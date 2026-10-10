@@ -89,7 +89,9 @@ Live, world `live` (fresh map `bots1`, peaceful, director client `pog-director`)
 - Second pass: smelt bricks from mined stone, `collect` tour with radius (bricks), tiles (`stone-brick` size 2:
   4 consumed, `stone-path` with the old tile as hidden tile; a repeat is refused), `belt_route` + `construct`
   (`E4`, 4 belts built), `blueprint_capture` + `paste` (4 ghosts) + `deconstruct` of the ghosts, `kite` (ended
-  `low_health` with ammo used, as designed), `refuel` tour (`topped_up`).
+  `low_health` with ammo used, as designed), `refuel` tour (`topped_up`), `cancel_craft` (plates refunded), copper
+  ore mined and smelted and `collect` from the furnace, `pole_route` dry run.
+- Bubble lifecycle in the engine: a 3-line bubble, then a new `say` left 1 render object, 0 after 8 s.
 - Death: killing the character ended the action with `died`; `status` showed `dead_until_tick` and `deaths`; actions
   were refused while dead; respawn after 600 ticks at the spawn slot with pistol and magazines; the corpse held the
   full inventory. After the crash fix, gemini mined a removed bot's corpse: all items moved, corpse gone.
@@ -103,8 +105,8 @@ Live, world `live` (fresh map `bots1`, peaceful, director client `pog-director`)
 
 ## Known gaps
 
-- Not exercised live: rearm, pipe/pole routes, equipment, wire, research completing in a lab, cancel_craft,
-  configure. They use the same proxy and paths as the tested actions, but a playerless-character quirk like the
+- Not exercised live: rearm, pipe routes, placing pole routes, equipment, wire (small poles need the electronics
+  trigger tech, not reached on the test map), research completing in a lab, configure. They use the same proxy and paths as the tested actions, but a playerless-character quirk like the
   corpse crash could still hide in one of them.
 - A bot's death shows up in other agents' `losses` lines as a destroyed `character` (the existing loss tracker counts
   every own-force entity; a player's character death already did the same).
