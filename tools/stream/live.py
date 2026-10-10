@@ -11,9 +11,9 @@ from model import SPARK_ITEMS
 
 
 class LiveSource:
-    def __init__(self, world, run, profiles="auto", flow_every=30.0):
+    def __init__(self, world, run, profiles="auto", flow_every=30.0, harness=None):
         self.name = f"live:{world}"
-        self.h = Harness(world)
+        self.h = harness or Harness(world)
         self.run = run
         self.agents_cfg = run.get("agents") or {}
         self.flow_every = flow_every
