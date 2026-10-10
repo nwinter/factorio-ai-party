@@ -5,11 +5,12 @@ param(
   [int]$GamePort = 34197,
   [string]$Factorio = 'D:\pog\factorio-2.0.77-alpha',
   [string]$PlayerName = 'pog-agent',
+  [string]$Slot = '',          # several clients in one world: '-astra', '-opus' (own dir, task and exe name)
   [switch]$Sound
 )
 $ErrorActionPreference = 'Stop'
 $srv = "D:\pog\inst\$Name"
-$dir = "D:\pog\inst\$Name-client"
+$dir = "D:\pog\inst\$Name-client$Slot"
 New-Item -ItemType Directory -Force "$dir\config","$dir\mods" | Out-Null
 $fwd = $dir -replace '\\','/'
 $data = ($Factorio -replace '\\','/') + '/data'
@@ -35,8 +36,14 @@ if (-not (Test-Path "$dir\player-data.json")) {
 robocopy "$srv\mods" "$dir\mods" /E /XF mod-list.json /NFL /NDL /NJH /NJS /NP | Out-Null
 $list = (Get-Content "$srv\mods\mod-list.json" -Raw | ConvertFrom-Json).mods | Where-Object { $_.enabled }
 (@{mods=@($list)} | ConvertTo-Json -Depth 4) | Set-Content -Encoding ascii "$dir\mods\mod-list.json"
-$task = "pog-$Name-client"
-$action = New-ScheduledTaskAction -Execute "$Factorio\bin\x64\factorio.exe" -Argument "--config `"$dir\config\config.ini`" --mp-connect 127.0.0.1:$GamePort"
+$task = "pog-$Name-client$Slot"
+# A per-slot copy of the executable gives the window a distinct exe name, so OBS can capture it.
+$exe = "$Factorio\bin\x64\factorio.exe"
+if ($Slot) {
+  $exe = "$Factorio\bin\x64\factorio$Slot.exe"
+  if (-not (Test-Path $exe)) { Copy-Item "$Factorio\bin\x64\factorio.exe" $exe }
+}
+$action = New-ScheduledTaskAction -Execute $exe -Argument "--config `"$dir\config\config.ini`" --mp-connect 127.0.0.1:$GamePort"
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
 Register-ScheduledTask -TaskName $task -Action $action -Principal $principal -Settings $settings -Force | Out-Null

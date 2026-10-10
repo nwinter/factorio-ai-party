@@ -19,6 +19,8 @@ local stock_module = require('stock')
 local stock
 local space_module = require('space')
 local clock_module = require('clock')
+-- Kept on M rather than as locals: this chunk is near Lua's 200-local limit.
+M.chat_module = require('chat')
 local clock
 local space
 local kite
@@ -426,6 +428,7 @@ function handlers.describe()
       'Walk/mine completion is bounded by ticks; inspect status and observe to verify outcomes'}}
   for name,schema in pairs(scheduler and scheduler.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(clock and clock.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.chat and M.chat.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(space and space.schema or {}) do description.actions[name]=schema end
   description.runtime_fault=state().runtime_fault or false
   return description
@@ -3172,6 +3175,8 @@ scheduler=scheduler_module{
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
 clock=clock_module{state=state}
 for name,handler in pairs(clock.handlers) do handlers[name]=handler end
+M.chat=M.chat_module{state=state}
+for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- wait_until as a direct call: a timed action that holds the character idle
 -- until the condition is met (outcome met) or the timeout passes (timed_out),
 -- so `fh call wait_until --wait` works outside a queue (in turn mode the
@@ -3191,7 +3196,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
+local passive={say=true,chat=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
 local reads={describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -3274,6 +3279,7 @@ function M.dispatch(request)
     local p=game.get_player(request.player or 1)
     if p and p.valid then result.clock=clock_line(p); result.losses=unseen_losses(p) end
     if clock and request.action=='status' then result.time_mode=clock.report() end
+    if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index) end
   end
   return result
 end
@@ -3571,6 +3577,8 @@ function M.on_event(event)
       local ok,p=pcall(player,index)
       if ok then request_path(p,nav) else nav.path_state='failed' end
     else nav.path_state='failed' end
+  elseif event.name==defines.events.on_console_chat then
+    if M.chat then M.chat.on_console_chat(event) end
   elseif event.name==defines.events.on_unit_group_finished_gathering then
     threat.on_group(event)
   elseif event.name==defines.events.on_entity_damaged then

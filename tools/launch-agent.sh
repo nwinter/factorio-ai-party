@@ -34,7 +34,7 @@ EOS
   args=(--route claude-b --model "$model" --thinking "$thinking" --permission-mode dontAsk)
 fi
 # Each run gets its own Herdr tab (POG_TAB=<tab id> puts this agent beside one already there).
-out=$(/Users/owner/.local/bin/ai-session spawn "${args[@]}" -C "$dir" --name "pog-$world-$run" --herdr tab --prompt-file "$prompt" --start 2>&1)
+out=$(/Users/owner/.local/bin/ai-session spawn "${args[@]}" -C "$dir" --name "pog-${POG_WS:-$world}-$run" --herdr tab --prompt-file "$prompt" --start 2>&1)
 pane=$(printf '%s\n' "$out" | sed -n 's/.*Herdr pane \([^ .]*\).*/\1/p' | tail -1)
 test -n "$pane" || { printf '%s\n' "$out" >&2; exit 1; }
 tab=$(herdr pane get "$pane" | python3 -c "import json,sys; d=json.load(sys.stdin)['result']; print(d.get('pane',d)['tab_id'])")

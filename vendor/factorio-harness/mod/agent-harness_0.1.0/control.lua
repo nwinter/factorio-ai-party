@@ -51,7 +51,7 @@ end)
 -- here so hot reloads keep identical handlers; the runtime opts in by exposing
 -- on_event. Faults quarantine the runtime exactly like tick failures.
 script.on_event({defines.events.on_script_path_request_finished, defines.events.on_entity_died,
-    defines.events.on_unit_group_finished_gathering, defines.events.on_entity_damaged}, function(event)
+    defines.events.on_unit_group_finished_gathering, defines.events.on_entity_damaged, defines.events.on_console_chat}, function(event)
   if state().runtime_fault then return end
   if not runtime then boot() end
   if not runtime.on_event then return end

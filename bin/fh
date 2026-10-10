@@ -5,6 +5,7 @@ case $world in
   live) port=27015 ;;
   a) port=27021 ;;
   b) port=27022 ;;
+  c) port=27023 ;;
   *) port=${POG_RCON_PORT:?set POG_RCON_PORT for world $world} ;;
 esac
 export FACTORIO_RCON_HOST=127.0.0.1 FACTORIO_RCON_PORT=$port FACTORIO_RCON_PASSWORD_FILE=$HOME/.config/pog/rcon-$world.pw
