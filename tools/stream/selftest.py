@@ -99,6 +99,21 @@ def main():
     assert any(a["kind"] == "power" for a in snap["alerts"]), snap["alerts"]
     assert any(a["kind"] == "attack" for a in snap["alerts"]), snap["alerts"]
 
+    # base attacks from status.alerts become alerts and pull interest toward agents near them
+    ev = LiveSource.attack_events({"attacked": [
+        {"chunk_centre": {"x": 16, "y": 16}, "hits": 9, "last_tick": 4000, "entities": "gun-turret x2, stone-wall x5"},
+        {"chunk_centre": {"x": 500, "y": 16}, "hits": 1, "last_tick": 10}]}, 5000)
+    assert len(ev) == 1 and ev[0]["text"] == "Base under attack near (16, 16): gun-turret x2", ev
+    before = m.agents["astra"].interest
+    m.ingest({"events": ev}, time.time())
+    assert m.agents["astra"].interest > before + 3, "astra is 15 tiles from the attack"
+
+    # with profiles, per-agent status is spread over rounds
+    nine = {"agents": {f"b{i}": {} for i in range(9)}}
+    rr = LiveSource("test", nine, harness=FakeHarness())
+    rounds = [rr.status_round(list(nine["agents"]), {}) for _ in range(3)]
+    assert sorted(sum(rounds, [])) == sorted(nine["agents"]) and all(len(r) == 3 for r in rounds), rounds
+
     log = os.path.join(os.environ.get("TMPDIR", "/tmp"), "selftest-director.jsonl")
     d = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], src.send_camera, log)
     cams = d.step(snap)

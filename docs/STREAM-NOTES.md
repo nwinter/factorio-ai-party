@@ -66,8 +66,10 @@ names; without one the card says e.g. "50 m W" (distance and bearing from spawn)
 Every poll (default 3 s), over one persistent RCON connection, using the same
 `remote.call("agent_harness", "dispatch", json)` that `bin/fh` sends:
 
-- `profiles` (only with the eng/bots runtime, see below), `status` for each configured agent, `chat` with
-  `peek: true` and a `since` cursor.
+- `profiles` (only with the eng/bots runtime, see below), `status` per configured agent, `chat` with `peek: true` and
+  a `since` cursor. With `profiles`, status is round-robin (a third of the agents per poll; position, alive and the
+  current action come from `profiles` every poll). Without it, every agent's status is read every poll.
+- If the world does not answer at startup, the service keeps serving and re-probes every minute.
 - `tools/pog.py`'s score Lua (tick, research done/current, production totals), plus `STREAM_LUA` in
   `tools/stream/harness.py`: research progress, the four costliest finished technologies (seeds "recent milestones" on
   start) and the count of electric machines in `low_power`/`no_power` status.
@@ -92,7 +94,8 @@ stops a player.
   mine/craft > walk), sustained action, chat (+2), combat start (+6), death (+5), and +2.5 for the two most recently
   active agents when a technology finishes (the contract's "research completion credit"; the harness does not say who
   fed the labs).
-- Alerts: attack (status `combat` going true), death, low power (more than 25% of at least 10 electric machines
+- Alerts: attack (an agent's status `combat` going true, or a base area in status `alerts.attacked` hit within the
+  last 30 game seconds, which also raises interest for agents within 60 tiles of it), death, low power (more than 25% of at least 10 electric machines
   starved, not while paused), research complete. Each key is rate-limited and shown for up to 40 s.
 - Page (`static/`): agent cards (glyph avatar on the agent's colour, display name, harness tag, model label and role,
   status dot and current action, location, camera badge), research card with progress and latest milestones,
@@ -145,8 +148,8 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
   reader. With bots it reads as a bot. `last_said` from `profiles` is ingested but only the chat feed shows it.
 - `control.lua` stops `request.player or 1` on a failed non-read call. For bot requests (no `player`) that would hit
   player 1; eng/bots should key this on the bot.
-- Attack alerts come from each agent's `combat` flag. Turret or wall attacks away from agents are not detected; the
-  status `alerts`/`warnings` ("under attack near ...") could feed them.
+- Base-attack alerts use status `alerts.attacked` (tested against the shape in `threat.lua`, not yet against a real
+  attack: world c is peaceful). Losses (`alerts.latest`) are not shown.
 - Research credit goes to the most recently active agents, since nothing says who fed the labs.
 - Production uses coloured lines, not Factorio item icons (the client has no Space Age data and the icons are not
   served anywhere).

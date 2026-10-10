@@ -229,6 +229,12 @@ class Model:
         ag = self.agents.get(e.get("agent")) if e.get("agent") else None
         if e["kind"] == "attack" and ag:
             ag.bump(6, now)
+        p = e.get("position")
+        fresh = e.get("key") not in self.alert_keys or now - self.alert_keys[e["key"]] >= e.get("ttl", 60)
+        if p and fresh:  # a fight somewhere: pull cameras toward agents near it
+            for other in self.agents.values():
+                if other.position and math.hypot(other.position["x"] - p["x"], other.position["y"] - p["y"]) <= 60:
+                    other.bump(4, now)
         self.alert(e["kind"], e["text"], key=e.get("key") or f"{e['kind']}:{e['text']}", agent=e.get("agent"),
                    ttl=e.get("ttl", 60))
 
