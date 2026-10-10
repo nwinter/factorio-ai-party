@@ -8,7 +8,7 @@ Agents never get this tool: it runs privileged Lua. Usage:
 """
 import argparse, json, os, socket, struct, sys
 
-PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023}
+PORTS = {"live": 27015, "a": 27021, "b": 27022, "c": 27023, "n": 27025}
 
 
 class Rcon:

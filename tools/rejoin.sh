@@ -4,7 +4,7 @@
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 world=$1 slot=${2:-} name=${3:-pog-$1} index=${4:-1}
-case $world in live) game=34197 rcon=27015 ;; a) game=34201 rcon=27021 ;; b) game=34202 rcon=27022 ;; c) game=34203 rcon=27023 ;; *) echo "unknown world" >&2; exit 1 ;; esac
+case $world in live) game=34197 rcon=27015 ;; a) game=34201 rcon=27021 ;; b) game=34202 rcon=27022 ;; c) game=34203 rcon=27023 ;; n) game=34205 rcon=27025 ;; *) echo "unknown world" >&2; exit 1 ;; esac
 tmp=$(mktemp -t pogkill).ps1
 cat > "$tmp" <<EOP
 Get-CimInstance Win32_Process -Filter "Name like 'factorio%.exe'" | Where-Object { \$_.CommandLine -match 'inst\\\\$world-client$slot\\\\' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }
