@@ -86,6 +86,10 @@ Live, world `live` (fresh map `bots1`, peaceful, director client `pog-director`)
   fuel, rotate, mine a fuelled furnace (contents returned), place_ghosts + construct, queue (two walks, both
   `duration_elapsed`), pickup of drill output, transfer, research, shoot with `auto` at biters (1 magazine spent,
   3 biters killed, then grok died), repair (130 to 200 HP, pack returned), say, profile, chat, screenshot.
+- Second pass: smelt bricks from mined stone, `collect` tour with radius (bricks), tiles (`stone-brick` size 2:
+  4 consumed, `stone-path` with the old tile as hidden tile; a repeat is refused), `belt_route` + `construct`
+  (`E4`, 4 belts built), `blueprint_capture` + `paste` (4 ghosts) + `deconstruct` of the ghosts, `kite` (ended
+  `low_health` with ammo used, as designed), `refuel` tour (`topped_up`).
 - Death: killing the character ended the action with `died`; `status` showed `dead_until_tick` and `deaths`; actions
   were refused while dead; respawn after 600 ticks at the spawn slot with pistol and magazines; the corpse held the
   full inventory. After the crash fix, gemini mined a removed bot's corpse: all items moved, corpse gone.
@@ -99,9 +103,11 @@ Live, world `live` (fresh map `bots1`, peaceful, director client `pog-director`)
 
 ## Known gaps
 
-- Not exercised live: kite, rearm/refuel tours, collect with radius, belt/pipe/pole routes, tile placement,
-  blueprint paste, equipment, research completing in a lab, wire. They use the same proxy and paths as the tested
-  actions, but a playerless-character quirk like the corpse crash could still hide in one of them.
+- Not exercised live: rearm, pipe/pole routes, equipment, wire, research completing in a lab, cancel_craft,
+  configure. They use the same proxy and paths as the tested actions, but a playerless-character quirk like the
+  corpse crash could still hide in one of them.
+- A bot's death shows up in other agents' `losses` lines as a destroyed `character` (the existing loss tracker counts
+  every own-force entity; a player's character death already did the same).
 - Repair rate (speed/2 HP per tick) is my reading of the game's rate, not measured against a player.
 - Sight is charted by script (±48 tiles). A bot that just arrived in uncharted ground may see "outside local visible
   area" for up to ~1.5 s (charting is asynchronous: about 40 ticks to visible).
