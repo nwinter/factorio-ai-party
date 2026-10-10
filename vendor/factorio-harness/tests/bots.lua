@@ -155,6 +155,9 @@ list=runtime.dispatch{action='profiles',args={},player=1}.profiles
 for _,row in ipairs(list) do assert(row.name~='pog-director','directors are not agents') end
 eq(runtime.operator.camera({player=2,position={x=7,y=7},smooth=false}).camera.position.x,7)
 eq(director.position.x,7)
+-- A director (no character) can peek at the chat, as an overlay does.
+eq(#runtime.dispatch{action='chat',args={peek=true,since=0},player=2}.messages>0,true)
+fails(function() runtime.dispatch{action='chat',args={},player=2} end,'living survival character')
 eq(runtime.operator.camera({player=2,release=true}).released,true)
 eq(#runtime.operator.cameras().cameras,0)
 storage.agent_harness.controlled={[1]={}}

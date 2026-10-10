@@ -3330,7 +3330,10 @@ dispatch_request=function(request)
     assert(not p.cheat_mode or a.allow_cheat_mode==true,'cheat mode requires explicit testing opt-in')
     return handler(p,a)
   end
-  if request.action=='status' or request.action=='queue_status' or request.action=='queue_cancel' then
+  -- A peek at the chat is a read any player can make (directors and
+  -- overlays have no character).
+  local peek=request.action=='chat' and type(request.args)=='table' and request.args.peek==true
+  if peek or request.action=='status' or request.action=='queue_status' or request.action=='queue_cancel' then
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     return handler(body(p),request.args or {})
   end
