@@ -38,7 +38,8 @@ local function character(pos)
   c.destroy=function() c.valid=false end
   return c
 end
-surface.find_non_colliding_position=function(_,origin) return {x=origin.x,y=origin.y} end
+-- An obstacle (the crash site) west of spawn pushes spots east of x=-3.
+surface.find_non_colliding_position=function(_,origin) return {x=math.max(origin.x,-3),y=origin.y} end
 surface.create_entity=function(args)
   local e
   if args.name=='character' then e=character(args.position) else e={valid=true,name=args.name,position=args.position,force=args.force,type='container'} end
@@ -167,7 +168,10 @@ c.valid=false; advance(1)
 local dead=bot('status',{})
 eq(dead.alive,false); eq(dead.dead_until_tick,tick+600); eq(dead.active,false); eq(dead.last.outcome,'died')
 fails(function() bot('walk',{direction='east',ticks=5}) end,'is dead')
-eq(runtime.dispatch{action='profiles',args={},player=1}.profiles[3].alive,false)
+for _,row in ipairs(runtime.dispatch{action='profiles',args={},player=1}.profiles) do
+  if row.name=='astra' then eq(row.alive,false); eq(row.dead_until_tick,dead.dead_until_tick) end
+  assert(row.name~='pog-director','a released director is still a spectator, not an agent')
+end
 advance(599); eq(bot('status',{}).alive,false)
 advance(1)
 local again=bot('status',{}); eq(again.alive,true); eq(again.dead_until_tick,nil); eq(again.deaths,1)

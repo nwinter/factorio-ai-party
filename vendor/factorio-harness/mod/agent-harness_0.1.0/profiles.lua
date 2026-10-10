@@ -92,7 +92,7 @@ return function(api)
   function M.handlers.profiles()
     local out = {}
     for _, p in pairs(game.players) do
-      if not api.director(p.index) then
+      if not api.director(p.index) and p.controller_type ~= defines.controllers.spectator then
         local r = row('player', p.name, p.index, p.character, p.position)
         r.connected = p.connected
         out[#out+1] = r

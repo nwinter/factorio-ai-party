@@ -112,10 +112,27 @@ return function(api)
     local r = RING + ring * RING_STEP
     return {x=origin.x + r * math.cos(angle), y=origin.y + r * math.sin(angle)}
   end
+  local SPACING, TRIES = 2, 36
+  -- The bot's own slot, or the next one whose free spot keeps SPACING from
+  -- every other living bot (obstacles such as the crash site push spots).
+  local function spot_for(b, surface, origin)
+    local first
+    for k = 0, TRIES - 1 do
+      local spot = M.slot(origin, (b.slot or 1) + k)
+      local pos = surface.find_non_colliding_position('character', spot, 32, 0.5) or spot
+      first = first or pos
+      local clear = true
+      for _, other in pairs(bots().by_index) do
+        local c = other ~= b and other.character
+        if c and c.valid and c.surface == surface and ((c.position.x - pos.x)^2 + (c.position.y - pos.y)^2)^0.5 < SPACING then clear = false; break end
+      end
+      if clear then return pos end
+    end
+    return first
+  end
   local function spawn(b, kind)
     local force, surface = force_of(b), surface_of(b)
-    local spot = M.slot(force.get_spawn_position(surface), b.slot or 1)
-    local pos = surface.find_non_colliding_position('character', spot, 32, 0.5) or spot
+    local pos = spot_for(b, surface, force.get_spawn_position(surface))
     local c = surface.create_entity{name='character', position=pos, force=force}
     assert(c, 'could not create the character')
     for name, count in pairs(items(kind)) do
