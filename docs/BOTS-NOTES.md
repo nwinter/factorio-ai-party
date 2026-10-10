@@ -17,7 +17,8 @@ Wiring:
 
 - `control.lua`: requests accept `bot` (name, validated; not together with `player`). Operator-only remote functions
   `bot_create`, `bot_remove`, `bots`, `camera`, `cameras`, `profile_ticks` (all return JSON, errors as
-  `{ok:false,error:{code:"operator_failed"}}`). `profiles` and `cameras` are read-only. A failed request for an unknown
+  `{ok:false,error:{code:"operator_failed"}}`). `profiles` and `cameras` are read-only. A `bot` request is refused
+  while the world runs a runtime without bot support (an older runtime would act as player 1); run `fh deploy`. A failed request for an unknown
   bot stops nobody (a request without `player` or `bot` still means player 1).
 - `runtime.lua`: a bot name becomes its index (1000000+n) at the top of `dispatch`; from there bots go through the same
   handlers, active-action table, queues, clocks and chat cursors as players. `player(index)` returns the bot proxy;
@@ -91,6 +92,7 @@ Live, world `live` (fresh map `bots1`, peaceful, director client `pog-director`)
   (`E4`, 4 belts built), `blueprint_capture` + `paste` (4 ghosts) + `deconstruct` of the ghosts, `kite` (ended
   `low_health` with ammo used, as designed), `refuel` tour (`topped_up`), `cancel_craft` (plates refunded), copper
   ore mined and smelted and `collect` from the furnace, `pole_route` dry run.
+- Save and server restart (with a `control.lua` update) kept all nine bots, alive, where they stood.
 - Bubble lifecycle in the engine: a 3-line bubble, then a new `say` left 1 render object, 0 after 8 s.
 - Death: killing the character ended the action with `died`; `status` showed `dead_until_tick` and `deaths`; actions
   were refused while dead; respawn after 600 ticks at the spawn slot with pistol and magazines; the corpse held the
