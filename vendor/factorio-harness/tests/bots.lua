@@ -12,7 +12,8 @@ rendering={draw_text=function(t) local obj={id=#drawn+1,valid=true}; obj.destroy
   get_object_by_id=function(id) return drawn[id] and drawn[id].obj end}
 remote={interfaces={}}
 helpers={json_to_table=function(t) return t end}
-local force={name='player',is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,get_spawn_position=function() return {x=0,y=0} end}
+local charts={}
+local force={name='player',chart=function(_,area) charts[#charts+1]=area end,is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,get_spawn_position=function() return {x=0,y=0} end}
 local surface={name='nauvis',index=1}
 -- A character entity: the LuaControl surface the handlers use.
 local function character(pos)
@@ -37,7 +38,7 @@ local function character(pos)
   c.destroy=function() c.valid=false end
   return c
 end
-surface.find_non_colliding_position=function(_,origin) return {x=origin.x+1,y=origin.y} end
+surface.find_non_colliding_position=function(_,origin) return {x=origin.x,y=origin.y} end
 surface.create_entity=function(args)
   local e
   if args.name=='character' then e=character(args.position) else e={valid=true,name=args.name,position=args.position,force=args.force,type='container'} end
@@ -67,7 +68,9 @@ local function bot(action,args) return runtime.dispatch{action=action,args=args,
 
 -- Operator-only creation: unique valid names, starting items, next to spawn.
 local made=runtime.operator.bot_create('astra')
-eq(made.ok,true); eq(made.bot.name,'astra'); eq(made.bot.position.x,1)
+eq(made.ok,true); eq(made.bot.name,'astra'); eq(made.bot.position.x,4); eq(made.bot.position.y,0)
+-- A new character charts the area a player would see around it.
+eq(#charts,1); eq(charts[1][1][1],4-32); eq(charts[1][2][2],32)
 local c=made.bot and storage.agent_harness.bots.by_name.astra.character
 eq(c.items['iron-plate'],8); eq(c.items['stone-furnace'],1); eq(c.items.pistol,1)
 fails(function() runtime.operator.bot_create('astra') end,'already exists')
@@ -88,7 +91,7 @@ local r=bot('walk',{direction='east',ticks=3})
 eq(r.until_tick,3)
 advance(1); eq(c.walking_state.walking,true); eq(c.walking_state.direction,4)
 local st=bot('status',{})
-eq(st.bot,true); eq(st.name,'astra'); eq(st.active.kind,'walk'); eq(st.alive,true); eq(st.position.x,1)
+eq(st.bot,true); eq(st.name,'astra'); eq(st.active.kind,'walk'); eq(st.alive,true); eq(st.position.x,4)
 advance(3); eq(c.walking_state.walking,false); eq(bot('status',{}).last.outcome,'duration_elapsed')
 fails(function() runtime.dispatch{action='status',args={},bot='nobody'} end,'no bot named nobody')
 fails(function() runtime.dispatch{action='status',args={},bot='astra',player=1} end,'not both')
@@ -140,9 +143,9 @@ fails(function() runtime.operator.camera({player=2,follow='astra',zoom=5}) end,'
 local old=director.character
 local cam=runtime.operator.camera({player=2,follow='astra',zoom=0.5})
 eq(cam.ok,true); eq(director.controller_type,2); eq(old.valid,false)
-eq(director.position.x,1) -- first frame jumps to the target
+eq(director.position.x,4) -- first frame jumps to the target
 c.position={x=11,y=0}; advance(1)
-assert(director.position.x>1 and director.position.x<2,'eases toward the target')
+assert(director.position.x>4 and director.position.x<5,'eases toward the target')
 advance(200); assert(math.abs(director.position.x-11)<0.05,'arrives')
 c.position={x=500,y=0}; advance(1); eq(director.position.x,500) -- far targets jump
 eq(runtime.operator.cameras().cameras[1].follow,'astra')
@@ -171,6 +174,26 @@ local again=bot('status',{}); eq(again.alive,true); eq(again.dead_until_tick,nil
 local c2=storage.agent_harness.bots.by_name.astra.character
 assert(c2~=c,'a new character'); eq(c2.items.pistol,1); eq(c2.items['iron-plate'],nil)
 eq(c2.color.r,1) -- the profile colour is reapplied
+-- Taking a corpse never calls mine_entity (the engine crashes for a playerless
+-- character): its items move to the inventory and the empty corpse goes.
+defines.inventory.character_corpse=9
+local function slot(name,count)
+  local st={valid_for_read=true,name=name,count=count}
+  st.clear=function() st.valid_for_read=false; st.count=0 end
+  return st
+end
+local loot={slot('iron-plate',4),slot('stone',20)}
+loot.is_empty=function() for _,st in ipairs(loot) do if st.valid_for_read then return false end end return true end
+local corpse={valid=true,type='character-corpse',get_inventory=function() return loot end}
+corpse.destroy=function() corpse.valid=false end
+c2.mine_entity=function() error('mine_entity must not be called on a corpse') end
+local room=10
+c2.get_main_inventory().insert=function(st) local n=math.min(room,st.count); room=room-n; c2.items[st.name]=(c2.items[st.name] or 0)+n; return n end
+local astra_proxy=runtime.bots.proxy(storage.agent_harness.bots.by_name.astra)
+eq(runtime.bots.mine(astra_proxy,corpse),false) -- only 10 fit
+eq(c2.items['iron-plate'],4); eq(c2.items.stone,6); eq(loot[2].count,14); eq(corpse.valid,true)
+room=100
+eq(runtime.bots.mine(astra_proxy,corpse),true); eq(c2.items.stone,20); eq(corpse.valid,false)
 -- Removal kills the character (its corpse keeps the items) and forgets the bot.
 local removed=runtime.operator.bot_remove('opus')
 eq(removed.bot.died,true)
@@ -182,4 +205,18 @@ bot('clock',{mode='turns'})
 eq(game.tick_paused,true)
 bot('walk',{direction='east',ticks=5}); eq(game.tick_paused,false)
 advance(7); eq(game.tick_paused,true)
+-- Nine bots spread on rings around the spawn point, none on top of another,
+-- and each keeps its surroundings charted once a second, staggered.
+for _,name in ipairs({'sol','luna','sonnet','haiku','grok','gemini','muse','opus2'}) do runtime.operator.bot_create(name) end
+local spots={}
+for _,b in ipairs(runtime.operator.bots().bots) do spots[#spots+1]=b.position end
+eq(#spots,9)
+for i=1,#spots do for j=i+1,#spots do
+  local d=((spots[i].x-spots[j].x)^2+(spots[i].y-spots[j].y)^2)^0.5
+  assert(d>=2,'bots '..i..' and '..j..' spawn '..d..' tiles apart')
+end end
+local before=#charts; advance(60); eq(#charts-before,9)
+local per_tick={}
+before=#charts; for _=1,60 do local n=#charts; advance(1); per_tick[#per_tick+1]=#charts-n end
+for _,n in ipairs(per_tick) do assert(n<=1,'charting is staggered across ticks') end
 print('bots: ok')

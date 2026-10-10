@@ -95,16 +95,34 @@ return function(api)
     if ok and type(list) == 'table' then return list end
     return kind == 'created' and FALLBACK_ITEMS or {}
   end
+  -- A player's character keeps the chunks around it charted and visible; a
+  -- character without a player does not, so do it for bots: the chunks within
+  -- the 32-tile visibility limit, refreshed every second (staggered by bot).
+  local SIGHT, SIGHT_TICKS = 32, 60
+  local function look(c)
+    local pos = c.position
+    c.force.chart(c.surface, {{pos.x - SIGHT, pos.y - SIGHT}, {pos.x + SIGHT, pos.y + SIGHT}})
+  end
+  -- Each bot has its own spot on rings around the spawn point (12 per ring,
+  -- 4 tiles out, then 3 tiles further per ring), so a crowd never stacks up.
+  local RING, RING_SIZE, RING_STEP = 4, 12, 3
+  function M.slot(origin, slot)
+    local ring = math.floor((slot - 1) / RING_SIZE)
+    local angle = ((slot - 1) % RING_SIZE) * 2 * math.pi / RING_SIZE + ring * math.pi / RING_SIZE
+    local r = RING + ring * RING_STEP
+    return {x=origin.x + r * math.cos(angle), y=origin.y + r * math.sin(angle)}
+  end
   local function spawn(b, kind)
     local force, surface = force_of(b), surface_of(b)
-    local origin = force.get_spawn_position(surface)
-    local pos = surface.find_non_colliding_position('character', origin, 32, 0.5) or origin
+    local spot = M.slot(force.get_spawn_position(surface), b.slot or 1)
+    local pos = surface.find_non_colliding_position('character', spot, 32, 0.5) or spot
     local c = surface.create_entity{name='character', position=pos, force=force}
     assert(c, 'could not create the character')
     for name, count in pairs(items(kind)) do
       if count > 0 then c.insert{name=name, count=count} end
     end
     b.character = c; b.position = c.position; b.dead_until_tick = nil
+    look(c)
     if api.on_spawn then api.on_spawn(b) end
     return c
   end
@@ -113,7 +131,7 @@ return function(api)
     local all = bots()
     assert(not all.by_name[name], 'a bot named ' .. name .. ' already exists')
     for _, p in pairs(game.players) do assert(p.name ~= name, 'a player is named ' .. name) end
-    local b = {name=name, index=BASE+all.next, force='player', surface='nauvis', created_tick=game.tick}
+    local b = {name=name, index=BASE+all.next, slot=all.next, force='player', surface='nauvis', created_tick=game.tick}
     spawn(b, 'created')
     all.next = all.next + 1
     all.by_name[name] = b; all.by_index[b.index] = b
@@ -141,6 +159,7 @@ return function(api)
     for _, b in pairs(bots().by_index) do
       if b.character and b.character.valid then
         if tick % 30 == 0 then b.position = b.character.position end
+        if (tick + b.index) % SIGHT_TICKS == 0 then look(b.character) end
       elseif not b.dead_until_tick then
         b.character = nil
         b.dead_until_tick = tick + RESPAWN_TICKS
@@ -156,6 +175,25 @@ return function(api)
     if not b or type(out) ~= 'table' then return out end
     out.bot = true; out.name = b.name; out.dead_until_tick = b.dead_until_tick; out.deaths = b.deaths
     return out
+  end
+  -- Mining through the engine, except a character corpse: the engine's
+  -- corpse pickup assumes a player and crashes the game for a playerless
+  -- character. Taking a corpse moves its items to the inventory (what fits);
+  -- the corpse goes once it is empty, as for a player.
+  function M.mine(p, e)
+    if not (M.is(p) and e.type == 'character-corpse') then return p.mine_entity(e, false) end
+    local from = e.get_inventory(defines.inventory.character_corpse)
+    local to = p.get_main_inventory()
+    for i = 1, #from do
+      local stack = from[i]
+      if stack.valid_for_read then
+        local moved = to.insert(stack)
+        if moved >= stack.count then stack.clear() elseif moved > 0 then stack.count = stack.count - moved end
+      end
+    end
+    if not from.is_empty() then return false end
+    e.destroy()
+    return true
   end
   -- Tiles without a cursor: the item's placement condition against the tile
   -- underneath (landfill only on water), one item per tile placed.

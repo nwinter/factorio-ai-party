@@ -3534,12 +3534,12 @@ function M.tick(event)
       elseif not p.can_reach_entity(e) then finish(index,'out_of_reach')
       elseif action.done_tick then
         if event.tick>=action.done_tick then
-          if p.mine_entity(e,false) then finish(index,'target_mined')
+          if M.bots.mine(p,e) then finish(index,'target_mined')
           else
             -- The engine refuses for two reasons: no room for the products,
             -- or an entity that cannot be mined by hand (a stump or remnant).
             action.blocked_item=blocked_product(p,action)
-            if action.blocked_item then finish(index,'inventory_full')
+            if action.blocked_item or e.valid and e.type=='character-corpse' then finish(index,'inventory_full')
             else action.error='the engine refused to mine '..e.name..' (not hand-minable: a stump, remnant or corpse; it does not block building, or deconstruct it)'; finish(index,'not_minable') end
           end
         end
