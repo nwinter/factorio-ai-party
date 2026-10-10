@@ -68,7 +68,7 @@ script.on_event({defines.events.on_script_path_request_finished, defines.events.
     log('Agent harness event error: ' .. tostring(err))
   end
 end)
-local read_only = {describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true}
+local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true}
 remote.add_interface('agent_harness', {
   install = function(source)
     local ok,result=pcall(function()

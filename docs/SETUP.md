@@ -38,6 +38,7 @@ tools/winps.sh tools/win/start-server.ps1 -Name a -Save base1 -GamePort 34201 -R
 tools/winps.sh tools/win/start-client.ps1 -Name a -GamePort 34201 -PlayerName pog-a
 ssh -N -L 27021:127.0.0.1:27021 pogwin &                                      # RCON tunnel
 POG_WORLD=a bin/fh doctor                                                     # first call on a fresh save is swallowed; repeat
+POG_WORLD=a bin/fh deploy                                                     # always: the save may carry an older runtime
 tools/pog.py --world a save && tools/winps.sh tools/win/stop-world.ps1 -Name a
 ```
 
@@ -56,6 +57,18 @@ tools/pog.py --world a save && tools/winps.sh tools/win/stop-world.ps1 -Name a
 - Claude: `--route claude-b --model fable --thinking low --permission-mode dontAsk`, with an allowlist in the
   workspace's `.claude/settings.json`.
 
+## Co-op worlds and recording
+
+- Several clients per world: `start-client.ps1 -Slot -astra -PlayerName pog-astra` gives each its own folder, task and
+  renamed executable (`factorio-astra.exe`) so OBS can capture each window. Player indices follow join order.
+- `tools/new-run.sh` co-op env: `POG_WS`, `POG_CLIENT`, `POG_PLAYER_INDEX`, `POG_TEAMMATE`, `POG_TEAMMATE_WS`, `POG_ROLE`.
+  `tools/launch-agent.sh` puts a run in its own Herdr tab; `POG_TAB=<tab>` adds the second agent beside the first.
+- Chat: agents use `say`/`chat`; unread messages ride on every reply. Plain text sent over RCON
+  (`tools/pog.py --world c rcon "message"`) reaches them as `server:`.
+- OBS (profile and scene collection `pog`, NVENC HEVC to `D:\pog\recordings`): `tools/.venv/bin/python tools/obs.py
+  coop-scene|start|stop|status|shot`. Needs `tools/tunnel.sh 4455`. `tools/overlay.py --world c` feeds the text panel.
+- Watchers: `tools/watch.py --worlds a,b,c runs/RUN...` reports key research, summaries, harness faults and blocked agents.
+
 ## Gotchas
 
 - `--wait-timeout` is in milliseconds.
@@ -63,3 +76,7 @@ tools/pog.py --world a save && tools/winps.sh tools/win/stop-world.ps1 -Name a
   (Factorio's one-time "commands disable achievements" warning eats it). Repeat the call.
 - Screenshots need the graphical client; they land in `D:\pog\inst\<world>-client\script-output\`.
 - The server answers harness queries while `game.tick_paused` is set, so a turn-based mode is possible.
+- A failed non-read call stops that player's current action. Tools that poll (overlay, watchers) must use read-only
+  calls (`status`, `chat` with `peek`) and the world must run the current runtime (`fh deploy`).
+- OBS's old "Untitled" profile shows an expired-Twitch-login dialog on start that blocks closing and WebSocket;
+  `tools/win/obs-dismiss.ps1` presses OK. `tools/win/desktop-shot.ps1` screenshots the box's desktop.
