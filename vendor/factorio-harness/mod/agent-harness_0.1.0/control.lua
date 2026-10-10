@@ -123,6 +123,8 @@ remote.add_interface('agent_harness', {
           message='runtime is quarantined after a tick failure; deploy a corrected runtime bundle',fault=s.runtime_fault}})
       end
       if not runtime then boot() end
+      -- An older runtime would ignore `bot` and act as player 1.
+      assert(request.bot==nil or runtime.bots~=nil, 'the running runtime does not support bots; deploy a current runtime')
       local success, result = pcall(runtime.dispatch, request)
       -- The runtime resolves a bot name to its index in request.player; an
       -- unknown bot leaves it unset and stops nobody.
