@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Screenshot the `stream` scene as OBS composes it, then put the program scene back.
 
-  tools/.venv/bin/python tools/stream/obs_shot.py OUT.png [--wait 4] [--back co-op]
+  tools/.venv/bin/python tools/stream/obs_shot.py OUT.png [--wait 4] [--back co-op] [--size 1280x720] [--reload]
 
 Browser sources only render while their scene is live, so this switches the program scene to `stream` for a few
 seconds. It refuses while a recording is running so it never changes what is being recorded.
@@ -19,6 +19,7 @@ def main():
     ap.add_argument("--scene", default="stream")
     ap.add_argument("--back", default="co-op")
     ap.add_argument("--wait", type=float, default=4.0)
+    ap.add_argument("--size", default="1920x1080", help="output size, e.g. 1280x720 to judge stream readability")
     ap.add_argument("--reload", action="store_true", help="reload the overlay page first (after editing it)")
     a = ap.parse_args()
     c = obs.client()
@@ -29,7 +30,8 @@ def main():
         if a.reload:
             c.press_input_properties_button("stream overlay", "refreshnocache")
         time.sleep(a.wait)
-        img = c.get_source_screenshot(a.scene, "png", 1920, 1080, -1).image_data
+        w, h = (int(v) for v in a.size.split("x"))
+        img = c.get_source_screenshot(a.scene, "png", w, h, -1).image_data
         open(a.out, "wb").write(base64.b64decode(img.split(",", 1)[1]))
     finally:
         c.set_current_program_scene(a.back)
