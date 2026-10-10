@@ -2,7 +2,8 @@
 """OBS control for pog recordings (through the SSH tunnel on 127.0.0.1:4455).
 
   tools/.venv/bin/python tools/obs.py coop-scene --left astra --right opus --title "..."
-  tools/.venv/bin/python tools/obs.py start|stop|pause|resume|status
+  tools/.venv/bin/python tools/obs.py start|stop|pause|resume|status       (recording)
+  tools/.venv/bin/python tools/obs.py stream-start|stream-stop|stream-status   (YouTube; key in ~/.config/pog/youtube.key)
   tools/.venv/bin/python tools/obs.py shot OUT.png        # what OBS is composing right now
 """
 import argparse, base64, os, sys
@@ -60,7 +61,8 @@ def coop_scene(c, left, right, title):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["coop-scene", "start", "stop", "pause", "resume", "status", "shot"])
+    ap.add_argument("cmd", choices=["coop-scene", "start", "stop", "pause", "resume", "status", "shot",
+                                    "stream-start", "stream-stop", "stream-status"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--left", default="astra")
     ap.add_argument("--right", default="opus")
@@ -80,6 +82,14 @@ def main():
     elif a.cmd == "status":
         r = c.get_record_status()
         print(f"active={r.output_active} paused={r.output_paused} time={r.output_timecode} bytes={r.output_bytes}")
+    elif a.cmd == "stream-start":
+        c.start_stream(); print("streaming to YouTube (visibility is set in YouTube Studio)")
+    elif a.cmd == "stream-stop":
+        c.stop_stream(); print("stream stopped")
+    elif a.cmd == "stream-status":
+        r = c.get_stream_status()
+        print(f"active={r.output_active} reconnecting={r.output_reconnecting} time={r.output_timecode} "
+              f"skipped={r.output_skipped_frames}/{r.output_total_frames} congestion={r.output_congestion:.2f}")
     elif a.cmd == "shot":
         scene = c.get_current_program_scene().scene_name
         img = c.get_source_screenshot(scene, "png", 1280, 720, -1).image_data
