@@ -62,4 +62,20 @@ eq(quarantined.ok,false); eq(quarantined.error.code,'runtime_fault')
 eq(encoded[interface.dispatch(request('fault-read','observe'))].ok,true)
 eq(encoded[interface.install(source)].ok,true); eq(storage.agent_harness.runtime_fault,nil)
 eq(encoded[interface.dispatch(request('recovered-write','build'))].ok,true)
+-- Bots: a request names a player or a bot (a valid name), never both.
+local function bot_request(id,fields) local r={id=id,action='build',args={}}; for k,v in pairs(fields) do r[k]=v end; return helpers.table_to_json(r) end
+eq(encoded[interface.dispatch(bot_request('bot-ok',{bot='astra'}))].ok,true)
+eq(encoded[interface.dispatch(bot_request('bot-both',{bot='astra',player=1}))].error.code,'invalid_request')
+eq(encoded[interface.dispatch(bot_request('bot-bad',{bot='Astra!'}))].error.code,'invalid_request')
+-- A failed request for an unknown bot stops nobody (not player 1).
+stopped={}
+local botty='return {dispatch=function(r) if r.bot=="known" then r.player=1000001 end; error("nope") end,tick=function() end,stop_all=function() end,stop_player=function(i) stopped[#stopped+1]=i end,'..
+  'operator={bot_create=function(name) return {ok=true,bot={name=name}} end,camera=function(args) return {ok=true,args=args} end}}'
+eq(encoded[interface.install(botty)].ok,true)
+interface.dispatch(bot_request('ghost-bot',{bot='ghost'})); eq(#stopped,0)
+interface.dispatch(bot_request('known-bot',{bot='known'})); eq(stopped[1],1000001)
+-- Operator calls go to runtime.operator and report failures as JSON.
+eq(encoded[interface.bot_create('astra')].bot.name,'astra')
+eq(encoded[interface.camera('cam-json')].ok,true)
+eq(encoded[interface.bot_remove('astra')].error.code,'operator_failed')
 print('control: '..assertions..' assertions passed')
