@@ -75,6 +75,9 @@ return function(api)
       c.run_until = nil
       c.until_crafted = nil
     end
+    -- With nobody connected, leave pausing to the server's auto_pause: a
+    -- tick-paused game never lets a reconnecting client finish joining.
+    if #game.connected_players == 0 then return end
     if not busy() then game.tick_paused = true end
   end
   M.report = report

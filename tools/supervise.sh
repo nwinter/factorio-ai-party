@@ -7,7 +7,8 @@ nudges=0
 while [ "$(date +%s)" -lt "$deadline" ]; do
   status=$(herdr pane get "$pane" 2>/dev/null | grep -o '"agent_status":"[a-z]*"' | cut -d'"' -f4)
   if [ "$status" = idle ] || [ "$status" = done ]; then
-    sleep 20
+    # Agents waiting on background work look idle between turns: require 3 quiet minutes.
+    sleep 180
     status=$(herdr pane get "$pane" 2>/dev/null | grep -o '"agent_status":"[a-z]*"' | cut -d'"' -f4)
     if { [ "$status" = idle ] || [ "$status" = done ]; } && [ "$(date +%s)" -lt "$((deadline - 120))" ]; then
       nudges=$((nudges + 1))

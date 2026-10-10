@@ -3,7 +3,7 @@ package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
 local p={index=1,valid=true,character={valid=true},crafting_queue_size=0}
-game={tick=100,tick_paused=false,get_player=function(i) if i==1 then return p end end}
+game={tick=100,tick_paused=false,connected_players={p},get_player=function(i) if i==1 then return p end end}
 local s={active={},combat={},queues={}}
 local clock=dofile('mod/agent-harness_0.1.0/clock.lua'){state=function() return s end}
 local function tick(n) for _=1,(n or 1) do game.tick=game.tick+1; clock.tick() end end
@@ -59,3 +59,8 @@ tick(100); eq(game.tick_paused,false)
 -- advance in realtime mode is harmless: time already runs.
 r=clock.handlers.advance(p,{ticks=10}); eq(r.until_tick,game.tick+10); eq(game.tick_paused,false)
 print('clock: ok')
+-- With nobody connected the clock leaves pausing to the server, so a client can rejoin.
+clock.handlers.clock(p,{mode='turns'}); game.tick_paused=false
+game.connected_players={}; tick(); eq(game.tick_paused,false)
+game.connected_players={p}; tick(); eq(game.tick_paused,true)
+
