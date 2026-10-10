@@ -302,14 +302,16 @@ return function(api)
     -- Everything in reach gets built (or mined) before taking another step.
     if placed>0 or waiting or action.mining then stop(p); return end
     local nav=action.nav
-    if nav and not nav.target.ghost.valid then
+    if nav and not (nav.target and nav.target.ghost.valid) then
       -- Target built on the way: keep heading there while the stand point
       -- still covers other ghosts, rather than re-planning mid-walk.
       local covered
       for _,rec in ipairs(action.pending) do
         if rec.ghost.valid and api.distance(nav.position,rec.ghost.position)<=reach(p,rec)-(rec.mine and 0 or 1) then covered=rec; break end
       end
-      nav.target=covered; nav=covered and nav
+      -- No stand point left: drop the walk too, or the next tick indexes a nil target.
+      nav.target=covered
+      if not covered then action.nav=nil; nav=nil end
     end
     if nav then
       local outcome=api.navigate(p,nav)

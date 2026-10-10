@@ -20,6 +20,12 @@ local function state()
   end
   return s
 end
+-- A quarantined runtime cannot run the turn clock, so a turn-mode world would
+-- play on unattended; freeze it until a fixed runtime is deployed.
+local function quarantine(err)
+  state().runtime_fault={tick=game.tick,message=tostring(err)}
+  if state().clock and state().clock.mode=='turns' then game.tick_paused=true end
+end
 local function compile(source)
   local chunk, err = load(source, '@agent-harness/runtime', 't', _ENV)
   assert(chunk, err)
@@ -41,7 +47,7 @@ script.on_event(defines.events.on_tick, function(event)
   if not runtime then boot() end
   local ok, err = pcall(runtime.tick, event)
   if not ok then
-    state().runtime_fault={tick=game.tick,message=tostring(err)}
+    quarantine(err)
     local stopped,stop_error=pcall(runtime.stop_all)
     log('Agent harness tick error: ' .. tostring(err))
     if not stopped then log('Agent harness cleanup error: '..tostring(stop_error)) end
@@ -57,7 +63,7 @@ script.on_event({defines.events.on_script_path_request_finished, defines.events.
   if not runtime.on_event then return end
   local ok, err = pcall(runtime.on_event, event)
   if not ok then
-    state().runtime_fault={tick=game.tick,message=tostring(err)}
+    quarantine(err)
     pcall(runtime.stop_all)
     log('Agent harness event error: ' .. tostring(err))
   end
