@@ -1,0 +1,12 @@
+{
+  "title": "Astra + Opus 5.5 play Factorio together",
+  "subtitle": "Co-op 1 · real time · world c",
+  "agents": {
+    "astra": {"kind": "player", "player": 1, "aliases": ["pog-astra"], "display_name": "Astra", "color": "#7c5cff",
+              "glyph": "A", "model": "GPT-6 Astra", "harness": "Codex", "role": "Smelting & science"},
+    "opus":  {"kind": "player", "player": 2, "aliases": ["pog-opus"], "display_name": "Opus", "color": "#e8743b",
+              "glyph": "O", "model": "Claude Opus 5.5", "harness": "Claude Code", "role": "Power, fuel & oil"}
+  },
+  "cameras": [{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}, {"slot": "cam3", "player": 5}],
+  "landmarks": []
+}
