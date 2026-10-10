@@ -65,7 +65,7 @@ tools/pog.py --world a save && tools/winps.sh tools/win/stop-world.ps1 -Name a
   `tools/launch-agent.sh` puts a run in its own Herdr tab; `POG_TAB=<tab>` adds the second agent beside the first.
 - Chat: agents use `say`/`chat`; unread messages ride on every reply. Plain text sent over RCON
   (`tools/pog.py --world c rcon "message"`) reaches them as `server:`.
-- OBS (profile and scene collection `pog`, NVENC HEVC to `D:\pog\recordings`): `tools/.venv/bin/python tools/obs.py
+- OBS (profile and scene collection `pog`, Quick Sync HEVC to `D:\pog\recordings`, ~2.6 GB/hour): `tools/.venv/bin/python tools/obs.py
   coop-scene|start|stop|status|shot`. Needs `tools/tunnel.sh 4455`. `tools/overlay.py --world c` feeds the text panel.
 - Watchers: `tools/watch.py --worlds a,b,c runs/RUN...` reports key research, summaries, harness faults and blocked agents.
 
@@ -80,3 +80,7 @@ tools/pog.py --world a save && tools/winps.sh tools/win/stop-world.ps1 -Name a
   calls (`status`, `chat` with `peek`) and the world must run the current runtime (`fh deploy`).
 - OBS's old "Untitled" profile shows an expired-Twitch-login dialog on start that blocks closing and WebSocket;
   `tools/win/obs-dismiss.ps1` presses OK. `tools/win/desktop-shot.ps1` screenshots the box's desktop.
+- NVENC is unavailable in OBS 32 ("outdated_driver": NVIDIA driver 535.98 from 2023); recordings use Intel Quick Sync.
+  OBS applies output settings changed over WebSocket only when a profile loads: switch to a temporary profile and back.
+- OBS's NDI plugin keeps an output running, which blocks frame-rate/resolution changes (stays 1080p60).
+- Video memory: each low-graphics client takes ~1 GB of the RTX 2070's 8 GB; close idle clients during recordings.
