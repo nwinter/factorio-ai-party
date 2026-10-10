@@ -50,6 +50,19 @@ test('queue command maps to runtime protocol with JSON-only stdout',async()=>{
     assert.equal(stderr,'');assert.equal(JSON.parse(stdout).result.revision,5);
   });
 });
+test('--bot and FH_BOT address a bot by name instead of a player',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{}};},async port=>{
+    await cli(port,['call','status','--bot','astra']);
+    await exec(process.execPath,['dist/host/cli.js','--format','json','--port',String(port),'call','status'],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only',FH_BOT:'opus'}});
+    await exec(process.execPath,['dist/host/cli.js','--format','json','--port',String(port),'call','status','--player','2'],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only',FH_BOT:'opus'}});
+  });
+  assert.equal(seen[0].bot,'astra');assert.equal(seen[0].player,undefined);
+  assert.equal(seen[1].bot,'opus');
+  assert.equal(seen[2].player,2);assert.equal(seen[2].bot,undefined);
+  await assert.rejects(cli(1,['call','status','--bot','astra','--player','2']),(e:any)=>/not both/.test(e.stdout+e.stderr));
+  await assert.rejects(cli(1,['call','status','--bot','Astra!']),(e:any)=>/must be a bot name/.test(e.stdout+e.stderr));
+});
 test('queue submit rejects a plan file that is not an array before contacting the game',async()=>{
   const {writeFile,mkdtemp}=await import('node:fs/promises');
   const {tmpdir}=await import('node:os');
