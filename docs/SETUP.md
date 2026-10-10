@@ -68,6 +68,9 @@ tools/pog.py --world a save && tools/winps.sh tools/win/stop-world.ps1 -Name a
 - OBS (profile and scene collection `pog`, Quick Sync HEVC to `D:\pog\recordings`, ~2.6 GB/hour): `tools/.venv/bin/python tools/obs.py
   coop-scene|start|stop|status|shot`. Needs `tools/tunnel.sh 4455`. `tools/overlay.py --world c` feeds the text panel.
 - Watchers: `tools/watch.py --worlds a,b,c runs/RUN...` reports key research, summaries, harness faults and blocked agents.
+- YouTube (unlisted test stream): OBS `pog` profile streams to `rtmps://a.rtmps.youtube.com:443/live2` (note `rtmps` in the
+  host) with the key from `~/.config/pog/youtube.key` (never commit it); Quick Sync H.264 at 6 Mbps. 2-minute test:
+  0 dropped frames, no congestion. `tools/obs.py stream-start|stream-status|stream-stop`.
 
 ## Gotchas
 
