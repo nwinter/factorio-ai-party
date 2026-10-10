@@ -3473,7 +3473,22 @@ local function blocked_product(p,action)
     if not p.can_insert{name=name} then return name end
   end
 end
+-- Operator measurement (profile_ticks): the harness tick's own cost, timed
+-- with LuaProfiler and written to the log. Module state on purpose: it never
+-- touches game state, and profiler readings differ between machines anyway.
+local profiling
 function M.tick(event)
+  if not profiling then return M.tick_body(event) end
+  local timer=helpers.create_profiler()
+  M.tick_body(event)
+  timer.stop(); profiling.total.add(timer); profiling.left=profiling.left-1
+  if profiling.left==0 then
+    profiling.total.divide(profiling.n)
+    log({'','agent-harness tick average over ',profiling.n,' ticks (',#M.bots.list(),' bots, ',table_size(state().active),' active actions): ',profiling.total})
+    profiling=nil
+  end
+end
+function M.tick_body(event)
   idle_tick()
   M.bots.tick(event.tick)
   for index,action in pairs(state().active) do
@@ -3618,6 +3633,12 @@ M.operator={
   bot_remove=function(name) local out=M.bots.remove(name); return {ok=true,tick=game.tick,bot=out} end,
   bots=function() local out={}; for _,b in ipairs(M.bots.list()) do out[#out+1]={name=b.name,index=b.index,alive=M.bots.alive(b),position=b.position,dead_until_tick=b.dead_until_tick} end; return {ok=true,tick=game.tick,bots=out} end,
   camera=function(args) return M.cameras.set(args) end,
+  profile_ticks=function(n)
+    n=integer(n,600,1,36000,'ticks')
+    local total=helpers.create_profiler(true)
+    profiling={n=n,left=n,total=total}
+    return {ok=true,tick=game.tick,until_tick=game.tick+n,note='the average lands in the server log (factorio-current.log)'}
+  end,
   cameras=function() return M.cameras.list() end}
 local MAX_ALERTS=64
 function M.on_event(event)

@@ -85,6 +85,7 @@ remote.add_interface('agent_harness', {
   bots = function() return operator('bots') end,
   camera = function(json) return operator('camera', json) end,
   cameras = function() return operator('cameras') end,
+  profile_ticks = function(n) return operator('profile_ticks', n) end,
   install = function(source)
     local ok,result=pcall(function()
     assert(type(source) == 'string' and #source <= 524288, 'runtime source must be <=524288 bytes')

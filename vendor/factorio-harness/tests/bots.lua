@@ -245,4 +245,13 @@ local before=#charts; advance(60); eq(#charts-before,9)
 local per_tick={}
 before=#charts; for _=1,60 do local n=#charts; advance(1); per_tick[#per_tick+1]=#charts-n end
 for _,n in ipairs(per_tick) do assert(n<=1,'charting is staggered across ticks') end
+-- profile_ticks times the harness tick and logs the average once.
+local logged={}
+log=function(m) logged[#logged+1]=m end
+table_size=function(t) local n=0 for _ in pairs(t) do n=n+1 end return n end
+local timers=0
+helpers.create_profiler=function() timers=timers+1; return {stop=function() end,add=function() end,divide=function(n) logged.divided=n end} end
+eq(runtime.operator.profile_ticks(5).until_tick,tick+5)
+advance(4); eq(#logged,0); advance(1); eq(#logged,1); eq(logged.divided,5); eq(logged[1][5],9)
+advance(5); eq(#logged,1)
 print('bots: ok')
