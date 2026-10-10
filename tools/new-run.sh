@@ -27,7 +27,8 @@ ln -sf AGENTS.md "$dir/CLAUDE.md"
 cat > "$dir/fh" <<EOS
 #!/usr/bin/env bash
 export POG_WORLD=$world
-exec "$root/bin/fh" "\$@" --player $index
+# Every request and reply is journaled for the run analysis.
+exec "$root/bin/fh" "\$@" --player $index --journal "$dir/journal.jsonl"
 EOS
 cat > "$dir/shot" <<EOS
 #!/usr/bin/env bash

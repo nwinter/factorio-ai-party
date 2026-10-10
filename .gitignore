@@ -5,3 +5,5 @@ runs/*/*/shots/
 runs/*/*/describe.json
 .DS_Store
 tools/.venv/
+CLAUDE.local.md
+.claude/settings.local.json
