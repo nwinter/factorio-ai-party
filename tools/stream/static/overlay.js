@@ -267,6 +267,7 @@
     if (sec < 3600) return Math.floor(sec / 60) + "m ago";
     return Math.floor(sec / 3600) + "h ago";
   }
+  const gameTime = (tick) => { const m = Math.floor(tick / 3600); return Math.floor(m / 60) + "h" + String(m % 60).padStart(2, "0"); };
   const shown = new Map();
   function renderChat(s) {
     const list = $("chat-list");
@@ -294,7 +295,7 @@
       if (ag) { applyPalette(node, ag); fillAvatar(node._av, ag, "sm"); }
       setText(node._from, ag ? ag.display_name : m.from);
       const age = s.now - (m.t || s.now);
-      setText(node._when, ago(age));
+      setText(node._when, (m.tick != null ? gameTime(m.tick) + " · " : "") + ago(age));
       node.classList.toggle("old", age > 90 && age <= 240);
       node.classList.toggle("older", age > 240);
     }

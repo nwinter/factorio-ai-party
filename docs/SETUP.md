@@ -67,6 +67,8 @@ tools/pog.py --world a save && tools/winps.sh tools/win/stop-world.ps1 -Name a
   (`tools/pog.py --world c rcon "message"`) reaches them as `server:`.
 - OBS (profile and scene collection `pog`, Quick Sync HEVC to `D:\pog\recordings`, ~2.6 GB/hour): `tools/.venv/bin/python tools/obs.py
   coop-scene|start|stop|status|shot`. Needs `tools/tunnel.sh 4455`. `tools/overlay.py --world c` feeds the text panel.
+- Stream overlay and director cameras (many agents): `tools/stream/` and `tools/obs.py stream-scene`; see
+  `docs/STREAM-NOTES.md`.
 - Watchers: `tools/watch.py --worlds a,b,c runs/RUN...` reports key research, summaries, harness faults and blocked agents.
 
 ## Gotchas

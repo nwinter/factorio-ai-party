@@ -125,8 +125,8 @@ class MockSource:
         self.chat = []
         self.seq = 0
         self.next_chat = time.time() + 2
-        self.next_attack = time.time() + 45
-        self.next_power = time.time() + 150
+        self.next_attack = time.time() + 20
+        self.next_power = time.time() + 50
         self.power_until = 0
         self.events = []
         self.profile_change_at = time.time() + 120
