@@ -7,3 +7,4 @@ runs/*/*/describe.json
 tools/.venv/
 CLAUDE.local.md
 .claude/settings.local.json
+__pycache__/

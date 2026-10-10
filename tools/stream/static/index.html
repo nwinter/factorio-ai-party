@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pog stream overlay</title>
+<meta name="viewport" content="width=1920, height=1080">
+<link rel="stylesheet" href="/static/overlay.css">
+</head>
+<body>
+<div id="stage">
+  <div class="cam" id="cam-main" data-slot="main"><div class="cam-label"></div></div>
+  <div class="cam" id="cam-cam2" data-slot="cam2"><div class="cam-label"></div></div>
+  <div class="cam" id="cam-cam3" data-slot="cam3"><div class="cam-label"></div></div>
+  <div id="alerts"></div>
+
+  <aside id="side">
+    <header id="head" class="panel">
+      <div class="titles">
+        <div id="title">Player of Games</div>
+        <div id="subtitle"></div>
+      </div>
+      <div class="clock">
+        <div id="clock">0h00m</div>
+        <div id="clock-sub">game time</div>
+      </div>
+    </header>
+
+    <section id="cards"></section>
+
+    <section id="prod" class="panel">
+      <div class="panel-title">Production <span class="unit">per minute</span></div>
+      <div id="sparks"></div>
+    </section>
+
+    <section id="chat" class="panel">
+      <div class="panel-title">Chat</div>
+      <div id="chat-list"></div>
+    </section>
+  </aside>
+</div>
+<script src="/static/overlay.js"></script>
+</body>
+</html>
