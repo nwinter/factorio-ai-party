@@ -297,7 +297,7 @@ class Model:
                     break
             if g1 > g0:
                 rate = {k: (p1.get(k, 0) - p0.get(k, 0)) * 60.0 / (g1 - g0) for k in p1}
-        names = [n for n in SPARK_ITEMS if latest.get(n, 0) > 0 or self.flows.get(n)]
+        names = [n for n in SPARK_ITEMS if latest.get(n, 0) > 0 or sum(self.flows.get(n) or []) > 0]
         science = [n for n in names if n in SCIENCE]
         materials = [n for n in names if n not in SCIENCE]
         # keep the panel to 6 rows: newest science tiers matter most once there are many

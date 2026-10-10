@@ -138,6 +138,9 @@
   function renderCards(s) {
     const box = $("cards");
     const agents = s.agents.filter((a) => a.seen !== false || a.display_name);
+    // 2 columns; the research card takes one cell. Up to 7 agents: 4 roomy rows; 8-9: 5 rows; 10-12: 7 compact rows.
+    const density = agents.length <= 7 ? "1" : agents.length <= 9 ? "2" : "3";
+    if (document.body.dataset.density !== density) document.body.dataset.density = density;
     const keep = new Set();
     agents.forEach((a, i) => {
       keep.add(a.name);
@@ -149,7 +152,8 @@
         const r1 = el("div", "row1");
         c.name = el("div", "name");
         c.badge = el("div", "badge");
-        r1.append(c.name, c.badge);
+        c.harness = el("div", "harness");
+        r1.append(c.name, c.badge, c.harness);
         c.model = el("div", "model");
         const doing = el("div", "doing");
         c.dot = el("span", "dot");
@@ -165,6 +169,7 @@
       applyPalette(c.root, a);
       fillAvatar(c.av, a);
       setText(c.name, a.display_name || a.name);
+      setText(c.harness, a.harness || "");
       c.root.title = a.motto || "";
       c.model.textContent = "";
       c.model.append(el("b", "", a.model || "model ?"));
@@ -197,6 +202,7 @@
       box.appendChild(researchCard.root);
     }
     researchCard.root.style.order = 999;
+    researchCard.root.style.gridColumn = agents.length % 2 === 0 ? "1 / span 2" : "";
     const r = s.research || {};
     setText(researchCard.tech, r.label || "No research queued");
     setText(researchCard.pct, r.progress != null ? Math.floor(r.progress * 100) + "%" : r.done_count ? r.done_count + " done" : "");
@@ -215,7 +221,7 @@
     const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
     return { line, area: line + ` L ${w} ${h} L 0 ${h} Z` };
   }
-  const fmtRate = (v) => (v == null ? "–" : v >= 1000 ? (v / 1000).toFixed(1) + "k" : v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(0) : v.toFixed(1));
+  const fmtRate = (v) => (v == null ? "–" : v === 0 ? "0" : v >= 1000 ? (v / 1000).toFixed(1) + "k" : v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(0) : v.toFixed(1));
   function renderProduction(s) {
     const box = $("sparks");
     const items = s.production || [];
@@ -341,7 +347,8 @@
         label.append(label._doing);
       }
       const lead = agents[0];
-      const doing = agents.length === 1 && lead.activity === "acting" && lead.action ? humanItem(lead.action) : agents.length > 1 ? "working together" : "";
+      const doing = agents.length > 1 ? "working together" : lead.activity === "acting" && lead.action ? humanItem(lead.action)
+        : lead.activity === "thinking" ? "thinking" : "";
       setText(label._doing, doing ? "· " + doing : "");
       frame.style.borderColor = palette(lead).ink + "66";
       label.classList.add("on");

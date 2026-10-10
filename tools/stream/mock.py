@@ -19,6 +19,12 @@ PROFILES = {
     "sol": {"display_name": "Sol", "color": "#ffd400", "glyph": "☀", "motto": "Keep the labs lit."},
     "luna": {"display_name": "Luna", "color": "#14141c", "glyph": "🌙", "motto": "Night shift."},
     "grok": {"display_name": "Grok the Unyielding Builder", "color": "#00c8e0", "glyph": "Gk", "motto": ""},
+    "gemini": {"display_name": "Gemini", "color": "#5aa9ff", "glyph": "♊", "motto": "Two belts are better than one."},
+    "muse": {"display_name": "Muse", "color": "#ff8fb1", "glyph": "Mu", "motto": "Every blueprint a sketch."},
+    # extras for the 12-agent density test (tools/stream/runs/mock12.json)
+    "nova": {"display_name": "Nova", "color": "#3ddc97", "glyph": "N", "motto": ""},
+    "kite": {"display_name": "Kite", "color": "#ff6b3d", "glyph": "🪁", "motto": ""},
+    "echo": {"display_name": "echo", "color": "#9aa0a6", "glyph": "e", "motto": ""},
 }
 
 SITES = {
@@ -35,6 +41,11 @@ ROLES = {
     "sol": ["science labs", "mall", "iron smelting"],
     "luna": ["defense line", "oil field", "spawn"],
     "grok": ["mall", "power plant", "science labs", "stone"],
+    "gemini": ["copper smelting", "iron smelting", "mall", "spawn"],
+    "muse": ["science labs", "oil field", "mall"],
+    "nova": ["coal field", "power plant"],
+    "kite": ["defense line", "iron ore"],
+    "echo": ["stone", "spawn", "mall"],
 }
 
 ACTIONS = {
@@ -65,6 +76,10 @@ LINES = {
              "Swapping to piercing ammo when we have steel to spare."],
     "grok": ["Mall makes assemblers, belts, inserters, poles now.", "Building a 2nd engine row by the labs.",
              "Who wants a blueprint for 12 green circuit assemblers?", "Moving power poles out of the walkway, sorry Sonnet."],
+    "gemini": ["Copper line doubled: two belts into the circuit block.", "Splitting the bus at x=40 for the green circuits.",
+               "Balancer down, both lanes even now.", "Need 200 more belts, Grok?"],
+    "muse": ["New blueprint: 6-refinery block with cracking.", "Sketched a compact lab ring for blue + purple.",
+             "Placed the oil block ghost; filling it by hand for now.", "Blueprint string in notes if anyone wants the smelter."],
 }
 
 

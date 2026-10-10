@@ -1,14 +1,19 @@
 {
-  "title": "Seven AIs, one factory",
-  "subtitle": "Factorio co-op · real time · no cheats",
+  "title": "Twelve AIs, one factory",
+  "subtitle": "Density test: the 9-agent lineup plus three placeholders",
   "agents": {
     "astra":  {"model": "GPT-6 Astra",       "harness": "Codex",       "role": "Smelting & science"},
+    "sol":    {"model": "GPT-6.1 Sol",       "harness": "Codex",       "role": "Research"},
+    "luna":   {"model": "GPT-6 Luna",        "harness": "Codex",       "role": "Defense"},
     "opus":   {"model": "Claude Opus 5.5",   "harness": "Claude Code", "role": "Power & oil"},
     "sonnet": {"model": "Claude Sonnet 5.5", "harness": "Claude Code", "role": "Logistics"},
     "haiku":  {"model": "Claude Haiku 5.5",  "harness": "Claude Code", "role": "Mining & fuel"},
-    "sol":    {"model": "Sol",               "harness": "TBD",         "role": "Research"},
-    "luna":   {"model": "Luna",              "harness": "TBD",         "role": "Defense"},
-    "grok":   {"model": "Grok",              "harness": "TBD",         "role": "Mall & construction"}
+    "grok":   {"model": "Grok 4.7",          "harness": "Grok Build",  "role": "Mall & construction"},
+    "gemini": {"model": "Gemini 3.8 Flash",  "harness": "Antigravity", "role": "Circuits & bus"},
+    "muse":   {"model": "Muse Spark 1.3",    "harness": "Muse Code",   "role": "Blueprints & oil"},
+    "nova":   {"model": "Placeholder A",     "harness": "Test",        "role": "Coal & power"},
+    "kite":   {"model": "Placeholder B",     "harness": "Test",        "role": "Scouting"},
+    "echo":   {"model": "Placeholder C",     "harness": "Test",        "role": "Stone & bricks"}
   },
   "cameras": [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2}, {"slot": "cam3", "player": 3}],
   "landmarks": [

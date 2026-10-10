@@ -119,7 +119,7 @@ def main():
     ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
     a = ap.parse_args()
 
-    run_path = a.run or os.path.join(HERE, "runs", "mock7.json" if a.mock else "coop1.json")
+    run_path = a.run or os.path.join(HERE, "runs", "mock9.json" if a.mock else "coop1.json")
     run = json.load(open(run_path))
     slots = run.get("cameras") or [{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4},
                                    {"slot": "cam3", "player": 5}]
