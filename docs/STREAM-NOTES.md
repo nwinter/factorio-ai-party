@@ -5,6 +5,8 @@ service"). It is a small stdlib Python service on the Mac that polls a world rea
 "interest" per agent, picks camera targets for three director clients, and serves a 1920x1080 transparent overlay page
 for an OBS browser source plus a JSON/SSE feed. It is built for 9 agents and degrades to 12.
 
+![9-agent mock in the OBS "stream" scene (director clients not running, so the camera areas are empty)](stream-overlay-mock9.png)
+
 ## Run it
 
 ```sh

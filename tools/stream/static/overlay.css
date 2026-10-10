@@ -193,12 +193,15 @@ body.preview .cam::after {
 .card .doing .where { color: var(--faint); white-space: nowrap; flex: 0 3 auto; min-width: 0; max-width: 42%; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
 
 .dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--idle); }
-.dot.acting { background: var(--acting); animation: breathe 2.6s ease-in-out infinite; }
-.dot.thinking { background: var(--thinking); animation: blink 1.8s ease-in-out infinite; }
+/* static dots; only agents on a camera breathe, so nine cards do not all pulse at once */
+.dot.acting { background: var(--acting); }
+.dot.thinking { background: var(--thinking); opacity: 0.85; }
+.card.oncam .dot.acting { animation: breathe 2.8s ease-in-out infinite; }
+.card.oncam .dot.thinking { animation: blink 3.2s ease-in-out infinite; }
 .dot.dead { background: var(--dead); }
 .dot.offline { background: transparent; border: 2px solid var(--idle); width: 6px; height: 6px; }
 @keyframes breathe { 0%, 100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.45); } 50% { box-shadow: 0 0 0 5px rgba(74, 222, 128, 0); } }
-@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
 
 /* avatar: glyph on the agent's colour, ring when the colour vanishes into the panel */
 .avatar {
