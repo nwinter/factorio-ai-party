@@ -71,7 +71,7 @@ local function bot(action,args) return runtime.dispatch{action=action,args=args,
 local made=runtime.operator.bot_create('astra')
 eq(made.ok,true); eq(made.bot.name,'astra'); eq(made.bot.position.x,4); eq(made.bot.position.y,0)
 -- A new character charts the area a player would see around it.
-eq(#charts,1); eq(charts[1][1][1],4-32); eq(charts[1][2][2],32)
+eq(#charts,1); eq(charts[1][1][1],4-48); eq(charts[1][2][2],48)
 local c=made.bot and storage.agent_harness.bots.by_name.astra.character
 eq(c.items['iron-plate'],8); eq(c.items['stone-furnace'],1); eq(c.items.pistol,1)
 fails(function() runtime.operator.bot_create('astra') end,'already exists')
@@ -201,6 +201,25 @@ eq(runtime.bots.mine(astra_proxy,corpse),false) -- only 10 fit
 eq(c2.items['iron-plate'],4); eq(c2.items.stone,6); eq(loot[2].count,14); eq(corpse.valid,true)
 room=100
 eq(runtime.bots.mine(astra_proxy,corpse),true); eq(c2.items.stone,20); eq(corpse.valid,false)
+-- Repair: the engine ignores repair_state for a playerless character, so a
+-- bot heals by script and drains the pack; the pack goes back afterwards.
+local furnace={valid=true,name='stone-furnace',type='furnace',force=force,position={x=2,y=0},health=100,max_health=200,minable=true,prototype={repair_speed_modifier=1}}
+local pack={valid_for_read=false}
+c2.cursor_stack={valid_for_read=false,swap_stack=function(st) pack.valid_for_read=true; pack.count=st.count; pack.durability=300; c2.items['repair-pack']=0
+  setmetatable(c2.cursor_stack,{__index=pack}); c2.cursor_stack.valid_for_read=nil; return true end}
+pack.prototype={type='repair-tool',speed=2}; pack.name='repair-pack'
+pack.drain_durability=function(n) pack.durability=pack.durability-n end
+pack.clear=function() pack.valid_for_read=false; pack.count=0 end
+c2.items['repair-pack']=2
+c2.get_main_inventory().find_item_stack=function(name) if (c2.items[name] or 0)>0 then return {count=c2.items[name],prototype=pack.prototype} end end
+c2.get_main_inventory().insert=function(st) c2.items[st.name]=(c2.items[st.name] or 0)+st.count; return st.count end
+surface.find_entities_filtered=function() return {furnace} end
+c2.repair_state={repairing=false}
+eq(bot('repair',{position={x=2,y=0},ticks=300}).until_tick,tick+300)
+advance(10); eq(furnace.health,110); eq(pack.durability,290)
+advance(100); eq(furnace.health,200); eq(bot('status',{}).last.outcome,'repair_completed')
+eq(pack.valid_for_read,false); eq(c2.items['repair-pack'],2) -- back in the inventory
+surface.find_entities_filtered=function() return {} end
 -- Removal kills the character (its corpse keeps the items) and forgets the bot.
 local removed=runtime.operator.bot_remove('opus')
 eq(removed.bot.died,true)

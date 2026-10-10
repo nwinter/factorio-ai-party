@@ -96,9 +96,11 @@ return function(api)
     return kind == 'created' and FALLBACK_ITEMS or {}
   end
   -- A player's character keeps the chunks around it charted and visible; a
-  -- character without a player does not, so do it for bots: the chunks within
-  -- the 32-tile visibility limit, refreshed every second (staggered by bot).
-  local SIGHT, SIGHT_TICKS = 32, 60
+  -- character without a player does not, so do it for bots, refreshed every
+  -- second (staggered by bot). Charting is asynchronous (a chunk turns visible
+  -- within ~40 ticks and stays so for over 8 s), so the box reaches 48 tiles:
+  -- a walking bot finds the chunks inside the 32-tile limit already visible.
+  local SIGHT, SIGHT_TICKS = 48, 60
   local function look(c)
     local pos = c.position
     c.force.chart(c.surface, {{pos.x - SIGHT, pos.y - SIGHT}, {pos.x + SIGHT, pos.y + SIGHT}})
@@ -211,6 +213,26 @@ return function(api)
     if not from.is_empty() then return false end
     e.destroy()
     return true
+  end
+  -- The engine ignores repair_state on a character without a player, so a
+  -- bot repairs by script: the held tool heals speed/2 HP per tick (a repair
+  -- pack, speed 2: 60 HP/s), scaled by the target's repair speed modifier,
+  -- and loses that much durability, like a player's repair.
+  function M.repair(p, e)
+    local tool = p.cursor_stack
+    local ok, modifier = pcall(function() return e.prototype.repair_speed_modifier end)
+    local heal = math.min(e.max_health - e.health, tool.prototype.speed / 2 * (ok and modifier or 1), tool.durability)
+    if heal <= 0 then return end
+    e.health = e.health + heal
+    tool.drain_durability(heal)
+  end
+  -- A borrowed cursor goes back to the inventory (clear_cursor does nothing
+  -- for a character without a player); what does not fit stays held.
+  function M.clear_cursor(p)
+    local held = p.cursor_stack
+    if not (held and held.valid_for_read) then return end
+    local moved = p.get_main_inventory().insert(held)
+    if moved >= held.count then held.clear() elseif moved > 0 then held.count = held.count - moved end
   end
   -- Tiles without a cursor: the item's placement condition against the tile
   -- underneath (landfill only on water), one item per tile placed.

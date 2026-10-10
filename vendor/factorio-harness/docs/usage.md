@@ -123,7 +123,7 @@ fh --bot astra call status                                                      
 - Names match `[a-z][a-z0-9_-]{0,15}` and are unique (also against player names).
 - A new bot gets the freeplay starting items and its own spot on rings around the spawn point, at least 2 tiles from every other bot.
 - Every action works for bots. Building places directly (the item is consumed, reach is checked); tiles and blueprint pastes need no cursor (pastes cannot flip).
-- A bot keeps the chunks within 32 tiles of it charted and visible, as a player's character does.
+- A bot keeps the chunks within about 48 tiles of it charted and visible, as a player's character does (refreshed every second; charting takes up to ~40 ticks, so a bot that just arrived somewhere new may need a moment).
 - Death ends the bot's action and queue step with outcome `died`. It respawns at its spawn spot after 600 ticks with the freeplay respawn items; `status` reports `dead_until_tick` meanwhile. Mining its corpse takes the items back.
 - The server's `auto_pause` stops the game while no client is connected; keep a director client connected while bots play.
 

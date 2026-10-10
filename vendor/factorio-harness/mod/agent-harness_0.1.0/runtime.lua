@@ -169,7 +169,8 @@ local function finish(index, outcome)
   stop(body(M.lookup(index)))
   if action and action.borrowed_cursor then
     local p=M.lookup(index)
-    if p and p.valid and p.connected and p.character and p.character.valid and p.cursor_stack then pcall(p.clear_cursor) end
+    if M.bots.is(p) and p.valid and p.character then M.bots.clear_cursor(p)
+    elseif p and p.valid and p.connected and p.character and p.character.valid and p.cursor_stack then pcall(p.clear_cursor) end
   end
   s.active[index]=nil
 end
@@ -1328,7 +1329,8 @@ function handlers.repair(p,a)
     borrowed=true
   end
   assert(p.cursor_stack.prototype.type=='repair-tool','cursor must hold a repair tool')
-  state().active[p.index]={kind='repair',entity=e,borrowed_cursor=borrowed,until_tick=game.tick+ticks}
+  -- A bot's cursor is invisible to it: always put the tool back afterwards.
+  state().active[p.index]={kind='repair',entity=e,borrowed_cursor=borrowed or M.bots.is(p),until_tick=game.tick+ticks}
   return {until_tick=game.tick+ticks}
 end
 -- Hand-crafting what our machines already made wastes the character's time:
@@ -3526,8 +3528,11 @@ function M.tick(event)
       else
         -- Reassigning selection/state every tick fights the client's cursor
         -- hover and makes the selection box flash; only correct drift.
-        if p.selected~=e then p.selected=e end
-        if not p.repair_state.repairing then p.repair_state={repairing=true,position=e.position} end
+        if M.bots.is(p) then M.bots.repair(p,e)
+        else
+          if p.selected~=e then p.selected=e end
+          if not p.repair_state.repairing then p.repair_state={repairing=true,position=e.position} end
+        end
       end
     elseif action.kind=='mine' then
       local e=action.entity
