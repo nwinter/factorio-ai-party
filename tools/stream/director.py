@@ -9,15 +9,17 @@ import json, math, time
 DEFAULTS = {
     "main_dwell": 20.0,      # seconds before the main camera may cut
     "side_dwell": 12.0,
-    "max_dwell": 75.0,       # after this, cut to the best other agent if it is at least `rotate_ratio` as interesting
+    "max_dwell": 60.0,       # after this, cut to the best other agent if it is at least `rotate_ratio` as interesting
     "rotate_ratio": 0.5,
-    "switch_margin": 1.3,    # a challenger must beat the current subject by this factor (+ switch_bias) to cut early
-    "switch_bias": 1.0,
+    "switch_margin": 1.6,    # a challenger must beat the current subject by this factor (+ switch_bias) to cut early
+    "switch_bias": 2.0,
+    "cut_spacing": 4.0,      # seconds between voluntary cuts on any camera, so cameras do not all cut at once
     "pair_distance": 40.0,   # tiles
     "solo_zoom": 0.7,
     "side_zoom": 0.6,
     "airtime_bonus": 0.015,  # interest per second since an agent was last on any camera (capped)
     "airtime_cap": 2.5,
+    "onair_penalty": 0.8,    # main camera discounts agents a secondary camera already shows (fewer forced cuts)
     "reframe_tiles": 6.0,    # re-send a pair midpoint when it moved this far
     "reframe_every": 2.0,
 }
@@ -37,6 +39,7 @@ class Director:
         self.state = {s["slot"]: None for s in slots}  # slot -> current assignment dict
         self.last_on_air = {}
         self.started = time.time()
+        self.last_cut = 0.0
 
     # -- scoring ----------------------------------------------------------------------------------------------
     def scores(self, agents, now):
@@ -80,22 +83,36 @@ class Director:
         scores = self.scores(agents, now)
         ranked = sorted(scores, key=lambda n: -scores[n])
         taken = set()
+        released = []  # subjects a higher camera just cut away from: a lower camera that lost its subject takes one
         for i, slot in enumerate(self.slots):
             name = slot["slot"]
             cur = self.state.get(name)
             dwell = self.cfg["main_dwell"] if i == 0 else self.cfg["side_dwell"]
             zoom = slot.get("zoom") or (self.cfg["solo_zoom"] if i == 0 else self.cfg["side_zoom"])
-            free = [n for n in ranked if n not in taken]
-            subject, reason = self.choose(cur, free, scores, now, dwell)
+            slot_scores = scores
+            if i == 0:
+                shown = {t["subject"] for s2, t in self.state.items() if t and s2 != name}
+                slot_scores = {n: v * (self.cfg["onair_penalty"] if n in shown else 1.0) for n, v in scores.items()}
+            free = sorted((n for n in ranked if n not in taken), key=lambda n: -slot_scores[n])
+            on_air = {t["subject"] for s2, t in self.state.items() if t and s2 != name}
+            subject, reason = self.choose(cur, free, slot_scores, now, dwell, on_air, released)
             if subject is None:
                 if cur is not None:
                     self.apply(slot, None, "no candidates", scores, now)
                 continue
             # secondary cameras do not pair-frame agents that the main camera already shows
             partner = cur["agents"][1] if cur and cur["subject"] == subject and len(cur["agents"]) > 1 else None
-            target = self.frame(subject, by_name, taken | {subject}, zoom, partner)
+            # do not pull another camera's subject into a pair while that camera is still within its dwell
+            held = set()
+            for j, other in enumerate(self.slots):
+                t = self.state.get(other["slot"])
+                if j != i and t and now - t["since"] < (self.cfg["main_dwell"] if j == 0 else self.cfg["side_dwell"]):
+                    held.add(t["subject"])
+            target = self.frame(subject, by_name, taken | held | {subject}, zoom, partner)
             taken.update(target["agents"])
             if cur is None or cur["subject"] != subject:
+                if cur is not None:
+                    released.append(cur["subject"])
                 self.apply(slot, dict(target, subject=subject, since=now), reason, scores, now)
             elif cur["agents"] != target["agents"]:
                 self.apply(slot, dict(target, subject=subject, since=cur["since"]),
@@ -109,7 +126,7 @@ class Director:
                 self.last_on_air[n] = now
         return self.public()
 
-    def choose(self, cur, free, scores, now, dwell):
+    def choose(self, cur, free, scores, now, dwell, on_air=(), released=()):
         if not free:
             return None, None
         best = free[0]
@@ -119,9 +136,12 @@ class Director:
         if subj not in scores:
             return best, f"{subj} unavailable"
         if subj not in free:
+            swap = [n for n in released if n in free]
+            if swap:
+                return swap[0], f"{subj} moved up; swap to {swap[0]}"
             return best, f"{subj} taken by a higher camera"
         held = now - cur["since"]
-        if held < dwell or best == subj:
+        if held < dwell or best == subj or now - self.last_cut < self.cfg["cut_spacing"]:
             return subj, None
         others = [n for n in free if n != subj]
         if not others:
@@ -129,8 +149,9 @@ class Director:
         challenger = others[0]
         if scores[challenger] > scores[subj] * self.cfg["switch_margin"] + self.cfg["switch_bias"]:
             return challenger, f"{challenger} {scores[challenger]} beats {subj} {scores[subj]}"
-        if held > self.cfg["max_dwell"] and scores[challenger] >= scores[subj] * self.cfg["rotate_ratio"]:
-            return challenger, f"rotate after {int(held)} s"
+        fresh = [n for n in others if n not in on_air]  # a rotation shows someone no camera is showing
+        if held > self.cfg["max_dwell"] and fresh and scores[fresh[0]] >= scores[subj] * self.cfg["rotate_ratio"]:
+            return fresh[0], f"rotate after {int(held)} s"
         return subj, None
 
     def apply(self, slot, target, reason, scores, now, quiet=False):
@@ -147,6 +168,8 @@ class Director:
             result = {"ok": False, "error": str(e)}
         if target is not None:
             target["sent"] = now
+        if reason not in ("reframe", "pair", "unpair"):
+            self.last_cut = now
         self.state[name] = target
         top = sorted(scores.items(), key=lambda kv: -kv[1])[:5]
         entry = {"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)), "slot": name,
