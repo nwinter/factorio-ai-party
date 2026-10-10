@@ -1,0 +1,6 @@
+vendor/factorio-harness/node_modules/
+vendor/factorio-harness/dist/
+vendor/factorio-harness/.factorio-harness/
+runs/*/*/shots/
+runs/*/*/describe.json
+.DS_Store

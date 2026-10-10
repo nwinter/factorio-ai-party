@@ -1,0 +1,21 @@
+{
+  "name": "factorio-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Lua-first, survival-faithful Factorio control for agents",
+  "bin": { "fh": "dist/host/cli.js" },
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "tsc",
+    "build:bridge": "make -C bridge",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "test:bridge": "make -C bridge test",
+    "test:integration": "npm run build && node dist/scripts/integration.js",
+    "fh": "node dist/host/cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "typescript": "~5.9.3"
+  }
+}

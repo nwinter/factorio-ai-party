@@ -1,0 +1,9 @@
+{"state":"Factorio, tick 51840 (14.4 min). Player at (12,-40). Inventory: 31 iron plate, 8 copper plate, 2 burner mining drill, 40 coal. Stone furnaces: 4 iron (2 starved of ore), 1 copper. Iron ore patch at (30,-20), copper ore at (-50,10), coal at (5,-60). Research: none queued. Power: none. Alerts: none. Goal: reach automation of red science.",
+ "questions":{
+  "next":{"type":"choice","instructions":"Which task should the player do next?","criteria":{
+     "place_drills_iron":"Place the 2 burner drills on iron ore feeding the starved furnaces",
+     "handmine_copper":"Walk to copper and hand mine copper ore",
+     "build_power":"Start building steam power (boiler, engine, offshore pump)",
+     "queue_research":"Queue automation research",
+     "craft_drills":"Handcraft more burner mining drills"}},
+  "urgent":{"type":"noul","instructions":"Is anything in this state an emergency that should interrupt the current plan?"}}}

@@ -1,0 +1,2 @@
+/* The logic library exports only its entry point. */
+{ global: fh_logic_create; local: *; };

@@ -1,0 +1,6 @@
+[
+  {"action":"shoot","args":{"auto":true,"radius":24,"ticks":300},"wait":false},
+  {"action":"walk","args":{"direction":"west","ticks":90}},
+  {"action":"walk","args":{"direction":"south","ticks":60}},
+  {"action":"wait_ticks","args":{"ticks":30}}
+]

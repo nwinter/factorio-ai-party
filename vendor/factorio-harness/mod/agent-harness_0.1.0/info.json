@@ -1,0 +1,9 @@
+{
+  "name": "agent-harness",
+  "version": "0.1.0",
+  "title": "Agent Harness",
+  "author": "Factorio Harness contributors",
+  "description": "Bounded survival actions and local observations for external agents. Hot-reloadable runtime over RCON.",
+  "factorio_version": "2.0",
+  "dependencies": ["base >= 2.0.0"]
+}
