@@ -113,3 +113,18 @@ Same seed (20261010), peaceful, base game. Game time to each milestone (agent-lo
 - Biggest time sinks for both: hand-carried fuel/plates, scouting for oil, self-inflicted power outages.
 - Harness fixes from the runs are logged in `docs/HARNESS-CHANGES.md` (engineer agent, merged, tests passing).
 - Round three (3 h each, turn mode, merged harness) started 13:00 in `runs/2026-10-10-turns3h/`.
+
+### Round three and co-op 1 (2026-10-10 afternoon)
+
+- Round three (turn mode, 3 h, merged harness): Astra reached blue science (14 packs) at game 1h20 despite a
+  16-minute uncontrolled stretch from a harness crash (construct nil target, fixed); Fable reached 12 technologies and
+  was building toward oil. Both lost their last 15-40 minutes to client drops (see below).
+- Co-op 1 (Astra + Opus 5.5, real time, 2 h, peaceful): 25 technologies including robotics; blue science consumed by
+  game 1h34; 364 blue, 1,731 green, 1,867 red packs; 32k iron plates; 1,302 belts. Clear division of labor (Astra:
+  smelting and science; Opus: power, fuel, oil, sulfur) negotiated in game chat; 100+ chat messages. Recorded from
+  game 0h35 (Quick Sync; NVENC needs a newer NVIDIA driver); 41-second time-lapse in `D:\pog\recordings`.
+- Open problem: graphical clients in the turn-mode worlds were dropped by the server ("You have been dropped from the
+  game", heartbeat removal) several times from 15:19, including shortly after reconnects; the real-time co-op clients
+  never dropped. `tools/rejoin.sh WORLD` reconnects; `tools/watch.py` now alerts. Next architecture should need fewer
+  graphical clients (director cameras, script-driven characters).
+- Quota measured: Astra ~2.5% of a Codex weekly per agent-hour; Claude agents ~1% of a Claude weekly per agent-hour.

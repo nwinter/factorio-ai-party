@@ -75,11 +75,14 @@ while time.strftime('%H%M') < a.stop_at and time.time() - start < a.max_sec:
             try:
                 out = subprocess.run([f'{ROOT}/bin/fh', 'call', 'status', '--format', 'json'], capture_output=True, text=True,
                                      env=dict(os.environ, POG_WORLD=w), timeout=30).stdout
-                fault = json.loads(out).get('result', {}).get('runtime_fault')
+                res = json.loads(out).get('result', {})
+                fault = res.get('runtime_fault')
+                if not fault and (res.get('connected') is False or res.get('control_error')):
+                    fault = f"client disconnected: {res.get('control_error') or 'player not connected'} (tools/rejoin.sh {w})"
             except Exception:
                 fault = None
             if fault and w not in faulted:
-                faulted.add(w); print(f"HARNESS FAULT in world {w}: {fault}", flush=True)
+                faulted.add(w); print(f"ATTENTION world {w}: {fault}", flush=True)
             elif not fault:
                 faulted.discard(w)
     time.sleep(30)
