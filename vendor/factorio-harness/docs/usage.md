@@ -106,6 +106,35 @@ Some actions work at a distance, the way a player can through remote view:
 
 Not supported yet: vehicles, rails, circuit editing, and fluid transfers.
 
+## Bots
+
+A bot is a character the harness drives without a LuaPlayer or a client, so many agents can share one world. It plays by the same rules as a player's character (walking, mining and crafting time, reach, inventory, no free items).
+
+```sh
+# operator only (RCON), never through dispatch:
+/silent-command rcon.print(remote.call("agent_harness","bot_create","astra"))   # {ok, bot={name,unit_number,position,index}}
+/silent-command rcon.print(remote.call("agent_harness","bot_remove","astra"))   # the character dies; its corpse keeps the items
+/silent-command rcon.print(remote.call("agent_harness","bots"))                 # name, index, alive, position, dead_until_tick
+
+fh --bot astra call walk --args '{"direction":"east","ticks":60}' --wait        # or FH_BOT=astra; not with --player
+fh --bot astra call status                                                      # bot=true, name, dead_until_tick, deaths
+```
+
+- Names match `[a-z][a-z0-9_-]{0,15}` and are unique (also against player names).
+- A new bot gets the freeplay starting items and its own spot on rings around the spawn point, at least 2 tiles from every other bot.
+- Every action works for bots. Building places directly (the item is consumed, reach is checked); tiles and blueprint pastes need no cursor (pastes cannot flip).
+- A bot keeps the chunks within about 48 tiles of it charted and visible, as a player's character does (refreshed every second; charting takes up to ~40 ticks, so a bot that just arrived somewhere new may need a moment).
+- Death ends the bot's action and queue step with outcome `died`. It respawns at its spawn spot after 600 ticks with the freeplay respawn items; `status` reports `dead_until_tick` meanwhile. Mining its corpse takes the items back.
+- The server's `auto_pause` stops the game while no client is connected; keep a director client connected while bots play.
+- Cost check (operator): `remote.call("agent_harness","profile_ticks",600)` times the harness tick for 600 ticks and writes the average to the server log (`agent-harness tick average ...`). Nine bots: about 0.05 ms per tick idle, 0.26 ms with all nine pathfinding at once.
+
+## Profiles, speech bubbles, cameras
+
+- `profile` sets your `display_name` (1..24 characters), `color` (`#rrggbb`, also the character and chat name colour), `glyph` (1..2 characters, an emoji or letters) and `motto` (0..80). With no arguments it reads the profile.
+- `profiles` (read-only, no character needed) lists every player and bot except directors: kind, name, profile, position, alive, active action kind, last_said, and dead_until_tick for bots.
+- `say` also draws the text over the speaker's character in its colour, wrapped at about 40 characters, for 8 s or until it speaks again. A person typing in the game chat gets a bubble too.
+- Director cameras (operator only): `remote.call("agent_harness","camera", json)` with `{"player":1,"follow":"astra","zoom":0.8}` or `{"player":1,"position":{"x":0,"y":0},"smooth":false}`; `{"player":1,"release":true}` stops following. The player becomes a spectator once (its character is removed), and its view eases toward the target every tick, jumping when the target is over 200 tiles away. `remote.call("agent_harness","cameras")` and the read action `cameras` list them. An attached agent cannot be made a director.
+
 ## Live reload
 
 ```sh

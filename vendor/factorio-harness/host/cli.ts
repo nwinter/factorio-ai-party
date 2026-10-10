@@ -43,7 +43,7 @@ const help = `fh — Factorio agent CLI
   fh stream                                 JSON-lines requests in, replies out; one connection
   fh run --file plan.json                    Sequential actions, waits after each timed action
 
-Options: --player N (default 1), --host HOST, --port N, --timeout MS (default 5000; deploy/watch 60000),
+Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT), --host HOST, --port N, --timeout MS (default 5000; deploy/watch 60000),
          --session NAME (default: auto-use default session), --bridge-socket PATH (bridge without a session),
          --wait, --wait-timeout MS (default: until the action's own end tick, at least 30000), --journal PATH, --args-file PATH
          --format json|compact (default compact; stream always uses JSONL)
@@ -67,7 +67,7 @@ let outputFormat: 'json' | 'compact' = 'compact';
 function output(value: unknown) { process.stdout.write(outputFormat === 'compact' ? formatCompact(value) : JSON.stringify(value) + '\n'); }
 async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'},
+    format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
     wait:{type:'boolean'}, 'wait-timeout':{type:'string'},
@@ -137,6 +137,10 @@ async function main() {
   }
   const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait']);
   if (!known.has(command)) throw new Error(`Unknown command ${command}; use fh help`);
+  // A bot is a script-driven character addressed by name (FH_BOT for wrappers).
+  const bot = values.bot ?? (values.player ? undefined : process.env.FH_BOT || undefined);
+  if (values.bot && values.player) throw new Error('Use --player or --bot, not both');
+  if (bot !== undefined && !/^[a-z][a-z0-9_-]{0,15}$/.test(bot)) throw new Error('--bot must be a bot name ([a-z][a-z0-9_-]{0,15})');
   let connection: SessionConnection | undefined;
   if (values.session) {
     if (values.host || values.port || values['bridge-socket']) throw new Error('Use --session, --bridge-socket, or --host/--port, not several');
@@ -156,7 +160,7 @@ async function main() {
   const bridged = connection?.kind === 'bridge';
   if (connection?.kind === 'bridge') {
     if (deploying || command === 'view') throw new Error(`${command} needs the agent-harness mod on the server; bridge sessions act through normal player input only`);
-    if (values.player) throw new Error('A bridge controls its own client\'s player; --player does not apply');
+    if (values.player || bot) throw new Error('A bridge controls its own client\'s player; --player/--bot do not apply');
     // Bridge replies wait for the next game tick; allow for a busy client.
     const bridge = new BridgeClient(connection.socket, integer(values.timeout,10000), values.journal);
     harness = bridge; client = bridge;
@@ -166,7 +170,7 @@ async function main() {
     if (!password && passwordFile) password = (await readFile(passwordFile,'utf8')).trimEnd();
     if (!password) throw new Error('Run fh start, select --session NAME, or set FACTORIO_RCON_PASSWORD_FILE');
     const rcon = new RconClient({host:connection?.host ?? values.host ?? process.env.FACTORIO_RCON_HOST, port:connection?.port ?? integer(values.port ?? process.env.FACTORIO_RCON_PORT,27015), password, timeoutMs:integer(values.timeout,deploying ? 60000 : 5000)});
-    harness = deployer = new Harness(rcon, integer(values.player,connection?.player ?? 1), values.journal);
+    harness = deployer = new Harness(rcon, integer(values.player,connection?.player ?? 1), values.journal, bot);
     client = rcon;
   }
   let stopping = false;

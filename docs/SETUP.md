@@ -74,6 +74,19 @@ tools/pog.py --world a save && tools/winps.sh tools/win/stop-world.ps1 -Name a
   host) with the key from `~/.config/pog/youtube.key` (never commit it); Quick Sync H.264 at 6 Mbps. 2-minute test:
   0 dropped frames, no congestion. `tools/obs.py stream-start|stream-status|stream-stop`.
 
+## Bots and director cameras
+
+Many agents share one world as bots (characters without a client); 1-3 director clients show them. Details in
+`vendor/factorio-harness/docs/usage.md` and `docs/BOTS-NOTES.md`.
+
+```sh
+tools/winps.sh tools/win/start-client.ps1 -Name live -Slot -director -PlayerName pog-director   # keeps the world running (auto_pause)
+tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","bot_create","astra"))'
+POG_WORLD=live bin/fh --bot astra call status                                                  # FH_BOT=astra in a run's wrapper
+tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","camera",helpers.table_to_json({player=1,follow="astra",zoom=0.8})))'
+tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","profile_ticks",600))'   # average in factorio-current.log
+```
+
 ## Gotchas
 
 - `--wait-timeout` is in milliseconds.
@@ -88,4 +101,9 @@ tools/pog.py --world a save && tools/winps.sh tools/win/stop-world.ps1 -Name a
 - NVENC is unavailable in OBS 32 ("outdated_driver": NVIDIA driver 535.98 from 2023); recordings use Intel Quick Sync.
   OBS applies output settings changed over WebSocket only when a profile loads: switch to a temporary profile and back.
 - OBS's NDI plugin keeps an output running, which blocks frame-rate/resolution changes (stays 1080p60).
+- After a `control.lua` change, restarting the server on the same save works, but each client's mod copy must be
+  refreshed too (`scp -r .../agent-harness_0.1.0 pogwin:D:/pog/inst/<world>-client<slot>/mods/`), else joining fails
+  with `multiplayer.script-mismatch`. Re-running `start-client.ps1` while its task exists printed nothing and did not
+  relaunch; `Stop-ScheduledTask`/`Start-ScheduledTask pog-<world>-client<slot>` did.
+- A crashed server leaves its scheduled task "Ready" but `start-server.ps1` may not relaunch it; start the task again.
 - Video memory: each low-graphics client takes ~1 GB of the RTX 2070's 8 GB; close idle clients during recordings.

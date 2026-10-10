@@ -18,7 +18,7 @@ return function(api)
     return c.seq
   end
   M.schema = {
-    say = {text='1..500 characters: posted to the game chat as this player (people and other agents see it)'},
+    say = {text='1..500 characters: posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s'},
     chat = {since='optional sequence number (default: what this player has not read yet)',
       limit='1..100, newest kept (default 30)', peek='boolean: read without marking as read (overlays, spectators)',
       returns='messages {seq,tick,from,text} and cursor; marks them read unless peek'},
@@ -34,6 +34,8 @@ return function(api)
     local seq = append(name, text, p.index)
     local c = log()
     c.cursors[p.index] = math.max(c.cursors[p.index] or 0, seq)
+    -- The speech bubble is decoration: it never fails the message.
+    if api.on_say then pcall(api.on_say, p, text) end
     return {seq=seq}
   end
   function M.handlers.chat(p, a)
@@ -63,6 +65,7 @@ return function(api)
   function M.on_console_chat(event)
     local p = event.player_index and game.get_player(event.player_index)
     append(p and p.name or 'server', event.message, event.player_index)
+    if p and api.on_say then pcall(api.on_say, p, event.message) end
   end
   return M
 end

@@ -68,7 +68,7 @@ return function(api)
     if c.run_until then
       local done = game.tick >= c.run_until
       if not done and c.until_crafted then
-        local p = game.get_player(c.until_crafted)
+        local p = (api.lookup or game.get_player)(c.until_crafted)
         done = not (p and p.valid and crafting(p))
       end
       if not done then return end

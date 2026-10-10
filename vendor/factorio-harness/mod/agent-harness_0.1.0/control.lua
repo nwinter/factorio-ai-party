@@ -68,8 +68,24 @@ script.on_event({defines.events.on_script_path_request_finished, defines.events.
     log('Agent harness event error: ' .. tostring(err))
   end
 end)
-local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true}
+local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true, profiles = true, cameras = true}
+-- Operator-only calls (bots, cameras): RCON/console only, never via dispatch.
+local function operator(name, arg)
+  local ok, result = pcall(function()
+    if not runtime then boot() end
+    assert(not state().runtime_fault, 'runtime is quarantined after a tick failure; deploy a corrected runtime bundle')
+    assert(runtime.operator and runtime.operator[name], name .. ' is not supported by the running runtime; deploy a current one')
+    return runtime.operator[name](arg)
+  end)
+  return helpers.table_to_json(ok and result or {ok=false, tick=game.tick, error={code='operator_failed', message=tostring(result)}})
+end
 remote.add_interface('agent_harness', {
+  bot_create = function(name) return operator('bot_create', name) end,
+  bot_remove = function(name) return operator('bot_remove', name) end,
+  bots = function() return operator('bots') end,
+  camera = function(json) return operator('camera', json) end,
+  cameras = function() return operator('cameras') end,
+  profile_ticks = function(n) return operator('profile_ticks', n) end,
   install = function(source)
     local ok,result=pcall(function()
     assert(type(source) == 'string' and #source <= 524288, 'runtime source must be <=524288 bytes')
@@ -93,6 +109,8 @@ remote.add_interface('agent_harness', {
       assert(type(request.id) == 'string' and #request.id >= 1 and #request.id <= 128, 'id must be a 1..128 character string')
       assert(type(request.action) == 'string', 'action must be a string')
       assert(request.player==nil or (type(request.player)=='number' and request.player==math.floor(request.player) and request.player>=1), 'player must be a positive integer')
+      assert(request.bot==nil or (type(request.bot)=='string' and request.bot:match('^[a-z][a-z0-9_-]*$') and #request.bot<=16), 'bot must be a bot name')
+      assert(request.bot==nil or request.player==nil, 'a request may name a player or a bot, not both')
       assert(request.args == nil or type(request.args) == 'table', 'args must be an object')
       local s = state()
       local previous = s.cache[request.id]
@@ -105,8 +123,13 @@ remote.add_interface('agent_harness', {
           message='runtime is quarantined after a tick failure; deploy a corrected runtime bundle',fault=s.runtime_fault}})
       end
       if not runtime then boot() end
+      -- An older runtime would ignore `bot` and act as player 1.
+      assert(request.bot==nil or runtime.bots~=nil, 'the running runtime does not support bots; deploy a current runtime')
       local success, result = pcall(runtime.dispatch, request)
-      if not success and not read_only[request.action] and not request.action:match('^queue_') and runtime.stop_player and type(request.player or 1)=='number' then pcall(runtime.stop_player,request.player or 1) end
+      -- The runtime resolves a bot name to its index in request.player; an
+      -- unknown bot leaves it unset and stops nobody.
+      local who=request.player or (request.bot==nil and 1 or nil)
+      if not success and not read_only[request.action] and not request.action:match('^queue_') and runtime.stop_player and type(who)=='number' then pcall(runtime.stop_player,who) end
       local envelope = {id = request.id, ok = success, tick = game.tick}
       if success then envelope.result = result else envelope.error = {code = 'action_failed', message = tostring(result)} end
       local encoded = helpers.table_to_json(envelope)

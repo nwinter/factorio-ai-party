@@ -241,10 +241,11 @@ return function(api)
         end
         local before={}
         for _,e in pairs(ghosts()) do before[ghost_key(e)]=true end
-        if type(p)=='table' and rawget(p,'__platform') then
+        if type(p)=='table' and (rawget(p,'__platform') or rawget(p,'__bot')) then
           -- A platform is built from remote view: place the blueprint's ghosts
           -- on its surface directly; the cursor lives on the player's surface.
-          assert(not a.flip_horizontal and not a.flip_vertical, 'flips are not supported when pasting on a platform')
+          -- A bot has no cursor at all.
+          assert(not a.flip_horizontal and not a.flip_vertical, 'flips are not supported when pasting on a platform or as a bot')
           stack.build_blueprint{surface=p.surface,force=p.force,position=pos,direction=direction,
             build_mode=defines.build_mode.normal,skip_fog_of_war=true,by_player=real(p),raise_built=true}
         else

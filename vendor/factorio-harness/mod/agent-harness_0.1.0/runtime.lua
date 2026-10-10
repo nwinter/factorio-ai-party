@@ -41,6 +41,19 @@ local function position(value)
 end
 local function distance(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
 local function state() return storage.agent_harness end
+-- Bots (script-driven characters), profiles/speech bubbles and director
+-- cameras. Bot indices sit above every player index (bots.BASE).
+M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,
+  profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)) end}
+M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
+  controlled=function(index) return state().controlled and state().controlled[index]~=nil end}
+M.profiles=require('profiles'){state=state,is_bot=function(p) return M.bots.is(p) end,director=function(index) return M.cameras.director(index) end,
+  bots=function() return M.bots.list() end,active=function(index) local a=M.active(index); return a and a.kind or false end}
+-- A player or bot by index, dead or alive (cleanup and status).
+function M.lookup(index)
+  if M.bots.is_index(index) then return M.bots.lookup(index) end
+  return game.get_player(index)
+end
 local function combat_targets()
   local s=state()
   -- Target selection affects simulation. Persist both entity and scan deadline
@@ -65,10 +78,16 @@ local function body(p)
     __index=function(_,k) if ON_BODY[k] then return c[k] end return p[k] end,
     __newindex=function(_,k,v) if ON_BODY[k] then c[k]=v else p[k]=v end end})
 end
--- The LuaPlayer behind a body proxy, for engine calls that take a player.
-local function real(p) return type(p)=='table' and rawget(p,'__player') or p end
-local function in_map_view(p) return real(p).controller_type==defines.controllers.remote end
+-- The LuaPlayer behind a body proxy, for engine calls that take a player
+-- (nil for a bot: it has none).
+local function real(p)
+  if type(p)~='table' then return p end
+  if rawget(p,'__bot') then return nil end
+  return rawget(p,'__player') or p
+end
+local function in_map_view(p) local r=real(p); return r~=nil and r.controller_type==defines.controllers.remote end
 local function player(index)
+  if M.bots.is_index(index) then return M.bots.actor(index) end
   local p = game.get_player(index or 1)
   assert(p and p.valid, 'player does not exist')
   local controlled=state().controlled and state().controlled[p.index]
@@ -108,7 +127,7 @@ local function finish(index, outcome)
     last.stalls=action.stalls; last.no_progress=action.no_progress; last.paths_failed=(action.paths_failed or 0)>0 and action.paths_failed or nil
   end
   if action and action.kind=='kite' then
-    local last,p=s.last[index],body(game.get_player(index))
+    local last,p=s.last[index],body(M.lookup(index))
     last.kills=action.kills
     if p and p.valid and p.character and p.character.valid then
       last.ammo_used=kite.ammo_used(p,action)
@@ -129,7 +148,7 @@ local function finish(index, outcome)
     last.missing=next(action.missing) and action.missing or nil
     last.failed=#action.failed>0 and action.failed or nil
     -- Missing items our factory already holds: say where, not just what.
-    local p=last.missing and body(game.get_player(index))
+    local p=last.missing and body(M.lookup(index))
     if p and p.valid and p.character and p.character.valid then
       local n=0
       for item in pairs(last.missing) do
@@ -147,16 +166,17 @@ local function finish(index, outcome)
       last.left=math.max(0,#action.targets-action.index+1)>0 and #action.targets-action.index+1 or nil
     end
   end
-  stop(body(game.get_player(index)))
+  stop(body(M.lookup(index)))
   if action and action.borrowed_cursor then
-    local p=game.get_player(index)
-    if p and p.valid and p.connected and p.character and p.character.valid and p.cursor_stack then pcall(p.clear_cursor) end
+    local p=M.lookup(index)
+    if M.bots.is(p) and p.valid and p.character then M.bots.clear_cursor(p)
+    elseif p and p.valid and p.connected and p.character and p.character.valid and p.cursor_stack then pcall(p.clear_cursor) end
   end
   s.active[index]=nil
 end
 local function stop_combat(index,outcome)
   combat_targets()[index]=nil
-  local p=body(game.get_player(index))
+  local p=body(M.lookup(index))
   if p and p.valid and p.character and p.character.valid then
     p.shooting_state={state=defines.shooting.not_shooting,position=p.position}
   end
@@ -167,11 +187,11 @@ end
 -- Set while a passive action raises: the bootstrap's failure handler calls
 -- stop_player right after, which must leave the queue alone.
 local passive_failed=false
-function M.stop_player(index)
-  if passive_failed then passive_failed=false; return end
+function M.stop_player(index,outcome)
+  if passive_failed and not outcome then passive_failed=false; return end
   if scheduler then scheduler.pause(index) end
-  finish(index,'interrupted')
-  stop_combat(index,'interrupted')
+  finish(index,outcome or 'interrupted')
+  stop_combat(index,outcome or 'interrupted')
 end
 function M.stop_all()
   if scheduler then scheduler.pause_all() end
@@ -208,6 +228,7 @@ local function active(index)
     condition=action.kind=='wait_until' and action.condition['until'] or nil,saw=action.kind=='wait_until' and action.saw or nil,
     stuck_s=action.watch and game.tick-action.watch.since>=STUCK_TICKS and math.floor((game.tick-action.watch.since)/60) or nil}
 end
+M.active=active
 -- Our own space platforms are shown whole in remote view: every chunk of
 -- their surface counts as charted and visible.
 local function own_platform(p)
@@ -430,6 +451,8 @@ function handlers.describe()
   for name,schema in pairs(clock and clock.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.chat and M.chat.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(space and space.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.profiles.schema) do description.actions[name]=schema end
+  description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
   return description
 end
@@ -1306,7 +1329,8 @@ function handlers.repair(p,a)
     borrowed=true
   end
   assert(p.cursor_stack.prototype.type=='repair-tool','cursor must hold a repair tool')
-  state().active[p.index]={kind='repair',entity=e,borrowed_cursor=borrowed,until_tick=game.tick+ticks}
+  -- A bot's cursor is invisible to it: always put the tool back afterwards.
+  state().active[p.index]={kind='repair',entity=e,borrowed_cursor=borrowed or M.bots.is(p),until_tick=game.tick+ticks}
   return {until_tick=game.tick+ticks}
 end
 -- Hand-crafting what our machines already made wastes the character's time:
@@ -1636,9 +1660,10 @@ local function built_summary(e)
 end
 local function build_tile(p,a,stack,pos)
   assert(not in_map_view(p),'tiles are placed by the character; leave map view')
-  assert(not p.cursor_stack.valid_for_read,'cursor must be empty; clear it in the client first')
   assert(a.direction==nil or a.direction=='north','tiles take no direction')
   local size=integer(a.size,1,1,4,'size')
+  if M.bots.is(p) then return M.bots.place_tiles(p,a,stack,pos,size) end
+  assert(not p.cursor_stack.valid_for_read,'cursor must be empty; clear it in the client first')
   local tile=stack.prototype.place_as_tile_result.result.name
   local inv=p.get_main_inventory()
   local function held() return inv.get_item_count{name=a.item,quality=a.quality or 'normal'} end
@@ -1668,7 +1693,7 @@ local function build_one(p,a)
   -- While the game is tick-paused (turn mode between actions) the engine
   -- refuses every cursor build ("placement blocked" on clear ground), so
   -- place directly then, as in map view.
-  local direct=in_map_view(p) or stack.prototype.place_result.type=='underground-belt' or game.tick_paused==true
+  local direct=in_map_view(p) or M.bots.is(p) or stack.prototype.place_result.type=='underground-belt' or game.tick_paused==true
   assert(direct or not p.cursor_stack.valid_for_read,'cursor must be empty; clear it in the client first')
   if stack.prototype.place_result.type=='transport-belt' then
     pos={x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5}
@@ -3173,10 +3198,12 @@ scheduler=scheduler_module{
   end
 }
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
-clock=clock_module{state=state}
+clock=clock_module{state=state,lookup=function(index) return M.lookup(index) end}
 for name,handler in pairs(clock.handlers) do handlers[name]=handler end
-M.chat=M.chat_module{state=state}
+M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
+for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
+function handlers.cameras() return M.cameras.list() end
 -- wait_until as a direct call: a timed action that holds the character idle
 -- until the condition is met (outcome met) or the timeout passes (timed_out),
 -- so `fh call wait_until --wait` works outside a queue (in turn mode the
@@ -3196,8 +3223,8 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={say=true,chat=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
-local reads={describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true}
+local passive={profile=true,say=true,chat=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
+local reads={describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -3273,10 +3300,17 @@ local function idle_tick()
 end
 local dispatch_request
 function M.dispatch(request)
+  -- A bot is addressed by name and handled under its index from here on
+  -- (the bootstrap's failure cleanup reads request.player too).
+  if request.bot~=nil then
+    assert(request.player==nil,'a request may name a player or a bot, not both')
+    request.player=M.bots.index_of(request.bot)
+  end
   local result=dispatch_request(request)
   if clock then clock.after_dispatch() end
-  if type(result)=='table' and request.action~='describe' then
-    local p=game.get_player(request.player or 1)
+  if request.action=='status' then M.bots.status(request.player,result) end
+  if type(result)=='table' and request.action~='describe' and request.action~='profiles' and request.action~='cameras' then
+    local p=M.lookup(request.player or 1)
     if p and p.valid then result.clock=clock_line(p); result.losses=unseen_losses(p) end
     if clock and request.action=='status' then result.time_mode=clock.report() end
     if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index) end
@@ -3286,7 +3320,10 @@ end
 dispatch_request=function(request)
   local handler=handlers[request.action]; assert(handler,'unsupported action; call describe')
   check_args(request.action,request.args)
-  if request.action=='describe' then return handler() end
+  if request.action=='describe' or request.action=='profiles' or request.action=='cameras' then return handler() end
+  if M.bots.is_index(request.player) and (request.action=='attach' or request.action=='detach') then
+    return {bot=M.bots.record(request.player).name,attached=request.action=='attach',note='bots need no attach'}
+  end
   if request.action=='attach' then
     local p=game.get_player(request.player or 1)
     assert(p and p.valid and p.connected,'join a graphical Factorio client: disconnected players have no controllable character')
@@ -3295,8 +3332,11 @@ dispatch_request=function(request)
     assert(not p.cheat_mode or a.allow_cheat_mode==true,'cheat mode requires explicit testing opt-in')
     return handler(p,a)
   end
-  if request.action=='status' or request.action=='queue_status' or request.action=='queue_cancel' then
-    local p=game.get_player(request.player or 1); assert(p and p.valid,'player does not exist')
+  -- A peek at the chat is a read any player can make (directors and
+  -- overlays have no character).
+  local peek=request.action=='chat' and type(request.args)=='table' and request.args.peek==true
+  if peek or request.action=='status' or request.action=='queue_status' or request.action=='queue_cancel' then
+    local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     return handler(body(p),request.args or {})
   end
   local p=player(request.player)
@@ -3433,8 +3473,24 @@ local function blocked_product(p,action)
     if not p.can_insert{name=name} then return name end
   end
 end
+-- Operator measurement (profile_ticks): the harness tick's own cost, timed
+-- with LuaProfiler and written to the log. Module state on purpose: it never
+-- touches game state, and profiler readings differ between machines anyway.
+local profiling
 function M.tick(event)
+  if not profiling then return M.tick_body(event) end
+  local timer=helpers.create_profiler()
+  M.tick_body(event)
+  timer.stop(); profiling.total.add(timer); profiling.left=profiling.left-1
+  if profiling.left==0 then
+    profiling.total.divide(profiling.n)
+    log({'','agent-harness tick average over ',profiling.n,' ticks (',#M.bots.list(),' bots, ',table_size(state().active),' active actions): ',profiling.total})
+    profiling=nil
+  end
+end
+function M.tick_body(event)
   idle_tick()
+  M.bots.tick(event.tick)
   for index,action in pairs(state().active) do
     local ok,p=pcall(player,index)
     if not ok then
@@ -3487,8 +3543,11 @@ function M.tick(event)
       else
         -- Reassigning selection/state every tick fights the client's cursor
         -- hover and makes the selection box flash; only correct drift.
-        if p.selected~=e then p.selected=e end
-        if not p.repair_state.repairing then p.repair_state={repairing=true,position=e.position} end
+        if M.bots.is(p) then M.bots.repair(p,e)
+        else
+          if p.selected~=e then p.selected=e end
+          if not p.repair_state.repairing then p.repair_state={repairing=true,position=e.position} end
+        end
       end
     elseif action.kind=='mine' then
       local e=action.entity
@@ -3498,12 +3557,12 @@ function M.tick(event)
       elseif not p.can_reach_entity(e) then finish(index,'out_of_reach')
       elseif action.done_tick then
         if event.tick>=action.done_tick then
-          if p.mine_entity(e,false) then finish(index,'target_mined')
+          if M.bots.mine(p,e) then finish(index,'target_mined')
           else
             -- The engine refuses for two reasons: no room for the products,
             -- or an entity that cannot be mined by hand (a stump or remnant).
             action.blocked_item=blocked_product(p,action)
-            if action.blocked_item then finish(index,'inventory_full')
+            if action.blocked_item or e.valid and e.type=='character-corpse' then finish(index,'inventory_full')
             else action.error='the engine refused to mine '..e.name..' (not hand-minable: a stump, remnant or corpse; it does not block building, or deconstruct it)'; finish(index,'not_minable') end
           end
         end
@@ -3557,9 +3616,30 @@ function M.tick(event)
       if ok then survey.sample(p) end
     end
   end
+  if event.tick%3600==0 then
+    for _,b in ipairs(M.bots.list()) do
+      local ok,p=pcall(player,b.index)
+      if ok then survey.sample(p) end
+    end
+  end
   scheduler.tick()
   clock.tick()
+  M.cameras.tick()
 end
+-- Operator-only remote functions (control.lua): never reachable through
+-- dispatch, so agents cannot spawn bots or move cameras.
+M.operator={
+  bot_create=function(name) return {ok=true,tick=game.tick,bot=M.bots.create(name)} end,
+  bot_remove=function(name) local out=M.bots.remove(name); return {ok=true,tick=game.tick,bot=out} end,
+  bots=function() local out={}; for _,b in ipairs(M.bots.list()) do out[#out+1]={name=b.name,index=b.index,alive=M.bots.alive(b),position=b.position,dead_until_tick=b.dead_until_tick} end; return {ok=true,tick=game.tick,bots=out} end,
+  camera=function(args) return M.cameras.set(args) end,
+  profile_ticks=function(n)
+    n=integer(n,600,1,36000,'ticks')
+    local total=helpers.create_profiler(true)
+    profiling={n=n,left=n,total=total}
+    return {ok=true,tick=game.tick,until_tick=game.tick+n,note='the average lands in the server log (factorio-current.log)'}
+  end,
+  cameras=function() return M.cameras.list() end}
 local MAX_ALERTS=64
 function M.on_event(event)
   if event.name==defines.events.on_script_path_request_finished then
@@ -3587,7 +3667,7 @@ function M.on_event(event)
     local cause=event.cause
     if cause and cause.valid and cause.type=='character' then
       for index,action in pairs(state().active) do
-        local p=action.kind=='kite' and game.get_player(index)
+        local p=action.kind=='kite' and M.lookup(index)
         if p and p.character==cause then action.kills=action.kills+1 end
       end
     end
