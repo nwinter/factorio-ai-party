@@ -13,12 +13,17 @@ claude_flags="--permission-mode dontAsk --setting-sources project,local --tools 
 
 # Grok Build env: skip the Claude- and Cursor-compatible skills, rules, named instruction files, hooks and MCP servers
 # (the 3 MCP servers that failed at every start in shake3 came from Cursor's .mcp.json), managed MCP servers and
-# cross-session memory. Grok has no switch for $GROK_HOME/rules, $GROK_HOME/hooks or ~/.agents/skills.
-grok_env="GROK_CLAUDE_SKILLS_ENABLED=false GROK_CLAUDE_MCPS_ENABLED=false GROK_CLAUDE_RULES_ENABLED=false GROK_CLAUDE_HOOKS_ENABLED=false GROK_CLAUDE_AGENTS_ENABLED=false GROK_CURSOR_SKILLS_ENABLED=false GROK_CURSOR_MCPS_ENABLED=false GROK_CURSOR_RULES_ENABLED=false GROK_CURSOR_HOOKS_ENABLED=false GROK_CURSOR_AGENTS_ENABLED=false GROK_MANAGED_MCPS_ENABLED=false GROK_MEMORY=0"
+# cross-session memory; GROK_SUBAGENTS=0 and GROK_WORKFLOWS=0 drop spawn_subagent and the workflow tool (smoke-l4
+# listed both). $GROK_HOME/rules and hooks and ~/.agents/skills have no switch: see grok_bin below.
+grok_env="GROK_CLAUDE_SKILLS_ENABLED=false GROK_CLAUDE_MCPS_ENABLED=false GROK_CLAUDE_RULES_ENABLED=false GROK_CLAUDE_HOOKS_ENABLED=false GROK_CLAUDE_AGENTS_ENABLED=false GROK_CURSOR_SKILLS_ENABLED=false GROK_CURSOR_MCPS_ENABLED=false GROK_CURSOR_RULES_ENABLED=false GROK_CURSOR_HOOKS_ENABLED=false GROK_CURSOR_AGENTS_ENABLED=false GROK_MANAGED_MCPS_ENABLED=false GROK_MEMORY=0 GROK_SUBAGENTS=0 GROK_WORKFLOWS=0"
 # Muse Code env: no skill-reminder agent (shake3: 356 decisions about the owner's skills) and no cross-session memory
 # tools or memory reminders (notes.md is the agents' memory). The owner's hooks go with -c hooks={} (clean-profile.py).
 muse_env="MUSE_EXPERIMENTAL_SKILL_REMINDER=0 MUSE_EXPERIMENTAL_MEMORY=0 MUSE_EXPERIMENTAL_MEMORY_REMINDER=0"
 
 # Shake2's Grok was denied `./fh ... > describe.json` and `python3 -c` despite the .claude allowlist; redirects into the
-# workspace count as edits. Loops stay unapproved (Grok runs unsandboxed).
+# workspace count as edits. No rule can approve a loop: Grok treats control flow as one unit that always prompts, and
+# dontAsk denies it (docs 22-permissions-and-safety.md; smoke-l4), so agent/harness-grok.md suggests python3 instead.
 grok_allow="--permission-mode dontAsk --allow 'Bash(./fh *)' --allow 'Bash(./shot *)' --allow 'Bash(python3 *)' --allow 'Edit(./**)' --allow 'Write(./**)'"
+# The real binary: `grok` on PATH is the owner's herdr-session wrapper, which refuses a GROK_HOME it does not know.
+# The launch adds a run-local GROK_HOME (tools/grok-home.py): no home rules, hooks, ~/.agents/skills or bundled skills.
+grok_bin="$HOME/.grok/bin/grok"
