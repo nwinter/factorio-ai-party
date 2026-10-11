@@ -91,7 +91,11 @@ kept carrying science while Opus ran `./fh sleep 280` in loops and woke for ment
 take 200", 07:57:16 PDT). That is a working pattern for the bot, and it leaves Opus with almost nothing to say on
 stream. At 08:04:49 it started `for i in 1 2 3 4 5 6 7 8; do ./fh sleep 280 ...` (about 37 minutes), which ran past
 the 08:12 deadline; that explains its sleep checks to 08:17:14 (P1 item 1). Its notes call this "Shift 6" while the hosts
-called it shift three: Opus numbers shifts by run name. I did not read Sonnet's transcript (P2). The raw counts in the journals mislead unless sleep checks are left out; the analysis scripts and
+called it shift three: Opus numbers shifts by run name. Sonnet
+(`~/…/personal/projects/-Users-owner-code-player-of-games-runs-shake6-sonnet/6edfb972….jsonl`) did the same with a
+saved `haul` plan (`./fh plan run haul >/dev/null; ./fh sleep 600; ./fh wait`, repeated from 07:26 to 07:56) and
+judged at the end that "my own contribution this shift was small". At 08:09:19 it wrote "The deadline has passed",
+three minutes early, then at 08:10:47 "The deadline is about a minute away"; I did not find what clock it read (P2). The raw counts in the journals mislead unless sleep checks are left out; the analysis scripts and
 any activity figure on the stream should drop them.
 
 Host mistakes beyond P1 items 2 and 3: "packs at forty-three per tick" (Vale 08:04:31, a per-minute figure); "Dream
