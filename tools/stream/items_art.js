@@ -321,10 +321,12 @@ T.battery = (() => {
   fill(cv, rect(3, 3, 12, 14), C, "cyly");
   fill(cv, rect(3, 10, 12, 12), C2, "cyly");
   outline(cv, rect(3, 3, 12, 14), "o");
-  paint(cv, 6, 5, [
+  paint(cv, 6, 4, [
+    "..h.",
     ".hh.",
     "hhhh",
     ".hh.",
+    ".h..",
   ]);
   return cv;
 })();
@@ -478,7 +480,7 @@ const GROUPS = [
     "iron-ore": { label: "Iron ore", t: "ore", c: "#6f8ba6", c2: "#b9d0e0" },
     "copper-ore": { label: "Copper ore", t: "ore", c: "#c06a3c", c2: "#5fc2a4" },
     "stone": { label: "Stone", t: "ore", c: "#a48e6c", c2: "#d8c8a8" },
-    "coal": { label: "Coal", t: "ore", c: "#2c2b2b", c2: "#7c7a78", color: "#8a8a8a" },
+    "coal": { label: "Coal", t: "ore", c: "#2c2b2b", c2: "#a8a49e", color: "#8a8a8a" },
     "uranium-ore": { label: "Uranium ore", t: "ore", c: "#4c9c34", c2: "#a6ff6a", color: "#7ddc4c" },
     "wood": { label: "Wood", t: "log", c: "#7a4f2a", c2: "#d9b07a" },
     "crude-oil": { label: "Crude oil", t: "drop", c: "#2e2620", color: "#8c7a6a" },

@@ -371,11 +371,11 @@
      "......kkkk......",
      "......kxxk......",
      "...oooooooooo...",
-     "...olhhmmdddo...",
+     "...olhhmhdddo...",
      "...olhhhhdddo...",
      "...olhhhhhddo...",
      "...olhhhhdddo...",
-     "...olhhmmdddo...",
+     "...olhhhmdddo...",
      "...olhhmmdddo...",
      "...oOOOOOOOOo...",
      "...oLHHMMDDDo...",
@@ -734,7 +734,7 @@
      "label": "Coal",
      "t": "ore",
      "c": "#2c2b2b",
-     "c2": "#7c7a78",
+     "c2": "#a8a49e",
      "color": "#8a8a8a"
     },
     "uranium-ore": {
