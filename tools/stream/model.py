@@ -148,6 +148,7 @@ class Model:
         self.prod_samples = deque(maxlen=400)  # (wall time, game seconds, {item: total})
         self.flows = {}
         self.power = None
+        self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
         self.last_obs_t = None
@@ -175,6 +176,8 @@ class Model:
             self.prod_samples.append((now, game_sec, dict(obs["produced"])))
         if obs.get("flows"):
             self.flows = obs["flows"]
+        if obs.get("darkness") is not None:
+            self.darkness = obs["darkness"]
         if obs.get("power"):
             self._ingest_power(obs["power"], now)
         for e in obs.get("board_events") or []:
@@ -560,6 +563,7 @@ class Model:
             "chat": list(self.chat)[-14:],
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
+            "darkness": self.darkness,
             "production": self.production(now),
             "science": self.science(now),
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],

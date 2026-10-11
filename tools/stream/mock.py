@@ -121,6 +121,13 @@ CHANGELOG = {"Way to save a build order and replay it": "harness v4: plan_save /
              "Tell me when a lab runs dry": "harness v5: labs out of packs in status warnings"}
 
 
+def mock_darkness(gsec):
+    """Factorio's day is 25000 ticks: dusk ramps in, a short full night (darkness ~0.85), dawn ramps out."""
+    phase = (gsec * 60 % 25000) / 25000  # 0 noon .. 0.5 midnight
+    edge = abs(phase - 0.5)
+    return round(0.85 if edge < 0.05 else max(0.0, 0.85 * (0.25 - edge) / 0.2), 3)
+
+
 def load_timeline():
     rows = []
     try:
@@ -390,6 +397,7 @@ class MockSource:
             } for a in self.agents.values()],
             "chat": self.chat[-20:],
             "power": {"machines": 330, "starved": 140 if now < self.power_until else 3},
+            "darkness": mock_darkness(gsec),
             "events": events,
             "board_events": self.board_log[-20:],
         }

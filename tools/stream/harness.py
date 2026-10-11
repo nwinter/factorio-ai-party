@@ -17,7 +17,8 @@ import pog  # noqa: E402  (tools/pog.py: Rcon client, ports, SCORE_LUA)
 READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events"}
 
 # Extra operator reads for the overlay (same privilege level as `pog.py score`): research progress, the costliest
-# finished technologies (to seed "recent milestones" on start), and machines starved of power.
+# finished technologies (to seed "recent milestones" on start), machines starved of power, and how dark it is
+# (LuaSurface.darkness, 0 at noon; drives the night lift on the camera captures, nightlift.py).
 STREAM_LUA = r"""
 local f = game.forces.player
 local s = game.surfaces.nauvis
@@ -40,7 +41,8 @@ for _, e in pairs(s.find_entities_filtered{force = f, type = {"assembling-machin
   end
 end
 rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, research = cur and cur.name or nil,
-  progress = cur and f.research_progress or nil, top_done = top, electric_machines = machines, starved = starved})
+  progress = cur and f.research_progress or nil, top_done = top, electric_machines = machines, starved = starved,
+  darkness = s.darkness, daytime = s.daytime})
 """
 
 # Production history for sparklines: item counts in the last hour, 2-minute buckets (one_hour precision has

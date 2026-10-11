@@ -350,6 +350,45 @@ def main():
     rpl.follow_segment(t7 + 50)
     assert fobs.program == "stream"
 
+    # night lift: filter created on each capture, ramps toward the darkness, settles back by day
+    import nightlift as nl
+
+    class FilterOBS:
+        def __init__(self):
+            self.filters, self.settings = {"stream cam1": [], "stream cam2": [], "stream cam3": []}, {}
+
+        def call(self, req, data=None):
+            if req == "GetSourceFilterKindList":
+                return {"sourceFilterKinds": ["color_filter", "color_filter_v2"]}
+            if req == "GetSourceFilterList":
+                if data["sourceName"] not in self.filters:
+                    raise rp.OBSError("GetSourceFilterList: 600 no source")
+                return {"filters": [{"filterName": f} for f in self.filters[data["sourceName"]]]}
+            if req == "CreateSourceFilter":
+                assert data["filterKind"] == "color_filter_v2"
+                self.filters[data["sourceName"]].append(data["filterName"])
+            if req == "SetSourceFilterSettings":
+                self.settings[data["sourceName"]] = data["filterSettings"]
+            return {}
+
+    fo = FilterOBS()
+    night = nl.NightLift(obs=fo, log=lambda *a: None, start=False)
+    t8 = 1000.0
+    night.t = t8
+    night.set_darkness(0.0)
+    night.work(t8)
+    assert all(f == ["night lift"] for f in fo.filters.values()) and fo.settings["stream cam1"]["gamma"] == 0
+    night.set_darkness(0.85)  # midnight
+    night.work(t8 + 1)
+    assert 0 < fo.settings["stream cam2"]["gamma"] < 0.1, fo.settings  # ramps, no jump
+    for k in range(2, 40):
+        night.work(t8 + k)
+    assert fo.settings["stream cam3"] == nl.settings_for(1.0), fo.settings
+    night.set_darkness(0.1)
+    for k in range(40, 80):
+        night.work(t8 + k)
+    assert fo.settings["stream cam1"]["gamma"] == 0, fo.settings
+
     log = os.path.join(os.environ.get("TMPDIR", "/tmp"), "selftest-director.jsonl")
     d = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], src.send_camera, log)
     cams = d.step(snap)
