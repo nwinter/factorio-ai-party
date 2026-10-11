@@ -61,6 +61,8 @@ said = voices.speakable("Power: 2 boilers + 4 steam engines online. Boiler 2 at 
                         "Coal chest(-71.5,-12.5) ok, belt S along x-82.5 to 1,000 plates")
 check("speakable strips map coordinates", not re.search(r"\d+\.\d|-\d|x-", said) and "1,000" in said
       and "2 boilers + 4 steam engines" in said, said)
+said2 = voices.speakable("Astra taking copper mining at x -58..-29, y -23..1. Will supply plates.")
+check("speakable strips coordinate ranges", said2 == "Astra taking copper mining. Will supply plates.", said2)
 check("speakable strips emoji/markdown/urls", voices.speakable("@Grok **wow** 😅 see https://a.b now") == "Grok wow see now")
 
 # differ: first snapshot only opens; later changes become events
