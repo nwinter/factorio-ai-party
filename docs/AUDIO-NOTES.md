@@ -4,6 +4,31 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Round 6: shifts, the stage label, ElevenLabs off (shake5 P1 items 3, 4 and 5, 2026-10-11)
+
+- Shifts (item 3). `caster.py --run-dir runs/RUN` (start-team.sh passes it) reads `resumed-from`, follows the chain
+  of earlier shifts, and reads the resume tick from `start.log` ("resumed at tick N"). On a resumed run the hosts get
+  `shift`: `number` (shake5 is 2), `continues` (shake4), `first_shift`, `resumed_at_game_minute` (124) and
+  `at_the_deadline` ("the world is saved and the next shift continues it from there"). It rides with the clock: the
+  opener, research, viewer, segment and pace/explain beats, and every beat in the last 15 minutes (every beat when no deadline is known). The opener's
+  `how_to_call_it` asks the hosts to welcome viewers back to a later shift of the same world. The rule now says the
+  agents play until the deadline and, when the facts carry a shift, that the deadline is a handover: the world is
+  saved and research in progress and the base carry over. `check_line` rejects "ends the run" and "game over" lines
+  on a shift at any time. A first shift (no `resumed-from`) gets no shift fact, since nothing says whether another
+  shift will follow.
+- Stage label (item 4). Stage 3 is "Oil & blue science" in `model.py` (was "Oil"); the overlay, the site and the
+  segment facts show the same label. The hosts' facts also carry `science_packs_made` ("red (automation)", "green
+  (logistic)", "blue (chemical)", ...), the packs made so far, so the stage reads as progress.
+- ElevenLabs off (item 5, TTS part). Under `--tts auto`, providers named in `POG_TTS_OFF` are left out of the TTS
+  object, so a voice picked before they were turned off (Opus's saved `el-george`) goes straight to its stand-in
+  through `substitute()` with no ElevenLabs call and no 401. start-team.sh exports `POG_TTS_OFF=eleven`. A forced
+  `--tts eleven` still uses ElevenLabs. The `profiles.lua` part of item 5 (refuse a voice another agent holds) is not
+  in this branch.
+
+Not done here, from the same study: P2 item 12 (baseline past its end; research beats still carried
+`shake1_finished_this_at` at minute 151), P2 item 13 (old deaths without a respawn fact, mottos read as plans) and
+P3 item 18 ("still as a heron", "Luna they-them").
+
 ## Round 5: fixes from the shake4 study (2026-10-11)
 
 What docs/studies/shake4.md P2 items 9 and 11 and section 6 asked of the casters, each covered by `caster_selftest.py`:
