@@ -97,18 +97,41 @@ stops a player.
   active agents when a technology finishes (the contract's "research completion credit"; the harness does not say who
   fed the labs).
 - Alerts: attack (an agent's status `combat` going true, or a base area in status `alerts.attacked` hit within the
-  last 30 game seconds, which also raises interest for agents within 60 tiles of it), death, low power (more than 25% of at least 10 electric machines
+  last 30 game seconds, which also raises interest for agents within 60 tiles of it), losses (status `alerts.latest`
+  lines, the runtime's `describe_incident` text, when the newest hit is under 2 minutes old: "7 lost near (12, -40):
+  4 stone wall, 3 gun turret (by 5 small biter)"), death, low power (more than 25% of at least 10 electric machines
   starved, not while paused), research complete. Each key is rate-limited and shown for up to 40 s.
 - Page (`static/`): agent cards (glyph avatar on the agent's colour, display name, harness tag, model label and role,
-  status dot and current action, location, camera badge), research card with progress and latest milestones,
+  the agent's motto from `profiles` in italics, or a quiet "profile not set" while `profiles` reports no display
+  name, colour or glyph; status dot and current action, location, camera badge), research card with progress and latest milestones,
   production sparklines (six series: two or more materials plus the newest science packs), chat with avatars,
   game-time and relative timestamps and age fading, alert toasts over the main camera, and a label on each camera
   frame naming who it shows. Updates are keyed DOM edits, so only changed parts animate.
 - Colour fallback: any colour works. Name text is lightened until it has 4.5:1 contrast on the panel; glyph ink is
   black or white, whichever contrasts more with the fill; a fill that disappears into the panel gets a ring; emoji
   glyphs sit on a dark tint of the colour with a ring in it. Invalid colours fall back to a hue hashed from the name.
-- Density: up to 7 agents use roomy 100 px cards, 8-9 use 84 px (5 rows of 2), 10-12 use 66 px (7 rows); the
-  research card takes the last grid cell and the chat panel gets whatever height is left.
+- Density: up to 7 agents use roomy 104 px cards, 8-9 use 86 px (5 rows of 2), both with four lines (name, model,
+  motto, action); 10-12 use 66 px (7 rows) and put the motto after the model on line two. The research card takes
+  the last grid cell and the chat panel gets whatever height is left.
+
+## Team board (docs/BOARD-API.md, "Overlay")
+
+- Polling: `board_events {since_seq}` every poll, `board {limit: 60}` plus `board {kind: "claim"}` every 15 s. Both
+  only after the read-only `describe` lists `board` and `board_events` (re-checked every 5 minutes, since a runtime
+  can be installed mid-run): on an older runtime the unknown action fails and the failed call stops the reading bot.
+  `status` and `board` are sent with `peek: true`, which makes eng/board leave the reading agent's `team` hint cursors
+  alone; a runtime that rejects the argument (main today) gets plain reads, logged once.
+- Event shape (eng/board `board.lua`): `{seq, tick, by, id, change, title, kind, owner, requested_by, status, text}`,
+  `change` = posted | taken | assigned | released | note | a status. The model keeps an item cache from events
+  between `board` reads (a read always wins), drops notes and operator bookkeeping, and bumps interest a little for the
+  agent who posted, took or finished something.
+- Panel (between the cards and production, 160 px): open unowned requests (amber when any), items in progress, active
+  claims; the last three events ("Luna posted REQUEST Piercing ammo...", "Grok took ...", "Gemini finished ...",
+  "is blocked on" in red) with the agent's avatar and age; one "Harness v4 · plan_save / plan_run macros" line for 10
+  minutes after a `harness` item is done (merged with the operator's `server: harness vN: ...` chat line when both
+  arrive within 3 minutes); and up to three active claims with avatars. Without a board runtime the panel is hidden
+  and the layout is as before. With it, the header shrinks to 64 px and production to one 84 px strip (no title,
+  values per minute), leaving chat about 220 px (three messages) at 9 agents and about 185 px at 12.
 
 ## Director
 
@@ -120,6 +143,12 @@ cameras take the next best agents. When a free agent is within 40 tiles of a cam
 (midpoint, zoom `60 / (distance + 24)`, clamped 0.3..0.7), keeps that partner until 50 tiles, and re-sends the
 midpoint when it moves 6 tiles (at most every 2 s). If a higher camera takes a lower camera's subject, the lower
 camera takes the higher camera's previous subject (swap).
+
+Attacks: a fresh (under 8 s old) attack or loss alert cuts the main camera at once, ignoring the dwell: to the
+attacked agent, else to the nearest agent within 50 tiles of the attacked area, else to the area itself (`camera`
+with `position`, zoom 0.5). It holds 20 s (`attack_hold`), at most one attack cut per 45 s (`attack_spacing`), and
+the camera label shows the alert text ("⚔ Base under attack near (-149, 117)"). `attack_cut: false` in the run
+config's `director` turns it off. A 30-minute mock run gets about five such cuts, all on the west wall.
 
 Each decision is appended to `tools/stream/logs/director-<start>.jsonl`: time, slot, reason, target agents and zoom,
 the exact `camera` body sent, the harness reply, and the top five scores. Tune with:
@@ -138,9 +167,23 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the
   reverse tunnel, as screenshotted by `obs_shot.py`. World c shows the real clock (1h59m, paused), construction
   robotics at 89%, 25 technologies, and real production history; both players are offline there.
-- `selftest.py` passes.
+- `selftest.py` passes, including board gating on `describe`, the eng/board event shape (from `board.lua` at
+  eng/board 77a670c), loss-line parsing, changelog merging, attack cuts and the `peek` fallback.
+- Board, mottos and alerts (2026-10-10, eng/stream2): the page was run in jsdom against `/state.json` from the 9-agent
+  mock (board stats, three events with avatars, claims, "profile not set" on Sonnet, power/attack/loss banners, the
+  attack label on the main camera) and from world n, read-only with `--no-camera` (the real mottos, Sonnet "profile
+  not set", board panel hidden because n's runtime has no board). Not yet seen rendered: this session could not
+  reach OBS or a browser, so there is no new screenshot. The image at the top predates the board panel.
 
 ## What's left
+
+- Screenshot of the board layout: `python3 tools/stream/serve.py --mock --port 8788` with the tunnel up, then
+  `tools/.venv/bin/python tools/stream/obs_shot.py docs/stream-overlay-board9.png --reload`, and check the 4-line cards
+  (86 px) and the 160 px board panel at 1280x720 (`--size 1280x720`) for readability.
+- eng/board accepts `peek` only on `chat`: `status`/`board` with `peek` fail as an unknown argument, so until eng/board
+  allows it the overlay's reads consume the reading bot's (the first configured agent's) `team` hints. Reported to
+  the eng/board session.
+- The board has only been checked against the shapes in eng/board's code, not a running world with it.
 
 - The `camera` function and `profiles` exist only in the contract so far. Once eng/bots lands: confirm the `profiles`
   reply shape (`{profiles: [...]}` or a bare list; both are accepted), which identity the read should carry (the
@@ -151,7 +194,7 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - `control.lua` stops `request.player or 1` on a failed non-read call. For bot requests (no `player`) that would hit
   player 1; eng/bots should key this on the bot.
 - Base-attack alerts use status `alerts.attacked` (tested against the shape in `threat.lua`, not yet against a real
-  attack: world c is peaceful). Losses (`alerts.latest`) are not shown.
+  attack: world c is peaceful). Loss banners parse `alerts.latest` text, which is not a structured field.
 - Research credit goes to the most recently active agents, since nothing says who fed the labs.
 - Production uses coloured lines, not Factorio item icons (the client has no Space Age data and the icons are not
   served anywhere).
