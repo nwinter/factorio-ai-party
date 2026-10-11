@@ -43,7 +43,7 @@ def game():
 def series():
     global _series
     if _series is None:
-        _series = H.load_runs(exclude=os.environ.get("ANALYST_REPLAY"))
+        _series = H.load_runs(exclude=[os.environ.get("ANALYST_REPLAY"), os.environ.get("ANALYST_RUN_DIR")])
     return _series
 
 
@@ -117,7 +117,9 @@ TOOLS = {
                          lambda a: kb().research_time_text(kb().resolve(a["tech"]) or a["tech"], int(a["labs"]))),
     "kb_planets": (S("Planets, space locations and route lengths (from a Space Age dump; the base dump has only Nauvis)."),
                    lambda a: kb().planets_text()),
-    "kb_map_settings": (S("This world's map settings: pollution, evolution factors, expansion, peaceful, mods."),
+    "kb_map_settings": (S("Map settings of the world the knowledge base was dumped from (pollution, evolution factors, "
+                          "expansion, mods). Not this run's: whether enemies are on is in game_snapshot (peaceful) "
+                          "and the run's start log."),
                         lambda a: json.dumps(kb().settings, indent=0)[:4000]),
     "game_snapshot": (S("Current game: time, research and progress, SPM, production and use per minute (10-min "
                         "average), buildings, enemy evolution, pollution, kills and losses."),

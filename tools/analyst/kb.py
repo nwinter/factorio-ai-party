@@ -149,9 +149,11 @@ class KB:
                          for p in r["products"])
         machines = self.machines_for(r["category"])
         unlock = self.unlocked_by.get(r["name"])
+        conds = r.get("surface_conditions") or []
         lines = [f"recipe {r['name']}: {ing} -> {prod} in {fmt(r['energy'])} s (at crafting speed 1); category "
                  f"{r['category']}, made in {', '.join(machines) or 'hand only'}"
-                 + ("; hand-craftable" if r["category"] == "crafting" else ""),
+                 + ("; hand-craftable" if r["category"] == "crafting" and not conds else "")
+                 + (f"; only where {surface_text(conds)}" if conds else ""),
                  "available from the start" if r.get("enabled") else
                  f"unlocked by technology {', '.join(unlock)}" if unlock else "not unlocked by any technology"]
         others = [x for x in self.made_by.get(r.get("main_product") or (r["products"][0]["name"] if r["products"] else ""), [])
@@ -185,7 +187,8 @@ class KB:
         if k == "mine-entity":
             return f"mine {pretty(tr.get('entity'))}"
         if k == "build-entity":
-            return f"build a {pretty(tr.get('entity'))}"
+            name = pretty(tr.get('entity'))
+            return f"build {'an' if name[:1].lower() in 'aeiou' else 'a'} {name}"
         if k == "craft-fluid":
             return f"produce {pretty(tr.get('fluid'))}"
         if k == "send-item-to-orbit":
@@ -456,6 +459,22 @@ class KB:
             lines.append(f"current output corresponds to about {fmt(need_now[it]['machines'], 1)} {need_now[it]['machine']} "
                          f"running full time on {pretty(it)}")
         return "\n".join(lines)
+
+
+def surface_text(conds):
+    """Recipe surface conditions in words: gravity 0 means space platforms only (Space Age)."""
+    out = []
+    for c in conds:
+        p, lo, hi = c.get("property"), c.get("min"), c.get("max")
+        if p == "gravity" and hi == 0:
+            out.append("gravity is 0 (on a space platform)")
+        elif lo is not None and hi is not None:
+            out.append(f"{p} is {fmt(lo)} to {fmt(hi)}")
+        elif lo is not None:
+            out.append(f"{p} is at least {fmt(lo)}")
+        elif hi is not None:
+            out.append(f"{p} is at most {fmt(hi)}")
+    return " and ".join(out) or "a surface condition holds"
 
 
 def main():

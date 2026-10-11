@@ -29,22 +29,33 @@ LABELS = {"2026-10-10-baseline1/a": "solo GPT-6 Astra, real time, peaceful",
           "2026-10-10-turns3h/b": "solo Fable 5.1, turn mode 3 h, peaceful",
           "2026-10-10-coop1": "co-op Astra + Opus 5.5, real time, peaceful",
           "shake1": "nine-agent team, normal enemies, real time (docs/studies/shake1.md)",
-          "shake2": "nine-agent team, normal enemies, real time (docs/studies/shake2.md)"}
+          "shake2": "nine-agent team, normal enemies, real time (docs/studies/shake2.md)",
+          "shake3": "nine-agent team, normal enemies, real time, base game",
+          "sapilot": "three-agent Space Age pilot (Astra, Opus, Gemini Flash), normal enemies, real time, 30 min"}
+SPACE_AGE_RUNS = ("sapilot", "shake4")  # every other run so far was the base game
+
+
+def is_space_age(name):
+    return name.split("/")[0] in SPACE_AGE_RUNS or name.startswith("sa")
 
 
 SP = " "
 
 
 def label(name):
-    return f"{name} ({LABELS[name]})" if name in LABELS else name
+    if name in LABELS:
+        return f"{name} ({LABELS[name]})"
+    return f"{name} (Space Age)" if is_space_age(name) else name
 
 
 def load_runs(exclude=None):
-    """{series name: snapshots}. exclude: a run being replayed, which must not be its own benchmark."""
+    """{series name: snapshots}. exclude: the run being replayed or played live (a directory or a list of them),
+    which must not be its own benchmark."""
     series = load_all()
-    if exclude:
-        ex = os.path.basename(exclude.rstrip("/"))
-        series = {k: v for k, v in series.items() if k != ex and not k.startswith(ex + "/")}
+    for e in ([exclude] if isinstance(exclude, str) else exclude or []):
+        if e:
+            ex = os.path.basename(e.rstrip("/"))
+            series = {k: v for k, v in series.items() if k != ex and not k.startswith(ex + "/")}
     return series
 
 
