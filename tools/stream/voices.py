@@ -29,6 +29,8 @@ pass the caption text: a line already through pronounce() loses the IPA forms (r
 import base64, hashlib, json, os, re, shutil, subprocess, tempfile, time, unicodedata
 import urllib.error, urllib.parse, urllib.request
 
+import textprep
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 KEY_DIR = os.path.expanduser(os.environ.get("POG_KEY_DIR", "~/.config/pog"))
 STATE_DIR = os.path.expanduser(os.environ.get("POG_VOICE_STATE", "~/.cache/pog/voices"))  # designed voices, id lookups
@@ -241,7 +243,7 @@ COORDS = re.compile(r"\(?\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)?|\b[xy]\s
 
 
 def has_coords(text):
-    return bool(COORDS.search(str(text)))
+    return any(not re.fullmatch(r"\(?\s*\d{1,3},\d{3}\s*\)?", m.group().strip()) for m in COORDS.finditer(str(text)))
 
 
 # ---- pronunciation ------------------------------------------------------------------------------------------------
@@ -323,14 +325,26 @@ def pronounce(text, style="respell"):
 
 
 def speakable(text, limit=220):
-    """Strip what TTS reads badly: emoji, markdown, URLs, @handles, map coordinates; cut at a sentence."""
-    text = re.sub(r"\s*(?:\b(?:at|near|to|from)\s+)?(?:" + COORDS.pattern + ")", "", text)
+    """Strip what TTS reads badly: emoji, markdown, URLs, @handles, map coordinates; cut at a sentence.
+    A removed coordinate leaves a space (the patterns also eat the whitespace after it: "chest -58.5,-23.5 for"
+    used to become "chestfor")."""
+    text = re.sub(r"\s*(?:\b(?:at|near|to|from|along)\s+)?(?:" + COORDS.pattern + ")",
+                  lambda m: m.group() if re.search(r"(?<![\d.\-])\d{1,3},\d{3}\s*$", m.group()) else " ", text)  # 1,000
     text = re.sub(r"\(\s*\)", "", re.sub(r"(?:,\s*)+(?=[,.;:!?)]|$)", "", text))
     text = re.sub(r"\s+([,.;:!?])", r"\1", text)
     text = re.sub(r"https?://\S+", "", text)
-    text = re.sub(r"[*_`#>\[\]{}|~]", "", text)
+    # map coordinates read terribly aloud: "(23.5,-8.5)", "at 31.5,19", "x-82.5", "y21.5", "x22..32,y-10..8"
+    text = re.sub(r"\s*(?:\b(?:at|to|near)\s*)?\(\s*-?[\d.]+\s*,\s*-?[\d.]+\s*\)", " ", text)
+    text = re.sub(r"\s*(?:\b(?:at|to|near)\s+)?-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?(?:\s*/\s*-?\d+(?:\.\d+)?)*\b",
+                  lambda m: m.group() if re.search(r"(?<![\d.\-])\d{1,3},\d{3}$", m.group()) else " ", text)  # 1,000
+    text = re.sub(r"\s*\b(?:(?:at|to|near|along)\s+)?[xy]\s*=?\s*-?\d+(?:\.\d+)?(?:\s*\.\.\s*-?\d+(?:\.\d+)?)?\b"
+                  r"(?:,?\s*[xy]\s*=?\s*-?\d+(?:\.\d+)?(?:\s*\.\.\s*-?\d+(?:\.\d+)?)?\b)?", " ", text)
+    text = re.sub(r"(?<![\w.])(?:-\d+(?:\.\d+)?\s*\.\.\s*-?\d+|\d+(?:\.\d+)?\s*\.\.\s*-\d+)(?:\.\d+)?\b", " ",
+                  text)  # a bare map range with a minus: -68..-48 (not "2..3 times")
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
+    text = re.sub(r"[*_`#>\[\]{}|]|~(?!\s?\d)", "", text)  # "~90" stays: TTS prep says "about 90"
     text = re.sub(r"@(\w+)", r"\1", text)
-    text = "".join(ch for ch in text if unicodedata.category(ch)[0] != "S" or ch in "%$+=")
+    text = "".join(ch for ch in text if unicodedata.category(ch)[0] != "S" or ch in "%$+=~")
     text = re.sub(r"\s+", " ", text).strip()
     if len(text) > limit:
         cut = max(text.rfind(p, 0, limit) for p in (". ", "! ", "? "))
@@ -640,6 +654,49 @@ PROVIDERS = {"eleven": lambda: ElevenLabs("eleven"), "eleven-fast": lambda: Elev
 FAMILY = {"eleven": "eleven", "eleven-fast": "eleven", "openai": "openai", "cartesia": "cartesia", "inworld": "inworld"}
 
 
+RESPACE_MODELS = {"openai": ["gpt-4.1-nano", "gpt-5-nano"], "cf": "@cf/meta/llama-3.1-8b-instruct-fp8-fast"}
+
+
+def respace_model(tts=None):
+    """ask(prompt, text) -> text for textprep.Respacer: OpenAI's cheapest fast model when openai.key exists, else a
+    small Workers AI model, else None (heuristics only). POG_RESPACE=0 turns the model pass off. textprep only uses
+    an answer that matches the input in everything but whitespace, so a wrong answer costs nothing but the call."""
+    if os.environ.get("POG_RESPACE", "1") == "0":
+        return None
+    key = read_key("openai")
+    if key:
+        models = list(RESPACE_MODELS["openai"])
+
+        def ask(prompt, text):
+            while True:
+                body = {"model": models[0], "messages": [{"role": "system", "content": prompt},
+                                                         {"role": "user", "content": text}],
+                        "max_completion_tokens": 400 + len(text)}
+                if models[0].startswith("gpt-5"):
+                    body["reasoning_effort"] = "minimal"
+                else:
+                    body["temperature"] = 0
+                try:
+                    res = _json("POST", "https://api.openai.com/v1/chat/completions",
+                                {"Authorization": "Bearer " + key}, body, timeout=4)
+                    return res["choices"][0]["message"]["content"]
+                except TTSError as x:
+                    if len(models) > 1 and str(x)[:3] in ("400", "404") and "model" in str(x).lower():
+                        models.pop(0)
+                        continue
+                    raise
+        return ask
+    ai = getattr(tts, "ai", None)
+    if ai is not None:
+        def ask(prompt, text):
+            res = ai.run(RESPACE_MODELS["cf"], {"messages": [{"role": "system", "content": prompt},
+                                                             {"role": "user", "content": text}],
+                                                "max_tokens": 400, "temperature": 0})
+            return res.get("response") or ""
+        return ask
+    return None
+
+
 def available_providers():
     """Provider names whose key file exists (no network)."""
     return [p for p in PROVIDERS if read_key(PROVIDER_KEY[p])]
@@ -668,6 +725,7 @@ class TTS:
         self.chars = 0
         self.seconds = 0.0
         self.last = {}  # provider, voice, mood, cached of the latest clip
+        self.respacer = None  # textprep.Respacer, made on first use (it needs self.ai)
         self.providers = {}
         for name, make in PROVIDERS.items():
             if backend in ("auto", name):
@@ -764,7 +822,15 @@ class TTS:
             open(path, "wb").write(audio)
         return audio, ctype, dur, time.time() - t0
 
+    def prep(self, text):
+        """The words TTS reads: spaces restored and spoken forms (textprep), coordinates the new spaces expose
+        stripped. Captions keep the caller's text."""
+        if self.respacer is None:
+            self.respacer = textprep.Respacer(ask=respace_model(self))
+        return speakable(self.respacer(text), limit=100000)
+
     def _synth(self, prov, text, ref, m, instruction, caster, voice):
+        text = self.prep(text)
         if prov in self.providers:
             p = self.providers[prov]
             style = p.phonemes if os.environ.get("POG_TTS_IPA", "1") != "0" else "respell"  # 0: respellings only
