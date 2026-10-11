@@ -31,6 +31,18 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
   `shots/NAME.png` that you can open and look at. Use pictures to check layouts (inserter directions, belt flow).
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
 
+## Pace
+
+Your character stands still while you think, and the clock does not.
+
+- Before a step that needs real thought, leave a queue plan or a long timed action running.
+- Don't poll. Check `research` at most once a minute; let the factory run with `wait_until` or a queue plan; use one
+  `status` per cycle instead of chains of `research`, `date` and `inspect` calls.
+- Batch: chain a move and the action at its end with `&&`, and put many placements in one `build`.
+- Read every failure. A nonzero exit means the action failed: never send `./fh` output to `/dev/null` or through
+  `tail` without checking the exit status, and check a result before you announce it in chat.
+- Once assemblers make a science pack, stop hand-crafting it. Build more labs and science assemblers before oil.
+
 ## Harness notes from earlier runs
 
 - `--wait` now lasts until the action's own end tick. A nonzero exit means it failed or is still running: read
