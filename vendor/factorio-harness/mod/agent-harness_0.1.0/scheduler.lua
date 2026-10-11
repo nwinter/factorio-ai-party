@@ -85,10 +85,19 @@ return function(api)
     end
     return out
   end
-  local function snapshot(q)
+  -- recent: keep only the newest entries of the history (the changing calls;
+  -- shake3: Opus's queue cancel printed 60+ entries); queue_status shows it all.
+  local RECENT=3
+  local function snapshot(q,recent)
     local failure
     for i=#q.history,1,-1 do if not q.history[i].ok then failure=q.history[i]; break end end
-    return {revision=q.revision,paused=q.paused,pending=q.pending,active=q.current or false,history=q.history,
+    local history=q.history
+    if recent and #history>recent then
+      history={}
+      for i=#q.history-recent+1,#q.history do history[#history+1]=q.history[i] end
+    end
+    return {revision=q.revision,paused=q.paused,pending=q.pending,active=q.current or false,history=history,
+      history_total=history~=q.history and #q.history or nil,
       waiting=q.current and q.current.action=='wait_until' and {condition=q.current.args,saw=q.current.saw,until_tick=q.current.until_tick} or nil,
       guards=q.guards and #q.guards>0 and q.guards or nil,last_failure=failure,after_direct=q.after_direct,
       repeating=q.loop~=nil,cycle=q.cycle,next_cycle_tick=q.next_cycle_tick,
@@ -188,7 +197,7 @@ return function(api)
     for _,g in ipairs(new_guards) do q.guards[#q.guards+1]=g end
     if a.start~=false then q.paused=false end
     q.revision=q.revision+1
-    return snapshot(q)
+    return snapshot(q,RECENT)
   end
   function M.handlers.queue_repeat(p,a)
     local q=queue(p.index); revision(q,a)
@@ -201,7 +210,7 @@ return function(api)
     M.pause(p.index)
     q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1
     assign(q,items); q.pending=items; q.paused=false; q.revision=q.revision+1
-    return snapshot(q)
+    return snapshot(q,RECENT)
   end
   function M.handlers.queue_edit(p,a)
     local q=queue(p.index)
@@ -220,19 +229,19 @@ return function(api)
     for _=1,remove do table.remove(q.pending,index) end
     for n=#items,1,-1 do table.insert(q.pending,index,items[n]) end
     q.revision=q.revision+1
-    return snapshot(q)
+    return snapshot(q,RECENT)
   end
   function M.handlers.queue_cancel(p,a)
     local q=queue(p.index); revision(q,a)
     api.stop(p)
     M.pause(p.index)
     if a.clear~=false then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={} end
-    return snapshot(q)
+    return snapshot(q,RECENT)
   end
   function M.handlers.queue_resume(p,a)
     local q=queue(p.index); revision(q,a)
     q.paused=false; q.revision=q.revision+1
-    return snapshot(q)
+    return snapshot(q,RECENT)
   end
   function M.tick()
     for index,q in pairs(api.state().queues or {}) do
@@ -306,7 +315,7 @@ return function(api)
     end
   end
   M.schema={
-    queue_status={},
+    queue_status={returns='the whole history (up to 64 entries); the other queue calls return only the newest 3 and history_total'},
     queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional'},
     queue_submit={steps='array of {action,args,wait?,label?,on_fail?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace pending only',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them'},
     queue_edit={expected_revision='required from queue_status',index='1-based pending index',remove='count to remove',steps='replacement steps'},

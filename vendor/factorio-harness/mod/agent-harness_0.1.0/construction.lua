@@ -214,6 +214,39 @@ return function(api)
     end
     return any
   end
+  function M.in_box(pos,box)
+    return pos.x>box.left_top.x and pos.x<box.right_bottom.x and pos.y>box.left_top.y and pos.y<box.right_bottom.y
+  end
+  -- When the agent's own character is the only thing in a footprint (shake3:
+  -- Grok's most common error), where to step so the build can go ahead: the
+  -- nearest free spot just off the footprint that keeps the position in build
+  -- reach, not on a belt. Returns {to, box (what the character must leave)},
+  -- or nil when anything else is in the way or no spot fits.
+  function M.aside(p,proto,pos,direction)
+    local c=p.character
+    if not (c and c.valid) then return nil end
+    local box=M.box(proto,pos,direction)
+    local mine=false
+    for _,e in pairs(p.surface.find_entities_filtered{area=box}) do
+      if e.valid then
+        if e==c then mine=true
+        elseif e.type~='resource' and e.type~='corpse' then return nil end
+      end
+    end
+    if not mine then return nil end
+    -- The character is 0.4 wide: its centre must be 0.2 off the box.
+    local leave={left_top={x=box.left_top.x-0.22,y=box.left_top.y-0.22},right_bottom={x=box.right_bottom.x+0.22,y=box.right_bottom.y+0.22}}
+    local m,here=0.45,p.position
+    local l,t,r,b=box.left_top.x-m,box.left_top.y-m,box.right_bottom.x+m,box.right_bottom.y+m
+    local spots={{x=l,y=here.y},{x=r,y=here.y},{x=here.x,y=t},{x=here.x,y=b},{x=l,y=t},{x=r,y=t},{x=l,y=b},{x=r,y=b}}
+    table.sort(spots,function(u,v) return api.distance(here,u)<api.distance(here,v) end)
+    for _,s in ipairs(spots) do
+      if api.distance(s,pos)<=p.build_distance-0.5 and p.surface.can_place_entity{name=c.name,position=s,force=p.force}
+        and p.surface.count_entities_filtered{area={{s.x-0.4,s.y-0.4},{s.x+0.4,s.y+0.4}},type=BELTS,limit=1}==0 then
+        return {to=s,box=leave}
+      end
+    end
+  end
   local function obstructed(rec)
     for _,o in ipairs(rec.obstacles or {}) do if o.valid then return o end end
   end

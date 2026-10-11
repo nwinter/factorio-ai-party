@@ -35,6 +35,11 @@ tick(); check(combat[1] and active[1]); check(#calls==2)
 tick(); tick(); check(#calls==2)
 tick(); check(calls[3]=='craft'); check(combat[1]~=nil)
 q=h.queue_status(p); check(#q.history==3 and not q.active)
+-- Changing calls return only the newest 3 entries (shake3: Opus's queue cancel
+-- printed 60+); queue_status keeps them all.
+h.queue_submit(p,{steps={{action='craft'}}}); tick()
+q=h.queue_submit(p,{steps={},start=false}); check(#q.history==3 and q.history_total==4 and q.history[3].action=='craft')
+check(#h.queue_status(p).history==4 and h.queue_status(p).history_total==nil)
 -- Edit only pending steps and reject stale revisions before side effects.
 q=h.queue_submit(p,{steps={{action='wait_ticks',args={ticks=10}},{action='craft'}}})
 tick(); q=h.queue_status(p)
