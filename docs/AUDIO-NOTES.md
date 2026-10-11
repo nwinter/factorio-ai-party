@@ -440,6 +440,10 @@ number (captions show "~90" as written; the TTS text says "about 90").
 
 ### For eng/audio (`caster.py`)
 
+Status 2026-10-10 23:10: item 1 done on eng/audio ("Casters: pass caption text to TTS"). eng/audio checked the merge:
+the two branches conflict only in `tools/stream/voices.py`; take eng/voices' file whole. eng/audio's
+`caster_selftest.py` passes against it (including the coordinate and "1,000" cases).
+
 1. Drop the `voices.pronounce(...)` around the text passed to `tts.speak(...)`: `speak()` applies the lexicon itself,
    per provider, and a line already respelled loses the IPA forms (it still works, just less precisely). Keep passing
    the caption text: `speak()` also restores spaces and spoken forms (`textprep`), for the audio only.
