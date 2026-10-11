@@ -110,3 +110,35 @@ class NightLift:
 
     def public(self):
         return dict(self.status)
+
+
+def main():
+    """Try the lift on the box without a game at night: ramp to --darkness, hold, ramp back to day (or --leave)."""
+    import argparse, json
+    ap = argparse.ArgumentParser(description=main.__doc__)
+    ap.add_argument("--darkness", type=float, default=0.85, help="pretend darkness (0 day .. 0.85 midnight)")
+    ap.add_argument("--hold", type=float, default=15, help="seconds at that darkness")
+    ap.add_argument("--leave", action="store_true", help="leave the lift on (the service resets it on its next poll)")
+    ap.add_argument("--obs", default="127.0.0.1:4455")
+    a = ap.parse_args()
+    host, _, port = a.obs.partition(":")
+    o = OBS(host, int(port or 4455))
+    live = {r: o.call(r).get("outputActive") for r in ("GetStreamStatus", "GetRecordStatus")}
+    print("outputs:", live, flush=True)
+    n = NightLift(obs=o, start=False, ramp=0.25)  # a quicker ramp for the demo
+    n.set_darkness(a.darkness)
+    t0 = time.time()
+    while time.time() - t0 < 6 + a.hold:
+        n.work(time.time())
+        time.sleep(1)
+    print("at darkness", a.darkness, json.dumps(n.status["sent"]), flush=True)
+    if not a.leave:
+        n.set_darkness(0.0)
+        for _ in range(8):
+            n.work(time.time())
+            time.sleep(1)
+        print("back to day", json.dumps(n.status["sent"]), flush=True)
+
+
+if __name__ == "__main__":
+    main()
