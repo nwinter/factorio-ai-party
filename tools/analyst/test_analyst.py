@@ -89,8 +89,24 @@ class HistoryTest(unittest.TestCase):
             self.assertEqual([r["tick"] for r in s["w1"]], [3600, 7200, 10800, 14400, 18000])
             self.assertIn("shifts w1 + w2 + w3", H.label("w1"))
             self.assertEqual(sorted(H.load_runs(exclude=os.path.join(tmp, "w3"))), ["other"])
+            open(os.path.join(tmp, "w3", "start.log"), "w").write("05:18:52 world n: resumed at tick 15000 (game 4m)\n")
+            w = H.world_text(os.path.join(tmp, "w3"))
+            self.assertIn("resumed shift", w)
+            self.assertIn("save at game minute 4.", w)           # the resume tick, not the first score row (minute 5)
+            self.assertIn("w1 game minutes 0 to 2,", w)
+            self.assertIn("automation 1", w)                     # the world's own milestones, all shifts
+            self.assertIsNone(H.world_text(os.path.join(tmp, "w1")))
         finally:
             H.ROOTS = roots
+
+    def test_test_runs_are_named_and_not_benchmarks(self):
+        """shake4 mistake 8: 'co-op' aired from coop1 comparisons nobody had introduced."""
+        for name, text in H.LABELS.items():
+            self.assertTrue(text.startswith("say: "), name)
+        self.assertIn("two-agent co-op test", H.label("2026-10-10-coop1"))
+        s = H.load_runs(teams_only=True)
+        self.assertIn("shake1", s)
+        self.assertFalse([k for k in s if k.startswith("2026-10-10-")])
 
 
 class McpTest(unittest.TestCase):
@@ -122,6 +138,17 @@ class PointsTest(unittest.TestCase):
         bad = {"text": "They make 22 packs a minute.", "facts": {"spm": 15}}
         self.assertIsNone(analyst.point_problem(ok))
         self.assertIn("22", analyst.point_problem(bad))
+        lvl = {"text": "Logistics 2 comes next; two assembling machine 2s and automation-2 are done.", "facts": {}}
+        self.assertIsNone(analyst.point_problem(lvl))       # level names are names, not figures
+        self.assertIn("3", analyst.point_problem({"text": "Logistics 2 needs 3 more minutes.", "facts": {}}))
+
+    def test_test_run_comparisons_dropped(self):
+        import analyst
+        for t in ("Science is 13.7. Coop1 had 13.6 here.", "This team is at 14.3, close to the co-op run's 13.5.",
+                  "Nineteen in the co-op!", "Turns1 had 17.5."):
+            self.assertIn("co-op test", analyst.point_problem({"text": t, "facts": {"a": 13.7, "b": 13.6, "c": 14.3, "d": 13.5, "e": 17.5}}), t)
+        self.assertIsNone(analyst.point_problem({"text": "Luna and Sol co-operate on the trunk belt.", "facts": {}}))
+        self.assertIsNone(analyst.point_problem({"text": "Good co-op play: Luna staged plates for Astra.", "facts": {}}))
 
     def test_game_minute_is_a_fact(self):
         import analyst
@@ -131,6 +158,11 @@ class PointsTest(unittest.TestCase):
         reply, dropped = analyst.clean_reply(reply, minute=19)
         self.assertEqual([p["facts"].get("game_minute") for p in reply["talking_points"]], [20])
         self.assertIn("28", dropped[0]["why"])  # a forecast minute still needs its own fact
+        reply = {"judgement": {"pace": "behind", "text": "Only 25 technologies are done at 2h11.", "facts": {"techs": 25}},
+                 "talking_points": [{"text": "Blue usually starts by 3h05.", "facts": {}}]}
+        reply, dropped = analyst.clean_reply(reply, minute=131)
+        self.assertEqual(reply["judgement"]["facts"].get("game_time"), "2h11")  # the game clock, a resumed shift
+        self.assertEqual(len(dropped), 1)                                      # another clock time is a claim
 
 
 class BoardTest(unittest.TestCase):

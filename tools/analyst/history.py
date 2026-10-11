@@ -11,7 +11,7 @@ Score logs are `runs/<run>/scores.jsonl` (tools/score-loop.sh: cumulative produc
 every 2 minutes), read from this checkout and from the main checkout (~/code/player-of-games/runs), where runs that
 are not committed live. A run with several worlds (turn runs a and b) counts as one series per world.
 """
-import argparse, json, os, subprocess, sys
+import argparse, json, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
@@ -20,19 +20,28 @@ PACKS = ["automation-science-pack", "logistic-science-pack", "military-science-p
          "production-science-pack", "utility-science-pack", "space-science-pack"]
 SKIP = ("smoke", "mock")
 # Who played (docs/PLAN.md results tables: world a was GPT-6 Astra and b Fable 5.1 in the solo rounds; round three's
-# Fable run ended with 12 technologies, which is turns3h/b).
-LABELS = {"2026-10-10-baseline1/a": "solo GPT-6 Astra, real time, peaceful",
-          "2026-10-10-baseline1/b": "solo Fable 5.1, real time, peaceful",
-          "2026-10-10-turns1/a": "solo GPT-6 Astra, turn mode, peaceful",
-          "2026-10-10-turns1/b": "solo Fable 5.1, turn mode, peaceful",
-          "2026-10-10-turns3h/a": "solo GPT-6 Astra, turn mode 3 h, peaceful",
-          "2026-10-10-turns3h/b": "solo Fable 5.1, turn mode 3 h, peaceful",
-          "2026-10-10-coop1": "co-op Astra + Opus 5.5, real time, peaceful",
-          "shake1": "nine-agent team, normal enemies, real time (docs/studies/shake1.md)",
-          "shake2": "nine-agent team, normal enemies, real time (docs/studies/shake2.md)",
-          "shake3": "nine-agent team, normal enemies, real time, base game",
-          "sapilot": "three-agent Space Age pilot (Astra, Opus, Gemini Flash), normal enemies, real time, 30 min"}
+# Fable run ended with 12 technologies, which is turns3h/b). Each label starts with what to call the run on air: the
+# code names (coop1, turns1, baseline1) mean nothing to viewers (docs/studies/shake4.md, mistake 8).
+LABELS = {"2026-10-10-baseline1/a": "say: an early solo test; GPT-6 Astra alone, base game, peaceful (no biters), real time",
+          "2026-10-10-baseline1/b": "say: an early solo test; Fable 5.1 alone, base game, peaceful (no biters), real time",
+          "2026-10-10-turns1/a": "say: an early solo test; GPT-6 Astra alone, base game, peaceful, turn mode (game paused while it thinks)",
+          "2026-10-10-turns1/b": "say: an early solo test; Fable 5.1 alone, base game, peaceful, turn mode (game paused while it thinks)",
+          "2026-10-10-turns3h/a": "say: an early solo test; GPT-6 Astra alone, base game, peaceful, turn mode, 3 h",
+          "2026-10-10-turns3h/b": "say: an early solo test; Fable 5.1 alone, base game, peaceful, turn mode, 3 h",
+          "2026-10-10-coop1": "say: the two-agent co-op test; GPT-6 Astra and Claude Opus 5.5 together, base game, "
+                              "peaceful (no biters), real time, 2 h",
+          "shake1": "say: the first nine-agent team run; base game, normal enemies, real time (docs/studies/shake1.md)",
+          "shake2": "say: the second nine-agent team run; base game, normal enemies, real time (docs/studies/shake2.md)",
+          "shake3": "say: the third nine-agent team run; base game, normal enemies, real time",
+          "sapilot": "say: the three-agent Space Age pilot; Astra, Opus and Gemini Flash, normal enemies, real time, 30 min",
+          "shake4": "say: the first nine-agent Space Age team run; normal enemies, real time (docs/studies/shake4.md)"}
 SPACE_AGE_RUNS = ("sapilot", "shake4")  # every other run so far was the base game
+
+
+def is_team_run(name):
+    """The team runs (shake*, the Space Age pilot) are the benchmarks the analyst offers; the solo and co-op tests of
+    10 October were one or two agents on peaceful maps, so they are kept for questions about them only."""
+    return not name.startswith("2026-10-10-")
 
 
 def is_space_age(name):
@@ -70,12 +79,15 @@ def chain_root(run):
 
 
 SHIFTS = {}  # series name -> the runs (shifts) it is made of, when more than one
+SPANS = {}   # run (shift) -> (first tick, last tick) of its own score log
 
 
-def load_runs(exclude=None):
+def load_runs(exclude=None, teams_only=False):
     """{series name: snapshots}. exclude: the run being replayed or played live (a directory or a list of them),
-    which must not be its own benchmark; nor may the earlier shifts of its world."""
+    which must not be its own benchmark; nor may the earlier shifts of its world. teams_only: the team runs only."""
     series = load_all()
+    if teams_only:
+        series = {k: v for k, v in series.items() if is_team_run(k)}
     for e in ([exclude] if isinstance(exclude, str) else exclude or []):
         if e:
             ex = chain_root(os.path.basename(e.rstrip("/")))
@@ -86,6 +98,7 @@ def load_runs(exclude=None):
 def load_all():
     series = {}
     SHIFTS.clear()
+    SPANS.clear()
     for root in ROOTS:
         if not os.path.isdir(root):
             continue
@@ -94,7 +107,9 @@ def load_all():
             if any(s in run for s in SKIP) or not os.path.exists(p):
                 continue
             rows = {}
-            for line in open(p):
+            with open(p) as f:
+                lines = f.readlines()
+            for line in lines:
                 try:
                     j = json.loads(line)
                 except json.JSONDecodeError:
@@ -110,6 +125,7 @@ def load_all():
                 if name not in series:
                     v.sort(key=lambda r: r["tick"])
                     series[name] = dedupe(v)
+                    SPANS[name] = (series[name][0]["tick"], series[name][-1]["tick"])
     # Shifts of one world (a resumed run continues its save's game time) are one series under the first shift's name.
     for name in list(series):
         root = chain_root(name)
@@ -198,6 +214,51 @@ def when_text(series, tech):
     for name, rows in series.items():
         m = milestones(rows).get(tech)
         lines.append(f"- {label(name)}:{SP}" + (f"game minute {m:.0f}" if m is not None else f"not reached (run ended at minute {rows[-1]['tick'] / 3600:.0f})"))
+    return "\n".join(lines)
+
+
+def resume_tick(run):
+    """The tick a resumed shift started at ("resumed at tick N" in runs/RUN/start.log), or None."""
+    for root in ROOTS:
+        p = os.path.join(root, run, "start.log")
+        if os.path.exists(p):
+            with open(p, errors="replace") as f:
+                m = re.search(r"resumed at tick (\d+)", f.read())
+            if m:
+                return int(m.group(1))
+    return None
+
+
+def world_text(run, series=None):
+    """For a live or replayed run that continues an earlier shift's world: the game minutes each shift played, and
+    the world's own milestones and science rate so far (all shifts as one series). None for a first shift."""
+    run = os.path.basename((run or "").rstrip("/"))
+    if not run or not resumed_from(run):
+        return None
+    root = chain_root(run)
+    series = series if series is not None else load_all()
+    rows = series.get(root) or []
+    shifts = SHIFTS.get(root) or [root, run]
+    starts = {s: (0 if i == 0 else resume_tick(s) or SPANS[s][0]) for i, s in enumerate(shifts) if s in SPANS}
+    spans = ", ".join(f"{s} game minutes {starts[s] / 3600:.0f} to {SPANS[s][1] / 3600:.0f}" if s in SPANS else s
+                      for s in shifts)
+    start = resume_tick(run) or SPANS.get(run, (None,))[0]
+    lines = [f"This run ({run}) is a resumed shift: the same world, base and agents as {root}, continued from its save"
+             + (f" at game minute {start / 3600:.0f}" if start else "") + f". Shifts so far: {spans}. Everything before "
+             "this shift is this team's own earlier play, not another team's: count pace and say times in game time (the "
+             "game clock carried on), never time since this stream or shift started. The agents restarted their sessions "
+             "at the shift change and re-read their notes, so a slow minute or two after the resume is the restart."]
+    if rows:
+        ms = milestones(rows)
+        lines.append("This world's technologies by game minute (all shifts): "
+                     + ", ".join(f"{t} {m:.0f}" for t, m in ms.items() if not t.startswith("first ")))
+        firsts = [f"{t[6:]} minute {m:.0f}" for t, m in ms.items() if t.startswith("first ")]
+        if firsts:
+            lines.append("First science pack of each colour: " + ", ".join(firsts))
+        pts = [f"minute {m}: {r:.1f}" for m in range(30, int(rows[-1]["tick"] / 3600) + 1, 30)
+               for r in [rate(rows, m, PACKS)] if r is not None]
+        if pts:
+            lines.append("This world's science per minute (all packs, 10-minute window): " + ", ".join(pts))
     return "\n".join(lines)
 
 

@@ -99,7 +99,8 @@ given world may differ (read them from the world if it matters).
 ## Peaceful mode and settings
 
 - Peaceful mode: biters exist but only fight back when attacked; pollution does not trigger attack groups.
-  Our early benchmarks and co-op 1 were peaceful; shake1 used normal enemies. Rocket time achievements
+  Our early solo tests and the two-agent co-op test were peaceful; the nine-agent team runs (shake1 on)
+  used normal enemies. Rocket time achievements
   are disabled with peaceful or no enemies. Deathworld presets raise nest density and evolution factors.
 - Enemy settings: no enemies, peaceful, normal (default); map settings also set evolution and expansion.
 

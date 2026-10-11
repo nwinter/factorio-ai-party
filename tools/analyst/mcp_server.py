@@ -40,11 +40,12 @@ def game():
     return _game
 
 
-def series():
+def series(tests=False):
+    """Past runs other than this one's world; the team runs only unless tests (the solo and co-op tests)."""
     global _series
     if _series is None:
         _series = H.load_runs(exclude=[os.environ.get("ANALYST_REPLAY"), os.environ.get("ANALYST_RUN_DIR")])
-    return _series
+    return _series if tests else {k: v for k, v in _series.items() if H.is_team_run(k)}
 
 
 def done_or_none():
@@ -135,16 +136,21 @@ TOOLS = {
                     lambda a: json.dumps(trim_status(game().status()), ensure_ascii=False)[:6000]),
     "game_power": (S("Electric networks: production, demand, satisfaction, machines without power."),
                    lambda a: json.dumps(game().power(), ensure_ascii=False)[:5000]),
-    "history_at": (S("Every past run at a game minute: techs, SPM, iron plates per minute, labs, assemblers.",
-                     minute=NUM("game minute")),
+    "history_at": (S("Every past team run at a game minute: techs, SPM, iron plates per minute, labs, assemblers. "
+                     "Name a run on air by its 'say:' text, never by its code name.", minute=NUM("game minute")),
                    lambda a: H.at_text(series(), float(a["minute"]))),
-    "history_when": (S("When each past run finished a technology.", tech=STR("technology")),
+    "history_when": (S("When each past team run finished a technology.", tech=STR("technology")),
                      lambda a: H.when_text(series(), kb().resolve(a["tech"]) or a["tech"])),
     "history_milestones": (S("Game minute of every technology and first science pack in one past run.", run=STR("run name")),
-                           lambda a: "\n".join(f"{m:5.1f} min  {t}" for t, m in H.milestones(series().get(a["run"], [])).items())
-                           or f"runs: {', '.join(series())}"),
-    "history_runs": (S("Past runs with score logs, who played, length, final techs and SPM."),
-                     lambda a: H.runs_text(series())),
+                           lambda a: "\n".join(f"{m:5.1f} min  {t}" for t, m in H.milestones(series(True).get(a["run"], [])).items())
+                           or f"runs: {', '.join(series(True))}"),
+    "history_runs": (S("Past runs with score logs, who played, length, final techs and SPM, including the early solo "
+                       "and co-op tests (one or two agents, peaceful): for questions about them, not as pace benchmarks."),
+                     lambda a: H.runs_text(series(True))),
+    "history_world": (S("This run's own world across shifts: when a resumed run's earlier shifts played, and the "
+                        "world's milestones and science rate so far (empty for a first shift)."),
+                      lambda a: H.world_text(os.environ.get("ANALYST_RUN_DIR") or os.environ.get("ANALYST_REPLAY"))
+                      or "this run is the first shift of its world"),
     "history_study": (S("A study document about a past run (shake1, shake2, shake1-transcripts).", name=STR("study")),
                       lambda a: H.study_text(a["name"])[:20000]),
     "notes": (S("Curated notes: milestones, good-vs-poor-play, biters-pollution, space-age, glossary.", topic=STR("file name without .md")),

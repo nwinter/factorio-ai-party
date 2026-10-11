@@ -71,7 +71,8 @@ Single agents, peaceful (docs/PLAN.md, agent-logged game times):
 
 - Round three (turn mode, 3 h): Astra reached blue science (14 packs) at game 1h20 despite a 16-minute
   harness crash; Fable reached 12 techs, building toward oil.
-- Co-op 1 (Astra + Opus 5.5, real time, peaceful, 2 h): 25 techs including robotics; blue science consumed
+- The two-agent co-op test (coop1; on air say "the two-agent co-op test", never "coop1" or "the co-op": GPT-6
+  Astra and Claude Opus 5.5 together, base game, real time, peaceful, so no biters, 2 h): 25 techs including robotics; blue science consumed
   by 1h34; 364 blue, 1,731 green, 1,867 red packs; 32k iron plates. Roughly competent-human pace.
 - shake1 (nine agents, normal biters, real time, ~59 min; docs/studies/shake1.md): 14 techs; burner
   mining ~4m25; steam 12m42; red from assemblers ~18m17; green packs from assemblers 23m47; fully automated
@@ -81,7 +82,8 @@ Single agents, peaceful (docs/PLAN.md, agent-logged game times):
 - Mira's run (GPT-6 Astra alone, standard game with enemies): rocket at ~44 h game time
   (4 d 11 h wall clock). A first-time-human-like result; slow by experienced standards.
 - Lesson so far: more agents did not mean faster tech. Nine agents were slower than two (14 techs/h vs
-  25 in 2 h) because of duplicated work, hand logistics and raids.
+  25 in 2 h) because of duplicated work, hand logistics and raids; the two had a peaceful map, so say so when
+  using this (the solo and co-op tests are not pace benchmarks for the team runs).
 
 ## What comes next (after X, usually Y, because Z)
 

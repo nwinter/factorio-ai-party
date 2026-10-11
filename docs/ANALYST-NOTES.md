@@ -327,6 +327,38 @@ in a run.
   text (in AUDIO-NOTES, "Viewer questions answered by the analyst"): a crash-site sentence, and Space Age's goal
   (on Space Age runs, a rocket launch is a milestone, not the goal).
 
+## Round 5: coop1 on air, resumed shifts (shake4, shake5)
+
+- The "co-op" lines (docs/studies/shake4.md, mistake 8 and P2 item 10). From game minute 24, shake4's analyst
+  named coop1 or "the co-op run" in 119 spoken texts (points, judgements, headlines), and the hosts aired "Nineteen in the co-op, Vale!" with nobody having said what coop1 was.
+  Two changes. The analyst now offers only the team runs as benchmarks: shake1-4 and the Space Age pilot, in the
+  digest and in `history_at` / `history_when`. The 10 October solo and co-op tests stay in `history_runs` and
+  `history_milestones` for questions about them. Every run's label in `tools/analyst/history.py` starts with what
+  to say on air, for example "say: the two-agent co-op test; GPT-6 Astra and Claude Opus 5.5 together, base game,
+  peaceful (no biters), real time, 2 h", and the prompt asks for that wording in place of a code name. A point
+  that still compares with a test run ("coop1", "the co-op run", "turns1", "baseline1") is dropped.
+  Co-operation wording such as "co-operate" or "co-op play" is left alone.
+- Resumed shifts. shake5 resumes shake4's world n from game minute 124 (save 03:54, resumed 05:18). The history
+  already treated the shifts as one series: main's 566cb0a merges score logs through `runs/RUN/resumed-from`, and
+  the live shift excludes its own world from the benchmarks. shake5's first cycles (`runs/shake5/analyst.log`) use
+  game time throughout ("At 2h05", "two hours in", "24 technologies"), with no fresh-start wording. What they
+  lacked was the world's own past: past team runs end by minute 78, so after the resume there was no benchmark at
+  all. New: a digest section "This world's earlier shifts" and the MCP tool `history_world`. They give each shift's
+  game-minute span (the resume tick comes from start.log's "resumed at tick N"), the world's technologies by game
+  minute, the first pack of each colour, and science per minute every 30 game minutes across shifts. They also say
+  to keep game time, and that a slow minute after the resume is the agents restarting. A dry cycle on the shake5
+  replay at minute 132 used it: "Science per minute has fallen from 37.1 at minute 60 to 12.1 now."
+- A false drop seen in both logs: 19 of shake4's 70 dropped points, and 2 of shake5's first 6, failed on "number 2
+  not in facts" where the 2 was part of a name ("Logistics 2 comes next", "assembling machine 2"). The digit of a
+  knowledge-base name ending in -N is no longer checked as a figure. Past two hours a resumed shift writes the
+  game clock as "at 2h11"; that clock, within a minute of the game time, now counts as a fact the way "minute 131"
+  already did. All 7 of shake5's drops by 05:31 came from one of these two causes.
+- Viewer answers may name the solo and co-op tests when a viewer asks about them; the drop applies to talking
+  points, judgements and next-milestone lines.
+- Not changed (other branches): `tools/stream/baseline.py:62`'s "previous run on the same map" (P2 item 9). The
+  history labels now give the wording it needs: shake1-3 are "base game", shake4 is "the first nine-agent Space
+  Age team run".
+
 ## What's left
 
 - Validated live in the pilot: the flow-count semantics, and the analyst under a live team run (machine status,

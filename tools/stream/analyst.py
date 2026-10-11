@@ -46,6 +46,9 @@ buildings counts the team's own buildings, never enemies.
 %(extra)s- Say what is true, not the mistake: write "research progress is always kept", never "progress was not \
 lost"; "the wreck is scenery", never "it is not an attack". The hosts' fast writer drops the "not" and repeats the \
 mistake. The same goes for corrections.
+- Viewers have not seen the earlier runs: name a past run with what it was, as its "say:" label puts it ("shake1, \
+the first nine-agent team run"), never by a bare code name. Compare only with the team runs in the digest; the early \
+solo and co-op tests (one or two agents, peaceful maps) are not pace benchmarks, so leave them out of comparisons.
 - Never guess a number: use the digest or a tool (kb_* for exact recipes, technologies, ratios and machine stats \
 of this version; game_* for the current game; history_* for past runs; notes for pacing and good play).
 - Do no arithmetic in your head. Any computed figure (what N machines make, machines needed for a rate, research \
@@ -101,6 +104,21 @@ def log(*a):
 
 # ---- point checks ----------------------------------------------------------------------------------------------
 NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
+_LEVEL_RE = None
+
+
+def level_names_re():
+    """Names with a level number ("logistics 2", "assembling machine 2", "electric energy distribution 1"): their
+    digit is part of the name, not a figure to check (shake4 dropped about 25 points for 'number 2 not in facts')."""
+    global _LEVEL_RE
+    if _LEVEL_RE is None:
+        from kb import KB
+        k = KB(kb_version())
+        bases = {re.sub(r"-\d+$", "", n) for d in (k.techs, k.entities, getattr(k, "items", {}) or {}) for n in d
+                 if re.search(r"-\d+$", n)}
+        alts = sorted((re.escape(b).replace(r"\-", "[- ]") for b in bases), key=len, reverse=True)
+        _LEVEL_RE = re.compile(r"\b(?:" + "|".join(alts) + r")[- ]\ds?\b(?![.,]\d)", re.I) if alts else re.compile(r"(?!x)x")
+    return _LEVEL_RE
 
 
 def fact_numbers(facts):
@@ -118,8 +136,10 @@ def point_problem(p):
     text, facts = p.get("text") or "", p.get("facts") or {}
     if not text.strip():
         return "empty text"
+    if TEST_RUN_RE.search(text):
+        return "compares with an early solo or co-op test run (not a benchmark; viewers don't know it)"
     known = fact_numbers(facts)
-    for raw in NUM_RE.findall(text):
+    for raw in NUM_RE.findall(level_names_re().sub(" ", text)):
         v = float(raw.replace(",", ""))
         if not any(abs(v - k) <= max(1.0, 0.05 * abs(k)) for k in known):
             return f"number {raw} not in facts"
@@ -130,7 +150,10 @@ def point_problem(p):
     return None
 
 
+# shake4 aired "Nineteen in the co-op, Vale!" from the analyst's coop1 comparisons (docs/studies/shake4.md, mistake 8).
+TEST_RUN_RE = re.compile(r"\b(coop ?1|co-?op (run|test|game)|the co-?op\b(?!-)|turns ?(1|3h)|baseline ?1)\b", re.I)
 MINUTE_RE = re.compile(r"\bminute (\d+)\b", re.I)
+CLOCK_RE = re.compile(r"\b(\d{1,2}) ?h ?(\d{1,2})(?: ?m(?:in)?)?\b", re.I)
 
 
 def add_minute(p, minute):
@@ -142,6 +165,11 @@ def add_minute(p, minute):
         if abs(int(n) - minute) <= 1 and int(n) not in fact_numbers(p.get("facts") or {}):
             p.setdefault("facts", {})
             p["facts"].setdefault("game_minute", int(n))
+    # "at 2h11" is the same clock (shake5, a resumed shift past two hours, dropped judgements for its "2")
+    for h, m in CLOCK_RE.findall(p.get("text") or ""):
+        if abs(int(h) * 60 + int(m) - minute) <= 1:
+            p.setdefault("facts", {})
+            p["facts"].setdefault("game_time", f"{int(h)}h{int(m):02d}")
 
 
 def clean_reply(reply, minute=None):
@@ -192,7 +220,8 @@ class Digest:
         from kb import KB
         self.G, self.H = G, H
         self.kb = KB()
-        self.series = H.load_runs(exclude=[a.replay, a.run_dir])  # the current run is never its own benchmark
+        # The current run (and its world's earlier shifts) is never its own benchmark; the benchmarks are the team runs.
+        self.series = H.load_runs(exclude=[a.replay, a.run_dir], teams_only=True)
         self.a = a
         self.game = G.ReplayGame(a.replay, a.at) if a.replay else G.LiveGame(a.world, a.bot, a.player, a.surface)
 
@@ -258,7 +287,14 @@ class Digest:
             except Exception as e:
                 parts.append(f"(status unavailable: {e})")
         parts.append("## Reference rates (exact for this version; quote these instead of computing)\n" + self.reference_rates(snap))
-        parts.append("## Past runs at this game minute\n" + H.at_text(self.series, round(minute)))
+        try:
+            world = H.world_text(self.a.run_dir or self.a.replay)
+            if world:
+                parts.append("## This world's earlier shifts\n" + world)
+        except Exception as e:
+            parts.append(f"(shift history unavailable: {e})")
+        parts.append("## Past team runs at this game minute (name a run on air as its 'say:' text)\n"
+                     + H.at_text(self.series, round(minute)))
         cur = snap.get("research")
         if cur:
             parts.append(H.when_text(self.series, cur))
