@@ -510,6 +510,38 @@ def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
     return f
 
 
+# What each card on the overlay asks of the hosts. HOSTS3: the hosts "don't seem to be doing anything" while the
+# stream shows "Last N minutes", production and spotlight cards; only replays and space moments had a call.
+CARD_CALLS = {
+    "attack_replay": "as an instant replay, in the past tense, like a replay breakdown",
+    "space_moment": "a milestone for the team: celebrate it and say what it opens up",
+    "recap": "the card sums up the last few minutes: pick its best story (a technology, a death, a raid, a job "
+             "done) and tell it, with one number at most",
+    "production": "the card shows what the factory makes a minute, now against ten minutes ago: say what went up or "
+                  "down (biggest_gain, biggest_drop) and why that matters",
+    "spotlight": "the card introduces one agent: who they are, the job they are on, and something they said, "
+                 "warmly, as if introducing a player viewers should root for",
+    "research": "the card shows the research queue: what is being researched now, and what it opens up",
+    "overview": "the camera shows the whole base: describe what viewers can see of the factory and how it has grown",
+    "space": "the card shows the team's progress toward space: say where they are on the way",
+}
+
+
+def card_facts(seg):
+    """The facts of a card (a segment) on screen, and how to call it."""
+    f = {"on_screen_now": {"segment": seg.get("type"), "title": seg.get("title"),
+                           "seconds": round(seg["ends"] - seg["started"]) if seg.get("ends") and seg.get("started")
+                           else None, **(seg.get("facts") or {})}}
+    # eng/stream2: platform speed_kms is LuaSpacePlatform.speed x 60, not yet checked against the game's km/s; a
+    # spotlight's "doing" is often "walking" and its motto was most of shake7's motto filler
+    f["on_screen_now"] = drop_keys(f["on_screen_now"], ("speed_kms",) + (
+        ("doing",) if TRAVEL.match(str(f["on_screen_now"].get("doing") or "")) else ()))
+    if seg.get("type") in CARD_CALLS:
+        # not "muted" or "banner" for a replay: the first version read those production notes out on air
+        f["how_to_call_it"] = CARD_CALLS[seg["type"]]
+    return f
+
+
 def facts_for(e, s, baseline=None, deadline=None, shift=None):
     f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
     gm = re.match(r"(\d+)h(\d+)m", s.get("game_time") or "")
@@ -528,17 +560,7 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
             f.update(e.get("answer_facts") or {}, analyst_answer=e["answer"])
             f["how_to_call_it"] = "Rook says the viewer's name and question; Vale answers it from analyst_answer"
     if e["kind"] == "segment":
-        seg = e.get("segment") or {}
-        f["on_screen_now"] = {"segment": seg.get("type"), "title": seg.get("title"),
-                              "seconds": round(seg["ends"] - seg["started"]) if seg.get("ends") and seg.get("started")
-                              else None, **(seg.get("facts") or {})}
-        if seg.get("type") == "attack_replay":
-            # not "muted" or "banner": the first version read those production notes out on air
-            f["how_to_call_it"] = "as an instant replay, in the past tense, like a replay breakdown"
-        if seg.get("type") == "space_moment":
-            f["how_to_call_it"] = "a milestone for the team: celebrate it and say what it opens up"
-        # eng/stream2: platform speed_kms is LuaSpacePlatform.speed x 60, not yet checked against the game's km/s
-        f["on_screen_now"] = drop_keys(f["on_screen_now"], ("speed_kms",))
+        f.update(card_facts(e.get("segment") or {}))
     if e["kind"] == "research" and baseline and e.get("text"):
         tech = re.sub(r"^research complete:\s*", "", e["text"], flags=re.I).strip().lower().replace(" ", "-")
         mins = baseline.minutes(tech)
@@ -1566,6 +1588,14 @@ class Caster:
         facts = facts_for(e, s, self.base_for(s), self.deadline(), self.shift())
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
+        live = self.live_segment(s, margin=3) if hasattr(self, "live_segment") else None
+        if live and e["kind"] != "segment" and e["prio"] < URGENT and "on_screen_now" not in facts:
+            # a card stays up about 30 s, and the beats after its own went on as if it were not there
+            card = card_facts(live)
+            facts["on_screen_now"] = card["on_screen_now"]
+            facts["card_on_screen"] = ("a card is on screen now, so talk about what it shows first, then this beat "
+                                       "if there is room" + (f". The card: {card['how_to_call_it']}"
+                                                             if card.get("how_to_call_it") else ""))
         names = list(self.names(s).values())
         recent = list(self.recent)
         lines, backend, err, lat = [], "template", None, 0.0

@@ -726,6 +726,37 @@ c3 = _caster(w3)
 c3.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
 check("urgent beats get no rewrite", len(w3.notes) == 1, str(w3.notes))
 
+# HOSTS3: the cards on screen (recap, production, spotlight...) get their own call, and other beats talk over them
+rc = caster.card_facts({"type": "recap", "title": "Last 23 minutes", "started": now, "ends": now + 30,
+                        "facts": {"minutes": 23, "attacks": 58, "research_done": ["Military 2"]}})
+sp_ = caster.card_facts({"type": "spotlight", "title": "Spotlight: Sol", "facts": {"agent": "Sol", "doing": "walking",
+                                                                                   "motto": "Keep the furnaces warm"}})
+check("cards: recap, production and spotlight each have a call; a spotlight drops 'walking'",
+      "best story" in rc["how_to_call_it"] and rc["on_screen_now"]["attacks"] == 58 and
+      "doing" not in sp_["on_screen_now"] and "root for" in sp_["how_to_call_it"] and
+      all(k in caster.CARD_CALLS for k in ("recap", "production", "spotlight", "overview", "research")), str(sp_))
+
+
+class _FactsWriter(_Writer):
+    def exchange(self, e, facts, *a, **k):
+        self.facts = facts
+        return [("pbp", "Twenty-three minutes in one card."), ("color", "Military 2 is the big one there.")]
+
+
+fw = _FactsWriter([])
+c4 = _caster(fw)
+card = {"id": "seg-9", "type": "recap", "state": "live", "title": "Last 23 minutes", "started": now,
+        "ends": time.time() + 25, "facts": {"minutes": 23, "attacks": 58}}
+c4.say_exchange({"kind": "chat", "agent": "sol", "text": "more labs north", "t": now, "prio": 4},
+                {"agents": [], "segment": card}, "pbp", 2)
+check("a chat beat while a card is up carries the card and is told to talk about it first",
+      fw.facts.get("on_screen_now", {}).get("segment") == "recap" and "talk about what it shows first" in
+      fw.facts.get("card_on_screen", "") and "best story" in fw.facts["card_on_screen"], str(fw.facts)[:300])
+fw2 = _FactsWriter([])
+c5 = _caster(fw2)
+c5.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": [], "segment": card}, "pbp", 2)
+check("an urgent beat does not carry the card", "on_screen_now" not in fw2.facts)
+
 # Round 6 (shake5 P1 item 4): stage 3 is "Oil & blue science", and the stage fact says which packs are made
 import model  # noqa: E402
 check("stage 3 label names blue science", model.STAGE_LABELS[3] == "Oil & blue science")
