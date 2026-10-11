@@ -15,6 +15,8 @@ import pog  # noqa: E402  (tools/pog.py: Rcon client, ports, SCORE_LUA)
 # know it yet treats it as a failed mutation and stops player 1, so callers gate it on `has_bots_runtime()`.
 # `board` and `board_events` (docs/BOARD-API.md) are only sent once `describe` (read-only) lists them.
 READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events"}
+# Operator reads (eng/board audience.lua): every agent's `confess` lines, for viewers only. Gated on `describe`.
+OPERATOR_READS = {"confessions"}
 
 # Extra operator reads for the overlay (same privilege level as `pog.py score`): research progress, the costliest
 # finished technologies (to seed "recent milestones" on start), machines starved of power, and how dark it is
@@ -125,6 +127,18 @@ class Harness:
             req["bot"] = bot
         else:
             req["player"] = player or 1
+        raw = self.command(f'/silent-command rcon.print(remote.call("agent_harness", "dispatch", {lua_string(json.dumps(req))}))')
+        reply = json.loads(raw)
+        if not reply.get("ok"):
+            raise RuntimeError(f"{action}: {reply.get('error', {}).get('message', raw)}")
+        return reply.get("result", {}), reply.get("tick")
+
+    def operator_read(self, action, args=None):
+        """Operator reads (`operator: true`, no player): a failure stops nobody on a runtime that knows them, but an
+        older runtime treats the request as player 1's unknown action, so callers gate on `describe` first."""
+        if action not in OPERATOR_READS:
+            raise ValueError(f"{action} is not an operator read")
+        req = {"id": "stream-" + uuid.uuid4().hex[:12], "action": action, "args": args or {}, "operator": True}
         raw = self.command(f'/silent-command rcon.print(remote.call("agent_harness", "dispatch", {lua_string(json.dumps(req))}))')
         reply = json.loads(raw)
         if not reply.get("ok"):

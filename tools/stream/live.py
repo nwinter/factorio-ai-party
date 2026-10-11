@@ -38,6 +38,8 @@ class LiveSource:
         self.board_seq = 0
         self.board_every = 15.0
         self.next_board = 0
+        self.has_confess = False
+        self.confess_seq = 0
         self.probe()
 
     def probe(self):
@@ -194,6 +196,7 @@ class LiveSource:
             res, _ = self.h.dispatch("describe", **self.reader())
             actions = res.get("actions") or {}
             self.has_board = "board_events" in actions and "board" in actions
+            self.has_confess = "confessions" in actions
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -207,8 +210,16 @@ class LiveSource:
         if not self.has_board:
             if time.time() >= self.next_board_probe:
                 self.board_probe()
-            if not self.has_board:
-                return
+        if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
+            try:
+                res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})
+                obs["confessions"] = res.get("confessions") or []
+                if res.get("cursor") is not None:
+                    self.confess_seq = res["cursor"]
+            except Exception as e:
+                errors["confessions"] = str(e)
+        if not self.has_board:
+            return
         try:
             res, _ = self.h.dispatch("board_events", {"since_seq": self.board_seq}, **self.reader())
             events = res.get("events") or []

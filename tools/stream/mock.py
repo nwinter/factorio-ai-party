@@ -99,6 +99,18 @@ BANTER = {
 }
 
 
+# Confessionals (`confess`): asides to the viewers that teammates never see.
+CONFESS = {
+    "astra": ["Between us: the smelter column is a mess and I'm hoping nobody looks too closely.",
+              "I told Sol the ratio was perfect. It is not perfect."],
+    "opus": ["Honestly? I just like watching the steam engines puff.", "If Sonnet asks, the power dip was a test."],
+    "sonnet": ["I put the chest on the bus. I would do it again."],
+    "luna": ["Third death tonight. The biters have learned my name.", "I don't trust that wall. At all."],
+    "grok": ["The mall is too big. I know. I can't stop."],
+    "gemini": ["Two belts was a bit. It's three belts now. Don't tell anyone."],
+}
+
+
 # Team board traffic (docs/BOARD-API.md), loosely following the shakedown: requests for materials, area claims,
 # tasks taken and finished, the odd blocker, and agents asking the operator for harness tools.
 BOARD_SCRIPT = [
@@ -172,6 +184,9 @@ class MockSource:
         self.next_chat = time.time() + 2
         self.next_attack = time.time() + 20
         self.next_power = time.time() + 50
+        self.next_confess = time.time() + 20
+        self.confess_seq = 0
+        self.confessions = []
         self.power_until = 0
         self.events = []
         self.profile_change_at = time.time() + 120
@@ -386,6 +401,12 @@ class MockSource:
                                f"gun turret (by small biter)", "key": f"loss:{round(x / 32)},{round(y / 32)}", "ttl": 90,
                                "position": {"x": x, "y": y}})
             self.next_base_attack = now + r.uniform(150, 260)
+        if now >= self.next_confess:  # `confess`: a line for the viewers only (audience.lua)
+            a = r.choice([a for a in self.agents.values() if a["alive"] and a["name"] in CONFESS])
+            self.confess_seq += 1
+            self.confessions.append({"seq": self.confess_seq, "tick": int(gsec * 60), "from": a["name"],
+                                     "text": r.choice(CONFESS[a["name"]])})
+            self.next_confess = now + r.uniform(40, 90)
         score, research = self.score_at(gsec)
         obs = {
             "tick": int(gsec * 60), "paused": False, "game_seconds": gsec,
@@ -400,6 +421,7 @@ class MockSource:
             "darkness": mock_darkness(gsec),
             "events": events,
             "board_events": self.board_log[-20:],
+            "confessions": self.confessions[-10:],
         }
         for a in obs["agents"]:
             if now < self.unset.get(a["name"], 0):

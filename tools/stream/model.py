@@ -71,6 +71,28 @@ def clean_text(s):
     return re.sub(r"\[/?[a-z-]+(=[^\]]*)?\]", "", s or "")
 
 
+try:  # eng/audio's local classifier, so the overlay and the casters agree on what is conversation
+    from caster import heuristic_kind
+except Exception:  # caster.py missing or failing to import: everything from agents counts as talk
+    heuristic_kind = None
+
+
+def chat_lane(entry):
+    """'talk' (banter, strategy, emotion, `aloud`, confessionals: the big chat lane), 'log' (coordinates, counts,
+    acknowledgements, server lines: the small ticker), or 'viewer' (a viewer line relayed into the game chat, already
+    in the viewers lane)."""
+    frm = (entry.get("from") or "").lower()
+    if entry.get("viewer") or frm.startswith("viewer") or clean_text(entry.get("text")).lower().startswith("viewer "):
+        return "viewer"
+    if entry.get("confess") or entry.get("aloud"):
+        return "talk"
+    if not entry.get("agent"):
+        return "log"
+    if heuristic_kind is None:
+        return "talk"
+    return "talk" if heuristic_kind(clean_text(entry.get("text")))[0] == "voice" else "log"
+
+
 def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
@@ -137,7 +159,7 @@ class Model:
         self.agents = {}
         for name, cfg in (run.get("agents") or {}).items():
             self.agents[name] = Agent(name, cfg)
-        self.chat = deque(maxlen=60)
+        self.chat = deque(maxlen=200)  # chat_window() picks each lane's latest from here
         self.chat_seen = set()
         self.alerts = deque(maxlen=30)
         self.alert_keys = {}
@@ -170,6 +192,8 @@ class Model:
             self._ingest_agent(a, now)
         for m in obs.get("chat", []):
             self._ingest_chat(m, now)
+        for c in obs.get("confessions") or []:
+            self._ingest_confession(c, now)
         if obs.get("research"):
             self._ingest_research(obs["research"], now)
         if obs.get("produced") is not None:
@@ -245,6 +269,9 @@ class Model:
                  "text": m.get("text", ""), "t": m.get("t", now)}
         if m.get("aloud"):  # the agent asked for this line to be voiced on stream (tools/stream/caster.py)
             entry["aloud"] = True
+        if m.get("viewer"):  # a viewer's line the operator relayed into the game chat (audience.lua)
+            entry["viewer"] = m["viewer"]
+        entry["lane"] = chat_lane(entry)
         self.chat.append(entry)
         cl = None if sender else CHANGELOG_RE.match(clean_text(entry["text"]))
         if cl:
@@ -253,6 +280,27 @@ class Model:
             ag = self.agents[sender]
             ag.bump(2, now)
             ag.last_activity_t = now
+
+    def chat_window(self, talk=12, other=8):
+        """The last `talk` conversation lines and the last `other` log / viewer lines, in arrival order: logistics
+        chatter must not push the conversation off the page."""
+        msgs = list(self.chat)
+        keep = {id(m) for m in [m for m in msgs if m.get("lane") == "talk"][-talk:]}
+        keep |= {id(m) for m in [m for m in msgs if m.get("lane") != "talk"][-other:]}
+        return [m for m in msgs if id(m) in keep]
+
+    def _ingest_confession(self, c, now):
+        """audience.lua `confessions` (operator read): {seq, tick, from, text}, an agent talking to the viewers only."""
+        key = ("confess", c.get("seq"))
+        if key in self.chat_seen:
+            return
+        self.chat_seen.add(key)
+        sender = self._match_sender(c.get("from", ""))
+        entry = {"seq": f"c{c.get('seq')}", "tick": c.get("tick"), "from": c.get("from"), "agent": sender,
+                 "text": c.get("text", ""), "t": c.get("t", now), "confess": True, "lane": "talk"}
+        self.chat.append(entry)
+        if sender:
+            self.agents[sender].bump(2.5, now)
 
     def _match_sender(self, frm):
         frm = (frm or "").lower()
@@ -560,7 +608,7 @@ class Model:
             "now": now, "tick": self.tick, "paused": self.paused, "game_time": fmt_game_time(self.tick / 60),
             "title": self.run.get("title"), "subtitle": self.run.get("subtitle"),
             "agents": agents,
-            "chat": list(self.chat)[-14:],
+            "chat": self.chat_window(),
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
             "darkness": self.darkness,

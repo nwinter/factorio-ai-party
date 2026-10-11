@@ -44,7 +44,13 @@ html body.portrait #sci.many #stage-label { display: none !important; }
 /* chat: what is left (about 470 px with 9 agents: cards end at y 1329, science at 1417), big type */
 html body.portrait #chat { padding: 14px 18px 16px; }
 html body.portrait #chat .panel-title { font-size: 24px; }
-html body.portrait #chat-list { left: 16px; right: 16px; bottom: 16px; top: 52px; padding: 12px 16px 14px; gap: 16px; }
+html body.portrait #chat { gap: 10px; }
+html body.portrait #chat-list { padding: 12px 16px 14px; gap: 16px; }
+html body.portrait .vmsg { font-size: 23px; }
+html body.portrait .vhead { font-size: 15px; }
+html body.portrait #chat-ticker { height: 64px; }
+html body.portrait .tick { height: 27px; font-size: 19px; }
+html body.portrait .msg .tag { font-size: 14px; line-height: 20px; }
 html body.portrait .msg { gap: 14px; }
 html body.portrait .msg .avatar { width: 48px; height: 48px; }
 html body.portrait .msg .meta { font-size: 21px; }
@@ -52,6 +58,12 @@ html body.portrait .msg .from { max-width: 520px; }
 html body.portrait .msg .when { font-size: 17px; }
 html body.portrait .msg .text { font-size: 27px; line-height: 1.28; -webkit-line-clamp: 3; }
 html body.portrait .empty { font-size: 22px; }
+
+/* voice captions (audio.js) sit on the bottom edge of the main camera, as on landscape */
+html body.portrait #voice { left: 24px; width: 1032px; top: 693px; }
+html body.portrait #voice .cap { font-size: 30px; max-width: 1000px; }
+html body.portrait #voice .face { width: 64px; height: 64px; }
+html body.portrait #voice .who { font-size: 19px; }
 
 /* cameras, labels and alerts */
 html body.portrait .cam-label { font-size: 24px; left: 12px; top: 12px; }

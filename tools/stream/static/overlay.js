@@ -374,7 +374,10 @@
   const shown = new Map();
   function renderChat(s) {
     const list = $("chat-list");
-    const msgs = (s.chat || []).slice(-10); // the well clips the oldest; the mask fades them out
+    const all = s.chat || [];
+    // talk lane: conversation and confessionals (model.chat_lane); logistics go to the ticker, viewers to their lane
+    const msgs = all.filter((m) => (m.lane || "talk") === "talk").slice(-10); // the well clips the oldest
+    renderTicker(s, all.filter((m) => m.lane === "log").slice(-2));
     const keys = new Set();
     for (const m of msgs) {
       const key = String(m.seq ?? m.tick + m.from + m.text);
@@ -382,13 +385,15 @@
       let node = shown.get(key);
       const ag = agentFor(s, m);
       if (!node) {
-        node = el("div", "msg" + (ag ? "" : " server") + (m.aloud ? " aloud" : ""));
+        node = el("div", "msg" + (ag ? "" : " server") + (m.aloud ? " aloud" : "") + (m.confess ? " confess" : ""));
         node._av = avatar(ag || { name: m.from || "server", display_name: m.from || "server", color: "#5a4a2e", glyph: "⚙", tool: true }, "sm");
         const content = el("div", "content");
         const meta = el("div", "meta");
         node._from = el("span", "from");
         node._when = el("span", "when");
-        meta.append(node._from, node._when);
+        meta.append(node._from);
+        if (m.confess) meta.append(el("span", "tag", "to camera"));
+        meta.append(node._when);
         node._text = el("div", "text", clean(m.text));
         content.append(meta, node._text);
         node.append(node._av, content);
@@ -408,6 +413,54 @@
       empty = el("div", "empty", s.errors && s.errors.chat ? "Chat unavailable (no connected reader)" : "No messages yet");
       list.appendChild(empty);
     } else if (msgs.length && empty) empty.remove();
+  }
+
+  // logistics ticker: the last two coordination lines, one line each
+  const ticks = new Map();
+  function renderTicker(s, lines) {
+    const box = $("chat-ticker");
+    const keys = new Set();
+    for (const m of lines) {
+      const key = String(m.seq ?? m.tick + m.from + m.text);
+      keys.add(key);
+      let n = ticks.get(key);
+      const ag = agentFor(s, m);
+      if (!n) {
+        n = el("div", "tick");
+        if (ag) { applyPalette(n, ag); n.append(avatar(ag, "xxs")); }
+        n.append(el("span", "tfrom", ag ? ag.display_name : m.from || "server"), el("span", "ttext", clean(m.text)));
+        n._when = el("span", "twhen");
+        n.append(n._when);
+        box.appendChild(n);
+        ticks.set(key, n);
+      }
+      setText(n._when, ago(s.now - (m.t || s.now)));
+    }
+    for (const [key, n] of ticks) if (!keys.has(key)) { n.remove(); ticks.delete(key); }
+  }
+
+  // viewers lane (viewers.py via serve.py): the last two messages that passed the filters, while recent
+  const VIEWER_RECENT_S = 300;
+  const vnodes = new Map();
+  function renderViewers(s) {
+    const lane = $("viewer-lane");
+    const list = $("viewer-list");
+    const msgs = (s.viewers || []).filter((v) => s.now - (v.t || 0) < VIEWER_RECENT_S).slice(-2);
+    lane.hidden = !msgs.length;
+    const keys = new Set();
+    for (const v of msgs) {
+      const key = String(v.id || v.seq);
+      keys.add(key);
+      if (vnodes.has(key)) continue;
+      const n = el("div", "vmsg");
+      // names and text are viewers' own words: textContent only (el() never parses HTML)
+      n.append(el("span", "src" + (v.source === "site" ? " site" : ""), v.source === "site" ? "SITE" : "YT"),
+        el("span", "vname" + (v.staff ? " staff" : ""), v.name || "viewer"), el("span", "vtext", v.text || ""));
+      if (v.order) n.append(el("span", "order", "to the agents"));
+      list.appendChild(n);
+      vnodes.set(key, n);
+    }
+    for (const [key, n] of vnodes) if (!keys.has(key)) { n.remove(); vnodes.delete(key); }
   }
 
   // ---------- team board: recent events, open unowned requests, active claims, harness changelog ----------
@@ -680,10 +733,12 @@
 
   function render(s) {
     state = s;
+    window.pogState = s; // audio.js finds speaking agents' avatars here
     renderHead(s);
     renderCards(s);
     renderProduction(s);
     renderChat(s);
+    renderViewers(s);
     renderBoard(s);
     renderAlerts(s);
     renderCams(s);

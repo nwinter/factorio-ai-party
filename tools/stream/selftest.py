@@ -350,6 +350,20 @@ def main():
     rpl.follow_segment(t7 + 50)
     assert fobs.program == "stream"
 
+    # chat lanes: conversation and confessionals talk, coordination goes to the ticker, relayed viewer lines skip both
+    m9 = Model({"agents": {"astra": {}, "luna": {}}})
+    m9.ingest({"chat": [
+        {"seq": 1, "tick": 1, "from": "astra", "text": "Placed 4 inserters at (12,-3), moving to iron"},
+        {"seq": 2, "tick": 2, "from": "luna", "text": "Wall held. Barely. Somebody send ammo!"},
+        {"seq": 3, "tick": 3, "from": "astra", "text": "on it", "aloud": True},
+        {"seq": 4, "tick": 4, "from": "viewer cy", "text": "you are doing great", "viewer": True},
+        {"seq": 5, "tick": 5, "from": "server", "text": "server: harness v5: board"}],
+        "confessions": [{"seq": 1, "tick": 6, "from": "luna", "text": "I don't trust that wall."}]})
+    lanes = [(c["seq"], c["lane"]) for c in m9.snapshot(time.time())["chat"]]
+    assert lanes == [(1, "log"), (2, "talk"), (3, "talk"), (4, "viewer"), (5, "log"), ("c1", "talk")], lanes
+    m9.ingest({"confessions": [{"seq": 1, "tick": 6, "from": "luna", "text": "I don't trust that wall."}]})
+    assert sum(1 for c in m9.chat if c.get("confess")) == 1  # confessions dedup by their own seq
+
     # night lift: filter created on each capture, ramps toward the darkness, settles back by day
     import nightlift as nl
 

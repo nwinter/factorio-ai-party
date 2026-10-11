@@ -333,9 +333,13 @@ body.preview .cam::after {
 #board-claims .more { flex: none; color: var(--faint); }
 
 /* ---- chat: the biggest panel; messages sit in a deep well ---- */
-#chat { position: relative; flex: 1; min-height: 0; box-sizing: border-box; padding: 10px 14px 12px; overflow: hidden; }
+/* lanes, top to bottom: talk (banter, strategy, emotion, aloud, confessionals; big), viewers (while any are recent),
+   logistics ticker (coordinates, counts, acknowledgements, server lines; two small lines) */
+#chat { position: relative; flex: 1; min-height: 0; box-sizing: border-box; padding: 10px 12px 10px; overflow: hidden;
+  display: flex; flex-direction: column; gap: 7px; }
+#chat > .panel-title { flex: none; padding: 0 2px; }
 #chat-list {
-  position: absolute; left: 12px; right: 12px; bottom: 12px; top: 36px; box-sizing: border-box; padding: 8px 12px 10px;
+  position: relative; flex: 1; min-height: 0; box-sizing: border-box; padding: 8px 12px 10px;
   border-radius: var(--fx-r-1); background: var(--well); box-shadow: var(--fx-inset-shadow);
   display: flex; flex-direction: column; justify-content: flex-end; gap: 11px; overflow: hidden;
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 40px);
@@ -355,6 +359,36 @@ body.preview .cam::after {
 }
 .msg.server .from { color: var(--fx-orange); }
 .msg.aloud .text::before { content: "🔊 "; font-family: var(--emoji); font-size: 0.8em; }
+/* confessionals: an aside to the viewers that teammates never see */
+.msg.confess { margin-left: -6px; padding: 5px 8px 6px 6px; border-left: 3px solid var(--agent, var(--fx-orange)); border-radius: 0 var(--fx-r-1) var(--fx-r-1) 0;
+  background: linear-gradient(90deg, rgba(var(--fx-orange-rgb), 0.12), transparent 80%); }
+.msg.confess .text { font-style: italic; color: var(--head); }
+.msg .tag { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 6px; line-height: 16px;
+  border-radius: var(--fx-r-1); background: linear-gradient(180deg, #ffc56b, var(--fx-orange)); color: var(--fx-text-dark); }
+
+/* viewers lane */
+#viewer-lane { flex: none; display: flex; flex-direction: column; gap: 3px; padding: 5px 10px 6px; border-radius: var(--fx-r-1);
+  background: rgba(var(--fx-blue-rgb), 0.08); box-shadow: inset 0 0 0 1px rgba(var(--fx-blue-rgb), 0.35); }
+#viewer-lane[hidden] { display: none; }
+.vhead { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fx-blue); }
+#viewer-list { display: flex; flex-direction: column; gap: 3px; }
+.vmsg { display: flex; align-items: baseline; gap: 7px; font-size: 15px; line-height: 1.25; min-width: 0; animation: rise-in 450ms ease both; }
+.vmsg .src { flex: none; font-size: 10px; font-weight: 700; padding: 0 4px; line-height: 15px; border-radius: 2px; color: #fff; background: #c4302b; }
+.vmsg .src.site { background: var(--fx-blue); color: var(--fx-text-dark); }
+.vmsg .vname { flex: none; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; color: #9cc8ff; }
+.vmsg .vname.staff { color: var(--fx-yellow); }
+.vmsg .vtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e6e6e6; }
+.vmsg .order { flex: none; font-size: 10.5px; color: var(--fx-orange); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* logistics ticker */
+#chat-ticker { flex: none; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px; height: 46px; box-sizing: border-box;
+  border-radius: var(--fx-r-1); background: rgba(0, 0, 0, 0.22); overflow: hidden; }
+#chat-ticker:empty { display: none; }
+.tick { display: flex; align-items: center; gap: 6px; height: 19px; font-size: 13.5px; white-space: nowrap; color: var(--muted); min-width: 0; animation: rise-in 450ms ease both; }
+.tick .avatar { width: 18px !important; height: 18px !important; flex: none; }
+.tick .tfrom { flex: none; font-weight: 700; color: var(--agent-ink, var(--muted)); }
+.tick .ttext { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.tick .twhen { flex: none; margin-left: auto; color: var(--faint); font-size: 12px; }
 .empty { color: var(--faint); font-size: 15px; }
 
 /* ---- segments (segments.py): analysis panels cover the main camera; spotlight/overview are a card on it ---- */
