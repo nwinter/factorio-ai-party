@@ -131,6 +131,12 @@ eq(bot('profile',{voice='Orion'}).voice,'orion'); eq(bot('profile',{}).voice,'or
 local listed; for _,row in ipairs(bot('profiles',{}).profiles) do if row.name=='astra' then listed=row end end
 eq(listed.voice,'orion')
 fails(function() bot('profile',{voice=string.rep('x',17)}) end,'voice must be 1..16')
+-- pronouns: free text for the casters, listed in profiles; "" clears.
+eq(bot('profile',{pronouns='she/her'}).pronouns,'she/her')
+for _,row in ipairs(bot('profiles',{}).profiles) do if row.name=='astra' then listed=row end end
+eq(listed.pronouns,'she/her')
+fails(function() bot('profile',{pronouns=string.rep('x',33)}) end,'pronouns must be 0..32')
+eq(bot('profile',{pronouns=''}).pronouns,nil)
 -- avatar: a few named parts, validated and stored as sent; false clears.
 eq(bot('profile',{}).avatar,nil)
 local av=bot('profile',{avatar={base='robot',helmet='power',visor='mono',emblem='gear',accessory='antenna',backdrop='hazard',accent='#33CCFF'}}).avatar

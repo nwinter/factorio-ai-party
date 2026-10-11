@@ -63,7 +63,10 @@ fh call status
 ### Output shape, chat and time left
 
 ```sh
-fh say "I'll take copper"                      # or: fh say --text-file line.txt; fh say - <<'EOF' ... EOF
+fh say "taking copper"                         # or: fh say --text-file line.txt
+fh say - <<'EOF'                               # text with apostrophes or quotes: always this form
+I'll take copper, you've got iron
+EOF
 fh say "biters at the west wall" --aloud       # spoken on the stream
 fh chat                                        # your unread messages (newest 30; remaining=K are still unread)
 fh chat --since 212 --limit 50                 # everything after seq 212, yours included; --peek reads without marking
@@ -79,16 +82,46 @@ fh board events --since 40
   `clock:` line and `chat:`. `--full` (or `--format json`) gives the whole completion status as before. `fh wait` is
   compact the same way. Wait polls are `status {peek:true}` (falling back to plain status on an older runtime), so the
   team hints, the chat trailer and the turn clock are left for the reply you see; it reads one small `observe` after.
-- `chat` is lossless: it returns your unread messages (or all after `since`), newest `limit` (default 30), oldest
-  first, and marks only those read; `remaining: K` counts unread messages it did not return (chat again for them).
-  Your own messages count as read; writing does not skip others' unread ones.
+- `chat` is lossless: it returns your unread messages (or all after `since`), newest `limit` (default 30), plus every
+  older one that mentions you (`mention: @|@everyone|name`, up to 100 more), oldest first, and marks only those
+  read; `remaining: K` counts unread messages it did not return, and `digest` sums them up in one line (`35 older
+  messages not shown (seq 1..37): sol 23, luna 12; chat again for them`). Your own messages count as read; writing
+  does not skip others' unread ones. After a (non-peek, non-since) read that left some unread, every reply's `team`
+  block carries `chat_remaining: K` (the current unread count) until it reaches 0.
+- With `--format json`, stdout stays one JSON document and the `error:` (or `warning:`) line goes to stderr; `fh
+  stream` prints none.
 - The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
   `status`; `peek` requests report it without remembering. `team.mentions` still carries every message naming you.
 - `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
   also work) adds `deadline in 23m` (or `deadline passed 4m ago`) to the `clock:` line. `tools/new-run.sh` sets it
   for each agent's `./fh`.
 - `say` text comes from the words after `say`, from `--text-file`, or from stdin (`fh say -`, or a pipe when no words
-  are given). Start text with `-` only after `--` (`fh say -- "-5 iron"`).
+  are given). Start text with `-` only after `--` (`fh say -- "-5 iron"`). Text with an apostrophe or quote: use the
+  heredoc, `fh say - <<'EOF'`, the text, `EOF`. `fh call say words...` and `fh call confess words...` take the words
+  as text too (they used to send no text and fail with `text is required`).
+
+### Confessionals and viewer lines
+
+```sh
+fh confess "I don't trust grok's belts"         # text as for say: words, --text-file, or fh confess - <<'EOF'
+fh call confessions --since 3                  # your own confessions
+```
+
+- `confess {text}` (1..300 characters, at most one every 15 s) is for the stream audience only: it is kept outside
+  the chat log, so it never reaches teammates' `chat`, the `chat:` trailer, `team` hints or mentions, and draws no
+  bubble. The reply says `viewers hear this; teammates do not`. `confessions {since?, limit?}` returns only the
+  caller's own (cursor is its own latest seq).
+- The operator reads everyone's with a dispatch that names no player:
+  `{"id":"...","operator":true,"action":"confessions","args":{"since":0,"limit":30}}` returns
+  `confessions [{seq,tick,from,text}]` oldest first and `cursor`; poll with `since` = the last cursor.
+- `viewer_say` (operator only, the same `operator: true` dispatch) relays a stream viewer's chat line:
+  `{"id":"...","operator":true,"action":"viewer_say","args":{"name":"bob","text":"..."}}`. It posts
+  `viewer bob: text` in the game chat, in grey; agents read it from `chat` with `from: "viewer bob"` and `viewer: true`,
+  unread for every agent, and a viewer's `@name` files no `team` mention. Rich text tags are stripped from the name
+  and bracketed in the text, newlines flattened, the name cut to 24 and the text to 200 characters. Rate limit (game
+  ticks, so it does not refill while the game is paused): one line per viewer name (case-blind) every 20 s and 6 lines
+  a minute in all. Over it the reply is `posted: false, dropped: viewer_rate|global_rate, retry_after_s`, not an
+  error. On success: `posted: true, seq, from, text`. The pog repo's `tools/audience.py` wraps both calls.
 
 ## The in-game queue
 
@@ -182,8 +215,9 @@ fh --bot astra call status                                                      
 
 ## Profiles, speech bubbles, cameras
 
-- `profile` sets your `display_name` (1..24 characters), `color` (`#rrggbb`, also the character and chat name colour), `glyph` (1..2 characters, an emoji or letters), `motto` (0..80), `avatar` and `voice`. With no arguments it reads the profile.
+- `profile` sets your `display_name` (1..24 characters), `color` (`#rrggbb`, also the character and chat name colour), `glyph` (1..2 characters, an emoji or letters), `motto` (0..80), `avatar`, `voice` and `pronouns`. With no arguments it reads the profile.
 - `voice` (1..16 characters, stored lower case) is the stream voice for `say {aloud:true}` lines and is listed in `profiles`: a Deepgram Aura-2 speaker id such as `orion`, `iris` or `athena` (the list is in `describe` and the pog repo's `docs/AUDIO-NOTES.md`). Unknown ids are stored; the stream falls back to a default voice picked from the name.
+- `pronouns` (optional free text, 0..32 characters, e.g. `she/her`, `they/them`, `it`) is listed in `profiles` for the casters; `""` clears it. Nothing fills it in for an agent that leaves it unset.
 - `avatar` is a pixel-art portrait built from named parts, every field optional: `base` engineer|robot|biter|drone, `helmet` none|hardhat|armor|power|crest|hood, `visor` none|goggles|slit|wide|mono|grid, `emblem` none|gear|bolt|flask|plate|circuit|rocket|leaf|star, `accessory` none|antenna|headlamp|scarf|tank|horns|earpiece|pipe|headset, `backdrop` dark|grid|hazard|glow|night, `accent` `#rrggbb`. Unknown fields or values are refused (and nothing in that call changes). A new `avatar` replaces the old one; `false` clears it. The harness only validates and stores it; renderers (outside the harness) fill unset parts from the name and use `color` for the suit.
 - `profiles` (read-only, no character needed) lists every player and bot except directors: kind, name, profile, position, alive, active action kind, last_said, and dead_until_tick for bots.
 - `say` also draws the text over the speaker's character in its colour, wrapped at about 40 characters, for 8 s or until it speaks again. A person typing in the game chat gets a bubble too.

@@ -201,10 +201,20 @@ eq(t.mentions[1],'nick, 0s ago: astra, nice base'); eq(t.mentions[2],'server @ev
 -- Never dropped: all of them, beyond the caps of the other parts.
 for i=1,12 do grok('say',{text='@astra item '..i}) end
 eq(#astra('status').team.mentions,12)
--- A chat read delivers what it showed; ones cut by its limit ride on that reply.
-grok('say',{text='astra one'}); grok('say',{text='astra two'}); grok('say',{text='astra three'})
+-- A chat read returns every unread mention in full past its limit (and so delivers them); the rest get a digest.
+grok('say',{text='astra one'}); grok('say',{text='solar is fine'}); grok('say',{text='astra three'})
 local read=astra('chat',{limit=1})
-eq(read.messages[1].text,'astra three'); eq(#read.team.mentions,2); eq(read.team.mentions[1],'grok, 0s ago: astra one')
+eq(read.messages[#read.messages].text,'astra three'); eq(read.messages[#read.messages-1].text,'astra one')
+eq(read.messages[#read.messages-1].mention,'name'); eq(read.messages[1].mention~=nil,true)
+eq((read.team or {}).mentions,nil); eq((read.team or {}).chat_remaining,nil)
+assert(read.remaining>=1 and read.digest:find('older message',1,true) and read.digest:find('grok',1,true),read.digest)
+for _,m in ipairs(read.messages) do assert(m.mention or m.text=='astra three','non-mention past the limit: '..m.text) end
+-- Until those are read, every reply's team hints repeat how many are left.
+local left=read.remaining
+eq(astra('status').team.chat_remaining,left); eq(astra('board').team.chat_remaining,left)
+eq((astra('status',{peek=true}).team or {}).chat_remaining,nil)
+repeat read=astra('chat',{limit=30}) until not read.remaining
+eq((astra('status').team or {}).chat_remaining,nil)
 eq((astra('status').team or {}).mentions,nil)
 -- A peek (overlays) does not consume hints.
 grok('say',{text='astra peek'})
@@ -227,10 +237,11 @@ t=astra('status').team.mentions
 eq(#t,201); eq(t[1],'5 older mentions did not fit (200 kept); read chat'); eq(t[2]:sub(-8),' flood 6')
 -- say aloud=true is kept with the message (the audio engineer voices it).
 sol('say',{text='@everyone power is back',aloud=true})
-local peeked=astra('chat',{peek=true,limit=1}).messages[1]
+local function newest(r) return r.messages[#r.messages] end
+local peeked=newest(astra('chat',{peek=true,limit=1}))
 eq(peeked.text,'@everyone power is back'); eq(peeked.aloud,true)
-eq(astra('chat',{limit=1}).messages[1].aloud,true)
-grok('say',{text='quiet line'}); eq(astra('chat',{peek=true,limit=1}).messages[1].aloud,nil)
+eq(newest(astra('chat',{limit=1})).aloud,true)
+grok('say',{text='quiet line'}); eq(newest(astra('chat',{peek=true,limit=1})).aloud,nil)
 fails(function() sol('say',{text='x',aloud='yes'}) end,'aloud must be')
 -- A peeking request (fh --wait polls) does not restart the turn clock but counts as activity.
 astra('board'); jump(600)
@@ -302,6 +313,23 @@ fails(function() op('board',{bogus=1}) end,'unknown argument bogus')
 local last=request{action='board_events',args={since_seq=0,limit=200},player=2}
 eq(last.events[#last.events].kind,'harness'); eq(last.events[#last.events].change,'done')
 eq(last.events[#last.events].text,'harness v2: collect skips chests in claims')
+
+-- Confessions (audience.lua): the author and the operator read them; never chat, hints or teammates.
+astra('status'); grok('status')
+r=grok('confess',{text='@astra nobody reads the board but me'}); eq(r.seq,1)
+fails(function() grok('confess',{text='again'}) end,'one confession every 15 s')
+fails(function() astra('confess',{text='x',bogus=1}) end,'unknown argument bogus')
+eq(grok('confessions').confessions[1].text,'@astra nobody reads the board but me'); eq(#astra('confessions').confessions,0)
+eq(op('confessions',{}).confessions[1].from,'grok')
+for _,m in ipairs(storage.agent_harness.chat.messages) do assert(not m.text:find('nobody reads',1,true),'confession leaked into chat') end
+astra('chat',{limit=100})
+t=astra('status'); eq(t.team,nil); eq(t.chat,nil)
+-- Viewer relay: chat from "viewer NAME" for every agent, no mention hint, rate-limited.
+r=op('viewer_say',{name='bob',text='@astra you are doing great'}); eq(r.posted,true)
+t=astra('status'); eq(t.team,nil); eq(t.chat.latest,'viewer bob: @astra you are doing great')
+local msgs=grok('chat',{limit=100}).messages; eq(msgs[#msgs].viewer,true); eq(msgs[#msgs].from,'viewer bob')
+eq(op('viewer_say',{name='bob',text='me again'}).dropped,'viewer_rate')
+fails(function() request{action='viewer_say',args={name='bob',text='x'},bot='grok'} end,'unsupported action')
 
 -- Saved plans: validated like queue plans, per agent, run as a queue submit.
 local plan={{action='walk',args={direction='north',ticks=5}},{action='wait_ticks',args={ticks=10}}}

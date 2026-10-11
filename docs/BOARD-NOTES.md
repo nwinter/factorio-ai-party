@@ -256,3 +256,111 @@ runtime.lua's dispatch and clock_line, one in board.lua); control.lua is unchang
 - Zone abbreviations are a fixed table (US, UK/EU, India, Japan, Australia east). Others fall back to local time.
 - The trailer's "changed" state is per player in the save; a reconnecting client or a new wrapper does not reset it,
   and `status` is the way to see it again.
+
+## Round 3: confessionals, pronouns, viewer chat relay (ROUND3.md)
+
+Runtime only (no control.lua change): a new sibling module `audience.lua`, small hooks in `chat.lua`, `profiles.lua`
+and `runtime.lua`. Operator calls ride the existing `operator: true` dispatch (as `tools/harness-requests.py` does),
+so no new remote function was needed.
+
+### What changed
+
+- `fh confess "..."` (text as for `say`: words, `--text-file`, stdin) calls `confess {text}`: 1..300 characters, one
+  every 15 s per agent. It is stored in `storage.agent_harness.audience.confessions` (last 200), never in the chat
+  log, so it reaches no teammate's `chat`, trailer, `team` hints or mentions, and draws no bubble. Agents can read
+  their own (`confessions`, cursor = their own latest seq so they cannot count others'). The overlay, voices and
+  casters read everyone's with `{"operator":true,"action":"confessions","args":{"since":N}}`
+  (`confessions [{seq,tick,from,text}]`, `cursor`). agent/team.md has one neutral line: viewers hear it, teammates
+  don't.
+- `profile {pronouns}`: free text 0..32, `""` clears, listed in `profiles`. agent/team.md mentions it as optional in
+  the Identity bullet. Nothing defaults it.
+- `viewer_say {name, text}` (operator dispatch only; an agent's `fh call viewer_say` is `unsupported action`) posts
+  `viewer NAME: text` to the game chat in grey and to the chat log with `from: "viewer NAME"`, `viewer: true` and no
+  player, so it is unread for every agent and shows in the `chat:` trailer as `latest=viewer bob: ...`. It files no
+  `team` mention (a viewer's `@astra` would otherwise jump the queue of teammates' mentions). Rich text tags are
+  stripped from names and bracketed in text. Rate limit in the harness: one line per viewer (case-blind) every 20 s,
+  6 a minute in all, in game ticks; a dropped line is `posted:false, dropped, retry_after_s` (not an error), so the
+  bridge can drop or retry without parsing errors.
+- `tools/audience.py viewer NAME TEXT` and `tools/audience.py confessions [--since]` wrap both (exit 3 on a dropped
+  line). It refuses worlds a, b, c and n unless `POG_AUDIENCE_ANY_WORLD=1`; I wrote that guard while keeping off run
+  worlds, then tried to remove it as a session constraint baked into an operator tool, and a guardrail hook blocked
+  the edit. Remove it if the bridge should target run worlds without the variable.
+
+### Decisions to check
+
+- Confession cooldown 15 s and length 300; viewer limits 20 s per name and 6 a minute. All are constants at the top of
+  `audience.lua`.
+- Viewer lines skip mention filing. If viewers should be able to ping an agent, drop the `not viewer` check in
+  `chat.lua`'s `append` (they would then appear in `team.mentions`).
+- The stream side is not wired: `tools/stream/live.py` should poll `confessions` with the operator dispatch (its
+  `Harness.dispatch` only sends player/bot reads today) and copy `pronouns` from `profiles` like `voice`; the caster
+  can then use pronouns and voice confessions. I left `tools/stream` to its owners.
+
+### Verification
+
+- Lua: `tests/audience.lua` (new), plus dispatch tests in `tests/board.lua` (confess as a bot, cooldown, unknown
+  argument, own-only reads, operator read, no chat line, no team hint, viewer line in the trailer and `chat` with
+  `viewer: true`, no mention hint, agent cannot call `viewer_say`) and `tests/bots.lua` (pronouns). `tests/cli.test.ts`
+  covers `fh confess` input forms and `--aloud` refusal. `npm test`: 91 pass, the same 4 bridge tests fail on the
+  sandbox's `listen EPERM`.
+- Live (world `live`, runtime from a scratch merge of eng/board and eng/harness2 at ca7e2fc, sha 2177cfb2...):
+  astra confessed (seq 1), a second within 15 s failed with `error: action_failed: one confession every 15 s; next in
+  12 s`; grok's `confessions` was empty and grok's chat trailer unchanged; `tools/audience.py confessions` printed
+  astra's line. `tools/audience.py viewer` posted #228 and #229; astra's `chat` showed both with `viewer: true` and no
+  `team` block; the same name again printed `dropped: viewer_rate ...; retry in 13 s` (exit 3). Pronouns `she/her`
+  showed in `profiles`, then I cleared them so no agent carries pronouns it did not choose. Fixed after the live run
+  (and redeployed): the agent cursor leak and whole-tag stripping in names (`Bob [color=red]42[/color]` had come out as
+  `Bob color=red42/color`; then `viewer Ann 42` for `Ann [color=red]42[/color]`). An empty `confessions` list comes back
+  as `{}` (Factorio's JSON for an empty table), like other empty lists; readers should accept both.
+
+## Round 3, if time allows: shake2 study P2 items 7 to 9
+
+### What changed
+
+- Item 7, chat that gets drained. A `chat` read returns the newest `limit` plus every older unread message that
+  mentions the reader (`mention: @|@everyone|name`, matched by board.lua's rules via the new `board.mention_of`, up to
+  100 more), and `digest`, one line for the unread ones it left: `11 older messages not shown (seq 220..232): h2-b 3,
+  smoke-grok 2, ...; chat again for them`. Only returned messages are marked read (round 2's lossless rule stands), so
+  the digest does not drain by itself; instead, after a non-peek, non-since read that left some, every reply's `team`
+  block carries `chat_remaining: K` (the current unread count) until it is 0. Viewer lines never count as mentions.
+- Item 8, quote-safe `say`. Luna's 6 `text is required` failures sent `say` with `args: {}` (journal). The current
+  `fh say` refuses empty text before sending, so these came another way; the one path I found is `fh call say words...`,
+  which dropped the words. It now sends them as text (also `call confess`), and with neither words nor `--args` it goes
+  the `fh say` way (stdin or a client error). Her transcript is not in the run folder, so the exact command is not
+  confirmed. The Lua error now names the working forms. agent/team.md, agent/coop.md and usage.md document only the
+  heredoc for text with apostrophes or quotes (the old `fh say "I'll take copper"` example is gone).
+- Item 9. With `--format json`, stdout stays one JSON document (tools/overlay.py and tools/chat-log.py `json.loads` it)
+  and the same `error:` (or `warning:`) line compact output ends with goes to stderr. `fh stream` prints none.
+
+### Decisions to check
+
+- Mentions past the limit include plain-name mentions (`name`), not only `@`; with chatty teams that can return many
+  more than `limit` lines. The 100 cap bounds it.
+- `chat_remaining` sits in `team` (as the study asks) in addition to the `chat:` trailer, which still shows only when
+  a newer message arrived (and on `status`).
+- The error line on stderr: an agent that pipes only stdout (`| tail -1` without `2>&1`) still sees just the JSON
+  (which has `"ok":false`). Putting it on stdout would break the repo's JSON readers.
+
+### Verification
+
+- `tests/chat.lua` (mentions past the limit, digest text, `left` counts, peek and since leave it alone),
+  `tests/board.lua` (dispatch: mention in full past `limit=1`, `team.chat_remaining` on status and board, not on peek,
+  gone after draining), `tests/cli.test.ts` (`call say words`, `call confess`, json error and warning on stderr with
+  stdout still JSON, nothing on stderr for a clean reply). `npm test`: 93 pass, the same 4 sandbox failures.
+- Live, after deploying a merge of eng/board and eng/harness2 at 7491ca8 (sha 83e5705d, about 00:09): grok's
+  `@astra item 7 check` followed by two sol lines; `fh chat --limit 2` as astra returned the mention (`mention: @`) and
+  both newer lines, `remaining: 11` and the digest; `fh board` then showed `team: chat_remaining=11`; a full read
+  returned the 11 (viewer line flagged) and the next `fh board` had no `chat_remaining`. `fh call say "it's call say
+  with words now"` posted seq 236. A failing `build --format json` printed the JSON on stdout and `error:
+  action_failed: unknown argument name for build; ...` on stderr, exit 1. World saved.
+
+### Coordination
+
+- My first two deploys tonight (about 23:57 and 00:02) carried only harness2's ca7e2fc; harness2 had meanwhile
+  committed name tags, tint and avatar sprites (341d688, e1e0d5e, 7491ca8), so if their runtime was on live those
+  deploys replaced it for about ten minutes. The 00:09 deploy includes them. Merging eng/harness2 into eng/board
+  conflicts only in the `tests/lua.test.ts` file list (keep both `tests/audience.lua` and `tests/nametags.lua`);
+  all Lua suites pass on the merge. pog-harness2-b3 was told. A session named pog-harness3-ed started shortly
+  before midnight; I did not contact it, and do not know whether it deploys to live.
+- The scratch worktrees `scratchpad/merge` (round 2) and `scratchpad/merge3` (this round, with a throwaway detached
+  commit and an unfinished merge) are still registered; a hook blocked `merge --abort` and `worktree remove --force`.

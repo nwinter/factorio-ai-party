@@ -9,7 +9,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { RconClient, RconOutcomeUnknown } from './rcon.js';
 import { Harness, type Reply } from './harness.js';
 import { renderMap } from './view.js';
-import { formatCompact } from './format.js';
+import { formatCompact, finalLine } from './format.js';
 import { parseDeadline, deadlineText } from './deadline.js';
 import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
@@ -48,6 +48,7 @@ const help = `fh — Factorio agent CLI
   fh plan run|show|delete NAME, fh plan list Run (--args '{"mode":"replace"}'), inspect or delete saved plans
   fh say "text" [--aloud]                   Post in chat; or --text-file F, or stdin (fh say - <<'EOF' ... EOF)
   fh chat [--since SEQ] [--limit N] [--peek] Your unread messages (newest N; remaining=K are still unread), or all after SEQ
+  fh confess "text"                         A line for the stream audience only (teammates never see it); input as for say
   fh stream                                 JSON-lines requests in, replies out; one connection
   fh run --file plan.json                    Sequential actions, waits after each timed action
 
@@ -82,9 +83,16 @@ function withDeadline(value: unknown): unknown {
   if (deadline === undefined || !result || typeof result.clock !== 'string') return value;
   return {...value as Reply, result:{...result, clock:`${result.clock}; ${deadlineText(deadline)}`}};
 }
+let streaming = false;
 function output(value: unknown) {
   value = withDeadline(value);
   process.stdout.write(outputFormat === 'compact' ? formatCompact(value) : JSON.stringify(value) + '\n');
+  // JSON stays one document on stdout; the error:/warning: line goes to stderr
+  // so a reader of the terminal (or 2>&1 | tail -1) still sees it.
+  if (outputFormat === 'json' && !streaming) {
+    const line = finalLine(value);
+    if (line) process.stderr.write(line + '\n');
+  }
 }
 async function readStdin(waitMs?: number): Promise<string> {
   const chunks: Buffer[] = [];
@@ -129,6 +137,7 @@ async function main() {
   if (!command || values.help || command === 'help') { process.stdout.write(help); return; }
   if (values.format && !['json','compact'].includes(values.format)) throw new Error('--format must be json or compact');
   outputFormat = command === 'stream' || values.format === 'json' ? 'json' : 'compact';
+  streaming = command === 'stream';
   const deadlineFile = values['deadline-file'] ?? process.env.FH_DEADLINE_FILE;
   if (deadlineFile) {
     // A missing or unreadable deadline only drops the time left, never the request.
@@ -217,7 +226,12 @@ async function main() {
     positionals[1] = operation === 'save' || operation === 'delete' ? 'plan_save' : operation === 'run' ? 'plan_run' : 'plans';
     command = 'call';
   }
-  if (command === 'say') {
+  // `fh call say words...` used to drop the words and send {} ("text is required").
+  if (command === 'call' && (positionals[1] === 'say' || positionals[1] === 'confess') && (positionals.length > 2 || !values.args)) {
+    command = positionals[1]!;
+    positionals.splice(0, 2, command);
+  }
+  if (command === 'say' || command === 'confess') {
     // Text as arguments, a file or stdin: no JSON quoting, apostrophes are fine.
     const args = object(JSON.parse(values.args ?? '{}'),'args');
     const words = positionals.slice(1);
@@ -227,10 +241,13 @@ async function main() {
     else if (words.length) text = words.join(' ');
     else if (args.text === undefined && !process.stdin.isTTY) text = await readStdin(1000);
     if (text !== undefined) args.text = text.trim();
-    if (typeof args.text !== 'string' || !args.text) throw new Error('say needs text: fh say "text", fh say --text-file F, or fh say - with the text on stdin');
-    if (values.aloud) args.aloud = true;
+    if (typeof args.text !== 'string' || !args.text) throw new Error(`${command} needs text: fh ${command} "text", fh ${command} --text-file F, or fh ${command} - with the text on stdin`);
+    if (values.aloud) {
+      if (command === 'confess') throw new Error('--aloud applies to say; a confession always goes to the stream');
+      args.aloud = true;
+    }
     values.args = JSON.stringify(args);
-    positionals.splice(1, positionals.length - 1, 'say');
+    positionals.splice(1, positionals.length - 1, command);
     command = 'call';
   }
   if (command === 'chat') { positionals.splice(1, positionals.length - 1, 'chat'); command = 'call'; }
@@ -241,9 +258,9 @@ async function main() {
     if (values.since !== undefined) {
       const since = Number(values.since);
       if (!Number.isSafeInteger(since) || since < 0) throw new Error('--since must be a sequence number (0 or more)');
-      if (action === 'chat') args.since = since;
+      if (action === 'chat' || action === 'confessions') args.since = since;
       else if (action === 'board_events') args.since_seq = since;
-      else throw new Error('--since applies to fh chat and fh board events');
+      else throw new Error('--since applies to fh chat, fh board events and fh call confessions');
     }
     if (values.limit !== undefined) args.limit = integer(values.limit, 30);
     if (values.peek) args.peek = true;

@@ -11,8 +11,8 @@ already targets your character.
 
 - Identity: in your first minute, choose how you appear on the stream with
   `./fh call profile --args '{"display_name":"...","color":"#rrggbb","glyph":"...","motto":"..."}'`
-  (display_name up to 24 characters, glyph is 1-2 characters or an emoji shown beside your name, motto up to 80). It's
-  yours to pick; change it later only if you have a reason. `./fh call profiles` shows what teammates already chose: a
+  (display_name up to 24 characters, glyph is 1-2 characters or an emoji shown beside your name, motto up to 80; add
+  `"pronouns":"..."` if you want the casters to use particular ones). It's yours to pick; change it later only if you have a reason. `./fh call profiles` shows what teammates already chose: a
   colour, glyph and voice nobody else has keeps you recognisable on stream.
 - Voice: your `say --aloud` lines are spoken on stream in your own voice. Pick one in the same call with
   `"voice":"<id>"` from the list below (without a pick you get one chosen from your name):
@@ -23,12 +23,13 @@ already targets your character.
   none|antenna|headlamp|scarf|tank|horns|earpiece|pipe|headset, backdrop dark|grid|hazard|glow|night, accent a second
   `#rrggbb` (your suit is your colour). Fields you skip are picked from your name.
 - Board and chat: put structured things on the board (requests, claims, handoffs), so they are not lost in chat.
-  Chat is for talking: `./fh say "..."` posts in the game chat and in a bubble above your character (for tricky text
-  use `./fh say - <<'EOF'` ... `EOF`). Viewers are watching the stream and enjoy hearing your plans, opinions,
-  frustrations and banter, so talk as you play. A reply carries `chat: unread=N latest=...` when a new message
-  arrived; `./fh chat` shows your unread messages and only those count as read (`remaining: K` means more are
-  waiting: run it again). Answer teammates promptly.
-- Output: a failure ends with an `error:` line and exits nonzero; a partial result (`short`, `awaiting_craft`, a
+  Chat is for talking: `./fh say "..."` posts in the game chat and in a bubble above your character; text with an
+  apostrophe or quote goes on stdin: `./fh say - <<'EOF'`, the text, then `EOF` on its own line. Viewers are watching
+  the stream and enjoy hearing your plans, opinions, frustrations and banter, so talk as you play. A reply carries
+  `chat: unread=N latest=...` when a new message arrived; `./fh chat` shows your unread messages (every one that
+  mentions you, the newest 30, and a one-line digest of the rest) and only those count as read. While some are left,
+  `team: chat_remaining=K` repeats on every reply: run `./fh chat` again. Answer teammates promptly.
+- Output: a failure ends with an `error:` line (on stderr with `--format json`) and exits nonzero; a partial result (`short`, `awaiting_craft`, a
   refused craft) ends with a `warning:` line. `--wait` replies are brief (outcome, position, inventory change; add
   `--full` for the whole status). The `clock:` line ends with the time left until your deadline.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles), claim areas before building
@@ -38,7 +39,8 @@ already targets your character.
 - Hand items over through a chest: put them in, then say what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
-- A human or the operator (`server:`) may write in chat. Answer briefly and keep playing.
+- A human or the operator (`server:`) may write in chat, and lines from stream viewers arrive as `viewer NAME: ...`
+  (not a teammate). Answer briefly and keep playing.
 
 ### Board, team hints, plans, harness requests
 
@@ -50,6 +52,7 @@ already targets your character.
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`).
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
   own voice: use it for the moments viewers should hear (a plan, a win, a complaint, a joke), a few times an hour.
+- `./fh confess "..."` is a confessional: viewers hear it on the stream, and your teammates never see it.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   board items assigned to you or changed, attacks, losses and hits on your character. Each is shown once.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.

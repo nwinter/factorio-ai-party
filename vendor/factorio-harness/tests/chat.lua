@@ -71,4 +71,21 @@ local chat2=dofile('mod/agent-harness_0.1.0/chat.lua'){state=function() return s
 local before_print=#printed
 chat2.handlers.say(astra,{text='only players see this'})
 eq(#printed,before_print); eq(#heard,1); eq(heard[1]:sub(-21),'only players see this')
+-- Drained reads: every unread mention in full past the limit, a digest of the rest, `left` until read.
+local s4={}
+local c4=dofile('mod/agent-harness_0.1.0/chat.lua'){state=function() return s4 end,
+  mention_of=function(index,m) return index==2 and m.player~=2 and m.text:find('@opus',1,true) and '@' or nil end}
+nick.chat_color={r=1,g=1,b=1}
+for i=1,40 do c4.handlers.say(i%3==0 and nick or astra,{text=(i==2 or i==35) and '@opus m'..i or 'm'..i}) end
+r=c4.handlers.chat(opus,{limit=3})
+eq(#r.messages,5); eq(r.messages[1].text,'@opus m2'); eq(r.messages[1].mention,'@'); eq(r.messages[2].text,'@opus m35')
+eq(r.messages[3].text,'m38'); eq(r.messages[3].mention,nil)
+eq(r.remaining,35); eq(r.digest,'35 older messages not shown (seq 1..37): pog-astra 23, nwinter 12; chat again for them')
+eq(c4.left(2),35); eq(c4.left(1),nil)
+c4.handlers.say(astra,{text='new'}); eq(c4.left(2),36)
+r=c4.handlers.chat(opus,{limit=100}); eq(r.remaining,nil); eq(r.digest,nil); eq(c4.left(2),nil)
+-- peek and since reads leave `left` alone.
+for i=1,5 do c4.handlers.say(astra,{text='p'..i}) end
+c4.handlers.chat(opus,{limit=1,peek=true}); eq(c4.left(2),nil)
+c4.handlers.chat(opus,{limit=1,since=0}); eq(c4.left(2),nil)
 print('chat: ok')

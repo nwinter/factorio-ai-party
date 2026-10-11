@@ -118,6 +118,13 @@ export function formatCompact(value: unknown): string {
   } else render(value, '', 0);
   return lines.join('\n') + '\n';
 }
+/** The error: or warning: line compact output ends with (none for a clean success). */
+export function finalLine(value: unknown): string | undefined {
+  if (!record(value) || typeof value.ok !== 'boolean') return undefined;
+  const { notes } = lift(value.result);
+  if (!value.ok) return `error: ${errorText(value.error)}${notes.length ? '; ' + notes.join('; ') : ''}`;
+  return notes.length ? `warning: ${notes.join('; ')}` : undefined;
+}
 /** One line, whatever the value. */
 function oneLine(value: unknown): string {
   const shown = typeof value === 'string' ? value : inline(value) ?? JSON.stringify(value);
