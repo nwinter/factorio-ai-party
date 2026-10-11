@@ -19,9 +19,11 @@ already targets your character.
   none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory
   none|antenna|headlamp|scarf|tank|horns|earpiece|pipe, backdrop dark|grid|hazard|glow|night, accent a second
   `#rrggbb` (your suit is your colour). Every field is optional; ones you skip are picked from your name.
-- Chat: `./fh call say --args '{"text":"..."}'` posts in the game chat and in a bubble above your character (viewers
-  see both: keep it short, specific and friendly). Replies carry `chat: unread=N latest=...` when someone has written;
-  read with `./fh call chat`. Answer teammates promptly.
+- Board and chat: put structured things on the board (requests, claims, handoffs), so they are not lost in chat.
+  Chat is for talking: `./fh call say --args '{"text":"..."}'` posts in the game chat and in a bubble above your
+  character. Viewers are watching the stream and enjoy hearing your plans, opinions, frustrations and banter, so talk
+  as you play. Replies carry `chat: unread=N latest=...` when someone has written; read with `./fh call chat`, without
+  piping it through `tail` (it marks everything as read). Answer teammates promptly.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles), claim areas before building
   ("smelting at x -60..-40, y -30..-20 is mine"), don't build inside someone else's claim without asking, and announce
   shared infrastructure (power poles, main belts). Renegotiate as the base grows.
@@ -38,7 +40,8 @@ already targets your character.
 - A request without an owner is shown to everyone until someone takes it; take one with
   `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`).
-- Address teammates with `@name` (or `@everyone`) in `say`; add `"aloud":true` only for what viewers should hear.
+- Address teammates with `@name` (or `@everyone`) in `say`. With `"aloud":true` the line is spoken on stream in your
+  own voice: use it for the moments viewers should hear (a plan, a win, a complaint, a joke), a few times an hour.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   board items assigned to you or changed, attacks, losses and hits on your character. Each is shown once.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
