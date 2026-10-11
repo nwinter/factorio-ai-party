@@ -83,6 +83,14 @@ p.can_reach_entity=function() return true end
 fails(function() space.launch(p,{position={x=20.5,y=20.5},ride=true}) end,'ride needs platform')
 local rode=space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true})
 assert(rode.riding); eq(p.stopped,1)
+-- A bot (no LuaPlayer behind it) is refused before anything moves.
+local bot=setmetatable({__bot='astra'},{__index=p})
+local real_of=function(q) if rawget(q,'__bot') then return nil end return q end
+local bot_space=dofile('mod/agent-harness_0.1.0/space.lua'){position=function(v) return v end,integer=function(v) return v end,
+  remote_entity=function() return silo end,real=real_of,stop=function(q) q.stopped=(q.stopped or 0)+1 end}
+fails(function() bot_space.launch(bot,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'bots cannot ride rockets')
+fails(function() bot_space.land(bot,{}) end,'bots cannot ride rockets')
+eq(p.stopped,1)
 -- Landing: only from our platform stopped at a planet.
 fails(function() space.land(p,{}) end,'not on a space platform')
 p.surface.platform=platform; platform.force=p.force

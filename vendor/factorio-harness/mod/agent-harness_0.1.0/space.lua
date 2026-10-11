@@ -5,6 +5,9 @@
 return function(api)
   local M={}
   local function invert(t) local out={} for k,v in pairs(t or {}) do out[v]=k end return out end
+  -- Riding a rocket and dropping from the hub are LuaPlayer moves; a bot is a
+  -- character with no player to sit in the hub, so it stays on its planet.
+  local BOT_TRAVEL='bots cannot ride rockets or land yet: a bot is a character with no player to sit in a platform hub; send cargo instead'
   local platform_states=invert(defines.space_platform_state)
   local silo_states=invert(defines.rocket_silo_status)
   local function item_name(v)
@@ -213,6 +216,7 @@ return function(api)
     local rider
     if a.ride then
       assert(a.ride==true,'ride must be true')
+      assert(api.real(p)~=nil,BOT_TRAVEL)
       assert(a.platform~=nil,'ride needs platform=<name>')
       assert(p.can_reach_entity(silo),'stand within reach of the silo to board its rocket')
       rider=p.character
@@ -235,6 +239,7 @@ return function(api)
   -- The hub's "drop to planet": the character descends in a cargo pod to the
   -- planet the platform is stopped at (a landing pad if there is one).
   function M.land(p,a)
+    assert(api.real(p)~=nil,BOT_TRAVEL)
     local pl=p.surface.platform
     assert(pl and pl.force==p.force,'the character is not on a space platform')
     assert(pl.space_location and pl.space_location.type=='planet','platform '..pl.name..' is not stopped at a planet (at '..tostring(location(pl))..')')
