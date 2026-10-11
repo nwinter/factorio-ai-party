@@ -235,6 +235,15 @@ needed from them.
   An RCON test drawing two overlapping item sprites on live to check draw order was refused by the session's
   permission mode.
 
+### Live deploys and eng/board
+
+eng/board reported that two of their deploys to live (about 23:55 and 00:00) carried only ca7e2fc, so they may have
+briefly replaced the name-tag runtime. My screenshots at about 00:01 and 00:02 came after my own deploys and showed
+the tags. At about 00:20 they deployed eng/board merged with 7491ca8 (sha 83e5705d), and a screenshot after that
+still shows every bot tagged and tinted. Merging the two branches conflicts only in the `tests/lua.test.ts` file
+list: keep both `tests/audience.lua` and `tests/nametags.lua`. Any later deploy from here should be built from a
+merge with eng/board.
+
 ### For eng/stream2
 
 `tools/stream/director.py` still has `"max_zoom": 2.0` with the comment "the mod's camera limit". The mod now allows 4.
