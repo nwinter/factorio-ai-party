@@ -105,7 +105,7 @@ EOF
     ctx_args=$(python3 "$root/tools/context.py" setup muse "$model" "$dir")
     clean_args=$(python3 "$root/tools/clean-profile.py" muse "$dir")
     # One tool call, so the workspace's PostToolUse hook (.muse/hooks.json, tools/context.py) shows it still loads.
-    eval "muse exec $ctx_args $clean_args --model $model --effort low --workspace '$dir' --trust-workspace --approval-mode never --json $* 'Run the shell command ls once, then reply with the word ready.'" \
+    eval "env $muse_env muse exec $ctx_args $clean_args --model $model --effort low --workspace '$dir' --trust-workspace --approval-mode never --json $* 'Run the shell command ls once, then reply with the word ready.'" \
       > probe.jsonl 2> probe.err || true
     python3 - "$dir" <<'EOF' | tee -a profile.txt
 import collections, glob, json, os, re, sys
@@ -119,6 +119,10 @@ for f in reversed(files[-20:]):
     keys = collections.Counter(m.split(":")[0] for m in re.findall(r'"kind":"hook_run_started","run_id":"([^"]+)"', text))
     print("hooks run by source:", dict(keys) or "none")
     print("tooling text:", text.count("shared agent tooling"), "skill reminder decisions:", text.count("skill_reminder_decision"))
+    tools = re.search(r'"active_tools":\[([^\]]*)\]', text)
+    print("active tools:", tools.group(1).replace('"', "") if tools else "?")
+    roster = re.search(r'"reminder_roster":\{.*?"agents":\[(.*?)\]\}', text)
+    print("reminder agents:", re.findall(r'\{"id":"([a-z-]+)"', roster.group(1)) if roster else "?")
     try:
         print("workspace hooks seen:", json.load(open(os.path.join(d, ".context-state.json"))).get("hooks_seen", "no"))
     except (OSError, ValueError):

@@ -147,10 +147,10 @@ EOL
   muse)
     model=${6:-muse-spark-1.3} effort=${7:-low}
     ctx_args=$(python3 "$root/tools/context.py" setup muse "$model" "$dir")   # -c context_compaction.* options
-    clean_args=$(python3 "$root/tools/clean-profile.py" muse "$dir")         # -c hooks=... (JSON, shell-quoted)
+    clean_args=$(python3 "$root/tools/clean-profile.py" muse "$dir")         # -c 'hooks={}'; $muse_env: profile-flags.sh
     pane=$(new_pane)
     printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" \
-      "exec muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
+      "exec env $muse_env muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
       > "$dir/.muse-run.sh"
     chmod +x "$dir/.muse-run.sh"
     herdr pane run "$pane" "'$dir/.muse-run.sh'" >/dev/null
