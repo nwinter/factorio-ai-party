@@ -68,7 +68,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
       echo "3. bot $name: created; fresh notes.md"
     fi
   done
-  echo "4. stream service, chat log, shot sync$([ "${POG_CASTER:-1}" != 0 ] && echo ', casters')$([ "${POG_ANALYST:-1}" != 0 ] && echo ', analyst'), recording$([ "$stream" = --stream ] && echo ', stream')"
+  echo "4. stream service, chat log, shot sync$([ "${POG_CASTER:-1}" != 0 ] && echo ', casters')$([ "${POG_ANALYST:-1}" != 0 ] && echo ', analyst')$([ "${POG_PLAYERS:-0}" = 1 ] && echo ', player votes'), recording$([ "$stream" = --stream ] && echo ', stream')"
   echo "5. agents launch$([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo ' with full tools (POG_FULL_TOOLS=1: tools/, team-tools/, gamedata/, subagents, web)'); 6. supervisors and score loop"
   [ -n "$resume" ] && echo "prompt adds: $(tools/launch-agent.sh --resume-sentence)"
   exit 0
@@ -80,6 +80,7 @@ quota | while read -r line; do log "$line"; done
 # recent branch that this checkout lacks, and a built host older than its sources. Warnings only.
 { python3 tools/code_check.py || true; } | while read -r line; do log "$line"; done
 log "full tools: $([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo 'on (docs/TOOLS-NOTES.md)' || echo off)"
+log "player votes: $([ "${POG_PLAYERS:-0}" = 1 ] && echo "on (docs/PLAYERS-NOTES.md; protected: ${POG_PLAYERS_PROTECT:-none})" || echo off)"
 
 if [ -n "$resume" ]; then
   # 1. A later shift: the same instance and save (docs/HARNESS3-NOTES.md, round 7).
@@ -196,6 +197,13 @@ if [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; then
   nohup python3 site/push_live.py --source http://127.0.0.1:8788/state.json >"$rundir/push-live.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("push-live:$!:$rundir/push-live.log")
+fi
+# Human players' votes (docs/PLAYERS-NOTES.md): the operator tally runs a carried kick, ban or trust; names in
+# POG_PLAYERS_PROTECT (comma-separated) are never kicked or banned.
+if [ "${POG_PLAYERS:-0}" = 1 ]; then
+  nohup python3 tools/players.py --world "$world" watch --log "$rundir/votes.jsonl" >"$rundir/players.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+  helpers+=("players:$!:$rundir/players.log")
 fi
 # Analyst: talking points for the casters every 90 s, read-only (docs/ANALYST-NOTES.md); POG_ANALYST=0 turns it off.
 if [ "${POG_ANALYST:-1}" != 0 ]; then

@@ -116,6 +116,10 @@ def dry_run():
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"],
                            env=dict(env, POG_FULL_TOOLS="1"), capture_output=True, text=True, cwd=ROOT)
         assert "5. agents launch with full tools" in r.stdout, r.stdout
+        assert "player votes" not in out, out   # POG_PLAYERS unset
+        r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"],
+                           env=dict(env, POG_PLAYERS="1"), capture_output=True, text=True, cwd=ROOT)
+        assert ", player votes, recording" in r.stdout, r.stdout
         assert not os.path.exists(os.path.join(ROOT, "runs", "resume-dry-test")), "the dry run made a run directory"
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "shake4", "10"], env=env,
                            capture_output=True, text=True, cwd=ROOT)
