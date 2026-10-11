@@ -18,9 +18,11 @@ What docs/studies/shake3.md P1 items 1, 2 (caster part) and 3 and P2 item 12 ask
   engineers, loss numbers count the team's buildings destroyed, and "character" and "engineer" mean one of the
   team's engineers.
 - Time left. `--deadline` takes "YYYY-MM-DD HH:MM", "HH:MM", or a deadline.txt file or glob (the latest wins).
-  start-team passes `"$rundir/*/deadline.txt"`, so every beat has `minutes_to_deadline`. `check_line` rejects "ends
-  the run" before the last minute, and "N minutes left/to go/more minutes" lines that disagree with it (or come
-  with no deadline fact).
+  start-team passes `"$rundir/*/deadline.txt"`. `minutes_to_deadline` goes on the opener, research, viewer and
+  segment beats and the pace and explain fillers, and on every beat in the last 15 minutes. On every beat, the
+  hosts said "forty-six minutes left" four exchanges running in a mock cast. `check_line` rejects "ends the run"
+  before the last minute, and "N minutes left/to go/more minutes" lines that disagree with the fact or come without
+  it. Research beats also get `compared_with_shake1` ("15 minutes later"), so the hosts need not do the arithmetic.
 - Status "thinking (standing still)" is now "planning the next step" ("idle" is "between tasks"). The rules and the
   naturalist prompt describe planning kindly. Space Age pilot: most mockery lines were about standing still.
 - Pronouns. `profile.pronouns` reaches the snapshot (`live.py`, `model.py`) and every agent fact (`pronouns`, else
@@ -39,7 +41,9 @@ What docs/studies/shake3.md P1 items 1, 2 (caster part) and 3 and P2 item 12 ask
   applies, from `voices.TTS.last_here()`. That is a per-thread copy of `last`, because an exchange is synthesised
   in parallel. `caster_report.py` prints "spoken by". Mock run: `pbp: openai/verse`, `color: openai/ballad`.
 - A Workers AI 8008 error ("AiError: Internal server error") retries once on another Aura-2 voice of the same
-  gender (atlas to draco, thalia to theia). A second failure drops the line as before.
+  gender (atlas to draco, thalia to theia). A second failure drops the line as before. eng/voices pointed out that
+  the TTS failure counters (`down`, `fails`) are shared between the synthesis threads without a lock. Two threads
+  failing at once can both count, so a provider may rest after 2 failures instead of 3.
 
 The analyst (docs/ANALYST-NOTES.md, the split agreed there and in "Viewer questions answered by the analyst" below):
 
