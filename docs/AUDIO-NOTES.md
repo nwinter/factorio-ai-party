@@ -18,6 +18,12 @@ talks. Everything is mixed by OBS through the overlay's browser source.
   "on the way" and so on). Vale's "won't rebuild Vulcanus" is cut; "Vulcanus is the next big goal" passes.
 - Base-game runs had the Space Age notes. model.py sends a `space` block on every run (`space_age` false in the base
   game), and `show_for` took any block as Space Age. `is_space_age` now reads the flag.
+- From shake7's first minutes (it runs main from before these commits):
+  - The numbers check counts per sentence. "Eleven gone now. Six pipes, two inserters." was cut and is now allowed.
+  - The simile check cuts only drawn-out images, four words or more after "like a". "Talking like a shift supervisor" was cut and is now allowed.
+  - Templates speak alerts as a person would: "11 lost to small biters. 6 pipes, 2 inserters.", "Biters at the steam engine.". Shake7 aired "Damage report: 11 lost: 6 pipe, 2 inserter (by small biters)." twice in a minute.
+  - Event beats now carry the run's standing numbers under `background`, to mention only if they matter. These are the research percentage, the science rate, the stage and the technologies done. Shake7's hosts said "Rocket fuel at twenty two/twenty four/twenty six/twenty seven" in 6 of their first 30 lines. Story beats (open, research, lull, power) keep those numbers up front.
+  - The style rewrite is logged ("[writer] rewrite after ..."), and copy_report counts it.
 - `tools/stream/copy_report.py runs/<run>/caster.log [--last 30]` reads a running shift's caster log, read only: the
   template share and the `[cost]` fallbacks count, cuts by reason (style cuts by kind), and the tells left in writer
   lines next to the shake4-6 shares. On shake6 (before the copy changes) it gives 5% templates, 0 style cuts and
