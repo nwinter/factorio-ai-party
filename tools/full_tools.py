@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Full engineer tools for a game workspace, behind POG_FULL_TOOLS=1 (docs/TOOLS-NOTES.md):
-tools/full_tools.py workspace DIR KIND | claude DIR
+tools/full_tools.py workspace DIR KIND | claude DIR | grok-args DIR | paragraph KIND
 
   workspace: DIR/tools/ (the agent's own scripts), DIR/team-tools -> ../team-tools (shared with the run's other
              agents), DIR/gamedata/ (a read-only copy of the prototype dump in tools/analyst/kb: recipes, items,
@@ -8,8 +8,10 @@ tools/full_tools.py workspace DIR KIND | claude DIR
   claude:    merges into DIR/.claude/settings.json: subagents, web search and fetch, background-job tools allowed;
              the sandbox may write team-tools; other agents' workspaces are unreadable except their notes.md.
 
-Codex, Grok and Muse settings live where their clean profiles are written (tools/clean-profile.py,
-tools/grok-home.py, tools/profile-flags.sh); agy already has its subagent and web tools.
+  grok-args: Grok Build's --allow/--deny words for the same two things.
+
+Codex and Grok switches live where their clean profiles are written (tools/clean-profile.py, tools/grok-home.py,
+tools/profile-flags.sh); agy and Muse Code already have their subagent and web tools.
 No tool here reads or writes the game: only ./fh acts in it.
 """
 import json
@@ -125,12 +127,26 @@ def claude(d):
         json.dump(cfg, f, indent=2)
 
 
+def grok_args(d):
+    """Grok Build's --allow/--deny words: team-tools writable, other workspaces' private files unreadable. Grok runs
+    without a sandbox; its deny rules also cover paths that shell commands such as cat touch (docs
+    22-permissions-and-safety.md), enforced by Grok rather than the kernel."""
+    shared = os.path.join(os.path.dirname(d), "team-tools")
+    words = [f"--allow 'Edit({shared}/**)'", f"--allow 'Write({shared}/**)'"]
+    for o in others(d):
+        words += [f"--deny 'Read({o}/{s})'" for s in PRIVATE_FILES]
+        words += [f"--deny 'Read({o}/{s}/**)'" for s in PRIVATE_DIRS]
+    return " ".join(words)
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1]
     if cmd == "workspace":
         workspace(sys.argv[2], sys.argv[3])
     elif cmd == "claude":
         claude(sys.argv[2])
+    elif cmd == "grok-args":
+        print(grok_args(sys.argv[2]))
     elif cmd == "paragraph":
         print(paragraph(sys.argv[2]), end="")
     else:

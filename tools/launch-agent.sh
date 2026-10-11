@@ -165,6 +165,7 @@ case $kind in
     ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
     # Run-local GROK_HOME; the owner's login must last the run plus 15 minutes (tools/grok-home.py refreshes it).
     home_env=$(python3 "$root/tools/grok-home.py" setup "$dir" $((minutes * 60 + 900)))
+    [ "$full" = 1 ] && grok_allow="$grok_allow $(python3 "$root/tools/full_tools.py" grok-args "$dir")"
     pane=$(new_pane)
     # --rules is part of the system prompt, which compaction keeps. $grok_env, $grok_allow, $grok_bin:
     # tools/profile-flags.sh. Started from a script: the full command is about 1,450 characters, and typed into a

@@ -62,10 +62,10 @@ disabled = [{bundled}]
 disabled = [{plugins}]
 
 [subagents]
-enabled = false
+enabled = {full}
 
 [workflows]
-enabled = false
+enabled = {full}
 """
 
 
@@ -121,6 +121,8 @@ def setup(d, ensure):
         f.write(CONFIG.replace("{ignore}", ", ".join(json.dumps(s) for s in dict.fromkeys(skills)))
                 .replace("{plugins}", ", ".join(json.dumps(p) for p in dict.fromkeys(plugins)))
                 .replace("{bundled}", ", ".join(json.dumps(b) for b in BUNDLED))
+                # POG_FULL_TOOLS=1 (tools/full_tools.py): spawn_subagent and the workflow tool stay.
+                .replace("{full}", "true" if os.environ.get("POG_FULL_TOOLS") == "1" else "false")
                 .replace("{acked}", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
     link = os.path.join(home, "sessions")
     if not os.path.lexists(link):

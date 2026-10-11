@@ -5,6 +5,8 @@
   "Your tools" paragraph once, before the compaction instructions, with the harness's line.
 - claude: subagent, web and background-job tools allowed, team-tools writable, other workspaces' private files
   denied (their notes.md not), and the launch's --tools list only with the switch on.
+- codex: live web search, multi_agent and team-tools writable only with the switch on. grok: subagents, workflows
+  and web_fetch only with it; the allow and deny words.
 - the paragraph names no strategy: no "should", "must" or "try".
 """
 import json
@@ -105,6 +107,44 @@ def claude():
     print("claude settings: ok")
 
 
+def codex_and_grok():
+    tmp = make_run()
+    try:
+        d = os.path.join(tmp, "run", "haiku")
+        texts = {}
+        for full in ("0", "1"):
+            shutil.rmtree(os.path.join(d, ".codex"), ignore_errors=True)
+            env = dict(os.environ, POG_FULL_TOOLS=full)
+            subprocess.run([sys.executable, os.path.join(ROOT, "tools", "clean-profile.py"), "codex", d], env=env, check=True)
+            texts[full] = open(os.path.join(d, ".codex", "config.toml")).read()
+        assert "web_search" not in texts["0"] and "multi_agent = false" in texts["0"], texts["0"]
+        assert "sandbox_workspace_write" not in texts["0"], texts["0"]
+        on = texts["1"]
+        assert 'web_search = "live"' in on and "multi_agent = true" in on, on
+        assert on.index('web_search = "live"') < on.index("[features]"), on   # a top-level key, before any table
+        assert json.dumps(os.path.join(tmp, "run", "team-tools")) in on.split("[sandbox_workspace_write]")[1], on
+        try:
+            import tomllib
+            tomllib.loads(on)
+        except ImportError:
+            pass
+        os.environ.pop("POG_TEAM", None)
+        words = full_tools.grok_args(d)
+        luna = os.path.join(tmp, "run", "luna")
+        assert f"--allow 'Edit({tmp}/run/team-tools/**)'" in words, words
+        assert f"--deny 'Read({luna}/journal.jsonl)'" in words and f"--deny 'Read({luna}/tools/**)'" in words, words
+        assert "notes.md" not in words and "/haiku/" not in words, words
+        def grok_env(full):
+            return subprocess.run(["bash", "-c", f". '{ROOT}/tools/profile-flags.sh'; echo \"$grok_env\""],
+                                  env=dict(os.environ, POG_FULL_TOOLS=full), capture_output=True, text=True,
+                                  check=True).stdout
+        assert "GROK_SUBAGENTS=0" in grok_env("0") and "GROK_WEB_FETCH" not in grok_env("0")
+        assert "GROK_SUBAGENTS" not in grok_env("1") and "GROK_WEB_FETCH=1" in grok_env("1")
+    finally:
+        shutil.rmtree(tmp)
+    print("codex and grok: ok")
+
+
 def flags():
     def tools(full):
         env = dict(os.environ, POG_FULL_TOOLS=full)
@@ -119,4 +159,5 @@ if __name__ == "__main__":
     workspace()
     paragraphs()
     claude()
+    codex_and_grok()
     flags()
