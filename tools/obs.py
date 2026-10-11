@@ -202,7 +202,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["coop-scene", "stream-scene", "scene", "reload-overlay", "start", "stop", "pause",
                                     "resume", "status", "shot", "stream-start", "stream-stop", "stream-status",
-                                    "stream-audio", "audio-test", "meter"])
+                                    "stream-audio", "audio-test", "meter", "replay-stop"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--game-url", help="audio-test: loop this audio URL as a stand-in for the game client")
     ap.add_argument("--seconds", type=float, default=20, help="meter: how long to listen")
