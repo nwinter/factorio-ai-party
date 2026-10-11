@@ -6,8 +6,9 @@ param(
   [string]$Factorio = 'D:\pog\factorio-2.0.77-alpha',
   [string]$PlayerName = 'pog-agent',
   [string]$Slot = '',          # several clients in one world: '-astra', '-opus' (own dir, task and exe name)
-  [switch]$Sound               # unmute (stream: only the main director, -Slot -cam1). Music stays off either way:
+  [switch]$Sound,              # unmute (stream: only the main director, -Slot -cam1). Music stays off either way:
                                # the soundtrack may draw copyright claims; the stream has its own music slot.
+  [switch]$Human               # a person plays this client: sound and music on, normal graphics (not captured by OBS)
 )
 $ErrorActionPreference = 'Stop'
 $srv = "D:\pog\inst\$Name"
@@ -15,7 +16,10 @@ $dir = "D:\pog\inst\$Name-client$Slot"
 New-Item -ItemType Directory -Force "$dir\config","$dir\mods" | Out-Null
 $fwd = $dir -replace '\\','/'
 $data = ($Factorio -replace '\\','/') + '/data'
-$muted = if ($Sound) { 'false' } else { 'true' }
+$muted = if ($Sound -or $Human) { 'false' } else { 'true' }
+$music = if ($Human) { '0.5' } else { '0' }
+$quality = if ($Human) { 'normal' } else { 'low' }
+$vram = if ($Human) { 'all' } else { 'low' }
 Set-Content -Encoding ascii "$dir\config\config.ini" @"
 [path]
 read-data=$data
@@ -25,11 +29,11 @@ check-updates=false
 show-tips-and-tricks=false
 [sound]
 master-muted=$muted
-music-volume=0
+music-volume=$music
 [graphics]
 full-screen=false
-graphics-quality=low
-video-memory-usage=low
+graphics-quality=$quality
+video-memory-usage=$vram
 "@
 if (-not (Test-Path "$dir\player-data.json")) {
   (@{'service-username'=$PlayerName} | ConvertTo-Json) | Set-Content -Encoding ascii "$dir\player-data.json"
