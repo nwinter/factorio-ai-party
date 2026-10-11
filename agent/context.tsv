@@ -1,6 +1,8 @@
 # Per-model context limits for tools/launch-agent.sh (applied by tools/context.py). docs/CONTEXT-NOTES.md explains them.
 # window: the model's context window in tokens. compact_at: token count at which the context should be compacted
 # (0 = leave the harness default). Rows match on model; "*" rows are the fallback for a kind.
+# Muse: window is the 512K effective window its compaction fractions apply to (shake2 compacted at 0.191 x 512000 =
+# 97,792 tokens, not at 200K; docs/studies/shake2.md section 6).
 # model	kind	window	compact_at
 opus	claude	1000000	250000
 sonnet	claude	1000000	200000
@@ -15,5 +17,5 @@ grok-4.7	grok	256000	154000
 *	grok	256000	154000
 gemini-3.8-flash-high	agy	1048576	200000
 *	agy	1048576	200000
-muse-spark-1.3	muse	1048576	200000
-*	muse	1048576	200000
+muse-spark-1.3	muse	512000	200000
+*	muse	512000	200000

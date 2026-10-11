@@ -6,6 +6,7 @@
                                            POG_CTX_AT=N overrides compact_at (tools/context-probe.sh).
   tools/context.py limit KIND MODEL        print compact_at from agent/context.tsv
   tools/context.py agy-tokens DIR          context size of DIR's latest Antigravity conversation (0 if unknown)
+  tools/context.py grok-tokens DIR         context size of DIR's latest Grok Build session (0 if unknown)
   tools/context.py report RUN_DIR          per-workspace compaction counts from each context.log
   tools/context.py hook EVENT [--at N] [--mark]   hook handler; reads the hook payload on stdin
 
@@ -21,7 +22,7 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-NOTES_CAP = 9000          # characters of notes.md injected after a compaction (hook outputs are capped by harnesses)
+NOTES_CAP = 7000          # characters of notes.md injected after a compaction (the playbook asks for under 6 KB)
 STATE = ".context-state.json"
 MARKER = ".context-hooks"  # written by setup; hooks do nothing elsewhere (the repo-wide Grok hooks see every session)
 
@@ -131,6 +132,20 @@ def agy_tokens(d):
     return 0
 
 
+def grok_tokens(d):
+    """Context size of DIR's latest Grok Build session (the last `_meta.totalTokens` in updates.jsonl), 0 if unknown."""
+    import glob
+    import re
+    from urllib.parse import quote
+    base = os.path.join(os.path.expanduser("~/.grok/sessions"), quote(os.path.realpath(d), safe=""))
+    try:
+        path = max(glob.glob(os.path.join(base, "*", "updates.jsonl")), key=os.path.getmtime)
+        found = re.findall(r'"_meta":\{"totalTokens":(\d+)', "\n".join(tail_lines(path)))
+        return int(found[-1]) if found else 0
+    except (OSError, ValueError):
+        return 0
+
+
 def tail_lines(path, size=400_000, since=0):
     """Complete lines in the last `size` bytes of a file, starting no earlier than byte offset `since`."""
     with open(path, "rb") as f:
@@ -202,6 +217,7 @@ def hook(event, args):
         summary = payload.get("compact_summary") or ""
         state["compactions"] = state.get("compactions", 0) + 1
         state["nudged"] = False
+        state.pop("floor", None)
         if transcript and os.path.exists(transcript):
             state["since"] = os.path.getsize(transcript)   # usage before this point is the old context's
         if "--mark" in args:
@@ -219,6 +235,9 @@ def hook(event, args):
         print(notes_block(d, "Your context was just compacted."))
     elif event == "post-tool":
         context = None
+        if "hooks_seen" not in state:
+            state["hooks_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")   # shows the workspace hooks load (smoke tests)
+            save()
         if state.get("reinject"):
             state.pop("reinject")
             save()
@@ -227,9 +246,14 @@ def hook(event, args):
         elif "--at" in args and transcript and not state.get("nudged"):
             at = int(args[args.index("--at") + 1])
             tokens = claude_tokens(transcript, state.get("since", 0))
+            if tokens and "floor" not in state:
+                state["floor"] = tokens   # context at the first tool call of this window (after a compaction: its floor)
+                save()
             # Claude Code compacts as soon as a tool result would cross the threshold; with a 12K margin the probe's
-            # nudge and compaction landed in the same step, too late for the agent to update notes.md.
-            if at and tokens >= at - max(20000, at // 5):
+            # nudge and compaction landed in the same step, too late for the agent to update notes.md. Never warn in
+            # the first half of the room above the floor: Haiku's floor (51-59K) sat above its 60K warning in shake2.
+            floor = state.get("floor", 0)
+            if at and tokens >= max(at - max(20000, at // 5), floor + (at - floor) // 2):
                 state["nudged"] = True
                 save()
                 log(action="nudge", tokens=tokens, at=at)
@@ -263,6 +287,8 @@ def main():
         print(limits(args[0], args[1])[1])
     elif cmd == "agy-tokens":
         print(agy_tokens(args[0]))
+    elif cmd == "grok-tokens":
+        print(grok_tokens(args[0]))
     elif cmd == "report":
         report(args[0])
     elif cmd == "hook":

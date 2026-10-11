@@ -59,7 +59,9 @@ def main():
         assert "just compacted" in text and "smelting at -40,-20" in text
         assert "S1" in open(os.path.join(d, "compactions.md")).read()
         assert post() == "", "Claude re-injects through SessionStart, not post-tool"
-        transcript(tr, 75000)
+        transcript(tr, 62000)   # shake2: Haiku's context right after a compaction was 51-59K, above the old 60K warning
+        assert post() == "", "no nudge in the first half of the room above the post-compaction floor"
+        transcript(tr, 72000)
         assert "Update notes.md" in post(), "nudge re-arms after a compaction"
         assert log_events(d) == ["post-tool:nudge", "pre-compact:", "post-compact:", "session-compact:",
                                  "post-tool:nudge"], log_events(d)
@@ -87,7 +89,9 @@ def main():
         cfg = tomllib.load(open(os.path.join(d, ".codex", "config.toml"), "rb"))
         assert cfg["model_context_window"] == 272000 and cfg["model_auto_compact_token_limit"] == 140000
         assert os.path.exists(cfg["experimental_compact_prompt_file"])
-        run("setup", "muse", "muse-spark-1.3", d)
+        # Muse applies the fractions to a 512K effective window (shake2 compacted at 0.191 x 512000 = 97,792).
+        opts = run("setup", "muse", "muse-spark-1.3", d).split()
+        assert "context_compaction.soft_threshold=0.391" in opts and "context_compaction.hard_threshold=0.441" in opts, opts
         hooks = json.load(open(os.path.join(d, ".muse", "hooks.json")))["hooks"]
         assert hooks["SessionStart"][0]["matcher"] == "compact"
     assert run("limit", "agy", "gemini-3.8-flash-high").strip() == "200000"

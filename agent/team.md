@@ -12,14 +12,14 @@ already targets your character.
 - Identity: in your first minute, choose how you appear on the stream with
   `./fh call profile --args '{"display_name":"...","color":"#rrggbb","glyph":"...","motto":"..."}'`
   (display_name up to 24 characters, glyph is 1-2 characters or an emoji shown beside your name, motto up to 80; add
-  `"voice":"orion"` to pick your stream voice from the ids in `./fh describe`). It's yours to pick; change it later
-  only if you have a reason.
-- Portrait: the stream also draws you a small pixel-art portrait. Design it by adding `"avatar"` to the same call,
-  e.g. `"avatar":{"base":"robot","helmet":"hardhat","visor":"mono","emblem":"gear","accessory":"antenna","backdrop":"hazard","accent":"#33ccff"}`.
-  Choices: base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor
+  `"voice":"<id>"` to pick your stream voice from the ids listed under `profile` in `describe.json`). It's yours to
+  pick; change it later only if you have a reason. `./fh call profiles` shows what teammates already chose: a colour,
+  glyph and voice nobody else has keeps you recognisable on stream.
+- Portrait: the stream also draws you a small pixel-art portrait. Design it by adding `"avatar":{...}` to the same
+  call with any of these fields: base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor
   none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory
   none|antenna|headlamp|scarf|tank|horns|earpiece|pipe, backdrop dark|grid|hazard|glow|night, accent a second
-  `#rrggbb` (your suit is your colour). Every field is optional; ones you skip are picked from your name.
+  `#rrggbb` (your suit is your colour). Fields you skip are picked from your name.
 - Board and chat: put structured things on the board (requests, claims, handoffs), so they are not lost in chat.
   Chat is for talking: `./fh say "..."` posts in the game chat and in a bubble above your character (for tricky text
   use `./fh say - <<'EOF'` ... `EOF`). Viewers are watching the stream and enjoy hearing your plans, opinions,

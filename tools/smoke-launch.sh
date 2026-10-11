@@ -32,12 +32,18 @@ Read AGENTS.md in this directory: it has your instructions, interface and rules.
 test on a shared world, so do not move, mine, build, craft, take or give items, or post to the board. Only read and chat:
 1. `grep '"say"' describe.json`
 2. `./fh call status`, `./fh call chat` and `./fh board`
-3. Say one short line in chat: your name, that this is a launch smoke test, and one thing you noticed in status.
-4. In notes.md under `## Log`, write one line starting `tools:` that lists every tool, skill, plugin and MCP server
+3. Run these two commands exactly as written (they only read): `for a in status board; do ./fh call $a > /dev/null && echo "$a ok"; done`
+   and `python3 -c 'print("python ok")'`.
+4. Say one short line in chat: your name, that this is a launch smoke test, and one thing you noticed in status.
+5. In notes.md under `## Log`, write one line starting `tools:` that lists every tool, skill, plugin and MCP server
    available to you besides running shell commands and reading or editing files (write `tools: none` if there are
-   none), and one line starting `blocked:` that lists any command that was denied or failed to run (or `blocked: none`).
+   none), one line starting `rules:` naming any instructions you were given besides AGENTS.md and this prompt (or
+   `rules: none`), and one line starting `blocked:` that lists any command that was denied or failed to run (or
+   `blocked: none`).
 Then end your turn.
 EOP
+# Supervisors with a harmless nudge: shows whether a nudge reaches each harness (Muse's never did in shake2).
+nudge_text='Supervisor delivery test: add one line starting nudge: under ## Log in notes.md, then end your turn. Do nothing else.'
 
 # Bots for the smoke agents (bot_create refuses a name that exists, so a rerun reuses the earlier bot).
 for k in $kinds; do read -r name _ <<<"$(row "$k")"
@@ -48,8 +54,11 @@ done
 for k in $kinds; do read -r name route model effort label harness <<<"$(row "$k")"
   out=$(POG_WS="$name" POG_BOT="$name" POG_TEAM="$rundir/team.txt" POG_MODEL="${label//_/ } (${harness//_/ })" \
         POG_ROUTE="$route" POG_TIME_MODE=realtime POG_ONE_TURN=1 tools/launch-agent.sh "$run" "$world" "$name" "$minutes" "$k" "$model" "$effort")
-  echo "$name $(echo "$out" | awk '{print $1}') $k" >> "$rundir/panes.txt"
+  pane=$(echo "$out" | awk '{print $1}')
+  echo "$name $pane $k" >> "$rundir/panes.txt"
   echo "launched $name ($k): $out"
+  # agy runs one turn (POG_ONE_TURN) and has no supervisor in team runs either.
+  [ "$k" = agy ] || POG_NUDGE_TEXT="$nudge_text" nohup tools/supervise.sh "$pane" "$rundir/$name" >/dev/null 2>&1 &
 done
 
 sleep $((minutes * 60 + 30))
@@ -73,6 +82,14 @@ for line in open(os.path.join(rundir, "panes.txt")):
     except OSError:
         pass
     desc = sum(1 for _ in open(os.path.join(d, "describe.json"))) if os.path.exists(os.path.join(d, "describe.json")) else 0
-    notes = [l.strip() for l in open(os.path.join(d, "notes.md")) if l.startswith(("tools:", "blocked:", "- tools:", "- blocked:"))]
-    print(f"{name:13} {kind:6} requests={reqs} say={says} failed={fails} describe_lines={desc} | {' | '.join(notes) or 'no tools/blocked lines'}")
+    notes = [l.strip() for l in open(os.path.join(d, "notes.md"))
+             if l.lstrip("- ").startswith(("tools:", "rules:", "blocked:", "nudge:"))]
+    sup = [l.strip() for l in open(os.path.join(d, "supervisor.log"))] if os.path.exists(os.path.join(d, "supervisor.log")) else []
+    try:
+        hooks = json.load(open(os.path.join(d, ".context-state.json"))).get("hooks_seen", "no")
+    except (OSError, ValueError):
+        hooks = "no"
+    print(f"{name:13} {kind:6} requests={reqs} say={says} failed={fails} describe_lines={desc} hooks_seen={hooks}")
+    print("    notes: " + (" | ".join(notes) or "no tools/rules/blocked/nudge lines"))
+    print("    supervisor: " + (" | ".join(sup) or "none"))
 PY

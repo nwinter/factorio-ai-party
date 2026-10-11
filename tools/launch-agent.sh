@@ -76,7 +76,10 @@ case $kind in
     test -n "$croot" || { echo "unknown Claude route $route" >&2; exit 1; }
     cenv="-u CLAUDE_CONFIG_DIR"; [ "$route" = claude ] || cenv="CLAUDE_CONFIG_DIR='$croot'"
     pane=$(new_pane)
-    herdr pane run "$pane" "cd '$dir' && env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX -u CLAUDE_CODE_USE_FOUNDRY -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE $cenv ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_ENABLE_CFC=false /Users/owner/.local/bin/claude --model $model --effort $effort --permission-mode dontAsk --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --no-chrome --disable-slash-commands \"\$(cat '$prompt')\"" >/dev/null
+    # --setting-sources project,local: the route's user settings.json (hooks such as peon-ping, plugins, effort) stays
+    # out; login lives outside settings, so auth is unchanged. --tools: only the tools the game uses, which also
+    # shrinks the context Claude Code keeps after a compaction (51-59K for Haiku in shake2).
+    herdr pane run "$pane" "cd '$dir' && env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX -u CLAUDE_CODE_USE_FOUNDRY -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE $cenv ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_ENABLE_CFC=false /Users/owner/.local/bin/claude --model $model --effort $effort --permission-mode dontAsk --setting-sources project,local --tools Bash,Read,Edit,Write,Grep,Glob --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --no-chrome --disable-slash-commands \"\$(cat '$prompt')\"" >/dev/null
     ;;
   codex)
     model=${6:-gpt-6-astra} effort=${7:-low}
@@ -103,8 +106,14 @@ case $kind in
     ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
     pane=$(new_pane)
     # --rules is part of the system prompt, which compaction keeps. The GROK_CLAUDE_* switches stop Grok from loading
-    # the owner's Claude Code skills and MCP servers (shake1: a 17K-character skills reminder and MCP failure notices).
-    herdr pane run "$pane" "cd '$dir' && GROK_CLAUDE_SKILLS_ENABLED=false GROK_CLAUDE_MCPS_ENABLED=false $ctx_env grok -m $model --effort $effort --permission-mode dontAsk --rules '$compact_rule' \"\$(cat '$prompt')\"" >/dev/null
+    # the owner's Claude Code skills, rules, hooks and MCP servers; GROK_MANAGED_MCPS_ENABLED and GROK_MEMORY drop
+    # managed MCP servers and cross-session memory. Grok has no per-launch switch for ~/.grok/rules, ~/.agents/skills
+    # or its own config.toml MCP servers (docs/LAUNCH2-NOTES.md).
+    # --allow: shake2's Grok was denied `./fh ... > describe.json` and `python3 -c` despite the .claude allowlist;
+    # redirects into the workspace count as edits. Loops stay unapproved (Grok runs unsandboxed).
+    genv="GROK_CLAUDE_SKILLS_ENABLED=false GROK_CLAUDE_MCPS_ENABLED=false GROK_CLAUDE_RULES_ENABLED=false GROK_CLAUDE_HOOKS_ENABLED=false GROK_MANAGED_MCPS_ENABLED=false GROK_MEMORY=0"
+    gallow="--allow 'Bash(./fh *)' --allow 'Bash(./shot *)' --allow 'Bash(python3 *)' --allow 'Edit(./**)' --allow 'Write(./**)'"
+    herdr pane run "$pane" "cd '$dir' && $genv $ctx_env grok -m $model --effort $effort --permission-mode dontAsk $gallow --rules '$compact_rule' \"\$(cat '$prompt')\"" >/dev/null
     ;;
   agy)
     model=${6:-gemini-3.8-flash-high}
@@ -113,21 +122,24 @@ case $kind in
     # Print-mode turns back to back until the deadline. No --sandbox: it blocked ./fh (its target is outside the
     # workspace) and the model bypassed it on 576 calls in shake1 (auto-approved), so it only cost time.
     # agy has no compaction threshold setting (it compacts near 280K): past the limit, the next turn starts a fresh
-    # conversation that picks up from notes.md.
+    # conversation that picks up from notes.md. The check runs only between turns, and one turn can last the hour
+    # (shake2: 53 minutes); agy's own compaction covers that case.
     cat > "$dir/.agy-loop.sh" <<EOL
 #!/usr/bin/env bash
 cd '$dir'
-deadline=\$(date -j -f "%Y-%m-%d %H:%M %Z" "\$(cat deadline.txt)" +%s)
+# deadline.txt has minutes only; without explicit seconds date -j takes the current ones (shake2: a turn at 22:46:12).
+d=\$(cat deadline.txt)
+deadline=\$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "\${d% *}:00 \${d##* }" +%s)
 agy -p "\$(cat '$prompt')" --model $model --dangerously-skip-permissions
 ${POG_ONE_TURN:+exit 0  # POG_ONE_TURN: smoke tests run the first turn only}
-while [ "\$(date +%s)" -lt "\$deadline" ]; do
+while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
   tokens=\$(python3 '$root/tools/context.py' agy-tokens '$dir')
+  left=\$(( (deadline - \$(date +%s) + 59) / 60 ))
   if [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ]; then
     echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
-    agy -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat." --model $model --dangerously-skip-permissions
+    agy -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away." --model $model --dangerously-skip-permissions
   else
-    left=\$(( (deadline - \$(date +%s)) / 60 ))
-    agy -c -p "Continue: the deadline in deadline.txt is \$left minutes away and it is the only stop condition. Re-read notes.md, check ./fh call status and chat, and take the most useful open item. Write the final summary only in the last three minutes." --model $model --dangerously-skip-permissions
+    agy -c -p "Continue: the deadline in deadline.txt is \$left minutes away (the clock: line shows it) and it is the only stop condition. Re-read notes.md, check ./fh call status, ./fh call chat and ./fh board, and keep playing until the deadline has passed." --model $model --dangerously-skip-permissions
   fi
 done
 EOL
@@ -137,8 +149,13 @@ EOL
   muse)
     model=${6:-muse-spark-1.3} effort=${7:-low}
     ctx_args=$(python3 "$root/tools/context.py" setup muse "$model" "$dir")   # -c context_compaction.* options
+    clean_args=$(python3 "$root/tools/clean-profile.py" muse "$dir")         # -c hooks=... (JSON, shell-quoted)
     pane=$(new_pane)
-    herdr pane run "$pane" "cd '$dir' && muse $ctx_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" >/dev/null
+    printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" \
+      "exec muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
+      > "$dir/.muse-run.sh"
+    chmod +x "$dir/.muse-run.sh"
+    herdr pane run "$pane" "'$dir/.muse-run.sh'" >/dev/null
     ;;
   *) echo "unknown kind $kind" >&2; exit 1 ;;
 esac

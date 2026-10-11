@@ -41,7 +41,10 @@ Your character stands still while you think, and the clock does not.
   `status` per cycle instead of chains of `research`, `date` and `inspect` calls.
 - Batch: chain a move and the action at its end with `&&`, and put many placements in one `build`.
 - Read every failure. A nonzero exit means the action failed. Don't send `./fh` output to `/dev/null` or through
-  `head`/`tail`: a pipe hides the exit status and can cut off the error. Check a result before you announce it.
+  `head`/`tail`: a pipe hides the exit status and can cut off the error. Check a result before you announce it: join
+  the action and the `say` about it with `&&`, not `;`.
+- If your shell refuses a command (permission denied, not pre-approved), only that command was refused: write it as
+  separate commands joined with `&&` (no loop, no shell variables) or as a short `python3` script, and carry on.
 - Once assemblers make a science pack, stop hand-crafting it. Build more labs and science assemblers before oil.
 
 ## Harness notes from earlier runs
@@ -52,8 +55,13 @@ Your character stands still while you think, and the clock does not.
 - `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait` (also `item_count`,
   `crafting_done`) lets the factory run until a condition holds, without polling. Add `--wait-timeout 600000` to
   wait up to 10 minutes (15 at most); hitting the limit fails with `timed_out`.
-- `./fh sleep 120` lets the game run (your queue keeps going) and returns early if you are hit or mentioned.
-  `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
+- `./fh sleep 120` lets the game run (your queue keeps going) and returns early if you are hit or mentioned, but not
+  when a machine starves; your character is idle for the whole sleep.
+- Which wait fits: a queue plan for rounds that should keep going while you think (courier, refuel; `./fh plan save`
+  once, then `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes (a
+  `researched` wait can hold you for the whole research); `./fh sleep` when only a teammate or an attack should wake
+  you.
+- `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
 - `feed` tops up every machine in reach (or `"radius":20` to walk a line) with its recipe ingredients, lab science
   packs and burner fuel; `keep` holds back a reserve. Use it instead of one `transfer` per machine.
 - `collect` takes machine outputs only; it leaves chests alone unless you name their positions or pass `chests:true`.
@@ -79,7 +87,8 @@ Your character stands still while you think, and the clock does not.
 
 Your context is compacted automatically when it fills up, and the summary keeps only your last few actions.
 `notes.md` is your durable memory: after a compaction you continue from it. Keep it in this layout (it starts as a
-skeleton), short enough to re-read in one go (aim under 6 KB), with exact coordinates and ids:
+skeleton), short enough to re-read in one go (aim under 6 KB, replacing old lines rather than keeping superseded
+ones), in plain sentences with spaces between words, with exact coordinates and ids:
 
 - `## Now`: current goal, the next 1-3 concrete steps, what you are waiting on.
 - `## Claims and coordinates`: your claimed areas and what is in them; teammates' claims; key sites (ore patches,
@@ -95,8 +104,9 @@ told your context was compacted (or you notice you lost track), read `notes.md` 
 
 ## Stopping
 
-The deadline is the only stop condition; there is no wind-down period. If your job is finished, blocked or
-destroyed, run `./fh call status` and `./fh call chat` and take the most useful open item: unfuelled burners, starved
-labs, turrets low on ammo, requests naming you, open board items. Check `date` every so often. Three minutes before
-the deadline, finish `notes.md` with a final summary: milestones reached with game times, what slowed you down,
-harness problems you hit, and the tool changes that would have helped most. Then end your turn.
+The deadline in `deadline.txt` is the only stop condition. The `clock:` line on every reply ends with the time left
+(`deadline in 12m`), which is easier to trust than arithmetic on `date` or the game clock. In the last three minutes,
+add a final summary to `notes.md` (milestones with game times, what slowed you down, harness problems you hit, the
+tool changes that would have helped most), then keep playing; end your turn once the `clock:` line says the deadline
+has passed. When your own job is finished or blocked, `./fh call status`, `./fh call chat` and `./fh board` show what
+is still open.
