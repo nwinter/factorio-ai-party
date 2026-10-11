@@ -25,11 +25,16 @@ python3 tools/stream/analyst.py --replay runs/shake2 --at 45 --once --dry-run   
 python3 tools/stream/analyst.py --replay runs/shake1 --at 40 --at-step 6 --cycles 3   # walk a past run
 python3 tools/stream/analyst.py --world n --digest-only                               # what the model is given
 python3 tools/stream/analyst.py --model opus --every 120 ...                          # slower, catches more
-python3 tools/analyst/test_analyst.py                                                 # offline tests
+python3 tools/stream/analyst.py ... --feed http://127.0.0.1:8788 --viewer-questions     # + chat questions on air
+python3 tools/stream/analyst.py --replay runs/sapilot --at 20 --kb space-age-2.0.77 --ask-test "how many rocket parts?"
+python3 tools/stream/analyst.py --eval --eval-only analyst --eval-viewer               # 30 questions, on-air path
+python3 tools/analyst/test_analyst.py; python3 tools/stream/caster_selftest.py         # offline tests
 ```
 
-`tools/start-team.sh` starts it with the casters (`POG_ANALYST=0` skips it, `POG_ANALYST_MODEL=opus` switches model),
-reading as the first bot with peek, posting to the service on 8788 and answering questions on 8789.
+`tools/start-team.sh` starts it with the casters, reading as the first bot with peek, posting to the service on
+8788 and answering questions on 8789. `POG_ANALYST=0` skips it, `POG_ANALYST_MODEL=opus` switches model, and
+`POG_VIEWER_QUESTIONS=0` turns off chat questions on air. Space Age runs set `POG_KB=space-age-2.0.77`
+(`--kb` does the same by hand).
 
 Run `tools/stream/analyst.py` as a bare command (no `cd ... &&`, no pipe): `.claude/settings.local.json` exempts
 exactly `python3 tools/stream/analyst.py *` from the sandbox, which `claude -p` needs to reach its login and
