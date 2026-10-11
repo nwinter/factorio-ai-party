@@ -193,7 +193,7 @@ round 1, before tags; the difference is mostly the extra bots' charting).
   (helmets and accessories by the head's top row, visors by the eye row, emblems by the chest) get one variant per
   place. The glow backdrop is 4 ring masks tinted from the suit, and night stars 4..7 are separate layers shown by the
   name's hash, as in avatar.js.
-- That makes 165 layers on one 3072x576 sheet (21 KB). Each cell is 96 px (the 24 px art upscaled 4x, so it stays
+- That makes 175 layers (with eng/art's headset) on one 3072x576 sheet (22 KB). Each cell is 96 px (the 24 px art upscaled 4x, so it stays
   crisp without filtering flags) at sprite scale 0.25. `avatar_parts.lua` (4 KB) lists the layers for both `data.lua`
   and the runtime.
 - `avatar.lua` is a Lua port of avatar.js's `resolve` (FNV-1a and mulberry32 with 32-bit arithmetic: `bit32` in
@@ -206,6 +206,12 @@ round 1, before tags; the difference is mostly the extra bots' charting).
 - The runtime detects the sprites with `helpers.is_valid_sprite_path`. A world started before this mod has none and
   shows the tag alone. When the sprites appear (after a restart with the new mod), the next recheck adds the avatar.
 - `fh deploy` bundles skip `data.lua` (and the other data and settings stage files).
+- Reconciled with main (about 00:20): eng/art added the `headset` accessory and `PARTS.picks` (headset can be chosen
+  but is never a name-based default). The generator now exports `picks` into `avatar_parts.lua` and `avatar.lua`
+  draws defaults from it, so `--check` is 400 of 400 again, `tests/nametags.lua` passes (399 assertions), npm test
+  has 95 passes plus the 4 bridge EPERM failures, and eng/art's `test_avatar.py` passes. Any later change to the
+  rules in avatar.js `resolve` or `palette` (not only the art) needs the same change in `avatar.lua`; `--check` shows
+  when it is missing.
 
 ### Asking eng/art
 
@@ -251,7 +257,13 @@ I left their file alone.
 
 ### Operator requests
 
-1. A fresh test world with the new mod, to see the avatars (item 3). Nothing here touches a, b, c, n or live; the
+1. The operator is folding this into shake3, which starts on a fresh world with the current mod (about 01:30); the
+   separate world t3 below is no longer needed. What to look for there: every bot shows its avatar above its name tag,
+   the same picture as on the overlay; no layer is drawn over the wrong one (if any is, `nametags.lua` needs one
+   render layer per part); a `say` bubble sits above the avatar; and `fh deploy` replies `protocol: 2`, which closes
+   the round 2 chunked-install gap. The original request, kept for reference:
+
+   A fresh test world with the new mod, to see the avatars (item 3). Nothing here touches a, b, c, n or live; the
    ports are unused ones. From the repo root on eng/harness2:
 
    ```sh

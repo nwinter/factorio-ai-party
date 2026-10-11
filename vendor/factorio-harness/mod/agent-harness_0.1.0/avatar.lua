@@ -59,8 +59,11 @@ return function(parts)
     local nextr = rng(M.hash(name))
     local out = {}
     for _, f in ipairs(parts.fields) do
+      -- Name-based picks come from parts.picks where a field has one (parts added
+      -- later, like the headset, are choosable but never a default).
       local list, r = parts.options[f], nextr()
-      out[f] = listed(list, av[f]) and av[f] or list[r % #list + 1]
+      local pool = parts.picks and parts.picks[f] or list
+      out[f] = listed(list, av[f]) and av[f] or pool[r % #pool + 1]
     end
     local color_pick, accent_pick = nextr(), nextr()
     local suit = parse(type(color) == 'string' and color:match('^#%x%x%x%x%x%x$') and color) or parse(parts.colors[color_pick % #parts.colors + 1])
