@@ -96,6 +96,10 @@ touched). Two 5-minute casts:
    (75 with facts): it would have rejected 7, all of them wrong ("still no steam power", "zero belts laid", "our iron's
    crawling"), and nothing that was right.
 
+Merging with eng/voices: the only conflict is `tools/stream/voices.py`; take eng/voices' version whole (it carries
+this branch's coordinate and "1,000" handling). `caster_selftest.py` passes against it with its `textprep.py`,
+`lexicon.tsv` and `vocab.tsv`. caster.py passes caption text to `TTS.speak()`, which preps the audio text itself.
+
 ## Segments (with eng/stream2)
 
 Agreed with eng/stream2 on 2026-10-10. eng/stream2 shows the segments and runs the director; the casters ask for
