@@ -1,0 +1,534 @@
+{
+ "t": "2026-10-11 00:25:28",
+ "replay": "runs/shake2",
+ "at": 50,
+ "results": [
+  {
+   "id": 1,
+   "kind": "recipe",
+   "q": "What goes into green science?",
+   "gold": "1 inserter + 1 transport belt makes 1 logistic (green) science pack in 6 s.",
+   "analyst": {
+    "answer": "Green science (logistic science pack) takes 1 transport belt and 1 inserter. It makes one pack per 6 seconds at crafting speed 1.",
+    "seconds": 6.4,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.023214400000000003,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 2,
+   "kind": "ratio",
+   "q": "How many assembling machine 2s do you need for 60 green science per minute?",
+   "gold": "8 (6 s per pack at crafting speed 0.75).",
+   "analyst": {
+    "answer": "You need 8 assembling machine 2s on the green science itself to make 60 per minute. The feeder machines are small. One each for gears, cables and circuits, one for inserters, and one for belts, so about 13 in total if you build the whole chain. The raw demand is 330 iron plates and 90 copper plates per minute.",
+    "seconds": 8.4,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.025726,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 3,
+   "kind": "mechanic",
+   "q": "If the labs switch to a different research, is the progress on the old one lost?",
+   "gold": "No. Progress is kept and resumes when the tech is picked again.",
+   "analyst": {
+    "answer": "No, the progress is kept. In Factorio 2.0 each technology stores its partial progress, so when the labs switch away and later come back, research resumes where it left off.",
+    "seconds": 5.2,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 1,
+    "cost_usd": 0.0196916,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 4,
+   "kind": "tech",
+   "q": "How do you unlock oil processing in Factorio 2.0?",
+   "gold": "It is a trigger technology: after oil gathering (pumpjack), mining crude oil completes it; no science packs.",
+   "analyst": {
+    "answer": "In 2.0, oil processing has no science cost. You unlock it by mining crude oil with a pumpjack, which is a trigger technology. To get the pumpjack, research Oil Gathering, which needs fluid handling first and costs 100 each of red and green science. Once a pumpjack is on an oil patch and pumping, oil processing completes. That unlocks the refinery, the chemical plant, basic oil processing, and solid fuel from petroleum gas.",
+    "seconds": 8.7,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 3,
+    "cost_usd": 0.0279827,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 5,
+   "kind": "entity",
+   "q": "How much power does one steam engine make?",
+   "gold": "900 kW (0.9 MW).",
+   "analyst": {
+    "answer": "One steam engine makes 900 kW at full load. It uses 30 steam per second to do that. Two engines per boiler is the usual pairing.",
+    "seconds": 6.3,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.022926799999999997,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 6,
+   "kind": "ratio",
+   "q": "How many steam engines can one boiler run?",
+   "gold": "2 (boiler 1.8 MW, engine 0.9 MW).",
+   "analyst": {
+    "answer": "One boiler runs two steam engines. A boiler produces 1.8 MW of steam and each engine uses 900 kW. That is why the usual layout is one offshore pump to 20 boilers to 40 engines.",
+    "seconds": 5.4,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 1,
+    "cost_usd": 0.0203956,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 7,
+   "kind": "ratio",
+   "q": "How many boilers can one offshore pump supply?",
+   "gold": "20 (1,200 water per second; each boiler uses 60).",
+   "analyst": {
+    "answer": "One offshore pump supplies 20 boilers. The pump moves 1200 water per second, and each boiler burns 60 per second at its full 1.8 MW. Those 20 boilers feed 40 steam engines.",
+    "seconds": 7.7,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 3,
+    "cost_usd": 0.019953600000000002,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 8,
+   "kind": "recipe",
+   "q": "What does a rocket part cost?",
+   "gold": "10 processing units, 10 low density structures and 10 rocket fuel, made in the silo; a rocket needs 100 parts.",
+   "analyst": {
+    "answer": "A rocket part costs 10 processing units, 10 low density structures and 10 rocket fuel. It's made in the rocket silo, and a silo needs 100 rocket parts to build one rocket.",
+    "seconds": 5.0,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0163611,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 9,
+   "kind": "biters",
+   "q": "Why do biters attack the base?",
+   "gold": "Pollution spreads across chunks; when it reaches nests (spawners) they absorb it and send attack groups at the polluters.",
+   "analyst": {
+    "answer": "Biters attack because of pollution. Our machines, mostly boilers and mining drills, put out pollution, and when that cloud drifts over a nest, the spawners absorb it and use it to build attack groups. Those groups then walk toward the machines that made the pollution, hitting turrets, walls and any of our people in the way. Peaceful mode turns this off.",
+    "seconds": 6.1,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0295731,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 10,
+   "kind": "biters",
+   "q": "At what evolution do medium biters start to appear?",
+   "gold": "From evolution 0.2 (20%).",
+   "analyst": {
+    "answer": "Medium biters start showing up in attack groups at around 20% evolution. That's roughly when the first ones can spawn, and they get more common as evolution climbs toward big biters at about 50%. Medium spitters come later, at around 40%.",
+    "seconds": 6.5,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 3,
+    "cost_usd": 0.0331636,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 11,
+   "kind": "entity",
+   "q": "What is the range of a gun turret?",
+   "gold": "18 tiles.",
+   "analyst": {
+    "answer": "A gun turret has a range of 18 tiles. It holds one ammo slot and has 400 health.",
+    "seconds": 5.2,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0159352,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 12,
+   "kind": "entity",
+   "q": "How fast is a yellow transport belt?",
+   "gold": "15 items per second (900 per minute), both lanes.",
+   "analyst": {
+    "answer": "A yellow transport belt moves 15 items per second, which is 7.5 on each lane. That works out to 900 items per minute.",
+    "seconds": 5.2,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0159294,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 13,
+   "kind": "path",
+   "q": "From a new game, how many technologies do you need to research to get the rocket silo?",
+   "gold": "44 including the rocket silo itself (43 before it).",
+   "analyst": {
+    "answer": "From a new game you need 44 technologies to unlock the rocket silo, and that count includes the silo itself. Four of those are trigger techs finished by an action, such as crafting a lab or mining crude oil, so they cost no science packs. The whole path takes 3,350 chemical, 1,600 production and 1,000 utility science packs.",
+    "seconds": 7.6,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 3,
+    "cost_usd": 0.024524900000000002,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 14,
+   "kind": "recipe",
+   "q": "What is blue science made of?",
+   "gold": "1 sulfur, 3 advanced circuits and 2 engine units make 2 chemical science packs in 24 s.",
+   "analyst": {
+    "answer": "Blue science, the chemical science pack, takes 1 sulfur, 3 advanced circuits and 2 engine units. Those make 2 packs in 24 seconds at crafting speed 1.",
+    "seconds": 5.5,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0165229,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 15,
+   "kind": "entity",
+   "q": "How much ore does an electric mining drill mine per minute?",
+   "gold": "30 per minute (0.5 per second) on iron, copper, coal or stone, before mining productivity.",
+   "analyst": {
+    "answer": "An electric mining drill mines 30 ore per minute on iron, copper, coal or stone, before any mining productivity bonus. That comes from a mining speed of 0.5 and it uses 90 kW of power.",
+    "seconds": 5.5,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.016697899999999998,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 16,
+   "kind": "entity",
+   "q": "How much pollution does a boiler make per minute?",
+   "gold": "30 per minute.",
+   "analyst": {
+    "answer": "A boiler makes 30 pollution per minute while it's running at full load. It burns fuel at 1.8 MW to do that.",
+    "seconds": 5.0,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0162096,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 17,
+   "kind": "tech",
+   "q": "What does steel processing unlock, and what does it cost?",
+   "gold": "Steel plate and steel chest; 50 red science (50 units of 5 s).",
+   "analyst": {
+    "answer": "Steel processing unlocks the steel plate and steel chest recipes. It costs 50 red science packs, at 5 seconds per unit.",
+    "seconds": 5.1,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.016513800000000002,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 18,
+   "kind": "recipe",
+   "q": "How long does an iron plate take to smelt in a stone furnace?",
+   "gold": "3.2 seconds (stone furnace speed 1).",
+   "analyst": {
+    "answer": "An iron plate takes 3.2 seconds to smelt in a stone furnace, which has crafting speed 1. That works out to about 18.75 plates per minute from each furnace.",
+    "seconds": 5.4,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0166982,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 19,
+   "kind": "ratio",
+   "q": "How many stone furnaces make 120 iron plates per minute?",
+   "gold": "6.4, so 7 furnaces.",
+   "analyst": {
+    "answer": "You need 7 stone furnaces, since the math comes to 6.4 and you can't build a fraction. Each one makes 18.75 plates a minute. They'll need 120 iron ore a minute, which is about 4 electric mining drills.",
+    "seconds": 6.1,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0173721,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 20,
+   "kind": "research",
+   "q": "How long does oil gathering take to research with 9 labs?",
+   "gold": "About 5.6 minutes (100 units x 30 s / 9 labs), if red and green packs keep up (about 18 of each per minute).",
+   "analyst": {
+    "answer": "Oil gathering takes about 5.6 minutes with 9 labs at base lab speed. That assumes the labs get 18 automation and 18 logistic science packs per minute.",
+    "seconds": 5.4,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0165559,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 21,
+   "kind": "space-age",
+   "q": "Which planets are in Space Age?",
+   "gold": "Nauvis plus Vulcanus, Fulgora, Gleba and Aquilo (and the solar system edge / Shattered Planet beyond).",
+   "analyst": {
+    "answer": "Space Age has five planets: Nauvis, where everyone starts, plus Vulcanus (volcanic, with tungsten), Fulgora (lightning-struck scrap islands), Gleba (a swamp where food spoils) and frozen Aquilo. The finale is a trip to the solar system edge, and a fixed 4,000,000 km beyond it lies the Shattered Planet, which players aren't expected to reach.",
+    "seconds": 9.2,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 3,
+    "cost_usd": 0.0357416,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 22,
+   "kind": "space-age",
+   "q": "What is the Shattered Planet?",
+   "gold": "A destroyed planet far beyond the solar system edge; you cannot land; its remains are promethium asteroids, used for promethium science.",
+   "analyst": {
+    "answer": "The Shattered Planet is the Space Age endgame destination. It sits 4,000,000 km past the solar system edge, and only promethium asteroids remain of it. The asteroid density keeps rising as you approach, and the game isn't built for players to actually arrive, so reaching the edge is what counts as winning.",
+    "seconds": 6.7,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0326492,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 23,
+   "kind": "state",
+   "q": "What is the team researching right now?",
+   "gold": "Engine.",
+   "analyst": {
+    "answer": "The team is researching Engine right now, at about 48 minutes into the game. They've finished 13 technologies so far, and science is running at 24.5 packs per minute.",
+    "seconds": 6.0,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.017075,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 24,
+   "kind": "state",
+   "q": "What is the team's science per minute right now?",
+   "gold": "About 24.5 (16.3 red + 8.2 green) over the last 10 minutes.",
+   "analyst": {
+    "answer": "The team is making about 24.5 science per minute, averaged over the last 10 minutes. That is 16.3 red (automation) and 8.2 green (logistic). They are 48 minutes in and currently researching engine.",
+    "seconds": 7.0,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0172573,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 25,
+   "kind": "state",
+   "q": "How does this team's pace compare with shake1 at the same point?",
+   "gold": "Behind on output: 24.5 SPM vs shake1's 30.6 at minute 50; ahead on research, 13 technologies vs 11.",
+   "analyst": {
+    "answer": "At 48 minutes the team is a little behind shake1 on output and a little ahead on research. The team makes 24.5 science per minute against shake1's 29.6, and it makes about 294 iron plates per minute against shake1's 320. The team has 13 technologies done to shake1's 11, and both teams are researching engine.",
+    "seconds": 8.1,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 4,
+    "cost_usd": 0.026274600000000002,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 26,
+   "kind": "state",
+   "q": "What is the next big milestone, and when does it usually come?",
+   "gold": "Oil: engine, fluid handling, oil gathering, then oil processing by mining crude; past runs got oil processing at minutes 54 to 61, the nine-agent runs never did.",
+   "analyst": {
+    "answer": "At 48 minutes the team has red and green science running and is researching engine. The next big milestone is oil, then blue science once they have plastic and sulfur. Oil usually arrives somewhere between 45 minutes and 2 hours, and blue science follows at about 1 to 2.5 hours.",
+    "seconds": 6.4,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 3,
+    "cost_usd": 0.0337238,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 27,
+   "kind": "state",
+   "q": "Is copper or iron the bottleneck right now?",
+   "gold": "Copper: about 66 copper plates per minute against 294 iron.",
+   "analyst": {
+    "answer": "Copper is the bottleneck. The team is making 294.1 iron plates a minute but only 66.2 copper plates a minute, so copper is far behind. That shortfall is holding back circuits and green science.",
+    "seconds": 6.8,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 3,
+    "cost_usd": 0.0179957,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 28,
+   "kind": "ratio",
+   "q": "How many assembling machine 1s do you need for 60 red science per minute?",
+   "gold": "10 (5 s per pack at crafting speed 0.5).",
+   "analyst": {
+    "answer": "You need 10 assembling machine 1s on red science for 60 per minute. Each one makes 6 per minute, since the recipe takes 5 seconds and the machine runs at 0.5 speed. You'll also want one more assembler for the gear wheels that feed it.",
+    "seconds": 5.8,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 2,
+    "cost_usd": 0.0182424,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 29,
+   "kind": "mechanic",
+   "q": "Can a biter attack destroy research progress?",
+   "gold": "No. Biters can destroy labs, which pauses research, but finished techs and saved progress stay.",
+   "analyst": {
+    "answer": "No. Research progress is stored in the team's saved research state, not in any building, so biters destroying labs, assemblers or belts can't remove packs already spent or technologies already finished. An attack can wreck the labs and the science supply, so new research stalls until they're rebuilt, but what's been researched stays.",
+    "seconds": 4.0,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 1,
+    "cost_usd": 0.01322,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  },
+  {
+   "id": 30,
+   "kind": "alerts",
+   "q": "The overlay says '7 lost near the iron mines: 4 stone wall, 3 gun turret (by 5 small biter)'. What happened?",
+   "gold": "Our own 4 walls and 3 gun turrets were destroyed by small biters (5 were involved); it is a loss for the team, not new enemies or nests.",
+   "analyst": {
+    "answer": "A group of five small biters attacked the defenses by the iron mines and destroyed seven of our buildings: four stone walls and three gun turrets. That means the base was attacked and lost structures, not that the biters were wiped out or that anything in the mines was hit. I can't tell you whether the biters were killed or whether the mines kept running, so I'd call it a small raid that got through a thin defense line.",
+    "seconds": 7.8,
+    "correct": true,
+    "missing": [],
+    "rejected": [],
+    "turns": 3,
+    "cost_usd": 0.0197428,
+    "model": "sonnet",
+    "human_correct": true
+   }
+  }
+ ],
+ "summary": {
+  "analyst": {
+   "correct": 30,
+   "of": 30,
+   "by_kind": {
+    "knowledge": "25/25",
+    "state": "5/5"
+   },
+   "median_s": 6.1,
+   "max_s": 9.2,
+   "cost_usd": 0.644
+  }
+ },
+ "human_summary": {
+  "analyst": "30/30"
+ },
+ "note": "after the answer-only prompt change (at most one supporting figure, read from a tool)"
+}

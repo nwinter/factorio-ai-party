@@ -28,7 +28,8 @@ ratios and stats of this version (do no arithmetic in your head: use kb_output, 
 kb_path), game_* for the current game, history_* for past runs, notes for pacing, biters, Space Age. Questions about \
 "the team" or "right now" are about the current game in game_snapshot; past runs are in history_at. Speak as on a \
 live broadcast: do not mention tools, lookups, snapshots or replays, and leave out anything you could not check. \
-Reply with the answer only."""
+Answer what was asked; add at most one supporting figure, and only one you read from a tool result or the game \
+snapshot this turn, quoted as it appears (do not restate a total as a per-colour rate). Reply with the answer only."""
 
 HOST_PROMPT = ("{persona} You are casting a livestream of AI agents playing Factorio together. A viewer asks a "
                "question in chat. Answer it on air in one or two short sentences, from what you know about Factorio "

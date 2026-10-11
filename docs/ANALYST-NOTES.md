@@ -141,6 +141,13 @@ played from the shake2 score log at minute 50 (snapshot 0h48m, shake2 itself lef
   being kept, two engines per boiler, belt speed, the four planets, copper as the bottleneck and the current research.
 - Analyst slips: Q2 says "about 4 more" feeder machines while listing 5 (the main figure, 8, is right). Cost
   $0.60 API-equivalent for the 30 (subscription route, so quota rather than money).
+- Second analyst pass (`results-20261011-002414.json`): 30/30 by regex, 29/30 by my reading, median 6.4 s, max 8.9 s.
+  Q26 stated a false figure in passing ("red and green both run at 24 a minute"; 24.5 is the total), on a question it
+  otherwise answered right. Minor slips: Q2 has one assembler "shared" by two recipes, Q16 says boiler pollution does
+  not depend on fuel. The errors were side remarks beyond the question, so the answer prompt now asks for the answer
+  plus at most one supporting figure read from a tool this turn. Third pass with that prompt
+  (`results-20261011-002528.json`): 30/30 by regex and by my reading, median 6.1 s, max 9.2 s, shorter answers.
+  Over the three passes: 89/90 by my reading.
 - Relay misses: dropped the key fact (Q2 said 13 machines in all, Q17 dropped the 50-pack cost, Q22 dropped
   promethium) or rounded it (Q18, 3.2 s to "about three"). A caster that keeps the analyst's numbers verbatim would
   close most of that.
