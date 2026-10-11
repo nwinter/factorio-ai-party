@@ -143,6 +143,38 @@ def operator_pass():
     print("operator pass: ok")
 
 
+def request_form():
+    """players.Game sends the stream service's operator request form (counted as a harness request, not logged,
+    by the console audit on eng/broker)."""
+    sent = []
+
+    class Stub:
+        def command(self, cmd):
+            sent.append(cmd)
+            return json.dumps({"ok": True, "result": {"tick": 5}})
+
+    g = players.Game.__new__(players.Game)
+    g.harness = Stub()
+    assert g.operator("votes_open") == {"tick": 5}
+    cmd = sent[0]
+    prefix = '/silent-command rcon.print(remote.call("agent_harness", "dispatch", [['
+    assert cmd.startswith(prefix) and cmd.endswith("]]))"), cmd
+    req = json.loads(cmd[len(prefix):-4])
+    assert req["operator"] is True and req["action"] == "votes_open" and req["id"].startswith("players-"), req
+
+    class Refused(Stub):
+        def command(self, cmd):
+            return json.dumps({"ok": False, "error": {"message": "unsupported action; call describe"}})
+
+    g.harness = Refused()
+    try:
+        g.operator("votes_open")
+        raise AssertionError("expected an error")
+    except RuntimeError as e:
+        assert str(e) == "votes_open: unsupported action; call describe", e
+    print("request form: ok")
+
+
 LUA = r"""
 defines={events={},inventory={},build_check_type={manual_ghost=1}}
 local p={index=1,name='nick',valid=true,permission_group={name='Default'}}
@@ -194,4 +226,5 @@ if __name__ == "__main__":
     tally()
     book()
     operator_pass()
+    request_form()
     parity()
