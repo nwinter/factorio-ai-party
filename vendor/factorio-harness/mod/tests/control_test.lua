@@ -37,6 +37,27 @@ local source='return {dispatch=function() return {new=true} end,tick=function() 
 eq(encoded[interface.install(source)].ok,true); eq(storage.agent_harness.source,source)
 eq(encoded[interface.dispatch(request('new','observe'))].result.new,true)
 events.load(); eq(encoded[interface.dispatch(request('reload','observe'))].result.new,true)
+-- Chunked install: limits, chunks in order, byte check, then the same swap.
+eq(encoded[interface.install_limits()].max_bytes,8*1024*1024); eq(encoded[interface.install_limits()].chunk_bytes,262144)
+local chunked='return {dispatch=function() return {chunked=true} end,tick=function() end,stop_all=function() end}'
+local parts={chunked:sub(1,30),chunked:sub(31,60),chunked:sub(61)}
+eq(encoded[interface.install_chunk('u1',2,3,parts[2])].ok,false) -- chunk 1 first
+eq(encoded[interface.install_chunk('u1',1,3,parts[1])].received,1)
+eq(encoded[interface.install_chunk('u1',3,3,parts[3])].ok,false) -- out of order
+eq(encoded[interface.install_chunk('u1',2,3,parts[2])].bytes,60)
+eq(encoded[interface.install_commit('u1',#chunked)].ok,false) -- incomplete; the upload is dropped
+eq(storage.agent_harness.pending_install,nil); eq(encoded[interface.dispatch(request('still-new','observe'))].result.new,true)
+for i=1,3 do interface.install_chunk('u2',i,3,parts[i]) end
+eq(encoded[interface.install_commit('u2',#chunked+1)].ok,false) -- byte count mismatch
+for i=1,3 do interface.install_chunk('u3',i,3,parts[i]) end
+local committed=encoded[interface.install_commit('u3',#chunked)]
+eq(committed.ok,true); eq(committed.protocol,2); eq(committed.bytes,#chunked); eq(storage.agent_harness.source,chunked)
+eq(encoded[interface.dispatch(request('chunked','observe'))].result.chunked,true)
+eq(encoded[interface.install_chunk('u4',1,1,string.rep('x',262145))].ok,false) -- chunk too large
+-- The single-call cap is 8 MiB now (was 524288).
+local big='return {dispatch=function() return {big=true} end,tick=function() end,stop_all=function() end}\n--'..string.rep('x',600000)
+eq(encoded[interface.install(big)].ok,true)
+eq(encoded[interface.install(source)].ok,true)
 for i=1,260 do interface.dispatch(request('bounded-'..i,'build')) end
 eq(#storage.agent_harness.order,256); eq(storage.agent_harness.cache.one,nil)
 -- Request byte budget also bounds large mutation replay records.

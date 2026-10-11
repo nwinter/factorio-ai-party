@@ -1,12 +1,7 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { dirname, basename, join } from 'node:path';
-import { luaString } from './harness.js';
+import { luaString, MAX_RUNTIME_BYTES } from './harness.js';
 import { compactLua } from './compact.js';
-
-/** What one runtime may be at most: control.lua's install cap (8 MiB, sent in
- * chunks). Worlds whose control.lua predates chunked installs take 512 KiB. */
-export const MAX_RUNTIME_BYTES = 8 * 1024 * 1024;
-export const LEGACY_INSTALL_BYTES = 524288;
 
 /** Bundle sibling Lua modules into one atomic, save-persistent reload payload.
  * Standard require remains available for Factorio's libraries. */

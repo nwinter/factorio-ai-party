@@ -2,6 +2,9 @@
 local default_runtime = require('runtime')
 local runtime
 local MAX_CACHE_BYTES=8*1024*1024
+-- A runtime may be up to 8 MiB. One RCON command carries up to MAX_CHUNK_BYTES
+-- of it: larger runtimes arrive as install_chunk calls and install_commit.
+local MAX_RUNTIME_BYTES,MAX_CHUNK_BYTES=8*1024*1024,262144
 local function trim_cache(s)
   while #s.order>256 or s.cache_bytes>MAX_CACHE_BYTES do
     local oldest=table.remove(s.order,1)
@@ -79,6 +82,22 @@ local function operator(name, arg)
   end)
   return helpers.table_to_json(ok and result or {ok=false, tick=game.tick, error={code='operator_failed', message=tostring(result)}})
 end
+-- Validate, then swap the running runtime (shared by install and install_commit).
+local function install_source(source)
+  assert(type(source) == 'string' and #source <= MAX_RUNTIME_BYTES, 'runtime source must be <='..MAX_RUNTIME_BYTES..' bytes')
+  local candidate = compile(source) -- validate before changing the running runtime
+  local stopped=true
+  if runtime then stopped=pcall(runtime.stop_all) end
+  if not stopped then candidate.stop_all() end
+  state().source = source
+  runtime = candidate
+  state().runtime_fault=nil
+  return {ok = true, tick = game.tick, protocol = 2, bytes = #source}
+end
+local function installing(fn)
+  local ok,result=pcall(fn)
+  return helpers.table_to_json(ok and result or {ok=false,tick=game.tick,error={code='invalid_runtime',message=tostring(result)}})
+end
 remote.add_interface('agent_harness', {
   bot_create = function(name) return operator('bot_create', name) end,
   bot_remove = function(name) return operator('bot_remove', name) end,
@@ -86,19 +105,38 @@ remote.add_interface('agent_harness', {
   camera = function(json) return operator('camera', json) end,
   cameras = function() return operator('cameras') end,
   profile_ticks = function(n) return operator('profile_ticks', n) end,
-  install = function(source)
-    local ok,result=pcall(function()
-    assert(type(source) == 'string' and #source <= 524288, 'runtime source must be <=524288 bytes')
-    local candidate = compile(source) -- validate before changing the running runtime
-    local stopped=true
-    if runtime then stopped=pcall(runtime.stop_all) end
-    if not stopped then candidate.stop_all() end
-    state().source = source
-    runtime = candidate
-    state().runtime_fault=nil
-    return {ok = true, tick = game.tick, protocol = 1}
+  install = function(source) return installing(function() return install_source(source) end) end,
+  -- What this control.lua accepts; a world without it takes one install of <=524288 bytes.
+  install_limits = function() return helpers.table_to_json{max_bytes=MAX_RUNTIME_BYTES, chunk_bytes=MAX_CHUNK_BYTES, protocol=2} end,
+  -- Chunk index of total for upload id; index 1 starts over (an abandoned upload is dropped).
+  install_chunk = function(id, index, total, data)
+    return installing(function()
+      assert(type(id) == 'string' and #id >= 1 and #id <= 64, 'id must be a 1..64 character string')
+      assert(type(total) == 'number' and total == math.floor(total) and total >= 1 and total <= MAX_RUNTIME_BYTES / MAX_CHUNK_BYTES + 1, 'total out of range')
+      assert(type(index) == 'number' and index == math.floor(index) and index >= 1 and index <= total, 'index out of range')
+      assert(type(data) == 'string' and #data <= MAX_CHUNK_BYTES, 'chunk must be a string of <='..MAX_CHUNK_BYTES..' bytes')
+      local s = state()
+      if index == 1 then s.pending_install = {id=id, total=total, parts={}, bytes=0} end
+      local p = s.pending_install
+      assert(p and p.id == id and p.total == total, 'no upload '..id..' in progress; send chunk 1 first')
+      assert(index == #p.parts + 1, 'expected chunk '..(#p.parts + 1)..', got '..index)
+      assert(p.bytes + #data <= MAX_RUNTIME_BYTES, 'runtime source must be <='..MAX_RUNTIME_BYTES..' bytes')
+      p.parts[index] = data; p.bytes = p.bytes + #data
+      return {ok=true, tick=game.tick, id=id, received=index, total=total, bytes=p.bytes}
     end)
-    return helpers.table_to_json(ok and result or {ok=false,tick=game.tick,error={code='invalid_runtime',message=tostring(result)}})
+  end,
+  -- Assemble the chunks of id; bytes must match what the host sent.
+  install_commit = function(id, bytes)
+    return installing(function()
+      local s = state()
+      local p = s.pending_install
+      s.pending_install = nil
+      assert(p and p.id == id, 'no upload '..tostring(id)..' in progress')
+      assert(#p.parts == p.total, 'upload incomplete: '..#p.parts..' of '..p.total..' chunks')
+      local source = table.concat(p.parts)
+      assert(#source == bytes, 'upload has '..#source..' bytes, expected '..tostring(bytes))
+      return install_source(source)
+    end)
   end,
   dispatch = function(json)
     local request
