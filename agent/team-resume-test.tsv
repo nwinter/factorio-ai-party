@@ -1,0 +1,4 @@
+# Two cheap agents for test shifts (tools/start-team.sh with POG_RESUME; docs/HARNESS3-NOTES.md, round 7)
+# name	kind	route	model	effort	label	harness
+haiku	claude	claude	haiku	low	Claude Haiku 5.5	Claude Code
+luna	codex	codex-b	gpt-6-luna	low	GPT-6 Luna	Codex

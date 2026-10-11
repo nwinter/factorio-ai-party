@@ -1,7 +1,99 @@
 # Harness3 notes: the shake2 harness bugs (branch eng/harness3)
 
-Round 6 (the runtime.lua locals guard and refactor plan) comes first, then round 5 (the agents' own tool requests),
-round 4 (shake3 fixes) and the shake2 round.
+Round 7 (shifts: resuming a team world) comes first, then round 6 (the runtime.lua locals guard and refactor plan),
+round 5 (the agents' own tool requests), round 4 (shake3 fixes) and the shake2 round.
+
+## Round 7: shifts, resuming a team world
+
+### What a resume does
+
+`POG_RESUME=PREVIOUS_RUN tools/start-team.sh RUN MINUTES [--stream]`:
+
+1. `tools/win/resume-save.ps1 -Name n -From PREVIOUS_RUN -Check` (read-only, the world may be running) reports the
+   save it would take and the instance's mods. The save is the newest of `saves\PREVIOUS_RUN.zip` (stop-team's
+   `/server-save`) and the `_autosave*.zip` written after it, unless another run's save is newer than
+   `PREVIOUS_RUN.zip` (another run used the world since; its autosaves are not ours), then `PREVIOUS_RUN.zip`.
+   start-team refuses when the instance's `space-age` mod differs from `POG_SPACE_AGE` ("refusing: world n's mods
+   have space-age on but POG_SPACE_AGE=0; run again with POG_SPACE_AGE=1").
+2. Stop world n; copy the harness mod to `D:\pog\mods`; `resume-save.ps1 -To RUN` copies that save to
+   `saves\RUN.zip` (so this shift saves under its own name and the previous run's save stays as it was) and
+   refreshes the instance's harness mod (the directors copy the instance's mods). No new instance.
+3. The server starts on `RUN.zip`; describe + deploy as before; then `pog.py resume` (a save made while tick-paused
+   would load paused) and the log line `world n: resumed at tick T (game Nm)`.
+4. Directors join as before. `tools/team_bots.py` lists the save's bots (operator `bots`) and creates only members
+   it lacks ("haiku kept (alive, at -24,-13)", "luna created ..."; bots not in the team are listed and left alone).
+   Fresh worlds go through the same script (every member created).
+5. `runs/RUN/resumed-from` names the previous run. Each workspace's `notes.md` is the previous shift's, under one
+   line: "(Carried over from the previous shift, run shake4: its notes.md for haiku, as that shift left it.)"; a
+   member new to the world gets the usual empty notes. The prompt gains one sentence: "This is a later shift of the
+   same world: your bot and the factory are as the last shift left them, and notes.md is where you left off."
+6. The previous run's directory is `runs/PREVIOUS_RUN` in this checkout, else `~/code/player-of-games/runs/...`
+   (`POG_RESUME_DIR` overrides). `POG_DRY_RUN=1` prints the plan (save check, per-member notes found or not, the
+   previous run's last score tick) and touches nothing. `POG_OBS=0` skips the overlay tunnel, OBS scene, recording
+   and stream (test shifts). Between shifts, `POG_STOP_WORLD=1 tools/stop-team.sh RUN` also stops the server and
+   directors after the save, so game time moves only while agents play (the default is unchanged: the world keeps
+   running, and with directors connected it does not auto-pause).
+
+### Continuation in score, stream and analyst
+
+- Score: `pog.py score` reads `game.tick`, which goes on from the save; the new run's `scores.jsonl` starts there.
+- Analyst history (`tools/analyst/history.py`): a run with `resumed-from` joins the first shift's series (one series
+  "shake4", labelled "shifts shake4 + shake5"), and a live shift excludes its world's earlier shifts from the
+  benchmarks (it is never compared with itself). Pace comparisons were already by game time (tick / 3600).
+- Stream service and casters: every time is game ticks, so they continue. The research model primes on its first
+  poll, so old research is not announced again. The casters' baseline (shake1, 60 game minutes) gave "the same game
+  time" comparisons from its last sample past its end; it now gives none more than 5 minutes past it.
+
+### What else needs care
+
+- The deploy at resume interrupts every active action and pauses every plan (`runtime.stop_all`), except a repeating
+  plan resting between cycles: a previous shift's `queue_repeat` courier keeps cycling under the new session, which
+  learns of it only from its notes or `queue_status`.
+- Chat cursors are in the save: a new session's first `chat` returns what came in since its bot last read, up to the
+  200-message log. Board items and claims carry over (as intended); so do profiles, glyphs and voices.
+- The clock line shows the save's game time (about 2 h for shake4): the playbook has no first-hour assumption, but `agent/team.md` says "in your
+  first minute, choose how you appear" (the profile is already set; a second `profile` with the same glyph is fine).
+- stop-team's save is what the next shift continues; if the world kept running with directors after it (default),
+  the autosaves taken after it are newer and win (idle bots, and biters, for up to that long).
+- Space Age directors need the expansion build: start-team passes it from `POG_SPACE_AGE`, which the check matches
+  to the save.
+- Not checked in this round: the companion site (`site/push_live.py`) and `tools/report.py`/`tools/watch.py` are
+  per-run and start from the new run's files; the site's own run history, if it lists runs, shows shifts as runs.
+
+### Tests
+
+`python3 tools/test_resume.py`: `bash -n` of the four scripts; team_bots keeps/creates (fake RCON, including
+`{}` for an empty list and an operator failure); new-run's notes carry-over and a new member's fresh notes; the
+resume sentence; the start-team dry run (plan lines, previous last tick, no run directory made, a run id equal to
+the previous one refused); resume_check's comparisons. `tools/analyst/test_analyst.py` (shifts as one series),
+`tools/stream/caster_selftest.py` (no pace past the baseline). Live, read-only: `team_bots.existing` listed shake4's
+nine bots on world n, and `tools/resume_check.py` against a scratch run "resuming" shake4 reported the tick, research,
+buildings, both bots and both notes as carried over.
+
+Not run here: anything over ssh (this sandbox refuses <windows-box-ip>:22, "Operation not permitted"), so
+`resume-save.ps1` is untested (no PowerShell on the Mac either), and the permission mode refused running
+`tools/start-team.sh` itself, even as a dry run.
+
+### The 05:00 test (to run; this session cannot reach the box)
+
+From `/Users/owner/code/pog-harness3` on eng/harness3, after shake4 is stopped and saved (04:55):
+
+```sh
+cd /Users/owner/code/pog-harness3
+export POG_RESUME=shake4 POG_SPACE_AGE=1 POG_TEAM_FILE=agent/team-resume-test.tsv POG_OBS=0 POG_CASTER=0
+POG_DRY_RUN=1 tools/start-team.sh shift-test1 10        # the plan; expect both notes found and shake4's last tick
+tools/start-team.sh shift-test1 10                       # haiku and luna, 10 minutes, analyst on, no OBS/stream
+python3 tools/resume_check.py runs/shift-test1 n         # tick, research, buildings, bots, notes, prompt
+# after the 10 minutes:
+tools/stop-team.sh shift-test1 n
+python3 tools/analyst/history.py runs | grep shake4      # expect "shifts shake4 + shift-test1"
+```
+
+`runs/shift-test1/start.log` has the save chosen, the tick it resumed at and each bot kept or created. shake5 at
+06:00 then resumes shake4 itself (`POG_RESUME=shake4`): `shift-test1.zip` is newer than `shake4.zip`, so the check
+ignores the autosaves and takes `shake4.zip`, not the test's state. If shake5 runs from this worktree, move
+`runs/shift-test1` aside first: its `resumed-from` would make the analyst count it as a shift of shake4 (the analyst
+reads this checkout's runs and the main checkout's). From the main checkout it is not seen.
 
 ## Round 6: runtime.lua locals
 
