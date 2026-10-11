@@ -1,0 +1,225 @@
+{
+"connections": [
+{
+"from": "nauvis",
+"length": 15000,
+"name": "nauvis-vulcanus",
+"to": "vulcanus"
+},
+{
+"from": "nauvis",
+"length": 15000,
+"name": "nauvis-gleba",
+"to": "gleba"
+},
+{
+"from": "nauvis",
+"length": 15000,
+"name": "nauvis-fulgora",
+"to": "fulgora"
+},
+{
+"from": "vulcanus",
+"length": 15000,
+"name": "vulcanus-gleba",
+"to": "gleba"
+},
+{
+"from": "gleba",
+"length": 15000,
+"name": "gleba-fulgora",
+"to": "fulgora"
+},
+{
+"from": "gleba",
+"length": 30000,
+"name": "gleba-aquilo",
+"to": "aquilo"
+},
+{
+"from": "fulgora",
+"length": 30000,
+"name": "fulgora-aquilo",
+"to": "aquilo"
+},
+{
+"from": "aquilo",
+"length": 100000,
+"name": "aquilo-solar-system-edge",
+"to": "solar-system-edge"
+},
+{
+"from": "solar-system-edge",
+"length": 4000000,
+"name": "solar-system-edge-shattered-planet",
+"to": "shattered-planet"
+}
+],
+"locations": [
+{
+"distance": 15,
+"gravity_pull": 0.16666666666666666,
+"magnitude": 1,
+"name": "nauvis",
+"order": "a[nauvis]",
+"orientation": 0.2750000059604645,
+"solar_power_in_space": 300,
+"surface_properties": {
+"day-night-cycle": 25200
+},
+"type": "planet"
+},
+{
+"distance": 10,
+"gravity_pull": 0.16666666666666666,
+"magnitude": 1.5,
+"name": "vulcanus",
+"order": "b[vulcanus]",
+"orientation": 0.10000000149011612,
+"solar_power_in_space": 600,
+"surface_properties": {
+"day-night-cycle": 5400,
+"gravity": 40,
+"magnetic-field": 25,
+"pressure": 4000,
+"solar-power": 400
+},
+"type": "planet"
+},
+{
+"distance": 20,
+"gravity_pull": 0.16666666666666666,
+"magnitude": 1.1,
+"name": "gleba",
+"order": "c[gleba]",
+"orientation": 0.17499999701976776,
+"solar_power_in_space": 200,
+"surface_properties": {
+"day-night-cycle": 36000,
+"gravity": 20,
+"magnetic-field": 25,
+"pressure": 2000,
+"solar-power": 50
+},
+"type": "planet"
+},
+{
+"distance": 25,
+"gravity_pull": 0.16666666666666666,
+"magnitude": 0.9,
+"name": "fulgora",
+"order": "d[fulgora]",
+"orientation": 0.32499998807907104,
+"solar_power_in_space": 120,
+"surface_properties": {
+"day-night-cycle": 10800,
+"gravity": 8,
+"magnetic-field": 99,
+"pressure": 800,
+"solar-power": 20
+},
+"type": "planet"
+},
+{
+"distance": 35,
+"gravity_pull": 0.16666666666666666,
+"magnitude": 1,
+"name": "aquilo",
+"order": "e[aquilo]",
+"orientation": 0.22499999403953552,
+"solar_power_in_space": 60,
+"surface_properties": {
+"day-night-cycle": 72000,
+"gravity": 15,
+"magnetic-field": 10,
+"pressure": 300,
+"solar-power": 1
+},
+"type": "planet"
+},
+{
+"distance": 50,
+"gravity_pull": -0.16666666666666666,
+"magnitude": 1,
+"name": "solar-system-edge",
+"order": "f[solar-system-edge]",
+"orientation": 0.25,
+"solar_power_in_space": 1,
+"type": "space-location"
+},
+{
+"distance": 80,
+"gravity_pull": -0.16666666666666666,
+"magnitude": 1,
+"name": "shattered-planet",
+"order": "g[shattered-planet]",
+"orientation": 0.25,
+"solar_power_in_space": 1,
+"type": "space-location"
+},
+{
+"distance": 0,
+"gravity_pull": 0,
+"magnitude": 1,
+"name": "space-location-unknown",
+"order": "",
+"orientation": 0,
+"solar_power_in_space": 1,
+"type": "space-location"
+}
+],
+"qualities": [
+{
+"hidden": false,
+"level": 0,
+"name": "normal"
+},
+{
+"hidden": false,
+"level": 1,
+"name": "uncommon"
+},
+{
+"hidden": false,
+"level": 2,
+"name": "rare"
+},
+{
+"hidden": false,
+"level": 3,
+"name": "epic"
+},
+{
+"hidden": false,
+"level": 5,
+"name": "legendary"
+},
+{
+"hidden": true,
+"level": 0,
+"name": "quality-unknown"
+}
+],
+"surface_properties": [
+{
+"default": 300,
+"name": "day-night-cycle"
+},
+{
+"default": 10,
+"name": "gravity"
+},
+{
+"default": 90,
+"name": "magnetic-field"
+},
+{
+"default": 1000,
+"name": "pressure"
+},
+{
+"default": 100,
+"name": "solar-power"
+}
+]
+}

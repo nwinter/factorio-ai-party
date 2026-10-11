@@ -1,0 +1,4 @@
+# name	kind	route	model	effort	label	harness
+astra	codex	codex-b	gpt-6-astra	low	GPT-6 Astra	Codex
+opus	claude	claude-b	opus	low	Claude Opus 5.5	Claude Code
+gemini	agy	-	gemini-3.8-flash-high	-	Gemini 3.8 Flash	Antigravity

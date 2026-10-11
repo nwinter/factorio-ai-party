@@ -1,0 +1,235 @@
+[
+{
+"default_temperature": -35,
+"heat_capacity": 200,
+"hidden": false,
+"max_temperature": -33,
+"name": "ammonia"
+},
+{
+"default_temperature": -50,
+"heat_capacity": 200,
+"hidden": false,
+"max_temperature": 100,
+"name": "ammoniacal-solution"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "crude-oil"
+},
+{
+"default_temperature": 15,
+"heat_capacity": 10,
+"hidden": false,
+"max_temperature": 500,
+"name": "electrolyte"
+},
+{
+"default_temperature": 0,
+"heat_capacity": 1000,
+"hidden": true,
+"max_temperature": 0,
+"name": "fluid-unknown"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 100,
+"hidden": false,
+"max_temperature": 25,
+"name": "fluorine"
+},
+{
+"default_temperature": -150,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 180,
+"name": "fluoroketone-cold"
+},
+{
+"default_temperature": 180,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 180,
+"name": "fluoroketone-hot"
+},
+{
+"default_temperature": 1000000,
+"heat_capacity": 25,
+"hidden": false,
+"max_temperature": 10000000,
+"name": "fusion-plasma"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "heavy-oil"
+},
+{
+"default_temperature": 15,
+"heat_capacity": 10,
+"hidden": false,
+"max_temperature": 2000,
+"name": "holmium-solution"
+},
+{
+"default_temperature": 1500,
+"heat_capacity": 10,
+"hidden": false,
+"max_temperature": 2000,
+"name": "lava"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "light-oil"
+},
+{
+"default_temperature": 15,
+"heat_capacity": 100,
+"hidden": false,
+"max_temperature": 15,
+"name": "lithium-brine"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "lubricant"
+},
+{
+"default_temperature": 1100,
+"heat_capacity": 10,
+"hidden": false,
+"max_temperature": 2000,
+"name": "molten-copper"
+},
+{
+"default_temperature": 1500,
+"heat_capacity": 10,
+"hidden": false,
+"max_temperature": 2000,
+"name": "molten-iron"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-0"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-1"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-2"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-3"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-4"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-5"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-6"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-7"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-8"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-9"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "petroleum-gas"
+},
+{
+"default_temperature": 15,
+"heat_capacity": 200,
+"hidden": false,
+"max_temperature": 5000,
+"name": "steam"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "sulfuric-acid"
+},
+{
+"default_temperature": 25,
+"fuel_value": 50000,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "thruster-fuel"
+},
+{
+"default_temperature": 25,
+"fuel_value": 50000,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "thruster-oxidizer"
+},
+{
+"default_temperature": 15,
+"heat_capacity": 2000,
+"hidden": false,
+"max_temperature": 100,
+"name": "water"
+}
+]

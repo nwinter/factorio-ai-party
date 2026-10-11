@@ -3,7 +3,8 @@
 #   tools/start-team.sh RUN_ID MINUTES [--stream]
 # Env: POG_TEAM_FILE (default agent/team-nine.tsv), POG_SEED (default 20261010), POG_ENEMIES (normal|peaceful, default
 # normal), POG_WORLD_NAME (default n; game port 34205, RCON 27025), POG_CASTER (default 1: shoutcasters on),
-# POG_YOUTUBE (@handle or video id for the YouTube chat bridge).
+# POG_YOUTUBE (@handle or video id for the YouTube chat bridge), POG_SPACE_AGE=1 (Space Age world, expansion-build
+# directors, the agents' Space Age playbook section and the analyst's Space Age knowledge base).
 # POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-b).
 # Each team line: name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness
 set -euo pipefail
@@ -13,6 +14,12 @@ run=$1 minutes=$2 stream=${3:-}
 world=${POG_WORLD_NAME:-n} game=34205 rcon=27025
 team=${POG_TEAM_FILE:-agent/team-nine.tsv}
 seed=${POG_SEED:-20261010} enemies=${POG_ENEMIES:-normal}
+export POG_SPACE_AGE=${POG_SPACE_AGE:-0}   # read again by tools/new-run.sh for each agent
+spaceage=() factorio=()
+if [ "$POG_SPACE_AGE" = 1 ]; then
+  spaceage=(-SpaceAge) factorio=(-Factorio 'D:\pog\factorio-2.0.77-expansion')
+  export POG_KB=${POG_KB:-space-age-2.0.77}
+fi
 rundir="runs/$run"; mkdir -p "$rundir"
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$rundir/start.log"; }
 
@@ -22,7 +29,7 @@ tools/winps.sh tools/win/stop-world.ps1 -Name "$world" >/dev/null || true
 scp -q -r vendor/factorio-harness/mod/agent-harness_0.1.0 pogwin:D:/pog/mods/ 2>/dev/null
 peaceful=(); [ "$enemies" = peaceful ] && peaceful=(-Peaceful)
 log "world $world: creating save $run (seed $seed, $enemies enemies)"
-tools/winps.sh tools/win/new-instance.ps1 -Name "$world" -Save "$run" -Seed "$seed" ${peaceful[@]+"${peaceful[@]}"} | grep -q FullName
+tools/winps.sh tools/win/new-instance.ps1 -Name "$world" -Save "$run" -Seed "$seed" ${peaceful[@]+"${peaceful[@]}"} ${spaceage[@]+"${spaceage[@]}"} | grep -q FullName
 scp -q ~/.config/pog/rcon-$world.pw "pogwin:D:/pog/inst/$world/rcon.pw" 2>/dev/null
 tools/winps.sh tools/win/start-server.ps1 -Name "$world" -Save "$run" -GamePort $game -RconPort $rcon >/dev/null
 POG_WORLD=$world bin/fh call describe >/dev/null 2>&1 || true          # first command on a fresh save is swallowed
@@ -33,7 +40,7 @@ for cam in cam1 cam2 cam3; do
   log "director $cam joining"
   sound=(); [ $cam = cam1 ] && sound=(-Sound)  # stream audio: only the main director is audible
   tools/winps.sh tools/win/start-client.ps1 -Name "$world" -GamePort $game -PlayerName "pog-$cam" -Slot "-$cam" \
-    ${sound[@]+"${sound[@]}"} >/dev/null
+    ${sound[@]+"${sound[@]}"} ${factorio[@]+"${factorio[@]}"} >/dev/null
 done
 
 # 3. Bots, one per team member.
