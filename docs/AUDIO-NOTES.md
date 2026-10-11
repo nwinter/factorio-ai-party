@@ -135,6 +135,14 @@ eng/stream2 then changed the rule (4320f73, same API): a segment is cut, and req
 when the director actually cuts the main camera to a fight, death, base attack or loss; alerts it lets pass no
 longer end or block segments. The caster needs no change for that.
 
+Attack replays (eng/stream2 a3bc5dd, f9f88e2): the director queues each saved clip itself (about 17 s after it
+cuts to a fight, 5 s after a death on the main camera), plays it in the OBS "replay" scene with the overlay page
+riding along, and mutes the clip. The caster no longer asks for replays; it talks over them like any segment, with
+the facts event, kind, agent, seconds and ago_s, plus a hint to call it as an instant replay in the past tense. The
+first hint mentioned "muted" and the banner, and Kimi read those words on air ("Replay shows—muted, that REPLAY
+banner"), so the hint now says only how to call it. On the bench: "Replay's up! Astra bites it twenty-one seconds
+ago." Not run against a real replay (needs OBS on the box); the selftest and the bench cover the facts and the writing.
+
 ## Status
 
 | Part | State (2026-10-10) |
