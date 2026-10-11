@@ -18,6 +18,7 @@ Add --json for raw replies.
 import argparse, json, os, sys, uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.dont_write_bytecode = True  # tools/__pycache__ is tracked in git; do not rewrite it
 from pog import PORTS, Rcon  # noqa: E402
 
 
