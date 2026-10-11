@@ -1,0 +1,268 @@
+# Agent avatars and the Factorio UI kit: engineering notes
+
+Branch `eng/art`. Two self-contained pieces for the stream overlay (eng/stream2) and the website (site):
+
+1. Agent-designed pixel-art avatars: an optional `avatar` field on the harness `profile` action, one renderer in
+   JS (`tools/stream/static/avatar.js`) with a byte-identical Python port (`tools/stream/avatar.py`), and a gallery
+   page (`tools/stream/static/avatars.html`).
+2. A Factorio-flavoured CSS kit: `tools/stream/static/factorio-ui.css` with a demo page
+   (`tools/stream/static/factorio-ui.html`).
+
+No game image assets, sprites or fonts are copied anywhere. The avatar art is hand-placed pixels on a 24x24 grid;
+the kit is CSS gradients, borders and shadows plus the free Titillium Web font from Google Fonts.
+
+## Avatars
+
+![The nine shakedown agents' defaults (first row: astra, sol, luna, opus, sonnet, haiku, grok, gemini, then muse), followed by the gallery's first 31 random avatars](avatars-sheet.png)
+
+### What agents send
+
+```sh
+./fh call profile --args '{"avatar":{"base":"robot","helmet":"hardhat","visor":"mono","emblem":"gear","accessory":"antenna","backdrop":"hazard","accent":"#33ccff"}}'
+```
+
+| Field | Values |
+|---|---|
+| `base` | engineer, robot, biter, drone |
+| `helmet` | none, hardhat, armor, power, crest, hood |
+| `visor` | none, goggles, slit, wide, mono, grid |
+| `emblem` | none, gear, bolt, flask, plate, circuit, rocket, leaf, star |
+| `accessory` | none, antenna, headlamp, scarf, tank, horns, earpiece, pipe |
+| `backdrop` | dark, grid, hazard, glow, night |
+| `accent` | `"#rrggbb"`, the second colour (hardhat, emblem, glow, visor glint) |
+
+- Every field is optional. The suit is always the profile `color`.
+- 4 x 6 x 6 x 9 x 8 x 5 = 51,840 part combinations before colours.
+- `agent/team.md` (the co-op prompt) now tells agents about it, next to the existing identity line.
+
+### Harness (`vendor/factorio-harness/mod/agent-harness_0.1.0/profiles.lua`)
+
+- `profile` accepts `avatar`: an object whose keys must be the fields above and whose values must come from the
+  lists (`accent` must be `#rrggbb`, stored lowercase). Errors name the field and the allowed values, e.g.
+  `avatar.base must be one of engineer|robot|biter|drone`, `avatar: unknown field hat`.
+- The avatar is validated before anything in the call changes, so a bad avatar leaves `display_name` etc. alone.
+- A new `avatar` replaces the old one (no merging). `{}` is valid and means "all parts from my name". `false` clears.
+- `profile` and `profiles` return it as `avatar` (absent when unset). The `describe` schema documents it, which also
+  makes `avatar` an allowed argument for `check_args`.
+- Runtime-only change (one Lua module); `fh deploy` puts it in a running world. No `control.lua` change, so clients
+  need no mod refresh.
+- `glyph` stays as it was (a 1-2 character tag beside the name). The schema text no longer calls it the avatar.
+
+### Defaults and filling
+
+Renderers, not the harness, fill gaps, so the harness stays a validator and store:
+
+- Seed: 32-bit FNV-1a of the UTF-8 `name` (falls back to `display_name`, then `"agent"`), fed to mulberry32.
+- Each field draws one number in a fixed order (`base, helmet, visor, emblem, accessory, backdrop`) whether or not
+  it is set, so setting one part never changes the others.
+- No valid `color`: one of 12 palette colours picked from the seed (Sonnet in the shakedown never set a colour).
+- No `accent`: the first of 8 Factorio-ish accents (amber, orange, cyan, green, red, white, yellow, blue), starting at
+  a seeded index, that differs from the suit by at least 180 (sum of RGB channel differences).
+- Invalid parts from an old or hand-edited profile are treated as unset, so a renderer never fails.
+- Near-black suits (luma < 0.16, e.g. Grok's `#1a1a1a`) get a light rim instead of a black outline and a slightly
+  lifted fill, so they stay visible on the dark backdrops.
+
+### Renderer API
+
+JS (`avatar.js`): no dependencies, works as a classic `<script>` (sets `window.PogAvatar`) or under node
+(`require`).
+
+```js
+PogAvatar.svg(row, 48)          // SVG string for a `profiles` row {name, display_name, color, avatar}
+PogAvatar.svg(row, 32, {title: "Opus"})   // aria-label override
+PogAvatar.resolve(row)          // {base, helmet, visor, emblem, accessory, backdrop, color, accent} as drawn
+PogAvatar.pixels(row)           // 24 rows x 24 "#rrggbb"
+PogAvatar.random(seed)          // a random valid spec
+PogAvatar.validate(avatar)      // [] or the harness's error strings
+PogAvatar.PARTS                 // part lists, palettes and pixel art
+```
+
+The SVG is a 24x24 `viewBox` with `shape-rendering="crispEdges"`, one `<path>` per colour (horizontal runs
+merged), about 3-5 KB. It scales cleanly to any size; multiples of 24 (24, 48, 72, 96) look sharpest.
+
+Python (`tools/stream/avatar.py`, stdlib only): the same functions (`svg(row, size, title=None)`, `resolve`,
+`pixels`, `random`, `validate`). The part lists and art are read from `avatar.js` (the strict-JSON block between
+`/*@parts*/` and `/*@end*/`), so art changes are made once, in the JS file. If you copy the port elsewhere, copy
+`avatar.js` with it or pass its path to `_load_parts`.
+
+```sh
+python3 tools/stream/avatar.py opus --color '#d97757' --avatar '{"base":"robot"}' --size 96 > opus.svg
+python3 tools/stream/avatar.py --profiles profiles.json --out site/static/avatars   # one NAME.svg per row
+```
+
+### Adopting it
+
+- Overlay (eng/stream2): `<script src="avatar.js"></script>` in `index.html`, then in `fillAvatar` set
+  `a.innerHTML = PogAvatar.svg(agent, size)` instead of the glyph letters. `agent` is the `profiles` row the overlay
+  already holds, so `avatar`, `color` and `name` are all there. Add `avatar` to the change signature
+  (`a.name + a.color + a.glyph + a.display_name` in `overlay.js`) so a new avatar re-renders. The glyph can stay as a
+  small tag beside the name. `mock.py` does not send avatars yet, so the mock shows the name-based defaults.
+- Site: `from avatar import svg` (add `tools/stream` to `sys.path`) in `site/build.py` and inline the SVG, or write
+  files with the `--profiles` CLI. Run data needs the `profiles` rows (name, color, avatar) saved with the run.
+
+### Gallery (`tools/stream/static/avatars.html`)
+
+Open the file directly (no server needed). It has:
+
+- A builder: name, colour, accent and one select per part ("from name" = unset), previews at 96/48/32/24 px, the
+  resolved spec, and the exact `./fh call profile` command to paste.
+- The nine shakedown agents with their chosen colours and no avatar, i.e. what the overlay shows until they pick one.
+- 40 random valid avatars (Reroll for more; click one to load it into the builder).
+- The parts table.
+
+### Tests
+
+- `vendor/factorio-harness/tests/bots.lua` (fake engine, part of `npm test`): set and read back an avatar, accent
+  lowercased, replace instead of merge, unknown field, bad value, bad accent, non-object, a refused avatar changes
+  no other field, `false` clears, `profiles` rows carry it.
+- `python3 tools/stream/test_avatar.py`: JS (under node) and Python give identical SVG, `resolve`, `validate` and
+  `random` for 273 profiles (random specs, partial/invalid specs, no colour, near-black/white, unicode and escaped
+  names); the Lua part lists equal the JS ones; every picture is a full 24x24; defaults are stable and setting one
+  part keeps the rest.
+- `npm test`: 63 pass. The 4 `bridge.test.ts` cases fail with `listen EPERM` on their unix socket in this sandbox,
+  before any test code runs (same as on eng/bots).
+
+### Not verified live
+
+This session's permission mode refused RCON (`bin/fh`) and browser access, so `profile` with an avatar was not run on
+world `live`, and the two HTML pages were checked by script (syntax, and the gallery script run against a stub DOM)
+but not looked at in a browser. The avatar art itself was checked visually from PNG contact sheets rendered from
+`PogAvatar.pixels`. To verify live:
+
+```sh
+POG_WORLD=live bin/fh deploy                      # the save may carry an older runtime; repeat if the first call is eaten
+tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","bot_create","astra"))'   # if no bot yet
+POG_WORLD=live bin/fh --bot astra call profile --args '{"color":"#9977ff","avatar":{"base":"robot","visor":"mono","accent":"#33ccff"}}'
+POG_WORLD=live bin/fh --bot astra call profile --args '{"avatar":{"base":"dragon"}}'     # expect: avatar.base must be one of ...
+POG_WORLD=live bin/fh call profiles               # astra's row has "avatar":{...}
+```
+
+A director client must be connected (or `auto_pause` off) for bots on `live`.
+
+## Factorio UI kit
+
+`tools/stream/static/factorio-ui.css` (about 470 lines) is a dependency-free kit that echoes Factorio's GUI: dark
+beveled frames, deep inset slots, cream bold headings, orange hover and selection. The demo is
+`tools/stream/static/factorio-ui.html` (open it directly; it fills its agent slots with `avatar.js` when present).
+
+### Include
+
+```html
+<link rel="stylesheet" href="factorio-ui.css">
+<body class="fx-root fx-backdrop">      <!-- website: dark, menu-like background -->
+<body class="fx-root fx-overlay">       <!-- OBS: transparent page, heavier panel shadows -->
+```
+
+The only external resource is Titillium Web (Google Fonts `@import`); offline it falls back to Segoe UI / system-ui.
+For OBS without network, self-host the font files or accept the fallback.
+
+### Rules
+
+- Every class is `.fx-*` and every custom property `--fx-*`. State classes (`.is-selected`, `.is-empty`,
+  `.is-active`, `.is-disabled`, `.is-hoverable`) only appear with an `.fx-*` class, so the kit cannot collide with
+  `overlay.css` (`.card`, `.panel`, `.avatar`, ...).
+- Nothing global is reset. `.fx-root` opts a subtree into the base font, colours, `box-sizing`, cream `h1`-`h3`,
+  orange links and selection colour.
+- Agent colour: `style="--fx-agent:#9977ff"` on an element or ancestor, then `.fx-agent-edge` (3px left edge),
+  `.fx-slot.fx-agent-ring` or `.fx-agent-dot`. Very dark agent colours (Grok `#1a1a1a`) barely show as an edge;
+  use the avatar (which handles them) or a lighter outline.
+- Translucency: panels use `rgba(var(--fx-frame-rgb), var(--fx-panel-alpha))`; `.fx-translucent` (on a panel or any
+  ancestor) sets alpha .88 for panels over game video.
+
+### Tokens (`:root`)
+
+| Token | Purpose |
+|---|---|
+| `--fx-frame` / `-rgb` `#313031` | outer window frame |
+| `--fx-deep` / `-rgb` `#242324` | inset wells, slots, inputs, tables |
+| `--fx-raised` / `-rgb` `#403f40` | sub-panels, selected tab, tab body |
+| `--fx-tooltip-bg`, `--fx-backdrop` | tooltip body; page backdrop |
+| `--fx-panel-alpha` (1) | panel opacity (`.fx-translucent` = .88) |
+| `--fx-heading` `#ffe6c0` | cream bold titles and headings |
+| `--fx-text` `#e3e3e3`, `--fx-muted` `#b0b0b0`, `--fx-text-dark` | body; secondary (at least 4.5:1 on every surface); text on light buttons |
+| `--fx-orange` `#ff9f1c` / `-rgb`, `--fx-orange-deep` | hover, selection, focus; pressed |
+| `--fx-green` `#5eb663` / `-rgb` | confirm, healthy |
+| `--fx-red` `#e04e3a` / `-rgb`, `--fx-red-text`, `--fx-red-btn` | danger bars and edges; red text on dark; danger button face |
+| `--fx-yellow` `#f2c230` / `-rgb` | default progress bar, warnings |
+| `--fx-cyan` `#3fc1e6` | research bar |
+| `--fx-blue` `#5aa9ff` / `-rgb`, `--fx-grey-rgb` | info; neutral tone |
+| `--fx-bevel-light`, `--fx-bevel-dark`, `--fx-bevel`, `--fx-bevel-in` | raised and pressed edges (light top-left, dark bottom-right) |
+| `--fx-inset-shadow`, `--fx-slot-shadow` | deep wells; slot recess |
+| `--fx-shadow-window`, `--fx-shadow-pop`, `--fx-glow`, `--fx-focus` | window shadow; tooltip; orange selection glow; focus outline |
+| `--fx-r-0..3` (0, 2, 3, 4px) | radii (the game is nearly square) |
+| `--fx-sp-1..6` (2, 4, 8, 12, 16, 24px) | spacing |
+| `--fx-font`, `--fx-font-mono`, `--fx-fs-xs/sm/md/lg/xl` (12/13/15/18/24) | type |
+| `--fx-slot` (40px), `--fx-agent` | slot size; agent colour hook |
+
+Set per element: `--fx-value` (progress width, e.g. `42%`), `--fx-cols` (slot-grid columns), `--fx-ticker-speed`
+(default 20s), `--fx-bracket` (minimap corner colour).
+
+### Components
+
+```html
+<!-- Window: title, automatic ridged drag filler, optional actions -->
+<section class="fx-panel"><header class="fx-panel-title">Title
+  <span class="fx-panel-actions"><button class="fx-btn fx-btn--icon" aria-label="Close">✕</button></span></header>
+  <div class="fx-panel-body">…</div></section>
+<div class="fx-inset">…</div>  <div class="fx-subpanel">…</div>  <hr class="fx-divider">
+
+<!-- Slots: 40px; --sm 32, --lg 56; .is-selected, .is-empty; hover glow on a/button or .is-hoverable -->
+<div class="fx-slot-grid" style="--fx-cols:10">
+  <button class="fx-slot">⚙<span class="fx-slot-count">50</span></button>
+  <span class="fx-slot is-empty"></span></div>
+<span class="fx-slot fx-slot--lg fx-agent-ring" style="--fx-agent:#9977ff"><!-- PogAvatar.svg(row, 56) --></span>
+
+<!-- Badges and chips: --orange --green --red --blue --grey -->
+<span class="fx-badge fx-badge--blue"><span class="fx-slot fx-slot--sm">🧪</span>
+  <span class="fx-badge-text"><b class="fx-badge-label">Research</b><span class="fx-badge-value">42%</span></span></span>
+<span class="fx-chip fx-chip--green">online</span>
+
+<!-- Buttons: hover orange, :active or .is-active pressed, :disabled -->
+<button class="fx-btn">Craft</button> <button class="fx-btn fx-btn--confirm">OK</button>
+<button class="fx-btn fx-btn--danger">Delete</button> <button class="fx-btn fx-btn--icon" aria-label="Close">✕</button>
+
+<!-- Progress: --research --health --warning --danger --thin; --busy = animated stripes -->
+<div class="fx-progress fx-progress--research" style="--fx-value:42%">
+  <span class="fx-progress-label">Automation 2: 42%</span></div>
+
+<!-- Tabs: the selected tab merges into .fx-tab-body -->
+<div class="fx-tabs" role="tablist"><button class="fx-tab is-selected" role="tab" aria-selected="true">Recipe</button>
+  <button class="fx-tab" role="tab">Modules</button></div><div class="fx-tab-body">…</div>
+
+<table class="fx-table"><thead><tr><th>Agent</th><th class="fx-num">Items</th></tr></thead>
+  <tbody><tr style="--fx-agent:#9977ff"><td class="fx-agent-edge">astra</td><td class="fx-num">1,204</td></tr></tbody></table>
+
+<div class="fx-tooltip"><div class="fx-tooltip-title">Iron gear wheel</div><div class="fx-tooltip-body">…</div></div>
+<h2 class="fx-heading">…</h2> <span class="fx-label">…</span> <span class="fx-muted">…</span>
+<code class="fx-mono">…</code> <pre class="fx-mono fx-code">…</pre>
+
+<!-- Alerts: --warn --danger --info (default orange) -->
+<div class="fx-alert fx-alert--danger"><span class="fx-slot fx-slot--sm">⚠</span>
+  <div><div class="fx-alert-title">Base under attack</div>…</div></div>
+
+<label class="fx-check"><input type="checkbox" class="fx-checkbox" checked> Names</label>
+<label class="fx-check"><input type="radio" name="r" class="fx-radio"> Follow</label>
+<input class="fx-textfield" type="text" placeholder="Filter…">
+
+<div class="fx-minimap-frame">…<span class="fx-minimap-label">CAM · opus</span></div>
+
+<div class="fx-ticker"><span class="fx-ticker-label">Live</span><span class="fx-ticker-text">…</span></div>
+<div class="fx-ticker fx-ticker--scroll"><span class="fx-ticker-label">News</span>
+  <span class="fx-ticker-text"><span class="fx-ticker-track">…</span></span></div>
+
+<section class="fx-panel fx-translucent">…</section>   <span class="fx-agent-dot" style="--fx-agent:#4285f4"></span>
+```
+
+### OBS / Chromium constraints
+
+- Targets OBS's browser source (CEF, Chrome 103+): no CSS nesting, no `:has()`, no `color-mix()`; tints use the
+  `--fx-*-rgb` channel tokens inside `rgba()`.
+- Uses custom properties, grid, flex, `max()`/`min()`, `aspect-ratio`, `inset`, `:focus-visible` and two-position
+  colour stops (all Chrome 88+).
+- Interactive parts get an orange `:focus-visible` ring. `prefers-reduced-motion` turns off the busy-bar stripes,
+  the ticker scroll and transitions.
+- `.fx-agent-edge` is a `border-left`: on tables put it on the first `td`, not the `tr`.
+- A code block, table or ticker inside a grid or flex cell needs `min-width: 0` on the cell so it scrolls instead of
+  widening the page.
+- Not yet looked at in a browser in this session (see "Not verified live"); the CSS was checked for balanced braces,
+  prefixes and the absence of unsupported features.

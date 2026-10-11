@@ -1,0 +1,471 @@
+@import url('https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&display=swap');
+/* =============================================================================
+   factorio-ui.css: a Factorio-flavoured GUI kit for the stream overlay and site
+   -----------------------------------------------------------------------------
+   Echoes the game's GUI (dark beveled frames, deep inset slots, cream bold
+   headings, orange hover/selection) using only CSS gradients, borders and
+   shadows. No game images, sprites, icons or fonts are copied or embedded.
+
+   Include:   <link rel="stylesheet" href="factorio-ui.css">
+              (the only external resource is Titillium Web from Google Fonts;
+              without network it falls back to Segoe UI / system-ui)
+   Prefixes:  every class is .fx-*, every custom property is --fx-*, state
+              classes are .is-* and only ever combined with an .fx-* class.
+   Opt-in:    nothing global is reset. Put class="fx-root" on <body> or a
+              container to get base font, colours and box-sizing inside it.
+              Over game video (OBS) use "fx-root fx-overlay" and add
+              .fx-translucent to panels that should let the video through.
+   Agents:    set style="--fx-agent: #9977ff" on any element; .fx-agent-edge
+              and .fx-agent-ring read it.
+   Targets:   OBS browser source (CEF, Chrome 103+): no CSS nesting, no :has(),
+              no color-mix(). Custom properties, grid, flex, :focus-visible OK.
+   Sections:  1. Tokens  2. Base (.fx-root)  3. Components
+   ============================================================================= */
+
+/* ---------- 1. Tokens ------------------------------------------------------ */
+:root {
+  /* Surfaces */
+  --fx-frame: #313031;            /* outer window frame */
+  --fx-frame-rgb: 49, 48, 49;     /* same, as channels for translucency */
+  --fx-deep: #242324;             /* deep inset content areas, slots, inputs */
+  --fx-deep-rgb: 36, 35, 36;
+  --fx-raised: #403f40;           /* raised sub-panels, selected tabs */
+  --fx-raised-rgb: 64, 63, 64;
+  --fx-tooltip-bg: #1e1d1e;       /* tooltip body */
+  --fx-backdrop: #161516;         /* page/menu backdrop behind panels */
+  --fx-panel-alpha: 1;            /* panel opacity; .fx-translucent sets .88 */
+
+  /* Text */
+  --fx-heading: #ffe6c0;          /* warm cream bold headings, titles */
+  --fx-text: #e3e3e3;             /* body text */
+  --fx-muted: #b0b0b0;            /* secondary text (>=4.5:1 on all surfaces) */
+  --fx-text-dark: #141414;        /* text on light/coloured buttons */
+
+  /* Accents (+ -rgb channels for tints, + -text for readable text on dark) */
+  --fx-orange: #ff9f1c;           /* hover, selection, focus, highlights */
+  --fx-orange-rgb: 255, 159, 28;
+  --fx-orange-deep: #f6a01a;      /* pressed/active orange */
+  --fx-green: #5eb663;            /* confirm, healthy */
+  --fx-green-rgb: 94, 182, 99;
+  --fx-red: #e04e3a;              /* danger bars, alert edges */
+  --fx-red-rgb: 224, 78, 58;
+  --fx-red-text: #ff6b57;         /* red text on dark surfaces */
+  --fx-red-btn: #e8604a;          /* danger button face (dark text 5:1) */
+  --fx-yellow: #f2c230;           /* default progress / crafting bar, warnings */
+  --fx-yellow-rgb: 242, 194, 48;
+  --fx-cyan: #3fc1e6;             /* research bar */
+  --fx-blue: #5aa9ff;             /* info */
+  --fx-blue-rgb: 90, 169, 255;
+  --fx-grey-rgb: 160, 160, 160;   /* neutral tone for chips/badges */
+
+  /* Bevels: light top-left edge, dark bottom-right edge */
+  --fx-bevel-light: rgba(255, 255, 255, 0.14);
+  --fx-bevel-dark: rgba(0, 0, 0, 0.55);
+  --fx-bevel: inset 1px 1px 0 var(--fx-bevel-light), inset -1px -1px 0 var(--fx-bevel-dark);
+  --fx-bevel-in: inset 1px 1px 0 var(--fx-bevel-dark), inset -1px -1px 0 var(--fx-bevel-light); /* pressed */
+  --fx-inset-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(0, 0, 0, 0.5);    /* deep wells */
+  --fx-slot-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.7), inset -1px -1px 0 rgba(255, 255, 255, 0.08), inset 0 0 6px rgba(0, 0, 0, 0.5);
+
+  /* Shadows */
+  --fx-shadow-window: 0 4px 14px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(0, 0, 0, 0.7); /* floating windows */
+  --fx-shadow-pop: 0 6px 20px rgba(0, 0, 0, 0.7);                                  /* tooltips */
+  --fx-glow: 0 0 0 2px var(--fx-orange), 0 0 8px rgba(var(--fx-orange-rgb), 0.55); /* selection glow */
+  --fx-focus: 2px solid var(--fx-orange);                                          /* focus outline */
+
+  /* Radii: the game is nearly square */
+  --fx-r-0: 0;
+  --fx-r-1: 2px;                  /* slots, inputs */
+  --fx-r-2: 3px;                  /* buttons, chips, panels */
+  --fx-r-3: 4px;                  /* large frames */
+
+  /* Spacing scale */
+  --fx-sp-1: 2px;
+  --fx-sp-2: 4px;
+  --fx-sp-3: 8px;
+  --fx-sp-4: 12px;
+  --fx-sp-5: 16px;
+  --fx-sp-6: 24px;
+
+  /* Typography */
+  --fx-font: "Titillium Web", "Segoe UI", system-ui, sans-serif;
+  --fx-font-mono: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+  --fx-fs-xs: 12px;               /* slot counts, captions */
+  --fx-fs-sm: 13px;               /* chips, table cells */
+  --fx-fs-md: 15px;               /* body */
+  --fx-fs-lg: 18px;               /* panel titles, headings */
+  --fx-fs-xl: 24px;               /* page headings */
+
+  /* Sizes */
+  --fx-slot: 40px;                /* default item slot */
+  --fx-agent: var(--fx-orange);   /* per-agent colour hook (override inline) */
+}
+
+/* ---------- 2. Base (opt-in) ----------------------------------------------- */
+/* class="fx-root": base typography/colours and box-sizing for descendants. */
+.fx-root {
+  font-family: var(--fx-font);
+  font-size: var(--fx-fs-md);
+  line-height: 1.4;
+  color: var(--fx-text);
+  -webkit-font-smoothing: antialiased;
+}
+.fx-root *, .fx-root *::before, .fx-root *::after { box-sizing: border-box; }
+.fx-root h1, .fx-root h2, .fx-root h3 { color: var(--fx-heading); font-weight: 700; line-height: 1.2; margin: 0 0 var(--fx-sp-3); }
+.fx-root a { color: var(--fx-orange); }
+.fx-root ::selection { background: rgba(var(--fx-orange-rgb), 0.45); color: #fff; }
+
+/* class="fx-root fx-overlay": transparent page for OBS; heavier shadows to lift panels off video. */
+.fx-overlay { background: transparent; --fx-shadow-window: 0 4px 18px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(0, 0, 0, 0.8); }
+
+/* .fx-backdrop: dark, menu-like page background (website use; no images). */
+.fx-backdrop {
+  background-color: var(--fx-backdrop);
+  background-image: radial-gradient(ellipse at 50% 0%, rgba(255, 170, 80, 0.07), transparent 60%),
+                    linear-gradient(180deg, #1d1c1d 0%, #121112 100%);
+  background-attachment: fixed;
+}
+
+/* ---------- 3. Components -------------------------------------------------- */
+
+/* Panel: <section class="fx-panel"><header class="fx-panel-title">Title</header><div class="fx-panel-body">..</div></section> */
+.fx-panel {
+  background: rgba(var(--fx-frame-rgb), var(--fx-panel-alpha));
+  border-radius: var(--fx-r-2);
+  box-shadow: var(--fx-bevel), var(--fx-shadow-window);
+  padding: var(--fx-sp-2) var(--fx-sp-4) var(--fx-sp-4);
+  color: var(--fx-text);
+}
+/* Title bar; text, then an auto "ridged" drag filler, then optional <span class="fx-panel-actions">. */
+.fx-panel-title {
+  display: flex; align-items: center; gap: var(--fx-sp-3);
+  min-height: 32px; margin: 0 0 var(--fx-sp-2);
+  font: 700 var(--fx-fs-lg)/1.2 var(--fx-font); color: var(--fx-heading);
+}
+.fx-panel-title::after {
+  content: ""; order: 1; flex: 1 1 24px; height: 20px; min-width: 24px;
+  border-radius: var(--fx-r-1);
+  background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.10) 0 1px, rgba(0, 0, 0, 0.55) 1px 2px, transparent 2px 4px);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+}
+.fx-panel-actions { order: 2; display: flex; gap: var(--fx-sp-2); }
+.fx-panel-body { display: flex; flex-direction: column; gap: var(--fx-sp-3); }
+
+/* Deep inset well: <div class="fx-inset">..</div> (lists, slot grids, camera). */
+.fx-inset {
+  background: rgba(var(--fx-deep-rgb), var(--fx-panel-alpha));
+  border-radius: var(--fx-r-1);
+  box-shadow: var(--fx-inset-shadow);
+  padding: var(--fx-sp-3);
+}
+/* Lighter raised section inside a panel: <div class="fx-subpanel">..</div> */
+.fx-subpanel {
+  background: rgba(var(--fx-raised-rgb), var(--fx-panel-alpha));
+  border-radius: var(--fx-r-1);
+  box-shadow: var(--fx-bevel), 0 1px 2px rgba(0, 0, 0, 0.4);
+  padding: var(--fx-sp-3);
+}
+/* Engraved separator: <hr class="fx-divider"> */
+.fx-divider {
+  border: 0; height: 2px; margin: var(--fx-sp-3) 0;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.6) 0 1px, rgba(255, 255, 255, 0.10) 1px 2px);
+}
+
+/* Item slot: <div class="fx-slot">⚙<span class="fx-slot-count">50</span></div>; anything fits inside. */
+.fx-slot {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  flex: none; width: var(--fx-slot); height: var(--fx-slot);
+  font-size: calc(var(--fx-slot) * 0.55); line-height: 1; color: var(--fx-text);
+  background: linear-gradient(180deg, #2b2a2b, #1f1e1f);
+  border-radius: var(--fx-r-1);
+  box-shadow: var(--fx-slot-shadow);
+  overflow: hidden; vertical-align: middle; user-select: none;
+  transition: box-shadow 0.08s ease-out, background-color 0.08s;
+}
+.fx-slot > svg, .fx-slot > img { max-width: 100%; max-height: 100%; display: block; }
+.fx-slot--sm { --fx-slot: 32px; }
+.fx-slot--lg { --fx-slot: 56px; }
+/* Count, bottom-right with the game's heavy dark text-shadow. */
+.fx-slot-count {
+  position: absolute; right: 2px; bottom: 0;
+  font: 700 var(--fx-fs-xs)/1.1 var(--fx-font); color: #fff;
+  text-shadow: 1px 1px 0 #000, -1px 0 1px #000, 0 -1px 1px #000, 0 0 3px #000;
+  pointer-events: none;
+}
+.fx-slot--sm .fx-slot-count { font-size: 11px; }
+.fx-slot--lg .fx-slot-count { font-size: 14px; }
+a.fx-slot:hover, button.fx-slot:hover, .fx-slot.is-hoverable:hover { box-shadow: var(--fx-glow), var(--fx-slot-shadow); }
+.fx-slot.is-selected { box-shadow: var(--fx-glow), var(--fx-slot-shadow); background: linear-gradient(180deg, #4a3a22, #2e2516); }
+.fx-slot.is-empty { background: #1c1b1c; color: transparent; }
+.fx-slot.fx-agent-ring { box-shadow: 0 0 0 2px var(--fx-agent), var(--fx-slot-shadow); }
+button.fx-slot { border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+/* Grid of slots: <div class="fx-slot-grid" style="--fx-cols: 10">..slots..</div> */
+.fx-slot-grid {
+  display: grid; gap: 2px; justify-content: start;
+  grid-template-columns: repeat(var(--fx-cols, auto-fill), var(--fx-slot));
+}
+.fx-slot-grid.fx-slot--sm { --fx-slot: 32px; }
+.fx-slot-grid.fx-slot--lg { --fx-slot: 56px; }
+
+/* Tone variants shared by chips, badges and alerts: .fx-chip--orange, .fx-badge--green, ... */
+.fx-chip, .fx-badge { --fx-tone-rgb: var(--fx-grey-rgb); --fx-tone-text: var(--fx-text); }
+.fx-chip--orange, .fx-badge--orange { --fx-tone-rgb: var(--fx-orange-rgb); --fx-tone-text: var(--fx-orange); }
+.fx-chip--green,  .fx-badge--green  { --fx-tone-rgb: var(--fx-green-rgb);  --fx-tone-text: var(--fx-green); }
+.fx-chip--red,    .fx-badge--red    { --fx-tone-rgb: var(--fx-red-rgb);    --fx-tone-text: var(--fx-red-text); }
+.fx-chip--blue,   .fx-badge--blue   { --fx-tone-rgb: var(--fx-blue-rgb);   --fx-tone-text: var(--fx-blue); }
+.fx-chip--grey,   .fx-badge--grey   { --fx-tone-rgb: var(--fx-grey-rgb);   --fx-tone-text: var(--fx-text); }
+
+/* Compact beveled pill: <span class="fx-chip fx-chip--green">online</span> */
+.fx-chip {
+  display: inline-flex; align-items: center; gap: var(--fx-sp-2);
+  padding: 1px var(--fx-sp-3); border-radius: var(--fx-r-2);
+  font: 600 var(--fx-fs-sm)/1.5 var(--fx-font); color: var(--fx-tone-text); white-space: nowrap;
+  background: linear-gradient(180deg, rgba(var(--fx-tone-rgb), 0.15), rgba(var(--fx-tone-rgb), 0.10)), var(--fx-deep);
+  border: 1px solid rgba(var(--fx-tone-rgb), 0.55);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+/* Slot-styled badge: <span class="fx-badge fx-badge--blue"><span class="fx-slot fx-slot--sm">🔩</span>
+   <span class="fx-badge-text"><b class="fx-badge-label">Agent</b><span class="fx-badge-value">1.2k</span></span></span> */
+.fx-badge { display: inline-flex; align-items: center; gap: var(--fx-sp-3); vertical-align: middle; }
+.fx-badge > .fx-slot { box-shadow: 0 0 0 1px rgba(var(--fx-tone-rgb), 0.7), var(--fx-slot-shadow); }
+.fx-badge-text { display: flex; flex-direction: column; line-height: 1.15; }
+.fx-badge-label { font-weight: 700; font-size: var(--fx-fs-sm); color: var(--fx-heading); }
+.fx-badge-value { font-size: var(--fx-fs-sm); color: var(--fx-tone-text); }
+
+/* Button: <button class="fx-btn">Craft</button>; light grey face, dark text, orange on hover (like the game). */
+.fx-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--fx-sp-2);
+  min-height: 28px; padding: 2px var(--fx-sp-4);
+  font: 600 var(--fx-fs-md)/1.2 var(--fx-font); color: var(--fx-text-dark);
+  background: linear-gradient(180deg, #d4d4d4 0%, #b4b4b4 55%, #a2a2a2 100%);
+  border: 1px solid #1a1a1a; border-radius: var(--fx-r-2);
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.6), inset -1px -1px 0 rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.5);
+  cursor: pointer; text-decoration: none; white-space: nowrap; user-select: none;
+}
+.fx-btn:hover { background: linear-gradient(180deg, #ffc56b 0%, var(--fx-orange) 60%, #e58a0c 100%); }
+.fx-btn:active, .fx-btn.is-active {
+  background: linear-gradient(180deg, #e38a10, var(--fx-orange-deep));
+  box-shadow: inset 1px 2px 3px rgba(0, 0, 0, 0.45);
+  transform: translateY(1px);
+}
+.fx-btn:disabled, .fx-btn.is-disabled {
+  cursor: default; transform: none; color: #6a6a6a;
+  background: linear-gradient(180deg, #5a595a, #4a494a); box-shadow: var(--fx-bevel);
+}
+.fx-btn--confirm { background: linear-gradient(180deg, #8fd890 0%, var(--fx-green) 60%, #4a9a4f 100%); }
+.fx-btn--confirm:hover { background: linear-gradient(180deg, #b0eea8 0%, #7ad07a 60%, #5eb663 100%); }
+.fx-btn--danger { background: linear-gradient(180deg, #f59a88 0%, var(--fx-red-btn) 60%, #d2503b 100%); }
+.fx-btn--danger:hover { background: linear-gradient(180deg, #ffb3a3 0%, #f2735d 60%, var(--fx-red-btn) 100%); }
+.fx-btn--icon { width: 28px; min-width: 28px; padding: 0; font-size: var(--fx-fs-md); }
+
+/* Shared visible focus ring for interactive parts. */
+.fx-btn:focus-visible, .fx-tab:focus-visible, .fx-slot:focus-visible, .fx-textfield:focus-visible,
+.fx-checkbox:focus-visible, .fx-radio:focus-visible { outline: var(--fx-focus); outline-offset: 2px; }
+
+/* Progress (research bar style):
+   <div class="fx-progress fx-progress--research" style="--fx-value: 42%"><span class="fx-progress-label">Automation 2 — 42%</span></div> */
+.fx-progress {
+  --fx-fill: var(--fx-yellow);
+  position: relative; height: 20px; overflow: hidden;
+  background: var(--fx-deep); border-radius: var(--fx-r-1);
+  box-shadow: var(--fx-inset-shadow);
+}
+.fx-progress::before {
+  content: ""; position: absolute; left: 2px; top: 2px; bottom: 2px;
+  width: max(0px, calc(var(--fx-value, 0%) - 4px)); max-width: calc(100% - 4px);
+  border-radius: 1px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.45) 0, rgba(255, 255, 255, 0.12) 40%, rgba(0, 0, 0, 0) 50%, rgba(0, 0, 0, 0.22) 100%),
+    var(--fx-fill);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+  transition: width 0.3s ease-out;
+}
+.fx-progress--research { --fx-fill: var(--fx-cyan); }
+.fx-progress--health   { --fx-fill: var(--fx-green); }
+.fx-progress--warning  { --fx-fill: var(--fx-orange); }
+.fx-progress--danger   { --fx-fill: var(--fx-red); }
+.fx-progress--thin { height: 8px; }
+.fx-progress-label {
+  position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; height: 100%;
+  font: 700 var(--fx-fs-sm)/1 var(--fx-font); color: #fff; white-space: nowrap; overflow: hidden;
+  text-shadow: 1px 1px 0 #000, 0 0 3px #000, 0 0 2px #000;
+}
+/* Indeterminate: add .fx-progress--busy (ignores --fx-value). */
+.fx-progress--busy::before {
+  width: auto; max-width: none; right: 2px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(0, 0, 0, 0.2)),
+    linear-gradient(45deg, rgba(0, 0, 0, 0.3) 25%, transparent 25% 50%, rgba(0, 0, 0, 0.3) 50% 75%, transparent 75%),
+    var(--fx-fill);
+  background-size: 100% 100%, 20px 20px;
+  animation: fx-busy 0.8s linear infinite;
+}
+@keyframes fx-busy { from { background-position: 0 0, 0 0; } to { background-position: 0 0, 20px 0; } }
+
+/* Tabs: <div class="fx-tabs" role="tablist"><button class="fx-tab is-selected" role="tab" aria-selected="true">..</button>..</div>
+   <div class="fx-tab-body">..</div> (selected tab merges into the body). */
+.fx-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 var(--fx-sp-2); position: relative; z-index: 1; }
+.fx-tab {
+  padding: var(--fx-sp-2) var(--fx-sp-4) 3px; margin-bottom: -1px;
+  font: 600 var(--fx-fs-md)/1.3 var(--fx-font); color: var(--fx-text);
+  background: linear-gradient(180deg, #2c2b2c, #232223);
+  border: 1px solid #111; border-bottom-color: transparent;
+  border-radius: var(--fx-r-2) var(--fx-r-2) 0 0;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+.fx-tab:hover { color: var(--fx-orange); }
+.fx-tab.is-selected, .fx-tab[aria-selected="true"] {
+  color: var(--fx-heading); background: var(--fx-raised);
+  box-shadow: inset 1px 1px 0 var(--fx-bevel-light); padding-bottom: 4px; margin-bottom: -2px;
+}
+.fx-tab-body {
+  background: rgba(var(--fx-raised-rgb), var(--fx-panel-alpha));
+  border: 1px solid #111; border-radius: var(--fx-r-1);
+  box-shadow: inset 1px 1px 0 var(--fx-bevel-light); padding: var(--fx-sp-4);
+}
+
+/* Dense table: <table class="fx-table"><thead><tr><th>..</th></tr></thead><tbody>..</tbody></table> */
+.fx-table {
+  width: 100%; border-collapse: separate; border-spacing: 0;
+  font-size: var(--fx-fs-sm); background: rgba(var(--fx-deep-rgb), var(--fx-panel-alpha));
+  box-shadow: var(--fx-inset-shadow); border-radius: var(--fx-r-1);
+}
+.fx-table th, .fx-table td { padding: 3px var(--fx-sp-3); text-align: left; vertical-align: middle; }
+.fx-table th {
+  font-weight: 700; color: var(--fx-heading); white-space: nowrap;
+  background: linear-gradient(180deg, #3a393a, #2e2d2e); border-bottom: 1px solid #000;
+}
+.fx-table tbody tr:nth-child(even) td { background: rgba(255, 255, 255, 0.04); }
+.fx-table tbody tr:hover td { background: rgba(var(--fx-orange-rgb), 0.10); }
+.fx-table .fx-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Tooltip box: <div class="fx-tooltip"><div class="fx-tooltip-title">Iron gear wheel</div><div class="fx-tooltip-body">..</div></div> */
+.fx-tooltip {
+  max-width: 320px; font-size: var(--fx-fs-sm); color: var(--fx-text);
+  background: rgba(30, 29, 30, 0.96); border: 1px solid #000; border-radius: var(--fx-r-1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06), var(--fx-shadow-pop);
+}
+.fx-tooltip-title {
+  padding: var(--fx-sp-2) var(--fx-sp-3); font: 700 var(--fx-fs-md)/1.3 var(--fx-font); color: var(--fx-heading);
+  background: linear-gradient(180deg, #3b3a3b, #2f2e2f);
+  border-bottom: 1px solid #000; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+.fx-tooltip-body { padding: var(--fx-sp-3); }
+
+/* Text helpers: .fx-heading (cream bold), .fx-label (small caps-ish label), .fx-muted, .fx-mono. */
+.fx-heading { font-family: var(--fx-font); font-weight: 700; color: var(--fx-heading); font-size: var(--fx-fs-lg); line-height: 1.2; margin: 0; }
+.fx-label { font-weight: 600; font-size: var(--fx-fs-sm); color: var(--fx-text); letter-spacing: 0.02em; }
+.fx-muted { color: var(--fx-muted); }
+.fx-mono { font-family: var(--fx-font-mono); font-size: 0.9em; }
+/* Code block: <pre class="fx-mono fx-code">..</pre> (scrolls instead of widening the page). */
+.fx-code {
+  margin: 0; padding: var(--fx-sp-3); overflow-x: auto; max-width: 100%;
+  font-size: 12px; line-height: 1.45; color: #d6d6d6; white-space: pre;
+  background: rgba(var(--fx-deep-rgb), var(--fx-panel-alpha)); box-shadow: var(--fx-inset-shadow); border-radius: var(--fx-r-1);
+}
+
+/* Alert strip: <div class="fx-alert fx-alert--danger"><span class="fx-slot fx-slot--sm">⚠</span><div>..</div></div> */
+.fx-alert {
+  --fx-tone: var(--fx-orange); --fx-tone-rgb: var(--fx-orange-rgb);
+  display: flex; align-items: center; gap: var(--fx-sp-3);
+  padding: var(--fx-sp-2) var(--fx-sp-3);
+  background: linear-gradient(90deg, rgba(var(--fx-tone-rgb), 0.16), rgba(var(--fx-frame-rgb), var(--fx-panel-alpha)) 60%);
+  border-left: 4px solid var(--fx-tone); border-radius: 0 var(--fx-r-1) var(--fx-r-1) 0;
+  box-shadow: var(--fx-bevel), 0 2px 6px rgba(0, 0, 0, 0.45);
+}
+.fx-alert > .fx-slot { box-shadow: 0 0 0 1px var(--fx-tone), var(--fx-slot-shadow); color: var(--fx-tone); }
+.fx-alert-title { font-weight: 700; color: var(--fx-heading); }
+.fx-alert--warn   { --fx-tone: var(--fx-yellow); --fx-tone-rgb: var(--fx-yellow-rgb); }
+.fx-alert--danger { --fx-tone: var(--fx-red);    --fx-tone-rgb: var(--fx-red-rgb); }
+.fx-alert--info   { --fx-tone: var(--fx-blue);   --fx-tone-rgb: var(--fx-blue-rgb); }
+
+/* Checkbox / radio: <label class="fx-check"><input type="checkbox" class="fx-checkbox"> Label</label> */
+.fx-check { display: inline-flex; align-items: center; gap: var(--fx-sp-3); cursor: pointer; }
+.fx-checkbox, .fx-radio {
+  -webkit-appearance: none; appearance: none; margin: 0; flex: none;
+  width: 18px; height: 18px; cursor: pointer; vertical-align: middle;
+  background: linear-gradient(180deg, #1c1b1c, #2a292a) center / 100% 100% no-repeat;
+  border: 1px solid #000; border-radius: var(--fx-r-1);
+  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+.fx-radio { border-radius: 50%; }
+.fx-checkbox:hover, .fx-radio:hover { border-color: var(--fx-orange); }
+.fx-checkbox:checked {
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3 3 7-7' fill='none' stroke='%23ff9f1c' stroke-width='2.6' stroke-linecap='square'/%3E%3C/svg%3E") center / 14px no-repeat,
+              linear-gradient(180deg, #1c1b1c, #2a292a);
+}
+.fx-radio:checked { background: radial-gradient(circle, #ffc56b 0 2px, var(--fx-orange) 3px 4px, transparent 5px), linear-gradient(180deg, #1c1b1c, #2a292a); }
+.fx-checkbox:disabled, .fx-radio:disabled { opacity: 0.45; cursor: default; }
+
+/* Text input: <input class="fx-textfield" type="text"> */
+.fx-textfield {
+  min-height: 28px; padding: 2px var(--fx-sp-3); min-width: 0;
+  font: 400 var(--fx-fs-md)/1.3 var(--fx-font); color: var(--fx-text);
+  background: var(--fx-deep); border: 1px solid #000; border-radius: var(--fx-r-1);
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.fx-textfield::placeholder { color: #8a8a8a; }
+.fx-textfield:hover { border-color: rgba(var(--fx-orange-rgb), 0.6); }
+.fx-textfield:focus { border-color: var(--fx-orange); }
+
+/* Camera/minimap frame with corner brackets: <div class="fx-minimap-frame"><img or canvas></div> */
+.fx-minimap-frame {
+  --fx-bracket: var(--fx-orange);
+  position: relative; aspect-ratio: 1 / 1; overflow: hidden;
+  background: #0d0c0d; border: 2px solid #111; border-radius: var(--fx-r-1);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.10), var(--fx-inset-shadow), var(--fx-shadow-window);
+}
+.fx-minimap-frame > img, .fx-minimap-frame > video, .fx-minimap-frame > canvas, .fx-minimap-frame > iframe {
+  display: block; width: 100%; height: 100%; object-fit: cover; border: 0;
+}
+.fx-minimap-frame::after {
+  content: ""; position: absolute; inset: 5px; pointer-events: none;
+  background:
+    linear-gradient(var(--fx-bracket), var(--fx-bracket)) left top / 16px 2px,
+    linear-gradient(var(--fx-bracket), var(--fx-bracket)) left top / 2px 16px,
+    linear-gradient(var(--fx-bracket), var(--fx-bracket)) right top / 16px 2px,
+    linear-gradient(var(--fx-bracket), var(--fx-bracket)) right top / 2px 16px,
+    linear-gradient(var(--fx-bracket), var(--fx-bracket)) left bottom / 16px 2px,
+    linear-gradient(var(--fx-bracket), var(--fx-bracket)) left bottom / 2px 16px,
+    linear-gradient(var(--fx-bracket), var(--fx-bracket)) right bottom / 16px 2px,
+    linear-gradient(var(--fx-bracket), var(--fx-bracket)) right bottom / 2px 16px;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 0 1px #000);
+}
+.fx-minimap-label {
+  position: absolute; left: 8px; bottom: 6px; z-index: 1;
+  font: 700 var(--fx-fs-xs)/1 var(--fx-font); color: var(--fx-heading); text-shadow: 1px 1px 0 #000, 0 0 3px #000;
+}
+
+/* Lower-third ticker: <div class="fx-ticker"><span class="fx-ticker-label">Live</span><span class="fx-ticker-text">..</span></div> */
+.fx-ticker {
+  display: flex; align-items: center; gap: var(--fx-sp-4); min-width: 0;
+  height: 36px; padding: 0 var(--fx-sp-4) 0 0; overflow: hidden; white-space: nowrap;
+  background: linear-gradient(180deg, rgba(var(--fx-raised-rgb), var(--fx-panel-alpha)), rgba(var(--fx-frame-rgb), var(--fx-panel-alpha)));
+  border-left: 4px solid var(--fx-orange); border-radius: 0 var(--fx-r-1) var(--fx-r-1) 0;
+  box-shadow: var(--fx-bevel), var(--fx-shadow-window);
+}
+.fx-ticker-label {
+  align-self: stretch; display: flex; align-items: center; padding: 0 var(--fx-sp-4);
+  font: 700 var(--fx-fs-sm)/1 var(--fx-font); text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--fx-text-dark); background: linear-gradient(180deg, #ffc56b, var(--fx-orange));
+}
+.fx-ticker-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* .fx-ticker--scroll: wrap the text in <span class="fx-ticker-track"> to scroll it right-to-left. */
+.fx-ticker--scroll .fx-ticker-text { text-overflow: clip; }
+.fx-ticker--scroll .fx-ticker-track { display: inline-block; padding-left: 100%; animation: fx-ticker var(--fx-ticker-speed, 20s) linear infinite; }
+@keyframes fx-ticker { to { transform: translateX(-100%); } }
+
+/* Translucency over video: add .fx-translucent to a panel (or any ancestor) to let the stream show through. */
+.fx-translucent { --fx-panel-alpha: 0.88; }
+
+/* Agent colour hooks: style="--fx-agent:#9977ff" + .fx-agent-edge (3px left edge) / .fx-slot.fx-agent-ring. */
+.fx-agent-edge { border-left: 3px solid var(--fx-agent); }
+.fx-agent-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--fx-agent); box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35); vertical-align: middle; }
+
+/* Motion: honour reduced-motion for the busy bar and the ticker. */
+@media (prefers-reduced-motion: reduce) {
+  .fx-progress--busy::before, .fx-ticker--scroll .fx-ticker-track { animation: none; }
+  .fx-ticker--scroll .fx-ticker-track { padding-left: 0; }
+  .fx-slot, .fx-progress::before { transition: none; }
+}

@@ -1,4 +1,4 @@
--- Agent-chosen identity (display name, colour, glyph avatar, motto) and the
+-- Agent-chosen identity (display name, colour, glyph, pixel avatar, motto) and the
 -- speech bubbles `say` draws over the speaker. `profiles` is what the stream
 -- overlay polls: every player's and bot's profile, where it is and what it does.
 return function(api)
@@ -39,10 +39,42 @@ return function(api)
     assert(n >= low and n <= high and #value <= math.max(32, high * 4),string.format('%s must be %d..%d characters', name, low, high))
     return value
   end
+  -- A pixel-art portrait chosen from a few fixed parts. The harness only
+  -- validates and stores it; renderers (tools/stream/static/avatar.js and its
+  -- Python port) draw it, fill unset parts from the name, and draw a default
+  -- from the name and colour when there is none.
+  local AVATAR = {
+    base={'engineer','robot','biter','drone'},
+    helmet={'none','hardhat','armor','power','crest','hood'},
+    visor={'none','goggles','slit','wide','mono','grid'},
+    emblem={'none','gear','bolt','flask','plate','circuit','rocket','leaf','star'},
+    accessory={'none','antenna','headlamp','scarf','tank','horns','earpiece','pipe'},
+    backdrop={'dark','grid','hazard','glow','night'},
+  }
+  local AVATAR_KEYS = {'base','helmet','visor','emblem','accessory','backdrop','accent'}
+  M.AVATAR = AVATAR
+  local function avatar_arg(value)
+    if value == false then return nil end
+    assert(type(value) == 'table', 'avatar must be an object like {"base":"robot","visor":"mono"} (or false to clear)')
+    local out = {}
+    for k, v in pairs(value) do
+      assert(type(k) == 'string' and (AVATAR[k] or k == 'accent'), 'avatar: unknown field ' .. tostring(k) .. ' (fields: ' .. table.concat(AVATAR_KEYS, ', ') .. ')')
+      if k == 'accent' then
+        assert(type(v) == 'string' and v:match('^#%x%x%x%x%x%x$'), 'avatar.accent must be "#rrggbb"')
+        out.accent = v:lower()
+      else
+        local ok = false
+        for _, name in ipairs(AVATAR[k]) do if v == name then ok = true end end
+        assert(ok, 'avatar.' .. k .. ' must be one of ' .. table.concat(AVATAR[k], '|'))
+        out[k] = v
+      end
+    end
+    return out
+  end
   function M.get(index) return store()[index] end
   local function public(pr)
     if not pr then return {} end
-    return {display_name=pr.display_name, color=pr.color, glyph=pr.glyph, motto=pr.motto}
+    return {display_name=pr.display_name, color=pr.color, glyph=pr.glyph, motto=pr.motto, avatar=pr.avatar}
   end
   -- Paint the character (and, for a player, the player and chat name colour).
   function M.apply(p)
@@ -55,17 +87,21 @@ return function(api)
     end
   end
   M.schema = {
-    profile = {display_name='1..24 characters', color='"#rrggbb" (character and chat name colour)', glyph='1..2 characters: an emoji or letters (avatar)',
-      motto='0..80 characters', returns='your profile; with no arguments just reads it'},
-    profiles = {returns='every player and bot (directors excluded): kind bot|player, name, display_name, color, glyph, motto, position, alive, active (current action kind or false), last_said {text,tick}'},
+    profile = {display_name='1..24 characters', color='"#rrggbb" (character and chat name colour)', glyph='1..2 characters: an emoji or letters (a short tag beside your name)',
+      motto='0..80 characters',
+      avatar='pixel portrait, every field optional (unset ones follow from your name): base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory none|antenna|headlamp|scarf|tank|horns|earpiece|pipe, backdrop dark|grid|hazard|glow|night, accent "#rrggbb" (second colour; suit is your color); false clears',
+      returns='your profile; with no arguments just reads it'},
+    profiles = {returns='every player and bot (directors excluded): kind bot|player, name, display_name, color, glyph, motto, avatar, position, alive, active (current action kind or false), last_said {text,tick}'},
   }
   function M.handlers.profile(p, a)
     local all = store()
     local pr = all[p.index] or {}
     local changed = false
+    local avatar = a.avatar ~= nil and avatar_arg(a.avatar) or nil -- validated before anything changes
     if a.display_name ~= nil then pr.display_name = text_arg(a.display_name, 'display_name', 1, 24); changed = true end
     if a.motto ~= nil then pr.motto = text_arg(a.motto, 'motto', 0, 80); changed = true end
     if a.glyph ~= nil then pr.glyph = text_arg(a.glyph, 'glyph', 1, 2); changed = true end
+    if a.avatar ~= nil then pr.avatar = avatar; changed = true end
     if a.color ~= nil then
       assert(type(a.color) == 'string', 'color must be "#rrggbb"')
       pr.rgb = rgb(a.color); pr.color = a.color:lower(); changed = true

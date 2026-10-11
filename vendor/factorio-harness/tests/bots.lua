@@ -126,6 +126,21 @@ fails(function() bot('profile',{color='orange'}) end,'#rrggbb')
 fails(function() bot('profile',{glyph='abc'}) end,'glyph must be 1..2')
 fails(function() bot('profile',{display_name=string.rep('x',25)}) end,'display_name must be 1..24')
 eq(bot('profile',{glyph='👩‍🚀'}).glyph,'👩‍🚀') -- a ZWJ sequence counts as two
+-- avatar: a few named parts, validated and stored as sent; false clears.
+eq(bot('profile',{}).avatar,nil)
+local av=bot('profile',{avatar={base='robot',helmet='power',visor='mono',emblem='gear',accessory='antenna',backdrop='hazard',accent='#33CCFF'}}).avatar
+eq(av.base,'robot'); eq(av.visor,'mono'); eq(av.accent,'#33ccff')
+eq(bot('profile',{}).avatar.helmet,'power')
+eq(bot('profile',{avatar={base='biter'}}).avatar.helmet,nil) -- a new avatar replaces the old one; unset parts follow from the name
+fails(function() bot('profile',{avatar={base='dragon'}}) end,'avatar.base must be one of engineer|robot|biter|drone')
+fails(function() bot('profile',{avatar={hat='hardhat'}}) end,'avatar: unknown field hat')
+fails(function() bot('profile',{avatar={accent='blue'}}) end,'avatar.accent must be "#rrggbb"')
+fails(function() bot('profile',{avatar='robot'}) end,'avatar must be an object')
+fails(function() bot('profile',{display_name='Changed',avatar={visor='laser'}}) end,'avatar.visor must be one of')
+eq(bot('profile',{}).display_name,'Astra') -- a refused avatar changes nothing
+eq(bot('profile',{}).avatar.base,'biter')
+eq(bot('profile',{avatar=false}).avatar,nil)
+bot('profile',{avatar={base='engineer',helmet='hardhat',emblem='flask'}})
 bot('say',{text='taking iron, you take copper'})
 -- Chat lines go to players, not camera clients (their view shows the bubble).
 eq(#printed,0); eq(#seen['pog-director'],0); eq(#seen['pog-cam1'],0)
@@ -146,6 +161,7 @@ local list=runtime.dispatch{action='profiles',args={},player=1}.profiles
 eq(#list,3)
 local by={}; for _,row in ipairs(list) do by[row.name]=row end
 eq(by.astra.kind,'bot'); eq(by.astra.display_name,'Astra'); eq(by.astra.alive,true); eq(by.astra.active,false)
+eq(by.astra.avatar.emblem,'flask'); eq(by.opus.avatar,nil)
 eq(by.astra.last_said.text:sub(1,4),'word'); eq(by.nick.kind,'player'); eq(by.nick.display_name,'Nick'); eq(by.opus.glyph,nil)
 
 -- Director cameras: operator-only, spectator once, eased follow, release.
