@@ -50,6 +50,28 @@ and 57 quoted a motto.
 - copy_bench puts logged facts in today's shape before writing: no walking, mottos only on the opener and spotlight,
   the shift by number, background numbers, card calls. `--match` picks the beats that went wrong.
 
+- Item 6 (Nick: the hosts are "kinda dumb and still very LLM-y").
+  - Speak less. Exchanges are 3 to 6 s apart (was 1 to 3). A camera cut, board note, harness note, research start or
+    aloud chat line is said only after 20 s of quiet (`--quiet`). Filler comes only after 40 s of quiet (`--lull`,
+    was 0), and only when something changed since the hosts last spoke or the analyst has a point. "Something
+    changed" means technologies done, the research, the science rate in steps of 5, the stage, the board's claims or
+    the alerts. Chat feeds the hosts only when an agent says it aloud (it was 25% of all chat). Urgent beats stay on
+    Kimi (`--urgent-model` now defaults to it), whichever writer `--model` picks. `--gap 1 3 --lull 0 --quiet 0`
+    brings back the continuous cast.
+  - Richer facts.
+    - Each agent carries `intent`: its newest say or tell, under 10 minutes old, cleaned for speech.
+    - "walking" becomes "heading off for <board job>", or is dropped when there is no job.
+    - Each agent carries `since_last_beat`: a new job, something new said, back from respawn, a new task, or
+      "nothing new since the hosts last saw them".
+    - The notes ask for a reason behind every line (news, a cause, a number that moved). An agent with nothing new
+      is not worth a line, and there are no riffs on mottos or small notes.
+  - Bigger writers. copy_bench and the caster take `or=<OpenRouter model>` (`--writer or`, OPENROUTER_API_KEY) beside
+    `cf=` and `claude=`, and the bench reports cost per stream hour (`--per-hour`, default 300 exchanges). The
+    comparison command is in `copy_bench.py`'s docstring and the final message of this round. It was not run from
+    this session.
+  - Limits. The bench feeds logged facts, which have no `intent` or `since_last_beat`, so it tests the prompt and
+    the writer but not the new facts. The speak-less rules were tested with a stubbed writer, not on a live run.
+
 Replayed over shake7's 1,200 aired writer lines, with facts in today's shape, today's checks would cut 288 (24%):
 192 walking, 60 motto, 33 mockery. That assumes the writer keeps shake7's habits. Shake7's walking and motto lines came
 from facts that no longer carry them, and the notes now ask for the opposite, so the live cut rate should be well
