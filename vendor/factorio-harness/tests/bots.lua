@@ -171,6 +171,12 @@ advance(1); eq(bot('queue_status',{}).active.action,'build')
 c.position={x=3.7,y=-3}; advance(2)
 local hist=bot('queue_status',{}).history; eq(hist[#hist].action,'build'); eq(hist[#hist].ok,true); eq(c.items['stone-furnace'],0)
 bot('queue_cancel',{})
+-- chat and say do not pause or stop a running plan (sapilot: Opus's wish for
+-- "a queue that does not pause on chat/say"; it already does not).
+bot('queue_submit',{steps={{action='walk',args={direction='east',ticks=20}},{action='wait_ticks',args={ticks=5}}}})
+advance(1); bot('say',{text='still walking'}); bot('chat',{})
+advance(1); local qs=bot('queue_status',{}); eq(qs.paused,false); eq(qs.active.action,'walk')
+bot('queue_cancel',{})
 -- With nowhere to stand in reach it fails as before, naming the character.
 c.items['stone-furnace']=1; c.position={x=3,y=0}; surface.can_place_entity=function(a) return a.name~='character' and false end
 fails(function() bot('build',{item='stone-furnace',position={x=3,y=0}}) end,'the character standing on the footprint')
