@@ -160,7 +160,7 @@ fh sleep 300                                          # let the game run up to 5
 
 - `wait_until --wait` takes its timeout from `--wait-timeout MS` (up to 900000, 15 minutes) unless `args.timeout` (ticks, up to 54000) is given; without either it is 3600 ticks. The condition is checked every 10 ticks. Not met in time: exit 1, `error.code` `timed_out`, with the condition and what it last saw.
 - `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one and pauses a running queue.
-- `fh sleep SECONDS` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), or a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), else `woke: elapsed`. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`. Agents with a short shell timeout (Codex exec yield, Claude Code Bash timeout) should keep SECONDS below it.
+- `fh sleep SECONDS` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), or a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), or someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), else `woke: elapsed`. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`. Agents with a short shell timeout (Codex exec yield, Claude Code Bash timeout) should keep SECONDS below it.
 - A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works.
 
 ## Messages and reads
@@ -254,9 +254,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Board actions never stop the character when they fail (like `say`), and work while a bot is dead.
 - Every reply carries a `team` block when something is new for that agent since its previous request, shown once.
   `mentions` comes first: every chat message that mentions you and that you have not seen, oldest first, in full and
-  never cut by the other parts' caps (`from @you|@everyone, <age> ago: text`). Then `board` (items assigned to you,
-  changes and notes on your requests, notes on your items, a nudge when another open unowned request passes 2 game
-  minutes), `alerts` (your character being hit, attacked areas with attacker and entities hit, enemy groups
+  never cut by the other parts' caps (`from @you|@everyone, <age> ago: text`). Then `tells` (below; `from[ to team],
+  <age> ago: text`), then `board` (at most 5 lines and `+N more`, by someone else: items assigned to you with their
+  first note, any change or note on an item you own or requested, an item reassigned or released away from you
+  (`(was yours)`), a claim posted over yours; after those, each new open unowned task or request once; and a nudge
+  when another open unowned request passes 2 game minutes), `alerts` (your character being hit, attacked areas with attacker and entities hit, enemy groups
   gathering, buildings destroyed; at most 8 lines; these replace the old top-level `losses` field) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
@@ -266,17 +268,28 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `chat` read (not `peek`) delivers the ones it showed, and the rest ride on the next reply. At most 200 wait per
   agent; beyond that the oldest are counted in a "did not fit" line.
 - `say {text, aloud: true}` marks a line to be spoken on the stream; `chat` (and `peek`) returns `aloud: true` with it.
-- `mention_counts` (read; any player, directors included, or the operator path): per agent `unread_mentions`,
-  `at_mentions` (@name/@everyone), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle
-  agent that was mentioned. It does not consume anything.
+- `tell {to, text}` sends one line (1..300 characters) to teammates outside the game chat: `to` is a name or display
+  name, several (an array or `"luna,sol"`), or `team` (also `everyone`, `all`) for every agent but you. Each recipient
+  gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
+  never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
+  fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`). `tells {since?, limit?}`
+  returns the tells you sent or received `{seq,tick,from,to,team?,text}`; the operator path returns every tell, which
+  the stream shows on its logistics ticker (`-> Sol: text`, never voiced). CLI: `fh tell luna "text"`,
+  `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells --since N`.
+- `sleep` also ends early with `woke: board` (and `board: <line>`) when a board line about the sleeper's own items
+  arrives (any of the `board` lines above except new unowned requests and the 2-minute nudge).
+- `mention_counts` (read; any player, directors included, or the operator path): per agent `unread_mentions` (tells
+  included), `at_mentions` (@name/@everyone, and tells), `tells`, `unread_board` (board lines about their items not yet
+  in a reply), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle agent that was
+  mentioned. It does not consume anything.
 - `harness_request {title, problem, proposal?}` posts a `harness` item owned by `operator` (at most 10 open per agent).
   The operator answers with notes and a `server: harness vN: ...` chat line.
 - Saved plans: `plan_save {name, steps, guards?, note?}` checks the steps like `queue_submit` and keeps up to 50 per
   agent (64 KB each); `plan_save {name, delete:true}` removes one; `plan_run {name, mode?, start?}` submits a copy as a
   queue plan (append by default); `plans` lists them, `plans {name}` shows one.
 - Operator: `tools/harness-requests.py list|show|answer|board|events|mentions` in the pog repo. Underneath, a dispatch
-  request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`
-  and `mention_counts` as `operator`.
+  request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`,
+  `mention_counts` and `tells` as `operator`.
 - Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
   request against a full backlog); nothing runs per tick.
 

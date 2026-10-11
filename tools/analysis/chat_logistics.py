@@ -44,8 +44,9 @@ def chat(run, names):
 
 
 def journal_counts(run):
-    """Successful requests per action that carry coordination: tell, say, board_post, board_update."""
-    counts = collections.Counter()
+    """Successful requests per action that carry coordination (tell, say, board_post, board_update, confess), and the
+    tells themselves (they are in no chat log)."""
+    counts, tells = collections.Counter(), []
     for agent_dir in glob.glob(os.path.join(run, '*/')):
         path = agent_dir + 'journal.jsonl.gz'
         if not os.path.exists(path):
@@ -60,12 +61,16 @@ def journal_counts(run):
                 except ValueError:
                     continue
                 if d.get('event') == 'request':
-                    reqs[d['request'].get('id')] = d['request'].get('action')
+                    reqs[d['request'].get('id')] = d['request']
                 elif d.get('event') == 'response' and (d.get('response') or {}).get('ok'):
-                    action = reqs.pop(d['response'].get('id'), None)
+                    req = reqs.pop(d['response'].get('id'), None) or {}
+                    action = req.get('action')
                     if action in ('tell', 'say', 'board_post', 'board_update', 'confess'):
                         counts[action] += 1
-    return counts
+                    if action == 'tell':
+                        tells.append({'tick': d['response'].get('tick') or 0, 'from': os.path.basename(agent_dir.rstrip('/')),
+                                      'to': (req.get('args') or {}).get('to'), 'text': (req.get('args') or {}).get('text') or ''})
+    return counts, tells
 
 
 def row(msgs):
@@ -97,13 +102,19 @@ def main():
                 bins[int((m['tick'] - t0) // size)].append(m)
             for k in sorted(bins):
                 print(f"  {k * a.window:4.0f}-{(k + 1) * a.window:<4.0f}m  {row(bins[k])}")
-        counts = journal_counts(run)
+        counts, tells = journal_counts(run)
+        tells = [t for t in tells if t['tick'] >= a.since_tick]
         if counts:
             print('  requests: ' + ', '.join(f"{k} {counts[k]}" for k in ('say', 'tell', 'board_post', 'board_update', 'confess')))
+        if tells:
+            print(f"  tells      {row(tells)}")
         if a.lines:
             for m in msgs:
                 if classify(m.get('text', '')) == a.lines:
                     print(f"    #{m.get('seq')} {m.get('from')}: {m.get('text')}")
+            for t in tells:
+                if classify(t['text']) == a.lines:
+                    print(f"    tell {t['from']} -> {t['to']}: {t['text']}")
 
 
 if __name__ == '__main__':

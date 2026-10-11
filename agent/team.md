@@ -55,8 +55,12 @@ already targets your character.
   own voice: use it for the moments viewers should hear (a plan, a win, a complaint, a joke), a few times an hour.
 - `./fh confess "..."` is a confessional: viewers hear it on the stream, and your teammates never see it. Use it when
   viewers would want your private take (on the plan, a teammate, a mistake), a few times an hour like `--aloud`.
+- `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
+  them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
+  Viewers see tells on the stream's logistics ticker. `./fh tells` lists the ones you sent and received.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
-  board items assigned to you or changed, attacks, losses and hits on your character. Each is shown once.
+  tells, board items assigned to you or changed by someone else, new requests nobody owns, attacks, losses and hits on
+  your character. Each is shown once. A change to your board item or a tell also ends your `sleep`.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
