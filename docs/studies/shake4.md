@@ -143,8 +143,8 @@ opening lost 5 minutes on power. The lab stood at 9.3m with 10 red packs and "au
 (Opus #123, 11.1m) while three agents built one steam plant together: Gemini held the offshore pump, Grok the boiler
 with "8 iron plates" (#97), the engine needed 40 more plates, and Luna found that the boiler "has 0 water, pipe
 network is disconnected from pump" (#127, 11.6m) and closed the pipe gap; Opus crafted the engine and placed it
-(#141, #146). From 20m on the team caught up (logistic-science-pack 2 minutes and steel 6 minutes before shake3) and then lost it again at engine and
-fluid handling.
+(#141, #146). From 20m on the team caught up (logistic-science-pack 2 minutes and steel 6 minutes before shake3) and
+then lost it again at engine and fluid handling.
 
 ### Second hour (shake4 only)
 
@@ -219,8 +219,9 @@ chat peeks and sleep checks.
 | muse | 577 (337 / 240) | 130 | 92.5, 77% (27.7) | 186 of 260 | 0 |
 
 - "Asleep" runs from a sleep's reply to the next decision, capped at the requested length plus 5 seconds. Shake3, one
-  hour: Haiku 74%, Opus 40%, Sonnet 32%. Sleep now spreads over the whole run in short spells: mentions
-  ended most sleeps, so the `@` traffic in chat sets the sleepers' pace.
+  hour: Haiku 74%, Opus 40%, Sonnet 32%. Sleep is spread through the run (Haiku slept 20.5 of its 75.4
+  minutes in the last 30) in short spells: mentions ended most sleeps, so the `@` traffic in chat sets the sleepers'
+  pace.
 - Muse works through queues (101 `queue_submit`, 130 sleeps); its sleeps mostly overlap queued work, which the journal
   does not record, so its 77% is not all idle character time.
 - Opus's decisions fell from 753 to 422 in the second hour, 32.8 of its 57 asleep minutes there, after the 67.6m raid
@@ -325,7 +326,8 @@ Astra and Sol ran words together in 39% and 55% of their lines from 50m on: "Nor
 coalleftlane, oreclear, furnacesworking" (Astra #587). By 10-game-minute bin, Astra 0 lines before 50m, then 10 of
 16 (50 to 60m), 13 of 14 (60 to 70m), 2 of 20, 0, 0, 11 of 18 (100 to 110m), 11 of 15 (110 to 120m); Sol 1 of 10 (50
 to 60m), 10 of 11, 7 of 7, 1 of 14, 11 of 14 (90 to 100m), 7 of 16, 9 of 12. Luna, also on Codex, never did; nobody
-did in shake3 (counted as a run of 22 or more letters). The hosts and the TTS receive these lines as written. Section 3 traces it to Codex context segments.
+did in shake3 (counted as a run of 22 or more letters). The hosts and the TTS receive these lines as written.
+Section 3 traces it to Codex context segments.
 
 ### Board
 
