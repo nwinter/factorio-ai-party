@@ -68,6 +68,30 @@ class HistoryTest(unittest.TestCase):
         self.assertIn("shake1", s)
         self.assertIn("techs", H.at_text(s, 40))
 
+    def test_shifts_are_one_series(self):
+        """A resumed run (runs/RUN/resumed-from) continues its world: one series under the first shift's name, and a
+        live shift excludes its earlier shifts from the benchmarks."""
+        import tempfile
+        tmp = tempfile.mkdtemp()
+        def run(name, ticks, prev=None):
+            os.makedirs(os.path.join(tmp, name))
+            with open(os.path.join(tmp, name, "scores.jsonl"), "w") as f:
+                for t in ticks:
+                    f.write(json.dumps({"world": "n", "score": {"tick": t, "research_done": ["automation"] * (t > 0)}}) + "\n")
+            if prev:
+                open(os.path.join(tmp, name, "resumed-from"), "w").write(prev + "\n")
+        run("w1", [3600, 7200]); run("w2", [7200, 10800, 14400], "w1"); run("w3", [18000], "w2"); run("other", [3600])
+        roots = H.ROOTS
+        H.ROOTS = [tmp]
+        try:
+            s = H.load_runs()
+            self.assertEqual(sorted(s), ["other", "w1"])
+            self.assertEqual([r["tick"] for r in s["w1"]], [3600, 7200, 10800, 14400, 18000])
+            self.assertIn("shifts w1 + w2 + w3", H.label("w1"))
+            self.assertEqual(sorted(H.load_runs(exclude=os.path.join(tmp, "w3"))), ["other"])
+        finally:
+            H.ROOTS = roots
+
 
 class McpTest(unittest.TestCase):
     def test_protocol(self):
