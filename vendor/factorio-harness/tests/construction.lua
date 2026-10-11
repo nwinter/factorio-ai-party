@@ -188,6 +188,7 @@ C=dofile('mod/agent-harness_0.1.0/construction.lua'){
   position=function(v)return {x=v.x,y=v.y}end,distance=distance,integer=integer,visible=function()return true end,
   directions={north=0,east=4,south=8,west=12},known=function()return true end,reason=function(e)return tostring(e) end,
   hand_mining_ticks=function() return 30 end,crafting_count=function(_,item) return item=='boiler' and crafting or 0 end,
+  real=function(x) return x.luaplayer end,
   request_path=function(_,nav) nav.requested=true end,
   navigate=function(_,nav)
     local d=distance(p.position,nav.position)
@@ -204,10 +205,23 @@ C=dofile('mod/agent-harness_0.1.0/construction.lua'){
 }
 local under=tree(200.5); local was_marked=false
 under.to_be_deconstructed=function() return was_marked end
-under.order_deconstruction=function(force,player) assert(force==p.force and player==p); was_marked=true; return true end
+-- The mark names the LuaPlayer behind the proxy, or no player for a bot
+-- (shake2: a proxy failed with "Invalid PlayerIdentification").
+local marked_by='unset'
+under.order_deconstruction=function(force,player)
+  assert(force==p.force and (player==nil or player=='LuaPlayer'),'Invalid PlayerIdentification. Expected LuaPlayer, index or name.')
+  marked_by=player; was_marked=true; return true
+end
 obstacles={under};ghosts={ghost(200.5,'stone-furnace')};p.position={x=200.5,y=6.5};inventory['stone-furnace']=1
-local cleared=C.plan_ghosts(p,{},{});eq(#cleared.pending,2);assert(was_marked)
+p.luaplayer=nil -- a bot
+local cleared=C.plan_ghosts(p,{},{});eq(#cleared.pending,2);assert(was_marked);eq(marked_by,nil)
 eq(run_timed(cleared),"constructed");eq(cleared.mined,1);eq(cleared.built,1)
+under=tree(201.5); was_marked=false; marked_by='unset'
+under.to_be_deconstructed=function() return was_marked end
+under.order_deconstruction=function(force,player) assert(player=='LuaPlayer','Invalid PlayerIdentification'); marked_by=player; was_marked=true; return true end
+obstacles={under};ghosts={ghost(201.5,'stone-furnace')};p.luaplayer='LuaPlayer' -- a player in map view
+C.plan_ghosts(p,{},{});eq(marked_by,'LuaPlayer')
+p.luaplayer=nil
 obstacles={}
 inventory.boiler=0;crafting=1;ghosts={ghost(220.5,'boiler')};p.position={x=212.5,y=6.5}
 local awaiting=C.plan_ghosts(p,{},{})

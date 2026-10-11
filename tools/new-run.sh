@@ -60,18 +60,21 @@ exec "$root/bin/fh" "\$@" $target --journal "$dir/journal.jsonl"
 EOS
 cat > "$dir/shot" <<EOS
 #!/usr/bin/env bash
-# Real screenshot from the agent's game client, centred on the character: ./shot NAME [WIDTH HEIGHT]
-# tools/shot-sync.sh copies it from the game box into shots/.
+# Real game screenshot centred on the character: ./shot NAME [WIDTH HEIGHT]. A game client renders it (yours, or a
+# director's for a bot) into script-output/pog/$ws/; tools/shot-sync.sh copies it from the game box into shots/.
 set -euo pipefail
-name=\${1:?name}; w=\${2:-1280}; h=\${3:-720}
+name=\$(printf %s "\${1:?usage: ./shot NAME [WIDTH HEIGHT]}" | tr -c 'A-Za-z0-9_-' _); w=\${2:-1280}; h=\${3:-720}
 cd "\$(dirname "\$0")"
 tag="\$name-\$(date +%s)-\$RANDOM"
-POG_WORLD=$world "$root/bin/fh" $target call screenshot --args "{\"path\":\"pog/\$tag.png\",\"width\":\$w,\"height\":\$h}" >/dev/null
-for i in \$(seq 1 40); do
+if ! out=\$(POG_WORLD=$world "$root/bin/fh" $target call screenshot --args "{\"path\":\"pog/$ws/\$tag.png\",\"width\":\$w,\"height\":\$h}" 2>&1); then
+  echo "\$out" >&2; exit 1
+fi
+for i in \$(seq 1 60); do
   if [ -f "shots/\$tag.png" ]; then mv "shots/\$tag.png" "shots/\$name.png"; echo "shots/\$name.png"; exit 0; fi
   sleep 0.5
 done
-echo "screenshot failed: not delivered within 20 s" >&2; exit 1
+client=\$(printf '%s\n' "\$out" | sed -n 's/^client: //p')
+echo "screenshot failed: \${client:-the game client} rendered it but it was not copied into shots/ within 30 s (operator: is tools/shot-sync.sh running?)" >&2; exit 1
 EOS
 chmod +x "$dir/fh" "$dir/shot"
 date -v+"${minutes}"M "+%Y-%m-%d %H:%M %Z" > "$dir/deadline.txt"

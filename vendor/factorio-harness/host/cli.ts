@@ -113,6 +113,11 @@ function counts(inventory: unknown): Map<string, number> {
   }
   return out;
 }
+// What the character carries: the main inventory plus the gun ammo slots,
+// where crafted magazines land and shooting spends them.
+function carried(player: any): unknown[] {
+  return [...(Array.isArray(player?.inventory) ? player.inventory : []), ...(Array.isArray(player?.ammo) ? player.ammo : [])];
+}
 function inventoryChange(before: unknown, after: unknown): string | undefined {
   const a = counts(before), b = counts(after), parts: string[] = [];
   for (const key of new Set([...a.keys(), ...b.keys()])) {
@@ -379,18 +384,22 @@ async function main() {
   }
   const compactWaits = !bridged && !values.full && outputFormat === 'compact';
   const OBSERVE_SELF = {radius:1,limit:1,exclude_resources:true,entity_types:['character']};
-  async function brief(status: Reply, started: number, before?: unknown): Promise<Reply> {
+  async function brief(status: Reply, started: number, before?: unknown, action?: string): Promise<Reply> {
     const self = await harness.request('observe',OBSERVE_SELF);
     // A dead character cannot observe; status still carries the hints.
     const carrier = self.ok ? self : await harness.request('status');
-    const last = status.result?.last;
+    // shoot runs on the combat channel: its own outcome is last_combat, not
+    // the previous movement's last (shake2: a shoot "returned outcome move_to").
+    const shot = action === 'shoot';
+    const last = shot ? status.result?.last_combat : status.result?.last;
     const player = self.ok ? self.result?.player : undefined;
     const result: Record<string, unknown> = {
-      outcome: last?.outcome ?? (status.result?.active ? 'running' : 'idle'), action: last?.kind,
+      outcome: last?.outcome ?? (status.result?.active ? 'running' : 'idle'), action: shot ? 'shoot' : last?.kind,
       waited_s: Math.round((Date.now()-started)/100)/10,
       position: player?.position ?? status.result?.position,
       health: player && player.health < player.max_health ? `${Math.round(player.health)}/${Math.round(player.max_health)}` : undefined,
-      inventory: before !== undefined && player ? inventoryChange(before, player.inventory) : undefined,
+      inventory: before !== undefined && player ? inventoryChange(before, carried(player)) : undefined,
+      ammo_used: shot ? last?.ammo_used : undefined,
       detail: last?.result, alive: status.result?.alive === false ? false : undefined,
       team: carrier.result?.team, clock: carrier.result?.clock, chat: carrier.result?.chat,
     };
@@ -403,7 +412,7 @@ async function main() {
     const done = await waitForActionEnd(action, untilTick, nowTick, started);
     // A timeout or a failed poll is reported as it is.
     if (done.error?.code === 'wait_timeout' || (!done.ok && done.error?.code !== 'action_interrupted' && done.error?.code !== 'timed_out')) return done;
-    return compactWaits ? brief(done, started, before) : finalReply(done);
+    return compactWaits ? brief(done, started, before, action) : finalReply(done);
   }
   async function waitForActionEnd(action: string, untilTick: number | undefined, nowTick: number | undefined, started: number): Promise<Reply> {
     const deadline = started+waitBudget(untilTick,nowTick,action === 'wait_until');
@@ -490,7 +499,7 @@ async function main() {
     let before: unknown;
     if (wait && compactWaits) {
       const self = await harness.request('observe',{...OBSERVE_SELF,peek:true}).catch(() => undefined);
-      if (self?.ok) before = self.result?.player?.inventory;
+      if (self?.ok) before = carried(self.result?.player);
     }
     let reply: Reply;
     try { reply = await harness.request(action,args,requestId); }

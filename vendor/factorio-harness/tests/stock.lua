@@ -5,7 +5,8 @@ defines={inventory={chest=1,cargo_landing_pad_main=2},direction={north=0}}
 prototypes={item={pipe={},coal={}}}
 game={tick=0}
 local function inv(item,n)
-  return {get_item_count=function(f) return f.name==item and n or 0 end}
+  return {get_item_count=function(f) return f.name==item and n or 0 end,
+    get_contents=function() return n>0 and {{name=item,quality='normal',count=n}} or {} end}
 end
 local function crafter(x,n,recipe)
   local e={valid=true,name='assembling-machine-1',type='assembling-machine',position={x=x,y=0}}
@@ -55,6 +56,16 @@ eq(stock.line(stock.scan(p,'coal',{radius=64})),nil)
 local v=stock.view(p,{item='pipe',limit=2})
 eq(#v.places,2); eq(v.more,1); eq(v.held,3); eq(v.places[2].distance,20)
 assert(not pcall(stock.view,p,{item='nope'}))
+-- view without an item (shake2: "item must be a known item name"): every
+-- item held, largest first, with how many entities and chests hold it.
+local copper={valid=true,name='iron-chest',type='container',position={x=8,y=0},get_inventory=function() return inv('copper-plate',200) end}
+world[#world+1]=copper
+local all=stock.view(p,{})
+eq(#all.items,2); eq(all.items[1],'copper-plate 200 in 1 entity (1 chest)'); eq(all.items[2],'pipe 157 in 3 entities (1 chest)')
+eq(all.radius,128); eq(all.more,nil); assert(all.note:find('item=NAME',1,true),all.note)
+local top=stock.view(p,{limit=1}); eq(#top.items,1); eq(top.more,1)
+eq(#stock.view(p,{radius=6}).items,1)
+table.remove(world)
 -- The stock line says when a chest holds some, so the collect hint includes chests=true.
 assert(line:find('radius=32 chests=true gathers it',1,true),line)
 -- gather: nearest-neighbour route from the character, walking where out of reach.

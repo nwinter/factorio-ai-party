@@ -188,12 +188,16 @@ end
 local function stop_combat(index,outcome)
   combat_targets()[index]=nil
   local p=body(M.lookup(index))
+  local combat=state().combat and state().combat[index]
+  local used
   if p and p.valid and p.character and p.character.valid then
     p.shooting_state={state=defines.shooting.not_shooting,position=p.position}
+    -- Whole magazines (or shells) gone from the ammo slots since the start.
+    if combat and combat.ammo_start then used=math.max(0,combat.ammo_start-kite.ammo_count(p)) end
   end
   if state().combat then state().combat[index]=nil end
   state().last_combat=state().last_combat or {}
-  state().last_combat[index]={outcome=outcome,tick=game.tick}
+  state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used}
 end
 -- Set while a passive action raises: the bootstrap's failure handler calls
 -- stop_player right after, which must leave the queue alone.
@@ -400,8 +404,10 @@ function handlers.describe()
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
       equipment={operation='insert|remove',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
-      shoot={position='{x,y} or auto=true',ticks='1..600',radius='1..32',gun_slot='1..3'},equip={slot='gun|ammo|armor',item='owned item name',index='default 1'},
-      describe={}, map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)'},
+      shoot={position='{x,y} or auto=true',ticks='1..600',radius='1..32',gun_slot='1..3',
+        outcomes='fires real ammo from the ammo slots (fails with none); status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots)'},equip={slot='gun|ammo|armor',item='owned item name',index='default 1'},
+      describe={}, inventory={returns='the character inventory: inventory (main), guns, ammo, armor, free (slots), crafting (hand queue), warnings (nearly full, hoarding); the same as observe player and status inv'},
+      map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
         reports='crafting (hand queue: items, seconds left, head entry); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches, next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name and incidents per 64-tile area with causes, attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts'},
@@ -425,8 +431,8 @@ function handlers.describe()
       move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: engine pathfinder (a failed request retries from the nearest free tile centre with a slimmer box, then a wider goal); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',status='last reports replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity) | blocked | timed_out'},
       pickup={ticks='1..600'},repair={position='{x,y}',ticks='1..600',item='repair-pack by default'},
       mine={position='{x,y}', ticks='1..600', name='optional', outcomes='target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
-      stock={item='item name',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8)',quality='default normal',
-        returns='total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance}; made_by (crafters set to a recipe making it); held (your inventory); summary line'},
+      stock={item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
+        returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance}; made_by (crafters set to a recipe making it); held (your inventory); summary line'},
       craft={force='boolean: hand-craft even when nearby stock covers it',short='when fewer started than asked: the raw ingredients missing for the rest (e.g. "wood short 18 (held 2)"), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item; a craft of >=3 s of hand time that stock covers is refused (errors) unless force=true',returns='started; hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
       rates={area='{left_top,right_bottom} <=192x192',positions='or 1..64 {x,y} machines',per='second|minute (default minute)',
         returns='rows per item: produced, consumed, net at full speed, by/into machines x count; power produced/consumed; errors (no_recipe, no_fuel, no_power, no_resources, ...)',
@@ -679,6 +685,14 @@ function handlers.status(p,a)
     alerts=recent_alerts(a),runtime_fault=state().runtime_fault or false,connected=p.connected,alive=p.character and p.character.valid or false,cheat_mode=p.cheat_mode,
     supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,
     surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,riding=p.driving or nil, last=state().last and state().last[p.index] or false, combat=state().combat and state().combat[p.index] or false, last_combat=state().last_combat and state().last_combat[p.index] or false, tick=game.tick, position=p.position}
+end
+-- The character's inventory on its own (shake2: `call inventory` failed 15
+-- times): observe's player inventories plus status's free-slot line.
+function handlers.inventory(p)
+  local free,warnings=survey.inventory(p)
+  return {inventory=contents(p.get_main_inventory()),guns=contents(p.get_inventory(defines.inventory.character_guns)),
+    ammo=contents(p.get_inventory(defines.inventory.character_ammo)),armor=contents(p.get_inventory(defines.inventory.character_armor)),
+    free=free,crafting=crafting_line(p),warnings=warnings and #warnings>0 and warnings or nil}
 end
 -- Connected visible resource tiles are summarized separately from structures so a
 -- large ore patch cannot consume the entity budget and hide machines or enemies.
@@ -2737,10 +2751,28 @@ local function catalog(p,a,kind)
 end
 function handlers.recipes(p,a) return catalog(p,a,'recipes') end
 function handlers.technologies(p,a) return catalog(p,a,'technologies') end
+-- The client that renders a screenshot: a player's own. A bot has none, and
+-- without by_player every connected client rendered it into its own
+-- script-output (shake1/2: ./shot never delivered), so one is chosen: the
+-- first connected director, else the first connected player.
+local function screenshot_client(p)
+  local own=real(p)
+  if own then return own end
+  local pick
+  for _,pl in pairs(game.connected_players) do
+    if pl.valid then
+      local rank=M.is_director(pl.index) and 0 or 1
+      if not pick or rank<pick.rank or (rank==pick.rank and pl.index<pick.player.index) then pick={player=pl,rank=rank} end
+    end
+  end
+  return pick and pick.player
+end
 function handlers.screenshot(p,a)
   assert(type(a.path)=='string' and #a.path<=160 and a.path:match('^[%w_/-]+%.png$') and not a.path:find('..',1,true) and a.path:sub(1,1)~='/','path must be a relative PNG path')
-  game.take_screenshot{player=real(p),by_player=real(p),surface=p.surface,position=p.position,path=a.path,resolution={x=integer(a.width,1280,320,1920,'width'),y=integer(a.height,720,240,1080,'height')},zoom=1,show_entity_info=true}
-  return {queued=true,path=a.path,requires_graphical_client=true}
+  local client=screenshot_client(p)
+  assert(client,'no graphical client is connected to render a screenshot')
+  game.take_screenshot{player=real(p),by_player=client,surface=p.surface,position=p.position,path=a.path,resolution={x=integer(a.width,1280,320,1920,'width'),y=integer(a.height,720,240,1080,'height')},zoom=1,show_entity_info=true}
+  return {queued=true,path=a.path,client=client.name,requires_graphical_client=true}
 end
 function handlers.revive_ghost(p,a)
   local e=entity(p,a); friendly(p,e)
@@ -2793,10 +2825,14 @@ function handlers.shoot(p,a)
   assert(a.auto==true or pos,'specify position or auto=true')
   if pos then assert(visible(p,pos),'firing position must be locally visible') end
   if a.gun_slot then p.character.selected_gun_index=integer(a.gun_slot,nil,1,3,'gun_slot') end
+  -- The engine fires from the ammo slots and spends what it fires; without
+  -- ammo the trigger does nothing, so say so instead of "shooting".
+  local ammo=kite.ammo_count(p)
+  assert(ammo>0,'no ammunition in the ammo slots: equip some (equip slot=ammo item=firearm-magazine) or craft firearm-magazine')
   state().combat=state().combat or {}
   combat_targets()[p.index]=nil
-  state().combat[p.index]={until_tick=game.tick+ticks,position=pos,auto=a.auto==true,radius=integer(a.radius,24,1,32,'radius')}
-  return {until_tick=game.tick+ticks}
+  state().combat[p.index]={until_tick=game.tick+ticks,position=pos,auto=a.auto==true,radius=integer(a.radius,24,1,32,'radius'),ammo_start=ammo}
+  return {until_tick=game.tick+ticks,ammo=ammo}
 end
 function handlers.equip(p,a)
   local names={gun='character_guns',ammo='character_ammo',armor='character_armor'}
@@ -3292,7 +3328,7 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
-local reads={labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true}
+local reads={labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -3580,7 +3616,7 @@ navigate=function(p,nav)
 end
 route=route_module{position=position,directions=directions,chunk_of=chunk_of}
 pipes=pipes_module{position=position,directions=directions,chunk_of=chunk_of}
-construction=construction_module{position=position,distance=distance,integer=integer,visible=visible,steer=steer,
+construction=construction_module{position=position,distance=distance,integer=integer,visible=visible,steer=steer,real=real,
   known=known,reason=reason,directions=directions,waypoint_goal=waypoint_goal,
   request_path=function(p,nav) return request_path(p,nav) end,navigate=function(p,nav) return navigate(p,nav) end,
   build=function(p,a) return handlers.build(p,a) end,hand_mining_ticks=hand_mining_ticks,crafting_count=crafting_count}
@@ -3701,6 +3737,7 @@ function M.tick_body(event)
   for index,action in pairs(state().combat or {}) do
     local ok,p=pcall(player,index)
     if not ok or event.tick>action.until_tick then stop_combat(index,ok and 'duration_elapsed' or 'player_unavailable')
+    elseif action.ammo_start and kite.ammo_count(p)==0 then stop_combat(index,'out_of_ammo')
     else
       local target=action.position
       if action.auto then

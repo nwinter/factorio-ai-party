@@ -14,6 +14,7 @@ return function(api)
     local inv=p.get_inventory(defines.inventory.character_ammo)
     return inv and inv.get_item_count() or 0
   end
+  M.ammo_count=ammo_count
   function M.plan(p,a)
     local band_min,band_max=a.min_distance or 7,a.max_distance or 12
     assert(type(band_min)=='number' and type(band_max)=='number' and band_min>=2 and band_max>band_min and band_max<=30,'need 2 <= min_distance < max_distance <= 30')

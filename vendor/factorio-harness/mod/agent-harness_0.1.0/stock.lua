@@ -68,9 +68,35 @@ return function(api)
       s.total,s.item,table.concat(parts,', '),near.count,near.position.x,near.position.y,math.floor(near.distance+0.5),largest,
       s.item,math.max(8,math.ceil(math.max(s.places[math.min(#s.places,4)].distance,big.distance))+2),chests and ' chests=true' or '')
   end
+  -- Without an item: what our machines and chests hold, per item, largest
+  -- first (shake2: agents asked `scope=stock` bare and got an error).
+  function M.summary(p,a,radius,limit)
+    local centre=a.position and api.position(a.position) or p.position
+    local totals,order={},{}
+    for _,e in pairs(p.surface.find_entities_filtered{position=centre,radius=radius,force=p.force,type=TYPES}) do
+      local inv=e.valid and output_of(e)
+      for _,s in ipairs(inv and inv.get_contents() or {}) do
+        local key=s.quality and s.quality~='normal' and s.name..'@'..s.quality or s.name
+        local t=totals[key]
+        if not t then t={item=key,count=0,entities=0,chests=0}; totals[key]=t; order[#order+1]=t end
+        t.count=t.count+s.count; t.entities=t.entities+1
+        if CHEST[e.type] then t.chests=t.chests+1 end
+      end
+    end
+    table.sort(order,function(x,y) return x.count>y.count or (x.count==y.count and x.item<y.item) end)
+    local items={}
+    for i=1,math.min(limit,#order) do
+      local t=order[i]
+      items[i]=string.format('%s %d in %d %s%s',t.item,t.count,t.entities,t.entities==1 and 'entity' or 'entities',
+        t.chests>0 and string.format(' (%d chest%s)',t.chests,t.chests==1 and '' or 's') or '')
+    end
+    return {radius=radius,items=items,more=#order>limit and #order-limit or nil,
+      note=#order>0 and 'machine outputs and chests within radius; scope=stock item=NAME lists the places and a collect line' or 'no machine output or chest within radius holds anything'}
+  end
   function M.view(p,a)
-    assert(type(a.item)=='string' and prototypes.item[a.item],'item must be a known item name')
     local radius=api.integer(a.radius,128,1,1024,'radius')
+    if a.item==nil then return M.summary(p,a,radius,api.integer(a.limit,16,1,64,'limit')) end
+    assert(type(a.item)=='string' and prototypes.item[a.item],'item must be a known item name')
     local limit=api.integer(a.limit,8,1,MAX_PLACES,'limit')
     local centre=a.position and api.position(a.position) or p.position
     local s=M.scan(p,a.item,{position=centre,radius=radius,quality=a.quality})
