@@ -596,6 +596,12 @@ check("the writer prompt carries the notes, the 18-word limit and the rewrite no
       str(px))
 
 
+tpl = [t for kinds in caster.TemplateWriter.T.values() for ts in kinds.values() for t in ts]
+check("templates: no style faults, no dashes or semicolons, one exclamation at most", all(
+    caster.style_fault(t) is None and not re.search(r"—|–|;", t) and t.count("!") <= 1 for t in tpl),
+    str([t for t in tpl if caster.style_fault(t) or t.count("!") > 1]))
+
+
 class _Writer:
     name = "fake"
 
