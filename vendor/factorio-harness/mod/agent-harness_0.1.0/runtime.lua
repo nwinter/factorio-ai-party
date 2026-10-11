@@ -3567,7 +3567,7 @@ navigate=function(p,nav)
 end
 route=route_module{position=position,directions=directions,chunk_of=chunk_of}
 pipes=pipes_module{position=position,directions=directions,chunk_of=chunk_of}
-construction=construction_module{position=position,distance=distance,integer=integer,visible=visible,steer=steer,
+construction=construction_module{position=position,distance=distance,integer=integer,visible=visible,steer=steer,real=real,
   known=known,reason=reason,directions=directions,waypoint_goal=waypoint_goal,
   request_path=function(p,nav) return request_path(p,nav) end,navigate=function(p,nav) return navigate(p,nav) end,
   build=function(p,a) return handlers.build(p,a) end,hand_mining_ticks=hand_mining_ticks,crafting_count=crafting_count}
