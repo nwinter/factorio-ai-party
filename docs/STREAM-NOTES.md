@@ -318,27 +318,14 @@ research card and the item cells are left to the landscape page. Alerts sit over
 Checked in jsdom against shake2's live state (cards, avatars, science strip, chat, the portrait layout file); not
 yet looked at in OBS.
 
-Getting it to viewers. This session could not reach the web or the OBS websocket (both refused by the permission
-mode), so the following is from what was known before October 2026 and needs checking against YouTube's and OBS's
-current docs before relying on it:
-
-- YouTube shows a 9:16 live stream full screen on phones (and can surface it in the Shorts feed). One stream is
-  one aspect ratio, so a horizontal and a vertical audience means either two live streams (two stream keys, one
-  channel) or YouTube's own dual-format support, if it now takes both from one encoder. Check that first: if it
-  exists, it decides the OBS side.
-- OBS side, cheapest first: (1) the free Aitum Vertical plugin adds a second 9:16 canvas with its own scenes and
-  its own stream output (its own key), sharing the sources already in OBS; (2) native multiple canvases; (3) a
-  second OBS instance with its own profile (most CPU/GPU, two configs to keep in sync). Checked on the box
-  (2026-10-11, read-only over obs-websocket): OBS 32.2.2, obs-websocket 5.7.4. `GetCanvasList` exists and lists one
-  canvas, "Main" (1920x1080, 60 fps); the websocket has no request to create a canvas, so a 9:16 canvas has to come
-  from a plugin (Aitum Vertical builds on these canvases) or OBS's own UI if this version exposes one.
-- Proposed: Aitum Vertical (or a native canvas) with one vertical scene: a browser source on
-  `http://127.0.0.1:8787/portrait` at 1080x1920, plus the three director window captures scaled into the holes above
-  (main 1032x581 at 24,112; cam2 508x286 at 24,709; cam3 508x286 at 548,709). Cost: a second 1080x1920 encode on
-  the same Quick Sync encoder (check headroom with `/replays.json` stats, below) and a second YouTube live event. No
-  change to the existing `pog` profile output.
-  Installing the plugin, adding the scene and the second stream are operator steps: the rules for this branch
-  exclude output settings and starting streams.
+Getting it to viewers (researched 2026-10-11; full steps in docs/VERTICAL-PROPOSAL.md): YouTube's Dual stream takes
+our own vertical feed on a second stream key as part of the same broadcast (one URL, one chat), set up in the Live
+Control Room before going live. On the box, the Aitum Vertical plugin (1.6.6) adds a 1080x1920 canvas with its own
+output; `tools/win/install-aitum-vertical.ps1` installs it, and `tools/vertical.py scene` builds "stream vertical" in
+that canvas: the three director captures (shared with "stream") in the holes above and a muted browser source on
+`http://127.0.0.1:8787/portrait` on top. `vertical.py key` sets the output's key from
+`~/.config/pog/youtube-vertical.key`; with the plugin's "start and stop with main" ticked, `obs.py stream-start`
+starts both feeds. Not yet run on the box.
 
 ## Director
 
