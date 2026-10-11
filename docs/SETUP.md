@@ -94,6 +94,14 @@ Launch hygiene and supervision (shake2 and shake3 studies; details in `docs/LAUN
   memory tools (`MUSE_EXPERIMENTAL_*`).
 - `tools/start-team.sh` starts every pane first and then clears trust prompts for all of them in one pass
   (`tools/clear-prompts.sh`).
+- Before a run or shift, `tools/start-team.sh` (and its dry run) prints warnings, never stops:
+  - `tools/quota_check.py TEAM MINUTES` reads `ai-usage agent --json` and projects each route's quota windows over
+    the run with the burn rates in `agent/quota-burn.tsv`.
+  - `tools/code_check.py` warns when main, or a branch active in the last 24 hours, has harness or `tools/stream`
+    commits this checkout lacks, or when `dist` is older than `host/*.ts`. The runtime deploy is logged with its
+    sha256.
+- The agy loop sleeps through a quota error (`tools/agy-quota.py` writes `agy-quota` to `context.log`) and stops
+  when the reset falls after the deadline.
 - No compaction in an agent's last 2 minutes: Claude Code's `PreCompact` hook blocks it, and the agy loop starts no
   fresh conversation; Grok, Codex and Muse have no control for it.
 - `tools/supervise.sh` logs how each nudge was delivered (falls back to typing into the pane when
