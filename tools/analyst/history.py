@@ -39,7 +39,16 @@ def label(name):
     return f"{name} ({LABELS[name]})" if name in LABELS else name
 
 
-def load_runs():
+def load_runs(exclude=None):
+    """{series name: snapshots}. exclude: a run being replayed, which must not be its own benchmark."""
+    series = load_all()
+    if exclude:
+        ex = os.path.basename(exclude.rstrip("/"))
+        series = {k: v for k, v in series.items() if k != ex and not k.startswith(ex + "/")}
+    return series
+
+
+def load_all():
     series = {}
     for root in ROOTS:
         if not os.path.isdir(root):

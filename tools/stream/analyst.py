@@ -1,0 +1,383 @@
+#!/usr/bin/env python3
+"""The stream's analyst: a strong model with read-only tools writes talking points, storylines and judgements for
+the fast on-air hosts, every 60-120 s during a run.
+
+  python3 tools/stream/analyst.py --world n --feed http://127.0.0.1:8788 --run-dir runs/shake3     # live
+  python3 tools/stream/analyst.py --replay runs/shake2 --at 45 --once --dry-run                   # offline check
+  python3 tools/stream/analyst.py --world n --model opus --every 120 --segments                   # also request segments
+
+Each cycle: build a digest from read-only game reads (tools/analyst/game.py: statistics Lua and harness reads with
+peek), past runs (tools/analyst/history.py) and the knowledge base (tools/analyst/kb.py); then run
+`claude -p` (subscription route) with that digest and an MCP server of read-only tools (tools/analyst/mcp_server.py;
+`--tools Read,Grep,Glob` and `--strict-mcp-config`, so the model cannot write anything or call a gameplay action).
+The reply is JSON; every talking point must carry the facts behind its names and numbers (the hosts' fact check
+holds them to those). Points that fail the check are dropped. The result is POSTed to the stream service
+(`POST /analyst`, served in the snapshot as `analyst`) and logged to tools/stream/logs/analyst-<start>.jsonl.
+"""
+import argparse, json, os, re, shutil, subprocess, sys, tempfile, threading, time, traceback, urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(HERE))
+AN = os.path.join(REPO, "tools", "analyst")
+sys.path.insert(0, AN)
+sys.dont_write_bytecode = True
+
+KINDS = ("stat", "comparison", "explainer", "prediction", "judgement", "storyline", "trivia", "correction")
+SEGMENT_TYPES = ("production", "research", "spotlight", "overview", "recap")
+
+SYSTEM = """You are the analyst for a livestream of AI agents playing Factorio together (version 2.0.77, base game; \
+Space Age later). Two fast on-air hosts (a play-by-play caster and a colour caster) speak lines written by a small \
+model in about a second; they know little about Factorio. You are the slow, expert voice behind them: every cycle you \
+study the game and write talking points they can say, with the facts behind them.
+
+What makes a great talking point: a number, a comparison and a cause ("15 science per minute at 40 minutes; shake1 \
+had 11 at this point; green science is short of copper"), what comes next and when, what good or poor play looks like \
+right now, a storyline across cycles (a struggling power grid, a race to oil, an agent carrying the team), or a \
+short explainer of a game mechanic that is on screen. Judge the team honestly but kindly.
+
+Facts you must get right (the hosts often get them wrong):
+- Research progress is never lost. Switching research keeps the progress; labs only consume science packs.
+- "Lost" buildings and damaged buildings are ours; biters are the attackers. Losses listed "by small biter" name the enemy.
+- Pollution is not damage; it spreads by chunk and makes biter nests send attacks when it reaches them.
+- On this stream "SPM" means all science pack colours summed per minute (the overlay headline). Say "per minute".
+- Several 2.0 technologies are trigger techs, finished by an action (steam power: craft 50 iron plates; oil \
+processing: mine crude oil) and cost no packs.
+- Never guess a number: use the digest or a tool (kb_* for exact recipes, technologies, ratios and machine stats \
+of this version; game_* for the current game; history_* for past runs; notes for pacing and good play).
+- Do no arithmetic in your head. Any computed figure (what N machines make, machines needed for a rate, research \
+time with N labs, packs still needed) must come from a tool call this cycle: kb_output, kb_ratio, kb_research_time, \
+kb_path. Numbers copied from the digest are fine as they are.
+
+Tools are all read-only. The digest below already has the current state, so call tools only for what it lacks \
+(a ratio, a path, a recipe, machine status, an agent's notes). Keep it to a few calls; you have about a minute.
+
+Reply with ONLY a JSON object, no prose before or after:
+{"headline": "one sentence on the state of the game",
+ "judgement": {"pace": "ahead" | "on pace" | "behind", "text": "one or two spoken sentences", "facts": {...}},
+ "talking_points": [{"kind": one of %(kinds)s, "topic": "short-slug", "text": "one or two spoken sentences, at most 30 words",
+   "facts": {"name": value, ...}, "priority": 1-3 (3 = say soon), "ttl_s": 120-900, "agents": ["names mentioned"]}],
+ "storylines": [{"id": "slug", "title": "few words", "status": "new" | "developing" | "resolved", "text": "one sentence", "facts": {...}}],
+ "next": {"milestone": "what the team should reach next", "text": "spoken sentence with when it usually comes", "facts": {...}},
+ "segments": [{"type": one of %(segs)s, "params": {}, "reason": "why now, one sentence", "urgency": 1-3}],
+ "corrections": ["short rules for the hosts based on what is happening now, e.g. 'the red alerts are our walls being hit, not new nests'"]}
+
+Rules for every "text": spoken English for a voice, no lists, no emoji, no map coordinates, no tick numbers. Every \
+number and every agent name in a text must appear in that item's "facts" (numbers as plain values, e.g. \
+{"spm": 15, "minute": 40}); round in the text only to the same value as the fact. Refer to agents by the names in \
+the digest and as "they". Write 5 to 8 talking points, fresh ones, not repeats of the previous cycle unless the \
+numbers changed. Suggest a segment only when the screen would help (a production breakdown when output moved, a \
+spotlight on an agent doing something notable).
+""" % {"kinds": "|".join(KINDS), "segs": "|".join(SEGMENT_TYPES)}
+
+
+def log(*a):
+    print(time.strftime("%H:%M:%S"), *a, flush=True)
+
+
+# ---- point checks ----------------------------------------------------------------------------------------------
+NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def fact_numbers(facts):
+    out = []
+    for n in NUM_RE.findall(json.dumps(facts, ensure_ascii=False)):
+        try:
+            out.append(float(n.replace(",", "")))
+        except ValueError:
+            pass
+    return out
+
+
+def point_problem(p):
+    """None when every number in the text is backed by its facts (within rounding), else the reason."""
+    text, facts = p.get("text") or "", p.get("facts") or {}
+    if not text.strip():
+        return "empty text"
+    known = fact_numbers(facts)
+    for raw in NUM_RE.findall(text):
+        v = float(raw.replace(",", ""))
+        if not any(abs(v - k) <= max(1.0, 0.05 * abs(k)) for k in known):
+            return f"number {raw} not in facts"
+    if re.search(r"\(\s*-?\d+\s*,\s*-?\d+\s*\)", text):
+        return "map coordinates"
+    if len(text.split()) > 45:
+        return "too long"
+    return None
+
+
+def clean_reply(reply):
+    """Validate the model's JSON; drop items that fail the fact rule."""
+    dropped = []
+    pts = []
+    for p in reply.get("talking_points") or []:
+        if not isinstance(p, dict):
+            continue
+        why = point_problem(p)
+        if why:
+            dropped.append({"text": p.get("text"), "why": why})
+            continue
+        p["kind"] = p.get("kind") if p.get("kind") in KINDS else "stat"
+        p["priority"] = max(1, min(3, int(p.get("priority") or 2)))
+        p["ttl_s"] = max(60, min(1800, int(p.get("ttl_s") or 300)))
+        pts.append(p)
+    reply["talking_points"] = pts
+    for key in ("judgement", "next"):
+        item = reply.get(key)
+        if isinstance(item, dict) and item.get("text") and point_problem(item):
+            dropped.append({"text": item.get("text"), "why": point_problem(item), "key": key})
+            item.pop("text")
+    reply["storylines"] = [s for s in reply.get("storylines") or [] if isinstance(s, dict) and not point_problem(s)]
+    reply["segments"] = [s for s in reply.get("segments") or [] if isinstance(s, dict) and s.get("type") in SEGMENT_TYPES]
+    reply["corrections"] = [c for c in reply.get("corrections") or [] if isinstance(c, str)][:6]
+    return reply, dropped
+
+
+def parse_json(text):
+    text = text.strip()
+    m = re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, re.S)
+    if m:
+        text = m.group(1)
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end < 0:
+        raise ValueError("no JSON object in reply: " + text[:200])
+    return json.loads(text[start:end + 1])
+
+
+# ---- digest ------------------------------------------------------------------------------------------------------
+class Digest:
+    def __init__(self, a):
+        import game as G
+        import history as H
+        from kb import KB
+        self.G, self.H = G, H
+        self.kb = KB()
+        self.series = H.load_runs(exclude=a.replay)
+        self.a = a
+        self.game = G.ReplayGame(a.replay, a.at) if a.replay else G.LiveGame(a.world, a.bot, a.player, a.surface)
+
+    def build(self, prev=None, feed=None):
+        G, H, kb = self.G, self.H, self.kb
+        parts, facts = [], {}
+        snap = self.game.snapshot()
+        minute = snap["tick"] / 3600
+        facts["game_minute"] = round(minute)
+        spm, per = G.spm(snap)
+        facts["spm"] = round(spm, 1)
+        parts.append("## Current game\n" + G.snapshot_text(snap))
+        try:
+            m = self.game.machines()
+            if m:
+                parts.append("## Machines by recipe and status\n" + G.machines_text(m))
+        except Exception as e:
+            parts.append(f"(machine status unavailable: {e})")
+        if not self.a.replay:
+            try:
+                st = self.game.status()
+                keep = {k: st.get(k) for k in ("evolution", "pollution", "enemies", "alerts", "power", "factory") if st.get(k)}
+                parts.append("## Harness status (threats, pollution, power)\n" + json.dumps(keep, ensure_ascii=False)[:2500])
+            except Exception as e:
+                parts.append(f"(status unavailable: {e})")
+        parts.append("## Past runs at this game minute\n" + H.at_text(self.series, round(minute)))
+        cur = snap.get("research")
+        if cur:
+            parts.append(H.when_text(self.series, cur))
+            parts.append(kb.tech_text(cur))
+        done = snap.get("done") or []
+        goals = [g for g in ("oil-processing", "chemical-science-pack", "construction-robotics", "rocket-silo") if g not in done]
+        for g in goals[:2]:
+            parts.append(kb.path_text(g, done))
+            parts.append(H.when_text(self.series, g))
+        try:
+            chat = self.game.chat(20)
+            parts.append("## Recent team chat\n" + G.chat_text(chat))
+        except Exception as e:
+            parts.append(f"(chat unavailable: {e})")
+        if feed:
+            ag = [f"{x.get('display_name') or x.get('name')} ({x.get('model') or '?'}; {x.get('role') or 'no role'}): "
+                  f"{x.get('activity')}{', ' + x['action'] if x.get('action') else ''}" for x in feed.get("agents") or []]
+            if ag:
+                parts.append("## Agents on the stream (names to use)\n" + "\n".join(ag))
+            al = [a.get("text") for a in feed.get("alerts") or [] if a.get("text")]
+            if al:
+                parts.append("## Alerts on screen now\n" + "\n".join(al))
+            board = feed.get("board") or {}
+            if board.get("available"):
+                parts.append("## Team board\n" + json.dumps({k: board.get(k) for k in ("open_unowned", "in_progress", "claims_total", "events")}, ensure_ascii=False)[:1500])
+        if self.a.run_dir and os.path.isdir(self.a.run_dir):
+            names = sorted(n for n in os.listdir(self.a.run_dir) if os.path.exists(os.path.join(self.a.run_dir, n, "notes.md")))
+            if names:
+                parts.append("Agents' notes.md (agent_notes tool): " + ", ".join(names))
+        if prev:
+            parts.append("## Your previous cycle (do not repeat unless numbers changed)\n" + json.dumps(
+                {"headline": prev.get("headline"), "storylines": prev.get("storylines"),
+                 "talking_points": [p.get("text") for p in prev.get("talking_points") or []]}, ensure_ascii=False)[:3000])
+        return "\n\n".join(parts), facts, snap
+
+
+# ---- model -------------------------------------------------------------------------------------------------------
+def run_claude(a, digest_text):
+    env = dict(os.environ)
+    srv_env = {"POG_KB": os.environ.get("POG_KB", "base-2.0.77")}
+    if a.replay:
+        srv_env.update(ANALYST_REPLAY=os.path.abspath(a.replay), ANALYST_AT=str(a.at if a.at is not None else ""))
+    else:
+        srv_env.update(ANALYST_WORLD=a.world, ANALYST_SURFACE=a.surface)
+        if a.bot:
+            srv_env["ANALYST_BOT"] = a.bot
+        if a.player:
+            srv_env["ANALYST_PLAYER"] = str(a.player)
+    if a.run_dir:
+        srv_env["ANALYST_RUN_DIR"] = os.path.abspath(a.run_dir)
+    cfg = {"mcpServers": {"analyst": {"command": sys.executable, "args": [os.path.join(AN, "mcp_server.py")], "env": srv_env}}}
+    fd, cfg_path = tempfile.mkstemp(prefix="analyst-mcp-", suffix=".json")
+    with os.fdopen(fd, "w") as f:
+        json.dump(cfg, f)
+    claude = shutil.which(a.claude) or a.claude
+    cmd = [claude, "-p", "--model", a.model, "--output-format", "json", "--no-session-persistence",
+           "--strict-mcp-config", "--mcp-config", cfg_path, "--tools", "Read,Grep,Glob",
+           "--allowedTools", "mcp__analyst", "Read", "Grep", "Glob", "--permission-mode", "dontAsk",
+           "--system-prompt", SYSTEM]
+    if a.effort:
+        cmd += ["--effort", a.effort]
+    t0 = time.time()
+    try:
+        p = subprocess.run(cmd, input=digest_text + "\n\nWrite this cycle's JSON now.", capture_output=True, text=True,
+                           timeout=a.timeout, cwd=REPO, env=env)
+    finally:
+        os.unlink(cfg_path)
+    dt = time.time() - t0
+    if p.returncode:
+        raise RuntimeError(f"claude exited {p.returncode}: {(p.stderr or p.stdout).strip()[:300]}")
+    out = json.loads(p.stdout)
+    if out.get("is_error"):
+        raise RuntimeError(f"claude error: {str(out.get('result'))[:300]}")
+    return out.get("result") or "", {"seconds": round(dt, 1), "turns": out.get("num_turns"),
+                                     "cost_usd": out.get("total_cost_usd"), "model": a.model}
+
+
+# ---- service ----------------------------------------------------------------------------------------------------
+def http_json(url, body=None, timeout=5):
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"} if data else {})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read() or b"{}")
+
+
+def fetch_feed(base):
+    try:
+        return http_json(base.rstrip("/") + "/state.json")
+    except Exception:
+        return None
+
+
+def request_segment(base, seg):
+    try:
+        types = http_json(base.rstrip("/") + "/segments")
+    except Exception:
+        return "no /segments"
+    ok = {t["type"]: t for t in types.get("types") or []}
+    if seg["type"] not in ok or not ok[seg["type"]].get("available", True):
+        return "unavailable"
+    if types.get("busy"):
+        return "busy"
+    try:
+        r = http_json(base.rstrip("/") + "/segment", {"type": seg["type"], "params": seg.get("params") or {},
+                                                       "by": "analyst", "reason": seg.get("reason")})
+        return r.get("state") or "sent"
+    except urllib.error.HTTPError as e:
+        return f"{e.code}"
+    except Exception as e:
+        return f"{type(e).__name__}"
+
+
+def cycle(a, dg, prev, logf):
+    feed = fetch_feed(a.feed) if a.feed else None
+    t0 = time.time()
+    text, facts, snap = dg.build(prev, feed)
+    t_digest = time.time() - t0
+    raw, meta = run_claude(a, text)
+    reply = parse_json(raw)
+    reply, dropped = clean_reply(reply)
+    meta.update(digest_s=round(t_digest, 1), digest_chars=len(text), dropped=len(dropped))
+    reply.update(game_minute=facts["game_minute"], tick=snap["tick"], meta=meta, t=time.time())
+    if a.feed and not a.dry_run:
+        try:
+            http_json(a.feed.rstrip("/") + "/analyst", reply)
+        except Exception as e:
+            log(f"[analyst] POST /analyst failed: {type(e).__name__}: {e}")
+        if a.segments:
+            for seg in sorted(reply.get("segments") or [], key=lambda s: -int(s.get("urgency") or 1))[:1]:
+                if int(seg.get("urgency") or 1) >= 2:
+                    reply.setdefault("segment_requests", []).append({**seg, "result": request_segment(a.feed, seg)})
+    if logf:
+        logf.write(json.dumps({"reply": reply, "dropped": dropped, "digest": text if a.log_digest else None}, ensure_ascii=False) + "\n")
+        logf.flush()
+    return reply, dropped, text
+
+
+def show(reply, dropped):
+    m = reply.get("meta") or {}
+    log(f"[analyst] minute {reply.get('game_minute')}: {m.get('seconds')} s, {m.get('turns')} turns, "
+        f"${m.get('cost_usd') or 0:.3f} API-equivalent, {len(reply.get('talking_points') or [])} points, {len(dropped)} dropped")
+    print("  headline:", reply.get("headline"))
+    j = reply.get("judgement") or {}
+    print(f"  judgement ({j.get('pace')}):", j.get("text"))
+    for p in reply.get("talking_points") or []:
+        print(f"  - [{p['kind']} p{p['priority']}] {p['text']}  {json.dumps(p.get('facts'), ensure_ascii=False)}")
+    for s in reply.get("storylines") or []:
+        print(f"  * story {s.get('id')} ({s.get('status')}): {s.get('text')}")
+    if reply.get("next"):
+        print("  next:", (reply["next"] or {}).get("text"))
+    for s in reply.get("segments") or []:
+        print(f"  segment {s.get('type')} u{s.get('urgency')}: {s.get('reason')}")
+    for c in reply.get("corrections") or []:
+        print("  correction:", c)
+    for d in dropped:
+        print("  dropped:", d)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--world", default=os.environ.get("POG_WORLD", "live"))
+    ap.add_argument("--bot", help="bot identity for harness reads (peek); default player --player or 1")
+    ap.add_argument("--player", type=int)
+    ap.add_argument("--surface", default="nauvis")
+    ap.add_argument("--replay", help="a past run directory (scores.jsonl) instead of a live world")
+    ap.add_argument("--at", type=float, help="game minute for --replay")
+    ap.add_argument("--run-dir", help="the run's directory (agents' notes.md)")
+    ap.add_argument("--feed", default=None, help="stream service base URL, e.g. http://127.0.0.1:8788")
+    ap.add_argument("--model", default="sonnet")
+    ap.add_argument("--effort", default=None, help="claude --effort (low, medium, high)")
+    ap.add_argument("--claude", default="claude")
+    ap.add_argument("--every", type=float, default=90, help="seconds between cycle starts (60-120)")
+    ap.add_argument("--timeout", type=float, default=240)
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--dry-run", action="store_true", help="do not POST to the service")
+    ap.add_argument("--segments", action="store_true", help="also request the top suggested segment (POST /segment)")
+    ap.add_argument("--digest-only", action="store_true", help="print the digest and exit (no model call)")
+    ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
+    ap.add_argument("--log-digest", action="store_true")
+    a = ap.parse_args()
+    dg = Digest(a)
+    if a.digest_only:
+        print(dg.build(None, fetch_feed(a.feed) if a.feed else None)[0])
+        return
+    os.makedirs(a.log_dir, exist_ok=True)
+    logf = open(os.path.join(a.log_dir, time.strftime("analyst-%Y%m%d-%H%M%S.jsonl")), "a")
+    prev = None
+    while True:
+        t0 = time.time()
+        try:
+            reply, dropped, _ = cycle(a, dg, prev, logf)
+            show(reply, dropped)
+            prev = reply
+        except Exception as e:
+            log(f"[analyst] cycle failed: {type(e).__name__}: {e}")
+            traceback.print_exc()
+        if a.once:
+            return
+        time.sleep(max(5.0, a.every - (time.time() - t0)))
+
+
+if __name__ == "__main__":
+    main()

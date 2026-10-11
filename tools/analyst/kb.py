@@ -67,16 +67,18 @@ class KB:
         self.version = version
         d = os.path.join(HERE, "kb", version)
 
-        def load(n):
+        def load(n, empty=()):
             p = os.path.join(d, n + ".json")
-            return json.load(open(p)) if os.path.exists(p) else []
+            if not os.path.exists(p):
+                return list(empty) if isinstance(empty, tuple) else empty
+            with open(p) as f:
+                return json.load(f)
         self.recipes = {r["name"]: r for r in load("recipes")}
         self.techs = {t["name"]: t for t in load("technologies")}
         self.items = {i["name"]: i for i in load("items")}
         self.entities = {e["name"]: e for e in load("entities")}
         self.fluids = {f["name"]: f for f in load("fluids")}
-        s = os.path.join(d, "settings.json")
-        self.settings = json.load(open(s)) if os.path.exists(s) else {}
+        self.settings = load("settings", {})
         self.unlocked_by, self.leads_to, self.made_by = {}, {}, {}
         for t in self.techs.values():
             for e in t.get("effects") or []:
@@ -381,6 +383,21 @@ class KB:
             lines.append(f"(a yellow belt carries {fmt(belt * 60)} items/min, both lanes)")
         return "\n".join(lines)
 
+    def output_text(self, recipe, machine=None, count=1):
+        """What N machines make per minute on one recipe, and what they consume."""
+        r = self.recipes.get(recipe) or self.recipe_for(self.resolve(recipe) or recipe)
+        if not r:
+            return f"no recipe {recipe}"
+        machine = machine or DEFAULT_MACHINE.get(r["category"]) or (self.machines_for(r["category"]) or ["?"])[0]
+        speed = self.machine_speed(machine)
+        crafts = 60 * speed / r["energy"] * count
+        prod = ", ".join(f"{fmt(crafts * (p.get('amount') or 1) * (p.get('probability') or 1), 2)} {pretty(p['name'])}" for p in r["products"])
+        use = ", ".join(f"{fmt(crafts * i['amount'], 2)} {pretty(i['name'])}" for i in r["ingredients"])
+        e = self.entities.get(machine) or {}
+        kw = e.get("max_energy_usage_kw") or e.get("energy_usage_kw")
+        return (f"{fmt(count)} x {machine} (crafting speed {fmt(speed)}) on {r['name']} ({fmt(r['energy'])} s per craft) make "
+                f"{prod} per minute, using {use} per minute" + (f"; draw {fmt(kw * count)} kW" if kw else ""))
+
     def compare_text(self, actual, item, target):
         it = self.resolve(item) or item
         have = actual.get(it, 0)
@@ -408,7 +425,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", default=DEFAULT_VERSION)
     ap.add_argument("cmd", choices=["search", "recipe", "tech", "path", "ratio", "entity", "item", "compare",
-                                    "research-time", "settings", "made-by"])
+                                    "research-time", "settings", "made-by", "output"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--done", default="", help="comma-separated researched technologies (for path)")
     ap.add_argument("--assembler")
@@ -440,6 +457,9 @@ def main():
         print(kb.ratio_text(item, rate, assembler=a.assembler, furnace=a.furnace, drill=a.drill, mining_prod=a.mining_prod))
     elif a.cmd in ("entity", "item"):
         print(kb.entity_text(kb.resolve(q) or q))
+    elif a.cmd == "output":  # output RECIPE [COUNT] [--assembler MACHINE]
+        count = float(a.args[1]) if len(a.args) > 1 else 1
+        print(kb.output_text(a.args[0], a.assembler or a.furnace, count))
     elif a.cmd == "compare":
         actual = json.loads(a.args[0])
         print(kb.compare_text(actual, a.args[1], float(a.args[2])))

@@ -194,6 +194,12 @@ class ReplayGame:
     """A past run's scores.jsonl (cumulative production, research, entities every ~2 min) seen at one game minute."""
 
     def __init__(self, run_dir, at_minute=None):
+        if not os.path.exists(os.path.join(run_dir, "scores.jsonl")):  # runs that are not committed: main checkout
+            for root in (os.path.join(os.path.dirname(os.path.dirname(HERE)), "runs"), os.path.expanduser("~/code/player-of-games/runs")):
+                cand = os.path.join(root, os.path.basename(run_dir.rstrip("/")))
+                if os.path.exists(os.path.join(cand, "scores.jsonl")):
+                    run_dir = cand
+                    break
         self.run_dir = run_dir
         self.rows = [json.loads(l)["score"] for l in open(os.path.join(run_dir, "scores.jsonl")) if l.strip()]
         self.at = at_minute
