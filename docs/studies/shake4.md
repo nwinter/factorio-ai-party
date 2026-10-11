@@ -282,3 +282,103 @@ minutes except a worm at a scout.
   (28,3) four times. Turrets there were placed and topped up after each raid and destroyed in the next.
 - The `kite` tool was the agents' discovery of the run: Astra used it in raid 2 and taught it to everyone aloud (#615),
   Sol coached "kite min7/max12" (#932).
+
+## 6. The stream
+
+Sources: `tools/stream/logs/caster-20261011-025203.jsonl` (1,836 rows: 708 host lines, 62 agent voice rows, 1,012
+chat decisions), `analyst-20261011-025203.jsonl` (82 cycles), `director-20261011-025159.jsonl` (2,276 camera
+commands), `viewers-20261011-025159.jsonl` and `viewer-answers-20261011-025203.jsonl` (both empty), and
+`runs/shake4/{caster,analyst,stream-service,push-live,shot-sync}.log`.
+
+### What held from shake3's P1
+
+- Every helper is listed in `start.log` (stream-service, chat-log, shot-sync, caster, push-live, analyst, "up" at
+  02:52:11), and the analyst ran. The "plus uncommitted changes" was tracked bytecode, untracked by b085e3c at 02:53.
+- Hits are not enemies: attack facts now carry `numbers_mean`, and no host line turned a hit count into a number of
+  biters (156 combat lines checked). Numbers that aired match the facts ("Biters chewed forty-nine buildings ... then a
+  hundred more!" for 49 then 109 lost, 04:00:50; "Grok saw sixty-six coming", 03:59:31, from Grok's chat).
+- No "crashing" and no "research progress is lost". The analyst's correction ("Research progress is always kept")
+  was in the facts of 342 of 343 exchanges, and 9 lines said it right ("research holds, progress keeps", Vale
+  04:33:53). "Crash" appears only for the crash-site wreck, which the analyst describes as scenery.
+- Time left is right in every line checked: "Thirty-one minutes left" at 04:20:44 (true 31.3), "Seventeen" at 04:35:17
+  (16.7), "Nine minutes" at 04:42:48 (9.2). Two drafts with a wrong time were rejected before air.
+- Pronouns: no he, she, him or her for an agent in 696 aired lines; one "the man" for Sol (Rook 03:59:18, "biters took
+  the man, not the motto!").
+- Host voices: OpenAI from the first line (Rook verse 354 clips, Vale ballad 341), one Aura-2 clip after an OpenAI
+  failure (04:37:42, 47.8 s to synthesise).
+- Overview zoom reaches the camera: the overview asks 0.3 and the camera gets 0.45; all 2,276 director commands
+  succeeded (shake3: the overview was refused).
+
+### The hosts' lines
+
+708 written (Rook 364, Vale 344), 696 aired, 12 cut for an urgent event or a segment leaving (shake3 443 aired). Writer
+Kimi K2.6 665, template 43; write latency median 2.4 s, p90 4.1 s, max 12.0 s; 4 writer timeouts
+(`caster.log:276`, `:358`, `:405`, `:440`), each replaced by a template line. `check_line` rejected 93 drafts: a number
+not in the facts 30, a name not in the facts 23, "something is missing" 13, "we" 11, previous-run comparison without
+pace facts 4, timeouts 4, not English 3 (Chinese characters, 04:36:33), wrong or unsupported time left 4, pronoun not
+given 1. Some name rejections were wrong: Grok was rejected at 04:42:22 and 04:42:29 although Grok had spoken aloud at
+04:42:03, because that exchange's facts did not carry Grok, and template lines aired instead. Cost over 122 minutes:
+writer $0.58, TTS $1.67, classifier $0.006 ($1.11 an hour); the analyst $4.49 API-equivalent.
+
+### Factual mistakes, with causes
+
+| # | Line (PDT, host) | Truth | Cause |
+|---|---|---|---|
+| 1 | 04:15:48 Rook "they surge four techs ahead of shake1"; 04:17:42 Vale "Five techs up on shake1, eleven thousand iron ahead"; 04:21:05, 04:26:29, 04:34:58 Rook "eight ahead of shake1", 04:35:01 "faster than shake1 ever dared", 04:38:43 Rook "nine ahead of shake1" and Vale "Eighteen thousand more iron plates" | shake1 ended at 60 minutes with 14 technologies; there is no shake1 at game 85 to 108 | the caster started 4m41s before fc29bd8; its pace facts compared with shake1's final sample (P1 item 1) |
+| 2 | 02:55:08 Rook "they trail by sixty seconds on the same map!" | shake1 was the base game on the same seed; shake3 was the previous run | `tools/stream/baseline.py:62` calls shake1 "the team's previous run on the same map" |
+| 3 | 03:44:06 Rook "five hundred more circuits than shake1 had! Red circuits now"; 03:44:39 Vale "Five hundred red circuits ahead of pace" | the 501 were electronic (green) circuits; advanced circuit research finished at 96.8m | the writer merged a board title ("Sol advanced circuits workshop", a claim) with `electronic circuits_gap: 501 more` |
+| 4 | 04:30:52 "Luna idles, sparkless, at the crash site"; 04:31:13 Rook "Luna stares at the crash site fire" | Luna was off camera (Astra and Gemini were on); Luna was at the workshop | `check_line` passes any name found anywhere in the facts (here a board post in `earlier_on_air`) |
+| 5 | 04:40:18 Vale "two Sols freeze mid-thought" | Sol and Luna were on camera | writer slip; not caught |
+| 6 | 04:41:04 Vale "Grok hand-crafts blue packs"; also 04:41:25 and 04:41:44 | no blue pack was ever made; Grok hand-crafted green packs ("I will hand-craft packs in the meantime", #915; Grok worked the green line all run) | inference: "chemical science pack researched" in the facts plus Grok's unqualified "packs" |
+| 7 | 03:15:39 Rook "One engineer down, buildings eaten" | 1 lost: 1 engineer, to worms | over-claim on a loss line |
+| 8 | 04:52:39 Rook "Nineteen in the co-op, Vale!"; 04:53:39 Vale "co-op cruised at fifty-five" | "co-op" is the earlier coop1 test, never introduced to viewers | the analyst compares with coop1 from minute 44 without saying what it was |
+| 9 | about 30 lines: "Haiku stands frozen, deep in thought" (03:32:20), "Here sits Grok, still as a heron" (04:06:25), "the planning Opus, motionless in crisis" (04:43:21) | the agents were planning | the naturalist brief, `caster.py:43` (P1 item 6); shake3 had 102 of 443 |
+
+The hosts did not repeat the agents' own false "Blue science is live" (Muse #934) as fact, but closed on "sulfur
+finally has water" (Vale 04:51:53), which was true, and "Sulfur plant lives" (Rook 04:51:20), which was not.
+
+### The analyst
+
+82 cycles from 02:52:13 to 04:53:45, every 90 seconds (gap median 90 s, max 93 s), latency median 11.5 s, no
+failures. 569 points (stat 264, explainer 81, storyline 72, comparison 67, prediction 52, judgement 27), 71 dropped by
+its own checks, 238 corrections (172 distinct), 106 segment suggestions (production 51, research 39, spotlight 10,
+overview 5, recap 1). Its points reached air in 29 exchanges (61 lines; comparisons 16, stats 10, explainers 3). Good
+uses: "Science is 12.7 per minute at minute 42. Shake2 had 23.3 and Shake3 had 20.2" became Vale's "Twelve-point-seven
+science, Rook. Their forebears doubled that." (03:35:29); a copper-cable bottleneck became Rook's "copper cable chokes
+at one-oh-six!" (04:24:08). Misuse: the "co-op" lines (mistake 8). Ignored: the first trigger-technology explainer
+(02:52:14) drew "Any bets on who breaks away first?". Its corrections did their job: no lost-research, crash or
+wreck-attack claim aired.
+
+### Viewer questions
+
+None arrived: both viewer logs are empty, while both endpoints were up (`analyst.log:1-2`, "answering viewer questions
+... one per 150 s at most"). The stream was unlisted; these logs cannot say whether anyone watched.
+
+### Segments, replays, director
+
+- Recaps at 03:13, 03:33, 03:53, 04:23 and 04:47: every 20 minutes except one 30-minute gap, because a recap starts
+  only when nothing is playing or queued (`tools/stream/segments.py:202`) and replays kept the queue busy.
+- On screen, from the caster's `on_screen_now` facts: research 6, recap 5, overview 2 (plus 04:40:25 in the director
+  log), production 2, spotlight 2 (Sonnet 03:21, Astra 04:53). Production ran twice in two hours although the analyst
+  suggested it 51 times. The Space Age panel never appears in the facts; nothing went to space.
+- Replays: 16 saved, 15 aired, from Sonnet's worm death (03:14) to "28 lost near (-33, 0)" (04:49). Haiku's death clip
+  was queued and dropped when Opus died 43 seconds later (`stream-service.log:1806`, `:1866`). Each replay aired from
+  about 27 seconds into a 42 to 44 second clip.
+- Director: 2,276 commands, all ok (main 924, cam2 672, cam3 680): reframe 718, pair 592, unpair 380, zoom 146; 1,547
+  framed two or more agents. Zoom 0.45 to 2.73, median 1.3.
+- Captions against cards and the Space Age panel's look need the recording on the box; not checked.
+
+### Voices and synthesis failures
+
+- ElevenLabs had no credits all run (P1 item 5). Agent voices (62 clips: 47 aloud, 15 strategy): Gemini apollo 15,
+  Opus el-george played as OpenAI fable 13, Astra athena 11, Grok arcas 8, Luna luna 8, Sol oa-cedar 3, Muse oa-onyx 3,
+  Sonnet oa-coral 1 (assigned from its name), Haiku 0. Every pick but Opus's played as chosen.
+- The chat classifier labelled 929 of 1,012 chat lines logistics (91.8%, not voiced), 64 aloud, 19 strategy; 83 were
+  voiceable, 62 played, 21 skipped for the per-agent gap or cooldown.
+
+### Live feed and frames
+
+- `push-live.log`: 120 one-minute reports from 02:53:03 to 04:53:58, all "0 failed", 6 pushes a minute.
+- `shot-sync.log` is 98,782 lines, 98,770 of them "skipped" re-reports of 24 stale screenshots from earlier runs, on
+  each of 6,348 passes; 11 agent shots were copied. Nothing in it says a stream frame was skipped, and the noise hides
+  real entries. `stream-service.log` has 18 harmless `ConnectionResetError` tracebacks from clients hanging up.
