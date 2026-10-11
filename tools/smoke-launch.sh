@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Smoke-test the launcher: one agent per harness on world live for a few minutes, read and chat only, then close.
-#   tools/smoke-launch.sh [RUN_ID] [MINUTES]      (run inside Herdr; default run smoke-HHMM, 3 minutes)
-# Env: POG_SMOKE_KINDS (default "codex claude grok agy muse") to test a subset.
+#   tools/smoke-launch.sh [RUN_ID] [MINUTES] [KINDS]  (run inside Herdr; default run smoke-HHMM, 3 minutes)
+# KINDS or env POG_SMOKE_KINDS (default "codex claude grok agy muse") tests a subset, e.g. "claude muse".
+# Codex launches through ai-session, which writes ~/.cache: run the script outside a sandbox that blocks that.
 # World live is shared with harness engineers: the agents only read and chat; the script adds smoke-* bots.
 # Prints one line per agent: journal requests, say calls, failed requests, describe.json lines, and its notes line
 # about the tools it saw (a clean profile reports only shell and file tools).
@@ -9,7 +10,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 run=${1:-smoke-$(date +%H%M)} minutes=${2:-3} world=live
-kinds=${POG_SMOKE_KINDS:-codex claude grok agy muse}
+kinds=${3:-${POG_SMOKE_KINDS:-codex claude grok agy muse}}
 rundir="runs/$run"; mkdir -p "$rundir"
 
 # kind -> name, route, model, effort, label (the cheapest model per harness)
@@ -89,7 +90,17 @@ for line in open(os.path.join(rundir, "panes.txt")):
         hooks = json.load(open(os.path.join(d, ".context-state.json"))).get("hooks_seen", "no")
     except (OSError, ValueError):
         hooks = "no"
-    print(f"{name:13} {kind:6} requests={reqs} say={says} failed={fails} describe_lines={desc} hooks_seen={hooks}")
+    start = ""
+    if kind == "claude":   # context at the first model call (Haiku's post-compaction floor follows from it)
+        import glob, re
+        esc = re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(d))
+        for t in sorted(glob.glob(os.path.expanduser(f"~/.claude/projects/{esc}/*.jsonl")), key=os.path.getmtime)[-1:]:
+            for l in open(t):
+                u = (json.loads(l).get("message") or {}).get("usage") if '"usage"' in l else None
+                if u:
+                    start = f" start_context={sum(int(u.get(k) or 0) for k in ('input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'))}"
+                    break
+    print(f"{name:13} {kind:6} requests={reqs} say={says} failed={fails} describe_lines={desc} hooks_seen={hooks}{start}")
     print("    notes: " + (" | ".join(notes) or "no tools/rules/blocked/nudge lines"))
     print("    supervisor: " + (" | ".join(sup) or "none"))
 PY

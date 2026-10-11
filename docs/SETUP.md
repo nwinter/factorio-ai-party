@@ -64,14 +64,29 @@ from `agent/context.tsv` (model, kind, window, compact_at) without touching glob
 
 - Claude Code (Haiku 80K, Sonnet 200K, Opus 250K): workspace `.claude/settings.json` gets
   `autoCompactWindow = compact_at + 33000` and hooks: `SessionStart`/`compact` prints `notes.md` after a compaction,
-  `PostToolUse` warns the agent to update `notes.md` shortly before one, `Pre/PostCompact` log.
+  `PostToolUse` warns the agent to update `notes.md` (in the second half of the room above the post-compaction
+  context, and at least 20% before the point), `Pre/PostCompact` log.
 - Codex (140K): workspace `.codex/config.toml` (`model_context_window`, `model_auto_compact_token_limit`); loads
   because run dirs are inside the trusted repo.
 - Grok (60%): `GROK_AUTO_COMPACT_THRESHOLD_PERCENT` on the launch command, `--rules`, and the repo's
   `.grok/hooks/context.json` (Grok reads project hooks only from the git root; they act only in run dirs).
 - Antigravity (200K): no setting; `.agy-loop.sh` starts a fresh conversation once `context.py agy-tokens` passes it.
-- Muse (200K): `muse -c context_compaction.soft_threshold=... -c context_compaction.hard_threshold=...`;
-  `.muse/hooks.json` re-injects `notes.md` after a compaction.
+- Muse (200K): `muse -c context_compaction.soft_threshold=... -c context_compaction.hard_threshold=...`, fractions
+  of its 512K effective window (soft 0.391, hard 0.441); `.muse/hooks.json` re-injects `notes.md` after a compaction.
+
+Launch hygiene and supervision (shake2 study, section 13; details in `docs/LAUNCH2-NOTES.md`):
+
+- Claude Code starts with `--setting-sources project,local` (no user settings: hooks, plugins) and
+  `--tools Bash,Read,Edit,Write,Grep,Glob`; `tools/permit.py` (a `PreToolUse` hook) approves `./fh` loops and other
+  commands built only from game programs and workspace redirects, which dontAsk otherwise denies.
+- Codex workspaces turn off host skill discovery, plugins, apps, browser and computer use and multi-agent features.
+- Grok gets `--allow` rules for `./fh`, `python3` and workspace edits and the per-launch switches for Claude-compat
+  rules, hooks, MCP and memory. Muse gets `-c hooks=` with the owner's hooks minus the tooling-context one.
+- `tools/supervise.sh` logs how each nudge was delivered (falls back to typing into the pane when
+  `herdr agent prompt` fails), notes turns that ended on a refused command and adds a rewrite hint, and skips a
+  Grok nudge in the last 3 minutes when its context is near the compaction point.
+- `tools/smoke-launch.sh [RUN] [MINUTES] [KINDS]` checks all of this live (run it outside the sandbox: it needs the
+  herdr socket and ai-session's cache).
 
 `AGENTS.md` ends with `## Compact instructions` (`agent/compact.md`) and `notes.md` starts as a structured skeleton.
 Hook events go to `DIR/context.log`, summaries to `DIR/compactions.md`; `tools/context.py report runs/RUN_ID`

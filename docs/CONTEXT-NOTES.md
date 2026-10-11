@@ -33,7 +33,7 @@ repo's own `.grok/hooks/`.
 | Codex 0.162.1 (Astra, Sol, Luna; 272K windows) | 140K | workspace `.codex/config.toml`: `model_context_window`, `model_auto_compact_token_limit` | AGENTS.md (re-injected by Codex) says to read `notes.md` | compacted at the 25K test limit |
 | Grok Build 1.0.50 (grok-4.7, 256K) | 60% = 154K | `GROK_AUTO_COMPACT_THRESHOLD_PERCENT=60` on the launch command | repo `.grok/hooks/context.json`: `PostCompact` marks, next `PostToolUse` injects `notes.md`; `--rules` line | compacted at the 15% test setting; hooks fired |
 | Antigravity 1.3.3 (gemini-3.8-flash-high) | 200K (own ~280K still applies within a turn) | none exists; `.agy-loop.sh` starts a fresh conversation past 200K | fresh conversation's prompt says to read `notes.md` | fresh start at 55.7K over a 30K test limit |
-| Muse Code 1.4.4 (muse-spark-1.3, 1M) | 200K (soft 0.191, hard 0.241) | `muse -c context_compaction.soft_threshold=... -c context_compaction.hard_threshold=...` | workspace `.muse/hooks.json`: `PostCompact` marks, next `PostToolUse` injects `notes.md` | compacted (soft and hard); hooks fired |
+| Muse Code 1.4.4 (muse-spark-1.3, 1M; fractions apply to a 512K effective window) | 200K (soft 0.391, hard 0.441; shake2's 0.191 fired at 97,792) | `muse -c context_compaction.soft_threshold=... -c context_compaction.hard_threshold=...` | workspace `.muse/hooks.json`: `PostCompact` marks, next `PostToolUse` injects `notes.md` | compacted (soft and hard); hooks fired |
 
 Per-model values live in `agent/context.tsv` (model, kind, window, compact_at; `*` rows are per-kind fallbacks), so
 `agent/team-nine.tsv` keeps its seven columns.
@@ -137,6 +137,9 @@ Per-model values live in `agent/context.tsv` (model, kind, window, compact_at; `
   `-c context_compaction.soft_threshold=0.191 -c context_compaction.hard_threshold=0.241` (200K and 250K of 1M).
   Past the soft threshold Muse compacts in the background; at the hard one it blocks the turn. (An earlier note here
   said Muse had no setting; `muse model-profile show` does not list it.)
+- Window (shake2): Muse applies the fractions to a 512K effective window, not 1,048,576: its log shows
+  `soft_threshold_tokens: 97792` for soft 0.191 (0.191 x 512,000). `agent/context.tsv` now lists Muse's window as
+  512000, so 200K gives soft 0.391 and hard 0.441.
 - Hooks: `.muse/hooks.json` in the workspace, loaded because the launcher passes `--trust-workspace`. Muse never
   fired `SessionStart` with matcher `compact` after its own compactions in the probe, so `PostCompact --mark` and
   `PostToolUse` re-inject `notes.md` as for Grok (`SessionStart` stays for a manual `/compact`).
