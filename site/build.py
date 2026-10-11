@@ -869,7 +869,8 @@ def build_agent_page(key, runs, all_worlds, chats):
             f'<div class="agent-head" style="--ac:{a["color"]}">{avatar(key, "xl")}<div><h1>{esc(a["name"])}</h1>'
             f'<p class="model">{esc(a["model"])} · {esc(a["harness"])}</p>'
             f'{f"<p class=motto>“{esc(motto)}”</p>" if motto else ""}</div></div>')
-    return page(a["name"], head + '<div class="agent-runs" style="--ac:' + a["color"] + '">' + "".join(rows) + "</div>", "/",
+    # active=None: agent pages belong to no nav section, so nothing is highlighted
+    return page(a["name"], head + '<div class="agent-runs" style="--ac:' + a["color"] + '">' + "".join(rows) + "</div>", None,
                 f'{a["name"]} ({a["model"]}) in Player of Games.')
 
 
@@ -965,7 +966,7 @@ def main():
     write("live/index.html", build_live())
     shutil.copy(SITE / "live" / "status.example.json", out / "live" / "status.example.json")
     shutil.copy(SITE / "live" / "status.json", out / "live" / "status.json")
-    write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>'))
+    write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>', None))
     for f in (SITE / "static").iterdir():
         (out / "static").mkdir(exist_ok=True)
         shutil.copy(f, out / "static" / f.name)
