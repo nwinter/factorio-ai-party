@@ -20,7 +20,6 @@ READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "b
 # finished technologies (to seed "recent milestones" on start), and machines starved of power.
 STREAM_LUA = r"""
 local f = game.forces.player
-local s = game.surfaces.nauvis
 local cur = f.current_research
 local done = {}
 for name, t in pairs(f.technologies) do
@@ -32,11 +31,13 @@ table.sort(done, function(a, b) return a.cost > b.cost end)
 local top = {}
 for i = 1, math.min(4, #done) do top[i] = done[i].name end
 local machines, starved = 0, 0
-for _, e in pairs(s.find_entities_filtered{force = f, type = {"assembling-machine", "lab", "mining-drill", "furnace", "inserter"}}) do
-  if e.prototype.electric_energy_source_prototype then
-    machines = machines + 1
-    local st = e.status
-    if st == defines.entity_status.low_power or st == defines.entity_status.no_power then starved = starved + 1 end
+for _, s in pairs(game.surfaces) do
+  for _, e in pairs(s.find_entities_filtered{force = f, type = {"assembling-machine", "lab", "mining-drill", "furnace", "inserter"}}) do
+    if e.prototype.electric_energy_source_prototype then
+      machines = machines + 1
+      local st = e.status
+      if st == defines.entity_status.low_power or st == defines.entity_status.no_power then starved = starved + 1 end
+    end
   end
 end
 rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, research = cur and cur.name or nil,
