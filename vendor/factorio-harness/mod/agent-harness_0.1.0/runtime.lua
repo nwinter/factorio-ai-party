@@ -3343,7 +3343,8 @@ function M.dispatch(request)
       result.team=M.board.team(p,unseen_losses(p))
     end
     if clock and request.action=='status' then result.time_mode=clock.report() end
-    if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index) end
+    -- The unread trailer repeats only when a newer message arrived (status always shows it).
+    if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index,peek and 'peek' or request.action=='status' and 'always' or nil) end
   end
   return result
 end

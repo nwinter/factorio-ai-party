@@ -232,6 +232,12 @@ eq(peeked.text,'@everyone power is back'); eq(peeked.aloud,true)
 eq(astra('chat',{limit=1}).messages[1].aloud,true)
 grok('say',{text='quiet line'}); eq(astra('chat',{peek=true,limit=1}).messages[1].aloud,nil)
 fails(function() sol('say',{text='x',aloud='yes'}) end,'aloud must be')
+-- The chat trailer on replies: shown when a newer message arrived, always on status, never consumed by peek.
+astra('chat',{limit=100}); astra('chat',{limit=100}); astra('chat',{limit=100})
+eq(astra('board').chat,nil)
+grok('say',{text='new thing'})
+eq(astra('board',{peek=true}).chat.unread,1)
+eq(astra('board').chat.latest:sub(-9),'new thing'); eq(astra('board').chat,nil); eq(astra('status').chat.unread,1)
 
 -- Alerts: attacks on our entities, my character being hit, groups, losses.
 local biter={valid=true,name='small-biter'}

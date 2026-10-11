@@ -126,6 +126,11 @@ fails(function() bot('profile',{color='orange'}) end,'#rrggbb')
 fails(function() bot('profile',{glyph='abc'}) end,'glyph must be 1..2')
 fails(function() bot('profile',{display_name=string.rep('x',25)}) end,'display_name must be 1..24')
 eq(bot('profile',{glyph='👩‍🚀'}).glyph,'👩‍🚀') -- a ZWJ sequence counts as two
+-- voice: the stream's speaker id, stored lower case, listed in profiles.
+eq(bot('profile',{voice='Orion'}).voice,'orion'); eq(bot('profile',{}).voice,'orion')
+local listed; for _,row in ipairs(bot('profiles',{}).profiles) do if row.name=='astra' then listed=row end end
+eq(listed.voice,'orion')
+fails(function() bot('profile',{voice=string.rep('x',17)}) end,'voice must be 1..16')
 -- avatar: a few named parts, validated and stored as sent; false clears.
 eq(bot('profile',{}).avatar,nil)
 local av=bot('profile',{avatar={base='robot',helmet='power',visor='mono',emblem='gear',accessory='antenna',backdrop='hazard',accent='#33CCFF'}}).avatar
