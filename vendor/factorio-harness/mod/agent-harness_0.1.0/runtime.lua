@@ -3507,7 +3507,7 @@ local TARGET={'name','unit_number'}
 local EXTRA_ARGS={attach={'offline'},build={'quality'},collect={'count','quality'},rearm={'quality'},refuel={'quality'},
   move_to={'within'},shoot={'auto'},transfer=TARGET,mine={'unit_number'},repair=TARGET,inspect=TARGET,rotate=TARGET,
   configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
-  board={'status'},board_update={'status','note'},plan_save={'note'}}
+  board={'status'},board_post={'note'},board_update={'status','note'},plan_save={'note'}}
 -- observe forwards to the scoped views; a scoped call is checked as that view.
 local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,sleep_check=true}
 local allowed_args

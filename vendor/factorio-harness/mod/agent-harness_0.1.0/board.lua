@@ -123,7 +123,18 @@ return function(api)
   local function needs_arg(v)
     if v == nil then return nil end
     if type(v) == 'string' then return clip(v, NOTE) end
-    assert(type(v) == 'table' and #v >= 1 and #v <= 16, 'needs is text or an array of 1..16 item names or {name,count}')
+    -- An object {item=count} (shake4: posts resent after that shape failed).
+    if type(v) == 'table' and #v == 0 and next(v) ~= nil then
+      local list = {}
+      for name, count in pairs(v) do
+        assert(type(name) == 'string' and type(count) == 'number', 'needs as an object maps item names to counts: {"iron-plate": 200}')
+        list[#list+1] = {name=clip(name, 64), count=count}
+      end
+      assert(#list <= 16, 'needs takes at most 16 items')
+      table.sort(list, function(x, y) return x.name < y.name end)
+      return list
+    end
+    assert(type(v) == 'table' and #v >= 1 and #v <= 16, 'needs is text, an array of 1..16 item names or {name,count}, or {item: count}')
     local out = {}
     for _, n in ipairs(v) do
       if type(n) == 'string' then out[#out+1] = clip(n, 64)
@@ -169,6 +180,8 @@ return function(api)
     assert(kind ~= 'harness', 'ask for a harness tool with harness_request')
     local item = {kind=kind, title=required_text(a.title, 'title', TITLE), requested_by=by, area=area_arg(a.area),
       needs=needs_arg(a.needs), tags=tags_arg(a.tags), notes={}, created_tick=game.tick, updated_tick=game.tick}
+    -- A first note (shake4: agents carried update's note over to posts).
+    if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', NOTE)} end
     local warnings = {}
     if kind == 'claim' then
       assert(item.area, 'a claim needs area {left_top, right_bottom}')
@@ -374,8 +387,8 @@ return function(api)
       id='one item in full (all notes)', returns='items, matched, open_unowned (open task/request items nobody owns)'},
     board_post = {kind='task|request|claim|note', title='1..120 characters (longer is cut)',
       owner='agent name or display name (task/request; a request without owner is shown to everyone until taken)',
-      area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text or array of item names/{name,count}',
-      tags='up to 8 short strings', returns='the item; warnings for overlapping claims or an unowned request'},
+      area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text, array of item names/{name,count}, or {item: count}',
+      tags='up to 8 short strings', note='optional first note, 1..200 characters', returns='the item; warnings for overlapping claims or an unowned request'},
     board_update = {id='item number', status='open|claimed|doing|done|blocked|dropped (owner or requester only)',
       owner='your name takes an open unowned item; another name reassigns (owner or requester only); "" releases it',
       note='1..200 characters, anyone may add (last 10 kept)'},
