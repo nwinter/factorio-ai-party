@@ -507,5 +507,20 @@ rf = caster.facts_for({"kind": "research", "text": "Research complete: Automatio
                       {"tick": 20 * 3600, "space": {"planets": []}}, b1)
 check("research facts say what the baseline run was", "this run plays Space Age" in rf.get("shake1_was", ""), str(rf))
 
+# Round 5, shake4 section 6 mistakes 3, 6 and 7
+l1 = caster.facts_for({"kind": "loss", "text": "1 lost near (3, 4): 1 engineer (by medium worms)", "t": 0, "prio": 8}, {})
+check("a loss of only an engineer says no building was lost", "no building" in l1["numbers_mean"], l1["numbers_mean"])
+l2 = caster.facts_for({"kind": "loss", "text": "25 lost: 18 transport belt, 2 engineer, 5 inserter (by small biters)",
+                       "t": 0, "prio": 8}, {})
+check("a mixed loss counts buildings and engineers", "buildings destroyed and engineers killed" in l2["numbers_mean"],
+      l2["numbers_mean"])
+l3 = caster.facts_for({"kind": "loss", "text": "9 lost: 9 transport belt (by small biters)", "t": 0, "prio": 8}, {})
+check("a buildings-only loss", l3["numbers_mean"] == "the team's buildings destroyed; the run goes on", l3["numbers_mean"])
+pg = b1.pace(40 * 3600, 9, {"electronic-circuit": 900, "iron-plate": 5000})
+check("pace facts call electronic circuits green circuits", any(k.startswith("green circuits_") for k in pg)
+      and not any("electronic" in k for k in pg), str(list(pg)))
+check("rules: research unlocks, it does not mean anything was made", "does not mean anything has been built or made"
+      in caster.EXCHANGE_RULES)
+
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)

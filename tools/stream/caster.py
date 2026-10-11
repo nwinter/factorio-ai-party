@@ -418,7 +418,12 @@ def facts_for(e, s, baseline=None, deadline=None):
         # aired as "nine biters chew their boots" and "fourteen turrets"
         f["numbers_mean"] = "how many times biters hit the team's own buildings or engineers"
     if e["kind"] == "loss":
-        f["numbers_mean"] = "the team's buildings destroyed; the run goes on"
+        # shake4 03:15:39, Rook: "One engineer down, buildings eaten" for "1 lost: 1 engineer"
+        lost = re.findall(r"(\d+) ([a-z][a-z -]*?)\s*(?=,|\(|$)", f.get("text", "").split(":", 1)[-1].lower())
+        people = {k.strip() for _, k in lost} & {"engineer", "engineers", "character", "characters"}
+        f["numbers_mean"] = ("engineers killed (an engineer respawns); no building was lost" if lost and len(people) == len(
+            {k.strip() for _, k in lost}) else "the team's buildings destroyed and engineers killed" if people else
+            "the team's buildings destroyed") + "; the run goes on"
     if e.get("also"):
         f["also_happening"] = [spoken(x) for x in e["also"] if x]
     for k in ("text",):  # alerts name agents by id ("sonnet died"); say their display names
@@ -484,7 +489,8 @@ EXCHANGE_RULES = (
     "places, items or outcomes (general Factorio knowledge from the show notes is fine). You may round numbers. Refer "
     "to agents by the names given, with the pronouns in their facts (they when none are given), never 'a man'. "
     "Numbers in an attack count hits: how many times biters struck the team's own buildings or engineers. Numbers "
-    "in a loss count the team's buildings destroyed. 'Character' and 'engineer' mean one of the team's engineers. "
+    "in a loss count the team's buildings destroyed and engineers killed, as numbers_mean says. Researching a "
+    "technology unlocks it; it does not mean anything has been built or made yet. 'Character' and 'engineer' mean one of the team's engineers. "
     "An agent whose status is planning is writing its next commands, not idle: never call it frozen, still, "
     "motionless, idle or asleep. The run goes on "
     "until the deadline, and the time left is minutes_to_deadline. The hosts are commentators, not on "

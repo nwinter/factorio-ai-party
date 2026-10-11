@@ -90,7 +90,8 @@ class Baseline:
         for item in ("iron-plate", "electronic-circuit"):
             if produced_now and produced_now.get(item) and then["produced"].get(item):
                 now_n, then_n = int(produced_now[item]), int(then["produced"][item])
-                label = item.replace("-", " ") + "s"
+                # shake4 03:44: "electronic circuits_gap" aired as "five hundred red circuits ahead"
+                label = {"electronic-circuit": "green circuits"}.get(item, item.replace("-", " ") + "s")
                 f[f"{label}_made_now"] = now_n
                 f[f"{label}_made_by_{self.name}_at_same_time"] = then_n
                 # the writers like to quote the gap; give it to them rather than let them do arithmetic
