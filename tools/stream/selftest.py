@@ -140,7 +140,7 @@ def main():
         {"chunk_centre": {"x": 16, "y": 16}, "hits": 9, "damage": 140, "last_tick": 4000, "entities": "gun-turret x2, stone-wall x5"},
         {"chunk_centre": {"x": -16, "y": -16}, "hits": 820, "damage": 0, "last_tick": 4500, "entities": "crash-site-spaceship x820"},
         {"chunk_centre": {"x": 500, "y": 16}, "hits": 1, "damage": 5, "last_tick": 10}]}, 5000)
-    assert len(ev) == 1 and ev[0]["text"] == "Base under attack near (16, 16): gun-turret x2", ev
+    assert len(ev) == 1 and ev[0]["text"] == "Base under attack near (16, 16): gun turret hit 2 times", ev
     before = m.agents["astra"].interest
     m.ingest({"events": ev}, time.time())
     assert m.agents["astra"].interest > before + 3, "astra is 15 tiles from the attack"
@@ -181,7 +181,7 @@ def main():
     losses = LiveSource.loss_events({"latest": [
         "in (12,-40)-(20,-31) 7 destroyed: 4 stone-wall, 3 gun-turret by 5 small-biter, 1m10s-0s ago",
         "in (300,5) 1 destroyed: 1 inserter, 4m20s ago"]})
-    assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by 5 small biter)", losses
+    assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by small biters)", losses
 
     # an attack cuts the main camera straight away, even inside its dwell
     sent_s = []

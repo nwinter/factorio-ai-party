@@ -207,7 +207,11 @@ def spoken(text):
     """Alert/board text as a caster would say it: no map coordinates, no dangling 'near'."""
     text = re.sub(r"\s*(?:near|at)?\s*\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)", "", str(text))
     text = re.sub(r"(?<=[a-z])-(?=[a-z\d])", " ", re.sub(r"\s*:\s*", ": ", text))  # gun-turret -> gun turret
-    text = re.sub(r"\s+x(\d+)\b", r" (\1 of them)", text)  # "assembling machine 1 x129" read as "x one two nine"
+    # attack alerts list "<entity> x<hits>": a hit count on the team's entity, never a count of anything (shake3 aired
+    # "(9 of them)" as "nine biters chew their boots"); live.py now writes "hit 9 times" itself
+    text = re.sub(r"\s+x(\d+)\b", r" hit \1 times", text)
+    text = re.sub(r"\bcharacter\b", "engineer", text)  # the runtime's word for one of the team's engineers
+    text = re.sub(r"\(by (\d+) ([a-z ]*?biter)\)", r"(by \2s)", text)  # loss alerts: "(by 21 small biter)" is kills
     return re.sub(r"\s+", " ", text).strip(" :")
 def spoken_time(gt):
     """'1h03m' -> '1 hour 3 minutes' (what TTS should read)."""
@@ -227,22 +231,58 @@ def agent_facts(s, name, said=False):
     where = a.get("location")
     if where and re.fullmatch(r"\d+ m [NSEW]{1,2}", where):  # "30 m E" is noise on air; named places are not
         where = None
-    f = {"name": a.get("display_name") or name, "role": a.get("role"), "model": a.get("model"),
-         "harness": a.get("harness"), "doing": a.get("action") if a.get("activity") == "acting" else None,
-         "status": {"dead": "down, waiting to respawn", "offline": "offline", "thinking": "thinking (standing still)",
-                    "idle": "idle"}.get(a.get("activity")),
+    # "thinking (standing still)" became 102 of 443 shake3 host lines mocking agents as frozen or statues
+    f = {"name": a.get("display_name") or name, "pronouns": pronouns_of(a), "role": a.get("role"),
+         "model": a.get("model"), "harness": a.get("harness"),
+         "doing": a.get("action") if a.get("activity") == "acting" else None,
+         "status": {"dead": "down, waiting to respawn", "offline": "offline", "thinking": "planning the next step",
+                    "idle": "between tasks"}.get(a.get("activity")),
          "where": where, "motto": a.get("motto") or None}
     if said and (a.get("last_said") or {}).get("text"):
         f["last_said"] = spoken(voices.speakable(a["last_said"]["text"], 160))
     return {k: v for k, v in f.items() if v}
 
 
+def pronouns_of(a):
+    """An agent's chosen pronouns ("he/him"), else "they/them" (shake3: Grok chose he/him; the rules forced "they")."""
+    p = re.sub(r"\s+", "", str(a.get("pronouns") or "")).lower()
+    return p if re.fullmatch(r"[a-z]{2,6}(?:/[a-z]{2,6}){0,2}", p) else "they/them"
+
+
+def read_deadline(spec, now=None):
+    """Epoch of the run's end from --deadline: "YYYY-MM-DD HH:MM[ TZ]", "HH:MM" (today), or a file or glob of
+    deadline.txt files (the latest wins: deadlines are staggered by launch). None when unknown."""
+    import glob as _glob
+    if not spec:
+        return None
+    texts = []
+    paths = _glob.glob(spec) if any(c in spec for c in "*?[") else ([spec] if os.path.isfile(spec) else [])
+    for p in paths:
+        try:
+            texts.append(open(p).read().strip())
+        except OSError:
+            pass
+    if not paths:
+        texts = [spec]
+    out = []
+    for t in texts:
+        m = re.match(r"^\s*(?:(\d{4}-\d{2}-\d{2})\s+)?(\d{1,2}):(\d{2})(?::(\d{2}))?", t)
+        if not m:
+            continue
+        day = m.group(1) or time.strftime("%Y-%m-%d", time.localtime(now or time.time()))
+        out.append(time.mktime(time.strptime(f"{day} {m.group(2)}:{m.group(3)}:{m.group(4) or '00'}", "%Y-%m-%d %H:%M:%S")))
+    return max(out) if out else None
+
+
 FILLERS = ["pace", "explain", "naturalist", "spotlight", "production", "board", "research"]
 
 
-def context_facts(s, baseline=None):
-    """What viewers need to follow along and what lets the hosts judge the play: stage, science rate, pace."""
+def context_facts(s, baseline=None, deadline=None):
+    """What viewers need to follow along and what lets the hosts judge the play: stage, science rate, pace, time left."""
     f = {}
+    if deadline:  # shake3: "forty more minutes of biter bait" with 4.5 left; there was no time-left fact
+        left = (deadline - time.time()) / 60
+        f["minutes_to_deadline"] = round(left) if left >= 1 else "under a minute" if left > 0 else "the deadline has passed"
     sc = s.get("science") or {}
     if sc.get("stage_label"):
         f["stage"] = sc["stage_label"]
@@ -258,11 +298,11 @@ def context_facts(s, baseline=None):
     return f
 
 
-def facts_for(e, s, baseline=None):
+def facts_for(e, s, baseline=None, deadline=None):
     f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
     # the pace comparison only where it is the story; on every line it turned the cast into a scoreboard
     paced = e["kind"] in ("research", "open", "viewer") or e.get("angle") in ("pace", "explain")
-    f.update(context_facts(s, baseline if paced else None))
+    f.update(context_facts(s, baseline if paced else None, deadline))
     if e["kind"] == "viewer":
         f["viewer_message"] = {"from": e.get("viewer"), "text": e.get("text")}
     if e["kind"] == "segment":
@@ -281,10 +321,12 @@ def facts_for(e, s, baseline=None):
     for k in ("text", "change", "title", "tech", "item"):
         if e.get(k):
             f[k] = spoken(e[k]) if k in ("text", "title") else e[k]
-    if e["kind"] == "attack" and ": " in f.get("text", ""):
-        # live alerts read "Base under attack: transport belt x7"; writers took the entity for the attacker
-        head, _, what = f["text"].partition(": ")
-        f["text"] = f"{head}; the biters are damaging: {what}"
+    if e["kind"] == "attack":
+        # "Base under attack: transport belt hit 7 times". shake3's "the biters are damaging: character (3 of them)"
+        # aired as "nine biters chew their boots" and "fourteen turrets"
+        f["numbers_mean"] = "hits by biters on the team's own buildings or engineers, not how many biters or buildings"
+    if e["kind"] == "loss":
+        f["numbers_mean"] = "the team's buildings destroyed; the run goes on"
     if e.get("also"):
         f["also_happening"] = [spoken(x) for x in e["also"] if x]
     for k in ("text",):  # alerts name agents by id ("sonnet died"); say their display names
@@ -338,7 +380,7 @@ def facts_for(e, s, baseline=None):
 RULES = ("Rules: one or two short sentences, at most 25 words, spoken aloud (no emoji, no lists, no stage "
          "directions, no quotation marks, do not start with your own name). Use ONLY the facts given; never invent "
          "names, numbers, places, items or outcomes. You may round numbers or skip them. Refer to agents by the "
-         "names given, and as \"they\", never he or she. Vary your openings; do not repeat phrasing from the recent "
+         "names given, with the pronouns in their facts (they when none are given). Vary your openings; do not repeat phrasing from the recent "
          "lines. Be fun, like a great esports cast, but never mean to a player.")
 EXCHANGE_RULES = (
     "Write the next moment of the broadcast as a quick back-and-forth between the two hosts: {n} lines, alternating, "
@@ -347,7 +389,12 @@ EXCHANGE_RULES = (
     "quotation marks. The hosts talk to each other: answer, tease, disagree, build on the last line; do not take "
     "turns reading facts. Use ONLY the facts given for anything about this game; never invent names, numbers, "
     "places, items or outcomes (general Factorio knowledge from the show notes is fine). You may round numbers. Refer "
-    "to agents by the names given, and as \"they\", never he or she or 'a man'. The hosts are commentators, not on "
+    "to agents by the names given, with the pronouns in their facts (they when none are given), never 'a man'. "
+    "Numbers in an attack are hits by biters on the team's own buildings or engineers, never a count of enemies "
+    "or of buildings; numbers in a loss are the team's buildings destroyed. 'Character' and 'engineer' mean one of "
+    "the team's engineers. An agent planning the next step is thinking, not frozen: never mock them as statues or "
+    "idle. The run ends only at the deadline: never say a loss or an attack ends the run, and say how long is left "
+    "only from minutes_to_deadline. The hosts are commentators, not on "
     "the team: the team is 'they', never 'we'. Never say something is missing, broken or absent ('no steam yet', "
     "'no belts') unless the facts say so, and mention the previous run only when the facts include a pace "
     "comparison. Skip map distances and directions unless they "
@@ -380,7 +427,11 @@ def check_line(line, facts, names, recent):
     for n in names:
         if re.search(r"\b" + re.escape(n.lower()) + r"\b", low) and n.lower() not in blob:
             return f"name not in facts: {n}"
-    known = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", blob)]
+    # numbers spelled out in the facts count too: shake3 rejected "Eleven labs" from Sol's "eleven labs are working"
+    known = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", blob)] + [float(v) for _, v in spelled_numbers(blob)]
+    why = off_roster(line, blob + " " + SHOW.lower(), names) or wrong_pronoun(low, facts) or wrong_deadline(low, facts)
+    if why:
+        return why
     for num in re.findall(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", line):  # "3,600" is one number
         num = num.replace(",", "")
         if num not in blob and not near_round(float(num), known):
@@ -392,6 +443,10 @@ def check_line(line, facts, names, recent):
         return "number not in facts: zero"
     # "still no steam", "no walls yet", "no belts in sight": absences are never in the facts (live world, Nemotron, Kimi)
     if re.search(r"\b(?:still|yet) no\b|\bno \w+(?: \w+)? (?:yet|in sight)\b|\bnot a single\b", low):
+        return "claims something is missing"
+    # shake3: "Astra scouts for oil that isn't there" (the field was found seven minutes later)
+    if re.search(r"\b(?:isn't|is not|aren't|are not|wasn't|was not|ain't) (?:even )?(?:there|here|anywhere)\b|"
+                 r"\bnowhere to be (?:found|seen)\b|\b(?:doesn't|does not|don't) (?:even )?exist\b", low.replace("’", "'")):
         return "claims something is missing"
     # On the live world, Vale invented "last run they'd still be punching trees" on beats with no pace facts.
     if re.search(r"\b(last|previous|other|earlier) (run|time|game|session)\b|\bshake\d\b|\blast time\b", low) and \
@@ -409,6 +464,73 @@ def check_line(line, facts, names, recent):
         prev = set(re.findall(r"[a-z']+", clean(r).lower()))
         if words and prev and len(words & prev) / len(words | prev) >= 0.6:
             return "repeats a recent line"
+    return None
+
+
+# Capitalised words a line may use without them being in the facts: the hosts, the game, sentence words.
+CAPS_OK = set("""rook vale factorio i i'm i'll i've i'd ai ais ok okay oh wow hey yes no nope well so and but or now
+then here there this that these those what who why how when where it it's its they them their we let's look watch
+meanwhile mr ms""".split())
+
+
+def off_roster(line, blob, names):
+    """A capitalised word that is named like an agent but is in neither the facts nor the roster: mid-sentence, or
+    listed with a roster name ("Gear and Sol do the heavy lifting", shake3 01:24)."""
+    roster = {w.lower() for n in names for w in re.findall(r"[A-Za-z][\w'-]*", n)}
+    toks = re.findall(r"[A-Za-z][\w'’-]*|[.!?:;—–]", line)
+    for i, t in enumerate(toks):
+        if not t[0].isupper() or not t[0].isalpha():
+            continue
+        w = t.lower().replace("’", "'")
+        base = re.sub(r"'s$", "", w)
+        if base in roster or base in CAPS_OK or base in UNITS or base in TENS:  # "Automation Two"
+            continue
+        nxt = toks[i + 1:i + 3]
+        if len(nxt) == 2 and nxt[0].lower() in ("and", "or", "with") and nxt[1].lower() in roster:
+            return f"name not in facts: {t}"  # listed with an agent, so named like one ("gear" is in the item names)
+        if re.search(r"\b" + re.escape(base) + r"\b", blob):
+            continue
+        if not (i == 0 or not toks[i - 1][0].isalpha()):
+            return f"name not in facts: {t}"
+    return None
+
+
+PRONOUNS = {"he": "he", "him": "he", "his": "he", "himself": "he", "she": "she", "her": "she", "hers": "she",
+            "herself": "she"}
+
+
+def wrong_pronoun(low, facts):
+    """'he' or 'she' only when an agent in the facts chose those pronouns (shake3: Rook called Luna 'she')."""
+    chosen = set(re.findall(r'"pronouns": "([a-z]+)', json.dumps(facts, ensure_ascii=False).lower()))
+    for w in re.findall(r"[a-z]+", low):
+        if w in PRONOUNS and PRONOUNS[w] not in chosen:
+            return f"pronoun not given: {w}"
+    return None
+
+
+ENDS_RUN = re.compile(r"\b(?:ends?|ending|ended|finish(?:es|ed)?|over for) (?:the|their|this) (?:run|game|show|stream)\b|"
+                      r"\bgame over\b|\b(?:run|game)(?:'s| is) over\b")
+TIME_LEFT = re.compile(r"\b([a-z\d-]+(?: [a-z-]+)?) (?:more |last |final )?minutes? (?:left|to go|remaining|on the clock|"
+                       r"of (?:[a-z]+ )?(?:bait|play|this|it)|before the (?:deadline|end|buzzer|bell))\b|"
+                       r"\b([a-z\d-]+(?: [a-z-]+)?) more minutes?\b")
+
+
+def wrong_deadline(low, facts):
+    """'Ends the run' and 'N minutes left' must agree with minutes_to_deadline (shake3: "One small biter ends the run
+    at thirty flat!", "forty more minutes of biter bait" with 4.5 left)."""
+    left = facts.get("minutes_to_deadline")
+    if ENDS_RUN.search(low) and not (left in ("under a minute", "the deadline has passed") or (
+            isinstance(left, (int, float)) and left <= 1)):
+        return "says the run ends before the deadline"
+    for m in TIME_LEFT.finditer(low):
+        words = m.group(1) or m.group(2)
+        nums = [float(x) for x in re.findall(r"\d+", words)] + [float(v) for _, v in spelled_numbers(words)]
+        if not nums:
+            continue
+        if not isinstance(left, (int, float)):
+            return "time left without a deadline fact"
+        if all(abs(n - left) > max(1.5, 0.15 * left) for n in nums):
+            return f"time left disagrees with minutes_to_deadline ({left})"
     return None
 
 
@@ -766,6 +888,7 @@ class Caster:
         self.history = deque(maxlen=4)  # the last story beats, as facts for callbacks
         self.seg_cat, self.seg_cat_t, self.seg_req_t, self.seg_next_ok = {}, 0.0, 0.0, 0.0
         self.prep = []  # recent write+TTS times, to start the next exchange before the current one ends
+        self.deadline_t = (0.0, None)  # (read at, epoch): deadline.txt files appear as agents launch
         self.baseline = None
         if a.baseline and os.path.exists(a.baseline):
             from baseline import Baseline
@@ -827,6 +950,11 @@ class Caster:
         kw["t"] = round(time.time(), 2)
         with open(self.log_path, "a") as f:
             f.write(json.dumps(kw, ensure_ascii=False) + "\n")
+
+    def deadline(self):
+        if time.time() - self.deadline_t[0] > 30:
+            self.deadline_t = (time.time(), read_deadline(getattr(self.a, "deadline", None)))
+        return self.deadline_t[1]
 
     def names(self, s):
         return {a["name"]: a.get("display_name") or a["name"] for a in s.get("agents") or []}
@@ -960,7 +1088,7 @@ class Caster:
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
-        facts = facts_for(e, s, self.baseline)
+        facts = facts_for(e, s, self.baseline, self.deadline())
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
         names = list(self.names(s).values())
@@ -1284,6 +1412,8 @@ def main():
     ap.add_argument("--writer-timeout", type=float, default=12, help="seconds per Workers AI call (claude: 3x)")
     ap.add_argument("--urgent-model", default=URGENT_MODEL,
                     help="fast Workers AI writer for urgent events ('' to use the main writer for everything)")
+    ap.add_argument("--deadline", help="when the run ends, for minutes_to_deadline: 'YYYY-MM-DD HH:MM', 'HH:MM', or "
+                    "a deadline.txt file or glob (the latest wins), e.g. 'runs/shake4/*/deadline.txt'")
     ap.add_argument("--baseline", default=os.path.join(HERE, "baselines", "shake1.json"),
                     help="past run to compare pace with (tools/stream/baseline.py makes one); '' for none")
     ap.add_argument("--lines", type=int, nargs=2, default=[2, 3], metavar=("MIN", "MAX"),
