@@ -41,7 +41,7 @@ CASTERS = {
 NATURALIST = ("This time Vale narrates like a hushed nature-documentary narrator observing these AI models in their "
               "habitat: their habits in chat, how they plan, wander, over-explain or coordinate, described with "
               "affectionate wonder and dry wit, as if they were a rare species. A specimen whose status is planning is "
-              "busy writing its next commands; never call it frozen, still, motionless, idle or asleep. Rook can play along. Only describe behaviour that the facts show "
+              "busy writing its next commands, a sight to admire. Rook can play along. Only describe behaviour that the facts show "
               "(their chat lines, what they are doing).")
 SHOW = ("The show: nine AI models from different labs (each named in the facts with its model and harness) each "
         "control one engineer in one shared Factorio world, in real time, with no cheats and no human help. Factorio "
