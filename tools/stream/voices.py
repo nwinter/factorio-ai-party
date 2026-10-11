@@ -353,16 +353,27 @@ def speakable(text, limit=220):
 
 
 # ---- delivery: how a line should sound ----------------------------------------------------------------------------
-FRUSTRATED = re.compile(r"\b(ugh+|argh+|again|why (?:is|does|won't|can't)|stuck|broken|starv\w*|damn|seriously|come on|"
-                        r"keeps?|still|nope|annoying|great, just)\b", re.I)
+FRUSTRATED = re.compile(r"\b(ugh+|argh+|why (?:is|does|won't|can't)|stuck|broken|starv\w*|damn|seriously|come on|"
+                        r"annoying|great, just)\b", re.I)
+FRUSTRATED_WEAK = re.compile(r"\b(again|keeps?|still|nope)\b", re.I)  # "by hand again!" is not a complaint
 EXCITED = re.compile(r"\b(yes+|huge|finally|boom|let's go|wow|incredible|done|online|we did it|massive|nice)\b", re.I)
 
 
 def mood(text, caster=None):
-    """excited | frustrated | deadpan | neutral: a cheap guess from the words, steering expressive providers."""
-    if FRUSTRATED.search(text) and (caster is None):
-        return "frustrated"
-    if text.count("!") >= 1 or EXCITED.search(text) or re.search(r"\b[A-Z]{4,}\b", text):
+    """excited | frustrated | deadpan | neutral: a cheap guess from the words, steering expressive providers.
+    Frustration and excitement are scored (a strong word counts 2, "again" or one "!" counts 1; a tie with a "!" is
+    excited); short flat sentences with no "!" or "?" are deadpan ("Iron plates. Again. I have become the iron plate.")."""
+    f = 2 * len(FRUSTRATED.findall(text)) + len(FRUSTRATED_WEAK.findall(text))
+    e = 2 * len(EXCITED.findall(text)) + ("!" in text) + bool(re.search(r"\b[A-Z]{4,}\b", text))
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s]
+    flat = "!" not in text and "?" not in text and len(sentences) >= 2 \
+        and len(text.split()) / len(sentences) <= 6 and f <= 1
+    if caster is None:
+        if flat:
+            return "deadpan"
+        if f > e or (f and f == e and "!" not in text):
+            return "frustrated"
+    if e:
         return "excited"
     if caster is None and len(text) < 70 and text.rstrip().endswith("."):
         return "deadpan"
