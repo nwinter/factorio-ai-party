@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Item icons</title>
+<link rel="stylesheet" href="factorio-ui.css">
+<style>
+  /* Gallery layout only; components come from factorio-ui.css. */
+  body { margin: 0; min-height: 100vh; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 24px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+  .wrap > * { min-width: 0; }
+  .intro p { margin: 4px 0; max-width: 78ch; }
+  .top { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  @media (max-width: 860px) { .top { grid-template-columns: minmax(0, 1fr); } }
+  .sizes { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+  .sizes figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .sizes figcaption { font-size: var(--fx-fs-xs); }
+  .pic { display: block; line-height: 0; padding: 4px; background: #242324; box-shadow: var(--fx-slot-shadow); }
+  .pic svg { display: block; }
+  .facts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .swatch { display: inline-block; width: 14px; height: 14px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); vertical-align: middle; }
+  pre.cmd { white-space: pre-wrap; word-break: break-all; margin: 0; }
+  .groups { display: flex; flex-direction: column; gap: 16px; }
+  .cells { display: grid; gap: 6px; grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
+  .cells button { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 2px; border-radius: 2px; }
+  .cells button:hover, .cells button:focus-visible { outline: 2px solid var(--fx-orange); }
+  .cells button.on .fx-slot { box-shadow: var(--fx-glow), var(--fx-slot-shadow); background: linear-gradient(180deg, #4a3a22, #2e2516); }
+  .cells span.n { font-size: 11px; color: var(--fx-muted); text-align: center; line-height: 1.2; overflow-wrap: anywhere; }
+  /* production widget sketch: icon, label, rate, sparkline */
+  .prod { display: flex; flex-direction: column; gap: 6px; }
+  .prod-row { display: grid; grid-template-columns: 32px minmax(0, 1fr) 52px 120px; gap: 8px; align-items: center; }
+  .prod-row .lbl { color: var(--fx-heading); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .prod-row .val { text-align: right; font-variant-numeric: tabular-nums; }
+  .prod-row svg.spark { width: 120px; height: 24px; display: block; }
+  .strip { display: flex; gap: 2px; flex-wrap: wrap; }
+</style>
+</head>
+<body class="fx-root fx-backdrop">
+<main class="wrap">
+  <header class="intro">
+    <h1 style="font-size: var(--fx-fs-xl)">Item icons</h1>
+    <p>Original 16&times;16 pixel art for the items the agents make, keyed by the game's item names so the production feed's <code class="fx-mono">item</code> field goes straight in. Rendering is <code class="fx-mono">items.js</code> (browser and node) or <code class="fx-mono">tools/stream/items.py</code> (same output). Unknown names get a tinted crate and a readable label. No game sprites are used.</p>
+  </header>
+
+  <div class="top">
+    <section class="fx-panel">
+      <header class="fx-panel-title" id="sel-title">Selected</header>
+      <div class="fx-panel-body">
+        <div class="sizes" id="sizes"></div>
+        <div class="facts" id="facts"></div>
+        <pre class="fx-mono fx-code cmd" id="code"></pre>
+      </div>
+    </section>
+    <section class="fx-panel">
+      <header class="fx-panel-title">In the production widget</header>
+      <div class="fx-panel-body">
+        <div class="fx-inset prod" id="prod"></div>
+        <div class="strip" id="strip"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="groups" id="groups"></div>
+
+  <section class="fx-panel">
+    <header class="fx-panel-title">Names without an icon</header>
+    <div class="fx-panel-body">
+      <p class="fx-muted" style="margin:0">Any other name renders as a crate tinted from the name, labelled from the name.</p>
+      <div class="cells" id="fallbacks"></div>
+    </div>
+  </section>
+</main>
+<script src="items.js"></script>
+<script>
+(function () {
+  "use strict";
+  var I = window.PogItems;
+  var $ = function (id) { return document.getElementById(id); };
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function slot(name, size, cls) {
+    var s = el("div", "fx-slot" + (cls ? " " + cls : ""));
+    s.innerHTML = I.svg(name, size);
+    return s;
+  }
+
+  var current = null;
+  function select(name) {
+    current = name;
+    $("sel-title").textContent = I.label(name);
+    var sizes = $("sizes");
+    sizes.textContent = "";
+    [16, 24, 32, 48, 96].forEach(function (px) {
+      var f = el("figure"), p = el("span", "pic");
+      p.innerHTML = I.svg(name, px);
+      f.append(p, el("figcaption", "fx-muted", px + " px"));
+      sizes.appendChild(f);
+    });
+    var facts = $("facts");
+    facts.textContent = "";
+    var sw = el("span", "swatch");
+    sw.style.background = I.color(name);
+    facts.append(el("code", "fx-mono", name), sw, el("span", "fx-muted", I.color(name)),
+      el("span", "fx-chip fx-chip--" + (I.has(name) ? "green" : "grey"), I.has(name) ? "own icon" : "crate fallback"));
+    $("code").textContent = 'PogItems.svg("' + name + '", 32)   // label: ' + JSON.stringify(I.label(name)) +
+      '\npython3 tools/stream/items.py ' + name + ' --size 32 > ' + name + '.svg';
+    document.querySelectorAll(".cells button").forEach(function (b) { b.classList.toggle("on", b.dataset.item === name); });
+  }
+
+  function cell(name) {
+    var b = el("button");
+    b.type = "button";
+    b.dataset.item = name;
+    b.title = name;
+    b.append(slot(name, 32), el("span", "n", I.label(name)));
+    b.addEventListener("click", function () { select(name); });
+    return b;
+  }
+
+  var groups = $("groups");
+  I.ITEMS.groups.forEach(function (g) {
+    var p = el("section", "fx-panel");
+    p.append(el("header", "fx-panel-title", g.name + " (" + g.items.length + ")"));
+    var body = el("div", "fx-panel-body"), cells = el("div", "cells");
+    g.items.forEach(function (n) { cells.appendChild(cell(n)); });
+    body.appendChild(cells);
+    p.appendChild(body);
+    groups.appendChild(p);
+  });
+  ["assembling-machine-2", "stone-furnace", "repair-pack", "my_modded--widget"].forEach(function (n) {
+    $("fallbacks").appendChild(cell(n));
+  });
+
+  // Production widget sketch with made-up rates (the overlay's real widget lives in overlay.js).
+  var demo = [["iron-plate", 412], ["copper-plate", 236], ["electronic-circuit", 88], ["steel-plate", 31],
+    ["automation-science-pack", 24], ["logistic-science-pack", 12.5]];
+  demo.forEach(function (d, i) {
+    var row = el("div", "prod-row"), name = d[0], color = I.color(name);
+    var pts = [], v = 0.4;
+    for (var k = 0; k < 24; k++) { v = Math.max(0.05, Math.min(1, v + Math.sin(k * 0.9 + i * 2) * 0.12 + 0.03)); pts.push(v); }
+    var path = pts.map(function (p, k) { return (k ? "L" : "M") + (k * 120 / 23).toFixed(1) + " " + (22 - p * 19).toFixed(1); }).join(" ");
+    var spark = '<svg class="spark" viewBox="0 0 120 24" preserveAspectRatio="none"><path d="' + path +
+      '" fill="none" stroke="' + color + '" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+    var s = slot(name, 28, "fx-slot--sm");
+    var sp = el("span");
+    sp.innerHTML = spark;
+    row.append(s, el("span", "lbl", I.label(name)), el("span", "val", String(d[1])), sp.firstChild);
+    $("prod").appendChild(row);
+  });
+  // Inventory strip with counts, as item-slot badges.
+  [["iron-gear-wheel", 50], ["transport-belt", 200], ["inserter", 18], ["pipe", 74], ["battery", 9], ["coal", 46],
+    ["rocket-fuel", 3]].forEach(function (d) {
+    var s = slot(d[0], 32);
+    s.title = I.label(d[0]);
+    s.appendChild(el("span", "fx-slot-count", String(d[1])));
+    $("strip").appendChild(s);
+  });
+
+  select("electronic-circuit");
+})();
+</script>
+</body>
+</html>
