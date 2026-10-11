@@ -25,8 +25,14 @@ What differs from the base game:
   (no robots), so items must reach the hub. Rockets launch on their own for the hub's requests when the silo has
   `auto_requests` on (`launch`). You cannot move items by hand on a platform.
 - Riding a rocket (`launch ride=true platform=NAME`, standing at the silo) takes only your worn armor and guns. Ship
-  everything else as cargo first; the harness refuses otherwise. `land` drops you to the planet below a stopped
-  platform. Bots cannot ride yet.
+  everything else as cargo first; the harness refuses otherwise. Finish or cancel hand crafting and empty your hand
+  too. The ride takes about 40 s; `status` shows `travel` (ascending, aboard, descending) and where you are.
+- Aboard a platform you have no body. You act by remote view only: `platforms`, `platform_schedule`, `requests`,
+  ghost tools with `platform=`, `research`, chat and the board. `land` drops you in a cargo pod to the planet below
+  a stopped platform. You land on its landing pad if there is one, else where you last stood on that planet, else
+  near its spawn, in about 20 s. Ship what you need down there first: you land with only your armor and guns.
+- If you die on another planet, you respawn on the planet where you last stood. If your platform is destroyed
+  while you are aboard, you die.
 - Quality: items and machines have a quality (`normal`, `uncommon`, `rare`, `epic`, `legendary`). Counts are per
   quality: a rare gear is not a normal gear. Actions default to `normal`; pass `quality` to move or build others.
 - Spoilage: Gleba fruit, nutrients, bioflux, agricultural packs and eggs spoil. `status` shows `spoiling` (stalest
