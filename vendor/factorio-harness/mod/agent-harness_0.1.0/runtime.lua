@@ -3200,7 +3200,7 @@ scheduler=scheduler_module{
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
 clock=clock_module{state=state,lookup=function(index) return M.lookup(index) end}
 for name,handler in pairs(clock.handlers) do handlers[name]=handler end
-M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end}
+M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 function handlers.cameras() return M.cameras.list() end

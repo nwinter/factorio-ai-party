@@ -56,7 +56,14 @@ local director={index=2,name='pog-director',valid=true,connected=true,controller
 director.character=character({x=50,y=50})
 director.set_controller=function(t) director.controller_type=t.type; director.character=nil end
 director.teleport=function(pos,surf) director.position={x=pos.x or pos[1],y=pos.y or pos[2]}; return true end
-local players={nick,director}
+director.game_view_settings={show_minimap=true,show_entity_info=false,show_quickbar=true}
+-- A camera client the operator has not pointed anywhere yet.
+local cam1={index=3,name='pog-cam1',valid=true,connected=true,controller_type=1,physical_controller_type=1,force=force,surface=surface,position={x=0,y=0}}
+cam1.character=character({x=0,y=0})
+-- Console lines each player sees.
+local seen={}
+for _,pl in ipairs({nick,director,cam1}) do seen[pl.name]={}; pl.print=function(m) table.insert(seen[pl.name],m) end end
+local players={nick,director,cam1}
 local tick=0
 game={tick=0,players=players,forces={player=force,enemy={name='enemy',get_evolution_factor=function() return 0 end,get_evolution_factor_by_time=function() return 0 end,
   get_evolution_factor_by_pollution=function() return 0 end,get_evolution_factor_by_killing_spawners=function() return 0 end}},
@@ -120,8 +127,10 @@ fails(function() bot('profile',{glyph='abc'}) end,'glyph must be 1..2')
 fails(function() bot('profile',{display_name=string.rep('x',25)}) end,'display_name must be 1..24')
 eq(bot('profile',{glyph='👩‍🚀'}).glyph,'👩‍🚀') -- a ZWJ sequence counts as two
 bot('say',{text='taking iron, you take copper'})
-eq(printed[#printed]:find('astra[/color]: taking iron',1,true)~=nil,true)
-eq(printed[#printed]:find('[color=1.00,0.50,0.00]',1,true)~=nil,true)
+-- Chat lines go to players, not camera clients (their view shows the bubble).
+eq(#printed,0); eq(#seen['pog-director'],0); eq(#seen['pog-cam1'],0)
+eq(seen.nick[#seen.nick]:find('astra[/color]: taking iron',1,true)~=nil,true)
+eq(seen.nick[#seen.nick]:find('[color=1.00,0.50,0.00]',1,true)~=nil,true)
 local bubble=drawn[#drawn]
 eq(bubble.text,'taking iron, you take copper'); eq(bubble.target.entity,c); eq(bubble.time_to_live,480); eq(bubble.color.r,1)
 -- Speaking again replaces the bubble; long text wraps at ~40 characters.
@@ -130,10 +139,11 @@ eq(bubble.obj.valid,false)
 local lines=0
 for i=#drawn,1,-1 do if drawn[i].obj.valid then lines=lines+1; assert(#drawn[i].text<=40) end end
 eq(lines,4)
--- profiles: players and bots, directors excluded once they are cameras.
+-- profiles: players and bots; camera clients (pog-cam*, pog-director) are
+-- excluded even before their first camera call.
 runtime.dispatch{action='profile',args={display_name='Nick'},player=1}
 local list=runtime.dispatch{action='profiles',args={},player=1}.profiles
-eq(#list,4)
+eq(#list,3)
 local by={}; for _,row in ipairs(list) do by[row.name]=row end
 eq(by.astra.kind,'bot'); eq(by.astra.display_name,'Astra'); eq(by.astra.alive,true); eq(by.astra.active,false)
 eq(by.astra.last_said.text:sub(1,4),'word'); eq(by.nick.kind,'player'); eq(by.nick.display_name,'Nick'); eq(by.opus.glyph,nil)
@@ -144,6 +154,9 @@ fails(function() runtime.operator.camera({player=2,follow='astra',zoom=5}) end,'
 local old=director.character
 local cam=runtime.operator.camera({player=2,follow='astra',zoom=0.5})
 eq(cam.ok,true); eq(director.controller_type,2); eq(old.valid,false)
+-- A clean view: GUI hidden, entity info kept.
+eq(director.game_view_settings.show_minimap,false); eq(director.game_view_settings.show_quickbar,false)
+eq(director.game_view_settings.show_crafting_queue,false); eq(director.game_view_settings.show_entity_info,true)
 eq(director.position.x,4) -- first frame jumps to the target
 c.position={x=11,y=0}; advance(1)
 assert(director.position.x>4 and director.position.x<5,'eases toward the target')
@@ -158,8 +171,17 @@ eq(director.position.x,7)
 -- A director (no character) can peek at the chat, as an overlay does.
 eq(#runtime.dispatch{action='chat',args={peek=true,since=0},player=2}.messages>0,true)
 fails(function() runtime.dispatch{action='chat',args={},player=2} end,'living survival character')
+-- Back with a character (a reconnect): the next tick makes it a director again.
+director.controller_type=1; director.character=character({x=7,y=7}); local back=director.character
+director.game_view_settings.show_minimap=true
+advance(1); eq(director.controller_type,2); eq(back.valid,false); eq(director.game_view_settings.show_minimap,false)
 eq(runtime.operator.camera({player=2,release=true}).released,true)
 eq(#runtime.operator.cameras().cameras,0)
+-- Released, it is still a director, even with a character again.
+eq(storage.agent_harness.directors[2],true)
+director.controller_type=1; director.character=character({x=7,y=7})
+for _,row in ipairs(runtime.dispatch{action='profiles',args={},player=1}.profiles) do assert(row.name~='pog-director') end
+director.controller_type=2; director.character=nil
 storage.agent_harness.controlled={[1]={}}
 fails(function() runtime.operator.camera({player=1,follow='astra'}) end,'attached agent')
 c.position={x=1,y=0}

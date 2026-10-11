@@ -32,4 +32,12 @@ fails(function() chat.handlers.chat(opus,{limit=0}) end,'limit must be')
 chat.handlers.say(astra,{text='peek test'})
 local before=chat.unread(2).unread
 eq(#chat.handlers.chat(opus,{since=0,limit=3,peek=true}).messages,3); eq(chat.unread(2).unread,before)
+-- With an audience (players minus camera clients), lines go to those players only.
+local heard={}
+local viewer={index=1,print=function(m) heard[#heard+1]=m end}
+local s2={}
+local chat2=dofile('mod/agent-harness_0.1.0/chat.lua'){state=function() return s2 end,audience=function() return {viewer} end}
+local before_print=#printed
+chat2.handlers.say(astra,{text='only players see this'})
+eq(#printed,before_print); eq(#heard,1); eq(heard[1]:sub(-21),'only players see this')
 print('chat: ok')

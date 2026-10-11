@@ -61,7 +61,14 @@ shooting and taking damage work natively.
   for a bot adds `deaths`. A bot's interrupted action reports outcome `died` (or `removed`).
 - `cameras` with no cameras serializes as `{}`, not `[]` (Factorio's `table_to_json` on an empty table).
 - Directors: a player becomes a spectator on its first `camera` call and its character is destroyed (starter items
-  lost, nothing gained). Attached agents (`attach`) are refused. `profiles` skips cameras and any spectator player.
+  lost, nothing gained). Attached agents (`attach`) are refused. A director stays one after `release`
+  (`storage.agent_harness.directors`); players named `pog-cam<N>`/`pog-director` and spectators count as directors
+  before any camera call. `profiles` skips all directors; `say` prints to non-directors only; a camera's GUI is hidden
+  through `game_view_settings` (entity info kept) and re-applied every 300 ticks; a camera player that comes back
+  with a character is made a spectator again on the next tick.
+- Not verified in the engine (world n was busy with the shakedown and `live` was stopped): the
+  `game_view_settings` writes. Each key is set under `pcall` and the whole table is assigned back, so a copy or a
+  live object both work; a key the engine lacks is skipped.
 - `chat` with `peek:true` now works for a player without a character (directors, overlay polling as player 1).
 - `say` bubbles: scale 1.4 in world units, fixed size (not zoom-scaled), up to 6 lines of 40 characters.
 

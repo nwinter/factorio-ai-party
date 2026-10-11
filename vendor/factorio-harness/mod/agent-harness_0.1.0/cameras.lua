@@ -10,9 +10,45 @@ return function(api)
     s.cameras = s.cameras or {}
     return s.cameras
   end
+  -- Once a camera, always a director (release only stops following).
+  local function directors()
+    local s = api.state()
+    s.directors = s.directors or {}
+    return s.directors
+  end
+  -- Camera clients are named pog-cam1.. or pog-director (tools/win/start-client.ps1
+  -- -PlayerName); they count as directors before their first camera call too.
+  local DIRECTOR_NAMES = {'^pog%-cam%d*$', '^pog%-director%d*$'}
   function M.director(index)
-    local c = store()[index]
-    return c ~= nil
+    if store()[index] ~= nil or directors()[index] then return true end
+    local p = game.get_player(index)
+    if not (p and p.valid) then return false end
+    if p.controller_type == defines.controllers.spectator then return true end
+    for _, pattern in ipairs(DIRECTOR_NAMES) do
+      if p.name:match(pattern) then return true end
+    end
+    return false
+  end
+  -- A clean picture: no GUI but entity info (alt-mode), as OBS captures it.
+  local HIDDEN_GUI = {'show_controller_gui', 'show_minimap', 'show_research_info', 'show_side_menu', 'show_alert_gui',
+    'show_quickbar', 'show_shortcut_bar', 'show_crafting_queue', 'show_tool_bar', 'show_hotkey_suggestions',
+    'show_map_view_options', 'show_surface_list', 'show_entity_tooltip', 'show_rail_block_visualisation'}
+  local function clean_view(p)
+    local view = p.game_view_settings
+    for _, key in ipairs(HIDDEN_GUI) do pcall(function() view[key] = false end) end
+    pcall(function() view.show_entity_info = true end)
+    pcall(function() p.game_view_settings = view end)
+  end
+  -- Spectator without a character; done again if the player came back with one
+  -- (a reconnect or respawn), since a director is never an agent.
+  local function make_director(p)
+    directors()[p.index] = true
+    if p.controller_type ~= defines.controllers.spectator then
+      local c = p.character
+      p.set_controller{type=defines.controllers.spectator}
+      if c and c.valid then c.destroy() end
+    end
+    clean_view(p)
   end
   local function distance(a, b) return ((a.x-b.x)^2 + (a.y-b.y)^2)^0.5 end
   -- Where a follow target is: a bot (alive or where it died) or a player.
@@ -65,11 +101,7 @@ return function(api)
     cam.view_zoom = old and old.view_zoom or nil
     -- Spectator once: the director's own character would otherwise stand in
     -- the world (and on stream) as a lifeless extra.
-    if p.controller_type ~= defines.controllers.spectator then
-      local c = p.character
-      p.set_controller{type=defines.controllers.spectator}
-      if c and c.valid then c.destroy() end
-    end
+    make_director(p)
     cams[p.index] = cam
     M.update(p, cam, true)
     return {ok=true, player=p.index, camera=M.describe(p.index)}
@@ -105,12 +137,26 @@ return function(api)
       pcall(function() p.zoom = z end)
     end
   end
+  local RECHECK_TICKS = 300
   function M.tick()
+    local recheck = game.tick % RECHECK_TICKS == 0
     for index, cam in pairs(store()) do
       local p = game.get_player(index)
       if not (p and p.valid) then store()[index] = nil
-      elseif p.connected and p.controller_type == defines.controllers.spectator then M.update(p, cam, false) end
+      elseif p.connected then
+        -- A reconnect can bring back a character or reset the view settings.
+        if recheck or p.controller_type ~= defines.controllers.spectator then make_director(p) end
+        M.update(p, cam, false)
+      end
     end
+  end
+  -- Players who see the game chat: everyone connected but directors.
+  function M.audience()
+    local out = {}
+    for _, p in pairs(game.connected_players) do
+      if not M.director(p.index) then out[#out+1] = p end
+    end
+    return out
   end
   return M
 end
