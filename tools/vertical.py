@@ -9,7 +9,7 @@ Through the same SSH tunnel as tools/obs.py (127.0.0.1:4455):
   tools/.venv/bin/python tools/vertical.py settings [--dry-run]  # OBS CLOSED: encoder, CBR, bitrate, keyframes,
                                                                   # audio track, output + key, start/stop with main
   tools/.venv/bin/python tools/vertical.py key [--server URL]     # an existing output's key, live (see `settings`)
-  tools/.venv/bin/python tools/vertical.py status|start|stop
+  tools/.venv/bin/python tools/vertical.py status|stop|start --yes
   tools/.venv/bin/python tools/vertical.py shot OUT.png           # the vertical scene, 540x960
 
 `scene` builds "stream vertical" in the plugin's canvas: a background, the three director captures the landscape
@@ -52,6 +52,9 @@ def find_canvas(c):
 def check(c):
     v = send(c, "GetVersion")
     print("obs", v.get("obsVersion"), "websocket", v.get("obsWebSocketVersion"))
+    vs = send(c, "GetVideoSettings")  # the main canvas; the plugin's canvas shares its frame rate
+    print(f"main canvas: base {vs.get('baseWidth')}x{vs.get('baseHeight')}, output {vs.get('outputWidth')}x"
+          f"{vs.get('outputHeight')}, {vs.get('fpsNumerator', 0) / max(1, vs.get('fpsDenominator', 1)):g} fps")
     for cv in send(c, "GetCanvasList").get("canvases", []):
         print("canvas", json.dumps(cv))
     print("plugin", vendor(c, "version"))
@@ -248,6 +251,7 @@ def main():
     ap.add_argument("--track", type=int, default=1, help="settings: audio mixer track (1-based)")
     ap.add_argument("--no-match-main", action="store_true", help="settings: do not start/stop with the main stream")
     ap.add_argument("--dry-run", action="store_true", help="settings: print what would be set, write nothing")
+    ap.add_argument("--yes", action="store_true", help="start: the plugin has an enabled output (see `settings`)")
     a = ap.parse_args()
     if a.cmd == "settings":  # over ssh/scp with OBS closed; no websocket
         return settings_on_box(a)
@@ -264,6 +268,9 @@ def main():
     elif a.cmd == "status":
         print(vendor(c, "status"))
     elif a.cmd == "start":
+        if not a.yes:  # 1.6.6 opens a modal "No output server" dialog on the box when no output is enabled
+            raise SystemExit("start: only after `settings` gave the plugin an enabled output (else a dialog opens on "
+                             "the box); add --yes to go ahead. A run normally starts it with the main stream.")
         print(vendor(c, "start_streaming"))
     elif a.cmd == "stop":
         print(vendor(c, "stop_streaming"))
