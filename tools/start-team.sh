@@ -2,7 +2,8 @@
 # Start a team run on a fresh world with bots, director cameras, overlay, recording and (optionally) the stream.
 #   tools/start-team.sh RUN_ID MINUTES [--stream]
 # Env: POG_TEAM_FILE (default agent/team-nine.tsv), POG_SEED (default 20261010), POG_ENEMIES (normal|peaceful, default
-# normal), POG_WORLD_NAME (default n; game port 34205, RCON 27025), POG_CASTER (default 1: shoutcasters on).
+# normal), POG_WORLD_NAME (default n; game port 34205, RCON 27025), POG_CASTER (default 1: shoutcasters on),
+# POG_YOUTUBE (@handle or video id for the YouTube chat bridge).
 # Each team line: name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -59,7 +60,10 @@ json.dump({"title": "Nine AIs, one factory", "subtitle": "Factorio co-op · real
            "agents": agents, "cameras": [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
                                          {"slot": "cam3", "player": 3}]}, open(out, "w"), indent=1)
 EOF
-nohup python3 tools/stream/serve.py --world "$world" --run "$rundir/stream.json" --port 8788 >"$rundir/stream-service.log" 2>&1 &
+# Viewer chat: the companion site's chat always; YouTube when POG_YOUTUBE (an @handle, channel id or video id) is set.
+viewers=(--viewers-site); [ -n "${POG_YOUTUBE:-}" ] && viewers+=(--viewers-youtube "$POG_YOUTUBE")
+nohup python3 tools/stream/serve.py --world "$world" --run "$rundir/stream.json" --port 8788 "${viewers[@]}" \
+  >"$rundir/stream-service.log" 2>&1 &
 echo $! > "$rundir/stream-service.pid"
 nohup ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
   -R 8787:127.0.0.1:8788 pogwin >/dev/null 2>&1 &
@@ -80,7 +84,12 @@ nohup tools/shot-sync.sh "$rundir" "$world-client-cam1" "$world-client-cam2" "$w
 echo $! >> "$rundir/stream-service.pid"
 # Shoutcasters and voiced agent lines (docs/AUDIO-NOTES.md); POG_CASTER=0 turns them off.
 if [ "${POG_CASTER:-1}" != 0 ]; then
-  nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts-fallback aura1 >"$rundir/caster.log" 2>&1 &
+  nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts auto --tts-fallback aura1 >"$rundir/caster.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+fi
+# The companion site's live page (site/push_live.py; token in site/worker/.secrets.json, gitignored).
+if [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; then
+  nohup python3 site/push_live.py --source http://127.0.0.1:8788/state.json >"$rundir/push-live.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
 fi
 

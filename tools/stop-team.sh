@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 run=$1 world=${2:-n} rundir="runs/$1"
 tools/.venv/bin/python tools/obs.py stream-stop 2>/dev/null || true
 tools/.venv/bin/python tools/obs.py stop 2>/dev/null || true
+tools/.venv/bin/python tools/obs.py replay-stop 2>/dev/null || true
 for f in stream-service.pid overlay-tunnel.pid supervisors.pid score-loop.pid; do
   [ -f "$rundir/$f" ] && while read -r pid; do kill "$pid" 2>/dev/null || true; done < "$rundir/$f"
 done

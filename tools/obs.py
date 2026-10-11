@@ -245,6 +245,8 @@ def main():
         c.start_stream(); print("streaming to YouTube (visibility is set in YouTube Studio)")
     elif a.cmd == "stream-stop":
         c.stop_stream(); print("stream stopped")
+    elif a.cmd == "replay-stop":
+        c.stop_replay_buffer(); print("replay buffer stopped")
     elif a.cmd == "stream-status":
         r = c.get_stream_status()
         print(f"active={r.output_active} reconnecting={r.output_reconnecting} time={r.output_timecode} "
