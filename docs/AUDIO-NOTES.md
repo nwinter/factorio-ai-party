@@ -10,10 +10,11 @@ What docs/studies/shake3.md P1 items 1, 2 (caster part) and 3 and P2 item 12 ask
 `caster_selftest.py`:
 
 - Attack and loss text. The runtime's `<entity> x<N>` is a hit count and "(by N small biter)" is a kill count.
-  `live.py` now writes banners (and so replay titles) as "Base under attack near (-48, 16): engineer hit 3 times" and
-  "21 lost near (12, -40): 9 transport belt, 5 burner mining drill (by small biters)". `caster.py`'s `spoken()` does
-  the same for older text. The "the biters are damaging:" prefix is gone, and attack and loss facts carry
-  `numbers_mean`. EXCHANGE_RULES states it as true statements: attack numbers count hits on the team's buildings or
+  `live.py` (eng/stream2's version of the fix, adopted here so the branches merge) writes banners and replay titles
+  without the counts: "Engineer under attack near (-48, 16)", "Base under attack near (64, 0): gun turret", and "21
+  lost near (12, -40): 9 transport belt, 5 burner mining drill (by small biters)". For older text, `caster.py`'s
+  `spoken()` turns "x9" into "hit 9 times" and "character" into "engineer". The "the biters are damaging:" prefix is
+  gone. Loss facts, and attack facts that still carry a number, include `numbers_mean`. EXCHANGE_RULES states it as true statements: attack numbers count hits on the team's buildings or
   engineers, loss numbers count the team's buildings destroyed, and "character" and "engineer" mean one of the
   team's engineers.
 - Time left. `--deadline` takes "YYYY-MM-DD HH:MM", "HH:MM", or a deadline.txt file or glob (the latest wins).
