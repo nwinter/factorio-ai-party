@@ -40,6 +40,9 @@ class LiveSource:
         self.next_board = 0
         self.has_confess = False
         self.confess_seq = 0
+        self.platform_every = 15.0
+        self.next_platforms = 0
+        self.platform_detail = {}
         self.probe()
 
     def probe(self):
@@ -109,8 +112,12 @@ class LiveSource:
             obs["produced"] = score.get("produced") or {}
             done = score.get("research_done") or []
             obs["research"] = {"current": score.get("current_research"), "done": done if isinstance(done, list) else []}
+            obs["space"] = {"rockets": score.get("rockets") or 0, "planets": score.get("planets") or [],
+                            "platforms": score.get("platforms") or []}
         except Exception as e:
             errors["score"] = str(e)
+        if (obs.get("space") or {}).get("platforms"):
+            self.observe_platforms(obs["space"], errors)
         try:
             ex = self.h.extras()
             if "research" in obs:
@@ -167,6 +174,8 @@ class LiveSource:
                 a["connected"] = st.get("connected", True) if a["kind"] == "player" else True
                 a["last"] = st.get("last")
                 a["combat"] = bool(st.get("combat"))
+                if st.get("surface"):  # Space Age: the planet or platform surface the body is on
+                    a["surface"], a["platform"] = st["surface"], st.get("platform")
                 a["dead_until_tick"] = st.get("dead_until_tick")
             obs["agents"].append(a)
         for name, p in profiles.items():
@@ -185,6 +194,25 @@ class LiveSource:
         self.observe_board(obs, errors)
         obs["errors"] = errors
         return obs
+
+    # ---- Space Age platforms ------------------------------------------------------------------------------------
+    def observe_platforms(self, space, errors):
+        """Platform detail (state, location or route, speed, schedule) with a peek `platforms` read per platform,
+        every platform_every seconds, at most 4 platforms; between reads the score's name and location stand."""
+        now = time.time()
+        if now >= self.next_platforms:
+            self.next_platforms = now + self.platform_every
+            detail = {}
+            for row in space["platforms"][:4]:
+                try:
+                    res, _ = self.read("platforms", {"platform": row["name"]}, **self.reader())
+                    for p in res.get("platforms") or []:
+                        detail[p.get("name")] = {k: p.get(k) for k in ("state", "at", "speed", "schedule", "paused",
+                                                                       "thrusters", "weight") if p.get(k) is not None}
+                except Exception as e:
+                    errors["platforms"] = str(e)
+            self.platform_detail = detail
+        space["platforms"] = [dict(row, **self.platform_detail.get(row["name"], {})) for row in space["platforms"]]
 
     # ---- team board (docs/BOARD-API.md) ------------------------------------------------------------------------
     def board_probe(self):

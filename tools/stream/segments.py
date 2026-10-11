@@ -26,8 +26,15 @@ TYPES = {
     "overview": {"title": "Base overview", "params": {}, "seconds": [15, 30]},
     "recap": {"title": "Recap", "params": {"minutes": "window, 5..30 (default 10)"}, "seconds": [20, 40]},
     "attack_replay": {"title": "Attack replay", "params": {"area": "alert id"}, "seconds": [15, 40]},
+    # Space Age: progress (planets, platforms, space science), and the moments model.py detects (first rocket,
+    # first platform, a platform reaching a new planet, the first landing there); the director starts a moment's
+    # segment itself within MOMENT_FRESH_S, skipping the spacing, and casters may ask for one too.
+    "space": {"title": "Space Age progress", "params": {}, "seconds": [15, 30]},
+    "space_moment": {"title": "Space Age moment", "params": {"moment": "moment id (default: the newest not yet shown)"},
+                     "seconds": [12, 25]},
 }
-LULL_ORDER = ["production", "spotlight", "research", "overview", "recap"]
+LULL_ORDER = ["production", "spotlight", "research", "space", "overview", "recap"]
+MOMENT_FRESH_S = 150.0
 
 
 def human(item):
@@ -53,6 +60,7 @@ class Segments:
         self.history = deque(maxlen=200)  # (t, kind, text) of alerts seen, for recaps
         self.seen = set()
         self.replays = None  # replays.Replays sets itself here
+        self.shown_moments = set()
 
     # ---- availability ------------------------------------------------------------------------------------------
     def why_unavailable(self, kind, snap):
@@ -67,7 +75,17 @@ class Segments:
             return "no research yet"
         if kind in ("spotlight", "overview") and not self.live_agents(snap):
             return "no agent in the world"
+        if kind == "space" and not (snap.get("space") or {}).get("active"):
+            return "no Space Age progress yet"
+        if kind == "space_moment" and not self.moments(snap):
+            return "no Space Age moment yet"
         return None
+
+    def moments(self, snap, fresh_only=False, now=None):
+        """Moments not yet shown as a segment, newest first."""
+        now = now or time.time()
+        return [m for m in reversed((snap.get("space") or {}).get("moments") or [])
+                if m["id"] not in self.shown_moments and (not fresh_only or now - m["t"] <= MOMENT_FRESH_S)]
 
     @staticmethod
     def live_agents(snap):
@@ -170,7 +188,10 @@ class Segments:
                 seg.update(state="starting", started=now, ends=now + STARTING_S + seg["seconds"])
                 self.cur = seg
                 self.last_start = now
-        if self.cur is None and self.queue is None and now - self.last_end >= self.lull_after:
+        if not self.busy() and self.moments(snap, fresh_only=True, now=now):
+            # a Space Age moment is news: start it as soon as nothing else runs (spacing waived, attacks still win)
+            self.request({"type": "space_moment", "by": "director", "reason": "moment"}, now, ignore_spacing=True)
+        elif self.cur is None and self.queue is None and now - self.last_end >= self.lull_after:
             self.lull(snap, now)
         return self.public()
 
@@ -233,6 +254,26 @@ class Segments:
                  "recent": [x["label"] for x in (r.get("recent") or [])[:4]]}
         title = f"Research: {r['label']}" + (f" {pct}%" if pct is not None else "") if r.get("label") else "Research"
         return title, facts, None
+
+    def build_space(self, params, snap, now):
+        sp = snap.get("space") or {}
+        facts = {"planets": sp.get("planets") or [], "rockets": sp.get("rockets") or 0,
+                 "platforms": [{k: p.get(k) for k in ("name", "where", "speed_kms", "paused")} for p in (sp.get("platforms") or [])[:4]],
+                 "science": {p["label"]: {"total": p.get("total"), "per_min": p.get("rate")} for p in sp.get("science") or []},
+                 "away": sp.get("away") or []}
+        return "Space Age progress", facts, None
+
+    def build_space_moment(self, params, snap, now):
+        ms = self.moments(snap)
+        m = next((x for x in ms if x["id"] == params["moment"]), None) if params.get("moment") else (ms[0] if ms else None)
+        if not m:
+            raise ValueError("no such moment (or it was shown)")
+        self.shown_moments.add(m["id"])
+        facts = dict(m["facts"], moment=m["kind"])
+        camera = None
+        if m.get("agent") and any(a["name"] == m["agent"] for a in self.live_agents(snap)):
+            camera = {"follow": m["agent"], "zoom": self.spotlight_zoom}
+        return m["title"], facts, camera
 
     def build_spotlight(self, params, snap, now):
         live = self.live_agents(snap)

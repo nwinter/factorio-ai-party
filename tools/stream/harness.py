@@ -14,7 +14,8 @@ import pog  # noqa: E402  (tools/pog.py: Rcon client, ports, SCORE_LUA)
 # Never add a gameplay action here. `profiles` is read-only per docs/BOTS-API.md, but a runtime that does not
 # know it yet treats it as a failed mutation and stops player 1, so callers gate it on `has_bots_runtime()`.
 # `board` and `board_events` (docs/BOARD-API.md) are only sent once `describe` (read-only) lists them.
-READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events"}
+# `platforms` (Space Age) is a read in the runtime; the overlay sends it only once the score lists a platform.
+READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events", "platforms"}
 # Operator reads (eng/board audience.lua): every agent's `confess` lines, for viewers only. Gated on `describe`.
 OPERATOR_READS = {"confessions"}
 
