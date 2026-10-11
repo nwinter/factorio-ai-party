@@ -1433,6 +1433,8 @@ class Caster:
             self.writer = None
         elif a.writer == "claude":
             self.writer = LLMWriter("claude", a.model or "haiku", bin=a.claude_bin, timeout=a.writer_timeout)
+        elif a.writer == "or":
+            self.writer = LLMWriter("or", a.model, timeout=a.writer_timeout)
         else:
             self.writer = LLMWriter("cf", a.model or DEFAULT_MODEL, ai=ai, timeout=a.writer_timeout)
         # urgent events (attack, death, loss) go to a fast writer so the call lands while it is still news
@@ -2061,9 +2063,10 @@ def bench(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--feed", default="http://127.0.0.1:8788", help="stream service base URL (serve.py)")
-    ap.add_argument("--writer", default="cf", choices=["cf", "claude", "template"])
+    ap.add_argument("--writer", default="cf", choices=["cf", "claude", "or", "template"])
     ap.add_argument("--model", help=f"writer model (cf: Workers AI model id, default {DEFAULT_MODEL}; "
-                                    "claude: haiku or sonnet)")
+                                    "claude: haiku, sonnet, opus or fable; or: an OpenRouter model id, with "
+                                    "OPENROUTER_API_KEY set)")
     ap.add_argument("--claude-bin", help=f"claude CLI for --writer claude (default {CLAUDE_BIN}, run with "
                                          "CLAUDE_CONFIG_DIR unset: the personal subscription)")
     ap.add_argument("--writer-timeout", type=float, default=12, help="seconds per Workers AI call (claude: 3x)")
