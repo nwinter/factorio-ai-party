@@ -12,7 +12,7 @@ run in a real game yet; "How to check it live" below is the first run.
 | Humans | `runtime.lua` | A human is a LuaPlayer that is not a camera client (`pog-cam*`, `pog-director*`, spectators) and not an attached agent. Bots have no LuaPlayer, so their events never carry a player and are never logged. |
 | Agent tools | `fh players [NAME]`, `fh vote`, `fh votes`, `fh restore NAME` | Also `fh call players|vote|restore` with the same words. Described in `agent/team.md` ("Human players"), tools only. |
 | Guest group | `control.lua` | A player's first join (`on_player_created`) puts them in `pog-guest`. Fixed in control.lua, so a quarantined runtime cannot let a newcomer in with full permissions. Camera clients and names the operator trusted are exempt. |
-| Votes | `players.lua` (ballots), `tools/votes.py` (the tally), `tools/players.py` (the operator) | Agents vote in the game; the operator process tallies, runs `/kick` or `/ban` or the group change, and closes the vote. |
+| Votes | `votes.lua` (every kind: mute, unmute, kick, ban, trust), `tools/players.py` (the operator) | One vote module and one `fh vote` for eng/viewers2's mute vote and these. The harness decides each ballot when it is cast. Mute and unmute act at once; a carried kick, ban or trust waits for `players.py`, which runs `/kick` or `/ban` or the group change and closes the vote. |
 | Stream | `chat.notice`, `tools/stream/model.py` | Every ballot, result and restore is a chat line from `vote` (the overlay's big chat lane; agents read it as chat). Joins and leaves are lines from `players` (the ticker), and so is a burst: 20 removals, or 20 deconstruction or upgrade orders, by one human within 5 minutes. The line gives the count, the time taken and the last position, at most one per player and kind every 2 minutes. Agents get it as unread chat, so they need not poll `fh players`. |
 | Launch | `tools/start-team.sh` | `POG_PLAYERS=1` starts `tools/players.py watch` (log `runs/RUN/players.log`, results `runs/RUN/votes.jsonl`). `POG_PLAYERS_PROTECT=nick` keeps names from being kicked or banned. |
 | Trusted names | `tools/start-team.sh`, operator `trust_names` | Every fresh run is a new save, so Nick's first join would land in the guest group. Right after the deploy, start-team.sh sets `POG_TRUSTED_PLAYERS` (default `nick`; empty for none) as names that join in the normal group. |
@@ -69,40 +69,32 @@ A guest can still do the following:
 - **Take items from chests.** These are logged as moves.
 - **Rotate, set filters, and build.** Builds are logged. A guest's ghosts are harmless, since without planners they cannot mark anything for removal.
 
-### Votes
+### Votes (one module, merged with eng/viewers2)
 
-- `fh vote kick|ban|trust NAME "reason"` opens a vote with a yes, or adds a yes to the open one. `fh vote no ...` votes against.
-- There is one open vote per kind and player, and it stays open 10 minutes. After a vote closes, the same kind on the same player can open again 5 minutes later, so a failed vote cannot be reopened into a chat flood.
-- The electorate is the agents whose own last request was within 10 minutes of game time. Peeks do not count, because the overlay peeks at every bot's status every few seconds.
-- `tools/votes.tally`:
-  - carried once yes is more than half the electorate;
-  - failed once no is;
-  - expired at the deadline.
+eng/viewers2 built `fh vote mute|unmute|list` in audience.lua, deciding in the game. This branch had `fh vote kick|ban|trust`, with ballots in the game and the tally in `tools/votes.py`. Both registered a `vote` action, so one would have replaced the other.
 
-  Ballots of agents no longer active do not count. Alone, one active agent is a majority.
-- The harness prints the same threshold ("N yes carry it"); `tools/test_players.py` checks that the two agree.
-- `tools/players.py` acts on the result:
+They are now one module, `votes.lua`, and one command:
 
-  | Result | Action |
-  |---|---|
-  | carried kick | `/kick NAME reason` |
-  | carried ban | `/ban NAME reason` |
-  | carried trust | operator `player_group` trusted |
-  | protected name, kick or ban | the vote closes as `cancelled` |
-  | the command fails | the vote stays open for the next pass |
-
-  The reason is cut to printable ASCII without brackets and 100 characters. Trust also records the name, so `control.lua` leaves that player out of the guest group on a later world.
-- If no operator is running, the runtime expires a vote a minute after its 10 minutes ("no operator tally").
-- `players.py trust NAME` and `players.py guest NAME` are the operator's direct controls (no vote).
-
-### One vote module for the viewers' mute vote
-
-- `tools/votes.py` is the shared mechanism, and nothing for a mute vote existed on eng/viewers or main when I looked.
-- The tally takes the ballots, the electorate and a `Rule`. `RULES["viewers"]` is 10 minutes in seconds, with at least 3 yes and 3 active viewers.
-- `Book` keeps ballots in memory (one open vote per kind and target; a later ballot replaces an earlier one).
-- `Activity` remembers who chatted lately.
-
-The module docstring has the four lines a mute vote needs in `viewers.py`.
+- `fh vote [yes|no] mute|unmute|kick|ban|trust NAME "reason"` opens a vote or adds a ballot. `fh vote list` (or `fh votes`) shows open and recent votes and muted viewers.
+- Mute and unmute name a viewer; kick, ban and trust name a human player.
+- A reason is required to open a vote, or for a yes from the CLI. `-` reads it from stdin.
+- **Decided when cast (as on eng/viewers2):**
+  - yes from more than half the active agents carries it;
+  - no from more than half fails it;
+  - ballots of agents who went quiet stop counting.
+- **Who is active:** a bot or attached agent whose own last request, or `fh sleep` poll (`sleep_check`), is within 10 minutes. The voter always counts.
+  - Other peeks do not count. The overlay peeks at every bot's status every few seconds, which on eng/viewers2 made every bot look active forever.
+  - Players who are not agents (Nick) never count; eng/viewers2 counted every non-director player.
+- **From this branch:**
+  - one open vote per kind and name;
+  - 10 minutes open, then `expired` (it may open again at once);
+  - after a vote is decided, the same kind on the same name waits 5 minutes;
+  - `fh vote no` votes against.
+- **Results:**
+  - Carried mute or unmute acts at once: the muted list stays in audience.lua, where `viewer_say` refuses those viewers, and `viewers.py` reads it from operator `votes`.
+  - A carried kick, ban or trust waits as `carried`. `tools/players.py` reads `votes_pending`, runs it, and closes it with `vote_close` as `done`, or `cancelled` for a protected name.
+- **Lines:** every ballot and result is a notice from `vote` (eng/viewers2's wording) on the stream's ticker. Player joins, leaves, bursts and restores are notices from `players`.
+- **`tools/votes.py` is gone:** nothing in Python tallies votes any more. The decision lives in one place, in the game.
 
 ### Restore
 
@@ -131,8 +123,9 @@ This needs a deploy first: the new control.lua and the runtime (see "What I need
 1. **Demote yourself.** Nick is an existing or trusted player on world n (`POG_TRUSTED_PLAYERS`), so his group does not change by itself. Run `python3 tools/players.py --world n guest nick`, then try a deconstruction planner in the client. It should be refused. Run `python3 tools/players.py --world n trust nick` to undo it.
 2. **Watch the log.** In the client, place 5 belts, mine 2 by hand, mark one machine with the planner (while trusted), and take 100 plates out of a chest. Then run `bin/fh players` as any agent, or `python3 tools/players.py --world n show`. It should list nick with `built count=5`, `removed how mined=2`, `pending_orders deconstruct 1`, and a move with `took iron-plate=100`.
 3. **Restore.** Run `POG_WORLD=n bin/fh --bot <bot> restore nick`. The marked machine should no longer be marked, and ghosts should appear where the 2 belts were.
-4. **Vote.** Two bots run `fh vote kick nick "test"`, then `python3 tools/players.py --world n once --dry-run` should print "would be carried". Run it without `--dry-run` to be kicked for real. To check the stream lines without the kick, set `POG_PLAYERS_PROTECT=nick`.
-5. **Guest on first join.** On a fresh smoke world (not a, b, c, n), a client joining as a new name should be in `pog-guest` (`fh players` shows `group guest`).
+4. **Vote.** With three bots active, two run `fh vote kick nick "test"`. The second ballot prints a `#N kick nick carried` notice. Then `python3 tools/players.py --world n once --dry-run` should print "would be carried out". Run it without `--dry-run` to be kicked for real. To check the lines without the kick, set `POG_PLAYERS_PROTECT=nick`: the vote closes as cancelled.
+5. **Mute.** Two bots run `fh vote mute testviewer "test"`. Then `python3 tools/audience.py --world n viewer testviewer hi` should come back `dropped: muted`.
+6. **Guest on first join.** On a fresh smoke world (not a, b, c, n), a client joining as a new name should be in `pog-guest` (`fh players` shows `group guest`).
 
 ## Console audit (eng/broker, merged here)
 
@@ -195,7 +188,7 @@ Other things to settle before opening:
 - **`lua tests/players.lua` (harness):**
   - the log: builds, each kind of removal, orders, moves (chest GUI and both orders of ctrl-click);
   - the read's window and errors;
-  - the votes: open, against, repeat, operator read and close, expiry;
+  - votes.lua on players: errors, open, against, a repeated ballot, failed by a majority against, cooldown, trust carried, `votes_pending`, `vote_close`, expiry and reopening;
   - restore: cancelled, ghosts with settings, already, blocked, nothing twice;
   - the operator group change;
   - join and leave lines.
@@ -204,12 +197,13 @@ Other things to settle before opening:
   - a newcomer joins it; camera and trusted names do not;
   - the new events are forwarded.
 - **`lua mod/tests/runtime_test.lua`:**
-  - the four actions are described;
+  - the four actions are described, and vote takes all five kinds;
   - `players` answers without a character;
   - a failed vote stops nothing.
-- **`npm test`:** `fh vote`, `fh votes`, `fh players` and `fh restore`, with words and through `fh call`.
+- **`lua tests/viewers.lua` (from eng/viewers2):** the mute vote through the runtime, unchanged except that `ban` is now a kind (the bad kind is `poke`) and a director's refusal reads `directors do not vote`.
+- **`lua tests/bots.lua`:** the electorate: own requests and `fh sleep` polls count, overlay peeks do not.
+- **`npm test`:** both branches' `fh vote` tests (mute, unmute and list; kick, no, trust, votes, players, restore), with words and through `fh call`.
 - **`python3 tools/test_players.py`:**
-  - the tally, Book and Activity;
-  - the operator pass on a fake world: kick, ban, trust, protected, bad name, failed command, expired, failed, dry run;
-  - harness parity, the overlay lane, and the agent docs (tools only).
+  - the operator pass on a fake world: kick, ban, trust, protected, bad name, failed command, dry run;
+  - the request form and the direct commands, the overlay lane, and the agent docs (tools only).
 - **`python3 tools/test_resume.py`:** the start-team dry run lists player votes only with `POG_PLAYERS=1`.
