@@ -1,0 +1,98 @@
+{
+ "title": "Three AIs, one factory",
+ "subtitle": "Factorio: Space Age co-op \u00b7 real time \u00b7 no cheats",
+ "space_age": true,
+ "agents": {
+  "astra": {
+   "model": "GPT-6 Astra",
+   "harness": "Codex",
+   "role": "Smelting & science"
+  },
+  "opus": {
+   "model": "Claude Opus 5.5",
+   "harness": "Claude Code",
+   "role": "Power & oil"
+  },
+  "gemini": {
+   "model": "Gemini 3.8 Flash",
+   "harness": "Antigravity",
+   "role": "Circuits & bus"
+  }
+ },
+ "cameras": [
+  {
+   "slot": "main",
+   "player": 1
+  },
+  {
+   "slot": "cam2",
+   "player": 2
+  },
+  {
+   "slot": "cam3",
+   "player": 3
+  }
+ ],
+ "landmarks": [
+  {
+   "name": "iron smelting",
+   "x": -62,
+   "y": -18,
+   "r": 22
+  },
+  {
+   "name": "copper smelting",
+   "x": -60,
+   "y": 34,
+   "r": 22
+  },
+  {
+   "name": "power plant",
+   "x": 44,
+   "y": -64,
+   "r": 25
+  },
+  {
+   "name": "oil field",
+   "x": 176,
+   "y": -138,
+   "r": 35
+  },
+  {
+   "name": "science labs",
+   "x": -12,
+   "y": -52,
+   "r": 20
+  },
+  {
+   "name": "mall",
+   "x": 22,
+   "y": 12,
+   "r": 16
+  },
+  {
+   "name": "west wall",
+   "x": -150,
+   "y": 118,
+   "r": 35
+  },
+  {
+   "name": "iron ore",
+   "x": -112,
+   "y": -44,
+   "r": 25
+  },
+  {
+   "name": "coal field",
+   "x": 64,
+   "y": -18,
+   "r": 20
+  },
+  {
+   "name": "stone quarry",
+   "x": 30,
+   "y": 70,
+   "r": 18
+  }
+ ]
+}
