@@ -295,6 +295,11 @@ check("a number spelled in the chat text counts as a fact ('Eleven labs')", cast
     "Eleven labs humming, Rook!", cf, ["Sol"], []) is None)
 check("a number glued in the chat text counts too", caster.check_line(
     "Plastics at twelve percent!", cf, ["Sol"], []) is None)
+check("a capitalised singular of a fact word passes ('Plastic' for 'plastics')", caster.check_line(
+    "Plastic research stalls at forty-two!", {"researching": {"tech": "Plastics", "percent": 42}}, names, []) is None)
+gmf = caster.facts_for({"kind": "lull", "angle": "explain", "t": now, "prio": 1}, {"agents": [], "game_time": "1h05m"})
+check("game minutes past the hour are a fact ('sixty-five minutes in')", gmf.get("game_minutes") == 65 and
+      caster.check_line("Sixty-five minutes in and the labs hum.", gmf, names, []) is None, str(gmf))
 
 # TTS: the record names who spoke; Workers AI 8008 retries once on a second voice (P1 item 2, P2 item 12)
 class _FakeTTS:
@@ -340,6 +345,58 @@ check("other TTS errors are not retried here", raised)
 real = voices.TTS("say")
 real.last = {"provider": "x"}
 check("voices.TTS.last_here falls back to last before this thread spoke", real.last_here() == {"provider": "x"})
+
+# eng/analyst: talking points in filler beats, corrections, headline on the opener (ROUND4 item 4)
+an = {"headline": "At 54 minutes the team makes 33.8 packs a minute.", "corrections": [
+    "The belts listed as lost in the west are ours, destroyed by biters."],
+      "next": {"milestone": "oil processing", "text": "Oil processing is next.", "facts": {"milestone": "oil processing"}},
+      "talking_points": [
+          {"id": "tp1", "kind": "comparison", "priority": 2, "text": "The shake2 team had 21.8 packs a minute here.",
+           "facts": {"shake2_spm": 21.8}, "expires": now + 300},
+          {"id": "tp2", "kind": "stat", "priority": 2, "text": "Iron runs at 338 plates a minute.",
+           "facts": {"iron_per_min": 338}, "expires": now + 300}]}
+check("analyst_pick by angle kinds", caster.analyst_pick(an, set(), caster.POINT_KINDS["production"])["id"] == "tp2")
+check("analyst_pick: no priority-3 point, no analyst beat", caster.analyst_pick(an, set(), None, min_priority=3) is None)
+check("analyst_pick skips used points", caster.analyst_pick(an, {"tp2"}, ("stat",)) is None)
+check("analyst off: no point", caster.analyst_pick(None, set()) is None)
+
+
+class _C:
+    naturalist, segment_every, dry_run = 0.0, 1e9, True
+
+
+cs4 = caster.Caster.__new__(caster.Caster)
+cs4.a, cs4.rng, cs4.filler_i, cs4.baseline, cs4.used_points = _C(), caster.random.Random(3), 0, None, set()
+cs4.seg_cat, cs4.seg_cat_t, cs4.seg_req_t, cs4.seg_next_ok = {}, 0.0, 0.0, 0.0
+snapA = {"agents": [{"name": "sol", "display_name": "Sol"}], "analyst": an, "board": {}}
+an3 = dict(an, talking_points=an["talking_points"] + [
+    {"id": "tp3", "kind": "judgement", "priority": 3, "text": "They are on pace for oil by 60.", "facts": {"minute": 60},
+     "expires": now + 300}])
+ev3 = cs4.filler(now, dict(snapA, analyst=an3))
+check("a fresh priority-3 point gets its own beat", ev3["angle"] == "analyst" and ev3["point"]["id"] == "tp3", str(ev3))
+fa = caster.facts_for(ev3, dict(snapA, analyst=an3))
+check("analyst beat facts: the point, its facts, the corrections", fa["analyst_point"]["point"].startswith("They are on pace")
+      and fa["analyst_point"]["minute"] == 60 and fa["corrections"] and "own words" in fa["angle"], str(fa))
+check("a line on the analyst's point passes the fact check", caster.check_line(
+    "The analyst has them on pace for oil by sixty, Vale!", fa, ["Sol"], []) is None)
+cmp_ = caster.facts_for({"kind": "lull", "angle": "pace", "t": now, "prio": 1, "point": an["talking_points"][0]}, snapA)
+check("a comparison point carries a pace fact, so the previous run may be named", caster.check_line(
+    "Shake2 had about twenty-two packs a minute here.", cmp_, ["Sol"], []) is None, str(cmp_))
+op = caster.facts_for({"kind": "open", "t": now, "prio": 8}, snapA)
+check("the opener carries the analyst's headline and next milestone", op.get("analyst_headline")
+      and op["next_milestone"]["text"] == "Oil processing is next.", str(op))
+marked = []
+cs4.base = "http://x"
+cs4.a.dry_run = False
+_o, caster.urllib.request.urlopen = caster.urllib.request.urlopen, lambda req, timeout=0: marked.append(
+    (req.full_url, req.data)) or type("R", (), {"read": lambda self: b"{}"})()
+try:
+    cs4.point_used("tp3")
+    cs4.point_used("tp3")
+finally:
+    caster.urllib.request.urlopen = _o
+check("a point on air is marked used once (POST /analyst/used)", marked == [("http://x/analyst/used", b'{"id": "tp3"}')]
+      and "tp3" in cs4.used_points, str(marked))
 
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)

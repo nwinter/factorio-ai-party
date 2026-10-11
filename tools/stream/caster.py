@@ -275,6 +275,41 @@ def read_deadline(spec, now=None):
 
 
 FILLERS = ["pace", "explain", "naturalist", "spotlight", "production", "board", "research"]
+# which of the analyst's point kinds fit each filler angle (docs/ANALYST-NOTES.md "What the analyst writes")
+POINT_KINDS = {"pace": ("comparison", "judgement"), "explain": ("explainer", "prediction", "trivia"),
+               "production": ("stat",), "research": ("prediction", "stat"), "spotlight": ("storyline",),
+               "board": ("storyline",)}
+
+
+def analyst_pick(analyst, used, kinds=None, min_priority=0):
+    """eng/analyst's pick_point, plus a priority floor; None when the analyst is off or has nothing fresh."""
+    try:
+        from analyst_board import pick_point
+    except ImportError:
+        return None
+    if not analyst:
+        return None
+    pts = [p for p in analyst.get("talking_points") or [] if int(p.get("priority") or 2) >= min_priority]
+    return pick_point(dict(analyst, talking_points=pts), used, kinds=kinds)
+
+
+def analyst_facts(f, e, s):
+    """The analyst's material for this beat: its point (said in the hosts' words, numbers kept), its corrections
+    for what is on screen, and the headline and what comes next on the opener."""
+    an = s.get("analyst") or {}
+    if e.get("point"):
+        from analyst_board import point_facts
+        f["analyst_point"] = point_facts(e["point"])
+        if e["kind"] == "lull":
+            f["angle"] = ("the analyst's point; say it in the hosts' own words and keep its numbers"
+                          + (f" ({f['angle']})" if f.get("angle") and e.get("angle") != "analyst" else ""))
+    if an.get("corrections"):
+        f["corrections"] = [str(c) for c in an["corrections"][:6]]  # true; they target what is on screen now
+    if e["kind"] == "open":
+        if an.get("headline"):
+            f["analyst_headline"] = an["headline"]
+        if (an.get("next") or {}).get("text"):
+            f["next_milestone"] = dict((an["next"].get("facts") or {}), text=an["next"]["text"])
 
 
 def context_facts(s, baseline=None, deadline=None):
@@ -300,6 +335,9 @@ def context_facts(s, baseline=None, deadline=None):
 
 def facts_for(e, s, baseline=None, deadline=None):
     f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
+    gm = re.match(r"(\d+)h(\d+)m", s.get("game_time") or "")
+    if gm and int(gm.group(1)):  # "sixty-five minutes in" for 1h05m
+        f["game_minutes"] = int(gm.group(1)) * 60 + int(gm.group(2))
     # the pace comparison only where it is the story; on every line it turned the cast into a scoreboard
     paced = e["kind"] in ("research", "open", "viewer") or e.get("angle") in ("pace", "explain")
     f.update(context_facts(s, baseline if paced else None, deadline))
@@ -373,6 +411,7 @@ def facts_for(e, s, baseline=None, deadline=None):
     if e["kind"] == "open":
         f["agents"] = [agent_facts(s, a["name"]) for a in (s.get("agents") or [])][:12]
         f["title"] = s.get("title")
+    analyst_facts(f, e, s)
     return {k: v for k, v in f.items() if v not in (None, [], {})}
 
 
@@ -488,7 +527,7 @@ def off_roster(line, blob, names):
         nxt = toks[i + 1:i + 3]
         if len(nxt) == 2 and nxt[0].lower() in ("and", "or", "with") and nxt[1].lower() in roster:
             return f"name not in facts: {t}"  # listed with an agent, so named like one ("gear" is in the item names)
-        if re.search(r"\b" + re.escape(base) + r"\b", blob):
+        if re.search(r"\b" + re.escape(base.rstrip("s")) + r"s?\b", blob):  # "Plastic" for "plastics"
             continue
         if not (i == 0 or not toks[i - 1][0].isalpha()):
             return f"name not in facts: {t}"
@@ -904,6 +943,7 @@ class Caster:
         self.agent_last = {}
         self.filler_i = 0
         self.history = deque(maxlen=4)  # the last story beats, as facts for callbacks
+        self.used_points = set()  # eng/analyst talking points already on air
         self.seg_cat, self.seg_cat_t, self.seg_req_t, self.seg_next_ok = {}, 0.0, 0.0, 0.0
         self.prep = []  # recent write+TTS times, to start the next exchange before the current one ends
         self.deadline_t = (0.0, None)  # (read at, epoch): deadline.txt files appear as agents launch
@@ -1065,7 +1105,17 @@ class Caster:
         else:
             angle = options[self.filler_i % len(options)]
             self.filler_i += 1
+        # eng/analyst's talking points (docs/ANALYST-NOTES.md): a fresh priority-3 point gets its own beat, else the
+        # best point that fits the angle
+        an = s.get("analyst")
+        point = analyst_pick(an, self.used_points, None, min_priority=3)
+        if point:
+            angle = "analyst"
+        else:
+            point = analyst_pick(an, self.used_points, POINT_KINDS.get(angle))
         e = {"kind": "lull", "t": now, "prio": 1, "angle": angle}
+        if point:
+            e["point"] = point
         if angle in ("naturalist", "spotlight"):
             agents = [a["name"] for a in s.get("agents") or []]
             main = ((s.get("cameras") or {}).get("main") or {}).get("agents") or []
@@ -1107,6 +1157,8 @@ class Caster:
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
         facts = facts_for(e, s, self.baseline, self.deadline())
+        if e["kind"] == "viewer" and hasattr(self, "ask_analyst"):  # eng/analyst: /ask answers a viewer's question
+            facts.update(self.ask_analyst(e) or {})
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
         names = list(self.names(s).values())
@@ -1153,7 +1205,23 @@ class Caster:
         if parts:
             self.history.append(f"{e['kind']} at {facts.get('game_time')}: " + " - ".join(map(str, parts)))
         self.stats["caster_lines"] += len(lines)
+        if e.get("point") and backend != "template":  # the writer built on the point: never offer it again
+            self.point_used(e["point"].get("id"))
         self.speak_lines(lines, e, facts, backend, err, lat, t_start)
+
+    def point_used(self, pid):
+        """Tell the service (eng/analyst's board) a talking point is on air, so it is not offered again."""
+        if not pid or pid in self.used_points:
+            return
+        self.used_points.add(pid)
+        if self.a.dry_run:
+            return
+        req = urllib.request.Request(self.base + "/analyst/used", data=json.dumps({"id": pid}).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=3).read()
+        except Exception as x:
+            log(f"[analyst] marking {pid} used failed: {type(x).__name__}: {x}")
 
     def speak_lines(self, lines, e, facts, backend, err, wlat, t_start):
         """TTS every line at once, then push them in order: each waits for the previous caster line and for any
@@ -1388,6 +1456,16 @@ def bench_events(snap):
             "title": f"Replay: {agents[0].title()} died",
             "facts": {"event": f"{agents[0].title()} died", "kind": "death", "agent": agents[0].title(), "seconds": 15,
                       "ago_s": 21}}}, "pbp", 3),
+        # round 4: hit counts are not enemies, loss counts are not attackers, the analyst's point in the hosts' words
+        ("hits", {"kind": "attack", "text": "Base under attack near (-48, 16): engineer hit 9 times", "prio": 9},
+         "pbp", 2),
+        ("loss", {"kind": "loss", "text": "21 lost near (12, -40): 9 transport belt, 5 burner mining drill "
+                                          "(by small biters)", "prio": 8}, "pbp", 2),
+        ("analyst", {"kind": "lull", "angle": "analyst", "prio": 1, "point": analyst_pick(
+            snap.get("analyst"), set()) or {
+            "id": "bench", "kind": "judgement", "priority": 3,
+            "text": "Seven labs are starved for green packs; the team needs 4 more green assemblers to fill them.",
+            "facts": {"labs": 7, "green_assemblers_needed": 4}}}, "color", 3),
     ]
 
 
@@ -1407,7 +1485,7 @@ def bench(a):
         lat, kept, total = [], 0, 0
         for label, e, first, n in bench_events(snap):
             e = dict(e, t=time.time())
-            facts = facts_for(e, snap, base)
+            facts = facts_for(e, snap, base, read_deadline(a.deadline))
             t0 = time.time()
             try:
                 lines = w.exchange(e, facts, [], first, n, naturalist=label == "naturalist")
