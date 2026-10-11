@@ -351,10 +351,44 @@ action, which costs an engineer session, not agent-hours.
 
 ## 5. Bot travel (round 4, Oct 11)
 
-Every agent is a bot, so bot travel was the blocker for the long run. It is built on this branch. It has run only
-against fake-engine tests: SSH to the box was blocked from this session ("Operation not permitted"), and the `sa`
-RCON tunnel answered but the server behind it was down (`rcon closed` at 01:43 and 01:57). So there are no live
-ticks to report yet. The live run is one command once the server and a client are up (below).
+Every agent is a bot, so bot travel was the blocker for the long run. It is built on this branch and passes
+fake-engine tests. World `sa` came up at 02:40 with the director `pog-sa` joined, but deploying this branch's runtime
+to it (`POG_WORLD=sa bin/fh deploy`) was refused by this session's permission mode. So `sa` still runs main's runtime,
+which refuses bot rides, and `tools/sa_travel.py` has not run. What did run on `sa` is the engine probe, operator Lua
+only (below). It decided the design question.
+
+### Live engine probe on `sa` (Oct 11, 02:40 to 02:45, seed 20261010, Space Age 2.0.77)
+
+Logged in `runs/sa-travel/engine-probe.jsonl`. Setup used operator Lua on `sa`: research marked done, a silo at
+(12.5, 0.5) with an electric-energy interface and `rocket_parts` set, and platform `travel-test` from a starter pack
+via `apply_starter_pack` (test setup).
+
+| Tick | What happened |
+|---|---|
+| 3242 → 4154 | The silo builds the rocket from the parts (statuses 2, 3, 5, 7). Ready at 4154. |
+| 4160 | `silo.launch_rocket({type=surface, surface=platform}, character)` with a character that has no player returns `true`. The engine takes a playerless rider. |
+| 4465 → 5677 | The character rises with the rocket on Nauvis (y -4 → -146). |
+| 5980 | The character is on `platform-1` (y -32, coming in). |
+| 6283 onward | The character sits at the hub (0, 0), valid. `count_entities_filtered{name='character'}` on the platform returns 0, so it is held inside the hub, as a player's body is. Ascent: about 2,100 ticks (35 s). |
+| 9823 | `hub.create_cargo_pod()` gives pod #84 (`awaiting_launch`). `pod.set_passenger(character)` raises no error, but `get_passenger()` then returns none. Setting `cargo_pod_destination` (Nauvis, (30, 30), exact) is accepted. |
+| 10007 | Pod #84 is `ascending` on `platform-1`; it launched by itself once the destination was set. |
+| 10375 | The same pod #84 is `descending` on Nauvis. A pod keeps its identity across the surface change. |
+| 10927 | Pod #84 is at (30, 30), the exact position asked for. |
+| 11111 | The pod is gone. It was empty and there is no landing pad, so it leaves nothing behind. Descent: about 1,200 ticks (20 s) from the destination being set. |
+| 13504 | The character is still in the hub at (0, 0). Nothing brought it down; it was destroyed by hand afterwards. |
+
+What this means:
+- The engine takes a bot up in its own body, but has no way to bring it down. `land_on_planet` is LuaPlayer-only, and
+  a hub-held character cannot be made a pod passenger. A bot that rode in its body would be stuck in the hub. The
+  script plan (body removed at boarding, made again where the hub pod lands) is the right one, and is what the
+  harness does.
+- The ride times the harness relies on are confirmed: the rocket's pod reaches the hub in about 35 s. A hub pod
+  launches on its own once its destination is set (the 5 s push is a fallback that should never fire), keeps its
+  entity across surfaces, lands at the exact position asked for, and is gone about 20 s later. The minimum ride
+  times (20 s up, 10 s down) sit below both.
+
+The full run (`tools/sa_travel.py`: a bot rides, the platform flies to Vulcanus, drop, land, mine, build) needs this
+branch's runtime deployed on `sa` first (below).
 
 ### How it works
 
@@ -418,10 +452,11 @@ Checked against the 2.0.77 API docs (all exist as used):
 - `LuaPlanet.create_surface`, `game.create_inventory`, `defines.inventory.cargo_unit` and `hub_main`
 - `LuaSpacePlatform.space_location` (RW)
 
-Unverified until the live run:
-- that a hub pod's entity keeps its identity while it changes surface
-- that an empty pod with no pad disappears or parks (both end the ride)
-- that a `cargo-pod-container` uses `defines.inventory.chest`
+Checked on the live engine (`sa`, read-only probe and the engine probe above):
+- `defines.inventory.cargo_unit`, `hub_main` and `chest` are all 1, and `defines.cargo_destination.surface` is 3.
+- `cargo-pod-container` is a `temporary-container`, which `transfer` now opens as a chest.
+- `prototypes.space_location.vulcanus.type` is `planet`; `game.planets.vulcanus.surface` is nil until it is created.
+- A hub pod keeps its entity across surfaces, and an empty pod with no pad disappears after landing.
 
 ### Tests
 
@@ -473,9 +508,9 @@ covers Space Age Nauvis).
 
 ### Left to do
 
-- The live run above, then fix what it finds.
-- If the engine probe shows a playerless character rides and comes out in the hub cleanly, consider riding in the
-  real body (closer to the game). Even then, the landing stays a script pod.
+- Deploy this branch to `sa` and run `tools/sa_travel.py`, then fix what it finds. Its last step repeats the engine
+  probe; pass `--no-engine-probe`, since that is answered.
+- Riding up in the real body: possible (see the probe), but there is no way back down. Stay with the script plan.
 - A real director client following a bot onto a platform: cameras teleport a spectator across surfaces, which the
   API allows. Whether the client renders a platform surface well enough for the stream is a question for the run.
 - The pod's own descent on stream: cameras follow `b.position`, which tracks the pod on both surfaces.
