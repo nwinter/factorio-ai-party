@@ -32,9 +32,9 @@ sections named.
    04:54). Start the shift with `tools/start-team.sh` (the `POG_RESUME` path) from main after the last merge, check
    the code line in `runs/shake5/start.log` (start-team already logs each helper's pid and first line, which held in
    shake4), and watch Grok's first minute.
-2. `sleep` is refused while the character is dead (section 3). 19 `./fh sleep` calls from 7 agents failed with "bot X
-   is dead; it respawns at tick N" (Haiku 8, four tries in 6 seconds twice), so agents spun on `observe` instead (26
-   more dead failures). `vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:3660` lets only `chat` and `say`
+2. `sleep` is refused while the character is dead (section 3). 16 `./fh sleep` calls and 1 `wait_until` from 6
+   agents failed with "bot X is dead; it respawns at tick N" (Haiku 8, four tries in 6 seconds twice), so agents spun
+   on `observe` instead (26 more dead failures). `vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:3660` lets only `chat` and `say`
    through for a dead bot; add `sleep` (and `wait_until`), and in `waits.lua` sleep until `dead_until_tick` and wake
    with "respawned". Chat while dead, the shake3 fix, held (0 failures; shake3 3).
 3. Claude Code ended its turn right after an auto-compaction twice (Sonnet 03:41:32 to 03:41:39, Haiku 04:20:44 to
@@ -72,7 +72,7 @@ sections named.
    and destroyed the advanced-circuit assemblers (sections 2 and 5).
 4. The shake3 fixes held: a 16-second launch, no early stops, summaries without stopping, 2 supervisor nudges and both
    due, chat while dead, stumps and one's own footprint no longer blocking builds, Grok's clean profile, Codex's skills
-   block gone, and Gemini's quota intact. New harness gaps: `sleep` refused while dead (19 calls), an item on the ground
+   block gone, and Gemini's quota intact. New harness gaps: `sleep` refused while dead (17 calls), an item on the ground
    blocking builds with no hint (11), Claude Code ending its turn after compaction (2), and `board_post` rejecting
    `note` (section 3, P1 items 2 to 4).
 5. Sleep spread through the run: Muse 77% of two hours asleep, Haiku 63%, Opus 48%, and mentions woke them most of
@@ -244,8 +244,8 @@ chat peeks and sleep checks.
 | muse | 29 (5.0%; 4.5 / 5.8) | 2.6% | dead (9) |
 
 - Rates fell for Opus, Sonnet, Grok, Gemini and Haiku, rose for Luna, Muse and Astra; Sol flat.
-- Harness gaps behind the errors: `sleep` refused while dead (19 calls, 7 agents; P1 item 2) and `observe` while dead
-  (26 more); item-on-ground in a build footprint (11; P1 item 4); `board_post` rejecting `note` and object `needs`
+- Harness gaps behind the errors: `sleep` refused while dead (16 sleeps and 1 `wait_until`, 6 agents; P1 item 2)
+  and `observe` while dead (26 more); item-on-ground in a build footprint (11; P1 item 4); `board_post` rejecting `note` and object `needs`
   (section 4); `observe` name filters wanting exact prototype names ("Unknown entity name: tree", Sol 2, Gemini 1).
 - Denials (Claude Code dontAsk): 7 (Opus 4, Sonnet 2, Haiku 1; shake3 6): `for` loops, `python3 - <<'EOF'`
   heredocs, a pipe into `grep -E`, two chained transfers, and one `./fh say` (Haiku 02:53:54). None ended a turn.
