@@ -1,7 +1,41 @@
 # Harness3 notes: the shake2 harness bugs (branch eng/harness3)
 
-Round 8 (shake4 P1 items 2 to 4) comes first, then round 7 (shifts: resuming a team world), round 6 (the runtime.lua
-locals guard and refactor plan), round 5 (the agents' own tool requests), round 4 (shake3 fixes) and the shake2 round.
+Round 9 (shake4 P2 items 7, 8, 14 and P3 item 18) comes first, then round 8 (shake4 P1 items 2 to 4), round 7
+(shifts: resuming a team world), round 6 (the runtime.lua locals guard and refactor plan), round 5 (the agents' own
+tool requests), round 4 (shake3 fixes) and the shake2 round.
+
+## Round 9: shake4 P2 items 7, 8, 14, P3 item 18
+
+Main merged first (it brought docs/studies/shake4.md).
+
+- Item 7, `board_post` shapes (10 posts resent). A post takes `note` (its first note, 1..200 characters, by the
+  poster) and `needs` as an object `{"iron-plate": 200}`, stored as the sorted list `[{name, count}]` the other
+  shapes already give. `note` is a describe key the argument check treats as documentation, so `board_post` lists it
+  in `EXTRA_ARGS` like `board_update`. `agent/team.md` shows both in one sentence.
+- Item 8, `observe` while dead (26 failures). An `observe` (any scope, or a view called by name) from a dead bot
+  answers `{dead: true, dead_until_tick, respawns_in_s, note: "bot X is dead until tick N; fh sleep SECONDS wakes at
+  the respawn (respawned)"}` with the usual team, clock and chat blocks, instead of failing. A bot riding a cargo pod
+  is not dead and keeps the old path. `fh`'s compact waits read `observe` for the self row; with this reply they find
+  no player row and fall back to status for the position, as before.
+- Item 14, profile colours (four oranges). Like a glyph, a `color` within 90 (redmean RGB distance, 0..765) of
+  another agent's is refused before anything changes, naming the holder, the distance and up to four free colours
+  from a 20-colour palette. Setting your own colour again is fine. Existing profiles are not re-checked, so a resumed
+  shake4 world keeps its oranges until someone changes colour. 90 refuses #ffa500 next to #ff8000 (74) and allows
+  #ffb000 (96); tune `MIN_COLOR_DISTANCE` in `profiles.lua` if it is too strict.
+- Item 18, name filters. `nearest`, `scan` and `observe`'s `entity_names` go through `M.find_named`, which calls the
+  engine and, only when it refuses with "Unknown entity name: X", lists the entity names holding every dash-separated
+  part of X ("rock-huge" finds huge-rock; first 12 and the total) and says when X is an entity type ("tree"). Valid
+  names cost nothing extra.
+
+Files: `mod/agent-harness_0.1.0/{runtime,board,profiles}.lua`, `tests/{board,bots}.lua`, `mod/tests/runtime_test.lua`,
+`agent/team.md`. runtime.lua keeps 3 free top-level locals (`find_named` is a field of M).
+
+Tests: every Lua suite passes; tools/test_{context,describe_lines,permit,resume,supervise}.py pass; `npm test` 97 of
+101, the 4 bridge socket tests that cannot listen inside this sandbox, as in round 8.
+
+Not checked live: deploying to world `live` needs the box (`tools/winps.sh`), which this session cannot reach. After
+a deploy there, with a bot `h3-a`: `bin/fh --bot h3-a call nearest --args '{"name":"tree"}'` should list tree
+names and suggest type; two `profile` calls with `#ff8000` from two bots should refuse the second.
 
 ## Round 8: shake4 P1 items 2, 3, 4
 
