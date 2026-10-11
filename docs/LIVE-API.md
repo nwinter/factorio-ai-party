@@ -113,7 +113,7 @@ page, add it to the keep-lists in `push_live.py` and document it here.
 Per client: one message every 4 s and 8 per minute; all clients together: 60 per minute. Over the limit:
 `429 {"error": "slow down", "retry_after_s": N}`. Other refusals are `400` (`empty message`, `links are not allowed`,
 `that name is reserved`, ...) or `403` (`chat is closed`, banned client, or a browser on another site's origin).
-Browsers may call the API only from `ALLOWED_ORIGINS` in `site/worker/wrangler.toml` (the Pages project and its
+Browsers may call the API only from `ALLOWED_ORIGINS` in `site/worker/wrangler.toml` (the custom domain, the Pages project and its
 preview subdomains, plus local preview on port 8765); scripts without an `Origin` header are allowed and limited the
 same way.
 
