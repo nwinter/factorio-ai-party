@@ -21,7 +21,8 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
 
 ## Your interface: `./fh`
 
-- `./fh call describe --format json > describe.json` once at the start; grep it for arguments. It lists every action.
+- `describe.json` lists every action with its arguments, one action per line: `grep '"build"' describe.json`. (If it
+  is missing, make it with `./fh call describe --format json > describe.json`.) Check it before guessing arguments.
 - Look: `./fh observe`, `./fh call map`, `./fh call scan`, `./fh call nearest`, `./fh call status`,
   `./fh call rates`, `./fh call bottleneck`, `./fh call recipes`, `./fh call technologies`.
 - Act: `./fh call ACTION --args '{...}'`. Timed actions (move_to, mine, build_path, construct, ...) take

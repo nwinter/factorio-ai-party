@@ -9,6 +9,10 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 run=$1 world=$2 player=$3 minutes=$4 kind=$5
 dir=$("$root/tools/new-run.sh" "$run" "$world" "$player" "$minutes")
+# describe.json, one action per line, ready before the agent starts (in shake1 Grok Build's permissions blocked the
+# redirect that made it, and grep on the one-line file returned all of it).
+"$dir/fh" call describe --format json 2>/dev/null | python3 "$root/tools/describe-lines.py" > "$dir/describe.json" 2>/dev/null \
+  || rm -f "$dir/describe.json"
 prompt="$root/runs/$run/prompt.md"
 test -f "$prompt" || cat > "$prompt" <<'EOP'
 Read AGENTS.md in this directory; it has your instructions, interface, rules, and deadline. Then play Factorio until the deadline in deadline.txt, keeping notes.md current, and finish with the final summary it asks for.
