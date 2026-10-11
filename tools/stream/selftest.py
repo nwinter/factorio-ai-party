@@ -108,6 +108,10 @@ def main():
     else:
         raise AssertionError("chat without peek was not refused")
 
+    # Lua sent through one_line() must not carry `--` comments (they would swallow the rest of the joined line)
+    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA"):
+        assert "--" not in harness.one_line(getattr(harness, name)), f"{name} has a Lua comment"
+
     run = {"agents": {"astra": {"model": "GPT-6 Astra", "harness": "Codex"}, "luna": {"model": "GPT-6 Luna"}}}
     fake = FakeHarness()
     src = LiveSource("test", run, harness=fake)
