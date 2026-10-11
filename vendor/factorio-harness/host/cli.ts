@@ -32,6 +32,7 @@ const help = `fh — Factorio agent CLI
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
   fh call walk --args '{"direction":"east","ticks":60}' --wait
   fh wait                                   Block until the character's current action (and combat) ends
+  fh sleep SECONDS                          Let the game run up to 900 s; wakes early on damage, death or a mention
   fh view --out artifacts/map.png            Render a local schematic PNG, also works headless
   fh deploy [--file runtime.lua]             Validate and replace live Lua runtime
   fh watch [--file runtime.lua]              Deploy changed Lua; retain old code on invalid update
@@ -165,7 +166,7 @@ async function main() {
     positionals[1] = operation === 'save' || operation === 'delete' ? 'plan_save' : operation === 'run' ? 'plan_run' : 'plans';
     command = 'call';
   }
-  const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait']);
+  const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait','sleep']);
   if (!known.has(command)) throw new Error(`Unknown command ${command}; use fh help`);
   // A bot is a script-driven character addressed by name (FH_BOT for wrappers).
   const bot = values.bot ?? (values.player ? undefined : process.env.FH_BOT || undefined);
@@ -225,13 +226,16 @@ async function main() {
     const status = await harness.request('status');
     return {...status, ok:false, error:{code:'wait_timeout', message:`${action} still running after the wait timeout; it continues in game: poll status or wait again (--wait-timeout MS)`}};
   }
-  const successfulOutcomes = ['duration_elapsed','target_mined','repair_completed','arrived','path_built','collected','topped_up','nothing_to_do','constructed','fed','met'];
+  // arrived_near: stopped beside a goal inside an entity, which is where callers want to be.
+  const successfulOutcomes = ['duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
-  function waitBudget(untilTick?: number, nowTick?: number): number {
-    if (values['wait-timeout'] !== undefined) return integer(values['wait-timeout'],30000);
+  // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
+  // wait for that end plus a margin rather than racing it.
+  function waitBudget(untilTick?: number, nowTick?: number, ownEnd = false): number {
+    if (values['wait-timeout'] !== undefined && !ownEnd) return integer(values['wait-timeout'],30000);
     const remaining = untilTick !== undefined && nowTick !== undefined ? Math.max(0,untilTick-nowTick) : 0;
-    return Math.min(900000, Math.max(30000, Math.ceil(remaining/60*1000*1.25)+5000));
+    return Math.min(ownEnd ? 960000 : 900000, Math.max(30000, Math.ceil(remaining/60*1000*1.25)+5000));
   }
   // A timed-out wait must not look like a finished action: no completion
   // snapshot, a still_running block, and an error that says what to do.
@@ -256,19 +260,19 @@ async function main() {
   async function waitForAction(action: string, untilTick?: number, nowTick?: number): Promise<Reply> {
     if (bridged) return waitForBridgeAction(action);
     const started = Date.now();
-    const deadline = started+waitBudget(untilTick,nowTick);
+    const deadline = started+waitBudget(untilTick,nowTick,action === 'wait_until');
     while (!stopping && Date.now()<deadline) {
       const status = await harness.request('status');
       const active = action === 'shoot' ? status.result?.combat : status.result?.active;
       // active may report shooting when movement has already finished. A
       // transfer/refuel/rearm short of items waits for the hand-craft queue as
       // an active 'feed'; the radius tours run as 'gather'.
-      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel'].includes(action) ? ['gather','feed'] : action === 'transfer' ? ['feed'] : [action];
+      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel'].includes(action) ? ['gather','feed'] : ['transfer','build'].includes(action) ? ['feed'] : [action];
       const stillRunning = active && (action === 'shoot' || kinds.includes(active.kind));
       if (!status.ok || !stillRunning) {
         const last = action === 'shoot' ? status.result?.last_combat : status.result?.last;
         if (status.ok && last?.outcome && !successfulOutcomes.includes(last.outcome)) {
-          return {...status,ok:false,error:{code:'action_interrupted',message:`Control ended: ${last.outcome}`}};
+          return {...status,ok:false,error:endedError(action,last)};
         }
         return status;
       }
@@ -277,6 +281,32 @@ async function main() {
     if (stopping) throw new Error('Stopped waiting for action; inspect status. Game actions have a bounded tick duration.');
     // Still running is not a failure of the action, but it is not done either.
     return timedOut(action, await harness.request('status'), Date.now()-started);
+  }
+  // A timed action that hit its own limit says so first (timed_out), with the
+  // condition a wait_until was still waiting for.
+  function endedError(action: string, last: any) {
+    if (last.outcome !== 'timed_out') return {code:'action_interrupted',message:`Control ended: ${last.outcome}`};
+    const what = action === 'wait_until' ? `wait_until timed_out: ${last.condition ?? 'condition'} not met${last.saw !== undefined ? ` (saw ${JSON.stringify(last.saw)})` : ''}; `+
+      `the timeout comes from --wait-timeout MS (up to 900000) or args.timeout ticks (up to 54000)` : `${action} timed_out at its own tick limit`;
+    return {code:'timed_out',message:what};
+  }
+  // fh sleep: the game runs; poll the read-only sleep_check (peek: mentions
+  // stay unread) about once a second, then read it once more normally so the
+  // reply carries the team block with whatever woke the agent.
+  async function sleep(seconds: number): Promise<Reply> {
+    const started = await harness.request('sleep',{seconds});
+    if (!started.ok) return started;
+    const deadline = Date.now()+seconds*1250+10000;
+    while (!stopping && Date.now()<deadline) {
+      const check = await harness.request('sleep_check',{peek:true});
+      if (!check.ok || check.result?.woke) break;
+      await delay(1000);
+    }
+    if (stopping) throw new Error('Stopped sleeping; the game keeps running.');
+    const final = await harness.request('sleep_check',{});
+    if (final.ok && !final.result?.woke) return {...final, ok:false, error:{code:'timed_out',message:`sleep timed_out: the game advanced less than ${seconds} s in ${Math.round(seconds*1.25+10)} s of real time (paused or slow server)`}};
+    if (final.ok && final.result?.woke === 'died') return {...final, ok:false, error:{code:'died',message:'your character died while sleeping'}};
+    return final;
   }
   // fh wait: block until whatever the character is doing (and any combat) ends.
   async function waitForIdle(): Promise<Reply> {
@@ -291,7 +321,7 @@ async function main() {
         const last = status.result?.last;
         const ok = !last?.outcome || successfulOutcomes.includes(last.outcome);
         return {...status, ok, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started},
-          ...(ok ? {} : {error:{code:'action_interrupted',message:`Control ended: ${last.outcome}`}})};
+          ...(ok ? {} : {error:endedError(last.kind ?? 'the action',last)})};
       }
       await delay(pollDelay(status));
       status = await harness.request('status');
@@ -302,6 +332,11 @@ async function main() {
   }
   async function execute(action: string, args: Record<string,unknown>, id?: string, wait = false, onAccepted?: (reply: Reply) => void): Promise<Reply> {
     const requestId = id ?? randomUUID();
+    // A waited wait_until runs as long as the CLI waits: --wait-timeout MS
+    // becomes its timeout in ticks (up to 15 minutes) unless args name one.
+    if (action === 'wait_until' && wait && args.timeout === undefined && values['wait-timeout'] !== undefined) {
+      args = {...args, timeout:Math.min(54000, Math.max(1, Math.ceil(integer(values['wait-timeout'],30000)*60/1000)))};
+    }
     let reply: Reply;
     try { reply = await harness.request(action,args,requestId); }
     catch (error) {
@@ -311,8 +346,8 @@ async function main() {
       throw error;
     }
     const waits = bridged ? ['walk','mine','build'].includes(action)
-      : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
-        || (['transfer','rearm','refuel'].includes(action) && reply.result?.awaiting_craft !== undefined);
+      : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
+        || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined);
     if (wait && reply.ok && waits) {
       onAccepted?.(reply);
       const completion = await waitForAction(action, reply.result?.until_tick, reply.tick);
@@ -380,6 +415,13 @@ async function main() {
         await writeFile(path,renderMap(reply.result,Number(args.radius ?? 24)));
         output({ok:true,tick:reply.tick,result:{path,kind:'local-schematic',legend:'white=player, blue=iron/water, orange=copper, dark=coal, green=trees/uranium, red=enemies, tan=structures',position:reply.result.player?.position,entities:Object.keys(reply.result.entities ?? {}).length,tiles:Object.keys(reply.result.tiles ?? {}).length,truncated:reply.result.truncated ?? false,tiles_truncated:reply.result.tiles_truncated ?? false}});
       } else {output(reply);process.exitCode=1;}
+    } else if (command === 'sleep') {
+      if (bridged) throw new Error('sleep needs the harness mod (not a bridge session)');
+      const seconds = Number(positionals[1]);
+      if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires SECONDS 1..900');
+      const reply = await sleep(seconds);
+      output(reply);
+      if (!reply.ok) process.exitCode=1;
     } else if (command === 'wait') {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
       const reply = await waitForIdle();

@@ -1307,5 +1307,42 @@ call('wait_until',{['until']='item_count',item='iron-plate',at_least=10,timeout=
 advance(31); waited=call('status').last; eq(waited.outcome,'timed_out'); eq(waited.saw,'iron-plate 3')
 fails(function() call('wait_until',{['until']='nope'}) end,'until must be one of')
 fails(function() call('wait_until',{['until']='crafting_done',timeout=0}) end,'timeout')
+-- In a function: the main chunk is at Lua's 200-local limit.
+;(function()
+-- wait_until runs up to 15 minutes (54000 ticks).
+p.crafting_queue_size=2
+eq(call('wait_until',{['until']='crafting_done',timeout=54000}).until_tick,game.tick+54000)
+fails(function() call('wait_until',{['until']='crafting_done',timeout=54001}) end,'timeout (1..54000 ticks) out of range')
+-- wait_ticks is a direct timed action too.
+local idle=call('wait_ticks',{ticks=5}); eq(idle.until_tick,game.tick+5)
+eq(call('status').active.kind,'wait_ticks'); eq(call('status').last.outcome,'replaced')
+advance(6); eq(call('status').active,false); eq(call('status').last.outcome,'duration_elapsed')
+-- inspect is a read: anything in sight, no reach needed; in_reach says so.
+p.can_reach_entity=function() return false end
+local far=call('inspect',{position=ins.position}); eq(far.in_reach,false); eq(far.io,'2.5,-0.5 -> 2.5,1.7 transport-belt')
+fails(function() call('rotate',{position=ins.position}) end,'out of reach')
+p.can_reach_entity=function() return true end
+-- build short of an item the hand-craft queue is making waits for it, then builds.
+p.force.recipes={lab={products={{name='lab',amount=1}},energy=2}}
+p.crafting_queue={{recipe='lab',count=1}}; p.crafting_queue_progress=0
+local pending=call('build',{item='lab',position={x=1,y=0}})
+eq(pending.awaiting_craft.item,'lab'); eq(pending.awaiting_craft.crafting,1)
+eq(call('status').active.kind,'feed')
+p.crafting_queue={}; advance(10)
+-- The rerun build fails here (the fake inventory never received the lab).
+eq(call('status').last.outcome,'failed')
+-- Corpses: transfer takes their items (never mine_entity), and an emptied corpse goes.
+defines.inventory.character_corpse=9
+local loot=stack('iron-plate',20)
+local slots=inv(loot); slots.is_empty=function() return not loot.valid_for_read end
+local corpse={valid=true,name='character-corpse',type='character-corpse',position={x=2,y=2},force={name='neutral'}}
+corpse.get_inventory=function(i) eq(i,9); return slots end
+corpse.destroy=function() corpse.valid=false end
+local bag=inv(stack(nil,0),stack(nil,0))
+p.get_main_inventory=function() return bag end
+p.surface.find_entities_filtered=function() return {corpse} end
+local took=call('transfer',{position=corpse.position,direction='to_player'})
+eq(took.transferred,20); eq(took.inventory,'character_corpse'); eq(took.corpse_removed,true); eq(corpse.valid,false)
+end)()
 end
 print('runtime: '..assertions..' assertions passed')
