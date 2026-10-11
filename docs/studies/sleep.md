@@ -79,9 +79,10 @@ The tool (`vendor/factorio-harness/mod/agent-harness_0.1.0/waits.lua`, `host/cli
 - No other wait wakes on a mention. `wait_until` (researched, item_count, crafting_done) and `--wait` ignore chat, so
   an agent told to "answer teammates promptly" that wants to wait for research has one tool that keeps it reachable,
   and that tool cannot wait for the research.
-- The cap is 900 s per call (`cli.ts:591`). Agents that want longer chain calls in shell loops (`for i in 1 2 3 4 5;
-  do ./fh sleep 280 ...; done`), and a loop keeps sleeping after a wake: each later call starts a new sleep, so the
-  first wake is the only one that ends a call early, and a loop piped through `grep` can hide even that.
+- The cap is 900 s per call (`cli.ts:591`), though nobody asked for more than 600. Agents chain calls in shell loops
+  (`for i in 1 2 3 4 5; do ./fh sleep 280 ...; done`), and a loop keeps sleeping after a wake: the next call starts a
+  new sleep that wakes only on a mention newer than its own start (`waits.lua:61-68`), so the agent reads the first
+  wake only when the whole loop ends, and a loop piped through `grep` can drop the `woke:` line.
 - The wake reply's `clock:` line reports the cost: "+3m37s since your last request, character idle 3m37s of it
   (100%)" (Haiku, shake6). The agent learns it after the fact, never before.
 
@@ -180,7 +181,7 @@ Opus, a queue supervisor. From shake4 on a repeating courier queue carried scien
 mentions, checked labs or answered, edited the courier, and slept again (`./fh sleep 300; ./fh call labs | head -2`, 40
 of 70 long sleeps in shake4). Shake3, Bash descriptions: "Let ferry run", "Let plan run" (23 of 26 long sleeps).
 Shake5 05:21:40: "Courier repeating. Let it run while I sleep." Its wakes are mostly teammates asking to build in its
-claim or take from its chests (`agent/team.md:37`, "don't build inside someone else's claim without asking"), and its
+claim or take from its chests (`agent/team.md:36`, "don't build inside someone else's claim without asking"), and its
 replies are mostly yes: 10 of its 13 `say` lines in shake6 start "yes", "approved", "fine by me" or "thanks". It made
 no builds in shake6.
 
@@ -236,7 +237,7 @@ back as their own reason ("let the factory run", "let the game run").
 | Compaction? | No | Share after a compaction at or below the run average |
 | Quota? | No | No quota messages in Claude transcripts; Gemini's quota made it absent; Codex "token limits" headings are uncertain |
 | Supervisor? | Only by not seeing it | A sleep is never nudged; ending a turn is |
-| Model disposition? | Yes, within the room the tools leave | Same prompt: Haiku sleeps 61 to 81% idle, Grok 4 to 18% on a similar hand-fed job; Opus chose the approver role; Sonnet saw 97% idle and kept the pattern; Muse slept less when it took a build |
+| Model disposition? | Yes, within the room the tools leave | Same prompt: Haiku sleeps 61 to 81% of a run with its character idle, Grok 4 to 18% on a similar hand-fed job; Opus chose the approver role; Sonnet saw 97% idle and kept the pattern; Muse slept less when it took a build |
 
 The tools decide whether a wish to wait becomes minutes of a standing character: the Codex shell turns it into
 seconds, Claude Code and Muse let it run its full length. The model decides how often it wants to wait and what job it
@@ -260,8 +261,8 @@ them what to build or when to act.
 4. Say what the sleep will cost when it starts: the `sleep` reply names the queue state ("queue running, 4 steps" or
    "no queue: your character stands idle up to 300 s"). The wake reply already reports idle seconds; add the queue
    steps run. File: `waits.lua` (`M.handlers.sleep`, `sleep_check`).
-5. A sleep started right after a mention wake that the agent has not answered ends at once and repeats the mention, so
-   a shell loop stops on the first wake. File: `waits.lua` (`why`).
+5. A sleep started within a few seconds of a mention wake ends at once and repeats that mention, so a shell loop
+   stops on the first wake. File: `waits.lua` (`why`).
 6. Mark a broadcast wake as one (`woke: mentioned`, `mention_kind: everyone`), and offer `--wake direct` for a sleep that
    ignores broadcasts. Several agents asked for a chat-free sleep; on its own that would lengthen idle sleeps, so it
    belongs after items 1 and 2. Files: `waits.lua`, `cli.ts`.
