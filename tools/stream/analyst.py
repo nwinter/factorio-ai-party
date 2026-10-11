@@ -375,6 +375,7 @@ def serve_ask(a, port):
     (about 6 s; tools/analyst/evaluate.py measured 30/30 on the viewer-question set). For the casters' viewer beats."""
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     import evaluate
+    from analyst_board import compares_runs
     sem = threading.Semaphore(3)
 
     class H(BaseHTTPRequestHandler):
@@ -406,8 +407,11 @@ def serve_ask(a, port):
                 text, meta = run_claude(a, q, system=evaluate.ANSWER_SYSTEM)
                 text = text.strip()
                 log(f"[ask] {q[:80]!r} -> {time.time() - t0:.1f} s")
+                facts = {"viewer_question": q, "analyst_answer": text}
+                if compares_runs(text):
+                    facts["pace"] = text  # eng/audio's check allows past-run comparisons only with a pace fact
                 self.reply(200, {"question": q, "answer": text, "seconds": round(time.time() - t0, 1),
-                                 "facts": {"viewer_question": q, "analyst_answer": text}, "meta": meta})
+                                 "facts": facts, "meta": meta})
             except Exception as e:
                 self.reply(500, {"error": f"{type(e).__name__}: {e}"})
             finally:

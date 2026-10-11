@@ -14,7 +14,7 @@ For the hosts (tools/stream/caster.py):
 The point's text is written for a voice and its facts hold every name and number in it, so a host line built from
 it passes the caster's fact check.
 """
-import threading, time
+import re, threading, time
 
 MAX_POINTS = 60
 
@@ -89,4 +89,14 @@ def point_facts(p):
     """Facts for a host line built on a talking point: the point's text plus its own facts."""
     if not p:
         return None
-    return dict(p.get("facts") or {}, point=p.get("text"), kind=p.get("kind"))
+    f = dict(p.get("facts") or {}, point=p.get("text"), kind=p.get("kind"))
+    if compares_runs(p.get("text")) or p.get("kind") == "comparison":
+        f["pace"] = p.get("text")  # eng/audio's check_line allows previous-run comparisons only with a pace fact
+    return f
+
+
+RUN_WORDS = re.compile(r"\b(shake\d*|co-?op ?\d*|coop\d*|baseline\d*|turns\w*|previous run|last run|past runs?|solo run)\b", re.I)
+
+
+def compares_runs(text):
+    return bool(text and RUN_WORDS.search(text))

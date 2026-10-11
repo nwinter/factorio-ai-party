@@ -90,5 +90,23 @@ class PointsTest(unittest.TestCase):
         self.assertIn("22", analyst.point_problem(bad))
 
 
+class BoardTest(unittest.TestCase):
+    def test_post_pick_use(self):
+        from analyst_board import AnalystBoard, pick_point, point_facts
+        b = AnalystBoard()
+        b.post({"game_minute": 40, "headline": "h", "talking_points": [
+            {"kind": "comparison", "topic": "pace", "text": "15 SPM; shake1 had 11.", "facts": {"spm": 15, "shake1": 11}, "priority": 3, "ttl_s": 300},
+            {"kind": "explainer", "topic": "trig", "text": "Oil processing is a trigger tech.", "facts": {}, "priority": 1, "ttl_s": 300}]})
+        view = b.public()
+        p = pick_point(view)
+        self.assertEqual(p["topic"], "pace")
+        f = point_facts(p)
+        self.assertIn("pace", f)  # eng/audio's check_line needs it for past-run comparisons
+        b.mark_used(p["id"])
+        self.assertEqual(pick_point(b.public())["topic"], "trig")
+        b.post({"talking_points": [{"kind": "explainer", "topic": "trig", "text": "new", "facts": {}, "ttl_s": 300}]})
+        self.assertEqual([x["text"] for x in b.public()["talking_points"]], ["new"])  # same topic replaced
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

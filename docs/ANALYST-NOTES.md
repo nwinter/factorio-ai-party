@@ -87,6 +87,10 @@ api.anthropic.com. Inside the sandbox every model call fails with `network-outbo
   same tolerance as the caster's check), so a host line built from `{"point": text, **facts}` passes
   `check_line`. In the check below the hosts' writer, given the analyst's answer as a fact under the caster's own
   RULES, was right 26/30 (vs 9/30 alone).
+- Checked against eng/audio's `check_line` (eng/audio 22f76ae): 28 of the 30 relay lines pass with facts
+  `{viewer_question, analyst_answer, game_time, team_size}`. The two rejections are right: one line invented
+  "ninety minutes", one spoke as "we". Your rule that past-run comparisons need a `"pace"` fact is met by
+  `point_facts` (adds `pace` for comparisons or any text naming a run) and by `/ask` replies.
 - `POST /analyst/used {"id": "tp12"}` marks a point said; it is not offered again. `GET /analyst.json` has everything.
 
 Suggested caster changes (your file, so not done here; `tools/stream/analyst_board.py` has the helpers):
