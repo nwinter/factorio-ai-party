@@ -143,7 +143,11 @@ stops a player.
   up to 0.6, brightness 0.03, contrast 0.12 and saturation 0.15 as darkness goes from 0.2 to 0.75, at most 0.04 of
   the lift per second, and is sent only when it moves 0.03. The game is not touched. On by default with `--world`
   (`--no-night`; `"night": {...}` in the run config to tune; `night` in the snapshot shows darkness, lift and the
-  values sent).
+  values sent). On the box (2026-10-11 02:18, no run live): the filters already existed on all three captures (made by
+  the operator's service during a run) at neutral. `python3 tools/stream/nightlift.py --darkness 0.85 --hold 40`
+  ramped them to full lift and back to neutral. A read-only screenshot of "stream" at full lift showed the pilot's
+  daylit base visibly brighter, mid-tones up and whites not clipped; it has not been seen on a game at real night.
+  Afterwards the filters, the program scene ("stream") and the outputs matched the state found.
 - Colour fallback: any colour works. Name text is lightened until it has 4.5:1 contrast on the grey panel; glyph ink
   is black or white; a fill that disappears into the panel gets a ring. Invalid colours fall back to a hue hashed from
   the name (avatar.js has its own palette fallback for the pixel art).
@@ -204,7 +208,11 @@ Rules (the director has the last word): one segment start per 180 s whoever asks
 cuts the main camera to a fight, death, base attack or loss, a running segment ends at once (`cut: "attack"`) and
 requests are declined for 20 s after that cut (`declined`). Alerts the director lets pass (a fight inside its 45 s
 attack spacing, or `attack_cut: false`) neither end nor block segments, so a busy stretch does not wipe them out. After 6 quiet minutes (`lull_after`) the director starts
-the next of production, spotlight, research, overview, recap itself (`by: "director"`). Tune with `"segments": {...}`
+the next of production, spotlight, research, overview, recap itself (`by: "director"`). A recap is also due every 20
+minutes (`recap_every`, from the service start or the last recap): the director starts it at the first free slot
+that the spacing allows, covering the minutes since the last one (5 to 30). Shake3 never got one: the hosts'
+research requests kept resetting the 6-minute lull clock, so the rotation reached overview at 01:18 and the run ended
+before recap's turn. Tune with `"segments": {...}`
 in the run config. Checked: selftest (states, spacing, spotlight hold, cut, lull), and all five types requested over
 HTTP on the mock and rendered in jsdom on both pages. Not yet seen in OBS.
 
@@ -399,7 +407,11 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - Encoder load: one 30 s sample during shake3 (00:28, `/replays.json` from the operator's service) with the stream,
   the recording and the replay buffer all active: 0 output and 0 render frames skipped of 1824, 60 fps, CPU 10.7%,
   render 0.78 ms. One sample; keep an eye on `skipped_since_last` over a whole run.
-- Night lift: tested against a fake OBS only (shake3 was live); check it on the box at night and tune `gamma`.
+- Night lift: it works on the box (above) but has only been seen on a daylit scene; look at it during a real game
+  night and tune `gamma`.
+- Replays called as replays: the Space Age pilot's one replay (01:39:04, after 262ef78) opened "Replay bites!", so the
+  hosts do call it a replay. That line also read the raw "spaceship chunk x653"; banners and replay titles no longer
+  carry hit or kill counts (78c03b6). Not yet heard on a real fight.
   Merging main broke its darkness read (main's all-surfaces loop in `STREAM_LUA` left `s` a nil global, so the whole
   extras read, research progress included, failed on world n); fixed in 8f7844f, and the selftest now compiles the
   overlay's Lua with `luac` and refuses stray globals. Darkness is Nauvis's; a camera on another planet is not lifted
