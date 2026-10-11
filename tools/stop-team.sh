@@ -15,6 +15,8 @@ python3 tools/pog.py --world "$world" pause || true
 # Console commands that were not harness requests (the mod's console log): operator tools are labelled, anything
 # else is listed as UNKNOWN to read by hand. Saved in the run for the study.
 python3 tools/console_audit.py --world "$world" --out "$rundir/console-audit.json" || true
+# POG_BROKER=1 runs: what the RCON broker forwarded and refused (it stopped with the helpers above).
+[ -f "$rundir/broker.log" ] && { sleep 1; python3 tools/fh_broker.py summary "$rundir/broker.log" || true; }
 python3 tools/pog.py --world "$world" save
 # Between shifts (POG_STOP_WORLD=1) the server and its directors stop too, so game time moves only while agents
 # play; the next shift resumes from this save (tools/start-team.sh, POG_RESUME).
