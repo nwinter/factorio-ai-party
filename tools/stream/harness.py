@@ -44,17 +44,22 @@ rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, re
 """
 
 # Production history for sparklines: item counts in the last hour, 2-minute buckets (one_hour precision has
-# 300 samples of 12 s; sample 1 is the newest).
+# 300 samples of 12 s; sample 1 is the newest). Summed over every surface (Space Age planets and platforms).
 FLOW_LUA = r"""
-local stats = game.forces.player.get_item_production_statistics(game.surfaces.nauvis)
+local all = {}
+for _, s in pairs(game.surfaces) do all[#all+1] = game.forces.player.get_item_production_statistics(s) end
 local out = {}
 for _, n in ipairs(ITEMS) do
-  if prototypes.item[n] and stats.get_input_count(n) > 0 then
+  local made = 0
+  if prototypes.item[n] then for _, stats in ipairs(all) do made = made + stats.get_input_count(n) end end
+  if made > 0 then
   local series = {}
   for b = 30, 1, -1 do
     local c = 0
-    for k = (b - 1) * 10 + 1, b * 10 do
-      c = c + stats.get_flow_count{name = n, category = "input", precision_index = defines.flow_precision_index.one_hour, sample_index = k, count = true}
+    for _, stats in ipairs(all) do
+      for k = (b - 1) * 10 + 1, b * 10 do
+        c = c + stats.get_flow_count{name = n, category = "input", precision_index = defines.flow_precision_index.one_hour, sample_index = k, count = true}
+      end
     end
     series[#series+1] = c
   end
