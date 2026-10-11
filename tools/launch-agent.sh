@@ -8,6 +8,9 @@
 # Prints: PANE TAB WORKSPACE
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
+# A later shift (tools/start-team.sh, POG_RESUME): one neutral sentence on the prompt, no advice.
+resume_sentence='This is a later shift of the same world: your bot and the factory are as the last shift left them, and notes.md is where you left off.'
+if [ "${1:-}" = --resume-sentence ]; then echo "$resume_sentence"; exit 0; fi
 . "$root/tools/profile-flags.sh"
 run=$1 world=$2 player=$3 minutes=$4 kind=$5
 dir=$("$root/tools/new-run.sh" "$run" "$world" "$player" "$minutes")
@@ -26,9 +29,12 @@ open(path, "w").write(text[:i] + add + text[i:] if i >= 0 else text.rstrip("\n")
 EOP
 fi
 prompt="$root/runs/$run/prompt.md"
-test -f "$prompt" || cat > "$prompt" <<'EOP'
+if [ ! -f "$prompt" ]; then
+  cat > "$prompt" <<'EOP'
 Read AGENTS.md in this directory; it has your instructions, interface, rules, and deadline. Then play Factorio until the deadline in deadline.txt, keeping notes.md current, and finish with the final summary it asks for.
 EOP
+  if [ -n "${POG_RESUME:-}" ]; then printf '%s\n' "$resume_sentence" >> "$prompt"; fi
+fi
 name="pog-${POG_WS:-$world}-$run"
 allow='"Read", "Grep", "Glob", "Edit(/**)", "Write(/**)", "Bash(./fh:*)", "Bash(./shot:*)", "Bash(echo:*)",
               "Bash(sleep:*)", "Bash(date:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)",
