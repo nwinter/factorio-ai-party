@@ -55,12 +55,20 @@ Your character stands still while you think, and the clock does not.
 - `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait` (also `item_count`,
   `crafting_done`) lets the factory run until a condition holds, without polling. Add `--wait-timeout 600000` to
   wait up to 10 minutes (15 at most); hitting the limit fails with `timed_out`.
-- `./fh sleep 120` lets the game run (your queue keeps going) and returns early if you are hit or mentioned, a
-  teammate tells you something, or someone changes your board item, but not when a machine starves; your character is idle for the whole sleep.
-- Which wait fits: a queue plan for rounds that should keep going while you think (courier, refuel; `./fh plan save`
-  once, then `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes (a
-  `researched` wait can hold you for the whole research); `./fh sleep` when only a teammate or an attack should wake
-  you.
+- `./fh sleep 120` waits up to 120 s; the game runs in real time either way. Your current action and queue keep going,
+  and nothing new starts: the reply's first line says whether your queue keeps running, your action keeps going until
+  a tick, or your character stands idle. It returns early when you are hit, mentioned or told something, when someone
+  changes your board item, when your running queue finishes or stalls, and with `--until` when a condition holds:
+  `--until "researched"` (the research running now, or `researched TECH`), `--until crafting_done`,
+  `--until "item_count iron-plate>=200"` (your inventory) or `"item_count iron-plate>=200 at -18.5,-34.5 -16.5,-34.5"`
+  (chests). It does not return when a machine starves, and never runs past your deadline. `./fh call sleep` is the
+  same wait.
+- A direct action that drives your character (walk, `move_to`, build, mine, transfer, collect, feed, `wait_until`,
+  `wait_ticks` and the like) pauses your running queue at once; `./fh queue resume` continues it. Reads, `sleep`,
+  `say`, `tell`, the board, `craft` and `research` leave the queue running.
+- The waits: a queue plan for rounds that keep going while you think (courier, refuel; `./fh plan save` once, then
+  `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes (a direct one pauses
+  your queue); `./fh sleep` for a wait that leaves the queue running.
 - `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
 - `feed` tops up every machine in reach (or `"radius":20` to walk a line) with its recipe ingredients, lab science
   packs and burner fuel; `keep` holds back a reserve. Use it instead of one `transfer` per machine.
@@ -106,8 +114,8 @@ told your context was compacted (or you notice you lost track), read `notes.md` 
 
 The deadline in `deadline.txt` is the only stop condition. The `clock:` line on every reply ends with the time left
 (`deadline in 12m`), which is easier to trust than arithmetic on `date` or the game clock. Deadlines differ by a few
-minutes between teammates, so yours passing says nothing about theirs. In the last three minutes, add a final summary
-to `notes.md` (milestones with game times, what slowed you down, harness problems you hit, the tool changes that would
-have helped most), then keep playing; a summary written earlier is a draft to finish then. End your turn once the
-`clock:` line says the deadline has passed. When your own job is finished or blocked, `./fh call status`, `./fh call chat` and `./fh board` show what
-is still open.
+minutes between teammates, so yours passing says nothing about theirs. Play until the `clock:` line says the deadline
+has passed (a `sleep` ends there too). Then add a final summary to `notes.md` (milestones with game times, what slowed
+you down, harness problems you hit, the tool changes that would have helped most) and end your turn; a summary written
+earlier is a draft to finish then. When your own job is finished or blocked, `./fh call status`, `./fh call chat` and
+`./fh board` show what is still open.

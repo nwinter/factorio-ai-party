@@ -108,3 +108,80 @@ test('fh sleep polls sleep_check with peek, then reads once normally; death exit
   }
   await assert.rejects(cli(1,['sleep','901']),(error:any)=>/SECONDS 1\.\.900/.test(error.stdout));
 });
+function sleepEngine(seen:any[], woke='condition') {
+  let checks=0;
+  return (request:any)=>{
+    seen.push(request);
+    if(request.action==='sleep'){checks=0;return {ok:true,result:{while_asleep:'no queue and no action: your character stands idle for up to 30 s',sleeping_s:request.args.seconds,until_tick:1801}};}
+    checks++;
+    return {ok:true,result:checks<2?{slept_s:1}:{slept_s:2,woke}};
+  };
+}
+test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
+  const seen:any[]=[];
+  await engine(sleepEngine(seen),async port=>{
+    for (const until of ['researched','researched automation-2','crafting_done','item_count iron-plate>=200',
+      'item_count iron-plate >= 200 at -18.5,-34.5 (3,4)','items coal<10','ammo_below count=5 radius=20',
+      '{"until":"item_count","item":"gear","at_least":5}']) {
+      assert.equal(JSON.parse((await cli(port,['sleep','30','--until',until])).stdout).result.woke,'condition');
+    }
+    await assert.rejects(cli(port,['sleep','30','--until','item_count iron-plate']),(error:any)=>/--until takes/.test(error.stdout));
+    await assert.rejects(cli(port,['sleep','30','--until','item_count iron-plate>=5 at north']),(error:any)=>/X,Y pairs/.test(error.stdout));
+  });
+  assert.deepEqual(seen.filter(r=>r.action==='sleep').map(r=>r.args.condition),[
+    {until:'researched'},{until:'researched',technology:'automation-2'},{until:'crafting_done'},
+    {until:'item_count',item:'iron-plate',at_least:200},
+    {until:'item_count',item:'iron-plate',at_least:200,positions:[{x:-18.5,y:-34.5},{x:3,y:4}]},
+    {until:'item_count',item:'coal',below:10},{until:'ammo_below',count:5,radius:20},
+    {until:'item_count',item:'gear',at_least:5}]);
+  assert.equal(seen.filter(r=>r.action==='sleep')[0].args.seconds,30);
+});
+test('fh sleep keeps the team hints the sleep request carried, and prints what keeps going first (compact)',async()=>{
+  let checks=0;
+  const reply=(request:any)=>{
+    if(request.action==='sleep'){checks=0;return {ok:true,result:{while_asleep:'your queue keeps running (move_to running, 2 steps pending); this sleep ends when it finishes or stalls',
+      sleeping_s:60,until_tick:3601,team:{mentions:['sol @you, 5s ago: @astra coal?'],alerts:['attack near (16,16)']}}};}
+    checks++;
+    return {ok:true,result:checks<2?{slept_s:1}:{while_asleep:'your queue keeps running (...)',slept_s:2,woke:'queue_done',
+      team:{mentions:['grok @you, 0s ago: @astra done'],board:['#4 (yours) note by sol: ok']}}};
+  };
+  await engine(reply,async port=>{
+    const json=JSON.parse((await cli(port,['sleep','60'])).stdout).result;
+    assert.deepEqual(json.team,{mentions:['sol @you, 5s ago: @astra coal?','grok @you, 0s ago: @astra done'],alerts:['attack near (16,16)'],board:['#4 (yours) note by sol: ok']});
+    const {stdout}=await exec(process.execPath,['dist/host/cli.js','--port',String(port),'sleep','60'],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
+    assert.match(stdout.split('\n')[0]!,/^while_asleep: your queue keeps running \(move_to running, 2 steps pending\)/);
+    assert.match(stdout,/@astra coal\?/);
+  });
+});
+test('fh call sleep blocks like fh sleep (with or without --wait)',async()=>{
+  for (const extra of [['--wait'],[]]) {
+    const seen:any[]=[];
+    await engine(sleepEngine(seen,'mentioned'),async port=>{
+      const reply=JSON.parse((await cli(port,['call','sleep','--args','{"seconds":120}',...extra])).stdout);
+      assert.equal(reply.result.woke,'mentioned');
+    });
+    // sleep_check travels as observe {scope: sleep_check} (harness.ts).
+    assert.deepEqual(seen.map(r=>[r.args.scope ?? r.action,r.args.peek]),[['sleep',undefined],['sleep_check',true],['sleep_check',true],['sleep_check',undefined]]);
+  }
+  await assert.rejects(cli(1,['call','sleep','--args','{"seconds":0}']),(error:any)=>/seconds 1\.\.900: fh sleep SECONDS/.test(error.stdout));
+});
+test('a sleep never runs past the deadline: cut to the time left, or none after it',async()=>{
+  const { mkdtemp, writeFile } = await import('node:fs/promises');
+  const { tmpdir } = await import('node:os');
+  const dir=await mkdtemp(`${tmpdir()}/fh-deadline-`);
+  const stamp=(ms:number)=>new Date(ms).toISOString().replace('T',' ').replace(/\.\d+Z$/,' UTC');
+  const run=(port:number,args:string[],file:string)=>exec(process.execPath,['dist/host/cli.js','--format','json','--port',String(port),...args],
+    {env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only',FH_DEADLINE_FILE:file}});
+  await writeFile(`${dir}/past.txt`,stamp(Date.now()-60000)+'\n');
+  await writeFile(`${dir}/soon.txt`,stamp(Date.now()+65000)+'\n');
+  const seen:any[]=[];
+  await engine(sleepEngine(seen,'elapsed'),async port=>{
+    const none=JSON.parse((await run(port,['sleep','300'],`${dir}/past.txt`)).stdout);
+    assert.equal(none.result.woke,'deadline'); assert.match(none.result.note,/no sleep: deadline passed/);
+    assert.equal(seen.length,0);
+    const cut=JSON.parse((await run(port,['sleep','300'],`${dir}/soon.txt`)).stdout);
+    assert.equal(cut.result.woke,'deadline'); assert.match(cut.result.note,/cut to end at the deadline/);
+  });
+  const seconds=seen[0].args.seconds;
+  assert.ok(seconds>=55 && seconds<=65,String(seconds));
+});
