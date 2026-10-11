@@ -129,6 +129,22 @@ eq(pushed.alerts.losses['transport-belt'],64); eq(pushed.alerts.losses['electric
 eq(loss_line(call('queue_status')),nil)
 runtime.on_event{name=11,tick=tick,entity={valid=true,name='inserter',position={x=205,y=-80},force={name='player'}}}
 assert(loss_line(call('queue_status')):find('81 destroyed',1,true))
+-- A cell quiet for 5 minutes, or a new shift, starts a new incident; the old
+-- one stays in status alerts with since (shake5: a raid total grew across two shifts).
+;(function()
+  local start=tick
+  tick=tick+5*3600+1; game.tick=tick
+  runtime.on_event{name=11,tick=tick,entity={valid=true,name='inserter',position={x=206,y=-80},force={name='player'}}}
+  local line=loss_line(call('queue_status'))
+  assert(line:find('losses in (206,-80) 1 destroyed: 1 inserter',1,true),line)
+  local closed=runtime.operator.shift_start(); eq(closed.ok,true); eq(closed.incidents_closed,3)
+  runtime.on_event{name=11,tick=tick,entity={valid=true,name='inserter',position={x=207,y=-80},force={name='player'}}}
+  line=loss_line(call('queue_status'))
+  assert(line:find('losses in (207,-80) 1 destroyed',1,true),line)
+  local history=call('status',{since=start-1}).alerts
+  eq(#history.latest,4); eq(history.losses.inserter,3); eq(history.losses['transport-belt'],64)
+  eq(#call('status').alerts.latest,2) -- the last 5 minutes: the two new incidents
+end)()
 -- Hits in the last 10 s lead status warnings, with where and by what.
 defines.events.on_entity_damaged=12
 runtime.on_event{name=12,tick=tick,entity={valid=true,name='gun-turret',position={x=40,y=40},force={name='player'}},force={name='enemy'},cause={valid=true,name='small-biter'},final_damage_amount=5}
@@ -658,19 +674,33 @@ ammo_left=10
 call('detach'); p.connected=false; fails(function() call('walk',{direction='east'}) end,'join a graphical Factorio client')
 -- Direct intervention cancels queued controls while preserving pending work.
 p.connected=true
+do
+-- pickup needs an item on the ground in reach (shake5): it takes it and
+-- last reports picked; with none in reach it is refused.
+local saved_find,saved_insert=p.surface.find_entities_filtered,p.insert
+local ground={valid=true,type='item-entity',name='item-on-ground',position={x=0,y=0},stack={valid_for_read=true,name='coal',count=2}}
+ground.destroy=function() ground.valid=false end
+p.surface.find_entities_filtered=function(f) if f.type=='item-entity' then return ground.valid and {ground} or {} end return saved_find(f) end
+local got={}; p.insert=function(s) got[s.name]=(got[s.name] or 0)+s.count; return s.count end
 call('queue_submit',{steps={{action='walk',args={direction='east',ticks=20}},{action='wait_ticks',args={ticks=5}}}})
 advance(1); eq(call('queue_status').active.action,'walk')
 call('pickup',{ticks=1})
 eq(call('queue_status').paused,true); eq(call('queue_status').active,false)
 eq(storage.agent_harness.active[1].kind,'pickup'); eq(#call('queue_status').pending,1)
 advance(2)
+eq(got.coal,2); eq(ground.valid,false); eq(call('status').last.picked.coal,2)
+fails(function() call('pickup',{}) end,'nothing to pick up within 1 tiles of')
 -- A step toward an absolute goal is requeued at the head when interrupted.
 call('queue_cancel',{})
 call('queue_submit',{steps={{action='move_to',args={position={x=50,y=0},pathfind=false}},{action='wait_ticks',args={ticks=5}}}})
 advance(1); eq(call('queue_status').active.action,'move_to')
-call('pickup',{ticks=1})
+ground.valid=true
+call('pickup',{ticks=30})
 local requeued=call('queue_status'); eq(#requeued.pending,2); eq(requeued.pending[1].action,'move_to')
-advance(2); call('queue_cancel',{})
+advance(8); eq(call('status').last.outcome,'picked_up') -- done once nothing is left in reach
+call('queue_cancel',{})
+p.surface.find_entities_filtered,p.insert=saved_find,saved_insert
+end
 -- on_fail goto keeps the plan running after the failed step's controls stop.
 call('queue_submit',{steps={{action='rotate',args={position={x=99,y=99}},on_fail='goto:out'},{action='walk',args={direction='east',ticks=5}},{action='wait_ticks',args={ticks=50},label='out'}}})
 advance(2); local jumped=call('queue_status')

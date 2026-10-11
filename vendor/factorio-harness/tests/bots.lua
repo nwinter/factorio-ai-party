@@ -23,7 +23,7 @@ local function character(pos)
   local inv={get_item_count=function(q) return items[type(q)=='table' and q.name or q] or 0 end,
     find_item_stack=function(q)
       if (items[q.name] or 0)==0 then return nil end
-      local stack={prototype={place_result={name=q.name,type='container'}}}
+      local stack={prototype={place_result={name=q.name,type='container',fast_replaceable_group=q.name:match('^assembling%-machine') and 'assembling-machine' or nil}}}
       stack.clear=function() items[q.name]=0 end
       return setmetatable(stack,{__index=function(_,k) if k=='count' then return items[q.name] end end,
         __newindex=function(_,k,v) if k=='count' then items[q.name]=v end end})
@@ -144,13 +144,39 @@ assert(not ok and err:find('placement blocked by burner-mining-drill (3,0)',1,tr
 eq(corpse.valid,false); eq(c.items['stone-furnace'],1)
 -- An item on the ground names its item and how to clear it (shake4: Grok's 9
 -- refused builds at one spot, no remedy).
-local dropped={valid=true,type='item-entity',name='item-on-ground',position={x=3.3,y=0.2},stack={valid_for_read=true,name='iron-plate'}}
+-- shake5: the build itself takes it into the inventory (Grok's pickup calls
+-- left the plate); one that does not fit stays, and the error says so.
+local dropped={valid=true,type='item-entity',name='item-on-ground',position={x=3.3,y=0.2},stack={valid_for_read=true,name='iron-plate',count=3}}
+dropped.destroy=function() dropped.valid=false end
 surface.find_entities_filtered=function(a) if a.area then return {dropped} end return {} end
+surface.can_place_entity=function() return not dropped.valid end
+local insert=c.insert
+c.insert=function() return 0 end -- a full inventory
 ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=0}})
-assert(not ok and err:find('placement blocked by item-on-ground (iron-plate) (3.3,0.2); pick the item up: stand on or next to it and fh call pickup',1,true),err)
-eq(c.items['stone-furnace'],1)
+assert(not ok and err:find('placement blocked by item-on-ground (iron-plate) (3.3,0.2); a build takes items on the ground into your inventory, and this one did not fit: free a slot',1,true),err)
+eq(c.items['stone-furnace'],1); eq(dropped.valid,true)
+c.insert=insert
+local plates=c.items['iron-plate'] or 0
+local placed=bot('build',{item='stone-furnace',position={x=3,y=0}})
+eq(placed.consumed,1); eq(placed.picked_up['iron-plate'],3); eq(c.items['iron-plate'],plates+3); eq(dropped.valid,false)
 surface.find_entities_filtered=function() return {} end
 surface.can_place_entity=function() return true end
+-- A machine over one of its fast-replace group passes the manual check, but the
+-- build would leave both (shake5: assembling-machine-2 over -1): refused, naming it.
+;(function()
+  local old={valid=true,type='assembling-machine',name='assembling-machine-1',position={x=3.5,y=0.5},force=force,prototype={fast_replaceable_group='assembling-machine'}}
+  surface.find_entities_filtered=function(a) if a.area and a.force then return {old} end return {} end
+  c.items['assembling-machine-2']=1
+  local made=#created
+  local ok2,err2=pcall(bot,'build',{item='assembling-machine-2',position={x=3.5,y=0.5}})
+  assert(not ok2 and err2:find('placement blocked by assembling-machine-1 (3.5,0.5) already on these tiles: building over it would leave both; mine it first',1,true),err2)
+  eq(c.items['assembling-machine-2'],1); eq(#created,made)
+  -- A stone furnace (another group) is not refused by it.
+  c.items['stone-furnace']=1
+  eq(bot('build',{item='stone-furnace',position={x=3,y=0}}).consumed,1)
+  c.items['assembling-machine-2']=0
+  surface.find_entities_filtered=function() return {} end
+end)()
 -- The bot's own character the only thing on the footprint (shake3: Grok's most
 -- common error): it walks off with real walking ticks, then builds.
 local function inside(pos,area) return pos.x>area.left_top.x and pos.x<area.right_bottom.x and pos.y>area.left_top.y and pos.y<area.right_bottom.y end
@@ -220,6 +246,12 @@ eq(as_opus({color='#4363d8'}).color,'#4363d8')
 eq(bot('profile',{color='#ff8000'}).color,'#ff8000')
 -- voice: the stream's speaker id, stored lower case, listed in profiles.
 eq(bot('profile',{voice='Orion'}).voice,'orion'); eq(bot('profile',{}).voice,'orion')
+-- A voice another agent holds is refused, naming the holder (shake5: Sol and
+-- Muse both oa-cedar); your own again is fine.
+fails(function() as_opus({voice='ORION',glyph='Z'}) end,'voice orion is taken by Astra (astra); pick another')
+eq(as_opus({}).glyph,'O') -- refused before anything changed
+eq(as_opus({voice='oa-cedar'}).voice,'oa-cedar')
+eq(bot('profile',{voice='orion'}).voice,'orion')
 local listed; for _,row in ipairs(bot('profiles',{}).profiles) do if row.name=='astra' then listed=row end end
 eq(listed.voice,'orion')
 fails(function() bot('profile',{voice=string.rep('x',17)}) end,'voice must be 1..16')

@@ -103,6 +103,9 @@ if [ -n "$resume" ]; then
   python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
   tick=$(python3 tools/pog.py --world "$world" score 2>/dev/null | python3 -c 'import json,sys; t=json.load(sys.stdin)["tick"]; print(f"{t} (game {t // 3600}m)")' 2>/dev/null || echo '?')
   log "world $world: resumed at tick $tick"
+  # Losses in this shift start new incidents; the previous shift's stay in status alerts history.
+  closed=$(python3 tools/pog.py --world "$world" rcon '/silent-command rcon.print(remote.call("agent_harness","shift_start"))' 2>&1)
+  log "world $world: shift_start $closed"
 fi
 
 # 2. Director clients (players 1-3, spectators once a camera is set). They keep the server from auto-pausing.

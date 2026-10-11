@@ -105,7 +105,8 @@ remote.add_interface('agent_harness', {
   camera = function(json) return operator('camera', json) end,
   cameras = function() return operator('cameras') end,
   profile_ticks = function(n) return operator('profile_ticks', n) end,
-  install = function(source) return installing(function() return install_source(source) end) end,
+  shift_start = function() return operator('shift_start') end,
+  install =function(source) return installing(function() return install_source(source) end) end,
   -- What this control.lua accepts; a world without it takes one install of <=524288 bytes.
   install_limits = function() return helpers.table_to_json{max_bytes=MAX_RUNTIME_BYTES, chunk_bytes=MAX_CHUNK_BYTES, protocol=2} end,
   -- Chunk index of total for upload id; index 1 starts over (an abandoned upload is dropped).

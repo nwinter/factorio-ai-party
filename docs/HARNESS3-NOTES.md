@@ -1,8 +1,51 @@
 # Harness3 notes: the shake2 harness bugs (branch eng/harness3)
 
-Round 9 (shake4 P2 items 7, 8, 14 and P3 item 18) comes first, then round 8 (shake4 P1 items 2 to 4), round 7
-(shifts: resuming a team world), round 6 (the runtime.lua locals guard and refactor plan), round 5 (the agents' own
-tool requests), round 4 (shake3 fixes) and the shake2 round.
+Round 10 (shake5 P1 harness items) comes first, then round 9 (shake4 P2 items 7, 8, 14 and P3 item 18), round 8
+(shake4 P1 items 2 to 4), round 7 (shifts: resuming a team world), round 6 (the runtime.lua locals guard and refactor
+plan), round 5 (the agents' own tool requests), round 4 (shake3 fixes) and the shake2 round.
+
+## Round 10: shake5 P1 items 1, 2, 8 and 5 (profiles part)
+
+Main merged first (it brought docs/studies/shake5.md).
+
+- Item 1, loss incidents. `record_loss` joins a loss to its cell's incident only while that incident is open and its
+  last loss is at most 5 minutes old; otherwise it starts a new one. A new operator call, `shift_start`
+  (`remote.call("agent_harness","shift_start")`, in control.lua and runtime.lua), marks every open incident closed
+  and returns `incidents_closed`. `tools/start-team.sh` calls it on a resume right after "resumed at tick" and logs
+  the reply. Old incidents stay in `state.losses` (64 kept, as before) and show in `status` with `since`; without
+  `since` the last 5 minutes are shown, as before. Game time does not run between shifts, so the 5-minute rule
+  alone would not split a raid still going at the save; `shift_start` does (saves from before this change load
+  fine: their incidents have no `closed` field and are treated as open).
+- Item 2, build over a machine. I chose the refusal: fast-replace for a bot (a character with no player) has no
+  inventory the engine can hand the old machine to through `player`, and I could not check the `character` path live.
+  `build_direct`, after `can_place_entity` passes, looks in the footprint for an entity of the same
+  `fast_replaceable_group` (the only kind the manual check lets overlap) and refuses: "placement blocked by
+  assembling-machine-1 (x,y) already on these tiles: building over it would leave both; mine it first (mine at its
+  position), then build (its recipe and contents do not carry over)". This also covers belts over belts (an upgrade
+  in place now needs a mine first) and players' builds through `build_direct` (undergrounds); a player's cursor
+  build keeps the engine's own fast-replace.
+- Item 8, items on the ground. `build_direct` takes item-entities in the footprint into the inventory next to
+  `clear_remnants` (reply `picked_up {item: count}`); one that does not fit stays and the placement error says to
+  free a slot. `pickup` is refused when no item lies within the character's `item_pickup_distance` (1 when unknown)
+  and otherwise takes one item stack every 6 ticks by script (a bot's character does not pick up on its own, which
+  is why Grok's calls returned ok and the plate stayed), ending `picked_up` when none is left, else
+  `duration_elapsed`, `inventory_full` or `nothing_in_reach`; `last.picked` lists what it took. The 6-tick pace is
+  my choice, not measured from the game.
+- Item 5, profiles part. A `voice` another agent holds is refused before anything changes, naming the holder, like
+  glyphs and colours. Existing duplicates in a save stay until someone sets a voice. The TTS fallback for `el-`
+  voices (the other half of item 5) is stream code and not in this round.
+
+Files: `mod/agent-harness_0.1.0/{runtime,control,profiles}.lua`, `tests/bots.lua`, `mod/tests/runtime_test.lua`,
+`tools/start-team.sh`. runtime.lua keeps 3 free top-level locals.
+
+Tests: every Lua suite passes; tools/test_resume.py passes; `npm test` 97 of 101 (the 4 sandboxed bridge socket tests,
+as before). control.lua gained a remote function, so a world needs the mod files copied (start-team's resume path
+and new instances do this), not only a runtime deploy, before `shift_start` answers.
+
+Not checked live (deploys need the box). On world `live` after copying the mod and restarting it, with bot `h3-a`:
+`tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","shift_start"))'` should print
+`incidents_closed`; drop an iron plate, build a stone furnace over it and expect `picked_up`; `fh call pickup` next to
+a dropped plate should report `last.picked`; an assembling-machine-2 over an assembling-machine-1 should be refused.
 
 ## Round 9: shake4 P2 items 7, 8, 14, P3 item 18
 
