@@ -9,7 +9,7 @@ redacts e-mail addresses, local paths, key-like tokens and IP addresses from eve
 API/v1/state with the publish token. The token comes from $POG_LIVE_TOKEN or site/worker/.secrets.json
 (gitignored; never commit it).
 """
-import argparse, json, os, sys, time, urllib.error, urllib.request
+import argparse, json, os, re, sys, time, urllib.error, urllib.request
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
@@ -41,6 +41,10 @@ def public_state(s):
     out["chat"] = [{k: c[k] for k in CHAT_KEYS if k in c} for c in s.get("chat", [])[-40:]]
     out["cameras"] = {slot: {"agents": c.get("agents", []), "pair": c.get("pair", False), "since": c.get("since")}
                       for slot, c in (s.get("cameras") or {}).items()}
+    # The broadcast the stream service's YouTube chat bridge follows, so the live page embeds the current one.
+    yt = ((s.get("viewers_status") or {}).get("youtube") or {})
+    if re.fullmatch(r"[\w-]{11}", str(yt.get("video") or "")):
+        out["stream"] = {"youtube_video_id": yt["video"]}
     out["schema"] = 1
     return scrub(out)
 
