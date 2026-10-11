@@ -116,6 +116,17 @@ class FakeAI:
 
 
 auto = voices.TTS("auto", ai=FakeAI())
+nine = [{"name": n} for n in ["astra", "opus", "sonnet", "haiku", "sol", "luna", "grok", "gemini", "muse"]]
+d1, d2 = voices.assign_voices(nine, tts=auto), voices.assign_voices(list(reversed(nine)), tts=auto)
+check("with keys, default agent voices are premium, distinct, deterministic",
+      all(voices.provider_of(v) != "aura2" for v in d1.values()) and len(set(d1.values())) == 9 and d1 == d2, str(d1))
+inw_only = voices.TTS("inworld", ai=FakeAI())
+d3 = voices.assign_voices(nine, tts=inw_only)
+check("a provider with few voices fills up (casters keep theirs), then Aura-2", len(set(d3.values())) == 9
+      and {v for v in d3.values() if voices.provider_of(v) == "inworld"} == {"in-dennis"}, str(d3))
+check("with ElevenLabs, other providers' caster candidates are free for agents",
+      "ca-daniel" not in {auto.caster_voice(r) for r in voices.ROLE_VOICES}
+      and {auto.caster_voice(r) for r in voices.ROLE_VOICES} == {"el-liam", "el-alice"})
 check("auto loads every provider with a key",
       sorted(auto.providers) == ["cartesia", "eleven", "eleven-fast", "inworld", "openai"],
       str(sorted(auto.providers)))

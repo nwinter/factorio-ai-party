@@ -203,7 +203,11 @@ def assign_voices(agents, taken=(), tts=None):
     (when `tts`, by default the latest premium-backend TTS made, can design one), and the rest get distinct voices
     by name hash."""
     tts = tts or _designer
-    out, used = {}, set(taken) | set(CASTERS.values()) | {v for vs in ROLE_VOICES.values() for v in vs}
+    if tts is not None and tts.providers:  # only the voices the casters will use on this backend are held back
+        reserved = {tts.caster_voice(r) for r in ROLE_VOICES}
+    else:
+        reserved = {v for vs in ROLE_VOICES.values() for v in vs}
+    out, used = {}, set(taken) | set(CASTERS.values()) | reserved
     for a in agents:
         v = (a.get("voice") or "").strip().lower()
         if v in CATALOG or v in DESIGNED:
@@ -213,15 +217,21 @@ def assign_voices(agents, taken=(), tts=None):
             v = tts.designed_voice(a["name"], a["voice_description"])
             if v:
                 out[a["name"]] = v
-    pool = [v for v in voice_ids() if v not in CASTERS.values()]
+    # defaults: the premium voices this TTS can speak first, then Aura-2 (deterministic for a given set of keys)
+    fams = {FAMILY[p] for p in tts.providers} if tts is not None and tts.providers else set()
+    pools = [sorted(v for v, e in PREMIUM.items() if FAMILY.get(e[0]) in fams),
+             [v for v in voice_ids() if v not in CASTERS.values()]]
     for a in sorted(agents, key=lambda a: a["name"]):
         if a["name"] in out:
             continue
         h = int(hashlib.sha1(a["name"].encode()).hexdigest(), 16)
-        for k in range(len(pool)):
-            v = pool[(h + k) % len(pool)]
-            if v not in used:
+        v = None
+        for pool in [p for p in pools if p]:
+            free = [pool[(h + k) % len(pool)] for k in range(len(pool))]
+            v = next((x for x in free if x not in used), None)
+            if v:
                 break
+        v = v or pools[1][h % len(pools[1])]
         out[a["name"]] = v
         used.add(v)
     return out

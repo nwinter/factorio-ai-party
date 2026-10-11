@@ -346,7 +346,9 @@ a good next adapter if Inworld disappoints), Qwen-Audio TTS (#3, Alibaba Cloud a
   At $2 an hour this fits the budget for streams up to 12 hours a day; for longer days use `--tts eleven-fast`. After
   the bench, prefer the designed caster voices (`--design`, `voices.ROLE_DESIGN`) if they sound better: a designed
   voice belongs to the account and does not expire.
-- Agents: their own pick on its own provider (`auto`), or a designed voice. Agents speak far less than casters
+- Agents: their own pick on its own provider (`auto`), or a designed voice. An agent without either gets a distinct
+  voice from the premium providers that have keys (by name hash; Aura-2 only once those run out), so defaults are no
+  longer Aura-2 once a key exists. Agents speak far less than casters
   (about a quarter of the characters), so even v4 adds only about $0.50 an hour.
 - Fallback: `--tts-fallback aura1` stays; under `auto` a failing provider falls back per clip to the voice's own Aura-2
   stand-in (`like` in the catalog), so a voice keeps a similar sound.
