@@ -87,7 +87,8 @@ Fake-engine tests (all in `npm test`):
   `listen EPERM` before any test code runs (same as before this branch).
 
 Live, world `live` (bots `h2-a`, `h2-b`; runtime built from a scratch merge of eng/board 811968a and this branch,
-deployed as sha a17260ef):
+deployed as sha a17260ef; later redeployed from eng/board 8421da7 + this branch 0c9b40a as sha 0f49e5fd, which is
+what `live` runs now):
 
 - `wait_ticks 120 --wait`: `duration_elapsed`. `wait_until item_count ... --wait --wait-timeout 4000`: the game got
   `until_tick` 240 ticks out and the CLI exited 1 with `timed_out` and `saw "iron-plate 8"`.
@@ -107,6 +108,9 @@ deployed as sha a17260ef):
   `collect` on the chest's position took the 5 and listed it under `claimed`. Chest mined and claim dropped after.
 - Cost: `profile_ticks 600` with 11 bots idle: 0.048 ms per harness tick (eng/bots measured 0.046 ms with 9). Nothing
   new runs per tick; `wait_ticks` is an ordinary active action.
+- After the redeploy, with the merged CLI: `fh sleep 60` while the operator applied 5 enemy damage woke after 8 s
+  with `woke: damaged`, `lost: 5`, and the hit in `team.alerts`. `describe` on live lists `wait_ticks` (direct),
+  `sleep`, `sleep_check`, `labs` and the new `inspect` note.
 - The merged CLI (with eng/board's compact waits): `wait_until` ends with `error: timed_out: ...` as its last line;
   `fh sleep 2` printed `woke: elapsed`.
 
