@@ -289,6 +289,12 @@ wood.count=5
 fails(function() call('build',{item='wooden-chest',builds={{position={x=4,y=0}},{position={x=6,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}}) end,
   'build 3/4 failed after 2 built: placement blocked')
 eq(wood.count,3); eq(p.cursor_stack.valid_for_read,false)
+-- skip_failed lists the blocked entry and builds the rest (shake3: Grok, Astra).
+wood.count=5
+local skipped=call('build',{item='wooden-chest',skip_failed=true,builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}})
+eq(skipped.built,2); eq(skipped.placed[2].x,9.5); eq(#skipped.failed,1); eq(skipped.failed[1].index,2); eq(skipped.failed[1].position.x,8)
+assert(skipped.failed[1].error:find('placement blocked',1,true),skipped.failed[1].error); eq(wood.count,3)
+wood.count=3
 -- The engine refills the hand from inventory after the last item; that still counts as consumed.
 local spare=stack('wooden-chest',4); main[2]=spare
 p.build_from_cursor=function(args)
