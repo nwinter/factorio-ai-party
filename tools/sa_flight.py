@@ -59,8 +59,12 @@ for _, e in ipairs(th) do
   out.thrusters[#out.thrusters+1] = {position = e.position, fuel = fuel, oxidizer = ox}
 end
 local guns = s.find_entities_filtered{name = "gun-turret"}
-for _, p in ipairs({{-12, -12}, {12, -12}, {-12, 2}, {12, 2}}) do
-  if #guns < 4 then
+for _, n in ipairs({"physical-projectile-damage", "weapon-shooting-speed"}) do
+  for i = 1, 6 do local t = f.technologies[n .. "-" .. i] if t then t.researched = true end end
+end
+for _, p in ipairs({{-14, -15}, {-10, -15}, {-6, -15}, {-2, -15}, {2, -15}, {6, -15}, {10, -15}, {14, -15}, {-14, -10}, {14, -10}, {-14, 2}, {14, 2},
+  {-12, -11}, {-8, -11}, {-4, -11}, {0, -11}, {4, -11}, {8, -11}, {12, -11}, {-14, -6}, {14, -6}}) do
+  if #guns < 21 then
     local pos = s.find_non_colliding_position("gun-turret", p, 6, 1)
     local e = pos and s.create_entity{name = "gun-turret", position = pos, force = f}
     if e then guns[#guns+1] = e end
@@ -78,6 +82,11 @@ rcon.print(helpers.table_to_json(out))
 
 # One sample: the platform, its damage, the thrusters (refilled here: the operator's fuel), the director, the tags.
 SAMPLE_LUA = PLATFORM + r"""
+if not pl then
+  local d = game.get_player("DIRECTOR")
+  rcon.print(helpers.table_to_json{tick = game.tick, gone = true, director = d and {index = d.index, surface = d.surface.name, position = d.position} or nil})
+  return
+end
 local states = {}
 for k, v in pairs(defines.space_platform_state) do states[v] = k end
 local s = pl.surface
@@ -91,10 +100,10 @@ end
 for _, e in pairs(s.find_entities_filtered{name = "thruster"}) do
   out.refill = out.refill + e.insert_fluid{name = "thruster-fuel", amount = 100000} + e.insert_fluid{name = "thruster-oxidizer", amount = 100000}
 end
-for _, e in pairs(s.find_entities_filtered{name = "gun-turret"}) do out.ammo = out.ammo + e.get_item_count("piercing-rounds-magazine") end
+for _, e in pairs(s.find_entities_filtered{name = "gun-turret"}) do e.insert{name = "piercing-rounds-magazine", count = 100} out.ammo = out.ammo + e.get_item_count("piercing-rounds-magazine") end
 out.asteroids = #s.find_entities_filtered{type = "asteroid"}
 local d = game.get_player("DIRECTOR")
-if d then out.director = {index = d.index, surface = d.surface.name, position = d.position, controller = d.controller_type, connected = d.connected, zoom = d.zoom} end
+if d then out.director = {index = d.index, surface = d.surface.name, position = d.position, controller = d.controller_type, connected = d.connected} end
 out.tags = {}
 local ok, objs = pcall(rendering.get_all_objects, "agent-harness")
 if ok then for _, o in pairs(objs) do
@@ -180,6 +189,9 @@ def main():
     if not a.resume_aboard:
         # 1. Test setup: the platform back at Nauvis with thrusters, fuel, turrets; a ready rocket.
         s.lua("bot_create", f'local ok,r=pcall(remote.call,"agent_harness","bot_create","{a.bot}") rcon.print(helpers.table_to_json({{ok=ok,r=r}}))')
+        s.lua("platform (operator)", PLATFORM + 'if not pl then pl = game.forces.player.create_space_platform{name = "travel-test", planet = "nauvis", starter_pack = "space-platform-starter-pack"} pl.apply_starter_pack() end rcon.print(helpers.table_to_json{tick = game.tick, index = pl.index, surface = pl.surface and pl.surface.name or nil})')
+        poll("hub built", lambda: raw(PLATFORM + 'rcon.print(helpers.table_to_json{tick = game.tick, hub = pl.hub and pl.hub.valid or false})'),
+             lambda v: v.get("hub"), 60, 1)
         setup = s.lua("flight setup (operator)", SETUP_LUA)
         silo = (setup or {}).get("silo")
         if not silo:
@@ -241,7 +253,15 @@ def main():
             s.lua("camera list (in flight)", CAMERA_LUA.replace("BODY", json.dumps({"player": director_index, "follow": a.bot, "zoom": 0.5})))
             shot("4-in-flight")
     arrived = poll("platform at vulcanus (own thrusters)", lambda: s.lua("flight sample", sample_lua),
-                   lambda v: v.get("at") == "vulcanus", a.fly_minutes * 60, 5, during_flight)
+                   lambda v: v.get("at") == "vulcanus" or v.get("gone"), a.fly_minutes * 60, 5, during_flight)
+    if arrived and arrived.get("gone"):
+        s.record("platform destroyed in flight", False, {"last_sample": marks, "gone": arrived})
+        for i in range(4):
+            time.sleep(5)
+            s.fh("status (after the loss)", "status")
+            sample(f"camera after the loss (+{(i + 1) * 5}s)")
+        shot("8-after-loss")
+        sys.exit(1)
     s.record("flight ticks", arrived is not None, {"schedule_tick": t_sched, "departed_tick": marks.get("departed"),
                                                    "first_damage_tick": marks.get("first_damage"), "mid_tick": marks.get("mid"),
                                                    "arrived_tick": (arrived or {}).get("tick"),
