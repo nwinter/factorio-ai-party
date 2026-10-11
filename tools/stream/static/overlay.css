@@ -325,6 +325,12 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
 .spark svg { display: block; width: 100%; height: 13px; margin-top: 1px; }
 #sparks .empty { grid-column: 1 / -1; align-self: center; }
 
+/* science, team board and Space share one slot and take turns (overlay.js rotateWidgets): one height for all three,
+   so chat below never jumps */
+.rot-off { display: none !important; }
+.rot-in { animation: rise-in 450ms ease both; }
+body:not(.portrait) #prod, body:not(.portrait) #board, body:not(.portrait) #space { height: 124px; }
+
 /* ---- team board ---- */
 /* ---- Space Age (overlay.js renderSpace): one head row, then up to three platform rows; chat gives up the height ---- */
 #space { flex: none; box-sizing: border-box; padding: 8px 14px 8px; display: flex; flex-direction: column; gap: 5px; overflow: hidden; }

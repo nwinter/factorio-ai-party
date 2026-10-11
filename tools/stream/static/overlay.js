@@ -860,8 +860,33 @@
     renderAlerts(s);
     renderCams(s);
     renderSegment(s);
+    rotateWidgets();
     watchVoice();
     watchAlerts();
+  }
+
+  // Widgets under the cards (science, team board, Space) take turns in one slot instead of stacking, so chat keeps
+  // its room (Nick on shake7: once Space appeared there was barely room for chat). Only widgets with something to
+  // show (not `hidden` by their own render) take part; each stays ROT_S seconds.
+  const WIDGETS = ["prod", "board", "space"], ROT_S = 18;
+  let rotCur = null, rotSince = 0;
+  function rotateWidgets() {
+    const now = Date.now() / 1000;
+    const ids = document.body.classList.contains("portrait") ? ["prod", "space"] : WIDGETS; // portrait has no board
+    const live = ids.filter((id) => $(id) && !$(id).hidden);
+    if (!live.length) return;
+    if (!live.includes(rotCur) || now - rotSince >= ROT_S) {
+      const next = live.length === 1 ? live[0] : live[(live.indexOf(rotCur) + 1) % live.length];
+      if (next !== rotCur) {
+        rotCur = next;
+        const n = $(next);
+        n.classList.remove("rot-in");
+        void n.offsetWidth; // restart the fade-in
+        n.classList.add("rot-in");
+      }
+      rotSince = now;
+    }
+    for (const id of WIDGETS) if ($(id)) $(id).classList.toggle("rot-off", id !== rotCur);
   }
 
   // Voice captions (audio.js #voice) grow up from the main camera's bottom edge. Their height goes to --voice-clear
