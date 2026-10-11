@@ -182,10 +182,11 @@ to the id from `/state.json`. Checked against eng/stream2's mock (commit 4320f73
 Ideas for you: an "analyst says" lower third from `analyst.headline` or a priority-3 point (text and numbers come with
 facts); a production segment variant that shows `kb_compare` output (what is short for a target rate).
 
-Merge note: `tools/stream/serve.py` conflicts with eng/stream2 on two lines, both branches adding a parameter to
-`make_handler` and to its call. Resolution: `def make_handler(hub, decisions, audio=None, segments=None,
-replays=None, analyst=None)` with both bodies' defaults, and `make_handler(hub, decisions, segments=segments,
-replays=replays, analyst=analyst)`. eng/audio merges cleanly.
+Merge note (round 4, 02:12): eng/analyst merges cleanly with eng/audio (a854241) and eng/stream2 (`git merge-tree`).
+The caster selftest passes on the merged tree with eng/audio, including its stricter name check, so answers
+with viewer names and proper nouns pass. The viewer-question checks sit above the baseline section of
+caster_selftest.py so that both branches can append at the end. (The round 1 serve.py conflict with eng/stream2
+was resolved on main.)
 
 ## The check: 30 viewer questions (2026-10-11)
 
