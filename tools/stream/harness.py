@@ -45,7 +45,7 @@ for _, s in pairs(game.surfaces) do
 end
 rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, research = cur and cur.name or nil,
   progress = cur and f.research_progress or nil, top_done = top, electric_machines = machines, starved = starved,
-  darkness = s.darkness, daytime = s.daytime})
+  darkness = game.surfaces.nauvis.darkness, daytime = game.surfaces.nauvis.daytime})
 """
 
 # Production history for sparklines: item counts in the last hour, 2-minute buckets (one_hour precision has
