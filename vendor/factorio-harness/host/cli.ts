@@ -493,6 +493,18 @@ async function main() {
       `the timeout comes from --wait-timeout MS (up to 900000) or args.timeout ticks (up to 54000)` : `${action} timed_out at its own tick limit`;
     return {code:'timed_out',message:what};
   }
+  // The sleep request's own reply carries the team hints pending when it
+  // started (they are shown once): keep them for the reply the agent sees.
+  function mergeTeam(started: Reply, final: Reply): Reply {
+    const early = started.result?.team;
+    if (!early || !final.result) return final;
+    const team: Record<string, unknown> = {...early};
+    for (const [key, value] of Object.entries(final.result.team ?? {})) {
+      const before = team[key];
+      team[key] = Array.isArray(before) && Array.isArray(value) ? [...before, ...value] : value;
+    }
+    return {...final, result:{...final.result, team}};
+  }
   // fh sleep: the game runs; poll the read-only sleep_check (peek: mentions
   // stay unread) about once a second, then read it once more normally so the
   // reply carries the team block with whatever woke the agent. A sleep never
@@ -506,6 +518,8 @@ async function main() {
     if (capped) seconds = Math.max(1, Math.floor(left/1000));
     const started = await harness.request('sleep',condition ? {seconds,condition} : {seconds});
     if (!started.ok) return started;
+    // What keeps going, at once (a shell that returns early, as Codex's, shows it before the wake).
+    if (outputFormat === 'compact' && typeof started.result?.while_asleep === 'string') process.stdout.write(`while_asleep: ${started.result.while_asleep}\n`);
     let until = Date.now()+seconds*1250+10000;
     if (capped) until = Math.min(until, deadline!+1000);
     while (!stopping && Date.now()<until) {
@@ -514,7 +528,7 @@ async function main() {
       await delay(1000);
     }
     if (stopping) throw new Error('Stopped sleeping; the game keeps running.');
-    const final = await harness.request('sleep_check',{});
+    const final = mergeTeam(started, await harness.request('sleep_check',{}));
     const woke = final.result?.woke;
     if (final.ok && capped && (!woke || woke === 'elapsed')) {
       return {...final, result:{...final.result, woke:'deadline', note:'this sleep was cut to end at the deadline'}};

@@ -111,6 +111,7 @@ assert(r.wakes_on:find('your queue finishing or stalling',1,true))
 advance(100); eq(check(sol).woke,nil)
 advance(100)
 r=check(sol); eq(r.woke,'queue_done'); eq(r.queue,'finished'); eq(r.queue_steps,2)
+assert(r.while_asleep:find('^your queue keeps running'),r.while_asleep) -- repeated in the wake reply
 eq(wake(sol).woke,'queue_done')
 -- A repeating plan never finishes; it does not end the sleep between cycles.
 sol('queue_repeat',{steps={{action='wait_ticks',args={ticks=60}}},interval_ticks=60}); advance(1)

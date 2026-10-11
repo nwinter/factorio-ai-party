@@ -72,9 +72,11 @@ return function(api)
     for k, v in pairs(prev.out) do out[k] = v end
     local ago = math.floor((game.tick - prev.read_tick) / 60)
     out['repeat'] = true; out.slept_s = 0
-    local record = {start_tick=game.tick, until_tick=game.tick, woke=woke, out=out, read_tick=prev.read_tick, repeats=(prev.repeats or 0) + 1}
+    out.while_asleep = string.format('this sleep did not start: you woke (%s) %d s ago; it ends at once and repeats that wake', woke, ago)
+    local record = {start_tick=game.tick, until_tick=game.tick, woke=woke, out=out, read_tick=prev.read_tick, repeats=(prev.repeats or 0) + 1,
+      while_asleep=out.while_asleep}
     sleeps()[p.index] = record
-    return {while_asleep=string.format('this sleep did not start: you woke (%s) %d s ago; it ends at once and repeats that wake', woke, ago),
+    return {while_asleep=out.while_asleep,
       sleeping_s=0, until_tick=game.tick, ['repeat']=true, woke=woke, mention=out.mention, tell=out.tell, board=out.board, queue=out.queue}
   end
   function M.handlers.sleep(p, a)
@@ -103,6 +105,7 @@ return function(api)
     if running(q) then record.queue = true end
     local out = {}
     out.while_asleep = asleep_line(p, record, seconds)
+    record.while_asleep = out.while_asleep
     out.sleeping_s = seconds
     out.until_tick = record.until_tick
     if condition then
@@ -113,7 +116,7 @@ return function(api)
       -- Met already: the first check ends the sleep.
       if met then
         record.woke = 'condition'; out.already_met = true
-        record.out = {slept_s=0, until_tick=record.until_tick, woke='condition', saw=saw}
+        record.out = {while_asleep=record.while_asleep, slept_s=0, until_tick=record.until_tick, woke='condition', saw=saw}
       end
     end
     sleeps()[p.index] = record
@@ -209,7 +212,8 @@ return function(api)
   function M.handlers.sleep_check(p, a)
     local record = sleeps()[p.index]
     assert(record, 'no sleep started; call sleep {seconds} first (fh sleep SECONDS)')
-    local out = {slept_s=math.floor((game.tick - record.start_tick) / 60), until_tick=record.until_tick}
+    -- What kept going comes first here too: today's CLI prints only this reply.
+    local out = {while_asleep=record.while_asleep, slept_s=math.floor((game.tick - record.start_tick) / 60), until_tick=record.until_tick}
     out.woke = record.woke or why(p, record, out)
     if out.woke and record.queue then
       local q = queue_of(p.index)

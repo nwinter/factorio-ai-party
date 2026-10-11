@@ -136,6 +136,23 @@ test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
     {until:'item_count',item:'gear',at_least:5}]);
   assert.equal(seen.filter(r=>r.action==='sleep')[0].args.seconds,30);
 });
+test('fh sleep keeps the team hints the sleep request carried, and prints what keeps going first (compact)',async()=>{
+  let checks=0;
+  const reply=(request:any)=>{
+    if(request.action==='sleep'){checks=0;return {ok:true,result:{while_asleep:'your queue keeps running (move_to running, 2 steps pending); this sleep ends when it finishes or stalls',
+      sleeping_s:60,until_tick:3601,team:{mentions:['sol @you, 5s ago: @astra coal?'],alerts:['attack near (16,16)']}}};}
+    checks++;
+    return {ok:true,result:checks<2?{slept_s:1}:{while_asleep:'your queue keeps running (...)',slept_s:2,woke:'queue_done',
+      team:{mentions:['grok @you, 0s ago: @astra done'],board:['#4 (yours) note by sol: ok']}}};
+  };
+  await engine(reply,async port=>{
+    const json=JSON.parse((await cli(port,['sleep','60'])).stdout).result;
+    assert.deepEqual(json.team,{mentions:['sol @you, 5s ago: @astra coal?','grok @you, 0s ago: @astra done'],alerts:['attack near (16,16)'],board:['#4 (yours) note by sol: ok']});
+    const {stdout}=await exec(process.execPath,['dist/host/cli.js','--port',String(port),'sleep','60'],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}});
+    assert.match(stdout.split('\n')[0]!,/^while_asleep: your queue keeps running \(move_to running, 2 steps pending\)/);
+    assert.match(stdout,/@astra coal\?/);
+  });
+});
 test('fh call sleep blocks like fh sleep (with or without --wait)',async()=>{
   for (const extra of [['--wait'],[]]) {
     const seen:any[]=[];

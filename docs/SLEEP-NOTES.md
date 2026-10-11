@@ -22,7 +22,11 @@ Runtime (Lua; `fh deploy`, no control.lua change, locals guard green):
 - The sleep reply's first field, `while_asleep`: `your queue keeps running (move_to running, 3 steps pending); this
   sleep ends when it finishes or stalls`, `your walk keeps going until tick N, then your character stands idle`, or
   `no queue and no action: your character stands idle for up to 300 s`, with `(your queue is paused with N steps
-  pending)` when it is. (item 4)
+  pending)` when it is. The wake reply repeats it first (today's CLI prints only the wake reply), and the rebuilt CLI
+  prints it as its first line at once in compact output. (item 4)
+- Fixed on the way: `fh sleep` dropped the `sleep` request's own reply, whose `team` block held the hints pending when
+  the sleep began (shown once, so a mention waiting then was never seen). The CLI now merges that block into the wake
+  reply.
 - Study item 5, built: a sleep started within 10 game seconds of the final read of a wake on an event (mentioned,
   told, board, damaged, condition, queue_done, queue_stalled) does not start; it returns at once with that wake,
   `repeat: true` and `while_asleep: this sleep did not start: you woke (mentioned) 4 s ago; ...`. A `for` loop of
