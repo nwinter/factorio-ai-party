@@ -182,6 +182,15 @@ fails(function() runtime.operator.camera({player=2,follow='astra',zoom=5}) end,'
 local old=director.character
 local cam=runtime.operator.camera({player=2,follow='astra',zoom=0.5})
 eq(cam.ok,true); eq(director.controller_type,2); eq(old.valid,false)
+eq(director.show_on_map,false) -- its name does not float over the bot it follows
+-- Camera clients with no camera yet become characterless spectators without a label
+-- on the 5 s recheck (a character would show its name on stream); agents are untouched.
+cam1.set_controller=function(t) cam1.controller_type=t.type; cam1.character=nil end
+cam1.game_view_settings={show_minimap=true}
+local cam1_body=cam1.character
+eq(cam1.show_on_map,nil); advance(300-tick%300)
+eq(cam1.show_on_map,false); eq(cam1.controller_type,2); eq(cam1_body.valid,false); eq(cam1.game_view_settings.show_minimap,false)
+eq(nick.show_on_map,nil); eq(nick.controller_type,1)
 eq(runtime.operator.camera({player=2,follow='astra',zoom=4}).camera.zoom,4); cam=runtime.operator.camera({player=2,follow='astra',zoom=0.5})
 -- A clean view: GUI hidden, entity info kept.
 eq(director.game_view_settings.show_minimap,false); eq(director.game_view_settings.show_quickbar,false)

@@ -39,10 +39,18 @@ return function(api)
     pcall(function() view.show_entity_info = true end)
     pcall(function() p.game_view_settings = view end)
   end
+  -- A director's name must not float over the bot it follows on stream:
+  -- show_on_map=false hides its label from the other clients. Set for every
+  -- connected director (also camera clients with no camera yet) on the 5 s
+  -- recheck, so a client that joins or reconnects later is covered too.
+  local function hide_name(p)
+    pcall(function() if p.show_on_map ~= false then p.show_on_map = false end end)
+  end
   -- Spectator without a character; done again if the player came back with one
   -- (a reconnect or respawn), since a director is never an agent.
   local function make_director(p)
     directors()[p.index] = true
+    hide_name(p)
     if p.controller_type ~= defines.controllers.spectator then
       local c = p.character
       p.set_controller{type=defines.controllers.spectator}
@@ -147,6 +155,14 @@ return function(api)
         -- A reconnect can bring back a character or reset the view settings.
         if recheck or p.controller_type ~= defines.controllers.spectator then make_director(p) end
         M.update(p, cam, false)
+      end
+    end
+    -- Every connected director, with a camera or not (a camera client before its
+    -- first camera call, or released), is a characterless spectator with no
+    -- label: a character would stand on stream with its name over its head.
+    if recheck then
+      for _, p in pairs(game.connected_players or {}) do
+        if M.director(p.index) then make_director(p) end
       end
     end
   end
