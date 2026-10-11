@@ -75,6 +75,7 @@ class Agent:
         self.seen = False
         self.died_at = None
         self.connected = True
+        self.voice = None  # profile.voice: a voice id from tools/stream/voices.py
 
     def bump(self, amount, now):
         self.decay(now)
@@ -136,7 +137,7 @@ class Model:
 
     def _ingest_agent(self, a, now):
         ag = self.agent(a["name"])
-        for key in ("kind", "display_name", "color", "glyph", "motto"):
+        for key in ("kind", "display_name", "color", "glyph", "motto", "voice"):
             if a.get(key):
                 setattr(ag, key, a[key])
         if a.get("position"):
@@ -184,6 +185,8 @@ class Model:
         sender = self._match_sender(m.get("from", ""))
         entry = {"seq": m.get("seq"), "tick": m.get("tick"), "from": m.get("from"), "agent": sender,
                  "text": m.get("text", ""), "t": m.get("t", now)}
+        if m.get("aloud"):  # the agent asked for this line to be voiced on stream (tools/stream/caster.py)
+            entry["aloud"] = True
         self.chat.append(entry)
         if sender and m.get("t", now) > now - 30:
             ag = self.agents[sender]
@@ -347,7 +350,7 @@ class Model:
                 "role": ag.cfg.get("role"), "alive": ag.alive, "activity": self.activity(ag, now),
                 "action": self.action_text(ag), "active": ag.active, "position": ag.position,
                 "location": self.location(ag), "interest": round(ag.interest, 2),
-                "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen,
+                "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen, "voice": ag.voice,
             })
         res = self.research
         return {

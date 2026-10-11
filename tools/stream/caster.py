@@ -1,0 +1,833 @@
+#!/usr/bin/env python3
+"""AI shoutcasters and voiced agent chat for the stream (Mac side). Stdlib only (+ ffmpeg for local TTS).
+
+  python3 tools/stream/serve.py --mock --port 8788 &                  # the stream service (state + overlay page)
+  python3 tools/stream/caster.py --feed http://127.0.0.1:8788          # Workers AI writer + Aura-2 voices
+  python3 tools/stream/caster.py --writer template --tts say           # offline: templates + macOS voices
+  python3 tools/stream/caster.py --writer claude --tts aura2           # `claude -p --model haiku` writes the lines
+  python3 tools/stream/caster.py --dry-run                             # print lines, no TTS, nothing pushed
+  python3 tools/stream/caster.py --bench                               # writer latency/cost on canned events
+
+Reads the service's /events SSE (one snapshot per second), turns snapshot changes into events (alerts, research,
+board, camera cuts, chat), and lets two casters talk about them: "Rook" (play-by-play) and "Vale" (colour). At most
+one caster line per --gap seconds (random within the range; urgent events wait only --urgent-gap), never while a
+clip is still playing. Agent chat lines are voiced when the agent marked them `aloud` or the classifier calls them
+banter/strategy/emotion. Clips go to the service (POST /audio); the overlay page plays them (casters duck under
+agents; OBS ducks game audio under the page). Every line is logged to tools/stream/logs/caster-<start>.jsonl.
+"""
+import argparse, base64, json, os, random, re, shutil, subprocess, sys, threading, time, traceback, urllib.request
+from collections import deque
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+sys.dont_write_bytecode = True
+
+import voices  # noqa: E402
+
+CASTERS = {
+    "pbp": {"name": "Rook", "label": "Rook · play-by-play",
+            "persona": "You are Rook, the play-by-play caster: punchy, present tense, high energy, you say what is "
+                       "happening right now and who is doing it, like an esports caster calling a big play."},
+    "color": {"name": "Vale", "label": "Vale · colour",
+              "persona": "You are Vale, the colour commentator: you explain why it matters, read the team's "
+                         "strategy, and bring warmth and dry humour. You sometimes riff on what Rook just said."},
+}
+PRIORITY = {"attack": 9, "death": 9, "loss": 8, "research": 7, "power": 6, "harness": 5, "board": 4, "chat": 4,
+            "info": 3,
+            "research_start": 3, "camera": 3, "open": 8, "lull": 1}
+URGENT = 8
+TEXT_MODELS = {  # Workers AI, USD per million tokens in/out (pricing page, 2026-10-10)
+    "@cf/meta/llama-3.3-70b-instruct-fp8-fast": (0.293, 2.253),
+    "@cf/meta/llama-3.1-8b-instruct-fp8-fast": (0.045, 0.384),
+    "@cf/google/gemma-4-26b-a4b-it": (0.100, 0.300),
+    "@cf/openai/gpt-oss-20b": (0.200, 0.300),
+    "@cf/mistralai/mistral-small-3.1-24b-instruct": (0.351, 0.555),
+}
+CLEF_PRICE = 0.038  # @cf/cloudflare/clef-flash, USD per million input tokens
+
+
+def log(*a):
+    print(time.strftime("%H:%M:%S"), *a, flush=True)
+
+
+# ---- feed ------------------------------------------------------------------------------------------------------
+class Feed(threading.Thread):
+    """Follows /events and keeps the latest snapshot; reconnects forever."""
+
+    def __init__(self, base, on_snapshot):
+        super().__init__(daemon=True)
+        self.base, self.on_snapshot = base.rstrip("/"), on_snapshot
+
+    def run(self):
+        while True:
+            try:
+                with urllib.request.urlopen(self.base + "/events", timeout=60) as r:
+                    for raw in r:
+                        line = raw.decode("utf-8", "replace").rstrip("\n")
+                        if line.startswith("data: "):
+                            try:
+                                self.on_snapshot(json.loads(line[6:]))
+                            except Exception:
+                                traceback.print_exc()
+            except Exception as e:
+                log(f"[feed] {type(e).__name__}: {e}; retrying")
+                time.sleep(3)
+
+
+# ---- snapshot diff -> events -----------------------------------------------------------------------------------
+class Differ:
+    def __init__(self):
+        self.prev = None
+        self.alert_ids, self.chat_keys, self.board_seqs = set(), set(), set()
+
+    def diff(self, s):
+        ev = []
+        now = time.time()
+        first = self.prev is None
+        p = self.prev or {}
+        for a in s.get("alerts") or []:
+            if a["id"] in self.alert_ids:
+                continue
+            self.alert_ids.add(a["id"])
+            if not first:
+                ev.append({"kind": a["kind"] if a["kind"] in PRIORITY else "info", "text": a.get("text"),
+                           "agent": a.get("agent")})
+        for m in s.get("chat") or []:
+            key = m.get("seq") or (m.get("tick"), m.get("from"), m.get("text"))
+            if key in self.chat_keys:
+                continue
+            self.chat_keys.add(key)
+            if not first and m.get("agent") and now - float(m.get("t") or now) < 30:
+                ev.append({"kind": "chat", "agent": m["agent"], "text": m.get("text", ""), "aloud": bool(m.get("aloud")),
+                           "seq": m.get("seq")})
+        board = s.get("board") or {}
+        for b in board.get("events") or []:  # eng/stream2's board snapshot: {seq, by, agent, verb, title, kind}
+            seq = b.get("seq") if b.get("seq") is not None else (b.get("tick"), b.get("id"), b.get("verb"))
+            if seq in self.board_seqs:
+                continue
+            self.board_seqs.add(seq)
+            verb = b.get("verb") or b.get("change")
+            if not first and verb in ("posted", "taken", "done", "blocked") and now - float(b.get("t") or now) < 60:
+                kind = "harness" if b.get("kind") == "harness" else "board"
+                ev.append({"kind": kind, "agent": b.get("agent") or b.get("by"), "change": verb,
+                           "title": b.get("title"), "item": b.get("kind")})
+        res, pres = s.get("research") or {}, p.get("research") or {}
+        if not first and res.get("current") and res.get("current") != pres.get("current"):
+            ev.append({"kind": "research_start", "tech": res.get("label")})
+        cam, pcam = (s.get("cameras") or {}).get("main") or {}, (p.get("cameras") or {}).get("main") or {}
+        if not first and cam.get("agents") and cam.get("agents") != pcam.get("agents"):
+            ev.append({"kind": "camera", "agents": cam["agents"]})
+        if first:
+            ev.append({"kind": "open"})
+        self.prev = s
+        for e in ev:
+            e["t"] = now
+            e["prio"] = PRIORITY.get(e["kind"], 2)
+        return ev
+
+
+# ---- facts: everything a line may mention ----------------------------------------------------------------------
+def spoken(text):
+    """Alert/board text as a caster would say it: no map coordinates, no dangling 'near'."""
+    text = re.sub(r"\s*(?:near|at)?\s*\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)", "", str(text))
+    text = re.sub(r"(?<=[a-z])-(?=[a-z])", " ", re.sub(r"\s*:\s*", ": ", text))  # gun-turret -> gun turret
+    return re.sub(r"\s+", " ", text).strip(" :")
+def spoken_time(gt):
+    """'1h03m' -> '1 hour 3 minutes' (what TTS should read)."""
+    m = re.match(r"(\d+)h(\d+)m", gt or "")
+    if not m:
+        return gt
+    h, mins = int(m.group(1)), int(m.group(2))
+    parts = ([f"{h} hour" + ("s" if h != 1 else "")] if h else []) + \
+        ([f"{mins} minute" + ("s" if mins != 1 else "")] if mins or not h else [])
+    return " ".join(parts)
+
+
+def agent_facts(s, name):
+    a = next((x for x in s.get("agents") or [] if x["name"] == name), None)
+    if not a:
+        return None
+    f = {"name": a.get("display_name") or name, "role": a.get("role"), "model": a.get("model"),
+         "doing": a.get("action") if a.get("activity") == "acting" else None,
+         "status": {"dead": "down, waiting to respawn", "offline": "offline"}.get(a.get("activity")),
+         "where": a.get("location"), "motto": a.get("motto") or None}
+    return {k: v for k, v in f.items() if v}
+
+
+def facts_for(e, s):
+    f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
+    for k in ("text", "change", "title", "tech", "item"):
+        if e.get(k):
+            f[k] = spoken(e[k]) if k in ("text", "title") else e[k]
+    board = s.get("board") or {}
+    if e["kind"] in ("board", "harness", "lull") and board.get("available"):
+        f["board"] = {k: board.get(k) for k in ("open_unowned", "in_progress", "claims_total") if board.get(k)}
+        if e["kind"] == "lull" and board.get("changelog"):
+            f["board"]["harness_changelog"] = [c.get("text") for c in board["changelog"]]
+    if e.get("agent"):
+        f["agent"] = agent_facts(s, e["agent"]) or {"name": e["agent"]}
+    if e.get("agents"):
+        f["on_camera"] = [agent_facts(s, n) or {"name": n} for n in e["agents"]]
+    res = s.get("research") or {}
+    if res.get("label"):
+        f["researching"] = {"tech": res["label"], "percent": int(round((res.get("progress") or 0) * 100))}
+    f["technologies_done"] = res.get("done_count")
+    if res.get("recent"):
+        f["latest_research"] = [r["label"] for r in res["recent"][:2]]
+    prod = [p for p in s.get("production") or [] if p.get("rate")]
+    if prod and e["kind"] in ("lull", "research", "power", "open"):
+        f["production_per_minute"] = {p["item"].replace("-", " "): round(p["rate"]) for p in prod[:4]}
+    if e["kind"] == "lull":
+        busy = [agent_facts(s, a["name"]) for a in s.get("agents") or [] if a.get("activity") == "acting"]
+        f["busy_agents"] = [b for b in busy if b][:3]
+        f["angle"] = e.get("angle")
+    if e["kind"] == "open":
+        f["agents"] = [agent_facts(s, a["name"]) for a in (s.get("agents") or [])][:12]
+        f["title"] = s.get("title")
+    return {k: v for k, v in f.items() if v not in (None, [], {})}
+
+
+# ---- writers -----------------------------------------------------------------------------------------------------
+RULES = ("Rules: one or two short sentences, at most 25 words, spoken aloud (no emoji, no lists, no stage "
+         "directions, no quotation marks, do not start with your own name). Use ONLY the facts given; never invent "
+         "names, numbers, places, items or outcomes. You may round numbers or skip them. Refer to agents by the "
+         "names given. Vary your openings; do not repeat phrasing from the recent lines. Be fun, like a great "
+         "esports cast, but never mean to a player.")
+
+
+def known_text(facts):
+    return json.dumps(facts, ensure_ascii=False).lower()
+
+
+def check_line(line, facts, names, recent):
+    """Return a reason the line is unusable, or None. Names and numbers must come from the facts."""
+    blob = known_text(facts)
+    low = line.lower()
+    for n in names:
+        if re.search(r"\b" + re.escape(n.lower()) + r"\b", low) and n.lower() not in blob:
+            return f"name not in facts: {n}"
+    for num in re.findall(r"\d+(?:\.\d+)?", line):
+        if num not in blob:
+            return f"number not in facts: {num}"
+    if len(line.split()) > 34:
+        return "too long"
+    words = set(re.findall(r"[a-z']+", low))
+    for r in recent:
+        prev = set(re.findall(r"[a-z']+", clean(r).lower()))
+        if words and prev and len(words & prev) / len(words | prev) >= 0.6:
+            return "repeats a recent line"
+    return None
+
+
+def clean(line):
+    line = line.strip()
+    line = re.sub(r"^(rook|vale|play-by-play|colour|color)\s*[:\-–]\s*", "", line, flags=re.I)
+    line = re.sub(r"\*[^*]+\*", "", line)  # stage directions
+    line = re.sub(r"\s+", " ", line).strip().strip('"“”').strip()
+    return line
+
+
+def at_phrase(where):
+    """'iron smelting' -> 'at the iron smelting', 'spawn' -> 'at spawn', '50 m W' -> '50 metres west of spawn'."""
+    m = re.match(r"(\d+) m ([NSEW]{1,2})$", where)
+    if m:
+        dirs = {"N": "north", "S": "south", "E": "east", "W": "west"}
+        return f"{m.group(1)} metres {'-'.join(dirs[c] for c in m.group(2))} of spawn"
+    return "at spawn" if where == "spawn" else f"at the {where}"
+
+
+class TemplateWriter:
+    """Fact-safe fallback: fills hand-written lines from the facts. Never says anything not in them."""
+    name = "template"
+    T = {
+        "open": {"pbp": ["Welcome in! {team_size} AIs, one factory, and the clock reads {game_time}. Let's go!",
+                         "We are live! {team_size} agents sharing one world. Buckle up."],
+                 "color": ["{team_size} different minds, one shared base. The question is whether they cooperate.",
+                           "I love this format. Nobody's in charge, everybody's building."]},
+        "attack": {"pbp": ["Contact! {text}!", "Here they come! {text}!", "Trouble on screen: {text}!"],
+                   "color": ["This is where the defence plan gets tested for real.",
+                             "You can build all day, but the biters set the schedule."]},
+        "death": {"pbp": ["Oh no! {text}! Back to respawn.", "And that's a knockout. {text}."],
+                  "color": ["Ouch. That's a long walk back from respawn.", "Painful, but the factory keeps running."]},
+        "loss": {"pbp": ["Damage report: {text}.", "That hurts. {text}."],
+                 "color": ["Losses mean repairs, and repairs mean someone's plan just got interrupted.",
+                           "Walls and turrets are consumables out here. Time to rebuild."]},
+        "info": {"pbp": ["Heads up: {text}."], "color": ["Worth keeping an eye on that."]},
+        "research": {"pbp": ["{text}! The labs deliver!", "Ding! {text}!", "{text}. Another one for the team!"],
+                     "color": ["That's {technologies_done} technologies done. New toys for everyone.",
+                               "Every tech unlock changes the plan. Watch who uses it first."]},
+        "research_start": {"pbp": ["Labs switch over: {tech} is next on the list."],
+                           "color": ["{tech} next. Smart pick, it unlocks a lot down the line."]},
+        "power": {"pbp": ["Warning lights! {text}.", "The power's sagging: {text}."],
+                  "color": ["Power is everything. When it dips, every machine slows down."]},
+        "board": {"pbp": ["On the board: {agent_name} {did} {title}.", "Board update! {agent_name} {did} {title}.",
+                          "{agent_name} {did} {title}. The board keeps moving."],
+                  "color": ["That team board is how {team_size} agents avoid stepping on each other.",
+                            "Good teamwork there from {agent_name}.", "Somebody has to do the chores. Thanks, {agent_name}."]},
+        "harness": {"pbp": ["Tool request on the board: {title}. Status: {change}."],
+                    "color": ["When the agents ask for better tools, that's the meta-game."]},
+        "camera": {"pbp": ["Let's check in on {cam_name}, {cam_doing}.", "Over to {cam_name} now: {cam_doing}.",
+                           "Here's {cam_name}, {cam_at}.", "Cameras find {cam_name}. Let's watch.",
+                           "{cam_name}, {cam_model} under the hood, {cam_doing}.",
+                           "And here's {cam_name} {cam_at}, {cam_doing}."],
+                   "color": ["{cam_name}'s role is {cam_role}. Let's see how it's going.",
+                             "Keep an eye on {cam_name} here.", "{cam_name}'s motto: {cam_motto} Let's see if it holds.",
+                             "{cam_name} runs on {cam_model}. Let's see what it does with the time.",
+                             "Love watching {cam_name} work {cam_at}."]},
+        "chat": {"pbp": ["{agent_name} on comms: they're talking it through.", "{agent_name} on the mic!",
+                         "Comms from {agent_name}."],
+                 "color": ["I like hearing {agent_name} think out loud.", "That's the chatter you want from a team.",
+                           "That's {agent_name} in a nutshell.", "{agent_name} has opinions, and I'm here for it."]},
+        "lull": {"pbp": ["{researching_tech} is at {researching_percent} percent in the labs.",
+                         "Game clock {game_time}, and the factory hums along.",
+                         "Meanwhile, {busy_name} is {busy_doing}.", "{busy_name} is {busy_doing} {busy_at}."],
+                 "color": ["Quiet moments are when a factory grows the most.",
+                           "{technologies_done} technologies down. Plenty more to go.",
+                           "The labs are working on {researching_tech}. That'll open things up.",
+                           "{busy_name}, on {busy_role}, never seems to stop.",
+                           "Clock says {game_time}, {technologies_done} technologies in. Not bad for a team with no boss."]},
+    }
+
+    def __init__(self, rng=None):
+        self.rng = rng or random.Random()
+        self.recent = deque(maxlen=12)
+
+    def write(self, who, e, facts, recent, names):
+        flat = dict(facts)
+        for key in ("agent",):
+            for k, v in (facts.get(key) or {}).items():
+                flat[f"{key}_{k}"] = v
+        cam = (facts.get("on_camera") or [{}])[0]
+        for k, v in cam.items():
+            flat[f"cam_{k}"] = v
+        busy = (facts.get("busy_agents") or [{}])[0]
+        for k, v in busy.items():
+            flat[f"busy_{k}"] = v
+        for pre, src in (("cam", cam), ("busy", busy)):
+            if src.get("where"):
+                flat[f"{pre}_at"] = at_phrase(src["where"])
+        if flat.get("cam_motto") and flat["cam_motto"][-1] not in ".!?":
+            flat["cam_motto"] += "."
+        for k, v in (facts.get("researching") or {}).items():
+            flat[f"researching_{k}"] = v
+        if facts.get("change"):
+            flat["did"] = {"posted": "posts", "taken": "picks up", "done": "finishes",
+                           "blocked": "is stuck on"}.get(facts["change"], facts["change"])
+        pool = self.T.get(e["kind"], {}).get(who, [])
+        opts = [t for t in pool if t not in self.recent]
+        self.rng.shuffle(opts)
+        for t in opts + pool:
+            try:
+                line = t.format(**flat)
+            except (KeyError, IndexError):
+                continue
+            self.recent.append(t)
+            return line
+        return None
+
+
+class LLMWriter:
+    """Workers AI chat model or `claude -p`; output is checked against the facts, templates fill in on failure."""
+
+    def __init__(self, kind, model=None, ai=None, timeout=12, bin="claude"):
+        self.kind, self.model, self.ai, self.timeout, self.bin = kind, model, ai, timeout, bin
+        self.name = f"{kind}:{model}" if model else kind
+        self.spent, self.calls, self.latency = 0.0, 0, []
+        if kind == "cf" and ai is None:
+            from cfai import WorkersAI
+            self.ai = WorkersAI()
+
+    def prompt(self, who, e, facts, recent):
+        other = "Vale (colour)" if who == "pbp" else "Rook (play-by-play)"
+        user = (f"Event: {e['kind']}. Facts (the only things you may state):\n{json.dumps(facts, ensure_ascii=False)}\n"
+                f"Recent lines on air (you and {other}):\n" + ("\n".join(f"- {r}" for r in recent[-6:]) or "- none")
+                + ("\nRook just called this; react with analysis or colour, do not repeat the call."
+                   if e.get("followup") else "")
+                + "\nSay your next line now. Reply with the line only.")
+        return CASTERS[who]["persona"] + " You are casting a livestream of AI agents playing Factorio together. " + RULES, user
+
+    def write(self, who, e, facts, recent, names):
+        system, user = self.prompt(who, e, facts, recent)
+        t0 = time.time()
+        if self.kind == "cf":
+            out = self.ai.run(self.model, {"messages": [{"role": "system", "content": system},
+                                                        {"role": "user", "content": user}],
+                                           "max_tokens": 80, "temperature": 0.9})
+            text = out.get("response") if isinstance(out, dict) else str(out)
+            if text is None and isinstance(out, dict) and out.get("choices"):  # OpenAI-style models (gpt-oss)
+                text = out["choices"][0]["message"].get("content")
+            usage = (out.get("usage") or {}) if isinstance(out, dict) else {}
+            pin, pout = TEXT_MODELS.get(self.model, (0.3, 2.3))
+            self.spent += (usage.get("prompt_tokens", len(system + user) / 4) * pin
+                           + usage.get("completion_tokens", 40) * pout) / 1e6
+        else:
+            if not shutil.which(self.bin):
+                raise RuntimeError(f"{self.bin} not found")
+            p = subprocess.run([self.bin, "-p", "--model", self.model or "haiku", system + "\n\n" + user],
+                               capture_output=True, text=True, timeout=self.timeout * 3)
+            if p.returncode:
+                raise RuntimeError(p.stderr.strip()[:200] or f"claude exited {p.returncode}")
+            text = p.stdout
+        self.calls += 1
+        self.latency.append(time.time() - t0)
+        return clean(text or "")
+
+
+# ---- chat classifier ---------------------------------------------------------------------------------------------
+LOGISTICS = re.compile(r"\b(on it|ok|okay|done|placed|inserted|moving|need \d+|\d+ (?:more )?\w+|at \(?-?\d+|x=|y=|"
+                       r"queue|lane|belt|chest|stock|ack|copy|roger|eta)\b", re.I)
+SPICE = re.compile(r"(!|\?|\b(?:we|plan|strategy|should|let's|lets|why|because|love|hate|sorry|nice|wow|yes|no way|"
+                   r"finally|beautiful|help|please|fight|regrets|personally|cry|probably|objections|everybody|"
+                   r"behold|you're welcome)\b)", re.I)
+
+
+def heuristic_kind(text):
+    """Cheap local stand-in for Clef: 'voice' for banter/strategy/emotion, else 'logistics'."""
+    spice = len(SPICE.findall(text))
+    dry = len(LOGISTICS.findall(text)) + len(re.findall(r"\d", text)) / 3
+    return ("voice" if spice >= 1 and spice >= dry * 0.75 else "logistics"), round(spice - dry, 2)
+
+
+class Classifier:
+    def __init__(self, kind, ai=None):
+        self.kind, self.ai = kind, ai
+        self.spent, self.calls, self.latency = 0.0, 0, []
+
+    def classify(self, msgs, names):
+        """msgs: [{seq, agent, text}] -> {seq: (voice?, label)}"""
+        if self.kind == "heuristic" or not msgs:
+            return {m["seq"]: (heuristic_kind(m["text"])[0] == "voice", "heuristic") for m in msgs}
+        qs = {}
+        for m in msgs[:64]:
+            qs[f"m{m['seq']}"] = {
+                "type": "choice",
+                "instructions": f"Message from {names.get(m['agent'], m['agent'])}: \"{m['text']}\". For a livestream "
+                                "audience, what kind of team chat line is this?",
+                "criteria": {"banter": "jokes, teasing, personality, chat between friends",
+                             "strategy": "plans, priorities, decisions, debate about what the team should do",
+                             "emotion": "excitement, frustration, alarm, celebration, apology",
+                             "logistics": "routine coordination: positions, item counts, acknowledgements, status"}}
+        state = "Team chat of AI agents playing Factorio co-op on a livestream."
+        t0 = time.time()
+        out = self.ai.run("@cf/cloudflare/clef-flash", {"model": "clef-flash", "state": state, "questions": qs})
+        self.calls += 1
+        self.latency.append(time.time() - t0)
+        self.spent += (len(json.dumps(qs)) / 4) * CLEF_PRICE / 1e6
+        answers = out.get("answers", {}) if isinstance(out, dict) else {}
+        res = {}
+        for m in msgs[:64]:
+            label = pick_choice(answers.get(f"m{m['seq']}"))
+            res[m["seq"]] = (label in ("banter", "strategy", "emotion"), label or "unknown")
+        return res
+
+
+def pick_choice(a):
+    """Clef `choice` answers carry the chosen option and per-option probabilities; accept a few shapes."""
+    if isinstance(a, str):
+        return a
+    if not isinstance(a, dict):
+        return None
+    for k in ("choice", "answer", "label", "value", "selected"):
+        if isinstance(a.get(k), str):
+            return a[k]
+    probs = a.get("probabilities") or a.get("scores") or a.get("probs")
+    if isinstance(probs, dict) and probs:
+        return max(probs, key=probs.get)
+    return None
+
+
+# ---- the service -------------------------------------------------------------------------------------------------
+class Breaker:
+    """Skip a failing backend for a while instead of paying a timeout on every line."""
+
+    def __init__(self, name, limit=3, cool=120):
+        self.name, self.limit, self.cool = name, limit, cool
+        self.fails, self.until = 0, 0.0
+
+    def ok(self):
+        return time.time() >= self.until
+
+    def good(self):
+        self.fails = 0
+
+    def fail(self):
+        self.fails += 1
+        if self.fails >= self.limit:
+            self.fails, self.until = 0, time.time() + self.cool
+            log(f"[{self.name}] {self.limit} failures in a row; using the fallback for {self.cool:.0f} s")
+class Caster:
+    def __init__(self, a):
+        self.a = a
+        self.rng = random.Random(a.seed)
+        self.base = a.feed.rstrip("/")
+        self.lock = threading.Lock()
+        self.snap = None
+        self.differ = Differ()
+        self.events = deque(maxlen=60)
+        self.chat_q = deque(maxlen=30)
+        self.recent = deque(maxlen=8)
+        self.caster_free = 0.0
+        self.agent_free = 0.0
+        self.next_gap = 0.0
+        self.last_line_t = time.time()
+        self.last_speaker = "color"
+        self.last_agent_voice = 0.0
+        self.agent_last = {}
+        ai = None
+        if a.writer.startswith("cf") or a.tts in voices.MODEL or a.classifier == "clef":
+            from cfai import WorkersAI
+            ai = WorkersAI()
+        self.template = TemplateWriter(self.rng)
+        if a.writer == "template":
+            self.writer = None
+        elif a.writer == "claude":
+            self.writer = LLMWriter("claude", a.model or "haiku", bin=a.claude_bin)
+        else:
+            self.writer = LLMWriter("cf", a.model or "@cf/meta/llama-3.3-70b-instruct-fp8-fast", ai=ai)
+        self.tts = None if a.dry_run else voices.TTS(a.tts, ai=ai)
+        self.tts_fallback = voices.TTS(a.tts_fallback, ai=ai) if a.tts_fallback and not a.dry_run else None
+        self.breakers = {k: Breaker(k, cool=a.backoff) for k in ("writer", "classifier", "tts")}
+        self.classifier = Classifier(a.classifier, ai=ai)
+        os.makedirs(a.log_dir, exist_ok=True)
+        self.log_path = os.path.join(a.log_dir, time.strftime("caster-%Y%m%d-%H%M%S.jsonl"))
+        self.t0 = time.time()
+        self.stats = {"caster_lines": 0, "agent_lines": 0, "fallbacks": 0, "skipped_no_listener": 0}
+
+    # -- plumbing
+    def on_snapshot(self, s):
+        with self.lock:
+            self.snap = s
+            for e in self.differ.diff(s):
+                if e["kind"] == "chat":
+                    self.chat_q.append(e)
+                    if e["aloud"] or self.rng.random() < 0.25:  # some chat also feeds the casters
+                        self.events.append(dict(e, prio=2 if not e["aloud"] else 4))
+                else:
+                    self.events.append(e)
+
+    def status(self):
+        try:
+            with urllib.request.urlopen(self.base + "/audio/status", timeout=3) as r:
+                return json.load(r)
+        except Exception:
+            return {"listeners": 0, "playing": []}
+
+    def push(self, meta, audio, ctype):
+        body = dict(meta, audio_b64=base64.b64encode(audio).decode(), ctype=ctype)
+        req = urllib.request.Request(self.base + "/audio", data=json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return json.load(r)
+
+    def record(self, **kw):
+        kw["t"] = round(time.time(), 2)
+        with open(self.log_path, "a") as f:
+            f.write(json.dumps(kw, ensure_ascii=False) + "\n")
+
+    def names(self, s):
+        return {a["name"]: a.get("display_name") or a["name"] for a in s.get("agents") or []}
+
+    # -- casters
+    def pick_event(self, now):
+        fresh = [e for e in self.events if now - e["t"] < self.a.stale]
+        self.events = deque(fresh, maxlen=60)
+        if not fresh:
+            return None
+        best = max(fresh, key=lambda e: (e["prio"], e["t"]))
+        self.events.remove(best)
+        # a burst of the same kind is one story: drop its siblings
+        self.events = deque([e for e in self.events if not (e["kind"] == best["kind"] and e["prio"] < URGENT)],
+                            maxlen=60)
+        return best
+
+    def caster_tick(self, now, st):
+        playing = st.get("playing") or []
+        if any(p.get("channel") == "caster" for p in playing) or now < self.caster_free:
+            return
+        if any(p.get("channel") == "agent" for p in playing) or now < self.agent_free:
+            return
+        with self.lock:
+            s = self.snap
+            top = max((e["prio"] for e in self.events if now - e["t"] < self.a.stale), default=0)
+        if not s:
+            return
+        gap_ok = now >= self.last_line_t + (self.a.urgent_gap if top >= URGENT else self.next_gap)
+        if not gap_ok:
+            return
+        with self.lock:
+            e = self.pick_event(now)
+        if not e and now - self.last_line_t >= self.a.lull:
+            e = {"kind": "lull", "t": now, "prio": 1,
+                 "angle": self.rng.choice(["research progress", "who is busy", "production", "team strategy"])}
+        if not e:
+            return
+        who = "pbp" if e["prio"] >= PRIORITY["research"] or e["kind"] in ("camera", "board", "harness",
+                                                                          "research_start") else "color"
+        if e["kind"] in ("lull", "chat", "research") and self.last_speaker == "color":
+            who = "pbp" if e["kind"] != "chat" else "color"
+        if e["kind"] == "lull" and self.last_speaker == "pbp" or e.get("followup"):
+            who = "color"
+        self.say_caster(who, e, s)
+
+    def say_caster(self, who, e, s):
+        facts = facts_for(e, s)
+        names = list(self.names(s).values())
+        recent = list(self.recent)
+        line, backend, err, lat = None, "template", None, 0.0
+        if self.writer and self.breakers["writer"].ok():
+            t0 = time.time()
+            try:
+                cand = self.writer.write(who, e, facts, recent, names)
+                self.breakers["writer"].good()
+                err = check_line(cand, facts, names, recent) if cand else "empty"
+                if not err:
+                    line, backend = cand, self.writer.name
+                else:
+                    log(f"[{who}] rejected ({err}): {cand}")
+            except Exception as x:
+                err = f"{type(x).__name__}: {x}"
+                log(f"[{who}] writer failed: {err}")
+                self.breakers["writer"].fail()
+            lat = time.time() - t0
+        if not line:
+            if self.writer:
+                self.stats["fallbacks"] += 1
+            line = self.template.write(who, e, facts, recent, names)
+        now = time.time()
+        self.last_line_t = now
+        self.next_gap = self.rng.uniform(*self.a.gap)
+        if not line:
+            return
+        self.recent.append(f"{CASTERS[who]['name']}: {line}")
+        self.last_speaker = who
+        if who == "pbp" and e["prio"] >= PRIORITY["research"] and not e.get("followup"):
+            # the colour caster reacts to a big play on the next beat, the way a cast pair does
+            with self.lock:
+                self.events.append(dict(e, prio=6, followup=True, t=time.time()))
+        self.stats["caster_lines"] += 1
+        log(f"[{CASTERS[who]['name']}] ({e['kind']}, {backend}, {lat:.1f}s) {line}")
+        rec = {"type": "caster", "who": who, "event": e["kind"], "line": line, "backend": backend,
+               "write_latency": round(lat, 2), "rejected": err, "facts": facts}
+        dur = self.voice(line, voices.CASTERS[who], who, {"channel": "caster", "speaker": CASTERS[who]["label"],
+                                                         "who": who, "text": line, "expires_in": 25}, rec)
+        self.caster_free = time.time() + dur + 0.6
+
+    # -- agent chat
+    def chat_tick(self, now, st):
+        with self.lock:
+            pending = [m for m in self.chat_q if now - m["t"] < self.a.chat_stale]
+            self.chat_q.clear()
+            s = self.snap
+        if not pending or not s:
+            return
+        names = self.names(s)
+        need = [m for m in pending if not m["aloud"]]
+        verdict = {}
+        if need:
+            try:
+                if not self.breakers["classifier"].ok():
+                    raise RuntimeError("backing off")
+                verdict = self.classifier.classify(need, names)
+                self.breakers["classifier"].good()
+            except Exception as x:
+                if str(x) != "backing off":
+                    log(f"[chat] classifier failed ({type(x).__name__}: {x}); using heuristic")
+                    self.breakers["classifier"].fail()
+                verdict = Classifier("heuristic").classify(need, names)
+        for m in pending:
+            ok, label = (True, "aloud") if m["aloud"] else verdict.get(m["seq"], (False, "?"))
+            self.record(type="chat_decision", agent=m["agent"], text=m["text"], voiced=ok, label=label)
+            if not ok:
+                continue
+            # `aloud` is the agent's request, not a free pass: shorter team-wide gap, same per-agent cooldown
+            gap = self.a.agent_gap / 2 if m["aloud"] else self.a.agent_gap
+            if time.time() - self.last_agent_voice < gap:
+                self.record(type="chat_skip", agent=m["agent"], reason="agent_gap")
+                continue
+            if time.time() - self.agent_last.get(m["agent"], 0) < self.a.agent_cooldown:
+                self.record(type="chat_skip", agent=m["agent"], reason="agent_cooldown")
+                continue
+            if any(p.get("channel") == "agent" for p in (st.get("playing") or [])) or time.time() < self.agent_free:
+                if not m["aloud"]:
+                    continue
+                time.sleep(max(0.0, min(8.0, self.agent_free - time.time())))
+            agents = s.get("agents") or []
+            vmap = voices.assign_voices(agents)
+            ag = next((a for a in agents if a["name"] == m["agent"]), {})
+            text = voices.speakable(m["text"], self.a.max_chars)
+            if not text:
+                continue
+            self.last_agent_voice = self.agent_last[m["agent"]] = time.time()
+            self.stats["agent_lines"] += 1
+            log(f"[voice:{names.get(m['agent'])}/{vmap.get(m['agent'])}] ({label}) {text}")
+            dur = self.voice(text, vmap.get(m["agent"], "orion"), None,
+                             {"channel": "agent", "speaker": names.get(m["agent"], m["agent"]), "agent": m["agent"],
+                              "color": ag.get("color"), "glyph": ag.get("glyph"), "text": text, "expires_in": 20},
+                             {"type": "agent", "agent": m["agent"], "label": label, "line": text})
+            self.agent_free = time.time() + dur + 0.4
+
+    def voice(self, text, voice_id, caster, meta, rec):
+        """TTS + push. Returns the clip length in seconds (an estimate when nothing is pushed)."""
+        est = len(text) / 15.0
+        if self.a.dry_run:
+            self.record(**rec, voice=voice_id, pushed=False)
+            return est
+        if not self.a.always and not self.status().get("listeners"):
+            self.stats["skipped_no_listener"] += 1
+            self.record(**rec, voice=voice_id, pushed=False, reason="no page listening")
+            return est
+        tts = self.tts if self.breakers["tts"].ok() else self.tts_fallback
+        if tts is None:
+            self.record(**rec, voice=voice_id, pushed=False, reason="tts backing off")
+            return est
+        try:
+            audio, ctype, dur, lat = tts.speak(text, voice_id, caster=caster)
+            if tts is self.tts:
+                self.breakers["tts"].good()
+            meta = dict(meta, duration=round(dur, 2), voice=voice_id)
+            self.push(meta, audio, ctype)
+            self.record(**rec, voice=voice_id, pushed=True, tts=tts.backend, tts_latency=round(lat, 2),
+                        seconds=round(dur, 2))
+            return dur
+        except Exception as x:
+            log(f"[tts:{tts.backend}] {type(x).__name__}: {x}")
+            if tts is self.tts:
+                self.breakers["tts"].fail()
+            self.record(**rec, voice=voice_id, pushed=False, error=str(x)[:200])
+            return est
+
+    def cost(self):
+        hrs = max(1e-6, (time.time() - self.t0) / 3600)
+        w = self.writer.spent if self.writer else 0.0
+        t = self.tts.spent if self.tts else 0.0
+        c = self.classifier.spent
+        return {"minutes": round(hrs * 60, 1), "writer_usd": round(w, 4), "tts_usd": round(t, 4),
+                "classifier_usd": round(c, 5), "usd_per_hour": round((w + t + c) / hrs, 3), **self.stats}
+
+    def run(self):
+        Feed(self.base, self.on_snapshot).start()
+        log(f"[caster] feed {self.base}  writer={self.writer.name if self.writer else 'template'}  tts={self.a.tts}"
+            f"  classifier={self.a.classifier}  log {os.path.relpath(self.log_path)}")
+        self.next_gap = self.a.first_gap
+        last_cost = time.time()
+        chat = threading.Thread(target=self.chat_loop, daemon=True)
+        chat.start()
+        while True:
+            now = time.time()
+            try:
+                self.caster_tick(now, {} if self.a.dry_run else self.status())
+            except Exception:
+                traceback.print_exc()
+            if now - last_cost > 300:
+                last_cost = now
+                log("[cost]", json.dumps(self.cost()))
+                self.record(type="cost", **self.cost())
+            if self.a.duration and now - self.t0 > self.a.duration:
+                log("[cost]", json.dumps(self.cost()))
+                self.record(type="cost", **self.cost())
+                return
+            time.sleep(0.5)
+
+    def chat_loop(self):
+        if self.a.no_chat:
+            return
+        while True:
+            try:
+                self.chat_tick(time.time(), {} if self.a.dry_run else self.status())
+            except Exception:
+                traceback.print_exc()
+            time.sleep(1.0)
+
+
+# ---- bench -------------------------------------------------------------------------------------------------------
+BENCH = [
+    ({"kind": "attack", "text": "Luna is under attack", "agent": "luna", "t": 0, "prio": 9},),
+    ({"kind": "research", "text": "Research complete: Construction robotics", "t": 0, "prio": 7},),
+    ({"kind": "camera", "agents": ["opus"], "t": 0, "prio": 3},),
+    ({"kind": "lull", "angle": "production", "t": 0, "prio": 1},),
+]
+
+
+def bench(a):
+    snap = json.load(urllib.request.urlopen(a.feed.rstrip("/") + "/state.json", timeout=5))
+    names = [x.get("display_name") or x["name"] for x in snap.get("agents") or []]
+    writers = []
+    for spec in a.bench_writers.split(","):
+        kind, _, model = spec.partition("=")
+        writers.append(TemplateWriter() if kind == "template" else LLMWriter(kind, model or None))
+    for w in writers:
+        lat, bad = [], 0
+        for (e,) in BENCH:
+            for who in ("pbp", "color"):
+                facts = facts_for(e, snap)
+                t0 = time.time()
+                try:
+                    line = w.write(who, e, facts, [], names)
+                    err = check_line(line, facts, names, []) if line else "empty"
+                except Exception as x:
+                    line, err = None, f"{type(x).__name__}: {str(x)[:120]}"
+                lat.append(time.time() - t0)
+                bad += bool(err)
+                print(f"{getattr(w, 'name', 'template'):48s} {who:5s} {e['kind']:8s} {lat[-1]:5.2f}s "
+                      f"{'REJECT ' + err if err else ''} {line}")
+        spent = getattr(w, "spent", 0.0)
+        print(f"== {getattr(w, 'name', 'template')}: median {sorted(lat)[len(lat) // 2]:.2f}s, "
+              f"rejected {bad}/{len(lat)}, ${spent:.5f} for {len(lat)} lines")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--feed", default="http://127.0.0.1:8788", help="stream service base URL (serve.py)")
+    ap.add_argument("--writer", default="cf", choices=["cf", "claude", "template"])
+    ap.add_argument("--model", help="writer model (cf: Workers AI model id; claude: haiku)")
+    ap.add_argument("--claude-bin", default="claude", help="claude CLI to run (pick the personal-subscription one)")
+    ap.add_argument("--tts", default="aura2", choices=list(voices.PRICE))
+    ap.add_argument("--tts-fallback", choices=list(voices.PRICE),
+                    help="TTS to use while the main one is backing off (e.g. aura1, say)")
+    ap.add_argument("--backoff", type=float, default=120,
+                    help="after 3 straight failures, skip a backend (writer, classifier, TTS) for this many seconds")
+    ap.add_argument("--classifier", default="clef", choices=["clef", "heuristic"])
+    ap.add_argument("--gap", type=float, nargs=2, default=[20, 40], metavar=("MIN", "MAX"),
+                    help="seconds between caster lines (random in range)")
+    ap.add_argument("--urgent-gap", type=float, default=8, help="minimum gap before an urgent line (attack, death)")
+    ap.add_argument("--first-gap", type=float, default=3)
+    ap.add_argument("--lull", type=float, default=50, help="seconds of quiet before a colour line about the state")
+    ap.add_argument("--stale", type=float, default=45, help="drop events older than this")
+    ap.add_argument("--agent-gap", type=float, default=15,
+                    help="min seconds between voiced agent lines (half for lines the agent marked aloud)")
+    ap.add_argument("--agent-cooldown", type=float, default=60, help="min seconds between voiced lines of one agent")
+    ap.add_argument("--chat-stale", type=float, default=20, help="never voice chat older than this")
+    ap.add_argument("--max-chars", type=int, default=200, help="voiced agent lines are cut at a sentence near this")
+    ap.add_argument("--no-chat", action="store_true", help="casters only, never voice agent chat")
+    ap.add_argument("--always", action="store_true", help="synthesise even when no overlay page is listening")
+    ap.add_argument("--dry-run", action="store_true", help="write lines and log them; no TTS, nothing pushed")
+    ap.add_argument("--duration", type=float, help="stop after this many seconds (tests)")
+    ap.add_argument("--seed", type=int)
+    ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
+    ap.add_argument("--bench", action="store_true", help="time writers on canned events from the live snapshot")
+    ap.add_argument("--bench-writers", default="template,cf=@cf/meta/llama-3.3-70b-instruct-fp8-fast,"
+                                               "cf=@cf/meta/llama-3.1-8b-instruct-fp8-fast,claude=haiku")
+    ap.add_argument("--push", metavar="FILE", help="push one audio file as a clip and exit (stings, tests)")
+    ap.add_argument("--push-channel", default="caster", help="--push: caster | agent | anything else (not played)")
+    ap.add_argument("--push-text", default="", help="--push: caption text")
+    ap.add_argument("--push-expires", type=float, default=30, help="--push: seconds the page may still start it")
+    a = ap.parse_args()
+    if a.bench:
+        return bench(a)
+    if a.push:
+        audio = open(a.push, "rb").read()
+        meta = {"channel": a.push_channel, "speaker": os.path.basename(a.push), "text": a.push_text,
+                "duration": round(voices.duration(audio), 2), "expires_in": a.push_expires}
+        body = dict(meta, audio_b64=base64.b64encode(audio).decode(), ctype="audio/mpeg")
+        req = urllib.request.Request(a.feed.rstrip("/") + "/audio", data=json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})
+        print(json.load(urllib.request.urlopen(req, timeout=10)))
+        return
+    try:
+        Caster(a).run()
+    except KeyboardInterrupt:
+        pass
+
+
+if __name__ == "__main__":
+    main()
