@@ -1345,4 +1345,21 @@ local took=call('transfer',{position=corpse.position,direction='to_player'})
 eq(took.transferred,20); eq(took.inventory,'character_corpse'); eq(took.corpse_removed,true); eq(corpse.valid,false)
 end)()
 end
+-- Space Age spoilage in status: spoilable stacks grouped per item and quality,
+-- stalest freshness first; nothing reported when nothing spoils.
+do
+  local normal,rare={name='normal'},{name='rare'}
+  local function stack(name,count,spoiled,quality)
+    return {valid_for_read=true,name=name,count=count,quality=quality or normal,spoil_percent=spoiled,
+      prototype={get_spoil_ticks=function() return spoiled and 3600 or 0 end}}
+  end
+  local slots={stack('yumako',10,0.2),stack('iron-plate',50),stack('yumako',5,0.5),stack('jellynut',3,0.1,rare),{valid_for_read=false}}
+  slots.valid=true
+  local saved=p.get_main_inventory
+  p.get_main_inventory=function() return setmetatable(slots,{__len=function() return 5 end}) end
+  eq(call('status').spoiling,'yumako*15 50% jellynut@rare*3 90%')
+  slots[1],slots[3],slots[4]=stack('coal',1),stack('coal',1),stack('coal',1)
+  eq(call('status').spoiling,nil)
+  p.get_main_inventory=saved
+end
 print('runtime: '..assertions..' assertions passed')
