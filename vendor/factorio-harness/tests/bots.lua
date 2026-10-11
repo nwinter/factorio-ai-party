@@ -154,6 +154,17 @@ fails(function() bot('profile',{color='orange'}) end,'#rrggbb')
 fails(function() bot('profile',{glyph='abc'}) end,'glyph must be 1..2')
 fails(function() bot('profile',{display_name=string.rep('x',25)}) end,'display_name must be 1..24')
 eq(bot('profile',{glyph='👩‍🚀'}).glyph,'👩‍🚀') -- a ZWJ sequence counts as two
+-- A glyph another agent holds is refused, naming the holder (shake3: Astra and
+-- Muse both ✦, Sol and Sonnet both S); case and U+FE0F do not make it differ.
+local function as_opus(args) return runtime.dispatch{action='profile',args=args,bot='opus'} end
+fails(function() as_opus({display_name='Opus',glyph='👩‍🚀'}) end,'glyph 👩‍🚀 is taken by Astra (astra); pick another')
+eq(as_opus({}).display_name,nil) -- refused before anything changed
+eq(as_opus({glyph='S'}).glyph,'S')
+fails(function() runtime.dispatch{action='profile',args={glyph='s'},player=1} end,'glyph S is taken by opus;')
+eq(bot('profile',{glyph='👩‍🚀'}).glyph,'👩‍🚀') -- setting your own glyph again is fine
+eq(as_opus({glyph='✦'}).glyph,'✦')
+fails(function() bot('profile',{glyph='✦\239\184\143'}) end,'is taken by opus')
+eq(as_opus({glyph='O'}).glyph,'O')
 -- voice: the stream's speaker id, stored lower case, listed in profiles.
 eq(bot('profile',{voice='Orion'}).voice,'orion'); eq(bot('profile',{}).voice,'orion')
 local listed; for _,row in ipairs(bot('profiles',{}).profiles) do if row.name=='astra' then listed=row end end
@@ -202,7 +213,7 @@ eq(#list,3)
 local by={}; for _,row in ipairs(list) do by[row.name]=row end
 eq(by.astra.kind,'bot'); eq(by.astra.display_name,'Astra'); eq(by.astra.alive,true); eq(by.astra.active,false)
 eq(by.astra.avatar.emblem,'flask'); eq(by.opus.avatar,nil)
-eq(by.astra.last_said.text:sub(1,4),'word'); eq(by.nick.kind,'player'); eq(by.nick.display_name,'Nick'); eq(by.opus.glyph,nil)
+eq(by.astra.last_said.text:sub(1,4),'word'); eq(by.nick.kind,'player'); eq(by.nick.display_name,'Nick'); eq(by.opus.glyph,'O')
 
 -- Director cameras: operator-only, spectator once, eased follow, release.
 fails(function() runtime.operator.camera({player=2,follow='nobody'}) end,'no bot or player named nobody')
