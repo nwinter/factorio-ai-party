@@ -34,8 +34,11 @@
       "helmet": ["none", "hardhat", "armor", "power", "crest", "hood"],
       "visor": ["none", "goggles", "slit", "wide", "mono", "grid"],
       "emblem": ["none", "gear", "bolt", "flask", "plate", "circuit", "rocket", "leaf", "star"],
-      "accessory": ["none", "antenna", "headlamp", "scarf", "tank", "horns", "earpiece", "pipe"],
+      "accessory": ["none", "antenna", "headlamp", "scarf", "tank", "horns", "earpiece", "pipe", "headset"],
       "backdrop": ["dark", "grid", "hazard", "glow", "night"]
+    },
+    "picks": {
+      "accessory": ["none", "antenna", "headlamp", "scarf", "tank", "horns", "earpiece", "pipe"]
     },
     "colors": ["#e8743b", "#5aa9ff", "#2fbf71", "#ffcb45", "#b58cff", "#ff6b8a", "#3ddcc4", "#c8c8c0",
                "#ff9f1c", "#8fd14f", "#7dd3fc", "#d97757"],
@@ -126,6 +129,11 @@
         "....ooo.................", "...oMnMo................", "...onano................",
         "...oMnMo................", "....oooM................", ".......oM...............",
         "........oMa............."]},
+      "headset": {"layer": "front", "dy": -1, "rows": [
+        ".......onnnnnnnno.......", "......on........no......", ".....on..........no.....",
+        "....oaao........oaao....", "...oabAAo......oAAbao...", "...oaaAAo......oAAaao...",
+        "...oaaAAo......oAAaao...", "....oMoo........oooo....", ".....oMo................",
+        "......oMo...............", ".......oMnno............"]},
       "pipe": {"layer": "back", "dy": -3, "rows": [
         "...................PP...", ".................PPpP....", "..................pp.....",
         "...................P....", "..................ooo...", ".................oMmMo...",
@@ -222,7 +230,8 @@
   }
 
   // The spec actually drawn. Each field draws its random number whether or not it is set, so setting one part
-  // never changes the others.
+  // never changes the others. Name-based picks come from PARTS.picks where a field has one: parts added later
+  // (the headset) are choosable but never drawn by default, so existing defaults stay put.
   function resolve(profile) {
     profile = profile || {};
     var name = String(profile.name || profile.display_name || "agent");
@@ -230,8 +239,8 @@
     var next = rng(hash(name));
     var out = {};
     PARTS.fields.forEach(function (f) {
-      var list = PARTS.options[f], r = next();
-      out[f] = list.indexOf(av[f]) >= 0 ? av[f] : list[r % list.length];
+      var list = PARTS.options[f], pool = PARTS.picks[f] || list, r = next();
+      out[f] = list.indexOf(av[f]) >= 0 ? av[f] : pool[r % pool.length];
     });
     var colorPick = next(), accentPick = next();
     var suit = parse(isHex(profile.color) ? profile.color : null) || parse(PARTS.colors[colorPick % PARTS.colors.length]);

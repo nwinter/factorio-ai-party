@@ -86,7 +86,34 @@ def main():
     b = avatar.resolve({"name": "opus", "color": "#d97757", "avatar": {"visor": "mono"}})
     assert b["visor"] == "mono" and all(a[k] == b[k] for k in a if k != "visor")
     assert avatar.resolve({"name": "sonnet"})["color"] in avatar.PARTS["colors"]
-    print("avatar: ok (%d profiles, JS and Python identical)" % len(items))
+
+    # Parts added later (picks) are choosable but never drawn by default, so old defaults stay put.
+    for f, pool in avatar.PARTS["picks"].items():
+        opts = avatar.PARTS["options"][f]
+        assert opts[:len(pool)] == pool, "picks for %s must be a prefix of the options" % f
+    assert all(avatar.resolve({"name": "n%d" % i})["accessory"] != "headset" for i in range(500))
+
+    # Casters: valid full specs, same in both ports, and a rename changes nothing but the label.
+    hosts = avatar.casters()
+    assert set(hosts) >= {"pbp", "color"}, hosts.keys()
+    js_hosts = node_casters()
+    for k, row in hosts.items():
+        assert avatar.validate(row["avatar"]) == [], (k, avatar.validate(row["avatar"]))
+        assert set(row["avatar"]) == set(avatar.PARTS["fields"]) | {"accent"}, "caster %s must set every part" % k
+        assert row["avatar"]["backdrop"] != "night", "night's stars follow the name; pick another backdrop"
+        assert js_hosts[k] == avatar.svg(row, 48), "caster %s: JS and Python differ" % k
+        renamed = dict(row, name="Someone Else", display_name="Someone Else")
+        assert avatar.pixels(renamed) == avatar.pixels(row), "caster %s: a rename changes the portrait" % k
+    print("avatar: ok (%d profiles and %d casters, JS and Python identical)" % (len(items), len(hosts)))
+
+
+def node_casters():
+    js = os.path.join(HERE, "static", "casters.js")
+    script = ("globalThis.PogAvatar=require(%s);const C=require(%s);const o={};"
+              "C.keys.forEach(k=>o[k]=C.svg(k,48));process.stdout.write(JSON.stringify(o));") % (
+        json.dumps(os.path.join(HERE, "static", "avatar.js")), json.dumps(js))
+    r = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    return json.loads(r.stdout)
 
 
 if __name__ == "__main__":

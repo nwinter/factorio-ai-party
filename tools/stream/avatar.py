@@ -11,6 +11,7 @@ that against node.
 CLI:
     python3 tools/stream/avatar.py NAME [--color '#9977ff'] [--avatar '{"base":"robot"}'] [--size 64] > astra.svg
     python3 tools/stream/avatar.py --profiles profiles.json --out DIR      # one NAME.svg per `profiles` row
+    python3 tools/stream/avatar.py --casters --out DIR                     # the stream hosts (static/casters.js)
 """
 import json
 import math
@@ -118,8 +119,9 @@ def resolve(profile):
     out = {}
     for f in PARTS["fields"]:
         options, r = PARTS["options"][f], nxt()
+        pool = PARTS["picks"].get(f, options)  # parts added later are choosable but not drawn by default
         v = av.get(f)
-        out[f] = v if isinstance(v, str) and v in options else options[r % len(options)]
+        out[f] = v if isinstance(v, str) and v in options else pool[r % len(pool)]
     color_pick, accent_pick = nxt(), nxt()
     suit = _parse(profile.get("color") if _is_hex(profile.get("color")) else None) or \
         _parse(PARTS["colors"][color_pick % len(PARTS["colors"])])
@@ -268,6 +270,19 @@ def random(seed):
     return out
 
 
+CASTERS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "casters.js")
+
+
+def casters(path=CASTERS_PATH):
+    """The stream hosts as profiles-style rows, keyed like caster.py ("pbp", "color"), from static/casters.js."""
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    body = text.split("/*@casters*/", 1)[1].split("/*@end*/", 1)[0]
+    data = json.loads(body[body.index("{"): body.rindex("}") + 1])
+    return {k: {"name": c["name"], "display_name": c["name"], "color": c["color"], "avatar": c["avatar"],
+                "role": c["role"], "kind": "caster"} for k, c in data.items()}
+
+
 def main(argv):
     import argparse
     ap = argparse.ArgumentParser(description="Render agent avatars as SVG")
@@ -276,12 +291,16 @@ def main(argv):
     ap.add_argument("--avatar", help="JSON avatar spec")
     ap.add_argument("--size", type=int, default=64)
     ap.add_argument("--profiles", help="JSON file: a `profiles` reply or a list of rows")
-    ap.add_argument("--out", help="directory for --profiles output")
+    ap.add_argument("--casters", action="store_true", help="render the stream hosts from static/casters.js")
+    ap.add_argument("--out", help="directory for --profiles/--casters output")
     a = ap.parse_args(argv)
-    if a.profiles:
-        with open(a.profiles, encoding="utf-8") as f:
-            data = json.load(f)
-        rows = data.get("profiles", []) if isinstance(data, dict) else data
+    if a.profiles or a.casters:
+        if a.casters:
+            rows = list(casters().values())
+        else:
+            with open(a.profiles, encoding="utf-8") as f:
+                data = json.load(f)
+            rows = data.get("profiles", []) if isinstance(data, dict) else data
         os.makedirs(a.out or ".", exist_ok=True)
         for row in rows:
             path = os.path.join(a.out or ".", re.sub(r"[^A-Za-z0-9_.-]", "_", str(row.get("name", "agent"))) + ".svg")

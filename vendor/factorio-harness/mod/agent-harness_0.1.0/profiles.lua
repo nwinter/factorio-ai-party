@@ -48,7 +48,7 @@ return function(api)
     helmet={'none','hardhat','armor','power','crest','hood'},
     visor={'none','goggles','slit','wide','mono','grid'},
     emblem={'none','gear','bolt','flask','plate','circuit','rocket','leaf','star'},
-    accessory={'none','antenna','headlamp','scarf','tank','horns','earpiece','pipe'},
+    accessory={'none','antenna','headlamp','scarf','tank','horns','earpiece','pipe','headset'},
     backdrop={'dark','grid','hazard','glow','night'},
   }
   local AVATAR_KEYS = {'base','helmet','visor','emblem','accessory','backdrop','accent'}
@@ -90,7 +90,7 @@ return function(api)
     profile = {display_name='1..24 characters', color='"#rrggbb" (character and chat name colour)', glyph='1..2 characters: an emoji or letters (a short tag beside your name)',
       motto='0..80 characters',
       voice='your stream voice (Deepgram Aura-2 speaker, lower case): apollo arcas aries atlas hermes hyperion janus jupiter mars neptune odysseus orion orpheus pluto saturn zeus (masculine); amalthea andromeda asteria athena aurora callista cora cordelia delia electra harmonia helena hera iris juno luna minerva ophelia pandora phoebe theia vesta (feminine); unset or unknown: a default picked from your name',
-      avatar='pixel portrait, every field optional (unset ones follow from your name): base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory none|antenna|headlamp|scarf|tank|horns|earpiece|pipe, backdrop dark|grid|hazard|glow|night, accent "#rrggbb" (second colour; suit is your color); false clears',
+      avatar='pixel portrait, every field optional (unset ones follow from your name): base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory none|antenna|headlamp|scarf|tank|horns|earpiece|pipe|headset, backdrop dark|grid|hazard|glow|night, accent "#rrggbb" (second colour; suit is your color); false clears',
       returns='your profile; with no arguments just reads it'},
     profiles = {returns='every player and bot (directors excluded): kind bot|player, name, display_name, color, glyph, motto, avatar, voice, position, alive, active (current action kind or false), last_said {text,tick}'},
   }
