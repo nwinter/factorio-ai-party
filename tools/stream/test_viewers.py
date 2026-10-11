@@ -382,6 +382,15 @@ check("log: every verdict, with who checked it and Clef's label",
       and rows["l2"]["reasons"] == ["clef:personal"] and rows["l2"]["label"] == "personal"
       and rows["l3"]["reasons"] == ["link"] and rows["l3"]["checked"] == "heuristic" and lf.lane()[1]["verdicts"] == 3, rows)
 
+# ---- the hostile sample (viewers_report.py, Clef stubbed with the sample's labels) -------------------------------------
+import viewers_report as VR  # noqa: E402
+hout, hai, _ = VR.replay(os.path.join(HERE, "runs", "viewers-hostile.jsonl"))
+check("hostile sample: every verdict as expected (pass, drop and its reason)", all(o["ok"] for o in hout),
+      [(o["row"]["text"], o["reasons"]) for o in hout if not o["ok"]])
+check("hostile sample: nothing hostile passes", not [o for o in hout if o["verdict"] == "pass" and o["row"].get("clef")])
+check("hostile sample: Clef costs under 1 cent per 1,000 messages one at a time",
+      hai.chars / 4 / len(hout) * 1000 * VR.PRICE / 1e6 < 0.01, hai.chars)
+
 # ---- the sample replay ------------------------------------------------------------------------------------------------
 sample = os.path.join(HERE, "runs", "viewers-sample.jsonl")
 vt = [NOW]
