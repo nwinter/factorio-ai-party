@@ -37,7 +37,10 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
   `error.code`. On `wait_timeout`, run `./fh wait` (never a new move/mine/build, which would interrupt it) until it
   reports `idle`. In-game queue plans (`./fh queue submit --file plan.json`, a JSON array of steps) avoid round trips.
 - `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait` (also `item_count`,
-  `crafting_done`) lets the factory run until a condition holds, without polling.
+  `crafting_done`) lets the factory run until a condition holds, without polling. Add `--wait-timeout 600000` to
+  wait up to 10 minutes (15 at most); hitting the limit fails with `timed_out`.
+- `./fh sleep 120` lets the game run (your queue keeps going) and returns early if you are hit or mentioned.
+  `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
 - `feed` tops up every machine in reach (or `"radius":20` to walk a line) with its recipe ingredients, lab science
   packs and burner fuel; `keep` holds back a reserve. Use it instead of one `transfer` per machine.
 - `collect` takes machine outputs only; it leaves chests alone unless you name their positions or pass `chests:true`.
