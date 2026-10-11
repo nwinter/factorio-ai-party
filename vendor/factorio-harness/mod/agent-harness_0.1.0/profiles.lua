@@ -87,7 +87,7 @@ return function(api)
     end
   end
   M.schema = {
-    profile = {display_name='1..24 characters', color='"#rrggbb" (character and chat name colour)', glyph='1..2 characters: an emoji or letters (a short tag beside your name); one another agent holds is refused',
+    profile = {display_name='1..24 characters', color='"#rrggbb" (character and chat name colour); one too close to another agent\'s is refused', glyph='1..2 characters: an emoji or letters (a short tag beside your name); one another agent holds is refused',
       motto='0..80 characters',
       voice='your stream voice (Deepgram Aura-2 speaker, lower case): apollo arcas aries atlas hermes hyperion janus jupiter mars neptune odysseus orion orpheus pluto saturn zeus (masculine); amalthea andromeda asteria athena aurora callista cora cordelia delia electra harmonia helena hera iris juno luna minerva ophelia pandora phoebe theia vesta (feminine); unset or unknown: a default picked from your name',
       pronouns='optional, 0..32 characters of free text (e.g. "she/her", "they/them", "it"); casters use them when they talk about you; "" clears',
@@ -114,12 +114,49 @@ return function(api)
       end
     end
   end
+  -- A colour tells agents apart on stream: one too close to another agent's
+  -- is refused the same way, naming the holder and a few free colours
+  -- (shake4: four agents chose oranges). Distance is "redmean" RGB (0..765).
+  local MIN_COLOR_DISTANCE = 90
+  local PALETTE = {'#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#42d4f4', '#f032e6', '#bfef45',
+    '#fabed4', '#469990', '#dcbeff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#000075', '#a9a9a9', '#ffffff'}
+  local function color_distance(x, y)
+    local a, b = rgb(x), rgb(y)
+    local r = (a.r + b.r) * 255 / 2
+    local dr, dg, db = (a.r - b.r) * 255, (a.g - b.g) * 255, (a.b - b.b) * 255
+    return math.sqrt((2 + r / 256) * dr * dr + 4 * dg * dg + (2 + (255 - r) / 256) * db * db)
+  end
+  local function check_color(index, color)
+    local taken = {}
+    for other, pr in pairs(store()) do
+      local name = other ~= index and pr.color and holder(other)
+      if name then taken[#taken+1] = {color=pr.color, name=name, display=pr.display_name} end
+    end
+    for _, t in ipairs(taken) do
+      local d = color_distance(color, t.color)
+      if d < MIN_COLOR_DISTANCE then
+        local free = {}
+        for _, c in ipairs(PALETTE) do
+          local ok = true
+          for _, u in ipairs(taken) do if color_distance(c, u.color) < MIN_COLOR_DISTANCE then ok = false end end
+          if ok and #free < 4 then free[#free+1] = c end
+        end
+        local who = t.display and t.display ~= t.name and t.display .. ' (' .. t.name .. ')' or t.name
+        error(string.format("color %s is too close to %s's %s (distance %d, at least %d apart); pick another%s (profiles lists every color in use)",
+          color, who, t.color, math.floor(d), MIN_COLOR_DISTANCE, #free > 0 and ', e.g. ' .. table.concat(free, ' ') or ''), 0)
+      end
+    end
+  end
   function M.handlers.profile(p, a)
     local all = store()
     local pr = all[p.index] or {}
     local changed = false
     local avatar = a.avatar ~= nil and avatar_arg(a.avatar) or nil -- validated before anything changes
     if a.glyph ~= nil then check_glyph(p.index, text_arg(a.glyph, 'glyph', 1, 2)) end -- likewise
+    if a.color ~= nil then
+      assert(type(a.color) == 'string', 'color must be "#rrggbb"'); rgb(a.color)
+      check_color(p.index, a.color:lower())
+    end
     if a.display_name ~= nil then pr.display_name = text_arg(a.display_name, 'display_name', 1, 24); changed = true end
     if a.motto ~= nil then pr.motto = text_arg(a.motto, 'motto', 0, 80); changed = true end
     if a.glyph ~= nil then pr.glyph = text_arg(a.glyph, 'glyph', 1, 2); changed = true end

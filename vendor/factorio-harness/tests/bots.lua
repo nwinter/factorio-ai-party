@@ -211,6 +211,13 @@ eq(bot('profile',{glyph='👩‍🚀'}).glyph,'👩‍🚀') -- setting your own
 eq(as_opus({glyph='✦'}).glyph,'✦')
 fails(function() bot('profile',{glyph='✦\239\184\143'}) end,'is taken by opus')
 eq(as_opus({glyph='O'}).glyph,'O')
+-- A colour too close to another agent's is refused the same way (shake4: four
+-- oranges); a far one is fine, and your own colour again is fine.
+fails(function() as_opus({color='#ff9010'}) end,"color #ff9010 is too close to Astra (astra)'s #ff8000")
+fails(function() as_opus({color='#FF8000',glyph='Q'}) end,'pick another, e.g. #e6194b')
+eq(as_opus({}).glyph,'O') -- refused before anything changed
+eq(as_opus({color='#4363d8'}).color,'#4363d8')
+eq(bot('profile',{color='#ff8000'}).color,'#ff8000')
 -- voice: the stream's speaker id, stored lower case, listed in profiles.
 eq(bot('profile',{voice='Orion'}).voice,'orion'); eq(bot('profile',{}).voice,'orion')
 local listed; for _,row in ipairs(bot('profiles',{}).profiles) do if row.name=='astra' then listed=row end end
