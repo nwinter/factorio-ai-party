@@ -103,4 +103,28 @@ bots[2].character.valid=false
 tags.tick(1800); check(st.nametags[1000002],nil)
 table.remove(bots,1)
 tags.tick(2100); check(st.nametags[1000001],nil); check(#live('sprite',c),0)
+
+-- Space Age: no body while riding or aboard. The tag rides on the cargo pod (the pod is not tinted),
+-- then over the platform hub, clear of its 8x8 body; a second rider stacks above; landing moves it to the body.
+local carriers={}
+package.loaded.nametags=nil
+tags=require('nametags'){state=function() return st end,bots=function() return bots end,profile=function(i) return profiles[i] end,
+  parts=parts,avatar=avatar,carrier=function(b) return carriers[b.index] end}
+local pod={valid=true,unit_number=900,name='cargo-pod',type='cargo-pod',surface={index=2}}
+carriers[1000002]=pod
+tags.tick(2400); check(#live('text',pod),1); check(live('text',pod)[1].args.text,'grok'); check(pod.color,nil)
+check(live('text',pod)[1].args.target.offset[2],-1.75-0.5); check(#live('sprite',pod),#avatar.layers('grok','#1a1a1a',nil))
+local hub={valid=true,unit_number=901,name='space-platform-hub',type='space-platform-hub',surface={index=3}}
+carriers[1000002]=hub; pod.valid=false
+tags.tick(2700); check(#live('text',pod),0); check(#live('text',hub),1); check(live('text',hub)[1].args.target.offset[2]<-4,true)
+bots[#bots+1]={index=1000003,name='astra'}
+carriers[1000003]=hub
+tags.tick(3000)
+local rows=live('text',hub); check(#rows,2)
+check(rows[2].args.target.offset[2]<rows[1].args.target.offset[2]-1,true)
+check(tags.bubble_y(1000003)<rows[2].args.target.offset[2],true)
+local landed=character(); bots[1].character=landed; carriers[1000002]=nil
+tags.tick(3300); check(#live('text',landed),1); check(#live('text',hub),1); check(live('text',landed)[1].args.target.offset[2],-1.75)
+carriers[1000003]=nil
+tags.tick(3600); check(#live('text',hub),0); check(st.nametags[1000003],nil)
 print('nametags: '..n..' assertions passed')

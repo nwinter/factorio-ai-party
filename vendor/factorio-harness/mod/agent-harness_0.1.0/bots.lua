@@ -364,6 +364,17 @@ return function(api)
       end
     end
   end
+  -- What carries a bot with no body: its cargo pod, else the hub of the platform
+  -- it is aboard (name tags ride on it).
+  function M.carrier(b)
+    local t = b and b.travel
+    if not t then return nil end
+    if t.pod and t.pod.valid then return t.pod end
+    if t.state == 'aboard' then
+      local pl = find_platform(b, t)
+      if pl and pl.hub and pl.hub.valid then return pl.hub end
+    end
+  end
   -- Aboard, the bot does what a player in the hub can: remote view.
   local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, land=true, drop=true,
     research=true, research_next=true, technologies=true, recipes=true, say=true, chat=true, confess=true, confessions=true,

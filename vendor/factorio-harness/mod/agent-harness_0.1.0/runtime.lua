@@ -55,6 +55,7 @@ M.profiles=require('profiles'){state=state,is_bot=function(p) return M.bots.is(p
   bots=function() return M.bots.list() end,active=function(index) local a=M.active(index); return a and a.kind or false end,
   on_apply=function(p) if M.bots.is(p) then M.nametags.refresh(M.bots.record(p.index)) end end,bubble_y=function(index) return M.nametags.bubble_y(index) end}
 M.nametags=require('nametags'){state=state,bots=function() return M.bots.list() end,profile=function(index) return M.profiles.get(index) end,
+  carrier=function(b) return M.bots.carrier(b) end,
   parts=require('avatar_parts'),avatar=require('avatar')(require('avatar_parts'))}
 -- A player or bot by index, dead or alive (cleanup and status).
 function M.lookup(index)
