@@ -616,6 +616,11 @@ def build_run_page(rid, run, worlds, chat):
     if chat:
         body.append('<section><h2>Team chat</h2>')
         body.append(f'<p class="muted">{len(chat)} messages, rebuilt from every agent\'s chat reads and posts. Highlighted lines are the moments the study quotes.</p>')
+        counts = sorted(((k, len(v)) for k, v in chat_by.items() if k in AGENTS), key=lambda kv: -kv[1])
+        top = max((n for _, n in counts), default=1)
+        bars = "".join(f'<li><span class="bar-label">{agent_chip(k)}</span><span class="bar-track"><span class="bar" style="width:{100 * n / top:.1f}%"></span></span>'
+                       f'<span class="bar-val">{n}</span></li>' for k, n in counts)
+        body.append(f'<figure class="bars"><figcaption><strong>Messages per agent</strong></figcaption><ul>{bars}</ul></figure>')
         hl = "".join(_chat_line(c, True) for c in chat if c["seq"] in notable)
         body.append(f'<ol class="chat">{hl}</ol>')
         full = "".join(_chat_line(c, c["seq"] in notable) for c in chat)

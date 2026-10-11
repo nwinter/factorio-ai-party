@@ -235,6 +235,14 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .agent-run h2 { font-size: 1.2rem; margin: .8rem 0 .4rem; }
 .team-member a { color: inherit; }
 
+/* bar list */
+.bars { margin: 1rem 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; max-width: 640px; }
+.bars ul { list-style: none; padding: 0; margin: .5rem 0 0; display: grid; gap: 6px; }
+.bars li { display: grid; grid-template-columns: 7.5em 1fr 2.5em; gap: 10px; align-items: center; font-size: .9rem; }
+.bar-track { height: 10px; }
+.bar { display: block; height: 100%; background: var(--s1); border-radius: 0 4px 4px 0; min-width: 2px; }
+.bar-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+
 /* incidents */
 .incidents { list-style: none; padding: 0; margin: .5rem 0; display: grid; gap: 8px; }
 .incidents li { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent-fill);

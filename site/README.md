@@ -40,6 +40,8 @@ The site is unlisted for now. Three things keep it out of search engines; remove
 | Agent cards: final summary | the "Final summary" section of each agent's `runs/<run>/<agent>/notes.md` |
 | Team chat and quotes | `runs/shake1/chat-full.jsonl` (rebuilt chat); quoted lines are picked by `seq` in `notable_chat` |
 | Study pages | `docs/studies/*.md`, rendered by the small Markdown renderer in `build.py` |
+| Agent pages (`/agents/<name>/`) | every run in `site.json` the agent played, with its role, outcome, stats and chat lines |
+| Operator interventions per run | `incidents` in each run's `site.json` entry (from `operator-interventions.log`, agent notes and `docs/PLAN.md`) |
 | Everything written by hand | `site/content/site.json`: agent identities, experiment write-ups, milestone tables (from `docs/PLAN.md` and agent notes), per-agent stats (from the study), harness changes (from `docs/HARNESS-CHANGES.md` and `docs/BOTS-NOTES.md`) |
 | Site settings | `site/config.json` |
 
