@@ -118,6 +118,10 @@ deployed=$(POG_WORLD=$world bin/fh deploy --format json 2>/dev/null || true)
 deploy_status=$(printf '%s' "$deployed" | python3 tools/code_check.py --deploy-reply)
 log "runtime deployed from $(git rev-parse --short HEAD): $deploy_status"
 case $deploy_status in ok*) ;; *) exit 1 ;; esac   # as before: no agents on a world without the runtime
+# A fresh save puts every player's first join in the guest group (docs/PLAYERS-NOTES.md); the operator's own names
+# (POG_TRUSTED_PLAYERS, default nick; empty for none) join in the normal group.
+trusted=${POG_TRUSTED_PLAYERS-nick}
+[ -n "$trusted" ] && log "trusted players: $(python3 tools/players.py --world "$world" trust-names $trusted 2>&1 | tail -1)"
 if [ -n "$resume" ]; then
   # A save made while tick-paused would load paused; team runs are real time. Game time goes on from the save's tick.
   python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true

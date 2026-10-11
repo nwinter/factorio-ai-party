@@ -122,7 +122,8 @@ Launch hygiene and supervision (shake2 and shake3 studies; details in `docs/LAUN
 - Human players: the harness logs what each human does (`fh players`), puts a player's first join in the
   `pog-guest` permission group, and takes the agents' kick, ban and trust votes. `POG_PLAYERS=1` (off by default)
   makes `start-team.sh` run the operator tally (`tools/players.py watch`, results in `runs/RUN/votes.jsonl`);
-  `POG_PLAYERS_PROTECT=nick` keeps names from being kicked or banned. By hand: `tools/players.py --world W
+  `POG_PLAYERS_PROTECT=nick` keeps names from being kicked or banned. `POG_TRUSTED_PLAYERS` (default `nick`)
+  are names that join a fresh save in the normal group instead of the guest group. By hand: `tools/players.py --world W
   show|once|trust NAME|guest NAME`. Details and what opening the server would need: `docs/PLAYERS-NOTES.md`.
 
 `AGENTS.md` ends with `## Compact instructions` (`agent/compact.md`) and `notes.md` starts as a structured skeleton.

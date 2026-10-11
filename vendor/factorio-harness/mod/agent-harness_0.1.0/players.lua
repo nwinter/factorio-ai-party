@@ -544,5 +544,20 @@ return function(api)
     s.trusted_names[p.name] = a.group == 'trusted' or nil
     return {name=p.name, group=group(p)}
   end
+  -- Names control.lua keeps out of the guest group on their first join (a
+  -- fresh save has none: start-team.sh sets the operator's own, POG_TRUSTED_PLAYERS).
+  function M.operator.trust_names(a)
+    assert(type(a.names) == 'table', 'names must be a list of player names')
+    local s = api.state()
+    s.trusted_names = s.trusted_names or {}
+    for _, name in ipairs(a.names) do
+      assert(type(name) == 'string' and name:match('^[%w_.%-]+$') and #name <= 60, 'not a player name: ' .. tostring(name))
+      s.trusted_names[name] = true
+    end
+    local out = {}
+    for name in pairs(s.trusted_names) do out[#out+1] = name end
+    table.sort(out)
+    return {trusted_names=out}
+  end
   return M
 end

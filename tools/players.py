@@ -6,6 +6,7 @@
     players.py --world W show [--minutes 10]   the players read, as the agents see it
     players.py --world W trust NAME            move a player out of the guest group (and keep them out on a later world)
     players.py --world W guest NAME            move a player into the guest group
+    players.py --world W trust-names NAME...   names kept out of the guest group when they first join (a fresh save)
 
 Each pass reads the open votes and the agents active in the last 10 minutes (operator `votes_open`), tallies each
 with votes.RULES["agents"], runs a carried one with the server's own command (/kick NAME reason, /ban NAME reason)
@@ -105,8 +106,8 @@ def tally_pass(game, protect=(), dry_run=False, log=None, out=sys.stdout):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--world", required=True)
-    ap.add_argument("command", choices=["watch", "once", "show", "trust", "guest"])
-    ap.add_argument("name", nargs="?")
+    ap.add_argument("command", choices=["watch", "once", "show", "trust", "guest", "trust-names"])
+    ap.add_argument("names", nargs="*")
     ap.add_argument("--interval", type=float, default=5)
     ap.add_argument("--protect", action="append", default=[], help="a name never kicked or banned (repeatable; also POG_PLAYERS_PROTECT, comma-separated)")
     ap.add_argument("--log")
@@ -116,9 +117,12 @@ def main(argv=None):
     protect = {n.strip().lower() for n in a.protect + os.environ.get("POG_PLAYERS_PROTECT", "").split(",") if n.strip()}
     game = Game(a.world)
     if a.command in ("trust", "guest"):
-        if not a.name:
-            ap.error(f"{a.command} needs a player NAME")
-        print(json.dumps(game.operator("player_group", {"name": a.name, "group": "trusted" if a.command == "trust" else "guest"})))
+        if len(a.names) != 1:
+            ap.error(f"{a.command} needs one player NAME")
+        print(json.dumps(game.operator("player_group", {"name": a.names[0], "group": "trusted" if a.command == "trust" else "guest"})))
+        return 0
+    if a.command == "trust-names":
+        print(json.dumps(game.operator("trust_names", {"names": a.names})))
         return 0
     if a.command == "show":
         print(json.dumps(game.operator("players", {"minutes": a.minutes}), indent=1))

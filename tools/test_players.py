@@ -172,6 +172,32 @@ def request_form():
         raise AssertionError("expected an error")
     except RuntimeError as e:
         assert str(e) == "votes_open: unsupported action; call describe", e
+    # The CLI's direct controls: trust, guest and trust-names (a fresh save's operator names, start-team.sh).
+    calls = []
+
+    class Direct:
+        def __init__(self, world):
+            calls.append(("world", world))
+
+        def operator(self, action, args=None):
+            calls.append((action, args))
+            return {"ok": True}
+
+    real, players.Game = players.Game, Direct
+    try:
+        out = io.StringIO()
+        sys.stdout, saved = out, sys.stdout
+        try:
+            assert players.main(["--world", "x", "trust-names", "nick", "zed"]) == 0
+            assert players.main(["--world", "x", "trust", "nick"]) == 0
+            assert players.main(["--world", "x", "guest", "eve"]) == 0
+        finally:
+            sys.stdout = saved
+    finally:
+        players.Game = real
+    assert calls == [("world", "x"), ("trust_names", {"names": ["nick", "zed"]}), ("world", "x"),
+                     ("player_group", {"name": "nick", "group": "trusted"}), ("world", "x"),
+                     ("player_group", {"name": "eve", "group": "guest"})], calls
     print("request form: ok")
 
 

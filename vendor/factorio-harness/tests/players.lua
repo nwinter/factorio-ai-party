@@ -232,6 +232,10 @@ eq(r.group,'normal'); eq(s.trusted_names.nick,true)
 r=M.operator.player_group({name='nick',group='guest'}); eq(r.group,'guest'); eq(s.trusted_names.nick,nil)
 fails(function() M.operator.player_group({name='nick',group='admin'}) end,'group must be trusted or guest')
 eq(#M.operator.players({}).players,2)
+-- Names trusted before they ever join (a fresh save): control.lua reads storage trusted_names.
+eq(table.concat(M.operator.trust_names({names={'nick','zed'}}).trusted_names,','),'nick,zed')
+fails(function() M.operator.trust_names({names={'bad name'}}) end,'not a player name: bad name')
+fails(function() M.operator.trust_names({}) end,'names must be a list')
 -- Removals make bursts too (by hand, robots and destruction alike).
 game.tick=game.tick+10*3600; local said=#notices
 for i=1,20 do local w=entity('stone-wall','wall',200+i,0.5); game.tick=game.tick+60; M.on_event(fire('on_player_mined_entity',{player_index=1,entity=w})); w.valid=false end
