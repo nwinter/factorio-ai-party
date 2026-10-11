@@ -740,7 +740,9 @@
   }
 
   // ---------- segments (tools/stream/segments.py): drawn from segment.facts only, so the casters match the screen ----------
-  const FULL = { production: 1, research: 1, recap: 1, space: 1 }; // these cover the main camera; spotlight/overview are a card on it
+  // Every segment is a card in the main camera's lower left, clear of its centre (Nick on shake7: the full panel over
+  // the whole camera stayed far longer than it took to read). FULL stays for a type that ever needs the whole camera.
+  const FULL = {};
   function factRow(label, value, cls) {
     const r = el("div", "srow" + (cls ? " " + cls : ""));
     r.append(el("span", "k", label), el("span", "v", value == null || value === "" ? "–" : String(value)));
@@ -749,28 +751,21 @@
   function segmentBody(seg) {
     const f = seg.facts || {};
     const body = el("div", "sbody");
-    if (seg.type === "production") {
-      const head = el("div", "shead");
-      head.append(el("span", "big", f.science_per_min != null ? fmtRate(f.science_per_min) : "–"), el("span", "unit", " science / min"),
-        el("span", "stage", f.stage ? f.stage + " stage" : ""));
-      body.append(head);
-      const packs = el("div", "spacks");
-      for (const [name, rate] of Object.entries(f.packs || {})) packs.append(el("span", "chip", name + " " + fmtRate(rate)));
-      body.append(packs);
+    if (seg.type === "production") { // only the lines that moved (segments.py production_moves), at most three
       const t = el("div", "stable");
-      t.append(el("div", "th", "Item"), el("div", "th num", "now /min"), el("div", "th num", "10 min ago"));
+      t.append(el("div", "th", "Changed in 10 min"), el("div", "th num", "now /min"), el("div", "th num", ""));
       for (const it of f.items || []) {
-        const icon = itemIcon(it.id || it.item.replace(/ /g, "-"), 32);
+        const icon = itemIcon(it.id || it.item.replace(/ /g, "-"), 28);
         const name = el("div", "td item");
         if (icon) name.append(icon);
         name.append(el("span", "", it.item));
-        const delta = it.rate_now != null && it.rate_10min_ago ? it.rate_now - it.rate_10min_ago : 0;
-        t.append(name, el("div", "td num" + (delta > 0 ? " up" : delta < 0 ? " down" : ""), fmtRate(it.rate_now)),
-          el("div", "td num faint", fmtRate(it.rate_10min_ago)));
+        const pct = it.change_pct || 0;
+        t.append(name, el("div", "td num", fmtRate(it.rate_now)),
+          el("div", "td num" + (pct > 0 ? " up" : pct < 0 ? " down" : ""), (pct > 0 ? "+" : "") + pct + "%"));
       }
       body.append(t);
-      if (f.biggest_gain || f.biggest_drop)
-        body.append(el("div", "snote", [f.biggest_gain && "Up most: " + f.biggest_gain, f.biggest_drop && "Down most: " + f.biggest_drop].filter(Boolean).join("   ·   ")));
+      if (f.science_per_min != null)
+        body.append(el("div", "snote", fmtRate(f.science_per_min) + " science / min" + (f.stage ? " · " + f.stage + " stage" : "")));
     } else if (seg.type === "research") {
       body.append(el("div", "shead big", f.current || "No research queued"));
       const bar = el("div", "bar sbar");
@@ -780,10 +775,11 @@
       body.append(bar, factRow("Progress", f.progress_pct != null ? f.progress_pct + "%" : null),
         factRow("Technologies done", f.done_count), factRow("Latest", (f.recent || []).join(", ")));
     } else if (seg.type === "recap") {
-      body.append(factRow("Science per minute", f.science_per_min != null ? fmtRate(f.science_per_min) : null),
-        factRow("Research finished", (f.research_done || []).join(", ") || "none"),
-        factRow("Board items done", (f.board_done || []).join(", ") || "none"),
-        factRow("Attacks", f.attacks || 0), factRow("Deaths", (f.deaths || []).length ? f.deaths.join(", ") : "none"));
+      // only what happened (segments.py recap_news refuses an empty window)
+      if ((f.research_done || []).length) body.append(factRow("Researched", f.research_done.join(", ")));
+      if ((f.board_done || []).length) body.append(factRow("Done", f.board_done.join(", ")));
+      if (f.attacks) body.append(factRow("Attacks", f.attacks));
+      if ((f.deaths || []).length) body.append(factRow("Deaths", f.deaths.join(", ")));
     } else if (seg.type === "spotlight") {
       body.append(factRow(f.model || "model ?", f.motto ? "“" + clean(f.motto) + "”" : ""),
         factRow("Now", [humanItem(f.doing || ""), f.location].filter(Boolean).join(" · ")));
@@ -813,7 +809,7 @@
     }
     return body;
   }
-  const isFull = (seg) => !!FULL[seg.type] || (seg.type === "space_moment" && !(seg.facts || {}).agent); // a landing shows the agent
+  const isFull = (seg) => !!FULL[seg.type];
   function renderSegment(s) {
     const box = $("segment");
     const seg = s.segment;
