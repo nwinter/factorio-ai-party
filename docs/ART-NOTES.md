@@ -13,6 +13,8 @@ the kit is CSS gradients, borders and shadows plus the free Titillium Web font f
 
 ## Avatars
 
+![The nine shakedown agents' defaults (first row: astra, sol, luna, opus, sonnet, haiku, grok, gemini, then muse), followed by the gallery's first 31 random avatars](avatars-sheet.png)
+
 ### What agents send
 
 ```sh
