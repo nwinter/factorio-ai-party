@@ -8,13 +8,15 @@
 # The run dir must be in a folder the CLIs trust: Grok loads workspace hooks only in trusted folders (Codex trusts a
 # git worktree through its main repository). From an untrusted worktree use -C /Users/owner/code/player-of-games.
 #
-# Clean-profile check: tools/context-probe.sh [-C CHECKOUT] --profile KIND MODEL [ROUTE] [EXTRA CLI ARGS...]
+# Clean-profile check: tools/context-probe.sh [-C CHECKOUT] [--full] --profile KIND MODEL [ROUTE] [EXTRA CLI ARGS...]
 #   Prepares runs/ctxtest/profile-KIND as tools/launch-agent.sh does (settings, tools/clean-profile.py and the words in
 #   tools/profile-flags.sh), runs one short headless turn and prints what the agent was given (profile.txt).
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 base=$root
 [ "${1:-}" = -C ] && { base=$2; shift 2; }
+# --full: the profile probe with POG_FULL_TOOLS=1 (tools/full_tools.py); the model lists the tools it can call.
+[ "${1:-}" = --full ] && { export POG_FULL_TOOLS=1; shift; }
 if [ "${1:-}" = --profile ]; then
   shift
   exec bash "$root/tools/profile-probe.sh" "$base" "$@"

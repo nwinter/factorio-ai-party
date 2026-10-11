@@ -84,12 +84,16 @@ def codex(d):
     # Shake2 still showed the owner's skills list (rooted at ~/.agents/skills, plus OpenAI's bundled plugin skills) and
     # a multi-agent role block in every request: turn off host skill discovery, plugins, apps and browser/computer use
     # (feature names from `codex features list`, codex-cli 0.162.1).
+    # POG_FULL_TOOLS=1 (tools/full_tools.py): live web search, the multi-agent tools (spawn_agent and the rest) and the
+    # run's shared team-tools folder writable; view_image is on either way.
+    full = os.environ.get("POG_FULL_TOOLS") == "1"
     text += ('# clean-profile: no personal developer instructions, skills, plugins or multi-agent roles; readable '
              'reasoning summaries\n'
              'developer_instructions = ""\n'
              'model_reasoning_summary = "concise"\n'
+             + ('web_search = "live"\n' if full else '') +
              '[features]\n'
-             'multi_agent = false\n'
+             f'multi_agent = {"true" if full else "false"}\n'
              'skip_host_skill_discovery = true\n'
              'skill_search = false\n'
              'plugins = false\n'
@@ -111,6 +115,9 @@ def codex(d):
              'include_instructions = false\n'
              '[skills.bundled]\n'
              'enabled = false\n')
+    if full:
+        shared = os.path.join(os.path.dirname(os.path.abspath(d)), "team-tools")
+        text += f'[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [{json.dumps(shared)}]\n'
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write(text)

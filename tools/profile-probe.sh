@@ -22,6 +22,13 @@ out=profile.txt
 : > $out
 say() { echo "$*" | tee -a $out; }
 say "profile probe: $kind $model route=${route:--} dir=$dir $(date '+%H:%M:%S')"
+# --full (POG_FULL_TOOLS=1): the full-tools workspace, and the model lists what it can call.
+full=${POG_FULL_TOOLS:-0}
+full_task="Reply with exactly two lines: 'tools: ' followed by the names of every tool you can call, comma-separated, and 'files: ' followed by the output of the shell command ls -F (one call)."
+if [ "$full" = 1 ]; then
+  python3 "$root/tools/full_tools.py" workspace "$dir" "$kind"
+  say "full tools: $(ls -F | tr '\n' ' ')"
+fi
 
 case $kind in
   claude)
@@ -30,12 +37,25 @@ case $kind in
     printf '{"permissions": {"defaultMode": "dontAsk", "allow": ["Read", "Bash(sleep:*)"]}}\n' > .claude/settings.json
     python3 "$root/tools/context.py" setup claude "$model" "$dir" >/dev/null
     python3 "$root/tools/clean-profile.py" claude "$dir"
+    variants="clean control"
+    if [ "$full" = 1 ]; then
+      printf '{"sandbox": {"enabled": true, "autoAllowBashIfSandboxed": true}, "permissions": {"defaultMode": "dontAsk", "allow": ["Read", "Bash(ls:*)"]}}\n' > .claude/settings.json.base
+      python3 - .claude/settings.json .claude/settings.json.base <<'EOF'
+import json, sys
+cfg, base = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
+cfg["sandbox"] = base["sandbox"]; cfg["permissions"] = base["permissions"]
+json.dump(cfg, open(sys.argv[1], "w"), indent=2)
+EOF
+      python3 "$root/tools/full_tools.py" claude "$dir"
+      variants=full
+    fi
     croot=$(route_root "$route" claude)
     cenv="-u CLAUDE_CONFIG_DIR"; [ "$route" = claude ] || cenv="CLAUDE_CONFIG_DIR='$croot'"
     task="Run the shell command sleep 2 three times, each as its own Bash call (do not combine them). After the third, reply with exactly three lines: 'git: ' followed by the current git branch and the latest commit message if your context gives them, else 'git: none'; 'email: ' followed by the user's email address if your context gives one, else 'email: none'; 'reminder: ' followed by the text of any system reminder about the user not having heard from you, else 'reminder: none'."
-    for variant in clean control; do
+    for variant in $variants; do
       extra="CLAUDE_CODE_SILENT_TURN_REMINDER_SECONDS=1 CLAUDE_CODE_SILENT_TURN_REMINDER_TURNS=1"
       [ $variant = control ] && extra="$extra CLAUDE_CODE_SILENT_TURN_REMINDER=1 CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS=0"
+      [ $variant = full ] && { extra=; task=$full_task; }
       eval "env $claude_unset $cenv $claude_vars $extra /Users/owner/.local/bin/claude -p \"\$task\" --model $model $claude_flags --output-format stream-json --verbose $*" \
         > probe-$variant.jsonl 2> probe-$variant.err || true
       say "--- $variant"
@@ -49,6 +69,8 @@ for line in open(path):
     except ValueError:
         continue
     sid = sid or row.get("session_id")
+    if row.get("type") == "system" and row.get("subtype") == "init":
+        print("init tools:", ",".join(row.get("tools") or []), "| agents:", ",".join(row.get("agents") or []))
     if row.get("type") == "result":
         result = row.get("result") or ""
 print("model says:", " | ".join(l.strip() for l in result.splitlines() if l.strip()) or "(no result)")
@@ -64,8 +86,11 @@ EOF
     python3 "$root/tools/context.py" setup codex "$model" "$dir" >/dev/null
     python3 "$root/tools/clean-profile.py" codex "$dir"
     croot=$(route_root "$route" codex)
+    task="Reply with the word ready."; sandbox=read-only
+    [ "$full" = 1 ] && { task=$full_task; sandbox=workspace-write; }
     CODEX_HOME=$croot /opt/homebrew/bin/codex exec --json --skip-git-repo-check -C "$dir" -m "$model" \
-      -c 'model_reasoning_effort="low"' --sandbox read-only "$@" "Reply with the word ready." > probe.jsonl 2> probe.err || true
+      -c 'model_reasoning_effort="low"' --sandbox $sandbox "$@" "$task" > probe.jsonl 2> probe.err || true
+    [ "$full" = 1 ] && say "model says: $(python3 -c 'import json,sys; print(" | ".join(r["item"].get("text","") for r in map(json.loads, open(sys.argv[1])) if r.get("type")=="item.completed" and r.get("item",{}).get("type")=="agent_message"))' probe.jsonl 2>/dev/null)"
     python3 - probe.jsonl "$croot" <<'EOF' | tee -a profile.txt
 import glob, json, os, re, sys
 path, croot = sys.argv[1:]
@@ -97,6 +122,7 @@ EOF
     left() { python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import importlib; g = importlib.import_module("grok-home"); print(g.owner_token()[1], "s left")' "$root/tools"; }
     say "owner login before setup: $(left)"
     home_env=$(python3 "$root/tools/grok-home.py" setup "$dir" 5400)
+    [ "$full" = 1 ] && grok_allow="$grok_allow $(python3 "$root/tools/full_tools.py" grok-args "$dir")"
     say "owner login after setup: $(left)"
     if [ "${1:-}" = tui ]; then   # the TUI the agents run, with the launch's env and flags (smoke-l4g stalled there)
       shift

@@ -8,14 +8,20 @@
 claude_unset="-u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX -u CLAUDE_CODE_USE_FOUNDRY -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE"
 claude_vars="ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_ENABLE_CFC=false CLAUDE_CODE_SILENT_TURN_REMINDER=0 CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS=1"
 # --setting-sources project,local: the route's user settings.json (hooks such as peon-ping, plugins, effort) stays out;
-# login lives outside settings. --tools: only the tools the game uses (also shrinks the post-compaction floor).
-claude_flags="--permission-mode dontAsk --setting-sources project,local --tools Bash,Read,Edit,Write,Grep,Glob --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --no-chrome --disable-slash-commands"
+# login lives outside settings. --tools: only the tools the game uses (also shrinks the post-compaction floor);
+# POG_FULL_TOOLS=1 adds subagents, web search and fetch and the background-job tools (tools/full_tools.py allows them).
+claude_tools="Bash,Read,Edit,Write,Grep,Glob"
+[ "${POG_FULL_TOOLS:-}" = 1 ] && claude_tools="$claude_tools,Agent,WebSearch,WebFetch,TaskStop,Monitor"
+claude_flags="--permission-mode dontAsk --setting-sources project,local --tools $claude_tools --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --no-chrome --disable-slash-commands"
 
 # Grok Build env: skip the Claude- and Cursor-compatible skills, rules, named instruction files, hooks and MCP servers
 # (the 3 MCP servers that failed at every start in shake3 came from Cursor's .mcp.json), managed MCP servers and
 # cross-session memory; GROK_SUBAGENTS=0 and GROK_WORKFLOWS=0 drop spawn_subagent and the workflow tool (smoke-l4
 # listed both). $GROK_HOME/rules and hooks and ~/.agents/skills have no switch: see grok_bin below.
-grok_env="GROK_CLAUDE_SKILLS_ENABLED=false GROK_CLAUDE_MCPS_ENABLED=false GROK_CLAUDE_RULES_ENABLED=false GROK_CLAUDE_HOOKS_ENABLED=false GROK_CLAUDE_AGENTS_ENABLED=false GROK_CURSOR_SKILLS_ENABLED=false GROK_CURSOR_MCPS_ENABLED=false GROK_CURSOR_RULES_ENABLED=false GROK_CURSOR_HOOKS_ENABLED=false GROK_CURSOR_AGENTS_ENABLED=false GROK_MANAGED_MCPS_ENABLED=false GROK_MEMORY=0 GROK_SUBAGENTS=0 GROK_WORKFLOWS=0"
+grok_env="GROK_CLAUDE_SKILLS_ENABLED=false GROK_CLAUDE_MCPS_ENABLED=false GROK_CLAUDE_RULES_ENABLED=false GROK_CLAUDE_HOOKS_ENABLED=false GROK_CLAUDE_AGENTS_ENABLED=false GROK_CURSOR_SKILLS_ENABLED=false GROK_CURSOR_MCPS_ENABLED=false GROK_CURSOR_RULES_ENABLED=false GROK_CURSOR_HOOKS_ENABLED=false GROK_CURSOR_AGENTS_ENABLED=false GROK_MANAGED_MCPS_ENABLED=false GROK_MEMORY=0"
+# POG_FULL_TOOLS=1: subagents and workflows stay, and web_fetch joins web_search (off by default, docs
+# 05-configuration.md); tools/full_tools.py grok-args adds the team-tools and teammate rules.
+if [ "${POG_FULL_TOOLS:-}" = 1 ]; then grok_env="$grok_env GROK_WEB_FETCH=1"; else grok_env="$grok_env GROK_SUBAGENTS=0 GROK_WORKFLOWS=0"; fi
 # Muse Code env: no skill-reminder agent (shake3: 356 decisions about the owner's skills) and no cross-session memory
 # tools or memory reminders (notes.md is the agents' memory). The owner's hooks go with -c hooks={} (clean-profile.py).
 muse_env="MUSE_EXPERIMENTAL_SKILL_REMINDER=0 MUSE_EXPERIMENTAL_MEMORY=0 MUSE_EXPERIMENTAL_MEMORY_REMINDER=0"

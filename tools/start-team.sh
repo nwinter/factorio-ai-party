@@ -69,7 +69,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
     fi
   done
   echo "4. stream service, chat log, shot sync$([ "${POG_CASTER:-1}" != 0 ] && echo ', casters')$([ "${POG_ANALYST:-1}" != 0 ] && echo ', analyst'), recording$([ "$stream" = --stream ] && echo ', stream')"
-  echo "5. agents launch; 6. supervisors and score loop"
+  echo "5. agents launch$([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo ' with full tools (POG_FULL_TOOLS=1: tools/, team-tools/, gamedata/, subagents, web)'); 6. supervisors and score loop"
   [ -n "$resume" ] && echo "prompt adds: $(tools/launch-agent.sh --resume-sentence)"
   exit 0
 fi
@@ -79,6 +79,7 @@ quota | while read -r line; do log "$line"; done
 # Launch from the code the fixes are in (docs/studies/shake5.md, P1 item 7): harness and stream commits on main or a
 # recent branch that this checkout lacks, and a built host older than its sources. Warnings only.
 { python3 tools/code_check.py || true; } | while read -r line; do log "$line"; done
+log "full tools: $([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo 'on (docs/TOOLS-NOTES.md)' || echo off)"
 
 if [ -n "$resume" ]; then
   # 1. A later shift: the same instance and save (docs/HARNESS3-NOTES.md, round 7).

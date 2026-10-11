@@ -73,6 +73,10 @@ i = text.find("## Compact instructions")
 open(path, "w").write(text[:i] + add + text[i:] if i >= 0 else text.rstrip("\n") + "\n\n" + add)
 EOP
 fi
+# POG_FULL_TOOLS=1: tools/, team-tools/, gamedata/ and the "Your tools" paragraph (tools/full_tools.py); each harness's
+# own settings follow in its case below.
+full=${POG_FULL_TOOLS:-0}
+[ "$full" = 1 ] && python3 "$root/tools/full_tools.py" workspace "$dir" "$kind"
 prompt="$root/runs/$run/prompt.md"
 if [ ! -f "$prompt" ]; then
   cat > "$prompt" <<'EOP'
@@ -125,6 +129,7 @@ case $kind in
     claude_settings
     python3 "$root/tools/context.py" setup claude "$model" "$dir" >/dev/null
     python3 "$root/tools/clean-profile.py" claude "$dir"
+    [ "$full" = 1 ] && python3 "$root/tools/full_tools.py" claude "$dir"
     # Started directly instead of through ai-session, which cannot pass flags: with the same environment ai-session
     # sets for the route (CLAUDE_CONFIG_DIR = the route's root, except for the default profile, and no API keys), plus
     # no MCP servers but our own (the user-scope cube-local leaked in smoke-2145), no Claude in Chrome, no skills.
@@ -160,6 +165,7 @@ case $kind in
     ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
     # Run-local GROK_HOME; the owner's login must last the run plus 15 minutes (tools/grok-home.py refreshes it).
     home_env=$(python3 "$root/tools/grok-home.py" setup "$dir" $((minutes * 60 + 900)))
+    [ "$full" = 1 ] && grok_allow="$grok_allow $(python3 "$root/tools/full_tools.py" grok-args "$dir")"
     pane=$(new_pane)
     # --rules is part of the system prompt, which compaction keeps. $grok_env, $grok_allow, $grok_bin:
     # tools/profile-flags.sh. Started from a script: the full command is about 1,450 characters, and typed into a

@@ -41,8 +41,20 @@ test on a shared world, so do not move, mine, build, craft, take or give items, 
    none), one line starting `rules:` naming any instructions you were given besides AGENTS.md and this prompt (or
    `rules: none`), and one line starting `blocked:` that lists any command that was denied or failed to run (or
    `blocked: none`).
-Then end your turn.
 EOP
+# POG_FULL_TOOLS=1: also exercise the full engineer tools (tools/full_tools.py), still without acting in the game.
+if [ "${POG_FULL_TOOLS:-}" = 1 ]; then cat >> "$rundir/prompt.md" <<'EOP'
+6. Write `tools/circuit.py`, a Python script that reads `gamedata/recipes.json` and prints the ingredients of
+   `electronic-circuit`; run it, then copy it into `team-tools/` under your name (for example `team-tools/NAME-circuit.py`).
+7. Look up the Factorio wiki page for the electronic circuit on the web, if you have a web tool.
+8. Start one subagent, if you can, that counts the lines of `describe.json` and reports the number back to you.
+9. Try to read the first line of another smoke agent's `journal.jsonl` and of its `notes.md` (the folders beside yours).
+10. In notes.md under `## Log`, write one line starting `full:` with `script=` (the ingredients or the error),
+   `shared=` (ok or the error), `web=` (the URL you read, or why not), `subagent=` (the number, or why not),
+   `teammate_journal=` (read or denied) and `teammate_notes=` (read or denied).
+EOP
+fi
+echo "Then end your turn." >> "$rundir/prompt.md"
 # Supervisors with a harmless nudge: shows whether a nudge reaches each harness (Muse's never did in shake2).
 nudge_text='Supervisor delivery test: add one line starting nudge: under ## Log in notes.md, then end your turn. Do nothing else.'
 
@@ -92,7 +104,7 @@ for line in open(os.path.join(rundir, "panes.txt")):
         pass
     desc = sum(1 for _ in open(os.path.join(d, "describe.json"))) if os.path.exists(os.path.join(d, "describe.json")) else 0
     notes = [l.strip() for l in open(os.path.join(d, "notes.md"))
-             if l.lstrip("- ").startswith(("tools:", "rules:", "blocked:", "nudge:"))]
+             if l.lstrip("- ").startswith(("tools:", "rules:", "blocked:", "nudge:", "full:"))]
     sup = [l.strip() for l in open(os.path.join(d, "supervisor.log"))] if os.path.exists(os.path.join(d, "supervisor.log")) else []
     try:
         hooks = json.load(open(os.path.join(d, ".context-state.json"))).get("hooks_seen", "no")
@@ -139,4 +151,7 @@ for line in open(os.path.join(rundir, "panes.txt")):
     print(f"{name:13} {kind:6} requests={reqs} say={says} failed={fails} describe_lines={desc} hooks_seen={hooks}{start}")
     print("    notes: " + (" | ".join(notes) or "no tools/rules/blocked/nudge lines"))
     print("    supervisor: " + (" | ".join(sup) or "none"))
+shared = os.path.join(rundir, "team-tools")
+if os.path.isdir(shared):   # POG_FULL_TOOLS=1: what the agents put in the shared folder
+    print("team-tools: " + (" ".join(sorted(os.listdir(shared))) or "empty"))
 PY

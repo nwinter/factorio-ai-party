@@ -110,6 +110,10 @@ Launch hygiene and supervision (shake2 and shake3 studies; details in `docs/LAUN
 - `tools/context-probe.sh --profile KIND MODEL [ROUTE]` checks a clean profile headless;
   `tools/smoke-launch.sh [RUN] [MINUTES] [KINDS]` checks the launch live (both outside the sandbox: they need the
   CLIs' own folders, the herdr socket and ai-session's cache).
+- `POG_FULL_TOOLS=1` (off by default) gives every harness its own `tools/`, a shared `team-tools/`, a read-only
+  `gamedata/` (the prototype dump), subagents and web search and fetch, with a short "Your tools" paragraph in
+  AGENTS.md (`tools/full_tools.py`, `agent/full-tools.md`). Probe: `tools/context-probe.sh --full --profile KIND
+  MODEL`; smoke: `POG_FULL_TOOLS=1 tools/smoke-launch.sh smoke-ft 6`. Details: `docs/TOOLS-NOTES.md`.
 
 `AGENTS.md` ends with `## Compact instructions` (`agent/compact.md`) and `notes.md` starts as a structured skeleton.
 Hook events go to `DIR/context.log`, summaries to `DIR/compactions.md`; `tools/context.py report runs/RUN_ID`
