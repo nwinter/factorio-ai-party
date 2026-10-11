@@ -93,7 +93,7 @@ class AudioHub:
             self.last_report = time.time()
             if cid in self.clips and st == "start":
                 self.playing[cid] = {"started": time.time(), **self.clips[cid][2]}
-            elif st in ("end", "skip", "error"):
+            elif st in ("end", "skip", "error", "cut"):  # cut: a line that mattered more faded this one out
                 self.playing.pop(cid, None)
             # a page that reloads mid-clip never reports the end; forget clips well past their length
             now = time.time()

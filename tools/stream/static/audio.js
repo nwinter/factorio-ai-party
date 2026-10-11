@@ -1,15 +1,19 @@
 // Voice player for the stream overlay: plays clips that tools/stream/caster.py pushes through serve.py.
-// Two channels, each one clip at a time: "caster" (Rook and Vale) and "agent" (voiced agent chat). While an agent
-// speaks, the caster channel ducks. In OBS, enable "Control audio via OBS" on the browser source so OBS mixes this
-// (and ducks game audio under it with a sidechain compressor: tools/obs.py stream-audio).
-// URL knobs: ?mute (no audio), ?duck=0.3 (caster gain while an agent speaks), ?caster=0.9, ?agent=1.0 (channel
-// gains), ?captions=0 (hide captions). A desktop browser needs one click before audio starts (autoplay policy).
+// One voice at a time (Nick, HOSTS3 item 5): one queue for the hosts (Rook and Vale) and the agents' voiced chat. A
+// new clip waits for the one playing, or, when it matters more, fades it out and plays next. Rank, high to low:
+// urgent events (attack, death, rocket: rank "urgent" from caster.py) > an agent speaking aloud > answers to viewers >
+// host banter. A Rook/Vale exchange stays together (its next line goes before other clips of the same rank), and a
+// clip still waiting when it expires is dropped, never played late. In OBS, enable "Control audio via OBS" on the
+// browser source so OBS mixes this (and ducks game audio under it: tools/obs.py stream-audio).
+// URL knobs: ?mute (no audio), ?caster=0.9, ?agent=1.0 (gains), ?fade=0.25 (seconds to fade out an interrupted
+// clip), ?captions=0 (hide captions). A desktop browser needs one click before audio starts (autoplay policy).
 (() => {
   const params = new URLSearchParams(location.search);
   if (params.has("mute")) return;
   const num = (k, d) => (params.has(k) && !isNaN(parseFloat(params.get(k))) ? parseFloat(params.get(k)) : d);
-  const DUCK = num("duck", 0.3);
   const VOL = { caster: num("caster", 0.9), agent: num("agent", 1.0) };
+  const FADE = num("fade", 0.25);
+  const RANK = { urgent: 3, agent: 2, viewer: 1, banter: 0 };
   const CAPTIONS = params.get("captions") !== "0";
 
   const style = document.createElement("style");
@@ -41,16 +45,8 @@
   (document.getElementById("stage") || document.body).appendChild(box);
 
   let ctx = null;
-  const gains = {};
   function audioCtx() {
-    if (!ctx) {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-      for (const ch of ["caster", "agent"]) {
-        gains[ch] = ctx.createGain();
-        gains[ch].gain.value = VOL[ch];
-        gains[ch].connect(ctx.destination);
-      }
-    }
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
     return ctx;
   }
   // Desktop browsers start the context suspended until a click; OBS's browser source does not.
@@ -64,19 +60,49 @@
   }
   if (audioCtx().state === "suspended") unlockButton();
 
-  const queues = { caster: [], agent: [] };
-  const busy = { caster: false, agent: false };
+  const queue = [];
+  let current = null;       // {clip, rank, src, gain, cut}
+  let lastExchange = null;  // the exchange of the last host line, to keep Rook and Vale together
 
   function report(id, state) {
     fetch("/audio/played", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, state }) }).catch(() => {});
   }
 
-  function duck(on) {
-    const g = gains.caster.gain, t = ctx.currentTime;
+  const rankOf = (clip) => (clip.rank in RANK ? RANK[clip.rank] : clip.channel === "agent" ? RANK.agent : RANK.banter);
+  const expired = (clip) => clip.expires && Date.now() / 1000 > clip.expires;
+
+  // the next clip: drop the expired, then the highest rank; among equals, the current exchange's next line, then
+  // the oldest
+  function pick() {
+    for (let i = queue.length - 1; i >= 0; i--) if (expired(queue[i])) { report(queue[i].id, "skip"); queue.splice(i, 1); }
+    if (!queue.length) return null;
+    let best = 0;
+    for (let i = 1; i < queue.length; i++) {
+      const a = queue[i], b = queue[best], ra = rankOf(a), rb = rankOf(b);
+      const cont = (c) => lastExchange != null && c.exchange === lastExchange;
+      if (ra > rb || (ra === rb && cont(a) && !cont(b))) best = i;
+    }
+    return queue.splice(best, 1)[0];
+  }
+
+  // a clip that matters more fades the current one out (FADE seconds) and goes next
+  function interrupt() {
+    const c = current;
+    if (!c || c.cut) return;
+    c.cut = true;
+    if (!c.src) return;  // still loading: it will not start
+    const g = c.gain.gain, t = ctx.currentTime;
     g.cancelScheduledValues(t);
     g.setValueAtTime(g.value, t);
-    g.linearRampToValueAtTime(on ? VOL.caster * DUCK : VOL.caster, t + (on ? 0.15 : 0.6));
+    g.linearRampToValueAtTime(0, t + FADE);
+    setTimeout(() => { try { c.src.stop(); } catch (err) { /* already ended */ } }, FADE * 1000 + 30);
+  }
+
+  function arrive(clip) {
+    queue.push(clip);
+    if (current && !current.cut && rankOf(clip) > current.rank) interrupt();
+    else playNext();
   }
 
   // an agent's colour lightened until it reads on the grey caption (4.5:1, as overlay.js does for names)
@@ -136,46 +162,48 @@
     return cap;
   }
 
-  async function playNext(ch) {
-    if (busy[ch]) return;
-    const clip = queues[ch].shift();
+  async function playNext() {
+    if (current) return;
+    const clip = pick();
     if (!clip) return;
-    if (Date.now() / 1000 > clip.expires) { report(clip.id, "skip"); return playNext(ch); }
-    busy[ch] = true;
-    let cap = null;
+    const cur = current = { clip, rank: rankOf(clip), cut: false };
+    let cap = null, state = "end";
     try {
       const c = audioCtx();
       if (c.state === "suspended") { await c.resume().catch(() => {}); if (c.state === "suspended") unlockButton(); }
       const data = await fetch(clip.url, { cache: "no-store" }).then((r) => r.arrayBuffer());
       const buf = await c.decodeAudioData(data);
+      if (cur.cut) { state = "cut"; return; }          // something that matters more arrived while it loaded
+      if (expired(clip)) { state = "skip"; return; }   // never late
+      const g = c.createGain();
+      g.gain.value = VOL[clip.channel === "agent" ? "agent" : "caster"];
+      g.connect(c.destination);
       const src = c.createBufferSource();
       src.buffer = buf;
-      src.connect(gains[ch]);
-      if (ch === "agent") duck(true);
+      src.connect(g);
+      cur.src = src;
+      cur.gain = g;
       cap = caption(clip);
       report(clip.id, "start");
+      // an urgent line does not reset it, so an exchange it interrupted can still finish together
+      if (clip.channel !== "agent" && cur.rank < RANK.urgent) lastExchange = clip.exchange != null ? clip.exchange : null;
       await new Promise((done) => { src.onended = done; src.start(); });
-      report(clip.id, "end");
+      if (cur.cut) state = "cut";
     } catch (err) {
       console.error("voice clip failed", clip.id, err);
-      report(clip.id, "error");
+      state = "error";
     } finally {
-      if (ch === "agent" && !queues.agent.length) duck(false);
+      report(clip.id, state);
       if (cap) { cap.classList.remove("on"); setTimeout(() => cap.remove(), 400); }
-      busy[ch] = false;
-      setTimeout(() => playNext(ch), 300);
+      current = null;
+      setTimeout(playNext, cur.cut ? 60 : 300);
     }
   }
 
   function connect() {
     const es = new EventSource("/audio-events");
     es.onmessage = (e) => {
-      try {
-        const clip = JSON.parse(e.data);
-        const ch = clip.channel === "agent" ? "agent" : "caster";
-        queues[ch].push(clip);
-        playNext(ch);
-      } catch (err) { console.error(err); }
+      try { arrive(JSON.parse(e.data)); } catch (err) { console.error(err); }
     };
   }
   connect();

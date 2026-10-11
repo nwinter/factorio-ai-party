@@ -757,6 +757,12 @@ c5 = _caster(fw2)
 c5.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": [], "segment": card}, "pbp", 2)
 check("an urgent beat does not carry the card", "on_screen_now" not in fw2.facts)
 
+# HOSTS3 item 5: the page plays one voice at a time by rank (static/audio.js, audio_selftest.mjs)
+check("clip ranks: urgent events and space moments, viewer answers, banter",
+      [caster.clip_rank(e) for e in ({"kind": "death", "prio": 9}, {"kind": "space", "prio": 7},
+                                     {"kind": "viewer", "prio": 6}, {"kind": "chat", "prio": 4})] ==
+      ["urgent", "urgent", "viewer", "banter"])
+
 # Round 6 (shake5 P1 item 4): stage 3 is "Oil & blue science", and the stage fact says which packs are made
 import model  # noqa: E402
 check("stage 3 label names blue science", model.STAGE_LABELS[3] == "Oil & blue science")

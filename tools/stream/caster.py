@@ -153,6 +153,15 @@ PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "sp
             "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
 URGENT = 8
+
+
+def clip_rank(e):
+    """The page's playback rank for a host line (static/audio.js): urgent events and space moments interrupt an
+    agent speaking aloud, which interrupts answers to viewers, which interrupt host banter."""
+    if e.get("prio", 0) >= URGENT or e.get("kind") == "space" or (
+            e.get("kind") == "segment" and (e.get("segment") or {}).get("type") == "space_moment"):
+        return "urgent"
+    return "viewer" if e.get("kind") == "viewer" else "banter"
 TEXT_MODELS = {  # Workers AI, USD per million tokens in/out (pricing page, 2026-10-10)
     "@cf/meta/llama-3.3-70b-instruct-fp8-fast": (0.293, 2.253),
     "@cf/meta/llama-3.1-8b-instruct-fp8-fast": (0.045, 0.384),
@@ -1727,8 +1736,10 @@ class Caster:
             stop = time.time() + 15
             while time.time() < min(max(self.agent_free, self.caster_free + gap), stop):
                 time.sleep(0.1)
+            # rank and exchange: the page plays one voice at a time, by rank, and keeps an exchange together
             self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
-                       "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice")}, audio, ctype)
+                       "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice"),
+                       "rank": clip_rank(e), "exchange": base.get("exchange")}, audio, ctype)
             self.caster_free = time.time() + dur
             self.record(**base, who=who, line=line, pushed=True, tts=tts.backend, **spoke,
                         tts_latency=round(tlat, 2), seconds=round(dur, 2), **({"facts": facts} if i == 0 else {}))
@@ -2020,6 +2031,9 @@ def main():
     ap.add_argument("--push-channel", default="caster", help="--push: caster | agent | anything else (not played)")
     ap.add_argument("--push-text", default="", help="--push: caption text")
     ap.add_argument("--push-expires", type=float, default=30, help="--push: seconds the page may still start it")
+    ap.add_argument("--push-rank", choices=("urgent", "agent", "viewer", "banter"),
+                    help="--push: playback rank on the page (default: agent for the agent channel, else banter)")
+    ap.add_argument("--push-exchange", help="--push: exchange id, to keep a host exchange together")
     a = ap.parse_args()
     if a.bench:
         return bench(a)
@@ -2027,6 +2041,7 @@ def main():
         audio = open(a.push, "rb").read()
         meta = {"channel": a.push_channel, "speaker": os.path.basename(a.push), "text": a.push_text,
                 "duration": round(voices.duration(audio), 2), "expires_in": a.push_expires}
+        meta.update({k: v for k, v in (("rank", a.push_rank), ("exchange", a.push_exchange)) if v})
         body = dict(meta, audio_b64=base64.b64encode(audio).decode(), ctype="audio/mpeg")
         req = urllib.request.Request(a.feed.rstrip("/") + "/audio", data=json.dumps(body).encode(), method="POST",
                                      headers={"Content-Type": "application/json"})
