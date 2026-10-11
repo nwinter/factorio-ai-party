@@ -1405,10 +1405,17 @@ end
 -- Why a hand craft started fewer than asked: the raw items it runs out of,
 -- following hand-craftable intermediates (gears, cables) down like the
 -- engine does, with where our factory holds each.
+-- Whether a crafter with these categories takes the recipe: its own category
+-- or one of its additional ones (Space Age: pressing, electronics, ...).
+local function takes(categories,recipe)
+  if categories[recipe.category or 'crafting'] then return true end
+  for _,extra in ipairs(recipe.additional_categories or {}) do if categories[extra] then return true end end
+  return false
+end
 local function hand_recipe(p,item)
   local recipe=p.force.recipes[item]
   local categories=p.character and p.character.prototype.crafting_categories or {}
-  if recipe and recipe.enabled and categories[recipe.category or 'crafting'] then return recipe end
+  if recipe and recipe.enabled and takes(categories,recipe) then return recipe end
 end
 local function craft_shortfall(p,name,count,notes)
   local have,short={},{}
@@ -1474,7 +1481,7 @@ local function best_assembler(p,recipe)
   for _,name in ipairs(ASSEMBLERS) do
     local proto=prototypes.entity[name]
     local unlocked=p.force.recipes[name] and p.force.recipes[name].enabled
-    if proto and unlocked and (proto.crafting_categories or {})[recipe.category or 'crafting'] then
+    if proto and unlocked and takes(proto.crafting_categories or {},recipe) then
       local ok,speed=pcall(function() return proto.get_crafting_speed() end)
       return name,ok and speed or proto.crafting_speed or 1
     end
@@ -1529,11 +1536,7 @@ function handlers.craftable(p,a)
   local names=type(a.recipes)=='string' and {a.recipes} or a.recipes
   local out={}
   local categories=p.character.prototype.crafting_categories or {}
-  local function by_hand(recipe)
-    local hand=categories[recipe.category]
-    for _,extra in ipairs(recipe.additional_categories or {}) do hand=hand or categories[extra] end
-    return hand
-  end
+  local function by_hand(recipe) return takes(categories,recipe) end
   if names then
     assert(type(names)=='table' and #names>=1 and #names<=64,'recipes requires 1..64 names')
     for _,name in ipairs(names) do
