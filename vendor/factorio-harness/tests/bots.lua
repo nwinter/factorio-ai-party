@@ -246,6 +246,12 @@ eq(as_opus({color='#4363d8'}).color,'#4363d8')
 eq(bot('profile',{color='#ff8000'}).color,'#ff8000')
 -- voice: the stream's speaker id, stored lower case, listed in profiles.
 eq(bot('profile',{voice='Orion'}).voice,'orion'); eq(bot('profile',{}).voice,'orion')
+-- A voice another agent holds is refused, naming the holder (shake5: Sol and
+-- Muse both oa-cedar); your own again is fine.
+fails(function() as_opus({voice='ORION',glyph='Z'}) end,'voice orion is taken by Astra (astra); pick another')
+eq(as_opus({}).glyph,'O') -- refused before anything changed
+eq(as_opus({voice='oa-cedar'}).voice,'oa-cedar')
+eq(bot('profile',{voice='orion'}).voice,'orion')
 local listed; for _,row in ipairs(bot('profiles',{}).profiles) do if row.name=='astra' then listed=row end end
 eq(listed.voice,'orion')
 fails(function() bot('profile',{voice=string.rep('x',17)}) end,'voice must be 1..16')
