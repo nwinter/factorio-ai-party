@@ -1561,4 +1561,16 @@ do
   eq(call('status').spoiling,nil)
   p.get_main_inventory=saved
 end
+-- Human players (players.lua): described, answered without a character, and a failure stops nothing.
+do
+  local d=call('describe').actions
+  eq(d.players~=nil and d.votes~=nil and d.vote~=nil and d.restore~=nil,true)
+  game.players={p}
+  local saved=p.character; p.character=nil
+  eq(#call('players',{}).players,1)
+  p.character=saved; call('walk',{direction='east',ticks=600})
+  local ok=pcall(call,'vote',{kind='kick',player='nobody',reason='x'}); eq(ok,false)
+  eq(call('status').active.kind,'walk'); call('stop',{})
+  game.players=nil
+end
 print('runtime: '..assertions..' assertions passed')

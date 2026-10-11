@@ -4,16 +4,34 @@ package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local assertions=0
 local function eq(a,b) assertions=assertions+1; assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 log=function() end
-storage={}; game={tick=7}; defines={events={on_tick=1,on_script_path_request_finished=2,on_entity_died=3}}
+storage={}; defines={events={on_tick=1,on_script_path_request_finished=2,on_entity_died=3,on_player_created=4,on_built_entity=5},input_action={deconstruct=1,upgrade=2,import_blueprint_string=3}}
+-- Permission groups: the guest group is created at init with the planners and blueprint import denied.
+local groups={}
+local function group(name) local g={name=name,players={},denied={}}
+  g.set_allows_action=function(a,allowed) g.denied[a]=not allowed end
+  g.add_player=function(p) p.group=name end
+  groups[name]=g; return g end
+local people={{index=1,name='nick',valid=true},{index=2,name='pog-cam1',valid=true},{index=3,name='eve',valid=true}}
+game={tick=7,permissions={get_group=function(n) return groups[n] end,create_group=group},get_player=function(i) return people[i] end}
 local encoded,sequence={},0
 helpers={table_to_json=function(value) sequence=sequence+1; local key='encoded-'..sequence; encoded[key]=value; return key end,json_to_table=function(key) return encoded[key] end}
 local events={}
-script={on_init=function(fn) events.init=fn end,on_load=function(fn) events.load=fn end,on_configuration_changed=function(fn) events.config=fn end,on_event=function(id,fn) if type(id)=='table' then events.forward=fn else events.tick=fn end end}
+script={on_init=function(fn) events.init=fn end,on_load=function(fn) events.load=fn end,on_configuration_changed=function(fn) events.config=fn end,on_event=function(id,fn) if type(id)=='table' then events.forward=fn; events.forwarded=id elseif id==4 then events.created=fn else events.tick=fn end end}
 local interface
 remote={add_interface=function(_,value) interface=value end}
 local calls,stops=0,0
 package.loaded.runtime={dispatch=function(r) calls=calls+1; if r.action=='fail' or r.args.fail then error('failure') end; return {calls=calls} end,tick=function() end,stop_all=function() stops=stops+1 end,stop_player=function() stops=stops+1 end}
 dofile('mod/agent-harness_0.1.0/control.lua'); events.init()
+local guest=groups['pog-guest']
+eq(guest.denied[1],true); eq(guest.denied[2],true); eq(guest.denied[3],true)
+-- A newcomer joins as a guest; camera clients and names the operator trusted do not.
+storage.agent_harness.trusted_names={eve=true}
+for i=1,3 do events.created({player_index=i}) end
+eq(people[1].group,'pog-guest'); eq(people[2].group,nil); eq(people[3].group,nil)
+-- The player log's events are forwarded to the runtime with the older ones.
+local forwarded_ids={}
+for _,id in ipairs(events.forwarded) do forwarded_ids[id]=true end
+eq(forwarded_ids[2] and forwarded_ids[3] and forwarded_ids[5],true); eq(forwarded_ids[4],nil)
 -- Forwarded engine events reach runtime.on_event; a failure quarantines the runtime.
 local forwarded={}
 package.loaded.runtime.on_event=function(e) forwarded[#forwarded+1]=e.name; if e.fail then error('bad event') end end

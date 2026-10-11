@@ -41,10 +41,50 @@ local function boot()
   runtime = storage.agent_harness and storage.agent_harness.source
     and compile(storage.agent_harness.source) or default_runtime
 end
-script.on_init(function() state(); boot() end)
+-- A human who joins a world for the first time starts in the guest group:
+-- no deconstruction or upgrade planners, no blueprints (import, library or
+-- copy), no cable cutting, settings paste, fluid flushing, capsules, vehicles,
+-- trains, research, rocket launches or platform changes. The agents' trust
+-- vote (players.lua, tools/players.py) moves a player to the normal group.
+-- Fixed here, so a faulted runtime cannot let a newcomer in with everything.
+local GUEST='pog-guest'
+local GUEST_DENY={'deconstruct','upgrade','cancel_deconstruct','cancel_upgrade','import_blueprint','import_blueprint_string',
+  'import_blueprints_filtered','import_permissions_string','open_blueprint_library_gui','grab_blueprint_record','delete_blueprint_library',
+  'delete_blueprint_record','copy','alternative_copy','select_blueprint_entities','alt_select_blueprint_entities','setup_blueprint',
+  'setup_single_blueprint_record','reassign_blueprint','activate_paste','paste_entity_settings','remove_cables','flush_opened_entity_fluid',
+  'flush_opened_entity_specific_fluid','use_item','toggle_driving','launch_rocket','send_spidertron','toggle_artillery_auto_targeting',
+  'start_research','cancel_research','move_research','change_research_condition','set_research_finished_stops_game',
+  'change_train_stop_station','set_train_stopped','change_train_wait_condition','change_train_wait_condition_data','add_train_station',
+  'remove_train_station','go_to_train_station','drag_train_schedule','set_trains_limit','connect_rolling_stock','disconnect_rolling_stock',
+  'add_train_interrupt','remove_train_interrupt','edit_interrupt','activate_interrupt','send_train_to_pin_target','set_train_stop_priority',
+  'create_space_platform','delete_space_platform','rename_space_platform','instantly_create_space_platform','set_rocket_silo_send_to_orbit_automated_mode',
+  'delete_logistic_group','set_logistic_network_name','delete_custom_tag','edit_custom_tag','destroy_item','destroy_opened_item',
+  'add_permission_group','delete_permission_group','edit_permission_group','admin_action','change_multiplayer_config','map_editor_action',
+  'toggle_map_editor','cheat','spawn_item'}
+local function guest_group()
+  local g=game.permissions.get_group(GUEST) or game.permissions.create_group(GUEST)
+  for _,name in ipairs(GUEST_DENY) do
+    local action=defines.input_action[name]
+    if action then g.set_allows_action(action,false) end
+  end
+  return g
+end
+local CAMERA_NAMES={'^pog%-cam%d*$','^pog%-director%d*$'}
+local function newcomer(p)
+  for _,pattern in ipairs(CAMERA_NAMES) do if p.name:match(pattern) then return false end end
+  local trusted=storage.agent_harness and storage.agent_harness.trusted_names
+  return not (trusted and trusted[p.name])
+end
+script.on_event(defines.events.on_player_created, function(event)
+  local p=game.get_player(event.player_index)
+  if not (p and p.valid and newcomer(p)) then return end
+  local ok,err=pcall(function() guest_group().add_player(p) end)
+  if not ok then log('Agent harness guest group error: '..tostring(err)) end
+end)
+script.on_init(function() state(); boot(); pcall(guest_group) end)
 -- on_load must not write storage or touch game.
 script.on_load(boot)
-script.on_configuration_changed(function() state(); boot(); runtime.stop_all() end)
+script.on_configuration_changed(function() state(); boot(); runtime.stop_all(); pcall(guest_group) end)
 script.on_event(defines.events.on_tick, function(event)
   if state().runtime_fault then return end
   if not runtime then boot() end
@@ -59,8 +99,15 @@ end)
 -- Engine callbacks the runtime may need beyond on_tick. Registration is fixed
 -- here so hot reloads keep identical handlers; the runtime opts in by exposing
 -- on_event. Faults quarantine the runtime exactly like tick failures.
-script.on_event({defines.events.on_script_path_request_finished, defines.events.on_entity_died,
-    defines.events.on_unit_group_finished_gathering, defines.events.on_entity_damaged, defines.events.on_console_chat}, function(event)
+-- The human player log (players.lua) listens to the events after on_console_chat.
+local forwarded={}
+for _,name in ipairs{'on_script_path_request_finished','on_entity_died','on_unit_group_finished_gathering','on_entity_damaged',
+    'on_console_chat','on_built_entity','on_player_mined_entity','on_robot_mined_entity','on_marked_for_deconstruction',
+    'on_marked_for_upgrade','on_cancelled_deconstruction','on_cancelled_upgrade','on_gui_opened','on_gui_closed',
+    'on_player_fast_transferred','on_player_main_inventory_changed','on_player_joined_game','on_player_left_game'} do
+  if defines.events[name] then forwarded[#forwarded+1]=defines.events[name] end
+end
+script.on_event(forwarded, function(event)
   if state().runtime_fault then return end
   if not runtime then boot() end
   if not runtime.on_event then return end
@@ -71,7 +118,7 @@ script.on_event({defines.events.on_script_path_request_finished, defines.events.
     log('Agent harness event error: ' .. tostring(err))
   end
 end)
-local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true, profiles = true, cameras = true}
+local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true, profiles = true, cameras = true, players = true, votes = true}
 -- Operator-only calls (bots, cameras): RCON/console only, never via dispatch.
 local function operator(name, arg)
   local ok, result = pcall(function()

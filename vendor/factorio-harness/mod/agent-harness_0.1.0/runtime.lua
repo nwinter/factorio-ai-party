@@ -551,6 +551,7 @@ function handlers.describe()
   for name,schema in pairs(M.labs and M.labs.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.audience and M.audience.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
   return description
@@ -3544,6 +3545,21 @@ for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Tells: lines to named teammates outside the chat (tells.lua).
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver}
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
+-- Human players: their log, votes and restore (players.lua). Bots, camera
+-- clients and attached agents are not humans.
+M.players=require('players'){state=state,
+  is_human=function(index) return not M.bots.is_index(index) and not M.is_director(index) and not (state().controlled and state().controlled[index]) end,
+  -- Agents whose last request (or peek) is within window ticks.
+  active_agents=function(window)
+    local out,clocks={},state().clocks or {}
+    for _,b in ipairs(M.bots.list()) do
+      local c=clocks[b.index]
+      if c and game.tick-math.max(c.call_tick or 0,c.seen_tick or 0)<=window then out[#out+1]=b.name end
+    end
+    return out
+  end,
+  notice=function(from,text) return M.chat.notice(from,text) end}
+for name,handler in pairs(M.players.handlers) do handlers[name]=handler end
 function handlers.cameras() return M.cameras.list() end
 -- wait_until as a direct call: a timed action that holds the character idle
 -- until the condition is met (outcome met) or the timeout passes (timed_out),
@@ -3652,7 +3668,7 @@ function M.dispatch(request)
   if request.operator==true then
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
-      local relay=M.audience.operator[request.action] or M.tells.operator[request.action]
+      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
@@ -3713,6 +3729,16 @@ dispatch_request=function(request)
       if not M.board.open_reads[request.action] then assert(not M.is_director(p.index),'directors do not post on the board') end
     end
     local ok,result=pcall(board,p,request.args or {})
+    if not ok then passive_failed=true; error(result,0) end
+    return result
+  end
+  -- Human players (players.lua): reads, votes and restore act for the agent,
+  -- dead or alive, and never stop its character.
+  local humans=M.players.handlers[request.action]
+  if humans then
+    local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
+    assert(not M.is_director(p.index),'directors do not vote or restore')
+    local ok,result=pcall(humans,p,request.args or {})
     if not ok then passive_failed=true; error(result,0) end
     return result
   end
@@ -4080,6 +4106,12 @@ M.operator={
   end}
 local MAX_ALERTS=64
 function M.on_event(event)
+  -- The player log must never quarantine the runtime: its faults are counted.
+  if M.players.events[event.name] then
+    local ok,err=pcall(M.players.on_event,event)
+    if not ok then local s=state(); s.player_log_errors={count=((s.player_log_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
+    if event.name~=defines.events.on_entity_died then return end
+  end
   if event.name==defines.events.on_script_path_request_finished then
     local paths=state().paths or {}
     local index=paths[event.id]; paths[event.id]=nil

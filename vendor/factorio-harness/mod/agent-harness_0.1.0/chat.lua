@@ -38,7 +38,7 @@ return function(api)
     end
     c.read[index] = next(set) and set or nil
   end
-  local function append(from, text, index, aloud, viewer)
+  local function append(from, text, index, aloud, viewer, notice)
     local c = log()
     c.seq = c.seq + 1
     local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil, viewer=viewer or nil}
@@ -46,7 +46,7 @@ return function(api)
     while #c.messages > MAX_LOG do table.remove(c.messages, 1) end
     -- Mentions are filed per agent as the message arrives (board.lua); a
     -- viewer's @name is not a teammate's, so it files none.
-    if api.on_message and not viewer then api.on_message(m) end
+    if api.on_message and not viewer and not notice then api.on_message(m) end
     return c.seq
   end
   -- A stream viewer's line relayed by the operator (audience.lua rate-limits
@@ -59,6 +59,17 @@ return function(api)
       game.print(line)
     end
     return append('viewer ' .. name, text, nil, nil, true)
+  end
+  -- A line from the harness itself (votes, restores): in the chat log for
+  -- every agent and the stream, filed as nobody's mention.
+  function M.notice(from, text)
+    local line = '[color=1,0.8,0.3]' .. from .. ':[/color] ' .. text
+    if api.audience then
+      for _, viewer in ipairs(api.audience()) do viewer.print(line) end
+    else
+      game.print(line)
+    end
+    return append(from, text, nil, nil, nil, true)
   end
   M.schema = {
     say = {text='1..500 characters: posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
