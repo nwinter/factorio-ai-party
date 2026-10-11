@@ -212,7 +212,10 @@ the next of production, spotlight, research, overview, recap itself (`by: "direc
 minutes (`recap_every`, from the service start or the last recap): the director starts it at the first free slot
 that the spacing allows, covering the minutes since the last one (5 to 30). Shake3 never got one: the hosts'
 research requests kept resetting the 6-minute lull clock, so the rotation reached overview at 01:18 and the run ended
-before recap's turn. Tune with `"segments": {...}`
+before recap's turn. Ten minutes past due (`recap_late`) it goes next: right after the running segment, spacing
+waived, 20 s after an attack cut, and every other request (replays and space moments included) gets `busy` ("an
+overdue recap goes next") until it starts. In shake4 replays kept taking the free slot and one gap was 30 minutes.
+Tune with `"segments": {...}`
 in the run config. Checked: selftest (states, spacing, spotlight hold, cut, lull), and all five types requested over
 HTTP on the mock and rendered in jsdom on both pages. Not yet seen in OBS.
 
@@ -267,6 +270,12 @@ and segments as long as it always returns to "stream"; the replay buffer (45 s, 
   (just before the 20 s attack hold ends) and the last 15 s are replayed: the fight as main followed it. A death
   replays only if main showed that agent in the 10 s before (else the buffer holds nothing of it): saved 5 s after,
   shown from 11 s before to 4 s after. At most one replay per 120 s; a clip not on air within 120 s is dropped.
+  Deaths close together each get a clip (up to two waiting behind the first) and air one after the other: both
+  replays play, rather than keeping only the first, because each death is its own story and two 15 s clips fit well
+  inside the 120 s age limit. In shake4 Haiku's clip was queued, Opus died 43 s later, that attack cut emptied the
+  segment queue and Opus's clip replaced Haiku's, so Haiku's death never aired. Now the cut still empties the queue
+  (the live death comes first), the first clip is offered again 20 s later, and the second follows it.
+  `/replays.json` lists the waiting ones under `waiting`.
 - How: the clip becomes an `attack_replay` segment (it skips the 180 s segment spacing, still waits for a free slot
   and for 20 s after the last attack cut), so the casters see it and talk over it. On "starting" the banner page is
   reloaded; on "live" the clip is loaded into the "replay clip" media source, seeked to the start of the window, and
@@ -412,6 +421,11 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - Replays called as replays: the Space Age pilot's one replay (01:39:04, after 262ef78) opened "Replay bites!", so the
   hosts do call it a replay. That line also read the raw "spaceship chunk x653"; banners and replay titles no longer
   carry hit or kill counts (78c03b6). Not yet heard on a real fight.
+- `shot-sync.log` (shake4 P3 item 17): a screenshot for a workspace outside the run is reported once and left on the
+  box, so the log no longer fills with one line per stale shot per pass (98,770 in shake4). Clearing the camera
+  clients' old shots at launch would delete files on the box, so it is not done; `del` them by hand between runs if
+  wanted. Checked with stand-in ssh/scp and `tools/test_shot_sync.py`, not on the box (shake5 was running).
+- The overdue recap and the two-deaths replays (shake4 P3 items 15, 16) are checked in the selftest only.
   Merging main broke its darkness read (main's all-surfaces loop in `STREAM_LUA` left `s` a nil global, so the whole
   extras read, research progress included, failed on world n); fixed in 8f7844f, and the selftest now compiles the
   overlay's Lua with `luac` and refuses stray globals. Darkness is Nauvis's; a camera on another planet is not lifted
