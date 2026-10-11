@@ -544,5 +544,6 @@ The rest, by priority.
 - Sleep share, errors, compactions and the shake4 fix checks come from each agent's journal, supervisor.log,
   context.log, the Claude and Codex transcripts and the agy logs.
 - Host lines and mistakes come from `caster.log` and `tools/stream/logs/caster-20261011-052058.jsonl`, checked
-  against scores.jsonl and chat.jsonl.
+  against scores.jsonl and chat.jsonl. Most host times are from the jsonl, which can run up to 4 s ahead of the
+  same line in `caster.log`.
 - I did not watch the recording; captions and the cam3 black minutes are not checked against video.
