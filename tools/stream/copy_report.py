@@ -79,6 +79,13 @@ def report(rows, cuts, costs, title, rewrites=()):
         many = sum(numbers(r[4]) >= 3 for r in writer)
         print(f"   words a line {sum(words) / n:.1f} (shake4-6: 14.9); lines with 3+ numbers {100 * many / n:.1f}% "
               f"(shake4-6: 13%)")
+        # the clipped rhythm the first copy pass gave (shake7's first 46 lines: 4.6 words a sentence, 33% of sentences
+        # three words or fewer, 28% of lines three sentences or more)
+        sents = [[p for p in re.split(r"(?<=[.!?])\s+", r[4]) if p] for r in writer]
+        flat = [len(p.split()) for ss in sents for p in ss]
+        print(f"   words a sentence {sum(flat) / max(len(flat), 1):.1f}; sentences of 3 words or fewer "
+              f"{100 * sum(x <= 3 for x in flat) / max(len(flat), 1):.0f}%; lines of 3+ sentences "
+              f"{100 * sum(len(ss) >= 3 for ss in sents) / n:.0f}%")
 
 
 def main():
