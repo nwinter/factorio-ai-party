@@ -167,8 +167,8 @@ def audio_test_scene(c, url, game_url=None):
                      {"color": 0xFF102018, "width": 1920, "height": 1080})
     place(c, scene, bg, 0, 0, 1920, 1080)
     ov = scene_input(c, scene, "audio-test overlay", "browser_source", {
-        "url": url, "width": 1920, "height": 1080, "fps": 30, "fps_custom": True, "shutdown": False,
-        "restart_when_active": False, "reroute_audio": True})
+        "url": url, "width": 1920, "height": 1080, "fps": 30, "fps_custom": True, "shutdown": True,
+        "restart_when_active": False, "reroute_audio": True})  # shut when hidden: Chrome's 6 connections per host
     c.set_scene_item_transform(scene, ov, {"positionX": 0, "positionY": 0, "alignment": 5,
                                            "boundsType": "OBS_BOUNDS_NONE", "scaleX": 1.0, "scaleY": 1.0})
     stream_audio(c, scene, overlay="audio-test overlay", prefix="audio-test", game_url=game_url, music=False)

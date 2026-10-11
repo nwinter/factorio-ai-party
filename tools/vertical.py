@@ -261,7 +261,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["check", "scene", "settings", "key", "status", "start", "stop", "shot"])
     ap.add_argument("out", nargs="?")
-    ap.add_argument("--url", default="http://127.0.0.1:8787/portrait", help="scene: the portrait page as the box sees it")
+    ap.add_argument("--url", default="http://localhost:8787/portrait", help="scene: the portrait page as the box sees it (localhost: its own connection pool; Chrome allows 6 per host and each overlay page holds two event streams)")
     ap.add_argument("--server", default="rtmps://a.rtmps.youtube.com:443/live2",
                     help="settings, key: YouTube's ingest (the landscape stream uses this RTMPS one, docs/SETUP.md)")
     ap.add_argument("--key-file", default=KEY_FILE, help="settings, key: the vertical stream key (on this Mac)")
