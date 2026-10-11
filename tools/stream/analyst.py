@@ -104,6 +104,21 @@ def log(*a):
 
 # ---- point checks ----------------------------------------------------------------------------------------------
 NUM_RE = re.compile(r"\d+(?:[.,]\d+)?")
+_LEVEL_RE = None
+
+
+def level_names_re():
+    """Names with a level number ("logistics 2", "assembling machine 2", "electric energy distribution 1"): their
+    digit is part of the name, not a figure to check (shake4 dropped about 25 points for 'number 2 not in facts')."""
+    global _LEVEL_RE
+    if _LEVEL_RE is None:
+        from kb import KB
+        k = KB(kb_version())
+        bases = {re.sub(r"-\d+$", "", n) for d in (k.techs, k.entities, getattr(k, "items", {}) or {}) for n in d
+                 if re.search(r"-\d+$", n)}
+        alts = sorted((re.escape(b).replace(r"\-", "[- ]") for b in bases), key=len, reverse=True)
+        _LEVEL_RE = re.compile(r"\b(?:" + "|".join(alts) + r")[- ]\ds?\b(?![.,]\d)", re.I) if alts else re.compile(r"(?!x)x")
+    return _LEVEL_RE
 
 
 def fact_numbers(facts):
@@ -124,7 +139,7 @@ def point_problem(p):
     if TEST_RUN_RE.search(text):
         return "compares with an early solo or co-op test run (not a benchmark; viewers don't know it)"
     known = fact_numbers(facts)
-    for raw in NUM_RE.findall(text):
+    for raw in NUM_RE.findall(level_names_re().sub(" ", text)):
         v = float(raw.replace(",", ""))
         if not any(abs(v - k) <= max(1.0, 0.05 * abs(k)) for k in known):
             return f"number {raw} not in facts"

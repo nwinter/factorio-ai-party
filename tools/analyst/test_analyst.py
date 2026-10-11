@@ -138,6 +138,9 @@ class PointsTest(unittest.TestCase):
         bad = {"text": "They make 22 packs a minute.", "facts": {"spm": 15}}
         self.assertIsNone(analyst.point_problem(ok))
         self.assertIn("22", analyst.point_problem(bad))
+        lvl = {"text": "Logistics 2 comes next; two assembling machine 2s and automation-2 are done.", "facts": {}}
+        self.assertIsNone(analyst.point_problem(lvl))       # level names are names, not figures
+        self.assertIn("3", analyst.point_problem({"text": "Logistics 2 needs 3 more minutes.", "facts": {}}))
 
     def test_test_run_comparisons_dropped(self):
         import analyst

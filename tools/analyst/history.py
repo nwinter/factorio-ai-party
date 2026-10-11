@@ -107,7 +107,9 @@ def load_all():
             if any(s in run for s in SKIP) or not os.path.exists(p):
                 continue
             rows = {}
-            for line in open(p):
+            with open(p) as f:
+                lines = f.readlines()
+            for line in lines:
                 try:
                     j = json.loads(line)
                 except json.JSONDecodeError:
