@@ -15,7 +15,11 @@
     "production-science-pack": ["Purple sci.", "#b06cf0"], "utility-science-pack": ["Yellow sci.", "#f5d142"],
     "space-science-pack": ["Space sci.", "#f0f0f0"],
   };
-  const ALERT_ICON = { attack: "⚔️", death: "💀", power: "⚡", research: "🔬", info: "ℹ️" };
+  const ALERT_ICON = { attack: "⚔️", loss: "🔥", death: "💀", power: "⚡", research: "🔬", info: "ℹ️" };
+  // board event verbs as a viewer reads them ("Astra took: ...")
+  const VERB = { posted: "posted", taken: "took", assigned: "assigned", released: "released", started: "started",
+    done: "finished", blocked: "is blocked on", dropped: "dropped", reopened: "reopened" };
+  const KIND = { request: "request", task: "task", claim: "claim", harness: "tool", note: "note" };
 
   // ---------- colour handling: agents pick any colour; keep everything readable on the dark panels ----------
   function parseHex(c) {
@@ -155,12 +159,13 @@
         c.harness = el("div", "harness");
         r1.append(c.name, c.badge, c.harness);
         c.model = el("div", "model");
+        c.motto = el("div", "motto");
         const doing = el("div", "doing");
         c.dot = el("span", "dot");
         c.txt = el("span", "txt");
         c.where = el("span", "where");
         doing.append(c.dot, c.txt, c.where);
-        body.append(r1, c.model, doing);
+        body.append(r1, c.model, c.motto, doing);
         c.root.append(c.av, body);
         cards.set(a.name, c);
         box.appendChild(c.root);
@@ -170,10 +175,19 @@
       fillAvatar(c.av, a);
       setText(c.name, a.display_name || a.name);
       setText(c.harness, a.harness || "");
-      c.root.title = a.motto || "";
-      c.model.textContent = "";
-      c.model.append(el("b", "", a.model || "model ?"));
-      if (a.role) c.model.append(document.createTextNode(" · " + a.role));
+      // motto from `profiles`; an agent that never called `profile` gets a quiet note instead
+      const unset = a.profile_set === false;
+      const motto = unset ? "profile not set" : a.motto ? "“" + clean(a.motto) + "”" : "";
+      const msig = [a.model, a.role, motto, density].join("|");
+      if (c.model.dataset.sig !== msig) {
+        c.model.dataset.sig = msig;
+        c.model.textContent = "";
+        c.model.append(el("b", "", a.model || "model ?"));
+        if (density === "3" && motto) c.model.append(document.createTextNode(" · "), el("i", "", motto));
+        else if (a.role) c.model.append(document.createTextNode(" · " + a.role));
+        setText(c.motto, motto);
+        c.motto.classList.toggle("unset", unset);
+      }
       c.dot.className = "dot " + a.activity;
       let doing = a.action || "";
       if (a.activity === "thinking" && !a.active) doing = "thinking…";
@@ -307,6 +321,113 @@
     } else if (msgs.length && empty) empty.remove();
   }
 
+  // ---------- team board: recent events, open unowned requests, active claims, harness changelog ----------
+  const boardNodes = new Map();
+  function boardAvatar(s, name) {
+    const ag = name && s.agents.find((a) => a.name === name);
+    if (ag) return [ag, avatar(ag, "xxs")];
+    return [null, el("span", "tool", "⚙")];
+  }
+  function renderBoard(s) {
+    const b = s.board || {};
+    const panel = $("board");
+    const on = !!b.available;
+    if (panel.hidden === on) panel.hidden = !on;
+    document.body.classList.toggle("has-board", on);
+    if (!on) return;
+
+    const stats = $("board-stats");
+    const ssig = [b.open_unowned, b.in_progress, b.claims_total].join("|");
+    if (stats.dataset.sig !== ssig) {
+      stats.dataset.sig = ssig;
+      stats.textContent = "";
+      const stat = (n, one, many, cls) => {
+        const e = el("span", cls || "");
+        e.append(el("b", "", n), document.createTextNode(n === 1 ? one : many));
+        return e;
+      };
+      stats.append(stat(b.open_unowned || 0, "open request", "open requests", "open" + (b.open_unowned ? " some" : "")),
+        stat(b.in_progress || 0, "in progress", "in progress"), stat(b.claims_total || 0, "claim", "claims"));
+    }
+
+    const log = $("board-log");
+    const cl = (b.changelog || []).filter((c) => s.now - (c.t || 0) < 600).slice(-1);
+    const rows = 3 - cl.length; // 160 px panel: three lines between the header and the claims row
+    const events = (b.events || []).slice(-rows);
+    const keys = new Set();
+    for (const e of events) {
+      const key = "e" + (e.seq ?? e.tick + ":" + e.id + ":" + e.verb);
+      keys.add(key);
+      let n = boardNodes.get(key);
+      if (!n) {
+        n = el("div", "bev");
+        const [ag, av] = boardAvatar(s, e.agent);
+        n._av = av;
+        if (ag) applyPalette(n, ag);
+        n._who = el("span", "who", ag ? ag.display_name : e.by === "operator" ? "Operator" : e.by || "?");
+        const verb = el("span", "verb " + e.verb, VERB[e.verb] || e.verb);
+        n.append(av, n._who, verb);
+        if (e.verb === "posted" && KIND[e.kind]) n.append(el("span", "kind", KIND[e.kind]));
+        let title = clean(e.title);
+        if (e.verb === "assigned" && e.owner) {
+          const owner = s.agents.find((a) => a.name === e.owner_agent);
+          title += " → " + (owner ? owner.display_name : e.owner);
+        }
+        n.append(el("span", "title", title));
+        n._when = el("span", "when");
+        n.append(n._when);
+        log.appendChild(n);
+        boardNodes.set(key, n);
+      }
+      const ag = e.agent && s.agents.find((a) => a.name === e.agent);
+      if (ag) { applyPalette(n, ag); fillAvatar(n._av, ag, "xxs"); setText(n._who, ag.display_name); }
+      const age = s.now - (e.t || s.now);
+      setText(n._when, ago(age));
+      n.classList.toggle("old", age > 300);
+      n.style.order = 1;
+    }
+    for (const c of cl) {
+      const key = "c" + c.t + c.text;
+      keys.add(key);
+      let n = boardNodes.get(key);
+      if (!n) {
+        n = el("div", "bev changelog");
+        n.append(el("span", "tool", "🛠"), el("span", "ver", "Harness " + (c.version || "update")),
+          el("span", "title", clean(c.text)));
+        n._when = el("span", "when");
+        n.append(n._when);
+        log.appendChild(n);
+        boardNodes.set(key, n);
+      }
+      setText(n._when, ago(s.now - (c.t || s.now)));
+      n.style.order = 2; // the changelog line sits under the events, nearest the claims
+    }
+    for (const [key, n] of boardNodes) if (!keys.has(key)) { n.remove(); boardNodes.delete(key); }
+    let empty = log.querySelector(".empty");
+    if (!events.length && !cl.length && !empty) log.appendChild(el("div", "empty", "Nothing on the board yet"));
+    else if ((events.length || cl.length) && empty) empty.remove();
+
+    const box = $("board-claims");
+    const claims = b.claims || [];
+    const csig = claims.map((c) => c.id + (c.agent || c.owner) + c.title).join("|") + "|" + b.claims_total
+      + "|" + claims.map((c) => { const a = s.agents.find((x) => x.name === c.agent); return a ? a.color + a.glyph : ""; }).join("");
+    if (box.dataset.sig !== csig) {
+      box.dataset.sig = csig;
+      box.textContent = "";
+      box.append(el("span", "lbl", "Claims"));
+      if (!claims.length) box.append(el("span", "more", "none yet"));
+      const shown = claims.slice(0, 3);
+      for (const c of shown) {
+        const chip = el("span", "claim");
+        const [, av] = boardAvatar(s, c.agent);
+        chip.append(av, el("span", "", clean(c.title)));
+        box.append(chip);
+      }
+      const more = (b.claims_total || claims.length) - shown.length;
+      if (more > 0) box.append(el("span", "more", "+" + more));
+    }
+  }
+
   const alertNodes = new Map();
   function renderAlerts(s) {
     const box = $("alerts");
@@ -333,7 +454,18 @@
       const label = frame.querySelector(".cam-label");
       const cam = (s.cameras || {})[slot];
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
-      const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|");
+      const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "");
+      label.classList.toggle("attack", !!(cam && cam.attack));
+      if (cam && cam.attack && !agents.length) { // a base attack nobody is near: the camera shows the place
+        if (label.dataset.sig !== sig) {
+          label.dataset.sig = sig;
+          label.textContent = "";
+          label.append(el("span", "ico", "⚔️"), el("span", "", cam.attack));
+        }
+        frame.style.borderColor = "rgba(248,113,113,0.55)";
+        label.classList.add("on");
+        continue;
+      }
       if (!agents.length) { label.classList.remove("on"); frame.style.borderColor = ""; continue; }
       if (label.dataset.sig !== sig) {
         label.dataset.sig = sig;
@@ -348,7 +480,8 @@
         label.append(label._doing);
       }
       const lead = agents[0];
-      const doing = agents.length > 1 ? "working together" : lead.activity === "acting" && lead.action ? humanItem(lead.action)
+      const doing = cam.attack ? (cam.attack.startsWith(lead.display_name) ? "under attack" : "attack nearby")
+        : agents.length > 1 ? "working together" : lead.activity === "acting" && lead.action ? humanItem(lead.action)
         : lead.activity === "thinking" ? "thinking" : "";
       setText(label._doing, doing ? "· " + doing : "");
       frame.style.borderColor = palette(lead).ink + "66";
@@ -362,6 +495,7 @@
     renderCards(s);
     renderProduction(s);
     renderChat(s);
+    renderBoard(s);
     renderAlerts(s);
     renderCams(s);
   }

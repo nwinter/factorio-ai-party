@@ -13,12 +13,28 @@ from live import LiveSource  # noqa: E402
 from model import Model  # noqa: E402
 
 
+# board.lua (eng/board) event shape: the item's kind/owner/requester/status after the change
+BOARD_EVENTS = [
+    {"seq": 1, "tick": 10, "by": "luna", "id": 1, "change": "posted", "title": "Gears", "kind": "request",
+     "owner": None, "requested_by": "luna", "status": "open"},
+    {"seq": 2, "tick": 11, "by": "astra", "id": 1, "change": "taken", "title": "Gears", "kind": "request",
+     "owner": "astra", "requested_by": "luna", "status": "claimed"},
+    {"seq": 3, "tick": 12, "by": "luna", "id": 2, "change": "posted", "title": "West wall", "kind": "claim",
+     "owner": "luna", "requested_by": "luna", "status": "claimed"},
+    {"seq": 4, "tick": 13, "by": "luna", "id": 1, "change": "note", "title": "Gears", "kind": "request",
+     "owner": "astra", "requested_by": "luna", "status": "claimed", "text": "thanks"},
+    {"seq": 5, "tick": 14, "by": "operator", "id": 4, "change": "done", "title": "Save build orders", "kind": "harness",
+     "owner": "operator", "requested_by": "astra", "status": "done"},
+]
+
+
 class FakeHarness:
     """Answers like the eng/bots runtime described in docs/BOTS-API.md."""
 
-    def __init__(self):
+    def __init__(self, board=False):
         self.calls = []
         self.tick = 600_000
+        self.board = board
 
     def probe(self):
         return {"harness": True, "camera": True, "cameras": True}
@@ -49,6 +65,18 @@ class FakeHarness:
             return {"position": {"x": 1, "y": 2}, "alive": bot != "luna", "active": {"kind": "mine"} if bot == "astra" else False,
                     "last": {"kind": "craft", "outcome": "done", "tick": 1}, "combat": bot == "astra" and {"until_tick": 5},
                     "dead_until_tick": self.tick + 300 if bot == "luna" else None}, self.tick
+        if action == "describe":
+            return {"actions": {a: {} for a in ["status", "profiles", "chat"] + (["board", "board_events"] if self.board else [])}}, self.tick
+        if action == "board_events":
+            assert self.board, "board_events sent to a runtime that does not list it"
+            evs = [e for e in BOARD_EVENTS if e["seq"] > args.get("since_seq", 0)]
+            return {"events": evs, "cursor": evs[-1]["seq"] if evs else args.get("since_seq", 0)}, self.tick
+        if action == "board":
+            items = [{"id": 2, "kind": "claim", "title": "West wall", "owner": "luna", "requested_by": "luna",
+                      "status": "claimed", "updated_tick": 3}] if args.get("kind") == "claim" else [
+                     {"id": 1, "kind": "request", "title": "Gears", "owner": "astra", "requested_by": "luna", "status": "claimed"},
+                     {"id": 3, "kind": "request", "title": "Steel", "owner": None, "requested_by": "astra", "status": "open"}]
+            return {"items": items, "matched": len(items), "open_unowned": 1}, self.tick
         if action == "chat":
             assert args.get("peek") is True
             return {"messages": [{"seq": 5, "tick": 10, "from": "Astra", "text": "[color=1,0,0]Iron[/color] ok"}], "cursor": 5}, self.tick
@@ -113,6 +141,48 @@ def main():
     rr = LiveSource("test", nine, harness=FakeHarness())
     rounds = [rr.status_round(list(nine["agents"]), {}) for _ in range(3)]
     assert sorted(sum(rounds, [])) == sorted(nine["agents"]) and all(len(r) == 3 for r in rounds), rounds
+
+    # board: never polled unless `describe` lists it; then events + items reach the snapshot
+    assert not src.has_board and not any(c[0].startswith("board") for c in fake.calls)
+    bh = FakeHarness(board=True)
+    bsrc = LiveSource("test", run, harness=bh)
+    bobs = bsrc.observe()
+    assert not bobs["errors"], bobs["errors"]
+    assert bsrc.has_board and bsrc.board_seq == 5 and len(bobs["board_events"]) == 5
+    bobs2 = bsrc.observe()
+    assert bobs2["board_events"] == [] and "board" not in bobs2  # cursor advanced; items refresh every 15 s
+    bm = Model(run)
+    bm.ingest(bobs, time.time())
+    bm.ingest({"chat": [{"seq": 9, "tick": 15, "from": "server", "text": "server: harness v4: plan_save / plan_run"}]})
+    b = bm.snapshot(time.time())["board"]
+    assert [(e["agent"], e["verb"]) for e in b["events"]] == [("luna", "posted"), ("astra", "taken"), ("luna", "posted"),
+                                                              (None, "done")], b["events"]
+    assert b["open_unowned"] == 1 and b["claims"][0]["agent"] == "luna" and b["in_progress"] == 1, b
+    assert len(b["changelog"]) == 1 and b["changelog"][0]["version"] == "v4" and \
+        b["changelog"][0]["request"] == "Save build orders", b["changelog"]
+
+    # losses from status.alerts.latest (runtime describe_incident lines)
+    losses = LiveSource.loss_events({"latest": [
+        "in (12,-40)-(20,-31) 7 destroyed: 4 stone-wall, 3 gun-turret by 5 small-biter, 1m10s-0s ago",
+        "in (300,5) 1 destroyed: 1 inserter, 4m20s ago"]})
+    assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by 5 small biter)", losses
+
+    # an attack cuts the main camera straight away, even inside its dwell
+    d2 = Director([{"slot": "main", "player": 3}], lambda body: {"ok": True}, None)
+    m2 = Model({"agents": {"astra": {}, "luna": {}}})
+    m2.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "active": "build"},
+                          {"name": "luna", "position": {"x": 300, "y": 0}}]})
+    m2.agents["astra"].interest = 20
+    now = time.time()
+    assert d2.step(m2.snapshot(now), now)["main"]["agents"] == ["astra"]
+    m2.ingest({"events": [{"kind": "attack", "text": "Base under attack near (500, 0)", "key": "a1", "position": {"x": 500, "y": 0}}]})
+    cams2 = d2.step(m2.snapshot(now + 2), now + 2)
+    assert cams2["main"]["agents"] == [] and "attack" in cams2["main"], cams2  # nobody near: show the place
+    assert d2.state["main"]["position"] == {"x": 500, "y": 0}
+    m2.ingest({"events": [{"kind": "attack", "text": "Base under attack near (290, 0)", "key": "a2", "position": {"x": 290, "y": 0}}]})
+    d2.last_attack_cut -= 60  # past attack_spacing
+    cams3 = d2.step(m2.snapshot(now + 3), now + 3)
+    assert cams3["main"]["agents"] == ["luna"], cams3  # luna is 10 tiles from this one: follow luna
 
     log = os.path.join(os.environ.get("TMPDIR", "/tmp"), "selftest-director.jsonl")
     d = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], src.send_camera, log)
