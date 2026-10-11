@@ -9,7 +9,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { RconClient, RconOutcomeUnknown } from './rcon.js';
 import { Harness, type Reply } from './harness.js';
 import { renderMap } from './view.js';
-import { formatCompact } from './format.js';
+import { formatCompact, finalLine } from './format.js';
 import { parseDeadline, deadlineText } from './deadline.js';
 import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
@@ -83,9 +83,16 @@ function withDeadline(value: unknown): unknown {
   if (deadline === undefined || !result || typeof result.clock !== 'string') return value;
   return {...value as Reply, result:{...result, clock:`${result.clock}; ${deadlineText(deadline)}`}};
 }
+let streaming = false;
 function output(value: unknown) {
   value = withDeadline(value);
   process.stdout.write(outputFormat === 'compact' ? formatCompact(value) : JSON.stringify(value) + '\n');
+  // JSON stays one document on stdout; the error:/warning: line goes to stderr
+  // so a reader of the terminal (or 2>&1 | tail -1) still sees it.
+  if (outputFormat === 'json' && !streaming) {
+    const line = finalLine(value);
+    if (line) process.stderr.write(line + '\n');
+  }
 }
 async function readStdin(waitMs?: number): Promise<string> {
   const chunks: Buffer[] = [];
@@ -130,6 +137,7 @@ async function main() {
   if (!command || values.help || command === 'help') { process.stdout.write(help); return; }
   if (values.format && !['json','compact'].includes(values.format)) throw new Error('--format must be json or compact');
   outputFormat = command === 'stream' || values.format === 'json' ? 'json' : 'compact';
+  streaming = command === 'stream';
   const deadlineFile = values['deadline-file'] ?? process.env.FH_DEADLINE_FILE;
   if (deadlineFile) {
     // A missing or unreadable deadline only drops the time left, never the request.
@@ -217,6 +225,11 @@ async function main() {
     values.args = JSON.stringify(args);
     positionals[1] = operation === 'save' || operation === 'delete' ? 'plan_save' : operation === 'run' ? 'plan_run' : 'plans';
     command = 'call';
+  }
+  // `fh call say words...` used to drop the words and send {} ("text is required").
+  if (command === 'call' && (positionals[1] === 'say' || positionals[1] === 'confess') && (positionals.length > 2 || !values.args)) {
+    command = positionals[1]!;
+    positionals.splice(0, 2, command);
   }
   if (command === 'say' || command === 'confess') {
     // Text as arguments, a file or stdin: no JSON quoting, apostrophes are fine.
