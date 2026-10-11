@@ -20,7 +20,7 @@ tools/winps.sh tools/win/stop-world.ps1 -Name "$world" >/dev/null || true
 scp -q -r vendor/factorio-harness/mod/agent-harness_0.1.0 pogwin:D:/pog/mods/ 2>/dev/null
 peaceful=(); [ "$enemies" = peaceful ] && peaceful=(-Peaceful)
 log "world $world: creating save $run (seed $seed, $enemies enemies)"
-tools/winps.sh tools/win/new-instance.ps1 -Name "$world" -Save "$run" -Seed "$seed" "${peaceful[@]}" | grep -q FullName
+tools/winps.sh tools/win/new-instance.ps1 -Name "$world" -Save "$run" -Seed "$seed" ${peaceful[@]+"${peaceful[@]}"} | grep -q FullName
 scp -q ~/.config/pog/rcon-$world.pw "pogwin:D:/pog/inst/$world/rcon.pw" 2>/dev/null
 tools/winps.sh tools/win/start-server.ps1 -Name "$world" -Save "$run" -GamePort $game -RconPort $rcon >/dev/null
 POG_WORLD=$world bin/fh call describe >/dev/null 2>&1 || true          # first command on a fresh save is swallowed
@@ -64,6 +64,7 @@ nohup ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes
 echo $! > "$rundir/overlay-tunnel.pid"
 sleep 3
 tools/.venv/bin/python tools/obs.py stream-scene >/dev/null
+tools/.venv/bin/python tools/obs.py scene stream >/dev/null
 tools/.venv/bin/python tools/obs.py reload-overlay >/dev/null || true
 tools/.venv/bin/python tools/obs.py start
 [ "$stream" = --stream ] && tools/.venv/bin/python tools/obs.py stream-start

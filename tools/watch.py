@@ -16,6 +16,7 @@ ap.add_argument('--summary-min', type=float, default=30)
 ap.add_argument('--stop-at', default='2400')
 ap.add_argument('--max-sec', type=float, default=1790)
 ap.add_argument('--worlds', default='', help='comma list of worlds to check for harness faults')
+ap.add_argument('--bot', default='', help='probe this bot instead of player 1 (team worlds)')
 a = ap.parse_args()
 seen, pos, last = {}, {}, {}
 sup_pos, faulted, last_fault_check = {}, set(), 0
@@ -73,7 +74,7 @@ while time.strftime('%H%M') < a.stop_at and time.time() - start < a.max_sec:
         last_fault_check = time.time()
         for w in a.worlds.split(','):
             try:
-                out = subprocess.run([f'{ROOT}/bin/fh', 'call', 'status', '--format', 'json'], capture_output=True, text=True,
+                out = subprocess.run([f'{ROOT}/bin/fh', 'call', 'status', '--format', 'json'] + (['--bot', a.bot] if a.bot else []), capture_output=True, text=True,
                                      env=dict(os.environ, POG_WORLD=w), timeout=30).stdout
                 res = json.loads(out).get('result', {})
                 fault = res.get('runtime_fault')
