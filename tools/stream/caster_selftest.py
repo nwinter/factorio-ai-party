@@ -466,5 +466,61 @@ finally:
 check("a point on air is marked used once (POST /analyst/used)", marked == [("http://x/analyst/used", b'{"id": "tp3"}')]
       and "tp3" in cs4.used_points, str(marked))
 
+# Round 5 (shake4 study item 11): a roster name counts only when that agent is on camera, in this beat's facts, or did
+# something in an earlier beat; never "two Sols".
+roster5 = ["Sol", "Luna", "Grok", "Astra"]
+seg5 = {"event": "segment", "on_camera": [{"name": "Sol", "status": "planning the next step"}],
+        "earlier_on_air": ["board at 1 hour 38 minutes: Luna - Astra coal feed belt handoff",
+                           "aloud at 1 hour 52 minutes: Grok - Sixty-six biters coming, turrets up!"]}
+check("names: an agent on camera passes", caster.check_line("Sol plans the next furnace row.", seg5, roster5, []) is None)
+check("names: the agent behind an earlier beat passes (Grok spoke aloud)",
+      caster.check_line("Grok called that raid early, Vale!", seg5, roster5, []) is None)
+check("names: an agent who posted earlier passes", caster.check_line("Luna's handoff note still holds.", seg5, roster5,
+                                                                     []) is None)
+check("names: an agent only mentioned in an earlier beat is rejected",
+      caster.check_line("Astra stares at the crash site fire.", seg5, roster5, []) == "name not in facts: Astra")
+check("names: 'two Sols' is rejected", caster.check_line("Two Sols, one furnace row!", seg5, roster5, []) ==
+      "more than one Sol" and caster.check_line("both Sols agree.", seg5, roster5, []) == "more than one Sol")
+check("names: a possessive is not a plural", caster.check_line("Two of Sol's furnaces glow.", seg5, roster5, []) is None)
+check("supported_names", caster.supported_names(seg5, roster5) == {"sol", "luna", "grok"},
+      str(caster.supported_names(seg5, roster5)))
+
+# Round 5 (shake4 study item 9): shake1 is the base-game run on the same seed, not "the previous run"; Space Age runs
+# compare with shake4.
+from baseline import Baseline
+b1 = Baseline(os.path.join(os.path.dirname(caster.__file__), "baselines", "shake1.json"))
+p1 = b1.pace(30 * 3600, 9)
+check("baseline: shake1 is the base-game run on the same seed", "base game on the same seed" in p1["compared_with"]
+      and "previous" not in p1["compared_with"], p1["compared_with"])
+p1s = b1.pace(30 * 3600, 9, space_age=True)
+check("baseline: on a Space Age run, shake1 says only the start compares", "this run plays Space Age" in
+      p1s["compared_with"], p1s["compared_with"])
+b4 = Baseline(os.path.join(os.path.dirname(caster.__file__), "baselines", "shake4.json"))
+check("baseline: shake4 is the first Space Age run", b4.space_age is True and "first Space Age run" in
+      b4.pace(30 * 3600, 9, space_age=True)["compared_with"])
+check("baseline: no comparison past shake4's end (a resumed shift)", b4.pace(130 * 3600, 25, space_age=True) is None)
+holder = type("H", (), {"base_for": caster.Caster.base_for})()
+holder.baseline, holder.space_baseline = b1, b4
+check("caster: Space Age runs compare with shake4, base-game runs with shake1",
+      holder.base_for({"space": {"planets": []}}) is b4 and holder.base_for({}) is b1)
+rf = caster.facts_for({"kind": "research", "text": "Research complete: Automation", "t": 0, "prio": 7},
+                      {"tick": 20 * 3600, "space": {"planets": []}}, b1)
+check("research facts say what the baseline run was", "this run plays Space Age" in rf.get("shake1_was", ""), str(rf))
+
+# Round 5, shake4 section 6 mistakes 3, 6 and 7
+l1 = caster.facts_for({"kind": "loss", "text": "1 lost near (3, 4): 1 engineer (by medium worms)", "t": 0, "prio": 8}, {})
+check("a loss of only an engineer says no building was lost", "no building" in l1["numbers_mean"], l1["numbers_mean"])
+l2 = caster.facts_for({"kind": "loss", "text": "25 lost: 18 transport belt, 2 engineer, 5 inserter (by small biters)",
+                       "t": 0, "prio": 8}, {})
+check("a mixed loss counts buildings and engineers", "buildings destroyed and engineers killed" in l2["numbers_mean"],
+      l2["numbers_mean"])
+l3 = caster.facts_for({"kind": "loss", "text": "9 lost: 9 transport belt (by small biters)", "t": 0, "prio": 8}, {})
+check("a buildings-only loss", l3["numbers_mean"] == "the team's buildings destroyed; the run goes on", l3["numbers_mean"])
+pg = b1.pace(40 * 3600, 9, {"electronic-circuit": 900, "iron-plate": 5000})
+check("pace facts call electronic circuits green circuits", any(k.startswith("green circuits_") for k in pg)
+      and not any("electronic" in k for k in pg), str(list(pg)))
+check("rules: research unlocks, it does not mean anything was made", "does not mean anything has been built or made"
+      in caster.EXCHANGE_RULES)
+
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)
