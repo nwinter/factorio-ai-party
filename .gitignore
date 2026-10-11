@@ -10,3 +10,4 @@ CLAUDE.local.md
 __pycache__/
 runs/*/*/journal.jsonl
 runs/*/*/journal.jsonl.gz
+runs/*/.keys/

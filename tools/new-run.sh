@@ -42,9 +42,16 @@ for k, v in {"PLAYER": player, "TEAMMATE": mate, "TEAMMATE_NOTES": mate_notes, "
 open(dst, "w").write(text)
 EOP
 ln -sf AGENTS.md "$dir/CLAUDE.md"
+# The only key fh needs is this world's RCON password: a copy sits beside the workspaces, so the launcher can deny
+# agents ~/.config/pog (obs.pw, youtube.key, other worlds' passwords). docs/LAUNCH-NOTES.md: what stays exposed.
+keys="$root/runs/$run/.keys"
+mkdir -p "$keys" && chmod 700 "$keys"
+if [ -f "$HOME/.config/pog/rcon-$world.pw" ]; then
+  install -m 600 "$HOME/.config/pog/rcon-$world.pw" "$keys/rcon-$world.pw"
+fi
 cat > "$dir/fh" <<EOS
 #!/usr/bin/env bash
-export POG_WORLD=$world
+export POG_WORLD=$world POG_RCON_PASSWORD_FILE="$keys/rcon-$world.pw"
 # The clock: line on every reply ends with the time left until this deadline.
 export FH_DEADLINE_FILE="$dir/deadline.txt"
 # Every request and reply is journaled for the run analysis.
@@ -58,7 +65,7 @@ set -euo pipefail
 name=\${1:?name}; w=\${2:-1280}; h=\${3:-720}
 cd "\$(dirname "\$0")"
 tag="\$name-\$(date +%s)-\$RANDOM"
-POG_WORLD=$world "$root/bin/fh" $target call screenshot --args "{\"path\":\"pog/\$tag.png\",\"width\":\$w,\"height\":\$h}" >/dev/null
+POG_WORLD=$world POG_RCON_PASSWORD_FILE="$keys/rcon-$world.pw" "$root/bin/fh" $target call screenshot --args "{\"path\":\"pog/\$tag.png\",\"width\":\$w,\"height\":\$h}" >/dev/null
 for i in \$(seq 1 40); do
   if [ -f "shots/\$tag.png" ]; then mv "shots/\$tag.png" "shots/\$name.png"; echo "shots/\$name.png"; exit 0; fi
   sleep 0.5

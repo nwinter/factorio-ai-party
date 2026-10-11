@@ -37,15 +37,18 @@ compact_rule='After any context compaction, read notes.md and deadline.txt befor
 # Claude-style settings: Claude Code uses the sandbox; Grok Build reads the same file for its allowlist.
 claude_settings() {
   mkdir -p "$dir/.claude"
-  local sandbox='"sandbox": {"enabled": true, "autoAllowBashIfSandboxed": true, "allowUnsandboxedCommands": false,
-    "network": {"allowLocalBinding": true}},'
+  # ~/.config/pog holds the OBS password, the YouTube stream key and every world's RCON password; fh gets its one key
+  # from runs/RUN/.keys (tools/new-run.sh). Claude Code reads "~/" in Read rules, Grok Build only absolute paths.
+  local sandbox="\"sandbox\": {\"enabled\": true, \"autoAllowBashIfSandboxed\": true, \"allowUnsandboxedCommands\": false,
+    \"network\": {\"allowLocalBinding\": true}, \"filesystem\": {\"denyRead\": [\"$HOME/.config/pog\"]}},"
   [ "${1:-}" = nosandbox ] && sandbox=''   # Grok Build: allowlist only (its own sandbox flags differ)
   cat > "$dir/.claude/settings.json" <<EOS
 {
   $sandbox
   "permissions": {
     "defaultMode": "dontAsk",
-    "allow": [$allow]
+    "allow": [$allow],
+    "deny": ["Read(~/.config/pog/**)", "Read($HOME/.config/pog/**)", "Edit(~/.config/pog/**)", "Edit($HOME/.config/pog/**)"]
   }
 }
 EOS
