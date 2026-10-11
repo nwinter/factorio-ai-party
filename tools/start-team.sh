@@ -29,7 +29,9 @@ POG_WORLD=$world bin/fh deploy >/dev/null
 # 2. Director clients (players 1-3, spectators once a camera is set). They keep the server from auto-pausing.
 for cam in cam1 cam2 cam3; do
   log "director $cam joining"
-  tools/winps.sh tools/win/start-client.ps1 -Name "$world" -GamePort $game -PlayerName "pog-$cam" -Slot "-$cam" >/dev/null
+  sound=(); [ $cam = cam1 ] && sound=(-Sound)  # stream audio: only the main director is audible
+  tools/winps.sh tools/win/start-client.ps1 -Name "$world" -GamePort $game -PlayerName "pog-$cam" -Slot "-$cam" \
+    ${sound[@]+"${sound[@]}"} >/dev/null
 done
 
 # 3. Bots, one per team member.

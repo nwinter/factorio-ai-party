@@ -25,6 +25,13 @@ names = ["Luna", "Opus", "Astra"]
 check("accepts a grounded line", caster.check_line("Luna is under fire at 67 percent research!", facts, names, []) is None)
 check("rejects an invented agent", caster.check_line("Opus rushes to help Luna!", facts, names, []) is not None)
 check("rejects an invented number", caster.check_line("Luna faces 40 biters!", facts, names, []) is not None)
+check("accepts a spelled-out fact", caster.check_line("Sixty-seven percent and one big push!", facts, names, []) is None)
+check("rejects a spelled-out invented number",
+      caster.check_line("Eighty-three percent done!", facts, names, []) is not None)
+check("accepts a rounded figure", caster.check_line("Over a hundred machines starve!",
+                                                    dict(facts, starved=118), names, []) is None)
+check("parses spelled numbers", [n for _, n in caster.spelled_numbers("one hundred and twenty belts, forty-two")]
+      == [120, 42])
 check("rejects a repeat", caster.check_line("Luna is under attack!", facts, names, ["Luna is under attack, wow"]) is not None)
 check("strips speaker prefix and stage directions", caster.clean('Rook: "*leans in* Huge play!"') == "Huge play!")
 
