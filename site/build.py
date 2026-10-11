@@ -542,6 +542,11 @@ def build_run_page(rid, run, worlds, chat):
     body.append('<section><h2>Milestones</h2><p class="muted">Game time when each milestone was reached, as logged by the agents and checked against the score log.</p>'
                 f'<div class="table-wrap"><table class="milestones"><thead><tr><th>Milestone</th>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table></div></section>')
 
+    if run.get("incidents"):
+        items = "".join(f'<li><span class="inc-time">{esc(i["time"])}</span>{esc(i["text"])}</li>' for i in run["incidents"])
+        body.append('<section><h2>Operator interventions and incidents</h2><p class="muted">Anything outside the agents\' control: '
+                    f'harness bugs, operator actions, lost connections.</p><ul class="incidents">{items}</ul></section>')
+
     # charts
     body.append('<section><h2>Progress over game time</h2><div class="chart-grid">')
     if run["kind"] == "versus":
@@ -581,7 +586,7 @@ def build_run_page(rid, run, worlds, chat):
         a = agent(k)
         ident = (run.get("identities") or {}).get(k, {})
         lines = [f'<article class="agent-card" style="--ac:{a["color"]}">',
-                 f'<header>{avatar(k, "lg")}<div><h3>{esc(a["name"])}</h3><p class="model">{esc(a["model"])} · {esc(a["harness"])}</p></div></header>']
+                 f'<header>{avatar(k, "lg")}<div><h3><a href="/agents/{k}/">{esc(a["name"])}</a></h3><p class="model">{esc(a["model"])} · {esc(a["harness"])}</p></div></header>']
         if ident.get("motto"):
             lines.append(f'<p class="motto">“{esc(ident["motto"])}”</p>')
         elif ident.get("note"):
@@ -647,18 +652,21 @@ def build_runs_index(runs, all_worlds):
     return page("Runs", "\n".join(body), "/runs/")
 
 
-def build_experiments(runs, all_worlds):
-    body = ['<h1>Experiments</h1>',
-            '<p class="lede">What we tried, in order, and what each round taught us. All runs so far use the same map: seed 20261010, base game, Factorio 2.0.77.</p>']
-    # comparison chart across runs
+def comparison_chart(runs, all_worlds):
     series = []
     for rid, label in [("baseline1", "Astra, real time"), ("turns1", "Astra, turn mode"), ("turns3h", "Astra, turns 3h"),
                        ("coop1", "Astra + Opus"), ("shake1", "Nine agents")]:
         run = runs[rid]
         w = run["players"][0]["world"] if run["kind"] == "versus" else run["world"]
         series.append({"name": label, "points": research_series(all_worlds[rid].get(w, []))})
-    body.append(line_chart("Technologies researched vs game time, across runs", series, "technologies", step=True,
-                           desc="One line per run. Solo runs show Astra's world."))
+    return line_chart("Technologies researched vs game time, across runs", series, "technologies", step=True,
+                      desc="One line per run. Solo runs show Astra's world. Turn mode pauses while the agent thinks.")
+
+
+def build_experiments(runs, all_worlds):
+    body = ['<h1>Experiments</h1>',
+            '<p class="lede">What we tried, in order, and what each round taught us. All runs so far use the same map: seed 20261010, base game, Factorio 2.0.77.</p>']
+    body.append(comparison_chart(runs, all_worlds))
     # milestone comparison
     cols = [("baseline1", "astra", "Astra, real time"), ("turns1", "astra", "Astra, turns"), ("turns3h", "astra", "Astra, turns 3h"),
             ("baseline1", "fable", "Fable, real time"), ("turns1", "fable", "Fable, turns"), ("turns3h", "fable", "Fable, turns 3h"),
@@ -697,7 +705,7 @@ def build_home(runs, all_worlds):
     team = []
     for k in CONTENT["team_order"]:
         a = agent(k)
-        team.append(f'<li class="team-member" style="--ac:{a["color"]}">{avatar(k, "lg")}<div><strong>{esc(a["name"])}</strong>'
+        team.append(f'<li class="team-member" style="--ac:{a["color"]}">{avatar(k, "lg")}<div><a href="/agents/{k}/"><strong>{esc(a["name"])}</strong></a>'
                     f'<span>{esc(a["model"])}</span><span class="muted">{esc(a["harness"])}</span></div></li>')
     fable = agent("fable")
     sf = run_final(all_worlds["shake1"]["n"])
@@ -772,7 +780,15 @@ def build_home(runs, all_worlds):
   <h2>The team</h2>
   <p class="muted">Names, colours and glyphs are the ones each agent chose for itself in the shakedown.</p>
   <ul class="team">{"".join(team)}</ul>
-  <p class="muted small">Earlier solo and versus runs also used {esc(fable["model"])} ({esc(fable["harness"])}).</p>
+  <p class="muted small">Earlier solo and versus runs also used <a href="/agents/fable/">{esc(fable["model"])}</a> ({esc(fable["harness"])}).</p>
+</section>
+
+<section>
+  <h2>Results so far</h2>
+  <p class="muted">Five runs on the same map, 10 October 2026. Turn mode reached every early milestone sooner in game
+  time; the two-agent co-op researched the most, {cf["techs"]} technologies in two hours.
+  <a href="/experiments/">The experiments log</a> has the details.</p>
+  {comparison_chart(runs, all_worlds)}
 </section>
 
 <section>
@@ -782,6 +798,46 @@ def build_home(runs, all_worlds):
 </section>
 """
     return page(CONFIG.get("site_title", "Player of Games"), body, "/", CONFIG.get("description", ""))
+
+
+def build_agent_page(key, runs, all_worlds, chats):
+    a = agent(key)
+    rows = []
+    motto = None
+    for rid, run in runs.items():
+        p = next((p for p in run["players"] if p["agent"] == key), None)
+        if not p:
+            continue
+        ident = (run.get("identities") or {}).get(key, {})
+        motto = ident.get("motto") or motto
+        if run["kind"] == "versus":
+            snaps = all_worlds[rid].get(p["world"], [])
+            mates = "alone in its own world"
+        else:
+            snaps = all_worlds[rid].get(run["world"], [])
+            others = [agent(q["agent"])["name"] for q in run["players"] if q["agent"] != key]
+            mates = f"with {len(others)} other agents" if len(others) > 2 else "with " + " and ".join(others)
+        f = run_final(snaps) if snaps else None
+        outcome = f'{f["techs"]} technologies by {f["game"]}' + (" (team)" if run["kind"] == "team" else "") if f else ""
+        st = (run.get("stats") or {}).get(key)
+        dl = "".join(f"<div><dt>{esc(n)}</dt><dd>{esc(v)}</dd></div>" for n, v in (st or {}).items())
+        mine = [c for c in chats.get(rid, []) if c["from"] == key]
+        notable = set(run.get("notable_chat", []))
+        quotes = [c for c in mine if c["seq"] in notable]
+        if mine and mine[0] not in quotes:
+            quotes.insert(0, mine[0])
+        q = "".join(f'<li><span class="q-time">{esc(game_time(c["tick"]))}</span> {esc(c["text"])}</li>' for c in quotes[:5])
+        rows.append(f'<article class="agent-run"><h2><a href="/runs/{rid}/">{esc(run["title"])}</a><span class="h-sub">{esc(run["date"])} · {esc(run["mode"])}, {esc(mates)}</span></h2>'
+                    f'<p class="role">{esc(p["role"])}</p>{f"<p>{esc(outcome)}</p>" if outcome else ""}'
+                    f'{f"<dl class=kv>{dl}</dl>" if dl else ""}'
+                    f'{f"<p class={chr(34)}muted small{chr(34)}>{len(mine)} chat messages</p>" if mine else ""}'
+                    f'{f"<ul class=quotes>{q}</ul>" if q else ""}</article>')
+    head = (f'<p class="crumbs"><a href="/">Home</a> / The team</p>'
+            f'<div class="agent-head" style="--ac:{a["color"]}">{avatar(key, "xl")}<div><h1>{esc(a["name"])}</h1>'
+            f'<p class="model">{esc(a["model"])} · {esc(a["harness"])}</p>'
+            f'{f"<p class=motto>“{esc(motto)}”</p>" if motto else ""}</div></div>')
+    return page(a["name"], head + '<div class="agent-runs" style="--ac:' + a["color"] + '">' + "".join(rows) + "</div>", "/",
+                f'{a["name"]} ({a["model"]}) in Player of Games.')
 
 
 def build_studies_index():
@@ -857,8 +913,11 @@ def main():
     write("index.html", build_home(runs, all_worlds))
     write("experiments/index.html", build_experiments(runs, all_worlds))
     write("runs/index.html", build_runs_index(runs, all_worlds))
+    chats = {rid: load_chat(run) for rid, run in runs.items()}
     for rid, run in runs.items():
-        write(f"runs/{rid}/index.html", build_run_page(rid, run, all_worlds[rid], load_chat(run)))
+        write(f"runs/{rid}/index.html", build_run_page(rid, run, all_worlds[rid], chats[rid]))
+    for key in AGENTS:
+        write(f"agents/{key}/index.html", build_agent_page(key, runs, all_worlds, chats))
     write("studies/index.html", build_studies_index())
     for sid, st in CONTENT["studies"].items():
         write(f"studies/{sid}/index.html", build_study(sid, st))

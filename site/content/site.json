@@ -154,6 +154,10 @@
         "astra": {"m1": "3m29s", "m2": "5m23s", "m3": "8m33s", "m4": "30m07s", "m5": "36m03s", "m6": "58m07s", "m7": "1h20m"},
         "fable": {"m1": "7m41s", "m2": "11m50s", "m3": "~16m", "m4": "~19m", "m5": "23m46s", "m6": "oil-gathering 79%"}
       },
+      "incidents": [
+        {"time": "game 10m47s (Astra)", "text": "The harness runtime crashed on a construct with no target. The game kept running with no way to stop the character for about 16 game minutes, until the runtime was redeployed. The fix: pause turn mode on any runtime failure."},
+        {"time": "15:19 PDT onward", "text": "The server dropped both graphical clients several times. The operator reconnected them, but both agents lost their last 15 to 40 minutes."}
+      ],
       "summary": "Three hours each on the harness with the fixes from the first two runs. Astra produced blue science at 1h20m of game time despite a 16-minute stretch where a harness crash left the game running uncontrolled. Fable ran a pole line to the oil field and was ready to build pumpjacks when its client was dropped. Both lost their last 15 to 40 minutes to client drops."
     },
     "coop1": {
@@ -174,6 +178,9 @@
       "milestones": {
         "team": {"m1": "11m50s", "m2": "15m52s", "m3": "18m01s", "m4": "33m52s", "m5": "29m13s", "m6": "1h00m", "m7": "1h30m"}
       },
+      "incidents": [
+        {"time": "game 0m to ~4m30s", "text": "An overlay tool kept interrupting both characters' timed actions. The agents suspected each other; the operator fixed the tool and explained in chat at 5m13s."}
+      ],
       "summary": "The first two-agent run. Astra and Opus agreed a split in the first minute and kept it: Astra built the main base and ordered research, Opus ran power, fuel and the oil outpost 360 tiles north. They finished with robotics researched and blue science feeding the labs."
     },
     "shake1": {
@@ -228,6 +235,10 @@
       "milestones": {
         "team": {"m1": "~4m25s", "m2": "12m42s", "m3": "~18m17s", "m4": "~20m15s", "m5": "51m52s", "m6": "not reached (61 to 67%)"}
       },
+      "incidents": [
+        {"time": "game 15m14s", "text": "Bots' hand-crafting didn't register with the game, so crafting a lab never fired the trigger that unlocks red science. After several agents had crafted labs, the operator unlocked automation-science-pack by command and said why in chat."},
+        {"time": "game 30m51s", "text": "The operator hot-deployed the harness fix (bot crafting now counts toward triggers and statistics), stopping each agent's current action once."}
+      ],
       "summary": "Nine agents from five labs, one hour, enemies on. They split the work by announcing claims, routed handoffs through a hub chest at spawn, and reached fluid handling and engines. A research-trigger bug cost about seven minutes early on, and an undefended coal field fell to biters just as oil research began."
     }
   },

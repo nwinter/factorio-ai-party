@@ -207,6 +207,8 @@ table.milestones.wide th[scope=row] { white-space: nowrap; }
 .agent-card { background: var(--surface); border: 1px solid var(--line); border-top: 4px solid var(--ac); border-radius: var(--radius); padding: 14px 16px; min-width: 0; }
 .agent-card header { display: flex; gap: 12px; align-items: center; }
 .agent-card h3 { margin: 0; font-size: 1.15rem; }
+.agent-card h3 a { color: inherit; text-decoration: none; }
+.agent-card h3 a:hover { text-decoration: underline; }
 .agent-card .model { margin: 0; color: var(--muted); font-size: .88rem; }
 .motto { font-style: italic; margin: .7rem 0 .2rem; color: var(--ink-2); }
 .role { margin: .4rem 0; font-weight: 600; font-size: .95rem; }
@@ -221,6 +223,23 @@ details.notes { margin-top: .6rem; border-top: 1px solid var(--line); padding-to
 details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .prose.small { font-size: .88rem; overflow-wrap: anywhere; }
 .prose.small h3, .prose.small h4, .prose.small h5 { font-size: .95rem; margin: .8rem 0 .3rem; }
+
+/* agent pages */
+.avatar.xl { width: 72px; height: 72px; border-radius: 18px; font-size: 1.6rem; }
+.agent-head { display: flex; gap: 18px; align-items: center; margin: 1rem 0 1.5rem; }
+.agent-head h1 { margin: 0; }
+.agent-head .model { margin: .2rem 0 0; color: var(--muted); }
+.agent-head .motto { margin: .4rem 0 0; }
+.agent-run { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--ac); border-radius: var(--radius);
+  padding: 4px 18px 12px; margin-bottom: 14px; }
+.agent-run h2 { font-size: 1.2rem; margin: .8rem 0 .4rem; }
+.team-member a { color: inherit; }
+
+/* incidents */
+.incidents { list-style: none; padding: 0; margin: .5rem 0; display: grid; gap: 8px; }
+.incidents li { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent-fill);
+  border-radius: 8px; padding: 8px 12px; font-size: .95rem; }
+.inc-time { display: block; color: var(--muted); font-size: .82rem; font-weight: 600; }
 
 /* chat */
 .chat { list-style: none; padding: 0; margin: .5rem 0; display: grid; gap: 2px; }
