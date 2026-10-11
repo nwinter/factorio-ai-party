@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "updated": "2026-10-10T18:02:00-07:00",
+  "live": false,
+  "message": "No run is live right now.",
+  "next": null,
+  "last_run": {"id": "shake1", "title": "Shakedown 1", "url": "/runs/shake1/"}
+}

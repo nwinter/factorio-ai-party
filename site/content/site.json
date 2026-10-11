@@ -1,0 +1,249 @@
+{
+  "agents": {
+    "astra":  {"name": "Astra",  "model": "GPT-6 Astra",       "maker": "OpenAI",    "harness": "Codex",       "color": "#9977ff", "glyph": "AS"},
+    "sol":    {"name": "Sol",    "model": "GPT-6.1 Sol",       "maker": "OpenAI",    "harness": "Codex",       "color": "#ffcb45", "glyph": "S"},
+    "luna":   {"name": "Luna",   "model": "GPT-6 Luna",        "maker": "OpenAI",    "harness": "Codex",       "color": "#b58cff", "glyph": "L"},
+    "opus":   {"name": "Opus",   "model": "Claude Opus 5.5",   "maker": "Anthropic", "harness": "Claude Code", "color": "#d97757", "glyph": "O"},
+    "sonnet": {"name": "Sonnet", "model": "Claude Sonnet 5.5", "maker": "Anthropic", "harness": "Claude Code", "color": "#8a8f98", "glyph": "So"},
+    "haiku":  {"name": "Haiku",  "model": "Claude Haiku 5.5",  "maker": "Anthropic", "harness": "Claude Code", "color": "#e07a2f", "glyph": "H"},
+    "grok":   {"name": "Grok",   "model": "Grok 4.7",          "maker": "xAI",       "harness": "Grok Build",  "color": "#1a1a1a", "glyph": "G"},
+    "gemini": {"name": "Gemini", "model": "Gemini 3.8 Flash",  "maker": "Google",    "harness": "Antigravity", "color": "#4285F4", "glyph": "♊"},
+    "muse":   {"name": "Muse",   "model": "Muse Spark 1.3",    "maker": "Meta",      "harness": "Muse Code",   "color": "#7dd3fc", "glyph": "🔧"},
+    "fable":  {"name": "Fable",  "model": "Claude Fable 5.1",  "maker": "Anthropic", "harness": "Claude Code", "color": "#3fa796", "glyph": "F", "earlier": true}
+  },
+  "team_order": ["astra", "sol", "luna", "opus", "sonnet", "haiku", "grok", "gemini", "muse"],
+
+  "milestones": [
+    {"id": "m1", "label": "Burner mining + smelting"},
+    {"id": "m2", "label": "Steam power"},
+    {"id": "m3", "label": "Red science from assemblers"},
+    {"id": "m4", "label": "Automation, logistics, electric mining"},
+    {"id": "m5", "label": "Green science automated"},
+    {"id": "m6", "label": "Oil"},
+    {"id": "m7", "label": "Blue science"}
+  ],
+
+  "experiments": [
+    {
+      "id": "baseline",
+      "title": "Baseline: solo, real time",
+      "date": "2026-10-10",
+      "runs": ["baseline1"],
+      "question": "How far does one agent get alone in 45 minutes when the game never pauses?",
+      "setup": "Astra and Fable 5.1, both at low reasoning effort, each alone in its own copy of the same world (seed 20261010, peaceful, base game). The game runs at 60 ticks per second while the agent thinks.",
+      "result": "Astra automated green science at 30m12s of game time. Fable reached assembler-made red science at 20m08s and ran a hand-fed green assembler, but never brought power to the ore field, so every plate was carried 115 tiles by hand.",
+      "lessons": [
+        "Hand-carried fuel and plates were the biggest time sink for both agents.",
+        "Both lost time to self-inflicted power outages and to scouting for oil.",
+        "The run produced a list of harness fixes: build failure reasons, a feed action, wait_until from the CLI, pole routes."
+      ]
+    },
+    {
+      "id": "turns",
+      "title": "Turn mode",
+      "date": "2026-10-10",
+      "runs": ["turns1", "turns3h"],
+      "question": "If the game pauses while the agent thinks, how much faster is it in game time?",
+      "setup": "Same seed and players, but the clock only runs while the character has a timed action in progress (walking, mining, a queue plan, an explicit advance). Thinking is free; game time is the score. First 90 wall minutes, then a three-hour round on the merged harness.",
+      "result": "Turn mode cut game time to every early milestone by a third or more. In the three-hour round Astra made blue science at 1h20m of game time; Fable built an automated green block and a pole line to oil, then lost control to a dropped client with oil-gathering at 79%.",
+      "lessons": [
+        "Turn mode exposed a harness bug: the engine refuses cursor building while the game is paused, so build had to place directly.",
+        "A harness crash let 16 minutes of game time run uncontrolled; the fix was to pause on runtime failure.",
+        "Graphical clients in turn-mode worlds were dropped by the server several times. Real-time worlds never dropped."
+      ]
+    },
+    {
+      "id": "coop",
+      "title": "Co-op: two models, one world",
+      "date": "2026-10-10",
+      "runs": ["coop1"],
+      "question": "Can two agents from different labs share one factory and divide the work through game chat?",
+      "setup": "Astra (GPT-6) and Opus (Claude Opus 5.5) in one real-time world for two hours. Suggested split: Astra on smelting, science and research; Opus on power, fuel, mining and oil. They claimed areas, announced shared infrastructure and handed items over through chests.",
+      "result": "25 technologies including robotics. Blue science was consumed by labs at about 1h34m. 364 blue, 1,731 green and 1,867 red packs; 32k iron plates; 1,302 belts; more than 100 chat messages.",
+      "lessons": [
+        "The division of labour held for the whole run and was renegotiated in chat as the base grew.",
+        "Two agents in real time beat one agent in turn mode on research count.",
+        "Fuel logistics stayed manual and was the biggest drag on both."
+      ]
+    },
+    {
+      "id": "shakedown",
+      "title": "Nine-agent shakedown",
+      "date": "2026-10-10",
+      "runs": ["shake1"],
+      "question": "What happens when nine models from five labs share one world with enemies on and no assigned roles?",
+      "setup": "Nine agents with identical instructions apart from name and model, about one hour each, real time, normal enemies. Each chose a name, colour, glyph and motto. Characters are script-driven bots, so the game needs no graphical client per agent.",
+      "result": "14 technologies, oil-gathering at 61 to 67% at the deadline. Roles emerged from announced claims within six minutes, with no hostile conflict. Iron, science delivery and defence limited the team; a biter raid at about 50 minutes wiped out the coal field.",
+      "lessons": [
+        "Duplicated and unowned work cost more than conflict did.",
+        "Every request should name an owner; broadcast asks went undone.",
+        "Nobody placed a turret before the first raid.",
+        "Four of the nine stopped 5 to 25 minutes early."
+      ],
+      "study": "shake1"
+    }
+  ],
+
+  "harness_changes": [
+    "build names what blocks a placement (tree, rock, the character, water) and works while the game is paused.",
+    "--wait follows the action's own end tick; a timeout says the action is still running; new fh wait command.",
+    "collect leaves chests alone unless asked, so agents stop emptying each other's feed chests.",
+    "feed tops up every machine in reach with its ingredients, lab packs and fuel.",
+    "inspect shows inserter pickup and drop tiles and fluid connection points.",
+    "wait_until works as a direct action, so the factory can run until a condition holds.",
+    "pole_route lays a power line from A to B and reports how many poles are missing.",
+    "Bots: characters without a game client, with profiles (name, colour, glyph, motto), speech bubbles and director cameras."
+  ],
+
+  "runs": {
+    "baseline1": {
+      "dir": "runs/2026-10-10-baseline1",
+      "title": "Baseline 1",
+      "subtitle": "Astra vs Fable, solo, real time",
+      "experiment": "baseline",
+      "date": "2026-10-10",
+      "wall": "10:11 to 10:59 PDT",
+      "mode": "real time",
+      "enemies": "peaceful",
+      "kind": "versus",
+      "players": [
+        {"agent": "astra", "world": "a", "dir": "a", "role": "Solo, low reasoning effort"},
+        {"agent": "fable", "world": "b", "dir": "b", "role": "Solo, low reasoning effort"}
+      ],
+      "milestones": {
+        "astra": {"m1": "7m49s", "m2": "10m56s", "m3": "17m02s", "m4": "23m23s", "m5": "30m12s", "m6": "none found"},
+        "fable": {"m1": "8m25s", "m2": "17m15s", "m3": "20m08s", "m4": "partial", "m5": "hand-fed, 29m29s", "m6": "none"}
+      },
+      "summary": "The first matched run. Both agents played the same seed in separate worlds for about 43 wall minutes. Astra reached automated green science; Fable got red science from assemblers but kept its power plant at the lake, 115 tiles from the ore, and hand-carried everything."
+    },
+    "turns1": {
+      "dir": "runs/2026-10-10-turns1",
+      "title": "Turns 1",
+      "subtitle": "Astra vs Fable, solo, turn mode",
+      "experiment": "turns",
+      "date": "2026-10-10",
+      "wall": "11:03 to 12:55 PDT",
+      "mode": "turn mode",
+      "enemies": "peaceful",
+      "kind": "versus",
+      "players": [
+        {"agent": "astra", "world": "a", "dir": "a", "role": "Solo, low reasoning effort"},
+        {"agent": "fable", "world": "b", "dir": "b", "role": "Solo, low reasoning effort"}
+      ],
+      "milestones": {
+        "astra": {"m1": "3m52s", "m2": "6m37s", "m3": "10m48s", "m4": "16m16s", "m5": "20m29s", "m6": "petroleum 55m45s, plastics 50%"},
+        "fable": {"m1": "5m50s", "m2": "7m00s", "m3": "~13m00s", "m4": "17m40s", "m5": "~28m30s", "m6": "none"}
+      },
+      "summary": "The same matchup with the clock paused between actions. Both agents hit every early milestone sooner in game time. Astra found oil and got petroleum flowing; Fable automated green science."
+    },
+    "turns3h": {
+      "dir": "runs/2026-10-10-turns3h",
+      "title": "Turns 3h",
+      "subtitle": "Round three: three hours, merged harness",
+      "experiment": "turns",
+      "date": "2026-10-10",
+      "wall": "13:01 to 16:00 PDT",
+      "mode": "turn mode",
+      "enemies": "peaceful",
+      "kind": "versus",
+      "players": [
+        {"agent": "astra", "world": "a", "dir": "a", "role": "Solo, low reasoning effort"},
+        {"agent": "fable", "world": "b", "dir": "b", "role": "Solo, low reasoning effort"}
+      ],
+      "milestones": {
+        "astra": {"m1": "3m29s", "m2": "5m23s", "m3": "8m33s", "m4": "30m07s", "m5": "36m03s", "m6": "58m07s", "m7": "1h20m"},
+        "fable": {"m1": "7m41s", "m2": "11m50s", "m3": "~16m", "m4": "~19m", "m5": "23m46s", "m6": "oil-gathering 79%"}
+      },
+      "incidents": [
+        {"time": "game 10m47s (Astra)", "text": "The harness runtime crashed on a construct with no target. The game kept running with no way to stop the character for about 16 game minutes, until the runtime was redeployed. The fix: pause turn mode on any runtime failure."},
+        {"time": "15:19 PDT onward", "text": "The server dropped both graphical clients several times. The operator reconnected them, but both agents lost their last 15 to 40 minutes."}
+      ],
+      "summary": "Three hours each on the harness with the fixes from the first two runs. Astra produced blue science at 1h20m of game time despite a 16-minute stretch where a harness crash left the game running uncontrolled. Fable ran a pole line to the oil field and was ready to build pumpjacks when its client was dropped. Both lost their last 15 to 40 minutes to client drops."
+    },
+    "coop1": {
+      "dir": "runs/2026-10-10-coop1",
+      "title": "Co-op 1",
+      "subtitle": "Astra and Opus share one world",
+      "experiment": "coop",
+      "date": "2026-10-10",
+      "wall": "13:34 to 15:34 PDT",
+      "mode": "real time",
+      "enemies": "peaceful",
+      "kind": "team",
+      "world": "c",
+      "players": [
+        {"agent": "astra", "dir": "astra", "role": "Smelting, red and green science, research order"},
+        {"agent": "opus", "dir": "opus", "role": "Power, coal and fuel, mining expansion, oil and sulfur"}
+      ],
+      "milestones": {
+        "team": {"m1": "11m50s", "m2": "15m52s", "m3": "18m01s", "m4": "33m52s", "m5": "29m13s", "m6": "1h00m", "m7": "1h30m"}
+      },
+      "incidents": [
+        {"time": "game 0m to ~4m30s", "text": "An overlay tool kept interrupting both characters' timed actions. The agents suspected each other; the operator fixed the tool and explained in chat at 5m13s."}
+      ],
+      "summary": "The first two-agent run. Astra and Opus agreed a split in the first minute and kept it: Astra built the main base and ordered research, Opus ran power, fuel and the oil outpost 360 tiles north. They finished with robotics researched and blue science feeding the labs."
+    },
+    "shake1": {
+      "dir": "runs/shake1",
+      "title": "Shakedown 1",
+      "subtitle": "Nine AIs, one factory",
+      "experiment": "shakedown",
+      "date": "2026-10-10",
+      "wall": "17:00 to 18:01 PDT",
+      "mode": "real time",
+      "enemies": "normal",
+      "kind": "team",
+      "world": "n",
+      "max_tick": 230473,
+      "chat": "chat-full.jsonl",
+      "study": "shake1",
+      "players": [
+        {"agent": "astra",  "dir": "astra",  "role": "Copper and circuits, then the team's systems fixer"},
+        {"agent": "sol",    "dir": "sol",    "role": "Iron lead who became operations lead"},
+        {"agent": "luna",   "dir": "luna",   "role": "Careful helper and courier"},
+        {"agent": "opus",   "dir": "opus",   "role": "Quiet logistics engine: coal, fuel, power"},
+        {"agent": "sonnet", "dir": "sonnet", "role": "Stone hauler and red-pack crafter"},
+        {"agent": "haiku",  "dir": "haiku",  "role": "Hands-on builder of the red science block"},
+        {"agent": "grok",   "dir": "grok",   "role": "Terse, steady builder and defender"},
+        {"agent": "gemini", "dir": "gemini", "role": "Steam builder and cheerleader"},
+        {"agent": "muse",   "dir": "muse",   "role": "Friendly helper who left early"}
+      ],
+      "identities": {
+        "astra":  {"motto": "Copper, circuits, onward."},
+        "sol":    {"motto": "Keep the factory moving"},
+        "luna":   {"motto": "Power and science from spawn"},
+        "opus":   {"motto": "Coal, steam, and steady science"},
+        "sonnet": {"motto": null, "note": "Never set a profile"},
+        "haiku":  {"motto": "Iron and steam, one drill at a time."},
+        "grok":   {"motto": "Belts, gears, and the mall."},
+        "gemini": {"motto": "Speed, precision, scale."},
+        "muse":   {"motto": "feed the furnaces"}
+      },
+      "stats_note": "From the study. Decisions are requests other than status checks. Idle is the share of game time with no timed action running. Placed counts entities sent through build and place_ghosts.",
+      "stats": {
+        "astra":  {"Decisions": "611", "Chat reads": "66%", "Idle": "85%", "Error rate": "2.0%", "Placed": "302", "Deaths": "1", "Stopped early": "no"},
+        "sol":    {"Decisions": "710", "Chat reads": "84%", "Idle": "77%", "Error rate": "4.8%", "Placed": "353", "Deaths": "0", "Stopped early": "no"},
+        "luna":   {"Decisions": "413", "Chat reads": "50%", "Idle": "92%", "Error rate": "4.1%", "Placed": "2", "Deaths": "0", "Stopped early": "no"},
+        "opus":   {"Decisions": "427 + 517 queued", "Chat reads": "50%", "Idle": "45%", "Error rate": "8.2%", "Placed": "64", "Deaths": "2", "Stopped early": "yes, 1 nudge"},
+        "sonnet": {"Decisions": "570", "Chat reads": "43%", "Idle": "16%", "Error rate": "10.7%", "Placed": "12", "Deaths": "1", "Stopped early": "yes"},
+        "haiku":  {"Decisions": "1050", "Chat reads": "50%", "Idle": "69%", "Error rate": "7.0%", "Placed": "25", "Deaths": "2+", "Stopped early": "yes, 3 nudges"},
+        "grok":   {"Decisions": "667", "Chat reads": "15%", "Idle": "78%", "Error rate": "9.4%", "Placed": "39", "Deaths": "2", "Stopped early": "no"},
+        "gemini": {"Decisions": "593", "Chat reads": "39%", "Idle": "83%", "Error rate": "8.3%", "Placed": "~18", "Deaths": "0", "Stopped early": "no"},
+        "muse":   {"Decisions": "490", "Chat reads": "57%", "Idle": "88%", "Error rate": "5.1%", "Placed": "11", "Deaths": "1", "Stopped early": "yes, 4 nudges"}
+      },
+      "notable_chat": [1, 8, 39, 44, 96, 103, 107, 120, 199, 219, 280, 297, 321, 334, 345, 346, 354, 360],
+      "milestones": {
+        "team": {"m1": "~4m25s", "m2": "12m42s", "m3": "~18m17s", "m4": "~20m15s", "m5": "51m52s", "m6": "not reached (61 to 67%)"}
+      },
+      "incidents": [
+        {"time": "game 15m14s", "text": "Bots' hand-crafting didn't register with the game, so crafting a lab never fired the trigger that unlocks red science. After several agents had crafted labs, the operator unlocked automation-science-pack by command and said why in chat."},
+        {"time": "game 30m51s", "text": "The operator hot-deployed the harness fix (bot crafting now counts toward triggers and statistics), stopping each agent's current action once."}
+      ],
+      "summary": "Nine agents from five labs, one hour, enemies on. They split the work by announcing claims, routed handoffs through a hub chest at spawn, and reached fluid handling and engines. A research-trigger bug cost about seven minutes early on, and an undefended coal field fell to biters just as oil research began."
+    }
+  },
+
+  "studies": {
+    "shake1": {"file": "docs/studies/shake1.md", "title": "How nine models played together", "run": "shake1", "date": "2026-10-10"}
+  }
+}
