@@ -154,12 +154,12 @@ class KB:
                  + ("; hand-craftable" if r["category"] == "crafting" else ""),
                  "available from the start" if r.get("enabled") else
                  f"unlocked by technology {', '.join(unlock)}" if unlock else "not unlocked by any technology"]
-        others = [x for x in self.made_by.get(r["main_product"] or (r["products"][0]["name"] if r["products"] else ""), [])
+        others = [x for x in self.made_by.get(r.get("main_product") or (r["products"][0]["name"] if r["products"] else ""), [])
                   if x != r["name"] and "recycling" not in x]
         if others:
             lines.append("other recipes making it: " + ", ".join(others))
         used = sorted({x["name"] for x in self.recipes.values() if not x.get("hidden") and "recycling" not in x["name"]
-                       and any(i["name"] == (r["main_product"] or r["name"]) for i in x["ingredients"])})
+                       and any(i["name"] == (r.get("main_product") or r["name"]) for i in x["ingredients"])})
         if used:
             lines.append(f"used in {len(used)} recipes: " + ", ".join(used[:14]) + (" ..." if len(used) > 14 else ""))
         return "\n".join(lines)
@@ -301,7 +301,11 @@ class KB:
         txt = f"{e['type']} {name}: " + "; ".join(parts)
         if e["type"] == "mining-drill" and e.get("mining_speed"):
             txt += f"\n= {fmt(e['mining_speed'] * 60)} ore per minute on iron/copper/coal/stone (mining time 1), before mining productivity"
-        if e["type"] == "resource" and e.get("mining_time"):
+        if e["type"] == "resource" and any(p.get("type") == "fluid" for p in e.get("products") or []):
+            amt = sum(p.get("amount") or 0 for p in e["products"])
+            txt += (f"\n= a pumpjack (mining speed 1) gives {fmt(amt / e['mining_time'])}/s, {fmt(60 * amt / e['mining_time'])}/min, "
+                    f"on a 100% yield field; output scales with the field's yield, which falls as it is pumped")
+        elif e["type"] == "resource" and e.get("mining_time"):
             txt += f"\n= an electric mining drill (0.5/s) mines {fmt(30 / e['mining_time'])} per minute from it"
         it = self.items.get(name)
         if it:
@@ -317,7 +321,7 @@ class KB:
         return e.get("crafting_speed") or 1.0
 
     def ratio(self, item, per_min, assembler=None, furnace=None, chem=None, drill="electric-mining-drill",
-              mining_prod=0.0, stop=()):
+              mining_prod=0.0, stop=(), prefer=None):
         """Build tree for per_min of item. Returns {item: {rate, recipe, machine, machines}} and raw {item: rate}."""
         need, raw = {}, {}
         stop = set(stop)
@@ -340,7 +344,7 @@ class KB:
             if it in RAW or it in stop:
                 raw[it] = raw.get(it, 0) + rate
                 return
-            r = self.recipe_for(it)
+            r = self.recipe_for(it, (prefer or {}).get(it))
             if not r:
                 raw[it] = raw.get(it, 0) + rate
                 return
@@ -363,10 +367,17 @@ class KB:
         drills = {}
         for ore, rate in raw.items():
             res = self.entities.get(ore)
-            if res and res.get("type") == "resource" and not res.get("required_fluid") and d.get("mining_speed"):
+            fluid_out = any(p.get("type") == "fluid" for p in (res or {}).get("products") or [])
+            if res and res.get("type") == "resource" and not res.get("required_fluid") and not fluid_out and d.get("mining_speed"):
                 per = d["mining_speed"] / res["mining_time"] * 60 * (1 + mining_prod)
                 drills[ore] = rate / per
         return need, raw, drills
+
+    def oil_prefer(self, done):
+        """Recipes the team can use: basic oil processing until advanced oil processing is researched."""
+        if done is not None and "advanced-oil-processing" not in done:
+            return {"petroleum-gas": "basic-oil-processing"}
+        return None
 
     def ratio_text(self, item, per_min, **kw):
         it = self.resolve(item) or item
@@ -379,6 +390,14 @@ class KB:
                          f"(recipe {n['recipe']}, {fmt(n['time'])} s per {fmt(n['per_craft'])}) -> build {math.ceil(n['machines'] - 1e-9)}")
         lines.append("raw: " + ", ".join(f"{fmt(v, 1)}/min {pretty(k)}" + (f" ({fmt(drills[k], 1)} {kw.get('drill', 'electric-mining-drill')}s)" if k in drills else "")
                                          for k, v in sorted(raw.items(), key=lambda kv: -kv[1])))
+        if "crude-oil" in raw:
+            lines.append(f"(crude oil comes from pumpjacks; one gives 600/min on a 100% yield field, so about "
+                         f"{fmt(raw['crude-oil'] / 600, 1)} pumpjacks at 100%; fields deplete toward a minimum yield)")
+        if any(n["recipe"] == "advanced-oil-processing" for n in need.values()):
+            lines.append("(approximate: oil counts only the petroleum gas from advanced oil processing; heavy and light "
+                         "oil by-products are not cracked or credited, so real crude needs are lower)")
+        if any(n["recipe"] == "basic-oil-processing" for n in need.values()):
+            lines.append("(basic oil processing: the only oil recipe before the advanced oil processing technology)")
         belt = self.entities.get("transport-belt", {}).get("belt_speed_items_per_s")
         if belt:
             lines.append(f"(a yellow belt carries {fmt(belt * 60)} items/min, both lanes)")

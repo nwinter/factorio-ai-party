@@ -47,6 +47,13 @@ def series():
     return _series
 
 
+def done_or_none():
+    try:
+        return game().snapshot().get("done")
+    except Exception:
+        return None
+
+
 def current_rates():
     snap = game().snapshot()
     return {n: (v.get("m10") or 0) / 10 for n, v in (snap.get("items") or {}).items()}, snap
@@ -92,7 +99,8 @@ TOOLS = {
     "kb_ratio": (S("Machines and raw resources to make N of an item per minute (no modules). Machines default to "
                    "assembling-machine-2 and stone-furnace.", item=STR("item"), per_minute=NUM("target rate"),
                    assembler=STR("assembling-machine-1/2/3", optional=True), furnace=STR("stone/steel/electric-furnace", optional=True)),
-                 lambda a: kb().ratio_text(a["item"], float(a["per_minute"]), assembler=a.get("assembler"), furnace=a.get("furnace"))),
+                 lambda a: kb().ratio_text(a["item"], float(a["per_minute"]), assembler=a.get("assembler"), furnace=a.get("furnace"),
+                                           prefer=kb().oil_prefer(done_or_none()))),
     "kb_output": (S("What N machines make and use per minute on one recipe (e.g. 4 assembling-machine-1 on "
                     "logistic-science-pack). Use this for any 'how much do X machines make' number.",
                     recipe=STR("recipe or item"), count=NUM("number of machines"),
