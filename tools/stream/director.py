@@ -26,7 +26,8 @@ DEFAULTS = {
     "zoom_delta": 0.1,       # ignore smaller zoom changes
     "main_scale": 1.5,       # every zoom above is multiplied by this on the main camera when sent
     "side_scale": 2.6,       # and by this on the secondary cameras (small tiles need a closer view)
-    "max_zoom": 2.0,         # the mod's camera limit (cameras.lua MAX_ZOOM)
+    "max_zoom": 3.0,         # cap on the zoom sent (cameras.lua MAX_ZOOM is 4)
+    "side_pair_distance": 12.0,  # secondaries frame two agents only when this close (else follow one, close up)
     "airtime_bonus": 0.015,  # interest per second since an agent was last on any camera (capped)
     "airtime_cap": 2.5,
     "onair_penalty": 0.8,    # main camera discounts agents a secondary camera already shows (fewer forced cuts)
@@ -95,7 +96,7 @@ class Director:
             return None  # between actions: keep whatever the last action asked for
         return base or self.cfg["solo_zoom"]
 
-    def frame(self, subject, agents_by_name, taken, zoom, partner=None):
+    def frame(self, subject, agents_by_name, taken, zoom, partner=None, pair_distance=None):
         """Single follow, or a pair framing when someone free is close to the subject. A current partner is kept
         until 1.25x the pair distance so framing does not flicker at the threshold."""
         s = agents_by_name[subject]
@@ -104,7 +105,7 @@ class Director:
             if name == subject or name in taken or not a["alive"] or not a.get("position"):
                 continue
             d = dist(s["position"], a["position"])
-            limit = self.cfg["pair_distance"] * (1.25 if name == partner else 1.0)
+            limit = (pair_distance or self.cfg["pair_distance"]) * (1.25 if name == partner else 1.0)
             if d <= limit and (best is None or (name == partner, -d) > (best[1] == partner, -best[0])):
                 best = (d, name)
         if not best:
@@ -257,7 +258,8 @@ class Director:
             else:
                 self.want[name] = (want, now)
                 zoom = want
-            target = self.frame(subject, by_name, taken | held | {subject}, zoom, partner)
+            target = self.frame(subject, by_name, taken | held | {subject}, zoom, partner,
+                                None if i == 0 else self.cfg["side_pair_distance"])
             target["solo_zoom"] = zoom
             if cur is not None and cur["subject"] == subject:
                 target.update({k: cur[k] for k in ("label", "kind", "attack_t") if k in cur})
