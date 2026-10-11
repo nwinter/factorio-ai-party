@@ -1217,8 +1217,6 @@ class Caster:
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
         facts = facts_for(e, s, self.baseline, self.deadline())
-        if e["kind"] == "viewer" and hasattr(self, "ask_analyst"):  # eng/analyst: /ask answers a viewer's question
-            facts.update(self.ask_analyst(e) or {})
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
         names = list(self.names(s).values())
