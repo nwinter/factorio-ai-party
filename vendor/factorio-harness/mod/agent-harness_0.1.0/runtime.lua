@@ -314,7 +314,8 @@ local function entity(p,args,read_only)
   local pos = position(args.position)
   assert_visible(p,pos,'target')
   local candidates = p.surface.find_entities_filtered{position=pos, radius=0.2, name=args.name}
-  -- Ore under a building is never the intended target unless named explicitly.
+  -- Ore under a building is never the intended target unless named explicitly
+  -- (resource: the fallback, ore or an item on the ground).
   local found, resource
   local function wanted(e)
     -- A silo's rocket and its cargo pod sit on the silo; they are never the
@@ -324,7 +325,9 @@ local function entity(p,args,read_only)
   end
   for _, e in pairs(candidates) do
     if wanted(e) then
-      if e.type == 'resource' and not args.name then resource = resource or e
+      -- An item lying on a chest's tile is not the target either (shake3:
+      -- Grok's "ambiguous target" until the item was picked up).
+      if (e.type == 'resource' or e.type == 'item-entity') and not args.name then resource = resource or e
       else
         if found then
           error(string.format('ambiguous target: %s and %s at (%g,%g); specify name or unit_number', found.name, e.name, pos.x, pos.y), 0)
@@ -338,7 +341,7 @@ local function entity(p,args,read_only)
   if not found then
     local cover
     for _, e in pairs(p.surface.find_entities_filtered{position=pos, name=args.name}) do
-      if wanted(e) and e.type ~= 'resource' then
+      if wanted(e) and e.type ~= 'resource' and e.type ~= 'item-entity' then
         if cover and cover ~= e then cover = nil; break end
         cover = e
       end

@@ -1403,6 +1403,14 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   fails(function() call('inspect',{position={x=30.5,y=0.5}}) end,'entity not found at (30.5,0.5): nothing within 3 tiles')
   world={pole,{valid=true,name='wooden-chest',type='container',position={x=24.5,y=0.5},half=0.5,force=p.force}}
   fails(function() call('inspect',{position={x=24.5,y=0.5}}) end,'ambiguous target: small-electric-pole and wooden-chest at (24.5,0.5); specify name or unit_number')
+  -- An item on the ground on a chest's tile does not make the chest ambiguous
+  -- (shake3: Grok's transfers until the item was picked up); alone, it is the target.
+  local chest={valid=true,name='wooden-chest',type='container',position={x=24.5,y=0.5},half=0.5,force=p.force,get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  local item={valid=true,name='item-on-ground',type='item-entity',position={x=24.6,y=0.4},half=0.2,force=p.force,get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  world={chest,item}
+  eq(call('inspect',{position={x=24.5,y=0.5}}).name,'wooden-chest')
+  world={item}
+  eq(call('inspect',{position={x=24.5,y=0.5}}).name,'item-on-ground')
   p.surface.find_entities_filtered=find
 end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed
