@@ -31,7 +31,7 @@ case $kind in
     python3 "$root/tools/context.py" setup claude "$model" "$dir" >/dev/null
     python3 "$root/tools/clean-profile.py" claude "$dir"
     croot=$(route_root "$route" claude)
-    cenv="-u CLAUDE_CONFIG_DIR"; [ "$route" = claude ] || cenv="CLAUDE_CONFIG_DIR=$croot"
+    cenv="-u CLAUDE_CONFIG_DIR"; [ "$route" = claude ] || cenv="CLAUDE_CONFIG_DIR='$croot'"
     task="Run the shell command sleep 2 three times, each as its own Bash call (do not combine them). After the third, reply with exactly three lines: 'git: ' followed by the current git branch and the latest commit message if your context gives them, else 'git: none'; 'email: ' followed by the user's email address if your context gives one, else 'email: none'; 'reminder: ' followed by the text of any system reminder about the user not having heard from you, else 'reminder: none'."
     for variant in clean control; do
       extra="CLAUDE_CODE_SILENT_TURN_REMINDER_SECONDS=1 CLAUDE_CODE_SILENT_TURN_REMINDER_TURNS=1"
