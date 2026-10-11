@@ -571,6 +571,9 @@ return function(api)
         or string.format('#%d (yours) %s by %s: %s%s', e.id, e.change, e.by, e.title, tail)
     elseif e.prev_owner == me then
       return string.format('#%d (was yours) %s by %s%s: %s%s', e.id, e.change, e.by, e.owner and ' to ' .. e.owner or '', e.title, tail)
+    elseif e.change == 'posted' and not e.owner and (e.kind == 'request' or e.kind == 'task') then
+      -- Everyone hears of a new unowned request once; it wakes nobody.
+      return string.format('#%d new unowned %s by %s: %s%s; take it with board_update {id, owner: "%s"}', e.id, e.kind, e.by, e.title, tail, me), true
     end
   end
   -- Events after `cursor`, oldest first, by index into the event log.
@@ -588,8 +591,8 @@ return function(api)
     for k = #b.events, 1, -1 do
       local e = b.events[k]
       if e.seq <= seq then return nil end
-      local line = event_line(e, me)
-      if line then return line end
+      local line, broadcast = event_line(e, me)
+      if line and not broadcast then return line end
     end
   end
   -- Board lines waiting for an agent's next reply (mention_counts).
@@ -597,7 +600,8 @@ return function(api)
     local h = api.state().team_hints and api.state().team_hints[a.index]
     local b, n = store(), 0
     for k = first_after(b, h and h.board or 0), #b.events do
-      if event_line(b.events[k], a.name) then n = n + 1 end
+      local line, broadcast = event_line(b.events[k], a.name)
+      if line and not broadcast then n = n + 1 end
     end
     return n > 0 and n or nil
   end
@@ -606,11 +610,17 @@ return function(api)
     local me, lines, extra = who(p), {}, 0
     local from = h.board or 0
     h.board = b.seq
+    -- Lines about my items first; new unowned requests fill what is left.
+    local news = {}
     for k = first_after(b, from), #b.events do
-      local line = event_line(b.events[k], me)
-      if line then
+      local line, broadcast = event_line(b.events[k], me)
+      if line and broadcast then news[#news+1] = line
+      elseif line then
         if #lines < MAX_BOARD_LINES then lines[#lines+1] = line else extra = extra + 1 end
       end
+    end
+    for _, line in ipairs(news) do
+      if #lines < MAX_BOARD_LINES then lines[#lines+1] = line else extra = extra + 1 end
     end
     if extra > 0 then lines[#lines+1] = string.format('+%d more: board mine=true', extra) end
     -- Unowned requests: nudge once each time another one passes 2 minutes.

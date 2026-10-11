@@ -161,4 +161,20 @@ local claim=sol('board_post',{kind='claim',title='smelting',area={left_top={x=0,
 local over=grok('board_post',{kind='claim',title='mall',area={left_top={x=5,y=5},right_bottom={x=20,y=20}}}).item.id
 eq(sol('status').team.board[1],'#'..over..' claim by grok overlaps your claim #'..claim..': mall')
 eq((astra('status').team or {}).board,nil)
+
+-- A new unowned request reaches every teammate once, after their own items,
+-- and wakes no sleeper.
+grok('status')
+astra('sleep',{seconds=60})
+local open=sol('board_post',{kind='request',title='someone build 2 boilers'}).item.id
+eq(astra('sleep_check',{peek=true}).woke,nil)
+astra('sleep_check',{}); astra('status')
+r=grok('board_post',{kind='task',title='wall',owner='astra'}) -- its reply carries grok's news
+eq(r.team.board[1],'#'..open..' new unowned request by sol: someone build 2 boilers; take it with board_update {id, owner: "grok"}')
+local mine2=r.item.id
+sol('board_post',{kind='request',title='another'})
+t=astra('status').team.board
+eq(t[1],'#'..mine2..' assigned to you by grok: wall')
+assert(t[2]:find('new unowned request by sol: another',1,true),t[2])
+eq(#grok('status').team.board,1); eq((sol('status').team or {}).board,nil) -- not to its poster
 print('tells: ok')
