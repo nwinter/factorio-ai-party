@@ -20,7 +20,7 @@ EOP
 name="pog-${POG_WS:-$world}-$run"
 allow='"Read", "Grep", "Glob", "Edit(/**)", "Write(/**)", "Bash(./fh:*)", "Bash(./shot:*)", "Bash(echo:*)",
               "Bash(sleep:*)", "Bash(date:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)",
-              "Bash(python3:*)", "Bash(jq:*)", "Bash(ls:*)", "Bash(wc:*)"'
+              "Bash(python3:*)", "Bash(jq:*)", "Bash(ls:*)", "Bash(wc:*)", "Bash(rg:*)", "Bash(sort:*)"'
 # Compaction settings per model: agent/context.tsv, applied by tools/context.py (docs/CONTEXT-NOTES.md).
 compact_rule='After any context compaction, read notes.md and deadline.txt before acting; notes.md is your memory.'
 
