@@ -64,6 +64,12 @@ for _=1,3 do
 end
 r=W.handlers.sleep(p,{seconds=300}); eq(r['repeat'],nil) -- the fourth runs
 eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
+-- A sleep given its own condition is never a repeat.
+game.tick=5310; table.insert(s.mentions[1].list,{tick=5310,from='sol',text='@astra cond'})
+eq(W.handlers.sleep_check(p,{}).woke,'mentioned')
+local Wc=dofile('mod/agent-harness_0.1.0/waits.lua'){state=function() return s end,integer=integer,replace=function() end,
+  advance=function() end,clock_mode=function() return 'realtime' end,validate_condition=function() end,condition=function() return false,'x 0' end}
+r=Wc.handlers.sleep(p,{seconds=300,condition={['until']='crafting_done'}}); eq(r['repeat'],nil); eq(r.condition,'crafting_done')
 -- Past 10 s it runs; a sleep that ran out (elapsed) is not repeated.
 game.tick=5400; table.insert(s.mentions[1].list,{tick=5400,from='sol',text='@astra again'})
 eq(W.handlers.sleep_check(p,{}).woke,'mentioned')

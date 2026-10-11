@@ -58,8 +58,9 @@ return function(api)
   -- loop reaches its end and the agent reads the wake. Bounded: within
   -- REPEAT_TICKS of the wake, at most REPEATS times per wake, never in turns
   -- mode (game time stands still between requests there); a sleep that ran
-  -- out (elapsed) or ended in death is not repeated. It cannot spin: every
-  -- repeat needs a wake, and every wake a real event.
+  -- out (elapsed) or ended in death is not repeated, nor is one given a
+  -- condition. It cannot spin: every repeat needs a wake, and every wake a
+  -- real event.
   local REPEAT_TICKS, REPEATS = 600, 3
   local REPEAT = {mentioned=true, told=true, board=true, damaged=true, condition=true, queue_done=true, queue_stalled=true}
   local function repeat_of(p, seconds)
@@ -78,7 +79,8 @@ return function(api)
   end
   function M.handlers.sleep(p, a)
     local seconds = api.integer(a.seconds, nil, 1, MAX_TICKS / 60, 'seconds (1..900)')
-    local again = repeat_of(p, seconds)
+    -- A sleep with its own condition says what it waits for: never a repeat.
+    local again = a.condition == nil and repeat_of(p, seconds)
     if again then return again end
     local condition
     if a.condition ~= nil then

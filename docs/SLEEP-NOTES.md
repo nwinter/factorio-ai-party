@@ -28,7 +28,7 @@ Runtime (Lua; `fh deploy`, no control.lua change, locals guard green):
   `repeat: true` and `while_asleep: this sleep did not start: you woke (mentioned) 4 s ago; ...`. A `for` loop of
   sleeps then runs out within a second of the first wake. Why it cannot busy-loop: at most 3 repeats per wake, every
   wake needs a real event (a mention, a hit, a board change...), none after `elapsed`, `died`, `respawned` or the
-  deadline, and none in turns mode (game time stands still between requests there). A `while true` loop gets 3 quick
+  deadline, none for a sleep given its own `--until`, and none in turns mode (game time stands still between requests there). A `while true` loop gets 3 quick
   returns per wake and then sleeps normally. The cost: an agent that reads a wake and deliberately sleeps again within
   10 s gets one instant return that says so.
 
