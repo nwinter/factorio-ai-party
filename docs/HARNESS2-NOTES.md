@@ -250,6 +250,27 @@ still shows every bot tagged and tinted. Merging the two branches conflicts only
 list: keep both `tests/audience.lua` and `tests/nametags.lua`. Any later deploy from here should be built from a
 merge with eng/board.
 
+### Director names in the world (shake3 follow-up)
+
+Report: camera clients' names ("pog-cam2") showed as in-world labels on stream, and `show_on_map=false` set by hand on
+world n hid some but not all. Changes in `cameras.lua` (runtime only, hot-deployable):
+
+- Each director gets `show_on_map=false` when it becomes a director and again on every 5 s recheck, so a client that
+  joins or reconnects later is covered too. A one-time setting misses those.
+- The recheck now runs over every connected director, not only those with a camera. A camera client before its first
+  camera call (or one released and back with a character) used to stand in the world as a character, and a
+  character carries its name label regardless of `show_on_map`. That is the likely source of the labels that stayed.
+  Now it becomes a characterless spectator within 5 s.
+- Live: after the deploy, `pog-director` (never given a camera, so until then `controller_type` 1, a character)
+  reads `show_on_map=false`, `controller_type` 5 (spectator), and screenshots through it still work.
+- Not reproduced: live has one client, so I could not watch one director's label from another client. I found no
+  client config or player setting for other players' names (the Factorio API docs were not reachable from this
+  session), so `start-client.ps1` is unchanged. If labels remain on n after this deploy, check the labelled player
+  with `serpent.line({p.name,p.controller_type,p.show_on_map,p.character~=nil})`. A character there means the
+  recheck did not reach it (not connected? not named pog-cam/pog-director?); a spectator with `show_on_map=false`
+  that is still labelled would point to a client-side setting.
+- World n is untouched; deploy there after shake3 (01:24) with `POG_WORLD=n bin/fh deploy`, built from this branch.
+
 ### For eng/stream2
 
 `tools/stream/director.py` still has `"max_zoom": 2.0` with the comment "the mod's camera limit". The mod now allows 4.
