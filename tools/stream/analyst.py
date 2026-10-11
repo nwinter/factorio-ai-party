@@ -46,6 +46,9 @@ buildings counts the team's own buildings, never enemies.
 %(extra)s- Say what is true, not the mistake: write "research progress is always kept", never "progress was not \
 lost"; "the wreck is scenery", never "it is not an attack". The hosts' fast writer drops the "not" and repeats the \
 mistake. The same goes for corrections.
+- Viewers have not seen the earlier runs: name a past run with what it was, as its "say:" label puts it ("shake1, \
+the first nine-agent team run"), never by a bare code name. Compare only with the team runs in the digest; the early \
+solo and co-op tests (one or two agents, peaceful maps) are not pace benchmarks, so leave them out of comparisons.
 - Never guess a number: use the digest or a tool (kb_* for exact recipes, technologies, ratios and machine stats \
 of this version; game_* for the current game; history_* for past runs; notes for pacing and good play).
 - Do no arithmetic in your head. Any computed figure (what N machines make, machines needed for a rate, research \
@@ -118,6 +121,8 @@ def point_problem(p):
     text, facts = p.get("text") or "", p.get("facts") or {}
     if not text.strip():
         return "empty text"
+    if TEST_RUN_RE.search(text):
+        return "compares with an early solo or co-op test run (not a benchmark; viewers don't know it)"
     known = fact_numbers(facts)
     for raw in NUM_RE.findall(text):
         v = float(raw.replace(",", ""))
@@ -130,6 +135,8 @@ def point_problem(p):
     return None
 
 
+# shake4 aired "Nineteen in the co-op, Vale!" from the analyst's coop1 comparisons (docs/studies/shake4.md, mistake 8).
+TEST_RUN_RE = re.compile(r"\b(coop ?1|co-?op (run|test|game)|the co-?op\b(?!-)|turns ?(1|3h)|baseline ?1)\b", re.I)
 MINUTE_RE = re.compile(r"\bminute (\d+)\b", re.I)
 
 
@@ -192,7 +199,8 @@ class Digest:
         from kb import KB
         self.G, self.H = G, H
         self.kb = KB()
-        self.series = H.load_runs(exclude=[a.replay, a.run_dir])  # the current run is never its own benchmark
+        # The current run (and its world's earlier shifts) is never its own benchmark; the benchmarks are the team runs.
+        self.series = H.load_runs(exclude=[a.replay, a.run_dir], teams_only=True)
         self.a = a
         self.game = G.ReplayGame(a.replay, a.at) if a.replay else G.LiveGame(a.world, a.bot, a.player, a.surface)
 
@@ -258,7 +266,14 @@ class Digest:
             except Exception as e:
                 parts.append(f"(status unavailable: {e})")
         parts.append("## Reference rates (exact for this version; quote these instead of computing)\n" + self.reference_rates(snap))
-        parts.append("## Past runs at this game minute\n" + H.at_text(self.series, round(minute)))
+        try:
+            world = H.world_text(self.a.run_dir or self.a.replay)
+            if world:
+                parts.append("## This world's earlier shifts\n" + world)
+        except Exception as e:
+            parts.append(f"(shift history unavailable: {e})")
+        parts.append("## Past team runs at this game minute (name a run on air as its 'say:' text)\n"
+                     + H.at_text(self.series, round(minute)))
         cur = snap.get("research")
         if cur:
             parts.append(H.when_text(self.series, cur))
