@@ -333,7 +333,10 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .live-body > * { margin: 0; }
 .live-run strong { display: block; color: var(--fx-heading); }
 .live-clock { display: flex; gap: 12px; flex-wrap: wrap; font-size: .9rem; color: var(--ink-2); }
-.live-research .fx-progress-label { text-transform: capitalize; }
+.live-research-label { display: flex; justify-content: space-between; gap: 8px; font-size: .9rem; margin-bottom: 3px; }
+.live-research-label strong { color: var(--fx-heading); text-transform: capitalize; }
+.live-research-pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+.live-research .fx-progress--thin { height: 10px; }
 .live-agents { list-style: none; padding: 0; margin: 0; display: grid; gap: 2px; }
 .live-agents li { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: .88rem; padding: 3px 0; border-bottom: 1px solid var(--line); }
 .live-agents li:last-child { border-bottom: 0; }

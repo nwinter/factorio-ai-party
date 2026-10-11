@@ -91,10 +91,12 @@
     h += '</div>';
     if (r.current) {
       var pct = Math.round((r.progress || 0) * 100);
+      // Label above the bar, not on it: light text over the cyan fill is hard to read.
       var tech = String(r.current).replace(/-/g, ' ');
-      h += '<div class="fx-progress fx-progress--research live-research" role="progressbar" aria-valuenow="' + pct +
-        '" aria-valuemin="0" aria-valuemax="100" aria-label="Research progress" style="--fx-value:' + pct + '%">' +
-        '<span class="fx-progress-label">' + esc(tech) + ': ' + pct + '%</span></div>';
+      h += '<div class="live-research"><div class="live-research-label"><span>Researching <strong>' + esc(tech) +
+        '</strong></span><span class="live-research-pct">' + pct + '%</span></div>' +
+        '<div class="fx-progress fx-progress--research fx-progress--thin" role="progressbar" aria-valuenow="' + pct +
+        '" aria-valuemin="0" aria-valuemax="100" aria-label="Research progress: ' + esc(tech) + '" style="--fx-value:' + pct + '%"></div></div>';
     }
     if ((s.alerts || []).length) {
       h += '<ul class="live-alerts">' + s.alerts.slice(-3).reverse().map(function (a) {
