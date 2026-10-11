@@ -95,6 +95,25 @@ What stays:
   (Grok runs unsandboxed); the token expires within 6 hours and the run home holds no refresh token.
 - To check: `tools/smoke-launch.sh smoke-l4g 3 grok` (needs Herdr, outside the engineer sandbox).
 
+smoke-l4g (02:41, TUI in a Herdr pane) stalled: the prompt pass timed out and Grok made no request. The run home's
+log has only the sign-in process; the TUI process logged nothing there or in `~/.grok/logs`, so it never got as far
+as its auth setup. Main reverted 9872fd5 for shake4 (33b21be). What changed since (c57c56d, b940b9f re-applies the
+run home on this branch):
+- The pane command had grown to about 1,450 characters. Typed into a pane whose shell is not ready yet, input past
+  the terminal's 1,024-byte line limit can be cut, and the command never runs (the likely cause; the same env and
+  flags start fine under a pseudo-terminal). Grok now starts from `DIR/.grok-run.sh` (`grok_run_script` in
+  `tools/profile-flags.sh`, as Muse and agy already do), which writes a start line to `DIR/grok-start.log`.
+- A fresh home opens the TUI with a "Help improve Grok [Opt out] [Opt in]" prompt; the run home's config now
+  answers it (`[privacy] privacy_banner_acked`, as in the owner's config).
+- `tools/context-probe.sh --profile grok grok-4.7 - tui` runs `.grok-run.sh` in a pseudo-terminal
+  (`tools/tui-capture.py`) and prints the screen. Result (02:53): start line written, welcome box without the privacy
+  prompt, session started at once, answers `skills: none`, `mcp: none`, no owner rule, worked for 24 s.
+- The smoke report prints `grok_started=` (the start line) and `grok_processes_logged=` (processes that logged in
+  the run home: 1 means only the sign-in, 2 or more means the TUI ran).
+- Still to prove under Herdr: `tools/smoke-launch.sh smoke-l4i 2 grok` on world live. If it stalls again with
+  `grok_started` set, the cause is inside Grok under Herdr's terminal; if `grok_started=no`, the pane never ran the
+  script.
+
 ## Still open
 
 - Muse: no documented per-run switch for user skills (the skill-reminder agent and memory are off, round 4).
