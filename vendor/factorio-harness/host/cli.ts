@@ -215,6 +215,14 @@ async function main() {
       error:{code:'wait_timeout', message:`${action} is STILL RUNNING: the wait gave up after ${Math.round(waitedMs/1000)} s but the action has not finished${leftText}. `+
         `A new character action would interrupt it. Keep waiting with 'fh wait', or check 'fh call status' (active) before doing anything else.`}};
   }
+  // Poll less often while an action has time left: 100 ms near the end, at most 400 ms.
+  // (At 100 ms flat, nine waiting agents sent ~20 status requests per second.)
+  function pollDelay(status: Reply): number {
+    const active = status.result?.active ?? status.result?.combat;
+    const tick = status.tick ?? status.result?.tick;
+    if (active?.until_tick === undefined || tick === undefined) return 250;
+    return Math.min(400, Math.max(100, Math.round((active.until_tick - tick) / 60 * 1000 / 4)));
+  }
   async function waitForAction(action: string, untilTick?: number, nowTick?: number): Promise<Reply> {
     if (bridged) return waitForBridgeAction(action);
     const started = Date.now();
@@ -234,7 +242,7 @@ async function main() {
         }
         return status;
       }
-      await delay(100);
+      await delay(pollDelay(status));
     }
     if (stopping) throw new Error('Stopped waiting for action; inspect status. Game actions have a bounded tick duration.');
     // Still running is not a failure of the action, but it is not done either.
@@ -255,7 +263,7 @@ async function main() {
         return {...status, ok, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started},
           ...(ok ? {} : {error:{code:'action_interrupted',message:`Control ended: ${last.outcome}`}})};
       }
-      await delay(100);
+      await delay(pollDelay(status));
       status = await harness.request('status');
       if (!status.ok) return status;
     }

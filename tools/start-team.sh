@@ -69,6 +69,10 @@ tools/.venv/bin/python tools/obs.py reload-overlay >/dev/null || true
 tools/.venv/bin/python tools/obs.py start
 [ "$stream" = --stream ] && tools/.venv/bin/python tools/obs.py stream-start
 
+first_bot=$(awk -F'\t' '!/^#/ && NF {print $1; exit}' "$team")
+nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$rundir/chat.jsonl" >"$rundir/chat-log.err" 2>&1 &
+echo $! >> "$rundir/stream-service.pid"
+
 # 5. Agents: three per Herdr tab, real time, team playbook.
 POG_TEAM="$rundir/team.txt"
 awk -F'\t' '!/^#/ && NF {print $1 "|" $6 " (" $7 ")"}' "$team" > "$POG_TEAM"
