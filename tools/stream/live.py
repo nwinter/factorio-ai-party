@@ -137,7 +137,7 @@ class LiveSource:
             obs["agents"].append(a)
         for name, p in profiles.items():
             if name not in self.agents_cfg:
-                obs["agents"].append({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto", "voice",
+                obs["agents"].append({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto",
                                                              "position", "alive", "active", "last_said")})
 
         try:

@@ -210,13 +210,10 @@ class MockSource:
         else:
             a["phase"], a["active"], a["until"] = "act", r.choice(ACTIONS[a["site"]]), now + r.uniform(6, 35)
 
-    def say(self, a, text, gsec, aloud=False):
+    def say(self, a, text, gsec):
         self.seq += 1
         a["last_said"] = {"text": text, "tick": int(gsec * 60)}
-        msg = {"seq": self.seq, "tick": int(gsec * 60), "from": a["display_name"], "text": text}
-        if aloud:
-            msg["aloud"] = True
-        self.chat.append(msg)
+        self.chat.append({"seq": self.seq, "tick": int(gsec * 60), "from": a["display_name"], "text": text})
         self.chat = self.chat[-50:]
 
     def observe(self):
@@ -229,7 +226,9 @@ class MockSource:
         if now >= self.next_chat:
             a = r.choice([a for a in self.agents.values() if a["alive"]])
             if r.random() < 0.3 and a["name"] in BANTER:
-                self.say(a, r.choice(BANTER[a["name"]]), gsec, aloud=r.random() < 0.5)
+                self.say(a, r.choice(BANTER[a["name"]]), gsec)
+                if r.random() < 0.5:  # `say {aloud: true}`
+                    self.chat[-1]["aloud"] = True
             else:
                 self.say(a, r.choice(LINES.get(a["name"], ["Working on it."])), gsec)
             if r.random() < 0.35:  # a reply

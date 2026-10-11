@@ -61,7 +61,6 @@ class Agent:
         self.color = self.cfg.get("color")
         self.glyph = self.cfg.get("glyph")
         self.motto = ""
-        self.voice = None  # profile.voice: a voice id from tools/stream/voices.py
         self.position = None
         self.alive = True
         self.dead_until_tick = None
@@ -76,6 +75,7 @@ class Agent:
         self.seen = False
         self.died_at = None
         self.connected = True
+        self.voice = None  # profile.voice: a voice id from tools/stream/voices.py
 
     def bump(self, amount, now):
         self.decay(now)
@@ -346,11 +346,11 @@ class Model:
             ag.decay(now)
             agents.append({
                 "name": ag.name, "kind": ag.kind, "display_name": ag.display_name, "color": ag.color,
-                "glyph": ag.glyph, "motto": ag.motto, "voice": ag.voice, "model": ag.cfg.get("model"), "harness": ag.cfg.get("harness"),
+                "glyph": ag.glyph, "motto": ag.motto, "model": ag.cfg.get("model"), "harness": ag.cfg.get("harness"),
                 "role": ag.cfg.get("role"), "alive": ag.alive, "activity": self.activity(ag, now),
                 "action": self.action_text(ag), "active": ag.active, "position": ag.position,
                 "location": self.location(ag), "interest": round(ag.interest, 2),
-                "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen,
+                "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen, "voice": ag.voice,
             })
         res = self.research
         return {
