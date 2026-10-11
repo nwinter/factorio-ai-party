@@ -119,8 +119,9 @@ Live, world `live` (fresh non-peaceful map `board1`, director client `pog-direct
 - Cost, measured in game with `helpers.create_profiler` over RCON: 9 bots, 300 board items, 327 events, a full
   200-message chat log. A cheap action (`plans`) took 0.116 ms per request with the team block and 0.076 ms with
   `peek` (no team block), so hints cost about 0.04 ms per request. An agent's first request against the whole backlog
-  took 0.54 ms. Before the aged-unowned scan was shared for a second in storage, steady state was 0.205 ms. Nothing
-  runs per tick. For scale, a bot's `status` averaged 15 ms in the same run, which is the existing threat/survey
+  took 0.54 ms. Before the aged-unowned scan was shared for a second in storage, steady state was 0.205 ms. After the
+  event scan was made to start at the agent's cursor: 0.088 ms with hints and 0.086 ms with `peek`, which is within
+  measurement noise. Nothing runs per tick. For scale, a bot's `status` averaged 15 ms in the same run, which is the existing threat/survey
   scans.
 
 ## Gaps

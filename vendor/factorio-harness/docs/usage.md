@@ -177,8 +177,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Operator: `tools/harness-requests.py list|show|answer|board|events` in the pog repo. Underneath, a dispatch request
   with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update` and `board_post` as
   `operator`.
-- Cost: hints add about 0.04 ms per request with a full board and 9 bots (0.5 ms on an agent's first request against
-  a full backlog); nothing runs per tick.
+- Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
+  request against a full backlog); nothing runs per tick.
 
 ## Live reload
 
