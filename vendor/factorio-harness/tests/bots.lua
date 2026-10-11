@@ -116,6 +116,34 @@ local placed=created[#created].args
 eq(placed.name,'stone-furnace'); eq(placed.player,nil); eq(placed.force,force)
 fails(function() bot('build',{item='stone-furnace',position={x=3,y=1}}) end,'not in main inventory')
 fails(function() c.items['stone-furnace']=1; bot('build',{item='stone-furnace',position={x=20,y=0}}) end,'out of build reach')
+-- Remnants go before a build: shake3's bots were refused by the stump a mined
+-- tree left ("placement blocked by tree-08-stump"). A character corpse stays.
+local stump={valid=true,type='corpse',name='tree-08-stump',position={x=3.2,y=0.1}}
+stump.destroy=function() stump.valid=false end
+local body={valid=true,type='character-corpse',name='character-corpse',position={x=3,y=0}}
+body.destroy=function() body.valid=false end
+surface.find_entities_filtered=function(a) if a.type=='corpse' and a.area then return {stump,body} end return {} end
+surface.can_place_entity=function() return not stump.valid end
+eq(bot('build',{item='stone-furnace',position={x=3,y=0}}).consumed,1)
+eq(stump.valid,false); eq(body.valid,true)
+-- A biter corpse is cleared and not named; the error names the real blocker
+-- (shake3: "placement blocked by small-biter-corpse (...), burner-mining-drill (...)").
+local corpse={valid=true,type='corpse',name='small-biter-corpse',position={x=3.1,y=0.2}}
+corpse.destroy=function() corpse.valid=false end
+local drill={valid=true,type='mining-drill',name='burner-mining-drill',position={x=3,y=0}}
+surface.find_entities_filtered=function(a)
+  if not a.area then return {} end
+  local out={}
+  for _,e in ipairs{corpse,drill} do if e.valid and (a.type==nil or a.type==e.type) then out[#out+1]=e end end
+  return out
+end
+surface.can_place_entity=function() return false end
+c.items['stone-furnace']=1
+local ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=0}})
+assert(not ok and err:find('placement blocked by burner-mining-drill (3,0)',1,true) and not err:find('corpse'),err)
+eq(corpse.valid,false); eq(c.items['stone-furnace'],1)
+surface.find_entities_filtered=function() return {} end
+surface.can_place_entity=function() return true end
 
 -- Profiles: set, read back, colour the character; bubbles over the speaker.
 local pr=bot('profile',{display_name='Astra',color='#FF8000',glyph='🚀',motto='iron first'})

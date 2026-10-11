@@ -179,6 +179,38 @@ return function(api)
     end
     return found,marked
   end
+  -- The area an entity of this prototype covers at pos, turned for east/west.
+  function M.box(proto,pos,direction)
+    local b=proto.collision_box or {left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
+    local l,t,r,btm=b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y
+    if direction==4 or direction==12 then l,t,r,btm=-btm,l,-t,r end
+    return {left_top={x=pos.x+l,y=pos.y+t},right_bottom={x=pos.x+r,y=pos.y+btm}}
+  end
+  -- Remnants (tree stumps, biter corpses, ruins: type corpse) never stop a
+  -- player's build, the game removes them under the new entity; a script
+  -- build or revive is refused by them (shake3: "placement blocked by
+  -- tree-08-stump" right after mining the tree). So they go first. A
+  -- character corpse holds items and stays.
+  function M.clear_remnants(surface,proto,pos,direction)
+    local n=0
+    for _,e in pairs(surface.find_entities_filtered{area=M.box(proto,pos,direction),type='corpse'}) do
+      if e.valid and e.type=='corpse' then e.destroy(); n=n+1 end
+    end
+    return n
+  end
+  -- True when the footprint holds only trees and rocks: what a ghost may go
+  -- over, since place_ghosts marks them and construct mines them.
+  local OBSTACLE={tree=true,plant=true,['simple-entity']=true}
+  function M.only_obstacles(surface,proto,pos,direction)
+    local any=false
+    for _,e in pairs(surface.find_entities_filtered{area=M.box(proto,pos,direction)}) do
+      if e.valid and e.type~='resource' then
+        if not (OBSTACLE[e.type] and e.minable) then return false end
+        any=true
+      end
+    end
+    return any
+  end
   local function obstructed(rec)
     for _,o in ipairs(rec.obstacles or {}) do if o.valid then return o end end
   end

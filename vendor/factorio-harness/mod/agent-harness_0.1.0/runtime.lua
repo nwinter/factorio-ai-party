@@ -1709,6 +1709,7 @@ local function placement_error(p,proto,pos,direction)
 end
 local function build_direct(p,stack,pos,direction,quality,kind)
   local proto,surface=stack.prototype.place_result,p.surface
+  construction.clear_remnants(surface,proto,pos,direction)
   local ghost=surface.find_entities_filtered{position=pos,radius=0.1,ghost_name=proto.name,force=p.force,limit=1}[1]
   local e
   if ghost then
@@ -2925,7 +2926,11 @@ local function place_ghost(p,spec)
   local direction=spec.direction and directions[spec.direction]
   assert(spec.direction==nil or direction,'direction must be a compass name')
   assert(spec.type==nil or proto.type=='underground-belt' and (spec.type=='input' or spec.type=='output'),'type is input|output for underground belts only')
-  if not p.surface.can_place_entity{name=spec.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual_ghost,forced=true} then
+  construction.clear_remnants(p.surface,proto,pos,direction)
+  -- The engine's check refuses trees and rocks (shake2/3: "placement blocked
+  -- by tree-08"); a player's ghost goes over them and marks them.
+  if not p.surface.can_place_entity{name=spec.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual_ghost,forced=true}
+    and not construction.only_obstacles(p.surface,proto,pos,direction) then
     error(placement_error(p,proto,pos,direction),0)
   end
   local ghost=p.surface.create_entity{name='entity-ghost',inner_name=spec.name,position=pos,direction=direction,force=p.force,player=real(p),raise_built=true,type=spec.type}
