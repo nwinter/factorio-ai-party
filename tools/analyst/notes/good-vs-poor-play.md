@@ -93,8 +93,8 @@ summed**, so 15 red + 12 green shows as 27 SPM. Say which one when quoting; the 
 | 4 h | blue trickle | red/green/blue 45-90 | purple/yellow running |
 | 8 h | | rocket parts begun | rocket launched |
 
-Our runs for scale: shake1 green peaked at 31/min (52-54 min) then collapsed; co-op 1 averaged about
-15 red and 14 green per minute over 2 h (1,867 and 1,731 packs) and reached blue by 1h34.
+Our runs for scale: shake1 green peaked at 31/min (52-54 min) then collapsed; the two-agent co-op test
+(peaceful map; on air never "coop1") averaged about 15 red and 14 green per minute over 2 h (1,867 and 1,731 packs) and reached blue by 1h34.
 
 ## How to judge a team at a given moment
 
