@@ -120,6 +120,10 @@ def codex(d):
     if full:
         shared = os.path.join(os.path.dirname(os.path.abspath(d)), "team-tools")
         text += f'[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [{json.dumps(shared)}]\n'
+        # smoke-ft: Luna's subagent ran no command and answered "describe.json was not present" with 18 output tokens
+        # and no reasoning. Subagents get their own effort (codex-cli 0.162.1 [agents]), medium unless set.
+        effort = os.environ.get("POG_SUBAGENT_EFFORT", "medium")
+        text += f'[agents]\ndefault_subagent_reasoning_effort = {json.dumps(effort)}\n'
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write(text)
