@@ -1,13 +1,14 @@
 # Study: shake3, the round-3 run (board, talk, stream)
 
-Run: 2026-10-11, agents launched 00:24:21 to 00:28:54 PDT, world `n`, seed 20261010, normal enemies, base game, real time, streamed unlisted. Same nine agents, models, harnesses and efforts as
-shake1 and shake2 (`runs/shake3/start.log`, `team.txt`). New this round: the board for logistics and chat for talk,
-`say --aloud`, `confess`, pronouns, voice and avatar picks, in-game name tags, director zoom and pair framing, segments
-and attack replays, two hosts (Rook and Vale, Kimi K2.6 on Cloudflare, OpenAI voices), the site's live feed and viewer
-chat. Deadlines were staggered by launch (each `deadline.txt`): astra, sol, luna 01:24; opus, sonnet 01:25; haiku
-01:26; grok, gemini 01:27; muse 01:28. The last score snapshot is 01:25:02, so the final score misses the last 2 to 3
-minutes of Haiku, Grok, Gemini and Muse. World tick 0 was about 00:22:19 (tick 23,603 at 00:28:55 in `scores.jsonl:1`), so game minute is about wall
-minute minus 00:22:19.
+Run: 2026-10-11, agents launched 00:24:21 to 00:28:54 PDT, world `n`, seed 20261010, normal enemies, base game, real
+time, streamed unlisted. Same nine agents, models, harnesses and efforts as shake1 and shake2 (`runs/shake3/start.log`,
+`team.txt`). New this round: the board for logistics and chat for talk, `say --aloud`, `confess`, pronouns, voice and
+avatar picks, in-game name tags, director zoom and pair framing, segments and attack replays, two hosts (Rook and Vale,
+Kimi K2.6 on Workers AI, meant to speak with OpenAI voices), the site's live feed and viewer chat. Deadlines were
+staggered by launch (each `deadline.txt`): astra, sol, luna 01:24; opus, sonnet 01:25; haiku 01:26; grok, gemini 01:27;
+muse 01:28. The last score snapshot is 01:25:02, so the final score misses the last 1 to 3 minutes of Haiku, Grok,
+Gemini and Muse. World tick 0 was about 00:22:19 (tick 23,603 at 00:28:55 in `scores.jsonl:1`), so game minute is
+about wall minute minus 00:22:19.
 
 Sources, all read-only: `runs/shake3/` in the main checkout (chat.jsonl, scores.jsonl, caster.log, stream-service.log,
 start.log, per-agent journal.jsonl.gz, notes.md, context.log, compactions.md, supervisor.log), the director and segment
@@ -136,8 +137,8 @@ Iron plates per minute between snapshots:
 
 Why the opening was about 2 minutes slower: the launch took 4.5 minutes (shake2 2.4), so Muse joined at game 6.6m
 (shake2's last agent 4.5m), and Muse is who took labs and red science (Opus #49 at 6.9m: "great, labs+red science are
-yours"). The first lab went down at 9.2m, 2 minutes after shake2's. Power was not the cause: steam was live at 8.0m in
-both runs.
+yours"). The first lab went down at 9.2m, 2 minutes after shake2's. Power was not the cause: steam was live at about
+8 minutes in both runs (8.0m against 8m18s).
 
 Why the middle was faster than shake2:
 - Iron never starved. Shake2's 14 to 17m and 24 to 29m dips (burners out of coal, backward inserters) did not recur;
@@ -188,7 +189,7 @@ keep playing until the clock line says the deadline has passed", quoted in `opus
 moved inside the turn:
 - Sonnet wrote its summary at 01:13:53, then slept (`./fh sleep 240` at 01:14:00, then 170, 70, 45), with 14 requests
   in its last 10 minutes against 109 in the 10 before. At 01:23:08 it told the team "Deadline reached, final notes
-  written" while its clock line said "deadline in 1m" (chat #539); Luna noticed and kept to her own clock.
+  written" while its clock line said "deadline in 1m" (chat #539); Luna noticed and kept to Luna's own clock.
 - Haiku made eight `./fh sleep 240..300` calls from 01:12:57 ("Let the factory run for five minutes"; after its summary
   at 01:21:27, "Let the game run until the deadline passes").
 - Opus wrote its "Final summary (written 50m50s)" (`opus/notes.md:34`) ten minutes early, ran its ferry plan between
@@ -198,7 +199,7 @@ moved inside the turn:
 - Muse held at the oil site from about 01:08 waiting for oil-gathering (one wait 01:14:24 to 01:19:49), then built the
   pumpjacks and refinery; from 01:24:04 it waited out its last 4 minutes.
 - The Codex trio did not wind down (Astra 108 against 113, Sol 61 against 36). Luna's drop is one 5-minute
-  `wait_until researched oil-gathering`, after which she queued plastics and sulfur research (01:21:32).
+  `wait_until researched oil-gathering`, after which Luna queued plastics and sulfur research (01:21:32).
 
 Supervisor nudges misfired twice (`tools/supervise.sh`): Grok was nudged at 00:48:57 ("status done, 39m left",
 `grok/supervisor.log:1`) while it was mid-turn, and the nudge never reached the model; Muse got 5 nudges from 01:21:01
@@ -321,7 +322,7 @@ shake1 365). Messages per 10 game minutes: 83, 111, 98, 101, 63, 79, 12 (shake2:
 | muse | 36 / 40 | 156 / 167 | 1 / 1 | 3 |
 | haiku | 35 / 25 | 164 / 186 | 3 / 5 | 3 |
 | gemini | 31 / 27 | 110 / 138 | 2 / 3 | 3 |
-| all | 547 / 434 | 186 / 182 | 32 / 25 | 79 |
+| all | 547 / 434 | 181 / 182 | 32 / 25 | 79 |
 
 Logistics against banter. Nick asked for less logistics and more banter in chat; it went the other way in volume and
 barely moved in share.
@@ -331,17 +332,18 @@ barely moved in share.
   mixed and 14 with no logistics word at all; shake2 416, 13, 5. Read by hand, the 14 are also mostly status ("Five
   labs are on engine, about a minute left").
 - Lines with any tone marker (thanks, sorry, great, proud, a joke word, `!!`): 79 of 547 (14.4%), against 10.8% in
-  shake2 and 6.0% in shake1. 58 of the 79 are a "thanks" inside a logistics message ("@sol Thanks! First iron
+  shake2 and 6.0% in shake1. 58 lines say "thanks", most of them inside a logistics message (Sol #7: "@luna Thanks! First iron
   drill/furnace at (-56,-38)/(-56,-36)").
-- Lines whose point is opinion, humour or feeling rather than work: about 6, all from Astra and Opus (below).
+- Lines whose point is opinion, humour or feeling rather than work: 3 to 6 depending on how one reads them, from Astra
+  (#230) and Opus (#523, #531, and the thanks in #245 and #464).
 - Chat carried what the board was meant to carry: claims (#1, #3, #20 at 2 to 4m, all aloud), handovers ("27 iron
   plates dropped in coal chest (-81.5,-23.5)", Haiku #74, aloud) and requests. The prompt asks for this in two places:
   AGENTS.md (from `agent/team.md:36-39`) says "claim areas before building ("smelting at x -60..-40, y -30..-20 is
   mine")" and "Hand items over through a chest: put them in, then say what and where", which tells agents to announce
   every handover in chat, while `team.md:25-28` says "put structured things on the board (requests, claims,
   handoffs)" and "Chat is for talking". Agents followed the specific instruction over the general one.
-- Space-dropping is back late in the run for Sol and Astra ("Oil-gathering is DONE at58m50!", "Two additional LABS
-  built and researching56m18").
+- Sol and Astra still run a number into the word before it ("Oil-gathering is DONE at58m50!", "Two additional LABS
+  built and researching56m18"), though their characters per word stayed normal (section 3).
 
 The best moments for the stream (game time, wall time, chat seq):
 - 23.6m, 00:46:07, Astra #230 (aloud): "The copper yard has become a respectable purple-funded bank. I am taking a short
@@ -366,7 +368,8 @@ The best moments for the stream (game time, wall time, chat seq):
 
 32 aloud lines (shake2 25): Opus 10, Astra 5, Sol 4, Grok 4, Luna 3, Haiku 3, Gemini 2, Muse 1, Sonnet 0. The first
 eleven (2.3m to 10.7m) are claims, status and handovers, eight of them with coordinates (Astra #1, Sol #3, Haiku #20,
-#74, #90, Opus #59). From 14m on, most are the moments the prompt names (milestones, the oil find, the raid call, the final stretch).
+#74, #90, Opus #59). From 14m on, most are the moments the prompt names (milestones, the oil find, the raid call, the
+final stretch).
 
 ### Confessions
 
@@ -419,14 +422,14 @@ harness item.
 
 | # | By to owner | Posted | Closed | Title | Outcome |
 |---|---|---|---|---|---|
-| 5 | astra to luna | 3m00s | 5m26s, by Astra | Coal for copper drill | Astra supplied herself |
+| 5 | astra to luna | 3m00s | 5m26s, by Astra | Coal for copper drill | Astra supplied it |
 | 6 | sol to luna | 3m19s | 6m20s | Coal and stone for northern iron | delivered |
 | 8 | astra to luna | 3m45s | 4m31s, by Astra | 10 stone for copper furnaces | Astra mined it |
 | 13 | opus to luna | 8m18s | 19m37s | Keep lake boiler fueled | Luna hand-fed it; superseded by Opus's coal belt (task #15) |
 | 22 | astra to sol | 47m52s | 48m02s | Authorize surplus iron collection | granted in chat 8 s earlier |
 
 - The board was a claim registry and an early queue: 20 of 23 items were posted in the first 15 minutes. After 15m05s
-  only #19 to #23 went up. Mid- and late-game asks went to chat (section 4).
+  only #19 to #23 went up. Mid- and late-game asks went to chat (above).
 - Its best use was Astra's oil note #19 at 25m30s, with all 8 wells and bounds, which Muse claimed as #20 at 30m06s.
 - Luna was again the board's worker (34 calls, 11 updates); Sonnet never called it.
 - No defence or warden item was posted; Sol's harness item #17 stayed open.
@@ -533,9 +536,9 @@ Four causes in the facts the hosts were given:
 On Nick's three reports: the mix-up of damaged buildings with enemy counts is cause A (00:54:45 and the rows marked
 A). No logged host line contains "crash" or says research progress is lost; the overlay banner and the replay titles
 carried the raw alert, such as "Base under attack near (-48, 16): character x3" (replay saved 00:51:19), which reads as
-characters attacking the base, and the nearest research line is "nineteen percent and falling" (01:16:28). The 9 lines
-lost to TTS failures and 4 cut for urgent events were not aired, so what Nick heard is most likely these lines or the
-banner.
+characters attacking the base, and the nearest research line is "nineteen percent and falling" (01:16:28). Lines lost to
+TTS failures (9) or cut for urgent events (4) were not aired, so the "crashing" and "progress lost" impressions most
+likely came from the on-screen banner and the lines above, or from wording the log does not hold.
 
 Identity on air: the caster never receives pronouns (`agent_facts`, `caster.py:223`, has no pronoun field) and its
 rules force "they" (`caster.py:341`, `:350`), so Grok's "he/him" never reached the hosts; Rook once called Luna "she"
@@ -568,8 +571,9 @@ logistics.
   reached the game chat either.
 - `shot-sync.log` is empty by design (`tools/shot-sync.sh` sends all output to /dev/null); 6 screenshots reached the
   agents' `shots/` folders.
-- The analyst did not run: start-team at 30d52c9 writes `analyst.log` to the run directory, and there is none, nor any
-  analyst log in `tools/stream/logs` before 01:38:41.
+- The analyst did not run: start-team has launched it by default, writing `analyst.log` to the run directory, since
+  553ace7 (00:15, before the 00:21:48 start), and there is no such file, nor any analyst log in `tools/stream/logs`
+  before 01:38:41. Why it did not start is not in the logs (start-team does not report it).
 - `stream-service.log` holds 7 `ConnectionResetError` tracebacks from client disconnects.
 
 ## 7. Recommendations
