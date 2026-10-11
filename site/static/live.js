@@ -28,10 +28,25 @@
     var r = parseInt(c.substr(1, 2), 16), g = parseInt(c.substr(3, 2), 16), b = parseInt(c.substr(5, 2), 16);
     return (0.2126 * r + 0.7152 * g + 0.0722 * b) > 140 ? '#111' : '#fff';
   }
+  // Pixel portrait from the art kit (avatar.js): the agent's own `avatar` parts, else a default from id and colour.
+  // The renderer validates parts and colours itself and escapes the label, so status data can't inject markup.
   function avatar(a) {
-    var c = safeColor(a.color) || hashColor(a.name || a.id || '?');
-    return '<span class="avatar sm" style="--ac:' + c + ';color:' + ink(c) + '">' + esc(a.glyph || (a.name || a.id || '?').charAt(0)) + '</span>';
+    var c = safeColor(a.color);
+    if (window.PogAvatar) {
+      var row = { name: String(a.id || a.name || 'agent'), display_name: a.name, color: c, avatar: a.avatar };
+      return '<span class="fx-slot avatar sm" aria-hidden="true">' + window.PogAvatar.svg(row, 24, { title: '' }) + '</span>';
+    }
+    c = c || hashColor(a.name || a.id || '?');
+    return '<span class="fx-slot avatar sm letter" aria-hidden="true" style="background:' + c + ';color:' + ink(c) + '">' +
+      esc((a.name || a.id || '?').charAt(0)) + '</span>';
   }
+  var TONES = { live: 'red', sample: 'orange', offline: 'grey' };
+  function setBadge(state, text) {
+    badge.className = 'live-badge fx-chip fx-chip--' + TONES[state];
+    badge.textContent = text;
+  }
+  var ALERT_TONES = { attack: 'danger', death: 'danger', low_power: 'warn', research: 'info' };
+  var ALERT_ICONS = { attack: '⚔', death: '✝', low_power: '⚡', research: '⚗' };
   function ago(iso) {
     var t = Date.parse(iso); if (!t) return '';
     var s = Math.round((Date.now() - t) / 1000);
@@ -55,8 +70,7 @@
 
   function render(s) {
     var live = !!s.live;
-    badge.dataset.state = demo ? 'sample' : (live ? 'live' : 'offline');
-    badge.textContent = demo ? 'Sample' : (live ? 'Live' : 'Offline');
+    if (demo) setBadge('sample', 'Sample'); else if (live) setBadge('live', 'Live'); else setBadge('offline', 'Offline');
     updated.textContent = s.updated && !demo ? 'updated ' + ago(s.updated) : '';
     if (s.stream && (s.stream.youtube_video_id || s.stream.youtube_channel_id)) embed(s.stream.youtube_video_id, s.stream.youtube_channel_id);
 
@@ -77,12 +91,17 @@
     h += '</div>';
     if (r.current) {
       var pct = Math.round((r.progress || 0) * 100);
-      h += '<div class="small">Researching <strong>' + esc(String(r.current).replace(/-/g, ' ')) + '</strong> ' + pct + '%</div>' +
-        '<div class="progress" role="progressbar" aria-valuenow="' + pct + '" aria-valuemin="0" aria-valuemax="100"><span style="width:' + pct + '%"></span></div>';
+      var tech = String(r.current).replace(/-/g, ' ');
+      h += '<div class="fx-progress fx-progress--research live-research" role="progressbar" aria-valuenow="' + pct +
+        '" aria-valuemin="0" aria-valuemax="100" aria-label="Research progress" style="--fx-value:' + pct + '%">' +
+        '<span class="fx-progress-label">' + esc(tech) + ': ' + pct + '%</span></div>';
     }
     if ((s.alerts || []).length) {
       h += '<ul class="live-alerts">' + s.alerts.slice(-3).reverse().map(function (a) {
-        return '<li><b>' + esc(a.kind) + '</b> ' + esc(a.text) + ' <span class="muted small">' + esc(a.game_time || '') + '</span></li>';
+        var tone = ALERT_TONES[a.kind] ? ' fx-alert--' + ALERT_TONES[a.kind] : '';
+        return '<li class="fx-alert' + tone + '"><span class="fx-slot fx-slot--sm" aria-hidden="true">' + (ALERT_ICONS[a.kind] || '!') + '</span>' +
+          '<div><div class="fx-alert-title">' + esc(String(a.kind || 'alert').replace(/_/g, ' ')) +
+          ' <span class="fx-muted small">' + esc(a.game_time || '') + '</span></div>' + esc(a.text) + '</div></li>';
       }).join('') + '</ul>';
     }
     var byId = {};
@@ -112,7 +131,7 @@
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
       .then(render)
       .catch(function () {
-        badge.dataset.state = 'offline'; badge.textContent = 'Offline';
+        setBadge('offline', 'Offline');
         body.innerHTML = '<p class="muted">Status is unavailable right now.</p>';
       })
       .then(function () { if (!demo) setTimeout(tick, document.hidden ? poll * 4 : poll); });
