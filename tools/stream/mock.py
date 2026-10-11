@@ -187,6 +187,9 @@ class MockSource:
         self.next_confess = time.time() + 20
         self.confess_seq = 0
         self.confessions = []
+        self.next_tell = time.time() + 12
+        self.tell_seq = 0
+        self.tells = []
         self.power_until = 0
         self.events = []
         self.profile_change_at = time.time() + 120
@@ -438,6 +441,16 @@ class MockSource:
             self.confessions.append({"seq": self.confess_seq, "tick": int(gsec * 60), "from": a["name"],
                                      "text": r.choice(CONFESS[a["name"]])})
             self.next_confess = now + r.uniform(40, 90)
+        if now >= self.next_tell:  # `tell`: logistics to named teammates outside the chat (tells.lua), the ticker
+            live = [a for a in self.agents.values() if a["alive"]]
+            if len(live) >= 2:
+                a, b = r.sample(live, 2)
+                self.tell_seq += 1
+                self.tells.append({"seq": self.tell_seq, "tick": int(gsec * 60), "from": a["name"],
+                                   "to": "team" if r.random() < 0.2 else [b["name"]],
+                                   "text": r.choice(["40 iron plates in the chest at (-18,-34)", "gears are in the mall chest",
+                                                     "north belt is down, fixing it", "need 20 coal at the boilers"])})
+            self.next_tell = now + r.uniform(15, 40)
         score, research = self.score_at(gsec)
         obs = {
             "tick": int(gsec * 60), "paused": False, "game_seconds": gsec,
@@ -453,6 +466,7 @@ class MockSource:
             "events": events,
             "board_events": self.board_log[-20:],
             "confessions": self.confessions[-10:],
+            "tells": self.tells[-10:],
         }
         for a in obs["agents"]:
             if now < self.unset.get(a["name"], 0):
