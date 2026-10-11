@@ -359,3 +359,20 @@ action, which costs an engineer session, not agent-hours.
 - Whether `peaceful_mode` set on a new planet surface at creation calms demolishers and pentapods.
 - Which hub inventory is "drop to planet".
 - Whether lightning hits characters on Fulgora.
+
+## Coordination: harness branches touching runtime and bots code
+
+eng/harness3 (round 4, 2026-10-11 night, for shake4). `bots.lua` is not touched. Hunks, so a bot-travel merge can
+avoid them:
+- `runtime.lua`: `dispatch_request` (a bot's `chat`/`say` take the proxy through `M.lookup`, dead or alive, just
+  before `player(request.player)`); `build_direct` (one `construction.clear_remnants` line); `place_ghost` (the same
+  line plus `construction.only_obstacles` in its placement check); `handlers.collect` (`want`, at the top); the
+  `collect` describe entry. No new top-level locals.
+- `construction.lua`: new `M.box`, `M.clear_remnants`, `M.only_obstacles` (before `obstructed`). `M.box` takes a
+  prototype, position and direction; it does not read the surface, so it works on any planet or platform.
+- `profiles.lua`: glyph uniqueness (`check_glyph`), the glyph describe text.
+- Tests: `tests/bots.lua`, `mod/tests/runtime_test.lua`. Tools: `tools/supervise.sh`, `tools/test_supervise.py`.
+
+Space Age note: `clear_remnants` removes type `corpse` (stumps, biter corpses, ruins) under a new building, as a
+player's build does; `only_obstacles` counts neutral `tree`, `plant` (wild Gleba plants; a force's own farm plants
+are not) and `simple-entity` (rocks) as what a ghost may go over. Details: `docs/HARNESS3-NOTES.md`.

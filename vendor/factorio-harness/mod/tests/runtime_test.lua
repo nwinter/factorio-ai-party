@@ -1259,6 +1259,9 @@ do
   inside={tree,chest}
   local refused=call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}})
   eq(refused.placed,0); assert(refused.failed[1].error:find('wooden-chest',1,true),refused.failed[1].error)
+  -- A force's own plant (a Gleba farm) is not an obstacle to mark.
+  inside={{valid=true,type='plant',name='yumako-tree',minable=true,force=p.force,position={x=60,y=0}}}
+  eq(call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}}).placed,0)
   p.surface.can_place_entity,p.surface.find_entities_filtered=can,find
 end
 -- repeat stamps the list count times, shifted each time; failures carry their copy.

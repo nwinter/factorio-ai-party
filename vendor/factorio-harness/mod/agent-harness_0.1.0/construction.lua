@@ -205,7 +205,8 @@ return function(api)
     local any=false
     for _,e in pairs(surface.find_entities_filtered{area=M.box(proto,pos,direction)}) do
       if e.valid and e.type~='resource' then
-        if not (OBSTACLE[e.type] and e.minable) then return false end
+        -- Neutral only: mark_obstacles leaves a force's own plants (Gleba farms) alone.
+        if not (OBSTACLE[e.type] and e.minable and (e.force==nil or e.force.name=='neutral')) then return false end
         any=true
       end
     end
