@@ -66,8 +66,8 @@ What did run, on the Mac:
 
 - `npm test` (TypeScript host): 89 of 93 pass. The 4 failures are the bridge tests, which need a Unix socket that
   this sandbox refuses (`listen EPERM`), not a code fault.
-- All 19 Lua fake-engine suites pass (`lua tests/*.lua`, `mod/tests/*.lua`; runtime 681 assertions, control 66,
-  scheduler 56). That includes `tests/space.lua`, which covers platforms, requests, schedules, launches and landing.
+- All 19 Lua fake-engine suites pass (`lua tests/*.lua`, `mod/tests/*.lua`; runtime 683 assertions with tonight's,
+  control 66, scheduler 56). That includes `tests/space.lua`, which covers platforms, requests, schedules, launches and landing.
 - New fake-engine checks for the score and stream Lua (multi-surface sums, infinite levels).
 
 Evidence that the harness core works on Space Age: upstream's connected-client integration suite "passed on
@@ -131,7 +131,7 @@ rocket puts them in the platform hub. There they are "locked inside the hub and 
 a planet" ([wiki](https://wiki.factorio.com/Space_platform)). The platform builds its ghosts itself from the hub
 inventory, with no robots.
 
-So the honest equivalent of "no character on a platform" is the remote controller's rights. Any agent, wherever its
+So the fair equivalent of "no character on a platform" is the remote controller's rights. Any agent, wherever its
 body stands, may:
 
 - edit a platform with ghosts, blueprints and deconstruction (`platform=NAME` on `place_ghosts`, `paste`,
@@ -147,24 +147,26 @@ for moving a body to another planet.
 
 Two wiki pages conflict on whether a rider can open their own inventory in the hub. Until the box shows which is
 right, the harness should not allow it. The wiki says a rider takes only "any equipped armor, their installed
-modules, and any weapons", and no ammo. The harness should enforce that: refuse to ride with anything else in the
-main inventory, as the silo's "Travel to platform" button does.
+modules, and any weapons", and no ammo. The harness now enforces that, together with the silo's "Travel to
+platform" rule that the rider is the only payload. `launch ride=true` refuses while the rocket holds cargo or the
+character's main, ammo or trash inventory holds anything. This may be stricter than the game; loosen it if the box shows the game keeps the
+items safely.
 
 ### Per item
 
 | Item | Game mechanics (2.0.77) | Harness today | Needed actions and reads | Fair-play mapping | Effort |
 |---|---|---|---|---|---|
-| Rockets and cargo pods | 50 rocket parts per rocket; payload limited by weight (1 t, `rocket_lift_weight`), 20 slots. Silo GUI: deliver cargo to a platform in orbit, launch a starter pack, or ride alone. `use_transitional_requests` auto-fills and launches for platform requests. Pods land on the planet's `cargo-landing-pad`, else near spawn as a `cargo-pod-container` (temporary container). | `launch` (cargo to a platform, to orbit, `ride`), silo `auto_requests`, `transfer` into `rocket_silo_rocket` and `cargo_landing_pad_main`, `platforms` lists silos. Fake-engine tested only. | Real-engine test. `ride` should use `{type=station, station=hub}` and require an empty payload plus the armor/weapons rule. Transfer from a `cargo-pod-container`. A launch report that follows the pod's state (`cargo_pod_state`, `on_cargo_pod_finished_*`). | Loading the silo needs reach (as now); launching from the silo GUI needs reach or remote view (GUI action); pad requests are settings. | 1–2 |
+| Rockets and cargo pods | 50 rocket parts per rocket; payload limited by weight (1 t, `rocket_lift_weight`), 20 slots. Silo GUI: deliver cargo to a platform in orbit, launch a starter pack, or ride alone. `use_transitional_requests` auto-fills and launches for platform requests. Pods land on the planet's `cargo-landing-pad`, else near spawn as a `cargo-pod-container` (temporary container). | `launch` (cargo to a platform, to orbit, `ride`), silo `auto_requests`, `transfer` into `rocket_silo_rocket` and `cargo_landing_pad_main`, `platforms` lists silos. Fake-engine tested only. | Real-engine test. `ride` sends to `{type=surface, surface=platform}`, which the API says switches to the hub station; `{type=station, station=hub}` is the documented alternative if it misbehaves. (Done tonight: the empty-payload and armor/guns rule.) Transfer from a `cargo-pod-container`. A launch report that follows the pod's state (`cargo_pod_state`, `on_cargo_pod_finished_*`). | Loading the silo needs reach (as now); launching from the silo GUI needs reach or remote view (GUI action); pad requests are settings. | 1–2 |
 | Space platforms: create, hub, construction | `force.create_space_platform{planet, starter_pack}` equals the "new platform" button; a silo then delivers the pack (`apply_starter_pack()` would skip that: a cheat). Hub: 59 slots, plus 20 per cargo bay. Ghosts are built from hub items. Foundation must be one connected area; thrusters on the south edge; no chests, burners, robots or rails. | `platform_create` (honest), `requests` on the hub with `import_from`, ghost tools with `platform=`, `grid`/`scan` with `platform=`, `platforms` (state, location, hub items, requests). | Hub drop to planet (`hub.create_cargo_pod()` with items taken from the hub inventory, or the hub's drop slots: which inventory is unverified). Platform health: `damaged_tiles`, destroyed entities in `status` alerts. Weight, `speed`. A `platform` view of what is unbuilt and why (ghosts waiting for items). | Remote-view rights only (above). | 2 |
 | Thrusters and routes | Thrusters burn `thruster-fuel` + `thruster-oxidizer` made on board from asteroid carbon, iron ore and ice. `PlatformSchedule` records have wait conditions (time, inactivity, item_count, all_requests_satisfied, any_request_not_satisfied, ...). Interrupts are set through `LuaSchedule` (`get_schedule()`). | `platform_schedule` (stops, waits, pause). | Interrupts. A per-platform `fuel` read (thruster fluid levels, speed). An ETA from `distance` and `speed`. | Settings only. | 1 |
 | Asteroid collection and crushing | Collectors (radius 7.5) pull chunks; chunks are not entities (`platform.find_asteroid_chunks_filtered`). Crushers are `assembling-machine`s (`metallic-asteroid-crushing` → iron ore, `carbonic` → carbon, `oxide` → ice). Asteroids (`asteroid` entities) damage platforms; turrets need ammo made on board. | `configure` sets recipes and filters remotely; `scan` sees asteroids as entities. | A chunk read (counts near the platform by type). Collector filter settings in `configure`. An ammo and turret read per platform. | Settings only; ammo reaches turrets by inserters, never by hand. | 1 |
 | Travel between planets (bodies) | Players: `launch_rocket(dest, character)`, then `LuaPlayer.land_on_planet()` from a platform stopped at a planet. The pod lands at a landing pad if there is one (unverified). | `launch ride=true`, `land` for players (untested). Bots: refused (tonight). All bots live on Nauvis. | Bot travel. First test whether `launch_rocket(dest, character)` accepts a playerless character and what the hub does with it. If not: on launch, keep the bot's armor and weapons in a script inventory and remove the body; the bot then acts with remote-view rights while "aboard". On drop, send a real cargo pod down (`hub.create_cargo_pod()`, destination the planet) and create the body where the pod lands, with those items back. Track `b.surface`; respawn on the last planet (as for players). | Same as a player: real ascent, flight and descent time; only armor and weapons travel with the body; everything else ships as cargo. Re-creating a bot's body is the same act as creating the bot, which we already accept. | 2–3 |
-| Other surfaces | Vulcanus: calcite, tungsten (hard-solid), lava, demolishers (`segmented-unit`) in territories; peaceful stops them seeking buildings, but they still roam. Fulgora: scrap and the recycler; night lightning damages metal buildings; oil-ocean islands. Gleba: `plant`s, agricultural towers, pentapods (`spider-unit`, `unit`), spores. Aquilo: freezing (`entity.frozen`), heating towers, ammoniacal ocean. Many planet techs are triggers (mine calcite, craft tungsten plate, ...), which the harness already describes. | Reads follow the actor's surface. Threat reports know biters and spawners. | Per planet in `status` warnings and `threats`: demolisher territories (`surface.get_territories()`), the lightning season and unprotected buildings, frozen machines, pentapod nests. A clearer `mine` refusal for hard-solid ores. Chart summaries that name the new rocks (`big-volcanic-rock`, stromatolites, icebergs, ruins) instead of matching "rock". | Peaceful per planet: `peaceful_mode` is per surface. An `on_surface_created` world setting copies Nauvis's to each new planet, documented as a world setting like the map seed. Keep enemy bases on Nauvis: the promethium path needs a living spawner to capture (`biter-egg-handling` trigger) and biter eggs. | 1 per planet (4) |
-| Quality | Five levels; quality modules from early on; the recycler loops quality. Recipes need ingredients of exactly one quality; `begin_crafting` has no quality parameter. | Quality on build, transfer, stock, construction, rates, requests; exact counts. | `wait_until` and lab counts across qualities; quality in inventory summaries and `stock` totals; `configure` recipe quality (`set_recipe(recipe, quality)`). | No change: quality comes from modules and the recycler. | 1 |
+| Other surfaces | Vulcanus: calcite, tungsten (hard-solid), lava, demolishers (`segmented-unit`) in territories; peaceful stops them seeking buildings, but they still roam. Fulgora: scrap and the recycler; night lightning damages metal buildings; oil-ocean islands. Gleba: `plant`s, agricultural towers, pentapods (`spider-unit`, `unit`), spores. Aquilo: freezing (`entity.frozen`), heating towers, ammoniacal ocean. Many planet techs are triggers (mine calcite, craft tungsten plate, ...), which the harness already describes. | Reads follow the actor's surface. Threat reports know biters and spawners. | Per planet in `status` warnings and `threats`: demolisher territories (`surface.get_territories()`), the lightning season and unprotected buildings, frozen machines, pentapod nests. A clearer `mine` refusal for hard-solid ores. Chart summaries that name the new rocks (`big-volcanic-rock`, stromatolites, icebergs, ruins) instead of matching "rock". | Peaceful per planet: `peaceful_mode` is per surface, and a planet's surface is created on first arrival. `tools/pog.py --world W peaceful` (added tonight) copies Nauvis's peaceful and no-enemies flags to every planet surface, a world setting like the map seed. Run it when `score` lists a new planet, or move it into `control.lua` as an `on_surface_created` handler, which needs a mod update on server and clients. Keep enemy bases on Nauvis: the promethium path needs a living spawner to capture (`biter-egg-handling` trigger) and biter eggs. | 1 per planet (4) |
+| Quality | Five levels; quality modules from early on; the recycler loops quality. Recipes need ingredients of one quality; `begin_crafting` has no quality parameter. | Quality on build, transfer, stock, construction, rates, requests; exact counts. | `wait_until` and lab counts across qualities; quality in inventory summaries and `stock` totals; `configure` recipe quality (`set_recipe(recipe, quality)`). | No change: quality comes from modules and the recycler. | 1 |
 | Spoilage | Gleba fruit 1 h, mash 3 min, jelly 4 min, nutrients 5 min, bioflux 2 h, agricultural pack 1 h, bacteria 1 min; spoiled `pentapod-egg` and `biter-egg` hatch enemies anywhere, inventories and platforms included. | `status.spoiling`, `scan fields=spoil` (tonight). | `feed`/`collect` freshest-first; inserter spoil priority in `configure` (`inserter_spoil_priority`); a warning when the actor carries eggs; lab inputs' freshness in `labs`. | No change. | 1 |
 | Elevated rails and trains | Rails, ramps and supports need gravity, so none work on platforms. They matter on Fulgora, where islands are joined over oil ocean, and for big Nauvis bases. | The harness has no train actions at all (base game included). | Trains: place rails (blueprints already work), stops, schedules, a `train` read. Optional: Fulgora can start with platform drops and `foundation` later. | No change. | 2–3 (optional) |
 | Shattered Planet and promethium | `promethium-science-pack` (tech, 2000 × 10 packs) unlocks `solar-system-edge` and `shattered-planet`. Promethium chunks come only on that route; huge asteroids need railguns. The pack is made on a platform from 25 chunks, 1 quantum processor and 10 biter eggs (eggs from captive spawners on Nauvis, spoiling in 30 min). The wiki says nobody is expected to reach the planet; platforms turn back on a fly condition. Vanilla victory is reaching `solar-system-edge`. | Schedules, requests, ghosts. | Fly-condition waits and interrupts; a platform damage and ammo read; egg logistics (rush eggs into orbit). Turn off the victory screen for an unbounded game (`space_finish_script` `set_no_victory`). | Settings only. | 1–2 |
-| Infinite research (the unbounded score) | `research-productivity` costs 1.2^L × 1000 units of all 12 packs; levels 1–5 cost about 107k packs, 1–10 about 374k. Other infinite techs cost 1.5^L or 2^L. | Score now reports levels past the first of each infinite tech, and packs consumed over all surfaces. | A leaderboard line in the overlay: science packs consumed per hour (all surfaces) and research-productivity level. | — | 0.5 |
+| Infinite research (the unbounded score) | `research-productivity` costs 1.2^L × 1000 units of all 12 packs; levels 1–5 cost about 107k packs, 1–10 about 374k. Other infinite techs cost 1.5^L or 2^L. | Score now reports levels past the first of each infinite tech, and packs consumed over all surfaces. | A leaderboard line in the overlay: science packs consumed per hour (all surfaces) and research-productivity level. | n/a | 0.5 |
 
 Total: about 15–20 sessions (45–60 engineer agent-hours), of which about 8 come before the first planet: rockets,
 platforms, thrusters, collection and bot travel.
@@ -177,10 +179,10 @@ From `runs/*/scores.jsonl` (operator score snapshots; packs are produced red, gr
 
 | Run | Agents | Mode | Wall h | Game h | Techs | Packs | Packs per agent-hour | Packs/min at the end |
 |---|---|---|---|---|---|---|---|---|
-| baseline1 world a | 1 | real time | 0.8 | 0.84 | 13 | 898 | ~1,100 | — |
+| baseline1 world a | 1 | real time | 0.8 | 0.84 | 13 | 898 | ~1,100 | n/a |
 | turns3h world a (Astra) | 1 | turns | 3.0 | 1.35 | 19 | 2,286 | ~760 | ~52 |
 | coop1 (Astra + Opus) | 2 | real time | 2.4 | 2.00 | 25 | 3,971 | ~830 | ~57 |
-| shake1 (9 agents, enemies on) | 9 | real time | 1.0 | ~1.0 | 14 | 934 | ~100 | — |
+| shake1 (9 agents, enemies on) | 9 | real time | 1.0 | ~1.0 | 14 | 934 | ~100 | n/a |
 
 Small teams in real time get the most science per agent-hour; nine agents in one world got an eighth of that
 (`docs/studies/shake1.md` explains why: coordination and hand logistics). In real time, game time runs at about 0.8 to
@@ -207,8 +209,9 @@ The pack counts alone are within reach. coop1 had made 36% of the Space Age silo
 running at 57 packs/min. At that rate the rest takes about 2 more game hours. 152k packs at 57/min would take 44 game
 hours, so the factory has to grow several-fold, but that is the normal shape of a run. The packs are not the hard part.
 The hard part is that from Vulcanus on, every new pack needs a working base on another planet, built with that
-planet's rules, and new mechanics are where our agents slow down. Oil took single agents over an hour, and nobody got
-there in shake1.
+planet's rules, and new mechanics are where our agents slow down. Oil is the precedent: only one single agent reached
+petroleum (at game 0:56, in turn mode), the 43-minute real-time runs found none, and shake1's nine agents ended with
+oil-gathering at 61 to 67%.
 
 Human references: a first base-game rocket averages about 42 hours on HowLongToBeat (quoted in a
 [2018 forum thread](https://forums.factorio.com/viewtopic.php?p=380886)). The Space Age multiplayer any% record is
@@ -219,8 +222,7 @@ the brief's "a hundred hours or more" stands.
 ### Estimate to promethium science
 
 Game hours per stage, with 2 agents on Nauvis rising to 4 (one per planet or platform). The low end assumes the early
-game pace holds; the high end assumes each new planet
-stalls the team the way oil stalled single agents:
+game pace holds; the high end assumes each new planet stalls the team the way oil stalled single agents:
 
 | Stage | Low | Central | High |
 |---|---|---|---|
