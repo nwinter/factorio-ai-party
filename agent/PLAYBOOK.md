@@ -79,6 +79,8 @@ told your context was compacted (or you notice you lost track), read `notes.md` 
 
 ## Stopping
 
-Check `date` every so often. At the deadline, stop acting and finish `notes.md` with a final summary: milestones
-reached with game times, what slowed you down, harness problems you hit, and the tool changes that would have helped
-most. Then end your turn.
+The deadline is the only stop condition; there is no wind-down period. If your job is finished, blocked or
+destroyed, run `./fh call status` and `./fh call chat` and take the most useful open item: unfuelled burners, starved
+labs, turrets low on ammo, requests naming you, open board items. Check `date` every so often. Three minutes before
+the deadline, finish `notes.md` with a final summary: milestones reached with game times, what slowed you down,
+harness problems you hit, and the tool changes that would have helped most. Then end your turn.
