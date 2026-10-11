@@ -3455,7 +3455,8 @@ for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 M.waits=require('waits'){state=state,integer=integer,
   replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
-  traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end}
+  traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,
+  dead_until=function(index) local b=M.bots.record(index); return b and not b.travel and not M.bots.alive(b) and b.dead_until_tick or nil end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
@@ -3653,11 +3654,11 @@ dispatch_request=function(request)
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     return handler(body(p),request.args or {})
   end
-  -- A dead bot still talks: it reads and answers the team while it waits to
+  -- A dead bot still talks (and sleeps until it respawns): it reads and answers the team while it waits to
   -- respawn (or rides a cargo pod). Otherwise a bot aboard a platform (or in a
   -- cargo pod) has no body: remote view only.
   local p
-  if (request.action=='chat' or request.action=='say') and M.bots.is_index(request.player) then
+  if (request.action=='chat' or request.action=='say' or request.action=='sleep') and M.bots.is_index(request.player) then
     p=M.lookup(request.player); assert(p and p.valid,'player does not exist')
   else
     if M.bots.is_index(request.player) then M.bots.check_action(request.player,request.action,request.args) end

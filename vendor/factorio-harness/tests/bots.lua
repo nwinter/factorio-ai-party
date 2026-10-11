@@ -329,8 +329,15 @@ for _,row in ipairs(runtime.dispatch{action='profiles',args={},player=1}.profile
   if row.name=='astra' then eq(row.alive,false); eq(row.dead_until_tick,dead.dead_until_tick) end
   assert(row.name~='pog-director','a released director is still a spectator, not an agent')
 end
+-- Sleep works while dead too (shake4: 19 refused sleeps): it sleeps until the
+-- respawn and wakes with respawned; the refusal of other actions points to it.
+fails(function() bot('walk',{direction='east',ticks=5}) end,'fh sleep SECONDS waits and wakes with respawned')
+local zz=bot('sleep',{seconds=30}); eq(zz.dead,true); eq(zz.respawns_at_tick,dead.dead_until_tick)
+eq(bot('observe',{scope='sleep_check',peek=true}).woke,nil)
 advance(599); eq(bot('status',{}).alive,false)
+eq(bot('observe',{scope='sleep_check',peek=true}).woke,nil)
 advance(1)
+eq(bot('observe',{scope='sleep_check'}).woke,'respawned')
 local again=bot('status',{}); eq(again.alive,true); eq(again.dead_until_tick,nil); eq(again.deaths,1)
 local c2=storage.agent_harness.bots.by_name.astra.character
 assert(c2~=c,'a new character'); eq(c2.items.pistol,1); eq(c2.items['iron-plate'],nil)
