@@ -63,6 +63,26 @@ for k in $kinds; do read -r name _ <<<"$(row "$k")"
   python3 tools/pog.py --world $world rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"bot_create\",\"$name\"))" >/dev/null || true
 done
 
+# POG_BROKER=1: the RCON broker serves the smoke bots (tools/fh_broker.py); the run has no key. The report below adds
+# its counts, and a probe from this script checks that a teammate's bot and a console command are refused.
+broker_pid=""
+if [ "${POG_BROKER:-0}" = 1 ]; then
+  names=$(for k in $kinds; do row "$k" | awk '{print $1}'; done)
+  nohup python3 tools/fh_broker.py --world $world --dir "$rundir/.sock" --log "$rundir/broker.log" $names >"$rundir/broker.err" 2>&1 &
+  broker_pid=$!
+  first=$(echo $names | awk '{print $1}') second=$(echo $names | awk '{print $NF}')
+  for i in $(seq 1 20); do [ -S "$rundir/.sock/$second.sock" ] && break; sleep 0.5; done
+  echo "broker: pid $broker_pid, $(ls "$rundir/.sock" | tr '\n' ' ')"
+  POG_FH_SOCKET="$rundir/.sock/$first.sock" bin/fh --bot "$first" call status >/dev/null 2>&1 && echo "broker probe: own bot ok" || echo "broker probe: own bot FAILED"
+  POG_FH_SOCKET="$rundir/.sock/$first.sock" bin/fh --bot "$second" call status 2>&1 | grep -q refused && echo "broker probe: other bot refused" || echo "broker probe: other bot NOT refused"
+fi
+
+sync_pid=""
+if [ "${POG_FULL_TOOLS:-}" = 1 ]; then   # Muse's own team-tools folder, mirrored with the shared one
+  nohup python3 tools/full_tools.py sync "$rundir" 5 >"$rundir/team-tools-sync.log" 2>&1 &
+  sync_pid=$!
+fi
+
 : > "$rundir/panes.txt"
 t0=$(date +%s)
 for k in $kinds; do read -r name route model effort label harness <<<"$(row "$k")"
@@ -85,6 +105,16 @@ done < "$rundir/panes.txt"
 sleep $((minutes * 60 + 30))
 
 while read -r name pane kind; do herdr pane close "$pane" >/dev/null 2>&1 || true; done < "$rundir/panes.txt"
+if [ -n "$sync_pid" ]; then
+  kill "$sync_pid" 2>/dev/null || true
+  python3 tools/full_tools.py sync "$rundir" >> "$rundir/team-tools-sync.log"
+  echo "team-tools sync: $(wc -l < "$rundir/team-tools-sync.log" | tr -d ' ') copies"
+fi
+if [ -n "$broker_pid" ]; then
+  kill "$broker_pid" 2>/dev/null || true; sleep 1
+  python3 tools/fh_broker.py summary "$rundir/broker.log"
+  echo "keys in the run: $([ -d "$rundir/.keys" ] && ls "$rundir/.keys" | tr '\n' ' ' || echo none)"
+fi
 python3 - "$rundir" <<'PY'
 import json, os, sys
 rundir = sys.argv[1]

@@ -118,6 +118,73 @@ script.on_event(forwarded, function(event)
     log('Agent harness event error: ' .. tostring(err))
   end
 end)
+-- Console audit: every console command that is not a harness request, from a player or over RCON, so the
+-- operator can see Lua or commands sent around fh (console_log below; tools/console_audit.py). It lives here,
+-- not in the runtime, so installing a runtime cannot remove it. Commands are grouped by shape (long strings and
+-- numbers blanked), so a repeated operator poll is one entry with a count.
+local AUDIT_SHAPES,AUDIT_TEXT=500,600
+local function audit_state()
+  storage.console_audit=storage.console_audit or {seq=0,harness=0,other=0,dropped=0,shapes={}}
+  return storage.console_audit
+end
+-- A harness request is exactly `rcon.print(remote.call("agent_harness", "dispatch", <long string>))` (bin/fh,
+-- tools/audience.py, the stream service), with a long string that cannot close before its end.
+local function harness_request(name,text)
+  if name~='silent-command' then return false end
+  local eq,start=text:match('^rcon%.print%(remote%.call%(%s*"agent_harness"%s*,%s*"dispatch"%s*,%s*%[(=*)%[()')
+  if not eq then return false end
+  local close=']'..eq..']))'
+  if #text<start+#close-1 or text:sub(-#close)~=close then return false end
+  local body=text:sub(start,#text-#close)
+  return not body:find(']'..eq..']',1,true) and body:sub(-(#eq+1))~=']'..eq
+end
+local function shape(name,text)
+  local s=text:gsub('%[(=*)%[.-%]%1%]','[[]]'):gsub('%d+','0')
+  return (name..' '..s):sub(1,1000)
+end
+local function audit(event)
+  local a=audit_state()
+  local name,text=event.command or '',event.parameters or ''
+  if harness_request(name,text) then a.harness=a.harness+1; return end
+  a.other=a.other+1; a.seq=a.seq+1
+  local key=shape(name,text)
+  local player=event.player_index and game.get_player(event.player_index)
+  local e=a.shapes[key]
+  if not e then
+    local count=0
+    for _ in pairs(a.shapes) do count=count+1 end
+    if count>=AUDIT_SHAPES then
+      local oldest
+      for k,v in pairs(a.shapes) do if not oldest or v.seq<a.shapes[oldest].seq then oldest=k end end
+      a.shapes[oldest]=nil; a.dropped=a.dropped+1
+    end
+    e={command=name,shape=key,first_tick=game.tick,count=0,first_text=text:sub(1,AUDIT_TEXT),players={}}
+    a.shapes[key]=e
+  end
+  e.seq=a.seq; e.last_tick=game.tick; e.count=e.count+1; e.last_text=text:sub(1,AUDIT_TEXT); e.bytes=#text
+  e.players[player and player.name or 'rcon']=true
+end
+script.on_event(defines.events.on_console_command,function(event)
+  local ok,err=pcall(audit,event)
+  if not ok then log('Agent harness console audit error: '..tostring(err)) end
+end)
+-- Entries changed after seq `since`, oldest first; harness and other are counts of all commands seen.
+local function console_log(since)
+  local a=audit_state()
+  since=tonumber(since) or 0
+  local list={}
+  for _,e in pairs(a.shapes) do
+    if e.seq>since then
+      local players={}
+      for p in pairs(e.players) do players[#players+1]=p end
+      table.sort(players)
+      list[#list+1]={seq=e.seq,command=e.command,shape=e.shape,count=e.count,first_tick=e.first_tick,last_tick=e.last_tick,
+        bytes=e.bytes,players=players,first_text=e.first_text,last_text=e.last_text}
+    end
+  end
+  table.sort(list,function(x,y) return x.seq<y.seq end)
+  return helpers.table_to_json{ok=true,tick=game.tick,seq=a.seq,harness=a.harness,other=a.other,dropped=a.dropped,entries=list}
+end
 local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true, profiles = true, cameras = true, players = true, votes = true, votes_open = true}
 -- Operator-only calls (bots, cameras): RCON/console only, never via dispatch.
 local function operator(name, arg)
@@ -153,6 +220,7 @@ remote.add_interface('agent_harness', {
   cameras = function() return operator('cameras') end,
   profile_ticks = function(n) return operator('profile_ticks', n) end,
   shift_start = function() return operator('shift_start') end,
+  console_log = console_log,
   install =function(source) return installing(function() return install_source(source) end) end,
   -- What this control.lua accepts; a world without it takes one install of <=524288 bytes.
   install_limits = function() return helpers.table_to_json{max_bytes=MAX_RUNTIME_BYTES, chunk_bytes=MAX_CHUNK_BYTES, protocol=2} end,

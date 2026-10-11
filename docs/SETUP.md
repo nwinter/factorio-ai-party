@@ -114,6 +114,11 @@ Launch hygiene and supervision (shake2 and shake3 studies; details in `docs/LAUN
   `gamedata/` (the prototype dump), subagents and web search and fetch, with a short "Your tools" paragraph in
   AGENTS.md (`tools/full_tools.py`, `agent/full-tools.md`). Probe: `tools/context-probe.sh --full --profile KIND
   MODEL`; smoke: `POG_FULL_TOOLS=1 tools/smoke-launch.sh smoke-ft 6`. Details: `docs/TOOLS-NOTES.md`.
+- `POG_BROKER=1` (off by default): the operator's RCON broker (`tools/fh_broker.py`) holds the world password, the run
+  has no key, and each agent's `fh` reaches only its own bot through `runs/RUN/.sock/BOT.sock`. Needs the harness
+  rebuilt (`cd vendor/factorio-harness && npm run build`: `fh --socket`). Smoke: `POG_BROKER=1 tools/smoke-launch.sh`.
+  `tools/stop-team.sh` prints the broker's refusals and, always, the console audit (`tools/console_audit.py`: console
+  commands that were not harness requests). Details and what still leaks: `docs/LAUNCH-NOTES.md`, "Fairness".
 - Human players: the harness logs what each human does (`fh players`), puts a player's first join in the
   `pog-guest` permission group, and takes the agents' kick, ban and trust votes. `POG_PLAYERS=1` (off by default)
   makes `start-team.sh` run the operator tally (`tools/players.py watch`, results in `runs/RUN/votes.jsonl`);

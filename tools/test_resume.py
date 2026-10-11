@@ -116,6 +116,10 @@ def dry_run():
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"],
                            env=dict(env, POG_FULL_TOOLS="1"), capture_output=True, text=True, cwd=ROOT)
         assert "5. agents launch with full tools" in r.stdout, r.stdout
+        assert "4b. RCON broker" not in r.stdout, r.stdout
+        r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"],
+                           env=dict(env, POG_BROKER="1"), capture_output=True, text=True, cwd=ROOT)
+        assert "4b. RCON broker (POG_BROKER=1): sockets runs/resume-dry-test/.sock/NAME.sock for haiku luna" in r.stdout, r.stdout
         assert "player votes" not in out, out   # POG_PLAYERS unset
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"],
                            env=dict(env, POG_PLAYERS="1"), capture_output=True, text=True, cwd=ROOT)

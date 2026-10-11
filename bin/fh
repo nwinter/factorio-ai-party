@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # fh against a pog world. POG_WORLD selects the instance (default live); RCON reaches it through the SSH tunnel.
+# Agent workspaces under the RCON broker (POG_BROKER=1, tools/fh_broker.py) pass POG_FH_SOCKET instead: the broker
+# holds the password and forwards only that bot's harness requests.
+if [ -n "${POG_FH_SOCKET:-}" ]; then
+  exec env -u FACTORIO_RCON_PASSWORD -u FACTORIO_RCON_PASSWORD_FILE FH_SOCKET="$POG_FH_SOCKET" \
+    node "$(dirname "$0")/../vendor/factorio-harness/dist/host/cli.js" "$@"
+fi
 world=${POG_WORLD:-live}
 case $world in
   live) port=27015 ;;

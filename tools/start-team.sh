@@ -69,6 +69,7 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
     fi
   done
   echo "4. stream service, chat log, shot sync$([ "${POG_CASTER:-1}" != 0 ] && echo ', casters')$([ "${POG_ANALYST:-1}" != 0 ] && echo ', analyst')$([ "${POG_PLAYERS:-0}" = 1 ] && echo ', player votes'), recording$([ "$stream" = --stream ] && echo ', stream')"
+  [ "${POG_BROKER:-0}" = 1 ] && echo "4b. RCON broker (POG_BROKER=1): sockets runs/$run/.sock/NAME.sock for $(echo $members); no key in the run"
   echo "5. agents launch$([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo ' with full tools (POG_FULL_TOOLS=1: tools/, team-tools/, gamedata/, subagents, web)'); 6. supervisors and score loop"
   [ -n "$resume" ] && echo "prompt adds: $(tools/launch-agent.sh --resume-sentence)"
   exit 0
@@ -80,6 +81,7 @@ quota | while read -r line; do log "$line"; done
 # recent branch that this checkout lacks, and a built host older than its sources. Warnings only.
 { python3 tools/code_check.py || true; } | while read -r line; do log "$line"; done
 log "full tools: $([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo 'on (docs/TOOLS-NOTES.md)' || echo off)"
+log "RCON broker: $([ "${POG_BROKER:-0}" = 1 ] && echo 'on (agents get no password; docs/LAUNCH-NOTES.md)' || echo 'off (agents read runs/RUN/.keys)')"
 log "player votes: $([ "${POG_PLAYERS:-0}" = 1 ] && echo "on (docs/PLAYERS-NOTES.md; protected: ${POG_PLAYERS_PROTECT:-none})" || echo off)"
 
 if [ -n "$resume" ]; then
@@ -227,6 +229,25 @@ for h in "${helpers[@]}"; do
   if kill -0 "$hpid" 2>/dev/null; then log "helper $hname pid $hpid up: $(head -1 "$hlog" 2>/dev/null | cut -c1-120)"
   else log "helper $hname pid $hpid FAILED: $(tail -2 "$hlog" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"; fi
 done
+
+# 4b. The RCON broker (POG_BROKER=1, tools/fh_broker.py): it holds the password, the run has no key, and each
+# agent's fh talks to its own socket runs/RUN/.sock/NAME.sock. Stopped with the helpers (stream-service.pid).
+if [ "${POG_BROKER:-0}" = 1 ]; then
+  nohup python3 tools/fh_broker.py --world "$world" --port "$rcon" --dir "$rundir/.sock" --log "$rundir/broker.log" \
+    $members >"$rundir/broker.err" 2>&1 &
+  broker_pid=$!
+  echo $broker_pid >> "$rundir/stream-service.pid"
+  last=$(echo $members | awk '{print $NF}')
+  for i in $(seq 1 20); do [ -S "$rundir/.sock/$last.sock" ] && break; sleep 0.5; done
+  if [ -S "$rundir/.sock/$last.sock" ]; then log "broker: pid $broker_pid, sockets for $(echo $members)"
+  else log "broker FAILED: $(tail -2 "$rundir/broker.err" | tr '\n' ' ' | cut -c1-200)"; exit 1; fi
+fi
+
+# POG_FULL_TOOLS=1: Muse's team-tools is a folder of its own, mirrored with the shared one (tools/full_tools.py).
+if [ "${POG_FULL_TOOLS:-0}" = 1 ]; then
+  nohup python3 tools/full_tools.py sync "$rundir" 5 >"$rundir/team-tools-sync.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+fi
 
 # 5. Agents: three per Herdr tab, real time, team playbook.
 POG_TEAM="$rundir/team.txt"

@@ -8,12 +8,14 @@ tools/full_tools.py workspace DIR KIND | claude DIR | grok-args DIR | paragraph 
   claude:    merges into DIR/.claude/settings.json: subagents, web search and fetch, background-job tools allowed;
              the sandbox may write team-tools; other agents' workspaces are unreadable except their notes.md.
 
-  grok-args: Grok Build's --allow/--deny words for the same two things.
+  grok-args: Grok Build's --allow/--deny words for the same two things, and its kernel sandbox profile.
+  sync:      tools/full_tools.py sync RUN_DIR [SECONDS]: mirror Muse's own team-tools folder with the shared one.
 
 Codex and Grok switches live where their clean profiles are written (tools/clean-profile.py, tools/grok-home.py,
 tools/profile-flags.sh); agy and Muse Code already have their subagent and web tools.
 No tool here reads or writes the game: only ./fh acts in it.
 """
+import glob
 import json
 import os
 import shutil
@@ -32,6 +34,43 @@ CLAUDE_EXTRA = ["Agent", "WebSearch", "WebFetch", "TaskStop", "Monitor"]
 PRIVATE_FILES = ["journal.jsonl", "context.log", "describe.json", "grok-start.log", ".agy-loop.sh", ".muse-run.sh",
                  ".grok-run.sh"]
 PRIVATE_DIRS = ["tools", "shots", ".claude", ".codex", ".grok-home", ".muse"]
+# smoke-ft: Muse's sandbox refused writes through the team-tools symlink ("path escapes workspace"; the profile
+# setting for an extra writable folder is undocumented). Its team-tools is a real folder that `sync` mirrors.
+MIRRORED = {"muse"}
+
+
+def sync_pair(a, b):
+    """Copy each file that is missing or older on one side from the other (by mtime); never deletes. Returns the
+    copied paths, relative to the folders."""
+    copied = []
+    names = set()
+    for top in (a, b):
+        for base, dirs, files in os.walk(top):
+            dirs[:] = [x for x in dirs if not x.startswith(".")]
+            names |= {os.path.relpath(os.path.join(base, f), top) for f in files if not f.startswith(".")}
+    for rel in sorted(names):
+        pa, pb = os.path.join(a, rel), os.path.join(b, rel)
+        ta = os.path.getmtime(pa) if os.path.isfile(pa) else None
+        tb = os.path.getmtime(pb) if os.path.isfile(pb) else None
+        if ta is not None and (tb is None or ta > tb + 0.5):
+            src, dst = pa, pb
+        elif tb is not None and (ta is None or tb > ta + 0.5):
+            src, dst = pb, pa
+        else:
+            continue
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(src, dst)
+        copied.append(rel)
+    return copied
+
+
+def sync(run):
+    """Mirror each workspace's real team-tools folder (MIRRORED harnesses) with the run's shared one."""
+    shared, out = os.path.join(run, "team-tools"), []
+    for ws in sorted(glob.glob(os.path.join(run, "*", "team-tools"))):
+        if os.path.isdir(ws) and not os.path.islink(ws):
+            out += [f"{os.path.basename(os.path.dirname(ws))}: {r}" for r in sync_pair(shared, ws)]
+    return out
 
 
 def on():
@@ -58,7 +97,13 @@ def workspace(d, kind):
     shared = os.path.join(os.path.dirname(d), "team-tools")
     os.makedirs(shared, exist_ok=True)
     link = os.path.join(d, "team-tools")
-    if not os.path.lexists(link):
+    if kind in MIRRORED:
+        # A real folder, mirrored with the shared one by `sync` (tools/start-team.sh and smoke-launch.sh run it).
+        if os.path.islink(link):
+            os.remove(link)
+        os.makedirs(link, exist_ok=True)
+        sync_pair(shared, link)
+    elif not os.path.lexists(link):
         os.symlink("../team-tools", link)
     data = os.path.join(d, "gamedata")
     if os.path.isdir(data):   # a relaunch into the same workspace: make it writable again to refresh it
@@ -136,7 +181,42 @@ def grok_args(d):
     for o in others(d):
         words += [f"--deny 'Read({o}/{s})'" for s in PRIVATE_FILES]
         words += [f"--deny 'Read({o}/{s}/**)'" for s in PRIVATE_DIRS]
-    return " ".join(words)
+    return " ".join(words) + grok_sandbox(d)
+
+
+SANDBOX_PROFILE = "pog"
+
+
+def grok_sandbox(d):
+    """smoke-ft: under dontAsk, Grok denied spawn_subagent and `cp` ("prompt policy"): no allow rule names the subagent
+    tool (Grok's rule tool names are Bash, Read, Edit, Write, Grep, Glob, MCPTool, WebFetch, WebSearch), only a bare
+    `*`. So Grok runs in its kernel sandbox (Seatbelt; docs 18-sandbox.md), a custom profile in the run home's
+    sandbox.toml, and `*` is allowed inside it, as Claude Code's sandbox auto-allows its commands:
+    - writes: the workspace (the profile's base), team-tools, the owner's ~/.grok (login refresh, sessions);
+    - kernel-denied reads and writes: ~/.config/pog, ~/.ssh, runs' key copies (all but this run's own when fh reads
+      it), and teammates' private files. These also hold for bin/fh run directly and for subagents.
+    POG_GROK_SANDBOX=0 keeps the allowlist (no subagents) instead. Returns the extra flag words."""
+    if os.environ.get("POG_GROK_SANDBOX", "1") == "0":
+        return ""
+    run = os.path.dirname(os.path.abspath(d))
+    root = os.path.dirname(os.path.dirname(run))
+    home = os.path.expanduser("~")
+    deny = [os.path.join(home, ".config", "pog"), os.path.join(home, ".ssh")]
+    deny += [p for p in (os.path.realpath(os.path.join(home, ".ssh")),) if p not in deny]
+    for k in sorted(glob.glob(os.path.join(root, "runs", "*", ".keys"))):
+        if os.environ.get("POG_BROKER") == "1" or os.path.dirname(k) != run:
+            deny.append(k)
+    for o in others(d):
+        deny += [os.path.join(o, s) for s in PRIVATE_FILES + PRIVATE_DIRS]
+    rw = [os.path.join(run, "team-tools"), os.path.join(home, ".grok")]
+    text = (f"# Written by tools/full_tools.py (POG_FULL_TOOLS=1) for this workspace's Grok.\n"
+            f"[profiles.{SANDBOX_PROFILE}]\nextends = \"workspace\"\n"
+            f"read_write = {json.dumps(rw)}\ndeny = {json.dumps(deny)}\n")
+    gh = os.path.join(d, ".grok-home")
+    os.makedirs(gh, mode=0o700, exist_ok=True)
+    with open(os.path.join(gh, "sandbox.toml"), "w") as f:
+        f.write(text)
+    return f" --sandbox {SANDBOX_PROFILE} --allow '*'"
 
 
 if __name__ == "__main__":
@@ -147,6 +227,14 @@ if __name__ == "__main__":
         claude(sys.argv[2])
     elif cmd == "grok-args":
         print(grok_args(sys.argv[2]))
+    elif cmd == "sync":   # sync RUN_DIR [SECONDS]: once, or every SECONDS until killed
+        import time
+        while True:
+            for line in sync(sys.argv[2]):
+                print(time.strftime("%H:%M:%S"), line, flush=True)
+            if len(sys.argv) < 4:
+                break
+            time.sleep(float(sys.argv[3]))
     elif cmd == "paragraph":
         print(paragraph(sys.argv[2]), end="")
     else:

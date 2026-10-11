@@ -14,6 +14,7 @@ import { parseDeadline, deadlineText } from './deadline.js';
 import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
 import { BridgeClient, BridgeOutcomeUnknown } from './bridge.js';
+import { BrokerTransport } from './broker.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const modPath = resolve(root, 'mod/agent-harness_0.1.0');
@@ -60,6 +61,7 @@ const help = `fh — Factorio agent CLI
 
 Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT), --host HOST, --port N, --timeout MS (default 5000; deploy/watch 60000),
          --session NAME (default: auto-use default session), --bridge-socket PATH (bridge without a session),
+         --socket PATH (an RCON broker's socket instead of RCON: harness requests only, no password; FH_SOCKET),
          --wait, --wait-timeout MS (default: until the action's own end tick, at least 30000), --journal PATH, --args-file PATH
          --full (after --wait: the whole status instead of outcome, position and inventory change)
          --since SEQ (chat, board events), --limit N, --deadline-file PATH (FH_DEADLINE_FILE: time left on the clock line)
@@ -76,6 +78,7 @@ function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be a JSON object`);
   return value as Record<string, unknown>;
 }
+function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
 function integer(value: string | undefined, fallback: number): number {
   const result = value === undefined ? fallback : Number(value);
   if (!Number.isSafeInteger(result) || result < 1) throw new Error('Numeric options must be positive integers');
@@ -140,7 +143,7 @@ async function main() {
     wait:{type:'boolean'}, 'wait-timeout':{type:'string'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
-    'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'},
+    'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
     full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'},
     'text-file':{type:'string'}, 'deadline-file':{type:'string'},
   }});
@@ -315,8 +318,18 @@ async function main() {
   const bot = values.bot ?? (values.player ? undefined : process.env.FH_BOT || undefined);
   if (values.bot && values.player) throw new Error('Use --player or --bot, not both');
   if (bot !== undefined && !/^[a-z][a-z0-9_-]{0,15}$/.test(bot)) throw new Error('--bot must be a bot name ([a-z][a-z0-9_-]{0,15})');
+  // An RCON broker (pog tools/fh_broker.py) holds the password and forwards only this bot's harness requests.
+  const brokerSocket = values.socket ?? (process.env.FH_SOCKET || undefined);
+  if (brokerSocket && (values.session || values['bridge-socket'] || values.host || values.port)) {
+    throw new Error('Use --socket alone: the broker chooses the world');
+  }
+  if (brokerSocket && (deployingCommand(command) || values.player)) {
+    throw new Error(`${values.player ? '--player' : command} is not available through the RCON broker: it forwards only a bot's harness requests`);
+  }
   let connection: SessionConnection | undefined;
-  if (values.session) {
+  if (brokerSocket) {
+    connection = undefined;
+  } else if (values.session) {
     if (values.host || values.port || values['bridge-socket']) throw new Error('Use --session, --bridge-socket, or --host/--port, not several');
     connection = await sessionConnection(values.session);
   } else if (values['bridge-socket']) {
@@ -338,6 +351,10 @@ async function main() {
     // Bridge replies wait for the next game tick; allow for a busy client.
     const bridge = new BridgeClient(connection.socket, integer(values.timeout,10000), values.journal);
     harness = bridge; client = bridge;
+  } else if (brokerSocket) {
+    const broker = new BrokerTransport(resolve(brokerSocket), integer(values.timeout,5000));
+    harness = new Harness(broker, 1, values.journal, bot);
+    client = broker;
   } else {
     let password = connection ? undefined : process.env.FACTORIO_RCON_PASSWORD;
     const passwordFile = connection?.passwordFile ?? process.env.FACTORIO_RCON_PASSWORD_FILE;
