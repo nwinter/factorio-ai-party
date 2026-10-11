@@ -423,6 +423,22 @@ def main():
         rc.step(s5, t9 + k)
     assert rc.cur is None or rc.cur["type"] == "recap", "no second recap within recap_every"
     assert rc.last_recap == t9 + 1281
+    # overdue (10 minutes late, shake4's replays kept the slot): next after the running segment, others refused
+    ro = Segments(lull_after=1e9, spacing=180)
+    t9 = ro.last_recap
+    ro.step(s5, t9 + 1)
+    rep = ro.request({"type": "overview"}, t9 + 1790, ignore_spacing=True)  # a replay-like request
+    assert rep[0] == 200, rep
+    ro.step(s5, t9 + 1791)
+    ro.cur["ends"] = t9 + 1820
+    for k in range(1792, 1830):
+        ro.step(s5, t9 + k)
+    assert ro.cur["type"] == "recap" and ro.cur["reason"] == "recap overdue" and ro.cur["started"] == t9 + 1821, ro.cur
+    assert ro.cur["facts"]["minutes"] == 30
+    ro2 = Segments(lull_after=1e9)
+    ro2.step(s5, ro2.last_recap + 1)
+    rep =ro2.request({"type": "overview"}, ro2.last_recap + 1810, ignore_spacing=True)[1]
+    assert rep.get("why") == "an overdue recap goes next", rep
 
     # replays: a death on the main camera -> save the buffer -> attack_replay segment -> replay scene -> back to stream
     import replays as rp
