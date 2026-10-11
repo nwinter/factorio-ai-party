@@ -47,7 +47,7 @@ done
 : > "$rundir/panes.txt"
 for k in $kinds; do read -r name route model effort label harness <<<"$(row "$k")"
   out=$(POG_WS="$name" POG_BOT="$name" POG_TEAM="$rundir/team.txt" POG_MODEL="${label//_/ } (${harness//_/ })" \
-        POG_ROUTE="$route" POG_TIME_MODE=realtime tools/launch-agent.sh "$run" "$world" "$name" "$minutes" "$k" "$model" "$effort")
+        POG_ROUTE="$route" POG_TIME_MODE=realtime POG_ONE_TURN=1 tools/launch-agent.sh "$run" "$world" "$name" "$minutes" "$k" "$model" "$effort")
   echo "$name $(echo "$out" | awk '{print $1}') $k" >> "$rundir/panes.txt"
   echo "launched $name ($k): $out"
 done

@@ -99,6 +99,7 @@ case $kind in
 cd '$dir'
 deadline=\$(date -j -f "%Y-%m-%d %H:%M %Z" "\$(cat deadline.txt)" +%s)
 agy -p "\$(cat '$prompt')" --model $model --dangerously-skip-permissions
+${POG_ONE_TURN:+exit 0  # POG_ONE_TURN: smoke tests run the first turn only}
 while [ "\$(date +%s)" -lt "\$deadline" ]; do
   tokens=\$(python3 '$root/tools/context.py' agy-tokens '$dir')
   if [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ]; then
