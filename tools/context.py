@@ -2,7 +2,8 @@
 """Per-harness context compaction for agent workspaces (see docs/CONTEXT-NOTES.md).
 
   tools/context.py setup KIND MODEL DIR    write the workspace's compaction settings and hooks; prints launch env
-                                           (KEY=VALUE words, may be empty) for harnesses configured by env
+                                           (KEY=VALUE words, may be empty) for harnesses configured by env.
+                                           POG_CTX_AT=N overrides compact_at (tools/context-probe.sh).
   tools/context.py limit KIND MODEL        print compact_at from agent/context.tsv
   tools/context.py agy-tokens DIR          context size of DIR's latest Antigravity conversation (0 if unknown)
   tools/context.py hook EVENT [--at N] [--mark]   hook handler; reads the hook payload on stdin
@@ -56,6 +57,7 @@ def claude_window(at):
 
 def setup(kind, model, d):
     window, at = limits(kind, model)
+    at = int(os.environ.get("POG_CTX_AT") or at)   # probes force an early compaction
     env = []
     if kind == "claude":
         path = os.path.join(d, ".claude", "settings.json")
