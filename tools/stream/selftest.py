@@ -31,10 +31,11 @@ BOARD_EVENTS = [
 class FakeHarness:
     """Answers like the eng/bots runtime described in docs/BOTS-API.md."""
 
-    def __init__(self, board=False):
+    def __init__(self, board=False, reject_peek=False):
         self.calls = []
         self.tick = 600_000
         self.board = board
+        self.reject_peek = reject_peek
 
     def probe(self):
         return {"harness": True, "camera": True, "cameras": True}
@@ -62,6 +63,9 @@ class FakeHarness:
                  "position": {"x": 300, "y": 2}, "alive": True, "active": False},
             ]}, self.tick
         if action == "status":
+            if (args or {}).get("peek") and self.reject_peek:
+                raise RuntimeError("status: unknown argument peek for status; valid: machines, since, threats")
+            self.status_args = args
             return {"position": {"x": 1, "y": 2}, "alive": bot != "luna", "active": {"kind": "mine"} if bot == "astra" else False,
                     "last": {"kind": "craft", "outcome": "done", "tick": 1}, "combat": bot == "astra" and {"until_tick": 5},
                     "dead_until_tick": self.tick + 300 if bot == "luna" else None}, self.tick
@@ -141,6 +145,13 @@ def main():
     rr = LiveSource("test", nine, harness=FakeHarness())
     rounds = [rr.status_round(list(nine["agents"]), {}) for _ in range(3)]
     assert sorted(sum(rounds, [])) == sorted(nine["agents"]) and all(len(r) == 3 for r in rounds), rounds
+
+    # status reads peek (no team-hint consumption); a runtime that rejects the argument gets plain reads
+    assert fake.status_args == {"peek": True} and src.peek_ok is True
+    old = FakeHarness(reject_peek=True)
+    osrc = LiveSource("test", run, harness=old)
+    oobs = osrc.observe()
+    assert not oobs["errors"] and osrc.peek_ok is False and old.status_args == {}, oobs["errors"]
 
     # board: never polled unless `describe` lists it; then events + items reach the snapshot
     assert not src.has_board and not any(c[0].startswith("board") for c in fake.calls)

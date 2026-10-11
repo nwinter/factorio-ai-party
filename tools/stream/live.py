@@ -32,6 +32,7 @@ class LiveSource:
         self.caps = None
         self.next_probe = 0
         self.use_profiles = profiles == "on"
+        self.peek_ok = None
         self.has_board = False
         self.next_board_probe = 0
         self.board_seq = 0
@@ -62,10 +63,29 @@ class LiveSource:
                 return {"player": cfg["player"]}
         return {"player": 1}
 
+    def read(self, action, args=None, **who):
+        """A read that leaves the agent's `team` hint cursors alone (eng/board skips hints for `peek: true`).
+        Runtimes that reject an unknown `peek` argument get the plain read from then on; a failed read never
+        stops anyone."""
+        args = dict(args or {})
+        if self.peek_ok is not False:
+            try:
+                res = self.h.dispatch(action, dict(args, peek=True), **who)
+                self.peek_ok = True
+                return res
+            except RuntimeError as e:
+                if "argument peek" not in str(e):
+                    raise
+                if self.peek_ok is None:
+                    print(f"[live] runtime rejects peek on {action}: overlay reads will consume "
+                          f"{who.get('bot') or who.get('player')}'s team hints", flush=True)
+                self.peek_ok = False
+        return self.h.dispatch(action, args, **who)
+
     def agent_status(self, name, cfg):
         if cfg.get("player"):
-            return self.h.dispatch("status", player=cfg["player"])[0]
-        return self.h.dispatch("status", bot=name)[0]
+            return self.read("status", player=cfg["player"])[0]
+        return self.read("status", bot=name)[0]
 
     def status_round(self, names, errors):
         """Names whose status to refresh this round: all of them without profiles, a share of them with."""
@@ -201,8 +221,8 @@ class LiveSource:
         if time.time() >= self.next_board:
             self.next_board = time.time() + self.board_every
             try:
-                res, _ = self.h.dispatch("board", {"limit": 60}, **self.reader())
-                claims, _ = self.h.dispatch("board", {"kind": "claim", "limit": 30}, **self.reader())
+                res, _ = self.read("board", {"limit": 60}, **self.reader())
+                claims, _ = self.read("board", {"kind": "claim", "limit": 30}, **self.reader())
                 items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])}
                 obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned")}
             except Exception as e:
