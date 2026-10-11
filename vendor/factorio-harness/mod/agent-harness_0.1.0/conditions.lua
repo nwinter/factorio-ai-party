@@ -58,10 +58,27 @@ return function(api)
       local ch=p.character; local r=ch.health/ch.max_health
       return r>c.fraction,string.format('health %d%%',math.floor(r*100))
     end,
+    -- In the character's main inventory, or summed over our entities on the
+    -- given tiles (chests, machines: every inventory they have).
     item_count=function(p,c)
-      local n=p.get_main_inventory().get_item_count(c.item)
+      local n,where=0,''
+      if c.positions then
+        local seen=0
+        for _,raw in ipairs(c.positions) do
+          for _,e in pairs(p.surface.find_entities_filtered{position=api.position(raw),radius=0.3,force=p.force}) do
+            if e.valid and e~=p.character then
+              local ok,k=pcall(e.get_item_count,c.item)
+              if ok and k then n=n+k end
+              seen=seen+1
+            end
+          end
+        end
+        where=' in '..seen..' entities'
+      else
+        n=p.get_main_inventory().get_item_count(c.item)
+      end
       local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
-      return met,c.item..' '..n
+      return met,c.item..' '..n..where
     end,
     crafting_done=function(p)
       local n=p.crafting_queue_size; return n==0,n..' crafts queued'
@@ -84,6 +101,10 @@ return function(api)
       assert(c.at_least~=nil or c.below~=nil,'item_count requires at_least or below')
       if c.at_least~=nil then number(c.at_least,0,1e9,'at_least') end
       if c.below~=nil then number(c.below,1,1e9,'below') end
+      if c.positions~=nil then
+        assert(type(c.positions)=='table' and #c.positions>=1 and #c.positions<=64,'item_count positions takes 1..64 {x,y} (chests)')
+        for _,pos in ipairs(c.positions) do api.position(pos) end
+      end
     end
     if kind=='researched' then assert(type(c.technology)=='string','researched requires technology') end
     return c

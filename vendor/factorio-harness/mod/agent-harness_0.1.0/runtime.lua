@@ -3527,7 +3527,8 @@ M.waits=require('waits'){state=state,integer=integer,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
   traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,
   dead_until=function(index) local b=M.bots.record(index); return b and not b.travel and not M.bots.alive(b) and b.dead_until_tick or nil end,
-  board_seq=function() return M.board.seq() end,board_news=function(p,seq) return M.board.news(p,seq) end}
+  board_seq=function() return M.board.seq() end,board_news=function(p,seq) return M.board.news(p,seq) end,
+  condition=function(p,c) return conditions.check(p,c) end,validate_condition=function(c) return conditions.validate(c) end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,

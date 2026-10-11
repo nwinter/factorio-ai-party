@@ -134,6 +134,7 @@ astra('tell',{to='sol',text='wake up, plates are in'})
 r=sol('sleep_check',{peek=true}); eq(r.woke,'told'); eq(r.tell,'astra: wake up, plates are in')
 r=sol('sleep_check',{}); eq(r.woke,'told')
 assert(has(r.team.tells,'wake up')) -- the final read delivers it
+jump(601) -- past the 10 s in which a new sleep repeats this wake
 sol('sleep',{seconds=60})
 local id=astra('board_post',{kind='request',title='bring 50 gears',owner='sol',note='to the mall chest (3,4)'}).item.id
 r=sol('sleep_check',{peek=true}); eq(r.woke,'board'); eq(r.board,'#'..id..' assigned to you by astra: bring 50 gears - to the mall chest (3,4)')
@@ -147,7 +148,7 @@ sol('board_update',{id=id,status='doing'})
 eq(sol('sleep_check',{peek=true}).woke,nil)
 astra('board_update',{id=id,note='make it 60'})
 eq(sol('sleep_check',{peek=true}).board,'#'..id..' (yours) note by astra: make it 60')
-sol('sleep_check',{}); sol('status')
+sol('sleep_check',{}); sol('status'); jump(601)
 
 -- Board news for owners: a requester's status change, a reassignment away,
 -- a claim posted over yours.
