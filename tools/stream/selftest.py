@@ -376,6 +376,21 @@ def main():
     lull.step(s5, time.time() + 1)
     assert lull.queue and lull.queue["by"] == "director" and lull.queue["type"] == "production", lull.queue
 
+    # recap: due every recap_every, ahead of the lull rotation, even when requests keep the lull clock from running
+    rc = Segments(lull_after=1e9, spacing=180)
+    t9 = rc.last_recap
+    rc.last_start = t9 + 1100  # a host request 100 s before the recap is due
+    rc.step(s5, t9 + 1201)
+    assert rc.queue is None, "spacing still holds"
+    rc.step(s5, t9 + 1281)
+    assert rc.queue and rc.queue["type"] == "recap" and rc.queue["by"] == "director" and rc.queue["facts"]["minutes"] == 21, rc.queue
+    rc.step(s5, t9 + 1282)
+    rc.cur["ends"] = t9 + 1290
+    for k in range(1290, 1600, 10):
+        rc.step(s5, t9 + k)
+    assert rc.cur is None or rc.cur["type"] == "recap", "no second recap within recap_every"
+    assert rc.last_recap == t9 + 1281
+
     # replays: a death on the main camera -> save the buffer -> attack_replay segment -> replay scene -> back to stream
     import replays as rp
     rp.time.sleep = lambda s: None  # the fake OBS answers at once
