@@ -121,13 +121,18 @@ n=0 tab=""
 while IFS=$'\t' read -r name kind route model effort label harness; do
   [ -z "$name" ] || [[ $name == \#* ]] && continue
   [ $((n % 3)) -eq 0 ] && tab=""
-  out=$(POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" POG_MODEL="$label ($harness)" POG_ROUTE="$route" \
+  # POG_NO_WAIT: start every pane now and clear the trust prompts of all of them in one pass below (shake3: the
+  # per-pane 40 s wait ran out for five agents and the launch took 4.5 minutes).
+  out=$(POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" POG_MODEL="$label ($harness)" POG_ROUTE="$route" \
         tools/launch-agent.sh "$run" "$world" "$name" "$minutes" "$kind" "$model" "$effort")
   pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')
   log "agent $name ($label, $kind) in pane $pane tab $tab"
   echo "$name $pane $kind" >> "$rundir/panes.txt"
   n=$((n + 1))
 done < "$team"
+prompt_args=()
+while read -r name pane kind; do prompt_args+=("$pane" "$rundir/$name"); done < "$rundir/panes.txt"
+tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
 log "started: $(wc -l < "$rundir/panes.txt") agents; deadline $(cat "$rundir"/*/deadline.txt | head -1)"
 
 # 6. Supervisors (agy runs its own loop until the deadline).

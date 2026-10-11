@@ -7,10 +7,18 @@
 # headless until the context passes the compaction point, then prints context.log and the harness's compaction markers.
 # The run dir must be in a folder the CLIs trust: Grok loads workspace hooks only in trusted folders (Codex trusts a
 # git worktree through its main repository). From an untrusted worktree use -C /Users/owner/code/player-of-games.
+#
+# Clean-profile check: tools/context-probe.sh [-C CHECKOUT] --profile KIND MODEL [ROUTE] [EXTRA CLI ARGS...]
+#   Prepares runs/ctxtest/profile-KIND as tools/launch-agent.sh does (settings, tools/clean-profile.py and the words in
+#   tools/profile-flags.sh), runs one short headless turn and prints what the agent was given (profile.txt).
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 base=$root
 [ "${1:-}" = -C ] && { base=$2; shift 2; }
+if [ "${1:-}" = --profile ]; then
+  shift
+  exec bash "$root/tools/profile-probe.sh" "$base" "$@"
+fi
 kind=$1 model=$2
 [ -n "${3:-}" ] && export POG_CTX_AT=$3
 ws=probe-$kind

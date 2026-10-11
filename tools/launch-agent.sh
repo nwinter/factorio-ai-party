@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Start an agent on a world: tools/launch-agent.sh RUN_ID WORLD PLAYER MINUTES KIND [MODEL] [EFFORT]
 #   KIND: codex | claude | grok | agy | muse
-#   Env: POG_ROUTE (ai-session route for codex/claude), POG_TAB (Herdr tab to join), POG_TIME_MODE, and the co-op
+#   Env: POG_ROUTE (ai-session route for codex/claude), POG_TAB (Herdr tab to join), POG_TIME_MODE, POG_NO_WAIT=1
+#   (return without clearing trust prompts; the caller runs tools/clear-prompts.sh), and the co-op
 #   overrides read by tools/new-run.sh (POG_WS, POG_CLIENT, POG_PLAYER_INDEX, POG_TEAMMATE, ...).
 # Creates the workspace, starts the agent in Herdr, and clears first-run trust prompts (we created the folder).
 # Prints: PANE TAB WORKSPACE
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
+. "$root/tools/profile-flags.sh"
 run=$1 world=$2 player=$3 minutes=$4 kind=$5
 dir=$("$root/tools/new-run.sh" "$run" "$world" "$player" "$minutes")
 # describe.json, one action per line, ready before the agent starts (in shake1 Grok Build's permissions blocked the
@@ -79,10 +81,8 @@ case $kind in
     test -n "$croot" || { echo "unknown Claude route $route" >&2; exit 1; }
     cenv="-u CLAUDE_CONFIG_DIR"; [ "$route" = claude ] || cenv="CLAUDE_CONFIG_DIR='$croot'"
     pane=$(new_pane)
-    # --setting-sources project,local: the route's user settings.json (hooks such as peon-ping, plugins, effort) stays
-    # out; login lives outside settings, so auth is unchanged. --tools: only the tools the game uses, which also
-    # shrinks the context Claude Code keeps after a compaction (51-59K for Haiku in shake2).
-    herdr pane run "$pane" "cd '$dir' && env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX -u CLAUDE_CODE_USE_FOUNDRY -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE $cenv ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_ENABLE_CFC=false /Users/owner/.local/bin/claude --model $model --effort $effort --permission-mode dontAsk --setting-sources project,local --tools Bash,Read,Edit,Write,Grep,Glob --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --no-chrome --disable-slash-commands \"\$(cat '$prompt')\"" >/dev/null
+    # $claude_unset, $claude_vars and $claude_flags: tools/profile-flags.sh.
+    herdr pane run "$pane" "cd '$dir' && env $claude_unset $cenv $claude_vars /Users/owner/.local/bin/claude --model $model --effort $effort $claude_flags \"\$(cat '$prompt')\"" >/dev/null
     ;;
   codex)
     model=${6:-gpt-6-astra} effort=${7:-low}
@@ -108,15 +108,8 @@ case $kind in
     claude_settings nosandbox
     ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
     pane=$(new_pane)
-    # --rules is part of the system prompt, which compaction keeps. The GROK_CLAUDE_* switches stop Grok from loading
-    # the owner's Claude Code skills, rules, hooks and MCP servers; GROK_MANAGED_MCPS_ENABLED and GROK_MEMORY drop
-    # managed MCP servers and cross-session memory. Grok has no per-launch switch for ~/.grok/rules, ~/.agents/skills
-    # or its own config.toml MCP servers (docs/LAUNCH2-NOTES.md).
-    # --allow: shake2's Grok was denied `./fh ... > describe.json` and `python3 -c` despite the .claude allowlist;
-    # redirects into the workspace count as edits. Loops stay unapproved (Grok runs unsandboxed).
-    genv="GROK_CLAUDE_SKILLS_ENABLED=false GROK_CLAUDE_MCPS_ENABLED=false GROK_CLAUDE_RULES_ENABLED=false GROK_CLAUDE_HOOKS_ENABLED=false GROK_MANAGED_MCPS_ENABLED=false GROK_MEMORY=0"
-    gallow="--allow 'Bash(./fh *)' --allow 'Bash(./shot *)' --allow 'Bash(python3 *)' --allow 'Edit(./**)' --allow 'Write(./**)'"
-    herdr pane run "$pane" "cd '$dir' && $genv $ctx_env grok -m $model --effort $effort --permission-mode dontAsk $gallow --rules '$compact_rule' \"\$(cat '$prompt')\"" >/dev/null
+    # --rules is part of the system prompt, which compaction keeps. $grok_env and $grok_allow: tools/profile-flags.sh.
+    herdr pane run "$pane" "cd '$dir' && $grok_env $ctx_env grok -m $model --effort $effort $grok_allow --rules '$compact_rule' \"\$(cat '$prompt')\"" >/dev/null
     ;;
   agy)
     model=${6:-gemini-3.8-flash-high}
@@ -138,7 +131,9 @@ ${POG_ONE_TURN:+exit 0  # POG_ONE_TURN: smoke tests run the first turn only}
 while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
   tokens=\$(python3 '$root/tools/context.py' agy-tokens '$dir')
   left=\$(( (deadline - \$(date +%s) + 59) / 60 ))
-  if [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ]; then
+  # No fresh start in the last 2 minutes: it costs a re-read of notes.md (shake3: Grok's compaction 39 s before its
+  # deadline ended its play).
+  if [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ] && [ "\$((deadline - \$(date +%s)))" -gt 120 ]; then
     echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
     agy -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away." --model $model --dangerously-skip-permissions
   else
@@ -165,17 +160,7 @@ esac
 [ -n "${tab:-}" ] || tab=$(herdr pane get "$pane" | python3 -c "import json,sys; d=json.load(sys.stdin)['result']; print(d.get('pane',d)['tab_id'])")
 herdr pane rename "$pane" "$name" >/dev/null 2>&1 || true
 
-# First-run prompts we can answer: folder trust (we created it).
-for _ in $(seq 1 40); do
-  screen=$(herdr pane read "$pane" --source visible --lines 40 2>/dev/null || true)
-  if grep -q "Yes, I trust this folder" <<<"$screen"; then
-    # Claude lists "No, exit" first; Antigravity preselects "Yes". Move only if Yes is not highlighted.
-    grep -qE "^[[:space:]]*(❯|>)[[:space:]]*Yes, I trust" <<<"$screen" || { herdr pane send-keys "$pane" down >/dev/null; sleep 0.3; }
-    herdr pane send-keys "$pane" enter >/dev/null; break
-  fi
-  if grep -q "Trust and continue" <<<"$screen"; then herdr agent send-keys "$pane" enter >/dev/null; break; fi
-  if grep -qiE "trust this (folder|project|directory)" <<<"$screen"; then herdr pane send-keys "$pane" enter >/dev/null; break; fi
-  if grep -qE "Working|esc to interrupt|thinking|Thinking" <<<"$screen"; then break; fi
-  sleep 1
-done
+# First-run prompts we can answer: folder trust (we created it). POG_NO_WAIT=1 skips this so a team launch can start
+# every pane first and clear all prompts in one pass (tools/start-team.sh).
+[ "${POG_NO_WAIT:-}" = 1 ] || "$root/tools/clear-prompts.sh" 40 "$pane" "$dir" >/dev/null
 echo "$pane $tab $dir"

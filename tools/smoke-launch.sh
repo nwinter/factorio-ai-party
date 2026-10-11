@@ -52,15 +52,23 @@ for k in $kinds; do read -r name _ <<<"$(row "$k")"
 done
 
 : > "$rundir/panes.txt"
+t0=$(date +%s)
 for k in $kinds; do read -r name route model effort label harness <<<"$(row "$k")"
-  out=$(POG_WS="$name" POG_BOT="$name" POG_TEAM="$rundir/team.txt" POG_MODEL="${label//_/ } (${harness//_/ })" \
+  # All panes first, then one pass for trust prompts, as tools/start-team.sh does.
+  out=$(POG_NO_WAIT=1 POG_WS="$name" POG_BOT="$name" POG_TEAM="$rundir/team.txt" POG_MODEL="${label//_/ } (${harness//_/ })" \
         POG_ROUTE="$route" POG_TIME_MODE=realtime POG_ONE_TURN=1 tools/launch-agent.sh "$run" "$world" "$name" "$minutes" "$k" "$model" "$effort")
   pane=$(echo "$out" | awk '{print $1}')
   echo "$name $pane $k" >> "$rundir/panes.txt"
-  echo "launched $name ($k): $out"
+  echo "launched $name ($k) after $(( $(date +%s) - t0 )) s: $out"
+done
+prompt_args=()
+while read -r name pane kind; do prompt_args+=("$pane" "$rundir/$name"); done < "$rundir/panes.txt"
+tools/clear-prompts.sh 90 "${prompt_args[@]}" | sed 's/^/prompts: /'
+echo "launch: $(wc -l < "$rundir/panes.txt" | tr -d ' ') agents ready or timed out after $(( $(date +%s) - t0 )) s"
+while read -r name pane k; do
   # agy runs one turn (POG_ONE_TURN) and has no supervisor in team runs either.
   [ "$k" = agy ] || POG_NUDGE_TEXT="$nudge_text" nohup tools/supervise.sh "$pane" "$rundir/$name" >/dev/null 2>&1 &
-done
+done < "$rundir/panes.txt"
 
 sleep $((minutes * 60 + 30))
 
@@ -100,6 +108,9 @@ for line in open(os.path.join(rundir, "panes.txt")):
                 if u:
                     start = f" start_context={sum(int(u.get(k) or 0) for k in ('input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'))}"
                     break
+            # Clean profile, round 4: no git status in the session context, no silent-turn reminder.
+            text = open(t).read()
+            start += f" gitStatus={text.count(chr(34) + 'gitStatus' + chr(34))} silent_reminders={text.count('t heard from you')}"
     print(f"{name:13} {kind:6} requests={reqs} say={says} failed={fails} describe_lines={desc} hooks_seen={hooks}{start}")
     print("    notes: " + (" | ".join(notes) or "no tools/rules/blocked/nudge lines"))
     print("    supervisor: " + (" | ".join(sup) or "none"))
