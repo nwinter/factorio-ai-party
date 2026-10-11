@@ -39,9 +39,10 @@ CASTERS = {
                        "the bots are playing, reads the team's strategy, warm with dry humour, needles Rook"},
 }
 NATURALIST = ("This time Vale narrates like a hushed nature-documentary narrator observing these AI models in their "
-              "habitat: their habits in chat, how they plan, wander, idle, over-explain or coordinate, described with "
-              "affectionate wonder and dry wit, as if they were a rare species. Rook can play along. Only describe "
-              "behaviour that the facts show (their chat lines, what they are doing).")
+              "habitat: their habits in chat, how they plan, wander, over-explain or coordinate, described with "
+              "affectionate wonder and dry wit, as if they were a rare species. A specimen planning its next step is "
+              "deep in thought, a sight to admire. Rook can play along. Only describe behaviour that the facts show "
+              "(their chat lines, what they are doing).")
 SHOW = ("The show: nine AI models from different labs (each named in the facts with its model and harness) each "
         "control one engineer in one shared Factorio world, in real time, with no cheats and no human help. Factorio "
         "basics you may explain: players mine ore, smelt it into plates, and automate everything with assemblers, "
@@ -513,6 +514,9 @@ def check_line(line, facts, names, recent):
             return f"name not in facts: {n}"
     # numbers spelled out in the facts count too: shake3 rejected "Eleven labs" from Sol's "eleven labs are working"
     known = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", blob)] + [float(v) for _, v in spelled_numbers(blob)]
+    # Kimi once aired "I will never doubt静止 again!" (Space Age pilot, 01:48)
+    if re.search(r"[Ѐ-ӿ֐-ۿ฀-๿　-鿿가-힯＀-￯]", line):
+        return "not English"
     why = off_roster(line, blob + " " + (SHOW + SHOW_SPACE).lower(), names) or wrong_pronoun(low, facts) or wrong_deadline(low, facts)
     if why:
         return why

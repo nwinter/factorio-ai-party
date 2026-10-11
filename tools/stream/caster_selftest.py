@@ -330,6 +330,9 @@ check("a number spelled in the chat text counts as a fact ('Eleven labs')", cast
     "Eleven labs humming, Rook!", cf, ["Sol"], []) is None)
 check("a number glued in the chat text counts too", caster.check_line(
     "Plastics at twelve percent!", cf, ["Sol"], []) is None)
+check("rejects a line with Chinese characters (Kimi, Space Age pilot)", caster.check_line(
+    "Gemini jolts awake, and I will never doubt静止 again!", {"agent": {"name": "Gemini"}}, ["Gemini"], []) == "not English")
+check("the naturalist prompt admires planning", "idle" not in caster.NATURALIST and "admire" in caster.NATURALIST)
 check("a capitalised singular of a fact word passes ('Plastic' for 'plastics')", caster.check_line(
     "Plastic research stalls at forty-two!", {"researching": {"tech": "Plastics", "percent": 42}}, names, []) is None)
 gmf = caster.facts_for({"kind": "lull", "angle": "explain", "t": now, "prio": 1}, {"agents": [], "game_time": "1h05m"})
