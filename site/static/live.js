@@ -259,6 +259,7 @@
   }
   function renderState(s, age) {
     var agents = s.agents || [], chat = s.chat || [], r = s.research || {}, sci = s.science || {}, board = s.board || {};
+    if (s.stream) embedPlayer(s.stream.youtube_video_id, s.stream.youtube_channel_id);
     var byName = {}; agents.forEach(function (a) { byName[a.name] = a; });
     var live = age != null && age <= LIVE_MAX_AGE;
 
