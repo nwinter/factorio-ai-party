@@ -113,7 +113,7 @@ def stream_scene(c, url, scene="stream"):
 GAME_DB = 4.0      # cam1 spectating a base peaks near -28 dBFS raw (metered 2026-10-10); music off (-Sound)
 GAME_LIMIT = -12.0  # limiter on the game so a nearby explosion can't jump over the voices
 MUSIC_DB = -24.0   # slot for an original music bed
-MUSIC_FILE = r"D:\pog\music\bed.mp3"
+MUSIC_FILE = r"D:\pog\music\bed.mp3"  # off (music=False) until the file exists: OBS warns at every start about a missing file
 # Sidechain ducking from the overlay page (casters + agent voices) while anyone talks. Ratio 6 measured ~22 dB down
 # (the game vanished); 2.5 aims at ~12-14 dB so the factory stays audible under the voices.
 DUCK = {"ratio": 2.5, "threshold": -40.0, "attack_time": 15, "release_time": 700, "output_gain": 0.0}
@@ -127,7 +127,7 @@ def ensure_filter(c, source, name, kind, settings):
 
 
 def stream_audio(c, scene="stream", overlay="stream overlay", prefix="stream", exe="factorio-cam1.exe",
-                 game_url=None, music=True):
+                 game_url=None, music=False):
     """Game audio from the main director client only, ducked under the overlay page's voices, plus a music slot."""
     game = f"{prefix} game audio"
     if game_url:  # test stand-in: any audio URL looped through a media source
@@ -167,8 +167,8 @@ def audio_test_scene(c, url, game_url=None):
                      {"color": 0xFF102018, "width": 1920, "height": 1080})
     place(c, scene, bg, 0, 0, 1920, 1080)
     ov = scene_input(c, scene, "audio-test overlay", "browser_source", {
-        "url": url, "width": 1920, "height": 1080, "fps": 30, "fps_custom": True, "shutdown": False,
-        "restart_when_active": False, "reroute_audio": True})
+        "url": url, "width": 1920, "height": 1080, "fps": 30, "fps_custom": True, "shutdown": True,
+        "restart_when_active": False, "reroute_audio": True})  # shut when hidden: Chrome's 6 connections per host
     c.set_scene_item_transform(scene, ov, {"positionX": 0, "positionY": 0, "alignment": 5,
                                            "boundsType": "OBS_BOUNDS_NONE", "scaleX": 1.0, "scaleY": 1.0})
     stream_audio(c, scene, overlay="audio-test overlay", prefix="audio-test", game_url=game_url, music=False)
@@ -202,7 +202,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["coop-scene", "stream-scene", "scene", "reload-overlay", "start", "stop", "pause",
                                     "resume", "status", "shot", "stream-start", "stream-stop", "stream-status",
-                                    "stream-audio", "audio-test", "meter"])
+                                    "stream-audio", "audio-test", "meter", "replay-stop"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--game-url", help="audio-test: loop this audio URL as a stand-in for the game client")
     ap.add_argument("--seconds", type=float, default=20, help="meter: how long to listen")

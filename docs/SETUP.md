@@ -137,6 +137,11 @@ Details and the evidence behind each setting: `docs/CONTEXT-NOTES.md`.
 - YouTube (unlisted test stream): OBS `pog` profile streams to `rtmps://a.rtmps.youtube.com:443/live2` (note `rtmps` in the
   host) with the key from `~/.config/pog/youtube.key` (never commit it); Quick Sync H.264 at 6 Mbps. 2-minute test:
   0 dropped frames, no congestion. `tools/obs.py stream-start|stream-status|stream-stop`.
+  Keep the service on "Custom" (`rtmp_custom`). OBS 32.2.2's built-in "YouTube - RTMPS" service crashed OBS at stream
+  start (`YouTubeAppDock::IngestionStarted`, 2026-10-11, no account connected), and the crashed process kept the
+  capture pipes and the browser profile locked until it was killed in Task Manager.
+  A broadcast that sits at "Preparing stream" while OBS reports frames going out is waiting to be started: Go live in
+  the Live Control Room, or turn on auto-start there.
 
 ## Shifts (resuming a team world)
 
