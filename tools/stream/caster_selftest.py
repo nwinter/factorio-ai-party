@@ -239,6 +239,8 @@ from baseline import Baseline  # noqa: E402
 bl = Baseline(os.path.join(HERE, "baselines", "shake1.json"))
 p = bl.pace(111171, 8, {"iron-plate": 3607}, ["logistics"])
 check("baseline pace facts", p and p["technologies_now"] == 8 and "verdict" in p and "shake1_next_research" in p, str(p))
+# A resumed shift plays past the baseline's end: no "same game time" comparison there (eng/harness3 round 7).
+check("no baseline pace past its last sample", bl.pace(bl.samples[-1]["tick"] + 20 * 3600, 30) is None)
 fp = caster.facts_for({"kind": "research", "text": "Research complete: Logistics", "t": now, "prio": 7},
                       {"tick": 111171, "research": {"done_count": 8}, "agents": []}, bl)
 check("research facts carry the baseline time", "shake1_finished_this_at" in fp, str(fp))

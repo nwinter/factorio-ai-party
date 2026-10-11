@@ -126,6 +126,18 @@ Details and the evidence behind each setting: `docs/CONTEXT-NOTES.md`.
   host) with the key from `~/.config/pog/youtube.key` (never commit it); Quick Sync H.264 at 6 Mbps. 2-minute test:
   0 dropped frames, no congestion. `tools/obs.py stream-start|stream-status|stream-stop`.
 
+## Shifts (resuming a team world)
+
+```sh
+POG_STOP_WORLD=1 tools/stop-team.sh shake4 n                  # save, then stop server and directors (game time stops)
+POG_RESUME=shake4 POG_SPACE_AGE=1 POG_DRY_RUN=1 tools/start-team.sh shake5 60   # the plan, touches nothing
+POG_RESUME=shake4 POG_SPACE_AGE=1 tools/start-team.sh shake5 60 --stream        # same save, bots and notes carry over
+python3 tools/resume_check.py runs/shake5 n                    # tick, research, buildings, bots, notes carried over
+```
+
+The newest of `saves\shake4.zip` and later autosaves is copied to `saves\shake5.zip`; `POG_SPACE_AGE` must match the
+instance's mods. `POG_OBS=0` for test shifts. Details: `docs/HARNESS3-NOTES.md`, round 7.
+
 ## Bots and director cameras
 
 Many agents share one world as bots (characters without a client); 1-3 director clients show them. Details in

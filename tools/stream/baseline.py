@@ -55,6 +55,10 @@ class Baseline:
         then = self.at(tick)
         if not then:
             return None
+        # Past the baseline's end (a resumed shift at game minute 60+ against a 60-minute run) there is no "same game
+        # time": its last sample would read as a standstill. 5 minutes covers the 2-minute sampling.
+        if tick > self.samples[-1]["tick"] + 5 * 3600:
+            return None
         f = {"compared_with": f"{self.name}, the team's previous run on the same map",
              "technologies_now": techs_now, f"{self.name}_technologies_at_same_time": then["techs"]}
         lead = techs_now - then["techs"]

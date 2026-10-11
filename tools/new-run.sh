@@ -88,6 +88,14 @@ echo "screenshot failed: \${client:-the game client} rendered it but it was not 
 EOS
 chmod +x "$dir/fh" "$dir/shot"
 date -v+"${minutes}"M "+%Y-%m-%d %H:%M %Z" > "$dir/deadline.txt"
+# A later shift of the same world (tools/start-team.sh, POG_RESUME): the agent starts from its notes of that shift.
+prev_notes="${POG_RESUME_DIR:-}/$ws/notes.md"
+if [ -n "${POG_RESUME:-}" ] && [ -n "${POG_RESUME_DIR:-}" ] && [ -f "$prev_notes" ]; then
+  { echo "(Carried over from the previous shift, run $POG_RESUME: its notes.md for $player, as that shift left it.)"
+    echo; cat "$prev_notes"; } > "$dir/notes.md"
+  echo "$dir"
+  exit 0
+fi
 cat > "$dir/notes.md" <<EON
 # Notes ($player, world $world)
 

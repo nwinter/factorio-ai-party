@@ -6,6 +6,11 @@
 # POG_YOUTUBE (@handle or video id for the YouTube chat bridge), POG_SPACE_AGE=1 (Space Age world, expansion-build
 # directors, the agents' Space Age playbook section and the analyst's Space Age knowledge base).
 # POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-b).
+# POG_RESUME=PREVIOUS_RUN: a later shift of the same world (docs/SPACEAGE.md, shifts): no new instance; the server
+# starts on the newest of saves\PREVIOUS_RUN.zip and the autosaves after it (copied to saves\RUN_ID.zip), existing bots
+# are kept, and each agent starts from its notes.md of that run. POG_SPACE_AGE must match the instance's mods.
+# POG_RESUME_DIR: the previous run's directory (default runs/PREVIOUS_RUN here, else in ~/code/player-of-games).
+# POG_DRY_RUN=1: check what can be checked here and print the plan; touches nothing.
 # Each team line: name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -20,20 +25,82 @@ if [ "$POG_SPACE_AGE" = 1 ]; then
   spaceage=(-SpaceAge) factorio=(-Factorio 'D:\pog\factorio-2.0.77-expansion')
   export POG_KB=${POG_KB:-space-age-2.0.77}
 fi
+resume=${POG_RESUME:-}
+if [ -n "$resume" ]; then
+  prev_dir=${POG_RESUME_DIR:-}
+  if [ -z "$prev_dir" ]; then
+    for d in "$root/runs/$resume" "$HOME/code/player-of-games/runs/$resume"; do [ -d "$d" ] && { prev_dir=$d; break; }; done
+  fi
+  [ -n "$prev_dir" ] && [ -d "$prev_dir" ] || { echo "POG_RESUME=$resume: no run directory runs/$resume here or in ~/code/player-of-games/runs; set POG_RESUME_DIR" >&2; exit 1; }
+  [ "$resume" != "$run" ] || { echo "POG_RESUME names this run ($run); a shift needs a new run id" >&2; exit 1; }
+  export POG_RESUME POG_RESUME_DIR=$prev_dir   # tools/new-run.sh and tools/launch-agent.sh read them
+fi
+members=$(awk -F'\t' '!/^#/ && NF {print $1}' "$team")
+if [ "${POG_DRY_RUN:-0}" = 1 ]; then
+  echo "plan for $run ($minutes min) on world $world (game $game, rcon $rcon), team $team: $(echo $members)"
+  if [ -n "$resume" ]; then
+    echo "1. resume: tools/winps.sh tools/win/resume-save.ps1 -Name $world -From $resume -Check (refuse unless space_age=$POG_SPACE_AGE);"
+    echo "   stop world $world; copy the newest of saves\\$resume.zip and later autosaves to saves\\$run.zip; refresh the instance's harness mod;"
+    echo "   start the server on $run.zip; deploy the runtime; write runs/$run/resumed-from"
+    last=$(tail -1 "$prev_dir/scores.jsonl" 2>/dev/null | python3 -c 'import json,sys; t=json.loads(sys.stdin.read())["score"]["tick"]; print(f"tick {t} (game {t//3600}m)")' 2>/dev/null || echo "no scores.jsonl")
+    echo "   previous run $prev_dir: last score $last"
+  else
+    echo "1. fresh: stop world $world, new instance save $run (seed $seed, $enemies enemies, space_age=$POG_SPACE_AGE), start server, deploy"
+  fi
+  echo "2. directors cam1..3 join"
+  for name in $members; do
+    if [ -n "$resume" ]; then
+      if [ -f "$prev_dir/$name/notes.md" ]; then notes="notes.md from $prev_dir/$name ($(wc -l < "$prev_dir/$name/notes.md" | tr -d ' ') lines)"; else notes="fresh notes.md (none in $resume)"; fi
+      echo "3. bot $name: kept if the save has it, else created; $notes"
+    else
+      echo "3. bot $name: created; fresh notes.md"
+    fi
+  done
+  echo "4. stream service, chat log, shot sync$([ "${POG_CASTER:-1}" != 0 ] && echo ', casters')$([ "${POG_ANALYST:-1}" != 0 ] && echo ', analyst'), recording$([ "$stream" = --stream ] && echo ', stream')"
+  echo "5. agents launch; 6. supervisors and score loop"
+  [ -n "$resume" ] && echo "prompt adds: $(tools/launch-agent.sh --resume-sentence)"
+  exit 0
+fi
 rundir="runs/$run"; mkdir -p "$rundir"
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$rundir/start.log"; }
 
-# 1. Fresh world with the current mod (stop any previous one of this name first).
-log "world $world: stopping old processes"
-tools/winps.sh tools/win/stop-world.ps1 -Name "$world" >/dev/null || true
-scp -q -r vendor/factorio-harness/mod/agent-harness_0.1.0 pogwin:D:/pog/mods/ 2>/dev/null
-peaceful=(); [ "$enemies" = peaceful ] && peaceful=(-Peaceful)
-log "world $world: creating save $run (seed $seed, $enemies enemies)"
-tools/winps.sh tools/win/new-instance.ps1 -Name "$world" -Save "$run" -Seed "$seed" ${peaceful[@]+"${peaceful[@]}"} ${spaceage[@]+"${spaceage[@]}"} | grep -q FullName
-scp -q ~/.config/pog/rcon-$world.pw "pogwin:D:/pog/inst/$world/rcon.pw" 2>/dev/null
+if [ -n "$resume" ]; then
+  # 1. A later shift: the same instance and save (docs/HARNESS3-NOTES.md, round 7).
+  log "world $world: resuming run $resume ($prev_dir)"
+  check=$(tools/winps.sh tools/win/resume-save.ps1 -Name "$world" -From "$resume" -Check) || true
+  printf '%s\n' "$check" | while read -r line; do log "  $line"; done
+  save_sa=$(printf '%s\n' "$check" | sed -n 's/^space_age=\([01]\).*/\1/p')
+  [ -n "$save_sa" ] || { log "resume check failed: $(printf '%s' "$check" | tr '\n' ' ' | cut -c1-300)"; exit 1; }
+  if [ "$save_sa" != "$POG_SPACE_AGE" ]; then
+    log "refusing: world $world's mods have space-age $([ "$save_sa" = 1 ] && echo on || echo off) but POG_SPACE_AGE=$POG_SPACE_AGE; run again with POG_SPACE_AGE=$save_sa"
+    exit 1
+  fi
+  log "world $world: stopping old processes"
+  tools/winps.sh tools/win/stop-world.ps1 -Name "$world" >/dev/null || true
+  scp -q -r vendor/factorio-harness/mod/agent-harness_0.1.0 pogwin:D:/pog/mods/ 2>/dev/null
+  copied=$(tools/winps.sh tools/win/resume-save.ps1 -Name "$world" -From "$resume" -To "$run") || true
+  printf '%s\n' "$copied" | grep -q '^copied=' || { log "resume copy failed: $(printf '%s' "$copied" | tr '\n' ' ' | cut -c1-300)"; exit 1; }
+  log "world $world: $(printf '%s\n' "$copied" | grep '^save=') copied to $run.zip"
+  echo "$resume" > "$rundir/resumed-from"
+else
+  # 1. Fresh world with the current mod (stop any previous one of this name first).
+  log "world $world: stopping old processes"
+  tools/winps.sh tools/win/stop-world.ps1 -Name "$world" >/dev/null || true
+  scp -q -r vendor/factorio-harness/mod/agent-harness_0.1.0 pogwin:D:/pog/mods/ 2>/dev/null
+  peaceful=(); [ "$enemies" = peaceful ] && peaceful=(-Peaceful)
+  log "world $world: creating save $run (seed $seed, $enemies enemies)"
+  tools/winps.sh tools/win/new-instance.ps1 -Name "$world" -Save "$run" -Seed "$seed" ${peaceful[@]+"${peaceful[@]}"} ${spaceage[@]+"${spaceage[@]}"} | grep -q FullName
+  scp -q ~/.config/pog/rcon-$world.pw "pogwin:D:/pog/inst/$world/rcon.pw" 2>/dev/null
+fi
 tools/winps.sh tools/win/start-server.ps1 -Name "$world" -Save "$run" -GamePort $game -RconPort $rcon >/dev/null
 POG_WORLD=$world bin/fh call describe >/dev/null 2>&1 || true          # first command on a fresh save is swallowed
 POG_WORLD=$world bin/fh deploy >/dev/null
+if [ -n "$resume" ]; then
+  # A save made while tick-paused would load paused; team runs are real time. Game time goes on from the save's tick.
+  python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
+  tick=$(python3 tools/pog.py --world "$world" score 2>/dev/null | python3 -c 'import json,sys; t=json.load(sys.stdin)["tick"]; print(f"{t} (game {t // 3600}m)")' 2>/dev/null || echo '?')
+  log "world $world: resumed at tick $tick"
+fi
 
 # 2. Director clients (players 1-3, spectators once a camera is set). They keep the server from auto-pausing.
 for cam in cam1 cam2 cam3; do
@@ -43,17 +110,8 @@ for cam in cam1 cam2 cam3; do
     ${sound[@]+"${sound[@]}"} ${factorio[@]+"${factorio[@]}"} >/dev/null
 done
 
-# 3. Bots, one per team member.
-python3 - "$team" "$world" <<'EOF'
-import json, os, sys
-sys.path.insert(0, "tools"); import pog
-team, world = sys.argv[1:]
-r = pog.Rcon("127.0.0.1", pog.PORTS[world], open(os.path.expanduser(f"~/.config/pog/rcon-{world}.pw")).read().strip())
-for line in open(team):
-    if not line.strip() or line.startswith("#"): continue
-    name = line.split("\t")[0]
-    print(name, r.command(f'/silent-command rcon.print(remote.call("agent_harness","bot_create","{name}"))'))
-EOF
+# 3. Bots, one per team member; a resumed save keeps its bots (only members it lacks are created).
+python3 tools/team_bots.py "$team" "$world" | while read -r line; do log "bot $line"; done
 
 # 4. Overlay service config, reverse tunnel for OBS, scene, recording, optional stream.
 python3 - "$team" "$rundir/stream.json" "$run" <<'EOF'
@@ -75,15 +133,22 @@ nohup python3 tools/stream/serve.py --world "$world" --run "$rundir/stream.json"
   >"$rundir/stream-service.log" 2>&1 &
 echo $! > "$rundir/stream-service.pid"
 helpers=("stream-service:$!:$rundir/stream-service.log")
-nohup ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
-  -R 8787:127.0.0.1:8788 pogwin >/dev/null 2>&1 &
-echo $! > "$rundir/overlay-tunnel.pid"
-sleep 3
-tools/.venv/bin/python tools/obs.py stream-scene >/dev/null
-tools/.venv/bin/python tools/obs.py scene stream >/dev/null
-tools/.venv/bin/python tools/obs.py reload-overlay >/dev/null || true
-tools/.venv/bin/python tools/obs.py start
-[ "$stream" = --stream ] && tools/.venv/bin/python tools/obs.py stream-start
+# POG_OBS=0: no overlay tunnel, scene, recording or stream (test shifts). OBS control needs the obsws venv; a worktree
+# without one uses the main checkout's.
+if [ "${POG_OBS:-1}" != 0 ]; then
+  py=tools/.venv/bin/python; [ -x "$py" ] || py=$HOME/code/player-of-games/tools/.venv/bin/python
+  nohup ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
+    -R 8787:127.0.0.1:8788 pogwin >/dev/null 2>&1 &
+  echo $! > "$rundir/overlay-tunnel.pid"
+  sleep 3
+  "$py" tools/obs.py stream-scene >/dev/null
+  "$py" tools/obs.py scene stream >/dev/null
+  "$py" tools/obs.py reload-overlay >/dev/null || true
+  "$py" tools/obs.py start
+  [ "$stream" = --stream ] && "$py" tools/obs.py stream-start
+else
+  log "POG_OBS=0: no overlay tunnel, recording or stream"
+fi
 
 first_bot=$(awk -F'\t' '!/^#/ && NF {print $1; exit}' "$team")
 nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$rundir/chat.jsonl" >"$rundir/chat-log.err" 2>&1 &

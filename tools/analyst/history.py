@@ -43,24 +43,49 @@ SP = " "
 
 
 def label(name):
+    shifts = f", shifts {' + '.join(SHIFTS[name])}" if len(SHIFTS.get(name, [])) > 1 else ""
     if name in LABELS:
-        return f"{name} ({LABELS[name]})"
-    return f"{name} (Space Age)" if is_space_age(name) else name
+        return f"{name} ({LABELS[name]}{shifts})"
+    return f"{name} (Space Age{shifts})" if is_space_age(name) else (f"{name} ({shifts[2:]})" if shifts else name)
+
+
+def resumed_from(run):
+    """The run a shift continued (runs/RUN/resumed-from, written by tools/start-team.sh with POG_RESUME), or None."""
+    for root in ROOTS:
+        p = os.path.join(root, run, "resumed-from")
+        if os.path.exists(p):
+            return open(p).read().strip() or None
+    return None
+
+
+def chain_root(run):
+    """The first shift of the world a run belongs to (the run itself when it was not resumed)."""
+    seen = {run}
+    while True:
+        prev = resumed_from(run)
+        if not prev or prev in seen:
+            return run
+        seen.add(prev)
+        run = prev
+
+
+SHIFTS = {}  # series name -> the runs (shifts) it is made of, when more than one
 
 
 def load_runs(exclude=None):
     """{series name: snapshots}. exclude: the run being replayed or played live (a directory or a list of them),
-    which must not be its own benchmark."""
+    which must not be its own benchmark; nor may the earlier shifts of its world."""
     series = load_all()
     for e in ([exclude] if isinstance(exclude, str) else exclude or []):
         if e:
-            ex = os.path.basename(e.rstrip("/"))
+            ex = chain_root(os.path.basename(e.rstrip("/")))
             series = {k: v for k, v in series.items() if k != ex and not k.startswith(ex + "/")}
     return series
 
 
 def load_all():
     series = {}
+    SHIFTS.clear()
     for root in ROOTS:
         if not os.path.isdir(root):
             continue
@@ -85,6 +110,19 @@ def load_all():
                 if name not in series:
                     v.sort(key=lambda r: r["tick"])
                     series[name] = dedupe(v)
+    # Shifts of one world (a resumed run continues its save's game time) are one series under the first shift's name.
+    for name in list(series):
+        root = chain_root(name)
+        if root != name:
+            series[root] = dedupe(sorted(series.get(root, []) + series.pop(name), key=lambda r: r["tick"]))
+            SHIFTS.setdefault(root, [root]).append(name)
+    def hops(run):
+        n = 0
+        while resumed_from(run) and n < 50:
+            run, n = resumed_from(run), n + 1
+        return n
+    for runs in SHIFTS.values():
+        runs.sort(key=hops)
     return series
 
 
