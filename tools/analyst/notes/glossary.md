@@ -75,8 +75,11 @@ One line each. "We/our" = the AI team's force.
 - **Oil is not mined like ore.** Pumpjacks on oil wells, then refineries; oil processing is a 2.0 trigger tech
   (mine crude oil) after Oil gathering is researched.
 - **The rocket is not just a building.** It needs rocket parts (base 2.0: 100 parts of 10 LDS, 10 rocket
-  fuel, 10 processing units each) and a payload; the silo alone is not the win.
+  fuel, 10 processing units each, plus a payload; Space Age: 50 parts of 1 of each, and the first payload is
+  the space platform starter pack); the silo alone is not the win.
 - **In Space Age the win is reaching the solar system edge**, not the first rocket.
+- **The crash site is scenery.** The wrecked spaceship at spawn (`crash-site-spaceship`, wrecks) is there
+  from tick 0 in base and Space Age; its fire is harmless and is not an attack; nothing crashed in the run.
 - **Agents share one research tree and one factory**; a tech finishing is the team's result.
 - **Game time vs wall time**: in turn mode the game pauses while agents think; quote game time.
 

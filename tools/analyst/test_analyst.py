@@ -52,6 +52,16 @@ class KBTest(unittest.TestCase):
         self.assertIn("nothing is lost", self.kb.tech_text("automation"))
 
 
+class SpaceAgeKBTest(unittest.TestCase):
+    def test_space_age_facts(self):
+        k = KB("space-age-2.0.77")
+        self.assertEqual(k.default_machine("electronics"), "assembling-machine-2")  # circuits moved category
+        self.assertIn("gravity is 0", k.recipe_text("space-science-pack"))
+        self.assertNotIn("hand-craftable", k.recipe_text("space-science-pack"))
+        self.assertIn("build an asteroid collector", k.tech_text("space-science-pack"))
+        self.assertEqual(k.entities["rocket-silo"]["rocket_parts_required"], 50)
+
+
 class HistoryTest(unittest.TestCase):
     def test_runs_load(self):
         s = H.load_runs()
@@ -89,6 +99,15 @@ class PointsTest(unittest.TestCase):
         self.assertIsNone(analyst.point_problem(ok))
         self.assertIn("22", analyst.point_problem(bad))
 
+    def test_game_minute_is_a_fact(self):
+        import analyst
+        reply = {"talking_points": [
+            {"text": "At minute 20 they make 7.9 packs a minute.", "facts": {"spm": 7.9}},
+            {"text": "Green science usually comes around minute 28.", "facts": {}}]}
+        reply, dropped = analyst.clean_reply(reply, minute=19)
+        self.assertEqual([p["facts"].get("game_minute") for p in reply["talking_points"]], [20])
+        self.assertIn("28", dropped[0]["why"])  # a forecast minute still needs its own fact
+
 
 class BoardTest(unittest.TestCase):
     def test_post_pick_use(self):
@@ -106,6 +125,62 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(pick_point(b.public())["topic"], "trig")
         b.post({"talking_points": [{"kind": "explainer", "topic": "trig", "text": "new", "facts": {}, "ttl_s": 300}]})
         self.assertEqual([x["text"] for x in b.public()["talking_points"]], ["new"])  # same topic replaced
+
+
+class YoungGameTest(unittest.TestCase):
+    def test_rates_before_minute_ten(self):
+        import game as G
+        snap = {"tick": 8 * 3600, "items": {"iron-plate": {"total": 400, "m10": 400, "used10": 80, "h1": 400}}}
+        it = G.young_game(snap)["items"]["iron-plate"]
+        self.assertAlmostEqual(it["m10"] / 10, 50)      # 400 plates in 8 minutes, not 40 a minute
+        self.assertAlmostEqual(it["h1"] / 60, 50)
+        old = {"tick": 30 * 3600, "items": {"iron-plate": {"total": 900, "m10": 300, "h1": 900}}}
+        it = G.young_game(old)["items"]["iron-plate"]
+        self.assertEqual(it["m10"], 300)                 # the ten-minute window is full
+        self.assertAlmostEqual(it["h1"] / 60, 30)
+
+
+class ViewerQuestionsTest(unittest.TestCase):
+    def test_is_question(self):
+        from analyst_board import is_question
+        for t in ("how many labs do they have?", "what's next after oil", "Rook, why is copper short", "is this space age?"):
+            self.assertTrue(is_question(t), t)
+        for t in ("lol", "go astra go", "this base is tidy", "??"):
+            self.assertFalse(is_question(t), t)
+
+    def test_picker_rate_and_staleness(self):
+        from analyst_board import QuestionPicker
+        p = QuestionPicker(every=150, max_age=60, retry=20)
+        lane = [{"id": 1, "text": "how many labs do they have?", "t": 1000},
+                {"id": 2, "text": "what comes after green science?", "t": 1040},
+                {"id": 3, "text": "astra mine the rocks now?", "t": 1041, "order": True},
+                {"id": 4, "text": "nice", "t": 1042}]
+        self.assertEqual(p.pick(lane, 1050)["id"], 2)       # newest question, orders and comments ignored
+        p.skipped(1060)
+        self.assertIsNone(p.pick(lane, 1070))               # retry hold
+        self.assertIsNone(p.pick(lane, 1081))               # id 1 is now 81 s old: stale
+        lane.append({"id": 5, "text": "why is power low?", "t": 1100})
+        self.assertEqual(p.pick(lane, 1101)["id"], 5)
+        p.answered(1110)
+        lane.append({"id": 6, "text": "who is winning?", "t": 1200})
+        self.assertIsNone(p.pick(lane, 1201))               # one answer per 150 s
+        lane.append({"id": 7, "text": "who builds the rocket?", "t": 1250})
+        self.assertEqual(p.pick(lane, 1261)["id"], 7)
+
+    def test_answer_checks_and_board(self):
+        import analyst
+        from analyst_board import AnalystBoard, questions_on
+        v = {"id": "m1", "name": "fan", "text": "how many labs?", "t": 1000}
+        self.assertIsNone(analyst.answer_problem({"question": "How many labs?", "answer": "They have 6 labs."}, v, 1010, 60))
+        self.assertIn("skipped", analyst.answer_problem({"skip": "off-topic"}, v, 1010, 60))
+        self.assertIn("stale", analyst.answer_problem({"question": "q", "answer": "a"}, v, 1200, 60))
+        self.assertIn("Reply with ONLY a JSON object", analyst.viewer_system())
+        b = AnalystBoard()
+        b.answer({"msg_id": "m1", "viewer": "fan", "question": "How many labs?", "answer": "They have 6 labs."})
+        self.assertEqual(b.public()["answers"][0]["viewer"], "fan")  # offered before the first cycle too
+        b.post({"talking_points": [], "viewer_questions": {"on": True}})
+        self.assertTrue(questions_on(b.public()))
+        self.assertEqual(b.public(now=__import__("time").time() + 200)["answers"], [])  # expired
 
 
 if __name__ == "__main__":

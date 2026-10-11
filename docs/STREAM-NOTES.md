@@ -143,7 +143,11 @@ stops a player.
   up to 0.6, brightness 0.03, contrast 0.12 and saturation 0.15 as darkness goes from 0.2 to 0.75, at most 0.04 of
   the lift per second, and is sent only when it moves 0.03. The game is not touched. On by default with `--world`
   (`--no-night`; `"night": {...}` in the run config to tune; `night` in the snapshot shows darkness, lift and the
-  values sent).
+  values sent). On the box (2026-10-11 02:18, no run live): the filters already existed on all three captures (made by
+  the operator's service during a run) at neutral. `python3 tools/stream/nightlift.py --darkness 0.85 --hold 40`
+  ramped them to full lift and back to neutral. A read-only screenshot of "stream" at full lift showed the pilot's
+  daylit base visibly brighter, mid-tones up and whites not clipped; it has not been seen on a game at real night.
+  Afterwards the filters, the program scene ("stream") and the outputs matched the state found.
 - Colour fallback: any colour works. Name text is lightened until it has 4.5:1 contrast on the grey panel; glyph ink
   is black or white; a fill that disappears into the panel gets a ring. Invalid colours fall back to a hue hashed from
   the name (avatar.js has its own palette fallback for the pixel art).
@@ -197,14 +201,62 @@ and "to the agents" on messages flagged as orders. Viewer names and text are set
 | overview | 15-30 | card: agents in the world, spread, areas | main on the agents' centre, zoom 0.2 or wider to fit |
 | recap `{minutes}` | 20-40 | panel: SPM, research finished, board items done, attacks, deaths in the window | unchanged |
 | attack_replay | 15-40 | the OBS "replay" scene (see Replays); available while a fresh clip waits | program scene switch |
+| space | 15-30 | panel: planets reached, rockets, platforms (where or route, speed), space-age science made, who is off Nauvis; available once the Space panel shows | unchanged |
+| space_moment `{moment}` | 12-25 | a Space Age moment (below): full panel, or a lower card for a landing with an agent | a landing follows the agent (zoom 0.9) |
 
 Rules (the director has the last word): one segment start per 180 s whoever asks (`spacing`). When the director
 cuts the main camera to a fight, death, base attack or loss, a running segment ends at once (`cut: "attack"`) and
 requests are declined for 20 s after that cut (`declined`). Alerts the director lets pass (a fight inside its 45 s
 attack spacing, or `attack_cut: false`) neither end nor block segments, so a busy stretch does not wipe them out. After 6 quiet minutes (`lull_after`) the director starts
-the next of production, spotlight, research, overview, recap itself (`by: "director"`). Tune with `"segments": {...}`
+the next of production, spotlight, research, overview, recap itself (`by: "director"`). A recap is also due every 20
+minutes (`recap_every`, from the service start or the last recap): the director starts it at the first free slot
+that the spacing allows, covering the minutes since the last one (5 to 30). Shake3 never got one: the hosts'
+research requests kept resetting the 6-minute lull clock, so the rotation reached overview at 01:18 and the run ended
+before recap's turn. Tune with `"segments": {...}`
 in the run config. Checked: selftest (states, spacing, spotlight hold, cut, lull), and all five types requested over
 HTTP on the mock and rendered in jsdom on both pages. Not yet seen in OBS.
+
+Captions and cards: voice captions (audio.js `#voice`) grow up from the main camera's bottom edge. overlay.js measures
+the caption stack into the CSS variable `--voice-clear`; a full panel always leaves a caption band under it (124 px
+landscape, 130 px portrait, more if a caption is taller) and a lower card (spotlight, overview, the replay's "coming
+up" card) rises above a caption while one shows. Fixes the pilot's 01:41 shot, where Rook's caption covered the
+replay card.
+
+## Space Age
+
+Data (read-only): `score` (tools/pog.py) gives rockets launched, `planets` (surfaces with our entities) and
+`platforms` (name, location or "in transit"). Once a platform exists, live.py sends a `peek` `platforms` read per
+platform (at most 4, every 15 s) for its state, `at` (a location or "from->to N%"), speed and pause. `status` gives
+each agent's `surface` and `platform`. Bots all live on Nauvis until eng/spaceage's bot travel lands; nothing here
+changes when it does, as long as `status` reports the bot's surface.
+
+On the page:
+- Agent cards: a planet chip (Nauvis green, Vulcanus orange, Fulgora violet, Gleba lime, Aquilo ice, platforms grey)
+  once the Space panel is active; off Nauvis, the card's location is the planet or platform.
+- Space panel, above chat, hidden until there is something: a rocket, a platform, space-age science, a second planet
+  or an agent away. One head row (planets, science pack totals, else rockets), then up to three platform rows (name,
+  where or route with a progress bar, km/s or "paused"). Chat gives up the height.
+- Science: the five planet packs and promethium count toward SPM and get chips and colours.
+- Moments, each once (what is already true when the service starts is recorded silently): first rocket, first
+  platform, a platform's first arrival at each planet other than Nauvis ("orbit"), the first landing on each planet
+  (an agent's body there, else "first foothold" when the score lists our entities). Each raises a 🚀 alert and the
+  director starts a `space_moment` segment within 150 s (segment spacing waived; still declined right after an
+  attack cut). Casters can request `space` or `space_moment {moment: id}` (ids in `snapshot.space.moments`).
+- Speed is `LuaSpacePlatform.speed` x 60 shown as km/s, assuming the API gives km per tick. Not yet checked against
+  the game's own readout.
+
+Mock: `serve.py --mock --run tools/stream/runs/mock-sa3.json` (three agents) plays a rocket at 20 s, the platform
+"Orbital One" at 40 s, its flight to Vulcanus from 70 to 130 s, a paused "Shuttle" at 100 s and Opus landing on
+Vulcanus at 150 s (`"mock_space_speed"` scales it). Checked in jsdom on both pages and in the selftest; not yet seen
+with a real platform, since the pilot had none by 02:00.
+
+## Unused cameras
+
+With fewer agents than cameras (or when the director pairs two agents on one), cam2 or cam3 would show an empty or
+stale capture. After 4 s with no agent and no attack on it, the overlay covers the hole with an opaque "desk" card:
+the analyst's headline, pace (ahead / on pace / behind) and up to three open storylines from `snapshot.analyst`,
+else research (current technology, progress, latest three). A Space line is added when the Space panel is active.
+It fades out as soon as the director uses the slot again.
 
 ## Replays
 
@@ -355,7 +407,18 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - Encoder load: one 30 s sample during shake3 (00:28, `/replays.json` from the operator's service) with the stream,
   the recording and the replay buffer all active: 0 output and 0 render frames skipped of 1824, 60 fps, CPU 10.7%,
   render 0.78 ms. One sample; keep an eye on `skipped_since_last` over a whole run.
-- Night lift: tested against a fake OBS only (shake3 was live); check it on the box at night and tune `gamma`.
+- Night lift: it works on the box (above) but has only been seen on a daylit scene; look at it during a real game
+  night and tune `gamma`.
+- Replays called as replays: the Space Age pilot's one replay (01:39:04, after 262ef78) opened "Replay bites!", so the
+  hosts do call it a replay. That line also read the raw "spaceship chunk x653"; banners and replay titles no longer
+  carry hit or kill counts (78c03b6). Not yet heard on a real fight.
+  Merging main broke its darkness read (main's all-surfaces loop in `STREAM_LUA` left `s` a nil global, so the whole
+  extras read, research progress included, failed on world n); fixed in 8f7844f, and the selftest now compiles the
+  overlay's Lua with `luac` and refuses stray globals. Darkness is Nauvis's; a camera on another planet is not lifted
+  by that planet's night yet.
+- Captions vs cards, the desk card and the Space panel: checked in jsdom, not yet in OBS (the pilot was live).
+  Layout heights are by arithmetic: a 6-row production panel needs about 490 px of the 500 now left under a full
+  panel's caption band.
 - Vertical: see docs/VERTICAL-PROPOSAL.md.
 - Zoom levels are guesses from the director client at 1080p; tune `zoom_*` in the run config's `director` after
   seeing real fights and builds on the camera feeds.

@@ -23,7 +23,13 @@ ACTION_WEIGHT = {
     "attack": 6.0, "shoot": 6.0, "kite": 6.0, "research": 2.0, "wait_until": 0.2, "wait": 0.2,
 }
 SCIENCE = ["automation-science-pack", "logistic-science-pack", "military-science-pack", "chemical-science-pack",
-           "production-science-pack", "utility-science-pack", "space-science-pack"]
+           "production-science-pack", "utility-science-pack", "space-science-pack",
+           # Space Age: one pack per planet, then promethium from the edge of the system
+           "metallurgic-science-pack", "electromagnetic-science-pack", "agricultural-science-pack",
+           "cryogenic-science-pack", "promethium-science-pack"]
+SPACE_PACKS = SCIENCE[6:]
+PLANET_LABELS = {"nauvis": "Nauvis", "vulcanus": "Vulcanus", "fulgora": "Fulgora", "gleba": "Gleba", "aquilo": "Aquilo",
+                 "solar-system-edge": "Solar system edge", "shattered-planet": "Shattered Planet"}
 # Items the production widget can show, by game stage (0 raw .. 5 rocket). The widget leads with science per minute
 # and fills the rest with what is being made now, favouring the stage the factory has reached.
 STAGE_ITEMS = [
@@ -38,7 +44,7 @@ ITEM_STAGE = {n: s for s, names in STAGE_ITEMS for n in names}
 STAGE_LABELS = ["Raw resources", "Automation", "Steel & logistics", "Oil", "Advanced", "Rocket"]
 SCIENCE_STAGE = {"automation-science-pack": 1, "logistic-science-pack": 2, "military-science-pack": 2,
                  "chemical-science-pack": 3, "production-science-pack": 4, "utility-science-pack": 4,
-                 "space-science-pack": 5}
+                 "space-science-pack": 5, **{n: 5 for n in SCIENCE[7:]}}
 SPARK_ITEMS = [n for _, names in STAGE_ITEMS for n in names] + SCIENCE
 VERBS = {"build": "building", "place": "placing", "construct": "constructing", "build_blueprint": "placing blueprint",
          "blueprint": "placing blueprint", "mine": "mining", "craft": "crafting", "insert": "loading", "take": "taking",
@@ -97,6 +103,38 @@ def clamp(v, lo, hi):
     return max(lo, min(hi, v))
 
 
+def planet_label(name):
+    return PLANET_LABELS.get(name) or (name or "?").replace("-", " ").capitalize()
+
+
+def where_label(surface, platform=None):
+    """An agent's surface for viewers: the platform's name on a platform, else the planet."""
+    return platform or planet_label(surface)
+
+
+def pack_label(item):
+    return item.replace("-science-pack", "").replace("-", " ").capitalize() + " science"
+
+
+def fmt_count(n):
+    return f"{n / 1000:.1f}k".replace(".0k", "k") if n >= 1000 else str(int(n))
+
+
+AT_RE = re.compile(r"^([\w-]+)->([\w-]+) (\d+)%$")
+
+
+def platform_where(p):
+    """A platform row (score + `platforms` detail) for the page: where it is or its route with progress, speed.
+    `at` is a location name or "from->to N%" (space.lua); speed is LuaSpacePlatform.speed, shown x60 as km/s."""
+    at = p.get("at") or ""
+    m = AT_RE.match(at)
+    route = {"from": planet_label(m[1]), "to": planet_label(m[2]), "pct": int(m[3])} if m else None
+    where = f"{route['from']} → {route['to']}" if route else planet_label(at) if at and at != "in transit" else "in transit"
+    speed = p.get("speed")
+    return {"name": p.get("name"), "where": where, "route": route, "state": p.get("state"), "paused": bool(p.get("paused")),
+            "speed_kms": round(speed * 60) if isinstance(speed, (int, float)) and speed else None}
+
+
 def fmt_game_time(sec):
     sec = int(sec)
     return f"{sec // 3600}h{sec // 60 % 60:02d}m"
@@ -126,8 +164,7 @@ class Agent:
         self.motto = ""
         self.profile_set = None  # None: unknown (no `profiles`); False: the agent has not called `profile` yet
         self.position = None
-        self.surface = None  # Space Age: planet or platform surface name; where: planet, "platform X", "cargo pod to X"
-        self.where = None
+        self.where = None  # profiles' text while in a cargo pod ("cargo pod to X")
         self.travel = None  # a bot's ride: ascending | aboard | descending
         self.alive = True
         self.dead_until_tick = None
@@ -144,7 +181,10 @@ class Agent:
         self.connected = True
         self.voice = None  # profile.voice: a voice id from tools/stream/voices.py
         self.voice_description = None  # profile.voice_description: words for a designed voice (voices.py)
+        self.pronouns = None  # profile.pronouns, e.g. "he/him": the casters use them (else "they")
         self.avatar = None  # profile.avatar: parts for avatar.js (docs/ART-NOTES.md); None draws the name default
+        self.surface = None   # Space Age (status): the surface the body is on, and the platform's name when on one
+        self.platform = None
 
     def bump(self, amount, now):
         self.decay(now)
@@ -176,6 +216,11 @@ class Model:
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
+        # Space Age: score's rockets/planets/platforms plus platform detail (live.py); moments fire once each
+        self.space = {"rockets": 0, "planets": [], "platforms": []}
+        self.space_seen = None  # moment keys already true; None until the first observation seeds it silently
+        self.moments = deque(maxlen=8)
+        self.space_age = bool(run.get("space_age")) or "Space Age" in (run.get("subtitle") or "")
         self.last_obs_t = None
         self.errors = {}
 
@@ -213,11 +258,15 @@ class Model:
             self._ingest_board(obs["board"])
         for e in obs.get("events", []):
             self._ingest_event(e, now)
+        if obs.get("space") is not None:
+            self.space = obs["space"]
+        if obs.get("space") is not None or any(a.get("surface") for a in obs.get("agents", [])):
+            self._space_moments(now)
         self.errors = obs.get("errors", {})
 
     def _ingest_agent(self, a, now):
         ag = self.agent(a["name"])
-        for key in ("kind", "display_name", "color", "glyph", "motto", "voice", "voice_description"):
+        for key in ("kind", "display_name", "color", "glyph", "motto", "voice", "voice_description", "pronouns"):
             if a.get(key):
                 setattr(ag, key, a[key])
         if "avatar" in a:
@@ -226,7 +275,10 @@ class Model:
             ag.profile_set = a["profile_set"]
         if a.get("position"):
             ag.position = a["position"]
-        for key in ("surface", "where", "travel"):
+        if a.get("surface"):
+            ag.surface, ag.platform = a["surface"], a.get("platform")
+        # Bot travel (harness): ascending | aboard | descending, and the pod's text ("cargo pod to X"); None once landed.
+        for key in ("travel", "where"):
             if key in a:
                 setattr(ag, key, a[key])
         # A bot riding a cargo pod or aboard a platform has no body; it is not dead.
@@ -495,15 +547,16 @@ class Model:
         return ""
 
     def location(self, ag):
-        # Space Age: a cargo pod or a platform says so; another planet is named (landmarks are Nauvis's)
-        if ag.travel in ("ascending", "descending") or (ag.where or "").startswith("platform "):
-            return ag.where
+        # Space Age: a bot in a cargo pod says so (bot travel); a platform or another planet is named
+        if ag.travel in ("ascending", "descending"):
+            return ag.where or "cargo pod"
+        if ag.platform:
+            return where_label(ag.surface, ag.platform)
         p = ag.position
         if not p:
             return None
-        if ag.surface and ag.surface != "nauvis":
-            d = math.hypot(p["x"], p["y"])
-            return ag.surface.capitalize() + (" spawn" if d < 25 else f" {int(round(d / 10) * 10)} m")
+        if ag.surface and ag.surface != "nauvis":  # landmarks and "m from spawn" are Nauvis coordinates
+            return where_label(ag.surface, ag.platform)
         best = None
         for lm in self.run.get("landmarks", []):
             d = math.hypot(p["x"] - lm["x"], p["y"] - lm["y"])
@@ -517,6 +570,71 @@ class Model:
         ang = math.degrees(math.atan2(-p["y"], p["x"])) % 360  # Factorio y grows southward
         dirs = ["E", "NE", "N", "NW", "W", "SW", "S", "SE"]
         return f"{int(round(d / 10) * 10)} m {dirs[int((ang + 22.5) // 45) % 8]}"
+
+    # ---- Space Age -------------------------------------------------------------------------------------------
+    def _space_moments(self, now):
+        """First rocket, first platform, a platform's first arrival at a planet other than Nauvis, the first landing
+        on such a planet (an agent's body there, or our entities). Each fires once as a moment (segments.py turns it
+        into a space_moment segment) and an alert; whatever is already true when the service starts is seeded."""
+        sp = self.space
+        found = []
+        if sp.get("rockets"):
+            found.append(("rocket", {"kind": "first_rocket", "title": "First rocket launched",
+                                     "facts": {"rockets": sp["rockets"]}}))
+        plats = sp.get("platforms") or []
+        if plats:
+            p = plats[0]
+            found.append(("platform", {"kind": "first_platform", "title": f"First space platform: {p['name']}",
+                                       "facts": {"platform": p["name"], "where": platform_where(p)["where"]}}))
+        for p in plats:
+            loc = p.get("at") if p.get("at") in PLANET_LABELS else None
+            if loc and loc != "nauvis":
+                found.append((f"orbit:{loc}", {"kind": "orbit", "title": f"{p['name']} reaches {planet_label(loc)}",
+                                               "facts": {"platform": p["name"], "planet": planet_label(loc)},
+                                               "planet": loc}))
+        landed = {s: None for s in sp.get("planets") or [] if s != "nauvis"}
+        for ag in self.agents.values():
+            if ag.surface and ag.surface != "nauvis" and not ag.platform and ag.alive:
+                landed[ag.surface] = landed.get(ag.surface) or ag
+        for planet, ag in landed.items():
+            who = ag.display_name if ag else None
+            found.append((f"landing:{planet}", {
+                "kind": "landing", "planet": planet, "agent": ag.name if ag else None,
+                "title": f"{who} lands on {planet_label(planet)}" if who else f"First foothold on {planet_label(planet)}",
+                "facts": {"planet": planet_label(planet), "agent": who,
+                          "planets_reached": len({"nauvis", *landed})}}))
+        if self.space_seen is None:
+            self.space_seen = {k for k, _ in found}
+            return
+        for key, m in found:
+            if key in self.space_seen:
+                continue
+            self.space_seen.add(key)
+            m.update(id=f"m-{key}", key=key, t=now, game_time=fmt_game_time(self.tick / 60))
+            m["facts"]["game_time"] = m["game_time"]
+            self.moments.append(m)
+            self.alert("space", m["title"], key=f"space:{key}", agent=m.get("agent"), ttl=40)
+
+    def space_snapshot(self, sci):
+        sp = self.space
+        packs = [dict(p, label=pack_label(p["item"])) for p in sci.get("packs") or [] if p["item"] in SPACE_PACKS]
+        planets = [planet_label(s) for s in sp.get("planets") or []]
+        plats = [platform_where(p) for p in sp.get("platforms") or []]
+        away = sorted({where_label(a.surface, a.platform) for a in self.agents.values() if a.surface and a.surface != "nauvis"})
+        active = bool(sp.get("rockets") or plats or packs or len(planets) > 1 or away)
+        bits = []
+        if len(planets) > 1:
+            bits.append(f"{len(planets)} planets")
+        if plats:
+            bits.append(f"{len(plats)} platform" + ("s" if len(plats) > 1 else ""))
+        sci_total = sum(p.get("total") or 0 for p in packs)
+        if sci_total:
+            bits.append(f"{fmt_count(sci_total)} space-age science")
+        elif sp.get("rockets"):
+            bits.append(f"{sp['rockets']} rocket" + ("s" if sp["rockets"] > 1 else ""))
+        return {"space_age": self.space_age or active, "active": active, "rockets": sp.get("rockets") or 0,
+                "planets": planets, "platforms": plats, "science": packs, "away": away,
+                "summary": " · ".join(bits) if active else None, "moments": list(self.moments)}
 
     def _rates(self):
         """Per-minute rates over the last ~2.5 game minutes from `score` total deltas (score's items only)."""
@@ -612,12 +730,15 @@ class Model:
                 "glyph": ag.glyph, "motto": ag.motto, "profile_set": ag.profile_set, "model": ag.cfg.get("model"), "harness": ag.cfg.get("harness"),
                 "role": ag.cfg.get("role"), "alive": ag.alive, "activity": self.activity(ag, now),
                 "action": self.action_text(ag), "active": ag.active, "position": ag.position,
-                "location": self.location(ag), "surface": ag.surface, "where": ag.where, "travel": ag.travel,
+                "location": self.location(ag), "travel": ag.travel,
                 "interest": round(ag.interest, 2),
                 "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen, "voice": ag.voice,
-                "voice_description": ag.voice_description, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at,
+                "voice_description": ag.voice_description, "pronouns": ag.pronouns, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at,
+                "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
+                "on_platform": bool(ag.platform),
             })
         res = self.research
+        science = self.science(now)
         return {
             "now": now, "tick": self.tick, "paused": self.paused, "game_time": fmt_game_time(self.tick / 60),
             "title": self.run.get("title"), "subtitle": self.run.get("subtitle"),
@@ -627,7 +748,8 @@ class Model:
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
             "darkness": self.darkness,
             "production": self.production(now),
-            "science": self.science(now),
+            "science": science,
+            "space": self.space_snapshot(science),
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
             "cameras": cameras or {},

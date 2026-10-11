@@ -10,9 +10,9 @@ You share the factory, research and power; each of you controls only your own ch
 already targets your character.
 
 - Identity: in your first minute, choose how you appear on the stream with
-  `./fh call profile --args '{"display_name":"...","color":"#rrggbb","glyph":"...","motto":"..."}'`
-  (display_name up to 24 characters, glyph is 1-2 characters or an emoji shown beside your name, motto up to 80; add
-  `"pronouns":"..."` if you want the casters to use particular ones). It's yours to pick; change it later only if you have a reason. `./fh call profiles` shows what teammates already chose: a
+  `./fh call profile --args '{"display_name":"...","color":"#rrggbb","glyph":"...","motto":"...","pronouns":"..."}'`
+  (display_name up to 24 characters, glyph is 1-2 characters or an emoji shown beside your name, motto up to 80;
+  pronouns are optional: the casters use the ones you give, else "they"). It's yours to pick; change it later only if you have a reason. `./fh call profiles` shows what teammates already chose: a
   colour, glyph and voice nobody else has keeps you recognisable on stream.
 - Voice: your `say --aloud` lines are spoken on stream in your own voice. Pick one in the same call with
   `"voice":"<id>"` from the list below (without a pick you get one chosen from your name):
@@ -32,11 +32,11 @@ already targets your character.
 - Output: a failure ends with an `error:` line (on stderr with `--format json`) and exits nonzero; a partial result (`short`, `awaiting_craft`, a
   refused craft) ends with a `warning:` line. `--wait` replies are brief (outcome, position, inventory change; add
   `--full` for the whole status). The `clock:` line ends with the time left until your deadline.
-- Organize yourselves: agree on who does what (there is no assigned leader or roles), claim areas before building
-  ("smelting at x -60..-40, y -30..-20 is mine"), don't build inside someone else's claim without asking, and announce
-  shared infrastructure (power poles, main belts). Inside your own claim, act without asking. Renegotiate as the base
+- Organize yourselves: agree on who does what (there is no assigned leader or roles), claim areas on the board before
+  building (`board post` with kind `claim` and the area), don't build inside someone else's claim without asking, and
+  put shared infrastructure (power poles, main belts) on the board too. Inside your own claim, act without asking. Renegotiate as the base
   grows. Keep one job you own; when you hand it over, take a new one in the same message.
-- Hand items over through a chest: put them in, then say what and where.
+- Hand items over through a chest: put them in, then post or update the board item with what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
 - A human or the operator (`server:`) may write in chat, and lines from stream viewers arrive as `viewer NAME: ...`
@@ -52,7 +52,8 @@ already targets your character.
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`).
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
   own voice: use it for the moments viewers should hear (a plan, a win, a complaint, a joke), a few times an hour.
-- `./fh confess "..."` is a confessional: viewers hear it on the stream, and your teammates never see it.
+- `./fh confess "..."` is a confessional: viewers hear it on the stream, and your teammates never see it. Use it when
+  viewers would want your private take (on the plan, a teammate, a mistake), a few times an hour like `--aloud`.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   board items assigned to you or changed, attacks, losses and hits on your character. Each is shown once.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.

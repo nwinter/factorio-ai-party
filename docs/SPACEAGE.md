@@ -556,6 +556,22 @@ covers Space Age Nauvis).
   API allows. Whether the client renders a platform surface well enough for the stream is a question for the run.
 - The pod's own descent on stream: cameras follow `b.position`, which tracks the pod on both surfaces.
 
+## Stream overlay (eng/stream2)
+
+The overlay reads Space Age state read-only: `score` (rockets, planets, platforms), a `peek` `platforms` read per
+platform, and each agent's `status.surface`/`platform`. It draws a planet chip per agent card, a Space panel and
+segments for the first rocket, first platform, a platform's arrival at a new planet and the first landing there
+(docs/STREAM-NOTES.md "Space Age"). What it needs from bot travel: `status` for a bot reports the surface its body is
+on (and the platform's name while aboard), and the director cameras keep following a bot across surfaces (already in
+cameras.lua). To check on the first real platform: that `LuaSpacePlatform.speed` x 60 matches the game's km/s.
+
+After the merge with bot travel: a bot's `status` reports `surface` (the platform's surface while aboard, the pod's
+while riding), `platform` (aboard or riding) and `travel`; `profiles` reports the same, plus `travel`. The model keeps
+main's `surface` and `platform` fields and `where_label`, and adds `travel`: a bot in a cargo pod reads "cargo pod to
+X", and a bodiless rider is not a death.
+
+## Open questions to settle on the box
+
 - A player's Lua state in a hub (`character`, `controller_type`, `physical_surface`, `hub`). One line:
   `/c local p=game.player rcon.print(serpent.line{p.controller_type,p.physical_controller_type,p.character and {p.character.surface.name,p.character.position},p.hub and p.hub.surface.name,p.physical_surface.name})`
 - Whether the game strips a rider's inventory, and whether a rider can use their inventory in the hub.
@@ -568,3 +584,35 @@ covers Space Age Nauvis).
 - Which hub inventory is "drop to planet". `drop` takes from `hub_main` into a pod's `cargo_unit` instead, which
   the API documents.
 - Whether lightning hits characters on Fulgora.
+
+## Coordination: harness branches touching runtime and bots code
+
+eng/harness3 (round 4, 2026-10-11 night, for shake4). `bots.lua` is not touched. Hunks, so a bot-travel merge can
+avoid them:
+- `runtime.lua`: `dispatch_request` (a bot's `chat`/`say` take the proxy through `M.lookup`, dead or alive, just
+  before `player(request.player)`); `build_direct` (one `construction.clear_remnants` line); `place_ghost`
+  (`construction.only_obstacles` in its placement check); `handlers.collect` (`want`, at the top); the
+  `collect` describe entry. No new top-level locals.
+- `construction.lua`: new `M.box`, `M.clear_remnants`, `M.only_obstacles` (before `obstructed`). `M.box` takes a
+  prototype, position and direction; it does not read the surface, so it works on any planet or platform.
+- `profiles.lua`: glyph uniqueness (`check_glyph`), the glyph describe text.
+- Tests: `tests/bots.lua`, `mod/tests/runtime_test.lua`. Tools: `tools/supervise.sh`, `tools/test_supervise.py`.
+
+Space Age note: `clear_remnants` removes type `corpse` (stumps, biter corpses, ruins) under a new building, as a
+player's build does; `only_obstacles` counts neutral `tree`, `plant` (wild Gleba plants; a force's own farm plants
+are not), `simple-entity` (rocks) and remnants as what a ghost may go over. Details: `docs/HARNESS3-NOTES.md`.
+
+eng/harness3 round 5 (2026-10-11, agents' tool requests). `bots.lua` is still not touched. Hunks:
+- `runtime.lua`: `position()` (accepts `[x,y]`); `assert_visible` (message); `entity()` (footprint pick, miss lists
+  nearby entities, ambiguous names both, an item on the ground is a fallback like ore); `summary()` and
+  `scan_fields.io` (a mining drill's drop tile); `build_one` (own-character check before placing) and
+  `handlers.build` (step aside, `skip_failed`); the `feed` branch of `M.tick_body` (walks off the footprint, then
+  reruns the build); `handlers.inspect` (drill drop); `begin_craft` (machine-only recipe error); describe `target`,
+  `build`, `inspect`. No new top-level locals.
+- `construction.lua`: new `M.in_box`, `M.aside`. `M.aside` reads `p.surface` and `p.character`, so it follows the
+  bot to whatever surface it is on.
+- `scheduler.lua`: `snapshot(q,recent)`; the changing queue calls return the newest 3 history entries.
+- Tests: `tests/bots.lua`, `tests/scheduler.lua`, `mod/tests/runtime_test.lua`.
+
+For bot travel: the step-aside walk uses `steer` and `p.walking_state` like `move_to`; on a platform or after a
+landing it works unchanged as long as the bot proxy's `character`, `surface` and `position` follow the bot.

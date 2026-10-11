@@ -75,19 +75,33 @@ from `agent/context.tsv` (model, kind, window, compact_at) without touching glob
 - Muse (200K): `muse -c context_compaction.soft_threshold=... -c context_compaction.hard_threshold=...`, fractions
   of its 512K effective window (soft 0.391, hard 0.441); `.muse/hooks.json` re-injects `notes.md` after a compaction.
 
-Launch hygiene and supervision (shake2 study, section 13; details in `docs/LAUNCH2-NOTES.md`):
+Launch hygiene and supervision (shake2 and shake3 studies; details in `docs/LAUNCH2-NOTES.md` and
+`docs/LAUNCH4-NOTES.md`). The env and flag words are in `tools/profile-flags.sh`:
 
-- Claude Code starts with `--setting-sources project,local` (no user settings: hooks, plugins) and
-  `--tools Bash,Read,Edit,Write,Grep,Glob`; `tools/permit.py` (a `PreToolUse` hook) approves `./fh` loops and other
-  commands built only from game programs and workspace redirects, which dontAsk otherwise denies.
-- Codex workspaces turn off host skill discovery, plugins, apps, browser and computer use and multi-agent features.
-- Grok gets `--allow` rules for `./fh`, `python3` and workspace edits and the per-launch switches for Claude-compat
-  rules, hooks, MCP and memory. Muse gets `-c hooks=` with the owner's hooks minus the tooling-context one.
+- Claude Code starts with `--setting-sources project,local` (no user settings: hooks, plugins),
+  `--tools Bash,Read,Edit,Write,Grep,Glob`, and no silent-turn reminder or git status
+  (`CLAUDE_CODE_SILENT_TURN_REMINDER=0`, `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS=1`); `tools/permit.py` (a `PreToolUse`
+  hook) approves `./fh` loops and other commands built only from game programs and workspace redirects, which dontAsk
+  otherwise denies.
+- Codex workspaces turn off the skills list and bundled skills (`[skills]`), the multi-agent role block (empty
+  `[features.multi_agent_v2]` hint texts), host skill discovery, plugins, apps and browser and computer use.
+- Grok gets `--allow` rules for `./fh`, `python3` and workspace edits, the switches for Claude- and Cursor-compat
+  skills, rules, hooks, MCP servers and named files, managed MCP, memory, subagents and workflows, and a run-local
+  `GROK_HOME` (`tools/grok-home.py`: no home rules, owner hooks or skills; login through an auth-provider command
+  that reads the owner's token read-only and has the owner's grok refresh it before a launch when short). Loops cannot
+  be approved under dontAsk; `agent/harness-grok.md` points to `python3`.
+- Muse gets `-c 'hooks={}'` (none of the owner's hooks; the workspace's still load) and no skill-reminder agent or
+  memory tools (`MUSE_EXPERIMENTAL_*`).
+- `tools/start-team.sh` starts every pane first and then clears trust prompts for all of them in one pass
+  (`tools/clear-prompts.sh`).
+- No compaction in an agent's last 2 minutes: Claude Code's `PreCompact` hook blocks it, and the agy loop starts no
+  fresh conversation; Grok, Codex and Muse have no control for it.
 - `tools/supervise.sh` logs how each nudge was delivered (falls back to typing into the pane when
   `herdr agent prompt` fails), notes turns that ended on a refused command and adds a rewrite hint, and skips a
   Grok nudge in the last 3 minutes when its context is near the compaction point.
-- `tools/smoke-launch.sh [RUN] [MINUTES] [KINDS]` checks all of this live (run it outside the sandbox: it needs the
-  herdr socket and ai-session's cache).
+- `tools/context-probe.sh --profile KIND MODEL [ROUTE]` checks a clean profile headless;
+  `tools/smoke-launch.sh [RUN] [MINUTES] [KINDS]` checks the launch live (both outside the sandbox: they need the
+  CLIs' own folders, the herdr socket and ai-session's cache).
 
 `AGENTS.md` ends with `## Compact instructions` (`agent/compact.md`) and `notes.md` starts as a structured skeleton.
 Hook events go to `DIR/context.log`, summaries to `DIR/compactions.md`; `tools/context.py report runs/RUN_ID`

@@ -15,6 +15,19 @@ LOSS_RE = re.compile(r"^(?:losses )?in \((-?\d+),(-?\d+)\)(?:-\(-?\d+,-?\d+\))? 
 RECENT_AGO = re.compile(r"^(?:.*-)?(?:\d+s|1m\d\ds)$")  # last part of the span under 2 minutes
 
 
+def hit_label(entities):
+    """status.alerts.attacked `entities` ("character x3", "gun-turret x12"): the x is a hit count, which the hosts read
+    as a number of enemies or turrets on air (shake3), so the banner and replay titles name only what was hit."""
+    name = re.sub(r"\s*x\d+$", "", (entities or "").strip()).replace("-", " ")
+    return "an engineer" if name == "character" else name
+
+
+def attacker_label(by):
+    """describe_incident's "by 5 small-biter, 2 medium-biter" counts kills by each kind: "small biters"."""
+    name = re.sub(r"^\d+\s+", "", (by or "").split(",")[0].strip()).replace("-", " ")
+    return name + "s" if name and not name.endswith("s") else name
+
+
 class LiveSource:
     def __init__(self, world, run, profiles="auto", flow_every=30.0, harness=None, status_share=3):
         self.name = f"live:{world}"
@@ -40,6 +53,9 @@ class LiveSource:
         self.next_board = 0
         self.has_confess = False
         self.confess_seq = 0
+        self.platform_every = 15.0
+        self.next_platforms = 0
+        self.platform_detail = {}
         self.probe()
 
     def probe(self):
@@ -109,8 +125,12 @@ class LiveSource:
             obs["produced"] = score.get("produced") or {}
             done = score.get("research_done") or []
             obs["research"] = {"current": score.get("current_research"), "done": done if isinstance(done, list) else []}
+            obs["space"] = {"rockets": score.get("rockets") or 0, "planets": score.get("planets") or [],
+                            "platforms": score.get("platforms") or []}
         except Exception as e:
             errors["score"] = str(e)
+        if (obs.get("space") or {}).get("platforms"):
+            self.observe_platforms(obs["space"], errors)
         try:
             ex = self.h.extras()
             if "research" in obs:
@@ -152,7 +172,7 @@ class LiveSource:
             st = self.status_cache.get(name, {})
             a = {"name": name, "kind": p.get("kind") or cfg.get("kind", "bot")}
             for key in ("display_name", "color", "glyph", "motto", "voice", "voice_description", "avatar", "position",
-                        "last_said", "alive", "active", "surface", "where", "travel"):
+                        "last_said", "alive", "active", "pronouns", "surface", "platform", "where", "travel"):
                 if p.get(key) is not None:
                     a[key] = p[key]
             if p:  # `profile` never called: profiles reports no display name, colour or glyph
@@ -173,13 +193,15 @@ class LiveSource:
                 a["connected"] = st.get("connected", True) if a["kind"] == "player" else True
                 a["last"] = st.get("last")
                 a["combat"] = bool(st.get("combat"))
+                if st.get("surface"):  # Space Age: the planet or platform surface the body is on
+                    a["surface"], a["platform"] = st["surface"], st.get("platform")
                 a["dead_until_tick"] = st.get("dead_until_tick")
             obs["agents"].append(a)
         for name, p in profiles.items():
             if name not in self.agents_cfg:
                 obs["agents"].append(dict({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto", "avatar",
-                                                                  "position", "alive", "active", "last_said", "surface",
-                                                                  "where", "travel")},
+                                                                  "position", "alive", "active", "last_said", "pronouns",
+                                                                  "surface", "platform", "where", "travel")},
                                           profile_set=any(p.get(k) for k in ("display_name", "color", "glyph"))))
 
         try:
@@ -192,6 +214,25 @@ class LiveSource:
         self.observe_board(obs, errors)
         obs["errors"] = errors
         return obs
+
+    # ---- Space Age platforms ------------------------------------------------------------------------------------
+    def observe_platforms(self, space, errors):
+        """Platform detail (state, location or route, speed, schedule) with a peek `platforms` read per platform,
+        every platform_every seconds, at most 4 platforms; between reads the score's name and location stand."""
+        now = time.time()
+        if now >= self.next_platforms:
+            self.next_platforms = now + self.platform_every
+            detail = {}
+            for row in space["platforms"][:4]:
+                try:
+                    res, _ = self.read("platforms", {"platform": row["name"]}, **self.reader())
+                    for p in res.get("platforms") or []:
+                        detail[p.get("name")] = {k: p.get(k) for k in ("state", "at", "speed", "schedule", "paused",
+                                                                       "thrusters", "weight") if p.get(k) is not None}
+                except Exception as e:
+                    errors["platforms"] = str(e)
+            self.platform_detail = detail
+        space["platforms"] = [dict(row, **self.platform_detail.get(row["name"], {})) for row in space["platforms"]]
 
     # ---- team board (docs/BOARD-API.md) ------------------------------------------------------------------------
     def board_probe(self):
@@ -261,7 +302,7 @@ class LiveSource:
             if not RECENT_AGO.match(ago):
                 continue  # the alert window is 5 game minutes; only show losses from the last minute or so
             what = ", ".join(n.strip().replace("-", " ") for n in names.split(",")[:2])
-            text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {by.split(',')[0].strip().replace('-', ' ')})" if by else "")
+            text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {attacker_label(by)})" if by else "")
             out.append({"kind": "loss", "text": text, "key": f"loss:{x},{y}", "ttl": 90,
                         "position": {"x": float(x), "y": float(y)}})
         return out
@@ -276,8 +317,10 @@ class LiveSource:
             if not area.get("damage"):
                 continue  # zero-damage hits: the crash site's fire, not an attack
             c = area.get("chunk_centre") or {}
-            what = (area.get("entities") or "").split(",")[0].strip()
-            text = f"Base under attack near ({round(c.get('x', 0))}, {round(c.get('y', 0))})" + (f": {what}" if what else "")
+            what = hit_label((area.get("entities") or "").split(",")[0])
+            near = f"near ({round(c.get('x', 0))}, {round(c.get('y', 0))})"
+            text = f"Engineer under attack {near}" if what == "an engineer" else \
+                f"Base under attack {near}" + (f": {what}" if what else "")
             out.append({"kind": "attack", "text": text, "key": f"area:{c.get('x')},{c.get('y')}", "ttl": 60,
                         "position": c})
         return out

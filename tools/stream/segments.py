@@ -26,8 +26,15 @@ TYPES = {
     "overview": {"title": "Base overview", "params": {}, "seconds": [15, 30]},
     "recap": {"title": "Recap", "params": {"minutes": "window, 5..30 (default 10)"}, "seconds": [20, 40]},
     "attack_replay": {"title": "Attack replay", "params": {"area": "alert id"}, "seconds": [15, 40]},
+    # Space Age: progress (planets, platforms, space science), and the moments model.py detects (first rocket,
+    # first platform, a platform reaching a new planet, the first landing there); the director starts a moment's
+    # segment itself within MOMENT_FRESH_S, skipping the spacing, and casters may ask for one too.
+    "space": {"title": "Space Age progress", "params": {}, "seconds": [15, 30]},
+    "space_moment": {"title": "Space Age moment", "params": {"moment": "moment id (default: the newest not yet shown)"},
+                     "seconds": [12, 25]},
 }
-LULL_ORDER = ["production", "spotlight", "research", "overview", "recap"]
+LULL_ORDER = ["production", "spotlight", "research", "space", "overview", "recap"]
+MOMENT_FRESH_S = 150.0
 
 
 def human(item):
@@ -35,9 +42,15 @@ def human(item):
 
 
 class Segments:
-    def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9):
+    def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9,
+                 recap_every=1200.0):
         self.spacing = spacing            # seconds between segment starts, whoever asks
         self.lull_after = lull_after      # the director fills a lull this long after the last segment ended
+        # A recap is due this long after the last one (or the service start): the director starts it at the first
+        # free slot, ahead of the lull rotation. In shake3 the hosts' research requests kept resetting the 6-minute
+        # lull clock, the rotation reached overview at 01:18 and the run ended before recap's turn: it never ran.
+        self.recap_every = recap_every
+        self.last_recap = time.time()
         self.urgent_quiet = urgent_quiet  # no segment within this long of an attack cut on the main camera
         self.overview_zoom = overview_zoom
         self.spotlight_zoom = spotlight_zoom
@@ -53,6 +66,7 @@ class Segments:
         self.history = deque(maxlen=200)  # (t, kind, text) of alerts seen, for recaps
         self.seen = set()
         self.replays = None  # replays.Replays sets itself here
+        self.shown_moments = set()
 
     # ---- availability ------------------------------------------------------------------------------------------
     def why_unavailable(self, kind, snap):
@@ -67,7 +81,17 @@ class Segments:
             return "no research yet"
         if kind in ("spotlight", "overview") and not self.live_agents(snap):
             return "no agent in the world"
+        if kind == "space" and not (snap.get("space") or {}).get("active"):
+            return "no Space Age progress yet"
+        if kind == "space_moment" and not self.moments(snap):
+            return "no Space Age moment yet"
         return None
+
+    def moments(self, snap, fresh_only=False, now=None):
+        """Moments not yet shown as a segment, newest first."""
+        now = now or time.time()
+        return [m for m in reversed((snap.get("space") or {}).get("moments") or [])
+                if m["id"] not in self.shown_moments and (not fresh_only or now - m["t"] <= MOMENT_FRESH_S)]
 
     @staticmethod
     def live_agents(snap):
@@ -144,6 +168,8 @@ class Segments:
                    "facts": facts, "by": str(body.get("by") or "caster"), "reason": str(body.get("reason") or ""),
                    "camera": camera, "queued": now}
             self.queue = seg
+            if kind == "recap":
+                self.last_recap = now
             return 200, {k: seg[k] for k in ("id", "state", "seconds", "title", "facts")} | {"eta": STARTING_S}
 
     # ---- the clock (called once a second with the latest snapshot) ---------------------------------------------
@@ -170,7 +196,14 @@ class Segments:
                 seg.update(state="starting", started=now, ends=now + STARTING_S + seg["seconds"])
                 self.cur = seg
                 self.last_start = now
-        if self.cur is None and self.queue is None and now - self.last_end >= self.lull_after:
+        if not self.busy() and self.moments(snap, fresh_only=True, now=now):
+            # a Space Age moment is news: start it as soon as nothing else runs (spacing waived, attacks still win)
+            self.request({"type": "space_moment", "by": "director", "reason": "moment"}, now, ignore_spacing=True)
+        elif (self.cur is None and self.queue is None and now - self.last_recap >= self.recap_every
+              and now - self.last_start >= self.spacing and self.urgent_since(snap, now) >= 60):
+            minutes = max(5, min(30, round((now - self.last_recap) / 60)))
+            self.request({"type": "recap", "params": {"minutes": minutes}, "by": "director", "reason": "recap due"}, now)
+        elif self.cur is None and self.queue is None and now - self.last_end >= self.lull_after:
             self.lull(snap, now)
         return self.public()
 
@@ -234,6 +267,26 @@ class Segments:
         title = f"Research: {r['label']}" + (f" {pct}%" if pct is not None else "") if r.get("label") else "Research"
         return title, facts, None
 
+    def build_space(self, params, snap, now):
+        sp = snap.get("space") or {}
+        facts = {"planets": sp.get("planets") or [], "rockets": sp.get("rockets") or 0,
+                 "platforms": [{k: p.get(k) for k in ("name", "where", "speed_kms", "paused")} for p in (sp.get("platforms") or [])[:4]],
+                 "science": {p["label"]: {"total": p.get("total"), "per_min": p.get("rate")} for p in sp.get("science") or []},
+                 "away": sp.get("away") or []}
+        return "Space Age progress", facts, None
+
+    def build_space_moment(self, params, snap, now):
+        ms = self.moments(snap)
+        m = next((x for x in ms if x["id"] == params["moment"]), None) if params.get("moment") else (ms[0] if ms else None)
+        if not m:
+            raise ValueError("no such moment (or it was shown)")
+        self.shown_moments.add(m["id"])
+        facts = dict(m["facts"], moment=m["kind"])
+        camera = None
+        if m.get("agent") and any(a["name"] == m["agent"] for a in self.live_agents(snap)):
+            camera = {"follow": m["agent"], "zoom": self.spotlight_zoom}
+        return m["title"], facts, camera
+
     def build_spotlight(self, params, snap, now):
         live = self.live_agents(snap)
         name = params.get("agent")
@@ -258,8 +311,10 @@ class Segments:
         ys = [a["position"]["y"] for a in live]
         cx, cy = round((min(xs) + max(xs)) / 2, 1), round((min(ys) + max(ys)) / 2, 1)
         spread = max(math.hypot(x - cx, y - cy) for x, y in zip(xs, ys))
-        # ~60 tiles across at zoom 1 on a 1080p client: fit the spread plus margin, but never closer than overview_zoom
-        zoom = round(max(0.05, min(self.overview_zoom, 60.0 / (2 * spread + 60))), 3)
+        # ~60 tiles across at zoom 1 on a 1080p client: fit the spread plus margin, but never closer than overview_zoom.
+        # The game camera refuses zoom below 0.3 (cameras.lua MIN_ZOOM; shake3's 0.129 was refused), so a wider spread
+        # than ~200 tiles shows only the middle.
+        zoom = round(max(0.3, min(self.overview_zoom, 60.0 / (2 * spread + 60))), 3)
         facts = {"agents_in_world": len(live), "agents_total": len(snap.get("agents") or []),
                  "centre": [cx, cy], "spread_tiles": round(spread), "locations": sorted({a["location"] for a in live
                                                                                         if a.get("location")})[:6]}

@@ -14,7 +14,9 @@
     "automation-science-pack": ["Red science", "#f05454"], "logistic-science-pack": ["Green science", "#4cc764"],
     "military-science-pack": ["Military sci.", "#9aa0a6"], "chemical-science-pack": ["Blue science", "#4aa3ff"],
     "production-science-pack": ["Purple sci.", "#b06cf0"], "utility-science-pack": ["Yellow sci.", "#f5d142"],
-    "space-science-pack": ["Space sci.", "#f0f0f0"],
+    "space-science-pack": ["Space sci.", "#f0f0f0"], "metallurgic-science-pack": ["Metallurgic sci.", "#f08a3a"],
+    "electromagnetic-science-pack": ["Electromag. sci.", "#e05ad0"], "agricultural-science-pack": ["Agricultural sci.", "#b8d84a"],
+    "cryogenic-science-pack": ["Cryogenic sci.", "#6ad0f0"], "promethium-science-pack": ["Promethium sci.", "#8a5ad8"],
     "iron-ore": ["Iron ore", "#7d97b0"], "copper-ore": ["Copper ore", "#c8784a"], "coal": ["Coal", "#8d8d8d"],
     "stone": ["Stone", "#b5a27a"], "stone-brick": ["Stone brick", "#c9b48a"], "iron-gear-wheel": ["Gears", "#a9b6c4"],
     "copper-cable": ["Copper cable", "#e6965f"], "transport-belt": ["Belts", "#f2c230"], "inserter": ["Inserters", "#e8b04a"],
@@ -26,9 +28,11 @@
     "rocket-part": ["Rocket parts", "#e8e8e8"], "satellite": ["Satellite", "#d8e0e8"],
   };
   const SHORT_PACK = { "automation-science-pack": "Red", "logistic-science-pack": "Green", "military-science-pack": "Military",
-    "chemical-science-pack": "Blue", "production-science-pack": "Purple", "utility-science-pack": "Yellow", "space-science-pack": "Space" };
+    "chemical-science-pack": "Blue", "production-science-pack": "Purple", "utility-science-pack": "Yellow", "space-science-pack": "Space",
+    "metallurgic-science-pack": "Metallurgic", "electromagnetic-science-pack": "Electromagnetic", "agricultural-science-pack": "Agricultural",
+    "cryogenic-science-pack": "Cryogenic", "promethium-science-pack": "Promethium" };
   const PROD_CELLS = 4, PROD_PINNED = 2, PROD_ROTATE_S = 10;
-  const ALERT_ICON = { attack: "⚔️", loss: "🔥", death: "💀", power: "⚡", research: "🔬", info: "ℹ️" };
+  const ALERT_ICON = { attack: "⚔️", loss: "🔥", death: "💀", power: "⚡", research: "🔬", info: "ℹ️", space: "🚀" };
   // board event verbs as a viewer reads them ("Astra took: ...")
   const VERB = { posted: "posted", taken: "took", assigned: "assigned", released: "released", started: "started",
     done: "finished", blocked: "is blocked on", dropped: "dropped", reopened: "reopened" };
@@ -174,6 +178,7 @@
   function renderCards(s) {
     const box = $("cards");
     const agents = s.agents.filter((a) => a.seen !== false || a.display_name);
+    const space = s.space || {};
     // 2 columns; the research card takes one cell. Up to 7 agents: 4 roomy rows; 8-9: 5 rows; 10-12: 7 compact rows.
     const density = agents.length <= 7 ? "1" : agents.length <= 9 ? "2" : "3";
     if (document.body.dataset.density !== density) document.body.dataset.density = density;
@@ -189,7 +194,8 @@
         c.name = el("div", "name");
         c.badge = el("div", "badge");
         c.harness = el("div", "harness");
-        r1.append(c.name, c.badge, c.harness);
+        c.world = el("div", "world");
+        r1.append(c.name, c.badge, c.world, c.harness);
         c.model = el("div", "model");
         const doing = el("div", "doing");
         c.dot = el("span", "dot");
@@ -223,7 +229,11 @@
       if (a.activity === "thinking" && !a.active) doing = "thinking…";
       if (a.activity === "idle" && !doing) doing = "idle";
       setText(c.txt, humanItem(doing));
-      setText(c.where, a.location ? "· " + a.location : "");
+      // Space Age: which planet or platform the body is on, once more than Nauvis is in play
+      const world = space.active && a.where ? a.where : "";
+      setText(c.world, world);
+      c.world.className = "world" + (world ? " on " + (a.on_platform ? "platform" : "p-" + (a.surface || "")) : "");
+      setText(c.where, a.location && a.location !== world ? "· " + a.location : "");
       c.root.classList.toggle("oncam", !!a.camera);
       c.root.classList.toggle("main", a.camera === "main");
       c.root.classList.toggle("dead", a.activity === "dead");
@@ -596,6 +606,7 @@
       const label = frame.querySelector(".cam-label");
       const cam = (s.cameras || {})[slot];
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
+      if (slot !== "main") renderFill(frame, s, !agents.length && !(cam && cam.attack));
       const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "");
       const death = !!(cam && cam.attack && cam.alert === "death");
       label.classList.toggle("attack", !!(cam && cam.attack) && !death);
@@ -636,8 +647,97 @@
     }
   }
 
+  // Space Age panel (right column, above chat): planets reached, space-age science made, up to three platforms with
+  // where they are or their route (progress bar) and speed. Hidden until there is something (model space.active).
+  function renderSpace(s) {
+    const sp = s.space || {};
+    const box = $("space");
+    if (!box) return;
+    box.hidden = !sp.active;
+    if (!sp.active) return;
+    const sig = JSON.stringify([sp.planets, (sp.science || []).map((p) => [p.item, fmtRate(p.total)]), sp.rockets,
+      (sp.platforms || []).slice(0, 3).map((p) => [p.name, p.where, p.route && p.route.pct, p.speed_kms, p.paused])]);
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    const planets = $("space-planets");
+    planets.textContent = "";
+    for (const name of sp.planets || []) planets.append(el("span", "planet p-" + name.toLowerCase().replace(/ /g, "-"), name));
+    const sci = $("space-sci");
+    sci.textContent = "";
+    for (const p of sp.science || []) {
+      const chip = el("span", "pack");
+      chip.title = p.label;
+      let swatch = itemIcon(p.item, 16);
+      if (!swatch) { swatch = el("i"); swatch.style.setProperty("--c", itemInfo(p.item)[1]); }
+      chip.append(swatch, document.createTextNode(fmtRate(p.total)));
+      sci.append(chip);
+    }
+    if (!(sp.science || []).length && sp.rockets) sci.append(el("span", "rockets", sp.rockets + (sp.rockets > 1 ? " rockets" : " rocket")));
+    const plats = $("space-plats");
+    plats.textContent = "";
+    const list = sp.platforms || [];
+    for (const p of list.slice(0, 3)) {
+      const row = el("div", "plat");
+      row.append(el("span", "pname", p.name), el("span", "pwhere", p.where));
+      if (p.route) {
+        const bar = el("span", "bar pbar"), i = el("i");
+        i.style.width = p.route.pct + "%";
+        bar.append(i);
+        row.append(bar);
+      }
+      row.append(el("span", "pspeed", p.paused ? "paused" : p.speed_kms ? p.speed_kms + " km/s" : ""));
+      plats.append(row);
+    }
+    if (list.length > 3) plats.append(el("div", "plat more", "+" + (list.length - 3) + " more platforms"));
+    box.classList.toggle("noplats", !list.length);
+  }
+
+  // A side camera nobody is on (fewer agents than cameras, or the director paired them) would show an empty or stale
+  // capture: after 4 s unused the hole gets an opaque desk card (the analyst's read, else research), gone on reuse.
+  const PACE = { ahead: "ahead", "on pace": "onpace", behind: "behind" };
+  function renderFill(frame, s, unused) {
+    let fill = frame.querySelector(".cam-fill");
+    if (!fill) { fill = el("div", "cam-fill"); frame.prepend(fill); }
+    const now = Date.now();
+    if (!unused) { frame._idle = 0; fill.classList.remove("on"); frame.classList.remove("filled"); return; }
+    frame._idle = frame._idle || now;
+    if (now - frame._idle < 4000) return;
+    const an = s.analyst, r = s.research || {}, sp = s.space;
+    const lines = (an && (an.storylines || []).filter((x) => x && x.status !== "resolved" && x.title).slice(0, 3)) || [];
+    const sig = JSON.stringify([an && an.headline, an && (an.judgement || {}).pace, lines.map((x) => [x.title, x.text]),
+      r.label, Math.round((r.progress || 0) * 50), r.done_count, sp && sp.summary]);
+    if (fill.dataset.sig !== sig) {
+      fill.dataset.sig = sig;
+      fill.textContent = "";
+      const head = el("div", "fhead");
+      if (an && an.headline) {
+        head.append(el("span", "tag", "Analyst desk"));
+        const pace = (an.judgement || {}).pace;
+        if (PACE[pace]) head.append(el("span", "pace " + PACE[pace], pace));
+        fill.append(head, el("div", "fbig", clean(an.headline)));
+        for (const x of lines) {
+          const row = el("div", "fline");
+          row.append(el("span", "k", clean(x.title)), el("span", "v", clean(x.text || "")));
+          fill.append(row);
+        }
+      } else {
+        head.append(el("span", "tag", "Research"));
+        fill.append(head, el("div", "fbig", r.label || "No research queued"));
+        const bar = el("div", "bar fbar"), i = el("i");
+        i.style.width = Math.round((r.progress || 0) * 100) + "%";
+        bar.append(i);
+        fill.append(bar);
+        const recent = (r.recent || []).map((x) => x.label).slice(0, 3).join(", ");
+        if (recent) { const row = el("div", "fline"); row.append(el("span", "k", "Latest"), el("span", "v", recent)); fill.append(row); }
+      }
+      if (sp && sp.summary) { const row = el("div", "fline space"); row.append(el("span", "k", "Space"), el("span", "v", sp.summary)); fill.append(row); }
+    }
+    fill.classList.add("on");
+    frame.classList.add("filled");
+  }
+
   // ---------- segments (tools/stream/segments.py): drawn from segment.facts only, so the casters match the screen ----------
-  const FULL = { production: 1, research: 1, recap: 1 }; // these cover the main camera; spotlight/overview are a card on it
+  const FULL = { production: 1, research: 1, recap: 1, space: 1 }; // these cover the main camera; spotlight/overview are a card on it
   function factRow(label, value, cls) {
     const r = el("div", "srow" + (cls ? " " + cls : ""));
     r.append(el("span", "k", label), el("span", "v", value == null || value === "" ? "–" : String(value)));
@@ -688,6 +788,21 @@
       if ((f.claims || []).length) body.append(factRow("Claims", f.claims.join(", ")));
     } else if (seg.type === "attack_replay") { // shown on the stream page for the 2.5 s before the replay scene cuts in
       body.append(factRow("Coming up", f.event), factRow("Length", f.seconds != null ? f.seconds + " s" : null));
+    } else if (seg.type === "space") {
+      body.append(factRow("Planets reached", (f.planets || []).join(", ")), factRow("Rockets launched", f.rockets || 0));
+      for (const p of f.platforms || [])
+        body.append(factRow(p.name, [p.where, p.speed_kms ? p.speed_kms + " km/s" : "", p.paused ? "paused" : ""].filter(Boolean).join(" · ")));
+      const sci = Object.entries(f.science || {}).map(([k, v]) => k + " " + fmtRate(v.total) + (v.per_min ? " (" + fmtRate(v.per_min) + "/min)" : ""));
+      if (sci.length) body.append(factRow("Science made", sci.join(", ")));
+      if ((f.away || []).length) body.append(factRow("Off Nauvis", f.away.join(", ")));
+    } else if (seg.type === "space_moment") {
+      if (f.moment === "first_rocket") body.append(factRow("Rockets launched", f.rockets));
+      if (f.platform) body.append(factRow("Platform", f.platform));
+      if (f.where) body.append(factRow("Where", f.where));
+      if (f.planet) body.append(factRow("Planet", f.planet));
+      if (f.agent) body.append(factRow("Who", f.agent));
+      if (f.planets_reached) body.append(factRow("Planets reached", f.planets_reached));
+      body.append(factRow("Game time", f.game_time));
     } else if (seg.type === "overview") {
       body.append(factRow("Agents in the world", f.agents_in_world + " of " + f.agents_total),
         factRow("Spread", "about " + f.spread_tiles + " tiles from the centre"),
@@ -695,10 +810,13 @@
     }
     return body;
   }
+  const isFull = (seg) => !!FULL[seg.type] || (seg.type === "space_moment" && !(seg.facts || {}).agent); // a landing shows the agent
   function renderSegment(s) {
     const box = $("segment");
     const seg = s.segment;
     const show = !!seg && seg.state !== "ended";
+    // a full panel shares the camera with at most the newest alert banner (overlay.css body.seg-full)
+    document.body.classList.toggle("seg-full", show && isFull(seg));
     if (!show) {
       if (!box.hidden && !box.classList.contains("out")) {
         box.classList.add("out");
@@ -710,12 +828,12 @@
     if (box.dataset.sig !== sig) {
       box.dataset.sig = sig;
       box.classList.remove("out");
-      box.className = (FULL[seg.type] ? "full" : "lower") + " seg-" + seg.type;
+      box.className = (isFull(seg) ? "full" : "lower") + " seg-" + seg.type;
       box.textContent = "";
       const panel = el("div", "spanel");
       const title = el("div", "stitle");
       title.append(el("span", "tag", seg.type === "spotlight" ? "Spotlight" : seg.type === "overview" ? "Overview"
-        : seg.type === "attack_replay" ? "Replay" : "Analysis"),
+        : seg.type === "attack_replay" ? "Replay" : seg.type === "space" || seg.type === "space_moment" ? "Space Age" : "Analysis"),
         el("span", "", seg.title));
       if (seg.type === "spotlight") {
         const ag = (s.agents || []).find((a) => a.name === (seg.facts || {}).name);
@@ -737,12 +855,40 @@
     renderHead(s);
     renderCards(s);
     renderProduction(s);
+    renderSpace(s);
     renderChat(s);
     renderViewers(s);
     renderBoard(s);
     renderAlerts(s);
     renderCams(s);
     renderSegment(s);
+    watchVoice();
+    watchAlerts();
+  }
+
+  // Voice captions (audio.js #voice) grow up from the main camera's bottom edge. Their height goes to --voice-clear
+  // (caption stack + gap, 0 without captions) so segment and replay cards keep clear of them (overlay.css).
+  // Alert banners stack down from the main camera's top: a full panel starts below them (--alerts-clear).
+  let alertsWatched = false;
+  function watchAlerts() {
+    const a = $("alerts"), seg = $("segment");
+    if (alertsWatched || !a || !seg || !window.ResizeObserver) return;
+    alertsWatched = true;
+    new ResizeObserver(() => {
+      const r = a.getBoundingClientRect(), top = parseFloat(getComputedStyle(seg).top) || 0; // valid while hidden too
+      const clear = a.children.length && r.height > 1 ? Math.ceil(r.bottom - top + 14) : 0;
+      document.body.style.setProperty("--alerts-clear", clear + "px");
+    }).observe(a);
+  }
+  let voiceWatched = false;
+  function watchVoice() {
+    const v = $("voice");
+    if (voiceWatched || !v || !window.ResizeObserver) return;
+    voiceWatched = true;
+    new ResizeObserver(() => {
+      const h = v.getBoundingClientRect().height;
+      document.body.style.setProperty("--voice-clear", h > 1 ? Math.ceil(h + 30) + "px" : "0px");
+    }).observe(v);
   }
 
   // ---------- feed: SSE with a polling fallback ----------

@@ -69,6 +69,31 @@ def main():
         assert line.startswith("haiku") and "compactions=1" in line and "reinjects=1" in line and "nudges=2" in line \
             and "tokens_at_compaction=[70000]" in line, line
 
+    # No automatic compaction in the last 2 minutes (exit 2 blocks it in Claude Code), unless the context has run on
+    # past the point; a manual one and an earlier one go ahead.
+    import time
+    with tempfile.TemporaryDirectory() as d:
+        run("setup", "claude", "haiku", d)
+        cmd = json.load(open(os.path.join(d, ".claude", "settings.json")))["hooks"]["PreCompact"][0]["hooks"][0]["command"]
+        assert "--skip-late 120 --at 80000" in cmd, cmd
+        tr = os.path.join(d, "t.jsonl")
+        transcript(tr, 80500)
+        pre = lambda trigger: subprocess.run([sys.executable, CTX, "hook", "pre-compact", "--skip-late", "120", "--at",
+                                              "80000"], input=json.dumps({"cwd": d, "transcript_path": tr,
+                                                                          "trigger": trigger}),
+                                             capture_output=True, text=True).returncode
+        deadline = lambda s: open(os.path.join(d, "deadline.txt"), "w").write(
+            time.strftime("%Y-%m-%d %H:%M PDT", time.localtime(time.time() + s)))
+        deadline(90)   # 30 to 90 s left
+        assert pre("auto") == 2 and pre("manual") == 0
+        transcript(tr, 90000)
+        assert pre("auto") == 0, "past compact_at + LATE_ROOM it compacts rather than overflow"
+        deadline(600)
+        transcript(tr, 80500)
+        assert pre("auto") == 0
+        assert [e for e in log_events(d) if e.startswith("pre-compact")] == \
+            ["pre-compact:skip-late", "pre-compact:", "pre-compact:", "pre-compact:"], log_events(d)
+
     with tempfile.TemporaryDirectory() as d:
         open(os.path.join(d, "notes.md"), "w").write("x" * 20000)
         assert run("setup", "grok", "grok-4.7", d).strip() == "GROK_AUTO_COMPACT_THRESHOLD_PERCENT=60"

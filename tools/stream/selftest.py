@@ -91,6 +91,98 @@ class FakeHarness:
         return {"ok": True}
 
 
+LUA_GLOBALS = {"game", "rcon", "helpers", "defines", "prototypes", "remote", "pairs", "ipairs", "next", "type",
+               "tostring", "tonumber", "math", "string", "table", "pcall"}
+
+
+def lua_globals_check():
+    """With a local luac: the overlay's Lua compiles once joined to one line and reads no stray globals (a loop
+    variable used after its loop reads as a nil global and fails the whole read on the server)."""
+    import re, shutil, subprocess
+    if not shutil.which("luac"):
+        return
+    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA", "SPACE_LUA"):
+        lua = getattr(harness, name, None)
+        if lua is None:
+            continue
+        lua = harness.one_line(lua).replace("ITEMS", "{}").replace("BODY", "'{}'")
+        out = subprocess.run(["luac", "-p", "-l", "-l", "-"], input=lua, capture_output=True, text=True)
+        assert out.returncode == 0, f"{name}: {out.stderr.strip()}"
+        names = set(re.findall(r'[GS]ETTABUP.*_ENV "([A-Za-z_]\w*)"', out.stdout))
+        assert names <= LUA_GLOBALS, f"{name} uses globals {sorted(names - LUA_GLOBALS)}"
+
+
+def space_checks():
+    """Space Age: platform rows, moments fire once (seeded on start), agents off Nauvis, space segments."""
+    from model import platform_where
+    from segments import Segments
+    w = platform_where({"name": "P", "at": "nauvis->vulcanus 42%", "speed": 1.2})
+    assert w["route"] == {"from": "Nauvis", "to": "Vulcanus", "pct": 42} and w["where"] == "Nauvis → Vulcanus" and w["speed_kms"] == 72, w
+    assert platform_where({"name": "P", "at": "in transit"})["where"] == "in transit"
+
+    run = {"agents": {"astra": {}, "opus": {}}, "space_age": True}
+    m = Model(run)
+    t = time.time()
+    base = [{"name": "astra", "surface": "nauvis", "position": {"x": 0, "y": 0}},
+            {"name": "opus", "surface": "nauvis", "position": {"x": 5, "y": 0}}]
+    m.ingest({"agents": base, "space": {"rockets": 1, "planets": ["nauvis"], "platforms": []}}, t)
+    assert not m.moments, "what is true at start is seeded, not announced"
+    snap = m.snapshot(t)
+    assert snap["space"]["active"] and snap["space"]["rockets"] == 1 and snap["space"]["summary"] == "1 rocket", snap["space"]
+    plat = {"name": "Orbital One", "at": "nauvis"}
+    m.ingest({"agents": base, "space": {"rockets": 2, "planets": ["nauvis"], "platforms": [plat]}}, t + 1)
+    assert [x["kind"] for x in m.moments] == ["first_platform"], list(m.moments)
+    away = [base[0], dict(base[1], surface="vulcanus")]
+    m.ingest({"agents": away, "space": {"rockets": 2, "planets": ["nauvis", "vulcanus"],
+                                        "platforms": [dict(plat, at="vulcanus")]}}, t + 2)
+    kinds = [x["kind"] for x in m.moments]
+    assert kinds == ["first_platform", "orbit", "landing"], kinds
+    landing = m.moments[-1]
+    assert landing["agent"] == "opus" and landing["facts"]["planet"] == "Vulcanus" and landing["facts"]["planets_reached"] == 2
+    m.ingest({"agents": away, "space": {"rockets": 3, "planets": ["nauvis", "vulcanus"], "platforms": [dict(plat, at="vulcanus")]}}, t + 3)
+    assert len(m.moments) == 3, "each moment fires once"
+    snap = m.snapshot(t + 3)
+    op = next(a for a in snap["agents"] if a["name"] == "opus")
+    assert op["where"] == "Vulcanus" and op["location"] == "Vulcanus", op
+    assert any(a["kind"] == "space" for a in snap["alerts"])
+
+    seg = Segments(lull_after=1e9)
+    seg.step(snap, t + 3)  # a fresh moment starts by itself (newest first: the landing, following the agent)
+    assert seg.queue and seg.queue["type"] == "space_moment" and seg.queue["camera"] == {"follow": "opus", "zoom": seg.spotlight_zoom}, seg.queue
+    assert seg.queue["facts"]["moment"] == "landing"
+    seg.step(snap, t + 4)
+    assert seg.cur["type"] == "space_moment"
+    seg.cur["ends"] = t + 5
+    seg.step(snap, t + 6)  # ended -> the next fresh moment (spacing waived)
+    seg.step(snap, t + 12)
+    assert seg.cur and seg.cur["facts"]["moment"] == "orbit", seg.cur
+    code, reply = seg.request({"type": "space"}, t + 500, ignore_spacing=True)
+    assert code == 409 and reply["error"] == "busy"
+    seg.cur = None
+    code, reply = seg.request({"type": "space"}, t + 500)
+    assert code == 200 and reply["facts"]["planets"] == ["Nauvis", "Vulcanus"] and reply["facts"]["rockets"] == 3, reply
+    assert Segments().why_unavailable("space", {"space": {"active": False}}) == "no Space Age progress yet"
+
+    # live: the `platforms` read goes out with peek, per platform, and merges into the score's rows
+    class PlatHarness(FakeHarness):
+        def dispatch(self, action, args=None, player=None, bot=None):
+            if action == "platforms":
+                assert args.get("peek") is True and args["platform"] == "Orbital One"
+                self.calls.append(("platforms", args))
+                return {"platforms": [{"name": "Orbital One", "state": "on_the_path", "at": "nauvis->vulcanus 10%", "speed": 1.5}]}, 1
+            return super().dispatch(action, args, player, bot)
+    ph = PlatHarness()
+    ls = LiveSource("test", {"agents": {"astra": {}}}, harness=ph)
+    sp = {"platforms": [{"name": "Orbital One", "at": "in transit"}]}
+    errs = {}
+    ls.observe_platforms(sp, errs)
+    assert not errs and sp["platforms"][0]["speed"] == 1.5 and sp["platforms"][0]["at"].startswith("nauvis->"), (errs, sp)
+    sp2 = {"platforms": [{"name": "Orbital One", "at": "in transit"}]}
+    ls.observe_platforms(sp2, errs)  # within platform_every: no new read, last detail reused
+    assert len([c for c in ph.calls if c[0] == "platforms"]) == 1 and sp2["platforms"][0]["speed"] == 1.5
+    assert "platforms" in harness.READ_ACTIONS
+
+
 def main():
     # read-only guard
     h = harness.Harness.__new__(harness.Harness)
@@ -111,6 +203,7 @@ def main():
     # Lua sent through one_line() must not carry `--` comments (they would swallow the rest of the joined line)
     for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA"):
         assert "--" not in harness.one_line(getattr(harness, name)), f"{name} has a Lua comment"
+    lua_globals_check()
 
     run = {"agents": {"astra": {"model": "GPT-6 Astra", "harness": "Codex"}, "luna": {"model": "GPT-6 Luna"}}}
     fake = FakeHarness()
@@ -140,7 +233,7 @@ def main():
         {"chunk_centre": {"x": 16, "y": 16}, "hits": 9, "damage": 140, "last_tick": 4000, "entities": "gun-turret x2, stone-wall x5"},
         {"chunk_centre": {"x": -16, "y": -16}, "hits": 820, "damage": 0, "last_tick": 4500, "entities": "crash-site-spaceship x820"},
         {"chunk_centre": {"x": 500, "y": 16}, "hits": 1, "damage": 5, "last_tick": 10}]}, 5000)
-    assert len(ev) == 1 and ev[0]["text"] == "Base under attack near (16, 16): gun-turret x2", ev
+    assert len(ev) == 1 and ev[0]["text"] == "Base under attack near (16, 16): gun turret", ev
     before = m.agents["astra"].interest
     m.ingest({"events": ev}, time.time())
     assert m.agents["astra"].interest > before + 3, "astra is 15 tiles from the attack"
@@ -181,7 +274,12 @@ def main():
     losses = LiveSource.loss_events({"latest": [
         "in (12,-40)-(20,-31) 7 destroyed: 4 stone-wall, 3 gun-turret by 5 small-biter, 1m10s-0s ago",
         "in (300,5) 1 destroyed: 1 inserter, 4m20s ago"]})
-    assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by 5 small biter)", losses
+    assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by small biters)", losses
+    # hit counts ("x3") and kill counts never reach the banner or the replay title (shake3: read on air as enemies)
+    hits = LiveSource.attack_events({"attacked": [
+        {"chunk_centre": {"x": -48, "y": 16}, "damage": 40, "last_tick": 100, "entities": "character x3"},
+        {"chunk_centre": {"x": 64, "y": 0}, "damage": 9, "last_tick": 100, "entities": "gun-turret x12, stone-wall x2"}]}, 100)
+    assert [h["text"] for h in hits] == ["Engineer under attack near (-48, 16)", "Base under attack near (64, 0): gun turret"], hits
 
     # an attack cuts the main camera straight away, even inside its dwell
     sent_s = []
@@ -219,10 +317,13 @@ def main():
     assert dsa.step(msa.snapshot(t_sa + 1), t_sa + 1)["main"]["agents"] == ["astra", "luna"]
     assert sent_sa[-1]["surface"] == "vulcanus" and sent_sa[-1]["position"] == {"x": 3.0, "y": 0.0}, sent_sa[-1]
     by_sa = {a["name"]: a for a in msa.snapshot(t_sa + 1)["agents"]}
-    assert by_sa["astra"]["location"] == "Vulcanus spawn", by_sa["astra"]
-    msa.ingest({"agents": [{"name": "luna", "position": {"x": 0, "y": -3}, "surface": "platform-1", "where": "platform alpha", "travel": "aboard"}]})
-    assert {a["name"]: a for a in msa.snapshot(t_sa + 2)["agents"]}["luna"]["location"] == "platform alpha"
-    msa.ingest({"agents": [{"name": "luna", "position": {"x": 0, "y": -3}, "surface": "platform-1", "where": "cargo pod to vulcanus", "travel": "descending", "alive": False}]})
+    assert by_sa["astra"]["location"] == "Vulcanus", by_sa["astra"]
+    msa.ingest({"agents": [{"name": "luna", "position": {"x": 0, "y": -3}, "surface": "platform-1", "platform": "alpha",
+                            "where": "platform alpha", "travel": "aboard"}]})
+    luna = {a["name"]: a for a in msa.snapshot(t_sa + 2)["agents"]}["luna"]
+    assert luna["location"] == "alpha" and luna["on_platform"], luna
+    msa.ingest({"agents": [{"name": "luna", "position": {"x": 0, "y": -3}, "surface": "platform-1", "platform": "alpha",
+                            "where": "cargo pod to vulcanus", "travel": "descending", "alive": False}]})
     luna = {a["name"]: a for a in msa.snapshot(t_sa + 3)["agents"]}["luna"]
     assert luna["location"] == "cargo pod to vulcanus" and luna["alive"], luna  # bodiless in a pod, not dead
     assert not [al for al in msa.snapshot(t_sa + 3).get("alerts") or [] if al["kind"] == "death"], "boarding is no death"
@@ -307,6 +408,21 @@ def main():
     lull = Segments(lull_after=0, spacing=0)
     lull.step(s5, time.time() + 1)
     assert lull.queue and lull.queue["by"] == "director" and lull.queue["type"] == "production", lull.queue
+
+    # recap: due every recap_every, ahead of the lull rotation, even when requests keep the lull clock from running
+    rc = Segments(lull_after=1e9, spacing=180)
+    t9 = rc.last_recap
+    rc.last_start = t9 + 1100  # a host request 100 s before the recap is due
+    rc.step(s5, t9 + 1201)
+    assert rc.queue is None, "spacing still holds"
+    rc.step(s5, t9 + 1281)
+    assert rc.queue and rc.queue["type"] == "recap" and rc.queue["by"] == "director" and rc.queue["facts"]["minutes"] == 21, rc.queue
+    rc.step(s5, t9 + 1282)
+    rc.cur["ends"] = t9 + 1290
+    for k in range(1290, 1600, 10):
+        rc.step(s5, t9 + k)
+    assert rc.cur is None or rc.cur["type"] == "recap", "no second recap within recap_every"
+    assert rc.last_recap == t9 + 1281
 
     # replays: a death on the main camera -> save the buffer -> attack_replay segment -> replay scene -> back to stream
     import replays as rp
@@ -428,6 +544,8 @@ def main():
     for k in range(40, 80):
         night.work(t8 + k)
     assert fo.settings["stream cam1"]["gamma"] == 0, fo.settings
+
+    space_checks()
 
     log = os.path.join(os.environ.get("TMPDIR", "/tmp"), "selftest-director.jsonl")
     d = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], src.send_camera, log)

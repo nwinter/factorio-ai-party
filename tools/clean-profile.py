@@ -55,11 +55,15 @@ def claude(d):
     # The launcher now passes --setting-sources project,local, so the route's user settings (hooks, plugins) no
     # longer load; keep the thinking behaviour they gave shake1 and shake2 so runs stay comparable.
     cfg["alwaysThinkingEnabled"] = True
+    # Shake3: the route attached its git status and recent commits at start and after each compaction.
+    cfg["includeGitInstructions"] = False
     env = cfg.setdefault("env", {})
     # Long timed actions and wait_until need more than the 2-minute default Bash timeout.
     env.update({"BASH_DEFAULT_TIMEOUT_MS": "300000", "BASH_MAX_TIMEOUT_MS": "960000",
                 "ENABLE_CLAUDEAI_MCP_SERVERS": "false", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0",
-                "CLAUDE_CODE_ENABLE_CFC": "0", "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1"})
+                "CLAUDE_CODE_ENABLE_CFC": "0", "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
+                # "The user hasn't heard from you in a while" (shake3: Opus 36, Sonnet 29); also on the launch line.
+                "CLAUDE_CODE_SILENT_TURN_REMINDER": "0", "CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS": "1"})
     # dontAsk denied loops over ./fh with shell variables (shake2: Haiku lost ~17 minutes); tools/permit.py approves
     # commands made only of game programs, loops and workspace redirects.
     permit = {"type": "command", "command": "python3 " + os.path.join(ROOT, "tools", "permit.py"), "timeout": 10}
@@ -86,42 +90,40 @@ def codex(d):
              'model_reasoning_summary = "concise"\n'
              '[features]\n'
              'multi_agent = false\n'
-             'multi_agent_v2 = false\n'
              'skip_host_skill_discovery = true\n'
              'skill_search = false\n'
              'plugins = false\n'
              'apps = false\n'
              'browser_use = false\n'
              'in_app_browser = false\n'
-             'computer_use = false\n')
+             'computer_use = false\n'
+             # Shake3 still had <multi_agent_role> (2,400 characters) and its <multi_agent_mode> revocation with
+             # multi_agent_v2 = false. Probes: the feature's empty hint texts remove both; enabled and
+             # usage_hint_enabled alone do not.
+             '[features.multi_agent_v2]\n'
+             'enabled = false\n'
+             'usage_hint_enabled = false\n'
+             'root_agent_usage_hint_text = ""\n'
+             'multi_agent_mode_hint_text = ""\n'
+             # Shake3 still had the 5.4K-character <skills_instructions> block (the owner's ~/.agents/skills and the
+             # route's .system skills): the [skills] table turns off the list and the bundled skills.
+             '[skills]\n'
+             'include_instructions = false\n'
+             '[skills.bundled]\n'
+             'enabled = false\n')
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write(text)
 
 
 def muse(d):
-    """Print a `-c hooks=...` launch option: the owner's Muse hooks without the personal tooling-context hook.
+    """Print the `-c hooks={}` launch option: none of the owner's Muse hooks from ~/.config/muse/settings.json.
 
-    ~/.config/muse/settings.json has SessionStart hooks `herdr-session record muse` (lets Herdr and so the supervisor
-    see Muse's state) and `native-agent-tooling context muse` (injects the owner's shared tooling rules; shake2).
-    The workspace's own .muse/hooks.json (tools/context.py) is a separate file and stays as it is."""
-    import shlex
-    try:
-        hooks = json.load(open(os.path.join(HOME, ".config", "muse", "settings.json"))).get("hooks") or {}
-    except (OSError, ValueError):
-        return
-    kept = {}
-    for event, groups in hooks.items():
-        out = []
-        for g in groups:
-            hs = [dict(h, command=h.get("command", "").replace("$HOME", HOME)) for h in g.get("hooks", [])
-                  if "native-agent-tooling" not in h.get("command", "")]
-            if hs:
-                out.append(dict(g, hooks=hs))
-        if out:
-            kept[event] = out
-    if kept != hooks:
-        print("-c " + shlex.quote("hooks=" + json.dumps(kept, separators=(",", ":"))))
+    Round 3 kept its `herdr-session record muse` hooks (SessionStart, Stop) and dropped `native-agent-tooling context
+    muse`; shake3 still ran the herdr ones, which only record the session for the owner's resume tools (Herdr has no
+    Muse agent kind; the supervisor types into the pane). The workspace's .muse/hooks.json (tools/context.py) is a
+    separate file and still loads."""
+    print("-c 'hooks={}'")
 
 
 if __name__ == "__main__":

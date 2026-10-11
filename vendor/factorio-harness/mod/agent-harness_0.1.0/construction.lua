@@ -179,6 +179,74 @@ return function(api)
     end
     return found,marked
   end
+  -- The area an entity of this prototype covers at pos, turned for east/west.
+  function M.box(proto,pos,direction)
+    local b=proto.collision_box or {left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
+    local l,t,r,btm=b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y
+    if direction==4 or direction==12 then l,t,r,btm=-btm,l,-t,r end
+    return {left_top={x=pos.x+l,y=pos.y+t},right_bottom={x=pos.x+r,y=pos.y+btm}}
+  end
+  -- Remnants (tree stumps, biter corpses, ruins: type corpse) never stop a
+  -- player's build, the game removes them under the new entity; a script
+  -- build or revive is refused by them (shake3: "placement blocked by
+  -- tree-08-stump" right after mining the tree). So they go first. A
+  -- character corpse holds items and stays.
+  function M.clear_remnants(surface,proto,pos,direction)
+    local n=0
+    for _,e in pairs(surface.find_entities_filtered{area=M.box(proto,pos,direction),type='corpse'}) do
+      if e.valid and e.type=='corpse' then e.destroy(); n=n+1 end
+    end
+    return n
+  end
+  -- True when the footprint holds only trees, rocks and remnants: what a
+  -- ghost may go over, since place_ghosts marks the trees and rocks,
+  -- construct mines them, and the build clears the remnants.
+  local OBSTACLE={tree=true,plant=true,['simple-entity']=true}
+  function M.only_obstacles(surface,proto,pos,direction)
+    local any=false
+    for _,e in pairs(surface.find_entities_filtered{area=M.box(proto,pos,direction)}) do
+      if e.valid and e.type=='corpse' then any=true
+      elseif e.valid and e.type~='resource' then
+        -- Neutral only: mark_obstacles leaves a force's own plants (Gleba farms) alone.
+        if not (OBSTACLE[e.type] and e.minable and (e.force==nil or e.force.name=='neutral')) then return false end
+        any=true
+      end
+    end
+    return any
+  end
+  function M.in_box(pos,box)
+    return pos.x>box.left_top.x and pos.x<box.right_bottom.x and pos.y>box.left_top.y and pos.y<box.right_bottom.y
+  end
+  -- When the agent's own character is the only thing in a footprint (shake3:
+  -- Grok's most common error), where to step so the build can go ahead: the
+  -- nearest free spot just off the footprint that keeps the position in build
+  -- reach, not on a belt. Returns {to, box (what the character must leave)},
+  -- or nil when anything else is in the way or no spot fits.
+  function M.aside(p,proto,pos,direction)
+    local c=p.character
+    if not (c and c.valid) then return nil end
+    local box=M.box(proto,pos,direction)
+    local mine=false
+    for _,e in pairs(p.surface.find_entities_filtered{area=box}) do
+      if e.valid then
+        if e==c then mine=true
+        elseif e.type~='resource' and e.type~='corpse' then return nil end
+      end
+    end
+    if not mine then return nil end
+    -- The character is 0.4 wide: its centre must be 0.2 off the box.
+    local leave={left_top={x=box.left_top.x-0.22,y=box.left_top.y-0.22},right_bottom={x=box.right_bottom.x+0.22,y=box.right_bottom.y+0.22}}
+    local m,here=0.45,p.position
+    local l,t,r,b=box.left_top.x-m,box.left_top.y-m,box.right_bottom.x+m,box.right_bottom.y+m
+    local spots={{x=l,y=here.y},{x=r,y=here.y},{x=here.x,y=t},{x=here.x,y=b},{x=l,y=t},{x=r,y=t},{x=l,y=b},{x=r,y=b}}
+    table.sort(spots,function(u,v) return api.distance(here,u)<api.distance(here,v) end)
+    for _,s in ipairs(spots) do
+      if api.distance(s,pos)<=p.build_distance-0.5 and p.surface.can_place_entity{name=c.name,position=s,force=p.force}
+        and p.surface.count_entities_filtered{area={{s.x-0.4,s.y-0.4},{s.x+0.4,s.y+0.4}},type=BELTS,limit=1}==0 then
+        return {to=s,box=leave}
+      end
+    end
+  end
   local function obstructed(rec)
     for _,o in ipairs(rec.obstacles or {}) do if o.valid then return o end end
   end

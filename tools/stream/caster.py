@@ -23,6 +23,7 @@ sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 
 import voices  # noqa: E402
+from analyst_board import is_question, questions_on  # noqa: E402
 
 CASTERS = {
     "pbp": {"name": "Rook", "label": "Rook",
@@ -38,20 +39,39 @@ CASTERS = {
                        "the bots are playing, reads the team's strategy, warm with dry humour, needles Rook"},
 }
 NATURALIST = ("This time Vale narrates like a hushed nature-documentary narrator observing these AI models in their "
-              "habitat: their habits in chat, how they plan, wander, idle, over-explain or coordinate, described with "
-              "affectionate wonder and dry wit, as if they were a rare species. Rook can play along. Only describe "
-              "behaviour that the facts show (their chat lines, what they are doing).")
+              "habitat: their habits in chat, how they plan, wander, over-explain or coordinate, described with "
+              "affectionate wonder and dry wit, as if they were a rare species. A specimen planning its next step is "
+              "deep in thought, a sight to admire. Rook can play along. Only describe behaviour that the facts show "
+              "(their chat lines, what they are doing).")
 SHOW = ("The show: nine AI models from different labs (each named in the facts with its model and harness) each "
         "control one engineer in one shared Factorio world, in real time, with no cheats and no human help. Factorio "
         "basics you may explain: players mine ore, smelt it into plates, and automate everything with assemblers, "
         "belts and inserters; labs consume science packs (red automation, green logistic, then blue and beyond) to "
         "research new technology; steam power runs the machines; pollution draws biters, which attack the base, so "
-        "walls and gun turrets matter. The team's goal is a rocket launch; milestones in order: burner mining and "
+        "walls and gun turrets matter. Every game starts beside the wreck of the engineers' crashed spaceship (the "
+        "crash site): scenery from before the game, with a few starting items; its fire is harmless. Research "
+        "progress is always kept. The long-term goal is a rocket launch; milestones in order: burner mining and "
         "smelting, steam power, red science from assemblers, automation/logistics/electronics with electric mining, "
         "automated green science, then oil, plastics, red circuits, blue science and on to the rocket silo. A pace "
         "comparison with the team's previous run, when given in the facts, tells viewers whether this run is "
         "faster or slower; judge how well the bots play from it and the other facts.")
-PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "viewer": 6, "power": 6, "harness": 5,
+SHOW_SPACE = (" This run plays the Space Age expansion, where a rocket launch is a milestone on the way: rockets "
+              "carry a space platform starter pack to orbit, space science is made on the platform, the planets "
+              "Vulcanus (metallurgic science), Fulgora (electromagnetic), Gleba (agricultural) and Aquilo (cryogenic) "
+              "follow, and the expansion's goal is reaching the edge of the solar system. A two-hour run is mostly the "
+              "start on Nauvis, the home planet: oil, plastics and blue science are its big milestones. Many Space Age "
+              "technologies unlock by a trigger, such as mining calcite or building an asteroid collector.")
+
+
+def show_for(s):
+    """The show notes for this snapshot: Space Age runs carry a `space` block (eng/stream2)."""
+    s = s or {}
+    space = s.get("space") or "space age" in str(s.get("subtitle") or "").lower() or os.environ.get("POG_SPACE_AGE") == "1"
+    return SHOW + (SHOW_SPACE if space else "")
+
+
+PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "power": 6,
+            "harness": 5,
             "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
 URGENT = 8
@@ -156,13 +176,24 @@ class Differ:
                 kind = "harness" if b.get("kind") == "harness" else "board"
                 ev.append({"kind": kind, "agent": b.get("agent") or b.get("by"), "change": verb,
                            "title": b.get("title"), "item": b.get("kind")})
+        an = s.get("analyst") or {}
         for v in viewer_messages(s):
             key = ("viewer", v["id"])
             if key in self.chat_keys:
                 continue
             self.chat_keys.add(key)
-            if not first and now - v["t"] < 60:
+            # questions go to the analyst while it takes them (one answer per 2-3 min; the rest go unanswered
+            # rather than answered from the writer's own Factorio knowledge, which the 30-question check put at 9/30)
+            if not first and now - v["t"] < 60 and not (questions_on(an) and is_question(v["text"])):
                 ev.append({"kind": "viewer", "viewer": v["name"], "text": v["text"]})
+        for x in an.get("answers") or []:  # the analyst's checked answer to a viewer question (analyst.py)
+            key = ("answer", x.get("id"))
+            if key in self.chat_keys:
+                continue
+            self.chat_keys.add(key)
+            if not first and x.get("answer") and now - float(x.get("t") or now) < 90:
+                ev.append({"kind": "viewer", "viewer": x.get("viewer"), "text": x.get("question"),
+                           "answer": x["answer"], "answer_facts": x.get("facts") or {}, "prio": PRIORITY["viewer"] + 1})
         seg = s.get("segment") or {}
         if seg.get("id") and seg.get("state") in ("starting", "live") and seg["id"] not in self.segments_seen:
             self.segments_seen.add(seg["id"])  # eng/stream2 shows a segment: talk over it (docs/AUDIO-NOTES "Segments")
@@ -178,7 +209,7 @@ class Differ:
         self.prev = s
         for e in ev:
             e["t"] = now
-            e["prio"] = PRIORITY.get(e["kind"], 2)
+            e["prio"] = e.get("prio") or PRIORITY.get(e["kind"], 2)
         return ev
 
 
@@ -207,7 +238,11 @@ def spoken(text):
     """Alert/board text as a caster would say it: no map coordinates, no dangling 'near'."""
     text = re.sub(r"\s*(?:near|at)?\s*\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)", "", str(text))
     text = re.sub(r"(?<=[a-z])-(?=[a-z\d])", " ", re.sub(r"\s*:\s*", ": ", text))  # gun-turret -> gun turret
-    text = re.sub(r"\s+x(\d+)\b", r" (\1 of them)", text)  # "assembling machine 1 x129" read as "x one two nine"
+    # attack alerts list "<entity> x<hits>": a hit count on the team's entity, never a count of anything (shake3 aired
+    # "(9 of them)" as "nine biters chew their boots"); live.py now writes "hit 9 times" itself
+    text = re.sub(r"\s+x(\d+)\b", r" hit \1 times", text)
+    text = re.sub(r"\bcharacter\b", "engineer", text)  # the runtime's word for one of the team's engineers
+    text = re.sub(r"\(by (\d+) ([a-z ]*?biter)\)", r"(by \2s)", text)  # loss alerts: "(by 21 small biter)" is kills
     return re.sub(r"\s+", " ", text).strip(" :")
 def spoken_time(gt):
     """'1h03m' -> '1 hour 3 minutes' (what TTS should read)."""
@@ -227,22 +262,104 @@ def agent_facts(s, name, said=False):
     where = a.get("location")
     if where and re.fullmatch(r"\d+ m [NSEW]{1,2}", where):  # "30 m E" is noise on air; named places are not
         where = None
-    f = {"name": a.get("display_name") or name, "role": a.get("role"), "model": a.get("model"),
-         "harness": a.get("harness"), "doing": a.get("action") if a.get("activity") == "acting" else None,
-         "status": {"dead": "down, waiting to respawn", "offline": "offline", "thinking": "thinking (standing still)",
-                    "idle": "idle"}.get(a.get("activity")),
+    # "thinking (standing still)" became 102 of 443 shake3 host lines mocking agents as frozen or statues
+    f = {"name": a.get("display_name") or name, "pronouns": pronouns_of(a), "role": a.get("role"),
+         "model": a.get("model"), "harness": a.get("harness"),
+         "doing": a.get("action") if a.get("activity") == "acting" else None,
+         "status": {"dead": "down, waiting to respawn", "offline": "offline", "thinking": "planning the next step",
+                    "idle": "between tasks"}.get(a.get("activity")),
          "where": where, "motto": a.get("motto") or None}
     if said and (a.get("last_said") or {}).get("text"):
         f["last_said"] = spoken(voices.speakable(a["last_said"]["text"], 160))
     return {k: v for k, v in f.items() if v}
 
 
+def drop_keys(x, keys):
+    """`x` without `keys` at any depth (facts the hosts must not say)."""
+    if isinstance(x, dict):
+        return {k: drop_keys(v, keys) for k, v in x.items() if k not in keys}
+    if isinstance(x, list):
+        return [drop_keys(v, keys) for v in x]
+    return x
+
+
+def pronouns_of(a):
+    """An agent's chosen pronouns ("he/him"), else "they/them" (shake3: Grok chose he/him; the rules forced "they")."""
+    p = re.sub(r"\s+", "", str(a.get("pronouns") or "")).lower()
+    return p if re.fullmatch(r"[a-z]{2,6}(?:/[a-z]{2,6}){0,2}", p) else "they/them"
+
+
+def read_deadline(spec, now=None):
+    """Epoch of the run's end from --deadline: "YYYY-MM-DD HH:MM[ TZ]", "HH:MM" (today), or a file or glob of
+    deadline.txt files (the latest wins: deadlines are staggered by launch). None when unknown."""
+    import glob as _glob
+    if not spec:
+        return None
+    texts = []
+    paths = _glob.glob(spec) if any(c in spec for c in "*?[") else ([spec] if os.path.isfile(spec) else [])
+    for p in paths:
+        try:
+            texts.append(open(p).read().strip())
+        except OSError:
+            pass
+    if not paths:
+        texts = [spec]
+    out = []
+    for t in texts:
+        m = re.match(r"^\s*(?:(\d{4}-\d{2}-\d{2})\s+)?(\d{1,2}):(\d{2})(?::(\d{2}))?", t)
+        if not m:
+            continue
+        day = m.group(1) or time.strftime("%Y-%m-%d", time.localtime(now or time.time()))
+        out.append(time.mktime(time.strptime(f"{day} {m.group(2)}:{m.group(3)}:{m.group(4) or '00'}", "%Y-%m-%d %H:%M:%S")))
+    return max(out) if out else None
+
+
 FILLERS = ["pace", "explain", "naturalist", "spotlight", "production", "board", "research"]
+# which of the analyst's point kinds fit each filler angle (docs/ANALYST-NOTES.md "What the analyst writes")
+POINT_KINDS = {"pace": ("comparison", "judgement"), "explain": ("explainer", "prediction", "trivia"),
+               "production": ("stat",), "research": ("prediction", "stat"), "spotlight": ("storyline",),
+               "board": ("storyline",)}
 
 
-def context_facts(s, baseline=None):
-    """What viewers need to follow along and what lets the hosts judge the play: stage, science rate, pace."""
+def analyst_pick(analyst, used, kinds=None, min_priority=0):
+    """eng/analyst's pick_point, plus a priority floor; None when the analyst is off or has nothing fresh."""
+    try:
+        from analyst_board import pick_point
+    except ImportError:
+        return None
+    if not analyst:
+        return None
+    pts = [p for p in analyst.get("talking_points") or [] if int(p.get("priority") or 2) >= min_priority]
+    return pick_point(dict(analyst, talking_points=pts), used, kinds=kinds)
+
+
+def analyst_facts(f, e, s):
+    """The analyst's material for this beat: its point (said in the hosts' words, numbers kept), its corrections
+    for what is on screen, and the headline and what comes next on the opener."""
+    an = s.get("analyst") or {}
+    if e.get("point"):
+        from analyst_board import point_facts
+        f["analyst_point"] = point_facts(e["point"])
+        if e["kind"] == "lull":
+            f["angle"] = ("the analyst's point; say it in the hosts' own words and keep its numbers"
+                          + (f" ({f['angle']})" if f.get("angle") and e.get("angle") != "analyst" else ""))
+    if an.get("corrections"):
+        f["corrections"] = [str(c) for c in an["corrections"][:6]]  # true; they target what is on screen now
+    if e["kind"] == "open":
+        if an.get("headline"):
+            f["analyst_headline"] = an["headline"]
+        if (an.get("next") or {}).get("text"):
+            f["next_milestone"] = dict((an["next"].get("facts") or {}), text=an["next"]["text"])
+
+
+def context_facts(s, baseline=None, deadline=None, clock=True):
+    """What viewers need to follow along and what lets the hosts judge the play: stage, science rate, pace, time left."""
     f = {}
+    left = (deadline - time.time()) / 60 if deadline else None
+    # shake3: "forty more minutes of biter bait" with 4.5 left; there was no time-left fact. On every beat the hosts
+    # said "forty-six minutes left" four exchanges running (mock), so only where time matters or it is running out.
+    if deadline and (clock or left <= 15):
+        f["minutes_to_deadline"] = round(left) if left >= 1 else "under a minute" if left > 0 else "the deadline has passed"
     sc = s.get("science") or {}
     if sc.get("stage_label"):
         f["stage"] = sc["stage_label"]
@@ -258,13 +375,19 @@ def context_facts(s, baseline=None):
     return f
 
 
-def facts_for(e, s, baseline=None):
+def facts_for(e, s, baseline=None, deadline=None):
     f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
+    gm = re.match(r"(\d+)h(\d+)m", s.get("game_time") or "")
+    if gm and int(gm.group(1)):  # "sixty-five minutes in" for 1h05m
+        f["game_minutes"] = int(gm.group(1)) * 60 + int(gm.group(2))
     # the pace comparison only where it is the story; on every line it turned the cast into a scoreboard
     paced = e["kind"] in ("research", "open", "viewer") or e.get("angle") in ("pace", "explain")
-    f.update(context_facts(s, baseline if paced else None))
+    f.update(context_facts(s, baseline if paced else None, deadline, clock=paced or e["kind"] == "segment"))
     if e["kind"] == "viewer":
         f["viewer_message"] = {"from": e.get("viewer"), "text": e.get("text")}
+        if e.get("answer"):  # the analyst's answer, checked with its tools; the hosts put it in their own words
+            f.update(e.get("answer_facts") or {}, analyst_answer=e["answer"])
+            f["how_to_call_it"] = "Rook says the viewer's name and question; Vale answers it from analyst_answer"
     if e["kind"] == "segment":
         seg = e.get("segment") or {}
         f["on_screen_now"] = {"segment": seg.get("type"), "title": seg.get("title"),
@@ -273,18 +396,28 @@ def facts_for(e, s, baseline=None):
         if seg.get("type") == "attack_replay":
             # not "muted" or "banner": the first version read those production notes out on air
             f["how_to_call_it"] = "as an instant replay, in the past tense, like a replay breakdown"
+        if seg.get("type") == "space_moment":
+            f["how_to_call_it"] = "a milestone for the team: celebrate it and say what it opens up"
+        # eng/stream2: platform speed_kms is LuaSpacePlatform.speed x 60, not yet checked against the game's km/s
+        f["on_screen_now"] = drop_keys(f["on_screen_now"], ("speed_kms",))
     if e["kind"] == "research" and baseline and e.get("text"):
         tech = re.sub(r"^research complete:\s*", "", e["text"], flags=re.I).strip().lower().replace(" ", "-")
         mins = baseline.minutes(tech)
         if mins is not None:
             f[f"{baseline.name}_finished_this_at"] = f"{mins} minutes"
+            if s.get("tick"):  # the hosts derived "fifteen minutes late to shake1's party" and the check rejected it
+                d = round(s["tick"] / 3600 - float(mins))
+                f[f"compared_with_{baseline.name}"] = (f"{abs(d)} minutes {'later' if d > 0 else 'earlier'}" if d
+                                                       else "at the same time")
     for k in ("text", "change", "title", "tech", "item"):
         if e.get(k):
             f[k] = spoken(e[k]) if k in ("text", "title") else e[k]
-    if e["kind"] == "attack" and ": " in f.get("text", ""):
-        # live alerts read "Base under attack: transport belt x7"; writers took the entity for the attacker
-        head, _, what = f["text"].partition(": ")
-        f["text"] = f"{head}; the biters are damaging: {what}"
+    if e["kind"] == "attack" and re.search(r"\d", f.get("text", "")):  # eng/stream2's banners carry no count now
+        # "Base under attack: transport belt hit 7 times". shake3's "the biters are damaging: character (3 of them)"
+        # aired as "nine biters chew their boots" and "fourteen turrets"
+        f["numbers_mean"] = "how many times biters hit the team's own buildings or engineers"
+    if e["kind"] == "loss":
+        f["numbers_mean"] = "the team's buildings destroyed; the run goes on"
     if e.get("also"):
         f["also_happening"] = [spoken(x) for x in e["also"] if x]
     for k in ("text",):  # alerts name agents by id ("sonnet died"); say their display names
@@ -331,6 +464,7 @@ def facts_for(e, s, baseline=None):
     if e["kind"] == "open":
         f["agents"] = [agent_facts(s, a["name"]) for a in (s.get("agents") or [])][:12]
         f["title"] = s.get("title")
+    analyst_facts(f, e, s)
     return {k: v for k, v in f.items() if v not in (None, [], {})}
 
 
@@ -338,7 +472,7 @@ def facts_for(e, s, baseline=None):
 RULES = ("Rules: one or two short sentences, at most 25 words, spoken aloud (no emoji, no lists, no stage "
          "directions, no quotation marks, do not start with your own name). Use ONLY the facts given; never invent "
          "names, numbers, places, items or outcomes. You may round numbers or skip them. Refer to agents by the "
-         "names given, and as \"they\", never he or she. Vary your openings; do not repeat phrasing from the recent "
+         "names given, with the pronouns in their facts (they when none are given). Vary your openings; do not repeat phrasing from the recent "
          "lines. Be fun, like a great esports cast, but never mean to a player.")
 EXCHANGE_RULES = (
     "Write the next moment of the broadcast as a quick back-and-forth between the two hosts: {n} lines, alternating, "
@@ -347,7 +481,11 @@ EXCHANGE_RULES = (
     "quotation marks. The hosts talk to each other: answer, tease, disagree, build on the last line; do not take "
     "turns reading facts. Use ONLY the facts given for anything about this game; never invent names, numbers, "
     "places, items or outcomes (general Factorio knowledge from the show notes is fine). You may round numbers. Refer "
-    "to agents by the names given, and as \"they\", never he or she or 'a man'. The hosts are commentators, not on "
+    "to agents by the names given, with the pronouns in their facts (they when none are given), never 'a man'. "
+    "Numbers in an attack count hits: how many times biters struck the team's own buildings or engineers. Numbers "
+    "in a loss count the team's buildings destroyed. 'Character' and 'engineer' mean one of the team's engineers. "
+    "An agent planning the next step is thinking; describe it kindly, in your own words. The run goes on "
+    "until the deadline, and the time left is minutes_to_deadline. The hosts are commentators, not on "
     "the team: the team is 'they', never 'we'. Never say something is missing, broken or absent ('no steam yet', "
     "'no belts') unless the facts say so, and mention the previous run only when the facts include a pace "
     "comparison. Skip map distances and directions unless they "
@@ -380,7 +518,14 @@ def check_line(line, facts, names, recent):
     for n in names:
         if re.search(r"\b" + re.escape(n.lower()) + r"\b", low) and n.lower() not in blob:
             return f"name not in facts: {n}"
-    known = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", blob)]
+    # numbers spelled out in the facts count too: shake3 rejected "Eleven labs" from Sol's "eleven labs are working"
+    known = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", blob)] + [float(v) for _, v in spelled_numbers(blob)]
+    # Kimi once aired "I will never doubt静止 again!" (Space Age pilot, 01:48)
+    if re.search(r"[Ѐ-ӿ֐-ۿ฀-๿　-鿿가-힯＀-￯]", line):
+        return "not English"
+    why = off_roster(line, blob + " " + (SHOW + SHOW_SPACE).lower(), names) or wrong_pronoun(low, facts) or wrong_deadline(low, facts)
+    if why:
+        return why
     for num in re.findall(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", line):  # "3,600" is one number
         num = num.replace(",", "")
         if num not in blob and not near_round(float(num), known):
@@ -392,6 +537,10 @@ def check_line(line, facts, names, recent):
         return "number not in facts: zero"
     # "still no steam", "no walls yet", "no belts in sight": absences are never in the facts (live world, Nemotron, Kimi)
     if re.search(r"\b(?:still|yet) no\b|\bno \w+(?: \w+)? (?:yet|in sight)\b|\bnot a single\b", low):
+        return "claims something is missing"
+    # shake3: "Astra scouts for oil that isn't there" (the field was found seven minutes later)
+    if re.search(r"\b(?:isn't|is not|aren't|are not|wasn't|was not|ain't) (?:even )?(?:there|here|anywhere)\b|"
+                 r"\bnowhere to be (?:found|seen)\b|\b(?:doesn't|does not|don't) (?:even )?exist\b", low.replace("’", "'")):
         return "claims something is missing"
     # On the live world, Vale invented "last run they'd still be punching trees" on beats with no pace facts.
     if re.search(r"\b(last|previous|other|earlier) (run|time|game|session)\b|\bshake\d\b|\blast time\b", low) and \
@@ -409,6 +558,73 @@ def check_line(line, facts, names, recent):
         prev = set(re.findall(r"[a-z']+", clean(r).lower()))
         if words and prev and len(words & prev) / len(words | prev) >= 0.6:
             return "repeats a recent line"
+    return None
+
+
+# Capitalised words a line may use without them being in the facts: the hosts, the game, sentence words.
+CAPS_OK = set("""rook vale factorio i i'm i'll i've i'd ai ais ok okay oh wow hey yes no nope well so and but or now
+then here there this that these those what who why how when where it it's its they them their we let's look watch
+meanwhile mr ms""".split())
+
+
+def off_roster(line, blob, names):
+    """A capitalised word that is named like an agent but is in neither the facts nor the roster: mid-sentence, or
+    listed with a roster name ("Gear and Sol do the heavy lifting", shake3 01:24)."""
+    roster = {w.lower() for n in names for w in re.findall(r"[A-Za-z][\w'-]*", n)}
+    toks = re.findall(r"[A-Za-z][\w'’-]*|[.!?:;—–]", line)
+    for i, t in enumerate(toks):
+        if not t[0].isupper() or not t[0].isalpha():
+            continue
+        w = t.lower().replace("’", "'")
+        base = re.sub(r"'s$", "", w)
+        if base in roster or base in CAPS_OK or base in UNITS or base in TENS:  # "Automation Two"
+            continue
+        nxt = toks[i + 1:i + 3]
+        if len(nxt) == 2 and nxt[0].lower() in ("and", "or", "with") and nxt[1].lower() in roster:
+            return f"name not in facts: {t}"  # listed with an agent, so named like one ("gear" is in the item names)
+        if re.search(r"\b" + re.escape(base.rstrip("s")) + r"s?\b", blob):  # "Plastic" for "plastics"
+            continue
+        if not (i == 0 or not toks[i - 1][0].isalpha()):
+            return f"name not in facts: {t}"
+    return None
+
+
+PRONOUNS = {"he": "he", "him": "he", "his": "he", "himself": "he", "she": "she", "her": "she", "hers": "she",
+            "herself": "she"}
+
+
+def wrong_pronoun(low, facts):
+    """'he' or 'she' only when an agent in the facts chose those pronouns (shake3: Rook called Luna 'she')."""
+    chosen = set(re.findall(r'"pronouns": "([a-z]+)', json.dumps(facts, ensure_ascii=False).lower()))
+    for w in re.findall(r"[a-z]+", low):
+        if w in PRONOUNS and PRONOUNS[w] not in chosen:
+            return f"pronoun not given: {w}"
+    return None
+
+
+ENDS_RUN = re.compile(r"\b(?:ends?|ending|ended|finish(?:es|ed)?|over for) (?:the|their|this) (?:run|game|show|stream)\b|"
+                      r"\bgame over\b|\b(?:run|game)(?:'s| is) over\b")
+TIME_LEFT = re.compile(r"\b([a-z\d-]+(?: [a-z-]+)?) (?:more |last |final )?minutes? (?:left|to go|remaining|on the clock|"
+                       r"of (?:[a-z]+ )?(?:bait|play|this|it)|before the (?:deadline|end|buzzer|bell))\b|"
+                       r"\b([a-z\d-]+(?: [a-z-]+)?) more minutes?\b")
+
+
+def wrong_deadline(low, facts):
+    """'Ends the run' and 'N minutes left' must agree with minutes_to_deadline (shake3: "One small biter ends the run
+    at thirty flat!", "forty more minutes of biter bait" with 4.5 left)."""
+    left = facts.get("minutes_to_deadline")
+    if ENDS_RUN.search(low) and not (left in ("under a minute", "the deadline has passed") or (
+            isinstance(left, (int, float)) and left <= 1)):
+        return "says the run ends before the deadline"
+    for m in TIME_LEFT.finditer(low):
+        words = m.group(1) or m.group(2)
+        nums = [float(x) for x in re.findall(r"\d+", words)] + [float(v) for _, v in spelled_numbers(words)]
+        if not nums:
+            continue
+        if not isinstance(left, (int, float)):
+            return "time left without a deadline fact"
+        if all(abs(n - left) > max(1.5, 0.15 * left) for n in nums):
+            return f"time left disagrees with minutes_to_deadline ({left})"
     return None
 
 
@@ -508,8 +724,13 @@ class TemplateWriter:
                           "{agent_name} {did} {title}. The board keeps moving."],
                   "color": ["That team board is how {team_size} agents avoid stepping on each other.",
                             "Good teamwork there from {agent_name}.", "Somebody has to do the chores. Thanks, {agent_name}."]},
+        "space": {"pbp": ["Big moment: {text}!", "{text}! That's history for this team!"],
+                  "color": ["That changes what this run can reach.", "A milestone. The map just got bigger."]},
         "segment": {"pbp": ["On screen now: {seg_title}.", "Let's take a closer look: {seg_title}."],
                     "color": ["Here's the picture: {seg_title}.", "Worth a look: {seg_title}."]},
+        # only the analyst's answers have analyst_answer; a plain viewer comment still gets no template line
+        "viewer": {"pbp": ["{viewer_message_from} asks: {viewer_message_text} {analyst_answer}"],
+                   "color": ["Good question from {viewer_message_from}. {analyst_answer}"]},
         "harness": {"pbp": ["Tool request on the board: {title}. Status: {change}."],
                     "color": ["When the agents ask for better tools, that's the meta-game."]},
         "camera": {"pbp": ["Let's check in on {cam_name}, {cam_doing}.", "Over to {cam_name} now: {cam_doing}.",
@@ -540,7 +761,7 @@ class TemplateWriter:
 
     def write(self, who, e, facts, recent, names):
         flat = dict(facts)
-        for key in ("agent",):
+        for key in ("agent", "viewer_message"):
             for k, v in (facts.get(key) or {}).items():
                 flat[f"{key}_{k}"] = v
         cam = (facts.get("on_camera") or [{}])[0]
@@ -629,10 +850,10 @@ class LLMWriter:
             raise RuntimeError(str(j.get("result"))[:200])
         return j.get("result") or ""
 
-    def exchange(self, e, facts, recent, first="pbp", n=2, naturalist=False):
+    def exchange(self, e, facts, recent, first="pbp", n=2, naturalist=False, show=SHOW):
         """A short back-and-forth: [(who, line)], not yet fact-checked."""
         system = (f"You write both hosts of a livestream cast of AI agents playing Factorio. Rook is "
-                  f"{CASTERS['pbp']['brief']}. Vale is {CASTERS['color']['brief']}. {SHOW}")
+                  f"{CASTERS['pbp']['brief']}. Vale is {CASTERS['color']['brief']}. {show}")
         user = (f"Event: {e['kind']}. Facts (the only game facts you may state):\n"
                 f"{json.dumps(facts, ensure_ascii=False)}\n"
                 f"Recent lines on air:\n" + ("\n".join(f"- {r}" for r in recent[-8:]) or "- none") + "\n"
@@ -725,6 +946,24 @@ def pick_choice(a):
     return None
 
 
+# ---- TTS: who spoke, and one retry ---------------------------------------------------------------------------------
+WORKERS_8008 = re.compile(r'"code"\s*:\s*8008\b|\bAiError\b.*\b8008\b')
+
+
+def spoke_by(tts):
+    """{provider, voice} of the clip this thread just made (voices.TTS.last_here; `last` on older TTS objects)."""
+    last = tts.last_here() if hasattr(tts, "last_here") else dict(getattr(tts, "last", None) or {})
+    return {k: last[k] for k in ("provider", "voice", "cached") if last.get(k) is not None} or {"provider": tts.backend}
+
+
+def second_voice(voice):
+    """Another Aura-2 voice of the same gender as `voice`'s Aura-2 stand-in, for the 8008 retry."""
+    like = (voices.CATALOG.get(voice) or voices.DESIGNED.get(voice) or voices.CATALOG["orion"])[3]
+    gender = voices.VOICES.get(like, voices.VOICES["orion"])[0]
+    pool = sorted(v for v, e in voices.VOICES.items() if e[0] == gender and v != like)
+    return next((v for v in pool if v > like), pool[0])
+
+
 # ---- the service -------------------------------------------------------------------------------------------------
 class Breaker:
     """Skip a failing backend for a while instead of paying a timeout on every line."""
@@ -764,8 +1003,10 @@ class Caster:
         self.agent_last = {}
         self.filler_i = 0
         self.history = deque(maxlen=4)  # the last story beats, as facts for callbacks
+        self.used_points = set()  # eng/analyst talking points already on air
         self.seg_cat, self.seg_cat_t, self.seg_req_t, self.seg_next_ok = {}, 0.0, 0.0, 0.0
         self.prep = []  # recent write+TTS times, to start the next exchange before the current one ends
+        self.deadline_t = (0.0, None)  # (read at, epoch): deadline.txt files appear as agents launch
         self.baseline = None
         if a.baseline and os.path.exists(a.baseline):
             from baseline import Baseline
@@ -827,6 +1068,11 @@ class Caster:
         kw["t"] = round(time.time(), 2)
         with open(self.log_path, "a") as f:
             f.write(json.dumps(kw, ensure_ascii=False) + "\n")
+
+    def deadline(self):
+        if time.time() - self.deadline_t[0] > 30:
+            self.deadline_t = (time.time(), read_deadline(getattr(self.a, "deadline", None)))
+        return self.deadline_t[1]
 
     def names(self, s):
         return {a["name"]: a.get("display_name") or a["name"] for a in s.get("agents") or []}
@@ -909,7 +1155,7 @@ class Caster:
             return {"kind": "segment", "segment": seg, "t": now, "prio": 1}
         main = ((s.get("cameras") or {}).get("main") or {}).get("agents") or []
         pick = self.rng.choice(main or [a["name"] for a in s.get("agents") or []] or [None])
-        opts = [("production", {}), ("overview", {}), ("recap", {}), ("spotlight", {"agent": pick})]
+        opts = [("production", {}), ("overview", {}), ("recap", {}), ("spotlight", {"agent": pick}), ("space", {})]
         self.rng.shuffle(opts)
         self.request_segment(opts, "lull")
         options = [f for f in FILLERS if (f != "pace" or self.baseline)
@@ -919,7 +1165,17 @@ class Caster:
         else:
             angle = options[self.filler_i % len(options)]
             self.filler_i += 1
+        # eng/analyst's talking points (docs/ANALYST-NOTES.md): a fresh priority-3 point gets its own beat, else the
+        # best point that fits the angle
+        an = s.get("analyst")
+        point = analyst_pick(an, self.used_points, None, min_priority=3)
+        if point:
+            angle = "analyst"
+        else:
+            point = analyst_pick(an, self.used_points, POINT_KINDS.get(angle))
         e = {"kind": "lull", "t": now, "prio": 1, "angle": angle}
+        if point:
+            e["point"] = point
         if angle in ("naturalist", "spotlight"):
             agents = [a["name"] for a in s.get("agents") or []]
             main = ((s.get("cameras") or {}).get("main") or {}).get("agents") or []
@@ -960,7 +1216,7 @@ class Caster:
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
-        facts = facts_for(e, s, self.baseline)
+        facts = facts_for(e, s, self.baseline, self.deadline())
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
         names = list(self.names(s).values())
@@ -970,7 +1226,7 @@ class Caster:
         if writer and self.breakers["writer"].ok():
             try:
                 cand = writer.exchange(e, facts, recent, first, n, naturalist=bool(
-                    e.get("naturalist") or e.get("angle") == "naturalist"))
+                    e.get("naturalist") or e.get("angle") == "naturalist"), show=show_for(s))
                 self.breakers["writer"].good()
                 err = None if cand else "empty"
                 for who, line in cand[:n + 1]:  # keep the exchange up to its first unusable line
@@ -1007,7 +1263,23 @@ class Caster:
         if parts:
             self.history.append(f"{e['kind']} at {facts.get('game_time')}: " + " - ".join(map(str, parts)))
         self.stats["caster_lines"] += len(lines)
+        if e.get("point") and backend != "template":  # the writer built on the point: never offer it again
+            self.point_used(e["point"].get("id"))
         self.speak_lines(lines, e, facts, backend, err, lat, t_start)
+
+    def point_used(self, pid):
+        """Tell the service (eng/analyst's board) a talking point is on air, so it is not offered again."""
+        if not pid or pid in self.used_points:
+            return
+        self.used_points.add(pid)
+        if self.a.dry_run:
+            return
+        req = urllib.request.Request(self.base + "/analyst/used", data=json.dumps({"id": pid}).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})
+        try:
+            urllib.request.urlopen(req, timeout=3).read()
+        except Exception as x:
+            log(f"[analyst] marking {pid} used failed: {type(x).__name__}: {x}")
 
     def speak_lines(self, lines, e, facts, backend, err, wlat, t_start):
         """TTS every line at once, then push them in order: each waits for the previous caster line and for any
@@ -1031,7 +1303,7 @@ class Caster:
         def synth(item):
             who, line = item
             try:
-                return tts.speak(line, voices.CASTERS[who], caster=who)  # eng/voices' TTS preps the audio text
+                return self.speak_clip(tts, line, voices.CASTERS[who], caster=who)  # eng/voices' TTS preps the text
             except Exception as x:
                 return x
 
@@ -1050,7 +1322,7 @@ class Caster:
                 continue
             if tts is self.tts:
                 self.breakers["tts"].good()
-            audio, ctype, dur, tlat = clip
+            audio, ctype, dur, tlat, spoke = clip
             if e["kind"] == "segment":
                 live = self.live_segment(self.snap, margin=1) if self.snap else None
                 if not live or live.get("id") != (e.get("segment") or {}).get("id"):
@@ -1067,9 +1339,9 @@ class Caster:
             while time.time() < min(max(self.agent_free, self.caster_free + gap), stop):
                 time.sleep(0.1)
             self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
-                       "expires_in": 25, "duration": round(dur, 2), "voice": voices.CASTERS[who]}, audio, ctype)
+                       "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice")}, audio, ctype)
             self.caster_free = time.time() + dur
-            self.record(**base, who=who, line=line, voice=voices.CASTERS[who], pushed=True, tts=tts.backend,
+            self.record(**base, who=who, line=line, pushed=True, tts=tts.backend, **spoke,
                         tts_latency=round(tlat, 2), seconds=round(dur, 2), **({"facts": facts} if i == 0 else {}))
 
     # -- agent chat
@@ -1147,17 +1419,17 @@ class Caster:
             self.record(**rec, voice=voice_id, pushed=False, reason="tts backing off")
             return est
         try:
-            audio, ctype, dur, lat = tts.speak(text, voice_id, caster=caster)
+            audio, ctype, dur, lat, spoke = self.speak_clip(tts, text, voice_id, caster=caster)
             if tts is self.tts:
                 self.breakers["tts"].good()
-            meta = dict(meta, duration=round(dur, 2), voice=voice_id)
+            meta = dict(meta, duration=round(dur, 2), voice=spoke.get("voice") or voice_id)
             if hold:
                 stop = time.time() + 10
                 while time.time() < min(hold(), stop):
                     time.sleep(0.2)
             self.push(meta, audio, ctype)
-            self.record(**rec, voice=voice_id, pushed=True, tts=tts.backend, tts_latency=round(lat, 2),
-                        seconds=round(dur, 2))
+            self.record(**rec, pushed=True, tts=tts.backend, **dict({"voice": voice_id}, **spoke),
+                        voice_id=voice_id, tts_latency=round(lat, 2), seconds=round(dur, 2))
             return dur
         except Exception as x:
             log(f"[tts:{tts.backend}] {type(x).__name__}: {x}")
@@ -1166,8 +1438,23 @@ class Caster:
             self.record(**rec, voice=voice_id, pushed=False, error=str(x)[:200])
             return est
 
+    def speak_clip(self, tts, text, voice, caster=None):
+        """tts.speak -> (audio, ctype, seconds, latency, {provider, voice[, retried]}): the record logs who spoke
+        (shake3 logged a constant, so whether the hosts were on OpenAI or Aura-2 had to be guessed from cost). A
+        Workers AI 8008 error ("Internal server error", 11 lines lost in shake3) retries once on a second voice."""
+        try:
+            audio, ctype, dur, lat = tts.speak(text, voice, caster=caster)
+            return audio, ctype, dur, lat, spoke_by(tts)
+        except Exception as x:
+            if not WORKERS_8008.search(str(x)):
+                raise
+            alt = second_voice(voice)
+            log(f"[tts:{tts.backend}] Workers AI 8008 on {voice}; retrying once on {alt}")
+            audio, ctype, dur, lat = tts.speak(text, alt)
+            return audio, ctype, dur, lat, dict(spoke_by(tts), retried="8008")
+
     def cost(self):
-        hrs = max(1e-6, (time.time() - self.t0) / 3600)
+        hrs =max(1e-6, (time.time() - self.t0) / 3600)
         w = sum(x.spent for x in (self.writer, self.fast) if x)
         t = sum(x.spent for x in (self.tts, self.tts_fallback) if x)
         c = self.classifier.spent
@@ -1227,6 +1514,16 @@ def bench_events(snap):
             "title": f"Replay: {agents[0].title()} died",
             "facts": {"event": f"{agents[0].title()} died", "kind": "death", "agent": agents[0].title(), "seconds": 15,
                       "ago_s": 21}}}, "pbp", 3),
+        # round 4: hit counts are not enemies, loss counts are not attackers, the analyst's point in the hosts' words
+        ("hits", {"kind": "attack", "text": "Base under attack near (-48, 16): engineer hit 9 times", "prio": 9},
+         "pbp", 2),
+        ("loss", {"kind": "loss", "text": "21 lost near (12, -40): 9 transport belt, 5 burner mining drill "
+                                          "(by small biters)", "prio": 8}, "pbp", 2),
+        ("analyst", {"kind": "lull", "angle": "analyst", "prio": 1, "point": analyst_pick(
+            snap.get("analyst"), set()) or {
+            "id": "bench", "kind": "judgement", "priority": 3,
+            "text": "Seven labs are starved for green packs; the team needs 4 more green assemblers to fill them.",
+            "facts": {"labs": 7, "green_assemblers_needed": 4}}}, "color", 3),
     ]
 
 
@@ -1246,10 +1543,10 @@ def bench(a):
         lat, kept, total = [], 0, 0
         for label, e, first, n in bench_events(snap):
             e = dict(e, t=time.time())
-            facts = facts_for(e, snap, base)
+            facts = facts_for(e, snap, base, read_deadline(a.deadline))
             t0 = time.time()
             try:
-                lines = w.exchange(e, facts, [], first, n, naturalist=label == "naturalist")
+                lines = w.exchange(e, facts, [], first, n, naturalist=label == "naturalist", show=show_for(snap))
                 errs = []
                 for _, line in lines:
                     errs.append(check_line(line, facts, names, []))
@@ -1284,6 +1581,8 @@ def main():
     ap.add_argument("--writer-timeout", type=float, default=12, help="seconds per Workers AI call (claude: 3x)")
     ap.add_argument("--urgent-model", default=URGENT_MODEL,
                     help="fast Workers AI writer for urgent events ('' to use the main writer for everything)")
+    ap.add_argument("--deadline", help="when the run ends, for minutes_to_deadline: 'YYYY-MM-DD HH:MM', 'HH:MM', or "
+                    "a deadline.txt file or glob (the latest wins), e.g. 'runs/shake4/*/deadline.txt'")
     ap.add_argument("--baseline", default=os.path.join(HERE, "baselines", "shake1.json"),
                     help="past run to compare pace with (tools/stream/baseline.py makes one); '' for none")
     ap.add_argument("--lines", type=int, nargs=2, default=[2, 3], metavar=("MIN", "MAX"),

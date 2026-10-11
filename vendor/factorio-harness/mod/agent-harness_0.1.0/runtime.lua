@@ -35,6 +35,8 @@ local function integer(value, default, low, high, name)
   return value
 end
 local function position(value)
+  -- [x, y] as the engine accepts it (shake3: Gemini's inspect position=[-5,-6]).
+  if type(value) == 'table' and value.x == nil and type(value[1]) == 'number' and type(value[2]) == 'number' and value[3] == nil then value = {x=value[1], y=value[2]} end
   assert(type(value) == 'table' and type(value.x) == 'number' and type(value.y) == 'number', 'position requires x and y')
   assert(math.abs(value.x) < 1000000 and math.abs(value.y) < 1000000, 'invalid position')
   return {x=value.x, y=value.y}
@@ -286,7 +288,7 @@ local function from_character(p,pos)
 end
 local function assert_visible(p,pos,what)
   if visible(p,pos) then return end
-  error(string.format('%s is outside local visible area: %s (limit 32 tiles, in a visible chunk)',what,from_character(p,pos)),2)
+  error(string.format('%s is outside local visible area: %s (limit 32 tiles, in a visible chunk; move_to within 30 tiles first)',what,from_character(p,pos)),2)
 end
 local function charted(p,pos) return own_platform(p) or p.force.is_chunk_charted(p.surface,chunk_of(pos)) end
 -- Read views may be centred anywhere on the charted map, so scripts can look
@@ -312,22 +314,60 @@ local function entity(p,args,read_only)
   local pos = position(args.position)
   assert_visible(p,pos,'target')
   local candidates = p.surface.find_entities_filtered{position=pos, radius=0.2, name=args.name}
-  -- Ore under a building is never the intended target unless named explicitly.
+  -- Ore under a building is never the intended target unless named explicitly
+  -- (resource: the fallback, ore or an item on the ground).
   local found, resource
-  for _, e in pairs(candidates) do
+  local function wanted(e)
     -- A silo's rocket and its cargo pod sit on the silo; they are never the
     -- intended target unless named.
-    if e.valid and (not args.unit_number or e.unit_number == args.unit_number) and e.type ~= 'character'
-      and (args.name or not attached[e.type]) then
-      if e.type == 'resource' and not args.name then resource = resource or e
+    return e.valid and (not args.unit_number or e.unit_number == args.unit_number) and e.type ~= 'character'
+      and (args.name or not attached[e.type])
+  end
+  for _, e in pairs(candidates) do
+    if wanted(e) then
+      -- An item lying on a chest's tile is not the target either (shake3:
+      -- Grok's "ambiguous target" until the item was picked up).
+      if (e.type == 'resource' or e.type == 'item-entity') and not args.name then resource = resource or e
       else
-        assert(not found, 'ambiguous target; specify name or unit_number')
+        if found then
+          error(string.format('ambiguous target: %s and %s at (%g,%g); specify name or unit_number', found.name, e.name, pos.x, pos.y), 0)
+        end
         found = e
       end
     end
   end
+  -- Any tile of a building's footprint picks it, as a player's cursor does
+  -- (shake3: Gemini's inspect missed buildings off their centre). Ore at the
+  -- point stays the target of an action (mine there means the ore, never the
+  -- drill over it); a read takes the building.
+  if not found and (read_only or not resource) then
+    local cover
+    for _, e in pairs(p.surface.find_entities_filtered{position=pos, name=args.name}) do
+      if wanted(e) and e.type ~= 'resource' and e.type ~= 'item-entity' then
+        if cover and cover ~= e then cover = nil; break end
+        cover = e
+      end
+    end
+    found = cover
+  end
   found = found or resource
-  assert(found, 'entity not found')
+  if not found then
+    -- Say what is close instead (shake3: 23 of Gemini's inspect misses were a
+    -- tile or so from a pole, inserter or belt, or empty).
+    local near = {}
+    for _, e in pairs(p.surface.find_entities_filtered{position=pos, radius=3, limit=32}) do
+      if e.valid and e.type ~= 'resource' and not attached[e.type] and e ~= p.character then near[#near+1] = e end
+    end
+    table.sort(near, function(x, y) return distance(x.position, pos) < distance(y.position, pos) end)
+    local parts = {}
+    for i = 1, math.min(3, #near) do
+      local e = near[i]
+      local name = e.type == 'character' and ((M.character_owner(e) or 'another') .. "'s character") or e.type == 'entity-ghost' and 'ghost ' .. e.ghost_name or e.name
+      parts[i] = string.format('%s (%g,%g) %.1f tiles', name, e.position.x, e.position.y, distance(e.position, pos))
+    end
+    error(string.format('entity not found at (%g,%g): %s; target an entity\'s position as scan lists it (observe scope=scan position={x=%g,y=%g} radius=3)',
+      pos.x, pos.y, #parts > 0 and 'nearest ' .. table.concat(parts, ', ') or 'nothing within 3 tiles', pos.x, pos.y), 0)
+  end
   -- Reads (inspect) only need sight, as scan does.
   if read_only then return found end
   assert(p.can_reach_entity(found), string.format('entity is out of reach (%.1f tiles from the character)',distance(p.position,found.position)))
@@ -373,9 +413,15 @@ local function summary(e)
     if other then out.paired_with=other.position else out.unpaired=true end
   end
   -- Inserter direction names the pickup side; show the tiles it moves between.
+  local function tile(pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
   if e.type=='inserter' then
-    local function tile(pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
     out.pickup=tile(e.pickup_position); out.drop=tile(e.drop_position)
+  end
+  -- A drill drops onto one tile beside its footprint: which, and into what
+  -- (sapilot board #4: Astra placed output chests by trial).
+  if e.type=='mining-drill' then
+    local ok,drop,into=pcall(function() return e.drop_position,e.drop_target end)
+    if ok and drop then out.drop=tile(drop); out.drop_into=into and into.valid and into.name or nil end
   end
   -- Pumps and underground pipes likewise: where fluid enters and leaves.
   if e.type=='pump' or e.type=='offshore-pump' or e.type=='pipe-to-ground' then pipes.hint(e,out) end
@@ -425,7 +471,7 @@ local handlers = {}
 local request_path,navigate,check_args
 function handlers.describe()
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
-    target='position:{x,y}, optional name and unit_number; targets require local visibility and character reach',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
+    target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (inspect: sight only); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
       equipment={operation='insert|remove',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
@@ -468,9 +514,9 @@ function handlers.describe()
       grid={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',returns='one character per tile: rows [{y,row}] from origin, ruler, legend {char: names}. Upper case buildings by type, belts ^>v<, U/J underground in/out, S splitter, ? ghost, @ character, # other; lower case ore; ~ water'},
       power={area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',limit='unpowered rows 1..256 (default 32)',note='networks with a pole in the area: poles, production/consumption kW (5 s average) by prototype, unpowered machines (no_power|low_power|unconnected)'},
       scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)'},
-      nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..64 (default 32); map-known entities only',limit='1..64 (default 5)'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait)'},
+      nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..64 (default 32); map-known entities only',limit='1..64 (default 5)'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',skip_failed='boolean, with builds: a failing entry is listed in failed {index,position,error} and the rest still build',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
       wire={from='pole {x,y} (optional name/unit_number) in reach',to='pole {x,y} in reach',disconnect='boolean: remove the copper wire instead'},
-      inspect={position='{x,y}',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach'}, rotate={position='{x,y}',reverse='boolean'},
+      inspect={position='{x,y}',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too'}, rotate={position='{x,y}',reverse='boolean'},
       configure={position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',recipe='enabled recipe',filters='or: item names for a filtering inserter/loader ([] clears; slot count from the entity)',filter_mode='whitelist|blacklist (inserters)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
       transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|cargo_landing_pad_main|hub_main|asteroid_collector_output|...; inferred when omitted (fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out)',direction='to_entity|to_player; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',up_to='optional target total cap'},
       feed={note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel; each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items)',
@@ -482,7 +528,7 @@ function handlers.describe()
       rearm={radius='1..256: walk a nearest-first route through every turret in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left)',ticks='with radius: 1..36000 (default 3600)',ammo='ammo item (default firearm-magazine)',count='1..1000 target per turret (default 10)',positions='optional 1..64 positions instead of every turret in reach',types='default {ammo-turret}; artillery-turret allowed',note='gives from the main inventory, then the gun ammo slots (crafted ammo lands there); fails when none is held and turrets want more; waits for ammo in the hand-craft queue (awaiting_craft; outcome fed | failed | timed_out)'},
       refuel={radius='1..256: walk a nearest-first route through every burner in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left)',ticks='with radius: 1..36000 (default 3600)',fuel='fuel item (default coal)',count='1..1000 target per entity (default 10)',positions='optional 1..64 positions instead of every burner in reach',types='optional entity type filter',note='fails when no fuel is held and burners want more; waits for fuel in the hand-craft queue (awaiting_craft)'},
       collect={types='entity types (default furnace, assembling-machine: machine outputs only)',chests='boolean: also empty plain chests (container, logistic-container) in reach or radius; off by default because chests are usually feed stock you placed (result notes chests_skipped / left_in_chests)',item='optional: only this item',positions='optional 1..64 positions instead of everything in reach (named chests are always taken from)',
-        radius='with item: 1..256, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; a timed action',count='with radius: stop after this many (default all)',ticks='with radius: 1..36000 (default 3600)',
+        radius='with item: 1..256, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; a timed action',count='with radius: stop after this many (default all)',want='optional, with item: hold this many; takes only the difference (nothing when you already have it); not with count',ticks='with radius: 1..36000 (default 3600)',
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited'},
       research={technology='name (omit everything to report: current, progress, queue, pending)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
       blueprint_import={blueprint='export string',slot='default clipboard'},blueprint_export={slot='default clipboard',layout='true returns normalized relative layout and material costs instead of export string'},blueprint_list={},blueprint_delete={slot='name'},
@@ -942,11 +988,13 @@ local scan_fields={
   end,
   -- Inserter pickup and drop positions with the entity found at each.
   io=function(e)
-    if e.type~='inserter' then return nil end
+    if e.type~='inserter' and e.type~='mining-drill' then return nil end
     local function at(pos)
       local target=e.surface.find_entities_filtered{position=pos,limit=1,type={'resource','character','corpse','character-corpse','item-entity','item-request-proxy','sticker','fire','smoke-with-trigger','projectile','entity-ghost','tile-ghost'},invert=true}[1]
       return string.format('%g,%g',pos.x,pos.y)..(target and ' '..target.name or '')
     end
+    -- A drill only drops (onto the ground when nothing is there).
+    if e.type=='mining-drill' then return '-> '..at(e.drop_position) end
     return at(e.pickup_position)..' -> '..at(e.drop_position)
   end,
   -- Fluidboxes with contents and where each pipe connection leads.
@@ -1474,6 +1522,12 @@ local function craft_shortfall(p,name,count,notes)
 end
 local function begin_craft(p,recipe,count,force,notes,shorts)
   assert(type(recipe)=='string' and p.force.recipes[recipe] and p.force.recipes[recipe].enabled,'recipe is unavailable')
+  -- Say why a machine-only recipe fails (shake3: Grok's engine-unit read
+  -- "not hand-craftable now" with force and the ingredients held).
+  local r,categories=p.force.recipes[recipe],p.character and p.character.prototype.crafting_categories
+  if categories and not takes(categories,r) then
+    error(string.format('%s (category %s) cannot be hand-crafted by a character; an assembling machine can make it (configure recipe=%s, then feed it)',recipe,r.category or 'crafting',recipe),0)
+  end
   count=integer(count,1,1,1000,'count')
   craft_stock(p,recipe,count,force,notes)
   local started=p.begin_crafting{recipe=recipe,count=count}
@@ -1709,6 +1763,7 @@ local function placement_error(p,proto,pos,direction)
 end
 local function build_direct(p,stack,pos,direction,quality,kind)
   local proto,surface=stack.prototype.place_result,p.surface
+  construction.clear_remnants(surface,proto,pos,direction)
   local ghost=surface.find_entities_filtered{position=pos,radius=0.1,ghost_name=proto.name,force=p.force,limit=1}[1]
   local e
   if ghost then
@@ -1795,6 +1850,12 @@ local function build_one(p,a)
   end
   local proto=stack.prototype.place_result
   assert(a.type==nil or proto.type=='underground-belt' and (a.type=='input' or a.type=='output'),'type is input|output for underground belts only')
+  -- Only the agent's own character in the way: handlers.build walks it off
+  -- the footprint first, once per entry.
+  if not a.stepped then
+    local aside=construction.aside(p,proto,pos,direction)
+    if aside then return {aside=aside} end
+  end
   -- Undergrounds are always placed directly with an explicit end: cursor
   -- building does not reliably make the exit of a pair from script.
   if direct then
@@ -1851,23 +1912,59 @@ function handlers.build(p,a)
       if waiting then return waiting end
     end
   end
-  if not a.builds then return build_one(p,a) end
+  -- The character stands on the footprint and nothing else does: walk it off
+  -- (real walking, a timed action) and build then, as a player steps aside.
+  -- The rest of the call reruns from that entry (outcome fed | failed | timed_out).
+  local function step_aside(aside,rest)
+    rest.awaited=true; rest.stepped=true
+    -- A later batch entry from a rerun replaces the running step-aside itself.
+    local current=state().active[p.index]
+    if current and not current.running then finish(p.index,'replaced') elseif not current then stop(p) end
+    local until_tick=game.tick+180
+    state().active[p.index]={kind='feed',handler='build',args=rest,aside=aside,until_tick=until_tick,next_check=game.tick}
+    return {stepping_aside={from=p.position,to=aside.to},until_tick=until_tick}
+  end
+  if not a.builds then
+    local r=build_one(p,a)
+    if not r.aside then return r end
+    local rest={}
+    for k,v in pairs(a) do rest[k]=v end
+    return step_aside(r.aside,rest)
+  end
   assert(type(a.builds)=='table' and #a.builds>=1 and #a.builds<=64,'builds requires 1..64 {item,position,direction} entries')
-  local placed={}
+  assert(a.skip_failed==nil or type(a.skip_failed)=='boolean','skip_failed must be true or false')
+  local placed,failed={},{}
+  for _,f in ipairs(a.failed_before or {}) do failed[#failed+1]=f end
   for i,b in ipairs(a.builds) do
     local ok,result=pcall(function()
       assert(type(b)=='table','each build must be an object')
-      local r=build_one(p,{item=b.item or a.item,position=b.position,direction=b.direction or a.direction,quality=b.quality or a.quality,type=b.type,size=b.size or a.size})
-      assert(r.consumed>0,'nothing was placed')
+      local r=build_one(p,{item=b.item or a.item,position=b.position,direction=b.direction or a.direction,quality=b.quality or a.quality,type=b.type,size=b.size or a.size,
+        stepped=a.stepped and i==1})
+      assert(r.aside or r.consumed>0,'nothing was placed')
       return r
     end)
     -- A partial batch is a failure, so plan on_fail policies see it; the
-    -- entries before it stay built.
-    if not ok then error(string.format('build %d/%d failed after %d built: %s',i,#a.builds,#placed,reason(result))) end
-    local e=result.entity or (result.entities and result.entities[1])
-    placed[i]=e and e.position or b.position
+    -- entries before it stay built. skip_failed (shake3: Grok and Astra
+    -- wanted the rest built) lists the entry and goes on.
+    if not ok and a.skip_failed then
+      failed[#failed+1]={index=i+(a.index_before or 0),position=type(b)=='table' and b.position or nil,error=reason(result)}
+    elseif not ok then error(string.format('build %d/%d failed after %d built: %s',i,#a.builds,#placed,reason(result)))
+    elseif result.aside then
+      local rest={builds={}}
+      for k,v in pairs(a) do if k~='builds' then rest[k]=v end end
+      for j=i,#a.builds do rest.builds[#rest.builds+1]=a.builds[j] end
+      rest.built_before=(a.built_before or 0)+#placed
+      rest.index_before=(a.index_before or 0)+i-1
+      rest.failed_before=#failed>0 and failed or nil
+      local out=step_aside(result.aside,rest)
+      out.built=#placed; out.placed=#placed>0 and placed or nil; out.failed=#failed>0 and failed or nil
+      return out
+    else
+      local e=result.entity or (result.entities and result.entities[1])
+      placed[#placed+1]=e and e.position or b.position
+    end
   end
-  return {built=#placed,placed=placed}
+  return {built=#placed,placed=placed,built_before=a.built_before,failed=#failed>0 and failed or nil}
 end
 -- Copper wire between two poles, both in the character's reach like a player
 -- dragging a wire; the wire itself must span the distance.
@@ -1936,8 +2033,10 @@ function handlers.inspect(p,a)
   out.electric_network_id=e.electric_network_id
   -- Inserters: the exact pickup/drop points, the tiles they are on, and what
   -- stands there (the same view as scan fields=io).
-  if e.type=='inserter' then
-    out.pickup_position=e.pickup_position; out.drop_position=e.drop_position
+  if e.type=='inserter' or e.type=='mining-drill' then
+    out.pickup_position=e.type=='inserter' and e.pickup_position or nil
+    local okd,drop=pcall(function() return e.drop_position end)
+    out.drop_position=okd and drop or nil
     local ok,io=pcall(scan_fields.io,e)
     if ok then out.io=io end
   end
@@ -2357,6 +2456,19 @@ local collect_types={plain={'furnace','assembling-machine'},chests={'furnace','a
 function handlers.collect(p,a)
   assert(a.chests==nil or type(a.chests)=='boolean','chests must be true or false')
   assert(a.types==nil or (type(a.types)=='table' and #a.types>=1 and #a.types<=16),'types requires 1..16 entity types')
+  -- want: a target holding (shake2 and shake3 plans wrote collect want=N);
+  -- takes only the difference, and nothing when the character has enough.
+  -- Worked out when the step runs, so a queued step sees what earlier steps got.
+  if a.want~=nil then
+    assert(type(a.item)=='string','want needs item: collect item=NAME want=N stops once you hold N')
+    assert(a.count==nil,'give count (how many to take) or want (how many to hold), not both')
+    local want,have=integer(a.want,1,1,100000,'want'),held(p,a.item,a.quality)
+    if have>=want then return {transferred=0,held=have,want=want,note='already holding '..have..' '..a.item} end
+    local copy={}
+    for k,v in pairs(a) do copy[k]=v end
+    copy.want=nil; copy.count=math.min(want-have,10000)
+    a=copy
+  end
   if a.radius~=nil then
     local action,out=stock.start(p,a,integer(a.ticks,3600,1,36000,'ticks'))
     if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
@@ -2925,7 +3037,11 @@ local function place_ghost(p,spec)
   local direction=spec.direction and directions[spec.direction]
   assert(spec.direction==nil or direction,'direction must be a compass name')
   assert(spec.type==nil or proto.type=='underground-belt' and (spec.type=='input' or spec.type=='output'),'type is input|output for underground belts only')
-  if not p.surface.can_place_entity{name=spec.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual_ghost,forced=true} then
+  -- The engine's check refuses trees, rocks and stumps (shake3: "placement
+  -- blocked by tree-08"); a player's ghost goes over them and marks the trees
+  -- and rocks, and the build clears the stumps (build_direct).
+  if not p.surface.can_place_entity{name=spec.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual_ghost,forced=true}
+    and not construction.only_obstacles(p.surface,proto,pos,direction) then
     error(placement_error(p,proto,pos,direction),0)
   end
   local ghost=p.surface.create_entity{name='entity-ghost',inner_name=spec.name,position=pos,direction=direction,force=p.force,player=real(p),raise_built=true,type=spec.type}
@@ -3534,9 +3650,16 @@ dispatch_request=function(request)
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     return handler(body(p),request.args or {})
   end
-  -- A bot aboard a platform (or in a cargo pod) has no body: remote view only.
-  if M.bots.is_index(request.player) then M.bots.check_action(request.player,request.action,request.args) end
-  local p=player(request.player)
+  -- A dead bot still talks: it reads and answers the team while it waits to
+  -- respawn (or rides a cargo pod). Otherwise a bot aboard a platform (or in a
+  -- cargo pod) has no body: remote view only.
+  local p
+  if (request.action=='chat' or request.action=='say') and M.bots.is_index(request.player) then
+    p=M.lookup(request.player); assert(p and p.valid,'player does not exist')
+  else
+    if M.bots.is_index(request.player) then M.bots.check_action(request.player,request.action,request.args) end
+    p=player(request.player)
+  end
   if not reads[request.action] and not passive[request.action] and not request.action:match('^queue_') then
     local q=state().queues and state().queues[p.index]
     if q and not q.paused then M.stop_player(p.index) end
@@ -3725,13 +3848,19 @@ function M.tick_body(event)
       local outcome=stock.tick(p,action)
       if outcome then finish(index,outcome) end
     elseif action.kind=='feed' then
-      if event.tick>=action.next_check then
+      -- A build stepping aside walks until the character is off the footprint.
+      if action.aside and construction.in_box(p.position,action.aside.box) then steer(p,action.aside.to,action)
+      elseif event.tick>=action.next_check then
+        if action.aside then stop(p); action.aside=nil end
         action.next_check=event.tick+FEED_CHECK
-        if held(p,action.item,action.args.quality)>=action.need or crafting_count(p,action.item)==0 then
+        if not action.item or held(p,action.item,action.args.quality)>=action.need or crafting_count(p,action.item)==0 then
           action.awaiting_craft=nil
+          action.running=true
           local ok,result=pcall(handlers[action.handler],p,action.args)
+          action.running=nil
           if ok then action.result=result else action.error=reason(result) end
-          finish(index,ok and 'fed' or 'failed')
+          -- A later batch entry stepping aside installed a new action: keep it.
+          if state().active[index]==action then finish(index,ok and 'fed' or 'failed') end
         end
       end
     elseif action.kind=='pickup' then

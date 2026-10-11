@@ -163,8 +163,9 @@ advance(1)
 local paused_warning=call('status').warnings[1]
 assert(paused_warning:find('queue: paused with 1 pending step (first: job-',1,true),paused_warning)
 assert(paused_warning:find(' walk [after]); paused when job-',1,true),paused_warning)
-assert(paused_warning:find(' rotate failed: entity not found; queue resume runs them',1,true),paused_warning)
-eq(call('queue_status').last_failure.result.reason,'entity not found')
+assert(paused_warning:find(' rotate failed: entity not found at (1,0): nothing within 3 tiles; target an',1,true),paused_warning)
+assert(paused_warning:find('radius=3); queue resume runs them',1,true),paused_warning)
+assert(call('queue_status').last_failure.result.reason:find('entity not found at (1,0)',1,true))
 call('queue_cancel',{})
 eq(call('status').warnings,nil)
 fails(function() call('walk',{direction='east',ticks=601}) end,'ticks out of range')
@@ -288,6 +289,12 @@ wood.count=5
 fails(function() call('build',{item='wooden-chest',builds={{position={x=4,y=0}},{position={x=6,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}}) end,
   'build 3/4 failed after 2 built: placement blocked')
 eq(wood.count,3); eq(p.cursor_stack.valid_for_read,false)
+-- skip_failed lists the blocked entry and builds the rest (shake3: Grok, Astra).
+wood.count=5
+local skipped=call('build',{item='wooden-chest',skip_failed=true,builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}})
+eq(skipped.built,2); eq(skipped.placed[2].x,9.5); eq(#skipped.failed,1); eq(skipped.failed[1].index,2); eq(skipped.failed[1].position.x,8)
+assert(skipped.failed[1].error:find('placement blocked',1,true),skipped.failed[1].error); eq(wood.count,3)
+wood.count=3
 -- The engine refills the hand from inventory after the last item; that still counts as consumed.
 local spare=stack('wooden-chest',4); main[2]=spare
 p.build_from_cursor=function(args)
@@ -522,6 +529,24 @@ feed_slots[1].count,feed_slots[1].valid_for_read=40,true
 main=inv(stack(nil,0),stack(nil,0),stack(nil,0))
 local with_chests=call('collect',{chests=true})
 eq(with_chests.transferred,40); eq(with_chests.chests_skipped,nil); eq(feed_slots[1].count,0)
+-- want: hold N, taking only the difference, in a queue too (shake2 and shake3:
+-- Opus's plans failed with "unknown argument want for collect").
+do
+  feed_slots[1].count,feed_slots[1].valid_for_read=40,true
+  main=inv(stack('copper-plate',15),stack(nil,0),stack(nil,0))
+  local topped=call('collect',{item='copper-plate',positions={{x=5,y=0}},want=25})
+  eq(topped.transferred,10); eq(feed_slots[1].count,30)
+  local enough=call('collect',{item='copper-plate',positions={{x=5,y=0}},want=20})
+  eq(enough.transferred,0); eq(enough.held,25); eq(feed_slots[1].count,30)
+  call('queue_cancel',{})
+  call('queue_submit',{steps={{action='collect',args={item='copper-plate',positions={{x=5,y=0}},want=40}}}})
+  advance(1)
+  eq(feed_slots[1].count,15)
+  local h=call('queue_status').history; eq(h[#h].action,'collect'); eq(h[#h].ok,true)
+  fails(function() call('collect',{positions={{x=5,y=0}},want=5}) end,'want needs item')
+  fails(function() call('collect',{item='copper-plate',want=5,count=5}) end,'not both')
+  call('queue_cancel',{})
+end
 p.surface.find_entities_filtered=function(f) eq(f.force,p.force); return {f2,f1} end
 main=inv(stack('coal',7),stack(nil,0),stack(nil,0))
 fails(function() call('refuel',{fuel='iron-ore'}) end,'fuel must be')
@@ -774,6 +799,11 @@ prototypes.entity['assembling-machine-2']={name='assembling-machine-2',crafting_
 local crafted=call('craft',{recipes={{recipe='iron-gear-wheel',count=3},{recipe='rocket'},{recipe='iron-gear-wheel',count=2},{recipe='pipe',count=1}}})
 eq(crafted.started['iron-gear-wheel'],5); eq(crafted.started.pipe,0); eq(crafted.errors.rocket,'recipe is unavailable')
 eq(crafted.no_assembler,nil); eq(crafted.blocks,nil) -- no assembler unlocked, short queue
+-- A machine-only recipe says so (shake3: Grok's engine-unit read "not hand-craftable now").
+p.force.recipes['engine-unit']={enabled=true,category='advanced-crafting'}
+eq(call('craft',{recipes={{recipe='engine-unit',count=1}}}).errors['engine-unit'],
+  'engine-unit (category advanced-crafting) cannot be hand-crafted by a character; an assembling machine can make it (configure recipe=engine-unit, then feed it)')
+p.force.recipes['engine-unit']=nil
 -- A long hand craft states the backlog and what an unlocked assembler would take.
 p.force.recipes['assembling-machine-2']={enabled=true}
 p.force.recipes['iron-gear-wheel'].energy=0.5; p.force.recipes['iron-gear-wheel'].products={{type='item',name='iron-gear-wheel',amount=1}}
@@ -1216,6 +1246,37 @@ local placed=call('place_ghosts',{entities={{name='gun-turret',position={x=100,y
 eq(placed.placed,2); eq(#placed.failed,3); eq(placed.failed[1].index,2); eq(placed.failed[1].error,'placement blocked')
 assert(placed.failed[2].error:find('not a placeable')); eq(placed.failed[3].error,'position is not charted')
 eq(placed.bounds.left,11); eq(placed.bounds.bottom,101); eq(storage.agent_harness.last_paste[1].right,101)
+-- A ghost goes over trees and rocks and marks them, though the engine's check
+-- refuses them (shake3: "placement blocked by tree-08" from place_ghosts),
+-- and over a stump, which stays until the build (out of reach here); anything
+-- else in the footprint still refuses it.
+do
+  local can,find=p.surface.can_place_entity,p.surface.find_entities_filtered
+  local tree={valid=true,type='tree',name='tree-08',minable=true,position={x=60.2,y=0.3}}
+  tree.to_be_deconstructed=function() return tree.marked==true end
+  tree.order_deconstruction=function(_,who) assert(who==nil or who==p); tree.marked=true; return true end
+  local stump={valid=true,type='corpse',name='tree-02-stump',position={x=59.8,y=0}}
+  stump.destroy=function() stump.valid=false end
+  local chest={valid=true,type='container',name='wooden-chest',position={x=60,y=0}}
+  local inside={tree,stump}
+  p.surface.can_place_entity=function() return false end
+  p.surface.find_entities_filtered=function(a)
+    if a.type=='corpse' then return stump.valid and {stump} or {} end
+    if a.area then return inside end
+    return {}
+  end
+  ghosts={}
+  local over=call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}})
+  eq(over.placed,1); eq(over.failed,nil); eq(ghosts[1],'gun-turret'); eq(over.obstacles_marked,1)
+  eq(stump.valid,true); eq(tree.marked,true)
+  inside={tree,chest}
+  local refused=call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}})
+  eq(refused.placed,0); assert(refused.failed[1].error:find('wooden-chest',1,true),refused.failed[1].error)
+  -- A force's own plant (a Gleba farm) is not an obstacle to mark.
+  inside={{valid=true,type='plant',name='yumako-tree',minable=true,force=p.force,position={x=60,y=0}}}
+  eq(call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}}).placed,0)
+  p.surface.can_place_entity,p.surface.find_entities_filtered=can,find
+end
 -- repeat stamps the list count times, shifted each time; failures carry their copy.
 ghosts={}
 local row=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}},['repeat']={count=4,dx=10}})
@@ -1329,6 +1390,53 @@ eq(seen.pickup.y,-0.5); eq(seen.drop.y,1.5); eq(seen.io,'2.5,-0.5 -> 2.5,1.7 tra
 local fc=call('inspect',{position=pump.position}).fluid_connections
 eq(#fc,1); eq(fc[1].flow,'output'); eq(fc[1].at.x,10.5); eq(fc[1].joins.x,9.5); eq(fc[1].joins.y,0.5); eq(fc[1].direction,'west'); eq(fc[1].connected_to,'pipe'); eq(fc[1].fluid,'water')
 eq(call('inspect',{position=ins.position}).fluid_connections,nil)
+-- Any tile of a building picks it; an empty tile says what is near (shake3:
+-- 23 of Gemini's inspect misses were a tile off a pole, inserter or belt).
+;(function()
+  local find=p.surface.find_entities_filtered
+  local am={valid=true,name='assembling-machine-1',type='assembling-machine',position={x=20.5,y=0.5},half=1.5,force=p.force,direction=0,
+    health=300,max_health=300,get_inventory=function() return nil end,get_fluid_contents=function() return {} end,get_recipe=function() return nil end}
+  local pole={valid=true,name='small-electric-pole',type='electric-pole',position={x=24.5,y=0.5},half=0.5,force=p.force}
+  local world={am,pole}
+  -- Engine semantics: with radius, centres in the circle; without, boxes covering the point.
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs(world) do
+      local dx,dy=math.abs(e.position.x-f.position.x),math.abs(e.position.y-f.position.y)
+      if (f.radius and (dx*dx+dy*dy)^0.5<=f.radius) or (not f.radius and dx<e.half and dy<e.half) then out[#out+1]=e end
+    end
+    return out
+  end
+  eq(call('inspect',{position={x=21.5,y=1.5}}).name,'assembling-machine-1')
+  eq(call('inspect',{position={21.5,1.5}}).name,'assembling-machine-1') -- [x,y] as the engine takes it
+  fails(function() call('inspect',{position={x=25.5,y=0.5}}) end,
+    'entity not found at (25.5,0.5): nearest small-electric-pole (24.5,0.5) 1.0 tiles; target an entity\'s position as scan lists it (observe scope=scan position={x=25.5,y=0.5} radius=3)')
+  fails(function() call('inspect',{position={x=30.5,y=0.5}}) end,'entity not found at (30.5,0.5): nothing within 3 tiles')
+  world={pole,{valid=true,name='wooden-chest',type='container',position={x=24.5,y=0.5},half=0.5,force=p.force}}
+  fails(function() call('inspect',{position={x=24.5,y=0.5}}) end,'ambiguous target: small-electric-pole and wooden-chest at (24.5,0.5); specify name or unit_number')
+  -- An item on the ground on a chest's tile does not make the chest ambiguous
+  -- (shake3: Grok's transfers until the item was picked up); alone, it is the target.
+  local chest={valid=true,name='wooden-chest',type='container',position={x=24.5,y=0.5},half=0.5,force=p.force,get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  local item={valid=true,name='item-on-ground',type='item-entity',position={x=24.6,y=0.4},half=0.2,force=p.force,get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  world={chest,item}
+  eq(call('inspect',{position={x=24.5,y=0.5}}).name,'wooden-chest')
+  world={item}
+  eq(call('inspect',{position={x=24.5,y=0.5}}).name,'item-on-ground')
+  -- A drill's drop tile and what it drops into (sapilot board #4).
+  local drill={valid=true,name='burner-mining-drill',type='mining-drill',position={x=30,y=0},half=1,force=p.force,direction=0,
+    drop_position={x=29.7,y=-1.3},drop_target=chest,get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  drill.surface={find_entities_filtered=function(f) return f.position.y==-1.3 and {chest} or {} end}
+  world={drill}
+  local seen=call('inspect',{position={x=30,y=0}})
+  eq(seen.drop.x,29.5); eq(seen.drop.y,-1.5); eq(seen.drop_into,'wooden-chest'); eq(seen.io,'-> 29.7,-1.3 wooden-chest'); eq(seen.pickup_position,nil)
+  -- Ore under a drill's footprint: inspect takes the drill, mine still means the ore
+  -- (the ore here is not hand-mineable, so the error shows which was picked).
+  drill.minable=true
+  world={drill,{valid=true,name='iron-ore',type='resource',position={x=30.5,y=0.5},half=0.5,minable=false,force={name='neutral'}}}
+  eq(call('inspect',{position={x=30.5,y=0.5}}).name,'burner-mining-drill')
+  fails(function() call('mine',{position={x=30.5,y=0.5}}) end,'entity is not mineable')
+  p.surface.find_entities_filtered=find
+end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed
 -- action that ends met (checked every 10 ticks) or timed_out.
 p.crafting_queue_size=0

@@ -4,6 +4,81 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Round 4: fixes from the shake3 study, the analyst's points, Space Age (2026-10-11)
+
+What docs/studies/shake3.md P1 items 1, 2 (caster part) and 3 and P2 item 12 asked for, each covered by
+`caster_selftest.py`:
+
+- Attack and loss text. The runtime's `<entity> x<N>` is a hit count and "(by N small biter)" is a kill count.
+  `live.py` (eng/stream2's version of the fix, adopted here so the branches merge) writes banners and replay titles
+  without the counts: "Engineer under attack near (-48, 16)", "Base under attack near (64, 0): gun turret", and "21
+  lost near (12, -40): 9 transport belt, 5 burner mining drill (by small biters)". For older text, `caster.py`'s
+  `spoken()` turns "x9" into "hit 9 times" and "character" into "engineer". The "the biters are damaging:" prefix is
+  gone. Loss facts, and attack facts that still carry a number, include `numbers_mean`. EXCHANGE_RULES states it as true statements: attack numbers count hits on the team's buildings or
+  engineers, loss numbers count the team's buildings destroyed, and "character" and "engineer" mean one of the
+  team's engineers.
+- Time left. `--deadline` takes "YYYY-MM-DD HH:MM", "HH:MM", or a deadline.txt file or glob (the latest wins).
+  start-team passes `"$rundir/*/deadline.txt"`. `minutes_to_deadline` goes on the opener, research, viewer and
+  segment beats and the pace and explain fillers, and on every beat in the last 15 minutes. On every beat, the
+  hosts said "forty-six minutes left" four exchanges running in a mock cast. `check_line` rejects "ends the run"
+  before the last minute, and "N minutes left/to go/more minutes" lines that disagree with the fact or come without
+  it. Research beats also get `compared_with_shake1` ("15 minutes later"), so the hosts need not do the arithmetic.
+- Status "thinking (standing still)" is now "planning the next step" ("idle" is "between tasks"). The rules and the
+  naturalist prompt describe planning kindly. Space Age pilot: most mockery lines were about standing still.
+- Pronouns. `profile.pronouns` reaches the snapshot (`live.py`, `model.py`) and every agent fact (`pronouns`, else
+  "they/them"). The rules say to use them. `check_line` rejects he/him/his or she/her when no agent in the facts
+  chose them.
+- `check_line` also catches "isn't there", "nowhere to be found" and "doesn't exist" absences, capitalised names
+  outside the facts and roster, and lines in other scripts (Kimi aired Chinese characters once in the pilot).
+  "Outside the roster" means a mid-sentence capitalised word in neither the facts nor the show notes, or any word
+  listed with an agent's name ("Gear and Sol").
+- Numbers written as words in the facts count as facts, so Sol's "eleven labs are working" lets the hosts say
+  "Eleven labs" (P2 item 12). `game_minutes` covers "sixty-five minutes in".
+- Rechecked over the aired lines: shake3, 12 of 425 lines would now be rejected (the study's "isn't there",
+  "ends the run", "Gear and Sol", "she", "forty more minutes", and seven invented names). The Space Age pilot:
+  3 of 187.
+- Who spoke. Caster and agent records log `provider` and `voice` (the provider's voice id), plus `retried` when it
+  applies, from `voices.TTS.last_here()`. That is a per-thread copy of `last`, because an exchange is synthesised
+  in parallel. `caster_report.py` prints "spoken by". Mock run: `pbp: openai/verse`, `color: openai/ballad`.
+- A Workers AI 8008 error ("AiError: Internal server error") retries once on another Aura-2 voice of the same
+  gender (atlas to draco, thalia to theia). A second failure drops the line as before. eng/voices pointed out that
+  the TTS failure counters (`down`, `fails`) are shared between the synthesis threads without a lock. Two threads
+  failing at once can both count, so a provider may rest after 2 failures instead of 3.
+
+The analyst (docs/ANALYST-NOTES.md, the split agreed there and in "Viewer questions answered by the analyst" below):
+
+- Filler beats use the analyst's talking points. A fresh priority-3 point gets its own beat (angle `analyst`).
+  Otherwise each angle takes the best unused point of a fitting kind: pace takes comparison or judgement; explain
+  takes explainer, prediction or trivia; production takes stat; research takes prediction or stat; spotlight and
+  board take storyline. The point goes in as `analyst_point` (the analyst's `point_facts`, which includes `pace`
+  for run comparisons). Once the model writer has built lines on it, `POST /analyst/used` marks it, so it is never
+  offered again.
+- `corrections` (up to 6, verbatim) go into every beat's facts. The opener gets `analyst_headline` and
+  `next_milestone`.
+- Viewer questions are eng/analyst's code (the viewer branch of `facts_for`, the Differ's question loop, the viewer
+  template). Two lines in `say_exchange` still call `self.ask_analyst(e)` when such a method exists. Nothing
+  defines one, so they do nothing. They were to be removed as agreed, but a PreToolUse hook (Cygnal) blocked that
+  edit, so they are left for a person to delete.
+- Bench (`--bench`, Kimi, mock snapshot with one analyst cycle): 22/27 lines kept. The analyst case gave "seven labs
+  are gasping, four more green assemblers needed", and the correction was used ("those are walls holding").
+
+Space Age (eng/stream2 143eb0d, and the analyst's pilot suggestions):
+
+- `space` alerts (first rocket, platform, orbit, landing) rank with research (priority 7). The hosts talk over
+  `space` and `space_moment` segments; a moment is called "a milestone for the team". Platform `speed_kms` is
+  dropped from the facts until it is checked against the game's km/s. Lulls may request a `space` segment when
+  the director lists it as available.
+- SHOW now covers the crash site (scenery from before the game; its fire is harmless) and the fact that research
+  progress is always kept. On Space Age runs (the snapshot has `space`, the subtitle names Space Age, or
+  `POG_SPACE_AGE=1`) it adds the expansion's goal and says a two-hour run is mostly the Nauvis start.
+- Dry run against eng/stream2's `mock-sa3.json`: "Orbital One reaches Vulcanus! Forty-nine minutes, and space opens
+  wide!", and a template line over the landing after a writer timeout.
+
+Not done or not checked: the shake1 pace baseline still applies on Space Age runs, where the early game is similar
+but later techs differ. The new rule wording has had one bench and two short mock runs, not a live world. Kimi
+timed out at 12 s twice in the 100 s Space Age mock run (shake3 logged 9 timeouts in an hour). Spend this round:
+about $0.08 of Workers AI and OpenAI TTS.
+
 ## Second pass: the hosts talk to each other, know the show, and never go quiet
 
 Asked for on 2026-10-10 evening (the first two items of that request arrived cut off; this pass reads them as "the
@@ -142,6 +217,32 @@ the facts event, kind, agent, seconds and ago_s, plus a hint to call it as an in
 first hint mentioned "muted" and the banner, and Kimi read those words on air ("Replay shows—muted, that REPLAY
 banner"), so the hint now says only how to call it. On the bench: "Replay's up! Astra bites it twenty-one seconds
 ago." Not run against a real replay (needs OBS on the box); the selftest and the bench cover the facts and the writing.
+
+## Viewer questions answered by the analyst (eng/analyst, round 4)
+
+The analyst (`tools/stream/analyst.py --viewer-questions`, on in start-team) picks the freshest viewer question
+from the lane. It answers at most one every 150 s, takes nothing older than 60 s, and skips off-topic or unsafe
+questions. It posts the restated question and a checked answer as `analyst.answers` in the snapshot. In
+caster.py, eng/analyst owns only:
+- the viewer and answer loops in `Differ.diff` (plain questions wait for the analyst while
+  `questions_on(analyst)`; comments are unchanged);
+- the viewer branch of `facts_for` (`analyst_answer`, `how_to_call_it`);
+- a `viewer` template that fills only with an answer.
+These are covered by caster_selftest.py "viewer questions". No `ask_analyst` hook is needed in `say_exchange`.
+Details and the split with eng/audio's talking-points work are in docs/ANALYST-NOTES.md, "What the analyst
+writes" and "Viewer questions on air".
+
+Two suggestions for `SHOW`, from the Space Age pilot (your text, so not edited here):
+- The crash site. At 01:39 the hosts called the replay of the burning wreck "pure biter buffet". Suggested
+  sentence: "Every game starts beside the wreck of the engineers' crashed spaceship (the crash site): scenery
+  from before the game, with a few starting items; its fire is harmless, and the engineers never crash."
+- The goal. On Space Age runs (the stream's subtitle names Space Age, POG_SPACE_AGE=1), "The team's goal is a rocket
+  launch" is wrong. Suggested: "In Space Age a rocket launch is a milestone: rockets carry a space platform starter
+  pack to orbit, space science is made on the platform, and the expansion's goal is reaching the solar system
+  edge. A 2 h run will mostly be the Nauvis start: oil, plastics and blue science are the big milestones."
+- Write true statements in rules and facts ("research progress is always kept"), never negated mistakes. In
+  the pilot, 31 of the analyst's 37 corrections were negated ("not because progress was lost"); the analyst's
+  prompt now avoids them.
 
 ## Status
 

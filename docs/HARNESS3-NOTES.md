@@ -1,5 +1,273 @@
 # Harness3 notes: the shake2 harness bugs (branch eng/harness3)
 
+Round 6 (the runtime.lua locals guard and refactor plan) comes first, then round 5 (the agents' own tool requests),
+round 4 (shake3 fixes) and the shake2 round.
+
+## Round 6: runtime.lua locals
+
+### The guard
+
+`tests/locals.lua` (in `npm test` through `tests/lua.test.ts`, and runnable as `lua tests/locals.lua`) compiles
+`mod/agent-harness_0.1.0/runtime.lua` and `control.lua` with N extra locals put in front of the first line, finds the
+largest N that still compiles, and fails when fewer than 3 slots are free:
+
+```
+locals: runtime.lua has 3 of 200 top-level local slots free
+locals: control.lua has 186 of 200 top-level local slots free
+```
+
+The failure says to move helpers into a module (require) or group them in a table, and points here. Why it matters: a
+fresh world loads runtime.lua through the mod as its own chunk, so a 201st top-level local breaks every new world at
+load, even though the hot-deploy bundle (73066da) wraps the body in a function and would still deploy. The count is the
+peak of locals alive at once in the main chunk, so a top-level `for` loop's hidden locals count too (the Lua 5.5 used by the tests keeps one more hidden
+local per generic `for` than Factorio's 5.2, so the test can only be stricter than the game). Checked: with one local
+added to a copy of runtime.lua the test fails with that message; the counter's own assertions (200 locals leave 0,
+199 leave 1, 198 leave 2) run every time.
+
+### Refactor plan (for tomorrow, after eng/spaceage's runtime.lua changes land)
+
+runtime.lua's main chunk holds about 200 locals in 4012 lines. Three steps, smallest diff first; run `lua
+tests/locals.lua` after each.
+
+1. Module constructors, 13 slots, mechanical. `blueprint_module`, `scheduler_module`, `construction_module`,
+   `kite_module`, `threat_module`, `survey_module`, `conditions_module`, `route_module`, `pipes_module`, `rates_module`,
+   `stock_module`, `space_module`, `clock_module` (lines 5-21) are each called once, where the module is built (lines
+   3005, 3422-3456, 3690-3700, 3782-3784). Call `require('x'){...}` there instead, as `M.chat_module` already avoids a
+   local. No behaviour change; one line each at the top and at the call.
+2. Constants, about 20 slots. One `local K={...}` (or fields on `M`) for `MAX_TICKS` (6 uses), `WATCH_TICKS`,
+   `STUCK_TICKS`, `LOSS_CELL`, `MAX_INCIDENTS`, `STOCK_RADIUS`, `STOCK_REFUSE_S`, `HAND_BACKLOG_S`,
+   `COPPER_GROUP_LIMIT`, `FEED_CHECK` (4), `PIPE_LEG`, `PADDED_BOX`, `SLIM_BOX`, `STALL_TICKS`, `SIDESTEP_TICKS`,
+   `MAX_STALLS`, `MAX_REPLANS`, `PROGRESS_TICKS`, `MAX_ALERTS`: 19 names, about 33 use sites, each `X` becoming `K.X`.
+   The lookup tables used once or twice can join a second table `T` for another ~10 slots: `give_order`, `kind_order`,
+   `collect_types`, `GRID_TYPES`, `GRID_SKIP`, `ARROWS`, `ASSEMBLERS`, `STEP`, `drawn_enemy`, `timed_kind`,
+   `repeat_shift`, `live_fields`, `DOC_ONLY`, `EXTRA_ARGS`, `VIEW_SCOPES`.
+3. Subsystems into modules, when more room is needed (each frees its helpers and moves code out of the 4000 lines):
+   - hand crafting, 12 functions: `hand_speed`, `crafting_left`, `crafting_count`, `crafting_line`, `craft_stock`,
+     `takes`, `hand_recipe`, `craft_shortfall`, `begin_craft`, `craft_cost`, `best_assembler`, `craft_facts` (plus
+     `STOCK_RADIUS`, `STOCK_REFUSE_S`, `ASSEMBLERS`, `HAND_BACKLOG_S`) into the existing `crafting.lua`, with `stock`
+     and `survey` passed in;
+   - losses and alerts, 7: `record_loss`, `losses_since`, `ago`, `counted`, `describe_incident`, `unseen_losses`,
+     `recent_alerts` (plus `LOSS_CELL`, `MAX_INCIDENTS`, `MAX_ALERTS`) into an `alerts.lua`;
+   - research, 7: `queue_names`, `trigger_text`, `research_block`, `with_prerequisites`, `set_research_queue`,
+     `array_of_names`, `feed_research_plans` into a `research.lua`;
+   - pipe routing, 5: `PIPE_LEG`, `free_pipe_tile`, `pipe_leg`, `joined_box`, `route_pumps` into the existing
+     `pipes.lua`.
+
+Leave alone: the locals the hot path and many handlers share (`state`, `player`, `body`, `real`, `entity`, `finish`,
+`stop`, `steer`, `position`, `distance`, `integer`, `handlers`, `reads`, `passive`, `check_args`): moving them costs
+an extra table lookup per call and touches hundreds of lines. Step 1 alone gets back to 16 free; steps 1 and 2 to over
+40, enough for the Space Age work.
+
+## Round 5: the agents' tool requests (shake3, sapilot)
+
+main merged first (fast-forward to 6687019). Each change has a fake-engine test that fails on the old code. None is
+checked on a live world (this session cannot run `bin/fh`); the checks to run are at the end of this section.
+
+### 1. build with the agent's own character on the footprint
+
+Evidence: Grok's most common shake3 placement error ("the character standing on the footprint (move off it first)", 9
+of 20 placement errors); Gemini's sapilot wish "Auto-evasion in `build`: automatic slight nudge of character if
+standing on the target building's footprint".
+
+Fix: when the agent's own character is the only thing in the footprint (corpses and ore aside), `build` picks the
+nearest free spot just off the footprint that keeps the position in build reach and is not on a belt, walks there with
+real walking (steered every tick, as `move_to` does, at most 3 s), and builds. It is the same timed action as a build
+waiting for a craft: the reply is `stepping_aside {from,to}` with `until_tick`, the outcome `fed | failed |
+timed_out`, and `last.result` holds the build reply. In a batch the entries before stay built (`built`, `placed`) and
+the rest run after the step (`built_before` in the final result). Anything else in the footprint, or no free spot in
+reach, fails as before with the same error. Queued builds wait through the step (`fed` counts as success).
+Test: `tests/bots.lua` (single, batch, queued, no free spot).
+
+### 2. Gemini's inspect misses
+
+Evidence (`runs/shake3/gemini/journal.jsonl.gz`): 30 `inspect` errors. 23 were "entity not found" on empty tiles,
+mostly at 08:05-08:11 while checking poles, inserters and belts around the green-science assemblers. Against Gemini's
+own earlier scan rows, most were exactly 1 tile from a small entity (pole, inserter, belt), a few beside a character,
+and some with nothing within 1.6 tiles: guessed positions, not moved entities or reach. 4 were out of sight (38 to 54
+tiles), 1 ambiguous, 1 `position: [-5,-6]`.
+
+Fix (`entity()`, so every targeted action gains it):
+- A point inside a building's footprint picks that building when no entity has its centre there, as a player's cursor
+  does (any tile of an assembler). This holds for actions too (`transfer`, `rotate`, `mine` on any tile of a building
+  act on it), except that ore at the point stays the target of an action: `mine` on an ore tile under a drill mines
+  the ore, never the drill; only `inspect` takes the building there.
+- A miss says what is near: "entity not found at (25.5,0.5): nearest small-electric-pole (24.5,0.5) 1.0 tiles; target
+  an entity's position as scan lists it (observe scope=scan position={x=25.5,y=0.5} radius=3)", or "nothing within 3
+  tiles".
+- "ambiguous target: small-electric-pole and wooden-chest at (x,y); specify name or unit_number".
+- `position` accepts `[x,y]` everywhere; the out-of-sight error adds "move_to within 30 tiles first".
+- The describe `target` line says all this.
+Test: `mod/tests/runtime_test.lua`.
+
+### 3. The board's harness requests and the notes' tool wishes
+
+The board held two harness items: shake3 #17 (Sol, stumps and ghosts over trees) was fixed in round 4; sapilot #4
+(Astra) is answered below. Tool wishes come from `runs/shake3/*/notes.md` and `runs/sapilot/*/notes.md`.
+
+Done (small tool fixes):
+
+| Request | Who | Change | Test |
+|---|---|---|---|
+| Drill output tile not exposed | Astra, sapilot board #4 and notes | entity summaries (build replies, observe rows) carry a mining drill's `drop` tile and `drop_into`; `inspect` adds `drop_position` and `io` ("-> x,y entity") | runtime_test |
+| A chest with an item on its tile is an ambiguous target | Grok, shake3 | an item on the ground is a fallback target like ore (taken only when nothing else is there, or by name) | runtime_test |
+| A build that skips blocked tiles; batches stop midway | Grok shake3, Astra sapilot | `build builds=[...] skip_failed=true`: failing entries go into `failed {index,position,error}`, the rest build | runtime_test |
+| queue cancel prints 60+ history entries; concise queue results | Opus shake3, Astra sapilot | `queue_submit/repeat/edit/cancel/resume` return the newest 3 history entries and `history_total`; `queue_status` keeps all | `tests/scheduler.lua` |
+| engine-unit "not hand-craftable now" with force and ingredients | Grok, shake3 | the engine is right (advanced-crafting is machine-only); the error now says "(category advanced-crafting) cannot be hand-crafted by a character; an assembling machine can make it (configure recipe=engine-unit, then feed it)" | runtime_test |
+| A queue that does not pause on chat/say | Opus, sapilot | already so: chat and say are passive and never stop a plan (Opus's one sapilot pause followed an out-of-reach failure); a test pins it | `tests/bots.lua` |
+| collect uses count, not want | Opus, shake3 | done in round 4 (`collect want=N`) | |
+| Ignore stumps; ghosts over trees | Sol, shake3 board #17 | done in round 4 | |
+| Talk while dead | Sonnet (study) | done in round 4 | |
+
+Not done, with the reason:
+
+| Request | Who | Reason |
+|---|---|---|
+| collect/feed across teammates' claims (trust lists, `teammate_chests`, claim override) | Gemini (both runs), Haiku, Opus, Sonnet, Muse | team policy, not a tool fix: claims protect a teammate's output by design, and named positions already take from them (the reply says whose). Whether to add consent (e.g. a claim flag "open to the team") is Nick's call |
+| Inserter direction as the drop side | Opus sapilot; Gemini noted the convention | convention change: every playbook line, describe text and agent habit assumes pickup side; flipping it mid-series would cost more than it saves. Describe states it, and build/inspect show `pickup` and `drop` tiles |
+| `place_ghosts` with integer directions | Gemini shake3 | 2.0 directions are 0..15 (east is 4, not 1); accepting numbers invites wrong guesses. The error already names the compass words |
+| sleep that ignores chat | Haiku | waking on a mention is what keeps a sleeping agent answerable to the team (study: Haiku slept ~44 of 60 minutes); a CLI flag in `host/cli.ts` (eng/board's file) if Nick wants it |
+| mine ticks above 600 | Grok | `max_action_ticks` is 600 by design; a plan or `--wait` loop repeats it |
+| A research wait that fails fast when every lab lacks packs | Grok | medium (a new `wait_until` condition reading lab inventories each check); `observe scope=labs` and status warnings ("labs missing packs") already show it |
+| feed balancing science across every lab | Grok | strategy-level behaviour of feed; `feed radius=` with `count` tops up every lab in range |
+| feed reports out_of_items after delivering | Luna | by design: the tour stops because its items ran out before every target was served; `last.given` shows what went in, and a plan step failing lets `on_fail` react |
+| item_count wait needs at_least or below; wait_until has no tick option | Luna, Sonnet | by design: the error names `at_least`/`below`; `wait_ticks` waits N ticks |
+| nearest needs name or type; transfer needs item with to_entity; argument names | Gemini sapilot | by design; the errors name the valid arguments (check_args lists them) |
+| corpse recovery needs transfer to_player | Sonnet | by design and documented (`take_order`, character_corpse) |
+| wait_until replaced silently by a move or build | Muse | one action at a time by design; the replaced action's `last.outcome` is `replaced`. A plan keeps steps in order |
+| bottleneck JSON has a trailing warning line | Muse | the CLI prints the warning after the JSON; `host/cli.ts` output format is eng/board's area. Recorded for them |
+| build centre rules opaque (integer vs .5) | Muse | the reply's `entity.position` shows where it went; a snapping rule in describe would help (small doc change, not done tonight) |
+| courier/loop primitive, attach_buffer, ghost-plan reviewer, power-coverage preview, editable plans mid-run, one view of assembler and lab stock, fluid alignment warning, pole routing around the crash ship, batch craft-before-build | Opus, Gemini, Muse, Luna, Astra | not small: each is a new action or planner. `queue_repeat`, `plan save/run`, `observe scope=labs`, `scan fields=io` and build's awaiting_craft cover parts of them |
+| labs query returned empty once | Muse | no repro in the journal |
+| chat_remaining stayed in the hundreds | Grok | chat is eng/board's area |
+
+### Files touched (round 5)
+
+- `vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua`: `position()` ([x,y]); `assert_visible` (hint);
+  `entity()` (footprint pick, nearest-entity miss, ambiguous names, item on the ground); `summary()` and `scan_fields.io`
+  (drill drop); `build_one` (aside check), `handlers.build` (step aside, `skip_failed`), the `feed` branch of
+  `M.tick_body` (walk off, rerun); `handlers.inspect` (drill drop); `begin_craft` (machine-only recipe); describe
+  entries `target`, `build`, `inspect`. No new top-level locals.
+- `.../construction.lua`: `M.in_box`, `M.aside` (new).
+- `.../scheduler.lua`: `snapshot(q,recent)` and the five changing handlers; `queue_status` describe text.
+- Tests: `tests/bots.lua`, `tests/scheduler.lua`, `mod/tests/runtime_test.lua`.
+- `docs/SPACEAGE.md` (coordination section), this file.
+
+### Tests (round 5)
+
+Every `tests/*.lua` and `mod/tests/*.lua` passes. `npm test`: 95 pass, 4 fail (the bridge socket tests this sandbox
+refuses with `listen EPERM`, as in rounds 3 and 4).
+
+### Live checks (to run; this session could not)
+
+```sh
+cd vendor/factorio-harness && npm run build && cd ../..
+POG_WORLD=live bin/fh deploy
+tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","bot_create","h3-a"))'
+fh() { POG_WORLD=live bin/fh --bot h3-a "$@"; }
+fh call status                                                          # X,Y (the bot's position)
+# Build where the bot stands: it steps off and builds (stepping_aside, then outcome fed)
+fh call build --args '{"item":"stone-furnace","position":{"x":X,"y":Y}}' --wait
+# inspect off-centre and on an empty tile next to it
+fh call inspect --args '{"position":{"x":X+0.6,"y":Y+0.6}}'             # the furnace
+fh call inspect --args '{"position":{"x":X+3,"y":Y}}'                   # "entity not found at ...: nearest stone-furnace ..."
+# drill drop tile: the starting burner drill
+fh call build --args '{"item":"burner-mining-drill","position":{"x":X+4,"y":Y}}'   # entity.drop, drop_into
+# (skip_failed needs items the new bot lacks; its fake-engine test covers it)
+tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","bot_remove","h3-a"))'
+```
+
+## Round 4: shake3 P2 items 7 and 10, P3 item 13 (glyphs)
+
+main merged in first (fast-forward to b2de475). All five items are fixed, each with a fake-engine or offline test that
+fails on the old code. None is verified on world `live`: this session's permission mode denied `bin/fh` again
+(`POG_WORLD=live bin/fh doctor`), so the live checks are written out below for the operator to run.
+
+| Item | shake3 evidence (`runs/shake3/*/journal.jsonl.gz`) | Cause | Fix | Test |
+|---|---|---|---|---|
+| `chat` fails while dead | Sonnet 3 times: "bot sonnet is dead; it respawns at tick N" | every non-read action resolved the bot through `player()`, which refuses a dead bot; only `chat peek` skipped it | a bot's `chat` and `say` take its proxy dead or alive (`dispatch_request`), so it reads and answers the team while it waits to respawn | `tests/bots.lua`: dead bot says, another player reads it, dead bot reads the reply, bad `limit` still refused |
+| tree stumps block placement | Sol's harness item #17; Haiku 3, Sonnet 3, Sol 1+ direct: "placement blocked by tree-08-stump" right after mining that tree; Sol's queue histories repeat errors that list stumps beside ghosts (counts inflated by repeated `queue_*` replies) | the engine's script placement check (`can_place_entity`, ghost `revive`) refuses remnants (type `corpse`), which a player's build removes | `construction.clear_remnants` removes remnants (never a `character-corpse`) in the footprint before a bot's direct build or ghost revive; the character is in build reach there | `tests/bots.lua`: build over a stump succeeds, the stump goes, a character corpse stays |
+| biter corpse blocks placement | Grok 01:02: "placement blocked by small-biter-corpse (-59.9,-13.2), burner-mining-drill (-62,-12), burner-mining-drill (-60,-12)" | the real blockers were the two drills (a 3x3 assembler over them); the corpse was listed first | the same clearing removes the corpse first, so the error names only the drills | `tests/bots.lua`: the error names the drill and no corpse; the corpse is gone |
+| ghost over trees refused | Sol's item #17 ("place_ghosts returned placement blocked by tree rather than marking/clearing it as docs promise"); Haiku 4: "placement blocked by tree-08, dead-tree-desert; mine it, or place_ghosts (marks it) + construct" from `place_ghosts` itself | `can_place_entity{build_check_type=manual_ghost, forced=true}` refuses trees in 2.0.77 | `place_ghost` also accepts a footprint holding only neutral trees, plants and rocks, and remnants (`construction.only_obstacles`); the ghost marks the trees and rocks as before, construct mines them, the build clears remnants. A force's own plants (Gleba farms) and anything else still refuse. Remnants under a ghost are not removed at placement (it reaches any charted spot) | `mod/tests/runtime_test.lua`: ghost over tree+stump placed, tree marked, stump left; tree+chest refused naming the chest; own plant refused |
+| `collect want` in a queue | Opus 2 (`queue_submit` refused whole: "unknown argument want for collect"), as in shake2 | `want` was never an argument | `collect want=N` (with `item`): hold N, taking only the difference; nothing taken (and `held`, `note`) when the character already has N; not with `count`. Worked out when the step runs, so a queued collect sees earlier steps' gains. Listed in describe | `mod/tests/runtime_test.lua`: direct top-up, already enough, queued step succeeds and takes the difference, errors |
+| supervisor nudges a working agent (P2 item 7) | Grok nudged 00:48:57 mid-turn; Muse 5 nudges 01:21 to 01:26 while building | herdr read `idle`/`done` during a backgrounded `--wait` or a long tool call | before nudging, `supervise.sh` reads the last `"event":"request"` line of `WORKSPACE/journal.jsonl`; under 120 s old means working: no nudge, log line `skip nudge (status idle): last request Ns ago, working` | `tools/test_supervise.py` (fake herdr always idle): request 10 s ago not nudged, 5 min ago nudged, no journal nudged |
+| shared glyphs (P3 item 13) | Astra and Muse both ✦, Sol and Sonnet both S | glyphs were not checked | `profile` refuses a glyph another agent or player holds: "glyph ✦ is taken by Astra (astra); pick another (profiles lists every glyph in use)", before anything in the call changes. Case and U+FE0F are ignored in the comparison. Setting your own glyph again is fine | `tests/bots.lua` |
+
+Survival rules are unchanged. Remnants give no items; a character corpse (the dead agent's items) is never removed.
+A ghost over trees is what a player's ghost does in game.
+
+What players see differently: `chat`/`say` while dead work; builds over stumps work and their errors name the real
+blocker; `place_ghosts` over trees works (then `construct`); `collect item=X want=N`; a duplicate glyph is refused.
+`agent/team.md` is unchanged (the describe line for `glyph` says it must be unique).
+
+### Files touched (round 4)
+
+- `vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua`: `dispatch_request` (dead bot talk), `build_direct`
+  (one `clear_remnants` line), `place_ghost` (placement check), `handlers.collect` (`want`), the `collect` describe
+  entry. No new top-level locals (main's bundler note, 73066da).
+- `.../construction.lua`: `M.box`, `M.clear_remnants`, `M.only_obstacles` (new, before `obstructed`).
+- `.../profiles.lua`: `same_glyph`, `holder`, `check_glyph` and one line in `M.handlers.profile`; the glyph describe text.
+- `vendor/factorio-harness/tests/bots.lua`, `vendor/factorio-harness/mod/tests/runtime_test.lua`.
+- `tools/supervise.sh` (journal check; `POG_SUPERVISE_QUIET`/`POG_SUPERVISE_POLL` for the test; the `.context-hooks`
+  read no longer prints an error when the file is missing), `tools/test_supervise.py` (new).
+- `docs/SPACEAGE.md`: a coordination section for eng/spaceage (bot travel), listing these hunks. `bots.lua` is not touched.
+
+### Tests (round 4)
+
+- Every `tests/*.lua` and `mod/tests/*.lua`: pass (runtime 720 assertions).
+- `npm test`: 95 pass, 4 fail. The 4 are the `tests/bridge.test.ts` socket tests, refused by this sandbox
+  (`listen EPERM ... .cache/bridge-*/bridge.sock`), as in round 3 before any change.
+- `npm run build`: clean. `python3 tools/test_supervise.py`, `tools/test_shot_sync.py`, `tools/test_describe_lines.py`: pass.
+
+### Live verification on `live` (to run; this session could not)
+
+From the repo root on eng/harness3. Deploying replaces the runtime the other engineers loaded on `live`. Bots `h3-a`
+and `h3-b`; X,Y and TX,TY are positions read from the previous reply.
+
+```sh
+cd vendor/factorio-harness && npm run build && cd ../..
+POG_WORLD=live bin/fh deploy
+for b in h3-a h3-b; do tools/pog.py --world live rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"bot_create\",\"$b\"))"; done
+fh() { POG_WORLD=live bin/fh --bot h3-a "$@"; }
+
+# Glyph: h3-a takes it, h3-b is refused naming h3-a
+fh call profile --args '{"glyph":"Q"}'
+POG_WORLD=live bin/fh --bot h3-b call profile --args '{"glyph":"q"}'      # expect: glyph Q is taken by h3-a
+
+# Stump: mine a tree, see its stump, build the starting stone furnace on it
+fh call nearest --args '{"type":"tree","limit":1}'                      # TX,TY
+fh call move_to --args '{"position":{"x":TX,"y":TY},"within":2}' --wait
+fh call mine --args '{"position":{"x":TX,"y":TY},"ticks":600}' --wait
+fh observe --args '{"scope":"scan","position":{"x":TX,"y":TY},"radius":2}'   # a *-stump here makes this a real check
+fh call build --args '{"item":"stone-furnace","position":{"x":TX,"y":TY}}'   # expect consumed: 1
+
+# Biter corpse in a footprint that overlaps the furnace: the error names the furnace only (the starting burner drill)
+tools/pog.py --world live rcon '/silent-command game.surfaces.nauvis.create_entity{name="small-biter-corpse",position={TX+1.3,TY+0.2}}'
+fh call build --args '{"item":"burner-mining-drill","position":{"x":TX+1,"y":TY}}'  # expect: placement blocked by stone-furnace (TX,TY), no corpse
+
+# Ghost over a tree, then construct
+fh call nearest --args '{"type":"tree","limit":1}'                      # a second tree, UX,UY
+fh call place_ghosts --args '{"entities":[{"name":"stone-furnace","position":{"x":UX,"y":UY}}]}'  # expect placed 1, obstacles_marked 1
+fh call construct --args '{"area":{"left_top":{"x":UX-2,"y":UY-2},"right_bottom":{"x":UX+2,"y":UY+2}}}' --wait
+# construct mines the tree (mined >= 1); the furnace itself is "missing" (the one furnace is placed above), which is fine
+
+# collect want in a queue: the bot holds 8 iron plates; nothing is taken and the step succeeds
+fh call queue_submit --args '{"steps":[{"action":"collect","args":{"item":"iron-plate","want":5,"positions":[{"x":TX,"y":TY}]}}]}'
+fh call queue_status                                                    # history: collect ok, note "already holding 8 iron-plate"
+
+# Dead bot talks: kill h3-a's character (no player), then chat and say within its 10 s respawn wait
+fh call status                                                          # X,Y
+tools/pog.py --world live rcon '/silent-command local c=game.surfaces.nauvis.find_entities_filtered{type="character",position={X,Y},radius=1}[1] if c and not c.player then c.die() end'
+fh call status                                                          # alive: false, dead_until_tick
+fh call say --args '{"text":"h3 check: talking while dead"}'           # expect seq, not "is dead"
+POG_WORLD=live bin/fh --bot h3-b call chat                              # shows h3-a's line
+fh call chat
+
+for b in h3-a h3-b; do tools/pog.py --world live rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"bot_remove\",\"$b\"))"; done
+```
+
+The supervisor change needs no live check beyond the next team run: `runs/shake4/*/supervisor.log` should show
+`skip nudge ... working` lines and no nudge while the journal has requests.
+
 Scope: the six bugs in `docs/studies/shake2.md` section 13, P2 item 10, with the evidence from section 7. All six are
 fixed and covered by fake-engine tests. None is verified on world `live`: this session's permission mode denied every
 `bin/fh` command (`bin/fh call status`, `bin/fh doctor`), so I could not deploy or create `h3-*` bots. The commands to

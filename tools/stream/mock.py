@@ -20,7 +20,7 @@ PROFILES = {
     "haiku": {"display_name": "Haiku", "color": "#2fbf71", "glyph": "🌸", "motto": "ore falls, plates rise"},
     "sol": {"display_name": "Sol", "color": "#ffd400", "glyph": "☀", "motto": "Keep the labs lit."},
     "luna": {"display_name": "Luna", "color": "#14141c", "glyph": "🌙", "motto": "Night shift.", "voice": "theia"},
-    "grok": {"display_name": "Grok the Unyielding Builder", "color": "#00c8e0", "glyph": "Gk", "motto": ""},
+    "grok": {"display_name": "Grok the Unyielding Builder", "color": "#00c8e0", "glyph": "Gk", "motto": "", "pronouns": "he/him"},
     "gemini": {"display_name": "Gemini", "color": "#5aa9ff", "glyph": "♊", "motto": "Two belts are better than one."},
     "muse": {"display_name": "Muse", "color": "#ff8fb1", "glyph": "Mu", "motto": "Every blueprint a sketch."},
     # extras for the 12-agent density test (tools/stream/runs/mock12.json)
@@ -200,6 +200,8 @@ class MockSource:
         self.next_board_read = 0
         self.next_base_attack = time.time() + 75
         self.harness_version = 3
+        self.space_age = bool(run.get("space_age"))  # a scripted Space Age arc on the wall clock (space_step)
+        self.sa_speed = float(run.get("mock_space_speed") or 1.0)
         # a few events already on the board when the stream starts
         for _ in range(5):
             self.board_step(time.time() - 60, self.game0)
@@ -339,6 +341,35 @@ class MockSource:
         self.chat.append({"seq": self.seq, "tick": int(gsec * 60), "from": a["display_name"], "text": text})
         self.chat = self.chat[-50:]
 
+    def space_step(self, now, obs):
+        """Space Age arc for the overlay (run "space_age": true; wall seconds x mock_space_speed): a rocket at 20 s, the
+        platform "Orbital One" over Nauvis at 40 s, flying to Vulcanus 70-130 s, the second agent landing at 150 s."""
+        t = (now - self.t0) * self.sa_speed
+        rockets = 0 if t < 20 else 1 + int((t - 20) // 45)
+        plats = []
+        if t >= 40:
+            if t < 70:
+                p = {"name": "Orbital One", "at": "nauvis", "state": "waiting_at_station", "speed": 0}
+            elif t < 130:
+                p = {"name": "Orbital One", "at": f"nauvis->vulcanus {int((t - 70) / 60 * 100)}%", "state": "on_the_path", "speed": 1.2}
+            else:
+                p = {"name": "Orbital One", "at": "vulcanus", "state": "waiting_at_station", "speed": 0}
+            plats.append(p)
+        if t >= 100:
+            plats.append({"name": "Shuttle", "at": "nauvis", "state": "waiting_at_station", "speed": 0, "paused": True})
+        planets = ["nauvis"] + (["vulcanus"] if t >= 150 else [])
+        obs["space"] = {"rockets": rockets, "planets": planets, "platforms": plats}
+        made = obs.setdefault("produced", {})
+        if t >= 40:
+            made["space-science-pack"] = int((t - 40) * 2.5)
+        if t >= 180:
+            made["metallurgic-science-pack"] = int((t - 180) * 0.6)
+        names = list(self.agents)
+        for a in obs["agents"]:
+            a["surface"], a["platform"] = "nauvis", None
+            if len(names) > 1 and a["name"] == names[1] and t >= 150:
+                a["surface"] = "vulcanus"
+
     def observe(self):
         now = time.time()
         gsec = self.game_seconds(now)
@@ -394,11 +425,11 @@ class MockSource:
             # biters hit the west wall: an attacked area (no agent necessarily there), then sometimes losses
             x, y = SITES["defense line"]
             x, y = x + r.uniform(-20, 20), y + r.uniform(-20, 20)
-            events.append({"kind": "attack", "text": f"Base under attack near ({round(x)}, {round(y)}): gun-turret",
+            events.append({"kind": "attack", "text": f"Base under attack near ({round(x)}, {round(y)}): gun turret",
                            "key": f"area:{round(x / 32)},{round(y / 32)}", "ttl": 60, "position": {"x": x, "y": y}})
             if r.random() < 0.6:
                 events.append({"kind": "loss", "text": f"{r.randint(2, 9)} lost near ({round(x)}, {round(y)}): stone wall, "
-                               f"gun turret (by small biter)", "key": f"loss:{round(x / 32)},{round(y / 32)}", "ttl": 90,
+                               f"gun turret (by small biters)", "key": f"loss:{round(x / 32)},{round(y / 32)}", "ttl": 90,
                                "position": {"x": x, "y": y}})
             self.next_base_attack = now + r.uniform(150, 260)
         if now >= self.next_confess:  # `confess`: a line for the viewers only (audience.lua)
@@ -412,7 +443,7 @@ class MockSource:
             "tick": int(gsec * 60), "paused": False, "game_seconds": gsec,
             "agents": [{
                 "name": a["name"], "kind": "bot", "display_name": a["display_name"], "color": a["color"],
-                "glyph": a["glyph"], "motto": a.get("motto", ""), "voice": a.get("voice"), "avatar": a.get("avatar"), "position": {"x": round(a["pos"][0], 1), "y": round(a["pos"][1], 1)},
+                "glyph": a["glyph"], "motto": a.get("motto", ""), "voice": a.get("voice"), "pronouns": a.get("pronouns"), "avatar": a.get("avatar"), "position": {"x": round(a["pos"][0], 1), "y": round(a["pos"][1], 1)},
                 "alive": a["alive"], "dead_until_tick": int((gsec + (a["dead_until"] - now) * self.speed) * 60) if not a["alive"] else None,
                 "active": a["active"], "last": a["last"], "combat": now < a["combat_until"], "last_said": a["last_said"],
             } for a in self.agents.values()],
@@ -441,4 +472,6 @@ class MockSource:
                 totals = [self.score_at(max(0, gsec - k * 120))[0]["produced"] for k in range(30, -1, -1)]
                 obs["flows"] = {n: [max(0, totals[i + 1].get(n, 0) - totals[i].get(n, 0)) for i in range(30)]
                                 for n in score["produced"]}
+        if self.space_age:
+            self.space_step(now, obs)
         return obs

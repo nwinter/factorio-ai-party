@@ -41,6 +41,15 @@ html body.portrait .pack .item-icon > svg { width: 32px; height: 32px; }
 html body.portrait #stage-label { font-size: 19px; }
 html body.portrait #sci.many #stage-label { display: none !important; }
 
+/* Space Age panel: larger type, two platform rows at most */
+html body.portrait #space { padding: 10px 20px 12px; gap: 8px; }
+html body.portrait .space-head .panel-title { font-size: 24px; }
+html body.portrait .planet { font-size: 18px; line-height: 28px; padding: 0 10px; }
+html body.portrait .plat { font-size: 21px; grid-template-columns: 230px 1fr 130px 110px; }
+html body.portrait .plat:not(:has(.pbar)) { grid-template-columns: 230px 1fr 110px; }
+html body.portrait .plat:nth-child(n+3):not(.more) { display: none; }
+html body.portrait .card .world.on { font-size: 15px; line-height: 22px; max-width: 170px; }
+
 /* chat: what is left (about 470 px with 9 agents: cards end at y 1329, science at 1417), big type */
 html body.portrait #chat { padding: 14px 18px 16px; }
 html body.portrait #chat .panel-title { font-size: 24px; }

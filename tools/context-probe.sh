@@ -7,16 +7,38 @@
 # headless until the context passes the compaction point, then prints context.log and the harness's compaction markers.
 # The run dir must be in a folder the CLIs trust: Grok loads workspace hooks only in trusted folders (Codex trusts a
 # git worktree through its main repository). From an untrusted worktree use -C /Users/owner/code/player-of-games.
+#
+# Clean-profile check: tools/context-probe.sh [-C CHECKOUT] --profile KIND MODEL [ROUTE] [EXTRA CLI ARGS...]
+#   Prepares runs/ctxtest/profile-KIND as tools/launch-agent.sh does (settings, tools/clean-profile.py and the words in
+#   tools/profile-flags.sh), runs one short headless turn and prints what the agent was given (profile.txt).
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 base=$root
 [ "${1:-}" = -C ] && { base=$2; shift 2; }
+if [ "${1:-}" = --profile ]; then
+  shift
+  exec bash "$root/tools/profile-probe.sh" "$base" "$@"
+fi
+# --late (claude): deadline 10 minutes out and the PreCompact skip window widened from 120 s to 15 minutes, so the
+# first automatic compaction is blocked (context.log: pre-compact skip-late) until the context passes compact_at + 8000.
+late=; [ "${1:-}" = --late ] && { late=1; shift; }
 kind=$1 model=$2
 [ -n "${3:-}" ] && export POG_CTX_AT=$3
 ws=probe-$kind
 rm -rf "$base/runs/ctxtest/$ws"
 dir=$(POG_WS=$ws "$base/tools/new-run.sh" ctxtest n "$ws" 30)
 env_words=$(python3 "$root/tools/context.py" setup "$kind" "$model" "$dir")
+if [ -n "$late" ]; then
+  date -v+10M "+%Y-%m-%d %H:%M %Z" > "$dir/deadline.txt"
+  python3 - "$dir/.claude/settings.json" <<'EOF'
+import json, sys
+p = sys.argv[1]; cfg = json.load(open(p))
+for g in cfg["hooks"]["PreCompact"]:
+    for h in g["hooks"]:
+        h["command"] = h["command"].replace("--skip-late 120", "--skip-late 900")
+json.dump(cfg, open(p, "w"), indent=2)
+EOF
+fi
 at=${POG_CTX_AT:-$(python3 "$root/tools/context.py" limit "$kind" "$model")}
 # ~8K tokens per file (Claude counted ~38 tokens per 12-word line); enough files to pass the compaction point once.
 # Keep files well under compact_at minus the starting context, or Claude Code stops with "Autocompact is thrashing".

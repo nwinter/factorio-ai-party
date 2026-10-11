@@ -66,7 +66,7 @@ for line in open(team):
     agents[name] = {"model": label, "harness": harness}
 words = {2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven", 8: "Eight", 9: "Nine", 10: "Ten"}
 json.dump({"title": f"{words.get(len(agents), len(agents))} AIs, one factory", "subtitle": ("Factorio: Space Age" if os.environ.get("POG_SPACE_AGE") == "1" else "Factorio") + " co-op · real time · no cheats",
-           "agents": agents, "cameras": [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
+           "space_age": os.environ.get("POG_SPACE_AGE") == "1", "agents": agents, "cameras": [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
                                          {"slot": "cam3", "player": 3}]}, open(out, "w"), indent=1)
 EOF
 # Viewer chat: the companion site's chat always; YouTube when POG_YOUTUBE (an @handle, channel id or video id) is set.
@@ -74,6 +74,7 @@ viewers=(--viewers-site); [ -n "${POG_YOUTUBE:-}" ] && viewers+=(--viewers-youtu
 nohup python3 tools/stream/serve.py --world "$world" --run "$rundir/stream.json" --port 8788 "${viewers[@]}" \
   >"$rundir/stream-service.log" 2>&1 &
 echo $! > "$rundir/stream-service.pid"
+helpers=("stream-service:$!:$rundir/stream-service.log")
 nohup ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
   -R 8787:127.0.0.1:8788 pogwin >/dev/null 2>&1 &
 echo $! > "$rundir/overlay-tunnel.pid"
@@ -87,19 +88,25 @@ tools/.venv/bin/python tools/obs.py start
 first_bot=$(awk -F'\t' '!/^#/ && NF {print $1; exit}' "$team")
 nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$rundir/chat.jsonl" >"$rundir/chat-log.err" 2>&1 &
 echo $! >> "$rundir/stream-service.pid"
+helpers+=("chat-log:$!:$rundir/chat-log.err")
 # ./shot: bots have no client, so a director renders each screenshot; this copies them into the workspaces.
 nohup tools/shot-sync.sh "$rundir" "$world-client-cam1" "$world-client-cam2" "$world-client-cam3" \
   >"$rundir/shot-sync.log" 2>&1 &
 echo $! >> "$rundir/stream-service.pid"
+helpers+=("shot-sync:$!:$rundir/shot-sync.log")
 # Shoutcasters and voiced agent lines (docs/AUDIO-NOTES.md); POG_CASTER=0 turns them off.
 if [ "${POG_CASTER:-1}" != 0 ]; then
-  nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts auto --tts-fallback aura1 >"$rundir/caster.log" 2>&1 &
+  # --deadline: the agents' deadline.txt files (written as they launch, after this) give the hosts the time left
+  nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts auto --tts-fallback aura1 \
+    --deadline "$rundir/*/deadline.txt" >"$rundir/caster.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
+  helpers+=("caster:$!:$rundir/caster.log")
 fi
 # The companion site's live page (site/push_live.py; token in site/worker/.secrets.json, gitignored).
 if [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; then
   nohup python3 site/push_live.py --source http://127.0.0.1:8788/state.json >"$rundir/push-live.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
+  helpers+=("push-live:$!:$rundir/push-live.log")
 fi
 # Analyst: talking points for the casters every 90 s, read-only (docs/ANALYST-NOTES.md); POG_ANALYST=0 turns it off.
 if [ "${POG_ANALYST:-1}" != 0 ]; then
@@ -107,11 +114,22 @@ if [ "${POG_ANALYST:-1}" != 0 ]; then
   aroute=${POG_ANALYST_ROUTE:-claude-b}
   aroot=$(/Users/owner/.local/bin/ai-session routes | awk -v r="$aroute" '$1 == r && $2 == "claude" {print $NF}')
   aenv=(-u CLAUDE_CONFIG_DIR); [ "$aroute" = claude ] || aenv=("CLAUDE_CONFIG_DIR=$aroot")
+  # Viewer questions from the site/YouTube lane, one answer per 150 s at most, voiced by the hosts; POG_VIEWER_QUESTIONS=0 off.
+  aflags=(); [ "${POG_VIEWER_QUESTIONS:-1}" != 0 ] && aflags+=(--viewer-questions)
   nohup env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE \
     "${aenv[@]}" ENABLE_CLAUDEAI_MCP_SERVERS=false python3 tools/stream/analyst.py --world "$world" --bot "$first_bot" --feed http://127.0.0.1:8788 \
-    --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every 90 --ask-port 8789 >"$rundir/analyst.log" 2>&1 &
+    --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every 90 --ask-port 8789 ${aflags[@]+"${aflags[@]}"} >"$rundir/analyst.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
+  helpers+=("analyst:$!:$rundir/analyst.log")
 fi
+# What code the helpers run, and whether each came up (docs/studies/shake3.md, P1 item 2).
+log "code $(git rev-parse --short HEAD)$(git diff --quiet HEAD -- tools agent vendor 2>/dev/null || echo ' plus uncommitted changes')"
+sleep 8
+for h in "${helpers[@]}"; do
+  IFS=: read -r hname hpid hlog <<<"$h"
+  if kill -0 "$hpid" 2>/dev/null; then log "helper $hname pid $hpid up: $(head -1 "$hlog" 2>/dev/null | cut -c1-120)"
+  else log "helper $hname pid $hpid FAILED: $(tail -2 "$hlog" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"; fi
+done
 
 # 5. Agents: three per Herdr tab, real time, team playbook.
 POG_TEAM="$rundir/team.txt"
@@ -121,13 +139,18 @@ n=0 tab=""
 while IFS=$'\t' read -r name kind route model effort label harness; do
   [ -z "$name" ] || [[ $name == \#* ]] && continue
   [ $((n % 3)) -eq 0 ] && tab=""
-  out=$(POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" POG_MODEL="$label ($harness)" POG_ROUTE="$route" \
+  # POG_NO_WAIT: start every pane now and clear the trust prompts of all of them in one pass below (shake3: the
+  # per-pane 40 s wait ran out for five agents and the launch took 4.5 minutes).
+  out=$(POG_NO_WAIT=1 POG_TAB="$tab" POG_WS="$name" POG_BOT="$name" POG_MODEL="$label ($harness)" POG_ROUTE="$route" \
         tools/launch-agent.sh "$run" "$world" "$name" "$minutes" "$kind" "$model" "$effort")
   pane=$(echo "$out" | awk '{print $1}'); tab=$(echo "$out" | awk '{print $2}')
   log "agent $name ($label, $kind) in pane $pane tab $tab"
   echo "$name $pane $kind" >> "$rundir/panes.txt"
   n=$((n + 1))
 done < "$team"
+prompt_args=()
+while read -r name pane kind; do prompt_args+=("$pane" "$rundir/$name"); done < "$rundir/panes.txt"
+tools/clear-prompts.sh 90 "${prompt_args[@]}" | while read -r pane how; do log "pane $pane: $how"; done
 log "started: $(wc -l < "$rundir/panes.txt") agents; deadline $(cat "$rundir"/*/deadline.txt | head -1)"
 
 # 6. Supervisors (agy runs its own loop until the deadline).
