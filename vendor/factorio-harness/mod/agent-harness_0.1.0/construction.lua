@@ -198,13 +198,15 @@ return function(api)
     end
     return n
   end
-  -- True when the footprint holds only trees and rocks: what a ghost may go
-  -- over, since place_ghosts marks them and construct mines them.
+  -- True when the footprint holds only trees, rocks and remnants: what a
+  -- ghost may go over, since place_ghosts marks the trees and rocks,
+  -- construct mines them, and the build clears the remnants.
   local OBSTACLE={tree=true,plant=true,['simple-entity']=true}
   function M.only_obstacles(surface,proto,pos,direction)
     local any=false
     for _,e in pairs(surface.find_entities_filtered{area=M.box(proto,pos,direction)}) do
-      if e.valid and e.type~='resource' then
+      if e.valid and e.type=='corpse' then any=true
+      elseif e.valid and e.type~='resource' then
         -- Neutral only: mark_obstacles leaves a force's own plants (Gleba farms) alone.
         if not (OBSTACLE[e.type] and e.minable and (e.force==nil or e.force.name=='neutral')) then return false end
         any=true

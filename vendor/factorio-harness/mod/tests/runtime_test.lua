@@ -1235,8 +1235,9 @@ eq(placed.placed,2); eq(#placed.failed,3); eq(placed.failed[1].index,2); eq(plac
 assert(placed.failed[2].error:find('not a placeable')); eq(placed.failed[3].error,'position is not charted')
 eq(placed.bounds.left,11); eq(placed.bounds.bottom,101); eq(storage.agent_harness.last_paste[1].right,101)
 -- A ghost goes over trees and rocks and marks them, though the engine's check
--- refuses them (shake3: "placement blocked by tree-08" from place_ghosts);
--- a stump goes first; anything else in the footprint still refuses it.
+-- refuses them (shake3: "placement blocked by tree-08" from place_ghosts),
+-- and over a stump, which stays until the build (out of reach here); anything
+-- else in the footprint still refuses it.
 do
   local can,find=p.surface.can_place_entity,p.surface.find_entities_filtered
   local tree={valid=true,type='tree',name='tree-08',minable=true,position={x=60.2,y=0.3}}
@@ -1245,7 +1246,7 @@ do
   local stump={valid=true,type='corpse',name='tree-02-stump',position={x=59.8,y=0}}
   stump.destroy=function() stump.valid=false end
   local chest={valid=true,type='container',name='wooden-chest',position={x=60,y=0}}
-  local inside={tree}
+  local inside={tree,stump}
   p.surface.can_place_entity=function() return false end
   p.surface.find_entities_filtered=function(a)
     if a.type=='corpse' then return stump.valid and {stump} or {} end
@@ -1255,7 +1256,7 @@ do
   ghosts={}
   local over=call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}})
   eq(over.placed,1); eq(over.failed,nil); eq(ghosts[1],'gun-turret'); eq(over.obstacles_marked,1)
-  eq(stump.valid,false); eq(tree.marked,true)
+  eq(stump.valid,true); eq(tree.marked,true)
   inside={tree,chest}
   local refused=call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}})
   eq(refused.placed,0); assert(refused.failed[1].error:find('wooden-chest',1,true),refused.failed[1].error)
