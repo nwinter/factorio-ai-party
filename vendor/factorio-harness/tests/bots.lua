@@ -339,6 +339,10 @@ end
 -- Sleep works while dead too (shake4: 19 refused sleeps): it sleeps until the
 -- respawn and wakes with respawned; the refusal of other actions points to it.
 fails(function() bot('walk',{direction='east',ticks=5}) end,'fh sleep SECONDS waits and wakes with respawned')
+-- observe answers when the bot respawns instead of failing (shake4: 26 failures).
+local seen=bot('observe',{scope='nearest',name='iron-ore'}); eq(seen.dead,true); eq(seen.dead_until_tick,dead.dead_until_tick)
+assert(seen.note:find('bot astra is dead until tick '..dead.dead_until_tick,1,true),seen.note)
+eq(bot('observe',{}).dead,true)
 local zz=bot('sleep',{seconds=30}); eq(zz.dead,true); eq(zz.respawns_at_tick,dead.dead_until_tick)
 eq(bot('observe',{scope='sleep_check',peek=true}).woke,nil)
 advance(599); eq(bot('status',{}).alive,false)

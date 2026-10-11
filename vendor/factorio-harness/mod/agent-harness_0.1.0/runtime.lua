@@ -3657,6 +3657,15 @@ dispatch_request=function(request)
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     return handler(body(p),request.args or {})
   end
+  -- A dead bot's observe answers when it respawns, as sleep_check does
+  -- (shake4: 26 observe calls failed with "is dead").
+  if (request.action=='observe' or VIEW_SCOPES[request.action]) and M.bots.is_index(request.player) then
+    local b=M.bots.record(request.player)
+    if b and not b.travel and not M.bots.alive(b) then
+      return {dead=true,dead_until_tick=b.dead_until_tick,respawns_in_s=b.dead_until_tick and math.max(0,math.ceil((b.dead_until_tick-game.tick)/60)) or nil,
+        note=string.format('bot %s is dead until tick %s; fh sleep SECONDS wakes at the respawn (respawned)',b.name,tostring(b.dead_until_tick))}
+    end
+  end
   -- A dead bot still talks (and sleeps until it respawns): it reads and answers the team while it waits to
   -- respawn (or rides a cargo pod). Otherwise a bot aboard a platform (or in a
   -- cargo pod) has no body: remote view only.
