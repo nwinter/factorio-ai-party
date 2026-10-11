@@ -37,9 +37,10 @@ What differs from the base game:
   explore, or build a radar. On Vulcanus the first coal can be 90 tiles from the landing spot.
 - If you die on another planet, you respawn on the planet where you last stood. If your platform is destroyed
   while you are aboard, you die.
-- Asteroids destroy undefended platforms in flight. On `sa`, four gun turrets with piercing rounds lost a platform
-  halfway to Vulcanus in under a minute. Before a platform leaves orbit, give it a line of turrets across its front
-  and an ammo supply, and watch hub health in `platforms`. Fly it empty once before you ride it.
+- Asteroids hit platforms in flight and can destroy them. On a test world, a platform with four gun turrets and
+  piercing rounds was destroyed halfway to Vulcanus, about a minute after it left orbit. A platform with twelve
+  such turrets was destroyed at 80% of the way. One with 21 turrets and physical projectile damage and weapon shooting
+  speed researched to level 6 arrived undamaged. The trip took about 6,800 ticks. `platforms` shows hub health.
 - Quality: items and machines have a quality (`normal`, `uncommon`, `rare`, `epic`, `legendary`). Counts are per
   quality: a rare gear is not a normal gear. Actions default to `normal`; pass `quality` to move or build others.
 - Spoilage: Gleba fruit, nutrients, bioflux, agricultural packs and eggs spoil. `status` shows `spoiling` (stalest
