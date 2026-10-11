@@ -146,7 +146,7 @@ return function(api)
     local notes = i.notes
     if not full and #notes > 2 then notes = {notes[#notes-1], notes[#notes]} end
     return {id=i.id, kind=i.kind, title=i.title, owner=i.owner, requested_by=i.requested_by, status=i.status, area=i.area,
-      needs=i.needs, tags=i.tags, problem=full and i.problem or nil, proposal=full and i.proposal or nil,
+      needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal,
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
       created_tick=i.created_tick, updated_tick=i.updated_tick}
   end
@@ -488,11 +488,14 @@ return function(api)
     h.alert_seq = s.alert_seq or 0
     local function fresh(x, t) if from then return (x.seq or 0) > from end return t >= game.tick - FIRST_ALERTS end
     -- My character first: the agent can act on it at once.
+    -- A dead agent has no character: its last one is remembered.
     local c = p.character
-    local hit = c and c.valid and s.char_hits and s.char_hits[c.unit_number]
+    local alive = c and c.valid
+    if alive then h.unit = c.unit_number end
+    local hit = h.unit and s.char_hits and s.char_hits[h.unit]
     if hit and fresh(hit, hit.last) then
-      lines[#lines+1] = string.format('you were hit %d times (%d damage) by %s, %s ago; health %d', hit.hits, round(hit.damage), hit.by or 'enemies',
-        ago(game.tick - hit.last), round(c.health or 0))
+      lines[#lines+1] = string.format('you were hit %d times (%d damage) by %s, %s ago; %s', hit.hits, round(hit.damage), hit.by or 'enemies',
+        ago(game.tick - hit.last), alive and 'health ' .. round(c.health or 0) or 'your character died')
     end
     local areas = {}
     for key, v in pairs(s.damage or {}) do

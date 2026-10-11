@@ -212,6 +212,11 @@ eq(astra('status').team,nil)
 -- Every agent hears about the attack; only astra about her character.
 t=sol('status').team
 assert(has(t.alerts,'attack near (48,48)')); eq(has(t.alerts,'you were hit'),nil)
+-- A dead agent still hears that its (last) character was hit.
+runtime.on_event{name=12,tick=tick,entity=ac,force=enemy,cause=biter,final_damage_amount=300}
+ac.valid=false
+assert(has(astra('status').team.alerts,'you were hit 2 times (312 damage) by small-biter, 0s ago; your character died'))
+ac.valid=true
 -- A quiet minute starts a new incident at the same place.
 jump(4000)
 runtime.on_event{name=12,tick=tick,entity={valid=true,name='inserter',type='inserter',position={x=40,y=41},force=force},force=enemy,cause=biter,final_damage_amount=5}
