@@ -485,5 +485,27 @@ check("names: a possessive is not a plural", caster.check_line("Two of Sol's fur
 check("supported_names", caster.supported_names(seg5, roster5) == {"sol", "luna", "grok"},
       str(caster.supported_names(seg5, roster5)))
 
+# Round 5 (shake4 study item 9): shake1 is the base-game run on the same seed, not "the previous run"; Space Age runs
+# compare with shake4.
+from baseline import Baseline
+b1 = Baseline(os.path.join(os.path.dirname(caster.__file__), "baselines", "shake1.json"))
+p1 = b1.pace(30 * 3600, 9)
+check("baseline: shake1 is the base-game run on the same seed", "base game on the same seed" in p1["compared_with"]
+      and "previous" not in p1["compared_with"], p1["compared_with"])
+p1s = b1.pace(30 * 3600, 9, space_age=True)
+check("baseline: on a Space Age run, shake1 says only the start compares", "this run plays Space Age" in
+      p1s["compared_with"], p1s["compared_with"])
+b4 = Baseline(os.path.join(os.path.dirname(caster.__file__), "baselines", "shake4.json"))
+check("baseline: shake4 is the first Space Age run", b4.space_age is True and "first Space Age run" in
+      b4.pace(30 * 3600, 9, space_age=True)["compared_with"])
+check("baseline: no comparison past shake4's end (a resumed shift)", b4.pace(130 * 3600, 25, space_age=True) is None)
+holder = type("H", (), {"base_for": caster.Caster.base_for})()
+holder.baseline, holder.space_baseline = b1, b4
+check("caster: Space Age runs compare with shake4, base-game runs with shake1",
+      holder.base_for({"space": {"planets": []}}) is b4 and holder.base_for({}) is b1)
+rf = caster.facts_for({"kind": "research", "text": "Research complete: Automation", "t": 0, "prio": 7},
+                      {"tick": 20 * 3600, "space": {"planets": []}}, b1)
+check("research facts say what the baseline run was", "this run plays Space Age" in rf.get("shake1_was", ""), str(rf))
+
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)
