@@ -329,7 +329,8 @@ def snapshot_text(snap, kb=None):
     lines.append("buildings: " + ", ".join(f"{n} {c}" for n, c in sorted(ents.items(), key=lambda kv: -kv[1])))
     if "evolution" in snap:
         lines.append(f"enemy evolution {snap['evolution'] * 100:.1f}%" + (" (peaceful mode)" if snap.get("peaceful") else "")
-                     + f"; pollution on the map {snap.get('pollution', 0):.0f}")
+                     + f"; pollution in the air on the map {snap.get('pollution', 0):.0f} (a total, not a rate; "
+                       "the emission rate per minute is pollution.per_min in the harness status)")
     if snap.get("killed"):
         lines.append("we have killed: " + ", ".join(f"{n} {c}" for n, c in sorted(snap["killed"].items(), key=lambda kv: -kv[1])[:8]))
     if snap.get("lost"):

@@ -89,6 +89,15 @@ class PointsTest(unittest.TestCase):
         self.assertIsNone(analyst.point_problem(ok))
         self.assertIn("22", analyst.point_problem(bad))
 
+    def test_game_minute_is_a_fact(self):
+        import analyst
+        reply = {"talking_points": [
+            {"text": "At minute 20 they make 7.9 packs a minute.", "facts": {"spm": 7.9}},
+            {"text": "Green science usually comes around minute 28.", "facts": {}}]}
+        reply, dropped = analyst.clean_reply(reply, minute=19)
+        self.assertEqual([p["facts"].get("game_minute") for p in reply["talking_points"]], [20])
+        self.assertIn("28", dropped[0]["why"])  # a forecast minute still needs its own fact
+
 
 class BoardTest(unittest.TestCase):
     def test_post_pick_use(self):

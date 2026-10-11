@@ -130,10 +130,26 @@ def point_problem(p):
     return None
 
 
-def clean_reply(reply):
+MINUTE_RE = re.compile(r"\bminute (\d+)\b", re.I)
+
+
+def add_minute(p, minute):
+    """'At minute 20 they have ...' is the game clock: put it into the item's facts when it is within a minute of the
+    current game minute (the pilot dropped 3 good points for it); other minutes still need a fact."""
+    if minute is None or not isinstance(p, dict) or not isinstance(p.get("facts", {}), dict):
+        return
+    for n in MINUTE_RE.findall(p.get("text") or ""):
+        if abs(int(n) - minute) <= 1 and int(n) not in fact_numbers(p.get("facts") or {}):
+            p.setdefault("facts", {})
+            p["facts"].setdefault("game_minute", int(n))
+
+
+def clean_reply(reply, minute=None):
     """Validate the model's JSON; drop items that fail the fact rule."""
     dropped = []
     pts = []
+    for item in (reply.get("talking_points") or []) + [reply.get("judgement"), reply.get("next")]:
+        add_minute(item, minute)
     for p in reply.get("talking_points") or []:
         if not isinstance(p, dict):
             continue
@@ -378,7 +394,7 @@ def cycle(a, dg, prev, logf):
     t_digest = time.time() - t0
     raw, meta = run_claude(a, text)
     reply = parse_json(raw)
-    reply, dropped = clean_reply(reply)
+    reply, dropped = clean_reply(reply, facts.get("game_minute"))
     meta.update(digest_s=round(t_digest, 1), digest_chars=len(text), dropped=len(dropped))
     reply.update(game_minute=facts["game_minute"], tick=snap["tick"], meta=meta, t=time.time())
     if getattr(a, "viewer_questions", False):  # the hosts leave viewer questions to the analyst (analyst_board.questions_on)
