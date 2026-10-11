@@ -200,6 +200,8 @@ class MockSource:
         self.next_board_read = 0
         self.next_base_attack = time.time() + 75
         self.harness_version = 3
+        self.space_age = bool(run.get("space_age"))  # a scripted Space Age arc on the wall clock (space_step)
+        self.sa_speed = float(run.get("mock_space_speed") or 1.0)
         # a few events already on the board when the stream starts
         for _ in range(5):
             self.board_step(time.time() - 60, self.game0)
@@ -339,6 +341,35 @@ class MockSource:
         self.chat.append({"seq": self.seq, "tick": int(gsec * 60), "from": a["display_name"], "text": text})
         self.chat = self.chat[-50:]
 
+    def space_step(self, now, obs):
+        """Space Age arc for the overlay (run "space_age": true; wall seconds x mock_space_speed): a rocket at 20 s, the
+        platform "Orbital One" over Nauvis at 40 s, flying to Vulcanus 70-130 s, the second agent landing at 150 s."""
+        t = (now - self.t0) * self.sa_speed
+        rockets = 0 if t < 20 else 1 + int((t - 20) // 45)
+        plats = []
+        if t >= 40:
+            if t < 70:
+                p = {"name": "Orbital One", "at": "nauvis", "state": "waiting_at_station", "speed": 0}
+            elif t < 130:
+                p = {"name": "Orbital One", "at": f"nauvis->vulcanus {int((t - 70) / 60 * 100)}%", "state": "on_the_path", "speed": 1.2}
+            else:
+                p = {"name": "Orbital One", "at": "vulcanus", "state": "waiting_at_station", "speed": 0}
+            plats.append(p)
+        if t >= 100:
+            plats.append({"name": "Shuttle", "at": "nauvis", "state": "waiting_at_station", "speed": 0, "paused": True})
+        planets = ["nauvis"] + (["vulcanus"] if t >= 150 else [])
+        obs["space"] = {"rockets": rockets, "planets": planets, "platforms": plats}
+        made = obs.setdefault("produced", {})
+        if t >= 40:
+            made["space-science-pack"] = int((t - 40) * 2.5)
+        if t >= 180:
+            made["metallurgic-science-pack"] = int((t - 180) * 0.6)
+        names = list(self.agents)
+        for a in obs["agents"]:
+            a["surface"], a["platform"] = "nauvis", None
+            if len(names) > 1 and a["name"] == names[1] and t >= 150:
+                a["surface"] = "vulcanus"
+
     def observe(self):
         now = time.time()
         gsec = self.game_seconds(now)
@@ -441,4 +472,6 @@ class MockSource:
                 totals = [self.score_at(max(0, gsec - k * 120))[0]["produced"] for k in range(30, -1, -1)]
                 obs["flows"] = {n: [max(0, totals[i + 1].get(n, 0) - totals[i].get(n, 0)) for i in range(30)]
                                 for n in score["produced"]}
+        if self.space_age:
+            self.space_step(now, obs)
         return obs

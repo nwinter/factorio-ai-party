@@ -197,6 +197,8 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(200, json.dumps(analyst.post(body)).encode(), "application/json")
             if path == "/analyst/used":
                 return self.send(200, json.dumps(analyst.mark_used(body.get("id"))).encode(), "application/json")
+            if path == "/analyst/answer":  # a viewer question the analyst answered, for the hosts (snapshot analyst.answers)
+                return self.send(200, json.dumps(analyst.answer(body)).encode(), "application/json")
             self.send(404, b"not found", "text/plain")
 
         def sse_head(self):

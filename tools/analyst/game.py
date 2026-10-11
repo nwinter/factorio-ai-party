@@ -140,6 +140,24 @@ def one_line(lua):
     return " ".join(l.strip() for l in lua.strip().splitlines() if l.strip())
 
 
+def young_game(snap):
+    """Before minute 10 the ten-minute window holds the whole game, so m10 / 10 understated rates (the Space Age
+    pilot's analyst said 38.6 iron plates a minute at minute 8, when 48.5 a minute had been made). Scale the
+    ten-minute (and one-hour) counts so that m10 / 10 and h1 / 60 are per-minute rates over the game so far."""
+    minutes = (snap.get("tick") or 0) / 3600
+    if not snap or minutes <= 0 or minutes >= 60:
+        return snap
+    for group in ("items", "fluids"):
+        for v in (snap.get(group) or {}).values():
+            if minutes < 10:
+                for k in ("m10", "used10"):
+                    if v.get(k):
+                        v[k] = v[k] * 10 / max(minutes, 1)
+            if v.get("h1"):
+                v["h1"] = v["h1"] * 60 / max(minutes, 1)
+    return snap
+
+
 def game_time(tick):
     m = int(tick // 3600)
     return f"{m // 60}h{m % 60:02d}m"
@@ -187,7 +205,7 @@ class LiveGame:
         return self._describe
 
     def snapshot(self):
-        return self.lua(SNAPSHOT_LUA)
+        return young_game(self.lua(SNAPSHOT_LUA))
 
     def machines(self):
         return self.lua(MACHINES_LUA)
@@ -311,7 +329,8 @@ def snapshot_text(snap, kb=None):
     lines.append("buildings: " + ", ".join(f"{n} {c}" for n, c in sorted(ents.items(), key=lambda kv: -kv[1])))
     if "evolution" in snap:
         lines.append(f"enemy evolution {snap['evolution'] * 100:.1f}%" + (" (peaceful mode)" if snap.get("peaceful") else "")
-                     + f"; pollution on the map {snap.get('pollution', 0):.0f}")
+                     + f"; pollution in the air on the map {snap.get('pollution', 0):.0f} (a total, not a rate; "
+                       "the emission rate per minute is pollution.per_min in the harness status)")
     if snap.get("killed"):
         lines.append("we have killed: " + ", ".join(f"{n} {c}" for n, c in sorted(snap["killed"].items(), key=lambda kv: -kv[1])[:8]))
     if snap.get("lost"):

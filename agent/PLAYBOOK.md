@@ -105,8 +105,9 @@ told your context was compacted (or you notice you lost track), read `notes.md` 
 ## Stopping
 
 The deadline in `deadline.txt` is the only stop condition. The `clock:` line on every reply ends with the time left
-(`deadline in 12m`), which is easier to trust than arithmetic on `date` or the game clock. In the last three minutes,
-add a final summary to `notes.md` (milestones with game times, what slowed you down, harness problems you hit, the
-tool changes that would have helped most), then keep playing; end your turn once the `clock:` line says the deadline
-has passed. When your own job is finished or blocked, `./fh call status`, `./fh call chat` and `./fh board` show what
+(`deadline in 12m`), which is easier to trust than arithmetic on `date` or the game clock. Deadlines differ by a few
+minutes between teammates, so yours passing says nothing about theirs. In the last three minutes, add a final summary
+to `notes.md` (milestones with game times, what slowed you down, harness problems you hit, the tool changes that would
+have helped most), then keep playing; a summary written earlier is a draft to finish then. End your turn once the
+`clock:` line says the deadline has passed. When your own job is finished or blocked, `./fh call status`, `./fh call chat` and `./fh board` show what
 is still open.

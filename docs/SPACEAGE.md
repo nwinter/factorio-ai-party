@@ -347,6 +347,15 @@ Each stage has a gate; budgets are central estimates.
 Stop early and rethink if any stage runs past the high column. The usual cause will be a missing harness read or
 action, which costs an engineer session, not agent-hours.
 
+## Stream overlay (eng/stream2)
+
+The overlay reads Space Age state read-only: `score` (rockets, planets, platforms), a `peek` `platforms` read per
+platform, and each agent's `status.surface`/`platform`. It draws a planet chip per agent card, a Space panel and
+segments for the first rocket, first platform, a platform's arrival at a new planet and the first landing there
+(docs/STREAM-NOTES.md "Space Age"). What it needs from bot travel: `status` for a bot reports the surface its body is
+on (and the platform's name while aboard), and the director cameras keep following a bot across surfaces (already in
+cameras.lua). To check on the first real platform: that `LuaSpacePlatform.speed` x 60 matches the game's km/s.
+
 ## Open questions to settle on the box
 
 - A player's Lua state in a hub (`character`, `controller_type`, `physical_surface`, `hub`). One line:
@@ -359,3 +368,20 @@ action, which costs an engineer session, not agent-hours.
 - Whether `peaceful_mode` set on a new planet surface at creation calms demolishers and pentapods.
 - Which hub inventory is "drop to planet".
 - Whether lightning hits characters on Fulgora.
+
+## Coordination: harness branches touching runtime and bots code
+
+eng/harness3 (round 4, 2026-10-11 night, for shake4). `bots.lua` is not touched. Hunks, so a bot-travel merge can
+avoid them:
+- `runtime.lua`: `dispatch_request` (a bot's `chat`/`say` take the proxy through `M.lookup`, dead or alive, just
+  before `player(request.player)`); `build_direct` (one `construction.clear_remnants` line); `place_ghost`
+  (`construction.only_obstacles` in its placement check); `handlers.collect` (`want`, at the top); the
+  `collect` describe entry. No new top-level locals.
+- `construction.lua`: new `M.box`, `M.clear_remnants`, `M.only_obstacles` (before `obstructed`). `M.box` takes a
+  prototype, position and direction; it does not read the surface, so it works on any planet or platform.
+- `profiles.lua`: glyph uniqueness (`check_glyph`), the glyph describe text.
+- Tests: `tests/bots.lua`, `mod/tests/runtime_test.lua`. Tools: `tools/supervise.sh`, `tools/test_supervise.py`.
+
+Space Age note: `clear_remnants` removes type `corpse` (stumps, biter corpses, ruins) under a new building, as a
+player's build does; `only_obstacles` counts neutral `tree`, `plant` (wild Gleba plants; a force's own farm plants
+are not), `simple-entity` (rocks) and remnants as what a ghost may go over. Details: `docs/HARNESS3-NOTES.md`.

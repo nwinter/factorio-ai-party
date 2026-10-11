@@ -23,6 +23,7 @@ sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 
 import voices  # noqa: E402
+from analyst_board import is_question, questions_on  # noqa: E402
 
 CASTERS = {
     "pbp": {"name": "Rook", "label": "Rook",
@@ -168,13 +169,24 @@ class Differ:
                 kind = "harness" if b.get("kind") == "harness" else "board"
                 ev.append({"kind": kind, "agent": b.get("agent") or b.get("by"), "change": verb,
                            "title": b.get("title"), "item": b.get("kind")})
+        an = s.get("analyst") or {}
         for v in viewer_messages(s):
             key = ("viewer", v["id"])
             if key in self.chat_keys:
                 continue
             self.chat_keys.add(key)
-            if not first and now - v["t"] < 60:
+            # questions go to the analyst while it takes them (one answer per 2-3 min; the rest go unanswered
+            # rather than answered from the writer's own Factorio knowledge, which the 30-question check put at 9/30)
+            if not first and now - v["t"] < 60 and not (questions_on(an) and is_question(v["text"])):
                 ev.append({"kind": "viewer", "viewer": v["name"], "text": v["text"]})
+        for x in an.get("answers") or []:  # the analyst's checked answer to a viewer question (analyst.py)
+            key = ("answer", x.get("id"))
+            if key in self.chat_keys:
+                continue
+            self.chat_keys.add(key)
+            if not first and x.get("answer") and now - float(x.get("t") or now) < 90:
+                ev.append({"kind": "viewer", "viewer": x.get("viewer"), "text": x.get("question"),
+                           "answer": x["answer"], "answer_facts": x.get("facts") or {}, "prio": PRIORITY["viewer"] + 1})
         seg = s.get("segment") or {}
         if seg.get("id") and seg.get("state") in ("starting", "live") and seg["id"] not in self.segments_seen:
             self.segments_seen.add(seg["id"])  # eng/stream2 shows a segment: talk over it (docs/AUDIO-NOTES "Segments")
@@ -190,7 +202,7 @@ class Differ:
         self.prev = s
         for e in ev:
             e["t"] = now
-            e["prio"] = PRIORITY.get(e["kind"], 2)
+            e["prio"] = e.get("prio") or PRIORITY.get(e["kind"], 2)
         return ev
 
 
@@ -364,6 +376,9 @@ def facts_for(e, s, baseline=None, deadline=None):
     f.update(context_facts(s, baseline if paced else None, deadline))
     if e["kind"] == "viewer":
         f["viewer_message"] = {"from": e.get("viewer"), "text": e.get("text")}
+        if e.get("answer"):  # the analyst's answer, checked with its tools; the hosts put it in their own words
+            f.update(e.get("answer_facts") or {}, analyst_answer=e["answer"])
+            f["how_to_call_it"] = "Rook says the viewer's name and question; Vale answers it from analyst_answer"
     if e["kind"] == "segment":
         seg = e.get("segment") or {}
         f["on_screen_now"] = {"segment": seg.get("type"), "title": seg.get("title"),
@@ -698,6 +713,9 @@ class TemplateWriter:
                   "color": ["That changes what this run can reach.", "A milestone. The map just got bigger."]},
         "segment": {"pbp": ["On screen now: {seg_title}.", "Let's take a closer look: {seg_title}."],
                     "color": ["Here's the picture: {seg_title}.", "Worth a look: {seg_title}."]},
+        # only the analyst's answers have analyst_answer; a plain viewer comment still gets no template line
+        "viewer": {"pbp": ["{viewer_message_from} asks: {viewer_message_text} {analyst_answer}"],
+                   "color": ["Good question from {viewer_message_from}. {analyst_answer}"]},
         "harness": {"pbp": ["Tool request on the board: {title}. Status: {change}."],
                     "color": ["When the agents ask for better tools, that's the meta-game."]},
         "camera": {"pbp": ["Let's check in on {cam_name}, {cam_doing}.", "Over to {cam_name} now: {cam_doing}.",
@@ -728,7 +746,7 @@ class TemplateWriter:
 
     def write(self, who, e, facts, recent, names):
         flat = dict(facts)
-        for key in ("agent",):
+        for key in ("agent", "viewer_message"):
             for k, v in (facts.get(key) or {}).items():
                 flat[f"{key}_{k}"] = v
         cam = (facts.get("on_camera") or [{}])[0]

@@ -143,6 +143,32 @@ first hint mentioned "muted" and the banner, and Kimi read those words on air ("
 banner"), so the hint now says only how to call it. On the bench: "Replay's up! Astra bites it twenty-one seconds
 ago." Not run against a real replay (needs OBS on the box); the selftest and the bench cover the facts and the writing.
 
+## Viewer questions answered by the analyst (eng/analyst, round 4)
+
+The analyst (`tools/stream/analyst.py --viewer-questions`, on in start-team) picks the freshest viewer question
+from the lane. It answers at most one every 150 s, takes nothing older than 60 s, and skips off-topic or unsafe
+questions. It posts the restated question and a checked answer as `analyst.answers` in the snapshot. In
+caster.py, eng/analyst owns only:
+- the viewer and answer loops in `Differ.diff` (plain questions wait for the analyst while
+  `questions_on(analyst)`; comments are unchanged);
+- the viewer branch of `facts_for` (`analyst_answer`, `how_to_call_it`);
+- a `viewer` template that fills only with an answer.
+These are covered by caster_selftest.py "viewer questions". No `ask_analyst` hook is needed in `say_exchange`.
+Details and the split with eng/audio's talking-points work are in docs/ANALYST-NOTES.md, "What the analyst
+writes" and "Viewer questions on air".
+
+Two suggestions for `SHOW`, from the Space Age pilot (your text, so not edited here):
+- The crash site. At 01:39 the hosts called the replay of the burning wreck "pure biter buffet". Suggested
+  sentence: "Every game starts beside the wreck of the engineers' crashed spaceship (the crash site): scenery
+  from before the game, with a few starting items; its fire is harmless, and the engineers never crash."
+- The goal. On Space Age runs (the stream's subtitle names Space Age, POG_SPACE_AGE=1), "The team's goal is a rocket
+  launch" is wrong. Suggested: "In Space Age a rocket launch is a milestone: rockets carry a space platform starter
+  pack to orbit, space science is made on the platform, and the expansion's goal is reaching the solar system
+  edge. A 2 h run will mostly be the Nauvis start: oil, plastics and blue science are the big milestones."
+- Write true statements in rules and facts ("research progress is always kept"), never negated mistakes. In
+  the pilot, 31 of the analyst's 37 corrections were negated ("not because progress was lost"); the analyst's
+  prompt now avoids them.
+
 ## Status
 
 | Part | State (2026-10-10) |

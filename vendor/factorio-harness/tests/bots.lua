@@ -116,6 +116,34 @@ local placed=created[#created].args
 eq(placed.name,'stone-furnace'); eq(placed.player,nil); eq(placed.force,force)
 fails(function() bot('build',{item='stone-furnace',position={x=3,y=1}}) end,'not in main inventory')
 fails(function() c.items['stone-furnace']=1; bot('build',{item='stone-furnace',position={x=20,y=0}}) end,'out of build reach')
+-- Remnants go before a build: shake3's bots were refused by the stump a mined
+-- tree left ("placement blocked by tree-08-stump"). A character corpse stays.
+local stump={valid=true,type='corpse',name='tree-08-stump',position={x=3.2,y=0.1}}
+stump.destroy=function() stump.valid=false end
+local body={valid=true,type='character-corpse',name='character-corpse',position={x=3,y=0}}
+body.destroy=function() body.valid=false end
+surface.find_entities_filtered=function(a) if a.type=='corpse' and a.area then return {stump,body} end return {} end
+surface.can_place_entity=function() return not stump.valid end
+eq(bot('build',{item='stone-furnace',position={x=3,y=0}}).consumed,1)
+eq(stump.valid,false); eq(body.valid,true)
+-- A biter corpse is cleared and not named; the error names the real blocker
+-- (shake3: "placement blocked by small-biter-corpse (...), burner-mining-drill (...)").
+local corpse={valid=true,type='corpse',name='small-biter-corpse',position={x=3.1,y=0.2}}
+corpse.destroy=function() corpse.valid=false end
+local drill={valid=true,type='mining-drill',name='burner-mining-drill',position={x=3,y=0}}
+surface.find_entities_filtered=function(a)
+  if not a.area then return {} end
+  local out={}
+  for _,e in ipairs{corpse,drill} do if e.valid and (a.type==nil or a.type==e.type) then out[#out+1]=e end end
+  return out
+end
+surface.can_place_entity=function() return false end
+c.items['stone-furnace']=1
+local ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=0}})
+assert(not ok and err:find('placement blocked by burner-mining-drill (3,0)',1,true) and not err:find('corpse'),err)
+eq(corpse.valid,false); eq(c.items['stone-furnace'],1)
+surface.find_entities_filtered=function() return {} end
+surface.can_place_entity=function() return true end
 
 -- Profiles: set, read back, colour the character; bubbles over the speaker.
 local pr=bot('profile',{display_name='Astra',color='#FF8000',glyph='🚀',motto='iron first'})
@@ -126,6 +154,17 @@ fails(function() bot('profile',{color='orange'}) end,'#rrggbb')
 fails(function() bot('profile',{glyph='abc'}) end,'glyph must be 1..2')
 fails(function() bot('profile',{display_name=string.rep('x',25)}) end,'display_name must be 1..24')
 eq(bot('profile',{glyph='👩‍🚀'}).glyph,'👩‍🚀') -- a ZWJ sequence counts as two
+-- A glyph another agent holds is refused, naming the holder (shake3: Astra and
+-- Muse both ✦, Sol and Sonnet both S); case and U+FE0F do not make it differ.
+local function as_opus(args) return runtime.dispatch{action='profile',args=args,bot='opus'} end
+fails(function() as_opus({display_name='Opus',glyph='👩‍🚀'}) end,'glyph 👩‍🚀 is taken by Astra (astra); pick another')
+eq(as_opus({}).display_name,nil) -- refused before anything changed
+eq(as_opus({glyph='S'}).glyph,'S')
+fails(function() runtime.dispatch{action='profile',args={glyph='s'},player=1} end,'glyph S is taken by opus;')
+eq(bot('profile',{glyph='👩‍🚀'}).glyph,'👩‍🚀') -- setting your own glyph again is fine
+eq(as_opus({glyph='✦'}).glyph,'✦')
+fails(function() bot('profile',{glyph='✦\239\184\143'}) end,'is taken by opus')
+eq(as_opus({glyph='O'}).glyph,'O')
 -- voice: the stream's speaker id, stored lower case, listed in profiles.
 eq(bot('profile',{voice='Orion'}).voice,'orion'); eq(bot('profile',{}).voice,'orion')
 local listed; for _,row in ipairs(bot('profiles',{}).profiles) do if row.name=='astra' then listed=row end end
@@ -174,7 +213,7 @@ eq(#list,3)
 local by={}; for _,row in ipairs(list) do by[row.name]=row end
 eq(by.astra.kind,'bot'); eq(by.astra.display_name,'Astra'); eq(by.astra.alive,true); eq(by.astra.active,false)
 eq(by.astra.avatar.emblem,'flask'); eq(by.opus.avatar,nil)
-eq(by.astra.last_said.text:sub(1,4),'word'); eq(by.nick.kind,'player'); eq(by.nick.display_name,'Nick'); eq(by.opus.glyph,nil)
+eq(by.astra.last_said.text:sub(1,4),'word'); eq(by.nick.kind,'player'); eq(by.nick.display_name,'Nick'); eq(by.opus.glyph,'O')
 
 -- Director cameras: operator-only, spectator once, eased follow, release.
 fails(function() runtime.operator.camera({player=2,follow='nobody'}) end,'no bot or player named nobody')
@@ -231,6 +270,13 @@ c.valid=false; advance(1)
 local dead=bot('status',{})
 eq(dead.alive,false); eq(dead.dead_until_tick,tick+600); eq(dead.active,false); eq(dead.last.outcome,'died')
 fails(function() bot('walk',{direction='east',ticks=5}) end,'is dead')
+-- Talk works while dead (shake3: Sonnet's chat failed 3 times with "bot sonnet is dead").
+local said=bot('say',{text='down at the boilers, back in 10 s'}); assert(said.seq,'say while dead')
+local heard=runtime.dispatch{action='chat',args={},player=1}
+eq(heard.messages[#heard.messages].text,'down at the boilers, back in 10 s'); eq(heard.messages[#heard.messages].from,'astra')
+runtime.dispatch{action='say',args={text='@astra ok'},player=1}
+local read=bot('chat',{}); eq(read.messages[#read.messages].text,'@astra ok')
+fails(function() bot('chat',{limit=0}) end,'limit must be 1..100')
 for _,row in ipairs(runtime.dispatch{action='profiles',args={},player=1}.profiles) do
   if row.name=='astra' then eq(row.alive,false); eq(row.dead_until_tick,dead.dead_until_tick) end
   assert(row.name~='pog-director','a released director is still a spectator, not an agent')

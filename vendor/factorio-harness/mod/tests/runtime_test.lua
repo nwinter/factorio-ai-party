@@ -522,6 +522,24 @@ feed_slots[1].count,feed_slots[1].valid_for_read=40,true
 main=inv(stack(nil,0),stack(nil,0),stack(nil,0))
 local with_chests=call('collect',{chests=true})
 eq(with_chests.transferred,40); eq(with_chests.chests_skipped,nil); eq(feed_slots[1].count,0)
+-- want: hold N, taking only the difference, in a queue too (shake2 and shake3:
+-- Opus's plans failed with "unknown argument want for collect").
+do
+  feed_slots[1].count,feed_slots[1].valid_for_read=40,true
+  main=inv(stack('copper-plate',15),stack(nil,0),stack(nil,0))
+  local topped=call('collect',{item='copper-plate',positions={{x=5,y=0}},want=25})
+  eq(topped.transferred,10); eq(feed_slots[1].count,30)
+  local enough=call('collect',{item='copper-plate',positions={{x=5,y=0}},want=20})
+  eq(enough.transferred,0); eq(enough.held,25); eq(feed_slots[1].count,30)
+  call('queue_cancel',{})
+  call('queue_submit',{steps={{action='collect',args={item='copper-plate',positions={{x=5,y=0}},want=40}}}})
+  advance(1)
+  eq(feed_slots[1].count,15)
+  local h=call('queue_status').history; eq(h[#h].action,'collect'); eq(h[#h].ok,true)
+  fails(function() call('collect',{positions={{x=5,y=0}},want=5}) end,'want needs item')
+  fails(function() call('collect',{item='copper-plate',want=5,count=5}) end,'not both')
+  call('queue_cancel',{})
+end
 p.surface.find_entities_filtered=function(f) eq(f.force,p.force); return {f2,f1} end
 main=inv(stack('coal',7),stack(nil,0),stack(nil,0))
 fails(function() call('refuel',{fuel='iron-ore'}) end,'fuel must be')
@@ -1216,6 +1234,37 @@ local placed=call('place_ghosts',{entities={{name='gun-turret',position={x=100,y
 eq(placed.placed,2); eq(#placed.failed,3); eq(placed.failed[1].index,2); eq(placed.failed[1].error,'placement blocked')
 assert(placed.failed[2].error:find('not a placeable')); eq(placed.failed[3].error,'position is not charted')
 eq(placed.bounds.left,11); eq(placed.bounds.bottom,101); eq(storage.agent_harness.last_paste[1].right,101)
+-- A ghost goes over trees and rocks and marks them, though the engine's check
+-- refuses them (shake3: "placement blocked by tree-08" from place_ghosts),
+-- and over a stump, which stays until the build (out of reach here); anything
+-- else in the footprint still refuses it.
+do
+  local can,find=p.surface.can_place_entity,p.surface.find_entities_filtered
+  local tree={valid=true,type='tree',name='tree-08',minable=true,position={x=60.2,y=0.3}}
+  tree.to_be_deconstructed=function() return tree.marked==true end
+  tree.order_deconstruction=function(_,who) assert(who==nil or who==p); tree.marked=true; return true end
+  local stump={valid=true,type='corpse',name='tree-02-stump',position={x=59.8,y=0}}
+  stump.destroy=function() stump.valid=false end
+  local chest={valid=true,type='container',name='wooden-chest',position={x=60,y=0}}
+  local inside={tree,stump}
+  p.surface.can_place_entity=function() return false end
+  p.surface.find_entities_filtered=function(a)
+    if a.type=='corpse' then return stump.valid and {stump} or {} end
+    if a.area then return inside end
+    return {}
+  end
+  ghosts={}
+  local over=call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}})
+  eq(over.placed,1); eq(over.failed,nil); eq(ghosts[1],'gun-turret'); eq(over.obstacles_marked,1)
+  eq(stump.valid,true); eq(tree.marked,true)
+  inside={tree,chest}
+  local refused=call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}})
+  eq(refused.placed,0); assert(refused.failed[1].error:find('wooden-chest',1,true),refused.failed[1].error)
+  -- A force's own plant (a Gleba farm) is not an obstacle to mark.
+  inside={{valid=true,type='plant',name='yumako-tree',minable=true,force=p.force,position={x=60,y=0}}}
+  eq(call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}}).placed,0)
+  p.surface.can_place_entity,p.surface.find_entities_filtered=can,find
+end
 -- repeat stamps the list count times, shifted each time; failures carry their copy.
 ghosts={}
 local row=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}},['repeat']={count=4,dx=10}})

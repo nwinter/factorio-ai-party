@@ -3,15 +3,26 @@
 # If the agent goes idle before deadline.txt, prompt it to continue. Logs to WORKSPACE/supervisor.log: each nudge, how
 # it was delivered (herdr's exit status and reply), turns that ended on a refused command, and skipped nudges.
 # Env: POG_NUDGE_TEXT replaces the nudge ({left} = minutes left; smoke tests use it to check delivery).
+# POG_SUPERVISE_QUIET and POG_SUPERVISE_POLL (seconds, default 60 and 20) shorten the waits for tools/test_supervise.py.
 pane=$1 dir=$2
+quiet=${POG_SUPERVISE_QUIET:-60} poll=${POG_SUPERVISE_POLL:-20}
 root=$(cd "$(dirname "$0")/.." && pwd)
 log() { echo "$(date +%T) $*" >> "$dir/supervisor.log"; }
 # deadline.txt has minutes only ("2026-10-10 22:44 PDT"); without explicit seconds date -j takes the current ones.
 d=$(cat "$dir/deadline.txt")
 deadline=$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "${d% *}:00 ${d##* }" +%s)
-read -r kind _ at _ < "$dir/.context-hooks" 2>/dev/null || kind=""
+read -r kind _ at _ 2>/dev/null < "$dir/.context-hooks" || kind=""
 nudges=0
 agent_status() { herdr pane get "$pane" 2>/dev/null | grep -o '"agent_status":"[a-z]*"' | cut -d'"' -f4; }
+# Seconds since the agent's last request in its journal (999999 with none). herdr's status reads idle or done while an
+# agent waits on a backgrounded --wait or a long tool call (shake3: Grok nudged mid-turn, Muse five times while
+# building), but the journal shows the work: a request in the last 2 minutes means working.
+since_request() {
+  local at
+  at=$(tail -n 400 "$dir/journal.jsonl" 2>/dev/null | grep '"event":"request"' | tail -n 1 | cut -d'"' -f4)
+  [ -n "$at" ] || { echo 999999; return; }
+  echo $(( $(date +%s) - $(date -j -u -f "%Y-%m-%dT%H:%M:%S" "${at%%.*}" +%s) ))
+}
 
 deliver() {
   local text=$1 out rc
@@ -28,10 +39,13 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   status=$(agent_status)
   if [ "$status" = idle ] || [ "$status" = done ]; then
     # Agents waiting on background work can look idle between turns: require a quiet minute.
-    sleep 60
+    sleep "$quiet"
     status=$(agent_status)
     now=$(date +%s)
-    if { [ "$status" = idle ] || [ "$status" = done ]; } && [ "$now" -lt "$((deadline - 30))" ]; then
+    ago=$(since_request)
+    if { [ "$status" = idle ] || [ "$status" = done ]; } && [ "$now" -lt "$((deadline - 30))" ] && [ "$ago" -lt 120 ]; then
+      log "skip nudge (status $status): last request ${ago}s ago, working"
+    elif { [ "$status" = idle ] || [ "$status" = done ]; } && [ "$now" -lt "$((deadline - 30))" ]; then
       left=$(( (deadline - now + 59) / 60 ))
       # Grok compacts at a fixed share of its window; a nudge's status/chat/board reads near that point set off a
       # minute-long compaction (shake2: 67 s of its last 2 minutes). Skip it in the last 3 minutes.
@@ -57,6 +71,6 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   elif [ "$status" = blocked ]; then
     log "blocked: needs a human look"
   fi
-  sleep 20
+  sleep "$poll"
 done
 log "deadline reached after $nudges nudges"

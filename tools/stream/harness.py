@@ -14,7 +14,8 @@ import pog  # noqa: E402  (tools/pog.py: Rcon client, ports, SCORE_LUA)
 # Never add a gameplay action here. `profiles` is read-only per docs/BOTS-API.md, but a runtime that does not
 # know it yet treats it as a failed mutation and stops player 1, so callers gate it on `has_bots_runtime()`.
 # `board` and `board_events` (docs/BOARD-API.md) are only sent once `describe` (read-only) lists them.
-READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events"}
+# `platforms` (Space Age) is a read in the runtime; the overlay sends it only once the score lists a platform.
+READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events", "platforms"}
 # Operator reads (eng/board audience.lua): every agent's `confess` lines, for viewers only. Gated on `describe`.
 OPERATOR_READS = {"confessions"}
 
@@ -43,9 +44,10 @@ for _, s in pairs(game.surfaces) do
     end
   end
 end
+local home = game.surfaces.nauvis
 rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, research = cur and cur.name or nil,
   progress = cur and f.research_progress or nil, top_done = top, electric_machines = machines, starved = starved,
-  darkness = s.darkness, daytime = s.daytime})
+  darkness = home.darkness, daytime = home.daytime})
 """
 
 # Production history for sparklines: item counts in the last hour, 2-minute buckets (one_hour precision has

@@ -81,6 +81,29 @@ body.preview .cam::after {
   position: absolute; inset: 0; display: grid; place-items: center;
   color: rgba(255, 255, 255, 0.18); font-size: 28px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.2em;
 }
+/* an unused side camera: an opaque desk card over the hole (overlay.js renderFill) */
+.cam-fill { position: absolute; inset: 0; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start;
+  gap: 10px; padding: 22px 26px 16px; overflow: hidden; background: rgba(var(--fx-frame-rgb), 0.98); box-shadow: var(--fx-bevel);
+  opacity: 0; transition: opacity 600ms ease; pointer-events: none; }
+.cam-fill.on { opacity: 1; }
+.cam-fill .fhead { display: flex; align-items: center; gap: 10px; }
+.cam-fill .tag { font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 8px; line-height: 22px;
+  border-radius: var(--fx-r-1); background: linear-gradient(180deg, #ffc56b, var(--fx-orange)); color: var(--fx-text-dark); }
+.cam-fill .pace { font-size: 14px; font-weight: 700; padding: 0 8px; line-height: 22px; border-radius: var(--fx-r-1); background: var(--well); }
+.cam-fill .pace.ahead { color: var(--acting); }
+.cam-fill .pace.onpace { color: var(--head); }
+.cam-fill .pace.behind { color: var(--dead); }
+.cam-fill .fbig { font-size: 24px; font-weight: 700; line-height: 1.25; color: var(--head);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.cam-fill .fbar { height: 12px; }
+.cam-fill .fline { display: flex; gap: 12px; align-items: baseline; font-size: 17px; min-width: 0; }
+.cam-fill .fline .k { flex: none; color: var(--muted); font-weight: 700; font-size: 14px; text-transform: uppercase; letter-spacing: 0.05em; }
+.cam-fill .fline .v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.cam-fill .fline.space .k { color: #9fc4ff; }
+.cam.filled::before { opacity: 0; }
+body.portrait .cam-fill .fbig { font-size: 28px; -webkit-line-clamp: 2; }
+body.portrait .cam-fill .fline { font-size: 22px; }
+body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; line-height: 28px; }
 .cam-label {
   position: absolute;
   left: 14px;
@@ -149,6 +172,7 @@ body.preview .cam::after {
 .alert.death, .alert.loss { background: linear-gradient(90deg, rgba(var(--fx-red-rgb), 0.38), rgba(var(--fx-frame-rgb), 0.95) 60%); }
 .alert.power { --tone: var(--fx-yellow); --tone-rgb: var(--fx-yellow-rgb); }
 .alert.research { --tone: var(--fx-cyan); --tone-rgb: 63, 193, 230; }
+.alert.space { --tone: #9fc4ff; --tone-rgb: 159, 196, 255; }
 .alert.info { --tone: var(--fx-blue); --tone-rgb: var(--fx-blue-rgb); }
 
 @keyframes drop-in { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: none; } }
@@ -302,6 +326,28 @@ body.preview .cam::after {
 #sparks .empty { grid-column: 1 / -1; align-self: center; }
 
 /* ---- team board ---- */
+/* ---- Space Age (overlay.js renderSpace): one head row, then up to three platform rows; chat gives up the height ---- */
+#space { flex: none; box-sizing: border-box; padding: 8px 14px 8px; display: flex; flex-direction: column; gap: 5px; overflow: hidden; }
+#space[hidden] { display: none; }
+.space-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.space-head .panel-title { flex: none; }
+.space-head .panel-title::after { display: none; }
+#space-planets { display: flex; gap: 5px; min-width: 0; overflow: hidden; }
+#space-sci { margin-left: auto; display: flex; gap: 5px; flex: none; }
+#space-sci .rockets { font-size: 14px; font-weight: 600; color: var(--muted); }
+.planet, .card .world.on { flex: none; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; padding: 0 7px; line-height: 19px;
+  border-radius: var(--fx-r-1); background: var(--fx-deep); box-shadow: var(--fx-slot-shadow); color: var(--pc, #c8d0dc); border-left: 3px solid var(--pc, #c8d0dc); }
+.p-nauvis { --pc: #8fc46a; } .p-vulcanus { --pc: #f08a3a; } .p-fulgora { --pc: #b38cf0; } .p-gleba { --pc: #b8d84a; }
+.p-aquilo { --pc: #6ad0f0; } .platform { --pc: #c0c8d8; }
+.card .world { display: none; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .world.on { display: inline-block; font-size: 11px; line-height: 17px; }
+.plat { display: grid; grid-template-columns: 150px 1fr 90px 74px; align-items: center; gap: 10px; font-size: 14px; min-width: 0; }
+.plat:not(:has(.pbar)) { grid-template-columns: 150px 1fr 74px; }
+.plat .pname { font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plat .pwhere { color: #c8d0dc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.plat .pbar { height: 8px; }
+.plat .pspeed { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plat.more { display: block; color: var(--faint); font-size: 12.5px; }
 #board { flex: none; height: 156px; box-sizing: border-box; padding: 9px 14px 8px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
 #board[hidden] { display: none; }
 .board-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 18px; }
@@ -395,9 +441,14 @@ body.preview .cam::after {
 #segment { position: absolute; left: 24px; top: 24px; width: 1208px; height: 680px; pointer-events: none; box-sizing: border-box; animation: drop-in 600ms ease both; }
 #segment[hidden] { display: none; }
 #segment.out { animation: fade-out 700ms ease both; }
-#segment.full { padding: 70px 90px; background: rgba(22, 21, 22, 0.55); }
+/* Captions (#voice, audio.js) sit on the main camera's bottom edge: a full panel keeps a caption band under it
+   (taller when a caption needs more), a lower card rises above a caption; alert banners at the top push a full panel
+   down while they show. --voice-clear and --alerts-clear come from overlay.js. */
+#segment.full { padding: max(56px, var(--alerts-clear, 0px)) 90px max(124px, var(--voice-clear, 0px)); background: rgba(22, 21, 22, 0.55);
+  transition: padding-top 250ms ease, padding-bottom 250ms ease; }
 #segment.full .spanel { height: 100%; }
-#segment.lower { display: flex; align-items: flex-end; padding: 0 0 22px 22px; }
+body.seg-full #alerts .alert:not(:last-child) { display: none; }
+#segment.lower { display: flex; align-items: flex-end; padding: 0 0 max(22px, var(--voice-clear, 0px)) 22px; transition: padding-bottom 250ms ease; }
 #segment.lower .spanel { width: 620px; }
 .spanel { box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; padding: 14px 22px 16px; overflow: hidden;
   background: rgba(var(--fx-frame-rgb), 0.95); border-radius: var(--fx-r-2); box-shadow: var(--fx-bevel), var(--fx-shadow-window); }
@@ -431,7 +482,7 @@ body.preview .cam::after {
 .sbar { height: 18px; }
 .stime { flex: none; height: 4px; border-radius: 2px; background: var(--fx-deep); overflow: hidden; }
 .stime > i { display: block; height: 100%; width: 100%; background: var(--fx-orange); transition: width 1s linear; }
-body.portrait #segment.full { padding: 24px; }
+body.portrait #segment.full { padding: max(24px, var(--alerts-clear, 0px)) 24px max(130px, var(--voice-clear, 0px)); }
 body.portrait #segment.lower .spanel { width: 100%; margin-right: 22px; }
 
 /* ---- density: the card grid shrinks with the lineup (<=7 roomy, 8-9 standard, 10-12 compact) ---- */

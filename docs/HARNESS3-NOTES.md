@@ -1,5 +1,99 @@
 # Harness3 notes: the shake2 harness bugs (branch eng/harness3)
 
+Round 4 (shake3 fixes, for shake4) is the next section; the shake2 round follows it.
+
+## Round 4: shake3 P2 items 7 and 10, P3 item 13 (glyphs)
+
+main merged in first (fast-forward to b2de475). All five items are fixed, each with a fake-engine or offline test that
+fails on the old code. None is verified on world `live`: this session's permission mode denied `bin/fh` again
+(`POG_WORLD=live bin/fh doctor`), so the live checks are written out below for the operator to run.
+
+| Item | shake3 evidence (`runs/shake3/*/journal.jsonl.gz`) | Cause | Fix | Test |
+|---|---|---|---|---|
+| `chat` fails while dead | Sonnet 3 times: "bot sonnet is dead; it respawns at tick N" | every non-read action resolved the bot through `player()`, which refuses a dead bot; only `chat peek` skipped it | a bot's `chat` and `say` take its proxy dead or alive (`dispatch_request`), so it reads and answers the team while it waits to respawn | `tests/bots.lua`: dead bot says, another player reads it, dead bot reads the reply, bad `limit` still refused |
+| tree stumps block placement | Sol's harness item #17; Haiku 3, Sonnet 3, Sol 1+ direct: "placement blocked by tree-08-stump" right after mining that tree; Sol's queue histories repeat errors that list stumps beside ghosts (counts inflated by repeated `queue_*` replies) | the engine's script placement check (`can_place_entity`, ghost `revive`) refuses remnants (type `corpse`), which a player's build removes | `construction.clear_remnants` removes remnants (never a `character-corpse`) in the footprint before a bot's direct build or ghost revive; the character is in build reach there | `tests/bots.lua`: build over a stump succeeds, the stump goes, a character corpse stays |
+| biter corpse blocks placement | Grok 01:02: "placement blocked by small-biter-corpse (-59.9,-13.2), burner-mining-drill (-62,-12), burner-mining-drill (-60,-12)" | the real blockers were the two drills (a 3x3 assembler over them); the corpse was listed first | the same clearing removes the corpse first, so the error names only the drills | `tests/bots.lua`: the error names the drill and no corpse; the corpse is gone |
+| ghost over trees refused | Sol's item #17 ("place_ghosts returned placement blocked by tree rather than marking/clearing it as docs promise"); Haiku 4: "placement blocked by tree-08, dead-tree-desert; mine it, or place_ghosts (marks it) + construct" from `place_ghosts` itself | `can_place_entity{build_check_type=manual_ghost, forced=true}` refuses trees in 2.0.77 | `place_ghost` also accepts a footprint holding only neutral trees, plants and rocks, and remnants (`construction.only_obstacles`); the ghost marks the trees and rocks as before, construct mines them, the build clears remnants. A force's own plants (Gleba farms) and anything else still refuse. Remnants under a ghost are not removed at placement (it reaches any charted spot) | `mod/tests/runtime_test.lua`: ghost over tree+stump placed, tree marked, stump left; tree+chest refused naming the chest; own plant refused |
+| `collect want` in a queue | Opus 2 (`queue_submit` refused whole: "unknown argument want for collect"), as in shake2 | `want` was never an argument | `collect want=N` (with `item`): hold N, taking only the difference; nothing taken (and `held`, `note`) when the character already has N; not with `count`. Worked out when the step runs, so a queued collect sees earlier steps' gains. Listed in describe | `mod/tests/runtime_test.lua`: direct top-up, already enough, queued step succeeds and takes the difference, errors |
+| supervisor nudges a working agent (P2 item 7) | Grok nudged 00:48:57 mid-turn; Muse 5 nudges 01:21 to 01:26 while building | herdr read `idle`/`done` during a backgrounded `--wait` or a long tool call | before nudging, `supervise.sh` reads the last `"event":"request"` line of `WORKSPACE/journal.jsonl`; under 120 s old means working: no nudge, log line `skip nudge (status idle): last request Ns ago, working` | `tools/test_supervise.py` (fake herdr always idle): request 10 s ago not nudged, 5 min ago nudged, no journal nudged |
+| shared glyphs (P3 item 13) | Astra and Muse both ✦, Sol and Sonnet both S | glyphs were not checked | `profile` refuses a glyph another agent or player holds: "glyph ✦ is taken by Astra (astra); pick another (profiles lists every glyph in use)", before anything in the call changes. Case and U+FE0F are ignored in the comparison. Setting your own glyph again is fine | `tests/bots.lua` |
+
+Survival rules are unchanged. Remnants give no items; a character corpse (the dead agent's items) is never removed.
+A ghost over trees is what a player's ghost does in game.
+
+What players see differently: `chat`/`say` while dead work; builds over stumps work and their errors name the real
+blocker; `place_ghosts` over trees works (then `construct`); `collect item=X want=N`; a duplicate glyph is refused.
+`agent/team.md` is unchanged (the describe line for `glyph` says it must be unique).
+
+### Files touched (round 4)
+
+- `vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua`: `dispatch_request` (dead bot talk), `build_direct`
+  (one `clear_remnants` line), `place_ghost` (placement check), `handlers.collect` (`want`), the `collect` describe
+  entry. No new top-level locals (main's bundler note, 73066da).
+- `.../construction.lua`: `M.box`, `M.clear_remnants`, `M.only_obstacles` (new, before `obstructed`).
+- `.../profiles.lua`: `same_glyph`, `holder`, `check_glyph` and one line in `M.handlers.profile`; the glyph describe text.
+- `vendor/factorio-harness/tests/bots.lua`, `vendor/factorio-harness/mod/tests/runtime_test.lua`.
+- `tools/supervise.sh` (journal check; `POG_SUPERVISE_QUIET`/`POG_SUPERVISE_POLL` for the test; the `.context-hooks`
+  read no longer prints an error when the file is missing), `tools/test_supervise.py` (new).
+- `docs/SPACEAGE.md`: a coordination section for eng/spaceage (bot travel), listing these hunks. `bots.lua` is not touched.
+
+### Tests (round 4)
+
+- Every `tests/*.lua` and `mod/tests/*.lua`: pass (runtime 720 assertions).
+- `npm test`: 95 pass, 4 fail. The 4 are the `tests/bridge.test.ts` socket tests, refused by this sandbox
+  (`listen EPERM ... .cache/bridge-*/bridge.sock`), as in round 3 before any change.
+- `npm run build`: clean. `python3 tools/test_supervise.py`, `tools/test_shot_sync.py`, `tools/test_describe_lines.py`: pass.
+
+### Live verification on `live` (to run; this session could not)
+
+From the repo root on eng/harness3. Deploying replaces the runtime the other engineers loaded on `live`. Bots `h3-a`
+and `h3-b`; X,Y and TX,TY are positions read from the previous reply.
+
+```sh
+cd vendor/factorio-harness && npm run build && cd ../..
+POG_WORLD=live bin/fh deploy
+for b in h3-a h3-b; do tools/pog.py --world live rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"bot_create\",\"$b\"))"; done
+fh() { POG_WORLD=live bin/fh --bot h3-a "$@"; }
+
+# Glyph: h3-a takes it, h3-b is refused naming h3-a
+fh call profile --args '{"glyph":"Q"}'
+POG_WORLD=live bin/fh --bot h3-b call profile --args '{"glyph":"q"}'      # expect: glyph Q is taken by h3-a
+
+# Stump: mine a tree, see its stump, build the starting stone furnace on it
+fh call nearest --args '{"type":"tree","limit":1}'                      # TX,TY
+fh call move_to --args '{"position":{"x":TX,"y":TY},"within":2}' --wait
+fh call mine --args '{"position":{"x":TX,"y":TY},"ticks":600}' --wait
+fh observe --args '{"scope":"scan","position":{"x":TX,"y":TY},"radius":2}'   # a *-stump here makes this a real check
+fh call build --args '{"item":"stone-furnace","position":{"x":TX,"y":TY}}'   # expect consumed: 1
+
+# Biter corpse in a footprint that overlaps the furnace: the error names the furnace only (the starting burner drill)
+tools/pog.py --world live rcon '/silent-command game.surfaces.nauvis.create_entity{name="small-biter-corpse",position={TX+1.3,TY+0.2}}'
+fh call build --args '{"item":"burner-mining-drill","position":{"x":TX+1,"y":TY}}'  # expect: placement blocked by stone-furnace (TX,TY), no corpse
+
+# Ghost over a tree, then construct
+fh call nearest --args '{"type":"tree","limit":1}'                      # a second tree, UX,UY
+fh call place_ghosts --args '{"entities":[{"name":"stone-furnace","position":{"x":UX,"y":UY}}]}'  # expect placed 1, obstacles_marked 1
+fh call construct --args '{"area":{"left_top":{"x":UX-2,"y":UY-2},"right_bottom":{"x":UX+2,"y":UY+2}}}' --wait
+# construct mines the tree (mined >= 1); the furnace itself is "missing" (the one furnace is placed above), which is fine
+
+# collect want in a queue: the bot holds 8 iron plates; nothing is taken and the step succeeds
+fh call queue_submit --args '{"steps":[{"action":"collect","args":{"item":"iron-plate","want":5,"positions":[{"x":TX,"y":TY}]}}]}'
+fh call queue_status                                                    # history: collect ok, note "already holding 8 iron-plate"
+
+# Dead bot talks: kill h3-a's character (no player), then chat and say within its 10 s respawn wait
+fh call status                                                          # X,Y
+tools/pog.py --world live rcon '/silent-command local c=game.surfaces.nauvis.find_entities_filtered{type="character",position={X,Y},radius=1}[1] if c and not c.player then c.die() end'
+fh call status                                                          # alive: false, dead_until_tick
+fh call say --args '{"text":"h3 check: talking while dead"}'           # expect seq, not "is dead"
+POG_WORLD=live bin/fh --bot h3-b call chat                              # shows h3-a's line
+fh call chat
+
+for b in h3-a h3-b; do tools/pog.py --world live rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"bot_remove\",\"$b\"))"; done
+```
+
+The supervisor change needs no live check beyond the next team run: `runs/shake4/*/supervisor.log` should show
+`skip nudge ... working` lines and no nudge while the journal has requests.
+
 Scope: the six bugs in `docs/studies/shake2.md` section 13, P2 item 10, with the evidence from section 7. All six are
 fixed and covered by fake-engine tests. None is verified on world `live`: this session's permission mode denied every
 `bin/fh` command (`bin/fh call status`, `bin/fh doctor`), so I could not deploy or create `h3-*` bots. The commands to
