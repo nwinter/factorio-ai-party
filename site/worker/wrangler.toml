@@ -9,7 +9,7 @@ preview_urls = false
 
 [vars]
 # Origins allowed to call the API from a browser. "*." entries match any subdomain (preview deployments).
-ALLOWED_ORIGINS = "https://player-of-games.pages.dev,https://*.player-of-games.pages.dev,http://127.0.0.1:8765,http://localhost:8765"
+ALLOWED_ORIGINS = "https://factorio.nickwinter.net,https://player-of-games.pages.dev,https://*.player-of-games.pages.dev,http://127.0.0.1:8765,http://localhost:8765"
 
 [[durable_objects.bindings]]
 name = "LIVE"
