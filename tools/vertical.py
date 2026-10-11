@@ -137,6 +137,17 @@ def set_key(c, server, key_file=KEY_FILE):
 #   - streaming_match_main: MainStreamStart() calls StartStream(); with no enabled output StartStream() opens a
 #     QMessageBox ("No output server") on the box. So it is only turned on together with an enabled output that has
 #     a key.
+#   - backtrack (the plugin's own replay buffer): a fresh install sets "backtrack" true (the constructor's first-time
+#     block), and CheckReplayBuffer(true) starts it whenever a main output is active (MainRecordStart,
+#     MainStreamStart, MainReplayBufferStart, MainVirtualCamStart); our main replay buffer runs from OBS start. The
+#     vendor request stop_backtrack stops it, but OnReplayBufferStop (on a clean stop) calls CheckReplayBuffer(true)
+#     at once and again after 500 ms, so it restarts while "backtrack" is true and anything main runs. Only
+#     "backtrack": false (read once, at load) keeps it off. Its encoder is the plugin's record encoder: in Simple
+#     output mode the profile's RecEncoder through get_simple_output_encoder, which falls back to obs_x264.
+#   - recording_match_main: MainRecordStart() calls StartRecord() when true; a second 1080x1920 recording we do not use.
+#   - Service: LoadStreamOutputs makes every output "rtmp_custom" (or "whip_custom" if the server says whip); the
+#     plugin never uses OBS's "YouTube - RTMPS" service (rtmp_common), which crashed OBS 32.2.2 at stream start on
+#     2026-10-11 (docs/SETUP.md). The server is kept an rtmps:// URL here.
 CONFIG_ON_BOX = "C:/Users/player/AppData/Roaming/obs-studio/plugin_config/vertical-canvas/config.json"
 QSV_H264 = "obs_qsv11_v2"   # OBS's Quick Sync H.264 (texture) encoder id, as the landscape stream
 
@@ -168,11 +179,20 @@ def apply_settings(cfg, bitrate=6000, encoder=QSV_H264, keyint=2, track=1, serve
         o["stream_server"] = server
     if key is not None:
         o["stream_key"] = key
-    o["enabled"] = bool(o.get("stream_server") and o.get("stream_key"))
+    srv = o.get("stream_server") or ""
+    if srv and (not srv.startswith("rtmps://") or "whip" in srv):
+        raise SystemExit(f"vertical output server {srv!r}: keep it a custom rtmps:// URL "
+                         "(e.g. rtmps://a.rtmps.youtube.com:443/live2), not WHIP or a service name")
+    o["enabled"] = bool(srv and o.get("stream_key"))
     c["stream_outputs"] = outs
     c.pop("stream_server", None), c.pop("stream_key", None)  # the legacy single output, read only without outputs
     c["streaming_match_main"] = bool(match_main and o["enabled"])
+    was = (c.get("backtrack", True), c.get("recording_match_main", False))
+    c["backtrack"] = False             # no second replay buffer (restarts itself otherwise, see above)
+    c["recording_match_main"] = False  # no second recording with the main one
     lines = [f"encoder {encoder}: CBR {bitrate} Kbps, keyframe every {keyint} s, audio track {track}",
+             f"backtrack (plugin replay buffer): off (was {'on' if was[0] else 'off'}); "
+             f"record with main: off (was {'on' if was[1] else 'off'})",
              f"output '{o.get('name')}': {o.get('stream_server') or '(no server)'}, key "
              f"{'set (' + str(len(o['stream_key'])) + ' chars)' if o.get('stream_key') else 'not set'}, "
              f"{'enabled' if o['enabled'] else 'disabled'}"]

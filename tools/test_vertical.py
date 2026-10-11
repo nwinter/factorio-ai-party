@@ -87,11 +87,13 @@ def main():
     print("vertical: ok")
 
 
-# A config as Aitum Vertical 1.6.6 writes it on exit (SaveSettings keys; fresh install: no outputs, main settings)
+# A config as Aitum Vertical 1.6.6 writes it on exit (SaveSettings keys; fresh install: no outputs, main settings,
+# backtrack on, and recording with main as seen on the box 2026-10-11)
 FRESH = {"canvas": [{"width": 1080, "height": 1920, "current_scene": "stream vertical", "streaming_video_bitrate": 0,
                      "streaming_match_main": False, "stream_advanced_settings": False, "stream_audio_track": 0,
                      "stream_encoder": "", "stream_encoder_settings": {}, "stream_outputs": [],
-                     "backtrack": False, "record_path": "", "transitions": [{"name": "Fade"}]}]}
+                     "backtrack": True, "backtrack_seconds": 30,
+                     "recording_match_main": True, "record_path": "", "transitions": [{"name": "Fade"}]}]}
 
 
 def settings_tests():
@@ -104,7 +106,15 @@ def settings_tests():
     assert c["stream_audio_track"] == 1 and c["streaming_video_bitrate"] == 6000
     assert c["stream_outputs"] == [{"name": "YouTube vertical", "stream_server": "rtmps://a.rtmps.youtube.com:443/live2",
                                     "stream_key": "", "enabled": False}]
-    assert c["streaming_match_main"] is False and "OFF until" in lines[2], lines  # no key: never the dialog
+    assert c["streaming_match_main"] is False and "OFF until" in lines[3], lines  # no key: never the dialog
+    assert c["backtrack"] is False and c["recording_match_main"] is False and c["backtrack_seconds"] == 30
+    assert "off (was on)" in lines[1], lines
+    for bad in ("rtmp://a.rtmp.youtube.com/live2", "https://x/whip", "YouTube - RTMPS"):
+        try:
+            v.apply_settings(copy.deepcopy(FRESH), server=bad)
+            raise AssertionError(f"{bad}: must refuse")
+        except SystemExit as e:
+            assert "custom rtmps://" in str(e)
     assert c["transitions"] == [{"name": "Fade"}] and c["current_scene"] == "stream vertical"  # the rest kept
     v.apply_settings(cfg, bitrate=4500, key="abcd-efgh")
     assert c["stream_outputs"][0]["enabled"] is True and c["stream_outputs"][0]["stream_key"] == "abcd-efgh"
@@ -112,7 +122,8 @@ def settings_tests():
     v.apply_settings(cfg, match_main=False)
     assert c["streaming_match_main"] is False and c["stream_outputs"][0]["stream_key"] == "abcd-efgh"  # key kept
     legacy = {"canvas": [{"width": 1080, "height": 1920, "stream_server": "rtmp://x/live2", "stream_key": "old"}]}
-    v.apply_settings(legacy)
+    v.apply_settings(legacy, server="rtmps://a.rtmps.youtube.com:443/live2")  # an rtmp:// server is replaced
+    assert legacy["canvas"][0]["stream_outputs"][0]["stream_server"].startswith("rtmps://")
     assert legacy["canvas"][0]["stream_outputs"][0]["stream_key"] == "old" and "stream_key" not in legacy["canvas"][0]
     try:
         v.apply_settings({"canvas": [{"width": 1080, "height": 1920}, {"width": 720, "height": 1280}]}, width=1920)
@@ -160,6 +171,7 @@ case "$src" in pogwin:*) cp {boxdir}/config.json "$dst";; *) cp "$src" {boxdir}/
         out = json.load(open(os.path.join(boxdir, "config.json")))["canvas"][0]
         assert out["stream_outputs"][0]["stream_key"] == "wxyz-1234" and out["stream_outputs"][0]["enabled"]
         assert out["streaming_match_main"] is True and out["stream_encoder_settings"]["keyint_sec"] == 2
+        assert out["backtrack"] is False and out["recording_match_main"] is False
         assert os.path.exists(os.path.join(boxdir, "config.json.bak-copy"))  # the dated copy was made first
         assert not open(os.path.join(boxdir, "config.json"), "rb").read().startswith(b"\xef\xbb\xbf")  # no BOM
 

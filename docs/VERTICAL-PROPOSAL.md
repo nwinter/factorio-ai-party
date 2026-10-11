@@ -80,8 +80,13 @@ the vertical canvas.
    | `stream_audio_track` | `1` | mixer track 1, the landscape stream's |
    | `stream_outputs[0]` | `{"name": "YouTube vertical", "stream_server": "rtmps://a.rtmps.youtube.com:443/live2", "stream_key": KEY, "enabled": true}` | the RTMP(S) output; enabled only with a server and a key |
    | `streaming_match_main` | `true` only if that output is enabled | starts and stops the vertical feed with the main stream |
+   | `backtrack` | `false` | the plugin's own replay buffer. A fresh install turns it on, and it starts whenever a main output runs (our replay buffer runs from OBS start): a second 1080x1920 encode, x264 in Simple output mode, that nothing uses. `stop_backtrack` does not keep it off: the plugin's stop handler calls `CheckReplayBuffer(true)` at once and after 500 ms, so it restarts by itself while this is true and any main output runs (seen on the box: still on 5 s after a successful stop) |
+   | `recording_match_main` | `false` | a second 1080x1920 recording started with the main one |
 
-   Everything else in the file (scenes order, transitions, hotkeys, recording) is kept. Options: `--bitrate`,
+   The server must be an `rtmps://` URL: the plugin always builds its outputs on OBS's custom service
+   (`rtmp_custom`), never the built-in "YouTube - RTMPS" one that crashed OBS 32.2.2 at stream start (docs/SETUP.md),
+   and `settings` refuses `rtmp://`, WHIP or anything else.
+   Everything else in the file (scenes order, transitions, hotkeys, recording path) is kept. Options: `--bitrate`,
    `--keyint`, `--track`, `--encoder`, `--server`, `--key-file`, `--no-match-main`. Without a key file it sets the
    encoder and leaves the output disabled and "match main" off: with "match main" on and no enabled output, 1.6.6
    opens a modal "No output server" dialog on the box every time the main stream starts.
