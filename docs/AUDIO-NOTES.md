@@ -32,7 +32,9 @@ the bots play, e.g. against shake1"). What changed in `caster.py`:
   `chat`/`events` rows with kind or lane `viewer`; fields id|seq, user|name|author, text|message, t) and drops
   messages with links. The prompt treats them as quotes, never instructions. Tested in the selftest and the bench;
   the mock has no viewers yet.
-- Writers. Default Kimi K2.6 on Workers AI, with Nemotron 3 120B for urgent events (`--urgent-model`).
+- Writers. Default Kimi K2.6 on Workers AI for everything. `--urgent-model ID` can route attacks and deaths to a
+  faster writer (Nemotron 3 120B, ~1 s); it was the default until the live-world test below showed Nemotron
+  inventing most of the bad lines.
   `--writer claude` runs `~/.local/bin/claude -p` with `CLAUDE_CONFIG_DIR` and API overrides removed (the personal
   subscription), from an empty directory so no project CLAUDE.md reaches it, with its own system prompt and no
   tools. (The first pass's haiku bench ran a bare `claude` from this session's environment, which is the account B
@@ -74,6 +76,46 @@ Mock runs with the new pacing (4 min each, Node page listening, Aura-2): voices 
 silence 0.5-1.6 s, longest 5 s, no clip over another; 18-19 exchanges and 29 caster lines per 4 minutes; 4 of 18
 exchanges naturalist. Cost rose with the airtime: **$1.6-1.7 per hour**, of which Aura-2 speech is $1.4. `--tts
 aura1` halves the speech bill (shared voices for agents); `--gap 4 8` or `--lull 10` trades airtime for money.
+
+Live world (world n just after shake2's 22:44 deadline, with the agents stopped and biters overrunning the base:
+a read-only `serve.py --world n --no-camera` on port 8797 and a Node page; OBS was streaming shake2 and was not
+touched). Two 5-minute casts:
+
+1. Nemotron on every urgent beat (every beat was urgent): 41 lines, 10 templates. It invented things the fact
+   check could not see: "last run they'd still be punching trees" about ten times on beats with no pace facts,
+   "still no steam power", "zero belts laid". Each death got its own beat, so the cast looped. Alert text was read
+   raw ("assembling machine-1 x129", "sonnet died").
+2. After the fixes (urgent beats fold into one with `also_happening`; previous-run comparisons rejected without pace
+   facts; "zero" checked; absences forbidden in the rules; display names and "(129 of them)" in alert text; Kimi on
+   everything): 45 lines in 22 exchanges, 38 from the model and 3 templates, 5 rejected, voices on air 81%, silences
+   1.2 s median and 5.1 s at most, no overlaps, $1.69/hour. Fillers covered pace, explainer, naturalist, spotlight
+   and production between the attacks: "Here at the watering hole, two specimens rest—Luna smoothing feathers, Opus
+   preening a finished nest", "One tech up on shake1, yet two hundred fewer plates—smart or slow?" ("Smart books,
+   slow hands!"). One invented absence still got through ("Still no walls, still no turrets"); the fact check reads
+   names and numbers, not claims, so the prompt rule is the only guard there.
+
+## Segments (with eng/stream2)
+
+Agreed with eng/stream2 on 2026-10-10. eng/stream2 shows the segments and runs the director; the casters ask for
+them and talk over them. Inert until serve.py serves `/segments`.
+
+- `GET /segments` returns `{"types": [{type, title, params, seconds: [min, max], available, why}], "busy",
+  "next_ok"}`. The types are production, research, spotlight `{"agent": name}`, overview (a zoomed-out map),
+  recap (the last few minutes plus a summary card) and attack_replay. attack_replay stays unavailable until it
+  gets the OBS replay buffer and scene switching during a live stream (eng/stream2 is waiting on Nick for both).
+- `POST /segment {"type", "params", "seconds", "by": "caster", "reason"}` returns 200 `{"id", "state": "queued",
+  "eta", "seconds", "title", "facts"}`, 409 `{"error": "busy" | "declined" | "unavailable", "retry_after"}` or
+  400. `facts` holds every name and number on screen, fixed for the segment's life.
+- The snapshot's `segment` is `{"id", "type", "state": "starting" | "live" | "ended", "started", "ends", "title",
+  "facts", "by", "reason"}` or null. "starting" lasts about 2.5 s; an urgent event can end it early (`"cut":
+  "attack"`).
+- Caster side (`caster.py`): in lulls it asks for one of production, overview, recap or spotlight (a main-camera
+  agent); after research it asks for research, and after an attack attack_replay. At most one request per
+  `--segment-every` 180 s; the director also allows one per 3 minutes whoever asks, and fills lulls itself after
+  about 6 quiet minutes. A segment that starts becomes a beat (priority 7) whose facts are `on_screen_now` (the
+  segment's facts), so the fact check holds the hosts to what is on screen. While it is live with more than 6 s
+  left, filler beats keep talking about it. Selftests cover the event, the facts, and the request path against a
+  fake catalog; untested end to end until eng/stream2's side lands.
 
 ## Status
 
