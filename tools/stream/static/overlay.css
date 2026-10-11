@@ -412,19 +412,15 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
 .msg .tag { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 6px; line-height: 16px;
   border-radius: var(--fx-r-1); background: linear-gradient(180deg, #ffc56b, var(--fx-orange)); color: var(--fx-text-dark); }
 
-/* viewers lane */
-#viewer-lane { flex: none; display: flex; flex-direction: column; gap: 3px; padding: 5px 10px 6px; border-radius: var(--fx-r-1);
-  background: rgba(var(--fx-blue-rgb), 0.08); box-shadow: inset 0 0 0 1px rgba(var(--fx-blue-rgb), 0.35); }
-#viewer-lane[hidden] { display: none; }
-.vhead { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fx-blue); }
-#viewer-list { display: flex; flex-direction: column; gap: 3px; }
-.vmsg { display: flex; align-items: baseline; gap: 7px; font-size: 15px; line-height: 1.25; min-width: 0; animation: rise-in 450ms ease both; }
-.vmsg .src { flex: none; font-size: 10px; font-weight: 700; padding: 0 4px; line-height: 15px; border-radius: 2px; color: #fff; background: #c4302b; }
-.vmsg .src.site { background: var(--fx-blue); color: var(--fx-text-dark); }
-.vmsg .vname { flex: none; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; color: #9cc8ff; }
-.vmsg .vname.staff { color: var(--fx-yellow); }
-.vmsg .vtext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #e6e6e6; }
-.vmsg .order { flex: none; font-size: 10.5px; color: var(--fx-orange); font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+/* viewers, in the main feed: a YT/SITE badge where agents have an avatar, a blue name and a "viewer" tag */
+.msg.viewer { padding: 4px 8px 5px 6px; margin-left: -6px; border-left: 3px solid var(--fx-blue); border-radius: 0 var(--fx-r-1) var(--fx-r-1) 0;
+  background: linear-gradient(90deg, rgba(var(--fx-blue-rgb), 0.10), transparent 80%); }
+.msg .vbadge { flex: none; width: 34px; margin-top: 2px; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+  border-radius: 3px; color: #fff; background: #c4302b; }
+.msg .vbadge.site { background: var(--fx-blue); color: var(--fx-text-dark); }
+.msg.viewer .from { color: #9cc8ff; }
+.msg.viewer .from.staff { color: var(--fx-yellow); }
+.msg .tag.vtag { background: rgba(var(--fx-blue-rgb), 0.9); color: var(--fx-text-dark); }
 
 /* logistics ticker */
 #chat-ticker { flex: none; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px; height: 46px; box-sizing: border-box;

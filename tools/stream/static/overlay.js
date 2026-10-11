@@ -382,19 +382,40 @@
   }
   const gameTime = (tick) => { const m = Math.floor(tick / 3600); return Math.floor(m / 60) + "h" + String(m % 60).padStart(2, "0"); };
   const shown = new Map();
+  // viewer messages (viewers.py via serve.py) that passed the filters, while recent: in the main feed, marked as
+  // viewers, scrolling away with the rest (shake7: Nick's line stayed up in a lane of its own)
+  const VIEWER_RECENT_S = 300;
   function renderChat(s) {
     const list = $("chat-list");
     const all = s.chat || [];
-    // talk lane: conversation and confessionals (model.chat_lane); logistics go to the ticker, viewers to their lane
-    const msgs = all.filter((m) => (m.lane || "talk") === "talk").slice(-10); // the well clips the oldest
+    // talk lane: conversation, confessionals (model.chat_lane) and viewers, by time; logistics go to the ticker
+    const talk = all.filter((m) => (m.lane || "talk") === "talk").slice(-10)
+      .map((m) => ({ m, t: m.t || s.now, key: String(m.seq ?? m.tick + m.from + m.text) }));
+    const viewers = (s.viewers || []).filter((v) => s.now - (v.t || 0) < VIEWER_RECENT_S).slice(-4)
+      .map((v) => ({ v, t: v.t || s.now, key: "v:" + String(v.id || v.seq) }));
+    const msgs = talk.concat(viewers).sort((a, b) => a.t - b.t).slice(-10); // the well clips the oldest
     renderTicker(s, all.filter((m) => m.lane === "log").slice(-2));
     const keys = new Set();
-    for (const m of msgs) {
-      const key = String(m.seq ?? m.tick + m.from + m.text);
+    let prev = null;
+    for (const it of msgs) {
+      const key = it.key, m = it.m, v = it.v;
       keys.add(key);
       let node = shown.get(key);
-      const ag = agentFor(s, m);
-      if (!node) {
+      const ag = m && agentFor(s, m);
+      if (!node && v) {
+        // names and text are viewers' own words: textContent only (el() never parses HTML)
+        node = el("div", "msg viewer");
+        const content = el("div", "content");
+        const meta = el("div", "meta");
+        node._from = el("span", "from" + (v.staff ? " staff" : ""), v.name || "viewer");
+        node._when = el("span", "when");
+        meta.append(node._from, el("span", "tag vtag", "viewer"));
+        if (v.order) meta.append(el("span", "tag", "to the agents"));
+        meta.append(node._when);
+        content.append(meta, el("div", "text", v.text || ""));
+        node.append(el("div", "vbadge" + (v.source === "site" ? " site" : ""), v.source === "site" ? "SITE" : "YT"), content);
+        shown.set(key, node);
+      } else if (!node) {
         node = el("div", "msg" + (ag ? "" : " server") + (m.aloud ? " aloud" : "") + (m.confess ? " confess" : ""));
         node._av = avatar(ag || { name: m.from || "server", display_name: m.from || "server", color: "#5a4a2e", glyph: "⚙", tool: true }, "sm");
         const content = el("div", "content");
@@ -407,13 +428,19 @@
         node._text = el("div", "text", clean(m.text));
         content.append(meta, node._text);
         node.append(node._av, content);
-        list.appendChild(node);
         shown.set(key, node);
       }
-      if (ag) { applyPalette(node, ag); fillAvatar(node._av, ag, "sm"); }
-      setText(node._from, ag ? ag.display_name : m.from);
-      const age = s.now - (m.t || s.now);
-      setText(node._when, (m.tick != null ? gameTime(m.tick) + " · " : "") + ago(age));
+      if (m) {
+        if (ag) { applyPalette(node, ag); fillAvatar(node._av, ag, "sm"); }
+        setText(node._from, ag ? ag.display_name : m.from);
+      }
+      // time order: a viewer line can land between two agent lines
+      if (prev ? prev.nextElementSibling !== node : list.firstElementChild !== node) {
+        if (prev) prev.after(node); else list.prepend(node);
+      }
+      prev = node;
+      const age = s.now - it.t;
+      setText(node._when, (m && m.tick != null ? gameTime(m.tick) + " · " : "") + ago(age));
       node.classList.toggle("old", age > 90 && age <= 240);
       node.classList.toggle("older", age > 240);
     }
@@ -447,30 +474,6 @@
       setText(n._when, ago(s.now - (m.t || s.now)));
     }
     for (const [key, n] of ticks) if (!keys.has(key)) { n.remove(); ticks.delete(key); }
-  }
-
-  // viewers lane (viewers.py via serve.py): the last two messages that passed the filters, while recent
-  const VIEWER_RECENT_S = 300;
-  const vnodes = new Map();
-  function renderViewers(s) {
-    const lane = $("viewer-lane");
-    const list = $("viewer-list");
-    const msgs = (s.viewers || []).filter((v) => s.now - (v.t || 0) < VIEWER_RECENT_S).slice(-2);
-    lane.hidden = !msgs.length;
-    const keys = new Set();
-    for (const v of msgs) {
-      const key = String(v.id || v.seq);
-      keys.add(key);
-      if (vnodes.has(key)) continue;
-      const n = el("div", "vmsg");
-      // names and text are viewers' own words: textContent only (el() never parses HTML)
-      n.append(el("span", "src" + (v.source === "site" ? " site" : ""), v.source === "site" ? "SITE" : "YT"),
-        el("span", "vname" + (v.staff ? " staff" : ""), v.name || "viewer"), el("span", "vtext", v.text || ""));
-      if (v.order) n.append(el("span", "order", "to the agents"));
-      list.appendChild(n);
-      vnodes.set(key, n);
-    }
-    for (const [key, n] of vnodes) if (!keys.has(key)) { n.remove(); vnodes.delete(key); }
   }
 
   // ---------- team board: recent events, open unowned requests, active claims, harness changelog ----------
@@ -857,7 +860,6 @@
     renderProduction(s);
     renderSpace(s);
     renderChat(s);
-    renderViewers(s);
     renderBoard(s);
     renderAlerts(s);
     renderCams(s);
