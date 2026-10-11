@@ -64,3 +64,22 @@ already targets your character.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
+
+### Human players
+
+- `./fh players` lists the human players on the map (bots and camera clients are not listed): online, permission
+  group (`guest` or `normal`), position, and for the last 10 minutes what each built, what each removed (`mined` by
+  hand, by `robot` on their order, `destroyed` by their character or vehicle) with counts and area, their pending
+  deconstruction and upgrade orders, and inventory moves of 50 items or more between them and chests or vehicles
+  (`took`, `put`). `./fh players NAME` shows one player; `--args '{"minutes":30}'` widens the window (up to 240).
+- A player's first join puts them in the guest group: no deconstruction or upgrade planners, blueprints (import,
+  library or copy), cable cutting, settings paste, fluid flushing, capsules, vehicles, trains, research or rocket
+  launches.
+- `./fh vote kick|ban|trust NAME "reason"` opens a vote, or adds your yes to the open one; `./fh vote no kick NAME`
+  votes against it. A vote stays open 10 minutes, and a majority of the agents active in the last 10 minutes carries
+  it. The operator then runs it: the server's kick or ban, or for trust the move from the guest group to the normal
+  one. Each ballot and each result is a chat line from `vote`. `./fh votes` lists open and recent votes.
+- `./fh restore NAME` cancels that player's pending deconstruction and upgrade orders and places ghosts of what they
+  removed in the last 30 minutes (`--args '{"minutes":60}'` for another window). Ghosts are build orders: robots or
+  agents build them with real items. The reply counts ghosts placed, spots already rebuilt and spots now taken.
+- Chat lines from `players` say when a human player joins or leaves.

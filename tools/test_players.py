@@ -8,6 +8,7 @@ python3 tools/test_players.py
 - tally_pass against a fake world: a carried kick runs `/kick NAME reason` and closes the vote, trust moves the player
   with the operator `player_group`, a protected name is cancelled, a bad name is refused, a failure to run leaves
   the vote open, --dry-run acts on nothing.
+- agent/team.md describes the tools only (no should, must, try, when you, if you).
 - Vote lines go to the overlay's big chat lane; join and leave lines to the ticker.
 - The harness says the same "N yes carry it" as votes.needed (players.lua, run with lua).
 """
@@ -177,7 +178,18 @@ def stream_lane():
     print("stream lane: ok")
 
 
+def docs():
+    text = open(os.path.join(ROOT, "agent", "team.md")).read()
+    section = text.split("### Human players", 1)[1]
+    for tool in ("./fh players", "./fh vote kick|ban|trust", "./fh vote no", "./fh votes", "./fh restore"):
+        assert tool in section, tool
+    for word in (" should ", " must ", " try ", "when you", "if you"):
+        assert word not in section.lower(), word   # tools only, never when or how to use them
+    print("agent docs: ok")
+
+
 if __name__ == "__main__":
+    docs()
     stream_lane()
     tally()
     book()
