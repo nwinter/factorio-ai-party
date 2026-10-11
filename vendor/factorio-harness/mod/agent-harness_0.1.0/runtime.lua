@@ -35,6 +35,8 @@ local function integer(value, default, low, high, name)
   return value
 end
 local function position(value)
+  -- [x, y] as the engine accepts it (shake3: Gemini's inspect position=[-5,-6]).
+  if type(value) == 'table' and value.x == nil and type(value[1]) == 'number' and type(value[2]) == 'number' and value[3] == nil then value = {x=value[1], y=value[2]} end
   assert(type(value) == 'table' and type(value.x) == 'number' and type(value.y) == 'number', 'position requires x and y')
   assert(math.abs(value.x) < 1000000 and math.abs(value.y) < 1000000, 'invalid position')
   return {x=value.x, y=value.y}
@@ -286,7 +288,7 @@ local function from_character(p,pos)
 end
 local function assert_visible(p,pos,what)
   if visible(p,pos) then return end
-  error(string.format('%s is outside local visible area: %s (limit 32 tiles, in a visible chunk)',what,from_character(p,pos)),2)
+  error(string.format('%s is outside local visible area: %s (limit 32 tiles, in a visible chunk; move_to within 30 tiles first)',what,from_character(p,pos)),2)
 end
 local function charted(p,pos) return own_platform(p) or p.force.is_chunk_charted(p.surface,chunk_of(pos)) end
 -- Read views may be centred anywhere on the charted map, so scripts can look
@@ -314,20 +316,53 @@ local function entity(p,args,read_only)
   local candidates = p.surface.find_entities_filtered{position=pos, radius=0.2, name=args.name}
   -- Ore under a building is never the intended target unless named explicitly.
   local found, resource
-  for _, e in pairs(candidates) do
+  local function wanted(e)
     -- A silo's rocket and its cargo pod sit on the silo; they are never the
     -- intended target unless named.
-    if e.valid and (not args.unit_number or e.unit_number == args.unit_number) and e.type ~= 'character'
-      and (args.name or not attached[e.type]) then
+    return e.valid and (not args.unit_number or e.unit_number == args.unit_number) and e.type ~= 'character'
+      and (args.name or not attached[e.type])
+  end
+  for _, e in pairs(candidates) do
+    if wanted(e) then
       if e.type == 'resource' and not args.name then resource = resource or e
       else
-        assert(not found, 'ambiguous target; specify name or unit_number')
+        if found then
+          error(string.format('ambiguous target: %s and %s at (%g,%g); specify name or unit_number', found.name, e.name, pos.x, pos.y), 0)
+        end
         found = e
       end
     end
   end
+  -- Any tile of a building's footprint picks it, as a player's cursor does
+  -- (shake3: Gemini's inspect missed buildings off their centre).
+  if not found then
+    local cover
+    for _, e in pairs(p.surface.find_entities_filtered{position=pos, name=args.name}) do
+      if wanted(e) and e.type ~= 'resource' then
+        if cover and cover ~= e then cover = nil; break end
+        cover = e
+      end
+    end
+    found = cover
+  end
   found = found or resource
-  assert(found, 'entity not found')
+  if not found then
+    -- Say what is close instead (shake3: 23 of Gemini's inspect misses were a
+    -- tile or so from a pole, inserter or belt, or empty).
+    local near = {}
+    for _, e in pairs(p.surface.find_entities_filtered{position=pos, radius=3, limit=32}) do
+      if e.valid and e.type ~= 'resource' and not attached[e.type] and e ~= p.character then near[#near+1] = e end
+    end
+    table.sort(near, function(x, y) return distance(x.position, pos) < distance(y.position, pos) end)
+    local parts = {}
+    for i = 1, math.min(3, #near) do
+      local e = near[i]
+      local name = e.type == 'character' and ((M.character_owner(e) or 'another') .. "'s character") or e.type == 'entity-ghost' and 'ghost ' .. e.ghost_name or e.name
+      parts[i] = string.format('%s (%g,%g) %.1f tiles', name, e.position.x, e.position.y, distance(e.position, pos))
+    end
+    error(string.format('entity not found at (%g,%g): %s; target an entity\'s position as scan lists it (observe scope=scan position={x=%g,y=%g} radius=3)',
+      pos.x, pos.y, #parts > 0 and 'nearest ' .. table.concat(parts, ', ') or 'nothing within 3 tiles', pos.x, pos.y), 0)
+  end
   -- Reads (inspect) only need sight, as scan does.
   if read_only then return found end
   assert(p.can_reach_entity(found), string.format('entity is out of reach (%.1f tiles from the character)',distance(p.position,found.position)))
@@ -425,7 +460,7 @@ local handlers = {}
 local request_path,navigate,check_args
 function handlers.describe()
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
-    target='position:{x,y}, optional name and unit_number; targets require local visibility and character reach',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
+    target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (inspect: sight only); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
       equipment={operation='insert|remove',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal'},revive_ghost={position='{x,y}',name='optional entity-ghost'},

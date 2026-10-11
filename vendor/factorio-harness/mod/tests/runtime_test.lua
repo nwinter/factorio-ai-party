@@ -163,8 +163,9 @@ advance(1)
 local paused_warning=call('status').warnings[1]
 assert(paused_warning:find('queue: paused with 1 pending step (first: job-',1,true),paused_warning)
 assert(paused_warning:find(' walk [after]); paused when job-',1,true),paused_warning)
-assert(paused_warning:find(' rotate failed: entity not found; queue resume runs them',1,true),paused_warning)
-eq(call('queue_status').last_failure.result.reason,'entity not found')
+assert(paused_warning:find(' rotate failed: entity not found at (1,0): nothing within 3 tiles; target an',1,true),paused_warning)
+assert(paused_warning:find('radius=3); queue resume runs them',1,true),paused_warning)
+assert(call('queue_status').last_failure.result.reason:find('entity not found at (1,0)',1,true))
 call('queue_cancel',{})
 eq(call('status').warnings,nil)
 fails(function() call('walk',{direction='east',ticks=601}) end,'ticks out of range')
@@ -1378,6 +1379,32 @@ eq(seen.pickup.y,-0.5); eq(seen.drop.y,1.5); eq(seen.io,'2.5,-0.5 -> 2.5,1.7 tra
 local fc=call('inspect',{position=pump.position}).fluid_connections
 eq(#fc,1); eq(fc[1].flow,'output'); eq(fc[1].at.x,10.5); eq(fc[1].joins.x,9.5); eq(fc[1].joins.y,0.5); eq(fc[1].direction,'west'); eq(fc[1].connected_to,'pipe'); eq(fc[1].fluid,'water')
 eq(call('inspect',{position=ins.position}).fluid_connections,nil)
+-- Any tile of a building picks it; an empty tile says what is near (shake3:
+-- 23 of Gemini's inspect misses were a tile off a pole, inserter or belt).
+;(function()
+  local find=p.surface.find_entities_filtered
+  local am={valid=true,name='assembling-machine-1',type='assembling-machine',position={x=20.5,y=0.5},half=1.5,force=p.force,direction=0,
+    health=300,max_health=300,get_inventory=function() return nil end,get_fluid_contents=function() return {} end,get_recipe=function() return nil end}
+  local pole={valid=true,name='small-electric-pole',type='electric-pole',position={x=24.5,y=0.5},half=0.5,force=p.force}
+  local world={am,pole}
+  -- Engine semantics: with radius, centres in the circle; without, boxes covering the point.
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs(world) do
+      local dx,dy=math.abs(e.position.x-f.position.x),math.abs(e.position.y-f.position.y)
+      if (f.radius and (dx*dx+dy*dy)^0.5<=f.radius) or (not f.radius and dx<e.half and dy<e.half) then out[#out+1]=e end
+    end
+    return out
+  end
+  eq(call('inspect',{position={x=21.5,y=1.5}}).name,'assembling-machine-1')
+  eq(call('inspect',{position={21.5,1.5}}).name,'assembling-machine-1') -- [x,y] as the engine takes it
+  fails(function() call('inspect',{position={x=25.5,y=0.5}}) end,
+    'entity not found at (25.5,0.5): nearest small-electric-pole (24.5,0.5) 1.0 tiles; target an entity\'s position as scan lists it (observe scope=scan position={x=25.5,y=0.5} radius=3)')
+  fails(function() call('inspect',{position={x=30.5,y=0.5}}) end,'entity not found at (30.5,0.5): nothing within 3 tiles')
+  world={pole,{valid=true,name='wooden-chest',type='container',position={x=24.5,y=0.5},half=0.5,force=p.force}}
+  fails(function() call('inspect',{position={x=24.5,y=0.5}}) end,'ambiguous target: small-electric-pole and wooden-chest at (24.5,0.5); specify name or unit_number')
+  p.surface.find_entities_filtered=find
+end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed
 -- action that ends met (checked every 10 ticks) or timed_out.
 p.crafting_queue_size=0
