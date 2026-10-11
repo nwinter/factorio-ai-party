@@ -9,6 +9,7 @@
 dir=$1; shift
 prev=""
 last_err="" last_err_t=0
+skipped=""  # screenshots for workspaces not in this run, already reported
 ts() { date +%H:%M:%S; }
 note_err() {  # note_err KEY MESSAGE: log unless the same KEY was logged in the last 60 s
   local now_s; now_s=$(date +%s)
@@ -37,7 +38,11 @@ while true; do
     rel=${path#*\\script-output\\pog\\}   # WS\NAME.png
     ws=${rel%%\\*} f=${rel#*\\}
     if [ "$ws" = "$rel" ] || [ ! -d "$dir/$ws/shots" ]; then
-      note_err "skip:$path" "skipped $path: no workspace $dir/$ws/shots"
+      # once per file: shake4's log had 98,770 re-reports of 24 old shots from earlier runs, one per pass
+      if ! grep -qxF -- "$path" <<<"$skipped"; then
+        echo "[shot-sync] $(ts) skipped $path: no workspace $dir/$ws/shots (left on the box, not reported again)"
+        skipped+="$path"$'\n'
+      fi
       continue
     fi
     if ! err=$(scp -q "pogwin:${path//\\//}" "$dir/$ws/shots/.incoming-$f" 2>&1); then
