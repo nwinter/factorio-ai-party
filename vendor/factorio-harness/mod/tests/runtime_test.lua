@@ -668,6 +668,25 @@ p.get_inventory=function() return {get_contents=function() return {} end} end
 local observation=call('observe',{})
 eq(observation.queue.pending,1); eq(observation.queue.paused,true)
 eq(observation.queue.history,nil); eq(observation.combat,false)
+-- inventory: the character's inventories on their own, a read that leaves
+-- the running action alone (shake2: `call inventory` failed 15 times).
+do
+  local kept=main
+  main={{valid_for_read=true,name='iron-plate',count=50},{valid_for_read=false}}
+  main.get_contents=function() return {{name='iron-plate',quality='normal',count=50}} end
+  main.count_empty_stacks=function() return 1 end
+  defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=2,3,4
+  p.get_inventory=function(id) return {get_contents=function() return id==3 and {{name='firearm-magazine',quality='normal',count=10}} or {} end} end
+  call('walk',{direction='east',ticks=5})
+  local held=call('inventory',{})
+  eq(held.inventory[1].name,'iron-plate'); eq(held.inventory[1].count,50); eq(held.ammo[1].count,10); eq(#held.guns,0)
+  eq(held.free,'free=1/2'); assert(held.clock,'inventory carries the clock line')
+  eq(call('status').active.kind,'walk'); call('stop',{})
+  fails(function() call('inventory',{item='iron-plate'}) end,'unknown argument item for inventory')
+  defines.inventory.character_guns,defines.inventory.character_ammo,defines.inventory.character_armor=nil,nil,nil
+  p.get_inventory=function() return {get_contents=function() return {} end} end
+  main=kept
+end
 -- Resource summaries must not crowd structures out of a small entity budget.
 local function resource(name,x,y,amount)
   return {valid=true,type='resource',name=name,position={x=x,y=y},amount=amount,force={name='neutral'}}
