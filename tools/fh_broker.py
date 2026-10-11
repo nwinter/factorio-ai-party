@@ -176,6 +176,10 @@ class Broker:
         os.chmod(directory, 0o750 if gid is not None else 0o700)
         for bot in bots:
             path = os.path.join(directory, f"{bot}.sock")
+            # macOS caps a Unix socket path at 104 bytes (103 and the terminator); bind fails with a bare error.
+            if len(os.fsencode(path)) > 103:
+                raise ValueError(f"socket path is longer than the 103 bytes a Unix socket allows ({len(os.fsencode(path))}): "
+                                 f"{path}; use a checkout with a shorter path")
             if os.path.exists(path):
                 os.remove(path)
             server = socketserver.ThreadingUnixStreamServer(path, self.handler(bot))

@@ -32,6 +32,10 @@ export class BrokerTransport implements Transport {
 
   private connect(): Promise<Socket> {
     if (this.socket && !this.socket.destroyed) return Promise.resolve(this.socket);
+    // macOS caps a Unix socket path at 104 bytes (103 and the terminator); a longer one fails with a bare EINVAL.
+    if (Buffer.byteLength(this.path) > 103) {
+      return Promise.reject(new RconUnavailable(`RCON broker socket path is longer than the 103 bytes a Unix socket allows (${Buffer.byteLength(this.path)}): ${this.path}`));
+    }
     return new Promise((resolve, reject) => {
       const socket = createConnection({ path: this.path });
       socket.setEncoding('utf8');

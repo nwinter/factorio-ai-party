@@ -151,6 +151,12 @@ def handler():
     r = json.loads(f.readline())
     assert not r["ok"] and r["unknown"] and "auth" in r["error"], r
     ours.close()
+    # A socket path past macOS's 104-byte limit is refused with a reason, before any bind.
+    try:
+        bad.serve(os.path.join(tmp, "x" * 120), ["haiku"])
+        raise AssertionError("expected a long-path refusal")
+    except ValueError as e:
+        assert "longer than the 103 bytes" in str(e), e
     shutil.rmtree(tmp)
     print("broker handler: ok")
 
@@ -185,10 +191,11 @@ def end_to_end():
         assert reply["result"]["bot"] == "haiku" and reply["result"]["action"] == "status", reply
         r = run("call", "walk", "--bot", "sol", "--args", '{"direction":"east","ticks":60}')
         assert r.returncode != 0 and "refused" in (r.stdout + r.stderr) and "not sol" in (r.stdout + r.stderr), (r.stdout, r.stderr)
+        # fh's compact output (errors included) is on stdout; --format json puts the error line on stderr.
         r = run("deploy", "--bot", "haiku")
-        assert r.returncode != 0 and "not available through the RCON broker" in r.stderr, r.stderr
+        assert r.returncode != 0 and "not available through the RCON broker" in r.stdout + r.stderr, (r.stdout, r.stderr)
         r = run("call", "status", "--player", "1")
-        assert r.returncode != 0 and "--player is not available" in r.stderr, r.stderr
+        assert r.returncode != 0 and "--player is not available" in r.stdout + r.stderr, (r.stdout, r.stderr)
         # A raw client on the socket: a console command is refused and never reaches the server.
         c = socket.socket(socket.AF_UNIX)
         c.connect(os.path.join(sock_dir, "haiku.sock"))

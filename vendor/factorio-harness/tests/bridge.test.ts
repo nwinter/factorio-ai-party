@@ -2,15 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server, type Socket } from 'node:net';
 import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { BridgeClient, BridgeOutcomeUnknown, BridgeUnavailable } from '../host/bridge.js';
 import { connectSession, parseServerAddress } from '../host/session.js';
 
 /** A fake bridge: answers each JSON line with whatever the handler returns. */
 async function fakeBridge(handler: (request: any, socket: Socket) => unknown): Promise<{path: string; server: Server; close(): Promise<void>}> {
-  await mkdir('.cache', {recursive:true});
-  const folder = await mkdtemp(resolve('.cache/bridge-'));
-  const path = resolve(folder, 'bridge.sock');
+  // A short folder: macOS caps a Unix socket path at 104 bytes, and a worktree's .cache can be deeper than that.
+  const folder = await mkdtemp(join(tmpdir(), 'fhbr-'));
+  const path = join(folder, 'bridge.sock');
   const server = createServer(socket => {
     let buffer = '';
     socket.setEncoding('utf8');

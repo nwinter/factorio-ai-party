@@ -1,17 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:net';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { BrokerTransport, BrokerRefused } from '../host/broker.js';
 import { Harness } from '../host/harness.js';
 import { RconOutcomeUnknown, RconUnavailable } from '../host/rcon.js';
 
 /** A fake RCON broker: answers each {"command"} line with whatever the handler returns. */
 async function fakeBroker(handler: (command: string) => unknown): Promise<{path: string; server: Server; close(): Promise<void>}> {
-  await mkdir('.cache', {recursive:true});
-  const folder = await mkdtemp(resolve('.cache/broker-'));
-  const path = resolve(folder, 'bot.sock');
+  // A short folder: macOS caps a Unix socket path at 104 bytes, and a worktree's .cache can be deeper than that.
+  const folder = await mkdtemp(join(tmpdir(), 'fhb-'));
+  const path = join(folder, 'bot.sock');
   const server = createServer(socket => {
     let buffer = '';
     socket.setEncoding('utf8');
@@ -58,5 +59,7 @@ test('a refusal, an unknown outcome and a missing broker are told apart', async 
     await assert.rejects(transport.command('lost'), RconOutcomeUnknown);
     await assert.rejects(transport.command('silence'), RconOutcomeUnknown);  // no reply: timed out
   } finally { transport.close(); await broker.close(); }
-  await assert.rejects(new BrokerTransport(resolve('.cache/none.sock'), 300).command('x'), RconUnavailable);
+  await assert.rejects(new BrokerTransport(join(tmpdir(), 'fhb-none.sock'), 300).command('x'), RconUnavailable);
+  await assert.rejects(new BrokerTransport(resolve('/tmp', 'x'.repeat(120), 'bot.sock'), 300).command('x'),
+    (e: Error) => e instanceof RconUnavailable && /longer than the 103 bytes/.test(e.message));
 });
