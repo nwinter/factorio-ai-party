@@ -30,7 +30,13 @@ return function(api)
     if #text > MAX_LEN then text = text:sub(1, MAX_LEN) end
     local name = p.name ~= '' and p.name or ('player ' .. p.index)
     local color = p.chat_color
-    game.print('[color=' .. string.format('%.2f,%.2f,%.2f', color.r, color.g, color.b) .. ']' .. name .. '[/color]: ' .. text)
+    local line = '[color=' .. string.format('%.2f,%.2f,%.2f', color.r, color.g, color.b) .. ']' .. name .. '[/color]: ' .. text
+    -- Camera clients get no console lines (their view shows the bubbles).
+    if api.audience then
+      for _, viewer in ipairs(api.audience()) do viewer.print(line) end
+    else
+      game.print(line)
+    end
     local seq = append(name, text, p.index)
     local c = log()
     c.cursors[p.index] = math.max(c.cursors[p.index] or 0, seq)
