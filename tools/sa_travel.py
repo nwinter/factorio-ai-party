@@ -145,6 +145,7 @@ def main():
     ap.add_argument("--out", default=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runs", "sa-travel"))
     ap.add_argument("--fly-minutes", type=float, default=3.0, help="wall minutes to let the platform fly on its schedule")
     ap.add_argument("--no-engine-probe", action="store_true")
+    ap.add_argument("--resume-aboard", action="store_true", help="the bot is already aboard travel-test: drop, land, mine, build")
     a = ap.parse_args()
     if a.world in ("a", "b", "c", "n", "live"):
         sys.exit("refusing: test setup runs operator Lua; use world sa")
@@ -155,45 +156,50 @@ def main():
     r = quiet(READY_LUA)
     s.record("world running", not r.get("paused"), r)
 
-    # 1. The bot, standing somewhere on Nauvis; setup next to it.
-    s.lua("bot_create", f'local ok,r=pcall(remote.call,"agent_harness","bot_create","{a.bot}") rcon.print(helpers.table_to_json({{ok=ok,r=r}}))')
-    st = s.fh("status", "status")
-    pos = R(st).get("position") or {"x": 0, "y": 0}
-    setup = s.lua("setup (operator)", SETUP_LUA.replace("AT_X", str(pos["x"])).replace("AT_Y", str(pos["y"])))
-    poll(s, "rocket ready, hub built", lambda: quiet(READY_LUA), lambda v: v.get("ready") and v.get("hub"), 120)
-    silo = (setup or {}).get("silo")
-    if not silo:
-        print(f"{s.fails} failed steps (no silo); log: {os.path.join(a.out, 'smoke.jsonl')}")
-        sys.exit(1)
-
-    # 2. Ride up: same payload rule as a player. The bot puts down ammo and inventory first (into a chest it builds).
-    s.fh("move_to silo", "move_to", {"position": {"x": silo["x"] - 6, "y": silo["y"]}, "tolerance": 2}, wait=True)
-    s.lua("chest for the rest (operator)", f'''
-      local s = game.surfaces.nauvis
-      local c = s.create_entity{{name = "wooden-chest", position = s.find_non_colliding_position("wooden-chest", {{{silo["x"] - 8}, {silo["y"]}}}, 8, 1), force = "player"}}
-      rcon.print(helpers.table_to_json{{chest = c.position}})''')
-    chest = find(s.fh("nearest chest", "nearest", {"name": "wooden-chest", "radius": 16, "limit": 1}), "entities")
-    inv = R(s.fh("inventory", "inventory"))
-    for key in ("inventory", "ammo"):
-        for item in (inv.get(key) or []):
-            if chest and isinstance(item, dict) and item.get("name"):
-                s.fh(f"put down {item['name']}", "transfer", {"position": chest[0]["position"], "item": item["name"],
-                                                             "count": item.get("count", 1), "direction": "to_entity"}, wait=True)
-    s.fh("launch ride (bot)", "launch", {"position": silo, "platform": "travel-test", "ride": True})
-    t0 = tick_of(s.fh("status after launch", "status"))
-    up = poll(s, "aboard travel-test", lambda: s.fh("status (riding)", "status"),
-              lambda v: (find(v, "travel") or {}).get("state") == "aboard", 180, 3)
-    s.record("ascent ticks", up is not None, {"launch_tick": t0, "aboard_tick": tick_of(up)})
-    s.fh("platforms (aboard)", "platforms", {"platform": "travel-test"})
-    s.fh("move_to aboard (refused)", "move_to", {"position": {"x": 0, "y": 0}})
-
-    # 3. Fly to Vulcanus on the platform's schedule (the bot sets it by remote view); else move it by script.
-    s.fh("platform_schedule vulcanus", "platform_schedule",
-         {"platform": "travel-test", "stops": [{"station": "vulcanus"}], "paused": False})
-    at_v = lambda v: (find(v, "at") == "vulcanus")
-    if not poll(s, "platform at vulcanus (flying)", lambda: quiet(READY_LUA), at_v, a.fly_minutes * 60, 5):
+    if a.resume_aboard:
+        # Continue a run whose bot is already aboard travel-test (after a redeploy): the platform at Vulcanus.
+        s.fh("status (resume)", "status")
         s.lua("move platform (operator)", MOVE_LUA)
-        poll(s, "platform at vulcanus (moved)", lambda: quiet(READY_LUA), at_v, 120, 3)
+    else:
+        # 1. The bot, standing somewhere on Nauvis; setup next to it.
+        s.lua("bot_create", f'local ok,r=pcall(remote.call,"agent_harness","bot_create","{a.bot}") rcon.print(helpers.table_to_json({{ok=ok,r=r}}))')
+        st = s.fh("status", "status")
+        pos = R(st).get("position") or {"x": 0, "y": 0}
+        setup = s.lua("setup (operator)", SETUP_LUA.replace("AT_X", str(pos["x"])).replace("AT_Y", str(pos["y"])))
+        poll(s, "rocket ready, hub built", lambda: quiet(READY_LUA), lambda v: v.get("ready") and v.get("hub"), 120)
+        silo = (setup or {}).get("silo")
+        if not silo:
+            print(f"{s.fails} failed steps (no silo); log: {os.path.join(a.out, 'smoke.jsonl')}")
+            sys.exit(1)
+
+        # 2. Ride up: same payload rule as a player. The bot puts down ammo and inventory first (into a chest it builds).
+        s.fh("move_to silo", "move_to", {"position": {"x": silo["x"] - 6, "y": silo["y"]}, "tolerance": 2}, wait=True)
+        s.lua("chest for the rest (operator)", f'''
+          local s = game.surfaces.nauvis
+          local c = s.create_entity{{name = "wooden-chest", position = s.find_non_colliding_position("wooden-chest", {{{silo["x"] - 8}, {silo["y"]}}}, 8, 1), force = "player"}}
+          rcon.print(helpers.table_to_json{{chest = c.position}})''')
+        chest = find(s.fh("nearest chest", "nearest", {"name": "wooden-chest", "radius": 16, "limit": 1}), "entities")
+        inv = R(s.fh("inventory", "inventory"))
+        for key in ("inventory", "ammo"):
+            for item in (inv.get(key) or []):
+                if chest and isinstance(item, dict) and item.get("name"):
+                    s.fh(f"put down {item['name']}", "transfer", {"position": chest[0]["position"], "item": item["name"],
+                                                                 "count": item.get("count", 1), "direction": "to_entity"}, wait=True)
+        s.fh("launch ride (bot)", "launch", {"position": silo, "platform": "travel-test", "ride": True})
+        t0 = tick_of(s.fh("status after launch", "status"))
+        up = poll(s, "aboard travel-test", lambda: s.fh("status (riding)", "status"),
+                  lambda v: (find(v, "travel") or {}).get("state") == "aboard", 180, 3)
+        s.record("ascent ticks", up is not None, {"launch_tick": t0, "aboard_tick": tick_of(up)})
+        s.fh("platforms (aboard)", "platforms", {"platform": "travel-test"})
+        s.fh("move_to aboard (refused)", "move_to", {"position": {"x": 0, "y": 0}})
+
+        # 3. Fly to Vulcanus on the platform's schedule (the bot sets it by remote view); else move it by script.
+        s.fh("platform_schedule vulcanus", "platform_schedule",
+             {"platform": "travel-test", "stops": [{"station": "vulcanus"}], "paused": False})
+        at_v = lambda v: (find(v, "at") == "vulcanus")
+        if not poll(s, "platform at vulcanus (flying)", lambda: quiet(READY_LUA), at_v, a.fly_minutes * 60, 5):
+            s.lua("move platform (operator)", MOVE_LUA)
+            poll(s, "platform at vulcanus (moved)", lambda: quiet(READY_LUA), at_v, 120, 3)
 
     # 4. Cargo first: the hub holds a furnace and coal (loaded by the operator here; in play a rocket brings them),
     #    the bot drops them to Vulcanus from remote view. Then it lands: a hub cargo pod; the body is made where it lands.
