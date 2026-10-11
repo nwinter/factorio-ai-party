@@ -256,12 +256,16 @@ check("loss banner: kills by small biters, no kill count", le and le[0]["text"].
 check("one hit reads 'once'", live.hit_text("gun-turret x1") == "gun turret hit once")
 af = caster.facts_for({"kind": "attack", "text": "Base under attack near (-48, 16): character x9", "t": now, "prio": 9}, {})
 check("attack facts: hits on the team's engineers, no 'biters are damaging'", af["text"] ==
-      "Base under attack: engineer hit 9 times" and "hits" in af["numbers_mean"] and "damaging" not in json.dumps(af), str(af))
+      "Base under attack: engineer hit 9 times" and "times biters hit" in af["numbers_mean"] and "damaging" not in json.dumps(af), str(af))
 lf = caster.facts_for({"kind": "loss", "text": "21 lost near (1, 2): 9 transport belt (by 21 small biter)", "t": now,
                        "prio": 8}, {})
 check("old loss text: '(by 21 small biter)' becomes '(by small biters)'", lf["text"].endswith("(by small biters)"), lf["text"])
-check("rules: attack numbers are hits, character is an engineer", "never a count of enemies" in caster.EXCHANGE_RULES
-      and "'Character'" in caster.EXCHANGE_RULES)
+check("rules: attack numbers are hits, character is an engineer", "Numbers in an attack count hits" in
+      caster.EXCHANGE_RULES and "'Character'" in caster.EXCHANGE_RULES)
+check("show notes: the crash site, research kept, Space Age goal when the run is Space Age",
+      "crash site" in caster.SHOW and "always kept" in caster.SHOW and "Space Age" not in caster.show_for({})
+      and "solar system" in caster.show_for({"subtitle": "Factorio Space Age co-op"})
+      and "solar system" in caster.show_for({"space": {"active": True}}))
 ff = {"text": "Base under attack: engineer hit 9 times", "numbers_mean": "hits"}
 check("accepts 'nine hits' for 9 hits",
       caster.check_line("Nine hits on the engineers!", ff, names, []) is None)

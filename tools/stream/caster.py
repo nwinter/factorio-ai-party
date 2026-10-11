@@ -47,20 +47,26 @@ SHOW = ("The show: nine AI models from different labs (each named in the facts w
         "basics you may explain: players mine ore, smelt it into plates, and automate everything with assemblers, "
         "belts and inserters; labs consume science packs (red automation, green logistic, then blue and beyond) to "
         "research new technology; steam power runs the machines; pollution draws biters, which attack the base, so "
-        "walls and gun turrets matter. The team's goal is a rocket launch; milestones in order: burner mining and "
+        "walls and gun turrets matter. Every game starts beside the wreck of the engineers' crashed spaceship (the "
+        "crash site): scenery from before the game, with a few starting items; its fire is harmless. Research "
+        "progress is always kept. The long-term goal is a rocket launch; milestones in order: burner mining and "
         "smelting, steam power, red science from assemblers, automation/logistics/electronics with electric mining, "
         "automated green science, then oil, plastics, red circuits, blue science and on to the rocket silo. A pace "
         "comparison with the team's previous run, when given in the facts, tells viewers whether this run is "
         "faster or slower; judge how well the bots play from it and the other facts.")
-SHOW_SPACE = (" This run plays the Space Age expansion: after blue science the goal is a rocket silo that launches a "
-              "space platform, space science made on the platform, then the planets Vulcanus (metallurgic science), "
-              "Fulgora (electromagnetic), Gleba (agricultural) and Aquilo (cryogenic). Many Space Age technologies are "
-              "unlocked by a trigger (mine calcite, build an asteroid collector) instead of lab research.")
+SHOW_SPACE = (" This run plays the Space Age expansion, where a rocket launch is a milestone on the way: rockets "
+              "carry a space platform starter pack to orbit, space science is made on the platform, the planets "
+              "Vulcanus (metallurgic science), Fulgora (electromagnetic), Gleba (agricultural) and Aquilo (cryogenic) "
+              "follow, and the expansion's goal is reaching the edge of the solar system. A two-hour run is mostly the "
+              "start on Nauvis, the home planet: oil, plastics and blue science are its big milestones. Many Space Age "
+              "technologies unlock by a trigger, such as mining calcite or building an asteroid collector.")
 
 
 def show_for(s):
     """The show notes for this snapshot: Space Age runs carry a `space` block (eng/stream2)."""
-    return SHOW + (SHOW_SPACE if (s or {}).get("space") else "")
+    s = s or {}
+    space = s.get("space") or "space age" in str(s.get("subtitle") or "").lower() or os.environ.get("POG_SPACE_AGE") == "1"
+    return SHOW + (SHOW_SPACE if space else "")
 
 
 PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "power": 6,
@@ -402,7 +408,7 @@ def facts_for(e, s, baseline=None, deadline=None):
     if e["kind"] == "attack":
         # "Base under attack: transport belt hit 7 times". shake3's "the biters are damaging: character (3 of them)"
         # aired as "nine biters chew their boots" and "fourteen turrets"
-        f["numbers_mean"] = "hits by biters on the team's own buildings or engineers, not how many biters or buildings"
+        f["numbers_mean"] = "how many times biters hit the team's own buildings or engineers"
     if e["kind"] == "loss":
         f["numbers_mean"] = "the team's buildings destroyed; the run goes on"
     if e.get("also"):
@@ -469,11 +475,10 @@ EXCHANGE_RULES = (
     "turns reading facts. Use ONLY the facts given for anything about this game; never invent names, numbers, "
     "places, items or outcomes (general Factorio knowledge from the show notes is fine). You may round numbers. Refer "
     "to agents by the names given, with the pronouns in their facts (they when none are given), never 'a man'. "
-    "Numbers in an attack are hits by biters on the team's own buildings or engineers, never a count of enemies "
-    "or of buildings; numbers in a loss are the team's buildings destroyed. 'Character' and 'engineer' mean one of "
-    "the team's engineers. An agent planning the next step is thinking, not frozen: never mock them as statues or "
-    "idle. The run ends only at the deadline: never say a loss or an attack ends the run, and say how long is left "
-    "only from minutes_to_deadline. The hosts are commentators, not on "
+    "Numbers in an attack count hits: how many times biters struck the team's own buildings or engineers. Numbers "
+    "in a loss count the team's buildings destroyed. 'Character' and 'engineer' mean one of the team's engineers. "
+    "An agent planning the next step is thinking; describe it kindly, in your own words. The run goes on "
+    "until the deadline, and the time left is minutes_to_deadline. The hosts are commentators, not on "
     "the team: the team is 'they', never 'we'. Never say something is missing, broken or absent ('no steam yet', "
     "'no belts') unless the facts say so, and mention the previous run only when the facts include a pace "
     "comparison. Skip map distances and directions unless they "
