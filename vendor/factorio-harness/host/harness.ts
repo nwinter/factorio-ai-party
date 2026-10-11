@@ -31,7 +31,7 @@ export function parseReply(text: string): Reply {
 }
 
 /** Read-only views the runtime serves through `observe`. */
-const OBSERVE_SCOPES = new Set(['map', 'nearest', 'craftable', 'scan', 'power', 'grid', 'rates', 'bottleneck', 'stock', 'platforms']);
+const OBSERVE_SCOPES = new Set(['map', 'nearest', 'craftable', 'scan', 'power', 'grid', 'rates', 'bottleneck', 'stock', 'platforms', 'labs', 'sleep_check']);
 
 export class Harness {
   /** `bot` addresses a script-driven bot by name instead of a player. */

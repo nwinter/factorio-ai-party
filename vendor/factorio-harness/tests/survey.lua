@@ -66,7 +66,7 @@ eq(s.machines['assembling-machine-1'],'1/3 working, 1 item_ingredient_shortage, 
 eq(s.machines.boiler,'2/3 working, 1 no_fuel')
 eq(s.machine_positions,nil)
 has(s.warnings,'fuel: boiler 1/3 no_fuel, 1 burning their last fuel')
-has(s.warnings,'power: 1/4 electric machines low_power')
+has(s.warnings,'power: 1 of 4 machines low_power (fh call power lists them)')
 has(s.warnings,'ammo: gun-turret 1/3 empty at (11,0), 1 below 5 at (12,0); rearm radius=R')
 has(s.warnings,'belts: 1 unpaired undergrounds: input (-3.5,-27.5)')
 has(s.warnings,'belts: 1 belts point into a belt they cannot feed: (0.5,9.5) into transport-belt')
