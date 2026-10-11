@@ -370,7 +370,8 @@ which does not depend on that answer.
    `transfer_stack`, so equipment grids survive) and the body is removed. The bot then follows the rocket's own
    cargo pod (`silo.rocket.attached_cargo_pod`). Its `b.position` and `b.surface` track the pod, so cameras ride
    along. It arrives when the pod is delivered (gone) or parks on the platform; without a pod handle, after a fixed
-   40 s.
+   40 s. A ride lasts at least 20 s up and 10 s down, whatever the pod entity does (in case the engine replaces a
+   pod when it changes surface). Rides follow the platform's index, so renaming a platform keeps its riders.
 2. Aboard, the bot has no body. A whitelist (`bots.check_action`) lets through what a player in the hub can do by
    remote view:
    - `platforms`, `platform_schedule`, `platform_create`, `requests` with `platform=` or `position=`, and `drop`
@@ -379,8 +380,11 @@ which does not depend on that answer.
 
    Everything else fails with "bot X is aboard platform P with no body (remote view only): ...". `status` reports
    `travel` {state, platform, from, to, since_tick}, `surface` and `planet`.
-3. `drop` (new; the hub's drop slots) sends hub items in a cargo pod (`hub.create_cargo_pod()`, items into
-   `cargo_unit`, then `cargo_pod_destination`, which launches it) to the planet below a stopped platform. It goes to
+3. `drop` (new; the hub's drop slots) sends hub items in a cargo pod (`hub.create_cargo_pod()`, then
+   `cargo_pod_destination`, which launches it) to the planet below a stopped platform. The hub's own stacks move into
+   the pod's `cargo_unit`: whole stacks by `transfer_stack`, the rest of a stack as a copy with its spoil progress.
+   So nothing is created or refreshed, and repeated entries in one call add up before the hub's count is checked.
+   A refused destination puts the items back in the hub. It goes to
    our landing pad there if there is one, else near the bot's last spot on that planet, else spawn. Without a pad it
    lands as a `cargo-pod-container`, which `transfer` now opens as a chest. This is how a first landing gets
    anything besides armor and guns.
@@ -388,7 +392,8 @@ which does not depend on that answer.
    follows it down, and the body is made where the pod comes down (`find_non_colliding_position`). It wears the same
    armor and guns and gets no starting items. If the pod still sits in the hatch after 5 s, it is pushed off once
    (`force_finish_ascending`); the descent is always the game's. `status.landed` gives the surface, tick, position
-   and the ride's ticks.
+   and the ride's ticks. If no body can be made at the landing spot or by the spawn point, the ride ends as a
+   death. It is never an error inside the game tick, which would stop the server.
 5. Bots live on any surface. The bot record keeps `surface` (planet or platform) and `planet` (last planet stood on),
    plus the last spot per planet. Respawn uses the last planet, as for players. A platform destroyed while the bot
    is aboard is a death: the kit is lost, and the bot respawns on its last planet after the usual 10 s. Every read
@@ -398,7 +403,12 @@ which does not depend on that answer.
    - Cameras follow a bot across surfaces, take an optional `surface` for fixed views, and report it.
    - The director pairs agents only on the same surface, never while one rides a pod, and sends the surface with
      every fixed view (pair midpoints, deaths).
-   - The overlay's location reads "platform alpha", "cargo pod to vulcanus" or "Vulcanus 40 m".
+   - The overlay's location reads "platform alpha", "cargo pod to vulcanus" or "Vulcanus 40 m". A bodiless rider
+     is not shown as dead, and no death alert fires at boarding. A `sleep` aboard does not wake as "died".
+
+A separate review of the diff found five bugs before any live run, all fixed in 2786ba3. `drop` could duplicate
+items through repeated entries and refreshed spoilage. A sleep aboard woke as "died". The overlay raised a death at
+every boarding and kept a landed bot's ride state. A failed body spawn at landing would have errored in the tick.
 
 Checked against the 2.0.77 API docs (all exist as used):
 - `create_cargo_pod` ("setting cargo_pod_destination will cause it to launch")
@@ -426,8 +436,12 @@ Unverified until the live run:
   - respawn on Vulcanus, the last spot remembered
   - a platform lost aboard (death, kit destroyed, respawn on Vulcanus)
   - a pad landing that ends on `parking`, no free hatch, removal in transit
+  - minimum ride times when the pod vanishes early, a body that cannot be made (a death, not an error), a renamed
+    platform
 - `tests/space.lua`: a bot ride goes through the same payload rule, then launches without a character and boards
-  the pod; `drop` (hub count check, partial fit, pad or position, platform in transit).
+  the pod. `drop`: repeated entries summed against the hub, whole stacks moved with their freshness, part of a
+  stack copied with its spoil progress, pad or position, a refused destination returning the items, platform in
+  transit. `tests/waits.lua`: a sleeping rider is not dead.
 - `tests/bots.lua`: `where` in `profiles`. `tools/stream/selftest.py`: different-surface pairing refused,
   same-surface pair with the surface sent, location text for planet, platform and pod.
 - Results: `npm test` 96/100. The 4 failures are the bridge socket tests, which this sandbox refuses (`listen EPERM`
