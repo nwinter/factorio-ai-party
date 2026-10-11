@@ -358,6 +358,119 @@ only, and the platform went to Vulcanus. There the bot dropped cargo, landed in 
 built and fuelled a furnace, walked about 90 tiles and mined coal. The live run found one bug, which stopped the
 runtime; it is fixed in 0a9ddb0.
 
+### Live flight and cameras on `sa` (round 5, Oct 11 06:26 to 06:55, `tools/sa_flight.py`, bot `flyer`)
+
+This run used main's runtime (source_sha256 06f24271), which Nick deployed. This session could not deploy the
+name-tag change below (b56f3e7), because the permission mode refused `fh deploy`. Test setup was operator Lua on `sa`
+only:
+- `travel-test` put back at Nauvis, with foundation laid.
+- Two thrusters, refilled with fuel and oxidizer on every 5 s sample.
+- Gun turrets with piercing rounds.
+- A ready rocket.
+
+The bot boarded and set the schedule itself. The camera was the pog-sa director client, driven through the harness
+`camera` remote call (`{player=1, follow="flyer"}`), as `director.py` sends it. Each sample read the director
+player's surface and position, and every name-tag render object of the mod (`rendering.get_all_objects`). Logs are
+`runs/sa-flight/run1.jsonl`, `run2.jsonl` and `run3.jsonl`, each with a `-summary.txt` and the script's `.out`.
+
+**Flight 1: four turrets. The platform was destroyed halfway, and the bot with it.**
+
+| Tick | Step | Result |
+|---|---|---|
+| 112992 | Setup (operator) | Platform from Vulcanus to Nauvis, hub repaired (741 to 1000 of 1000), 1,191 foundation tiles, thrusters at (±6, 16.5) with 1,000 fuel and 1,000 oxidizer each, 4 gun turrets with 100 piercing magazines each |
+| 112995 | Camera `follow=flyer` | Director (spectator) on `nauvis` at the bot, (2, 3.5). Name tag `flyer` on its character |
+| 113230 | `launch ride=true` (bot) | Launched. Body removed; the bot's name tag and avatar went with it |
+| 113616, 114187 | Camera during the ascent | Director on `nauvis` at (12.5, -4.2), then (12.5, -33.1): it follows the pod rising over the silo. No tag on the pod |
+| 115313 | `status` | `travel.state=aboard` on `platform-1`. Ascent 2,083 ticks (35 s) |
+| 115502 | Camera aboard | Director moved to `platform-1` at the hub (0, 0) by itself. No tag (the bot has no body) |
+| 115512 | `platform_schedule` → Vulcanus (bot, remote view) | `on_the_path`, "nauvis->vulcanus 0%" |
+| 115520 | Departure | Connection `nauvis-vulcanus`, speed 0.08, then 1.77 at 115828 and a steady 2.05 from 116136 |
+| 115520 → 118914 | Cruise | Distance 0.024 / 0.108 / 0.238 / 0.412 / 0.456. Thrusters used about 2,070 units of fuel and oxidizer per 308-tick sample. Asteroids on the platform surface: 1, 6, 17, 31, 55. Turret ammo 340 → 257 |
+| 118600 | First damage | Hub 661 of 1000, with a medium carbonic asteroid on the route. The camera was re-sent at zoom 0.5; director still on `platform-1` |
+| 118914 → ~119220 | Platform destroyed | The next sample found no `travel-test`. Hub 661 of 1000 was the last reading |
+| ~119220 | Bot | `lost: "platform travel-test is gone"`, `deaths=1`. Respawned on Nauvis at the spawn point (2, 3.5), the planet it last stood on |
+| 169712 | Camera | Still `follow=flyer`, director back on `nauvis` at the new body. The camera followed the bot back across surfaces with no new call |
+
+What flight 1 shows:
+- **A real flight works.** The bot rode up and set the schedule by remote view; the platform left on its own
+  thrusters and held 2.05 for about 3,400 ticks. At that rate the whole trip is about 7,500 ticks (125 s).
+- **Asteroids are the real risk.** Medium asteroids on the Nauvis-Vulcanus route destroyed a hub defended by four
+  gun turrets with piercing rounds about a minute after departure (3,700 ticks). Losing the platform kills a bot aboard, and the
+  harness handled that as designed: `lost`, a death, and a respawn on the last planet.
+- **The brief states the facts.** `agent/spaceage.md` says that asteroids can destroy a platform in flight, gives
+  these measurements, and says where hub health shows (`platforms`). It gives no advice on defence, per the
+  facts-only rule.
+
+**Flight 2: twelve turrets, ammo refilled every sample.**
+
+| Tick | Step | Result |
+|---|---|---|
+| 186820 | New platform `travel-test` (index 2) from a starter pack (operator) | Hub at once. Setup as flight 1 but with 12 turrets: 8 across the front at y = -15, 4 on the sides |
+| 187044 → 189121 | Ride up | Aboard after 2,077 ticks. Camera followed the pod over the silo, then moved to the platform hub |
+| 189320 | `platform_schedule` → Vulcanus (bot) | `on_the_path` |
+| 189329 | Departure | Speed 2.05 from about 189947 |
+| 189329 → 193043 | First half | No damage, no ammo used up to distance 0.50. Asteroids on the surface: 1 → 60 |
+| 193352 → 194588 | Second half | Turrets destroyed one by one: entities 15 → 8, turret ammo 1,200 → 500. Speed rose to 2.38 past the midpoint, as in flight 3 with nothing lost |
+| 194897 | Hub hit | 283 of 1000 at distance 0.80. Alerts: medium carbonic asteroids, 4 hits, 5,896 damage; medium metallic, 3 hits, 1,538 |
+| ~195000 → 195206 | Platform destroyed | `travel-test` gone; the bot was lost and died |
+| 195206, 195522 | Camera | Director on `nauvis` at (0, 0): the dead bot's last recorded position |
+| 195840 | Camera | Director on `nauvis` at the respawned body (2.0, 3.4). It followed with no new call |
+
+Flight 2 got further, but medium asteroids in the second half of the route still beat 12 gun turrets with piercing
+rounds and no damage research.
+
+**Flight 3: 21 turrets and weapon research. Arrived undamaged; the bot landed on Vulcanus.** Log:
+`runs/sa-flight/run3.jsonl`, 0 failed steps.
+
+| Tick | Step | Result |
+|---|---|---|
+| 196765 | New platform (index 3), setup (operator) | 21 gun turrets: two rows across the front and the sides. 2,100 piercing magazines. `physical-projectile-damage-1..6` and `weapon-shooting-speed-1..6` marked researched (test setup, like the silo) |
+| 196784 | Camera `follow=flyer` | Director on `nauvis` at the bot. Tag `flyer` on the character, 13 avatar sprites (33 → 46 render sprites) |
+| 197012 | `launch ride=true` (bot) | Launched. The tag and avatar went with the body (sprites back to 33) |
+| 197401 | Camera, pod going up | Director on `nauvis` at (12.5, -4.2) over the silo |
+| 199112 | Aboard | Ascent 2,100 ticks. Director on `platform-1` at the hub |
+| 199311 | `platform_schedule` → Vulcanus (bot) | `on_the_path` |
+| **199320** | **Departure** | Speed 0.09, 1.77 at 199629, 2.05 from 199938, 2.39 past the midpoint |
+| 202410 | Midway, camera re-sent at zoom 0.5 | Director on `platform-1`. Up to 62 asteroids on the platform surface at once |
+| 199320 → 206124 | Cruise | **No damage**: hub 1000 of 1000, all 24 entities intact. Ammo was refilled every sample, so the reading does not show use |
+| **206124** | **Arrival** | `waiting_at_station` at `vulcanus`. Departure to arrival 6,804 ticks (113 s) |
+| 206256 | `land` (bot) | Pod from the hub to Vulcanus (0, 0) |
+| 206652 | Camera, pod leaving | Director on `platform-1` at (-27.1, -45.7): it follows the pod out of the hub |
+| 207038 | Camera, pod descending | Director on `vulcanus` at (3.2, -97.9): it crossed to the planet with the pod |
+| 207347 | Body on Vulcanus at (0, 0) | `landed.ticks=1091` (18 s) |
+| 207780 | Camera on Vulcanus | Director on `vulcanus` at the bot (0, 0). Tag `flyer` on the new character, avatar back (46 sprites) |
+
+**Cameras on another surface.** One `camera {follow=flyer}` call, plus a zoom change, followed the bot across every
+surface change with no further calls:
+- Nauvis, then the pod over the silo, then the platform.
+- In flight, the pod leaving the hub, the pod on Vulcanus, and the body there.
+- In flights 1 and 2, back to Nauvis after the loss.
+
+`cameras.update` teleports the spectator across surfaces whenever the target's surface changes. The pog-sa client
+stayed connected throughout (a spectator, `controller=5`). While the bot has no body, the camera points at `b.position`:
+- **In a pod:** the pod's position, updated every tick.
+- **Aboard:** the hub.
+- **Dead:** the last position. After the platform loss that was (0, 0) on Nauvis, until the respawn.
+
+**Name tags and avatars.** With main's runtime, a traveling bot has none: they are drawn on the character, and the
+character is removed at boarding. So the camera showed an unlabelled pod and hub. b56f3e7 (this branch, not yet
+deployed) draws the tag and avatar on the pod, and above the hub while aboard, one row per rider. Back on a planet,
+the tag and avatar return on the new body at once (`on_spawn`).
+
+**Screenshots.** The director client took one at each stage with `game.take_screenshot{player=pog-sa, by_player=pog-sa}`.
+They are in that client's `script-output\pog\sa-flight\` on the box:
+- `1-nauvis` through `7-vulcanus` are from flight 3.
+- `8-after-loss` is from flight 2; flight 3 overwrote flight 1's.
+
+ssh is blocked from this session, so I have not seen them. Fetch them with
+`scp 'pogwin:D:/pog/inst/sa-client/script-output/pog/sa-flight/*.png' runs/sa-flight/`, using the client folder that
+`start-client.ps1 -Name sa` made.
+
+**Also found:**
+- `status` kept the `lost` from flight 2 through flight 3's successful ride and landing. A new ride now clears `lost`
+  and `landed`, with a test. This is not deployed.
+- The two thrusters used about 6.7 units of fuel and oxidizer per tick in total at full thrust.
+
 ### Live bot-travel run on `sa` (Oct 11, `tools/sa_travel.py`, bot `traveler`)
 
 Logs: `runs/sa-travel/run2.jsonl` and `run2.out` (ride up), `run3.out` and `smoke.jsonl` (resumed after the fix).
@@ -392,8 +505,8 @@ What the run also showed:
   The alert path works on platforms; real platforms need turrets.
 - The drop container landed about 10 tiles from where the bot did, since the drop does not ask for the exact spot.
   That is close enough to walk.
-- The stream side (cameras on another surface, overlay location) did not run: no director camera was pointed at the
-  bot. It is still fake-tested only.
+- The stream side did not run in round 4. Round 5 ran the cameras live (see "Live flight and cameras" above); the
+  overlay's location text is still only fake-tested.
 
 The live engine probe below ran before this, with operator Lua only. It decided the design question.
 
@@ -547,15 +660,16 @@ covers Space Age Nauvis).
 
 ### Left to do
 
-- A real thruster flight. The test platform had none, so the operator moved it. A live run with a director camera
-  pointed at the bot, to see cameras and the overlay on a platform and on Vulcanus.
+- Round 5 did the real thruster flight and the director camera; see "Live flight and cameras" above. Left from it:
+  - Deploy b56f3e7 (name tags on the pod and hub) and check it live.
+  - Fetch the director screenshots from the box.
+  - Add platform defence to agent training, which the agent brief now covers.
 - Done after the merge: `nearest` reaches 128 tiles (it was 64). The real limit after a landing is charting: only
   about 48 tiles around a bot are charted (`bots.lua` SIGHT). So when nothing is found, `nearest` now says to walk
   out and explore or build a radar, and the agent brief says the same.
 - Riding up in the real body: possible (see the probe), but there is no way back down. Stay with the script plan.
-- A real director client following a bot onto a platform: cameras teleport a spectator across surfaces, which the
-  API allows. Whether the client renders a platform surface well enough for the stream is a question for the run.
-- The pod's own descent on stream: cameras follow `b.position`, which tracks the pod on both surfaces.
+- Done in round 5: a director client follows a bot onto a platform, through the flight and back to a planet with no
+  new camera call. Whether the picture is good enough for the stream needs the screenshots.
 
 ## Stream overlay (eng/stream2)
 

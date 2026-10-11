@@ -87,6 +87,7 @@ eq(stopped[#stopped],'boarded')
 eq(kits[1][1].name,'modular-armor'); eq(kits[1][1].grid,'grid-1'); eq(kits[1][3].name,'pistol')
 local st=bots.status(b.index,{})
 eq(st.travel.state,'ascending'); eq(st.travel.from,'nauvis'); eq(st.platform,'alpha'); eq(st.surface,'nauvis')
+eq(bots.carrier(b),pod,'the name tag rides the pod')
 fails(function() bots.actor(b.index) end,'riding a cargo pod (ascending since tick 100)')
 fails(function() bots.check_action(b.index,'platforms',{}) end,'riding a cargo pod')
 bots.check_action(b.index,'status',{})
@@ -111,6 +112,7 @@ advance(100+1200-game.tick)
 eq(b.travel.state,'aboard'); eq(b.surface,'platform-1'); eq(b.position.x,0.5)
 st=bots.status(b.index,{})
 eq(st.travel.state,'aboard'); eq(st.platform,'alpha'); eq(st.surface,'platform-1')
+eq(bots.carrier(b),hub,'aboard, the name tag rides the hub')
 local proxy=bots.actor(b.index)
 eq(proxy.surface,platform_surface); eq(proxy.character,nil); eq(proxy.force,force)
 fails(function() return proxy.get_main_inventory() end,'aboard platform alpha with no body')
@@ -171,6 +173,7 @@ advance(600); eq(b.character.surface,vulcanus)
 platform_surface.valid=true
 -- With a landing pad, the hub pod goes to the pad (no fixed position).
 bots.board(b,platform,nil); advance(2400)
+eq(b.lost,nil,'a new ride clears the last loss (live on sa it stayed in status)'); eq(bots.status(b.index,{}).lost,nil)
 platform.space_location={name='nauvis',type='planet'}
 nauvis.pads={{position={x=20,y=20}}}
 hub_pod={valid=true,position={x=0,y=0},surface=platform_surface,cargo_pod_state='ascending'}

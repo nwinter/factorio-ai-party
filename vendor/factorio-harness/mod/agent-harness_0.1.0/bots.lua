@@ -258,6 +258,7 @@ return function(api)
     c.destroy()
     b.travel = {state='ascending', platform=platform.name, platform_index=platform.index, from=b.planet, pod=pod, since=game.tick, kit=kit, slots=slots}
     b.trips = (b.trips or 0) + 1
+    b.lost = nil; b.landed = nil  -- a new ride: the last one's outcome is stale
     return b.travel
   end
   -- The hub's drop to the planet below: a cargo pod out of the hub's hatch,
@@ -362,6 +363,17 @@ return function(api)
       elseif tick - t.since >= MIN_DESCENT then
         touch_down(b, tick)
       end
+    end
+  end
+  -- What carries a bot with no body: its cargo pod, else the hub of the platform
+  -- it is aboard (name tags ride on it).
+  function M.carrier(b)
+    local t = b and b.travel
+    if not t then return nil end
+    if t.pod and t.pod.valid then return t.pod end
+    if t.state == 'aboard' then
+      local pl = find_platform(b, t)
+      if pl and pl.hub and pl.hub.valid then return pl.hub end
     end
   end
   -- Aboard, the bot does what a player in the hub can: remote view.

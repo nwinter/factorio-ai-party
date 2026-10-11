@@ -25,12 +25,21 @@ return function(api)
     end
     return sprites_ok
   end
-  local function key(b, pr)
+  -- Space Age: a bot riding a cargo pod or aboard a platform has no body; its tag
+  -- rides on the pod, or over the platform hub (raised clear of it, one row per
+  -- rider), so the camera that follows it still shows who is there.
+  local HUB_LIFT, POD_LIFT = -2.6, -0.5
+  local function body(b)
     local c = b.character
+    if c and c.valid then return c, 0 end
+    local carrier = api.carrier and api.carrier(b)
+    if carrier and carrier.valid then return carrier, carrier.type == 'space-platform-hub' and HUB_LIFT or POD_LIFT end
+  end
+  local function key(b, pr, c)
     local av = pr and pr.avatar or {}
     local parts = {}
     for _, f in ipairs(api.parts.fields) do parts[#parts+1] = av[f] or '' end
-    return table.concat({c.unit_number or 0, b.name, pr and pr.display_name or '', pr and pr.glyph or '', pr and pr.color or '',
+    return table.concat({c.unit_number or 0, c.name or '', b.name, pr and pr.display_name or '', pr and pr.glyph or '', pr and pr.color or '',
       table.concat(parts, ','), av.accent or '', M.sprites() and 'a' or '', LAYOUT}, '|')
   end
   local function destroy(ids)
@@ -50,28 +59,34 @@ return function(api)
   function M.bubble_y(index)
     local rec = store()[index]
     if not rec then return -2.6 end
-    return rec.avatar and TAG_Y - LINE - BADGE - 0.15 or TAG_Y - LINE - 0.1
+    return (rec.lift or 0) + (rec.avatar and TAG_Y - LINE - BADGE - 0.15 or TAG_Y - LINE - 0.1)
   end
   function M.refresh(b)
     local all = store()
     local rec = all[b.index]
     if rec then destroy(rec.ids) end
     all[b.index] = nil
-    local c = b.character
-    if not (c and c.valid) then return nil end
+    local c, lift = body(b)
+    if not c then return nil end
     local pr = api.profile(b.index)
     local layers, spec = avatar.layers(b.name, pr and pr.color, pr and pr.avatar)
     local colour = pr and pr.rgb or avatar.rgb(spec.color)
-    pcall(function() c.color = colour end)
-    rec = {ids={}, key=key(b, pr)}
+    if lift == 0 then pcall(function() c.color = colour end)
+    else
+      -- Riders on one hub stack upward in the order they were drawn.
+      local row = 0
+      for _, other in pairs(all) do if other.carrier == c.unit_number then row = row + 1 end end
+      lift = lift - row * (LINE + (M.sprites() and BADGE or 0) + 0.15)
+    end
+    rec = {ids={}, key=key(b, pr, c), lift=lift, carrier=lift ~= 0 and c.unit_number or nil}
     local label = (pr and pr.display_name) or b.name
     if pr and pr.glyph then label = pr.glyph .. ' ' .. label end
-    local ok, tag = pcall(rendering.draw_text, {text=label, surface=c.surface, target={entity=c, offset={0, TAG_Y}},
+    local ok, tag = pcall(rendering.draw_text, {text=label, surface=c.surface, target={entity=c, offset={0, TAG_Y + lift}},
       color=text_colour(colour), scale=TAG_SCALE, alignment='center', vertical_alignment='bottom', use_rich_text=false})
     if ok and tag then rec.ids[#rec.ids+1] = tag.id end
     if M.sprites() then
       local size = BADGE / (api.parts.cell * api.parts.scale / 32)
-      local y = TAG_Y - LINE - BADGE / 2 - 0.05
+      local y = TAG_Y + lift - LINE - BADGE / 2 - 0.05
       for _, layer in ipairs(layers) do
         local drawn, obj = pcall(rendering.draw_sprite, {sprite=layer.sprite, surface=c.surface, target={entity=c, offset={0, y}},
           tint=layer.tint, x_scale=size, y_scale=size})
@@ -89,10 +104,10 @@ return function(api)
     local all, seen = store(), {}
     for _, b in ipairs(api.bots()) do
       seen[b.index] = true
-      local c = b.character
+      local c = body(b)
       local rec = all[b.index]
-      if c and c.valid then
-        local stale = not rec or rec.key ~= key(b, api.profile(b.index))
+      if c then
+        local stale = not rec or rec.key ~= key(b, api.profile(b.index), c)
         if not stale then
           local ok, obj = pcall(rendering.get_object_by_id, rec.ids[1])
           stale = not (ok and obj and obj.valid)
