@@ -453,6 +453,7 @@ function handlers.describe()
   for name,schema in pairs(M.chat and M.chat.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(space and space.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.profiles.schema) do description.actions[name]=schema end
+  for name,schema in pairs(M.board and M.board.schema or {}) do description.actions[name]=schema end
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
   return description
@@ -525,8 +526,8 @@ local function describe_incident(i)
   return string.format('in %s %d destroyed: %s%s, %s',where,i.total,table.concat(names,', '),
     #causes>0 and ' by '..table.concat(causes,', ') or '',span)
 end
--- Losses this player has not been told about, once, on any reply. Incidents
--- that grew since are repeated whole so the totals stay readable.
+-- Losses this player has not been told about, once, in the reply's team
+-- alerts. Incidents that grew since are repeated whole so the totals stay readable.
 local function unseen_losses(p)
   local s=state()
   s.losses_seen=s.losses_seen or {}
@@ -538,10 +539,10 @@ local function unseen_losses(p)
   table.sort(incidents,function(a,b) return a.seq>b.seq end)
   local lines={}
   for n,i in ipairs(incidents) do
-    if n>4 then lines[#lines+1]=string.format('+%d more areas; status alerts lists them',#incidents-4); break end
-    lines[#lines+1]=describe_incident(i)
+    if n>4 then lines[#lines+1]=string.format('+%d more areas with losses; status alerts lists them',#incidents-4); break end
+    lines[#lines+1]=describe_incident(i):gsub('^in ','losses in ',1)
   end
-  return 'buildings destroyed since your last request: '..table.concat(lines,'; ')
+  return lines
 end
 local function recent_alerts(a)
   local since=a.since or game.tick-18000
@@ -3204,6 +3205,11 @@ for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
+-- Team board, reply hints, harness requests and saved plans (board.lua).
+M.board=require('board'){state=state,director=function(index) return M.cameras.director(index) end,bots=function() return M.bots.list() end,
+  profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
+  submit=function(p,a) return handlers.queue_submit(p,a) end}
+for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 function handlers.cameras() return M.cameras.list() end
 -- wait_until as a direct call: a timed action that holds the character idle
 -- until the condition is met (outcome met) or the timeout passes (timed_out),
@@ -3234,7 +3240,8 @@ local DOC_ONLY={returns=true,note=true,reports=true,outcomes=true,status=true,us
 local TARGET={'name','unit_number'}
 local EXTRA_ARGS={attach={'offline'},build={'quality'},collect={'count','quality'},rearm={'quality'},refuel={'quality'},
   move_to={'within'},shoot={'auto'},transfer=TARGET,mine={'unit_number'},repair=TARGET,inspect=TARGET,rotate=TARGET,
-  configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET}
+  configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
+  board={'status'},board_update={'status','note'},plan_save={'note'}}
 -- observe forwards to the scoped views; a scoped call is checked as that view.
 local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true}
 local allowed_args
@@ -3301,6 +3308,17 @@ local function idle_tick()
 end
 local dispatch_request
 function M.dispatch(request)
+  -- Operator tools (RCON, never fh) read and answer the board as `operator`
+  -- without a player. A failure must stop nobody (the bootstrap stops player 1).
+  if request.operator==true then
+    local ok,result=pcall(function()
+      assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
+      M.check_args(request.action,request.args)
+      return M.board.operator(request.action,request.args)
+    end)
+    if not ok then passive_failed=true; error(result,0) end
+    return result
+  end
   -- A bot is addressed by name and handled under its index from here on
   -- (the bootstrap's failure cleanup reads request.player too).
   if request.bot~=nil then
@@ -3312,7 +3330,13 @@ function M.dispatch(request)
   if request.action=='status' then M.bots.status(request.player,result) end
   if type(result)=='table' and request.action~='describe' and request.action~='profiles' and request.action~='cameras' then
     local p=M.lookup(request.player or 1)
-    if p and p.valid then result.clock=clock_line(p); result.losses=unseen_losses(p) end
+    if p and p.valid then result.clock=clock_line(p) end
+    -- What is new for this agent (mentions, board, attacks/losses, reminders);
+    -- directors and peeking readers (overlays) leave the agent's cursors alone.
+    local peek=type(request.args)=='table' and request.args.peek==true
+    if p and p.valid and not peek and request.action~='board_events' and not M.cameras.director(p.index) then
+      result.team=M.board.team(p,unseen_losses(p))
+    end
     if clock and request.action=='status' then result.time_mode=clock.report() end
     if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index) end
   end
@@ -3332,6 +3356,20 @@ dispatch_request=function(request)
     local a=request.args or {}
     assert(not p.cheat_mode or a.allow_cheat_mode==true,'cheat mode requires explicit testing opt-in')
     return handler(p,a)
+  end
+  -- Board actions never stop the character on failure. Board reads work for
+  -- any player (directors, overlays); posts work while a bot is dead.
+  local board=M.board.handlers[request.action]
+  if board then
+    local p
+    if M.board.needs_character[request.action] then p=player(request.player)
+    else
+      p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
+      if not M.board.open_reads[request.action] then assert(not M.cameras.director(p.index),'directors do not post on the board') end
+    end
+    local ok,result=pcall(board,p,request.args or {})
+    if not ok then passive_failed=true; error(result,0) end
+    return result
   end
   -- A peek at the chat is a read any player can make (directors and
   -- overlays have no character).
@@ -3375,7 +3413,7 @@ local function waypoint_goal(p,action,goal)
   return action.waypoint<=#action.waypoints and action.waypoints[action.waypoint].position or goal
 end
 kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions}
-threat=threat_module{state=state,known=known,distance=distance}
+threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event) M.board.on_character_hit(event) end}
 survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end}
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
 space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,

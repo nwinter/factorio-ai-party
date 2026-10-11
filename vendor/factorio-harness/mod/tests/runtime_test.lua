@@ -119,12 +119,16 @@ eq(alerts.losses['stone-furnace'],1); eq(alerts.losses['small-biter'],nil)
 -- A wipe larger than any entry cap is counted whole, per area, and pushed once
 -- on the next reply of any kind.
 for i=1,80 do runtime.on_event{name=11,tick=tick,cause={valid=true,name='small-biter'},entity={valid=true,name=i<=16 and 'electric-mining-drill' or 'transport-belt',position={x=200+i%10,y=-90},force={name='player'}}} end
+-- Losses ride in the reply's team alerts.
+local function loss_line(reply)
+  for _,line in ipairs(reply.team and reply.team.alerts or {}) do if line:find('^losses in ') then return line end end
+end
 local pushed=call('status')
-assert(pushed.losses:find('in (200,-90)-(209,-90) 80 destroyed: 64 transport-belt, 16 electric-mining-drill by 80 small-biter',1,true),pushed.losses)
+assert(loss_line(pushed):find('losses in (200,-90)-(209,-90) 80 destroyed: 64 transport-belt, 16 electric-mining-drill by 80 small-biter',1,true),loss_line(pushed))
 eq(pushed.alerts.losses['transport-belt'],64); eq(pushed.alerts.losses['electric-mining-drill'],16)
-eq(call('queue_status').losses,nil)
+eq(loss_line(call('queue_status')),nil)
 runtime.on_event{name=11,tick=tick,entity={valid=true,name='inserter',position={x=205,y=-80},force={name='player'}}}
-assert(call('queue_status').losses:find('81 destroyed',1,true))
+assert(loss_line(call('queue_status')):find('81 destroyed',1,true))
 -- Hits in the last 10 s lead status warnings, with where and by what.
 defines.events.on_entity_damaged=12
 runtime.on_event{name=12,tick=tick,entity={valid=true,name='gun-turret',position={x=40,y=40},force={name='player'}},force={name='enemy'},cause={valid=true,name='small-biter'},final_damage_amount=5}

@@ -1,0 +1,555 @@
+-- Team board (shared tasks, requests, claims and notes kept in the save), its
+-- event log for the stream overlay, the per-agent `team` hint block pushed on
+-- replies, agents' requests for harness tools, and saved queue plans.
+-- Nothing here runs per tick: hints are computed when an agent's reply is
+-- built, bounded by the board size and the chat/event logs.
+return function(api)
+  local M = {handlers={}}
+  local MAX_ITEMS, MAX_EVENTS, MAX_NOTES, MAX_PLANS, MAX_HARNESS_OPEN, MAX_PLAN_BYTES = 300, 1000, 10, 50, 10, 65536
+  local TITLE, NOTE, LONG = 120, 200, 1000
+  local UNOWNED_AGE, REMIND_EVERY, FIRST_ALERTS = 7200, 3600, 3600
+  local MAX_BOARD_LINES, MAX_ALERT_LINES = 5, 8
+  local KINDS = {task=true, request=true, claim=true, note=true, harness=true}
+  local STATUSES = {open=true, claimed=true, doing=true, done=true, blocked=true, dropped=true}
+  local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
+  local OPERATOR = 'operator'
+
+  local function store()
+    local s = api.state()
+    s.board = s.board or {next_id=1, count=0, items={}, seq=0, events={}}
+    return s.board
+  end
+  local function hints(index)
+    local s = api.state()
+    s.team_hints = s.team_hints or {}
+    s.team_hints[index] = s.team_hints[index] or {}
+    return s.team_hints[index]
+  end
+  -- One line of text, cut to `max` bytes on a UTF-8 boundary; never fails.
+  local function clip(text, max)
+    text = tostring(text):gsub('[%c]+', ' ')
+    if #text <= max then return text end
+    local cut = max
+    while cut > 0 and (text:byte(cut + 1) or 0) >= 0x80 and text:byte(cut + 1) < 0xC0 do cut = cut - 1 end
+    return text:sub(1, cut)
+  end
+  local function required_text(value, name, max)
+    assert(type(value) == 'string' and value:find('%S'), name .. ' is required (1..' .. max .. ' characters)')
+    return clip(value, max)
+  end
+  local function optional_text(value, name, max)
+    if value == nil then return nil end
+    assert(type(value) == 'string', name .. ' must be a string')
+    return clip(value, max)
+  end
+  -- The name an agent goes by on the board (bot or player name).
+  local function who(p)
+    local n = p.name
+    if type(n) ~= 'string' or n == '' then n = 'player' .. p.index end
+    return n
+  end
+  local function round(v) return math.floor(v + 0.5) end
+  local function ago(ticks)
+    local sec = math.floor(ticks / 60)
+    if sec >= 3600 then return string.format('%dh%02dm', math.floor(sec / 3600), math.floor(sec / 60) % 60) end
+    if sec >= 60 then return string.format('%dm%02ds', math.floor(sec / 60), sec % 60) end
+    return sec .. 's'
+  end
+
+  -- Agents: every player who is not a director, and every bot.
+  local function agents()
+    local out = {}
+    for _, p in pairs(game.players) do
+      if not api.director(p.index) then out[#out+1] = {index=p.index, name=who(p)} end
+    end
+    for _, b in ipairs(api.bots()) do out[#out+1] = {index=b.index, name=b.name} end
+    for _, a in ipairs(out) do
+      local pr = api.profile(a.index)
+      a.display_name = pr and pr.display_name
+    end
+    return out
+  end
+  -- A name as agents write it: exact name, display name, or a player name
+  -- without its `pog-` prefix, any case. Unknown names fail with the roster.
+  local function resolve(name)
+    assert(type(name) == 'string', 'owner must be an agent name')
+    local want = name:lower():gsub('^@', '')
+    if want == OPERATOR then return OPERATOR end
+    local roster = agents()
+    for _, a in ipairs(roster) do if a.name:lower() == want then return a.name end end
+    for _, a in ipairs(roster) do
+      if (a.display_name and a.display_name:lower() == want) or a.name:lower():gsub('^pog%-', '') == want then return a.name end
+    end
+    local names = {}
+    for _, a in ipairs(roster) do names[#names+1] = a.name end
+    table.sort(names)
+    error('unknown agent ' .. name .. '; agents: ' .. table.concat(names, ', '), 0)
+  end
+
+  local function event(by, item, change, text)
+    local b = store()
+    b.seq = b.seq + 1
+    b.events[#b.events+1] = {seq=b.seq, tick=game.tick, by=by, id=item.id, change=change, title=item.title,
+      kind=item.kind, owner=item.owner, requested_by=item.requested_by, status=item.status, text=text}
+    while #b.events > MAX_EVENTS do table.remove(b.events, 1) end
+  end
+  -- Over the cap, finished items go first (oldest update first), then notes,
+  -- then the oldest of anything.
+  local function prune()
+    local b = store()
+    while b.count > MAX_ITEMS do
+      local victim
+      for _, pass in ipairs{function(i) return i.status == 'done' or i.status == 'dropped' end,
+          function(i) return i.kind == 'note' end, function() return true end} do
+        for _, i in pairs(b.items) do
+          if pass(i) and (not victim or i.updated_tick < victim.updated_tick or (i.updated_tick == victim.updated_tick and i.id < victim.id)) then victim = i end
+        end
+        if victim then break end
+      end
+      b.items[victim.id] = nil
+      b.count = b.count - 1
+    end
+  end
+  local function area_arg(a)
+    if a == nil then return nil end
+    assert(type(a) == 'table' and type(a.left_top) == 'table' and type(a.right_bottom) == 'table',
+      'area requires {left_top={x,y}, right_bottom={x,y}}')
+    local lt, rb = a.left_top, a.right_bottom
+    for _, v in ipairs{lt.x, lt.y, rb.x, rb.y} do assert(type(v) == 'number' and math.abs(v) < 1000000, 'area corners need numeric x and y') end
+    return {left_top={x=math.min(lt.x, rb.x), y=math.min(lt.y, rb.y)}, right_bottom={x=math.max(lt.x, rb.x), y=math.max(lt.y, rb.y)}}
+  end
+  local function needs_arg(v)
+    if v == nil then return nil end
+    if type(v) == 'string' then return clip(v, NOTE) end
+    assert(type(v) == 'table' and #v >= 1 and #v <= 16, 'needs is text or an array of 1..16 item names or {name,count}')
+    local out = {}
+    for _, n in ipairs(v) do
+      if type(n) == 'string' then out[#out+1] = clip(n, 64)
+      else
+        assert(type(n) == 'table' and type(n.name) == 'string' and (n.count == nil or type(n.count) == 'number'), 'needs entries are names or {name,count}')
+        out[#out+1] = {name=clip(n.name, 64), count=n.count}
+      end
+    end
+    return out
+  end
+  local function tags_arg(v)
+    if v == nil then return nil end
+    assert(type(v) == 'table' and #v <= 8, 'tags must be an array of up to 8 short strings')
+    local out = {}
+    for _, t in ipairs(v) do assert(type(t) == 'string', 'tags must be strings'); out[#out+1] = clip(t, 24) end
+    return out
+  end
+  local function overlaps(a, b)
+    return a.left_top.x < b.right_bottom.x and b.left_top.x < a.right_bottom.x and a.left_top.y < b.right_bottom.y and b.left_top.y < a.right_bottom.y
+  end
+  local function view(i, full)
+    local notes = i.notes
+    if not full and #notes > 2 then notes = {notes[#notes-1], notes[#notes]} end
+    return {id=i.id, kind=i.kind, title=i.title, owner=i.owner, requested_by=i.requested_by, status=i.status, area=i.area,
+      needs=i.needs, tags=i.tags, problem=full and i.problem or nil, proposal=full and i.proposal or nil,
+      notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
+      created_tick=i.created_tick, updated_tick=i.updated_tick}
+  end
+  local function open_unowned()
+    local n, oldest = 0, nil
+    for _, i in pairs(store().items) do
+      if i.status == 'open' and not i.owner and (i.kind == 'task' or i.kind == 'request') then
+        n = n + 1
+        if not oldest or i.created_tick < oldest.created_tick then oldest = i end
+      end
+    end
+    return n, oldest
+  end
+
+  local function post(by, a)
+    local kind = a.kind
+    assert(type(kind) == 'string' and KINDS[kind], 'kind must be task, request, claim or note')
+    assert(kind ~= 'harness', 'ask for a harness tool with harness_request')
+    local item = {kind=kind, title=required_text(a.title, 'title', TITLE), requested_by=by, area=area_arg(a.area),
+      needs=needs_arg(a.needs), tags=tags_arg(a.tags), notes={}, created_tick=game.tick, updated_tick=game.tick}
+    local warnings = {}
+    if kind == 'claim' then
+      assert(item.area, 'a claim needs area {left_top, right_bottom}')
+      item.owner = by
+    elseif kind == 'note' then
+      item.owner = by
+    elseif a.owner ~= nil and a.owner ~= '' then
+      item.owner = resolve(a.owner)
+    end
+    item.status = (item.owner and kind ~= 'note') and 'claimed' or 'open'
+    if kind == 'claim' then
+      for _, other in pairs(store().items) do
+        if other.kind == 'claim' and ACTIVE[other.status] and other.owner ~= by and overlaps(other.area, item.area) then
+          warnings[#warnings+1] = string.format('overlaps claim #%d by %s: %s', other.id, other.owner, other.title)
+        end
+      end
+    end
+    if kind == 'request' and not item.owner then
+      warnings[#warnings+1] = 'no owner: shown to everyone as unowned until someone takes it'
+    end
+    local b = store()
+    item.id = b.next_id; b.next_id = b.next_id + 1
+    b.items[item.id] = item; b.count = b.count + 1
+    event(by, item, 'posted')
+    prune()
+    return {item=view(item, true), warnings=#warnings > 0 and warnings or nil}
+  end
+
+  local function update(by, a)
+    assert(type(a.id) == 'number', 'id is required (a board item number)')
+    local item = store().items[a.id]
+    assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
+    assert(a.status ~= nil or a.owner ~= nil or a.note ~= nil, 'give status, owner or note')
+    local boss = by == OPERATOR or by == item.owner or by == item.requested_by
+    local changes = {}
+    if a.owner ~= nil then
+      assert(item.kind ~= 'claim' and item.kind ~= 'note' and item.kind ~= 'harness', 'a ' .. item.kind .. ' stays with its poster')
+      if a.owner == '' or a.owner == false then
+        assert(boss, 'only the owner or requester can release an item')
+        if item.owner then item.owner = nil; item.status = 'open'; changes[#changes+1] = 'released' end
+      else
+        local owner = resolve(a.owner)
+        local taking = owner == by and not item.owner and item.status == 'open'
+        assert(boss or taking, string.format('#%d is %s; only its owner or requester can reassign it (anyone can take an open unowned item)',
+          item.id, item.owner and 'owned by ' .. item.owner or item.status))
+        if owner ~= item.owner then
+          item.owner = owner
+          if item.status == 'open' then item.status = 'claimed' end
+          changes[#changes+1] = owner == by and 'taken' or 'assigned'
+          boss = true
+        end
+      end
+    end
+    if a.status ~= nil then
+      assert(type(a.status) == 'string' and STATUSES[a.status], 'status must be open, claimed, doing, done, blocked or dropped')
+      assert(boss, string.format('only the owner (%s) or requester (%s) can change the status of #%d; add a note instead',
+        tostring(item.owner or 'none'), tostring(item.requested_by), item.id))
+      if a.status ~= item.status then
+        item.status = a.status
+        if a.status ~= 'open' and not item.owner then item.owner = by end
+        changes[#changes+1] = a.status
+      end
+    end
+    local text
+    if a.note ~= nil then
+      text = required_text(a.note, 'note', NOTE)
+      item.notes[#item.notes+1] = {tick=game.tick, by=by, text=text}
+      while #item.notes > MAX_NOTES do table.remove(item.notes, 1) end
+    end
+    item.updated_tick = game.tick
+    for _, change in ipairs(changes) do event(by, item, change, text) end
+    if text and #changes == 0 then event(by, item, 'note', text) end
+    return {item=view(item, true), changed=#changes > 0 and changes or nil}
+  end
+
+  local function read(by, a)
+    local b = store()
+    if a.id ~= nil then
+      local item = b.items[a.id]
+      assert(item, 'no board item #' .. tostring(a.id))
+      return {item=view(item, true)}
+    end
+    local limit = a.limit or 30
+    assert(type(limit) == 'number' and limit >= 1 and limit <= 100, 'limit must be 1..100')
+    local want
+    if a.status ~= nil then
+      want = {}
+      local list = type(a.status) == 'table' and a.status or {a.status}
+      for _, s in ipairs(list) do
+        assert(s == 'active' or STATUSES[s], 'status must be active, open, claimed, doing, done, blocked or dropped')
+        if s == 'active' then for k in pairs(ACTIVE) do want[k] = true end else want[s] = true end
+      end
+    end
+    assert(a.kind == nil or KINDS[a.kind], 'kind must be task, request, claim, note or harness')
+    assert(a.since_tick == nil or type(a.since_tick) == 'number', 'since_tick must be a tick')
+    local list = {}
+    for _, i in pairs(b.items) do
+      if (not want or want[i.status]) and (not a.kind or i.kind == a.kind) and (not a.since_tick or i.updated_tick > a.since_tick)
+          and (a.mine ~= true or i.owner == by or i.requested_by == by) then
+        list[#list+1] = i
+      end
+    end
+    table.sort(list, function(x, y) return x.updated_tick > y.updated_tick or (x.updated_tick == y.updated_tick and x.id > y.id) end)
+    local out = {}
+    for n = 1, math.min(limit, #list) do out[n] = view(list[n]) end
+    local unowned = open_unowned()
+    return {items=out, matched=#list, open_unowned=unowned, tick=game.tick}
+  end
+
+  local function events(a)
+    local since = a.since_seq or 0
+    assert(type(since) == 'number', 'since_seq must be a number')
+    local limit = a.limit or 100
+    assert(type(limit) == 'number' and limit >= 1 and limit <= 200, 'limit must be 1..200')
+    local b, out = store(), {}
+    for _, e in ipairs(b.events) do
+      if e.seq > since then out[#out+1] = e; if #out >= limit then break end end
+    end
+    return {events=out, cursor=#out > 0 and out[#out].seq or math.max(since, 0), latest=b.seq, tick=game.tick}
+  end
+
+  local function harness_request(by, a)
+    local mine = 0
+    for _, i in pairs(store().items) do
+      if i.kind == 'harness' and i.requested_by == by and ACTIVE[i.status] then mine = mine + 1 end
+    end
+    assert(mine < MAX_HARNESS_OPEN, 'you already have ' .. mine .. ' open harness requests; add notes to those instead')
+    local b = store()
+    local item = {id=b.next_id, kind='harness', title=required_text(a.title, 'title', TITLE), owner=OPERATOR, requested_by=by,
+      status='open', problem=required_text(a.problem, 'problem', LONG), proposal=optional_text(a.proposal, 'proposal', LONG),
+      notes={}, created_tick=game.tick, updated_tick=game.tick}
+    b.next_id = b.next_id + 1
+    b.items[item.id] = item; b.count = b.count + 1
+    event(by, item, 'posted')
+    prune()
+    return {item=view(item, true), note='the operator reads harness requests; answers arrive as board notes on this item and a "server: harness" chat line'}
+  end
+
+  -- Saved plans: named queue plans per agent, run later as a queue submit.
+  -- Copies go in and out, so a running queue never edits the saved plan.
+  local function copy(v)
+    if type(v) ~= 'table' then return v end
+    local out = {}
+    for k, x in pairs(v) do out[k] = copy(x) end
+    return out
+  end
+  local function plans_of(name)
+    local s = api.state()
+    s.plans = s.plans or {}
+    s.plans[name] = s.plans[name] or {}
+    return s.plans[name]
+  end
+  local function plan_save(p, a)
+    assert(type(a.name) == 'string' and a.name:match('^[%w_%-%.]+$') and #a.name <= 32, 'name must be 1..32 letters, digits, _ - .')
+    local mine = plans_of(who(p))
+    if a.delete == true then
+      assert(mine[a.name], 'no saved plan ' .. a.name)
+      mine[a.name] = nil
+      return {deleted=a.name}
+    end
+    assert(type(a.steps) == 'table' and #a.steps >= 1, 'steps must be a non-empty array (same schema as queue_submit)')
+    local size = api.validate_plan(a)
+    assert(size <= MAX_PLAN_BYTES, 'a saved plan is limited to ' .. MAX_PLAN_BYTES .. ' bytes of arguments')
+    local count = 0
+    for _ in pairs(mine) do count = count + 1 end
+    assert(mine[a.name] or count < MAX_PLANS, 'at most ' .. MAX_PLANS .. ' saved plans; delete one with plan_save {name, delete=true}')
+    local old = mine[a.name]
+    mine[a.name] = {steps=copy(a.steps), guards=copy(a.guards), note=optional_text(a.note, 'note', TITLE), saved_tick=game.tick, runs=old and old.runs or 0}
+    return {name=a.name, steps=#a.steps, guards=a.guards and #a.guards or nil, bytes=size, replaced=old ~= nil or nil}
+  end
+  local function plan_run(p, a)
+    assert(type(a.name) == 'string', 'name is required (see plans)')
+    local plan = plans_of(who(p))[a.name]
+    if not plan then
+      local names = {}
+      for name in pairs(plans_of(who(p))) do names[#names+1] = name end
+      table.sort(names)
+      error('no saved plan ' .. a.name .. (#names > 0 and '; saved: ' .. table.concat(names, ', ') or '; save one with plan_save'), 0)
+    end
+    local result = api.submit(p, {steps=copy(plan.steps), guards=copy(plan.guards), mode=a.mode, start=a.start})
+    plan.runs = plan.runs + 1
+    if type(result) == 'table' then result.plan = a.name end
+    return result
+  end
+  local function plans(p, a)
+    local mine = plans_of(who(p))
+    if a.name ~= nil then
+      local plan = mine[a.name]
+      assert(plan, 'no saved plan ' .. tostring(a.name))
+      return {name=a.name, steps=plan.steps, guards=plan.guards, note=plan.note, saved_tick=plan.saved_tick, runs=plan.runs}
+    end
+    local out = {}
+    for name, plan in pairs(mine) do
+      out[#out+1] = {name=name, steps=#plan.steps, note=plan.note, saved_tick=plan.saved_tick, runs=plan.runs}
+    end
+    table.sort(out, function(x, y) return x.name < y.name end)
+    return {plans=out, max=MAX_PLANS}
+  end
+
+  M.schema = {
+    board = {mine='boolean: items I own or requested', status='active|open|claimed|doing|done|blocked|dropped or an array of them',
+      kind='task|request|claim|note|harness', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
+      id='one item in full (all notes)', returns='items, matched, open_unowned (open task/request items nobody owns)'},
+    board_post = {kind='task|request|claim|note', title='1..120 characters (longer is cut)',
+      owner='agent name or display name (task/request; a request without owner is shown to everyone until taken)',
+      area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text or array of item names/{name,count}',
+      tags='up to 8 short strings', returns='the item; warnings for overlapping claims or an unowned request'},
+    board_update = {id='item number', status='open|claimed|doing|done|blocked|dropped (owner or requester only)',
+      owner='your name takes an open unowned item; another name reassigns (owner or requester only); "" releases it',
+      note='1..200 characters, anyone may add (last 10 kept)'},
+    board_events = {since_seq='return events after this sequence number (default 0)', limit='1..200 (default 100), oldest first',
+      returns='events {seq,tick,by,id,change,title,kind,owner,requested_by,status,text} and cursor (pass it back as since_seq)'},
+    harness_request = {title='1..120 characters', problem='what you tried and what went wrong (1..1000)', proposal='optional: the tool or change you want',
+      returns='a board item (kind harness, owner operator); answers come as notes on it'},
+    plan_save = {name='1..32 letters, digits, _ - .', steps='queue plan steps (same schema as queue_submit)', guards='optional queue guards',
+      note='optional description', delete='true removes the saved plan', returns='name, steps, bytes'},
+    plan_run = {name='saved plan name', mode='append|replace pending (default append)', start='default true', returns='as queue_submit'},
+    plans = {name='optional: show one plan in full', returns='your saved plans (at most 50): name, steps, note, runs'},
+  }
+  -- Handlers take the acting agent's name, so the operator path can share them.
+  M.handlers.board = function(p, a) return read(who(p), a) end
+  M.handlers.board_post = function(p, a) return post(who(p), a) end
+  M.handlers.board_update = function(p, a) return update(who(p), a) end
+  M.handlers.board_events = function(_, a) return events(a) end
+  M.handlers.harness_request = function(p, a) return harness_request(who(p), a) end
+  M.handlers.plan_save = plan_save
+  M.handlers.plan_run = plan_run
+  M.handlers.plans = plans
+  -- Board reads any player may make (directors, overlays).
+  M.open_reads = {board=true, board_events=true}
+  -- Actions that need a living character (they drive or queue it).
+  M.needs_character = {plan_run=true}
+  -- The operator (RCON tools) reads and answers the board without a player.
+  function M.operator(action, a)
+    a = a or {}
+    if action == 'board' then return read(OPERATOR, a) end
+    if action == 'board_events' then return events(a) end
+    if action == 'board_update' then return update(OPERATOR, a) end
+    if action == 'board_post' then return post(OPERATOR, a) end
+    error('operator requests support board, board_events, board_update and board_post', 0)
+  end
+
+  -- The `team` hint block: what is new for this agent since its previous
+  -- request. Each part is shown once; nil when there is nothing.
+  local function escape(s) return (s:gsub('[%^%$%(%)%%%.%[%]%*%+%-%?]', '%%%0')) end
+  local function mention_patterns(p)
+    local names, out = {}, {}
+    local name = who(p):lower()
+    names[name] = true
+    names[(name:gsub('^pog%-', ''))] = true
+    local pr = api.profile(p.index)
+    if pr and pr.display_name then names[pr.display_name:lower()] = true end
+    for n in pairs(names) do if #n >= 2 then out[#out+1] = '%f[%w]' .. escape(n) .. '%f[^%w]' end end
+    return out
+  end
+  local function mentions(p, h)
+    local c = api.state().chat
+    if not c then return nil end
+    local from = math.max(c.cursors[p.index] or 0, h.mention or 0)
+    h.mention = c.seq
+    local patterns, n, latest = nil, 0, nil
+    for k = #c.messages, 1, -1 do
+      local m = c.messages[k]
+      if m.seq <= from then break end
+      if m.player ~= p.index then
+        patterns = patterns or mention_patterns(p)
+        local text = m.text:lower()
+        for _, pat in ipairs(patterns) do
+          if text:find(pat) then n = n + 1; latest = latest or m; break end
+        end
+      end
+    end
+    if n == 0 then return nil end
+    return string.format('%d unread message%s name%s you; latest: %s: %s', n, n == 1 and '' or 's', n == 1 and 's' or '', latest.from, clip(latest.text, 240))
+  end
+  local function board_lines(p, h)
+    local b = store()
+    local me, lines, extra = who(p), {}, 0
+    local from = h.board or 0
+    h.board = b.seq
+    for _, e in ipairs(b.events) do
+      if e.seq > from and e.by ~= me then
+        local line
+        if (e.change == 'posted' or e.change == 'assigned') and e.owner == me and e.kind ~= 'claim' and e.kind ~= 'note' then
+          line = string.format('#%d assigned to you by %s: %s', e.id, e.by, e.title)
+        elseif e.requested_by == me and e.change ~= 'posted' then
+          line = e.change == 'note' and string.format('#%d (your %s) note by %s: %s', e.id, e.kind, e.by, e.text)
+            or string.format('#%d (your %s) %s by %s: %s%s', e.id, e.kind, e.change, e.by, e.title, e.text and ' - ' .. e.text or '')
+        elseif e.owner == me and e.change == 'note' then
+          line = string.format('#%d (yours) note by %s: %s', e.id, e.by, e.text)
+        end
+        if line then
+          if #lines < MAX_BOARD_LINES then lines[#lines+1] = line else extra = extra + 1 end
+        end
+      end
+    end
+    if extra > 0 then lines[#lines+1] = string.format('+%d more: board mine=true', extra) end
+    -- Unowned requests: nudge once each time another one passes 2 minutes.
+    local newest, n, oldest = h.unowned or -1, 0, nil
+    for _, i in pairs(b.items) do
+      if i.status == 'open' and not i.owner and (i.kind == 'task' or i.kind == 'request') and game.tick - i.created_tick >= UNOWNED_AGE then
+        n = n + 1
+        if not oldest or i.created_tick < oldest.created_tick then oldest = i end
+        if i.created_tick > newest then newest = i.created_tick end
+      end
+    end
+    if n > 0 and newest > (h.unowned or -1) then
+      lines[#lines+1] = string.format('%d open request%s nobody owns (oldest %s: #%d %s); take one with board_update {id, owner: "%s"}',
+        n, n == 1 and '' or 's', ago(game.tick - oldest.created_tick), oldest.id, oldest.title, me)
+      h.unowned = newest
+    end
+    return #lines > 0 and lines or nil
+  end
+  local function alert_lines(p, h, losses)
+    -- Hits and groups are numbered (threat.lua); an agent's first reply looks
+    -- back one minute.
+    local s, lines = api.state(), {}
+    local from = h.alert_seq
+    h.alert_seq = s.alert_seq or 0
+    local function fresh(x, t) if from then return (x.seq or 0) > from end return t >= game.tick - FIRST_ALERTS end
+    -- My character first: the agent can act on it at once.
+    local c = p.character
+    local hit = c and c.valid and s.char_hits and s.char_hits[c.unit_number]
+    if hit and fresh(hit, hit.last) then
+      lines[#lines+1] = string.format('you were hit %d times (%d damage) by %s, %s ago; health %d', hit.hits, round(hit.damage), hit.by or 'enemies',
+        ago(game.tick - hit.last), round(c.health or 0))
+    end
+    local areas = {}
+    for key, v in pairs(s.damage or {}) do
+      if fresh(v, v.last) and v.damage > 0 then areas[#areas+1] = {key=key, v=v} end
+    end
+    table.sort(areas, function(x, y) return x.v.last > y.v.last end)
+    for n, area in ipairs(areas) do
+      if n > 3 then lines[#lines+1] = string.format('+%d more attacked areas: status alerts', #areas - 3); break end
+      local cx, cy = area.key:match('^(-?%d+),(-?%d+)$')
+      local names = {}
+      for name, count in pairs(area.v.entities) do names[#names+1] = name .. ' x' .. count end
+      table.sort(names)
+      while #names > 5 do table.remove(names) end
+      lines[#lines+1] = string.format('attack near (%d,%d)%s: %s hit %d times, %d damage, %s ago', tonumber(cx) * 32 + 16, tonumber(cy) * 32 + 16,
+        area.v.by and ' by ' .. area.v.by or '', table.concat(names, ', '), area.v.hits, round(area.v.damage), ago(game.tick - area.v.last))
+    end
+    local groups = 0
+    for k = #(s.attack_groups or {}), 1, -1 do
+      local g = s.attack_groups[k]
+      if not fresh(g, g.tick) or groups >= 2 then break end
+      groups = groups + 1
+      lines[#lines+1] = string.format('enemy group of %d gathered at (%d,%d)%s, %s ago', g.size, g.position.x, g.position.y,
+        g.target and string.format(' heading for (%d,%d)', g.target.x, g.target.y) or '', ago(game.tick - g.tick))
+    end
+    for _, line in ipairs(losses or {}) do lines[#lines+1] = line end
+    while #lines > MAX_ALERT_LINES do table.remove(lines) end
+    return #lines > 0 and lines or nil
+  end
+  local function reminders(p, h)
+    local pr = api.profile(p.index)
+    if pr and pr.display_name and pr.glyph and pr.color then return nil end
+    if h.reminded and game.tick - h.reminded < REMIND_EVERY then return nil end
+    h.reminded = game.tick
+    return {'profile: viewers see you by display_name, glyph and color; set them once with profile {display_name, glyph, color, motto}'}
+  end
+  function M.team(p, losses)
+    local h = hints(p.index)
+    local out = {mentions=mentions(p, h), board=board_lines(p, h), alerts=alert_lines(p, h, losses), reminders=reminders(p, h)}
+    return next(out) and out or nil
+  end
+  -- Engine hook (from threat.on_damaged): enemy hits on a character, kept
+  -- per character entity; a quiet minute starts a new incident.
+  function M.on_character_hit(event)
+    local s = api.state()
+    s.char_hits = s.char_hits or {}
+    local e = event.entity
+    local hit = s.char_hits[e.unit_number]
+    if not hit or event.tick - hit.last > FIRST_ALERTS then
+      for k, v in pairs(s.char_hits) do
+        if event.tick - v.last > FIRST_ALERTS then s.char_hits[k] = nil end
+      end
+      hit = {hits=0, damage=0}
+      s.char_hits[e.unit_number] = hit
+    end
+    hit.seq = s.alert_seq
+    hit.last = event.tick; hit.hits = hit.hits + 1; hit.damage = hit.damage + (event.final_damage_amount or 0)
+    hit.by = event.cause and event.cause.valid and event.cause.name or hit.by
+  end
+  return M
+end
