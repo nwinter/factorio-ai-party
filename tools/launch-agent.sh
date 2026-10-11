@@ -99,7 +99,8 @@ while [ "\$(date +%s)" -lt "\$deadline" ]; do
     echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
     agy -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat." --model $model --sandbox --dangerously-skip-permissions
   else
-    agy -c -p "Continue: the deadline in deadline.txt has not passed. Re-read notes.md, check ./fh call status and chat, and keep playing toward the next milestone." --model $model --sandbox --dangerously-skip-permissions
+    left=\$(( (deadline - \$(date +%s)) / 60 ))
+    agy -c -p "Continue: the deadline in deadline.txt is \$left minutes away and it is the only stop condition. Re-read notes.md, check ./fh call status and chat, and take the most useful open item. Write the final summary only in the last three minutes." --model $model --sandbox --dangerously-skip-permissions
   fi
 done
 EOL
