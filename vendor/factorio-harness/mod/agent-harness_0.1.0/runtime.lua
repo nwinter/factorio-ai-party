@@ -1332,6 +1332,12 @@ end
 function handlers.mine(p,a)
   local e=entity(p,a); friendly(p,e)
   assert(e.minable,'entity is not mineable')
+  -- Space Age: some ores are not hand-mineable (tungsten-ore is hard-solid,
+  -- big mining drills only). Ore is taken through mine_entity, which would
+  -- not check, so check the character's mining categories here.
+  local hand=e.type=='resource' and p.character and p.character.prototype.mining_categories
+  local category=hand and e.prototype.resource_category
+  assert(not category or hand[category],e.name..' is '..tostring(category)..': a character cannot mine it by hand (a drill that mines '..tostring(category)..' can)')
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local action={kind='mine',entity=e,until_tick=game.tick+ticks,products={}}

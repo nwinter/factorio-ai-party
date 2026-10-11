@@ -189,6 +189,13 @@ local last=call('status').last; eq(last.outcome,'target_mined'); eq(last.mined,3
 -- Resource mining idles silently when the product has no room; say so.
 ore.valid=true; ore.amount=5; call('mine',{position=ore.position,ticks=10}); advance(1); room=false; advance(1)
 last=call('status').last; eq(last.outcome,'inventory_full'); eq(last.blocked_item,'iron-ore'); room=true
+-- Space Age hard-solid ore: the character's mining categories decide, before anything stops.
+p.character.prototype.mining_categories={['basic-solid']=true}
+ore.prototype.resource_category='hard-solid'; ore.name='tungsten-ore'
+fails(function() call('mine',{position=ore.position,ticks=10}) end,'tungsten-ore is hard-solid: a character cannot mine it by hand')
+ore.prototype.resource_category='basic-solid'; ore.name='iron-ore'
+call('mine',{position=ore.position,ticks=1}); advance(2)
+p.character.prototype.mining_categories=nil; ore.prototype.resource_category=nil
 -- Non-resources wait out the hand-mining time, then mine once through the engine.
 p.character.prototype.mining_speed=0.5; p.force.manual_mining_speed_modifier=0
 local tree={valid=true,name='tree-01',type='tree',position={x=1,y=1},force={name='neutral'},minable=true,
