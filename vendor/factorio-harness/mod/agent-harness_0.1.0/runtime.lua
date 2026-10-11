@@ -3254,7 +3254,8 @@ M.waits=require('waits'){state=state,integer=integer,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
-  on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end}
+  on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
+  mention_of=function(index,m) return M.board.mention_of(index,m) end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- Confessionals and the operator's viewer relay (audience.lua).
 M.audience=require('audience'){state=state,post_viewer=function(name,text) return M.chat.viewer(name,text) end}
@@ -3400,6 +3401,9 @@ function M.dispatch(request)
     -- directors and peeking readers (overlays) leave the agent's cursors alone.
     if p and p.valid and not peek and request.action~='board_events' and not M.is_director(p.index) then
       result.team=M.board.team(p,unseen_losses(p))
+      -- A chat read that left messages unread is repeated until they are read.
+      local left=request.action~='chat' and M.chat and M.chat.left(p.index)
+      if left then result.team=result.team or {}; result.team.chat_remaining=left end
     end
     if clock and request.action=='status' then result.time_mode=clock.report() end
     -- The unread trailer repeats only when a newer message arrived (status always shows it).

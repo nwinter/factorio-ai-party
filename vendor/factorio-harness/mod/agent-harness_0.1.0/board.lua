@@ -436,20 +436,34 @@ return function(api)
     s.mentions[index] = s.mentions[index] or {list={}, dropped=0}
     return s.mentions[index]
   end
+  local function to_everyone(text)
+    for _, word in ipairs(EVERYONE) do if has_word(text, '@' .. word) then return true end end
+    return false
+  end
+  -- How text (lower case) mentions agent a: '@', '@everyone', 'name' or nil.
+  local function mention_how(a, text, everyone)
+    local names = {a.name:lower(), (a.name:lower():gsub('^pog%-', ''))}
+    if a.display_name then names[3] = a.display_name:lower() end
+    for _, n in ipairs(names) do if #n >= 2 and has_word(text, '@' .. n) then return '@' end end
+    if everyone then return '@everyone' end
+    for _, n in ipairs(names) do if #n >= 2 and has_word(text, n) then return 'name' end end
+    return nil
+  end
+  -- For chat reads (chat.lua): whether a logged message mentions this agent.
+  function M.mention_of(index, m)
+    if m.player == index or m.viewer then return nil end
+    local text = m.text:lower()
+    for _, a in ipairs(agents()) do
+      if a.index == index then return mention_how(a, text, to_everyone(text)) end
+    end
+    return nil
+  end
   function M.on_message(m)
     local text = m.text:lower()
-    local everyone = false
-    for _, word in ipairs(EVERYONE) do if has_word(text, '@' .. word) then everyone = true; break end end
+    local everyone = to_everyone(text)
     for _, a in ipairs(agents()) do
       if a.index ~= m.player then
-        local names = {a.name:lower(), (a.name:lower():gsub('^pog%-', ''))}
-        if a.display_name then names[3] = a.display_name:lower() end
-        local how
-        for _, n in ipairs(names) do if #n >= 2 and has_word(text, '@' .. n) then how = '@'; break end end
-        if not how and everyone then how = '@everyone' end
-        if not how then
-          for _, n in ipairs(names) do if #n >= 2 and has_word(text, n) then how = 'name'; break end end
-        end
+        local how = mention_how(a, text, everyone)
         if how then
           local box = inbox(a.index)
           box.list[#box.list+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, how=how, aloud=m.aloud}
