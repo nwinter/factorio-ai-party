@@ -61,6 +61,36 @@ def load(paths):
     return {k: v for k, v in ex.items() if v.get("facts") and v["lines"] and "template" not in str(v["backend"])}
 
 
+def as_today(facts, kind, angle=None):
+    """Logged facts in today's shape, so the bench tests today's facts as well as today's prompt: no 'walking' doing,
+    mottos only on the opener and spotlight cards, the shift fact by number, standing numbers as background on
+    event beats, and the card's call on segments."""
+    f = json.loads(json.dumps(facts))
+    keep_motto = kind == "open" or (f.get("on_screen_now") or {}).get("segment") == "spotlight"
+    if not keep_motto:
+        f = caster.drop_keys(f, ("motto",))
+
+    def strip(x):
+        if isinstance(x, dict):
+            return {k: strip(v) for k, v in x.items()
+                    if not (k == "doing" and isinstance(v, str) and caster.TRAVEL.match(v))}
+        return [strip(v) for v in x] if isinstance(x, list) else x
+    f = strip(f)
+    sh = f.get("shift")
+    if isinstance(sh, dict) and "number" in sh:
+        n = sh["number"]
+        f["shift"] = {"this_shift": f"shift {n}", "next_shift": f"shift {n + 1}", "earlier_shifts": n - 1,
+                      "at_the_deadline": f"the world is saved and shift {n + 1} continues it from there"}
+    if kind not in caster.STORY_KINDS and angle not in caster.STORY_ANGLES:
+        bg = {k: f.pop(k) for k in caster.BACKGROUND if k in f}
+        if bg:
+            f["background"] = dict(bg, note="standing numbers for context; mention one only if it matters here")
+    seg = f.get("on_screen_now") or {}
+    if kind == "segment" and seg.get("segment") in caster.CARD_CALLS:
+        f["how_to_call_it"] = caster.CARD_CALLS[seg["segment"]]
+    return f
+
+
 def pick(ex, n, seed):
     """n exchanges spread over event kinds, same picks for the same logs and seed."""
     rng = random.Random(seed)
@@ -97,8 +127,11 @@ def main():
     ap.add_argument("--writers", default="cf=" + caster.DEFAULT_MODEL, help="comma list of kind=model, or 'none'")
     ap.add_argument("--timeout", type=float, default=12)
     ap.add_argument("--md", help="also write the before/after as markdown here")
+    ap.add_argument("--match", help="only exchanges whose aired lines match this regex (e.g. 'walk|motto|classic')")
     a = ap.parse_args()
     ex = load(a.logs)
+    if a.match:
+        ex = {k: v for k, v in ex.items() if any(re.search(a.match, l, re.I) for _, l in v["lines"])}
     keys = pick(ex, a.n, a.seed)
     roster = {"Astra", "Sol", "Luna", "Opus", "Sonnet", "Haiku", "Grok", "Gemini", "Muse"}
     for x in ex.values():
@@ -109,7 +142,7 @@ def main():
     stats = {w.name: {"lines": [], "lat": [], "kept": 0, "asked": 0, "fails": 0} for w in writers}
     for i, k in enumerate(keys, 1):
         x = ex[k]
-        facts = x["facts"]
+        facts = as_today(x["facts"], x["kind"], x["angle"])
         e = {"kind": x["kind"], "angle": x["angle"], "naturalist": x["naturalist"], "t": time.time(),
              "prio": caster.PRIORITY.get(x["kind"], 1)}
         md.append(f"### {i}. {x['kind']}{'/' + x['angle'] if x['angle'] else ''} ({os.path.basename(k[0])})")

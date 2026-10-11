@@ -314,7 +314,7 @@ check("accepts 'ends the run' once the deadline has passed", caster.check_line(
 snap4 = {"agents": [{"name": "grok", "display_name": "Grok", "activity": "thinking", "pronouns": "he/him"},
                     {"name": "luna", "display_name": "Luna", "activity": "idle"}]}
 g = caster.agent_facts(snap4, "grok")
-check("thinking is 'planning the next step', not standing still", g["status"] == "planning the next step"
+check("thinking is 'working out the next step', not standing still", g["status"] == "working out the next step"
       and "standing" not in json.dumps(caster.agent_facts(snap4, "luna")), str(g))
 check("agent facts carry chosen pronouns, else they/them", g["pronouns"] == "he/him"
       and caster.agent_facts(snap4, "luna")["pronouns"] == "they/them")
@@ -536,9 +536,10 @@ with tempfile.TemporaryDirectory() as runs:
             open(os.path.join(runs, name, "resumed-from"), "w").write(prev + "\n")
     open(os.path.join(runs, "shake6", "start.log"), "w").write("05:18:52 world n: resumed at tick 446842 (game 124m)\n")
     sh = caster.read_shift(os.path.join(runs, "shake6"))
-    check("shift: number, the run it continues, the first shift, the resume minute", sh and sh["number"] == 3 and
-          sh["continues"] == "shake5" and sh["first_shift"] == "shake4" and sh["resumed_at_game_minute"] == 124
-          and "next shift continues it" in sh["at_the_deadline"], str(sh))
+    check("shift: this shift, the next one, the resume minute; no run names (shake6 study P1 item 2)", sh and
+          sh["this_shift"] == "shift 3" and sh["next_shift"] == "shift 4" and sh["earlier_shifts"] == 2 and
+          sh["resumed_at_game_minute"] == 124 and "shift 4 continues it" in sh["at_the_deadline"]
+          and "shake" not in json.dumps(sh), str(sh))
     check("shift: a first shift has none", caster.read_shift(os.path.join(runs, "shake4")) is None
           and caster.read_shift(None) is None)
     so = caster.facts_for({"kind": "open", "t": 0, "prio": 8}, {"agents": []}, None, time.time() + 3600, sh)
@@ -546,7 +547,12 @@ with tempfile.TemporaryDirectory() as runs:
           and "later shift" in so.get("how_to_call_it", ""), str(so))
     far = caster.facts_for({"kind": "camera", "agents": [], "t": 0, "prio": 2}, {"agents": []}, None, time.time() + 2400, sh)
     near = caster.facts_for({"kind": "camera", "agents": [], "t": 0, "prio": 2}, {"agents": []}, None, time.time() + 300, sh)
-    check("shift: with the clock (time-left beats and the last 15 minutes)", "shift" not in far and near.get("shift"))
+    check("shift: on every beat (time left only with the clock)", far.get("shift") == sh and near.get("shift") == sh
+          and "minutes_to_deadline" not in far and near.get("minutes_to_deadline"))
+    check("shift numbers: this shift and the next pass, others and run names fail", caster.check_line(
+        "Shift three keeps rolling. Shift four gets this world next.", far, [], []) is None and caster.check_line(
+        "Shift five inherits it.", far, [], []) == "shift number not in facts: shift five" and caster.check_line(
+        "Shake five gets low density at ninety.", far, [], []) == "run name not in facts: shake five")
     check("shift: 'ends the run' is wrong at a handover", caster.check_line(
         "That horn ends the run for them!", dict(near, minutes_to_deadline="under a minute"), [], []) ==
         "says the run ends, but the next shift continues it")
@@ -554,7 +560,63 @@ with tempfile.TemporaryDirectory() as runs:
           in caster.EXCHANGE_RULES)
     cs6 = caster.Caster.__new__(caster.Caster)
     cs6.a = caster.argparse.Namespace(run_dir=os.path.join(runs, "shake5"))
-    check("Caster.shift reads --run-dir", cs6.shift()["number"] == 2, str(cs6.shift()))
+    check("Caster.shift reads --run-dir", cs6.shift()["this_shift"] == "shift 2", str(cs6.shift()))
+
+# Event beats carry the standing numbers as background; story beats keep them up front
+snapB = {"agents": [], "game_time": "3h10m", "science": {"stage_label": "Advanced", "spm": 30},
+         "research": {"label": "Rocket fuel", "progress": 0.22, "done_count": 32}}
+fa_ = caster.facts_for({"kind": "attack", "text": "Base under attack: boiler", "t": now, "prio": 9}, snapB)
+fr_ = caster.facts_for({"kind": "research", "text": "Research complete: Flammables", "t": now, "prio": 7}, snapB)
+check("background: an attack beat tucks research and science rate away; a research beat keeps them",
+      "researching" not in fa_ and fa_["background"]["researching"]["percent"] == 22 and "note" in fa_["background"]
+      and fr_.get("researching") and "background" not in fr_, str(fa_))
+tw_ = caster.TemplateWriter(caster.random.Random(2))
+tw_.T = {"attack": {"color": ["Meanwhile {researching_tech} sits at {researching_percent} percent."]}}
+check("background: templates still read it", tw_.write("color", {"kind": "attack"}, fa_, [], []) ==
+      "Meanwhile Rocket fuel sits at 22 percent.")
+check("background: numbers in it still count as facts", caster.check_line("Rocket fuel at twenty-two percent.", fa_,
+                                                                         [], []) is None)
+
+sf_ = caster.style_fault
+# HOSTS3: affectionate, no walking filler, no motto filler (shake7: 108 walking lines, 57 motto lines, mockery)
+snapW = {"agents": [{"name": "opus", "display_name": "Opus", "activity": "acting", "action": "walking",
+                     "motto": "Steam first, questions later"},
+                    {"name": "sol", "display_name": "Sol", "activity": "acting", "action": "building assembling machine 2"}],
+         "board": {"claims": [{"title": "Courier run for blue science", "agent": "opus", "owner": "opus"}]}}
+ow = caster.agent_facts(snapW, "opus")
+check("agent facts: no walking, the board job instead, no motto unless asked", "doing" not in ow and
+      ow.get("working_on") == "Courier run for blue science" and "motto" not in ow and
+      caster.agent_facts(snapW, "opus", motto=True)["motto"].startswith("Steam"), str(ow))
+fl = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"}, snapW)
+check("lull: busy agents are the ones with a job or a task", [b["name"] for b in fl.get("busy_agents", [])] ==
+      ["Opus", "Sol"], str(fl.get("busy_agents")))
+check("style: walking filler, mockery, motto filler and calling a fact false are cut", all(sf_(t) for t in (
+    "Opus is still walking. Four hours in.", "Classic Opus. Big chat energy.", "Haiku's still planning at spawn.",
+    "That motto aged fine.", "Science per minute says sixty. That number is a lie.",
+    "Opus is writing commands again. Planning, they call it.", "Gemini's just waiting.")) and
+      sf_("Opus is on the courier run for blue science.") is None and
+      sf_("Their motto is steam first.", '"motto": "steam first, questions later"') is None)
+check("quote marks come off in pairs only", caster.clean('"Steam first, questions later." Ran out of both.') ==
+      '"Steam first, questions later." Ran out of both.' and caster.clean('"Huge play!"') == "Huge play!" and
+      caster.clean('Steam first, questions later." Ran out.') == "Steam first, questions later. Ran out." and
+      caster.clean('Sol says "more labs" again.') == 'Sol says "more labs" again.')
+check("the notes ask for warmth, not mockery", "the hosts like them" in caster.SPOKEN and "Never mock" in caster.SPOKEN)
+
+# Shake6 study P1 item 3: planets reached, and the base game gets no Space Age notes
+base_snap = {"space": {"space_age": False, "active": False, "planets": ["Nauvis"]}}
+sa_snap = {"space": {"space_age": True, "active": False, "planets": ["Nauvis"]}}
+check("show notes: a base-game snapshot's space block is not Space Age", caster.show_for(base_snap) == caster.SHOW
+      and caster.show_for(sa_snap) != caster.SHOW and caster.planet_facts(base_snap) == {})
+pf = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"}, sa_snap)
+check("planets: Nauvis reached, the four others ahead", pf.get("planets_reached") == ["Nauvis"] and
+      pf.get("planets_not_reached_yet") == ["Vulcanus", "Fulgora", "Gleba", "Aquilo"], str(pf))
+check("planets: a line about a planet nobody reached is cut; a future goal is fine", caster.check_line(
+    "Thirty packs a minute won't rebuild Vulcanus.", pf, [], []) == "planet not reached: Vulcanus" and caster.check_line(
+    "Vulcanus is the next big goal.", pf, [], []) is None)
+pv = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"},
+                      {"space": {"space_age": True, "planets": ["Nauvis", "Vulcanus"]}})
+check("planets: once reached, it may be named", pv["planets_reached"] == ["Nauvis", "Vulcanus"] and caster.check_line(
+    "Vulcanus has a foothold now.", pv, [], []) is None, str(pv))
 
 # Hosts that sound human (COPY.md): the post-filter and the one rewrite
 rs = caster.restyle
@@ -571,14 +633,15 @@ check("style: 'X, not Y' and 'not X, but Y' are rejected", sf_("Those furnaces w
       sf_("Furnaces warm, science moving, not yet there.") is None)
 check("style: documentary narration, stock words, similes", sf_("Here in the wild, Grok marks water tiles.") and
       sf_("The labs are humming.") and sf_("Astra loops coal like a river finding its bed.") and
-      sf_("Looks like a coal run.") is None)
+      sf_("Looks like a coal run.") is None and sf_("Grok's back and talking like a shift supervisor.") is None)
 check("style: a body metaphor on machines unless the facts use the word", sf_("Twelve packs starve six labs.") and
       sf_("Twenty machines starved.", '"low power: 84 of 234 machines starved"') is None
       and sf_("Labs dream of green.") and sf_("Oh, there it is.") is None)
 check("style: three numbers in a line is too many; 'one' and two numbers are fine",
       sf_("Forty-seven on circuits, twenty techs deep, and 12 labs.") == "style: too many numbers in one line" and
       sf_("One more lab. Thirty-three science a minute, up from twenty.") is None and
-      sf_("Logistics 2 at sixty-nine percent.") is None)
+      sf_("Logistics 2 at sixty-nine percent.") is None and
+      sf_("Eleven gone now. Six pipes, two inserters. Small biters again.") is None)  # shake7: per sentence
 check("style faults go through check_line", caster.check_line("The furnaces bleed coal.", {"event": "lull"}, [], [])
       == "style: metaphor 'bleed'")
 tx = caster.tidy_exchange([("pbp", "Biters at the wall!"), ("color", "Oh no!"), ("pbp", "Holding!"),
@@ -603,6 +666,18 @@ check("the writer prompt carries the notes, the 18-word limit and the rewrite no
       str(px))
 
 
+sa = caster.spoken_alert
+check("spoken alerts: losses, raids, power and deaths as a person says them (shake7 aired the raw loss text)",
+      sa("11 lost: 6 pipe, 2 inserter (by small biters)") == "11 lost to small biters. 6 pipes, 2 inserters." and
+      sa("Base under attack near (48, 16): steam engine") == "Biters at the steam engine." and
+      sa("Low power: 84 of 234 machines starved") == "Low power. 84 of 234 machines starved." and
+      sa("Engineer under attack near (-48, 16)") == "Engineer under attack." and
+      sa("Sonnet died; lost assembling machine 1") == "Sonnet died. Lost assembling machine 1.",
+      sa("Sonnet died; lost assembling machine 1"))
+tl_ = caster.TemplateWriter(caster.random.Random(4)).write("pbp", {"kind": "loss"},
+                                                           {"text": "11 lost: 6 pipe, 2 inserter (by small biters)"}, [], [])
+check("the loss template speaks the alert", tl_ in ("Damage report. 11 lost to small biters. 6 pipes, 2 inserters.",
+                                                    "That hurts. 11 lost to small biters. 6 pipes, 2 inserters."), tl_)
 tpl = [t for kinds in caster.TemplateWriter.T.values() for ts in kinds.values() for t in ts]
 check("templates: no style faults, no dashes or semicolons, one exclamation at most", all(
     caster.style_fault(t) is None and not re.search(r"—|–|;", t) and t.count("!") <= 1 for t in tpl),
@@ -651,6 +726,43 @@ w3 = _Writer([[bad[1]], good])
 c3 = _caster(w3)
 c3.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
 check("urgent beats get no rewrite", len(w3.notes) == 1, str(w3.notes))
+
+# HOSTS3: the cards on screen (recap, production, spotlight...) get their own call, and other beats talk over them
+rc = caster.card_facts({"type": "recap", "title": "Last 23 minutes", "started": now, "ends": now + 30,
+                        "facts": {"minutes": 23, "attacks": 58, "research_done": ["Military 2"]}})
+sp_ = caster.card_facts({"type": "spotlight", "title": "Spotlight: Sol", "facts": {"agent": "Sol", "doing": "walking",
+                                                                                   "motto": "Keep the furnaces warm"}})
+check("cards: recap, production and spotlight each have a call; a spotlight drops 'walking'",
+      "best story" in rc["how_to_call_it"] and rc["on_screen_now"]["attacks"] == 58 and
+      "doing" not in sp_["on_screen_now"] and "root for" in sp_["how_to_call_it"] and
+      all(k in caster.CARD_CALLS for k in ("recap", "production", "spotlight", "overview", "research")), str(sp_))
+
+
+class _FactsWriter(_Writer):
+    def exchange(self, e, facts, *a, **k):
+        self.facts = facts
+        return [("pbp", "Twenty-three minutes in one card."), ("color", "Military 2 is the big one there.")]
+
+
+fw = _FactsWriter([])
+c4 = _caster(fw)
+card = {"id": "seg-9", "type": "recap", "state": "live", "title": "Last 23 minutes", "started": now,
+        "ends": time.time() + 25, "facts": {"minutes": 23, "attacks": 58}}
+c4.say_exchange({"kind": "chat", "agent": "sol", "text": "more labs north", "t": now, "prio": 4},
+                {"agents": [], "segment": card}, "pbp", 2)
+check("a chat beat while a card is up carries the card and is told to talk about it first",
+      fw.facts.get("on_screen_now", {}).get("segment") == "recap" and "talk about what it shows first" in
+      fw.facts.get("card_on_screen", "") and "best story" in fw.facts["card_on_screen"], str(fw.facts)[:300])
+fw2 = _FactsWriter([])
+c5 = _caster(fw2)
+c5.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": [], "segment": card}, "pbp", 2)
+check("an urgent beat does not carry the card", "on_screen_now" not in fw2.facts)
+
+# HOSTS3 item 5: the page plays one voice at a time by rank (static/audio.js, audio_selftest.mjs)
+check("clip ranks: urgent events and space moments, viewer answers, banter",
+      [caster.clip_rank(e) for e in ({"kind": "death", "prio": 9}, {"kind": "space", "prio": 7},
+                                     {"kind": "viewer", "prio": 6}, {"kind": "chat", "prio": 4})] ==
+      ["urgent", "urgent", "viewer", "banter"])
 
 # Round 6 (shake5 P1 item 4): stage 3 is "Oil & blue science", and the stage fact says which packs are made
 import model  # noqa: E402
