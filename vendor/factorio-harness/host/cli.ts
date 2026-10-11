@@ -33,7 +33,9 @@ const help = `fh — Factorio agent CLI
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
   fh call walk --args '{"direction":"east","ticks":60}' --wait
   fh wait                                   Block until the character's current action (and combat) ends
-  fh sleep SECONDS                          Let the game run up to 900 s; wakes early on damage, death or a mention
+  fh sleep SECONDS [--until COND]           Wait up to 900 s (never past the deadline) while your action and queue keep going;
+                                            wakes on damage, death, a mention, a tell, board news, your queue finishing or
+                                            stalling, or COND: researched [TECH] | crafting_done | item_count ITEM>=N [at X,Y X,Y]
   fh view --out artifacts/map.png            Render a local schematic PNG, also works headless
   fh deploy [--file runtime.lua]             Validate and replace live Lua runtime
   fh watch [--file runtime.lua]              Deploy changed Lua; retain old code on invalid update
@@ -71,6 +73,44 @@ No automatic replay of mutations. stdout uses compact labelled tables; --format 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be a JSON object`);
   return value as Record<string, unknown>;
+}
+/**
+ * `fh sleep --until`: a wait_until condition as JSON, or as words:
+ * `researched [TECH]`, `crafting_done`, `item_count ITEM>=N|ITEM<N [at X,Y X,Y ...]`,
+ * or any condition name followed by key=value pairs (`ammo_below count=5`).
+ */
+function parseUntil(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{')) return object(JSON.parse(trimmed),'--until');
+  const [kind = '', ...rest] = trimmed.split(/\s+/);
+  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N [at X,Y X,Y], or a wait_until condition as JSON';
+  if (kind === 'researched' || kind === 'research') {
+    if (rest.length > 1) throw new Error(usage);
+    return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
+  }
+  if (kind === 'crafting_done' || kind === 'crafted') return {until:'crafting_done'};
+  const value = (v: string): unknown => /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
+  if ((kind === 'item_count' || kind === 'items') && /[<>]/.test(rest.join(' '))) {
+    const match = rest.join(' ').match(/^([\w-]+)\s*(>=|<)\s*(\d+)(?:\s+(?:at|in)\s+(.+))?$/);
+    if (!match) throw new Error(usage);
+    const condition: Record<string, unknown> = {until:'item_count', item:match[1], [match[2] === '>=' ? 'at_least' : 'below']:Number(match[3])};
+    if (match[4]) {
+      condition.positions = match[4].split(/[\s;]+/).filter(Boolean).map(pair => {
+        const xy = pair.match(/^\(?(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)?$/);
+        if (!xy) throw new Error(`--until positions are X,Y pairs separated by spaces: ${pair}`);
+        return {x:Number(xy[1]), y:Number(xy[2])};
+      });
+    }
+    return condition;
+  }
+  if (!/^[a-z_]+$/.test(kind)) throw new Error(usage);
+  const condition: Record<string, unknown> = {until:kind};
+  for (const pair of rest) {
+    const at = pair.indexOf('=');
+    if (at < 1) throw new Error(usage);
+    condition[pair.slice(0, at)] = value(pair.slice(at + 1));
+  }
+  return condition;
 }
 function integer(value: string | undefined, fallback: number): number {
   const result = value === undefined ? fallback : Number(value);
@@ -138,7 +178,7 @@ async function main() {
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'},
     full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'},
-    'text-file':{type:'string'}, 'deadline-file':{type:'string'},
+    'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'},
   }});
   let command = positionals[0];
   if (!command || values.help || command === 'help') { process.stdout.write(help); return; }
@@ -455,20 +495,32 @@ async function main() {
   }
   // fh sleep: the game runs; poll the read-only sleep_check (peek: mentions
   // stay unread) about once a second, then read it once more normally so the
-  // reply carries the team block with whatever woke the agent.
-  async function sleep(seconds: number): Promise<Reply> {
-    const started = await harness.request('sleep',{seconds});
+  // reply carries the team block with whatever woke the agent. A sleep never
+  // runs past the workspace deadline: it is cut to the time left and ends there.
+  async function sleep(seconds: number, condition?: Record<string,unknown>): Promise<Reply> {
+    const left = deadline === undefined ? undefined : deadline-Date.now();
+    if (left !== undefined && left <= 1000) {
+      return {ok:true, result:{woke:'deadline', slept_s:0, note:`no sleep: ${deadlineText(deadline!)}`}};
+    }
+    const capped = left !== undefined && left < seconds*1000;
+    if (capped) seconds = Math.max(1, Math.floor(left/1000));
+    const started = await harness.request('sleep',condition ? {seconds,condition} : {seconds});
     if (!started.ok) return started;
-    const deadline = Date.now()+seconds*1250+10000;
-    while (!stopping && Date.now()<deadline) {
+    let until = Date.now()+seconds*1250+10000;
+    if (capped) until = Math.min(until, deadline!+1000);
+    while (!stopping && Date.now()<until) {
       const check = await harness.request('sleep_check',{peek:true});
       if (!check.ok || check.result?.woke) break;
       await delay(1000);
     }
     if (stopping) throw new Error('Stopped sleeping; the game keeps running.');
     const final = await harness.request('sleep_check',{});
-    if (final.ok && !final.result?.woke) return {...final, ok:false, error:{code:'timed_out',message:`sleep timed_out: the game advanced less than ${seconds} s in ${Math.round(seconds*1.25+10)} s of real time (paused or slow server)`}};
-    if (final.ok && final.result?.woke === 'died') return {...final, ok:false, error:{code:'died',message:'your character died while sleeping'}};
+    const woke = final.result?.woke;
+    if (final.ok && capped && (!woke || woke === 'elapsed')) {
+      return {...final, result:{...final.result, woke:'deadline', note:'this sleep was cut to end at the deadline'}};
+    }
+    if (final.ok && !woke) return {...final, ok:false, error:{code:'timed_out',message:`sleep timed_out: the game advanced less than ${seconds} s in ${Math.round(seconds*1.25+10)} s of real time (paused or slow server)`}};
+    if (final.ok && woke === 'died') return {...final, ok:false, error:{code:'died',message:'your character died while sleeping'}};
     return final;
   }
   // fh wait: block until whatever the character is doing (and any combat) ends.
@@ -498,6 +550,14 @@ async function main() {
   }
   async function execute(action: string, args: Record<string,unknown>, id?: string, wait = false, onAccepted?: (reply: Reply) => void): Promise<Reply> {
     const requestId = id ?? randomUUID();
+    // `fh call sleep` (with or without --wait) blocks like fh sleep: the raw
+    // action only starts a sleep (shake4-6: Luna's 103 sleeps that never waited).
+    if (action === 'sleep' && !bridged) {
+      const seconds = args.seconds;
+      if (typeof seconds !== 'number' || !Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires seconds 1..900: fh sleep SECONDS');
+      if (args.condition !== undefined && (typeof args.condition !== 'object' || args.condition === null)) throw new Error('sleep condition must be an object; or use fh sleep SECONDS --until ...');
+      return sleep(seconds, args.condition as Record<string,unknown> | undefined);
+    }
     // A waited wait_until runs as long as the CLI waits: --wait-timeout MS
     // becomes its timeout in ticks (up to 15 minutes) unless args name one.
     if (action === 'wait_until' && wait && args.timeout === undefined && values['wait-timeout'] !== undefined) {
@@ -597,7 +657,7 @@ async function main() {
       if (bridged) throw new Error('sleep needs the harness mod (not a bridge session)');
       const seconds = Number(positionals[1]);
       if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires SECONDS 1..900');
-      const reply = await sleep(seconds);
+      const reply = await sleep(seconds, values.until === undefined ? undefined : parseUntil(values.until));
       output(reply);
       if (!reply.ok) process.exitCode=1;
     } else if (command === 'wait') {
