@@ -2,7 +2,8 @@
 """Offline check for tools/supervise.sh with a fake herdr that always reports the agent idle: an agent whose journal
 has a request in the last 2 minutes is working and is never nudged (shake3: Grok and Muse were nudged mid-turn); one
 whose last request is older is nudged. Claude Code's idle means its turn ended (shake4), so a claude agent is nudged
-anyway. python3 tools/test_supervise.py"""
+anyway. After the deadline an agent whose turn has ended is asked once for its final summary.
+python3 tools/test_supervise.py"""
 import datetime
 import os
 import subprocess
@@ -26,7 +27,7 @@ def iso(seconds_ago):
     return t.strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (t.microsecond // 1000)
 
 
-def run(last_request_ago, kind=None):
+def run(last_request_ago, kind=None, deadline_in=240):
     """Supervise for a few seconds against a journal whose last request is that old; return supervisor.log."""
     tmp = tempfile.mkdtemp()
     bindir, ws = os.path.join(tmp, "bin"), os.path.join(tmp, "ws")
@@ -36,7 +37,7 @@ def run(last_request_ago, kind=None):
     open(herdr, "w").write(FAKE_HERDR)
     os.chmod(herdr, 0o755)
     open(os.path.join(ws, "deadline.txt"), "w").write(
-        time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(time.time() + 240)) + "\n")
+        time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(time.time() + deadline_in)) + "\n")
     if kind:
         open(os.path.join(ws, ".context-hooks"), "w").write(kind + " 0 0 0\n")
     with open(os.path.join(ws, "journal.jsonl"), "w") as j:
@@ -70,6 +71,10 @@ def main():
     log, calls = run(None)
     assert "nudge 1 (status idle" in log, log
     print("no journal yet: nudged")
+    log, calls = run(10, deadline_in=-120)
+    assert "nudge 1" not in log and "after the deadline (status idle): asking for the final summary" in log, log
+    assert calls.count("agent prompt") == 1, calls
+    print("after the deadline, turn ended: asked once for the final summary")
 
 
 if __name__ == "__main__":
