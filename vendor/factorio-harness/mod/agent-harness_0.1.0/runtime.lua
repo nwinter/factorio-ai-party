@@ -482,7 +482,7 @@ function handlers.describe()
       rearm={radius='1..256: walk a nearest-first route through every turret in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left)',ticks='with radius: 1..36000 (default 3600)',ammo='ammo item (default firearm-magazine)',count='1..1000 target per turret (default 10)',positions='optional 1..64 positions instead of every turret in reach',types='default {ammo-turret}; artillery-turret allowed',note='gives from the main inventory, then the gun ammo slots (crafted ammo lands there); fails when none is held and turrets want more; waits for ammo in the hand-craft queue (awaiting_craft; outcome fed | failed | timed_out)'},
       refuel={radius='1..256: walk a nearest-first route through every burner in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left)',ticks='with radius: 1..36000 (default 3600)',fuel='fuel item (default coal)',count='1..1000 target per entity (default 10)',positions='optional 1..64 positions instead of every burner in reach',types='optional entity type filter',note='fails when no fuel is held and burners want more; waits for fuel in the hand-craft queue (awaiting_craft)'},
       collect={types='entity types (default furnace, assembling-machine: machine outputs only)',chests='boolean: also empty plain chests (container, logistic-container) in reach or radius; off by default because chests are usually feed stock you placed (result notes chests_skipped / left_in_chests)',item='optional: only this item',positions='optional 1..64 positions instead of everything in reach (named chests are always taken from)',
-        radius='with item: 1..256, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; a timed action',count='with radius: stop after this many (default all)',ticks='with radius: 1..36000 (default 3600)',
+        radius='with item: 1..256, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; a timed action',count='with radius: stop after this many (default all)',want='optional, with item: hold this many; takes only the difference (nothing when you already have it); not with count',ticks='with radius: 1..36000 (default 3600)',
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited'},
       research={technology='name (omit everything to report: current, progress, queue, pending)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
       blueprint_import={blueprint='export string',slot='default clipboard'},blueprint_export={slot='default clipboard',layout='true returns normalized relative layout and material costs instead of export string'},blueprint_list={},blueprint_delete={slot='name'},
@@ -2358,6 +2358,19 @@ local collect_types={plain={'furnace','assembling-machine'},chests={'furnace','a
 function handlers.collect(p,a)
   assert(a.chests==nil or type(a.chests)=='boolean','chests must be true or false')
   assert(a.types==nil or (type(a.types)=='table' and #a.types>=1 and #a.types<=16),'types requires 1..16 entity types')
+  -- want: a target holding (shake2 and shake3 plans wrote collect want=N);
+  -- takes only the difference, and nothing when the character has enough.
+  -- Worked out when the step runs, so a queued step sees what earlier steps got.
+  if a.want~=nil then
+    assert(type(a.item)=='string','want needs item: collect item=NAME want=N stops once you hold N')
+    assert(a.count==nil,'give count (how many to take) or want (how many to hold), not both')
+    local want,have=integer(a.want,1,1,100000,'want'),held(p,a.item,a.quality)
+    if have>=want then return {transferred=0,held=have,want=want,note='already holding '..have..' '..a.item} end
+    local copy={}
+    for k,v in pairs(a) do copy[k]=v end
+    copy.want=nil; copy.count=math.min(want-have,10000)
+    a=copy
+  end
   if a.radius~=nil then
     local action,out=stock.start(p,a,integer(a.ticks,3600,1,36000,'ticks'))
     if state().active[p.index] then finish(p.index,'replaced') else stop(p) end

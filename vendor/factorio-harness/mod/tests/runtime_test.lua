@@ -522,6 +522,24 @@ feed_slots[1].count,feed_slots[1].valid_for_read=40,true
 main=inv(stack(nil,0),stack(nil,0),stack(nil,0))
 local with_chests=call('collect',{chests=true})
 eq(with_chests.transferred,40); eq(with_chests.chests_skipped,nil); eq(feed_slots[1].count,0)
+-- want: hold N, taking only the difference, in a queue too (shake2 and shake3:
+-- Opus's plans failed with "unknown argument want for collect").
+do
+  feed_slots[1].count,feed_slots[1].valid_for_read=40,true
+  main=inv(stack('copper-plate',15),stack(nil,0),stack(nil,0))
+  local topped=call('collect',{item='copper-plate',positions={{x=5,y=0}},want=25})
+  eq(topped.transferred,10); eq(feed_slots[1].count,30)
+  local enough=call('collect',{item='copper-plate',positions={{x=5,y=0}},want=20})
+  eq(enough.transferred,0); eq(enough.held,25); eq(feed_slots[1].count,30)
+  call('queue_cancel',{})
+  call('queue_submit',{steps={{action='collect',args={item='copper-plate',positions={{x=5,y=0}},want=40}}}})
+  advance(1)
+  eq(feed_slots[1].count,15)
+  local h=call('queue_status').history; eq(h[#h].action,'collect'); eq(h[#h].ok,true)
+  fails(function() call('collect',{positions={{x=5,y=0}},want=5}) end,'want needs item')
+  fails(function() call('collect',{item='copper-plate',want=5,count=5}) end,'not both')
+  call('queue_cancel',{})
+end
 p.surface.find_entities_filtered=function(f) eq(f.force,p.force); return {f2,f1} end
 main=inv(stack('coal',7),stack(nil,0),stack(nil,0))
 fails(function() call('refuel',{fuel='iron-ore'}) end,'fuel must be')
