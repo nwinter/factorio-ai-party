@@ -45,6 +45,8 @@ ln -sf AGENTS.md "$dir/CLAUDE.md"
 cat > "$dir/fh" <<EOS
 #!/usr/bin/env bash
 export POG_WORLD=$world
+# The clock: line on every reply ends with the time left until this deadline.
+export FH_DEADLINE_FILE="$dir/deadline.txt"
 # Every request and reply is journaled for the run analysis.
 exec "$root/bin/fh" "\$@" $target --journal "$dir/journal.jsonl"
 EOS
