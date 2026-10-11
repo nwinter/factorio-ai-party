@@ -3549,12 +3549,14 @@ for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
 -- clients and attached agents are not humans.
 M.players=require('players'){state=state,
   is_human=function(index) return not M.bots.is_index(index) and not M.is_director(index) and not (state().controlled and state().controlled[index]) end,
-  -- Agents whose last request (or peek) is within window ticks.
+  -- Agents whose own last request is within window ticks. Peeks do not
+  -- count (a clock a peek started is marked peeked): the overlay peeks at
+  -- every bot's status every few seconds.
   active_agents=function(window)
     local out,clocks={},state().clocks or {}
     for _,b in ipairs(M.bots.list()) do
       local c=clocks[b.index]
-      if c and game.tick-math.max(c.call_tick or 0,c.seen_tick or 0)<=window then out[#out+1]=b.name end
+      if c and not c.peeked and game.tick-c.call_tick<=window then out[#out+1]=b.name end
     end
     return out
   end,
@@ -3639,7 +3641,7 @@ local function clock_line(p,peek)
   local idle=c and c.idle or 0
   local waited=c and c.craft_wait or 0
   if peek and c then c.seen_tick=game.tick
-  else clocks[p.index]={call_tick=game.tick,idle=0,craft_wait=0} end
+  else clocks[p.index]={call_tick=game.tick,idle=0,craft_wait=0,peeked=peek or nil} end
   local function t(ticks)
     local sec=math.floor(ticks/60)
     if sec>=3600 then return string.format('%dh%02dm',math.floor(sec/3600),math.floor(sec/60)%60) end

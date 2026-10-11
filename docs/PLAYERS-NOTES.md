@@ -72,7 +72,7 @@ A guest can still do the following:
 
 - `fh vote kick|ban|trust NAME "reason"` opens a vote with a yes, or adds a yes to the open one. `fh vote no ...` votes against.
 - There is one open vote per kind and player, and it stays open 10 minutes.
-- The electorate is the agents whose last request (or peek) was within 10 minutes of game time.
+- The electorate is the agents whose own last request was within 10 minutes of game time. Peeks do not count, because the overlay peeks at every bot's status every few seconds.
 - `tools/votes.tally`:
   - carried once yes is more than half the electorate;
   - failed once no is;
