@@ -411,9 +411,15 @@ local function summary(e)
     if other then out.paired_with=other.position else out.unpaired=true end
   end
   -- Inserter direction names the pickup side; show the tiles it moves between.
+  local function tile(pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
   if e.type=='inserter' then
-    local function tile(pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
     out.pickup=tile(e.pickup_position); out.drop=tile(e.drop_position)
+  end
+  -- A drill drops onto one tile beside its footprint: which, and into what
+  -- (sapilot board #4: Astra placed output chests by trial).
+  if e.type=='mining-drill' then
+    local ok,drop,into=pcall(function() return e.drop_position,e.drop_target end)
+    if ok and drop then out.drop=tile(drop); out.drop_into=into and into.valid and into.name or nil end
   end
   -- Pumps and underground pipes likewise: where fluid enters and leaves.
   if e.type=='pump' or e.type=='offshore-pump' or e.type=='pipe-to-ground' then pipes.hint(e,out) end
@@ -508,7 +514,7 @@ function handlers.describe()
       scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)'},
       nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..64 (default 32); map-known entities only',limit='1..64 (default 5)'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
       wire={from='pole {x,y} (optional name/unit_number) in reach',to='pole {x,y} in reach',disconnect='boolean: remove the copper wire instead'},
-      inspect={position='{x,y}',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach'}, rotate={position='{x,y}',reverse='boolean'},
+      inspect={position='{x,y}',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too'}, rotate={position='{x,y}',reverse='boolean'},
       configure={position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',recipe='enabled recipe',filters='or: item names for a filtering inserter/loader ([] clears; slot count from the entity)',filter_mode='whitelist|blacklist (inserters)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
       transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|cargo_landing_pad_main|hub_main|asteroid_collector_output|...; inferred when omitted (fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out)',direction='to_entity|to_player; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',up_to='optional target total cap'},
       feed={note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel; each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items)',
@@ -980,11 +986,13 @@ local scan_fields={
   end,
   -- Inserter pickup and drop positions with the entity found at each.
   io=function(e)
-    if e.type~='inserter' then return nil end
+    if e.type~='inserter' and e.type~='mining-drill' then return nil end
     local function at(pos)
       local target=e.surface.find_entities_filtered{position=pos,limit=1,type={'resource','character','corpse','character-corpse','item-entity','item-request-proxy','sticker','fire','smoke-with-trigger','projectile','entity-ghost','tile-ghost'},invert=true}[1]
       return string.format('%g,%g',pos.x,pos.y)..(target and ' '..target.name or '')
     end
+    -- A drill only drops (onto the ground when nothing is there).
+    if e.type=='mining-drill' then return '-> '..at(e.drop_position) end
     return at(e.pickup_position)..' -> '..at(e.drop_position)
   end,
   -- Fluidboxes with contents and where each pipe connection leads.
@@ -2009,8 +2017,10 @@ function handlers.inspect(p,a)
   out.electric_network_id=e.electric_network_id
   -- Inserters: the exact pickup/drop points, the tiles they are on, and what
   -- stands there (the same view as scan fields=io).
-  if e.type=='inserter' then
-    out.pickup_position=e.pickup_position; out.drop_position=e.drop_position
+  if e.type=='inserter' or e.type=='mining-drill' then
+    out.pickup_position=e.type=='inserter' and e.pickup_position or nil
+    local okd,drop=pcall(function() return e.drop_position end)
+    out.drop_position=okd and drop or nil
     local ok,io=pcall(scan_fields.io,e)
     if ok then out.io=io end
   end

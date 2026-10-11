@@ -1411,6 +1411,13 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   eq(call('inspect',{position={x=24.5,y=0.5}}).name,'wooden-chest')
   world={item}
   eq(call('inspect',{position={x=24.5,y=0.5}}).name,'item-on-ground')
+  -- A drill's drop tile and what it drops into (sapilot board #4).
+  local drill={valid=true,name='burner-mining-drill',type='mining-drill',position={x=30,y=0},half=1,force=p.force,direction=0,
+    drop_position={x=29.7,y=-1.3},drop_target=chest,get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  drill.surface={find_entities_filtered=function(f) return f.position.y==-1.3 and {chest} or {} end}
+  world={drill}
+  local seen=call('inspect',{position={x=30,y=0}})
+  eq(seen.drop.x,29.5); eq(seen.drop.y,-1.5); eq(seen.drop_into,'wooden-chest'); eq(seen.io,'-> 29.7,-1.3 wooden-chest'); eq(seen.pickup_position,nil)
   p.surface.find_entities_filtered=find
 end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed
