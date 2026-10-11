@@ -90,22 +90,23 @@ case $kind in
     model=${6:-gemini-3.8-flash-high}
     pane=$(new_pane)
     limit=$(python3 "$root/tools/context.py" limit agy "$model")
-    # Antigravity's sandbox only works in print mode, so run sandboxed turns back to back until the deadline.
+    # Print-mode turns back to back until the deadline. No --sandbox: it blocked ./fh (its target is outside the
+    # workspace) and the model bypassed it on 576 calls in shake1 (auto-approved), so it only cost time.
     # agy has no compaction threshold setting (it compacts near 280K): past the limit, the next turn starts a fresh
     # conversation that picks up from notes.md.
     cat > "$dir/.agy-loop.sh" <<EOL
 #!/usr/bin/env bash
 cd '$dir'
 deadline=\$(date -j -f "%Y-%m-%d %H:%M %Z" "\$(cat deadline.txt)" +%s)
-agy -p "\$(cat '$prompt')" --model $model --sandbox --dangerously-skip-permissions
+agy -p "\$(cat '$prompt')" --model $model --dangerously-skip-permissions
 while [ "\$(date +%s)" -lt "\$deadline" ]; do
   tokens=\$(python3 '$root/tools/context.py' agy-tokens '$dir')
   if [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ]; then
     echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
-    agy -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat." --model $model --sandbox --dangerously-skip-permissions
+    agy -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat." --model $model --dangerously-skip-permissions
   else
     left=\$(( (deadline - \$(date +%s)) / 60 ))
-    agy -c -p "Continue: the deadline in deadline.txt is \$left minutes away and it is the only stop condition. Re-read notes.md, check ./fh call status and chat, and take the most useful open item. Write the final summary only in the last three minutes." --model $model --sandbox --dangerously-skip-permissions
+    agy -c -p "Continue: the deadline in deadline.txt is \$left minutes away and it is the only stop condition. Re-read notes.md, check ./fh call status and chat, and take the most useful open item. Write the final summary only in the last three minutes." --model $model --dangerously-skip-permissions
   fi
 done
 EOL
