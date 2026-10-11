@@ -168,7 +168,7 @@ stops a player.
 | spotlight `{agent}` | 20-45 | lower-third card: model, motto, current action and location, latest chat line, claims | main follows the agent (zoom 0.9) |
 | overview | 15-30 | card: agents in the world, spread, areas | main on the agents' centre, zoom 0.2 or wider to fit |
 | recap `{minutes}` | 20-40 | panel: SPM, research finished, board items done, attacks, deaths in the window | unchanged |
-| attack_replay | 15-40 | listed, `available: false` until the replay buffer is set up (see What's left) | |
+| attack_replay | 15-40 | the OBS "replay" scene (see Replays); available while a fresh clip waits | program scene switch |
 
 Rules (the director has the last word): one segment start per 180 s whoever asks (`spacing`). When the director
 cuts the main camera to a fight, death, base attack or loss, a running segment ends at once (`cut: "attack"`) and
@@ -177,6 +177,36 @@ attack spacing, or `attack_cut: false`) neither end nor block segments, so a bus
 the next of production, spotlight, research, overview, recap itself (`by: "director"`). Tune with `"segments": {...}`
 in the run config. Checked: selftest (states, spacing, spotlight hold, cut, lull), and all five types requested over
 HTTP on the mock and rendered in jsdom on both pages. Not yet seen in OBS.
+
+## Replays
+
+`replays.py`, operator go-ahead in REPLAYS.md (2026-10-11): the director may switch the program scene for replays
+and segments as long as it always returns to "stream"; the replay buffer (45 s, recording encoder) stays enabled.
+
+- When: the director's attack cuts drive it. After a cut to a fight or base attack, the buffer is saved 17 s later
+  (just before the 20 s attack hold ends) and the last 15 s are replayed: the fight as main followed it. A death
+  replays only if main showed that agent in the 10 s before (else the buffer holds nothing of it): saved 5 s after,
+  shown from 11 s before to 4 s after. At most one replay per 120 s; a clip not on air within 120 s is dropped.
+- How: the clip becomes an `attack_replay` segment (it skips the 180 s segment spacing, still waits for a free slot
+  and for 20 s after the last attack cut), so the casters see it and talk over it. On "starting" the banner page is
+  reloaded; on "live" the clip is loaded into the "replay clip" media source, seeked to the start of the window, and
+  the program switches to "replay"; when the segment ends or is cut by a new fight the program goes back to
+  "stream". A watchdog switches back whenever "replay" is on air with nothing playing.
+- The "replay" scene (created on first connect if missing; an existing one is left alone): "replay clip"
+  (ffmpeg_source, muted, since the clip's audio has the earlier voices in it), "replay banner" (browser source on
+  `http://127.0.0.1:8787/replay`: REPLAY tag, what happened, a time bar, red frame) and the live "stream overlay"
+  input off-canvas (x 4000) so the casters' voices keep playing during the replay.
+- OBS access: `obsws.py`, a stdlib obs-websocket v5 client (serve.py stays dependency-free), on `--obs
+  127.0.0.1:4455` (the SSH tunnel) with the password in `~/.config/pog/obs.pw`, as `tools/obs.py` uses. Replays are on
+  by default with `--world` and off with `--mock` (`--replays` / `--no-replays`; `"replays": false` or tuning in the
+  run config). `GET /replays.json`: connection, buffer state, pending / clip / playing, last replay, and encoder
+  health every 30 s (CPU, fps, render time, render and output frames skipped since the last read, which outputs
+  are active).
+- Checked on the box (00:00-00:06, nothing live): scene created, buffer started, a test clip saved
+  (`D:/pog/recordings/Replay_...mkv`, 41 s) and played from 26.3 s for 15 s in "replay", then back to "stream"; two
+  more from the mock's deaths. With only the buffer running: 0 output frames skipped, 14 render frames skipped
+  around the scene switch, CPU 9%. The banner did not show on the box (tunnel down, see What's left); in jsdom it
+  renders the live segment ("Luna died", "21 s ago", time bar).
 
 ## Vertical (9:16) page
 
@@ -208,13 +238,16 @@ current docs before relying on it:
   channel) or YouTube's own dual-format support, if it now takes both from one encoder. Check that first: if it
   exists, it decides the OBS side.
 - OBS side, cheapest first: (1) the free Aitum Vertical plugin adds a second 9:16 canvas with its own scenes and
-  its own stream output (its own key), sharing the sources already in OBS; (2) native multiple canvases, if the
-  installed OBS version has them; (3) a second OBS instance with its own profile (most CPU/GPU, two configs to keep
-  in sync).
-- Proposed: Aitum Vertical (or native canvases if present) with one vertical scene: a browser source on
+  its own stream output (its own key), sharing the sources already in OBS; (2) native multiple canvases; (3) a
+  second OBS instance with its own profile (most CPU/GPU, two configs to keep in sync). Checked on the box
+  (2026-10-11, read-only over obs-websocket): OBS 32.2.2, obs-websocket 5.7.4. `GetCanvasList` exists and lists one
+  canvas, "Main" (1920x1080, 60 fps); the websocket has no request to create a canvas, so a 9:16 canvas has to come
+  from a plugin (Aitum Vertical builds on these canvases) or OBS's own UI if this version exposes one.
+- Proposed: Aitum Vertical (or a native canvas) with one vertical scene: a browser source on
   `http://127.0.0.1:8787/portrait` at 1080x1920, plus the three director window captures scaled into the holes above
-  (main 1032x581 at 24,112; cam2 508x286 at 24,709; cam3 508x286 at 548,709). Cost: a second 1080x1920 encode
-  (NVENC handles both on one GPU) and a second YouTube live event. No change to the existing `pog` profile output.
+  (main 1032x581 at 24,112; cam2 508x286 at 24,709; cam3 508x286 at 548,709). Cost: a second 1080x1920 encode on
+  the same Quick Sync encoder (check headroom with `/replays.json` stats, below) and a second YouTube live event. No
+  change to the existing `pog` profile output.
   Installing the plugin, adding the scene and the second stream are operator steps: the rules for this branch
   exclude output settings and starting streams.
 
@@ -288,12 +321,10 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - World n's runtime still rejects `peek` on `status`; the merged eng/board runtime accepts it on any request, so
   worlds running the current runtime get peek reads.
 - The board has only been checked against the shapes in eng/board's code, not a running world with it.
-- Replays (requested by Nick): the plan is the OBS replay buffer on the program output, saved by the director
-  (`SaveReplayBuffer`) a few seconds after a death or a fight on camera, then a replay scene with a REPLAY banner and
-  a cut back. Blocked here: the replay buffer is part of the `pog` profile's output settings and switching the
-  program scene during a live stream goes beyond this branch's "switch for screenshots and switch back" rule, so
-  both need the operator's go-ahead; encoder headroom (Quick Sync with stream + recording + buffer) could not be
-  read because this session cannot reach the OBS websocket. Until then `attack_replay` stays unavailable.
+- Replays: the banner over a real replay has not been seen. On the box the clip played, but the reverse tunnel
+  (8787 on the box -> the Mac) was down, so the banner page could not load. Check it with the tunnel up during
+  shake3. Encoder load with stream + recording + replay buffer together is unmeasured: watch
+  `skipped_since_last.outputSkippedFrames` in `/replays.json` during the first live run.
 - Zoom levels are guesses from the director client at 1080p; tune `zoom_*` in the run config's `director` after
   seeing real fights and builds on the camera feeds.
 
