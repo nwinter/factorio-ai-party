@@ -58,8 +58,10 @@ def claude(d):
     # Shake3: the route attached its git status and recent commits at start and after each compaction.
     cfg["includeGitInstructions"] = False
     env = cfg.setdefault("env", {})
-    # Long timed actions and wait_until need more than the 2-minute default Bash timeout.
-    env.update({"BASH_DEFAULT_TIMEOUT_MS": "300000", "BASH_MAX_TIMEOUT_MS": "960000",
+    # Long timed actions, wait_until and fh sleep need more than the 2-minute default Bash timeout. A 900 s
+    # `fh sleep` may take up to 1135 s of real time on a slow server (cli.ts: seconds x 1.25 + 10); past the timeout
+    # Claude Code moves the call to the background, where it outlives the turn (sleep study, shake6 Opus at 300 s).
+    env.update({"BASH_DEFAULT_TIMEOUT_MS": "1200000", "BASH_MAX_TIMEOUT_MS": "1200000",
                 "ENABLE_CLAUDEAI_MCP_SERVERS": "false", "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0",
                 "CLAUDE_CODE_ENABLE_CFC": "0", "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
                 # "The user hasn't heard from you in a while" (shake3: Opus 36, Sonnet 29); also on the launch line.
