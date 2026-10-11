@@ -57,6 +57,7 @@ class Replays:
         self.next_buffer_try = 0
         self.scene_ready = False
         self.next_watch = 0
+        self.refreshed = None  # segment id whose banner page was reloaded
         if start:  # selftest drives work() by hand
             threading.Thread(target=self.run, daemon=True).start()
 
@@ -127,14 +128,15 @@ class Replays:
         if now >= self.next_stats:
             self.next_stats = now + self.cfg["stats_every"]
             self.read_stats()
-        if not self.status["buffer_active"] and now >= self.next_buffer_try:
-            self.next_buffer_try = now + 60
-            try:
-                o.call("StartReplayBuffer")
-                self.log("[replays] started the OBS replay buffer")
-            except OBSError as e:
-                self.status["error"] = str(e)[:200]
+        if not self.status["buffer_active"]:  # re-read every loop until it runs (it takes a moment to start)
             self.status["buffer_active"] = o.call("GetReplayBufferStatus").get("outputActive")
+            if not self.status["buffer_active"] and now >= self.next_buffer_try:
+                self.next_buffer_try = now + 60
+                try:
+                    o.call("StartReplayBuffer")
+                    self.log("[replays] started the OBS replay buffer")
+                except OBSError as e:
+                    self.status["error"] = str(e)[:200]
         with self.lock:
             p = self.pending
         if p and now >= p["save_at"] and self.status["buffer_active"]:
@@ -191,7 +193,13 @@ class Replays:
         o = self.obs
         cur = self.segments.cur
         live = cur if cur and cur["type"] == "attack_replay" and cur["state"] in ("starting", "live") else None
-        if live and not self.playing and live["state"] == "live":
+        if live and live["state"] == "starting" and self.refreshed != live["id"]:
+            self.refreshed = live["id"]
+            try:  # reload the banner page 2.5 s ahead: a browser source that once failed to load stays blank
+                o.call("PressInputPropertiesButton", {"inputName": self.cfg["banner"], "propertyName": "refreshnocache"})
+            except OBSError as e:
+                self.log(f"[replays] banner refresh failed: {e}")
+        elif live and not self.playing and live["state"] == "live":
             c = self.clip
             if not c or c["id"] != live.get("clip"):
                 return
