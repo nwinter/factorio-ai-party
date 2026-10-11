@@ -1,0 +1,20 @@
+# Live API for the companion site: latest stream state (pushed from the Mac) and the site's own viewer chat.
+# Deploy from the repo root:  npx wrangler deploy --config site/worker/wrangler.toml
+# Secret (once):              npx wrangler secret put PUBLISH_TOKEN --config site/worker/wrangler.toml
+name = "player-of-games-live"
+main = "worker.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+preview_urls = false
+
+[vars]
+# Origins allowed to call the API from a browser. "*." entries match any subdomain (preview deployments).
+ALLOWED_ORIGINS = "https://player-of-games.pages.dev,https://*.player-of-games.pages.dev,http://127.0.0.1:8765,http://localhost:8765"
+
+[[durable_objects.bindings]]
+name = "LIVE"
+class_name = "Live"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Live"]

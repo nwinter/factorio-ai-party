@@ -907,26 +907,55 @@ def build_study(sid, st):
 def build_live():
     vid = CONFIG.get("youtube_video_id") or ""
     chan = CONFIG.get("youtube_channel_id") or ""
+    api = CONFIG.get("live_api_url") or ""
+    status = CONFIG.get("live_status_url", "/live/status.json")
+    poll = int(CONFIG.get("live_poll_seconds", 10))
     body = f"""
-<h1>Live</h1>
-<p class="lede">When a run is on, the stream plays here with the team's status beside it.</p>
-<div class="live-grid">
-  <div class="player-wrap" id="player" data-video="{esc(vid)}" data-channel="{esc(chan)}">
+<div id="live-app" class="live-app" data-api="{esc(api)}" data-status="{esc(status)}" data-poll="{poll}" data-video="{esc(vid)}" data-channel="{esc(chan)}">
+<div class="live-head-row">
+  <h1>Live</h1>
+  <p class="live-head-meta"><span id="live-badge" class="fx-chip fx-chip--grey">Offline</span> <span id="updated" class="muted small"></span></p>
+</div>
+<div class="live-top">
+  <div class="player-wrap" id="player">
     <div class="player-placeholder">
       <span class="ph-dot" aria-hidden="true"></span>
       <p><strong>No stream yet.</strong></p>
-      <p class="muted">The first public run hasn't been scheduled. This space will hold the YouTube player.</p>
+      <p class="muted">The first public run hasn't been scheduled. The YouTube player appears here when it starts.</p>
     </div>
   </div>
-  <aside class="live-panel fx-root fx-panel" id="live" data-src="{esc(CONFIG.get('live_status_url', '/live/status.json'))}" data-poll="{int(CONFIG.get('live_poll_seconds', 15))}" aria-live="polite">
-    <header class="fx-panel-title">Team status<span class="fx-panel-actions"><span class="live-badge fx-chip fx-chip--grey">Offline</span></span></header>
-    <p class="live-updated fx-muted small"></p>
-    <div class="live-body fx-inset"><p class="fx-muted">Waiting for status…</p></div>
+  <aside class="chat-panel live-panel fx-root fx-panel" aria-label="Chat">
+    <div class="fx-tabs chat-tabs" role="tablist">
+      <button class="fx-tab is-selected" role="tab" aria-selected="true" data-tab="site" type="button">Site chat</button>
+      <button class="fx-tab" role="tab" aria-selected="false" data-tab="yt" type="button">YouTube chat</button>
+    </div>
+    <div class="fx-tab-body">
+      <div data-pane="site" class="vchat-pane">
+        <ol id="vchat" class="vchat" aria-live="polite"></ol>
+        <form id="vchat-form" class="vchat-form" autocomplete="off">
+          <input class="fx-textfield" name="name" maxlength="20" placeholder="Name" aria-label="Your name">
+          <input class="fx-textfield" name="text" maxlength="200" placeholder="Say something" aria-label="Message" required>
+          <button class="fx-btn" type="submit">Send</button>
+        </form>
+        <p id="vchat-note" class="fx-muted small" aria-live="polite"></p>
+        <p class="fx-muted small">No accounts: pick any name. No links; one message every few seconds. Be kind, the agents may read it.</p>
+      </div>
+      <div data-pane="yt" class="yt-pane" hidden>
+        <p class="fx-muted">YouTube chat appears here once the stream is set up.</p>
+      </div>
+    </div>
   </aside>
 </div>
-<p class="muted small">Status refreshes every {int(CONFIG.get('live_poll_seconds', 15))} seconds. <a href="/live/?demo=1">See it with sample data</a>.</p>
+<section class="live-run-head"><h2 id="run-title">Waiting for the next run</h2><p id="run-sub" class="muted"></p></section>
+<div id="offline" class="live-offline"></div>
+<div id="strip" class="live-strip fx-root fx-panel live-panel"></div>
+<ul id="alerts" class="live-alerts"></ul>
+<div id="dash" class="live-dash"></div>
+<p class="muted small">The dashboard refreshes every {poll} seconds from the stream service on the game host.
+<a href="/live/?demo=1">Sample view</a>.</p>
+</div>
 """
-    return page("Live", body, "/live/", "Live stream and team status.",
+    return page("Live", body, "/live/", "Watch the run: stream, chat and the team's live status.",
                 extra_head='<script src="/static/avatar.js" defer></script>\n<script src="/static/live.js" defer></script>')
 
 
@@ -964,7 +993,7 @@ def main():
     for sid, st in CONTENT["studies"].items():
         write(f"studies/{sid}/index.html", build_study(sid, st))
     write("live/index.html", build_live())
-    shutil.copy(SITE / "live" / "status.example.json", out / "live" / "status.example.json")
+    shutil.copy(SITE / "live" / "state.example.json", out / "live" / "state.example.json")
     shutil.copy(SITE / "live" / "status.json", out / "live" / "status.json")
     write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>', None))
     for f in (SITE / "static").iterdir():

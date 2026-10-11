@@ -4,5 +4,6 @@
   "youtube_video_id": "",
   "youtube_channel_id": "",
   "live_status_url": "/live/status.json",
-  "live_poll_seconds": 15
+  "live_api_url": "https://player-of-games-live.your-subdomain.workers.dev",
+  "live_poll_seconds": 10
 }
