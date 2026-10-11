@@ -36,6 +36,10 @@ check("rejects the hosts joining the team", caster.check_line("We're one tech be
       and caster.check_line("Luna needs our help", facts, names, []) is not None)
 check("allows host phrasing", caster.check_line("And here we see Luna, stay with us!", facts, names, []) is None)
 check("reads 3,600 as one number", caster.check_line("Luna made 3,600 plates", dict(facts, made=3607), names, []) is None)
+check("rejects a previous-run comparison without pace facts",
+      caster.check_line("Last run they were still punching trees!", facts, names, []) is not None
+      and caster.check_line("Last run they were slower.", dict(facts, pace={"verdict": "x"}), names, []) is None)
+check("rejects an invented zero", caster.check_line("Zero belts laid so far.", facts, names, []) is not None)
 check("rejects a repeat", caster.check_line("Luna is under attack!", facts, names, ["Luna is under attack, wow"]) is not None)
 check("strips speaker prefix and stage directions", caster.clean('Rook: "*leans in* Huge play!"') == "Huge play!")
 
@@ -114,6 +118,20 @@ d2 = caster.Differ()
 d2.diff({"agents": []})
 vk = [e for e in d2.diff({"agents": [], "viewers": [{"id": 9, "user": "cy", "text": "hi hosts", "t": now}]})]
 check("differ: viewer event", [(e["kind"], e["viewer"]) for e in vk] == [("viewer", "cy")], str(vk))
+
+# a siege: pending urgent events fold into one beat
+class _A:
+    stale, seed = 45, 1
+cs = caster.Caster.__new__(caster.Caster)
+cs.a, cs.events = _A(), caster.deque(maxlen=60)
+for i, k in enumerate(["death", "attack", "loss", "board"]):
+    cs.events.append({"kind": k, "text": f"{k} {i}", "t": now + i, "prio": caster.PRIORITY[k]})
+pk = cs.pick_event(now + 5)
+check("siege folds urgent events", pk["prio"] >= caster.URGENT and len(pk.get("also", [])) == 2
+      and [e["kind"] for e in cs.events] == ["board"], str(pk))
+at = caster.facts_for({"kind": "death", "text": "sonnet died; lost assembling-machine-1 x129", "t": now, "prio": 9},
+                      {"agents": [{"name": "sonnet", "display_name": "Sonnet"}]})["text"]
+check("alert text: counts and display names", at == "Sonnet died; lost assembling machine 1 (129 of them)", at)
 
 # pace against the shake1 baseline
 from baseline import Baseline  # noqa: E402

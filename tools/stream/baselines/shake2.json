@@ -1,0 +1,325 @@
+{
+ "name": "shake2",
+ "source": "shake2",
+ "samples": [
+  {
+   "tick": 16078,
+   "techs": 0,
+   "produced": {
+    "iron-plate": 24,
+    "copper-plate": 9
+   }
+  },
+  {
+   "tick": 23291,
+   "techs": 2,
+   "produced": {
+    "iron-plate": 199,
+    "copper-plate": 22
+   }
+  },
+  {
+   "tick": 30521,
+   "techs": 3,
+   "produced": {
+    "iron-plate": 486,
+    "copper-plate": 101,
+    "electronic-circuit": 10,
+    "automation-science-pack": 3
+   }
+  },
+  {
+   "tick": 37733,
+   "techs": 3,
+   "produced": {
+    "iron-plate": 739,
+    "copper-plate": 148,
+    "electronic-circuit": 27,
+    "automation-science-pack": 16
+   }
+  },
+  {
+   "tick": 44947,
+   "techs": 4,
+   "produced": {
+    "iron-plate": 994,
+    "copper-plate": 250,
+    "electronic-circuit": 31,
+    "automation-science-pack": 24
+   }
+  },
+  {
+   "tick": 52190,
+   "techs": 4,
+   "produced": {
+    "iron-plate": 1082,
+    "copper-plate": 397,
+    "electronic-circuit": 37,
+    "automation-science-pack": 30
+   }
+  },
+  {
+   "tick": 59408,
+   "techs": 5,
+   "produced": {
+    "iron-plate": 1193,
+    "copper-plate": 541,
+    "electronic-circuit": 52,
+    "automation-science-pack": 39
+   }
+  },
+  {
+   "tick": 66623,
+   "techs": 5,
+   "produced": {
+    "iron-plate": 1561,
+    "copper-plate": 650,
+    "electronic-circuit": 86,
+    "automation-science-pack": 39
+   }
+  },
+  {
+   "tick": 73840,
+   "techs": 7,
+   "produced": {
+    "iron-plate": 1975,
+    "copper-plate": 718,
+    "electronic-circuit": 105,
+    "automation-science-pack": 75
+   }
+  },
+  {
+   "tick": 81015,
+   "techs": 7,
+   "produced": {
+    "iron-plate": 2348,
+    "copper-plate": 851,
+    "electronic-circuit": 142,
+    "automation-science-pack": 94
+   }
+  },
+  {
+   "tick": 88216,
+   "techs": 7,
+   "produced": {
+    "iron-plate": 2631,
+    "copper-plate": 1009,
+    "electronic-circuit": 157,
+    "automation-science-pack": 97
+   }
+  },
+  {
+   "tick": 95425,
+   "techs": 7,
+   "produced": {
+    "iron-plate": 2824,
+    "copper-plate": 1154,
+    "electronic-circuit": 168,
+    "automation-science-pack": 113
+   }
+  },
+  {
+   "tick": 102639,
+   "techs": 7,
+   "produced": {
+    "iron-plate": 3073,
+    "copper-plate": 1344,
+    "electronic-circuit": 188,
+    "automation-science-pack": 128
+   }
+  },
+  {
+   "tick": 109861,
+   "techs": 8,
+   "produced": {
+    "iron-plate": 3511,
+    "copper-plate": 1536,
+    "electronic-circuit": 231,
+    "automation-science-pack": 148,
+    "logistic-science-pack": 2
+   }
+  },
+  {
+   "tick": 117075,
+   "techs": 8,
+   "produced": {
+    "iron-plate": 4012,
+    "copper-plate": 1722,
+    "electronic-circuit": 309,
+    "automation-science-pack": 167,
+    "logistic-science-pack": 9
+   }
+  },
+  {
+   "tick": 124292,
+   "techs": 9,
+   "produced": {
+    "iron-plate": 4487,
+    "copper-plate": 1889,
+    "electronic-circuit": 343,
+    "automation-science-pack": 203,
+    "logistic-science-pack": 21
+   }
+  },
+  {
+   "tick": 131508,
+   "techs": 10,
+   "produced": {
+    "iron-plate": 5002,
+    "copper-plate": 2015,
+    "electronic-circuit": 398,
+    "automation-science-pack": 243,
+    "logistic-science-pack": 41
+   }
+  },
+  {
+   "tick": 138722,
+   "techs": 10,
+   "produced": {
+    "iron-plate": 5567,
+    "copper-plate": 2127,
+    "electronic-circuit": 448,
+    "automation-science-pack": 271,
+    "logistic-science-pack": 60
+   }
+  },
+  {
+   "tick": 145932,
+   "techs": 13,
+   "produced": {
+    "iron-plate": 6130,
+    "copper-plate": 2261,
+    "electronic-circuit": 464,
+    "automation-science-pack": 305,
+    "logistic-science-pack": 78
+   }
+  },
+  {
+   "tick": 153147,
+   "techs": 13,
+   "produced": {
+    "iron-plate": 6712,
+    "copper-plate": 2412,
+    "electronic-circuit": 481,
+    "automation-science-pack": 349,
+    "logistic-science-pack": 88
+   }
+  },
+  {
+   "tick": 160362,
+   "techs": 13,
+   "produced": {
+    "iron-plate": 7324,
+    "copper-plate": 2563,
+    "electronic-circuit": 481,
+    "automation-science-pack": 350,
+    "logistic-science-pack": 93
+   }
+  },
+  {
+   "tick": 167572,
+   "techs": 13,
+   "produced": {
+    "iron-plate": 7896,
+    "copper-plate": 2678,
+    "electronic-circuit": 541,
+    "automation-science-pack": 385,
+    "logistic-science-pack": 107
+   }
+  },
+  {
+   "tick": 174788,
+   "techs": 13,
+   "produced": {
+    "iron-plate": 8513,
+    "copper-plate": 2790,
+    "electronic-circuit": 591,
+    "automation-science-pack": 434,
+    "logistic-science-pack": 142
+   }
+  },
+  {
+   "tick": 181997,
+   "techs": 13,
+   "produced": {
+    "iron-plate": 9190,
+    "copper-plate": 2873,
+    "electronic-circuit": 625,
+    "automation-science-pack": 458,
+    "logistic-science-pack": 151
+   }
+  },
+  {
+   "tick": 189211,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 9899,
+    "copper-plate": 2947,
+    "electronic-circuit": 650,
+    "automation-science-pack": 475,
+    "logistic-science-pack": 180
+   }
+  },
+  {
+   "tick": 196425,
+   "techs": 15,
+   "produced": {
+    "iron-plate": 10383,
+    "copper-plate": 3057,
+    "electronic-circuit": 650,
+    "automation-science-pack": 495,
+    "logistic-science-pack": 209
+   }
+  },
+  {
+   "tick": 203633,
+   "techs": 15,
+   "produced": {
+    "iron-plate": 10731,
+    "copper-plate": 3207,
+    "electronic-circuit": 650,
+    "automation-science-pack": 532,
+    "logistic-science-pack": 239
+   }
+  },
+  {
+   "tick": 210847,
+   "techs": 15,
+   "produced": {
+    "iron-plate": 11070,
+    "copper-plate": 3379,
+    "electronic-circuit": 697,
+    "automation-science-pack": 577,
+    "logistic-science-pack": 241
+   }
+  },
+  {
+   "tick": 218056,
+   "techs": 15,
+   "produced": {
+    "iron-plate": 11442,
+    "copper-plate": 3538,
+    "electronic-circuit": 697,
+    "automation-science-pack": 620,
+    "logistic-science-pack": 267
+   }
+  }
+ ],
+ "first_done": {
+  "electronics": 23291,
+  "steam-power": 23291,
+  "automation-science-pack": 30521,
+  "automation": 44947,
+  "logistics": 59408,
+  "electric-mining-drill": 73840,
+  "gun-turret": 73840,
+  "logistic-science-pack": 109861,
+  "steel-processing": 124292,
+  "fast-inserter": 131508,
+  "automation-2": 145932,
+  "radar": 145932,
+  "steel-axe": 145932,
+  "engine": 189211,
+  "fluid-handling": 196425
+ }
+}
