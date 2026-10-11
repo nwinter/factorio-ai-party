@@ -22,6 +22,9 @@ return function(api)
   local KINDS = {kick=true, ban=true, trust=true}
   local OUTCOMES = {carried=true, failed=true, expired=true, cancelled=true}
   local GUEST = 'pog-guest'
+  -- A burst of removals or orders is a chat line from `players`: BURST within
+  -- BURST_TICKS, then at most one line per player and kind every QUIET_TICKS.
+  local BURST, BURST_TICKS, QUIET_TICKS = 20, 5 * MINUTE, 2 * MINUTE
   -- Removals that are play, not the team's work: trees, rocks, ore, corpses, ghosts.
   local NOT_WORK = {tree=true, ['simple-entity']=true, resource=true, ['item-entity']=true, ['entity-ghost']=true,
     ['tile-ghost']=true, character=true, ['character-corpse']=true, corpse=true, ['rail-remnants']=true, cliff=true, fish=true,
@@ -86,11 +89,32 @@ return function(api)
     end
     return r
   end
+  local function duration(ticks)
+    local sec = math.floor(ticks / 60)
+    if sec >= 60 then return string.format('%dm%02ds', math.floor(sec / 60), sec % 60) end
+    return sec .. 's'
+  end
+  -- Count toward a burst; the line names the count, the time it took and the last place.
+  local function burst(p, r, kind, e)
+    r.bursts = r.bursts or {}
+    local b = r.bursts[kind]
+    if not b or game.tick - b.start > BURST_TICKS then b = {start=game.tick, count=0, said=b and b.said}; r.bursts[kind] = b end
+    b.count = b.count + 1
+    if b.count < BURST or (b.said and game.tick - b.said < QUIET_TICKS) then return end
+    local function num(v) v = math.floor(v * 10 + 0.5) / 10; return v == math.floor(v) and string.format('%d', v) or string.format('%.1f', v) end
+    local what = kind == 'removed' and 'removed %d of the team\'s entities' or kind == 'upgrade' and 'marked %d of the team\'s entities for upgrade'
+      or 'marked %d of the team\'s entities for deconstruction'
+    api.notice('players', string.format('%s ' .. what .. ' in %s, the last at (%s,%s) on %s (fh players %s)', p.name, b.count,
+      duration(game.tick - b.start), num(e.position.x), num(e.position.y), e.surface.name, p.name))
+    b.said = game.tick
+    b.start, b.count = game.tick, 0
+  end
   local function removed(index, e, how)
     local p = human(index)
     if not p or not (e and e.valid) or NOT_WORK[e.type] or not e.force or e.force.name == 'enemy' or e.force.name == 'neutral' then return end
     local r = record(p)
     r.removed = push(r.removed, snapshot(e, how), MAX_REMOVED)
+    burst(p, r, 'removed', e)
   end
   local function contents(inventory)
     local out = {}
@@ -176,7 +200,7 @@ return function(api)
       s.order_count = s.order_count + 1
     end
     s.orders[k] = {player=p.index, kind=kind, entity=e, tick=game.tick, name=e.name, position={x=e.position.x, y=e.position.y}}
-    record(p)
+    if not NOT_WORK[e.type] then burst(p, record(p), kind, e) else record(p) end
   end
   local function cancelled(event, kind)
     local e = event.entity

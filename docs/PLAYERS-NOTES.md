@@ -13,7 +13,7 @@ run in a real game yet; "How to check it live" below is the first run.
 | Agent tools | `fh players [NAME]`, `fh vote`, `fh votes`, `fh restore NAME` | Also `fh call players|vote|restore` with the same words. Described in `agent/team.md` ("Human players"), tools only. |
 | Guest group | `control.lua` | A player's first join (`on_player_created`) puts them in `pog-guest`. Fixed in control.lua, so a quarantined runtime cannot let a newcomer in with full permissions. Camera clients and names the operator trusted are exempt. |
 | Votes | `players.lua` (ballots), `tools/votes.py` (the tally), `tools/players.py` (the operator) | Agents vote in the game; the operator process tallies, runs `/kick` or `/ban` or the group change, and closes the vote. |
-| Stream | `chat.notice`, `tools/stream/model.py` | Every ballot, result and restore is a chat line from `vote` (the overlay's big chat lane; agents read it as chat). Joins and leaves are lines from `players` (the ticker). |
+| Stream | `chat.notice`, `tools/stream/model.py` | Every ballot, result and restore is a chat line from `vote` (the overlay's big chat lane; agents read it as chat). Joins and leaves are lines from `players` (the ticker), and so is a burst: 20 removals, or 20 deconstruction or upgrade orders, by one human within 5 minutes. The line gives the count, the time taken and the last position, at most one per player and kind every 2 minutes. Agents get it as unread chat, so they need not poll `fh players`. |
 | Launch | `tools/start-team.sh` | `POG_PLAYERS=1` starts `tools/players.py watch` (log `runs/RUN/players.log`, results `runs/RUN/votes.jsonl`). `POG_PLAYERS_PROTECT=nick` keeps names from being kicked or banned. |
 
 ### Inventory moves

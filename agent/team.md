@@ -82,4 +82,5 @@ already targets your character.
 - `./fh restore NAME` cancels that player's pending deconstruction and upgrade orders and places ghosts of what they
   removed in the last 30 minutes (`--args '{"minutes":60}'` for another window). Ghosts are build orders: robots or
   agents build them with real items. The reply counts ghosts placed, spots already rebuilt and spots now taken.
-- Chat lines from `players` say when a human player joins or leaves.
+- Chat lines from `players` say when a human player joins or leaves, and when one removes, or marks for
+  deconstruction or upgrade, 20 or more of the team's entities within 5 minutes (with the last position).

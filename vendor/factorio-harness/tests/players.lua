@@ -150,6 +150,26 @@ M.on_event(fire('on_player_joined_game',{player_index=1})); eq(notices[#notices]
 M.on_event(fire('on_player_joined_game',{player_index=2})); eq(notices[#notices],'players: nick joined the game (guest group)')
 M.on_event(fire('on_player_left_game',{player_index=3})); eq(notices[#notices],'players: eve left the game')
 eq(M.handlers.players(luna,{player='eve'}).players[1].left_s_ago,0)
+-- A burst (20 removals or orders within 5 minutes) is one chat line from `players`, then quiet for 2 minutes.
+local before=#notices
+game.tick=game.tick+5*3600+1                         -- past the earlier orders' 5 minutes
+local row={}
+for i=1,45 do row[i]=entity('transport-belt','transport-belt',100+i,100); row[i].marked=true end
+for i=1,19 do M.on_event(fire('on_marked_for_deconstruction',{player_index=1,entity=row[i]})) end
+eq(#notices,before)
+game.tick=game.tick+90
+M.on_event(fire('on_marked_for_deconstruction',{player_index=1,entity=row[20]}))
+eq(notices[#notices],"players: nick marked 20 of the team's entities for deconstruction in 1s, the last at (120,100) on nauvis (fh players nick)")
+for i=21,45 do M.on_event(fire('on_marked_for_deconstruction',{player_index=1,entity=row[i]})) end
+eq(#notices,before+1)                                -- 25 more, but within the quiet 2 minutes
+game.tick=game.tick+2*3600
+for i=1,20 do M.on_event(fire('on_cancelled_deconstruction',{entity=row[i]})); row[i].marked=false end
+local tree2=entity('tree-02','tree',0,50); tree2.marked=true
+M.on_event(fire('on_marked_for_deconstruction',{player_index=1,entity=tree2}))  -- trees do not count
+eq(#notices,before+1)
+for i=21,45 do row[i].marked=false; M.on_event(fire('on_cancelled_deconstruction',{entity=row[i]})) end
+M.on_event(fire('on_cancelled_deconstruction',{entity=tree2})); tree2.valid=false
+game.tick=1200
 -- Errors name the player; the window drops older activity.
 fails(function() M.handlers.players(luna,{player='pog-cam1'}) end,'no human player named pog-cam1')
 fails(function() M.handlers.players(luna,{minutes=0}) end,'minutes must be a whole number 1..240')
@@ -212,4 +232,8 @@ eq(r.group,'normal'); eq(s.trusted_names.nick,true)
 r=M.operator.player_group({name='nick',group='guest'}); eq(r.group,'guest'); eq(s.trusted_names.nick,nil)
 fails(function() M.operator.player_group({name='nick',group='admin'}) end,'group must be trusted or guest')
 eq(#M.operator.players({}).players,2)
+-- Removals make bursts too (by hand, robots and destruction alike).
+game.tick=game.tick+10*3600; local said=#notices
+for i=1,20 do local w=entity('stone-wall','wall',200+i,0.5); game.tick=game.tick+60; M.on_event(fire('on_player_mined_entity',{player_index=1,entity=w})); w.valid=false end
+eq(#notices,said+1); eq(notices[#notices],"players: nick removed 20 of the team's entities in 19s, the last at (220,0.5) on nauvis (fh players nick)")
 print('players: ok')
