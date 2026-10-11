@@ -82,10 +82,11 @@ and `build_direct` are unchanged since 41f8a20.
    - Research went from 24 technologies to 29 (advanced oil processing, logistics 2, battery and two more), with
      processing-unit at 74% at the end.
    - It made 566 blue, 615 red and 695 green packs, and 26,658 iron plates.
-   - Sulfur stopped at 06:03 when the one refinery's petroleum went to plastics, and blue ran on stock after that.
+   - Sulfur stopped at 06:03 with the sulfur plant short of petroleum while plastics from the same refinery kept
+     rising. Blue ran on stock after that.
 3. The raids grew from 60 to 100 biters a group. Power went down once (06:03) and was rebuilt with more steam. There
-   were at least 4 deaths, three of them in the first two minutes, because the world ran unattended through a raid
-   at the boundary.
+   were at least 4 deaths. Three of them came in the first two minutes, in a raid that was already under way during
+   the unattended minutes at the shift boundary.
 4. New harness faults:
    - Loss incidents never close, so alerts add up two shifts of losses.
    - `build` over a machine leaves both machines in place.
@@ -93,8 +94,7 @@ and `build_direct` are unchanged since 41f8a20.
    - Gemini's agy loop spun on a quota error for its last 13.5 minutes.
 5. Of shake4's fixes, sleep while dead held, as did the naturalist wording and Grok's home. Observe while dead
    reached main four minutes after the agents launched, so the shift ran without it. The supervisor fix was not
-   tested. An old ElevenLabs pick survived the
-   voice change.
+   tested. An old ElevenLabs pick survived the voice change.
 6. Chat logistics fell to 84% (shake4 91 to 94%), the lowest yet. Aloud stayed at shake4's rate and there was no
    confession.
 7. On the stream:
@@ -128,13 +128,13 @@ The others went back to their old jobs without announcing them:
 The save carried more than the factory:
 
 - Opus and Astra resumed their action queues with `queue_resume` (05:21:38, 05:21:24).
-- The board kept its numbering and its open items: Luna's first post was note #58 (05:23:44), and her end notes list
+- The board kept its numbering and its open items: Luna's first post was note #58 (05:23:44), and Luna's end notes list
   claims #1 to #65 from both shifts.
 - Chat read cursors carried over too. Opus had 183 unread at the end of shake4 and 182 at its first shake5 call;
   Sonnet had 193 and then 194.
 
-Apart from repairs, I found no case of an agent undoing or redoing the last shift's work. The exception is
-the assembler overlap in P1 item 2. That was an upgrade that went wrong, not a rebuild.
+Apart from repairs, I found no case of an agent undoing or redoing the last shift's work. The nearest is the
+assembler overlap in P1 item 2, an upgrade that went wrong.
 
 What was lost between shifts:
 
@@ -153,7 +153,7 @@ What was lost between shifts:
 The notes did not grow:
 
 - At the end of shake4 they ran from 5.8K (Opus) to 21.7K (Luna), 83.5K in all.
-- At the end of shake5 they ran from 6.6K (Opus) to 11.5K (Muse), 74.8K in all. Luna cut hers from 21.7K to 9.2K.
+- At the end of shake5 they ran from 6.6K (Opus) to 11.5K (Muse), 74.8K in all. Luna cut its file from 21.7K to 9.2K.
 - Every file keeps the same headings: Now, Claims and coordinates, Team agreements, Open board items, Milestones,
   Lessons, Log, and a shift summary.
 
@@ -189,8 +189,9 @@ field 350 tiles north stopped about 130 tiles short. Gemini went back to it firs
 - Its first `pipe_route` dry runs failed at the trunk's end: "from holds pipe-to-ground but no tile at its
   connections is free of other connections" (05:22:47), then "pipe must be a pipe entity" (05:23:13).
 - At 05:31:47 Sol pointed out that the line spans over 320 tiles and that "pipe_route pumps=true can split overlong
-  fluid segments". Luna had seen the "gas line overextended 324" warning (05:38:02).
-- Gemini routed with `pumps: true` at 05:32:45.
+  fluid segments".
+- Gemini routed with `pumps: true` at 05:32:45. Luna still saw the line "pipeline_overextended extent324" at 05:37:31,
+  and at 05:39:14 wrote "Pump split fixed the 324-tile flow warning".
 - At 05:38:48 Gemini posted: "Petroleum trunk is fully connected and pumping! Sulfur chemical plant at (21.5,-37.5)
   is LIVE and producing!"
 - Sulfur appears in the score at 142.5m. The first blue packs follow at 144.5m: Sol, "Blue science assemblers now
@@ -202,11 +203,11 @@ Sulfur stopped at 878 at 168.4m (06:03) and stayed there to the end:
 
 - Gemini's inspect of the sulfur plant at 05:58:06 shows `fluid_ingredient_shortage`.
 - Astra at 06:09:27: "North plastic plant intermittently lacks petroleum".
-- Plastic kept rising at 36/min, so the one refinery's petroleum went to plastics.
-- Blue kept going on stock: 566 made against 283 sulfur needed.
-- Gemini then turned the third chemical plant to sulfuric acid and battery (06:07:45).
+- Plastic from the same refinery (the base has one) kept rising at 36/min.
+- Blue kept going on stock: 566 packs take 283 of the 878 sulfur made.
+- Gemini set another chemical plant (9.5,-37.5) to batteries at 06:07:45, beside one fed with sulfur for acid.
 
-The labs used 250 of the 566 blue packs. Battery takes no blue, and blue consumption stayed at 65 from 156.5m to
+The labs used 250 of the 566 blue packs. Battery research used none: blue consumption stayed at 65 from 156.5m to
 172.4m.
 
 Research order changed hands three times:
@@ -220,7 +221,7 @@ Advanced-oil-processing took 12 minutes from first being queued at the front.
 
 ### Power and defence
 
-The raids that were under way at the resume kept coming from the south-east, larger each time. Eight enemy groups
+The raids that were under way at the resume kept coming from the south-east and grew over the hour. Eight enemy groups
 were reported in team alerts (first sighting, size, target):
 
 | time | size | from | heading for |
@@ -238,7 +239,7 @@ The defensive work, in order:
 
 - Sol put two turrets on the south side of the workshop (05:24:05).
 - Haiku rebuilt them, added two more, and by 05:56:23 had laid a wall line at y=30 from Astra's 66 stone walls.
-- Grok held the boilers through three waves: "Power held. Four boilers are running" (05:34:42).
+- Grok stayed on the boilers through three waves: "Power held. Four boilers are running" (05:34:42).
 - Haiku rearmed the east turret row twice (06:00:55, 06:02:01).
 - The 88-group took down the power at about 06:03. Grok: "Battery is at 79 percent but labs are dark from low power"
   (06:03:28).
@@ -265,7 +266,7 @@ The launch went through in one pass:
 - Nine agents launched from 05:21:11 to 05:21:29, and all were journaling by 05:21:49 (`start.log`).
 - The nine bots were "kept (alive)" at their old positions (`start.log:14-22`).
 - First game calls came from 05:21:07 (Astra) to 05:21:28 (Muse).
-- Every agent except Gemini played to 06:19 to 06:21. Gemini stopped at 06:07:52 (P1 item 6).
+- Every agent except Gemini made its last call between 06:19 and 06:21. Gemini stopped at 06:07:52 (P1 item 6).
 - The supervisors made 0 nudges. Grok's six checks were all "skip nudge (status done): last request 0-1s ago,
   working" (`grok/supervisor.log`).
 
@@ -325,8 +326,8 @@ Haiku's floor is still rising:
 - This session was new, yet its first floor was higher than shake4's first.
 - Its summaries were 8.2K to 9.1K characters (`haiku/context.log:4`, `:8`, `:12`).
 - At 80K it compacts about three times an hour and keeps about 52K of working room.
-- Over the next shifts the room shrinks by about 2K an hour unless notes.md shrinks. Luna's rewrite in this shift
-  shows that can happen.
+- Within a session the room shrinks by about 2K an hour. Each shift starts a new session, but this one's first floor
+  (26.2K) was already above shake4's first (24.5K), although Haiku's notes.md shrank from 8.2K to 6.9K.
 
 Codex compaction stalls were shorter than shake4's: Astra about 1.8 minutes each, Sol one of 1.6 minutes, and Luna
 none over 60 s. No Claude turn ended after a compaction, so shake4's supervisor fix was not tested.
@@ -392,7 +393,8 @@ The board had about 120 calls: 32 reads, 11 posts and 77 updates (shake4: 232 ca
   "Muse Spark", colour, glyph and motto). The other profiles carried over from the save unchanged.
 
 Aloud: 34 lines (Grok 8, Astra 7, Haiku 6, Luna 5, Sol 4, Opus 3, Gemini 1, Muse 0, Sonnet 0), about shake4's rate.
-Two of Sol's four aloud lines were squashed ("Fourthengineasm2 verifiedworking2h29 at(-20.5,10.5)", 05:45:43).
+Three of Sol's four aloud lines had run-together words ("Fourthengineasm2 verifiedworking2h29 at(-20.5,10.5)",
+05:45:43).
 
 Best moments (time, speaker, aloud where marked):
 
@@ -409,7 +411,7 @@ Best moments (time, speaker, aloud where marked):
 - 06:14:50 to 06:15:15, the assembler overlap. Sol: "Scan has BOTH asm1 and asm2 on each tile. Oldasm1 apparently
   intercepts ingredients." Opus: "Great catch, thank you. That overlap came from my build over the asm1s, so I'll
   report it as a harness bug", which it did.
-- 06:18:04 Grok (aloud), the one line that spoke of shifts: "Processing unit is about halfway. Green packers are
+- 06:18:04 Grok (aloud), looking ahead to the next shift: "Processing unit is about halfway. Green packers are
   still running, and the spare boiler is still in my hands if the next shift needs it."
 
 ### Stream
@@ -423,7 +425,7 @@ The hosts:
   wrong time left ("forty minutes left" at 05:55).
 - 16 host lines came after the deadline.
 
-The analyst ran 42 cycles with 0 failures and caught the right story: green, not blue, was the limit at 06:04 to
+The analyst ran 42 cycles with 0 failures and caught the right story: green science was the limit at 06:04 to
 06:06. No viewer question arrived (the ask endpoint was up), as in shake4. The live feed pushed 61 summaries with 0
 failures.
 
@@ -528,8 +530,8 @@ The rest, by priority.
     clients' script-output folders at launch.
 18. `check_line` misses "still as a heron" (2 lines) and pronouns read out as words ("Luna they-them"):
     `tools/stream/caster.py`.
-19. Run-together words carried across the shift in notes.md (section 3), and two squashed aloud lines went to the
-    voices. If the voices stumble on them, the text prep for speech (`tools/stream/textprep.py`) can split a word
+19. Run-together words carried across the shift in notes.md (section 3), and three of Sol's aloud lines went to the
+    voices with them. If the voices stumble on them, the text prep for speech (`tools/stream/textprep.py`) can split a word
     from a digit glued to it. The agents' own writing is theirs.
 
 ## Appendix: methods
