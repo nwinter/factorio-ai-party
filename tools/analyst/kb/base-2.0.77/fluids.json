@@ -1,0 +1,135 @@
+[
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "crude-oil"
+},
+{
+"default_temperature": 0,
+"heat_capacity": 1000,
+"hidden": true,
+"max_temperature": 0,
+"name": "fluid-unknown"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "heavy-oil"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "light-oil"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "lubricant"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-0"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-1"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-2"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-3"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-4"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-5"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-6"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-7"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-8"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "parameter-9"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "petroleum-gas"
+},
+{
+"default_temperature": 15,
+"heat_capacity": 200,
+"hidden": false,
+"max_temperature": 5000,
+"name": "steam"
+},
+{
+"default_temperature": 25,
+"heat_capacity": 1000,
+"hidden": false,
+"max_temperature": 25,
+"name": "sulfuric-acid"
+},
+{
+"default_temperature": 15,
+"heat_capacity": 2000,
+"hidden": false,
+"max_temperature": 100,
+"name": "water"
+}
+]
