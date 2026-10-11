@@ -6,6 +6,7 @@
                                            POG_CTX_AT=N overrides compact_at (tools/context-probe.sh).
   tools/context.py limit KIND MODEL        print compact_at from agent/context.tsv
   tools/context.py agy-tokens DIR          context size of DIR's latest Antigravity conversation (0 if unknown)
+  tools/context.py report RUN_DIR          per-workspace compaction counts from each context.log
   tools/context.py hook EVENT [--at N] [--mark]   hook handler; reads the hook payload on stdin
 
 Hook events: pre-compact and post-compact log to DIR/context.log (post-compact also saves the summary to
@@ -221,6 +222,21 @@ def hook(event, args):
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": context}}))
 
 
+def report(run_dir):
+    """One line per workspace: compactions, re-injects, nudges, agy fresh starts, tokens at each compaction."""
+    for name in sorted(os.listdir(run_dir)):
+        path = os.path.join(run_dir, name, "context.log")
+        if not os.path.exists(path):
+            continue
+        rows = [json.loads(l) for l in open(path) if l.strip()]
+        count = lambda ev, action=None: sum(r["event"] == ev and (action is None or r.get("action") == action)
+                                            for r in rows)
+        at = [r.get("tokens") for r in rows if r["event"] in ("pre-compact", "agy-fresh") and r.get("tokens")]
+        print(f"{name:10} compactions={count('post-compact')} agy_fresh={count('agy-fresh')} "
+              f"reinjects={count('session-compact') + count('post-tool', 'reinject')} "
+              f"nudges={count('post-tool', 'nudge')} tokens_at_compaction={at}")
+
+
 def main():
     cmd, args = sys.argv[1], sys.argv[2:]
     if cmd == "setup":
@@ -229,6 +245,8 @@ def main():
         print(limits(args[0], args[1])[1])
     elif cmd == "agy-tokens":
         print(agy_tokens(args[0]))
+    elif cmd == "report":
+        report(args[0])
     elif cmd == "hook":
         hook(args[0], args[1:])
     else:

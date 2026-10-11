@@ -18,7 +18,9 @@ config: settings are written into the run workspace or passed on the launch comm
    the harness's workspace settings and hooks (below).
 4. Hooks call `tools/context.py hook ...`. They log to `DIR/context.log` (one JSON line per pre-compact,
    post-compact, re-inject and nudge) and save each compaction summary the harness hands over to
-   `DIR/compactions.md`, so a run's compactions can be studied afterwards.
+   `DIR/compactions.md`, so a run's compactions can be studied afterwards: `tools/context.py report runs/RUN_ID`
+   prints compactions, re-injects, nudges, agy fresh starts and the token count at each compaction per agent.
+   (Codex agents write no `context.log`; their compactions show as `"type":"compacted"` in the rollout JSONL.)
 
 ## Per-harness settings
 
@@ -48,8 +50,15 @@ Per-model values live in `agent/context.tsv` (model, kind, window, compact_at; `
   every turn re-sends the whole context (cache reads are cheaper, not free), and in our runs most of it is stale
   `observe`/`status`/wait output. 200-250K keeps several hours of play affordable while leaving plenty of working
   room; Opus gets more because it plans over longer histories.
+- Defaults without our settings (model-config docs): models with a native 1M window (Haiku 5.5, Sonnet 5+, Opus
+  4.7+) compact at about 967K. A Haiku 5.5 request "costs more per token when its prompt is longer than 100K
+  tokens". Precedence: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` > `--autocompact` > settings; within the binary's merge, a
+  higher scope's top-level `autoCompactWindow` replaces lower scopes' per-model `/autocompact` values, so the
+  workspace (project) setting wins over user settings. None of the Claude profiles' user settings set any of these.
 - What a compaction keeps: `## Compact instructions` in CLAUDE.md is the documented way to steer auto-compaction.
-  `PreCompact` stdout is not added to the summary prompt (docs), so it only logs.
+  `PreCompact` stdout is not added to the summary prompt (docs), so it only logs. After a compaction Claude Code
+  re-injects the project CLAUDE.md and re-reads up to five recently edited files (under 5,000 tokens each), so
+  `notes.md` often comes back by itself; the `SessionStart` hook makes it certain (~1-2K tokens per compaction).
 - Nudge: a `PostToolUse` hook reads the latest assistant `usage` in the transcript (input + cache creation + cache
   read + output) and, once per context window, when it is within `max(12000, compact_at / 10)` of the compaction
   point, adds "Context is at N tokens ... Update notes.md now" to the agent's context. The window re-arms at the
@@ -112,7 +121,9 @@ Done in this session (offline):
 - `python3 tools/test_context.py`: threshold math for 80K/200K/250K against the binary's formula; generated Claude,
   Codex (parsed with `tomllib`), Grok and Muse files; the hook flows with synthetic payloads (no nudge at 50K, one
   nudge at 70K for Haiku, none repeated, pre/post-compact logged, summary saved, SessionStart prints notes.md,
-  nudge re-arms after a compaction, Grok marker re-injects once and caps notes at 9000 chars); `limit` fallbacks.
+  nudge re-arms after a compaction and ignores usage from before it, Grok marker re-injects once and caps notes at
+  9000 chars); `limit` fallbacks; `report`.
+- The `.agy-loop.sh` heredoc was checked by reading its expansion (the session refused running a generated script).
 - `tools/context.py agy-tokens` on shake1's gemini workspace returned 80923 (= 2224 + 78699 of its last step).
 - The `new-run.sh` AGENTS.md generator, run on scratch output, ends with the Compact instructions section.
 - `bash -n` on `launch-agent.sh`, `new-run.sh`, `context-probe.sh`.

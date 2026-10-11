@@ -35,7 +35,9 @@ def main():
         fire = min(w * int(pct) // 100, w - 13000) if pct else w - 13000
         assert w >= 100000 and fire == at, (at, w, pct, fire)
 
-    with tempfile.TemporaryDirectory() as d:
+    with tempfile.TemporaryDirectory() as run_dir:
+        d = os.path.join(run_dir, "haiku")
+        os.mkdir(d)
         open(os.path.join(d, "notes.md"), "w").write("# Notes\n\n## Now\nGoal: smelting at -40,-20\n")
         assert run("setup", "claude", "haiku", d).strip() == ""
         cfg = json.load(open(os.path.join(d, ".claude", "settings.json")))
@@ -60,6 +62,9 @@ def main():
         assert "Update notes.md" in post(), "nudge re-arms after a compaction"
         assert log_events(d) == ["post-tool:nudge", "pre-compact:", "post-compact:", "session-compact:",
                                  "post-tool:nudge"], log_events(d)
+        line = run("report", run_dir)
+        assert line.startswith("haiku") and "compactions=1" in line and "reinjects=1" in line and "nudges=2" in line \
+            and "tokens_at_compaction=[70000]" in line, line
 
     with tempfile.TemporaryDirectory() as d:
         open(os.path.join(d, "notes.md"), "w").write("x" * 20000)
