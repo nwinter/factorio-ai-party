@@ -4,7 +4,8 @@ Branch `eng/art`. Three self-contained pieces for the stream overlay (eng/stream
 
 1. Agent-designed pixel-art avatars: an optional `avatar` field on the harness `profile` action, one renderer in
    JS (`tools/stream/static/avatar.js`) with a byte-identical Python port (`tools/stream/avatar.py`), and a gallery
-   page (`tools/stream/static/avatars.html`).
+   page (`tools/stream/static/avatars.html`). The casters' portraits are in `tools/stream/static/casters.js`, and
+   the parts are exported as Factorio sprite layers with a Lua module in `tools/stream/sprites/`.
 2. A Factorio-flavoured CSS kit: `tools/stream/static/factorio-ui.css` with a demo page
    (`tools/stream/static/factorio-ui.html`).
 3. Item icons in the same pixel style for the production widget and the site: `tools/stream/static/items.js`
@@ -31,12 +32,14 @@ gradients, borders and shadows plus the free Titillium Web font from Google Font
 | `helmet` | none, hardhat, armor, power, crest, hood |
 | `visor` | none, goggles, slit, wide, mono, grid |
 | `emblem` | none, gear, bolt, flask, plate, circuit, rocket, leaf, star |
-| `accessory` | none, antenna, headlamp, scarf, tank, horns, earpiece, pipe |
+| `accessory` | none, antenna, headlamp, scarf, tank, horns, earpiece, pipe, headset |
 | `backdrop` | dark, grid, hazard, glow, night |
 | `accent` | `"#rrggbb"`, the second colour (hardhat, emblem, glow, visor glint) |
 
 - Every field is optional. The suit is always the profile `color`.
-- 4 x 6 x 6 x 9 x 8 x 5 = 51,840 part combinations before colours.
+- 4 x 6 x 6 x 9 x 9 x 5 = 58,320 part combinations before colours.
+- `headset` (ear cups in the accent colour, band, boom mic; round 3) is the casters' signature. Agents may choose it,
+  but it is never drawn as a name-based default (see `picks` below).
 - `agent/team.md` (the co-op prompt) now tells agents about it, next to the existing identity line.
 
 ### Harness (`vendor/factorio-harness/mod/agent-harness_0.1.0/profiles.lua`)
@@ -59,6 +62,10 @@ Renderers, not the harness, fill gaps, so the harness stays a validator and stor
 - Seed: 32-bit FNV-1a of the UTF-8 `name` (falls back to `display_name`, then `"agent"`), fed to mulberry32.
 - Each field draws one number in a fixed order (`base, helmet, visor, emblem, accessory, backdrop`) whether or not
   it is set, so setting one part never changes the others.
+- Name-based picks come from `PARTS.picks[field]` when the field has one, else from `PARTS.options[field]`. A part
+  added later goes at the end of `options` only, so it is choosable while every existing default stays exactly as it
+  was (checked: 2,009 profiles render identically before and after the headset). `test_avatar.py` requires `picks`
+  to be a prefix of `options`.
 - No valid `color`: one of 12 palette colours picked from the seed (Sonnet in the shakedown never set a colour).
 - No `accent`: the first of 8 Factorio-ish accents (amber, orange, cyan, green, red, white, yellow, blue), starting at
   a seeded index, that differs from the suit by at least 180 (sum of RGB channel differences).
@@ -104,6 +111,37 @@ python3 tools/stream/avatar.py --profiles profiles.json --out site/static/avatar
 - Site: `from avatar import svg` (add `tools/stream` to `sys.path`) in `site/build.py` and inline the SVG, or write
   files with the `--profiles` CLI. Run data needs the `profiles` rows (name, color, avatar) saved with the run.
 
+### Casters (`tools/stream/static/casters.js`)
+
+![Rook (play-by-play) and Vale (colour)](casters-sheet.png)
+
+The stream's two hosts get avatar.js portraits like the agents. Today they are caster.py's Rook (play-by-play:
+punchy, high energy) and Vale (colour: analysis, warmth, dry humour). eng/audio is reworking them into streamer
+hosts, and when this round was drawn its notes had no new names or personalities yet (no commits past main), so the
+looks follow the current personas: Rook is an orange engineer with a bolt emblem on the hazard backdrop, and Vale is
+a teal engineer with a monocle and leaf emblem on the soft glow backdrop. Both wear the headset.
+
+`casters.js` holds one strict-JSON entry per host, keyed like caster.py's `CASTERS` (`pbp`, `color`):
+`{name, role, color, avatar}`. Every part, the colour and the accent are set, and no host uses the `night` backdrop
+(its stars follow the name), so the name only feeds the label. So:
+
+- Rename: change `name` in `casters.js` (and in caster.py). The portrait does not change; the test checks this.
+- Restyle or add a host: edit or add an entry with any avatar.js parts. The gallery and the Python CLI pick it up.
+
+```js
+// <script src="avatar.js"></script><script src="casters.js"></script>
+PogCasters.svg("pbp", 48)       // SVG via PogAvatar
+PogCasters.row("color")         // {name, display_name, color, avatar, role, kind: "caster"} for PogAvatar.svg
+PogCasters.byName("Rook")       // "pbp": for captions that carry only the speaker's name
+```
+
+```sh
+python3 tools/stream/avatar.py --casters --out site/static/avatars    # Rook.svg, Vale.svg
+```
+
+In Python, `avatar.casters()` returns the same rows. Overlay use (eng/stream2): the caption block that shows who
+is speaking can put `PogCasters.svg(key, 28)` beside caster lines, the same way agents get theirs.
+
 ### Gallery (`tools/stream/static/avatars.html`)
 
 Open the file directly (no server needed). It has:
@@ -111,6 +149,7 @@ Open the file directly (no server needed). It has:
 - A builder: name, colour, accent and one select per part ("from name" = unset), previews at 96/48/32/24 px, the
   resolved spec, and the exact `./fh call profile` command to paste.
 - The nine shakedown agents with their chosen colours and no avatar, i.e. what the overlay shows until they pick one.
+- The casters from `casters.js` (click one to load it into the builder).
 - 40 random valid avatars (Reroll for more; click one to load it into the builder).
 - The parts table.
 
@@ -118,13 +157,15 @@ Open the file directly (no server needed). It has:
 
 - `vendor/factorio-harness/tests/bots.lua` (fake engine, part of `npm test`): set and read back an avatar, accent
   lowercased, replace instead of merge, unknown field, bad value, bad accent, non-object, a refused avatar changes
-  no other field, `false` clears, `profiles` rows carry it.
+  no other field, the headset is accepted, `false` clears, `profiles` rows carry it.
 - `python3 tools/stream/test_avatar.py`: JS (under node) and Python give identical SVG, `resolve`, `validate` and
   `random` for 273 profiles (random specs, partial/invalid specs, no colour, near-black/white, unicode and escaped
   names); the Lua part lists equal the JS ones; every picture is a full 24x24; defaults are stable and setting one
-  part keeps the rest.
-- `npm test`: 63 pass. The 4 `bridge.test.ts` cases fail with `listen EPERM` on their unix socket in this sandbox,
-  before any test code runs (same as on eng/bots).
+  part keeps the rest; `picks` is a prefix of `options` and defaults never draw the headset; each caster sets every
+  part, is identical in JS and Python, and renders the same pixels under another name; `avatar_sprites.js --check`
+  passes (sprite composite equals avatar.js, Lua port equals JS) and the committed sprite files are current.
+- `npm test` (round 3): 89 pass. The 4 `bridge.test.ts` cases fail with `listen EPERM` on their unix socket in this
+  sandbox, before any test code runs (same as on eng/bots).
 
 ### Not verified live
 
@@ -142,6 +183,80 @@ POG_WORLD=live bin/fh call profiles               # astra's row has "avatar":{..
 ```
 
 A director client must be connected (or `auto_pause` off) for bots on `live`.
+
+### Sprites for the game (eng/harness2)
+
+For drawing agent avatars above characters with `rendering.draw_sprite`. Generated from `avatar.js` by
+`node tools/stream/avatar_sprites.js` into `tools/stream/sprites/`:
+
+- `avatar-parts.png`: an RGBA atlas, 1996x896 px, 174 cells (313 sprites; identical images share a cell).
+- `avatar_sprites.lua`: the sprite table plus a Lua port of `resolve` and `palette` and a `layers` function. It is
+  generated, so do not edit it. It runs in the data stage and the control stage and calls no game API itself.
+
+![The atlas over dark grey at half size: backdrops, then per base the base, emblem, helmet, visor and accessory layers](avatar-sprites-preview.png)
+
+**Layers.** Every sprite is a whole avatar canvas: 24x24 avatar pixels at 4 px each, so 96x96 px, with the part
+already in place. All layers therefore have the same size and the same anchor (the cell's centre), and an avatar
+is drawn by putting its layers at one target with one offset and one scale, bottom to top. A layer is one of two
+kinds:
+
+- A white mask (opaque `#ffffff` pixels), named `...-suit`, `-suitdark`, `-suitlight`, `-outline`, `-accent`,
+  `-accentdark`, `-accentlight`, `-accentsoft`, `-accentpale`, `-accentglow` or `-glow1..4`. It is drawn with
+  `tint` set to one palette colour. Since the mask is white, the tinted pixel is exactly that colour.
+- A detail layer (`...-detail`, no tint): the colours that never change (skin, metal, visor glass, backdrop
+  patterns).
+
+There is one mask per colour, so shading follows the avatar.js rules exactly. That includes near-black suits, which
+get their light rim from the `outline` tint. `--check` composites every layer from the PNG with its tint for 313
+profiles (agents, random specs, casters, unicode and empty names) and gets avatar.js's pixels exactly.
+
+Sprite names are `pogav-<base>-<part>-<option>-<paint>` (for example `pogav-robot-helmet-hardhat-accent`) and
+`pogav-backdrop-<backdrop>-<paint>`. Parts are exported once per base because helmets, visors, emblems and
+accessories sit at different heights on different bases. Night's stars 4-7 are separate sprites because they
+follow the name, like the SVG.
+
+**Data stage** (a prototype change: the mod needs `data.lua` and the PNG, so all clients need the new mod version
+and the server a restart, unlike `fh deploy`):
+
+```lua
+-- data.lua; copy avatar-parts.png to graphics/ and avatar_sprites.lua next to data.lua
+for _, p in pairs(require("avatar_sprites").prototypes("__agent-harness__/graphics/avatar-parts.png", 0.5)) do
+  data:extend{p}
+end
+-- each: {type="sprite", name=..., filename=..., x=..., y=..., width=96, height=96, scale=0.5, flags={"no-crop"}}
+```
+
+**Control stage:**
+
+```lua
+local AV = require("avatar_sprites")
+-- row = the profiles row: {name=bot_or_player_name, display_name=..., color=pr.color, avatar=pr.avatar}
+local ids = {}
+for _, l in ipairs(AV.layers(row, {backdrop = true})) do
+  ids[#ids + 1] = rendering.draw_sprite{sprite = l.sprite, tint = l.tint, surface = c.surface,
+    target = {entity = c, offset = {0, -3.4}}, x_scale = 1, y_scale = 1}.id
+end
+```
+
+- `AV.layers(row, opts)` returns `{sprite, tint, hex}` bottom to top (`tint` is `{r, g, b, a}` in 0..1, or nil for
+  detail layers), and the resolved spec as a second value. Unset parts, colour and accent come from the name as on the
+  overlay, so the in-game avatar matches the stream's. `opts.backdrop = false` leaves out the square backdrop, so
+  only the figure is drawn.
+- Layer count: 6 to 23 for the figure, plus 1 to 4 for the backdrop. With 9 agents that is up to about 250 render
+  objects. Redraw (destroy the ids, draw again) when `profile` changes the avatar, colour or name. Objects targeting
+  a character go away when it dies, so draw them again on respawn.
+- Size: at `scale = 0.5` the avatar is 48x48 game pixels, 1.5 tiles (each avatar pixel is 2x2 at zoom 1).
+  `x_scale`/`y_scale` at draw time resize it, and 2/3 gives a 1-tile avatar. Cells are 4 px apart, so filtering at
+  odd zooms does not bleed between neighbours.
+- Placement: speech bubbles (`profiles.lua`) draw text from `offset {0, -2.6}` upward. A 1.5-tile avatar centred at
+  `{0, -3.4}` sits above the head (-2.65 to -4.15). Either start the bubbles above it (about -4.3) or put the avatar
+  beside them (for example `{-1.4, -2.9}` at 2/3 scale). That layout is harness2's call.
+
+**Not verified in Factorio.** No game client was available to this session. The layer maths, atlas placement and
+the Lua port are checked offline: the Lua runs under `lua` 5.5 with only double arithmetic, as Factorio's 5.2
+needs, and gives the same layers and tints as the JS. Things to confirm in game: the `no-crop` flag and `scale`
+look right, pixels stay crisp at the zooms the director cameras use (if they blur, check the sprite filtering flags
+in the prototype docs and try whole-number screen scales), and layers stack in the order they are created.
 
 ## Item icons
 

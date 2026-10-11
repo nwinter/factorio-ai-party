@@ -18,7 +18,7 @@ already targets your character.
   e.g. `"avatar":{"base":"robot","helmet":"hardhat","visor":"mono","emblem":"gear","accessory":"antenna","backdrop":"hazard","accent":"#33ccff"}`.
   Choices: base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor
   none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory
-  none|antenna|headlamp|scarf|tank|horns|earpiece|pipe, backdrop dark|grid|hazard|glow|night, accent a second
+  none|antenna|headlamp|scarf|tank|horns|earpiece|pipe|headset, backdrop dark|grid|hazard|glow|night, accent a second
   `#rrggbb` (your suit is your colour). Every field is optional; ones you skip are picked from your name.
 - Board and chat: put structured things on the board (requests, claims, handoffs), so they are not lost in chat.
   Chat is for talking: `./fh say "..."` posts in the game chat and in a bubble above your character (for tricky text

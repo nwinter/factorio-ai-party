@@ -72,6 +72,14 @@
   </section>
 
   <section class="fx-panel">
+    <header class="fx-panel-title">Casters</header>
+    <div class="fx-panel-body">
+      <p class="fx-muted" style="margin:0 0 8px">The stream hosts, from <code class="fx-mono">casters.js</code>. Every part is set, so renaming a host leaves the portrait as it is. The headset is theirs by convention, though agents may pick it too.</p>
+      <div class="agents" id="casters"></div>
+    </div>
+  </section>
+
+  <section class="fx-panel">
     <header class="fx-panel-title">Random valid avatars</header>
     <div class="fx-panel-body" style="display:flex;flex-direction:column;gap:8px">
       <div class="row"><span class="fx-muted">40 random specs. Click one to load it into the builder.</span><button class="fx-btn" id="reroll" type="button">Reroll</button></div>
@@ -87,6 +95,7 @@
   </section>
 </main>
 <script src="avatar.js"></script>
+<script src="casters.js"></script>
 <script>
 (function () {
   "use strict";
@@ -154,6 +163,19 @@
     card.append(pic(p, 72), meta);
     card.addEventListener("click", function () { load({ name: p.name, color: spec.color, avatar: {} }); });
     $("agents").append(card);
+  });
+
+  // The casters (casters.js; the section stays empty if that file is missing).
+  var C = window.PogCasters;
+  (C ? C.keys : []).forEach(function (k) {
+    var p = C.row(k), spec = A.resolve(p);
+    var card = el("div", "fx-subpanel agent fx-agent-edge");
+    card.style.setProperty("--fx-agent", spec.color);
+    var meta = el("div", "meta");
+    meta.append(el("b", "", p.name), el("span", "fx-mono", k + " · " + p.role), el("span", "fx-muted", describe(spec)));
+    card.append(pic(p, 72), meta);
+    card.addEventListener("click", function () { load(p); });
+    $("casters").append(card);
   });
 
   // Random gallery.

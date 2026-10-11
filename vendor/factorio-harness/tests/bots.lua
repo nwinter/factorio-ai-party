@@ -144,6 +144,7 @@ fails(function() bot('profile',{avatar='robot'}) end,'avatar must be an object')
 fails(function() bot('profile',{display_name='Changed',avatar={visor='laser'}}) end,'avatar.visor must be one of')
 eq(bot('profile',{}).display_name,'Astra') -- a refused avatar changes nothing
 eq(bot('profile',{}).avatar.base,'biter')
+eq(bot('profile',{avatar={accessory='headset'}}).avatar.accessory,'headset')
 eq(bot('profile',{avatar=false}).avatar,nil)
 bot('profile',{avatar={base='engineer',helmet='hardhat',emblem='flask'}})
 bot('say',{text='taking iron, you take copper'})
