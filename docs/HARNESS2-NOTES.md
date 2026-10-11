@@ -114,6 +114,58 @@ what `live` runs now):
 - The merged CLI (with eng/board's compact waits): `wait_until` ends with `error: timed_out: ...` as its last line;
   `fh sleep 2` printed `woke: elapsed`.
 
+## Round 2: room for the runtime to grow (deploy size)
+
+After main merged this branch, the runtime bundle was 507,910 bytes against a 524,288-byte cap that both
+`host/bundle.ts` and `control.lua`'s `install` enforced. Two changes:
+
+1. Compaction (host only, so every existing world benefits): `host/compact.ts` drops Lua comments, indentation,
+   repeated spaces and trailing spaces outside strings, and keeps every line break, so runtime error line numbers
+   (`agent-harness/runtime:NNNN`) still point at the same bundle lines. Short and long strings are copied byte for
+   byte; a long comment inside a line becomes one space. The bundle went from 507,910 to 411,053 bytes (-19%), so a
+   world with the old `control.lua` has about 113 KB of room again.
+2. Chunked installs (`control.lua`, protocol 2): `install` now takes up to 8 MiB; `install_limits` reports
+   `{max_bytes: 8388608, chunk_bytes: 262144, protocol: 2}`; `install_chunk(id, index, total, data)` collects chunks
+   in order in `storage.agent_harness.pending_install` (chunk 1 starts over, so an abandoned upload is dropped);
+   `install_commit(id, bytes)` checks the count and byte total, clears the upload, and installs through the same
+   validate-then-swap path as `install`. `fh deploy` (`Harness.deploy`) sends one `install` up to 524,288 bytes,
+   which every world accepts, so hot-deploy to existing worlds works as before. A larger bundle needs
+   `install_limits`; an older world gets a clear error before anything is sent. Chunks are split on UTF-8 character
+   boundaries.
+3. Bug found on the way: `luaString` (the long-bracket quoting for RCON) produced `...]]]` for a value ending in
+   `]`, which Lua closes one character early. Whole bundles never ended in `]`, but chunks can; it now raises the
+   bracket level in that case.
+
+Verification:
+
+- `tests/compact.test.ts`: unit cases (comments inside strings, long strings and comments with levels, mid-line long
+  comments, escapes, line counts); every Lua suite (`tests/*.lua`, `runtime_test`, `control_test`) run against
+  compacted copies of all modules passes; the compacted bundle compiles.
+- `tests/deploy.test.ts`: `luaString` round-trips values ending in brackets through real Lua; `utf8Chunks` keeps
+  characters whole; small runtime = one `install`; 600 KB+ runtime = probe, 3 chunks within the cap and a commit with
+  the right byte count; the commands `fh deploy` generates, run through the real `control.lua` under Lua, install an
+  840 KB runtime byte for byte (4 chunks, protocol 2 reply); an old world (no `install_limits`) and an over-cap
+  runtime are refused with clear messages.
+- `mod/tests/control_test.lua`: limits, chunk order, starting over, incomplete commit (dropped, old runtime kept),
+  byte mismatch, oversized chunk, an over-512-KiB single install.
+- `npm test`: 89 pass, 4 fail (the same bridge `listen EPERM` sandbox failures).
+- Live on `live` (old `control.lua`, started before this change): `fh deploy` of the compacted 411 KB bundle replied
+  `protocol: 1` and the runtime works (`labs`, `sleep`); a padded 611,108-byte bundle was refused before sending
+  with `this world's control.lua takes at most 524288 bytes and has no chunked install. Restart the world with the
+  current agent-harness mod ...`, and the running runtime stayed in place.
+- Not verified live: a chunked deploy into a world running the new `control.lua`. Creating a throwaway world
+  (`tools/winps.sh tools/win/new-instance.ps1 -Name h2 ...`) was blocked in this session by the Cygnal guardrail
+  (it reads the scripts' `-ExecutionPolicy Bypass` as disabling a safety gate). To check it: create or restart a
+  world with the current mod (`new-instance.ps1` copies `D:\pog\mods`, so refresh that or the instance's `mods`
+  folder first), then `fh deploy --file <a copy of the mod folder with a 200 KB padding module>/runtime.lua`; expect
+  `protocol: 2` and `chunks: 3`, then `fh deploy` of the normal runtime.
+
+Gaps: an existing world needs a server restart with the new mod (and refreshed client mod copies, else
+`multiplayer.script-mismatch`) before it accepts more than 524,288 bytes; team runs create fresh worlds, so they get
+it automatically once `D:\pog\mods` holds the current mod. A chunked upload is not atomic across RCON failures: a lost
+chunk reply leaves the upload pending until the next `fh deploy`, which starts over at chunk 1. Save files carry the
+stored runtime source (now compacted, so smaller than before).
+
 ## Merging with eng/board
 
 Lua merges cleanly. `host/cli.ts` conflicts in 4 hunks; the resolution used for testing (merged tree: `npm test`
@@ -130,9 +182,7 @@ Lua merges cleanly. `host/cli.ts` conflicts in 4 hunks; the resolution used for 
 
 ## Gaps
 
-- Bundle size: the merged runtime bundle is 507,256 bytes against the 524,288-byte deploy limit (checked in
-  `bundle.ts` and in `control.lua`'s `install`). About 17 KB remain for everyone. Raising it needs a `control.lua`
-  change (and a client mod refresh); trimming describe text in `runtime.lua` is the cheaper route.
+- Bundle size: resolved in round 2 below (compaction plus chunked installs up to 8 MiB).
 - `fh sleep` mention detection reads `storage.agent_harness.mentions` (board.lua's inbox) directly; if eng/board
   changes that layout, `waits.lua`'s `why()` must follow; the same holds for `char_hits` (enemy hits). Damage from
   non-enemy sources (fire, own turrets) is seen only as lower health at a check, once a second.
