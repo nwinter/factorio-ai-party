@@ -235,6 +235,12 @@ if [ "${POG_BROKER:-0}" = 1 ]; then
   else log "broker FAILED: $(tail -2 "$rundir/broker.err" | tr '\n' ' ' | cut -c1-200)"; exit 1; fi
 fi
 
+# POG_FULL_TOOLS=1: Muse's team-tools is a folder of its own, mirrored with the shared one (tools/full_tools.py).
+if [ "${POG_FULL_TOOLS:-0}" = 1 ]; then
+  nohup python3 tools/full_tools.py sync "$rundir" 5 >"$rundir/team-tools-sync.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+fi
+
 # 5. Agents: three per Herdr tab, real time, team playbook.
 POG_TEAM="$rundir/team.txt"
 awk -F'\t' '!/^#/ && NF {print $1 "|" $6 " (" $7 ")"}' "$team" > "$POG_TEAM"

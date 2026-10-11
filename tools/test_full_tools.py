@@ -50,6 +50,27 @@ def workspace():
         assert text.index("## Your tools") < text.index("## Compact instructions"), text
         assert "The Agent tool starts subagents" in text and "base-2.0.77" in text and "{{" not in text, text
         assert "<!-- harness -->" not in text and "codex:" not in text, text
+        # Muse: its own team-tools folder, mirrored with the shared one both ways (newer wins, nothing deleted).
+        shared = os.path.join(tmp, "run", "team-tools")
+        open(os.path.join(shared, "haiku-circuit.py"), "w").write("print(1)\n")
+        m = os.path.join(tmp, "run", "muse")
+        os.makedirs(m)
+        open(os.path.join(m, "AGENTS.md"), "w").write(AGENTS)
+        full_tools.workspace(m, "muse")
+        mine = os.path.join(m, "team-tools")
+        assert os.path.isdir(mine) and not os.path.islink(mine), mine
+        assert open(os.path.join(mine, "haiku-circuit.py")).read() == "print(1)\n"
+        open(os.path.join(mine, "muse-circuit.py"), "w").write("print(2)\n")
+        assert full_tools.sync(os.path.join(tmp, "run")) == ["muse: muse-circuit.py"]
+        assert open(os.path.join(shared, "muse-circuit.py")).read() == "print(2)\n"
+        later = os.path.getmtime(os.path.join(shared, "haiku-circuit.py")) + 10
+        open(os.path.join(shared, "haiku-circuit.py"), "w").write("print(3)\n")
+        os.utime(os.path.join(shared, "haiku-circuit.py"), (later, later))
+        os.remove(os.path.join(mine, "muse-circuit.py"))
+        assert sorted(full_tools.sync(os.path.join(tmp, "run"))) == ["muse: haiku-circuit.py", "muse: muse-circuit.py"]
+        assert open(os.path.join(mine, "haiku-circuit.py")).read() == "print(3)\n"
+        assert full_tools.sync(os.path.join(tmp, "run")) == []
+        assert "kept in step with the shared one" in open(os.path.join(m, "AGENTS.md")).read()
         os.environ["POG_SPACE_AGE"] = "1"
         try:
             assert "space-age-2.0.77" in full_tools.paragraph("grok")
@@ -125,7 +146,8 @@ def codex_and_grok():
         assert json.dumps(os.path.join(tmp, "run", "team-tools")) in on.split("[sandbox_workspace_write]")[1], on
         try:
             import tomllib
-            tomllib.loads(on)
+            assert tomllib.loads(on)["agents"]["default_subagent_reasoning_effort"] == "medium", on
+            assert "[agents]" not in texts["0"], texts["0"]
         except ImportError:
             pass
         os.environ.pop("POG_TEAM", None)
@@ -133,7 +155,19 @@ def codex_and_grok():
         luna = os.path.join(tmp, "run", "luna")
         assert f"--allow 'Edit({tmp}/run/team-tools/**)'" in words, words
         assert f"--deny 'Read({luna}/journal.jsonl)'" in words and f"--deny 'Read({luna}/tools/**)'" in words, words
-        assert "notes.md" not in words and "/haiku/" not in words, words
+        assert "notes.md" not in words and "/haiku/" not in words.split("--sandbox")[0], words
+        # Grok's kernel sandbox profile (subagents need a bare '*' allow, so the kernel holds the line instead).
+        assert words.endswith(" --sandbox pog --allow '*'"), words
+        import tomllib
+        prof = tomllib.loads(open(os.path.join(d, ".grok-home", "sandbox.toml")).read())["profiles"]["pog"]
+        assert prof["extends"] == "workspace" and os.path.join(tmp, "run", "team-tools") in prof["read_write"], prof
+        assert os.path.join(luna, "journal.jsonl") in prof["deny"] and os.path.expanduser("~/.config/pog") in prof["deny"], prof
+        assert os.path.join(luna, "notes.md") not in prof["deny"], prof
+        os.environ["POG_GROK_SANDBOX"] = "0"
+        try:
+            assert "--sandbox" not in full_tools.grok_args(d)
+        finally:
+            os.environ.pop("POG_GROK_SANDBOX")
         def grok_env(full):
             return subprocess.run(["bash", "-c", f". '{ROOT}/tools/profile-flags.sh'; echo \"$grok_env\""],
                                   env=dict(os.environ, POG_FULL_TOOLS=full), capture_output=True, text=True,

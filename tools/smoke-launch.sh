@@ -77,6 +77,12 @@ if [ "${POG_BROKER:-0}" = 1 ]; then
   POG_FH_SOCKET="$rundir/.sock/$first.sock" bin/fh --bot "$second" call status 2>&1 | grep -q refused && echo "broker probe: other bot refused" || echo "broker probe: other bot NOT refused"
 fi
 
+sync_pid=""
+if [ "${POG_FULL_TOOLS:-}" = 1 ]; then   # Muse's own team-tools folder, mirrored with the shared one
+  nohup python3 tools/full_tools.py sync "$rundir" 5 >"$rundir/team-tools-sync.log" 2>&1 &
+  sync_pid=$!
+fi
+
 : > "$rundir/panes.txt"
 t0=$(date +%s)
 for k in $kinds; do read -r name route model effort label harness <<<"$(row "$k")"
@@ -99,6 +105,11 @@ done < "$rundir/panes.txt"
 sleep $((minutes * 60 + 30))
 
 while read -r name pane kind; do herdr pane close "$pane" >/dev/null 2>&1 || true; done < "$rundir/panes.txt"
+if [ -n "$sync_pid" ]; then
+  kill "$sync_pid" 2>/dev/null || true
+  python3 tools/full_tools.py sync "$rundir" >> "$rundir/team-tools-sync.log"
+  echo "team-tools sync: $(wc -l < "$rundir/team-tools-sync.log" | tr -d ' ') copies"
+fi
 if [ -n "$broker_pid" ]; then
   kill "$broker_pid" 2>/dev/null || true; sleep 1
   python3 tools/fh_broker.py summary "$rundir/broker.log"
