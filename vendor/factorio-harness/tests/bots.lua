@@ -231,6 +231,13 @@ c.valid=false; advance(1)
 local dead=bot('status',{})
 eq(dead.alive,false); eq(dead.dead_until_tick,tick+600); eq(dead.active,false); eq(dead.last.outcome,'died')
 fails(function() bot('walk',{direction='east',ticks=5}) end,'is dead')
+-- Talk works while dead (shake3: Sonnet's chat failed 3 times with "bot sonnet is dead").
+local said=bot('say',{text='down at the boilers, back in 10 s'}); assert(said.seq,'say while dead')
+local heard=runtime.dispatch{action='chat',args={},player=1}
+eq(heard.messages[#heard.messages].text,'down at the boilers, back in 10 s'); eq(heard.messages[#heard.messages].from,'astra')
+runtime.dispatch{action='say',args={text='@astra ok'},player=1}
+local read=bot('chat',{}); eq(read.messages[#read.messages].text,'@astra ok')
+fails(function() bot('chat',{limit=0}) end,'limit must be 1..100')
 for _,row in ipairs(runtime.dispatch{action='profiles',args={},player=1}.profiles) do
   if row.name=='astra' then eq(row.alive,false); eq(row.dead_until_tick,dead.dead_until_tick) end
   assert(row.name~='pog-director','a released director is still a spectator, not an agent')

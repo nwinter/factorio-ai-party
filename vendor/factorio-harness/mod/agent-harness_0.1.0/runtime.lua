@@ -3533,7 +3533,11 @@ dispatch_request=function(request)
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     return handler(body(p),request.args or {})
   end
-  local p=player(request.player)
+  -- A dead bot still talks: it reads and answers the team while it waits to respawn.
+  local p
+  if (request.action=='chat' or request.action=='say') and M.bots.is_index(request.player) then
+    p=M.lookup(request.player); assert(p and p.valid,'player does not exist')
+  else p=player(request.player) end
   if not reads[request.action] and not passive[request.action] and not request.action:match('^queue_') then
     local q=state().queues and state().queues[p.index]
     if q and not q.paused then M.stop_player(p.index) end
