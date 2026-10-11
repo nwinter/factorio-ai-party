@@ -160,7 +160,8 @@ return function(api)
       if cause.type == 'character' then index = cause.player and cause.player.index
       elseif cause.get_driver then
         local driver = cause.get_driver()
-        if driver then index = driver.is_player() and driver.index or driver.player and driver.player.index end
+        -- get_driver gives a LuaPlayer or a character entity.
+        if driver then index = driver.object_name == 'LuaPlayer' and driver.index or driver.player and driver.player.index end
       end
     end)
     removed(index, event.entity, 'destroyed')

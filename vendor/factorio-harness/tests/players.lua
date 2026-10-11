@@ -94,7 +94,7 @@ local biter=entity('small-biter','unit',26,26,{force={name='enemy'}})
 M.on_event(fire('on_entity_died',{entity=biter,cause={valid=true,type='character',player=nick}}))
 -- A car's driver is the cause too.
 local fence=entity('small-electric-pole','electric-pole',27,25)
-M.on_event(fire('on_entity_died',{entity=fence,cause={valid=true,type='car',get_driver=function() return {is_player=function() return false end,player=nick} end}})); fence.valid=false
+M.on_event(fire('on_entity_died',{entity=fence,cause={valid=true,type='car',get_driver=function() return {object_name='LuaEntity',player=nick} end}})); fence.valid=false
 local rm=s.humans.by_index[1].removed
 eq(#rm,4); eq(rm[1].recipe,'iron-gear-wheel'); eq(rm[2].belt_type,'output'); eq(rm[3].how,'destroyed'); eq(rm[4].name,'small-electric-pole')
 
