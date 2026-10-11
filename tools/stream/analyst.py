@@ -42,7 +42,7 @@ Facts you must get right (the hosts often get them wrong):
 - Several 2.0 technologies are trigger techs, finished by an action (steam power: craft 50 iron plates; oil \
 processing: mine crude oil) and cost no packs.
 - Agents never crash: an agent that stops is "thinking", "idle" or "offline". A count of damaged or destroyed \
-buildings counts our own buildings, never enemies.
+buildings counts the team's own buildings, never enemies.
 %(extra)s- Say what is true, not the mistake: write "research progress is always kept", never "progress was not \
 lost"; "the wreck is scenery", never "it is not an attack". The hosts' fast writer drops the "not" and repeats the \
 mistake. The same goes for corrections.
@@ -500,7 +500,9 @@ def viewer_system():
         assert old in base, old
         base = base.replace(old, new)
     facts = ("\n\nFacts to get right (say what is true, never the mistake):\n- Research progress is always kept when "
-             "labs switch.\n- Damaged or destroyed buildings are our own; agents never crash.\n"
+             "labs switch.\n- A count of damaged or destroyed buildings counts the team's own buildings, never "
+             "enemies; agents never crash.\n- Speak as the stream's analyst: the team and each agent are 'they', never "
+             "'we', 'our' or 'it'.\n"
              + (SPACE_AGE_FACTS if sa else "- The kb_* tools hold the base game. For a Space Age question, read notes "
                 "space-age first (Space Age differs: 50 rocket parts of 1 each, space science made on platforms).\n"))
     return base.rstrip() + facts.rstrip() + VIEWER_RULES
@@ -618,6 +620,7 @@ def main():
     ap.add_argument("--at", type=float, help="game minute for --replay")
     ap.add_argument("--run-dir", help="the run's directory (agents' notes.md)")
     ap.add_argument("--feed", default=None, help="stream service base URL, e.g. http://127.0.0.1:8788")
+    ap.add_argument("--kb", help="knowledge base version (default $POG_KB or base-2.0.77), e.g. space-age-2.0.77")
     ap.add_argument("--model", default="sonnet")
     ap.add_argument("--effort", default=None, help="claude --effort (low, medium, high)")
     ap.add_argument("--claude", default="claude")
@@ -632,6 +635,8 @@ def main():
     ap.add_argument("--ask-port", type=int, help="also answer viewer questions: POST http://127.0.0.1:PORT/ask")
     ap.add_argument("--viewer-questions", action="store_true",
                     help="answer questions from the snapshot's viewer lane for the hosts (needs --feed)")
+    ap.add_argument("--ask-test", action="append", metavar="QUESTION",
+                    help="answer QUESTION (repeatable) as an on-air viewer question and print it; nothing is posted")
     ap.add_argument("--ask-every", type=float, default=150, help="at most one viewer answer per this many seconds")
     ap.add_argument("--ask-max-age", type=float, default=60, help="skip viewer questions older than this (seconds)")
     ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
@@ -644,6 +649,8 @@ def main():
     ap.add_argument("--eval-relay", action="store_true", help="hosts' writer answering with the analyst's answer as a fact")
     ap.add_argument("--host-model", default="@cf/google/gemma-4-26b-a4b-it")
     a = ap.parse_args()
+    if a.kb:  # before anything imports kb.py (its default version) or starts the MCP server (inherits POG_KB)
+        os.environ["POG_KB"] = a.kb
     if a.eval or a.eval_grade:
         import evaluate
         if a.eval_grade and a.eval_relay:
@@ -652,6 +659,20 @@ def main():
             evaluate.regrade(a.eval_grade)
         else:
             evaluate.run(a, run_claude)
+        return
+    if a.ask_test:
+        from analyst_board import QuestionPicker
+        from concurrent.futures import ThreadPoolExecutor
+
+        def one(q):
+            v = {"id": q, "name": "tester", "text": q, "t": time.time()}
+            return answer_viewer(a, v, QuestionPicker(0, a.ask_max_age), post=lambda body: {"dry_run": True})
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            rows = list(ex.map(one, a.ask_test))
+        for r in rows:
+            out = r.get("reply") if isinstance(r.get("reply"), dict) else {}
+            print(f"\nQ: {r['text']}\n  {r['seconds']} s  " + (f"SKIP {r['skipped']}" if r.get("skipped") else
+                                                              f"[{out.get('question')}] {out.get('answer')}"))
         return
     dg = Digest(a)
     if a.ask_port:
