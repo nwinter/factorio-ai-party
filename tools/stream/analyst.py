@@ -155,6 +155,43 @@ class Digest:
         self.a = a
         self.game = G.ReplayGame(a.replay, a.at) if a.replay else G.LiveGame(a.world, a.bot, a.player, a.surface)
 
+    RATE_RECIPES = ["automation-science-pack", "logistic-science-pack", "military-science-pack", "chemical-science-pack",
+                    "production-science-pack", "utility-science-pack", "electronic-circuit", "advanced-circuit",
+                    "iron-gear-wheel", "engine-unit", "plastic-bar", "sulfur", "processing-unit", "low-density-structure"]
+
+    def reference_rates(self, snap):
+        """Per-machine output for the recipes that matter, and for live worlds each machine group's capacity."""
+        kb = self.kb
+        lines = []
+        for r in self.RATE_RECIPES:
+            rec = kb.recipes.get(r)
+            if not rec:
+                continue
+            per = []
+            for m in kb.machines_for(rec["category"]):
+                if m == "rocket-silo":
+                    continue
+                out = 60 * kb.machine_speed(m) / rec["energy"] * sum(p.get("amount") or 1 for p in rec["products"] if p["name"] == r)
+                per.append(f"{m} {round(out, 2):g}/min")
+            lines.append(f"one machine on {r}: " + ", ".join(per))
+        lines.append("one stone furnace: 18.75 iron or copper plates/min; steel or electric furnace: 37.5; "
+                     "electric mining drill: 30 ore/min; burner mining drill: 15 ore/min")
+        groups = getattr(self, "_machines", None) or {}
+        caps = []
+        for key, sts in groups.items():
+            name, recipe = key.split("|")
+            rec = kb.recipes.get(recipe)
+            if not rec or name not in kb.entities or kb.entities[name]["type"] not in ("assembling-machine", "furnace"):
+                continue
+            n = sum(sts.values())
+            out = 60 * kb.machine_speed(name) / rec["energy"] * n * sum(p.get("amount") or 1 for p in rec["products"] if p["name"] == (rec.get("main_product") or recipe))
+            made = ((snap.get("items") or {}).get(rec.get("main_product") or recipe) or {}).get("m10")
+            caps.append((out, f"{n} {name} on {recipe}: capacity {out:.1f}/min" + (f", made {made / 10:.1f}/min (all sources)" if made else "")))
+        if caps:
+            lines.append("this factory's machine groups (capacity if every machine ran full time):")
+            lines += [c for _, c in sorted(caps, reverse=True)[:14]]
+        return "\n".join(lines)
+
     def build(self, prev=None, feed=None):
         G, H, kb = self.G, self.H, self.kb
         parts, facts = [], {}
@@ -164,9 +201,11 @@ class Digest:
         spm, per = G.spm(snap)
         facts["spm"] = round(spm, 1)
         parts.append("## Current game\n" + G.snapshot_text(snap))
+        self._machines = None
         try:
             m = self.game.machines()
             if m:
+                self._machines = m
                 parts.append("## Machines by recipe and status\n" + G.machines_text(m))
         except Exception as e:
             parts.append(f"(machine status unavailable: {e})")
@@ -177,6 +216,7 @@ class Digest:
                 parts.append("## Harness status (threats, pollution, power)\n" + json.dumps(keep, ensure_ascii=False)[:2500])
             except Exception as e:
                 parts.append(f"(status unavailable: {e})")
+        parts.append("## Reference rates (exact for this version; quote these instead of computing)\n" + self.reference_rates(snap))
         parts.append("## Past runs at this game minute\n" + H.at_text(self.series, round(minute)))
         cur = snap.get("research")
         if cur:
@@ -353,6 +393,8 @@ def main():
     ap.add_argument("--every", type=float, default=90, help="seconds between cycle starts (60-120)")
     ap.add_argument("--timeout", type=float, default=240)
     ap.add_argument("--once", action="store_true")
+    ap.add_argument("--cycles", type=int, help="stop after N cycles")
+    ap.add_argument("--at-step", type=float, help="replay: advance --at by this many game minutes per cycle, no wait")
     ap.add_argument("--dry-run", action="store_true", help="do not POST to the service")
     ap.add_argument("--segments", action="store_true", help="also request the top suggested segment (POST /segment)")
     ap.add_argument("--digest-only", action="store_true", help="print the digest and exit (no model call)")
@@ -391,8 +433,13 @@ def main():
         except Exception as e:
             log(f"[analyst] cycle failed: {type(e).__name__}: {e}")
             traceback.print_exc()
-        if a.once:
+        n_done = locals().get("n_done", 0) + 1
+        if a.once or (a.cycles and n_done >= a.cycles):
             return
+        if a.replay and a.at_step:
+            a.at = (a.at or 0) + a.at_step
+            dg.game = dg.G.ReplayGame(a.replay, a.at)
+            continue
         time.sleep(max(5.0, a.every - (time.time() - t0)))
 
 
