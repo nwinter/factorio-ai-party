@@ -63,7 +63,13 @@ check("caster role voices never assigned", not set(voices.assign_voices([{"name"
 # ---- moods ----
 check("mood excited", voices.mood("Red science is ONLINE!") == "excited")
 check("mood frustrated", voices.mood("Ugh, the inserters are stuck again.") == "frustrated")
-check("mood deadpan", voices.mood("Iron plates. Again. Fine.") in ("deadpan", "frustrated"))
+check("mood deadpan", voices.mood("Iron plates. Again. I have become the iron plate.") == "deadpan")
+check("mood: 'again!' in a happy line is excited",
+      voices.mood("Roboports are up, the bots are flying, and I am never placing a chest by hand again!") == "excited")
+check("mood: a strong complaint with a '!' is frustrated",
+      voices.mood("Seriously, Grok, that is the third time the power has gone out. Build more steam engines!")
+      == "frustrated")
+check("mood: casters are never frustrated", voices.mood("Ugh, the bus is broken!", "pbp") == "excited")
 
 # ---- routing without keys ----
 tone = voices.TTS("tone")

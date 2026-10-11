@@ -19,6 +19,7 @@ import json, math, os, re
 HERE = os.path.dirname(os.path.abspath(__file__))
 VOCAB_FILE = os.path.join(HERE, "vocab.tsv")
 SYSTEM_DICT = "/usr/share/dict/words"
+LEXICON_FILE = os.path.join(HERE, "lexicon.tsv")
 
 # ---- vocabulary --------------------------------------------------------------------------------------------------
 _vocab = None
@@ -43,6 +44,10 @@ def vocab():
     words = set()
     if os.path.exists(SYSTEM_DICT):
         words = {w.strip().lower() for w in open(SYSTEM_DICT, encoding="utf-8", errors="ignore") if len(w.strip()) >= 4}
+    if os.path.exists(LEXICON_FILE):  # names and game terms (Vulcanus, Kovarex) are words, so the lexicon still sees them
+        for line in open(LEXICON_FILE, encoding="utf-8"):
+            if not line.startswith("#") and line.strip():
+                words.update(w.lower() for w in TOKEN.findall(line.split("\t")[0]))
     _vocab = (costs, words)
     return _vocab
 
@@ -70,7 +75,12 @@ def known(word):
             stem = w[:-len(suf)] + add
             if stem in words or stem in costs:
                 return True
-    return False
+    # British spellings of American dictionary words: colour, labelling, organise, centre
+    us = re.sub(r"our(?=s?$|ed$|ing$|ful$)", "or", w)
+    us = re.sub(r"([aeiou])ll(?=ing$|ed$|er$|ers$)", r"\1l", us)
+    us = re.sub(r"is(e|es|ed|ing|ation|ations)$", r"iz\1", us)
+    us = re.sub(r"tre(s?)$", r"ter\1", us)
+    return us != w and known(us)
 
 
 def piece_cost(w):
@@ -164,9 +174,12 @@ def boundaries(t):
 TOKEN = re.compile(r"[A-Za-z][A-Za-z']*")
 
 
-def resegment(t, min_len=3):
-    """Split glued alphabetic tokens that are not words. Returns (text, tokens still unknown and long)."""
+def resegment(t, min_len=4):
+    """Split glued alphabetic tokens that are not words. Returns (text, tokens still unknown and long).
+    A short capitalised token splits only into team-vocabulary words ("Myred", "Oilgather"): an unknown "Vulcanus" is a
+    name, not "Vulcan us"."""
     left = []
+    costs = vocab()[0]
 
     def fix(m):
         tok = m.group()
@@ -175,6 +188,8 @@ def resegment(t, min_len=3):
                 or re.fullmatch(r"[A-Z]{2,}s", core):
             return tok
         parts = segment(core)
+        if parts and re.fullmatch(r"[A-Z][a-z]{1,9}", core) and not all(p.lower() in costs for p in parts):
+            return tok
         if parts and len(parts) > 1 and len(parts) <= max(2, len(core) // 2):
             return " ".join(parts) + tok[len(core):]
         if len(core) >= 10:

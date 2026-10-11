@@ -114,6 +114,12 @@ CLEAN = [
     "Big push on the west wall, and Grok is holding the line!",
     "Red science is flowing, and Gemini just kicked off oil processing.",
     "That is 1,000 plates by the 2nd hour.",
+    # bench lines the first real bench split ("lab elling", "co lour", "a go", "Vulcan us")
+    "A quiet moment. Muse is labelling chests, which is the most exciting thing in logistics.",
+    "I have sorted the chests by colour. Nobody asked. You are welcome.",
+    "Why does the furnace keep starving? I fed it coal two minutes ago. This is broken.",
+    "Plan for the next hour: Luna on smelting, Haiku on rails, and I take the oil field at Vulcanus.",
+    "Organising the centre of the base, travelling light.",
 ]
 for line in CLEAN:
     check(f"unchanged: {line[:40]}", textprep.normalize(line) == line, textprep.normalize(line))
