@@ -27,7 +27,7 @@ config: settings are written into the run workspace or passed on the launch comm
 | Harness (models) | Compaction point | How it is set | After a compaction |
 |---|---|---|---|
 | Claude Code 2.1.296 (Opus, Sonnet, Haiku 5.5; 1M windows) | Opus 250K, Sonnet 200K, Haiku 80K | workspace `.claude/settings.json`: `autoCompactWindow` (+ `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` for Haiku) | `SessionStart` hook, matcher `compact`, prints `notes.md` into context |
-| Codex 0.162.1 (Astra, Sol, Luna; 272K windows) | 180K | workspace `.codex/config.toml`: `model_context_window`, `model_auto_compact_token_limit` | AGENTS.md (re-injected by Codex) says to read `notes.md` |
+| Codex 0.162.1 (Astra, Sol, Luna; 272K windows) | 150K | workspace `.codex/config.toml`: `model_context_window`, `model_auto_compact_token_limit` | AGENTS.md (re-injected by Codex) says to read `notes.md` |
 | Grok Build 1.0.50 (grok-4.7, 256K) | 60% = 154K | `GROK_AUTO_COMPACT_THRESHOLD_PERCENT=60` on the launch command | `PostCompact` hook marks, next `PostToolUse` hook injects `notes.md`; `--rules` line |
 | Antigravity 1.3.3 (gemini-3.8-flash-high) | 200K (own ~280K still applies within a turn) | none exists; `.agy-loop.sh` starts a fresh conversation past 200K | fresh conversation's prompt says to read `notes.md` |
 | Muse Code 1.4.4 (muse-spark-1.3, 1M) | harness default (no setting) | none exists | `SessionStart` hook, matcher `compact`, prints `notes.md` |

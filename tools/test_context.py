@@ -80,13 +80,13 @@ def main():
         run("setup", "codex", "gpt-6.1-sol", d)
         import tomllib
         cfg = tomllib.load(open(os.path.join(d, ".codex", "config.toml"), "rb"))
-        assert cfg["model_context_window"] == 272000 and cfg["model_auto_compact_token_limit"] == 180000
+        assert cfg["model_context_window"] == 272000 and cfg["model_auto_compact_token_limit"] == 150000
         assert os.path.exists(cfg["experimental_compact_prompt_file"])
         run("setup", "muse", "muse-spark-1.3", d)
         hooks = json.load(open(os.path.join(d, ".muse", "hooks.json")))["hooks"]
         assert hooks["SessionStart"][0]["matcher"] == "compact"
     assert run("limit", "agy", "gemini-3.8-flash-high").strip() == "200000"
-    assert run("limit", "codex", "gpt-7-unknown").strip() == "180000", "kind fallback row"
+    assert run("limit", "codex", "gpt-7-unknown").strip() == "150000", "kind fallback row"
     assert run("agy-tokens", "/nonexistent").strip() == "0"
     print("ok")
 
