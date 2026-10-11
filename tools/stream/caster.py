@@ -265,6 +265,10 @@ def facts_for(e, s, baseline=None):
     for k in ("text", "change", "title", "tech", "item"):
         if e.get(k):
             f[k] = spoken(e[k]) if k in ("text", "title") else e[k]
+    if e["kind"] == "attack" and ": " in f.get("text", ""):
+        # live alerts read "Base under attack: transport belt x7"; writers took the entity for the attacker
+        head, _, what = f["text"].partition(": ")
+        f["text"] = f"{head}; the biters are damaging: {what}"
     board = s.get("board") or {}
     if e["kind"] in ("board", "harness", "lull") and board.get("available"):
         f["board"] = {k: board.get(k) for k in ("open_unowned", "in_progress", "claims_total") if board.get(k)}
