@@ -215,7 +215,7 @@ class Digest:
 
 
 # ---- model -------------------------------------------------------------------------------------------------------
-def run_claude(a, digest_text):
+def run_claude(a, digest_text, system=None):
     env = dict(os.environ)
     srv_env = {"POG_KB": os.environ.get("POG_KB", "base-2.0.77")}
     if a.replay:
@@ -236,12 +236,13 @@ def run_claude(a, digest_text):
     cmd = [claude, "-p", "--model", a.model, "--output-format", "json", "--no-session-persistence",
            "--strict-mcp-config", "--mcp-config", cfg_path, "--tools", "Read,Grep,Glob",
            "--allowedTools", "mcp__analyst", "Read", "Grep", "Glob", "--permission-mode", "dontAsk",
-           "--system-prompt", SYSTEM]
+           "--system-prompt", system or SYSTEM]
     if a.effort:
         cmd += ["--effort", a.effort]
     t0 = time.time()
     try:
-        p = subprocess.run(cmd, input=digest_text + "\n\nWrite this cycle's JSON now.", capture_output=True, text=True,
+        p = subprocess.run(cmd, input=digest_text if system else digest_text + "\n\nWrite this cycle's JSON now.",
+                           capture_output=True, text=True,
                            timeout=a.timeout, cwd=REPO, env=env)
     finally:
         os.unlink(cfg_path)
@@ -357,7 +358,23 @@ def main():
     ap.add_argument("--digest-only", action="store_true", help="print the digest and exit (no model call)")
     ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
     ap.add_argument("--log-digest", action="store_true")
+    ap.add_argument("--eval", action="store_true", help="run the viewer-question check (tools/analyst/evaluate.py)")
+    ap.add_argument("--eval-only", choices=["analyst", "host"])
+    ap.add_argument("--eval-ids", help="comma-separated question ids")
+    ap.add_argument("--eval-parallel", type=int, default=5)
+    ap.add_argument("--eval-grade", help="re-grade a results file (with --eval-relay: add the relay condition to it)")
+    ap.add_argument("--eval-relay", action="store_true", help="hosts' writer answering with the analyst's answer as a fact")
+    ap.add_argument("--host-model", default="@cf/google/gemma-4-26b-a4b-it")
     a = ap.parse_args()
+    if a.eval or a.eval_grade:
+        import evaluate
+        if a.eval_grade and a.eval_relay:
+            evaluate.relay(a, a.eval_grade)
+        elif a.eval_grade:
+            evaluate.regrade(a.eval_grade)
+        else:
+            evaluate.run(a, run_claude)
+        return
     dg = Digest(a)
     if a.digest_only:
         print(dg.build(None, fetch_feed(a.feed) if a.feed else None)[0])
