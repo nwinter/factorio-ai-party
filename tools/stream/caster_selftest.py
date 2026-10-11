@@ -89,6 +89,9 @@ check("differ: first snapshot is the opener", [e["kind"] for e in first] == ["op
 check("differ: alerts, chat, research, camera, board", kinds == ["attack", "board", "camera", "chat", "research_start"],
       str(kinds))
 check("differ: no repeats", d.diff(snap2) == [])
+snap3 = dict(snap2, chat=snap2["chat"] + [{"seq": "t1", "agent": "luna", "text": "→ Sol: plates in (3,4)", "t": now,
+                                             "tell": True, "lane": "log"}])
+check("differ: a tell (logistics ticker) is no chat event for the casters", d.diff(snap3) == [])
 
 # templates never leave a placeholder and only use facts
 tw = caster.TemplateWriter()

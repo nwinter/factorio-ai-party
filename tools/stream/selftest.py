@@ -546,6 +546,14 @@ def main():
     assert lanes == [(1, "log"), (2, "talk"), (3, "talk"), (4, "viewer"), (5, "log"), ("c1", "talk")], lanes
     m9.ingest({"confessions": [{"seq": 1, "tick": 6, "from": "luna", "text": "I don't trust that wall."}]})
     assert sum(1 for c in m9.chat if c.get("confess")) == 1  # confessions dedup by their own seq
+    # tells (agent -> teammates outside the chat) always go to the ticker, with the recipients, once each
+    tells = [{"seq": 1, "tick": 7, "from": "astra", "to": ["luna"], "text": "29 plates in the chest (3,4)"},
+             {"seq": 2, "tick": 8, "from": "luna", "to": "team", "text": "north belt is down"}]
+    m9.ingest({"tells": tells})
+    m9.ingest({"tells": tells})
+    told = [c for c in m9.chat if c.get("tell")]
+    assert [(c["seq"], c["lane"], c["agent"], c["text"]) for c in told] == [
+        ("t1", "log", "astra", "→ Luna: 29 plates in the chest (3,4)"), ("t2", "log", "luna", "→ team: north belt is down")], told
 
     # night lift: filter created on each capture, ramps toward the darkness, settles back by day
     import nightlift as nl

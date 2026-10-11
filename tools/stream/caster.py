@@ -161,7 +161,7 @@ class Differ:
             if key in self.chat_keys:
                 continue
             self.chat_keys.add(key)
-            if not first and m.get("agent") and now - float(m.get("t") or now) < 30:
+            if not first and m.get("agent") and not m.get("tell") and now - float(m.get("t") or now) < 30:
                 ev.append({"kind": "chat", "agent": m["agent"], "text": m.get("text", ""), "aloud": bool(m.get("aloud")),
                            "seq": m.get("seq")})
         board = s.get("board") or {}

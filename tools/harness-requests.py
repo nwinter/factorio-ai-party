@@ -114,7 +114,8 @@ def main():
         for row in result["agents"]:
             last = row.get("last_request_tick")
             seen = f"last request {ago(last, now)}" if last is not None else "no request yet"
-            line = f"{row['name']}: {row['unread_mentions']} unread mentions ({row['at_mentions']} @), {seen}"
+            line = f"{row['name']}: {row['unread_mentions']} unread mentions ({row['at_mentions']} @, {row.get('tells') or 0} tells), "
+            line += f"{row.get('unread_board') or 0} board lines, {seen}"
             if row.get("latest"):
                 line += f"; latest {row['latest']}"
             print(line)

@@ -53,6 +53,8 @@ class LiveSource:
         self.next_board = 0
         self.has_confess = False
         self.confess_seq = 0
+        self.has_tells = False
+        self.tell_seq = 0
         self.platform_every = 15.0
         self.next_platforms = 0
         self.platform_detail = {}
@@ -245,6 +247,7 @@ class LiveSource:
             actions = res.get("actions") or {}
             self.has_board = "board_events" in actions and "board" in actions
             self.has_confess = "confessions" in actions
+            self.has_tells = "tells" in actions
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -266,6 +269,14 @@ class LiveSource:
                     self.confess_seq = res["cursor"]
             except Exception as e:
                 errors["confessions"] = str(e)
+        if self.has_tells:  # tells (agent -> named teammates, outside the chat), read as the operator: the ticker
+            try:
+                res, _ = self.h.operator_read("tells", {"since": self.tell_seq, "limit": 30})
+                obs["tells"] = res.get("tells") or []
+                if res.get("cursor") is not None:
+                    self.tell_seq = res["cursor"]
+            except Exception as e:
+                errors["tells"] = str(e)
         if not self.has_board:
             return
         try:
