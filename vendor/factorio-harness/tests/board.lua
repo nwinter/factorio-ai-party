@@ -152,7 +152,10 @@ eq(request{action='board',args={},player=2}.matched,6)
 fails(function() request{action='board_post',args={kind='note',title='x'},player=2} end,'directors do not post')
 
 -- Team hints: assignment, requester updates, notes on my items; each shown once.
--- (Any reply carries them: astra's earlier calls already consumed #2.)
+-- (Any reply carries them: astra's earlier calls already consumed #2's note.)
+-- The requester finishing an item tells its owner.
+local t=astra('status').team
+eq(t.board[1],'#2 (yours) done by sol: feed the labs')
 eq(astra('status').team,nil)
 local posted=sol('board_post',{kind='task',title='feed the furnaces',owner='astra'}).item.id
 local t=astra('status').team
