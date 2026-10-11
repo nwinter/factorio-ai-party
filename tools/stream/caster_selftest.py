@@ -247,13 +247,16 @@ check("research facts carry the baseline time", "shake1_finished_this_at" in fp,
 import live  # noqa: E402
 ae = live.LiveSource.attack_events({"attacked": [{"chunk_centre": {"x": -48, "y": 16}, "hits": 3, "damage": 40,
                                                   "last_tick": 100, "entities": "character x3, stone-wall x2"}]}, 100)
-check("banner: 'character x3' is an engineer hit 3 times", ae and ae[0]["text"] ==
-      "Base under attack near (-48, 16): engineer hit 3 times", str(ae))
+check("banner (eng/stream2's live.py): 'character x3' is an engineer under attack, no count", ae and ae[0]["text"] ==
+      "Engineer under attack near (-48, 16)", str(ae))
+ef = caster.facts_for({"kind": "attack", "text": ae[0]["text"], "t": now, "prio": 9}, {})
+check("an engineer attack reaches the hosts without a number", ef["text"] == "Engineer under attack"
+      and "numbers_mean" not in ef and caster.check_line("Fourteen biters on the engineer!", ef, names, []) is not None,
+      str(ef))
 le = live.LiveSource.loss_events({"latest": ["in (12,-40)-(20,-31) 21 destroyed: 9 transport-belt, 5 burner-mining-drill "
                                              "by 21 small-biter, 1m10s-0s ago"]})
 check("loss banner: kills by small biters, no kill count", le and le[0]["text"].endswith("(by small biters)")
       and "21 small" not in le[0]["text"], str(le))
-check("one hit reads 'once'", live.hit_text("gun-turret x1") == "gun turret hit once")
 af = caster.facts_for({"kind": "attack", "text": "Base under attack near (-48, 16): character x9", "t": now, "prio": 9}, {})
 check("attack facts: hits on the team's engineers, no 'biters are damaging'", af["text"] ==
       "Base under attack: engineer hit 9 times" and "times biters hit" in af["numbers_mean"] and "damaging" not in json.dumps(af), str(af))

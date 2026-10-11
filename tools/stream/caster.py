@@ -406,7 +406,7 @@ def facts_for(e, s, baseline=None, deadline=None):
     for k in ("text", "change", "title", "tech", "item"):
         if e.get(k):
             f[k] = spoken(e[k]) if k in ("text", "title") else e[k]
-    if e["kind"] == "attack":
+    if e["kind"] == "attack" and re.search(r"\d", f.get("text", "")):  # eng/stream2's banners carry no count now
         # "Base under attack: transport belt hit 7 times". shake3's "the biters are damaging: character (3 of them)"
         # aired as "nine biters chew their boots" and "fourteen turrets"
         f["numbers_mean"] = "how many times biters hit the team's own buildings or engineers"

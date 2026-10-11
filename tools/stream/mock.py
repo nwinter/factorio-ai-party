@@ -425,7 +425,7 @@ class MockSource:
             # biters hit the west wall: an attacked area (no agent necessarily there), then sometimes losses
             x, y = SITES["defense line"]
             x, y = x + r.uniform(-20, 20), y + r.uniform(-20, 20)
-            events.append({"kind": "attack", "text": f"Base under attack near ({round(x)}, {round(y)}): gun turret hit {r.randint(2, 14)} times",
+            events.append({"kind": "attack", "text": f"Base under attack near ({round(x)}, {round(y)}): gun turret",
                            "key": f"area:{round(x / 32)},{round(y / 32)}", "ttl": 60, "position": {"x": x, "y": y}})
             if r.random() < 0.6:
                 events.append({"kind": "loss", "text": f"{r.randint(2, 9)} lost near ({round(x)}, {round(y)}): stone wall, "

@@ -15,23 +15,17 @@ LOSS_RE = re.compile(r"^(?:losses )?in \((-?\d+),(-?\d+)\)(?:-\(-?\d+,-?\d+\))? 
 RECENT_AGO = re.compile(r"^(?:.*-)?(?:\d+s|1m\d\ds)$")  # last part of the span under 2 minutes
 
 
-def hit_text(entry):
-    """One `entities` entry of an attack alert, "transport-belt x14", is the team's entity and how many times biters
-    hit it: "transport belt hit 14 times". "character" is one of the team's engineers. (shake3: "character x3" on the
-    banner read as three characters attacking, and the hosts turned hit counts into "nine biters", "fourteen turrets".)"""
-    m = re.match(r"^\s*(.*?)\s+x(\d+)\s*$", entry or "")
-    name, hits = (m.group(1), int(m.group(2))) if m else ((entry or "").strip(), None)
-    name = "engineer" if name == "character" else name.replace("-", " ")
-    if hits is None:
-        return name
-    return f"{name} hit {'once' if hits == 1 else f'{hits} times'}"
+def hit_label(entities):
+    """status.alerts.attacked `entities` ("character x3", "gun-turret x12"): the x is a hit count, which the hosts read
+    as a number of enemies or turrets on air (shake3), so the banner and replay titles name only what was hit."""
+    name = re.sub(r"\s*x\d+$", "", (entities or "").strip()).replace("-", " ")
+    return "an engineer" if name == "character" else name
 
 
-def killers_text(by):
-    """"5 small-biter, 2 medium-biter" -> "small biters and medium biters": the numbers are kills, not attackers."""
-    kinds = [re.sub(r"^\d+\s*", "", k.strip()).replace("-", " ") for k in (by or "").split(",") if k.strip()]
-    kinds = [k if k.endswith("s") else k + "s" for k in kinds[:2] if k]
-    return " and ".join(kinds)
+def attacker_label(by):
+    """describe_incident's "by 5 small-biter, 2 medium-biter" counts kills by each kind: "small biters"."""
+    name = re.sub(r"^\d+\s+", "", (by or "").split(",")[0].strip()).replace("-", " ")
+    return name + "s" if name and not name.endswith("s") else name
 
 
 class LiveSource:
@@ -301,7 +295,7 @@ class LiveSource:
             if not RECENT_AGO.match(ago):
                 continue  # the alert window is 5 game minutes; only show losses from the last minute or so
             what = ", ".join(n.strip().replace("-", " ") for n in names.split(",")[:2])
-            text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {killers_text(by)})" if killers_text(by) else "")
+            text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {attacker_label(by)})" if by else "")
             out.append({"kind": "loss", "text": text, "key": f"loss:{x},{y}", "ttl": 90,
                         "position": {"x": float(x), "y": float(y)}})
         return out
@@ -316,8 +310,10 @@ class LiveSource:
             if not area.get("damage"):
                 continue  # zero-damage hits: the crash site's fire, not an attack
             c = area.get("chunk_centre") or {}
-            what = hit_text((area.get("entities") or "").split(",")[0]) if area.get("entities") else ""
-            text = f"Base under attack near ({round(c.get('x', 0))}, {round(c.get('y', 0))})" + (f": {what}" if what else "")
+            what = hit_label((area.get("entities") or "").split(",")[0])
+            near = f"near ({round(c.get('x', 0))}, {round(c.get('y', 0))})"
+            text = f"Engineer under attack {near}" if what == "an engineer" else \
+                f"Base under attack {near}" + (f": {what}" if what else "")
             out.append({"kind": "attack", "text": text, "key": f"area:{c.get('x')},{c.get('y')}", "ttl": 60,
                         "position": c})
         return out
