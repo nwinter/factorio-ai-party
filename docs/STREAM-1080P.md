@@ -14,16 +14,50 @@ is Aitum Vertical's 1080x1920 canvas, Quick Sync H.264 at 6 Mbps (`tools/vertica
 3. Stay on H.264 and 30 fps for now: HEVC and 60 fps are not worth their risk and cost yet (below).
 4. Needs about 28 Mbps of steady upload from the box (estimate below). Below that, 10 Mbps landscape.
 
-Shift change (OBS closed on the box, from the repo root on the Mac):
+First, keyframes. In shake7 YouTube Studio reported the horizontal feed's keyframe frequency as 7.9 s, an error (YouTube
+wants 4 s or less); the vertical feed, at 2 s from `vertical.py settings`, was healthy. The pog profile is in Simple
+output mode with Quick Sync and keyint 0 (auto), and Simple mode has no keyframe setting. The built-in YouTube service,
+which would enforce 2 s, crashed OBS 32.2.2 (docs/SETUP.md). So the profile moves to Advanced output, where the stream
+encoder's settings (`keyint_sec` among them) live in `streamEncoder.json`.
+
+`obs_profile.py advanced` does that and carries over everything Simple mode did. It reads each value from the Simple
+section and prints `CHECK:` for any that differs from what the operator described. The mapping follows OBS 32's
+`frontend/utility/SimpleOutput.cpp` and `AdvancedOutput.cpp`:
+
+| Simple mode | Advanced mode |
+|---|---|
+| `StreamEncoder=qsv`, `VBitrate`, CBR, `QSVPreset` | `AdvOut Encoder=obs_qsv11_v2`; `streamEncoder.json` `{rate_control: CBR, bitrate, keyint_sec: 2, preset}` |
+| stream audio on mixer track 1 at `ABitrate` (160) | `TrackIndex=1`, `Track1Bitrate=160`, `AudioEncoder=ffmpeg_aac` |
+| recording: `FilePath` (D:\pog\recordings), `RecFormat2` (mkv), quality "Stream" (shares the stream encoder) | `RecType=Standard`, `RecFilePath`, `RecFormat2`, `RecEncoder=none`, `RecAudioEncoder=none` (still one shared encode), `RecTracks=1` |
+| (quality "Small"/"HQ" instead) | `RecEncoder` = its id, `recordEncoder.json` CQP at OBS's own CalcCRF(23 or 16) |
+| replay buffer `RecRB`, `RecRBTime` (45), `RecRBSize` (512) | `AdvOut RecRB`, `RecRBTime`, `RecRBSize` |
+| replay prefix `RecRBPrefix=Replay` (replays.py reads the saved path) | unchanged: Advanced mode reads `[SimpleOutput] RecRBPrefix/RecRBSuffix` too |
+| `[Video] AutoRemux` (off), filename format, reconnect, delay, `service.json` (Custom RTMPS) | untouched |
+
+Before writing, it keeps a dated copy of `basic.ini`, `streamEncoder.json` and `recordEncoder.json`
+(`NAME.pog-YYYYMMDD-HHMMSS`; a file that did not exist gets a `.absent` marker). `rollback STAMP` restores all three
+and deletes any of them the change created.
+
+Shift change, OBS closed on the box (File > Exit), from the repo root on the Mac:
 
 ```sh
-tools/.venv/bin/python tools/obs_profile.py show                                       # read-only, works anytime
+tools/.venv/bin/python tools/obs_profile.py show                       # read-only, works anytime
+tools/.venv/bin/python tools/obs_profile.py advanced --dry-run         # every key before -> after, and CHECK lines
+tools/.venv/bin/python tools/obs_profile.py advanced                   # prints the backup stamp and the undo command
+# optional, the 1080p plan below (Advanced mode now; its own backups):
 tools/.venv/bin/python tools/obs_profile.py 1080p --encoder nvenc --bitrate 12000 --dry-run
 tools/.venv/bin/python tools/obs_profile.py 1080p --encoder nvenc --bitrate 12000
-# then start OBS; back out: tools/.venv/bin/python tools/obs_profile.py 720p --encoder qsv --bitrate 6000
+# start OBS. Undo everything (OBS closed): obs_profile.py rollback STAMP (the stamp `advanced` printed;
+# `obs_profile.py backups` lists them)
 ```
 
-The dry run prints every key before and after. Check that the current encoder value reads `qsv` (Simple output mode)
+After starting OBS: Settings > Output should show Output Mode "Advanced", the stream tab Quick Sync H.264 with
+Keyframe Interval 2 s, the recording tab D:\pog\recordings, mkv, "(Use stream encoder)", and the replay buffer
+45 s / 512 MB. In YouTube Studio's stream health, the horizontal feed's keyframe error should be gone within a minute
+of going live. `tools/stream/replays.py` saving a clip ("[replays] saved ...Replay_...mkv") shows the buffer and its
+prefix work.
+
+The 1080p dry run prints every key before and after. Check that the current encoder value reads `qsv` (Simple output mode)
 or `obs_qsv11_v2` (Advanced): that confirms the format the script writes (`nvenc` / `obs_nvenc_h264_tex`). The
 script never touches `service.json`, so the stream stays on the Custom RTMPS service (docs/SETUP.md: OBS 32.2.2's
 built-in YouTube service crashed OBS at stream start). The vertical needs no change for this plan.
