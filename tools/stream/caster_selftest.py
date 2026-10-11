@@ -341,12 +341,14 @@ check("accepts sentence-start words and show words", caster.check_line(
 # numbers from the event's own chat text (P2 item 12)
 cf = {"event": "chat", "text": "Final stretch: eleven labs are working, plastics12percent", "agent": {"name": "Sol"}}
 check("a number spelled in the chat text counts as a fact ('Eleven labs')", caster.check_line(
-    "Eleven labs humming, Rook!", cf, ["Sol"], []) is None)
+    "Eleven labs running, Rook!", cf, ["Sol"], []) is None)
 check("a number glued in the chat text counts too", caster.check_line(
     "Plastics at twelve percent!", cf, ["Sol"], []) is None)
 check("rejects a line with Chinese characters (Kimi, Space Age pilot)", caster.check_line(
     "Gemini jolts awake, and I will never doubt静止 again!", {"agent": {"name": "Gemini"}}, ["Gemini"], []) == "not English")
-check("the naturalist prompt admires planning", "idle" not in caster.NATURALIST and "admire" in caster.NATURALIST)
+check("the naturalist prompt: planning is writing commands, no documentary narration", "idle" not in
+      caster.NATURALIST and "writing its next commands" in caster.NATURALIST and "no nature-documentary" in
+      caster.NATURALIST)
 check("a capitalised singular of a fact word passes ('Plastic' for 'plastics')", caster.check_line(
     "Plastic research stalls at forty-two!", {"researching": {"tech": "Plastics", "percent": 42}}, names, []) is None)
 gmf = caster.facts_for({"kind": "lull", "angle": "explain", "t": now, "prio": 1}, {"agents": [], "game_time": "1h05m"})
@@ -553,6 +555,102 @@ with tempfile.TemporaryDirectory() as runs:
     cs6 = caster.Caster.__new__(caster.Caster)
     cs6.a = caster.argparse.Namespace(run_dir=os.path.join(runs, "shake5"))
     check("Caster.shift reads --run-dir", cs6.shift()["number"] == 2, str(cs6.shift()))
+
+# Hosts that sound human (COPY.md): the post-filter and the one rewrite
+rs = caster.restyle
+check("restyle: a dash pivot becomes two sentences", rs("Sol's motto holds—furnaces warm, science moving—they're "
+      "walking the walk!") == "Sol's motto holds. Furnaces warm, science moving. They're walking the walk!",
+      rs("Sol's motto holds—furnaces warm, science moving—they're walking the walk!"))
+check("restyle: semicolons, ellipses, ' - ' and doubled marks", rs("They speak; they act... a rare moment - wow!!")
+      == "They speak. They act. A rare moment. Wow!", rs("They speak; they act... a rare moment - wow!!"))
+check("restyle: hyphenated words and numbers stay", rs("Sixty-five labs, steam-powered.") ==
+      "Sixty-five labs, steam-powered.")
+sf_ = caster.style_fault
+check("style: 'X, not Y' and 'not X, but Y' are rejected", sf_("Those furnaces want coal now, not philosophy.")
+      and sf_("Not a crash, but a reset.") and sf_("It's not just iron.") and
+      sf_("Furnaces warm, science moving, not yet there.") is None)
+check("style: documentary narration, stock words, similes", sf_("Here in the wild, Grok marks water tiles.") and
+      sf_("The labs are humming.") and sf_("Astra loops coal like a river finding its bed.") and
+      sf_("Looks like a coal run.") is None)
+check("style: a body metaphor on machines unless the facts use the word", sf_("Twelve packs starve six labs.") and
+      sf_("Twenty machines starved.", '"low power: 84 of 234 machines starved"') is None
+      and sf_("Labs dream of green.") and sf_("Oh, there it is.") is None)
+check("style: three numbers in a line is too many; 'one' and two numbers are fine",
+      sf_("Forty-seven on circuits, twenty techs deep, and 12 labs.") == "style: too many numbers in one line" and
+      sf_("One more lab. Thirty-three science a minute, up from twenty.") is None and
+      sf_("Logistics 2 at sixty-nine percent.") is None)
+check("style faults go through check_line", caster.check_line("The furnaces bleed coal.", {"event": "lull"}, [], [])
+      == "style: metaphor 'bleed'")
+tx = caster.tidy_exchange([("pbp", "Biters at the wall!"), ("color", "Oh no!"), ("pbp", "Holding!"),
+                           ("color", "Patient or slow?")])
+check("tidy: one exclamation per exchange, no hanging question", tx == [("pbp", "Biters at the wall!"),
+      ("color", "Oh no."), ("pbp", "Holding.")], str(tx))
+check("tidy: a lone line keeps its question", caster.tidy_exchange([("color", "Patient or slow?")]) ==
+      [("color", "Patient or slow?")])
+notes = caster.spoken_notes(caster.random.Random(1))
+check("spoken notes: the reason, the bans, four sample exchanges", "voice engine" in notes and "Dashes" in notes
+      and notes.count("\n--\n") == 3 and "—" not in notes and ";" not in caster.SPOKEN, notes[-300:])
+check("the examples pass the style check and the post-filter leaves them alone", all(
+    caster.style_fault(l.split(": ", 1)[1]) is None and caster.restyle(l.split(": ", 1)[1]) == l.split(": ", 1)[1]
+    for x in caster.EXAMPLES for l in x.splitlines()))
+pw = caster.LLMWriter("claude", "haiku")
+pw.complete = lambda system, user, max_tokens=80: pw.__dict__.setdefault("seen", (system, user)) and \
+    "Rook: Oil's in.\nVale: Finally—plastics next; big day."
+px = pw.exchange({"kind": "research"}, {"event": "research"}, [], "pbp", 2, note="Your last draft had a line")
+check("the writer prompt carries the notes, the 18-word limit and the rewrite note; output is restyled",
+      "voice engine" in pw.seen[0] and "at most 18 words" in pw.seen[1] and pw.seen[1].endswith(
+          "Your last draft had a line") and px == [("pbp", "Oil's in."), ("color", "Finally. Plastics next. Big day.")],
+      str(px))
+
+
+tpl = [t for kinds in caster.TemplateWriter.T.values() for ts in kinds.values() for t in ts]
+check("templates: no style faults, no dashes or semicolons, one exclamation at most", all(
+    caster.style_fault(t) is None and not re.search(r"—|–|;", t) and t.count("!") <= 1 for t in tpl),
+    str([t for t in tpl if caster.style_fault(t) or t.count("!") > 1]))
+
+
+class _Writer:
+    name = "fake"
+
+    def __init__(self, drafts):
+        self.drafts, self.notes = list(drafts), []
+
+    def exchange(self, e, facts, recent, first, n, naturalist=False, show="", note=""):
+        self.notes.append(note)
+        return self.drafts.pop(0)
+
+
+def _caster(writer):
+    c = caster.Caster.__new__(caster.Caster)
+    c.a = caster.argparse.Namespace(gap=(1, 2), lines=(2, 3), deadline=None, run_dir=None)
+    c.writer, c.fast, c.rng, c.template = writer, None, caster.random.Random(1), caster.TemplateWriter()
+    c.breakers = {"writer": caster.Breaker("writer", cool=(1, 2))}
+    c.history, c.recent, c.baseline, c.used_points = caster.deque(maxlen=4), caster.deque(maxlen=12), None, set()
+    c.stats = {"caster_lines": 0, "agent_lines": 0, "fallbacks": 0}
+    c.deadline_t, c.last_speaker, c.caster_free = (0.0, None), None, 0.0
+    c.spoke = []
+    c.speak_lines = lambda lines, *a: c.spoke.extend(lines)
+    return c
+
+
+bad = [("pbp", "Biters at the wall!"), ("color", "Those furnaces starve while labs dream.")]
+good = [("pbp", "Biters at the wall!"), ("color", "Oh, that's the side they never walled.")]
+w1 = _Writer([[bad[1], bad[0]], good])
+c1 = _caster(w1)
+c1.say_exchange({"kind": "attack", "text": "Base under attack near (1, 2)", "t": now, "prio": 5}, {"agents": []},
+                "color", 2)
+check("a style fault in the first line gets one rewrite, with the reason", len(w1.notes) == 2 and "metaphor" in
+      w1.notes[1] and c1.spoke == good, f"{w1.notes} {c1.spoke}")
+w2 = _Writer([[bad[1]], [bad[1]]])
+c2 = _caster(w2)
+c2.say_exchange({"kind": "attack", "text": "Base under attack near (1, 2)", "t": now, "prio": 5}, {"agents": []},
+                "pbp", 2)
+check("a second style fault falls back to a template", len(w2.notes) == 2 and c2.stats["fallbacks"] == 1
+      and c2.spoke and c2.spoke[0][1] != bad[1][1], str(c2.spoke))
+w3 = _Writer([[bad[1]], good])
+c3 = _caster(w3)
+c3.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
+check("urgent beats get no rewrite", len(w3.notes) == 1, str(w3.notes))
 
 # Round 6 (shake5 P1 item 4): stage 3 is "Oil & blue science", and the stage fact says which packs are made
 import model  # noqa: E402
