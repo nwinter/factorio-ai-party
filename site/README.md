@@ -82,57 +82,57 @@ pages fall back to Segoe UI or the system font.
 | Key | Meaning |
 |---|---|
 | `site_title`, `description` | header and meta description |
-| `youtube_video_id` | the stream's video ID; when set, the live page embeds it (muted autoplay, youtube-nocookie) |
-| `youtube_channel_id` | alternative: embed the channel's current live stream |
-| `live_status_url` | where the live page fetches status (default `/live/status.json`) |
-| `live_poll_seconds` | refresh interval (default 15; four times slower while the tab is hidden) |
+| `youtube_video_id` | the broadcast's video ID. When set, the live page embeds the player (muted autoplay, youtube-nocookie) and the YouTube live chat beside it. Unlisted broadcasts work if embedding is allowed on the broadcast |
+| `youtube_channel_id` | alternative: embed the channel's current live stream (no chat embed: YouTube's chat embed needs a video ID) |
+| `live_api_url` | the live API (Worker) base URL; empty turns the dashboard and site chat off |
+| `live_status_url` | the offline notice (default `/live/status.json`: message, next run, latest run, optional stream IDs) |
+| `live_poll_seconds` | dashboard refresh interval (default 10, matching the pusher; four times slower while the tab is hidden) |
 
 No stream exists yet, so both YouTube keys are empty and the page shows a placeholder.
 
-## Live status JSON
+## Live page
 
-The live page polls `live_status_url` and renders whatever it finds. The publisher doesn't exist yet; it should
-write this file (for example from the stream overlay service's `/state.json`, which already has most of these
-fields) and upload it, or the URL can point at any HTTPS endpoint that serves it with CORS. `live/status.json` in
-this folder is the offline default that ships with the site; `live/status.example.json` is a full sample, viewable
-at `/live/?demo=1`.
+`/live/` is the place to watch a run. Top: the YouTube player and a chat panel with two tabs, "YouTube chat" (the
+live chat embed, `embed_domain` set to the page's host) and "Site chat" (our own, no accounts). Below: a dashboard
+drawn from the stream service's state: a status strip (game time, technologies, science per minute, research
+progress), alerts, one panel per agent (portrait, model and role, state, current action and place, last two chat
+lines, camera), a minimap of agent positions with camera rings and alert pins, the board (owners and recent events),
+research, production and science charts for the last 30 minutes, and the team's game chat. `/live/?demo=1` shows it
+with `live/state.example.json`, a snapshot of the stream service's mock session passed through the pusher's filter.
 
-```jsonc
-{
-  "schema": 1,                       // bump on breaking changes
-  "updated": "2026-10-10T17:52:10-07:00",   // ISO time the publisher wrote this
-  "live": true,                      // false: show "Offline" plus message/next/last_run only
-  "message": "optional one-liner",
-  "next": {"title": "Shakedown 2", "when": "2026-10-12T17:00:00-07:00"},   // optional, shown when offline
-  "last_run": {"id": "shake1", "title": "Shakedown 1", "url": "/runs/shake1/"},  // optional, site-relative url
-  "run": {"id": "shake2", "title": "...", "subtitle": "...", "mode": "realtime|turns", "enemies": "normal",
-          "seed": 20261010, "started": "ISO", "deadline": "ISO"},
-  "stream": {"youtube_video_id": "", "youtube_channel_id": ""},   // optional; overrides config when set
-  "game": {
-    "tick": 176400, "game_time": "49m00s", "paused": false, "rockets": 0,
-    "research": {"current": "fluid-handling", "progress": 0.42, "done": 12,
-                 "recent": [{"tech": "engine", "game_time": "48m55s"}]},
-    "per_minute": {"iron-plate": 412, "automation-science-pack": 24},   // optional, not drawn yet
-    "power": {"capacity_mw": 3.6, "load_mw": 1.6, "starved": 0}          // optional, not drawn yet
-  },
-  "agents": [{
-    "id": "astra", "name": "Astra", "model": "GPT-6 Astra", "harness": "Codex",
-    "color": "#9977ff", "glyph": "AS", "motto": "...",      // from profiles; null lets the avatar renderer pick
-    "avatar": {"base": "robot", "visor": "mono"},            // optional: the profile's avatar parts, as in ART-NOTES
-    "state": "acting|thinking|idle|dead|offline",
-    "action": "construct", "location": "green science",
-    "camera": "main|cam2|cam3",                              // optional: which director camera shows them
-    "respawn_s": 7                                           // optional, when dead
-  }],
-  "chat": [{"seq": 334, "game_time": "49m00s", "from": "gemini", "text": "..."}],   // last ~20; page shows 8
-  "alerts": [{"kind": "attack|death|low_power|research", "text": "...", "game_time": "48m50s"}]  // page shows 3
-}
+Data flow, all documented in `docs/LIVE-API.md`:
+
+```
+game host -> tools/stream/serve.py (/state.json) -> site/push_live.py (every 10 s, filtered + redacted)
+          -> Worker player-of-games-live (POST /v1/state, token) <- live page (GET /v1/state, GET/POST /v1/chat)
+                                                                  <- eng/viewers on the Mac (GET /v1/chat)
 ```
 
-All text is escaped before display, colours must be `#rrggbb`, and links in `last_run.url` must be site-relative.
-`id` is the bot name the portrait is seeded from, so use the same name as the harness `profiles` row; unknown avatar
-parts are ignored by the renderer.
-`_headers` serves `/live/status.json` with `Cache-Control: no-store`.
+When the latest state is more than 60 s old the page shows "Offline", dims the last dashboard and shows the notice
+from `live/status.json`.
+
+### The Worker (`site/worker/`)
+
+```sh
+npx wrangler deploy --config site/worker/wrangler.toml          # deploy or update
+npx wrangler dev --config site/worker/wrangler.toml --port 8791 --ip 127.0.0.1 --inspector-port 9339   # local
+python3 site/worker/test_api.py http://127.0.0.1:8791            # 20 checks: auth, CORS, chat limits, moderation
+```
+
+One Durable Object (SQLite-backed, free plan) holds the latest state and the chat. `PUBLISH_TOKEN` is a Worker secret
+for pushing state and moderating; the same value lives in `site/worker/.secrets.json` (and `.dev.vars` for local
+runs), both gitignored and mode 600. To rotate: write a new value into `.secrets.json`, run
+`npx wrangler secret bulk site/worker/.secrets.json --config site/worker/wrangler.toml`, and restart the pusher.
+`ALLOWED_ORIGINS` in `wrangler.toml` lists the origins whose pages may call the API (add a custom domain there).
+
+### The pusher (`site/push_live.py`, on the Mac)
+
+```sh
+python3 site/push_live.py                    # serve.py on 127.0.0.1:8787, push every 10 s until stopped
+python3 site/push_live.py --once --print     # show what would be published
+```
+
+It forwards only the fields listed in `docs/LIVE-API.md` and passes every string through `clean()`.
 
 ## Files
 
@@ -142,5 +142,7 @@ parts are ignored by the renderer.
 - `config.json`: settings
 - `static/`: `style.css` (light/dark tokens on top of the art kit, layout), `site.js` (theme toggle, chart hover),
   `live.js` (live page). `factorio-ui.css`, `avatar.js` and `avatars/` are added to `dist/static/` by the build.
-- `live/`: default and sample status files
+- `live/`: `status.json` (offline notice) and `state.example.json` (sample state for `?demo=1`)
+- `push_live.py`: Mac-side state pusher
+- `worker/`: the live API Worker (`worker.js`, `wrangler.toml`, `test_api.py`)
 - `dist/`: build output (not committed)
