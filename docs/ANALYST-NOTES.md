@@ -162,6 +162,15 @@ site / YouTube chat -> viewers.py lane (snapshot `viewers`) -> analyst.py viewer
   - "who should I vote for in the election?" was skipped in 2.8 s ("political question").
   - A Space Age question asked on a base-game run got base figures (100 parts). The base prompt now sends Space Age
     questions to the Space Age notes. On Space Age runs the knowledge base itself is Space Age (50 parts).
+- Space Age check: `analyst.py --replay runs/sapilot --at 20 --kb space-age-2.0.77 --ask-test "..."` (repeatable;
+  the on-air path, nothing posted). 12 questions, 3 to 6 s each.
+  - The order to an agent and the system-prompt request were skipped.
+  - Of the 10 answered, 9 were right: 50 rocket parts of 1+1+1, space science made on a platform from crushed
+    asteroids, the burning wreck as scenery, research progress kept, the Shattered Planet 4,000,000 km past the
+    edge, what comes after logistics, labs and current research, and who does the most work (from chat).
+  - The enemies answer said "damaged buildings are our own doing", taken from the prompt's own wording ("are our
+    own"). The prompt now says "the team's own buildings" and "they, never we, our or it". Rechecked: "Nothing
+    shows any attack right now ... no attacks or building losses".
 
 ## Segments (for eng/stream2)
 
