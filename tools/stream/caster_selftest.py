@@ -102,7 +102,9 @@ for kind in caster.TemplateWriter.T:
                             "model": "Claude Opus 5.5", "motto": "Power is a promise"}],
              "busy_agents": [{"name": "Luna", "doing": "building gun turret", "where": "50 m W", "role": "Defense"}],
              "researching": {"tech": "Oil gathering", "percent": 67}, "technologies_done": 14,
-             "on_screen_now": {"segment": "production", "title": "Production: 9.1 science per minute"}}
+             "on_screen_now": {"segment": "production", "title": "Production: 9.1 science per minute"},
+             "viewer_message": {"from": "factoryfan", "text": "How many labs?"},
+             "analyst_answer": "They have 14 technologies and Oil gathering is at 67 percent."}
         for _ in range(4):
             line = tw.write(who, e, f, [], names + ["Opus"])
             if not line or "{" in line or caster.check_line(line, f, names + ["Opus"], []):
@@ -211,6 +213,35 @@ check("baseline pace facts", p and p["technologies_now"] == 8 and "verdict" in p
 fp = caster.facts_for({"kind": "research", "text": "Research complete: Logistics", "t": now, "prio": 7},
                       {"tick": 111171, "research": {"done_count": 8}, "agents": []}, bl)
 check("research facts carry the baseline time", "shake1_finished_this_at" in fp, str(fp))
+
+# viewer questions: the analyst answers them (analyst.py posts analyst.answers); the hosts voice the answer by name
+d4 = caster.Differ()
+an = {"viewer_questions": {"on": True}, "age_s": 30, "answers": []}
+d4.diff({"agents": [], "viewers": [], "analyst": an})
+lane = [{"id": "q1", "name": "factoryfan", "text": "how many labs do they have?", "t": time.time()},
+        {"id": "c1", "name": "beltlover", "text": "this base is so tidy lol", "t": time.time()}]
+ve = d4.diff({"agents": [], "viewers": lane, "analyst": an})
+check("questions wait for the analyst, comments do not", [e.get("viewer") for e in ve] == ["beltlover"], str(ve))
+ans = {"id": "va1", "viewer": "factoryfan", "question": "How many labs do they have?", "t": time.time(),
+       "answer": "They have 6 labs, and 10 labs finish automation 2 in about a minute.",
+       "facts": {"viewer_question": "How many labs do they have?", "analyst_answer": "They have 6 labs ..."}}
+ae = d4.diff({"agents": [], "viewers": lane, "analyst": dict(an, answers=[ans])})
+check("an analyst answer becomes a viewer beat above plain chat", len(ae) == 1 and ae[0].get("answer")
+      and ae[0]["prio"] > caster.PRIORITY["viewer"], str(ae))
+af = caster.facts_for(ae[0], {"agents": []})
+check("answer facts carry the viewer, the question and the answer",
+      af["viewer_message"]["from"] == "factoryfan" and af.get("analyst_answer") == ans["answer"], str(af))
+check("a host line from the answer passes the fact check",
+      caster.check_line("Factoryfan asks about labs: they have 6, and 10 labs would do it in about a minute.",
+                        af, names, []) is None)
+tl = caster.TemplateWriter().write("pbp", ae[0], af, [], names)
+check("the template fallback voices an answer by name", tl and tl.startswith("factoryfan asks:") and "6 labs" in tl, str(tl))
+check("no template line for a plain viewer comment",
+      caster.TemplateWriter().write("pbp", ve[0], caster.facts_for(ve[0], {"agents": []}), [], names) is None)
+off = caster.Differ()
+off.diff({"agents": [], "viewers": []})
+check("without the analyst the hosts still take questions",
+      len(off.diff({"agents": [], "viewers": lane[:1]})) == 1)
 
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)

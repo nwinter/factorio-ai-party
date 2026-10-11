@@ -108,5 +108,48 @@ class BoardTest(unittest.TestCase):
         self.assertEqual([x["text"] for x in b.public()["talking_points"]], ["new"])  # same topic replaced
 
 
+class ViewerQuestionsTest(unittest.TestCase):
+    def test_is_question(self):
+        from analyst_board import is_question
+        for t in ("how many labs do they have?", "what's next after oil", "Rook, why is copper short", "is this space age?"):
+            self.assertTrue(is_question(t), t)
+        for t in ("lol", "go astra go", "this base is tidy", "??"):
+            self.assertFalse(is_question(t), t)
+
+    def test_picker_rate_and_staleness(self):
+        from analyst_board import QuestionPicker
+        p = QuestionPicker(every=150, max_age=60, retry=20)
+        lane = [{"id": 1, "text": "how many labs do they have?", "t": 1000},
+                {"id": 2, "text": "what comes after green science?", "t": 1040},
+                {"id": 3, "text": "astra mine the rocks now?", "t": 1041, "order": True},
+                {"id": 4, "text": "nice", "t": 1042}]
+        self.assertEqual(p.pick(lane, 1050)["id"], 2)       # newest question, orders and comments ignored
+        p.skipped(1060)
+        self.assertIsNone(p.pick(lane, 1070))               # retry hold
+        self.assertIsNone(p.pick(lane, 1081))               # id 1 is now 81 s old: stale
+        lane.append({"id": 5, "text": "why is power low?", "t": 1100})
+        self.assertEqual(p.pick(lane, 1101)["id"], 5)
+        p.answered(1110)
+        lane.append({"id": 6, "text": "who is winning?", "t": 1200})
+        self.assertIsNone(p.pick(lane, 1201))               # one answer per 150 s
+        lane.append({"id": 7, "text": "who builds the rocket?", "t": 1250})
+        self.assertEqual(p.pick(lane, 1261)["id"], 7)
+
+    def test_answer_checks_and_board(self):
+        import analyst
+        from analyst_board import AnalystBoard, questions_on
+        v = {"id": "m1", "name": "fan", "text": "how many labs?", "t": 1000}
+        self.assertIsNone(analyst.answer_problem({"question": "How many labs?", "answer": "They have 6 labs."}, v, 1010, 60))
+        self.assertIn("skipped", analyst.answer_problem({"skip": "off-topic"}, v, 1010, 60))
+        self.assertIn("stale", analyst.answer_problem({"question": "q", "answer": "a"}, v, 1200, 60))
+        self.assertIn("Reply with ONLY a JSON object", analyst.viewer_system())
+        b = AnalystBoard()
+        b.answer({"msg_id": "m1", "viewer": "fan", "question": "How many labs?", "answer": "They have 6 labs."})
+        self.assertEqual(b.public()["answers"][0]["viewer"], "fan")  # offered before the first cycle too
+        b.post({"talking_points": [], "viewer_questions": {"on": True}})
+        self.assertTrue(questions_on(b.public()))
+        self.assertEqual(b.public(now=__import__("time").time() + 200)["answers"], [])  # expired
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
