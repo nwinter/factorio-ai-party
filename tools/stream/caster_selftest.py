@@ -314,7 +314,7 @@ check("accepts 'ends the run' once the deadline has passed", caster.check_line(
 snap4 = {"agents": [{"name": "grok", "display_name": "Grok", "activity": "thinking", "pronouns": "he/him"},
                     {"name": "luna", "display_name": "Luna", "activity": "idle"}]}
 g = caster.agent_facts(snap4, "grok")
-check("thinking is 'planning the next step', not standing still", g["status"] == "planning the next step"
+check("thinking is 'working out the next step', not standing still", g["status"] == "working out the next step"
       and "standing" not in json.dumps(caster.agent_facts(snap4, "luna")), str(g))
 check("agent facts carry chosen pronouns, else they/them", g["pronouns"] == "he/him"
       and caster.agent_facts(snap4, "luna")["pronouns"] == "they/them")
@@ -576,6 +576,30 @@ check("background: templates still read it", tw_.write("color", {"kind": "attack
       "Meanwhile Rocket fuel sits at 22 percent.")
 check("background: numbers in it still count as facts", caster.check_line("Rocket fuel at twenty-two percent.", fa_,
                                                                          [], []) is None)
+
+sf_ = caster.style_fault
+# HOSTS3: affectionate, no walking filler, no motto filler (shake7: 108 walking lines, 57 motto lines, mockery)
+snapW = {"agents": [{"name": "opus", "display_name": "Opus", "activity": "acting", "action": "walking",
+                     "motto": "Steam first, questions later"},
+                    {"name": "sol", "display_name": "Sol", "activity": "acting", "action": "building assembling machine 2"}],
+         "board": {"claims": [{"title": "Courier run for blue science", "agent": "opus", "owner": "opus"}]}}
+ow = caster.agent_facts(snapW, "opus")
+check("agent facts: no walking, the board job instead, no motto unless asked", "doing" not in ow and
+      ow.get("working_on") == "Courier run for blue science" and "motto" not in ow and
+      caster.agent_facts(snapW, "opus", motto=True)["motto"].startswith("Steam"), str(ow))
+fl = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"}, snapW)
+check("lull: busy agents are the ones with a job or a task", [b["name"] for b in fl.get("busy_agents", [])] ==
+      ["Opus", "Sol"], str(fl.get("busy_agents")))
+check("style: walking filler, mockery, motto filler and calling a fact false are cut", all(sf_(t) for t in (
+    "Opus is still walking. Four hours in.", "Classic Opus. Big chat energy.", "Haiku's still planning at spawn.",
+    "That motto aged fine.", "Science per minute says sixty. That number is a lie.")) and
+      sf_("Opus is on the courier run for blue science.") is None and
+      sf_("Their motto is steam first.", '"motto": "steam first, questions later"') is None)
+check("quote marks come off in pairs only", caster.clean('"Steam first, questions later." Ran out of both.') ==
+      '"Steam first, questions later." Ran out of both.' and caster.clean('"Huge play!"') == "Huge play!" and
+      caster.clean('Steam first, questions later." Ran out.') == "Steam first, questions later. Ran out." and
+      caster.clean('Sol says "more labs" again.') == 'Sol says "more labs" again.')
+check("the notes ask for warmth, not mockery", "the hosts like them" in caster.SPOKEN and "Never mock" in caster.SPOKEN)
 
 # Shake6 study P1 item 3: planets reached, and the base game gets no Space Age notes
 base_snap = {"space": {"space_age": False, "active": False, "planets": ["Nauvis"]}}

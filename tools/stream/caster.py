@@ -42,7 +42,7 @@ CASTERS = {
 # a large share of their clichés; the angle keeps the close watching and drops the narration.
 NATURALIST = ("This time Vale watches one agent's habits closely, the way a friend watches someone cook: what they "
               "keep doing in chat, how they plan, wander, over-explain or coordinate. Dry and fond, in plain talk; no "
-              "nature-documentary narration. An agent whose status is planning is writing its next commands. Only "
+              "nature-documentary narration. An agent working out the next step is writing its next commands. Only "
               "describe behaviour that the facts show (their chat lines, what they are doing).")
 # How the hosts sound. Shake4-6 (1,393 aired writer lines): 62% had a dash pivot, 39% ended on '!', 26% a body
 # metaphor on a machine ("furnaces starve"), 19% a three-part list, 14% a semicolon, 7% an "X, not Y" contrast.
@@ -59,6 +59,11 @@ SPOKEN = (
     "answers it next. Calm moments are fine. Not every moment is big. Mix the lengths, though. A quick reaction, "
     "then a normal full sentence that says why. Two short sentences in a line is plenty. Vale talks in fuller "
     "sentences than Rook.\n"
+    "The agents are the stars, and the hosts like them. Be curious about how they think and warm about what they "
+    "try. A gentle tease is fine. Never mock an agent for waiting, planning, sleeping, walking, chatting or their "
+    "motto. That is how they work, and viewers should end up liking them. Don't narrate someone walking. When "
+    "nothing much is happening, talk about the plan on the board, the factory, a number that changed, or a viewer's "
+    "question. Trust the facts. Never call a fact wrong.\n"
     "Written English sounds wrong out loud, so never use these. Dashes, semicolons, colons and ellipses. The 'X, not "
     "Y' or 'not X, but Y' turn. Lists of three. Metaphors and similes: furnaces and labs do not starve, bleed, choke, "
     "gasp, feast, sing, hum, dream or pray. Nature-documentary narration. The words humming, cooking, symphony, ballet, "
@@ -68,9 +73,9 @@ EXAMPLES = [
     "Rook: Oil processing is in.\nVale: Finally. That's plastics next.\nRook: And the refinery's already down.\n"
     "Vale: Yeah. Now it just needs crude.",
     "Rook: Biters at the turrets.\nVale: Oh, that's the side they never walled.\nRook: Holding. Just about.",
-    "Vale: Wait, is that Grok walking back to spawn?\nRook: Looks like it. Coal run, I think.\n"
+    "Vale: Wait, is that Grok heading back to spawn?\nRook: Looks like it. Coal run, I think.\n"
     "Vale: Huh. Long way for coal.",
-    "Rook: Oh no. Sonnet's down.\nVale: Worms. Walked right into range.\nRook: They'll be back in a minute.",
+    "Rook: Oh no. Sonnet's down.\nVale: Worms. Got too close.\nRook: They'll be back in a minute.",
     "Vale: So they're level on pace.\nRook: Level. I'll take it.\nVale: Green science is what's holding them back.",
     "Rook: Power's dipping.\nVale: Yeah, they built the labs before the boilers.\nRook: Classic.",
     "Rook: Astra's posted a job on the board. More furnaces.\nVale: Good. Somebody had to say it.",
@@ -328,20 +333,31 @@ def spoken_time(gt):
     return " ".join(parts)
 
 
-def agent_facts(s, name, said=False):
+TRAVEL = re.compile(r"^(?:walk|mov|travel|last: move|going|heading|run(?:ning)? to)", re.I)
+
+
+def agent_facts(s, name, said=False, motto=False):
+    """One agent for the hosts: who they are, the job they hold on the board, and what they are doing unless it is
+    just getting somewhere. Shake7: about 108 of 803 lines said an agent was walking ("Opus is still walking. Four
+    hours in, still walking."), and 57 quoted a motto, so the motto comes only where an agent is introduced."""
     a = next((x for x in s.get("agents") or [] if x["name"] == name), None)
     if not a:
         return None
     where = a.get("location")
     if where and re.fullmatch(r"\d+ m [NSEW]{1,2}", where):  # "30 m E" is noise on air; named places are not
         where = None
+    doing = a.get("action") if a.get("activity") == "acting" else None
+    if doing and TRAVEL.match(doing):
+        doing = None
+    names = {name, a.get("display_name")}
+    job = next((c.get("title") for c in (s.get("board") or {}).get("claims") or []
+                if c.get("title") and (c.get("agent") in names or c.get("owner") in names)), None)
     # "thinking (standing still)" became 102 of 443 shake3 host lines mocking agents as frozen or statues
     f = {"name": a.get("display_name") or name, "pronouns": pronouns_of(a), "role": a.get("role"),
-         "model": a.get("model"), "harness": a.get("harness"),
-         "doing": a.get("action") if a.get("activity") == "acting" else None,
-         "status": {"dead": "down, waiting to respawn", "offline": "offline", "thinking": "planning the next step",
-                    "idle": "between tasks"}.get(a.get("activity")),
-         "where": where, "motto": a.get("motto") or None}
+         "model": a.get("model"), "harness": a.get("harness"), "working_on": job, "doing": doing,
+         "status": {"dead": "down, waiting to respawn", "offline": "offline",
+                    "thinking": "working out the next step"}.get(a.get("activity")),
+         "where": where, "motto": (a.get("motto") or None) if motto else None}
     if said and (a.get("last_said") or {}).get("text"):
         f["last_said"] = spoken(voices.speakable(a["last_said"]["text"], 160))
     return {k: v for k, v in f.items() if v}
@@ -574,10 +590,10 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     if e["kind"] == "lull":
         angle = e.get("angle")
         busy = [agent_facts(s, a["name"]) for a in s.get("agents") or [] if a.get("activity") == "acting"]
-        f["busy_agents"] = [b for b in busy if b][:3]
+        f["busy_agents"] = [b for b in busy if b and (b.get("doing") or b.get("working_on"))][:3]
         f["angle"] = {"pace": "how this run compares with the previous one, and what that says about the bots",
                       "explain": "explain for viewers who just arrived what is going on and what comes next",
-                      "naturalist": "observe the AI models' behaviour, nature-documentary style",
+                      "naturalist": "what one agent keeps doing and how they think, with fond curiosity",
                       "spotlight": "one agent: who they are (model, harness), what they are doing, what they said",
                       "production": "the factory's output and what it is short of",
                       "board": "the team task board: who asked for what",
@@ -591,7 +607,7 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         cams = e.get("agents") or ([e["agent"]] if e.get("agent") else [])
         f["observed"] = [x for x in (agent_facts(s, n, said=True) for n in cams[:3]) if x]
     if e["kind"] == "open":
-        f["agents"] = [agent_facts(s, a["name"]) for a in (s.get("agents") or [])][:12]
+        f["agents"] = [agent_facts(s, a["name"], motto=True) for a in (s.get("agents") or [])][:12]
         f["title"] = s.get("title")
     analyst_facts(f, e, s)
     f = {k: v for k, v in f.items() if v not in (None, [], {})}
@@ -627,7 +643,7 @@ EXCHANGE_RULES = (
     "Numbers in an attack count hits: how many times biters struck the team's own buildings or engineers. Numbers "
     "in a loss count the team's buildings destroyed and engineers killed, as numbers_mean says. Researching a "
     "technology unlocks it; it does not mean anything has been built or made yet. 'Character' and 'engineer' mean one of the team's engineers. "
-    "An agent whose status is planning is writing its next commands, not idle: never call it frozen, still, "
+    "An agent working out the next step is writing its next commands, not idle: never call it frozen, still, "
     "motionless, idle or asleep. The agents play until the deadline, and the time left is minutes_to_deadline. When "
     "the facts carry a shift, the run is a series of shifts on one saved world: this shift picks up the world where "
     "the last one left it, and at the deadline the world is saved and the next shift continues it, so research in "
@@ -648,7 +664,7 @@ def parse_exchange(text):
     for raw in (text or "").splitlines():
         m = re.match(r"^\W*(rook|vale)\W*\s*[:\-–]\s*(.+)$", raw.strip(), re.I)
         if m:
-            line = restyle(clean(m.group(2).strip().strip("*").strip('"“”').strip()))
+            line = restyle(clean(m.group(2).strip().strip("*").strip()))
             if line:
                 out.append((HOSTS[m.group(1).lower()], line))
     return out
@@ -672,6 +688,11 @@ NOT_CONTRAST = re.compile(r", not (?!yet\b|now\b|quite\b|bad\b|really\b)\w|\bnot
                           r"\b(?:isn't|aren't|wasn't) [^,.!?]{1,30}, (?:it's|they're|it was)\b")
 DOC_WORDS = re.compile(r"\b(?:habitat|specimens?|species|plumage|herons?|rookery|in their natural|in the wild|"
                        r"forag\w+|mating call)\b")
+MOCK = re.compile(r"\bclassic (?:astra|sol|luna|opus|sonnet|haiku|grok|gemini|muse)\b|\bbig \w+ energy\b|"
+                  r"\bsomeone else(?:'s)? (?:moves|does|brain|feet|hands|will)\b|"
+                  r"\bstill (?:just )?(?:planning|thinking|talking|chatting|waiting|sleeping)\b|"
+                  r"\b(?:planning|thinking|talking|chatting|sleeping) again\b|\bthey love (?:a|to) \w+|"
+                  r"\b(?:all|just) talk\b|\bkeeps? the brand\b|\baged (?:fine|well|badly)\b")
 BUZZ_WORDS = re.compile(r"\b(?:humming|hums|symphony|ballet|orchestra\w*|heartbeat|masterclass)\b")
 BODY_WORDS = re.compile(r"\b(starv\w*|bleed\w*|bled|chok\w*|feast\w*|drown\w*|scream\w*|gasp\w*|thirst\w*|"
                         r"devour\w*|pray\w*|dreams?|dreaming)\b")
@@ -682,6 +703,16 @@ def style_fault(line, blob=""):
     buzzwords, a body metaphor on machines ("twelve packs starve six labs") unless the facts use that word ("84 of
     234 machines starved"), or a simile."""
     low = line.lower().replace("’", "'")
+    # shake7: "Opus is still walking. Four hours in, still walking."; "Classic Opus. Big chat energy."; "That motto
+    # aged fine."; "Science per minute says sixty. That number is a lie."
+    if re.search(r"\b(?:walk|walks|walking|walked|stroll\w*)\b", low) and "walk" not in blob:
+        return "style: walking filler"
+    if MOCK.search(low):
+        return "style: mocks an agent"
+    if "motto" in low and "motto" not in blob:
+        return "style: motto filler"
+    if re.search(r"\b(?:is|that's|it's) a lie\b|\bwrong number\b|\bdon't believe (?:that|the) number\b", low):
+        return "style: calls a fact false"
     if NOT_CONTRAST.search(low):
         return "style: 'X, not Y' contrast"
     if DOC_WORDS.search(low):
@@ -948,8 +979,18 @@ def clean(line):
     line = line.strip()
     line = re.sub(r"^(rook|vale|play-by-play|colour|color)\s*[:\-–]\s*", "", line, flags=re.I)
     line = re.sub(r"\*[^*]+\*", "", line)  # stage directions
-    line = re.sub(r"\s+", " ", line).strip().strip('"“”').strip()
-    return line
+    return unquote(re.sub(r"\s+", " ", line).strip())
+
+
+def unquote(line):
+    """Quote marks off a whole line only in pairs; an odd one left over goes. Shake7 aired 13 lines like `Steam
+    first, questions later." Ran out of both.` after the old strip took the opening mark only."""
+    q = '"“”'
+    while len(line) > 1 and line[0] in q and line[-1] in q:
+        line = line[1:-1].strip()
+    if sum(line.count(c) for c in q) % 2:
+        line = re.sub(r'["“”]', "", line)
+    return line.strip()
 
 
 def at_phrase(where):
@@ -997,7 +1038,7 @@ class TemplateWriter:
                    "color": ["This is where the defence plan gets tested for real.",
                              "You can build all day, but the biters set the schedule."]},
         "death": {"pbp": ["Oh no. {text}", "Ouch. {text}"],
-                  "color": ["Ouch. That's a long walk back from respawn.", "Painful, but the factory keeps running."]},
+                  "color": ["Ouch. They'll be back after the respawn.", "Painful, but the factory keeps running."]},
         "loss": {"pbp": ["Damage report. {text}", "That hurts. {text}"],
                  "color": ["Losses mean repairs, and repairs mean someone's plan just got interrupted.",
                            "Walls and turrets are consumables out here. Time to rebuild."]},
@@ -1027,7 +1068,7 @@ class TemplateWriter:
                            "{cam_name}, {cam_model} under the hood, {cam_doing}.",
                            "And here's {cam_name} {cam_at}, {cam_doing}."],
                    "color": ["{cam_name}'s role is {cam_role}. Let's see how it's going.",
-                             "Keep an eye on {cam_name} here.", "{cam_name}'s motto: {cam_motto} Let's see if it holds.",
+                             "Keep an eye on {cam_name} here.", "{cam_name} is on {cam_working_on}. Let's see how it goes.",
                              "{cam_name} runs on {cam_model}. Let's see what it does with the time.",
                              "Love watching {cam_name} work {cam_at}."]},
         "chat": {"pbp": ["{agent_name} on comms: they're talking it through.", "{agent_name} on the mic.",
