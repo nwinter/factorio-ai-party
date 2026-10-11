@@ -327,7 +327,9 @@ return function(api)
     local t = b.travel
     if t.state == 'ascending' then
       if follow_pod(b, t.pod) then
-        if tick - t.since > MAX_TRAVEL_TICKS then arrive(b, tick) end
+        -- Delivered pods go away; one that parks on the platform has arrived too.
+        local parked = t.last_surface ~= t.from and try(function() return t.pod.cargo_pod_state end) == 'parking'
+        if parked or tick - t.since > MAX_TRAVEL_TICKS then arrive(b, tick) end
       elseif t.pod ~= nil or tick - t.since >= ASCENT_TICKS then
         arrive(b, tick)
       end
@@ -344,7 +346,8 @@ return function(api)
           t.pushed = tick
           pcall(function() pod.force_finish_ascending() end)
         end
-        if tick - t.since > MAX_TRAVEL_TICKS then touch_down(b, tick) end
+        local parked = t.last_surface == t.to and try(function() return pod.cargo_pod_state end) == 'parking'
+        if parked or tick - t.since > MAX_TRAVEL_TICKS then touch_down(b, tick) end
       else
         touch_down(b, tick)
       end

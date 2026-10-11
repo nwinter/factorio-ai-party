@@ -172,8 +172,11 @@ nauvis.pads={{position={x=20,y=20}}}
 hub_pod={valid=true,position={x=0,y=0},surface=platform_surface,cargo_pod_state='ascending'}
 hub.create_cargo_pod=function() return hub_pod end
 eq(bots.land(b).pad.x,20); eq(hub_pod.cargo_pod_destination.position,nil)
-hub_pod.valid=false; advance(1)
-eq(b.character.surface,nauvis); eq(b.character.position.x,20); eq(b.planet,'nauvis')
+hub_pod.surface=nauvis; hub_pod.position={x=20,y=19}; hub_pod.cargo_pod_state='descending'
+advance(1); eq(b.travel.state,'descending')
+hub_pod.cargo_pod_state='parking' -- parked at the pad, still valid: down all the same
+advance(1)
+eq(b.character.surface,nauvis); eq(b.character.position.y,19); eq(b.planet,'nauvis')
 -- No free hatch: nothing changes.
 bots.board(b,platform,nil); advance(2400)
 hub.create_cargo_pod=function() return nil end
