@@ -216,6 +216,9 @@ assert(has(t.alerts,'attack near (48,48)')); eq(has(t.alerts,'you were hit'),nil
 runtime.on_event{name=12,tick=tick,entity=ac,force=enemy,cause=biter,final_damage_amount=300}
 ac.valid=false
 assert(has(astra('status').team.alerts,'you were hit 2 times (312 damage) by small-biter, 0s ago; your character died'))
+-- A dead bot can still use the board (a plan needs a living character).
+eq(astra('board_post',{kind='task',title='died at the chest',owner='astra'}).item.requested_by,'astra')
+fails(function() astra('plan_run',{name='x'}) end,'')
 ac.valid=true
 -- A quiet minute starts a new incident at the same place.
 jump(4000)
