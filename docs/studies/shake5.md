@@ -50,3 +50,181 @@ and `build_direct` are unchanged since 41f8a20.
    credits" (`caster.log:15`, `:389`) and played as OpenAI fable. Sol and Muse also share oa-cedar. Fix: map an `el-`
    pick to its fallback in the TTS path without calling ElevenLabs while it has no credits, and have
    `profiles.lua` refuse a voice another agent holds. Seven lines of airtime, so do it if cheap.
+6. Gemini ran out of quota at 06:07:53 and its loop spun for the rest of the hour. The first `agy -p` of the shift
+   ended with "RESOURCE_EXHAUSTED (code 429): Individual quota reached ... Resets in 1h7m24s"
+   (`~/.gemini/antigravity-cli/log/cli-20261011_052133.log`). `.agy-loop.sh` then relaunched `agy -c -p` about every
+   2.5 s, 277 times up to 06:20:40, each with the same 429. Gemini's last game call was 06:07:52, so it lost the last
+   13.5 minutes. It started the shift at 72% of its 5-hour window. Nothing in the run directory records the stop
+   (Gemini has no supervisor.log or context.log). The window resets at about 07:15, so a shift that starts before
+   then runs Gemini dry from the start. Fix: in the generated loop (`tools/launch-agent.sh:135-156`), when agy exits
+   on a quota error, write it to context.log and sleep until the reset (or stop), instead of relaunching at once;
+   and have `tools/start-team.sh` check each route's quota headroom before a shift.
+7. Launch from the code the fixes are in. Shake5 ran code 41f8a20 (`start.log:23`). Three shake4 fixes landed on main
+   at 05:24 or later, after the launch: observe while dead (1658a13), board_post `note` (30c3964) and the name
+   filters (7c23228). That left 10 "is dead" failures (observe 5, shoot 2, inventory 2, build 1) and 3 failed board
+   notes. Before agents start, check the `code` line in start.log against the last commit to the harness and
+   `tools/stream`.
+8. The item-on-ground hint fired, but following it did not clear the item. From 06:19:36 to 06:20:26 Grok tried six
+   times to replace a destroyed boiler at (28,26.5). Each error named "item-on-ground (iron-plate) (27.6992,26.5)" and
+   said to pick it up with `fh call pickup`. Grok called `pickup` three times (once after `move_to` (27.5,26.5)) and
+   `mine` twice. Every call returned ok and the plate stayed. Grok gave up at 06:20:48. `pickup`
+   (`runtime.lua:1461-1466`) does not report what it picked up, so the cause is not visible in the journal. Fix:
+   have `build_direct` take ground items in the footprint into the inventory next to `clear_remnants`
+   (`runtime.lua:1794`), and make `pickup` report what it took or fail when nothing is in reach.
+
+## 1. Continuity
+
+The handover worked. Each agent started from its own shake4 notes.md and the sentence in `prompt.md` ("This is a
+later shift of the same world: your bot and the factory are as the last shift left them, and notes.md is where you
+left off"). The first command in the Haiku and Sonnet transcripts reads notes.md (05:21:33 and 05:21:32). All nine
+called `describe` first (05:21:07 to 05:21:28), and seven read chat and the board within a minute.
+
+Within 20 seconds of their first call, three agents announced their old roles in chat:
+
+- 05:21:29 Astra (aloud): "Astra back on fuel and plastics service; resuming courier while I assess north iron and
+  blue-science supply."
+- 05:21:34 Sol (aloud): "Sol back on circuits, engines and blue support. Rebuilding the raided workshop first;
+  @gemini please finish petroleum to sulfur. @haiku workshop needs a south defense screen."
+- 05:21:39 Opus: "Opus back on science: courier running, labs and red/green assemblers."
+
+The others went back to their old jobs without announcing them:
+
+- Gemini was on the gas line at 05:22:47 (a `pipe_route` dry run from the oil field trunk at (-94.5,-119.5) to the
+  sulfur plant).
+- Sonnet rearmed turrets at 05:21:39.
+- Haiku took 60 magazines from Astra's ammo chest by 05:22:31 and went to defence.
+- Muse went back to copper (05:22:36).
+
+The save carried more than the factory:
+
+- Opus and Astra resumed their action queues with `queue_resume` (05:21:38, 05:21:24).
+- The board kept its numbering and its open items: Luna's first post was note #58 (05:23:44), and her end notes list
+  claims #1 to #65 from both shifts.
+- Chat read cursors carried over too. Opus had 183 unread at the end of shake4 and 182 at its first shake5 call;
+  Sonnet had 193 and then 194.
+
+Apart from repairs, I found no case of an agent undoing or redoing the last shift's work. The exception is
+the assembler overlap in P1 item 2. That was an upgrade that went wrong, not a rebuild.
+
+What was lost between shifts:
+
+- About four game minutes with nobody playing, while a raid was under way:
+  - Shake4's agents stopped at 04:52 (about game 121.9m).
+  - The save was taken at 124.1m (`start.log:4`, `save_time` 03:54:39 on the box clock, an hour behind PDT).
+  - The resumed world ran from 05:18:52 (`start.log:10`) while the three director clients and nine agents joined;
+    the first agent call came at about 126.0m.
+- When the agents came back, a 60-biter group was heading for the power row (Opus's alert, 05:22:51). Haiku, Grok
+  and Gemini died between 05:23:17 and 05:23:36. Haiku left a corpse holding 2 turrets and 60 magazines (chat
+  seq 1032). The 10-minute resume test at 04:56 (`runs/_tests/shift-test1`, Haiku and Luna on a copy of the save)
+  met the same raid. Luna there: "the central lab/power area is under a heavy raid ... the lab line is down to 2/11"
+  (seq 1013 of that run).
+- Each agent's conversation. Only notes.md crossed over, and that was enough to restart every role.
+
+The notes did not grow:
+
+- At the end of shake4 they ran from 5.8K (Opus) to 21.7K (Luna), 83.5K in all.
+- At the end of shake5 they ran from 6.6K (Opus) to 11.5K (Muse), 74.8K in all. Luna cut hers from 21.7K to 9.2K.
+- Every file keeps the same headings: Now, Claims and coordinates, Team agreements, Open board items, Milestones,
+  Lessons, Log, and a shift summary.
+
+## 2. Progress in the hour
+
+| | shake4 end (122.8m) | shake5 start (126.6m) | shake5 end (186.4m) |
+|---|---|---|---|
+| Technologies | 24 | 24, researching electric-energy-distribution-1 | 29, researching processing-unit |
+| Red / green / blue packs made | 1,440 / 1,194 / 0 | 1,473 / 1,194 / 0 | 2,088 / 1,889 / 566 |
+| Sulfur / plastic made | 0 / 1,616 | 0 / 1,808 | 878 / 4,062 |
+| Iron plates | 35,298 | 36,490 | 63,148 |
+| Chemical plants / steam engines / labs | 2 / 8 / 12 | 2 / 8 / 12 | 4 / 10 / 12 |
+| Steel furnaces / assembling-machine-2 | 0 / 5 | 0 / 5 | 10 / 18 |
+
+Research completed in the shift, by score snapshot (≤ 2 min late):
+
+- electric-energy-distribution-1 at 132.5m (05:27)
+- fast-inserter at 152.5m (05:47)
+- advanced-oil-processing at 156.5m (Sol: "finished at game2h35", 05:51:06)
+- logistics-2 at 158.5m (05:53)
+- battery at 172.4m (06:08)
+
+Processing-unit ran from 172.4m to the end. The hosts read 74% at 06:22:57.
+
+The shift made 615 red, 695 green and 566 blue packs, and 26,658 iron plates (446/min; shake4's second hour 356/min).
+Red fell from shake4's second-hour 14.6/min to 10.3/min. Green held at 11.6/min (shake4 12.3).
+
+### The sulfur gap closed in 17 minutes
+
+Shake4 ended with the sulfur plant at (21.5,-37.5) watered but without petroleum, because the gas trunk from the oil
+field 350 tiles north stopped about 130 tiles short. Gemini went back to it first:
+
+- Its first `pipe_route` dry runs failed at the trunk's end: "from holds pipe-to-ground but no tile at its
+  connections is free of other connections" (05:22:47), then "pipe must be a pipe entity" (05:23:13).
+- At 05:31:47 Sol pointed out that the line spans over 320 tiles and that "pipe_route pumps=true can split overlong
+  fluid segments". Luna had seen the "gas line overextended 324" warning (05:38:02).
+- Gemini routed with `pumps: true` at 05:32:45.
+- At 05:38:48 Gemini posted: "Petroleum trunk is fully connected and pumping! Sulfur chemical plant at (21.5,-37.5)
+  is LIVE and producing!"
+- Sulfur appears in the score at 142.5m. The first blue packs follow at 144.5m: Sol, "Blue science assemblers now
+  working at game2h23! Four machines capacity15packs/min" (05:39:39).
+
+Blue then ran at about 14 packs/min to the end (148 at 156.5m, 566 at 186.4m).
+
+Sulfur stopped at 878 at 168.4m (06:03) and stayed there to the end:
+
+- Gemini's inspect of the sulfur plant at 05:58:06 shows `fluid_ingredient_shortage`.
+- Astra at 06:09:27: "North plastic plant intermittently lacks petroleum".
+- Plastic kept rising at 36/min, so the one refinery's petroleum went to plastics.
+- Blue kept going on stock: 566 made against 283 sulfur needed.
+- Gemini then turned the third chemical plant to sulfuric acid and battery (06:07:45).
+
+The labs used 250 of the 566 blue packs. Battery takes no blue, and blue consumption stayed at 65 from 156.5m to
+172.4m.
+
+Research order changed hands three times:
+
+- 05:39:39: Opus put advanced-oil-processing at the front.
+- 05:40:12 to 05:40:19: Sonnet replaced the queue three times, ending with logistics-2 first.
+- 05:43:00: Opus put advanced-oil-processing back at the front.
+- 05:45:43: Opus put fast-inserter at the front.
+
+Advanced-oil-processing took 12 minutes from first being queued at the front. No team alert tells an agent that
+someone else changed the queue (section 5, P2).
+
+### Power and defence
+
+The raids that were under way at the resume kept coming from the south-east, larger each time. Eight enemy groups
+were reported in team alerts (first sighting, size, target):
+
+| time | size | from | heading for |
+|---|---|---|---|
+| 05:22:52 | 60 | (56,102) | (37,-28), power east and Grok's green line |
+| 05:29:07 | 45 | (74,78) | (28,3), power row |
+| 05:32:33 | 28 | (83,93) | (28,-3) |
+| 05:43:38 | 23 | (83,93) | (-28,24), the workshop |
+| 05:52:14 | 39 | (74,78) | (28,3) |
+| 06:01:10 | 88 | (83,99) | (28,3) |
+| 06:09:56 | 95 | (50,94) | (28,3) |
+| 06:18:45 | 100 | (83,93) | (28,3) |
+
+The defensive work, in order:
+
+- Sol put two turrets on the south side of the workshop (05:24:05).
+- Haiku rebuilt them, added two more, and by 05:56:23 had laid a wall line at y=30 from Astra's 66 stone walls.
+- Grok held the boilers through three waves: "Power held. Four boilers are running" (05:34:42).
+- Haiku rearmed the east turret row twice (06:00:55, 06:02:01).
+- The 88-group took down the power at about 06:03. Grok: "Battery is at 79 percent but labs are dark from low power"
+  (06:03:28).
+- Astra restored the power with a new boiler and three steam engines: "Capacity now 9MW" (06:04:50). The
+  steam-engine count went from 7 to 10.
+- The last group of 100 hit both the power row and the workshop at 06:19, after the agents had started their
+  summaries.
+
+There were at least 4 deaths (Haiku, Grok and Gemini at 05:23 in the opening raid, Luna at 05:45:53). Haiku said it
+"died a third time" (05:23:59), so the count from respawn ticks in the journals is a floor. Shake4 had at least 13
+in two hours.
+
+The loss alerts for the two raided cells add up across both shifts (P1 item 1):
+
+- Power, (7,0)-(40,32): 66 destroyed at Sol's first alert of the shift, 78 at the end.
+- Workshop: 69 destroyed at the end of shake4, 157 at 06:20.
+
+So the totals cannot be split between the shifts from the alerts alone.
