@@ -1,0 +1,1643 @@
+[
+{
+"electric": true,
+"max_energy_production_kw": 300,
+"max_energy_usage_kw": 300,
+"max_health": 150,
+"name": "accumulator",
+"type": "accumulator"
+},
+{
+"inventory_size": 48,
+"max_health": 350,
+"name": "active-provider-chest",
+"type": "logistic-container"
+},
+{
+"attack_cooldown": 200,
+"attack_range": 224,
+"inventory_size": 1,
+"max_health": 2000,
+"name": "artillery-turret",
+"type": "artillery-turret"
+},
+{
+"crafting_categories": {
+"advanced-crafting": true,
+"basic-crafting": true,
+"crafting": true,
+"parameters": true
+},
+"crafting_speed": 0.5,
+"electric": true,
+"emissions_per_minute": {
+"pollution": 4
+},
+"energy_usage_kw": 75,
+"max_energy_usage_kw": 75,
+"max_health": 300,
+"name": "assembling-machine-1",
+"type": "assembling-machine"
+},
+{
+"crafting_categories": {
+"advanced-crafting": true,
+"basic-crafting": true,
+"crafting": true,
+"crafting-with-fluid": true,
+"parameters": true
+},
+"crafting_speed": 0.75,
+"electric": true,
+"emissions_per_minute": {
+"pollution": 3
+},
+"energy_usage_kw": 150,
+"max_energy_usage_kw": 150,
+"max_health": 350,
+"module_slots": 2,
+"name": "assembling-machine-2",
+"type": "assembling-machine"
+},
+{
+"crafting_categories": {
+"advanced-crafting": true,
+"basic-crafting": true,
+"crafting": true,
+"crafting-with-fluid": true,
+"parameters": true
+},
+"crafting_speed": 1.25,
+"electric": true,
+"emissions_per_minute": {
+"pollution": 2
+},
+"energy_usage_kw": 375,
+"max_energy_usage_kw": 375,
+"max_health": 400,
+"module_slots": 4,
+"name": "assembling-machine-3",
+"type": "assembling-machine"
+},
+{
+"electric": true,
+"energy_usage_kw": 480,
+"inventory_size": 2,
+"max_energy_usage_kw": 480,
+"max_health": 200,
+"module_slots": 2,
+"name": "beacon",
+"supply_area": 3,
+"type": "beacon"
+},
+{
+"absorptions_to_join_attack": {
+"pollution": 400
+},
+"attack_cooldown": 50,
+"attack_damage": {
+"amount": 90,
+"type": "physical"
+},
+"attack_range": 1.5,
+"max_health": 3000,
+"max_pursue_distance": 50,
+"movement_speed": 0.30000001192092896,
+"name": "behemoth-biter",
+"type": "unit"
+},
+{
+"absorptions_to_join_attack": {
+"pollution": 200
+},
+"attack_cooldown": 100,
+"attack_range": 16,
+"max_health": 1500,
+"max_pursue_distance": 50,
+"movement_speed": 0.15000000596046448,
+"name": "behemoth-spitter",
+"type": "unit"
+},
+{
+"attack_cooldown": 4,
+"attack_range": 48,
+"max_health": 3000,
+"name": "behemoth-worm-turret",
+"type": "turret"
+},
+{
+"absorptions_to_join_attack": {
+"pollution": 80
+},
+"attack_cooldown": 35,
+"attack_damage": {
+"amount": 30,
+"type": "physical"
+},
+"attack_range": 1.5,
+"max_health": 375,
+"max_pursue_distance": 50,
+"movement_speed": 0.23000000417232513,
+"name": "big-biter",
+"type": "unit"
+},
+{
+"max_health": 150,
+"max_wire_distance": 32,
+"name": "big-electric-pole",
+"supply_area": 2,
+"type": "electric-pole"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 500,
+"mining_time": 2,
+"name": "big-rock",
+"products": [
+{
+"amount": 20,
+"name": "stone",
+"type": "item"
+}
+],
+"type": "simple-entity"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 500,
+"mining_time": 2,
+"name": "big-sand-rock",
+"products": [
+{
+"amount_max": 25,
+"amount_min": 19,
+"name": "stone",
+"type": "item"
+}
+],
+"type": "simple-entity"
+},
+{
+"absorptions_to_join_attack": {
+"pollution": 30
+},
+"attack_cooldown": 100,
+"attack_range": 15,
+"max_health": 200,
+"max_pursue_distance": 50,
+"movement_speed": 0.15000000596046448,
+"name": "big-spitter",
+"type": "unit"
+},
+{
+"attack_cooldown": 4,
+"attack_range": 38,
+"max_health": 1500,
+"name": "big-worm-turret",
+"type": "turret"
+},
+{
+"max_count_of_owned_units": 7,
+"max_health": 350,
+"name": "biter-spawner",
+"spawner_units": [
+{
+"points": [
+{
+"evolution": 0,
+"weight": 0.3
+},
+{
+"evolution": 0.6,
+"weight": 0
+}
+],
+"unit": "small-biter"
+},
+{
+"points": [
+{
+"evolution": 0.2,
+"weight": 0
+},
+{
+"evolution": 0.6,
+"weight": 0.3
+},
+{
+"evolution": 0.7,
+"weight": 0.1
+}
+],
+"unit": "medium-biter"
+},
+{
+"points": [
+{
+"evolution": 0.5,
+"weight": 0
+},
+{
+"evolution": 1,
+"weight": 0.4
+}
+],
+"unit": "big-biter"
+},
+{
+"points": [
+{
+"evolution": 0.9,
+"weight": 0
+},
+{
+"evolution": 1,
+"weight": 0.3
+}
+],
+"unit": "behemoth-biter"
+}
+],
+"type": "unit-spawner"
+},
+{
+"hidden": true,
+"inventory_size": 48,
+"max_health": 350,
+"name": "blue-chest",
+"type": "container"
+},
+{
+"burner": {
+"categories": {
+"chemical": true
+},
+"effectivity": 1
+},
+"emissions_per_minute": {
+"pollution": 30.000000000000007
+},
+"inventory_size": 1,
+"max_energy_usage_kw": 1800,
+"max_health": 200,
+"name": "boiler",
+"target_temperature": 165,
+"type": "boiler"
+},
+{
+"hidden": true,
+"inventory_size": 1,
+"max_health": 4000,
+"name": "bottomless-chest",
+"type": "container"
+},
+{
+"inventory_size": 48,
+"max_health": 350,
+"name": "buffer-chest",
+"type": "logistic-container"
+},
+{
+"electric": true,
+"inserter_rotation_speed": 0.04,
+"max_energy_usage_kw": 168,
+"max_health": 160,
+"name": "bulk-inserter",
+"type": "inserter"
+},
+{
+"burner": {
+"categories": {
+"chemical": true
+},
+"effectivity": 0.5
+},
+"electric": true,
+"emissions_per_minute": {
+"pollution": 10
+},
+"hidden": true,
+"max_energy_production_kw": 1000.0000000000001,
+"max_energy_usage_kw": 1000.0000000000001,
+"max_health": 400,
+"name": "burner-generator",
+"type": "burner-generator"
+},
+{
+"burner": {
+"categories": {
+"chemical": true
+},
+"effectivity": 1
+},
+"inserter_rotation_speed": 0.013000000000000001,
+"inventory_size": 1,
+"max_energy_usage_kw": 144,
+"max_health": 100,
+"name": "burner-inserter",
+"type": "inserter"
+},
+{
+"burner": {
+"categories": {
+"chemical": true
+},
+"effectivity": 1
+},
+"emissions_per_minute": {
+"pollution": 12
+},
+"energy_usage_kw": 150,
+"inventory_size": 1,
+"max_energy_usage_kw": 150,
+"max_health": 150,
+"mining_area": 1.98,
+"mining_speed": 0.25,
+"name": "burner-mining-drill",
+"resource_categories": {
+"basic-solid": true
+},
+"type": "mining-drill"
+},
+{
+"attack_cooldown": 4,
+"attack_range": 20,
+"burner": {
+"categories": {
+"chemical": true
+},
+"effectivity": 1
+},
+"inventory_size": 1,
+"max_energy_usage_kw": 150,
+"max_health": 450,
+"name": "car",
+"type": "car"
+},
+{
+"inventory_size": 80,
+"max_health": 1000,
+"name": "cargo-landing-pad",
+"type": "cargo-landing-pad"
+},
+{
+"inventory_size": 40,
+"max_health": 600,
+"name": "cargo-wagon",
+"type": "cargo-wagon"
+},
+{
+"crafting_categories": {
+"centrifuging": true,
+"parameters": true
+},
+"crafting_speed": 1,
+"electric": true,
+"emissions_per_minute": {
+"pollution": 4
+},
+"energy_usage_kw": 350,
+"max_energy_usage_kw": 350,
+"max_health": 350,
+"module_slots": 2,
+"name": "centrifuge",
+"type": "assembling-machine"
+},
+{
+"crafting_categories": {
+"chemistry": true,
+"parameters": true
+},
+"crafting_speed": 1,
+"electric": true,
+"emissions_per_minute": {
+"pollution": 4
+},
+"energy_usage_kw": 210,
+"max_energy_usage_kw": 210,
+"max_health": 300,
+"module_slots": 3,
+"name": "chemical-plant",
+"type": "assembling-machine"
+},
+{
+"category": "basic-solid",
+"mining_time": 1,
+"name": "coal",
+"products": [
+{
+"amount": 1,
+"name": "coal",
+"type": "item"
+}
+],
+"type": "resource"
+},
+{
+"inventory_size": 1,
+"max_energy_usage_kw": 21,
+"max_health": 100,
+"name": "construction-robot",
+"robot_speed": 0.06,
+"type": "construction-robot"
+},
+{
+"category": "basic-solid",
+"mining_time": 1,
+"name": "copper-ore",
+"products": [
+{
+"amount": 1,
+"name": "copper-ore",
+"type": "item"
+}
+],
+"type": "resource"
+},
+{
+"hidden": true,
+"inventory_size": 48,
+"max_health": 350,
+"name": "crash-site-chest-1",
+"type": "container"
+},
+{
+"hidden": true,
+"inventory_size": 48,
+"max_health": 350,
+"name": "crash-site-chest-2",
+"type": "container"
+},
+{
+"hidden": true,
+"inventory_size": 5,
+"max_health": 600,
+"name": "crash-site-spaceship",
+"type": "container"
+},
+{
+"hidden": true,
+"inventory_size": 2,
+"max_health": 150,
+"name": "crash-site-spaceship-wreck-big-1",
+"type": "container"
+},
+{
+"hidden": true,
+"inventory_size": 2,
+"max_health": 150,
+"name": "crash-site-spaceship-wreck-big-2",
+"type": "container"
+},
+{
+"hidden": true,
+"inventory_size": 1,
+"max_health": 100,
+"name": "crash-site-spaceship-wreck-medium-1",
+"type": "container"
+},
+{
+"hidden": true,
+"inventory_size": 1,
+"max_health": 100,
+"name": "crash-site-spaceship-wreck-medium-2",
+"type": "container"
+},
+{
+"hidden": true,
+"inventory_size": 1,
+"max_health": 100,
+"name": "crash-site-spaceship-wreck-medium-3",
+"type": "container"
+},
+{
+"category": "basic-fluid",
+"infinite": true,
+"mining_time": 1,
+"name": "crude-oil",
+"products": [
+{
+"amount": 10,
+"name": "crude-oil",
+"type": "fluid"
+}
+],
+"type": "resource"
+},
+{
+"emissions_per_second": {
+"pollution": -0.0001
+},
+"max_health": 20,
+"mining_time": 0.5,
+"name": "dead-dry-hairy-tree",
+"products": [
+{
+"amount": 2,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.0001
+},
+"max_health": 20,
+"mining_time": 0.5,
+"name": "dead-grey-trunk",
+"products": [
+{
+"amount": 2,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.0001
+},
+"max_health": 20,
+"mining_time": 0.5,
+"name": "dead-tree-desert",
+"products": [
+{
+"amount": 2,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.0001
+},
+"max_health": 20,
+"mining_time": 0.5,
+"name": "dry-hairy-tree",
+"products": [
+{
+"amount": 2,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.0001
+},
+"max_health": 20,
+"mining_time": 0.5,
+"name": "dry-tree",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"absorptions_to_join_attack": {
+"pollution": 1
+},
+"attack_cooldown": 1,
+"attack_range": 1,
+"hidden": true,
+"max_health": 1,
+"max_pursue_distance": 50,
+"name": "dummy-spider-unit",
+"type": "spider-unit"
+},
+{
+"crafting_categories": {
+"smelting": true
+},
+"crafting_speed": 2,
+"electric": true,
+"emissions_per_minute": {
+"pollution": 1
+},
+"energy_usage_kw": 180,
+"max_energy_usage_kw": 180,
+"max_health": 350,
+"module_slots": 2,
+"name": "electric-furnace",
+"type": "furnace"
+},
+{
+"electric": true,
+"emissions_per_minute": {
+"pollution": 10
+},
+"energy_usage_kw": 90,
+"max_energy_usage_kw": 90,
+"max_health": 300,
+"mining_area": 4.98,
+"mining_speed": 0.5,
+"module_slots": 3,
+"name": "electric-mining-drill",
+"resource_categories": {
+"basic-solid": true
+},
+"type": "mining-drill"
+},
+{
+"belt_speed_items_per_s": 45,
+"max_health": 190,
+"name": "express-splitter",
+"type": "splitter"
+},
+{
+"belt_speed_items_per_s": 45,
+"max_health": 170,
+"name": "express-transport-belt",
+"type": "transport-belt"
+},
+{
+"belt_speed_items_per_s": 45,
+"max_health": 170,
+"name": "express-underground-belt",
+"type": "underground-belt"
+},
+{
+"hidden": true,
+"inventory_size": 1,
+"max_health": 666,
+"name": "factorio-logo-11tiles",
+"type": "container"
+},
+{
+"hidden": true,
+"inventory_size": 1,
+"max_health": 666,
+"name": "factorio-logo-16tiles",
+"type": "container"
+},
+{
+"hidden": true,
+"inventory_size": 1,
+"max_health": 666,
+"name": "factorio-logo-22tiles",
+"type": "container"
+},
+{
+"electric": true,
+"inserter_rotation_speed": 0.04,
+"max_energy_usage_kw": 58.8,
+"max_health": 150,
+"name": "fast-inserter",
+"type": "inserter"
+},
+{
+"belt_speed_items_per_s": 30,
+"max_health": 180,
+"name": "fast-splitter",
+"type": "splitter"
+},
+{
+"belt_speed_items_per_s": 30,
+"max_health": 160,
+"name": "fast-transport-belt",
+"type": "transport-belt"
+},
+{
+"belt_speed_items_per_s": 30,
+"max_health": 160,
+"name": "fast-underground-belt",
+"type": "underground-belt"
+},
+{
+"attack_cooldown": 4,
+"attack_range": 30,
+"max_health": 1400,
+"name": "flamethrower-turret",
+"type": "fluid-turret"
+},
+{
+"max_health": 600,
+"name": "fluid-wagon",
+"type": "fluid-wagon"
+},
+{
+"max_health": 350,
+"name": "gate",
+"type": "gate"
+},
+{
+"attack_cooldown": 6,
+"attack_range": 18,
+"inventory_size": 1,
+"max_health": 400,
+"name": "gun-turret",
+"type": "ammo-turret"
+},
+{
+"max_energy_usage_kw": 10000,
+"max_health": 200,
+"name": "heat-exchanger",
+"target_temperature": 500,
+"type": "boiler"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 2000,
+"mining_time": 3,
+"name": "huge-rock",
+"products": [
+{
+"amount_max": 50,
+"amount_min": 24,
+"name": "stone",
+"type": "item"
+},
+{
+"amount_max": 50,
+"amount_min": 24,
+"name": "coal",
+"type": "item"
+}
+],
+"type": "simple-entity"
+},
+{
+"electric": true,
+"inserter_rotation_speed": 0.014000000000000002,
+"max_energy_usage_kw": 14.700000000000001,
+"max_health": 150,
+"name": "inserter",
+"type": "inserter"
+},
+{
+"inventory_size": 32,
+"max_health": 200,
+"name": "iron-chest",
+"type": "container"
+},
+{
+"category": "basic-solid",
+"mining_time": 1,
+"name": "iron-ore",
+"products": [
+{
+"amount": 1,
+"name": "iron-ore",
+"type": "item"
+}
+],
+"type": "resource"
+},
+{
+"electric": true,
+"energy_usage_kw": 60,
+"max_energy_usage_kw": 60,
+"max_health": 150,
+"module_slots": 2,
+"name": "lab",
+"researching_speed": 1,
+"type": "lab"
+},
+{
+"attack_cooldown": 40,
+"attack_range": 24,
+"electric": true,
+"max_energy_usage_kw": 1200,
+"max_health": 1000,
+"name": "laser-turret",
+"type": "electric-turret"
+},
+{
+"burner": {
+"categories": {
+"chemical": true
+},
+"effectivity": 1
+},
+"inventory_size": 3,
+"max_energy_usage_kw": 600,
+"max_health": 1000,
+"movement_speed": 1.2,
+"name": "locomotive",
+"type": "locomotive"
+},
+{
+"inventory_size": 1,
+"max_energy_usage_kw": 18,
+"max_health": 100,
+"name": "logistic-robot",
+"robot_speed": 0.05,
+"type": "logistic-robot"
+},
+{
+"electric": true,
+"inserter_rotation_speed": 0.02,
+"max_energy_usage_kw": 21,
+"max_health": 160,
+"name": "long-handed-inserter",
+"type": "inserter"
+},
+{
+"absorptions_to_join_attack": {
+"pollution": 20
+},
+"attack_cooldown": 35,
+"attack_damage": {
+"amount": 15,
+"type": "physical"
+},
+"attack_range": 1,
+"max_health": 75,
+"max_pursue_distance": 50,
+"movement_speed": 0.23999999463558197,
+"name": "medium-biter",
+"type": "unit"
+},
+{
+"max_health": 100,
+"max_wire_distance": 9,
+"name": "medium-electric-pole",
+"supply_area": 3.5,
+"type": "electric-pole"
+},
+{
+"absorptions_to_join_attack": {
+"pollution": 12
+},
+"attack_cooldown": 100,
+"attack_range": 14,
+"max_health": 50,
+"max_pursue_distance": 50,
+"movement_speed": 0.16500000655651093,
+"name": "medium-spitter",
+"type": "unit"
+},
+{
+"attack_cooldown": 4,
+"attack_range": 30,
+"max_health": 500,
+"name": "medium-worm-turret",
+"type": "turret"
+},
+{
+"burner": {
+"categories": {
+"nuclear": true
+},
+"effectivity": 1
+},
+"inventory_size": 1,
+"max_energy_usage_kw": 40000,
+"max_health": 500,
+"name": "nuclear-reactor",
+"type": "reactor"
+},
+{
+"energy_usage_kw": 60,
+"max_energy_usage_kw": 60,
+"max_health": 150,
+"name": "offshore-pump",
+"pumping_speed_per_s": 1200,
+"type": "offshore-pump"
+},
+{
+"crafting_categories": {
+"oil-processing": true,
+"parameters": true
+},
+"crafting_speed": 1,
+"electric": true,
+"emissions_per_minute": {
+"pollution": 5.999999999999999
+},
+"energy_usage_kw": 420,
+"max_energy_usage_kw": 420,
+"max_health": 350,
+"module_slots": 3,
+"name": "oil-refinery",
+"type": "assembling-machine"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 10,
+"name": "parameter-0",
+"products": {},
+"type": "simple-entity"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 10,
+"name": "parameter-1",
+"products": {},
+"type": "simple-entity"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 10,
+"name": "parameter-2",
+"products": {},
+"type": "simple-entity"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 10,
+"name": "parameter-3",
+"products": {},
+"type": "simple-entity"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 10,
+"name": "parameter-4",
+"products": {},
+"type": "simple-entity"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 10,
+"name": "parameter-5",
+"products": {},
+"type": "simple-entity"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 10,
+"name": "parameter-6",
+"products": {},
+"type": "simple-entity"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 10,
+"name": "parameter-7",
+"products": {},
+"type": "simple-entity"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 10,
+"name": "parameter-8",
+"products": {},
+"type": "simple-entity"
+},
+{
+"emissions_per_second": {
+"pollution": 0
+},
+"max_health": 10,
+"name": "parameter-9",
+"products": {},
+"type": "simple-entity"
+},
+{
+"inventory_size": 48,
+"max_health": 350,
+"name": "passive-provider-chest",
+"type": "logistic-container"
+},
+{
+"max_health": 100,
+"name": "pipe",
+"type": "pipe"
+},
+{
+"max_health": 150,
+"name": "pipe-to-ground",
+"type": "pipe-to-ground"
+},
+{
+"electric": true,
+"energy_usage_kw": 29,
+"max_energy_usage_kw": 29,
+"max_health": 180,
+"name": "pump",
+"pumping_speed_per_s": 1200,
+"type": "pump"
+},
+{
+"electric": true,
+"emissions_per_minute": {
+"pollution": 10
+},
+"energy_usage_kw": 90,
+"max_energy_usage_kw": 90,
+"max_health": 200,
+"mining_area": 0.9800000000000001,
+"mining_speed": 1,
+"module_slots": 2,
+"name": "pumpjack",
+"resource_categories": {
+"basic-fluid": true
+},
+"type": "mining-drill"
+},
+{
+"electric": true,
+"energy_usage_kw": 300,
+"max_energy_usage_kw": 300,
+"max_health": 250,
+"name": "radar",
+"type": "radar"
+},
+{
+"hidden": true,
+"inventory_size": 48,
+"max_health": 350,
+"name": "red-chest",
+"type": "container"
+},
+{
+"inventory_size": 48,
+"max_health": 350,
+"name": "requester-chest",
+"type": "logistic-container"
+},
+{
+"construction_radius": 55,
+"electric": true,
+"energy_usage_kw": 50,
+"inventory_size": 7,
+"logistic_radius": 25,
+"max_energy_usage_kw": 2050.0000000000005,
+"max_health": 500,
+"name": "roboport",
+"type": "roboport"
+},
+{
+"crafting_categories": {
+"parameters": true,
+"rocket-building": true
+},
+"crafting_speed": 1,
+"electric": true,
+"energy_usage_kw": 250.00000000000003,
+"max_energy_usage_kw": 3990,
+"max_health": 5000,
+"module_slots": 4,
+"name": "rocket-silo",
+"rocket_parts_required": 100,
+"type": "rocket-silo"
+},
+{
+"absorptions_to_join_attack": {
+"pollution": 4
+},
+"attack_cooldown": 35,
+"attack_damage": {
+"amount": 7,
+"type": "physical"
+},
+"attack_range": 0.5,
+"max_health": 15,
+"max_pursue_distance": 50,
+"movement_speed": 0.20000000298023224,
+"name": "small-biter",
+"type": "unit"
+},
+{
+"max_health": 100,
+"max_wire_distance": 7.5,
+"name": "small-electric-pole",
+"supply_area": 2.5,
+"type": "electric-pole"
+},
+{
+"absorptions_to_join_attack": {
+"pollution": 4
+},
+"attack_cooldown": 100,
+"attack_range": 13,
+"max_health": 10,
+"max_pursue_distance": 50,
+"movement_speed": 0.1850000023841858,
+"name": "small-spitter",
+"type": "unit"
+},
+{
+"attack_cooldown": 4,
+"attack_range": 25,
+"max_health": 200,
+"name": "small-worm-turret",
+"type": "turret"
+},
+{
+"electric": true,
+"max_energy_production_kw": 60,
+"max_health": 200,
+"name": "solar-panel",
+"type": "solar-panel"
+},
+{
+"attack_cooldown": 60,
+"attack_range": 36,
+"max_energy_usage_kw": 250.00000000000003,
+"max_health": 3000,
+"name": "spidertron",
+"type": "spider-vehicle"
+},
+{
+"max_count_of_owned_units": 7,
+"max_health": 350,
+"name": "spitter-spawner",
+"spawner_units": [
+{
+"points": [
+{
+"evolution": 0,
+"weight": 0.3
+},
+{
+"evolution": 0.35,
+"weight": 0
+}
+],
+"unit": "small-biter"
+},
+{
+"points": [
+{
+"evolution": 0.25,
+"weight": 0
+},
+{
+"evolution": 0.5,
+"weight": 0.3
+},
+{
+"evolution": 0.7,
+"weight": 0
+}
+],
+"unit": "small-spitter"
+},
+{
+"points": [
+{
+"evolution": 0.4,
+"weight": 0
+},
+{
+"evolution": 0.7,
+"weight": 0.3
+},
+{
+"evolution": 0.9,
+"weight": 0.1
+}
+],
+"unit": "medium-spitter"
+},
+{
+"points": [
+{
+"evolution": 0.5,
+"weight": 0
+},
+{
+"evolution": 1,
+"weight": 0.4
+}
+],
+"unit": "big-spitter"
+},
+{
+"points": [
+{
+"evolution": 0.9,
+"weight": 0
+},
+{
+"evolution": 1,
+"weight": 0.3
+}
+],
+"unit": "behemoth-spitter"
+}
+],
+"type": "unit-spawner"
+},
+{
+"belt_speed_items_per_s": 15,
+"max_health": 170,
+"name": "splitter",
+"type": "splitter"
+},
+{
+"electric": true,
+"max_energy_production_kw": 900,
+"max_fluid_usage": 30,
+"max_health": 400,
+"name": "steam-engine",
+"type": "generator"
+},
+{
+"electric": true,
+"max_energy_production_kw": 5820,
+"max_fluid_usage": 60,
+"max_health": 300,
+"name": "steam-turbine",
+"type": "generator"
+},
+{
+"inventory_size": 48,
+"max_health": 350,
+"name": "steel-chest",
+"type": "container"
+},
+{
+"burner": {
+"categories": {
+"chemical": true
+},
+"effectivity": 1
+},
+"crafting_categories": {
+"smelting": true
+},
+"crafting_speed": 2,
+"emissions_per_minute": {
+"pollution": 4
+},
+"energy_usage_kw": 90,
+"inventory_size": 1,
+"max_energy_usage_kw": 90,
+"max_health": 300,
+"name": "steel-furnace",
+"type": "furnace"
+},
+{
+"category": "basic-solid",
+"mining_time": 1,
+"name": "stone",
+"products": [
+{
+"amount": 1,
+"name": "stone",
+"type": "item"
+}
+],
+"type": "resource"
+},
+{
+"burner": {
+"categories": {
+"chemical": true
+},
+"effectivity": 1
+},
+"crafting_categories": {
+"smelting": true
+},
+"crafting_speed": 1,
+"emissions_per_minute": {
+"pollution": 2
+},
+"energy_usage_kw": 90,
+"inventory_size": 1,
+"max_energy_usage_kw": 90,
+"max_health": 200,
+"name": "stone-furnace",
+"type": "furnace"
+},
+{
+"max_health": 350,
+"name": "stone-wall",
+"type": "wall"
+},
+{
+"inventory_size": 48,
+"max_health": 350,
+"name": "storage-chest",
+"type": "logistic-container"
+},
+{
+"max_health": 500,
+"name": "storage-tank",
+"type": "storage-tank"
+},
+{
+"max_health": 200,
+"max_wire_distance": 18,
+"name": "substation",
+"supply_area": 9,
+"type": "electric-pole"
+},
+{
+"attack_cooldown": 90,
+"attack_range": 30,
+"burner": {
+"categories": {
+"chemical": true
+},
+"effectivity": 1
+},
+"inventory_size": 2,
+"max_energy_usage_kw": 600,
+"max_health": 2000,
+"name": "tank",
+"type": "car"
+},
+{
+"belt_speed_items_per_s": 15,
+"max_health": 150,
+"name": "transport-belt",
+"type": "transport-belt"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-01",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-02",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-02-red",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-03",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-04",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-05",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-06",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-06-brown",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-07",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-08",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-08-brown",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-08-red",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-09",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-09-brown",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"emissions_per_second": {
+"pollution": -0.001
+},
+"max_health": 50,
+"mining_time": 0.55,
+"name": "tree-09-red",
+"products": [
+{
+"amount": 4,
+"name": "wood",
+"type": "item"
+}
+],
+"type": "tree"
+},
+{
+"belt_speed_items_per_s": 15,
+"max_health": 150,
+"name": "underground-belt",
+"type": "underground-belt"
+},
+{
+"category": "basic-solid",
+"fluid_amount": 10,
+"mining_time": 2,
+"name": "uranium-ore",
+"products": [
+{
+"amount": 1,
+"name": "uranium-ore",
+"type": "item"
+}
+],
+"required_fluid": "sulfuric-acid",
+"type": "resource"
+},
+{
+"inventory_size": 16,
+"max_health": 100,
+"name": "wooden-chest",
+"type": "container"
+}
+]

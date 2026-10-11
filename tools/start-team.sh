@@ -4,6 +4,7 @@
 # Env: POG_TEAM_FILE (default agent/team-nine.tsv), POG_SEED (default 20261010), POG_ENEMIES (normal|peaceful, default
 # normal), POG_WORLD_NAME (default n; game port 34205, RCON 27025), POG_CASTER (default 1: shoutcasters on),
 # POG_YOUTUBE (@handle or video id for the YouTube chat bridge).
+# POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-b).
 # Each team line: name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -90,6 +91,17 @@ fi
 # The companion site's live page (site/push_live.py; token in site/worker/.secrets.json, gitignored).
 if [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; then
   nohup python3 site/push_live.py --source http://127.0.0.1:8788/state.json >"$rundir/push-live.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+fi
+# Analyst: talking points for the casters every 90 s, read-only (docs/ANALYST-NOTES.md); POG_ANALYST=0 turns it off.
+if [ "${POG_ANALYST:-1}" != 0 ]; then
+  # Its own Claude route, like the agents' (tools/launch-agent.sh), not whatever session started the run.
+  aroute=${POG_ANALYST_ROUTE:-claude-b}
+  aroot=$(/Users/owner/.local/bin/ai-session routes | awk -v r="$aroute" '$1 == r && $2 == "claude" {print $NF}')
+  aenv=(-u CLAUDE_CONFIG_DIR); [ "$aroute" = claude ] || aenv=("CLAUDE_CONFIG_DIR=$aroot")
+  nohup env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE \
+    "${aenv[@]}" ENABLE_CLAUDEAI_MCP_SERVERS=false python3 tools/stream/analyst.py --world "$world" --bot "$first_bot" --feed http://127.0.0.1:8788 \
+    --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every 90 --ask-port 8789 >"$rundir/analyst.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
 fi
 

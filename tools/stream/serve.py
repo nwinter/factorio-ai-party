@@ -20,6 +20,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 
+from analyst_board import AnalystBoard  # noqa: E402
 from director import Director  # noqa: E402
 from segments import Segments  # noqa: E402
 from replays import Replays  # noqa: E402
@@ -110,9 +111,10 @@ class AudioHub:
                     "clips": len(self.order)}
 
 
-def make_handler(hub, decisions, audio=None, segments=None, replays=None):
+def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None):
     audio = audio or AudioHub()
     segments = segments or Segments()
+    analyst = analyst or AnalystBoard()
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -152,6 +154,8 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None):
                 return self.send(200, json.dumps(segments.types()).encode(), "application/json")
             if path == "/audio/status":
                 return self.send(200, json.dumps(audio.status()).encode(), "application/json")
+            if path == "/analyst.json":
+                return self.send(200, json.dumps(analyst.full(), ensure_ascii=False).encode(), "application/json; charset=utf-8")
             if path.startswith("/audio/clip/"):
                 clip = audio.clips.get(path.rsplit("/", 1)[-1])
                 if clip:
@@ -189,6 +193,10 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None):
             if path == "/audio/played":
                 audio.played(body)
                 return self.send(200, b"{}", "application/json")
+            if path == "/analyst":  # tools/stream/analyst.py posts each cycle
+                return self.send(200, json.dumps(analyst.post(body)).encode(), "application/json")
+            if path == "/analyst/used":
+                return self.send(200, json.dumps(analyst.mark_used(body.get("id"))).encode(), "application/json")
             self.send(404, b"not found", "text/plain")
 
         def sse_head(self):
@@ -308,6 +316,7 @@ def main():
     feed = viewers.build(a, "viewers_", names, harness=getattr(source, "h", None), log_dir=a.log_dir, loop=a.mock)
     if feed:
         feed.start()
+    analyst = AnalystBoard()
     lock = threading.Lock()
     source_info = {"source": getattr(source, "name", "mock"), "poll_ok": None, "poll_error": None}
 
@@ -349,6 +358,7 @@ def main():
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
                 snap.update(source_info)
                 snap["viewers"], snap["viewers_status"] = feed.lane() if feed else ([], None)
+                snap["analyst"] = analyst.public(now)
                 hub.publish(snap)
             except Exception:
                 traceback.print_exc()
@@ -364,7 +374,8 @@ def main():
     threading.Thread(target=poller, daemon=True).start()
     threading.Thread(target=ticker, daemon=True).start()
     try:
-        server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays))
+        server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,
+                                                                    analyst=analyst))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")
