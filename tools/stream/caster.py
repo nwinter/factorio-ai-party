@@ -769,7 +769,7 @@ def style_fault(line, blob=""):
     low = line.lower().replace("’", "'")
     # shake7: "Opus is still walking. Four hours in, still walking."; "Classic Opus. Big chat energy."; "That motto
     # aged fine."; "Science per minute says sixty. That number is a lie."
-    if re.search(r"\b(?:walk|walks|walking|walked|stroll\w*)\b", low) and "walk" not in blob:
+    if re.search(r"\b(?:walk|walks|walking|walked|stroll\w*)\b", low) and "walk" not in blob and "heading off for" not in blob:
         return "style: walking filler"
     if MOCK.search(low):
         return "style: mocks an agent"

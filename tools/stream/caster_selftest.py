@@ -781,6 +781,8 @@ f2 = {"agent": dict(ia, working_on="Concrete cell", intent="Concrete next.")}
 cm.mark_changes(f2)
 f3 = {"agent": dict(f2["agent"])}
 cm.mark_changes(f3)
+check("walking to a job is fine once the facts say where it leads", caster.style_fault(
+    "Astra's walking to restock the silo.", caster.known_text({"agent": ia})) is None)
 check("since_last_beat: a new job and new words; then nothing new", "since_last_beat" not in f1["agent"] and
       "took a new job: Concrete cell" in f2["agent"]["since_last_beat"] and "said something new" in
       f2["agent"]["since_last_beat"] and f3["agent"]["since_last_beat"] == ["nothing new since the hosts last saw them"],
