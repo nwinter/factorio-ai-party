@@ -104,6 +104,15 @@ def main():
         assert "truncated" in ctx and len(ctx) < 10000
         assert run("hook", "post-tool", stdin=json.dumps({"cwd": d})) == "", "re-inject once"
 
+    with tempfile.TemporaryDirectory() as d:   # only the last 10 Log lines come back after a compaction
+        log = "\n".join(f"- 1h{i:02d}m: event {i}" for i in range(39))
+        open(os.path.join(d, "notes.md"), "w").write(f"# Notes\n\n## Now\nGoal: g\n\n## Log\n{log}\n")
+        run("setup", "grok", "grok-4.7", d)
+        run("hook", "post-compact", "--mark", stdin=json.dumps({"cwd": d, "trigger": "auto"}))
+        ctx = json.loads(run("hook", "post-tool", stdin=json.dumps({"cwd": d})))["hookSpecificOutput"]["additionalContext"]
+        assert "Goal: g" in ctx and "event 38" in ctx and "event 29" in ctx and "event 28" not in ctx, ctx
+        assert "[29 older Log lines left out" in ctx
+
     with tempfile.TemporaryDirectory() as d:   # the repo-wide Grok hooks also see sessions outside agent workspaces
         run("hook", "post-compact", "--mark", stdin=json.dumps({"cwd": d}))
         assert os.listdir(d) == [], "hooks do nothing without the setup marker"
