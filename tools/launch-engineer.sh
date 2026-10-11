@@ -34,9 +34,13 @@ out=$(/Users/owner/.local/bin/ai-session spawn --route "$route" --model opus --t
       --name "pog-$name" --herdr tab --prompt-file "$wt/.task-prompt.md" --start 2>&1)
 pane=$(printf '%s\n' "$out" | sed -n 's/.*Herdr pane \([^ .]*\).*/\1/p' | tail -1)
 test -n "$pane" || { printf '%s\n' "$out" >&2; exit 1; }
+corrected=0
 for _ in $(seq 1 40); do
   screen=$(herdr pane read "$pane" --source visible --lines 40 2>/dev/null || true)
-  if grep -q "correct 'run' to" <<<"$screen"; then herdr pane send-text "$pane" "n" >/dev/null; sleep 1; continue; fi
+  # zsh autocorrect: answer only while it is the live prompt (the last line), never into Claude's input box
+  if [ "$corrected" = 0 ] && grep -v '^[[:space:]]*$' <<<"$screen" | tail -1 | grep -q "correct '.*' to"; then
+    herdr pane send-text "$pane" "n" >/dev/null; corrected=1; sleep 1; continue
+  fi
   if grep -q "Yes, I trust this folder" <<<"$screen"; then
     grep -qE "^[[:space:]]*(❯|>)[[:space:]]*Yes, I trust" <<<"$screen" || { herdr pane send-keys "$pane" down >/dev/null; sleep 0.3; }
     herdr pane send-keys "$pane" enter >/dev/null; break
