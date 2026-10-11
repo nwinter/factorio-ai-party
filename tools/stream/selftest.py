@@ -205,6 +205,26 @@ def main():
     cams3 = d2.step(m2.snapshot(now + 3), now + 3)
     assert cams3["main"]["agents"] == ["luna"], cams3  # luna is 10 tiles from this one: follow luna
 
+    # Space Age: agents pair only on the same surface; a pair's fixed view names that surface; a card says where
+    sent_sa = []
+    dsa = Director([{"slot": "main", "player": 3}], lambda body: sent_sa.append(body) or {"ok": True}, None)
+    msa = Model({"agents": {"astra": {}, "luna": {}}})
+    msa.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "surface": "vulcanus", "where": "vulcanus", "active": "build"},
+                           {"name": "luna", "position": {"x": 6, "y": 0}, "surface": "nauvis", "where": "nauvis"}]})
+    msa.agents["astra"].interest = 20
+    t_sa = time.time()
+    assert dsa.step(msa.snapshot(t_sa), t_sa)["main"]["agents"] == ["astra"]  # 6 tiles apart, different planets
+    assert sent_sa[-1]["follow"] == "astra"
+    msa.ingest({"agents": [{"name": "luna", "position": {"x": 6, "y": 0}, "surface": "vulcanus", "where": "vulcanus"}]})
+    assert dsa.step(msa.snapshot(t_sa + 1), t_sa + 1)["main"]["agents"] == ["astra", "luna"]
+    assert sent_sa[-1]["surface"] == "vulcanus" and sent_sa[-1]["position"] == {"x": 3.0, "y": 0.0}, sent_sa[-1]
+    by_sa = {a["name"]: a for a in msa.snapshot(t_sa + 1)["agents"]}
+    assert by_sa["astra"]["location"] == "Vulcanus spawn", by_sa["astra"]
+    msa.ingest({"agents": [{"name": "luna", "position": {"x": 0, "y": -3}, "surface": "platform-1", "where": "platform alpha", "travel": "aboard"}]})
+    assert {a["name"]: a for a in msa.snapshot(t_sa + 2)["agents"]}["luna"]["location"] == "platform alpha"
+    msa.ingest({"agents": [{"name": "luna", "position": {"x": 0, "y": -3}, "surface": "platform-1", "where": "cargo pod to vulcanus", "travel": "descending"}]})
+    assert {a["name"]: a for a in msa.snapshot(t_sa + 3)["agents"]}["luna"]["location"] == "cargo pod to vulcanus"
+
     # zoom follows activity once it has lasted zoom_settle; a death cuts to where the agent fell, spacing or not
     sent3 = []
     d3 = Director([{"slot": "main", "player": 3}], lambda body: sent3.append(body) or {"ok": True}, None)

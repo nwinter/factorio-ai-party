@@ -126,6 +126,9 @@ class Agent:
         self.motto = ""
         self.profile_set = None  # None: unknown (no `profiles`); False: the agent has not called `profile` yet
         self.position = None
+        self.surface = None  # Space Age: planet or platform surface name; where: planet, "platform X", "cargo pod to X"
+        self.where = None
+        self.travel = None  # a bot's ride: ascending | aboard | descending
         self.alive = True
         self.dead_until_tick = None
         self.active = False
@@ -223,6 +226,9 @@ class Model:
             ag.profile_set = a["profile_set"]
         if a.get("position"):
             ag.position = a["position"]
+        for key in ("surface", "where", "travel"):
+            if key in a:
+                setattr(ag, key, a[key])
         alive = a.get("alive", True)
         connected = a.get("connected", True)
         if ag.seen and ag.alive and not alive and connected and ag.connected:
@@ -488,9 +494,15 @@ class Model:
         return ""
 
     def location(self, ag):
+        # Space Age: a cargo pod or a platform says so; another planet is named (landmarks are Nauvis's)
+        if ag.travel in ("ascending", "descending") or (ag.where or "").startswith("platform "):
+            return ag.where
         p = ag.position
         if not p:
             return None
+        if ag.surface and ag.surface != "nauvis":
+            d = math.hypot(p["x"], p["y"])
+            return ag.surface.capitalize() + (" spawn" if d < 25 else f" {int(round(d / 10) * 10)} m")
         best = None
         for lm in self.run.get("landmarks", []):
             d = math.hypot(p["x"] - lm["x"], p["y"] - lm["y"])
@@ -599,7 +611,8 @@ class Model:
                 "glyph": ag.glyph, "motto": ag.motto, "profile_set": ag.profile_set, "model": ag.cfg.get("model"), "harness": ag.cfg.get("harness"),
                 "role": ag.cfg.get("role"), "alive": ag.alive, "activity": self.activity(ag, now),
                 "action": self.action_text(ag), "active": ag.active, "position": ag.position,
-                "location": self.location(ag), "interest": round(ag.interest, 2),
+                "location": self.location(ag), "surface": ag.surface, "where": ag.where, "travel": ag.travel,
+                "interest": round(ag.interest, 2),
                 "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen, "voice": ag.voice,
                 "voice_description": ag.voice_description, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at,
             })

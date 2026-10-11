@@ -152,7 +152,7 @@ class LiveSource:
             st = self.status_cache.get(name, {})
             a = {"name": name, "kind": p.get("kind") or cfg.get("kind", "bot")}
             for key in ("display_name", "color", "glyph", "motto", "voice", "voice_description", "avatar", "position",
-                        "last_said", "alive", "active"):
+                        "last_said", "alive", "active", "surface", "where", "travel"):
                 if p.get(key) is not None:
                     a[key] = p[key]
             if p:  # `profile` never called: profiles reports no display name, colour or glyph
@@ -163,6 +163,11 @@ class LiveSource:
                     a["active"] = act.get("kind") if isinstance(act, dict) else (act or False)
                     a["alive"] = st.get("alive", True)
                     a["position"] = st.get("position")
+                    a["surface"] = st.get("surface")
+                    trav = st.get("travel") or {}
+                    a["travel"] = trav.get("state")
+                    a["where"] = ("platform " + st["platform"]) if st.get("platform") and trav.get("state") in (None, "aboard") \
+                        else ("cargo pod" if trav else st.get("surface"))
                 a.setdefault("position", st.get("position"))
                 a["connected"] = st.get("connected", True) if a["kind"] == "player" else True
                 a["last"] = st.get("last")
@@ -172,7 +177,8 @@ class LiveSource:
         for name, p in profiles.items():
             if name not in self.agents_cfg:
                 obs["agents"].append(dict({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto", "avatar",
-                                                                  "position", "alive", "active", "last_said")},
+                                                                  "position", "alive", "active", "last_said", "surface",
+                                                                  "where", "travel")},
                                           profile_set=any(p.get(k) for k in ("display_name", "color", "glyph"))))
 
         try:

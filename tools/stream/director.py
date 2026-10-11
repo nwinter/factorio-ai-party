@@ -53,6 +53,14 @@ def dist(a, b):
     return math.hypot(a["x"] - b["x"], a["y"] - b["y"])
 
 
+RIDING = ("ascending", "descending")  # a bot in a cargo pod (harness travel state)
+
+
+def surface_of(agent):
+    """The planet or platform surface an agent is on (profiles `surface`); the base game has only nauvis."""
+    return agent.get("surface") or "nauvis"
+
+
 class Director:
     def __init__(self, slots, sender, log_path, **tuning):
         """slots: [{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}, ...] (first one is main)."""
@@ -104,6 +112,8 @@ class Director:
         for name, a in agents_by_name.items():
             if name == subject or name in taken or not a["alive"] or not a.get("position"):
                 continue
+            if surface_of(a) != surface_of(s) or a.get("travel") in RIDING or s.get("travel") in RIDING:
+                continue  # Space Age: only agents standing on the same planet or platform share a frame
             d = dist(s["position"], a["position"])
             limit = (pair_distance or self.cfg["pair_distance"]) * (1.25 if name == partner else 1.0)
             if d <= limit and (best is None or (name == partner, -d) > (best[1] == partner, -best[0])):
@@ -116,7 +126,8 @@ class Director:
                "y": round((s["position"]["y"] + o["position"]["y"]) / 2, 1)}
         # ~60 tiles across at zoom 1 on a 1080p client: leave ~24 tiles of margin around the pair
         pz = max(0.3, min(zoom, 60.0 / (d + 24.0)))
-        return {"agents": [subject, other], "position": mid, "zoom": round(pz, 2), "distance": round(d, 1)}
+        return {"agents": [subject, other], "position": mid, "surface": surface_of(s), "zoom": round(pz, 2),
+                "distance": round(d, 1)}
 
     # -- attacks ----------------------------------------------------------------------------------------------
     def attack_target(self, snapshot, by_name, scores, now):
@@ -134,9 +145,10 @@ class Director:
             if now - al["t"] > self.cfg["attack_fresh"]:
                 continue
             if al["kind"] == "death":  # the agent is down: show where it fell, close
-                p = (by_name.get(al.get("agent")) or {}).get("position") or al.get("position")
+                fell = by_name.get(al.get("agent")) or {}
+                p = fell.get("position") or al.get("position")
                 if p:
-                    return None, {"x": round(p["x"], 1), "y": round(p["y"], 1)}, al
+                    return None, {"x": round(p["x"], 1), "y": round(p["y"], 1), "surface": surface_of(fell)}, al
                 continue
             if al.get("agent") in scores:
                 return al["agent"], None, al
@@ -317,7 +329,10 @@ class Director:
         if target is None:
             body = {"player": slot["player"], "release": True}
         elif "position" in target:
-            body = {"player": slot["player"], "position": target["position"], "zoom": target["zoom"], "smooth": True}
+            pos = target["position"]
+            body = {"player": slot["player"], "position": {"x": pos["x"], "y": pos["y"]}, "zoom": target["zoom"], "smooth": True,
+                    # Space Age: a fixed view names its surface (else the director's own, maybe a platform)
+                    "surface": target.get("surface") or pos.get("surface") or "nauvis"}
         else:
             body = {"player": slot["player"], "follow": target["follow"], "zoom": target["zoom"], "smooth": True}
         if target is not None:

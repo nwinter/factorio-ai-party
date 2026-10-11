@@ -100,6 +100,11 @@ return function(api)
       local pos = args.position
       assert(type(pos) == 'table' and type(pos.x) == 'number' and type(pos.y) == 'number', 'follow or position {x,y} is required')
       cam.position = {x=pos.x, y=pos.y}
+      -- A fixed view on another planet or platform (default: where the director is).
+      if args.surface ~= nil then
+        assert(type(args.surface) == 'string' and game.get_surface(args.surface), 'no surface named ' .. tostring(args.surface))
+        cam.surface = args.surface
+      end
     end
     if args.zoom ~= nil then
       assert(type(args.zoom) == 'number' and args.zoom >= MIN_ZOOM and args.zoom <= MAX_ZOOM, string.format('zoom must be %g..%g', MIN_ZOOM, MAX_ZOOM))
@@ -117,7 +122,7 @@ return function(api)
   function M.describe(index)
     local c = store()[index]
     if not c then return nil end
-    local pos, surface = c.position, nil
+    local pos, surface = c.position, c.surface and game.get_surface(c.surface)
     if c.follow then pos, surface = locate(c.follow) end
     -- Space Age: the planet or platform surface the target is on.
     local p = game.get_player(index)
@@ -131,7 +136,7 @@ return function(api)
     return {ok=true, tick=game.tick, cameras=out}
   end
   function M.update(p, cam, now)
-    local target, surface = cam.position, nil
+    local target, surface = cam.position, cam.surface and game.get_surface(cam.surface)
     if cam.follow then target, surface = locate(cam.follow) end
     if not target then return end
     surface = surface or p.surface

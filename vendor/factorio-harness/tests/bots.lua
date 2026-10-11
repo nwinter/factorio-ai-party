@@ -174,6 +174,15 @@ eq(#list,3)
 local by={}; for _,row in ipairs(list) do by[row.name]=row end
 eq(by.astra.kind,'bot'); eq(by.astra.display_name,'Astra'); eq(by.astra.alive,true); eq(by.astra.active,false)
 eq(by.astra.avatar.emblem,'flask'); eq(by.opus.avatar,nil)
+-- Where each agent is (Space Age): a planet, a platform, or a cargo pod in between.
+surface.valid=true
+for _,row in ipairs(runtime.dispatch{action='profiles',args={},player=1}.profiles) do by[row.name]=row end
+eq(by.astra.surface,'nauvis'); eq(by.astra.where,'nauvis'); eq(by.astra.travel,nil); eq(by.nick.where,'nauvis')
+storage.agent_harness.bots.by_name.opus.travel={state='ascending',platform='alpha'}
+for _,row in ipairs(runtime.dispatch{action='profiles',args={},player=1}.profiles) do by[row.name]=row end
+eq(by.opus.where,'cargo pod to platform alpha'); eq(by.opus.travel,'ascending')
+storage.agent_harness.bots.by_name.opus.travel=nil
+surface.valid=nil
 eq(by.astra.last_said.text:sub(1,4),'word'); eq(by.nick.kind,'player'); eq(by.nick.display_name,'Nick'); eq(by.opus.glyph,nil)
 
 -- Director cameras: operator-only, spectator once, eased follow, release.

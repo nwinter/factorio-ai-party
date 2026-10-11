@@ -179,6 +179,10 @@ bots.board(b,platform,nil); advance(2400)
 hub.create_cargo_pod=function() return nil end
 fails(function() bots.land(b) end,'no free cargo hatch')
 eq(b.travel.state,'aboard')
+-- A fixed camera view on another surface (a pair framed on Vulcanus).
+cameras.set{player=2,position={x=5,y=5},surface='vulcanus',smooth=false}
+eq(director.surface,surfaces.vulcanus); eq(cameras.describe(2).surface,'vulcanus')
+fails(function() cameras.set{player=2,position={x=5,y=5},surface='moon'} end,'no surface named moon')
 -- Removing a bot in transit drops its kit.
 bots.remove('astra'); eq(kits[#kits].valid,false)
 print('travel: ok')

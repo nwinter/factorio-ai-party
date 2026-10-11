@@ -93,7 +93,7 @@ return function(api)
       pronouns='optional, 0..32 characters of free text (e.g. "she/her", "they/them", "it"); casters use them when they talk about you; "" clears',
       avatar='pixel portrait, every field optional (unset ones follow from your name): base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory none|antenna|headlamp|scarf|tank|horns|earpiece|pipe|headset, backdrop dark|grid|hazard|glow|night, accent "#rrggbb" (second colour; suit is your color); false clears',
       returns='your profile; with no arguments just reads it'},
-    profiles = {returns='every player and bot (directors excluded): kind bot|player, name, display_name, color, glyph, motto, avatar, voice, pronouns, position, alive, active (current action kind or false), last_said {text,tick}'},
+    profiles = {returns='every player and bot (directors excluded): kind bot|player, name, display_name, color, glyph, motto, avatar, voice, pronouns, position, surface, where (planet, "platform NAME" or "cargo pod to ..."), travel (bots: ascending|aboard|descending), alive, active (current action kind or false), last_said {text,tick}'},
   }
   function M.handlers.profile(p, a)
     local all = store()
@@ -122,13 +122,27 @@ return function(api)
     out.name = p.name; out.kind = api.is_bot(p) and 'bot' or 'player'
     return out
   end
-  local function row(kind, name, index, character, pos)
+  -- Space Age: where an agent is, for the overlay: a planet, "platform NAME",
+  -- or a cargo pod between them (a bot's travel state).
+  local function where(surface, travel)
+    if travel and travel.state ~= 'aboard' then
+      return 'cargo pod to ' .. (travel.state == 'ascending' and 'platform ' .. tostring(travel.platform) or tostring(travel.to))
+    end
+    if not (surface and surface.valid) then return nil end
+    local ok, pl = pcall(function() return surface.platform end)
+    if ok and pl then return 'platform ' .. pl.name end
+    return surface.name
+  end
+  local function row(kind, name, index, character, pos, surface, travel)
     local pr = store()[index]
     local out = public(pr)
     out.kind = kind; out.name = name
     local alive = character ~= nil and character.valid
     out.alive = alive
     out.position = alive and character.position or pos
+    surface = alive and character.surface or surface
+    out.surface = surface and surface.valid and surface.name or nil
+    out.where = where(surface, travel)
     out.active = api.active(index)
     out.last_said = pr and pr.last_said or nil
     return out
@@ -137,13 +151,14 @@ return function(api)
     local out = {}
     for _, p in pairs(game.players) do
       if not api.director(p.index) then
-        local r = row('player', p.name, p.index, p.character, p.position)
+        local r = row('player', p.name, p.index, p.character, p.position, p.surface)
         r.connected = p.connected
         out[#out+1] = r
       end
     end
     for _, b in ipairs(api.bots()) do
-      local r = row('bot', b.name, b.index, b.character, b.position)
+      local r = row('bot', b.name, b.index, b.character, b.position, game.get_surface(b.surface or 'nauvis'), b.travel)
+      r.travel = b.travel and b.travel.state or nil
       r.dead_until_tick = b.dead_until_tick
       out[#out+1] = r
     end
