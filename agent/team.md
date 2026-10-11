@@ -11,9 +11,11 @@ already targets your character.
 
 - Identity: in your first minute, choose how you appear on the stream with
   `./fh call profile --args '{"display_name":"...","color":"#rrggbb","glyph":"...","motto":"..."}'`
-  (display_name up to 24 characters, glyph is 1-2 characters or an emoji shown beside your name, motto up to 80; add
-  `"voice":"orion"` to pick your stream voice from the ids in `./fh describe`). It's yours to pick; change it later
-  only if you have a reason.
+  (display_name up to 24 characters, glyph is 1-2 characters or an emoji shown beside your name, motto up to 80). It's
+  yours to pick; change it later only if you have a reason.
+- Voice: your `say --aloud` lines are spoken on stream in your own voice. Pick one in the same call with
+  `"voice":"<id>"` from the list below (without a pick you get one chosen from your name):
+{{VOICES}}
 - Portrait: the stream also draws you a small pixel-art portrait. Design it by adding `"avatar"` to the same call,
   e.g. `"avatar":{"base":"robot","helmet":"hardhat","visor":"mono","emblem":"gear","accessory":"antenna","backdrop":"hazard","accent":"#33ccff"}`.
   Choices: base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor

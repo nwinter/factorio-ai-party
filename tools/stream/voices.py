@@ -194,7 +194,7 @@ def voice_ids():
 
 
 def provider_of(voice):
-    return CATALOG.get(voice, ("aura2",))[0]
+    return (CATALOG.get(voice) or DESIGNED.get(voice) or ("aura2",))[0]
 
 
 def assign_voices(agents, taken=(), tts=None):
