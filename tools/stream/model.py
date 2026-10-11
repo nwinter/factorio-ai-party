@@ -41,7 +41,8 @@ STAGE_ITEMS = [
     (5, ["rocket-part", "satellite"]),
 ]
 ITEM_STAGE = {n: s for s, names in STAGE_ITEMS for n in names}
-STAGE_LABELS = ["Raw resources", "Automation", "Steel & logistics", "Oil", "Advanced", "Rocket"]
+# Stage 3 was "Oil": shake5's hosts read it as "the oil is dry" an hour after blue science started
+STAGE_LABELS = ["Raw resources", "Automation", "Steel & logistics", "Oil & blue science", "Advanced", "Rocket"]
 SCIENCE_STAGE = {"automation-science-pack": 1, "logistic-science-pack": 2, "military-science-pack": 2,
                  "chemical-science-pack": 3, "production-science-pack": 4, "utility-science-pack": 4,
                  "space-science-pack": 5, **{n: 5 for n in SCIENCE[7:]}}

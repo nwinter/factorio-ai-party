@@ -381,6 +381,12 @@ def analyst_facts(f, e, s):
             f["next_milestone"] = dict((an["next"].get("facts") or {}), text=an["next"]["text"])
 
 
+PACK_NAMES = {"automation-science-pack": "red (automation)", "logistic-science-pack": "green (logistic)",
+              "military-science-pack": "grey (military)", "chemical-science-pack": "blue (chemical)",
+              "production-science-pack": "purple (production)", "utility-science-pack": "yellow (utility)",
+              "space-science-pack": "white (space)"}
+
+
 def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
     """What viewers need to follow along and what lets the hosts judge the play: stage, science rate, pace, time left,
     and on a resumed run which shift this is."""
@@ -395,6 +401,10 @@ def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
     sc = s.get("science") or {}
     if sc.get("stage_label"):
         f["stage"] = sc["stage_label"]
+        # what is being made, so the stage reads as progress (shake5: "Oil" aired as "oil stage choking")
+        made = [PACK_NAMES.get(p["item"], p["item"].replace("-", " ")) for p in sc.get("packs") or [] if p.get("total")]
+        if made:
+            f["science_packs_made"] = made
     if sc.get("spm"):
         f["science_packs_per_minute"] = round(sc["spm"])
     res = s.get("research") or {}

@@ -116,7 +116,7 @@ stops a player.
   alert toasts over the main camera, and a label on each camera naming who it shows. Updates are keyed DOM edits.
 - Production widget: a headline of science packs made per minute (all colours summed from flows or score deltas),
   with a 1-hour trend, one chip per pack colour with its rate, and the stage the factory has reached (Raw resources,
-  Automation, Steel & logistics, Oil, Advanced, Rocket: the furthest stage any item or pack has been made in). Below
+  Automation, Steel & logistics, Oil & blue science, Advanced, Rocket: the furthest stage any item or pack has been made in). Below
   it four item cells, each with eng/art's 32 px pixel icon (`items.js`, `PogItems.svg`; the pack chips use the 16 px
   pack icons), label and colour from `PogItems`, rate, and a sparkline in the item colour. `model.production()` ranks the items made in the last few minutes:
   weight 3 for the current stage, 2 for one stage back, 1 for two, 0.5 older (iron and copper plates at least 2),

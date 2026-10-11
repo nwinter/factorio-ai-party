@@ -551,5 +551,14 @@ with tempfile.TemporaryDirectory() as runs:
     cs6.a = caster.argparse.Namespace(run_dir=os.path.join(runs, "shake5"))
     check("Caster.shift reads --run-dir", cs6.shift()["number"] == 2, str(cs6.shift()))
 
+# Round 6 (shake5 P1 item 4): stage 3 is "Oil & blue science", and the stage fact says which packs are made
+import model  # noqa: E402
+check("stage 3 label names blue science", model.STAGE_LABELS[3] == "Oil & blue science")
+stf = caster.context_facts({"science": {"stage": 3, "stage_label": model.STAGE_LABELS[3], "spm": 40, "packs": [
+    {"item": "automation-science-pack", "rate": 20, "total": 900}, {"item": "logistic-science-pack", "rate": 12,
+    "total": 700}, {"item": "chemical-science-pack", "rate": 8, "total": 566}]}})
+check("the stage fact comes with the packs being made", stf["stage"] == "Oil & blue science" and
+      stf["science_packs_made"] == ["red (automation)", "green (logistic)", "blue (chemical)"], str(stf))
+
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)
