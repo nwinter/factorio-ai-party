@@ -356,6 +356,55 @@ def cycle(a, dg, prev, logf):
     return reply, dropped, text
 
 
+def serve_ask(a, port):
+    """POST /ask {"question": "..."} -> {"answer", "seconds", "facts"}: a viewer question answered with the tools
+    (about 6 s; tools/analyst/evaluate.py measured 30/30 on the viewer-question set). For the casters' viewer beats."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import evaluate
+    sem = threading.Semaphore(3)
+
+    class H(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def reply(self, code, obj):
+            body = json.dumps(obj, ensure_ascii=False).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            if self.path.split("?")[0] != "/ask":
+                return self.reply(404, {"error": "not found"})
+            try:
+                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+                q = str(body.get("question") or "").strip()[:500]
+            except ValueError:
+                return self.reply(400, {"error": "bad json"})
+            if not q:
+                return self.reply(400, {"error": "question missing"})
+            if not sem.acquire(timeout=1):
+                return self.reply(429, {"error": "busy"})
+            try:
+                t0 = time.time()
+                text, meta = run_claude(a, q, system=evaluate.ANSWER_SYSTEM)
+                text = text.strip()
+                log(f"[ask] {q[:80]!r} -> {time.time() - t0:.1f} s")
+                self.reply(200, {"question": q, "answer": text, "seconds": round(time.time() - t0, 1),
+                                 "facts": {"viewer_question": q, "analyst_answer": text}, "meta": meta})
+            except Exception as e:
+                self.reply(500, {"error": f"{type(e).__name__}: {e}"})
+            finally:
+                sem.release()
+
+    srv = ThreadingHTTPServer(("127.0.0.1", port), H)
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    log(f"[ask] answering viewer questions on http://127.0.0.1:{port}/ask")
+
+
 def show(reply, dropped):
     m = reply.get("meta") or {}
     log(f"[analyst] minute {reply.get('game_minute')}: {m.get('seconds')} s, {m.get('turns')} turns, "
@@ -398,6 +447,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="do not POST to the service")
     ap.add_argument("--segments", action="store_true", help="also request the top suggested segment (POST /segment)")
     ap.add_argument("--digest-only", action="store_true", help="print the digest and exit (no model call)")
+    ap.add_argument("--ask-port", type=int, help="also answer viewer questions: POST http://127.0.0.1:PORT/ask")
     ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
     ap.add_argument("--log-digest", action="store_true")
     ap.add_argument("--eval", action="store_true", help="run the viewer-question check (tools/analyst/evaluate.py)")
@@ -418,6 +468,8 @@ def main():
             evaluate.run(a, run_claude)
         return
     dg = Digest(a)
+    if a.ask_port:
+        serve_ask(a, a.ask_port)
     if a.digest_only:
         print(dg.build(None, fetch_feed(a.feed) if a.feed else None)[0])
         return
