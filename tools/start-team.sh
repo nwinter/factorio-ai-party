@@ -112,9 +112,11 @@ if [ "${POG_ANALYST:-1}" != 0 ]; then
   aroute=${POG_ANALYST_ROUTE:-claude-b}
   aroot=$(/Users/owner/.local/bin/ai-session routes | awk -v r="$aroute" '$1 == r && $2 == "claude" {print $NF}')
   aenv=(-u CLAUDE_CONFIG_DIR); [ "$aroute" = claude ] || aenv=("CLAUDE_CONFIG_DIR=$aroot")
+  # Viewer questions from the site/YouTube lane, one answer per 150 s at most, voiced by the hosts; POG_VIEWER_QUESTIONS=0 off.
+  aflags=(); [ "${POG_VIEWER_QUESTIONS:-1}" != 0 ] && aflags+=(--viewer-questions)
   nohup env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE \
     "${aenv[@]}" ENABLE_CLAUDEAI_MCP_SERVERS=false python3 tools/stream/analyst.py --world "$world" --bot "$first_bot" --feed http://127.0.0.1:8788 \
-    --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every 90 --ask-port 8789 >"$rundir/analyst.log" 2>&1 &
+    --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every 90 --ask-port 8789 ${aflags[@]+"${aflags[@]}"} >"$rundir/analyst.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("analyst:$!:$rundir/analyst.log")
 fi

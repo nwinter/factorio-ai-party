@@ -149,9 +149,11 @@ class KB:
                          for p in r["products"])
         machines = self.machines_for(r["category"])
         unlock = self.unlocked_by.get(r["name"])
+        conds = r.get("surface_conditions") or []
         lines = [f"recipe {r['name']}: {ing} -> {prod} in {fmt(r['energy'])} s (at crafting speed 1); category "
                  f"{r['category']}, made in {', '.join(machines) or 'hand only'}"
-                 + ("; hand-craftable" if r["category"] == "crafting" else ""),
+                 + ("; hand-craftable" if r["category"] == "crafting" and not conds else "")
+                 + (f"; only where {surface_text(conds)}" if conds else ""),
                  "available from the start" if r.get("enabled") else
                  f"unlocked by technology {', '.join(unlock)}" if unlock else "not unlocked by any technology"]
         others = [x for x in self.made_by.get(r.get("main_product") or (r["products"][0]["name"] if r["products"] else ""), [])
@@ -167,6 +169,14 @@ class KB:
     def machines_for(self, category):
         return [e["name"] for e in self.entities.values() if category in (e.get("crafting_categories") or {})
                 and e["type"] in ("assembling-machine", "furnace", "rocket-silo") and not e.get("hidden")]
+
+    def default_machine(self, category):
+        """The machine a team typically uses: the table above, else assembling-machine-2 when it can (Space Age moved
+        circuits to 'electronics' and gears to 'pressing'), else the first machine for the category."""
+        ms = self.machines_for(category)
+        if category in DEFAULT_MACHINE:
+            return DEFAULT_MACHINE[category]
+        return "assembling-machine-2" if "assembling-machine-2" in ms else (ms or ["?"])[0]
 
     # ---- technologies ----------------------------------------------------------------------------------------------
     def tech_cost(self, t):
@@ -185,7 +195,8 @@ class KB:
         if k == "mine-entity":
             return f"mine {pretty(tr.get('entity'))}"
         if k == "build-entity":
-            return f"build a {pretty(tr.get('entity'))}"
+            name = pretty(tr.get('entity'))
+            return f"build {'an' if name[:1].lower() in 'aeiou' else 'a'} {name}"
         if k == "craft-fluid":
             return f"produce {pretty(tr.get('fluid'))}"
         if k == "send-item-to-orbit":
@@ -336,7 +347,9 @@ class KB:
                 return m
             if cat == "chemistry" and chem:
                 return chem
-            return DEFAULT_MACHINE.get(cat) or (self.machines_for(cat) or ["?"])[0]
+            if assembler and assembler in self.machines_for(cat):  # Space Age's electronics, pressing, ...
+                return assembler
+            return self.default_machine(cat)
 
         def add(it, rate, depth=0):
             if depth > 30:
@@ -425,7 +438,7 @@ class KB:
         r = self.recipes.get(recipe) or self.recipe_for(self.resolve(recipe) or recipe)
         if not r:
             return f"no recipe {recipe}"
-        machine = machine or DEFAULT_MACHINE.get(r["category"]) or (self.machines_for(r["category"]) or ["?"])[0]
+        machine = machine or self.default_machine(r["category"])
         speed = self.machine_speed(machine)
         crafts = 60 * speed / r["energy"] * count
         prod = ", ".join(f"{fmt(crafts * (p.get('amount') or 1) * (p.get('probability') or 1), 2)} {pretty(p['name'])}" for p in r["products"])
@@ -456,6 +469,22 @@ class KB:
             lines.append(f"current output corresponds to about {fmt(need_now[it]['machines'], 1)} {need_now[it]['machine']} "
                          f"running full time on {pretty(it)}")
         return "\n".join(lines)
+
+
+def surface_text(conds):
+    """Recipe surface conditions in words: gravity 0 means space platforms only (Space Age)."""
+    out = []
+    for c in conds:
+        p, lo, hi = c.get("property"), c.get("min"), c.get("max")
+        if p == "gravity" and hi == 0:
+            out.append("gravity is 0 (on a space platform)")
+        elif lo is not None and hi is not None:
+            out.append(f"{p} is {fmt(lo)} to {fmt(hi)}")
+        elif lo is not None:
+            out.append(f"{p} is at least {fmt(lo)}")
+        elif hi is not None:
+            out.append(f"{p} is at most {fmt(hi)}")
+    return " and ".join(out) or "a surface condition holds"
 
 
 def main():
