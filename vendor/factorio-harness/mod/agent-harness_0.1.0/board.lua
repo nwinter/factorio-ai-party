@@ -88,6 +88,7 @@ return function(api)
 
   local function event(by, item, change, text)
     local b = store()
+    b.aged = nil
     b.seq = b.seq + 1
     b.events[#b.events+1] = {seq=b.seq, tick=game.tick, by=by, id=item.id, change=change, title=item.title,
       kind=item.kind, owner=item.owner, requested_by=item.requested_by, status=item.status, text=text}
@@ -108,6 +109,7 @@ return function(api)
       end
       b.items[victim.id] = nil
       b.count = b.count - 1
+      b.aged = nil
     end
   end
   local function area_arg(a)
@@ -465,14 +467,21 @@ return function(api)
     end
     if extra > 0 then lines[#lines+1] = string.format('+%d more: board mine=true', extra) end
     -- Unowned requests: nudge once each time another one passes 2 minutes.
-    local newest, n, oldest = h.unowned or -1, 0, nil
-    for _, i in pairs(b.items) do
-      if i.status == 'open' and not i.owner and (i.kind == 'task' or i.kind == 'request') and game.tick - i.created_tick >= UNOWNED_AGE then
-        n = n + 1
-        if not oldest or i.created_tick < oldest.created_tick then oldest = i end
-        if i.created_tick > newest then newest = i.created_tick end
+    -- The scan is shared by all agents for a second (kept in storage, so
+    -- every peer computes the same hints); any board change redoes it.
+    local aged = b.aged
+    if not aged or game.tick - aged.tick >= 60 then
+      aged = {tick=game.tick, n=0, newest=-1}
+      for _, i in pairs(b.items) do
+        if i.status == 'open' and not i.owner and (i.kind == 'task' or i.kind == 'request') and game.tick - i.created_tick >= UNOWNED_AGE then
+          aged.n = aged.n + 1
+          if not aged.oldest or i.created_tick < b.items[aged.oldest].created_tick then aged.oldest = i.id end
+          if i.created_tick > aged.newest then aged.newest = i.created_tick end
+        end
       end
+      b.aged = aged
     end
+    local n, newest, oldest = aged.n, aged.newest, aged.oldest and b.items[aged.oldest]
     if n > 0 and newest > (h.unowned or -1) then
       lines[#lines+1] = string.format('%d open request%s nobody owns (oldest %s: #%d %s); take one with board_update {id, owner: "%s"}',
         n, n == 1 and '' or 's', ago(game.tick - oldest.created_tick), oldest.id, oldest.title, me)
