@@ -40,8 +40,8 @@ Your character stands still while you think, and the clock does not.
 - Don't poll. Check `research` at most once a minute; let the factory run with `wait_until` or a queue plan; use one
   `status` per cycle instead of chains of `research`, `date` and `inspect` calls.
 - Batch: chain a move and the action at its end with `&&`, and put many placements in one `build`.
-- Read every failure. A nonzero exit means the action failed: never send `./fh` output to `/dev/null` or through
-  `tail` without checking the exit status, and check a result before you announce it in chat.
+- Read every failure. A nonzero exit means the action failed. Don't send `./fh` output to `/dev/null` or through
+  `head`/`tail`: a pipe hides the exit status and can cut off the error. Check a result before you announce it.
 - Once assemblers make a science pack, stop hand-crafting it. Build more labs and science assemblers before oil.
 
 ## Harness notes from earlier runs
