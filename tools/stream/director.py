@@ -22,6 +22,12 @@ DEFAULTS = {
     "onair_penalty": 0.8,    # main camera discounts agents a secondary camera already shows (fewer forced cuts)
     "reframe_tiles": 6.0,    # re-send a pair midpoint when it moved this far
     "reframe_every": 2.0,
+    "attack_cut": True,      # cut the main camera to a fresh attack (agent in combat, base area hit) right away
+    "attack_hold": 20.0,     # seconds the main camera stays on an attack
+    "attack_spacing": 45.0,  # at most one attack cut this often
+    "attack_fresh": 8.0,     # an alert older than this is no longer news
+    "attack_zoom": 0.5,
+    "attack_near": 50.0,     # follow an agent within this many tiles of a base attack instead of a fixed position
 }
 
 
@@ -40,6 +46,8 @@ class Director:
         self.last_on_air = {}
         self.started = time.time()
         self.last_cut = 0.0
+        self.last_attack_cut = -1e9
+        self.attacks_seen = set()
 
     # -- scoring ----------------------------------------------------------------------------------------------
     def scores(self, agents, now):
@@ -75,6 +83,30 @@ class Director:
         pz = max(0.3, min(zoom, 60.0 / (d + 24.0)))
         return {"agents": [subject, other], "position": mid, "zoom": round(pz, 2), "distance": round(d, 1)}
 
+    # -- attacks ----------------------------------------------------------------------------------------------
+    def attack_target(self, snapshot, by_name, scores, now):
+        """A fresh attack alert -> (subject agent or None, position or None, alert), or None. Each alert is
+        considered once; cuts are spaced by attack_spacing."""
+        if not self.cfg["attack_cut"] or now - self.last_attack_cut < self.cfg["attack_spacing"]:
+            return None
+        for al in sorted(snapshot.get("alerts") or [], key=lambda a: -a["t"]):
+            if al["kind"] not in ("attack", "loss") or al["id"] in self.attacks_seen:
+                continue
+            self.attacks_seen.add(al["id"])
+            if now - al["t"] > self.cfg["attack_fresh"]:
+                continue
+            if al.get("agent") in scores:
+                return al["agent"], None, al
+            p = al.get("position")
+            if not p:
+                continue
+            near = [(dist(a["position"], p), n) for n, a in by_name.items()
+                    if n in scores and a.get("position") and dist(a["position"], p) <= self.cfg["attack_near"]]
+            if near:
+                return min(near)[1], None, al
+            return None, {"x": round(p["x"], 1), "y": round(p["y"], 1)}, al
+        return None
+
     # -- main loop --------------------------------------------------------------------------------------------
     def step(self, snapshot, now=None):
         now = now or time.time()
@@ -84,9 +116,42 @@ class Director:
         ranked = sorted(scores, key=lambda n: -scores[n])
         taken = set()
         released = []  # subjects a higher camera just cut away from: a lower camera that lost its subject takes one
+        attack = self.attack_target(snapshot, by_name, scores, now) if self.slots else None
+        main = self.slots[0]["slot"] if self.slots else None
+        if attack:
+            subject, position, al = attack
+            cur = self.state.get(main)
+            if subject and cur and cur["subject"] == subject:
+                cur["since"] = now - self.cfg["main_dwell"] + self.cfg["attack_hold"]  # already there: just stay
+                self.last_attack_cut = now
+            elif subject:
+                target = self.frame(subject, by_name, {subject}, self.cfg["attack_zoom"])
+                if cur:
+                    released.append(cur["subject"])
+                self.apply(self.slots[0], dict(target, subject=subject, label=al["text"],
+                                               since=now - self.cfg["main_dwell"] + self.cfg["attack_hold"]),
+                           f"attack: {al['text']}", scores, now)
+                self.last_attack_cut = now
+            else:
+                if cur and cur["subject"] in by_name:
+                    released.append(cur["subject"])
+                self.apply(self.slots[0], {"agents": [], "subject": "@attack", "position": position,
+                                           "zoom": self.cfg["attack_zoom"], "label": al["text"], "since": now,
+                                           "until": now + self.cfg["attack_hold"]},
+                           f"attack: {al['text']}", scores, now)
+                self.last_attack_cut = now
         for i, slot in enumerate(self.slots):
             name = slot["slot"]
             cur = self.state.get(name)
+            if cur and cur["subject"] == "@attack":
+                if now < cur["until"]:
+                    continue  # holding on a base attack nobody is near
+                cur = None
+            elif attack and i == 0 and attack[0]:
+                taken.update(cur["agents"])  # just cut to the attacked agent; secondaries take the rest
+                for n in cur["agents"]:
+                    self.last_on_air[n] = now
+                continue
             dwell = self.cfg["main_dwell"] if i == 0 else self.cfg["side_dwell"]
             zoom = slot.get("zoom") or (self.cfg["solo_zoom"] if i == 0 else self.cfg["side_zoom"])
             slot_scores = scores
@@ -124,7 +189,7 @@ class Director:
                                quiet=True)
             for n in self.state[name]["agents"] if self.state.get(name) else []:
                 self.last_on_air[n] = now
-        return self.public()
+        return self.public(now)
 
     def choose(self, cur, free, scores, now, dwell, on_air=(), released=()):
         if not free:
@@ -184,11 +249,14 @@ class Director:
             print(f"[director] {entry['time']} {name}: {who} zoom {target and target['zoom']}  <- {reason}{stub}",
                   flush=True)
 
-    def public(self):
+    def public(self, now=None):
+        now = now or time.time()
         out = {}
         for slot in self.slots:
             t = self.state.get(slot["slot"])
             if t:
                 out[slot["slot"]] = {"agents": t["agents"], "zoom": t["zoom"], "since": t["since"],
                                      "player": slot["player"], "pair": len(t["agents"]) > 1}
+                if t.get("label") and now - t.get("sent", now) < self.cfg["attack_hold"]:
+                    out[slot["slot"]]["attack"] = t["label"]
         return out

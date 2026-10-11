@@ -5,12 +5,14 @@ With the eng/bots runtime (detected by the `camera` remote function) it polls `p
 lands it reads `status` for every player index in the run config each round, so the page works against today's
 worlds (e.g. the paused co-op save in world c).
 """
-import math, time
+import math, re, time
 
 from harness import Harness
 from model import SPARK_ITEMS
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
+LOSS_RE = re.compile(r"^in \((-?\d+),(-?\d+)\)(?:-\(-?\d+,-?\d+\))? (\d+) destroyed: (.*?)(?: by (.*?))?, (\S+) ago$")
+RECENT_AGO = re.compile(r"^(?:.*-)?(?:\d+s|1m\d\ds)$")  # last part of the span under 2 minutes
 
 
 class LiveSource:
@@ -30,6 +32,11 @@ class LiveSource:
         self.caps = None
         self.next_probe = 0
         self.use_profiles = profiles == "on"
+        self.has_board = False
+        self.next_board_probe = 0
+        self.board_seq = 0
+        self.board_every = 15.0
+        self.next_board = 0
         self.probe()
 
     def probe(self):
@@ -113,6 +120,7 @@ class LiveSource:
                 if not alerts_seen and st.get("alerts"):
                     alerts_seen = True  # force-wide: one agent's copy is enough
                     obs["events"] += self.attack_events(st["alerts"], obs.get("tick") or st.get("tick") or 0)
+                    obs["events"] += self.loss_events(st["alerts"])
             except Exception as e:
                 errors[f"status:{name}"] = str(e)
         for name in names:
@@ -123,6 +131,8 @@ class LiveSource:
             for key in ("display_name", "color", "glyph", "motto", "position", "last_said", "alive", "active"):
                 if p.get(key) is not None:
                     a[key] = p[key]
+            if p:  # `profile` never called: profiles reports no display name, colour or glyph
+                a["profile_set"] = any(p.get(k) for k in ("display_name", "color", "glyph"))
             if st:
                 if not p:  # without profiles, status is the only source of position/alive/active
                     act = st.get("active")  # status: {kind, until_tick, ...} or false
@@ -137,8 +147,9 @@ class LiveSource:
             obs["agents"].append(a)
         for name, p in profiles.items():
             if name not in self.agents_cfg:
-                obs["agents"].append({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto",
-                                                             "position", "alive", "active", "last_said")})
+                obs["agents"].append(dict({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto",
+                                                                  "position", "alive", "active", "last_said")},
+                                          profile_set=any(p.get(k) for k in ("display_name", "color", "glyph"))))
 
         try:
             res, _ = self.h.dispatch("chat", {"since": self.chat_since, "limit": 30, "peek": True}, **self.reader())
@@ -147,8 +158,73 @@ class LiveSource:
                 self.chat_since = obs["chat"][-1]["seq"]
         except Exception as e:
             errors["chat"] = str(e)
+        self.observe_board(obs, errors)
         obs["errors"] = errors
         return obs
+
+    # ---- team board (docs/BOARD-API.md) ------------------------------------------------------------------------
+    def board_probe(self):
+        """Board reads only once the running runtime lists `board_events`: an unknown action fails, and a failed
+        non-read call stops the reading bot. `describe` is read-only and lists the actions. Re-checked every 5 min,
+        since a runtime can be installed mid-run."""
+        self.next_board_probe = time.time() + 300
+        try:
+            res, _ = self.h.dispatch("describe", **self.reader())
+            actions = res.get("actions") or {}
+            self.has_board = "board_events" in actions and "board" in actions
+        except Exception as e:
+            self.has_board = False
+            print(f"[live] board probe failed: {e}", flush=True)
+            return
+        if self.has_board:
+            print("[live] runtime has the team board; polling board_events", flush=True)
+
+    def observe_board(self, obs, errors):
+        if self.caps is None or not self.caps.get("harness"):
+            return
+        if not self.has_board:
+            if time.time() >= self.next_board_probe:
+                self.board_probe()
+            if not self.has_board:
+                return
+        try:
+            res, _ = self.h.dispatch("board_events", {"since_seq": self.board_seq}, **self.reader())
+            events = res.get("events") or []
+            obs["board_events"] = events
+            cursor = res.get("cursor")
+            if cursor is None and events:
+                cursor = max(e.get("seq") or 0 for e in events)
+            if cursor is not None:
+                self.board_seq = cursor
+        except Exception as e:
+            errors["board_events"] = str(e)
+        if time.time() >= self.next_board:
+            self.next_board = time.time() + self.board_every
+            try:
+                res, _ = self.h.dispatch("board", {"limit": 60}, **self.reader())
+                claims, _ = self.h.dispatch("board", {"kind": "claim", "limit": 30}, **self.reader())
+                items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])}
+                obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned")}
+            except Exception as e:
+                errors["board"] = str(e)
+
+    @staticmethod
+    def loss_events(alerts):
+        """status.alerts.latest: describe_incident() lines, e.g. "in (12,-40)-(20,-31) 7 destroyed: 4 stone-wall,
+        3 gun-turret by 5 small-biter, 1m10s-0s ago" -> loss banners (one per area)."""
+        out = []
+        for line in (alerts.get("latest") or [])[:3]:
+            m = LOSS_RE.match(line or "")
+            if not m:
+                continue
+            x, y, total, names, by, ago = m.group(1), m.group(2), int(m.group(3)), m.group(4), m.group(5), m.group(6)
+            if not RECENT_AGO.match(ago):
+                continue  # the alert window is 5 game minutes; only show losses from the last minute or so
+            what = ", ".join(n.strip().replace("-", " ") for n in names.split(",")[:2])
+            text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {by.split(',')[0].strip().replace('-', ' ')})" if by else "")
+            out.append({"kind": "loss", "text": text, "key": f"loss:{x},{y}", "ttl": 90,
+                        "position": {"x": float(x), "y": float(y)}})
+        return out
 
     @staticmethod
     def attack_events(alerts, tick):
