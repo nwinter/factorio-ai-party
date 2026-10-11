@@ -347,6 +347,15 @@ Each stage has a gate; budgets are central estimates.
 Stop early and rethink if any stage runs past the high column. The usual cause will be a missing harness read or
 action, which costs an engineer session, not agent-hours.
 
+## Stream overlay (eng/stream2)
+
+The overlay reads Space Age state read-only: `score` (rockets, planets, platforms), a `peek` `platforms` read per
+platform, and each agent's `status.surface`/`platform`. It draws a planet chip per agent card, a Space panel and
+segments for the first rocket, first platform, a platform's arrival at a new planet and the first landing there
+(docs/STREAM-NOTES.md "Space Age"). What it needs from bot travel: `status` for a bot reports the surface its body is
+on (and the platform's name while aboard), and the director cameras keep following a bot across surfaces (already in
+cameras.lua). To check on the first real platform: that `LuaSpacePlatform.speed` x 60 matches the game's km/s.
+
 ## Open questions to settle on the box
 
 - A player's Lua state in a hub (`character`, `controller_type`, `physical_surface`, `hub`). One line:
