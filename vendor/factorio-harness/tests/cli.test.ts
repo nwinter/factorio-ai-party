@@ -286,6 +286,27 @@ test('compact --wait: outcome, position, inventory change and one clock line; pe
   });
   assert.deepEqual(seen.map(r=>r.action),['observe','mine','status','status','observe']);
 });
+test('compact --wait on shoot reports the combat outcome, ammo used and the ammo-slot change, not the last movement',async()=>{
+  // shake2: Grok's shoot "returned outcome move_to and did not spend ammo";
+  // the magazines had gone from the ammo slots, which the diff skipped.
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='observe'){
+      const ammo=request.args.peek?[{name:'firearm-magazine',count:10}]:[{name:'firearm-magazine',count:8}];
+      return {ok:true,result:{player:{position:{x:1,y:1},health:250,max_health:250,inventory:[{name:'coal',count:5}],ammo},clock:'c'}};
+    }
+    if(request.action==='shoot')return {ok:true,result:{until_tick:60,ammo:10}};
+    polls++;
+    return {ok:true,result:polls===1?{active:false,combat:{until_tick:60}}
+      :{active:false,combat:false,last:{kind:'move_to',outcome:'arrived'},last_combat:{outcome:'duration_elapsed',ammo_used:2}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','shoot','--args','{"auto":true,"ticks":60}','--wait']);
+    assert.equal(code,0);
+    const second=stdout.slice(stdout.indexOf('\ntick:',1)+1);
+    assert.match(second,/outcome: duration_elapsed\naction: shoot\nwaited_s: [\d.]+\nposition: 1,1\ninventory: firearm-magazine-2\nammo_used: 2\n/);
+    assert.doesNotMatch(second,/move_to|arrived/);
+  });
+});
 test('--full keeps the whole completion status; fh wait is compact too',async()=>{
   let polls=0;
   await engine(request=>{

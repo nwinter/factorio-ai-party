@@ -605,11 +605,24 @@ fails(function() call('walk',{direction='east'}) end,'join a graphical Factorio 
 fails(function() call('attach',{offline=true}) end,'join a graphical Factorio client')
 p.connected=true
 call('attach',{})
-call('shoot',{position={x=3,y=0},ticks=4})
+-- shoot fires real ammo from the ammo slots: none is an error, not a silent no-op.
+local ammo_left=0
+p.get_inventory=function() return {get_item_count=function() return ammo_left end,get_contents=function() return {} end} end
+fails(function() call('shoot',{position={x=3,y=0},ticks=4}) end,'no ammunition in the ammo slots')
+ammo_left=10
+eq(call('shoot',{position={x=3,y=0},ticks=4}).ammo,10)
 call('walk',{direction='east',ticks=2})
 advance(1); eq(p.walking_state.walking,true); eq(p.shooting_state.state,1)
 advance(2); eq(p.walking_state.walking,false); eq(p.shooting_state.state,1)
 advance(2); eq(p.shooting_state.state,0); eq(call('status').active,false)
+eq(call('status').last_combat.outcome,'duration_elapsed'); eq(call('status').last_combat.ammo_used,0)
+-- What the engine spent is reported (shake2: Grok saw "unchanged" and
+-- concluded shoot spent nothing); empty slots end the shooting.
+call('shoot',{position={x=3,y=0},ticks=30}); advance(2); ammo_left=7; advance(2)
+eq(p.shooting_state.state,1); ammo_left=0; advance(1)
+eq(p.shooting_state.state,0); eq(call('status').combat,false)
+eq(call('status').last_combat.outcome,'out_of_ammo'); eq(call('status').last_combat.ammo_used,10)
+ammo_left=10
 call('detach'); p.connected=false; fails(function() call('walk',{direction='east'}) end,'join a graphical Factorio client')
 -- Direct intervention cancels queued controls while preserving pending work.
 p.connected=true
