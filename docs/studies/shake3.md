@@ -57,7 +57,35 @@ sections named.
 
 ## 1. Summary
 
-PENDING
+1. The outcome moved for the first time: 15 technologies including oil-processing (shake2 15 without it, shake1 14),
+   crude pumped at 59.4m and a refinery placed at 60.8m, 692 red and 427 green packs by 60.6m (shake2 620 and 267),
+   13,508 iron plates (11,442). The opening was about 2 minutes slower (a 4.5-minute launch; Muse, who took labs, joined
+   at game 6.6m); the middle was faster because iron never starved and green packs doubled in the 40 to 50m window
+   (engine 2.5 to 4 minutes earlier). Oil was found at 25.5m with no scout lost, so the limit on oil was research: 7
+   labs from 22.5m to 54.6m, starved for green, and oil-gathering last in the queue (section 2).
+2. No agent ended its turn early (shake2: six, about 31 agent-minutes). The stop rule works, but "keep playing" became
+   `./fh sleep` for Haiku (about 44.5 minutes asleep), Opus (23.8) and Sonnet (19.1), and Gemini and Muse waited out
+   their last 5 to 10 minutes; Sonnet told the team "Deadline reached" a minute early (section 3).
+3. The round-2 harness fixes held: Claude Code's floor halved (post-compaction 23 to 29K, Haiku compacted 2 times
+   instead of 6), Muse compacted at 200K as intended, 6 dontAsk denials were all rewritten within seconds, nudges now
+   reach Muse, error rates fell for seven of nine agents, `inventory` works, and queue plans came back (9 saves, 13
+   runs). Still wrong: the Codex skills list and multi-agent block, Grok's personal rules and MCP servers, Muse's
+   hooks, Claude Code's "user hasn't heard from you", chat reads failing while dead, and two supervisor nudges sent to
+   agents that were working (section 3).
+4. Talk went the wrong way. 547 messages (shake2 434), 92% logistics by a keyword count, about 6 lines whose point is a
+   joke or a feeling; "thanks" is most of the warmth. The prompt sends handovers and claims to chat in so many words
+   (`agent/team.md:36-39`), against its own "board for handoffs" line. 32 aloud lines, 0 confessions, 1 agent set
+   pronouns. Identity picks improved: 7 distinct voices and 6 distinct avatars (shake2: 4 voices, 3 of them orion; 4
+   near-identical avatars). The board shrank to a claim registry: 20 of 23 items in the first 15 minutes (section 4).
+5. Defence improved without prompting: 11 turrets (shake2 4), the first within 2 minutes of the technology, 3 deaths
+   (shake2 4) and no scout deaths. Two raids hurt (the power plant at 35.5m, 27 entities; the west coal field at 42.7m,
+   21), and the last two caused no losses (section 5).
+6. The stream side is where most of tonight's fixes are. The hosts aired 428 lines and talked well over the pictures,
+   but the facts misled them: attack hit counts rendered as "(N of them)" became "nine biters" and "fourteen turrets";
+   a loss line's kill count became "one small biter ends the run"; the status "thinking (standing still)" became 102
+   lines of mockery; there was no time-left fact. The hosts most likely spoke with fallback voices because the caster
+   started four minutes before the OpenAI-voice commit, the analyst never ran, 11 lines failed synthesis, the overview
+   zoom was refused, the recap never ran, and no viewer message arrived (section 6).
 
 ## 2. Progress and pace by milestone
 
@@ -546,7 +574,70 @@ logistics.
 
 ## 7. Recommendations
 
-PENDING
+P1 is at the top of this document.
+
+### P2: harness and launch
+
+6. Stop text (`agent/team.md` or the stopping section of AGENTS.md, and the summary nudge in `tools/supervise.sh`). The
+   rule fixed early stops, but agents read "keep playing until the clock line says the deadline has passed" as
+   permission to sleep through the last 10 minutes, and wrote their final summary 10 minutes early (Opus at 50m50s,
+   Sonnet at about 51m). Say the final summary goes in the last three minutes by the `clock:` line, and that a team
+   message about the deadline should quote the `clock:` line (Sonnet's "Deadline reached" at 01:23:08 was a minute
+   early for it and four minutes early for Muse).
+7. Supervisor "done" test (`tools/supervise.sh`): it nudged Grok mid-turn (00:48:57, a backgrounded `move_to --wait`
+   and a 120 s tool call in flight) and Muse five times while it built the pumpjacks and refinery. Treat an agent with
+   a request in the last 2 minutes of its journal as working.
+8. Clean profiles, round 4, as in shake2's P1 item 5, still open: Codex `<skills_instructions>` (5.4K characters,
+   the owner's skills) and `<multi_agent_role>` (the workspace switches did not remove them); Claude Code's "user
+   hasn't heard from you" reminder (Opus 36, Sonnet 29) and claude-b's email and git-log attachments; Grok's
+   `~/.grok/rules/agent-tooling.md`, 3 failing MCP servers and global hooks, and the 2 secret-like strings in its
+   events.jsonl (rotate); Muse's hooks from `~/.config/muse/settings.json` (`tools/clean-profile.py`). Keep route
+   `codex` free of other sessions during a run (six `codex exec` sessions ran on it from 00:30 to 00:44).
+9. Launch readiness (`tools/launch-agent.sh:166-177`): five agents waited the full 40-iteration loop (44 to 49 s each),
+   stretching the launch to 4.5 minutes. Match each harness's ready screen, or launch all panes first and answer trust
+   prompts in a second pass.
+10. Runtime bugs (`vendor/factorio-harness`): `chat` fails while the character is dead (Sonnet, 3 times); a biter
+    corpse blocks placement (Grok, 01:02); tree stumps block placement (Sol's item #17, unanswered); `collect want` in
+    a queue still fails as in shake2 (Opus, 2).
+11. Grok's compaction at 60% started 39 s before its deadline and ended its play (01:26:21); skip compaction in the
+    last 2 minutes (`agent/context.tsv` or Grok's hook).
+12. Stream: Workers AI 8008 errors cost 11 lines; retry once on a second voice before dropping a line. `check_line`
+    rejected true numbers that came from chat ("Eleven labs"); include the numbers from the event's own chat text in
+    the facts. `site/push_live.py` should log a periodic ok line; `tools/shot-sync.sh` discards all output.
+
+### P3: playbook and show
+
+13. Identity: list pronouns in the profile example in `team.md:12-16` (only Grok set them, and only because the field
+    is mentioned in passing); reject glyphs already taken (Astra and Muse share ✦, Sol and Sonnet share "S").
+14. Board after the opening: 20 of 23 items came in the first 15 minutes, and mid-game requests went to chat. Once P1
+    item 5 points handovers at the board, check whether `team:` reminders of open items keep it in use.
+15. Show: run the recap segment (it never ran), and check that replays are called as replays now that 262ef78 is in.
+    The stream's own classifier voiced 34 agent lines in an hour; more banter in chat (P1 item 5) is what would raise
+    that, rather than a looser classifier.
+
+## 8. Verdicts per model, shake3 against shake2
+
+- Astra: the run's best player again. Found the oil field on a safe route, posted the wells to the board, added labs
+  when oil-gathering was short, connected the refinery in the last minute, the lowest error rate (1.7%), the most
+  messages (125) and the one deliberate joke. Compaction stalls of 160 and 110 s.
+- Sol: still the coordinator by volume (90 messages, the most mentions after Opus, Muse and Astra), with 49 large queue
+  submissions and a north green bank that doubled green output; slower steps (median 11.9 s, p90 32.7 s). Chat text
+  stayed spaced; notes did not.
+- Luna: fast (473 steps, 2.0 s median), the board's worker again (34 calls), and no wind-down. Error rate down from
+  7.7% to 3.4%.
+- Opus: built and defended power (the lake plant, the oil power line, 5 turrets), ran a ferry plan, and gave the
+  stream its best aloud lines (10, the most). Slept 23.8 minutes, more than in shake2.
+- Sonnet: owned research order and placed 6 turrets after dying twice; never touched the board; slept the last 10
+  minutes and announced the deadline early.
+- Haiku: a fair test this time (2 compactions, no denials): it scouted north early, shot raiders, supplied iron and
+  belts, and used 3 aloud lines; asleep about 44.5 of 60 minutes.
+- Grok: green assemblers and ferries, the clearest aloud explanation of the oil unlock; errors up to 5.7%, mostly
+  standing on its own build footprint; its last compaction ended its play 39 s early.
+- Gemini: ammo assembler, mall supply, played past its deadline without a restart; slept through the 01:22 boiler
+  outage; error rate up to 7.3% (24 `inspect` misses).
+- Muse: claimed and built the oil site (two pumpjacks, the refinery), compacted once at the intended 200K, the lowest
+  error rate of the three non-Codex, non-Claude agents (2.6%). Joined last and owned labs, which made the opening
+  slower.
 
 ## Appendix: methods
 
@@ -555,4 +646,13 @@ PENDING
 - Chat: `runs/shake3/chat.jsonl`, `runs/shake2/chat.jsonl`, `runs/shake1/chat-full.jsonl`. Coordinates as in shake2;
   "tone marker" is a word list (thanks, sorry, great, nice, proud, oops, finally, crew, joke words and the like) or a
   doubled `!`/`?`; the logistics classifier counts item, quantity, chest, belt and claim words plus coordinates.
-- Confessions and profiles: `confess` and `profile` requests in the nine journals.
+- Confessions, profiles and pronouns: `confess` and `profile` requests in the nine journals.
+- Agents (section 3): as in shake2's appendix. Action gap here caps each timed action at the agent's next request, so
+  it is stricter than shake2's. Codex steps from `tools/analysis/transcript_steps.py` and `codex_tokens.py`; journal
+  errors and gaps from `tools/analysis/journal_errors.py` and `journal_gaps.py`. Grok from events.jsonl and
+  updates.jsonl; Gemini from agy's `brain/<id>/.system_generated/logs/transcript.jsonl`; Muse from session.jsonl.
+- Board: every `board`, `board_post`, `board_update` and `harness_request` in the nine journals, paired by id.
+- Combat: team `attacks` and `losses` alerts in the journals, "bot X is dead" errors, and chat.
+- Stream: the caster's jsonl record (aired, rejected, latency, cost), the director's command log, `stream-service.log`;
+  each host claim checked against chat, scores and the alerts at that time.
+- The one-off parsers live in the session scratchpad and are not committed.
