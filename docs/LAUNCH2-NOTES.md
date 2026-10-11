@@ -50,12 +50,54 @@ What to look for, and what to do if it fails:
 - `smoke-muse` has no `nudge:` line and its supervisor log shows the `pane send-text` fallback failing: Muse nudges
   still do not arrive.
 
+## Grok after smoke-l4 (round 4 addendum)
+
+smoke-l4 (02:21, `runs/smoke-l4.out` in the main checkout) passed for Codex, Claude and Muse. Grok still listed the
+owner's skills (ai-usage, aws-spot, find-skills, herdr, lifelog), Grok's built-in skills, `spawn_subagent` and
+`workflow`, the owner's home rule ("Nick's shared agent tooling"), and its prompt policy refused
+`for a in status board; do ./fh call $a ...; done`.
+
+What changed (`tools/grok-home.py`, `tools/profile-flags.sh`, `tools/launch-agent.sh`):
+- Each Grok workspace gets its own `GROK_HOME` (`DIR/.grok-home`, git-ignored): a `config.toml` with Claude and
+  Cursor compatibility off, `~/.agents/skills` and each skill's real path ignored, Grok's built-in skills disabled by
+  name, subagents and workflows off; `sessions` links to `~/.grok/sessions` (so `context.py grok-tokens` and the run
+  analysis find the sessions where they were); `hooks/herdr.json` links to Herdr's own Grok integration, which reports
+  the session to Herdr for `tools/supervise.sh`. The owner's home rule, `local-session-profile` hook and plugins
+  folder are not there.
+- Login without touching the owner's: Grok signs the run home in through `GROK_AUTH_PROVIDER_COMMAND`
+  (`tools/grok-home.py token`), which reads `~/.grok/auth.json` read-only and prints the current access token and
+  its time left. The run home stores that access token only, never the refresh token. Before a launch,
+  `grok-home.py setup` checks that the owner's login lasts the run plus 15 minutes; if not, it runs the owner's own
+  grok in its own home with a larger early-refresh window (`GROK_AUTH_EARLY_INVALIDATION_SECS`), so Grok refreshes
+  that login the way it does in the owner's sessions.
+- `GROK_SUBAGENTS=0` and `GROK_WORKFLOWS=0` on the launch line. The launch runs `~/.grok/bin/grok` directly: `grok`
+  on PATH is the owner's herdr-session wrapper, which refuses an unknown `GROK_HOME`.
+
+Probe (`tools/context-probe.sh --profile grok grok-4.7`, 02:37): the model reported `skills: none`, `mcp: none`, no
+owner rule, no subagent or workflow tool; `grok inspect` lists only the workspace's AGENTS.md as instructions and only
+Herdr's hook plus the repo's context hooks; the owner's login went from 4,745 to 21,598 s left during setup (refresh
+path, which the 05:00 launch needs since that login expired at 03:56); `python3 -c` with subprocess ran.
+
+What stays:
+- Loops: Grok treats control flow (`for`, `while`, `if`) as one unit that always prompts, so under dontAsk it is
+  denied whatever the allow rules say (docs `22-permissions-and-safety.md`, "Chained commands"), and a hook's
+  "allow" approves nothing. Tried and dropped: `--allow 'Bash(for *)'` with a veto hook (the loop was still denied).
+  `agent/harness-grok.md` (added to Grok's AGENTS.md) suggests a `python3` one-liner or a queue plan instead.
+  Changing the permission mode to `auto` would let a classifier approve loops but also other commands, unsandboxed.
+- Grok's own system prompt and its two generic "user rules" ("State points directly in affirmative language", "verify
+  your work in the browser"): they come back in a fresh `GROK_HOME` with no rule files, so they are built in or set on
+  the xAI account, not in the owner's files. `--system-prompt-override` did not remove them (or the skills list).
+- Grok's product tools (web and X search, image and video generation, scheduler, monitor, plan mode): `--tools` and
+  `--disallowed-tools` work only headless, not in the TUI the agents use.
+- Two Claude Code plugins (claude-hud, code-simplifier) that Grok reads from `~/.claude/plugins`; `[plugins] disabled`
+  did not apply. With subagents off, code-simplifier's agent cannot be called; claude-hud is a status line.
+- The agent can read the access token in its own `.grok-home/auth.json`, as it could read `~/.grok/auth.json` before
+  (Grok runs unsandboxed); the token expires within 6 hours and the run home holds no refresh token.
+- To check: `tools/smoke-launch.sh smoke-l4g 3 grok` (needs Herdr, outside the engineer sandbox).
+
 ## Still open
 
-- Grok has no per-launch switch for `~/.grok/rules`, skills from `~/.agents/skills` and bundled skills, or the MCP
-  servers in its own `config.toml` (`~/.grok/docs`, files 07, 08, 10, 12); only a separate `GROK_HOME` would drop
-  them, which moves auth, trust and session paths. Not done.
-- Muse: no documented per-run switch for user skills or memory.
+- Muse: no documented per-run switch for user skills (the skill-reminder agent and memory are off, round 4).
 - Claude Code's "user hasn't heard from you" reminder (Opus 32 times in shake2) may come from the dropped user
   settings or be built in; check a long run's transcript.
 - The Grok events log in `~/.grok/sessions` records an MCP server command line with an API token (shake2 study,

@@ -85,9 +85,11 @@ Launch hygiene and supervision (shake2 and shake3 studies; details in `docs/LAUN
   otherwise denies.
 - Codex workspaces turn off the skills list and bundled skills (`[skills]`), the multi-agent role block (empty
   `[features.multi_agent_v2]` hint texts), host skill discovery, plugins, apps and browser and computer use.
-- Grok gets `--allow` rules for `./fh`, `python3` and workspace edits and the switches for Claude- and Cursor-compat
-  skills, rules, hooks, MCP servers and named files, managed MCP and memory. Its home rules, `~/.agents/skills` and
-  home hooks have no switch.
+- Grok gets `--allow` rules for `./fh`, `python3` and workspace edits, the switches for Claude- and Cursor-compat
+  skills, rules, hooks, MCP servers and named files, managed MCP, memory, subagents and workflows, and a run-local
+  `GROK_HOME` (`tools/grok-home.py`: no home rules, owner hooks or skills; login through an auth-provider command
+  that reads the owner's token read-only and has the owner's grok refresh it before a launch when short). Loops cannot
+  be approved under dontAsk; `agent/harness-grok.md` points to `python3`.
 - Muse gets `-c 'hooks={}'` (none of the owner's hooks; the workspace's still load) and no skill-reminder agent or
   memory tools (`MUSE_EXPERIMENTAL_*`).
 - `tools/start-team.sh` starts every pane first and then clears trust prompts for all of them in one pass

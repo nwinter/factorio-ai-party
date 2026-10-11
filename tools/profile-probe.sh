@@ -93,10 +93,16 @@ EOF
     ;;
   grok)
     ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
-    eval "env $grok_env $ctx_env grok inspect" > inspect.txt 2>&1 || true
+    # 90 minutes: when the owner's login has less, setup has the owner's grok refresh it (the shake4 launch path).
+    left() { python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import importlib; g = importlib.import_module("grok-home"); print(g.owner_token()[1], "s left")' "$root/tools"; }
+    say "owner login before setup: $(left)"
+    home_env=$(python3 "$root/tools/grok-home.py" setup "$dir" 5400)
+    say "owner login after setup: $(left)"
+    eval "env $grok_env $home_env $ctx_env '$grok_bin' inspect" > inspect.txt 2>&1 || true
     say "--- grok inspect (bundled skills omitted)"
     grep -v " bundled" inspect.txt | grep -vE "^\s*$" | tee -a $out
-    eval "env $grok_env $ctx_env GROK_LOG_FILE='$dir/grok.log' grok -p \"\$(printf '%s' 'List, one per line, every instruction file or rules text you were given besides AGENTS.md and CLAUDE.md (its name or first heading), or write rules: none; then one line naming the MCP servers you can use, or mcp: none; then one line naming the skills you can use, or skills: none.')\" -m $model $grok_allow --output-format plain $*" \
+    cp "$root/agent/grok-probe-prompt.txt" prompt.txt
+    eval "env $grok_env $home_env $ctx_env GROK_LOG_FILE='$dir/grok.log' '$grok_bin' -p \"\$(cat prompt.txt)\" -m $model $grok_allow --output-format plain $*" \
       > probe.out 2> probe.err || true
     say "--- model says"; tee -a $out < probe.out
     say "mcp errors in grok.log: $(grep -ciE 'mcp.*(error|fail)' grok.log 2>/dev/null || true)"

@@ -22,11 +22,8 @@ Shake3's Muse already lost the tooling-context hook in round 3 (no "shared agent
 hooks it still ran were the two `herdr-session record muse` calls, which only record the session for the owner's
 resume tools.
 
-Why the Grok leftovers stay: Grok always reads rules and hooks from `$GROK_HOME` (docs `12-project-rules.md`), the
-`GROK_CONFIG` overlay accepts only `models`, `features`, `toolset` and a shell-environment filter, and a workspace
-`.grok/config.toml` is read but its `[skills]` and `[plugins]` lists were not applied (`grok inspect`). A run-local
-`GROK_HOME` would drop all of them, but it moves the login: the OIDC token in `~/.grok/auth.json` expires at 03:56
-PDT and refreshes with a refresh token, so a copy or a replaced symlink could leave the owner's own Grok signed out.
+Grok's leftovers in the table were fixed after smoke-l4 with a run-local `GROK_HOME` whose login never copies the
+owner's refresh token; see `docs/LAUNCH2-NOTES.md`, "Grok after smoke-l4".
 
 ## Launch readiness
 
