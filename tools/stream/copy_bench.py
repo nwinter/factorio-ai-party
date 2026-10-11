@@ -8,6 +8,16 @@ For each picked exchange (spread over event kinds) it prints the lines that aire
 (restyle, then style_fault), and each writer's new exchange on the same facts after check_line and tidy_exchange.
 The summary counts the tells before and after, the lines kept, write latency and cost. `--writers none` runs the
 post-filter alone (no network). Workers AI needs a fresh wrangler login (`npx wrangler whoami`).
+
+Writers: cf=<Workers AI model>, claude=<sonnet|opus|fable> (claude -p on the personal subscription; cost is the
+API-equivalent), or=<OpenRouter model id> (OPENROUTER_API_KEY in the environment). The bigger-writer comparison
+(HOSTS3 item 6), run from a shell that may reach those services:
+
+  L=~/code/player-of-games/tools/stream/logs
+  python3 tools/stream/copy_bench.py $L/caster-20261011-130031.jsonl --n 15 --timeout 20 \\
+      --match "walk|motto|still|again|classic|energy|queue" \\
+      --writers cf=@cf/moonshotai/kimi-k2.6,claude=sonnet,claude=opus,claude=fable,or=openai/gpt-6.1-sol,or=google/gemini-3.8-flash \\
+      --md /tmp/copy-bench-writers.md
 """
 import argparse, collections, json, os, random, re, statistics, sys, time
 
@@ -126,6 +136,8 @@ def main():
     ap.add_argument("--seed", type=int, default=6)
     ap.add_argument("--writers", default="cf=" + caster.DEFAULT_MODEL, help="comma list of kind=model, or 'none'")
     ap.add_argument("--timeout", type=float, default=12)
+    ap.add_argument("--per-hour", type=float, default=300,
+                    help="exchanges per stream hour, for cost per hour (shake7 aired about 310 an hour)")
     ap.add_argument("--md", help="also write the before/after as markdown here")
     ap.add_argument("--match", help="only exchanges whose aired lines match this regex (e.g. 'walk|motto|classic')")
     a = ap.parse_args()
@@ -201,7 +213,9 @@ def main():
         summary.append(f"{n}: kept {s['kept']}/{s['asked']} lines, {s['fails']} failed calls, latency median "
                        f"{statistics.median(lat):.1f}s p90 {lat[int(0.9 * (len(lat) - 1))]:.1f}s, "
                        f"{statistics.mean(words):.1f} words a line, ${(w.spent or w.equiv) / max(len(s['lat']), 1) * 1000:.2f}"
-                       f" per 1,000 exchanges")
+                       f" per 1,000 exchanges, ${(w.spent or w.equiv) / max(len(s['lat']), 1) * a.per_hour:.2f} per stream "
+                       f"hour at {a.per_hour:.0f} exchanges" + (" (API-equivalent; claude -p runs on the subscription)"
+                                                                if w.kind == "claude" else ""))
     print("\n".join(summary))
     if a.md:
         open(a.md, "w").write("\n".join(summary) + "\n\n" + out + "\n")

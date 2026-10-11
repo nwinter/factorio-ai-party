@@ -1220,6 +1220,20 @@ class LLMWriter:
             self.spent += (usage.get("prompt_tokens", len(system + user) / 4) * pin
                            + usage.get("completion_tokens", max_tokens / 2) * pout) / 1e6
             return text
+        if self.kind == "or":  # OpenRouter (copy_bench comparisons: GPT, Gemini); key in OPENROUTER_API_KEY
+            key = os.environ.get("OPENROUTER_API_KEY")
+            if not key:
+                raise RuntimeError("OPENROUTER_API_KEY is not set")
+            body = {"model": self.model, "messages": [{"role": "system", "content": system},
+                                                      {"role": "user", "content": user}],
+                    "max_tokens": max(max_tokens, 400), "temperature": 0.9, "usage": {"include": True}}
+            req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
+                                         data=json.dumps(body).encode(), method="POST",
+                                         headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=self.timeout * 3) as r:
+                out = json.load(r)
+            self.spent += float((out.get("usage") or {}).get("cost") or 0)
+            return ((out.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
         if not shutil.which(self.bin):
             raise RuntimeError(f"{self.bin} not found")
         # The personal subscription: CLAUDE_CONFIG_DIR unset and no API overrides (a parent session may set them).
