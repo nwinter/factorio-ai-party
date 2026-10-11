@@ -149,6 +149,12 @@ stops a player.
   arrive within 3 minutes); and up to three active claims with avatars. Without a board runtime the panel is hidden
   and chat takes its height.
 
+## Viewer chat (docs/VIEWERS-NOTES.md)
+
+`--viewers-youtube TARGET`, `--viewers-site`, `--viewers-replay JSONL` start `tools/stream/viewers.py` inside the
+service; the snapshot then carries `viewers` (filtered messages, oldest first) and `viewers_status`. Without these
+options `viewers` is an empty list and `viewers_status` null. The page does not draw the lane yet.
+
 ## Director
 
 `director.py`, run once per second over the latest snapshot. Main camera on the highest score (interest plus a small
