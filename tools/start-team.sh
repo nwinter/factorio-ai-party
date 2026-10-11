@@ -57,14 +57,15 @@ EOF
 
 # 4. Overlay service config, reverse tunnel for OBS, scene, recording, optional stream.
 python3 - "$team" "$rundir/stream.json" "$run" <<'EOF'
-import json, sys
+import json, os, sys
 team, out, run = sys.argv[1:]
 agents = {}
 for line in open(team):
     if not line.strip() or line.startswith("#"): continue
     name, kind, route, model, effort, label, harness = line.rstrip("\n").split("\t")
     agents[name] = {"model": label, "harness": harness}
-json.dump({"title": "Nine AIs, one factory", "subtitle": "Factorio co-op · real time · no cheats",
+words = {2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven", 8: "Eight", 9: "Nine", 10: "Ten"}
+json.dump({"title": f"{words.get(len(agents), len(agents))} AIs, one factory", "subtitle": ("Factorio: Space Age" if os.environ.get("POG_SPACE_AGE") == "1" else "Factorio") + " co-op · real time · no cheats",
            "agents": agents, "cameras": [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
                                          {"slot": "cam3", "player": 3}]}, open(out, "w"), indent=1)
 EOF
