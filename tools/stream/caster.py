@@ -712,6 +712,7 @@ class Caster:
         self.last_agent_voice = 0.0
         self.agent_last = {}
         self.filler_i = 0
+        self.history = deque(maxlen=4)  # the last story beats, as facts for callbacks
         self.prep = []  # recent write+TTS times, to start the next exchange before the current one ends
         self.baseline = None
         if a.baseline and os.path.exists(a.baseline):
@@ -839,6 +840,8 @@ class Caster:
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
         facts = facts_for(e, s, self.baseline)
+        if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
+            facts["earlier_on_air"] = list(self.history)
         names = list(self.names(s).values())
         recent = list(self.recent)
         lines, backend, err, lat = [], "template", None, 0.0
@@ -877,6 +880,11 @@ class Caster:
                 f"{'/naturalist' if e.get('naturalist') else ''}, {backend}, {lat:.1f}s) {line}")
         self.last_speaker = lines[-1][0]
         self.last_line_t = time.time()
+        story = facts.get("text") or facts.get("title") or facts.get("tech")
+        who_ = (facts.get("agent") or {}).get("name")
+        parts = ([who_] if who_ and not (story and who_.lower() in str(story).lower()) else []) + ([story] if story else [])
+        if parts:
+            self.history.append(f"{e['kind']} at {facts.get('game_time')}: " + " - ".join(map(str, parts)))
         self.stats["caster_lines"] += len(lines)
         self.speak_lines(lines, e, facts, backend, err, lat, t_start)
 

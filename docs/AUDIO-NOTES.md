@@ -74,6 +74,7 @@ aura1` halves the speech bill (shared voices for agents); `--gap 4 8` or `--lull
 
 | Part | State (2026-10-10) |
 |---|---|
+| Second pass: exchanges, show context and shake1 pace, naturalist angle, continuous talk, viewer lane, new writers | Benched (8 writers), selftests, three mock casts; real-world test below |
 | `caster.py` live: Gemma 4 writer, Aura-2 voices, Clef-flash classifier, mock feed, OBS page listening | Four live runs (3 to 5 min each), all lines from the model, none rejected; results below |
 | All 41 Aura-2 voices, plus Aura-1 and MeloTTS | Rendered, loudness measured, transcribed back with Whisper (`voices.py --check`) |
 | Writers: Gemma 4 26B, Llama 3.3 70B, Llama 3.1 8B, gpt-oss-20b, `claude -p --model haiku` | Benched (`caster.py --bench`) |
