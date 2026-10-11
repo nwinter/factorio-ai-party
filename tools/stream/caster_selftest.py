@@ -205,15 +205,6 @@ posted = [json.loads(d) for u, d in calls if u.endswith("/segment")]
 check("segment request skips unavailable types and rate-limits", r1 == {"id": "seg-2", "state": "queued"}
       and r2 is None and [p["type"] for p in posted] == ["production"], str(posted))
 
-# pace against the shake1 baseline
-from baseline import Baseline  # noqa: E402
-bl = Baseline(os.path.join(HERE, "baselines", "shake1.json"))
-p = bl.pace(111171, 8, {"iron-plate": 3607}, ["logistics"])
-check("baseline pace facts", p and p["technologies_now"] == 8 and "verdict" in p and "shake1_next_research" in p, str(p))
-fp = caster.facts_for({"kind": "research", "text": "Research complete: Logistics", "t": now, "prio": 7},
-                      {"tick": 111171, "research": {"done_count": 8}, "agents": []}, bl)
-check("research facts carry the baseline time", "shake1_finished_this_at" in fp, str(fp))
-
 # viewer questions: the analyst answers them (analyst.py posts analyst.answers); the hosts voice the answer by name
 d4 = caster.Differ()
 an = {"viewer_questions": {"on": True}, "age_s": 30, "answers": []}
@@ -242,6 +233,15 @@ off = caster.Differ()
 off.diff({"agents": [], "viewers": []})
 check("without the analyst the hosts still take questions",
       len(off.diff({"agents": [], "viewers": lane[:1]})) == 1)
+
+# pace against the shake1 baseline
+from baseline import Baseline  # noqa: E402
+bl = Baseline(os.path.join(HERE, "baselines", "shake1.json"))
+p = bl.pace(111171, 8, {"iron-plate": 3607}, ["logistics"])
+check("baseline pace facts", p and p["technologies_now"] == 8 and "verdict" in p and "shake1_next_research" in p, str(p))
+fp = caster.facts_for({"kind": "research", "text": "Research complete: Logistics", "t": now, "prio": 7},
+                      {"tick": 111171, "research": {"done_count": 8}, "agents": []}, bl)
+check("research facts carry the baseline time", "shake1_finished_this_at" in fp, str(fp))
 
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)
