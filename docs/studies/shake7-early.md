@@ -3,8 +3,8 @@
 Shake7 resumes shake6's world (saved at game minute 244, tick 879043) with the same nine agents, full tools
 (`POG_FULL_TOOLS=1`: own `tools/`, shared `team-tools/`, subagents, web, `gamedata/`), tells and board news
 (eng/board) and the hosts' copy filter (eng/audio). It launched earlier than planned: world resumed 12:58:24, agents
-13:00:47 to 13:01:10, deadline 17:00 (`runs/shake7/start.log`). This look covers the first 100 minutes, 13:01 to 14:41 (game minutes 244 to about 341). Times are PDT; game
-minutes are tick/3600 from shake4's start. Data only, read-only on the game; nothing on the box was touched.
+13:00:47 to 13:01:10, deadline 17:00 (`runs/shake7/start.log`). This look covers the first 100 minutes, 13:01 to
+14:41 (game minutes 244 to about 342). Times are PDT; game minutes are tick/3600 from shake4's start. Data only, read-only on the game; nothing on the box was touched.
 
 ## P1
 
