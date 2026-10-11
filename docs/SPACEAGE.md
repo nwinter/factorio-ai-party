@@ -13,11 +13,13 @@ Summary:
 - Harness. Most of Space Age is already in the harness. It has platforms, hub requests, platform schedules, the silo
   launch, riding a rocket, landing, ghost construction on platforms, quality on build and transfer, and trigger
   technologies. The space parts have only run against fake-engine tests; the core (walking, mining, crafting, building,
-  blueprints, combat) passed upstream's real-engine suite with Space Age enabled. The biggest gap: bots (our
-  multi-agent architecture) cannot leave Nauvis. I could not run the Space Age world on the box from this session
-  (section 2). Tonight's fixes are on this branch: multi-surface score and sparklines, spoilage reads, Space Age
-  recipe categories, Gleba plants, no hand-mining of hard-solid ore, the rocket-ride payload rule, bot travel
-  refusal, and per-planet peaceful flags. A one-command smoke test is there too.
+  blueprints, combat) passed upstream's real-engine suite with Space Age enabled. The biggest gap was that bots
+  (our multi-agent architecture) could not leave Nauvis. Round 4 (Oct 11) built bot travel: ride a rocket, act by
+  remote view aboard, drop cargo and land in a cargo pod, respawn on the last planet; cameras and the overlay follow
+  across surfaces (section 5). It passes fake-engine tests and an API check; the live run on `sa` is written
+  (`tools/sa_travel.py`) but has not run, because this session could not reach the box. Earlier fixes on this
+  branch: multi-surface score and sparklines, spoilage reads, Space Age recipe categories, Gleba plants, no
+  hand-mining of hard-solid ore, the rocket-ride payload rule, and per-planet peaceful flags.
 - Pace and cost. Reaching promethium science needs about 132k–152k science packs. Most of the work, though, is
   building on four more planets. Reference: a solo Astra reportedly finished all planets in about 44 game hours.
   Team estimate (option A, 2 to 4 agents): 60 game hours central (range 38–140), about 250 agent-hours, run as 4-hour
@@ -177,10 +179,10 @@ items safely.
 | Item | Game mechanics (2.0.77) | Harness today | Needed actions and reads | Fair-play mapping | Effort |
 |---|---|---|---|---|---|
 | Rockets and cargo pods | 50 rocket parts per rocket; payload limited by weight (1 t, `rocket_lift_weight`), 20 slots. Silo GUI: deliver cargo to a platform in orbit, launch a starter pack, or ride alone. `use_transitional_requests` auto-fills and launches for platform requests. Pods land on the planet's `cargo-landing-pad`, else near spawn as a `cargo-pod-container` (temporary container). | `launch` (cargo to a platform, to orbit, `ride`), silo `auto_requests`, `transfer` into `rocket_silo_rocket` and `cargo_landing_pad_main`, `platforms` lists silos. Fake-engine tested only. | Real-engine test. `ride` sends to `{type=surface, surface=platform}`, which the API says switches to the hub station; `{type=station, station=hub}` is the documented alternative if it misbehaves. (Done tonight: the empty-payload and armor/guns rule.) Transfer from a `cargo-pod-container`. A launch report that follows the pod's state (`cargo_pod_state`, `on_cargo_pod_finished_*`). | Loading the silo needs reach (as now); launching from the silo GUI needs reach or remote view (GUI action); pad requests are settings. | 1–2 |
-| Space platforms: create, hub, construction | `force.create_space_platform{planet, starter_pack}` equals the "new platform" button; a silo then delivers the pack (`apply_starter_pack()` would skip that: a cheat). Hub: 59 slots, plus 20 per cargo bay. Ghosts are built from hub items. Foundation must be one connected area; thrusters on the south edge; no chests, burners, robots or rails. | `platform_create` (honest), `requests` on the hub with `import_from`, ghost tools with `platform=`, `grid`/`scan` with `platform=`, `platforms` (state, location, hub items, requests). | Hub drop to planet (`hub.create_cargo_pod()` with items taken from the hub inventory, or the hub's drop slots: which inventory is unverified). Destroyed entities in `status` alerts. Why ghosts stay unbuilt (missing hub items). (Done tonight: `platforms platform=NAME` reports speed, damaged tiles and the unbuilt ghost count.) | Remote-view rights only (above). | 2 |
+| Space platforms: create, hub, construction | `force.create_space_platform{planet, starter_pack}` equals the "new platform" button; a silo then delivers the pack (`apply_starter_pack()` would skip that: a cheat). Hub: 59 slots, plus 20 per cargo bay. Ghosts are built from hub items. Foundation must be one connected area; thrusters on the south edge; no chests, burners, robots or rails. | `platform_create` (honest), `requests` on the hub with `import_from`, ghost tools with `platform=`, `grid`/`scan` with `platform=`, `platforms` (state, location, hub items, requests). | (Done in round 4: `drop`, hub items down in a `hub.create_cargo_pod()` pod; fake-engine tested.) Destroyed entities in `status` alerts. Why ghosts stay unbuilt (missing hub items). (Done tonight: `platforms platform=NAME` reports speed, damaged tiles and the unbuilt ghost count.) | Remote-view rights only (above). | 2 |
 | Thrusters and routes | Thrusters burn `thruster-fuel` + `thruster-oxidizer` made on board from asteroid carbon, iron ore and ice. `PlatformSchedule` records have wait conditions (time, inactivity, item_count, all_requests_satisfied, any_request_not_satisfied, ...). Interrupts are set through `LuaSchedule` (`get_schedule()`). | `platform_schedule` (stops, waits, pause). | Interrupts. An ETA from `distance` and `speed`. (Done tonight: thruster count and lowest tank in `platforms`.) | Settings only. | 1 |
 | Asteroid collection and crushing | Collectors (radius 7.5) pull chunks; chunks are not entities (`platform.find_asteroid_chunks_filtered`). Crushers are `assembling-machine`s (`metallic-asteroid-crushing` → iron ore, `carbonic` → carbon, `oxide` → ice). Asteroids (`asteroid` entities) damage platforms; turrets need ammo made on board. | `configure` sets recipes and filters remotely; `scan` sees asteroids as entities. | Collector filter settings in `configure`. (Done tonight: chunk counts by type in `platforms`.) An ammo and turret read per platform. | Settings only; ammo reaches turrets by inserters, never by hand. | 1 |
-| Travel between planets (bodies) | Players: `launch_rocket(dest, character)`, then `LuaPlayer.land_on_planet()` from a platform stopped at a planet. The pod lands at a landing pad if there is one (unverified). | `launch ride=true`, `land` for players (untested). Bots: refused (tonight). All bots live on Nauvis. | Bot travel. First test whether `launch_rocket(dest, character)` accepts a playerless character and what the hub does with it. If not: on launch, keep the bot's armor and weapons in a script inventory and remove the body; the bot then acts with remote-view rights while "aboard". On drop, send a real cargo pod down (`hub.create_cargo_pod()`, destination the planet) and create the body where the pod lands, with those items back. Track `b.surface`; respawn on the last planet (as for players). | Same as a player: real ascent, flight and descent time; only armor and weapons travel with the body; everything else ships as cargo. Re-creating a bot's body is the same act as creating the bot, which we already accept. | 2–3 |
+| Travel between planets (bodies) | Players: `launch_rocket(dest, character)`, then `LuaPlayer.land_on_planet()` from a platform stopped at a planet. The pod lands at a landing pad if there is one (unverified). | `launch ride=true`, `land` for players (untested). Bots: built in round 4 by the script-inventory plan (section 5), fake-engine tested. | A live run (`tools/sa_travel.py`), including the engine probe: does `launch_rocket(dest, character)` take a playerless character? If it does and lands it cleanly, the bot could ride in its own body. | Same as a player: real ascent, flight and descent time; only armor and weapons travel with the body; everything else ships as cargo. Re-creating a bot's body is the same act as creating the bot, which we already accept. | 2–3 |
 | Other surfaces | Vulcanus: calcite, tungsten (hard-solid), lava, demolishers (`segmented-unit`) in territories; peaceful stops them seeking buildings, but they still roam. Fulgora: scrap and the recycler; night lightning damages metal buildings; oil-ocean islands. Gleba: `plant`s, agricultural towers, pentapods (`spider-unit`, `unit`), spores. Aquilo: freezing (`entity.frozen`), heating towers, ammoniacal ocean. Many planet techs are triggers (mine calcite, craft tungsten plate, ...), which the harness already describes. | Reads follow the actor's surface. Threat reports know biters and spawners. | Per planet in `status` warnings and `threats`: demolisher territories (`surface.get_territories()`), the lightning season and unprotected buildings, frozen machines, pentapod nests. (Done tonight: `mine` refuses hard-solid ores.) Chart summaries that name the new rocks (`big-volcanic-rock`, stromatolites, icebergs, ruins) instead of matching "rock". | Peaceful per planet: `peaceful_mode` is per surface, and a planet's surface is created on first arrival. `tools/pog.py --world W peaceful` (added tonight) copies Nauvis's peaceful and no-enemies flags to every planet surface, a world setting like the map seed. Run it when `score` lists a new planet, or move it into `control.lua` as an `on_surface_created` handler, which needs a mod update on server and clients. Keep enemy bases on Nauvis: the promethium path needs a living spawner to capture (`biter-egg-handling` trigger) and biter eggs. | 1 per planet (4) |
 | Quality | Five levels; quality modules from early on; the recycler loops quality. Recipes need ingredients of one quality; `begin_crafting` has no quality parameter. | Quality on build, transfer, stock, construction, rates, requests; exact counts. | `wait_until` and lab counts across qualities; quality in inventory summaries and `stock` totals; `configure` recipe quality (`set_recipe(recipe, quality)`). | No change: quality comes from modules and the recycler. | 1 |
 | Spoilage | Gleba fruit 1 h, mash 3 min, jelly 4 min, nutrients 5 min, bioflux 2 h, agricultural pack 1 h, bacteria 1 min; spoiled `pentapod-egg` and `biter-egg` hatch enemies anywhere, inventories and platforms included. | `status.spoiling`, `scan fields=spoil` (tonight). | `feed`/`collect` freshest-first; inserter spoil priority in `configure` (`inserter_spoil_priority`); a warning when the actor carries eggs; lab inputs' freshness in `labs`. | No change. | 1 |
@@ -347,15 +349,132 @@ Each stage has a gate; budgets are central estimates.
 Stop early and rethink if any stage runs past the high column. The usual cause will be a missing harness read or
 action, which costs an engineer session, not agent-hours.
 
-## Open questions to settle on the box
+## 5. Bot travel (round 4, Oct 11)
+
+Every agent is a bot, so bot travel was the blocker for the long run. It is built on this branch. It has run only
+against fake-engine tests: SSH to the box was blocked from this session ("Operation not permitted"), and the `sa`
+RCON tunnel answered but the server behind it was down (`rcon closed` at 01:43 and 01:57). So there are no live
+ticks to report yet. The live run is one command once the server and a client are up (below).
+
+### How it works
+
+The engine's ride and landing are LuaPlayer moves, and a bot has no LuaPlayer. Whether `launch_rocket(dest,
+character)` takes a playerless character is still untested. Even if it does, nothing could take such a body out of
+the hub again (`land_on_planet` is a LuaPlayer method). So the harness uses the script-inventory plan from section 3,
+which does not depend on that answer.
+
+1. `launch ride=true platform=NAME` (`space.lua`, then `bots.board`). The checks are the same as for a player: reach
+   to the silo, an empty rocket, and nothing carried but worn armor and guns. Bots also need an empty hand-craft
+   queue and an empty hand, since both would be lost with the body. The rocket launches with no character
+   (`silo.launch_rocket(dest)`). The armor and guns move into a script inventory (`game.create_inventory`, with
+   `transfer_stack`, so equipment grids survive) and the body is removed. The bot then follows the rocket's own
+   cargo pod (`silo.rocket.attached_cargo_pod`). Its `b.position` and `b.surface` track the pod, so cameras ride
+   along. It arrives when the pod is delivered (gone) or parks on the platform; without a pod handle, after a fixed
+   40 s.
+2. Aboard, the bot has no body. A whitelist (`bots.check_action`) lets through what a player in the hub can do by
+   remote view:
+   - `platforms`, `platform_schedule`, `platform_create`, `requests` with `platform=` or `position=`, and `drop`
+   - ghost tools and `grid`/`scan` with `platform=`
+   - `research`, `recipes`, `technologies`, chat, the board, `status`, `land`
+
+   Everything else fails with "bot X is aboard platform P with no body (remote view only): ...". `status` reports
+   `travel` {state, platform, from, to, since_tick}, `surface` and `planet`.
+3. `drop` (new; the hub's drop slots) sends hub items in a cargo pod (`hub.create_cargo_pod()`, items into
+   `cargo_unit`, then `cargo_pod_destination`, which launches it) to the planet below a stopped platform. It goes to
+   our landing pad there if there is one, else near the bot's last spot on that planet, else spawn. Without a pad it
+   lands as a `cargo-pod-container`, which `transfer` now opens as a chest. This is how a first landing gets
+   anything besides armor and guns.
+4. `land` (`bots.land`) sends a hub cargo pod with no cargo to the same place, the pad or the bot's spot. The bot
+   follows it down, and the body is made where the pod comes down (`find_non_colliding_position`). It wears the same
+   armor and guns and gets no starting items. If the pod still sits in the hatch after 5 s, it is pushed off once
+   (`force_finish_ascending`); the descent is always the game's. `status.landed` gives the surface, tick, position
+   and the ride's ticks.
+5. Bots live on any surface. The bot record keeps `surface` (planet or platform) and `planet` (last planet stood on),
+   plus the last spot per planet. Respawn uses the last planet, as for players. A platform destroyed while the bot
+   is aboard is a death: the kit is lost, and the bot respawns on its last planet after the usual 10 s. Every read
+   and action already goes through `p.surface` (checked: no other code assumes Nauvis), so it follows the bot.
+6. Stream:
+   - `profiles` reports `surface`, `where` (a planet, "platform NAME", or "cargo pod to X") and `travel`.
+   - Cameras follow a bot across surfaces, take an optional `surface` for fixed views, and report it.
+   - The director pairs agents only on the same surface, never while one rides a pod, and sends the surface with
+     every fixed view (pair midpoints, deaths).
+   - The overlay's location reads "platform alpha", "cargo pod to vulcanus" or "Vulcanus 40 m".
+
+Checked against the 2.0.77 API docs (all exist as used):
+- `create_cargo_pod` ("setting cargo_pod_destination will cause it to launch")
+- CargoDestination: a surface destination with no position goes to a station if one is available, else {0,0}
+- `cargo_pod_state` (awaiting_launch, ascending, surface_transition, descending, parking), `force_finish_ascending`
+- `rocket`, `attached_cargo_pod`, `launch_rocket(destination?, character?)`
+- `LuaPlanet.create_surface`, `game.create_inventory`, `defines.inventory.cargo_unit` and `hub_main`
+- `LuaSpacePlatform.space_location` (RW)
+
+Unverified until the live run:
+- that a hub pod's entity keeps its identity while it changes surface
+- that an empty pod with no pad disappears or parks (both end the ride)
+- that a `cargo-pod-container` uses `defines.inventory.chest`
+
+### Tests
+
+- `tests/travel.lua` (new, in `npm test`), against a fake engine:
+  - boarding refusals (crafting queue, held stack)
+  - armor with its grid and a gun kept in the kit, the body removed, no death counted
+  - the camera following the pod onto the platform surface
+  - the aboard whitelist (8 allowed, 6 refused)
+  - landing refused in transit
+  - a landing on Vulcanus at spawn (surface created), the hatch push, the body at the pod's last position with
+    armor and gun back
+  - respawn on Vulcanus, the last spot remembered
+  - a platform lost aboard (death, kit destroyed, respawn on Vulcanus)
+  - a pad landing that ends on `parking`, no free hatch, removal in transit
+- `tests/space.lua`: a bot ride goes through the same payload rule, then launches without a character and boards
+  the pod; `drop` (hub count check, partial fit, pad or position, platform in transit).
+- `tests/bots.lua`: `where` in `profiles`. `tools/stream/selftest.py`: different-surface pairing refused,
+  same-surface pair with the surface sent, location text for planet, platform and pod.
+- Results: `npm test` 96/100. The 4 failures are the bridge socket tests, which this sandbox refuses (`listen EPERM`
+  on a Unix socket), as before. Every Lua suite passes (runtime 700 assertions, control 66). The stream selftests
+  pass.
+
+### The live run (next session with box access)
+
+```
+tools/winps.sh tools/win/start-server.ps1 -Name sa -Save sa1 -GamePort 34210 -RconPort 27030
+tools/winps.sh tools/win/start-client.ps1 -Name sa -GamePort 34210 -PlayerName pog-sa -Slot -sa -Factorio D:\pog\factorio-2.0.77-expansion
+POG_WORLD=sa bin/fh deploy        # control.lua unchanged: hot deploy is enough
+tools/sa_travel.py                # logs to runs/sa-travel/smoke.jsonl, with ticks
+```
+
+What it does, all on `sa`:
+1. Operator setup: research marked done, a silo with power from an electric-energy interface and a ready rocket
+   (`rocket_parts` set), and platform `travel-test` from a starter pack (`apply_starter_pack`: test setup only).
+2. The bot puts its inventory and ammo into a chest, rides up, reads `platforms` aboard and is refused `move_to`.
+3. It schedules the platform to Vulcanus. If the platform does not arrive within `--fly-minutes` (it has no
+   thrusters), the operator sets `space_location`.
+4. The operator puts a furnace and coal in the hub; the bot `drop`s them and `land`s.
+5. On Vulcanus it unpacks the container, mines coal and calcite, builds the furnace and refuels it.
+6. Engine probe: a second rocket with a playerless character as rider, then where that character is every 5 s for
+   a minute.
+
+The ascent and descent ticks go into the log. The base-game smoke test should run once too (`tools/sa_smoke.py`
+covers Space Age Nauvis).
+
+### Left to do
+
+- The live run above, then fix what it finds.
+- If the engine probe shows a playerless character rides and comes out in the hub cleanly, consider riding in the
+  real body (closer to the game). Even then, the landing stays a script pod.
+- A real director client following a bot onto a platform: cameras teleport a spectator across surfaces, which the
+  API allows. Whether the client renders a platform surface well enough for the stream is a question for the run.
+- The pod's own descent on stream: cameras follow `b.position`, which tracks the pod on both surfaces.
 
 - A player's Lua state in a hub (`character`, `controller_type`, `physical_surface`, `hub`). One line:
   `/c local p=game.player rcon.print(serpent.line{p.controller_type,p.physical_controller_type,p.character and {p.character.surface.name,p.character.position},p.hub and p.hub.surface.name,p.physical_surface.name})`
 - Whether the game strips a rider's inventory, and whether a rider can use their inventory in the hub.
 - Where `land_on_planet` puts the character (landing pad or spawn).
-- Whether a playerless character can ride (`launch_rocket(dest, character)` for a bot).
+- Whether a playerless character can ride (`launch_rocket(dest, character)` for a bot). Bot travel no longer
+  depends on it (section 5); `tools/sa_travel.py` ends with this probe.
 - Space Age freeplay: crash site, starting items, `freeplay` remote interface, and whether the victory screen comes
   from `space-finish-script` (switch it off for an unbounded game).
 - Whether `peaceful_mode` set on a new planet surface at creation calms demolishers and pentapods.
-- Which hub inventory is "drop to planet".
+- Which hub inventory is "drop to planet". `drop` takes from `hub_main` into a pod's `cargo_unit` instead, which
+  the API documents.
 - Whether lightning hits characters on Fulgora.
