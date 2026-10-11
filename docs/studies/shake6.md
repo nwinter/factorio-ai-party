@@ -14,7 +14,8 @@ unchecked.
    is at 244, so the next shift inherits about 5.5 game minutes that no agent played, during a raid on the boiler row
    (the hosts at 08:13:02 and 08:13:42: "Four boilers down, four engines gone", "seventy lost walls"). Opus's
    supervisor logged "08:12:19 deadline reached after 0 nudges" (`opus/supervisor.log`), but Opus's own last call was
-   at 08:15:14 and its sleep checks ran to 08:17:14, so its session was still running; the others' last own calls
+   at 08:15:14 and its sleep checks ran to 08:17:14, inside a 37-minute sleep loop it began at 08:04:49, so its session
+   was still running; a sleep that crosses the deadline should end at it (`tools/fh` sleep, or the supervisor); the others' last own calls
    were 08:10:44 to 08:12:11. File: `tools/stop-team.sh` (pause the world first, then save, then stop agents
    and helpers); the shake5 study's P2 item 9 asked for the same thing at the start of a shift.
 2. **The hosts number the shifts wrongly.** The shift fact landed (Rook at 07:22:13: "Shift three picks up a world
@@ -36,7 +37,7 @@ unchecked.
 
 | shake5 P1 | Held? | Evidence |
 | --- | --- | --- |
-| 1. Loss incidents close | Yes at the resume; not checked during the run | `start.log`: `shift_start {"ok":true,"tick":675042,"incidents_closed":6}`. Loss lines in the caster were smaller (Vale 08:13:42 "seventy lost walls"); I did not read the incident rows. |
+| 1. Loss incidents close | Yes | `start.log`: `shift_start {"ok":true,"tick":675042,"incidents_closed":6}`. The loss reports start small and stay per raid: "8 lost" (07:27:01), "1 lost: 1 gun turret" (07:37:56), "34 lost" (08:09:52) in `caster.log`, against shake5's running 157. |
 | 2. Build over a machine refused | Not exercised as in shake5 | No build over a same-group machine in the journals. Opus told Sol at the start "Set the recipe again after placing; fast-replace dropped mine last time" (chat seq 1389, a shake5 message, see below). Astra's one build failure: "target already contains this entity; use rotate explicitly or an underground crossing" (`astra/journal.jsonl.gz`), a different check. |
 | 8. Ground items taken by build and `pickup` | Not exercised | No agent called `pickup` in shake6. Grok's spare boiler at (28,26.5), the shake5 ground-item site, failed again on "placement blocked by steam-engine (31.5,26.5)" and on pipes (`grok/journal.jsonl.gz`), a placement clash. Sol and Astra still asked at about 07:36 for that boiler "if groundiron picked" (seq 1530, 1532). |
 | 5. Unique voices | Yes for the agents who spoke aloud | Aloud voices in `caster.log`: Astra athena (4), Sol oa-cedar (4), Grok arcas (2), Luna luna (1), Gemini apollo (1). No two agents share one. |
@@ -84,14 +85,19 @@ Grok). These are P3.
 Opus and Sonnet barely played. Leaving out the harness's own `observe` calls with `scope: sleep_check` (one a
 second while a bot sleeps), Opus made 72 calls in 50 minutes, 56 of them `sleep` and 13 `say`, plus one `research`
 and one `queue_resume`; Sonnet made 78 (21 `sleep`, 12 `plan_run`, 25 `observe`). The others made 286 (Haiku) to 875
-(Grok). Opus's sleep checks number 3,311 and run to 08:17:14. I did not read their transcripts, so I cannot say
-whether they were waiting on queued plans, on chat, or had nothing to do; this is the first thing to read for the
-next study (P2). The raw counts in the journals mislead unless sleep checks are left out; the analysis scripts and
+(Grok). Opus's transcript (`~/…/account-b/projects/-Users-owner-code-player-of-games-runs-shake6-opus/6afe89a4….jsonl`)
+shows why: at 07:22:42 it resumed its repeating courier queue ("Labs lack green. Resume courier queue"), so its bot
+kept carrying science while Opus ran `./fh sleep 280` in loops and woke for mentions to approve requests ("@sol yes
+take 200", 07:57:16 PDT). That is a working pattern for the bot, and it leaves Opus with almost nothing to say on
+stream. At 08:04:49 it started `for i in 1 2 3 4 5 6 7 8; do ./fh sleep 280 ...` (about 37 minutes), which ran past
+the 08:12 deadline; that explains its sleep checks to 08:17:14 (P1 item 1). Its notes call this "Shift 6", the hosts
+called it shift three: the agents number shifts by run name. I did not read Sonnet's transcript (P2). The raw counts in the journals mislead unless sleep checks are left out; the analysis scripts and
 any activity figure on the stream should drop them.
 
 Host mistakes beyond P1 items 2 and 3: "packs at forty-three per tick" (Vale 08:04:31, a per-minute figure); "Dream
-passes to shift four, Rook out" spoken by Rook (08:11:36); and lines after the deadline at 08:12:25 to 08:13:42
-calling the world saved while it ran. The filter rejected 7 lines for numbers or names not in the facts (for example
+passes to shift four, Rook out" spoken by Rook (08:11:36); "seventy lost walls" (Vale 08:13:42; the last loss report was 34 buildings, mostly belts and pipes); and lines after
+the deadline, 08:12:25 to at least 08:16:12, calling the world saved while it ran. The director kept cutting until
+08:17:07 (`tools/stream/logs/director-20261011-072202.jsonl`, last line). The filter rejected 7 lines for numbers or names not in the facts (for example
 08:06:26 "world saved at 233").
 
 ## Director memory and the picture
