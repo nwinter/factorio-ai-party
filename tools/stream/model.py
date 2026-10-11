@@ -215,6 +215,7 @@ class Model:
         self.flows = {}
         self.power = None
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
+        self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
         # Space Age: score's rockets/planets/platforms plus platform detail (live.py); moments fire once each
@@ -253,6 +254,9 @@ class Model:
             self.flows = obs["flows"]
         if obs.get("darkness") is not None:
             self.darkness = obs["darkness"]
+        if obs.get("basemap"):
+            ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
+            self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
         if obs.get("power"):
             self._ingest_power(obs["power"], now)
         for e in obs.get("board_events") or []:
@@ -774,6 +778,7 @@ class Model:
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
             "darkness": self.darkness,
+            "basemap": self.basemap,
             "production": self.production(now),
             "science": science,
             "space": self.space_snapshot(science),

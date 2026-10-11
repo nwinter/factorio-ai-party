@@ -220,12 +220,59 @@
   app.addEventListener('pointerleave', chartHover, true);
 
   // ------------------------------------------------------------------ minimap of agent positions
-  function minimap(agents, alerts, cams) {
+  // The base layer (state.basemap, tools/stream/harness.py BASEMAP_LUA, read once a minute): rows of category
+  // letters, one per cell of `cell` tiles from (x0, y0). Drawn as one path per category in cell units, built once
+  // per snapshot tick and placed with a transform, so a 10 s refresh only moves it.
+  var BASE_CATS = [['D', 'Defence'], ['R', 'Labs'], ['O', 'Oil and chemistry'], ['A', 'Assembly'], ['S', 'Smelting'],
+    ['M', 'Mining'], ['E', 'Power'], ['K', 'Storage'], ['B', 'Belts and inserters'], ['P', 'Pipes']];
+  // Ore under and around the base (basemap.ore, read every 5 minutes): its own grid, drawn faintly under the buildings.
+  var ORE_CATS = [['i', 'Iron ore'], ['c', 'Copper ore'], ['k', 'Coal'], ['s', 'Stone'], ['o', 'Crude oil'], ['u', 'Uranium ore'], ['x', 'Other resource']];
+  var pathCache = {};
+  function validGrid(g) {
+    return g && Array.isArray(g.rows) && g.rows.length && isFinite(g.x0) && isFinite(g.y0) && g.cell > 0;
+  }
+  // One <path> per letter, in cell units: a run of equal letters on a row is one rectangle.
+  function gridPaths(slot, g, cats, prefix, tick) {
+    var key = tick + ':' + g.cell + ':' + g.x0 + ':' + g.y0 + ':' + g.rows.length + ':' + g.rows.join('').length;
+    if (pathCache[slot] && pathCache[slot].key === key) return pathCache[slot];
+    var d = {};
+    cats.forEach(function (c) { d[c[0]] = []; });
+    g.rows.forEach(function (row, r) {
+      row = String(row);
+      for (var c = 0; c < row.length;) {
+        var ch = row.charAt(c), n = 1;
+        while (c + n < row.length && row.charAt(c + n) === ch) n++;
+        if (d[ch]) d[ch].push('M' + c + ' ' + r + 'h' + n + 'v1h-' + n + 'z');
+        c += n;
+      }
+    });
+    var used = cats.filter(function (c) { return d[c[0]].length; });
+    pathCache[slot] = { key: key, cats: used, paths: used.map(function (c) { return '<path class="' + prefix + c[0] + '" d="' + d[c[0]].join('') + '"/>'; }).join('') };
+    return pathCache[slot];
+  }
+  function minimap(agents, alerts, cams, bm) {
     var pts = agents.filter(function (a) { return a.position && isFinite(a.position.x) && isFinite(a.position.y); });
     var pins = (alerts || []).filter(function (a) { return a.position && isFinite(a.position.x); });
-    if (!pts.length) return '<p class="fx-muted">No positions yet.</p>';
-    var xs = pts.map(function (a) { return a.position.x; }).concat(pins.map(function (p) { return p.position.x; }));
-    var ys = pts.map(function (a) { return a.position.y; }).concat(pins.map(function (p) { return p.position.y; }));
+    var base = validGrid(bm) && bm.w > 0 ? bm : null, ore = base && validGrid(bm.ore) ? bm.ore : null;
+    if (!pts.length && !base) return '<p class="fx-muted">No positions yet.</p>';
+    // With a base, frame the base; an agent far outside it (scouting, travelling) is pinned to the edge instead of
+    // shrinking the base to a dot.
+    var far = {};
+    if (base) {
+      var bw = base.w * base.cell, bh = base.rows.length * base.cell, bcx = base.x0 + bw / 2, bcy = base.y0 + bh / 2;
+      var reach = Math.max(96, bw, bh);
+      pts.forEach(function (a) {
+        if (Math.abs(a.position.x - bcx) > reach || Math.abs(a.position.y - bcy) > reach)
+          far[a.name] = Math.round(Math.max(Math.abs(a.position.x - bcx), Math.abs(a.position.y - bcy)));
+      });
+    }
+    var near = pts.filter(function (a) { return !(a.name in far); });
+    var xs = near.map(function (a) { return a.position.x; }).concat(pins.map(function (p) { return p.position.x; }));
+    var ys = near.map(function (a) { return a.position.y; }).concat(pins.map(function (p) { return p.position.y; }));
+    if (base) {
+      xs.push(base.x0, base.x0 + base.w * base.cell);
+      ys.push(base.y0, base.y0 + base.rows.length * base.cell);
+    }
     var minX = Math.min.apply(0, xs), maxX = Math.max.apply(0, xs), minY = Math.min.apply(0, ys), maxY = Math.max.apply(0, ys);
     var span = Math.max(64, maxX - minX, maxY - minY) * 1.25, cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     var S = 320, k = S / span;
@@ -234,20 +281,44 @@
     for (var gx = Math.ceil((cx - span / 2) / stepT) * stepT; gx < cx + span / 2; gx += stepT) grid += '<line x1="' + px(gx) + '" x2="' + px(gx) + '" y1="0" y2="' + S + '"/>';
     for (var gy = Math.ceil((cy - span / 2) / stepT) * stepT; gy < cy + span / 2; gy += stepT) grid += '<line y1="' + py(gy) + '" y2="' + py(gy) + '" x1="0" x2="' + S + '"/>';
     var onCam = {}; Object.keys(cams || {}).forEach(function (slot) { (cams[slot].agents || []).forEach(function (n) { onCam[n] = slot; }); });
+    var layer = '', legend = '';
+    var place = function (g) { return 'translate(' + px(g.x0) + ' ' + py(g.y0) + ') scale(' + (g.cell * k).toFixed(4) + ')'; };
+    if (base) {
+      var bp = gridPaths('base', base, BASE_CATS, 'b-', base.tick);
+      var op = ore ? gridPaths('ore', ore, ORE_CATS, 'o-', base.tick) : null;
+      layer = (op ? '<g class="mm-ore" transform="' + place(ore) + '">' + op.paths + '</g>' : '') +
+        '<g class="mm-base" transform="' + place(base) + '">' + bp.paths + '</g>';
+      layer += (Array.isArray(base.nests) ? base.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); }).map(function (n) {
+        return n[2] === 's' ? '<rect class="nest" x="' + (px(n[0]) - 3) + '" y="' + (py(n[1]) - 3) + '" width="6" height="6"><title>Enemy spawner</title></rect>'
+          : '<circle class="worm" cx="' + px(n[0]) + '" cy="' + py(n[1]) + '" r="2.5"><title>Worm</title></circle>';
+      }).join('');
+      legend = '<ul class="mm-legend">' + bp.cats.map(function (c) { return '<li><i class="b-' + c[0] + '"></i>' + esc(c[1]) + '</li>'; }).join('') +
+        ((base.nests || []).length ? '<li><i class="nest"></i>Enemy nests</li>' : '') + '</ul>' +
+        (op && op.cats.length ? '<ul class="mm-legend mm-legend-ore">' + op.cats.map(function (c) { return '<li><i class="o-' + c[0] + '"></i>' + esc(c[1]) + '</li>'; }).join('') + '</ul>' : '');
+    }
+    // Pinned agents sit just inside the frame edge, on the line from the frame's centre towards them.
+    var edge = function (a) {
+      var dx = a.position.x - cx, dy = a.position.y - cy, lim = span / 2 - 14 / k, t = lim / Math.max(Math.abs(dx), Math.abs(dy));
+      return { x: cx + dx * t, y: cy + dy * t };
+    };
     var marks = pins.map(function (p) {
       return '<g class="pin" transform="translate(' + px(p.position.x) + ' ' + py(p.position.y) + ')"><title>' + esc(label(p.kind) + ': ' + p.text) + '</title>' +
         '<path d="M0 -9 L8 6 L-8 6 Z"/><text y="4" text-anchor="middle">!</text></g>';
     }).join('');
     marks += pts.map(function (a) {
-      var c = safeColor(a.color) || '#999999';
-      return '<g class="dot' + (a.alive === false ? ' dead' : '') + '" transform="translate(' + px(a.position.x) + ' ' + py(a.position.y) + ')">' +
-        '<title>' + esc((a.display_name || a.name) + (a.location ? ' · ' + a.location : '')) + '</title>' +
+      var c = safeColor(a.color) || '#999999', isFar = a.name in far, at = isFar ? edge(a) : a.position;
+      var right = isFar && px(at.x) > S * 0.6;  // labels of agents pinned on the right edge go to the left of the dot
+      return '<g class="dot' + (a.alive === false ? ' dead' : '') + (isFar ? ' far' : '') + '" transform="translate(' + px(at.x) + ' ' + py(at.y) + ')">' +
+        '<title>' + esc((a.display_name || a.name) + (a.location ? ' · ' + a.location : '') + (isFar ? ' · about ' + far[a.name] + ' tiles from the base' : '')) + '</title>' +
         (onCam[a.name] ? '<circle r="10" class="cam"/>' : '') + '<circle r="5.5" style="fill:' + c + '"/>' +
-        '<text x="9" y="4">' + esc(a.display_name || a.name) + '</text></g>';
+        '<text x="' + (right ? -9 : 9) + '" y="4"' + (right ? ' text-anchor="end"' : '') + '>' + esc(a.display_name || a.name) + (isFar ? ' ↗' : '') + '</text></g>';
     }).join('');
-    return '<svg class="minimap" viewBox="0 0 ' + S + ' ' + S + '" role="img" aria-label="Agent positions"><rect width="' + S + '" height="' + S + '" class="mm-bg"/>' +
-      '<g class="mm-grid">' + grid + '</g>' + marks + '</svg>' +
-      '<p class="fx-muted small">About ' + Math.round(span) + ' tiles across; grid every ' + stepT + ' tiles. Rings: on camera. Triangles: alerts.</p>';
+    return '<svg class="minimap" viewBox="0 0 ' + S + ' ' + S + '" role="img" aria-label="' + (base ? 'The base and agent positions' : 'Agent positions') + '"><rect width="' + S + '" height="' + S + '" class="mm-bg"/>' +
+      '<g class="mm-grid">' + grid + '</g>' + layer + marks + '</svg>' + legend +
+      '<p class="fx-muted small">About ' + Math.round(span) + ' tiles across; grid every ' + stepT + ' tiles. Rings: on camera. Triangles: alerts.' +
+      (base ? ' Buildings in ' + base.cell + '-tile cells' + (base.buildings != null ? ' (' + esc(base.buildings) + ' in all)' : '') +
+        ', refreshed every minute' + (ore ? '; ore every five minutes' : '') + '.' : '') +
+      (Object.keys(far).length ? ' Dashed: agents far from the base, shown at the edge (hover for the distance).' : '') + '</p>';
   }
 
   // ------------------------------------------------------------------ dashboard
@@ -335,7 +406,7 @@
 
     $('#dash').innerHTML =
       card('card-agents', 'Agents', '<div class="agents-live">' + (cards || '<p class="fx-muted">No agents.</p>') + '</div>') +
-      card('card-map', 'Map', minimap(agents, s.alerts, s.cameras)) +
+      card('card-map', 'Map', minimap(agents, s.alerts, s.cameras, s.basemap)) +
       card('card-board', 'Board', boardHtml) +
       card('card-research', 'Research', research) +
       card('card-charts', 'Factory', '<div class="chart-grid">' + chartHtml + '</div>') +
