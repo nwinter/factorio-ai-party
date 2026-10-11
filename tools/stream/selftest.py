@@ -91,6 +91,27 @@ class FakeHarness:
         return {"ok": True}
 
 
+LUA_GLOBALS = {"game", "rcon", "helpers", "defines", "prototypes", "remote", "pairs", "ipairs", "next", "type",
+               "tostring", "tonumber", "math", "string", "table", "pcall"}
+
+
+def lua_globals_check():
+    """With a local luac: the overlay's Lua compiles once joined to one line and reads no stray globals (a loop
+    variable used after its loop reads as a nil global and fails the whole read on the server)."""
+    import re, shutil, subprocess
+    if not shutil.which("luac"):
+        return
+    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA", "SPACE_LUA"):
+        lua = getattr(harness, name, None)
+        if lua is None:
+            continue
+        lua = harness.one_line(lua).replace("ITEMS", "{}").replace("BODY", "'{}'")
+        out = subprocess.run(["luac", "-p", "-l", "-l", "-"], input=lua, capture_output=True, text=True)
+        assert out.returncode == 0, f"{name}: {out.stderr.strip()}"
+        names = set(re.findall(r'[GS]ETTABUP.*_ENV "([A-Za-z_]\w*)"', out.stdout))
+        assert names <= LUA_GLOBALS, f"{name} uses globals {sorted(names - LUA_GLOBALS)}"
+
+
 def main():
     # read-only guard
     h = harness.Harness.__new__(harness.Harness)
@@ -111,6 +132,7 @@ def main():
     # Lua sent through one_line() must not carry `--` comments (they would swallow the rest of the joined line)
     for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA"):
         assert "--" not in harness.one_line(getattr(harness, name)), f"{name} has a Lua comment"
+    lua_globals_check()
 
     run = {"agents": {"astra": {"model": "GPT-6 Astra", "harness": "Codex"}, "luna": {"model": "GPT-6 Luna"}}}
     fake = FakeHarness()
