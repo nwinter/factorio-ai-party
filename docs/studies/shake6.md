@@ -12,9 +12,10 @@ unchecked.
    08:12 PDT"), game minute about 238.6. The score loop shows the world unpaused and advancing after it: 240.1 at
    08:13:05, 242.1 at 08:15:06, 244.1 at 08:17:06, all `"paused": false` (`scores.jsonl`, last three lines). The save
    is at 244, so the next shift inherits about 5.5 game minutes that no agent played, during a raid on the boiler row
-   (the hosts at 08:13:02 and 08:13:42: "Four boilers down, four engines gone", "seventy lost walls"). Opus's journal
-   has actions to 08:17:14, five minutes after the others stopped (last actions 08:10:44 to 08:12:43), so at least one
-   agent session was still running. File: `tools/stop-team.sh` (pause the world first, then save, then stop agents
+   (the hosts at 08:13:02 and 08:13:42: "Four boilers down, four engines gone", "seventy lost walls"). Opus's
+   supervisor logged "08:12:19 deadline reached after 0 nudges" (`opus/supervisor.log`), but Opus's own last call was
+   at 08:15:14 and its sleep checks ran to 08:17:14, so its session was still running; the others' last own calls
+   were 08:10:44 to 08:12:11. File: `tools/stop-team.sh` (pause the world first, then save, then stop agents
    and helpers); the shake5 study's P2 item 9 asked for the same thing at the start of a shift.
 2. **The hosts number the shifts wrongly.** The shift fact landed (Rook at 07:22:13: "Shift three picks up a world
    already three hours deep"), but by the end the hosts mixed "shift three", "shift four" and "shift five", and once
@@ -26,9 +27,10 @@ unchecked.
 3. **Vale's first line had two errors.** At 07:22:20: "three hours in and still oil stage, thirty science packs a
    minute won't rebuild Vulcanus." The world is on Nauvis and never had a Vulcanus base. The "oil stage" was the old
    label; seven minutes later Vale said "oil and blue stage" (07:29:19), so the new label (92ccf95) did reach the
-   facts. The Vulcanus line most likely comes from `planets` in the score or from Space Age names in the prompt; I did
-   not trace it. File: `tools/stream/caster.py` (state the planet the team is on and that no other planet has been
-   reached).
+   facts. Vulcanus is named in the hosts' Space Age description (`tools/stream/caster.py:58-63`, `SHOW_SPACE`, "the planets
+   Vulcanus (metallurgic science), Fulgora ... follow"), and nothing in the facts says no planet but Nauvis has been
+   reached. File: `tools/stream/caster.py` (a fact naming the planets reached, Nauvis only, and the rule that other
+   planets are future milestones).
 
 ## The shake5 P1 fixes
 
@@ -51,8 +53,9 @@ All nine bots were alive where they had stood (`start.log` "bot ... kept"), and 
 (chat and Gemini's 08:09:19 aloud summary). I did not read the notes or first turns.
 
 `chat.jsonl` starts with shake5 messages (seq 1368 at tick 631273, before the resume tick) logged again at 07:22:05:
-the shake5 study's P2 item 10 (`tools/chat-log.py` starts from 0) is still open. Counts of shake6 chat below exclude
-nothing, so treat the 433 lines as an upper bound.
+the shake5 study's P2 item 10 (`tools/chat-log.py` starts from 0) is still open. Of the 433 lines, 135 (seq 1223 to
+1420) are shake5's; 298 are shake6's, by sender Sol 68, Astra 60, Luna 60, Grok 35, Muse 23, Haiku 23, Opus 13,
+Gemini 13, Sonnet 3.
 
 | | first score (190.1m, 07:22:55) | last score (244.1m, 08:17:06) |
 | --- | --- | --- |
@@ -73,13 +76,18 @@ it respawns at tick 835111"). Biters reached the boiler row from 08:04.
 
 ## New breaks and host mistakes
 
-Harness errors were few: 107 failed calls of 15,000 (Grok 35, mostly "entity is out of reach"; Gemini 22; Luna 20).
+Harness errors were few: 107 failed calls of 3,752 the agents made themselves (Grok 35, mostly "entity is out of reach"; Gemini 22; Luna 20).
 Unknown-argument errors suggest a field list in the help is unclear: `field status|recipe|inventory|output` was sent
 by Sol and Gemini with `|` and `,` separators (`unknown field ...`), and `collect` got `items` and `position` (Sol,
 Grok). These are P3.
 
-Opus and Sonnet spent 98% of their calls on `observe` (3,311 of 3,383; 2,662 of 2,714) and Opus spoke 13 `say`
-lines; I did not read their transcripts to see whether that is waiting or a loop.
+Opus and Sonnet barely played. Leaving out the harness's own `observe` calls with `scope: sleep_check` (one a
+second while a bot sleeps), Opus made 72 calls in 50 minutes, 56 of them `sleep` and 13 `say`, plus one `research`
+and one `queue_resume`; Sonnet made 78 (21 `sleep`, 12 `plan_run`, 25 `observe`). The others made 286 (Haiku) to 875
+(Grok). Opus's sleep checks number 3,311 and run to 08:17:14. I did not read their transcripts, so I cannot say
+whether they were waiting on queued plans, on chat, or had nothing to do; this is the first thing to read for the
+next study (P2). The raw counts in the journals mislead unless sleep checks are left out; the analysis scripts and
+any activity figure on the stream should drop them.
 
 Host mistakes beyond P1 items 2 and 3: "packs at forty-three per tick" (Vale 08:04:31, a per-minute figure); "Dream
 passes to shift four, Rook out" spoken by Rook (08:11:36); and lines after the deadline at 08:12:25 to 08:13:42
