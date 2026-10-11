@@ -4,11 +4,11 @@ package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local assertions=0
 local function eq(a,b) assertions=assertions+1; assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 log=function() end
-storage={}; game={tick=7}; defines={events={on_tick=1,on_script_path_request_finished=2,on_entity_died=3}}
+storage={}; game={tick=7}; defines={events={on_tick=1,on_script_path_request_finished=2,on_entity_died=3,on_console_command=9}}
 local encoded,sequence={},0
 helpers={table_to_json=function(value) sequence=sequence+1; local key='encoded-'..sequence; encoded[key]=value; return key end,json_to_table=function(key) return encoded[key] end}
 local events={}
-script={on_init=function(fn) events.init=fn end,on_load=function(fn) events.load=fn end,on_configuration_changed=function(fn) events.config=fn end,on_event=function(id,fn) if type(id)=='table' then events.forward=fn else events.tick=fn end end}
+script={on_init=function(fn) events.init=fn end,on_load=function(fn) events.load=fn end,on_configuration_changed=function(fn) events.config=fn end,on_event=function(id,fn) if type(id)=='table' then events.forward=fn elseif id==9 then events.console=fn else events.tick=fn end end}
 local interface
 remote={add_interface=function(_,value) interface=value end}
 local calls,stops=0,0
@@ -103,4 +103,30 @@ interface.dispatch(bot_request('known-bot',{bot='known'})); eq(stopped[1],100000
 eq(encoded[interface.bot_create('astra')].bot.name,'astra')
 eq(encoded[interface.camera('cam-json')].ok,true)
 eq(encoded[interface.bot_remove('astra')].error.code,'operator_failed')
+-- Console audit: harness requests are only counted; anything else is logged by shape.
+game.get_player=function(i) return {name='player'..i} end
+local function console(text,player,name) events.console{command=name or 'silent-command',parameters=text,player_index=player} end
+local function audit_log(since) return encoded[interface.console_log(since)] end
+console('rcon.print(remote.call("agent_harness", "dispatch", [[\n{"id":"a","action":"status","bot":"haiku"}]]))')
+console('rcon.print(remote.call("agent_harness","dispatch",[==[{"id":"b","action":"say","args":{"text":"]] x"}}]==]))')
+local log0=audit_log(0); eq(log0.harness,2); eq(log0.other,0); eq(#log0.entries,0)
+-- Code after a closed long string, a body ending in "]", another command name: all logged.
+console('rcon.print(remote.call("agent_harness", "dispatch", [[\n{}]])) game.speed=10 rcon.print(remote.call("agent_harness", "dispatch", [[\n{}]]))')
+console('rcon.print(remote.call("agent_harness", "dispatch", [[\n{}]]]))')
+console('rcon.print(remote.call("agent_harness", "dispatch", [[\n{}]]))',nil,'c')
+console('game.player.insert{name="iron-plate",count=100}',1,'c')
+local log1=audit_log(0); eq(log1.harness,2); eq(log1.other,4); eq(#log1.entries,4)
+eq(log1.entries[1].first_text:find('game.speed=10',1,true)~=nil,true); eq(log1.entries[1].players[1],'rcon')
+eq(log1.entries[4].command,'c'); eq(log1.entries[4].players[1],'player1')
+-- The same shape with other numbers and long strings is one entry with a count; since returns only what changed.
+console('rcon.print(remote.call("agent_harness","camera",[[{"zoom":0.5}]]))')
+console('rcon.print(remote.call("agent_harness","camera",[[{"zoom":12}]]))')
+local log2=audit_log(log1.seq); eq(#log2.entries,1); eq(log2.entries[1].count,2)
+eq(log2.entries[1].shape,'silent-command rcon.print(remote.call("agent_harness","camera",[[]]))')
+eq(log2.entries[1].first_text:find('0.5',1,true)~=nil,true); eq(log2.entries[1].last_text:find('12',1,true)~=nil,true)
+-- Bounded: past 500 shapes the least recently seen ones are dropped.
+for i=1,500 do console('local x'..string.rep('y',i)..'=1') end
+local log3=audit_log(0); eq(#log3.entries,500); eq(log3.dropped,5)
+-- A malformed event is logged, never raised.
+events.console{command='c',parameters={}}
 print('control: '..assertions..' assertions passed')
