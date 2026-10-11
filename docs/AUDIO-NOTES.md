@@ -130,8 +130,10 @@ with 409 while an attack was on screen, as agreed. A production segment that sta
 "While advanced circuits bled out, down to ten." Three bugs found and fixed on the way:
 the opener and an attack outranked the segment until an attack cut it; "fifty-one" for an on-screen 51.4 failed
 the fact check (numbers within 1 of a fact now pass); and the hosts talked about a segment 25 s after an attack had
-cut it. The mock raises an alert every few seconds, so most segments there are declined or cut within seconds; a
-real run is calmer.
+cut it. The mock raised an alert every few seconds, so most segments there were declined or cut within seconds.
+eng/stream2 then changed the rule (4320f73, same API): a segment is cut, and requests are declined for 20 s, only
+when the director actually cuts the main camera to a fight, death, base attack or loss; alerts it lets pass no
+longer end or block segments. The caster needs no change for that.
 
 ## Status
 
