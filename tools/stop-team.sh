@@ -9,6 +9,9 @@ tools/.venv/bin/python tools/obs.py replay-stop 2>/dev/null || true
 for f in stream-service.pid overlay-tunnel.pid supervisors.pid score-loop.pid; do
   [ -f "$rundir/$f" ] && while read -r pid; do kill "$pid" 2>/dev/null || true; done < "$rundir/$f"
 done
+# Pause first: directors keep the world running, and shake6 ran 5 unplayed game minutes past its deadline
+# (docs/studies/shake6.md, P1 item 1). A resumed shift unpauses it (tools/start-team.sh, POG_RESUME).
+python3 tools/pog.py --world "$world" pause || true
 python3 tools/pog.py --world "$world" save
 # Between shifts (POG_STOP_WORLD=1) the server and its directors stop too, so game time moves only while agents
 # play; the next shift resumes from this save (tools/start-team.sh, POG_RESUME).
