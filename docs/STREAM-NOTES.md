@@ -5,7 +5,7 @@ service"). It is a small stdlib Python service on the Mac that polls a world rea
 "interest" per agent, picks camera targets for three director clients, and serves a 1920x1080 transparent overlay page
 for an OBS browser source plus a JSON/SSE feed. It is built for 9 agents and degrades to 12.
 
-![9-agent mock in the OBS "stream" scene (director clients not running, so the camera areas are empty)](stream-overlay-mock9.png)
+![9-agent mock in the OBS "stream" scene with the Factorio UI kit, pixel avatars, team board, science-per-minute production and the larger chat (director clients not running, so the camera areas are empty)](stream-overlay-fx9.png)
 
 ## Run it
 
@@ -117,7 +117,8 @@ stops a player.
 - Production widget: a headline of science packs made per minute (all colours summed from flows or score deltas),
   with a 1-hour trend, one chip per pack colour with its rate, and the stage the factory has reached (Raw resources,
   Automation, Steel & logistics, Oil, Advanced, Rocket: the furthest stage any item or pack has been made in). Below
-  it four item cells with rate and sparkline. `model.production()` ranks the items made in the last few minutes:
+  it four item cells, each with eng/art's 32 px pixel icon (`items.js`, `PogItems.svg`; the pack chips use the 16 px
+  pack icons), label and colour from `PogItems`, rate, and a sparkline in the item colour. `model.production()` ranks the items made in the last few minutes:
   weight 3 for the current stage, 2 for one stage back, 1 for two, 0.5 older (iron and copper plates at least 2),
   times `1 + log10(1 + rate)`. With more than four, the top two stay and the other two cells page through the rest
   every 10 s. With five or more pack colours the trend and stage label give way to the chips.
@@ -204,16 +205,17 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
   and world n (read-only, `--no-camera`): a pixel avatar on every card and chat line, the science row, four item cells,
   and with injected late-game data five pack chips (313/min) and the item cells paging every 10 s. The mock director
   cut main to "Luna died" at zoom 1.1. The flows query ran on world n (30 buckets per item, all zero: n is finished).
-- Not yet seen rendered: this session cannot reach OBS or a browser, so the layout above (heights, widths, the
-  science row at 640 px, fonts) is computed, not looked at. The image at the top predates the board panel and the
-  art kit.
+- OBS screenshot (the operator, from the 9-agent mock through the reverse tunnel; the image at the top): avatars
+  sharp, Titillium Web loaded, the science row fits, chat large. That shot predates the item icons.
+- Item icons: jsdom against the same mock shows an icon in each of the four production cells and in every pack chip
+  (two packs in the mock, five with injected late-game data).
 
 ## What's left
 
-- Screenshot of the new layout: `python3 tools/stream/serve.py --mock --run tools/stream/runs/mock9.json --port 8788`
-  with the tunnel up, then `tools/.venv/bin/python tools/stream/obs_shot.py docs/stream-overlay-fx9.png --reload`.
-  Check: the science row does not clip, three-line cards at 70 px, chat at about 316 px, pixel avatars crisp at 48
-  and 24 px, Titillium Web loads in OBS (else Segoe UI), and the same at 1280x720 (`--size 1280x720`).
+- A screenshot with the item icons (same commands: `serve.py --mock --run tools/stream/runs/mock9.json --port 8788`,
+  the tunnel, `obs_shot.py docs/stream-overlay-fx9.png --reload`), and a check at 1280x720 (`--size 1280x720`).
+- piercing-rounds-magazine, stone-wall, flying-robot-frame and satellite are in the widget's item list but not yet
+  drawn in items.js; until eng/art adds them they show as items.js's tinted crate with a proper label.
 - World n's runtime still rejects `peek` on `status`; the merged eng/board runtime accepts it on any request, so
   worlds running the current runtime get peek reads.
 - The board has only been checked against the shapes in eng/board's code, not a running world with it.
@@ -231,7 +233,6 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - Base-attack alerts use status `alerts.attacked` (tested against the shape in `threat.lua`, not yet against a real
   attack: world c is peaceful). Loss banners parse `alerts.latest` text, which is not a structured field.
 - Research credit goes to the most recently active agents, since nothing says who fed the labs.
-- Production uses coloured lines and pack swatches, not Factorio item icons (no game images are copied, per
-  docs/ART-NOTES.md). `score` totals cover only `tools/pog.py`'s item list; other items get rates from flows (30 s
+- `score` totals cover only `tools/pog.py`'s item list; other items get rates from flows (30 s
   refresh).
 - The 8787 port conflict on the Mac (see above).

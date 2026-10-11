@@ -290,9 +290,13 @@ body.preview .cam::after {
 #sci.many .pack { padding: 0 6px 0 3px; gap: 4px; }
 #stage-label { margin-left: auto; flex: none; font-size: 12.5px; font-weight: 600; color: var(--muted); }
 #sparks { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-.spark { min-width: 0; padding: 3px 8px 2px; border-radius: var(--fx-r-1); background: var(--well); box-shadow: var(--fx-inset-shadow); animation: rise-in 450ms ease both; }
+.spark { display: flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 8px 2px 4px; border-radius: var(--fx-r-1); background: var(--well); box-shadow: var(--fx-inset-shadow); animation: rise-in 450ms ease both; }
+.spark .main { flex: 1; min-width: 0; }
+.item-icon { flex: none; display: block; line-height: 0; }
+.item-icon > svg { display: block; }
+.pack .item-icon { margin: 0 -1px 0 -1px; }
 .spark .lbl { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 13px; line-height: 1.15; color: var(--muted); }
-.spark .lbl span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spark .lbl span:first-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .spark .val { color: var(--ink); font-weight: 700; font-size: 14.5px; font-variant-numeric: tabular-nums; flex: none; }
 .spark svg { display: block; width: 100%; height: 13px; margin-top: 1px; }
 #sparks .empty { grid-column: 1 / -1; align-self: center; }

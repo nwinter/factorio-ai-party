@@ -283,11 +283,11 @@
       packs.dataset.sig = psig;
       packs.textContent = "";
       for (const p of sci.packs || []) {
-        const [, color] = ITEM[p.item] || ["", "#ccc"];
+        const [plabel, color] = itemInfo(p.item);
         const chip = el("span", "pack");
-        chip.title = SHORT_PACK[p.item] || p.item;
-        const swatch = el("i");
-        swatch.style.setProperty("--c", color);
+        chip.title = SHORT_PACK[p.item] || plabel;
+        let swatch = itemIcon(p.item, 16);
+        if (!swatch) { swatch = el("i"); swatch.style.setProperty("--c", color); }
         chip.append(swatch, document.createTextNode(fmtRate(p.rate)));
         packs.append(chip);
       }
@@ -306,6 +306,20 @@
     }
     renderSparks(items);
   }
+  // item labels, colours and 16x16 pixel icons from eng/art's items.js (docs/ART-NOTES.md "Item icons"); the
+  // ITEM table is the fallback when items.js is missing
+  function itemInfo(name) {
+    const P = window.PogItems;
+    if (P) { try { return [P.label(name), P.color(name)]; } catch (err) { console.error(err); } }
+    return ITEM[name] || [humanItem(name), "#cccccc"];
+  }
+  function itemIcon(name, size) {
+    const P = window.PogItems;
+    if (!P) return null;
+    const box = el("span", "item-icon");
+    try { box.innerHTML = P.svg(name, size); } catch (err) { console.error(err); return null; }
+    return box;
+  }
   function renderSparks(items) {
     const box = $("sparks");
     const sig = items.map((x) => x.item).join(",");
@@ -314,9 +328,11 @@
       box.textContent = "";
       if (!items.length) box.appendChild(el("div", "empty", "Waiting for the first plates…"));
       for (const it of items) {
-        const [label, color] = ITEM[it.item] || [humanItem(it.item), "#cccccc"];
+        const [label, color] = itemInfo(it.item);
         const cell = el("div", "spark");
         cell.dataset.item = it.item;
+        const icon = itemIcon(it.item, 32);
+        if (icon) cell.append(icon);
         const lbl = el("div", "lbl");
         lbl.append(el("span", "", label), el("span", "val"));
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -324,7 +340,9 @@
         svg.setAttribute("preserveAspectRatio", "none");
         svg.innerHTML = `<defs><linearGradient id="g-${it.item}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.35"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>` +
           `<path class="a" fill="url(#g-${it.item})"/><path class="l" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
-        cell.append(lbl, svg);
+        const main = el("div", "main");
+        main.append(lbl, svg);
+        cell.append(main);
         box.appendChild(cell);
       }
     }
