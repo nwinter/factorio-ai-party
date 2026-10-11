@@ -60,6 +60,7 @@ case $kind in
     fi
     # ai-session passes no extra flags or env, so compaction settings go in the workspace's own config.
     python3 "$root/tools/context.py" setup "$kind" "$model" "$dir" >/dev/null
+    python3 "$root/tools/clean-profile.py" "$kind" "$dir"
     out=$(/Users/owner/.local/bin/ai-session spawn "${args[@]}" -C "$dir" --name "$name" --herdr tab --prompt-file "$prompt" --start 2>&1)
     pane=$(printf '%s\n' "$out" | sed -n 's/.*Herdr pane \([^ .]*\).*/\1/p' | tail -1)
     test -n "$pane" || { printf '%s\n' "$out" >&2; exit 1; }
