@@ -1007,7 +1007,7 @@ class Caster:
         def synth(item):
             who, line = item
             try:
-                return tts.speak(voices.pronounce(line), voices.CASTERS[who], caster=who)
+                return tts.speak(line, voices.CASTERS[who], caster=who)  # eng/voices' TTS preps the audio text
             except Exception as x:
                 return x
 
@@ -1118,7 +1118,7 @@ class Caster:
             self.record(**rec, voice=voice_id, pushed=False, reason="tts backing off")
             return est
         try:
-            audio, ctype, dur, lat = tts.speak(voices.pronounce(text), voice_id, caster=caster)
+            audio, ctype, dur, lat = tts.speak(text, voice_id, caster=caster)
             if tts is self.tts:
                 self.breakers["tts"].good()
             meta = dict(meta, duration=round(dur, 2), voice=voice_id)
