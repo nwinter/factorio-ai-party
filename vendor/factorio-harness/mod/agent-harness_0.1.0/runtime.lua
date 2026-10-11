@@ -43,7 +43,8 @@ local function distance(a,b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
 local function state() return storage.agent_harness end
 -- Bots (script-driven characters), profiles/speech bubbles and director
 -- cameras. Bot indices sit above every player index (bots.BASE).
-M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,
+M.crafting=require('crafting'){state=state}
+M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
   profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)) end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
   controlled=function(index) return state().controlled and state().controlled[index]~=nil end}

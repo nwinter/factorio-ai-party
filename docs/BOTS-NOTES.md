@@ -45,6 +45,7 @@ take a player get none.
 | `mine_entity` on a character corpse | moves items | **segfaults the server** (crash at tick 16308 in the first test world) | move the corpse's items to the inventory, destroy it when empty |
 | `repair_state` | repairs | ignored | heal `speed/2` HP per tick from the held tool (repair pack: 60 HP/s), drain the same durability |
 | `clear_cursor` | returns cursor to inventory | does nothing | insert the cursor stack back into the main inventory |
+| Hand-craft bookkeeping | production statistics and craft-item research triggers | crafts finish, nothing recorded (found on world n: 0 labs/gears produced, automation-science-pack never triggered) | `crafting.lua`: every 10 ticks diff the queue per recipe (intermediates included); products in and ingredients out of the force's item statistics; craft-item triggers counted while the technology is available, `researched` at the trigger count |
 | Cursor building (`build_from_cursor`) | LuaPlayer only | n/a | direct placement (existing path: item consumed, reach and placement checked); tiles by `set_tiles` with the item's placement condition |
 
 Walking, pathfinding, hand crafting, timed mining (rocks, ore, buildings with contents), picking up items,

@@ -57,10 +57,20 @@ return function(api)
     surface=function(b) if alive(b) then return b.character.surface end return surface_of(b) end,
     force=function(b) if alive(b) then return b.character.force end return force_of(b) end,
     chat_color=colour, color=colour,
+    -- Queue changes settle the crafting snapshot around them (crafting.lua).
+    begin_crafting=function(b) return function(args) return M.change_queue(b, 'begin_crafting', args) end end,
+    cancel_crafting=function(b) return function(args) return M.change_queue(b, 'cancel_crafting', args) end end,
     -- Nobody looks through a bot's screen.
     create_local_flying_text=function() return function() end end,
     print=function() return function() end end,
   }
+  function M.change_queue(b, method, args)
+    assert(alive(b), 'bot ' .. b.name .. ' is dead')
+    if api.crafting then api.crafting.flush(b) end
+    local result = b.character[method](args)
+    if api.crafting then api.crafting.snapshot(b) end
+    return result
+  end
   function M.proxy(b)
     return setmetatable({__bot=b.name}, {
       __index=function(_, k)
@@ -179,10 +189,12 @@ return function(api)
       if b.character and b.character.valid then
         if tick % 30 == 0 then b.position = b.character.position end
         if (tick + b.index) % SIGHT_TICKS == 0 then look(b.character) end
+        if api.crafting then api.crafting.tick(b, tick) end
       elseif not b.dead_until_tick then
         b.character = nil
         b.dead_until_tick = tick + RESPAWN_TICKS
         b.deaths = (b.deaths or 0) + 1
+        if api.crafting then api.crafting.forget(b) end
         if api.stop then api.stop(b.index, 'died') end
       elseif tick >= b.dead_until_tick then
         spawn(b, 'respawn')
