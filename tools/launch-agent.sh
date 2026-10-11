@@ -63,15 +63,24 @@ new_pane() {
 }
 
 case $kind in
-  codex|claude)
-    if [ "$kind" = codex ]; then
-      model=${6:-gpt-6-astra} effort=${7:-low}
-      args=(--route "${POG_ROUTE:-codex-b}" --model "$model" --thinking "$effort" --sandbox workspace-write --network --approval never)
-    else
-      model=${6:-opus} effort=${7:-low}
-      claude_settings
-      args=(--route "${POG_ROUTE:-claude-b}" --model "$model" --thinking "$effort" --permission-mode dontAsk)
-    fi
+  claude)
+    model=${6:-opus} effort=${7:-low}
+    route=${POG_ROUTE:-claude-b}
+    claude_settings
+    python3 "$root/tools/context.py" setup claude "$model" "$dir" >/dev/null
+    python3 "$root/tools/clean-profile.py" claude "$dir"
+    # Started directly instead of through ai-session, which cannot pass flags: with the same environment ai-session
+    # sets for the route (CLAUDE_CONFIG_DIR = the route's root, except for the default profile, and no API keys), plus
+    # no MCP servers but our own (the user-scope cube-local leaked in smoke-2145), no Claude in Chrome, no skills.
+    croot=$(/Users/owner/.local/bin/ai-session routes | awk -v r="$route" '$1 == r && $2 == "claude" {print $NF}')
+    test -n "$croot" || { echo "unknown Claude route $route" >&2; exit 1; }
+    cenv="-u CLAUDE_CONFIG_DIR"; [ "$route" = claude ] || cenv="CLAUDE_CONFIG_DIR='$croot'"
+    pane=$(new_pane)
+    herdr pane run "$pane" "cd '$dir' && env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX -u CLAUDE_CODE_USE_FOUNDRY -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE $cenv ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_ENABLE_CFC=false /Users/owner/.local/bin/claude --model $model --effort $effort --permission-mode dontAsk --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --no-chrome --disable-slash-commands \"\$(cat '$prompt')\"" >/dev/null
+    ;;
+  codex)
+    model=${6:-gpt-6-astra} effort=${7:-low}
+    args=(--route "${POG_ROUTE:-codex-b}" --model "$model" --thinking "$effort" --sandbox workspace-write --network --approval never)
     # ai-session passes no extra flags or env, so compaction settings go in the workspace's own config.
     python3 "$root/tools/context.py" setup "$kind" "$model" "$dir" >/dev/null
     python3 "$root/tools/clean-profile.py" "$kind" "$dir"
