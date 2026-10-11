@@ -221,6 +221,7 @@ def main():
     if box:
         s.fh("move_to container", "move_to", {"position": box[0]["position"], "tolerance": 2}, wait=True)
         s.fh("take the cargo", "transfer", {"position": box[0]["position"], "direction": "to_player", "inventory": "chest"}, wait=True)
+    # On sa (seed 20261010) the nearest coal on Vulcanus is ~90 tiles from spawn, past nearest's 64: `map` finds it.
     for res in ("coal", "calcite"):
         rows = find(s.fh(f"nearest {res}", "nearest", {"name": res, "radius": 64, "limit": 1}), "entities")
         if rows:
@@ -236,7 +237,7 @@ def main():
     p = R(s.fh("status before build", "status")).get("position") or {"x": 0, "y": 0}
     s.fh("build stone-furnace on vulcanus", "build", {"item": "stone-furnace", "position": {"x": round(p["x"]) + 3, "y": round(p["y"])}})
     s.fh("refuel", "refuel", {"radius": 8}, wait=True)
-    s.fh("map on vulcanus", "map", {"radius": 16})
+    s.fh("map on vulcanus", "map", {"radius": 128})
     s.fh("final status", "status")
     s.lua("score", __import__("pog").SCORE_LUA)
 

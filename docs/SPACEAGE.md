@@ -16,8 +16,8 @@ Summary:
   blueprints, combat) passed upstream's real-engine suite with Space Age enabled. The biggest gap was that bots
   (our multi-agent architecture) could not leave Nauvis. Round 4 (Oct 11) built bot travel: ride a rocket, act by
   remote view aboard, drop cargo and land in a cargo pod, respawn on the last planet; cameras and the overlay follow
-  across surfaces (section 5). It passes fake-engine tests and an API check; the live run on `sa` is written
-  (`tools/sa_travel.py`) but has not run, because this session could not reach the box. Earlier fixes on this
+  across surfaces (section 5). It ran live on `sa`: a bot rode up (35 s) and landed on Vulcanus (18 s), then
+  unpacked dropped cargo, built and mined there. The live run found one bug, which is fixed. Earlier fixes on this
   branch: multi-surface score and sparklines, spoilage reads, Space Age recipe categories, Gleba plants, no
   hand-mining of hard-solid ore, the rocket-ride payload rule, and per-planet peaceful flags.
 - Pace and cost. Reaching promethium science needs about 132k–152k science packs. Most of the work, though, is
@@ -352,10 +352,50 @@ action, which costs an engineer session, not agent-hours.
 ## 5. Bot travel (round 4, Oct 11)
 
 Every agent is a bot, so bot travel was the blocker for the long run. It is built on this branch and passes
-fake-engine tests. World `sa` came up at 02:40 with the director `pog-sa` joined, but deploying this branch's runtime
-to it (`POG_WORLD=sa bin/fh deploy`) was refused by this session's permission mode. So `sa` still runs main's runtime,
-which refuses bot rides, and `tools/sa_travel.py` has not run. What did run on `sa` is the engine probe, operator Lua
-only (below). It decided the design question.
+fake-engine tests, and it ran live on world `sa` on Oct 11 between 02:49 and 03:08. Nick deployed the runtime
+(this session's permission mode refused `fh deploy`). A bot rode a rocket to a platform, was aboard with remote view
+only, and the platform went to Vulcanus. There the bot dropped cargo, landed in a cargo pod, unpacked the cargo,
+built and fuelled a furnace, walked about 90 tiles and mined coal. The live run found one bug, which stopped the
+runtime; it is fixed in 0a9ddb0.
+
+### Live bot-travel run on `sa` (Oct 11, `tools/sa_travel.py`, bot `traveler`)
+
+Logs: `runs/sa-travel/run2.jsonl` and `run2.out` (ride up), `run3.out` and `smoke.jsonl` (resumed after the fix).
+Run 1 (`run1-script-bug.jsonl`) failed on a script bug: it read `fh` replies at the top level, not `result`. So the
+bot never emptied its inventory, and the harness rightly refused the ride ("only armor and guns travel with the
+rider: put down everything in character_main first").
+
+| Tick | Step | Result |
+|---|---|---|
+| 68112 → 68262 | Walk to the silo, put inventory and ammo in a chest (`transfer` × 4) | ok |
+| 68271 | `launch ride=true platform=travel-test` | `launched`, rocket with no character; body removed, pistol kept |
+| 68279 | `status` | `alive=false`, `control_error`: "riding a cargo pod (ascending ...)" |
+| 70368 | `status` | `travel.state=aboard`. Ascent 2,097 ticks (35 s), the same as the engine's own rider (below) |
+| 70375 | `platforms platform=travel-test` (aboard) | ok |
+| 70381 | `move_to` (aboard) | refused: "aboard platform travel-test with no body (remote view only)" |
+| 70389 | `platform_schedule` → Vulcanus (aboard) | ok, `waiting_for_departure`. Without thrusters it never left, so the operator set `space_location` (72213) |
+| 72000 | Hourly survey sample | **Bug**: it sampled the bodiless bot and raised inside the tick, which quarantined the runtime. Fixed in 0a9ddb0 (sample bodies only; a survey error never raises in the tick); redeployed |
+| 93360 | `drop` stone furnace ×1, coal ×10 (aboard) | `dropped`, pod to Vulcanus near (0, 0) |
+| 93366 | `land` | pod at (0, 0); `riding a cargo pod (descending)` |
+| 94462 | Body made on Vulcanus at (0, 0) | `landed.ticks=1096` (18 s). Inventory empty, pistol back |
+| 94507 → 94708 | The drop's `cargo-pod-container` at (6.5, 8.5); walk there, `transfer` to the bot | 11 items (furnace, 10 coal) |
+| 94749 | `build stone-furnace` at (8, 10) on Vulcanus | ok |
+| 94761 | `refuel` | ok (coal into the furnace) |
+| 95869 → 96764 | `move_to` coal at (-9.5, -90.5), 90 tiles from spawn | arrived |
+| 96764 → 97064 | `mine` coal, 300 ticks | 2 coal in the inventory |
+| 97099 | `score` | planets `nauvis`, `vulcanus`; platform `travel-test` at Vulcanus; 2 rockets |
+
+What the run also showed:
+- The nearest coal and calcite on Vulcanus are 90 tiles out, past `nearest`'s 64-tile limit. The script's own
+  `nearest` found nothing, and the coal was found by operator read. Agents should use `map` there.
+- While parked at Vulcanus, small metallic asteroids hit the undefended test platform (3 losses in `team.alerts`).
+  The alert path works on platforms; real platforms need turrets.
+- The drop container landed about 10 tiles from where the bot did, since the drop does not ask for the exact spot.
+  That is close enough to walk.
+- The stream side (cameras on another surface, overlay location) did not run: no director camera was pointed at the
+  bot. It is still fake-tested only.
+
+The live engine probe below ran before this, with operator Lua only. It decided the design question.
 
 ### Live engine probe on `sa` (Oct 11, 02:40 to 02:45, seed 20261010, Space Age 2.0.77)
 
@@ -387,8 +427,7 @@ What this means:
   entity across surfaces, lands at the exact position asked for, and is gone about 20 s later. The minimum ride
   times (20 s up, 10 s down) sit below both.
 
-The full run (`tools/sa_travel.py`: a bot rides, the platform flies to Vulcanus, drop, land, mine, build) needs this
-branch's runtime deployed on `sa` first (below).
+The full run (`tools/sa_travel.py`) is in the table above.
 
 ### How it works
 
@@ -508,8 +547,10 @@ covers Space Age Nauvis).
 
 ### Left to do
 
-- Deploy this branch to `sa` and run `tools/sa_travel.py`, then fix what it finds. Its last step repeats the engine
-  probe; pass `--no-engine-probe`, since that is answered.
+- A real thruster flight. The test platform had none, so the operator moved it. A live run with a director camera
+  pointed at the bot, to see cameras and the overlay on a platform and on Vulcanus.
+- `nearest` reaches only 64 tiles. On Vulcanus the first resources were 90 tiles from spawn. Either widen it or tell
+  agents to use `map` after landing.
 - Riding up in the real body: possible (see the probe), but there is no way back down. Stay with the script plan.
 - A real director client following a bot onto a platform: cameras teleport a spectator across surfaces, which the
   API allows. Whether the client renders a platform surface well enough for the stream is a question for the run.
