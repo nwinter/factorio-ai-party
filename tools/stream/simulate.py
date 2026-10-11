@@ -35,7 +35,8 @@ def stats(rows, minutes):
         subjects = {}
         for r in cuts:
             if r["slot"] == slot and r["target"]:
-                subjects[r["target"]["agents"][0]] = subjects.get(r["target"]["agents"][0], 0) + 1
+                who = (r["target"]["agents"] or ["@base attack"])[0]
+                subjects[who] = subjects.get(who, 0) + 1
         out[slot] = {
             "cuts_per_min": round(len(times) / max(minutes, 1e-9), 2),
             "dwell_median_s": round(statistics.median(dwell), 1) if dwell else None,
@@ -46,7 +47,7 @@ def stats(rows, minutes):
     reasons = {}
     for r in cuts:
         why = r["reason"]
-        key = ("challenger" if " beats " in why else "rotate" if why.startswith("rotate") else
+        key = ("attack" if why.startswith("attack") else "challenger" if " beats " in why else "rotate" if why.startswith("rotate") else
                "subject unavailable" if why.endswith("unavailable") else "swap" if "swap" in why else "taken by higher camera" if "taken" in why else why)
         reasons[key] = reasons.get(key, 0) + 1
     out["reasons"] = reasons

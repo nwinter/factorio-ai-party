@@ -97,6 +97,28 @@ BANTER = {
 }
 
 
+# Team board traffic (docs/BOARD-API.md), loosely following the shakedown: requests for materials, area claims,
+# tasks taken and finished, the odd blocker, and agents asking the operator for harness tools.
+BOARD_SCRIPT = [
+    ("request", "sonnet", "200 iron gear wheels for the belt mall", None),
+    ("claim", "luna", "West wall and turret line", None),
+    ("task", "astra", "Third iron smelting column", "astra"),
+    ("request", "sol", "More green circuits into the labs", None),
+    ("claim", "opus", "Power plant and offshore pumps", None),
+    ("harness", "grok", "Way to save a build order and replay it", "operator"),
+    ("request", "haiku", "Coal belt to the boiler row", None),
+    ("task", "gemini", "Balance the copper bus lanes", "gemini"),
+    ("claim", "muse", "Oil field north-east", None),
+    ("request", "luna", "Piercing ammo for the west turrets", None),
+    ("harness", "astra", "Tell me when a lab runs dry", "operator"),
+    ("task", "grok", "Assembler row for engines", "grok"),
+    ("request", "opus", "Steel for 4 more boilers", None),
+    ("claim", "haiku", "South-west copper patch", None),
+]
+CHANGELOG = {"Way to save a build order and replay it": "harness v4: plan_save / plan_run macros",
+             "Tell me when a lab runs dry": "harness v5: labs out of packs in status warnings"}
+
+
 def load_timeline():
     rows = []
     try:
@@ -144,6 +166,19 @@ class MockSource:
         self.power_until = 0
         self.events = []
         self.profile_change_at = time.time() + 120
+        # one agent has not called `profile` yet (as Sonnet in shakedown 1); it picks one a few minutes in
+        self.unset = {"sonnet": time.time() + 150} if "sonnet" in self.agents else {}
+        self.board_items = {}
+        self.board_log = []
+        self.board_seq = 0
+        self.board_script = list(BOARD_SCRIPT)
+        self.next_board = time.time() + 3
+        self.next_board_read = 0
+        self.next_base_attack = time.time() + 75
+        self.harness_version = 3
+        # a few events already on the board when the stream starts
+        for _ in range(5):
+            self.board_step(time.time() - 60, self.game0)
 
     # ---- timeline --------------------------------------------------------------------------------------------
     def game_seconds(self, now):
@@ -210,6 +245,70 @@ class MockSource:
         else:
             a["phase"], a["active"], a["until"] = "act", r.choice(ACTIONS[a["site"]]), now + r.uniform(6, 35)
 
+    # ---- team board -------------------------------------------------------------------------------------------
+    def board_event(self, item, by, change, gsec):
+        """Same shape as eng/board's board.lua: change is posted | taken | assigned | released | note | a status."""
+        self.board_seq += 1
+        item["updated_tick"] = int(gsec * 60)
+        change = {"owner": "taken"}.get(change, change.replace("status:", ""))
+        self.board_log.append({"seq": self.board_seq, "tick": int(gsec * 60), "by": by, "id": item["id"],
+                               "change": change, "title": item["title"], "kind": item["kind"], "owner": item["owner"],
+                               "requested_by": item["requested_by"], "status": item["status"]})
+        self.board_log = self.board_log[-100:]
+
+    def board_step(self, now, gsec):
+        r = self.rng
+        names = [n for n in self.agents]
+        live = [it for it in self.board_items.values() if it["status"] not in ("done", "dropped")]
+        if self.board_script and (r.random() < 0.45 or len(live) < 4):
+            kind, by, title, owner = self.board_script.pop(0)
+            if by not in self.agents:
+                return
+            item = {"id": len(self.board_items) + 1, "kind": kind, "title": title, "requested_by": by,
+                    "owner": by if kind == "claim" else owner, "status": "claimed" if kind == "claim" else
+                    "doing" if kind == "task" else "open", "notes": [], "created_tick": int(gsec * 60)}
+            if kind == "claim":
+                x, y = SITES[ROLES.get(by, ["spawn"])[0]]
+                item["area"] = {"left_top": {"x": x - 20, "y": y - 20}, "right_bottom": {"x": x + 20, "y": y + 20}}
+            self.board_items[item["id"]] = item
+            self.board_event(item, by, "posted", gsec)
+            return
+        if not live:
+            return
+        it = r.choice(live)
+        if it["kind"] == "request" and it["status"] == "open":
+            taker = r.choice([n for n in names if n != it["requested_by"]])
+            it["owner"], it["status"] = taker, "claimed"
+            self.board_event(it, taker, "owner", gsec)
+        elif it["kind"] == "harness" and it["status"] == "open":
+            it["status"] = "doing"
+            self.board_event(it, "operator", "status:doing", gsec)
+        elif it["kind"] == "harness":
+            it["status"] = "done"
+            self.board_event(it, "operator", "status:done", gsec)
+            self.harness_version += 1
+            line = CHANGELOG.get(it["title"], it["title"]).split(": ", 1)[-1]
+            self.seq += 1
+            self.chat.append({"seq": self.seq, "tick": int(gsec * 60), "from": "server",
+                              "text": f"server: harness v{self.harness_version}: {line}"})
+        elif it["kind"] == "claim":
+            if r.random() < 0.25:
+                it["status"] = "dropped"
+                self.board_event(it, it["owner"], "status:dropped", gsec)
+        elif it["status"] in ("claimed", "doing", "blocked"):
+            roll = r.random()
+            if roll < 0.15 and it["status"] != "blocked":
+                it["status"] = "blocked"
+                self.board_event(it, it["owner"], "status:blocked", gsec)
+            elif roll < 0.4 and it["status"] == "claimed":
+                it["status"] = "doing"
+                self.board_event(it, it["owner"], "status:doing", gsec)
+            else:
+                it["status"] = "done"
+                self.board_event(it, it["owner"], "status:done", gsec)
+        if not self.board_script and len(live) < 3:
+            self.board_script = list(BOARD_SCRIPT)  # loop the script for long sessions
+
     def say(self, a, text, gsec):
         self.seq += 1
         a["last_said"] = {"text": text, "tick": int(gsec * 60)}
@@ -264,6 +363,20 @@ class MockSource:
             if g:
                 g["color"] = "#ff3d7f" if g["color"] != "#ff3d7f" else "#00c8e0"
             self.profile_change_at = now + 240
+        if now >= self.next_board:
+            self.board_step(now, gsec)
+            self.next_board = now + r.uniform(6, 16)
+        if now >= self.next_base_attack:
+            # biters hit the west wall: an attacked area (no agent necessarily there), then sometimes losses
+            x, y = SITES["defense line"]
+            x, y = x + r.uniform(-20, 20), y + r.uniform(-20, 20)
+            events.append({"kind": "attack", "text": f"Base under attack near ({round(x)}, {round(y)}): gun-turret",
+                           "key": f"area:{round(x / 32)},{round(y / 32)}", "ttl": 60, "position": {"x": x, "y": y}})
+            if r.random() < 0.6:
+                events.append({"kind": "loss", "text": f"{r.randint(2, 9)} lost near ({round(x)}, {round(y)}): stone wall, "
+                               f"gun turret (by small biter)", "key": f"loss:{round(x / 32)},{round(y / 32)}", "ttl": 90,
+                               "position": {"x": x, "y": y}})
+            self.next_base_attack = now + r.uniform(150, 260)
         score, research = self.score_at(gsec)
         obs = {
             "tick": int(gsec * 60), "paused": False, "game_seconds": gsec,
@@ -276,7 +389,18 @@ class MockSource:
             "chat": self.chat[-20:],
             "power": {"machines": 330, "starved": 140 if now < self.power_until else 3},
             "events": events,
+            "board_events": self.board_log[-20:],
         }
+        for a in obs["agents"]:
+            if now < self.unset.get(a["name"], 0):
+                a.update(display_name=None, color=None, glyph=None, motto=None, profile_set=False)
+            else:
+                a["profile_set"] = True
+        if now >= self.next_board_read:
+            self.next_board_read = now + 15
+            items = sorted(self.board_items.values(), key=lambda it: -it["updated_tick"])
+            obs["board"] = {"items": items[:60], "open_unowned": sum(
+                1 for it in items if it["kind"] == "request" and it["status"] == "open" and not it["owner"])}
         if score:
             obs["produced"] = score["produced"]
             obs["research"] = research

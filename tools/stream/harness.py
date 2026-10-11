@@ -13,7 +13,8 @@ import pog  # noqa: E402  (tools/pog.py: Rcon client, ports, SCORE_LUA)
 
 # Never add a gameplay action here. `profiles` is read-only per docs/BOTS-API.md, but a runtime that does not
 # know it yet treats it as a failed mutation and stops player 1, so callers gate it on `has_bots_runtime()`.
-READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras"}
+# `board` and `board_events` (docs/BOARD-API.md) are only sent once `describe` (read-only) lists them.
+READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events"}
 
 # Extra operator reads for the overlay (same privilege level as `pog.py score`): research progress, the costliest
 # finished technologies (to seed "recent milestones" on start), and machines starved of power.
