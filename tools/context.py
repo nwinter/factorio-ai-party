@@ -24,6 +24,10 @@ import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NOTES_CAP = 7000          # characters of notes.md injected after a compaction (the playbook asks for under 6 KB)
+# Log lines injected after a compaction (the playbook keeps ~10). Haiku's Log reached 39 lines in shake4 and Claude Code
+# also re-attaches notes.md as a recently read file, so each compaction carried the whole Log twice and the floor
+# rose from 24.5K to 31.1K (docs/LAUNCH2-NOTES.md, round 5).
+LOG_KEEP = 10
 STATE = ".context-state.json"
 MARKER = ".context-hooks"  # written by setup; hooks do nothing elsewhere (the repo-wide Grok hooks see every session)
 
@@ -193,9 +197,26 @@ def seconds_left(d):
         return None
 
 
+def trim_log(notes, keep=LOG_KEEP):
+    """notes.md with only the last `keep` lines of its ## Log section, and a line saying how many were left out."""
+    lines = notes.split("\n")
+    try:
+        start = next(i for i, l in enumerate(lines) if l.strip().lower() == "## log") + 1
+    except StopIteration:
+        return notes
+    end = next((i for i in range(start, len(lines)) if lines[i].startswith("## ")), len(lines))
+    entries = [i for i in range(start, end) if lines[i].strip()]
+    if len(entries) <= keep:
+        return notes
+    cut = entries[-keep]
+    omitted = len(entries) - keep
+    return "\n".join(lines[:start] + [f"[{omitted} older Log lines left out: fold them into the sections above, then "
+                                      "delete them from notes.md]"] + lines[cut:])
+
+
 def notes_block(d, why):
     try:
-        notes = open(os.path.join(d, "notes.md")).read()
+        notes = trim_log(open(os.path.join(d, "notes.md")).read())
     except OSError:
         notes = "(notes.md is missing)"
     if len(notes) > NOTES_CAP:
@@ -286,7 +307,8 @@ def hook(event, args):
                 log(action="nudge", tokens=tokens, at=at)
                 context = (f"Context is at {tokens} tokens; automatic compaction happens at about {at}, and the "
                            "summary keeps only your last few actions. Update notes.md now (Now, claims and "
-                           "coordinates, agreements, open board items, lessons), then continue.")
+                           "coordinates, agreements, open board items, lessons) and cut its Log to the last 10 lines, "
+                           "then continue.")
         if context:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": context}}))
 

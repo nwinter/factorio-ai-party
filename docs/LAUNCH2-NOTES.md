@@ -114,6 +114,73 @@ run home on this branch):
   `grok_started` set, the cause is inside Grok under Herdr's terminal; if `grok_started=no`, the pane never ran the
   script.
 
+## Compaction after shake4 (round 5)
+
+Sources: Haiku's and Sonnet's Claude Code transcripts (`~/.claude/projects/-Users-...-runs-shake4-{haiku,sonnet}`),
+the Codex rollouts for Astra and Luna (`~/.codex-account-b/sessions/2026/10/11/rollout-...T02-52-18-...`, `...T02-52-27-...`)
+and Sol (`~/.codex/sessions/2026/10/11/rollout-...T02-52-22-...`), and `runs/shake4/*/notes.md` in the main checkout.
+
+### Haiku's rising floor (P2 item 12)
+
+What came back after each of Haiku's 8 compactions (characters, except the floor):
+
+| # | Time | Before | Floor (tokens) | Summary | notes.md re-attached by Claude Code | notes.md in our hook | Kept messages |
+|---|---|---|---|---|---|---|---|
+| 1 | 03:07:17 | 79,880 | 24,450 | 7,108 | 2,301 | 2,311 | 4,908 |
+| 2 | 03:22:00 | 79,935 | 25,141 | 6,233 | 3,644 | 3,643 | 2,142 |
+| 3 | 03:32:09 | 81,852 | 25,897 | 6,743 | 4,162 | 4,155 | 4,856 |
+| 4 | 04:01:06 | 80,193 | 27,054 | 8,329 | 4,778 | 4,761 | 4,173 |
+| 5 | 04:12:41 | 81,088 | 28,595 | 7,342 | 5,474 | 5,452 | 6,792 |
+| 6 | 04:20:44 | 80,825 | 29,003 | 8,673 | 6,132 | 6,108 | 5,340 |
+| 7 | 04:34:24 | 81,155 | 31,124 | 9,551 | 6,949 | 6,917 | 6,857 |
+| 8 | 04:42:20 | 80,284 | 30,194 | 7,630 | 8,259 | 7,261 (cut at 7,000) | 5,398 |
+
+- The rest of the floor stays the same each time: system prompt and tools (7,382 tokens, cached), CLAUDE.md and
+  AGENTS.md (22.4K characters), the start prompt (9.8K), the sandbox note (6.0K) and the small attachments.
+- notes.md is what grew: from 2.3K to 8.3K characters, with a `## Log` of 39 lines at the end (the playbook asks for
+  about 10). It came back twice after each compaction: once in the SessionStart hook output, and once because Claude
+  Code re-attaches files the agent read recently. That is about 12K of the 15K extra characters by the seventh
+  compaction; the summary (+0.5 to 2.4K) and the kept messages (+0 to 2K) vary up and down.
+- Sonnet shows the same thing at a smaller size: 2 compactions, floor 22.6K then 26.8K, notes.md attached twice
+  (4.5K each) the second time.
+- Claude Code 2.1.296 has no switch for re-attaching recently read files (no such env var or setting in the binary),
+  so the fix is on our side. After a compaction the hook now prints only the last 10 Log lines, with a line asking the
+  agent to fold the older ones into the sections above and delete them. The pre-compaction warning also asks the
+  agent to cut the Log to 10 lines, which shrinks the copy Claude Code re-attaches too (`tools/context.py`
+  `trim_log`, test in `tools/test_context.py`). Haiku's final notes.md prints as 5.3K characters instead of 8.2K.
+  Luna's (21.7K) prints as 16.4K and is then cut at 7,000 as before.
+- compact_at stays at 80K for Haiku. Requests go up to 81.9K at that setting, and Claude Code's hard limit sits
+  about 13K past compact_at, so 90K would bring requests close to the 100K price step. The fix above should hold
+  the floor near 25K, which leaves about 55K of working room. Check the floor in the next run's `context.log`.
+
+### Codex compaction stalls (P2 item 13)
+
+| Agent | Compactions | Stall each (s) | Summary written (output tokens) | Context after |
+|---|---|---|---|---|
+| astra (gpt-6-astra) | 5 | 106, 127, 123, 99, 133 | 3,397 to 5,089 | 22.0 to 23.7K |
+| sol (gpt-6.1-sol) | 5 | 93, 197, 132, 100, 56 | 2,019 to 5,471 | 20.7 to 24.2K |
+| luna (gpt-6-luna) | 8 | 20, 19, 16, 42, 35, 17, 18, 17 | 1,861 to 2,371 | 19.8 to 20.4K |
+
+- Every compaction is one remote call (`/responses` with the compaction item; no local fallback ran). Its input is
+  the whole context, about 140K tokens, and 137 to 140K of it is cached each time. The stall is the time to write
+  the summary: Astra writes 3.4 to 5.1K tokens at 32 to 42 tokens per second, Sol 2.0 to 5.5K at 20 to 41, and Luna
+  1.9 to 2.4K at about 117. Astra's and Sol's summaries are about twice as long and their output is about 3 times
+  slower; Sol's 197-second stall wrote 3.9K tokens at 20 per second.
+- The 51 to 84K characters of `replacement_history` are four items. Three are the start of the session and the same
+  every time: the developer message (1.9K), and AGENTS.md with the environment plus the start prompt (24.8K). The
+  fourth is the encrypted summary (22 to 57K), whose size follows the output tokens. Nothing accumulates across
+  compactions: the context after each one is 20 to 24K tokens, flat through the run.
+- Nothing in Codex 0.162.1 shortens the summary. The server writes it with its own prompt and ignores
+  `experimental_compact_prompt_file` (round 3). `remote_compaction_v2` is listed as "removed" in `codex features list`,
+  and there is no setting for a compaction model.
+- So total stall is the number of compactions times about 2 minutes (Astra, Sol) or 20 seconds (Luna), and the only
+  setting that changes it is `compact_at`. No change made: raising Astra's and Sol's compact_at from 140K to 200K
+  (window 272K) would give 178K of room instead of 118K, so about 3.3 compactions in two hours instead of 5, which
+  saves about 3.5 minutes each. The cost is a longer average context per request (mostly cached input) and longer
+  segments; Astra's and Sol's squashed words in shake4 came in whole segments starting at 56K, so longer segments
+  could keep that going longer. That trade is the operator's call before a longer shift; the rows are
+  `agent/context.tsv:11-13`.
+
 ## Still open
 
 - Muse: no documented per-run switch for user skills (the skill-reminder agent and memory are off, round 4).
