@@ -4,6 +4,254 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Hosts that sound human (COPY.md, 2026-10-11)
+
+Nick: the hosts' lines "seem super AI-format-ty". This section counts the tells, sums up how live casters talk,
+and describes the writer changes. It ends with 30 lines on the same facts.
+
+### The tells, counted
+
+All 1,393 lines a writer model aired in shake4, shake5 and shake6 (`runs/shake{4,5,6}/caster.log`, Kimi K2.6;
+template lines left out). One line can show several tells.
+
+| tell | lines | share | example |
+|---|---|---|---|
+| dash pivot (an em dash mid-line) | 861 | 62% | "Sol's motto holds—furnaces warm, science moving—they're walking the walk right now!" |
+| ends on "!" (623 have one anywhere) | 536 | 39% | "Logistics 2 surges to sixty-nine! Belt dreams live!" |
+| body or drama metaphor on machines (starve, bleed, choke, feast, gasp, drown, scream, chew) | 356 | 26% | "twelve packs starve six labs while research dreams of green" |
+| three-part list | 260 | 19% | "Muse malling belts and inserters, Astra fueling, Grok eyeing that lake—seven hands, one patchwork plan" |
+| a host's name as address ("Rook,", "Vale!") | 248 | 18% | "Five fewer plates, Rook, and Grok's still sight-seeing" |
+| semicolon | 200 | 14% | "They speak; they act. A rare moment of clarity in the rookery." |
+| stock words (humming, cooking, deep, alive, symphony, chaos...) | 179 | 13% | "blue science humming", "three hours deep" |
+| ends on a question | 139 | 10% | "Classic opening, but two claims on the board already—patient or slow?" |
+| "X, not Y" / "not X, but Y" | 91 | 7% | "those furnaces want coal now, not philosophy!" |
+| nature-documentary words | 70 | 5% | "Here we find Luna in deep thought ... a specimen of Codex, rare and luminous" |
+| number with a metaphor in one clause | 49 | 4% | "Twenty-five of eighty-six machines gasping" |
+| simile ("like a ...") | 39 | 3% | "like a heron staking its fishing ground" |
+
+Sentence shapes repeat as well:
+- **Openings:** 24% open on a number ("Thirty-three science, Rook..."), 23% on a name and a verb ("Opus walks..."), 10% on "Name's X".
+- **Length:** lines average 14.9 words and 1.25 sentences, and 150 run to 20 words or more.
+- **Frequent words:** "while" is the most frequent word of four letters or more, from the "A does X while B does Y" shape. "still" is fifth, and "dreams" also ranks high. Lines with the stock words "deep", "cooking" and "alive" are counted in the table.
+- **Where the shapes come from:** the old prompt asked for them. Rook's persona said "vivid verbs, exclamations welcome", and the rules said "Be fun, like a great esports cast". The naturalist angle asked Vale for a hushed nature documentary.
+
+### How live casters talk (research, with sources)
+
+- **Short and reactive.** Real calls are fragments and reactions. Vin Scully's "High fly ball into right field, she is... gone!" was followed by more than a minute of silence ([1988 World Series](https://en.wikipedia.org/wiki/Kirk_Gibson%27s_1988_World_Series_home_run)). Al Michaels counted down "11 seconds, you've got 10 seconds", saying the number once and plainly ([Miracle on Ice](https://en.wikipedia.org/wiki/Miracle_on_Ice)).
+- **Bursts and labels.** Studies of streamers find short "response cries" ("nice.", "oh shit.", "wait ...?") and short labels for a known kind of play ("What a disgusting roam") ([Recktenwald, PolyU thesis](https://theses.lib.polyu.edu.hk/bitstream/200/9795/1/991022179237803411.pdf)).
+- **Sportscaster grammar.** Announcers drop the subject and the verb "is" ("Kestrel with the red circuits"), and use result phrases and stock routines ([Ferguson 1983, Language in Society](https://resolve.cambridge.org/core/journals/language-in-society/article/abs/sports-announcer-talk-syntactic-aspects-of-register-variation/6B134D8B6D90BD6B5B073B6C10A33FC0)).
+- **Writing for the ear.** Talk to one person. One idea per sentence, short enough for a breath. Subject, then verb. Use contractions, strong verbs and rounded numbers said the way people say them. Read it aloud ([NPR](https://www.npr.org/2023/02/17/1156597697/how-to-write-script-speech-podcast-voice), [UBC](https://wiki.ubc.ca/Course:LFS400/Workshops/Writing_For_the_Ear), [journalism.university](https://journalism.university/audio-podcast/mastering-art-writing-audio-news)).
+- **Play-by-play and colour.** Play-by-play says who and what. Colour says why, and does not repeat the play-by-play's facts. Colour gets out of the way on a big moment, and its longer thoughts go in the lulls and replays ([Say the Damn Score](https://www.saythedamnscore.com/sliding-analyst-chair/), [Wikipedia: colour commentator](https://en.wikipedia.org/wiki/Color_commentator)).
+- **Hand-offs.** Casters pass by name, with a question the other answers ("Is this really happening, Bill?").
+- **The AI tells.** Wikipedia's [Signs of AI writing](https://en.wikipedia.org/wiki/Wikipedia:Signs_of_AI_writing) lists "not X, but Y", the rule of three, puffed-up words and em dashes. These are the same tells counted above.
+- **Prompting.** Anthropic's [prompting guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices) says examples are among the most reliable ways to steer tone. It recommends three to five varied ones, saying what to do with the reason given, and writing the prompt in the style wanted. Ban lists alone leak: one fix for dashes found models swapping in "--".
+
+### What changed in the writer (`tools/stream/caster.py`)
+
+- **Personas.** Rook speaks in "short plain words" and "reacts out loud". The old "vivid verbs, exclamations welcome" is gone. Vale answers Rook in plain talk.
+- **`SPOKEN` style notes.**
+  - The notes give the reason: every line is spoken by a voice engine on a live stream.
+  - They are written in the style they ask for: short sentences, no dashes, no semicolons.
+  - They ask for fragments, one idea per sentence, plain verbs, and who before what.
+  - They ask for reactions ("Oh, there it is." "Wait, is that Grok?" "Huh."), answering the other host, and colour that doesn't repeat play-by-play.
+  - Numbers: said once, at most one per line.
+  - Endings: mostly full stops, and one exclamation an exchange at most.
+  - Questions only when the other host answers. Calm moments are fine.
+  - A short "never" list covers dashes, "X, not Y", lists of three, metaphors and similes, documentary narration, the stock words, and opening on a number.
+  - Lines are at most 18 words (was 25).
+- **`EXAMPLES`.** Twelve short exchanges in the hosts' voices, written for this, from made-up moments. Each call shows four at random, so no single shape hardens into a template. The fact check still applies to anything the writer copies from them.
+- **Naturalist angle.** It keeps the close watching and drops the documentary narration.
+- **Post-filter, part one: `restyle()`.** A dash pivot, a semicolon or an ellipsis becomes a full stop, which turns one line into two short sentences.
+- **Post-filter, part two: `style_fault()` in `check_line`.** It rejects:
+  - an "X, not Y" or "not X, but Y" contrast;
+  - documentary words;
+  - the stock words;
+  - a body metaphor on machines, unless the facts use the word themselves ("84 of 234 machines starved" is the power alert's own wording);
+  - a simile ("looks like a coal run" is fine).
+- **Post-filter, part three: `tidy_exchange()`.** Exclamations after the first in an exchange become full stops, and a closing question nobody answers is dropped.
+- **One rewrite.** When a style fault cuts an exchange before two lines, the writer is asked once more, with the reason and the line. Urgent beats are not retried. A second miss falls back to a template, as any failed draft does.
+- **Cost and latency.** The notes and examples add about 445 tokens a call. That is about $0.0004 an exchange on Kimi K2.6, or roughly $0.08 an hour at shake5's pace. A rewrite costs one more call of about 2.7 s (Kimi's median in shake5). The next exchange is already prepared while the current one plays.
+- **Voices.** The hosts stay on OpenAI voices (verse and ballad) unless `POG_TTS_PREFER=eleven`. With ElevenLabs working again, that is about 40,000 characters an hour, so it's Nick's cost decision.
+
+### Replaying the post-filter over shake4-6
+
+Over the 1,328 aired writer lines in the shake4-6 jsonl logs:
+- `restyle` rewrites 76%, nearly all dash pivots.
+- `style_fault` would cut 36%:
+
+| reason | lines |
+|---|---|
+| "X, not Y" | 87 |
+| documentary words | 54 |
+| "dream(s)" | 65 |
+| bleed and similar | 42 |
+| starve and similar | 38 |
+| "humming" or "hums" | 40 |
+| simile | 27 |
+| feast, gasp, choke, scream and other metaphors, stock words, the rest | the remaining 125 |
+
+- `tidy_exchange` would turn 75 extra exclamations into full stops and drop 44 hanging closing questions, over 622 exchanges.
+
+The 36% is the old prompt's output. The post-filter is a backstop, and the new notes and examples are meant to keep drafts from tripping it. If a live run shows many template lines (the `fallbacks` count in `caster.log`'s stats), loosen `BODY_WORDS` first.
+
+### 30 lines on the same facts
+
+Each item gives three lines:
+- **aired:** what the old writer aired in shake4, shake5 or shake6.
+- **post-filter:** what `restyle` and `style_fault` now do to that line, or "cut".
+- **target:** a hand-written line on the same beat's facts, showing what the new notes aim for. Every target passes the new `check_line` against that beat's logged facts.
+
+The targets are not model output. No writer model could be reached from this session:
+- the wrangler OAuth token for Workers AI has expired;
+- the sandbox denies registry.npmjs.org, so `npx wrangler` can't refresh it;
+- api.cloudflare.com and api.anthropic.com are denied as well.
+
+To get the model's own after lines on these 30 beats, refresh the login (`npx wrangler whoami`) and run `copy_bench.py` as shown below. It prints the same 30 beats, the same seed, with each writer's new exchange and the tell counts before and after.
+
+Pairs 16, 26 and 29 show the limits of the filter. "a funeral pyre dressed as a boiler room" passes it, and so do "hit the ground running" and the misread "Seven hits" (seven buildings were lost). Those are for the prompt and the fact check to fix. Pair 21's "Grok's packer promise" is a fair callback: Grok had said "I will keep the packers fed" in a chat beat a minute earlier.
+
+1. chat, game 2 hours 45 minutes
+   - aired: Vale: Astra finally answers Luna's plea—guns first, copper second, acid third? That's three plans stacked on one stack inserter.
+   - post-filter: Astra finally answers Luna's plea. Guns first, copper second, acid third? That's three plans stacked on one stack inserter.
+   - target: Vale: Astra says they'll refill the west guns. Right after the copper build.
+2. camera, game 3 hours 34 minutes
+   - aired: Rook: Opus walks still! Steam first, they said—where is the steam, Vale?
+   - post-filter: Opus walks still! Steam first, they said. Where is the steam, Vale?
+   - target: Rook: Opus on the move, Astra planning. Both in shot.
+3. attack, game 2 hours 8 minutes
+   - aired: Rook: Boilers burning, assemblers cracking—biters taste steam and circuits both! This raid's a buffet.
+   - post-filter: Boilers burning, assemblers cracking. Biters taste steam and circuits both! This raid's a buffet.
+   - target: Rook: Biters on an assembler. Now a boiler too.
+4. board, game 11 minutes
+   - aired: Rook: Astra boards a coal run—five drills, public chest—fueling boilers while their motto hangs in the air!
+   - post-filter: Astra boards a coal run. Five drills, public chest. Fueling boilers while their motto hangs in the air!
+   - target: Rook: Astra's posted a coal job. Five drills into a public chest, for the boilers.
+5. lull/analyst, game 2 hours 34 minutes
+   - aired: Vale: Thirty-three science, Rook, and blue's finally even—though most of it is idle labs staring at empty belts.
+   - post-filter: Thirty-three science, Rook, and blue's finally even. Though most of it is idle labs staring at empty belts.
+   - target: Vale: Thirty-three science a minute. And blue has caught up with green.
+6. segment, game 30 minutes
+   - aired: Rook: Spotlight locks on Sonnet — five iron pairs, eight steel furnaces, hand-fed and hungry!
+   - post-filter: Spotlight locks on Sonnet. Five iron pairs, eight steel furnaces, hand-fed and hungry!
+   - target: Rook: Spotlight on Sonnet. They're the one making steel.
+7. loss, game 2 hours 54 minutes
+   - aired: Rook: Seventy-six gone, pipes bleeding dry—Astra walks while the south chokes!
+   - post-filter: cut (style: metaphor 'bleeding')
+   - target: Rook: Ouch. Seventy-six buildings lost in that one.
+8. research, game 1 hour 30 minutes
+   - aired: Vale: Six techs up on shake1, twelve thousand iron ahead—they'll out-science their way to orbit if biters let them.
+   - post-filter: Six techs up on shake1, twelve thousand iron ahead. They'll out-science their way to orbit if biters let them.
+   - target: Vale: Stone wall's done. They're six technologies ahead of shake1 now.
+9. power, game 1 hour 47 minutes
+   - aired: Rook: Plastic crawls at forty-six, advanced circuits barely four—engines dream in molasses, Vale!
+   - post-filter: cut (style: metaphor 'dream')
+   - target: Rook: Power's short. Seventy-six machines aren't getting enough.
+10. death, game 34 minutes
+   - aired: Rook: Muse goes quiet—too quiet! They planned the next step, now they're planning respawn.
+   - post-filter: Muse goes quiet. Too quiet! They planned the next step, now they're planning respawn.
+   - target: Rook: Oh, Muse is down. Small biters, right at spawn.
+11. research_start, game 2 hours 25 minutes
+   - aired: Rook: Logistics 2 surges to sixty-nine! Belt dreams live!
+   - post-filter: cut (style: metaphor 'dreams')
+   - target: Rook: Logistics 2 at sixty-nine percent. Faster belts soon.
+12. harness, game 2 hours 59 minutes
+   - aired: Rook: Six minutes! Opus walks, Processing choking at thirty-seven, and Astra's electric drill volunteers for burner hospice duty!
+   - post-filter: cut (style: metaphor 'choking')
+   - target: Rook: Opus has filed a bug. Building over a machine puts a second one on top.
+13. open, game 3 hours 9 minutes
+   - aired: Rook: We're live! Shift three picks up a world already three hours deep—blue science humming, processing units eighty-one percent done!
+   - post-filter: cut (style: stock word 'humming')
+   - target: Rook: Welcome back. Shift three, same world, right where they saved it.
+14. chat, game 17 minutes
+   - aired: Vale: Gemini borrows iron and circuits now, trading scraps to birth three inserters for their belt dream.
+   - post-filter: cut (style: metaphor 'dream')
+   - target: Vale: Gemini's borrowing from Sol. Three inserters for the belt mall.
+15. camera, game 3 hours 4 minutes
+   - aired: Rook: Muse Spark plots, Sol schemes, and the clock bleeds under sixty seconds!
+   - post-filter: cut (style: metaphor 'bleeds')
+   - target: Rook: Muse and Sol, both planning. Under a minute left.
+16. attack, game 4 hours
+   - aired: Vale: Walls hold today, but shift three handed shift four a funeral pyre dressed as a boiler room, Rook.
+   - post-filter: unchanged
+   - target: Vale: Biters on the stone wall. Well, that's what it's there for.
+17. board/naturalist, game 3 hours 33 minutes
+   - aired: Vale: Watch now as Luna, specimen planning, scratches commands toward orbit while coal politics rage westward.
+   - post-filter: cut (style: nature-documentary narration)
+   - target: Vale: Luna just okayed Astra's coal line inside their own claim. Very polite team.
+18. lull/analyst, game 3 hours 45 minutes
+   - aired: Rook: Sol, Luna, Opus—all walking! Three engineers strolling while iron bleeds a hundred plates a minute into starvation!
+   - post-filter: cut (style: metaphor 'bleeds')
+   - target: Rook: Three of them on foot right now. Opus is one.
+19. segment, game 3 hours 17 minutes
+   - aired: Rook: Replay rolls—biters chewing steam at forty-eight, sixteen, three seconds gone!
+   - post-filter: Replay rolls. Biters chewing steam at forty-eight, sixteen, three seconds gone!
+   - target: Rook: Here's the replay. Biters went for a steam engine.
+20. loss, game 1 hour 35 minutes
+   - aired: Rook: Eleven buildings gone and red science starved—biters feast while Sol's copper sits on the belt!
+   - post-filter: cut (style: metaphor 'starved')
+   - target: Rook: Eleven buildings lost. Four of them turrets.
+21. research, game 1 hour 35 minutes
+   - aired: Rook: Advanced Circuit lands—Sulfur Processing next, Grok's packer promise pays off!
+   - post-filter: Advanced Circuit lands. Sulfur Processing next, Grok's packer promise pays off!
+   - target: Rook: Advanced circuits are done. Sulfur processing is next.
+22. power, game 1 hour 48 minutes
+   - aired: Rook: Precious and stranded! No blue packs rolling, thirteen minutes, Vale—they're researching bricks while the factory gasps.
+   - post-filter: cut (style: metaphor 'gasps')
+   - target: Rook: Power's dipping again. Eighty-four machines short.
+23. death, game 1 hour 44 minutes
+   - aired: Vale: They'll keep that research, Rook; death costs nothing but time, and biters already took their thirty.
+   - post-filter: They'll keep that research, Rook. Death costs nothing but time, and biters already took their thirty.
+   - target: Vale: Haiku's down at spawn. They'll be back, and the research doesn't care.
+24. research_start, game 1 hour 30 minutes
+   - aired: Vale: Forty-seven on circuits, twenty techs deep, green lines humming—they out-research their repairs.
+   - post-filter: cut (style: stock word 'humming')
+   - target: Vale: Advanced circuits, almost halfway. Twenty technologies done.
+25. harness, game 2 hours 6 minutes
+   - aired: Rook: Astra's walking, not working—what's the call there?
+   - post-filter: cut (style: 'X, not Y' contrast)
+   - target: Rook: Astra wants a harness change. A safer way into a fight.
+26. open, game 1 minute
+   - aired: Rook: Nine engineers hit the ground running! Opus, Grok, Muse—everyone's still at spawn figuring out who grabs the first pick.
+   - post-filter: Nine engineers hit the ground running! Opus, Grok, Muse. Everyone's still at spawn figuring out who grabs the first pick.
+   - target: Rook: Welcome in. Nine AIs and one factory, and the game is a minute old.
+27. chat/naturalist, game 1 hour 3 minutes
+   - aired: Vale: Here we find Luna in deep thought, planning their next step—a specimen of Codex, rare and luminous, murmuring coal routes to Astra like a bird sharing a worm.
+   - post-filter: cut (style: nature-documentary narration)
+   - target: Vale: Luna watches everyone. Saw Astra take the forty iron and still asked for a coal route.
+28. camera, game 3 hours 22 minutes
+   - aired: Rook: Sonnet pauses between tasks—brain reloads while biters chew pipes north!
+   - post-filter: Sonnet pauses between tasks. Brain reloads while biters chew pipes north!
+   - target: Rook: Sonnet's between jobs. Sol walking past.
+29. attack, game 1 hour 34 minutes
+   - aired: Rook: Seven hits, two turrets down, one boiler—small biters just cost them steam!
+   - post-filter: Seven hits, two turrets down, one boiler. Small biters just cost them steam!
+   - target: Rook: Two turrets and a boiler gone.
+30. board, game 3 hours 56 minutes
+   - aired: Rook: Gemini plans, turrets bleed, two minutes left—who dies holding the blueprint?
+   - post-filter: cut (style: metaphor 'bleed')
+   - target: Rook: Gemini's starting on rocket fuel. Two minutes left in this shift.
+
+### Running the writer comparison
+
+It hasn't been run yet: no writer model could be reached from this session. To run it:
+
+    npx wrangler whoami    # refresh the Workers AI login
+    L=~/code/player-of-games/tools/stream/logs
+    python3 tools/stream/copy_bench.py $L/caster-20261011-025203.jsonl $L/caster-20261011-052058.jsonl \
+        $L/caster-20261011-072205.jsonl --n 30 \
+        --writers cf=@cf/moonshotai/kimi-k2.6,cf=@cf/zai-org/glm-5.3-flash,cf=@cf/google/gemma-4-26b-a4b-it \
+        --md /tmp/copy-bench.md
+
+For each writer, the run reports:
+- the tell counts before and after;
+- lines kept by the fact and style checks;
+- median and p90 latency;
+- cost per 1,000 exchanges.
+
+Workers AI prices per million tokens in/out (`TEXT_MODELS`): Kimi K2.6 $0.95/$4.00, GLM 5.3 Flash $0.15/$0.50, Gemma 4 26B $0.10/$0.30, DeepSeek V4 Flash $0.44/$1.32. With 30 exchanges per writer, the whole comparison costs well under $0.10.
+
+Kimi stays the writer until a run like this shows another model writes plainer lines at a live-friendly latency (under about 5 s at p90). Earlier benches picked Kimi as the liveliest writer, and "lively" is part of what Nick heard as AI-ish.
+
 ## Round 6: shifts, the stage label, ElevenLabs off (shake5 P1 items 3, 4 and 5, 2026-10-11)
 
 - Shifts (item 3). `caster.py --run-dir runs/RUN` (start-team.sh passes it) reads `resumed-from`, follows the chain
@@ -21,7 +269,8 @@ talks. Everything is mixed by OBS through the overlay's browser source.
   (logistic)", "blue (chemical)", ...), the packs made so far, so the stage reads as progress.
 - ElevenLabs off (item 5, TTS part). Under `--tts auto`, providers named in `POG_TTS_OFF` are left out of the TTS
   object, so a voice picked before they were turned off (Opus's saved `el-george`) goes straight to its stand-in
-  through `substitute()` with no ElevenLabs call and no 401. start-team.sh exports `POG_TTS_OFF=eleven`. A forced
+  through `substitute()` with no ElevenLabs call and no 401. start-team.sh exports `POG_TTS_OFF` (empty since
+  ElevenLabs works again; `eleven` while it has no credits). A forced
   `--tts eleven` still uses ElevenLabs. The `profiles.lua` part of item 5 (refuse a voice another agent holds) is not
   in this branch.
 
