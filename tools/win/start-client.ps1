@@ -6,7 +6,8 @@ param(
   [string]$Factorio = 'D:\pog\factorio-2.0.77-alpha',
   [string]$PlayerName = 'pog-agent',
   [string]$Slot = '',          # several clients in one world: '-astra', '-opus' (own dir, task and exe name)
-  [switch]$Sound
+  [switch]$Sound               # unmute (stream: only the main director, -Slot -cam1). Music stays off either way:
+                               # the soundtrack may draw copyright claims; the stream has its own music slot.
 )
 $ErrorActionPreference = 'Stop'
 $srv = "D:\pog\inst\$Name"
@@ -24,6 +25,7 @@ check-updates=false
 show-tips-and-tricks=false
 [sound]
 master-muted=$muted
+music-volume=0
 [graphics]
 full-screen=false
 graphics-quality=low

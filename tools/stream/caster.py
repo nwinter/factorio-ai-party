@@ -32,7 +32,8 @@ CASTERS = {
               "persona": "You are Vale, the colour commentator: you explain why it matters, read the team's "
                          "strategy, and bring warmth and dry humour. You sometimes riff on what Rook just said."},
 }
-PRIORITY = {"attack": 9, "death": 9, "research": 7, "power": 6, "harness": 5, "board": 4, "chat": 4,
+PRIORITY = {"attack": 9, "death": 9, "loss": 8, "research": 7, "power": 6, "harness": 5, "board": 4, "chat": 4,
+            "info": 3,
             "research_start": 3, "camera": 3, "open": 8, "lull": 1}
 URGENT = 8
 TEXT_MODELS = {  # Workers AI, USD per million tokens in/out (pricing page, 2026-10-10)
@@ -89,7 +90,7 @@ class Differ:
                 continue
             self.alert_ids.add(a["id"])
             if not first:
-                ev.append({"kind": a["kind"] if a["kind"] in PRIORITY else "attack", "text": a.get("text"),
+                ev.append({"kind": a["kind"] if a["kind"] in PRIORITY else "info", "text": a.get("text"),
                            "agent": a.get("agent")})
         for m in s.get("chat") or []:
             key = m.get("seq") or (m.get("tick"), m.get("from"), m.get("text"))
@@ -100,14 +101,16 @@ class Differ:
                 ev.append({"kind": "chat", "agent": m["agent"], "text": m.get("text", ""), "aloud": bool(m.get("aloud")),
                            "seq": m.get("seq")})
         board = s.get("board") or {}
-        for b in board.get("events") or []:  # docs/BOARD-API.md board_events, as eng/stream2 relays them
-            seq = b.get("seq")
+        for b in board.get("events") or []:  # eng/stream2's board snapshot: {seq, by, agent, verb, title, kind}
+            seq = b.get("seq") if b.get("seq") is not None else (b.get("tick"), b.get("id"), b.get("verb"))
             if seq in self.board_seqs:
                 continue
             self.board_seqs.add(seq)
-            if not first and b.get("change") in ("posted", "taken", "done", "blocked", "claimed"):
+            verb = b.get("verb") or b.get("change")
+            if not first and verb in ("posted", "taken", "done", "blocked") and now - float(b.get("t") or now) < 60:
                 kind = "harness" if b.get("kind") == "harness" else "board"
-                ev.append({"kind": kind, "agent": b.get("by"), "change": b.get("change"), "title": b.get("title")})
+                ev.append({"kind": kind, "agent": b.get("agent") or b.get("by"), "change": verb,
+                           "title": b.get("title"), "item": b.get("kind")})
         res, pres = s.get("research") or {}, p.get("research") or {}
         if not first and res.get("current") and res.get("current") != pres.get("current"):
             ev.append({"kind": "research_start", "tech": res.get("label")})
@@ -124,6 +127,11 @@ class Differ:
 
 
 # ---- facts: everything a line may mention ----------------------------------------------------------------------
+def spoken(text):
+    """Alert/board text as a caster would say it: no map coordinates, no dangling 'near'."""
+    text = re.sub(r"\s*(?:near|at)?\s*\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)", "", str(text))
+    text = re.sub(r"(?<=[a-z])-(?=[a-z])", " ", re.sub(r"\s*:\s*", ": ", text))  # gun-turret -> gun turret
+    return re.sub(r"\s+", " ", text).strip(" :")
 def agent_facts(s, name):
     a = next((x for x in s.get("agents") or [] if x["name"] == name), None)
     if not a:
@@ -137,9 +145,14 @@ def agent_facts(s, name):
 
 def facts_for(e, s):
     f = {"event": e["kind"], "game_time": s.get("game_time"), "team_size": len(s.get("agents") or [])}
-    for k in ("text", "change", "title", "tech"):
+    for k in ("text", "change", "title", "tech", "item"):
         if e.get(k):
-            f[k] = e[k]
+            f[k] = spoken(e[k]) if k in ("text", "title") else e[k]
+    board = s.get("board") or {}
+    if e["kind"] in ("board", "harness", "lull") and board.get("available"):
+        f["board"] = {k: board.get(k) for k in ("open_unowned", "in_progress", "claims_total") if board.get(k)}
+        if e["kind"] == "lull" and board.get("changelog"):
+            f["board"]["harness_changelog"] = [c.get("text") for c in board["changelog"]]
     if e.get("agent"):
         f["agent"] = agent_facts(s, e["agent"]) or {"name": e["agent"]}
     if e.get("agents"):
@@ -187,16 +200,20 @@ def check_line(line, facts, names, recent):
             return f"number not in facts: {num}"
     if len(line.split()) > 34:
         return "too long"
-    if any(line.lower()[:40] == r.lower()[:40] for r in recent):
-        return "repeats a recent line"
+    words = set(re.findall(r"[a-z']+", low))
+    for r in recent:
+        prev = set(re.findall(r"[a-z']+", clean(r).lower()))
+        if words and prev and len(words & prev) / len(words | prev) >= 0.6:
+            return "repeats a recent line"
     return None
 
 
 def clean(line):
-    line = line.strip().strip('"').strip()
+    line = line.strip()
     line = re.sub(r"^(rook|vale|play-by-play|colour|color)\s*[:\-–]\s*", "", line, flags=re.I)
     line = re.sub(r"\*[^*]+\*", "", line)  # stage directions
-    return re.sub(r"\s+", " ", line).strip()
+    line = re.sub(r"\s+", " ", line).strip().strip('"“”').strip()
+    return line
 
 
 class TemplateWriter:
@@ -212,17 +229,22 @@ class TemplateWriter:
                              "You can build all day, but the biters set the schedule."]},
         "death": {"pbp": ["Oh no! {text}! Back to respawn.", "And that's a knockout. {text}."],
                   "color": ["Ouch. That's a long walk back from respawn.", "Painful, but the factory keeps running."]},
-        "research": {"pbp": ["{text}! The labs deliver!", "Ding! {text}!"],
+        "loss": {"pbp": ["Damage report: {text}.", "That hurts. {text}."],
+                 "color": ["Losses mean repairs, and repairs mean someone's plan just got interrupted.",
+                           "Walls and turrets are consumables out here. Time to rebuild."]},
+        "info": {"pbp": ["Heads up: {text}."], "color": ["Worth keeping an eye on that."]},
+        "research": {"pbp": ["{text}! The labs deliver!", "Ding! {text}!", "{text}. Another one for the team!"],
                      "color": ["That's {technologies_done} technologies done. New toys for everyone.",
                                "Every tech unlock changes the plan. Watch who uses it first."]},
         "research_start": {"pbp": ["Labs switch over: {tech} is next on the list."],
                            "color": ["{tech} next. Smart pick, it unlocks a lot down the line."]},
         "power": {"pbp": ["Warning lights! {text}.", "The power's sagging: {text}."],
                   "color": ["Power is everything. When it dips, every machine slows down."]},
-        "board": {"pbp": ["On the board: {agent_name} {change} {title}.", "Board update! {title}, {change} by {agent_name}."],
-                  "color": ["That team board is how nine agents avoid stepping on each other.",
-                            "Good teamwork there from {agent_name}."]},
-        "harness": {"pbp": ["Tool request on the board: {title}, {change}."],
+        "board": {"pbp": ["On the board: {agent_name} {did} {title}.", "Board update! {agent_name} {did} {title}.",
+                          "{agent_name} {did} {title}. The board keeps moving."],
+                  "color": ["That team board is how {team_size} agents avoid stepping on each other.",
+                            "Good teamwork there from {agent_name}.", "Somebody has to do the chores. Thanks, {agent_name}."]},
+        "harness": {"pbp": ["Tool request on the board: {title}. Status: {change}."],
                     "color": ["When the agents ask for better tools, that's the meta-game."]},
         "camera": {"pbp": ["Let's check in on {cam_name}, {cam_doing}.", "Over to {cam_name} now: {cam_doing}.",
                            "Here's {cam_name}, at the {cam_where}.", "Cameras find {cam_name}. Let's watch."],
@@ -251,6 +273,9 @@ class TemplateWriter:
             flat[f"cam_{k}"] = v
         for k, v in (facts.get("researching") or {}).items():
             flat[f"researching_{k}"] = v
+        if facts.get("change"):
+            flat["did"] = {"posted": "posts", "taken": "picks up", "done": "finishes",
+                           "blocked": "is stuck on"}.get(facts["change"], facts["change"])
         pool = self.T.get(e["kind"], {}).get(who, [])
         opts = [t for t in pool if t not in self.recent]
         self.rng.shuffle(opts)
