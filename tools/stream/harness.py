@@ -76,6 +76,66 @@ end
 rcon.print(helpers.table_to_json(out))
 """
 
+# The base as a coarse grid for the site's live map: every building of ours on nauvis (poles left out) binned into
+# CELL-tile cells, each cell labelled by its most telling building (defence > labs > oil > assembly > smelting >
+# mining > power > storage > belts and inserters > pipes); the cell doubles until the grid fits MAXC cells a side.
+# Plus enemy spawners and worms near the base. One find_entities_filtered over our types: a few ms on a large
+# base, read once a minute (live.py). No comments inside: one_line() joins the lines.
+BASEMAP_LUA = r"""
+local s = game.surfaces.nauvis
+local f = game.forces.player
+local CAT = {["ammo-turret"]="D",["electric-turret"]="D",["fluid-turret"]="D",["artillery-turret"]="D",["wall"]="D",["gate"]="D",
+  ["lab"]="R",["assembling-machine"]="A",["rocket-silo"]="A",["furnace"]="S",["mining-drill"]="M",["offshore-pump"]="M",
+  ["boiler"]="E",["generator"]="E",["solar-panel"]="E",["accumulator"]="E",["reactor"]="E",["burner-generator"]="E",
+  ["container"]="K",["logistic-container"]="K",["transport-belt"]="B",["underground-belt"]="B",["splitter"]="B",
+  ["inserter"]="B",["loader"]="B",["loader-1x1"]="B",["pipe"]="P",["pipe-to-ground"]="P",["pump"]="P",["storage-tank"]="P"}
+local OIL = {["oil-refinery"]=true,["chemical-plant"]=true,["pumpjack"]=true}
+local RANK = {D=10,R=9,O=8,A=7,S=6,M=5,E=4,K=3,B=2,P=1}
+local types = {}
+for t in pairs(CAT) do types[#types+1] = t end
+local pts = {}
+for _, e in pairs(s.find_entities_filtered{force = f, type = types}) do
+  local p = e.position
+  pts[#pts+1] = {p.x, p.y, OIL[e.name] and "O" or CAT[e.type]}
+end
+local C, MAXC = CELL, MAXCELLS
+local cells, x0, y0, x1, y1
+while true do
+  cells, x0, y0, x1, y1 = {}, nil, nil, nil, nil
+  for _, q in ipairs(pts) do
+    local cx, cy = math.floor(q[1] / C), math.floor(q[2] / C)
+    local row = cells[cy]
+    if not row then row = {} cells[cy] = row end
+    local old = row[cx]
+    if not old or RANK[q[3]] > RANK[old] then row[cx] = q[3] end
+    if not x0 or cx < x0 then x0 = cx end
+    if not x1 or cx > x1 then x1 = cx end
+    if not y0 or cy < y0 then y0 = cy end
+    if not y1 or cy > y1 then y1 = cy end
+  end
+  if not x0 or (x1 - x0 < MAXC and y1 - y0 < MAXC) then break end
+  C = C * 2
+end
+local rows = {}
+if x0 then
+  for cy = y0, y1 do
+    local row, buf = cells[cy] or {}, {}
+    for cx = x0, x1 do buf[#buf+1] = row[cx] or "." end
+    rows[#rows+1] = (table.concat(buf):gsub("%.+$", ""))
+  end
+end
+local nests = {}
+if x0 then
+  local m = 96
+  for _, e in pairs(s.find_entities_filtered{force = "enemy", type = {"unit-spawner", "turret"},
+      area = {{x0 * C - m, y0 * C - m}, {(x1 + 1) * C + m, (y1 + 1) * C + m}}, limit = 200}) do
+    nests[#nests+1] = {math.floor(e.position.x), math.floor(e.position.y), e.type == "unit-spawner" and "s" or "w"}
+  end
+end
+rcon.print(helpers.table_to_json{tick = game.tick, cell = C, x0 = x0 and x0 * C or 0, y0 = y0 and y0 * C or 0,
+  w = x0 and (x1 - x0 + 1) or 0, h = y0 and (y1 - y0 + 1) or 0, rows = rows, nests = nests, buildings = #pts})
+"""
+
 CAMERA_LUA = r"""
 local i = remote.interfaces.agent_harness
 if not (i and i.camera) then rcon.print('{"ok":false,"stub":true}') return end
@@ -87,6 +147,10 @@ PROBE_LUA = r"""
 local i = remote.interfaces.agent_harness
 rcon.print(helpers.table_to_json{harness = i ~= nil, camera = (i and i.camera) ~= nil, cameras = (i and i.cameras) ~= nil})
 """
+
+
+def basemap_lua(cell=4, max_cells=128):
+    return BASEMAP_LUA.replace("MAXCELLS", str(int(max_cells))).replace("CELL", str(int(cell)))
 
 
 def lua_string(text):
@@ -162,6 +226,14 @@ class Harness:
     def flows(self, items):
         lua = FLOW_LUA.replace("ITEMS", "{" + ",".join(json.dumps(i) for i in items) + "}")
         return self.lua(lua)
+
+    def basemap(self, cell=4, max_cells=128):
+        """The base as a grid of category letters (BASEMAP_LUA); read-only, for the site's live map."""
+        m = self.lua(basemap_lua(cell, max_cells))
+        for key in ("rows", "nests"):  # table_to_json writes an empty table as {}
+            if not isinstance(m.get(key), list):
+                m[key] = []
+        return m
 
     def probe(self):
         return self.lua(PROBE_LUA)

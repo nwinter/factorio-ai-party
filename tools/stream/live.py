@@ -57,6 +57,8 @@ class LiveSource:
         self.tell_seq = 0
         self.platform_every = 15.0
         self.next_platforms = 0
+        self.basemap_every = 60.0  # the site's live map: the base changes slowly and the read walks every building
+        self.next_basemap = 0
         self.platform_detail = {}
         self.probe()
 
@@ -147,6 +149,12 @@ class LiveSource:
                 obs["flows"] = self.h.flows(SPARK_ITEMS)
             except Exception as e:
                 errors["flows"] = str(e)
+        if time.time() >= self.next_basemap:
+            self.next_basemap = time.time() + self.basemap_every
+            try:
+                obs["basemap"] = self.h.basemap()
+            except Exception as e:
+                errors["basemap"] = str(e)
 
         profiles = {}
         if self.use_profiles:

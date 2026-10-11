@@ -220,12 +220,44 @@
   app.addEventListener('pointerleave', chartHover, true);
 
   // ------------------------------------------------------------------ minimap of agent positions
-  function minimap(agents, alerts, cams) {
+  // The base layer (state.basemap, tools/stream/harness.py BASEMAP_LUA, read once a minute): rows of category
+  // letters, one per cell of `cell` tiles from (x0, y0). Drawn as one path per category in cell units, built once
+  // per snapshot tick and placed with a transform, so a 10 s refresh only moves it.
+  var BASE_CATS = [['D', 'Defence'], ['R', 'Labs'], ['O', 'Oil and chemistry'], ['A', 'Assembly'], ['S', 'Smelting'],
+    ['M', 'Mining'], ['E', 'Power'], ['K', 'Storage'], ['B', 'Belts and inserters'], ['P', 'Pipes']];
+  var baseCache = { key: null, paths: '', cats: [] };
+  function validBase(bm) {
+    return bm && Array.isArray(bm.rows) && bm.rows.length && isFinite(bm.x0) && isFinite(bm.y0) && bm.cell > 0 && bm.w > 0;
+  }
+  function basePaths(bm) {
+    var key = bm.tick + ':' + bm.cell + ':' + bm.x0 + ':' + bm.y0 + ':' + bm.rows.length;
+    if (baseCache.key === key) return baseCache;
+    var d = {}, ok = {};
+    BASE_CATS.forEach(function (c) { d[c[0]] = []; ok[c[0]] = true; });
+    bm.rows.forEach(function (row, r) {
+      row = String(row);
+      for (var c = 0; c < row.length;) {
+        var ch = row.charAt(c), n = 1;
+        while (c + n < row.length && row.charAt(c + n) === ch) n++;
+        if (ok[ch]) d[ch].push('M' + c + ' ' + r + 'h' + n + 'v1h-' + n + 'z');
+        c += n;
+      }
+    });
+    var cats = BASE_CATS.filter(function (c) { return d[c[0]].length; });
+    baseCache = { key: key, cats: cats, paths: cats.map(function (c) { return '<path class="b-' + c[0] + '" d="' + d[c[0]].join('') + '"/>'; }).join('') };
+    return baseCache;
+  }
+  function minimap(agents, alerts, cams, bm) {
     var pts = agents.filter(function (a) { return a.position && isFinite(a.position.x) && isFinite(a.position.y); });
     var pins = (alerts || []).filter(function (a) { return a.position && isFinite(a.position.x); });
-    if (!pts.length) return '<p class="fx-muted">No positions yet.</p>';
+    var base = validBase(bm) ? bm : null;
+    if (!pts.length && !base) return '<p class="fx-muted">No positions yet.</p>';
     var xs = pts.map(function (a) { return a.position.x; }).concat(pins.map(function (p) { return p.position.x; }));
     var ys = pts.map(function (a) { return a.position.y; }).concat(pins.map(function (p) { return p.position.y; }));
+    if (base) {
+      xs.push(base.x0, base.x0 + base.w * base.cell);
+      ys.push(base.y0, base.y0 + base.rows.length * base.cell);
+    }
     var minX = Math.min.apply(0, xs), maxX = Math.max.apply(0, xs), minY = Math.min.apply(0, ys), maxY = Math.max.apply(0, ys);
     var span = Math.max(64, maxX - minX, maxY - minY) * 1.25, cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     var S = 320, k = S / span;
@@ -234,6 +266,17 @@
     for (var gx = Math.ceil((cx - span / 2) / stepT) * stepT; gx < cx + span / 2; gx += stepT) grid += '<line x1="' + px(gx) + '" x2="' + px(gx) + '" y1="0" y2="' + S + '"/>';
     for (var gy = Math.ceil((cy - span / 2) / stepT) * stepT; gy < cy + span / 2; gy += stepT) grid += '<line y1="' + py(gy) + '" y2="' + py(gy) + '" x1="0" x2="' + S + '"/>';
     var onCam = {}; Object.keys(cams || {}).forEach(function (slot) { (cams[slot].agents || []).forEach(function (n) { onCam[n] = slot; }); });
+    var layer = '', legend = '';
+    if (base) {
+      var bp = basePaths(base);
+      layer = '<g class="mm-base" transform="translate(' + px(base.x0) + ' ' + py(base.y0) + ') scale(' + (base.cell * k).toFixed(4) + ')">' + bp.paths + '</g>';
+      layer += (Array.isArray(base.nests) ? base.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); }).map(function (n) {
+        return n[2] === 's' ? '<rect class="nest" x="' + (px(n[0]) - 3) + '" y="' + (py(n[1]) - 3) + '" width="6" height="6"><title>Enemy spawner</title></rect>'
+          : '<circle class="worm" cx="' + px(n[0]) + '" cy="' + py(n[1]) + '" r="2.5"><title>Worm</title></circle>';
+      }).join('');
+      legend = '<ul class="mm-legend">' + bp.cats.map(function (c) { return '<li><i class="b-' + c[0] + '"></i>' + esc(c[1]) + '</li>'; }).join('') +
+        ((base.nests || []).length ? '<li><i class="nest"></i>Enemy nests</li>' : '') + '</ul>';
+    }
     var marks = pins.map(function (p) {
       return '<g class="pin" transform="translate(' + px(p.position.x) + ' ' + py(p.position.y) + ')"><title>' + esc(label(p.kind) + ': ' + p.text) + '</title>' +
         '<path d="M0 -9 L8 6 L-8 6 Z"/><text y="4" text-anchor="middle">!</text></g>';
@@ -245,9 +288,11 @@
         (onCam[a.name] ? '<circle r="10" class="cam"/>' : '') + '<circle r="5.5" style="fill:' + c + '"/>' +
         '<text x="9" y="4">' + esc(a.display_name || a.name) + '</text></g>';
     }).join('');
-    return '<svg class="minimap" viewBox="0 0 ' + S + ' ' + S + '" role="img" aria-label="Agent positions"><rect width="' + S + '" height="' + S + '" class="mm-bg"/>' +
-      '<g class="mm-grid">' + grid + '</g>' + marks + '</svg>' +
-      '<p class="fx-muted small">About ' + Math.round(span) + ' tiles across; grid every ' + stepT + ' tiles. Rings: on camera. Triangles: alerts.</p>';
+    return '<svg class="minimap" viewBox="0 0 ' + S + ' ' + S + '" role="img" aria-label="' + (base ? 'The base and agent positions' : 'Agent positions') + '"><rect width="' + S + '" height="' + S + '" class="mm-bg"/>' +
+      '<g class="mm-grid">' + grid + '</g>' + layer + marks + '</svg>' + legend +
+      '<p class="fx-muted small">About ' + Math.round(span) + ' tiles across; grid every ' + stepT + ' tiles. Rings: on camera. Triangles: alerts.' +
+      (base ? ' Buildings in ' + base.cell + '-tile cells' + (base.buildings != null ? ' (' + esc(base.buildings) + ' in all)' : '') +
+        ', refreshed every minute.' : '') + '</p>';
   }
 
   // ------------------------------------------------------------------ dashboard
@@ -334,7 +379,7 @@
 
     $('#dash').innerHTML =
       card('card-agents', 'Agents', '<div class="agents-live">' + (cards || '<p class="fx-muted">No agents.</p>') + '</div>') +
-      card('card-map', 'Map', minimap(agents, s.alerts, s.cameras)) +
+      card('card-map', 'Map', minimap(agents, s.alerts, s.cameras, s.basemap)) +
       card('card-board', 'Board', boardHtml) +
       card('card-research', 'Research', research) +
       card('card-charts', 'Factory', '<div class="chart-grid">' + chartHtml + '</div>') +

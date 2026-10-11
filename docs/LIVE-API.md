@@ -76,10 +76,21 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
                 "packs": [{"item": "automation-science-pack", "rate": 0.0, "total": 277}]},
     "alerts": [{"kind": "attack|death|low_power|research", "text": "...", "agent": "grok", "position": {"x": 0, "y": 0}}],
     "board": {"available": true, "open_unowned": 1, "in_progress": 2, "claims": [...], "events": [...]},
+    "basemap": {"tick": 230400, "cell": 4, "x0": -112, "y0": -72, "w": 56, "h": 41, "buildings": 659,
+                "rows": ["..DDDDDD", "....S.BB"],   // one string per cell row from y0; one letter per cell from x0
+                "nests": [[150, 40, "s"], [140, 30, "w"]]},  // enemy spawners (s) and worms (w) near the base
     "cameras": {"main": {"agents": ["sol"], "pair": false, "since": 1791695548.8}}
   }
 }
 ```
+
+`basemap` is the base as a coarse grid, read once a minute by the stream service (`BASEMAP_LUA` in
+`tools/stream/harness.py`, an operator read like the score): every building of ours on nauvis except electric poles,
+binned into `cell`-tile cells (4, doubled until the grid fits 128 cells a side), each cell labelled by its most telling
+building: `D` defence (turrets, walls, gates), `R` labs, `O` oil and chemistry (refineries, chemical plants,
+pumpjacks), `A` assembly (assemblers, the silo), `S` smelting, `M` mining (drills, offshore pumps), `E` power,
+`K` storage, `B` belts and inserters, `P` pipes, `.` nothing. Cell (c, r) covers tiles `x0 + c*cell` to
+`x0 + (c+1)*cell` and the same for y. Trailing empty cells are left off each row. It is absent until the first read.
 
 Field meanings are `serve.py`'s (see `docs/STREAM-NOTES.md`); dropped on purpose: `source`, `poll_ok`, `poll_error`,
 `errors`, per-agent `seen`, `interest` and `voice`, and camera zoom/player indices. To show something new on the

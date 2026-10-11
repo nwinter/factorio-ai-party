@@ -50,6 +50,10 @@ class FakeHarness:
     def flows(self, items):
         return {"iron-plate": [10] * 30}
 
+    def basemap(self):
+        return {"tick": self.tick, "cell": 4, "x0": -8, "y0": -4, "w": 3, "h": 2, "rows": ["SBA", ".D"], "nests": [],
+                "buildings": 5}
+
     def dispatch(self, action, args=None, player=None, bot=None):
         assert action in harness.READ_ACTIONS
         self.calls.append((action, bot, player))
@@ -203,6 +207,7 @@ def main():
     # Lua sent through one_line() must not carry `--` comments (they would swallow the rest of the joined line)
     for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA"):
         assert "--" not in harness.one_line(getattr(harness, name)), f"{name} has a Lua comment"
+    assert "--" not in harness.one_line(harness.basemap_lua()), "BASEMAP_LUA has a Lua comment"
     lua_globals_check()
 
     run = {"agents": {"astra": {"model": "GPT-6 Astra", "harness": "Codex"}, "luna": {"model": "GPT-6 Luna"}}}
@@ -220,6 +225,7 @@ def main():
     m = Model(run)
     m.ingest(obs, time.time())
     snap = m.snapshot(time.time())
+    assert snap["basemap"]["rows"] == ["SBA", ".D"], "the base map reaches the snapshot"
     by = {a["name"]: a for a in snap["agents"]}
     assert by["astra"]["activity"] == "acting" and by["astra"]["action"] == "mining"
     assert by["luna"]["activity"] == "dead" and "respawning" in by["luna"]["action"], by["luna"]
