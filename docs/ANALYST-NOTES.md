@@ -350,7 +350,11 @@ in a run.
   replay at minute 132 used it: "Science per minute has fallen from 37.1 at minute 60 to 12.1 now."
 - A false drop seen in both logs: 19 of shake4's 70 dropped points, and 2 of shake5's first 6, failed on "number 2
   not in facts" where the 2 was part of a name ("Logistics 2 comes next", "assembling machine 2"). The digit of a
-  knowledge-base name ending in -N is no longer checked as a figure.
+  knowledge-base name ending in -N is no longer checked as a figure. Past two hours a resumed shift writes the
+  game clock as "at 2h11"; that clock, within a minute of the game time, now counts as a fact the way "minute 131"
+  already did. All 7 of shake5's drops by 05:31 came from one of these two causes.
+- Viewer answers may name the solo and co-op tests when a viewer asks about them; the drop applies to talking
+  points, judgements and next-milestone lines.
 - Not changed (other branches): `tools/stream/baseline.py:62`'s "previous run on the same map" (P2 item 9). The
   history labels now give the wording it needs: shake1-3 are "base game", shake4 is "the first nine-agent Space
   Age team run".
