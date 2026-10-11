@@ -167,9 +167,10 @@ echo $! >> "$rundir/stream-service.pid"
 helpers+=("shot-sync:$!:$rundir/shot-sync.log")
 # Shoutcasters and voiced agent lines (docs/AUDIO-NOTES.md); POG_CASTER=0 turns them off.
 if [ "${POG_CASTER:-1}" != 0 ]; then
-  # --deadline: the agents' deadline.txt files (written as they launch, after this) give the hosts the time left
+  # --deadline: the agents' deadline.txt files (written as they launch, after this) give the hosts the time left;
+  # --run-dir: its resumed-from (POG_RESUME) tells the hosts this is a later shift of a saved world
   nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts auto --tts-fallback aura1 \
-    --deadline "$rundir/*/deadline.txt" >"$rundir/caster.log" 2>&1 &
+    --deadline "$rundir/*/deadline.txt" --run-dir "$rundir" >"$rundir/caster.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("caster:$!:$rundir/caster.log")
 fi

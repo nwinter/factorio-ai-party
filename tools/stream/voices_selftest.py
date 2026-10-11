@@ -150,6 +150,20 @@ check("clip is normalised mp3 with a duration", ctype == "audio/mpeg" and dur > 
 check("cost counted at the provider's rate", abs(auto.spent - len("Sol finally got red science ONLINE!") * 0.08 / 1000) < 1e-9,
       str(auto.spent))
 
+# shake5: with POG_TTS_OFF=eleven, a saved el- pick goes straight to its stand-in; ElevenLabs is never called
+os.environ["POG_TTS_OFF"] = "eleven"
+try:
+    off_auto = voices.TTS("auto", ai=FakeAI())
+    calls.clear()
+    off_auto.speak("Sol finally got red science ONLINE!", "el-george")
+    check("POG_TTS_OFF=eleven: auto leaves ElevenLabs out", not {"eleven", "eleven-fast"} & set(off_auto.providers),
+          str(sorted(off_auto.providers)))
+    check("POG_TTS_OFF=eleven: an el- pick plays on its stand-in with no ElevenLabs call",
+          calls and not any("elevenlabs" in str(c.get("url")) for c in calls)
+          and off_auto.last["provider"] != "eleven" and not off_auto.down, f"{off_auto.last} {[c['url'] for c in calls]}")
+finally:
+    del os.environ["POG_TTS_OFF"]
+
 auto.speak("Ugh, Grok, the belt is stuck again.", "oa-cedar")
 c = calls[-1]
 check("openai request", c["url"] == "https://api.openai.com/v1/audio/speech" and c["body"]["voice"] == "cedar"
