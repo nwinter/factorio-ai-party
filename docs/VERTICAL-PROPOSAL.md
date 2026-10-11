@@ -35,7 +35,8 @@ our layout that keeps the right half of the main camera and none of the panels: 
 - `GetCanvasList` exists, so this OBS has the multi-canvas machinery that vertical plugins build on.
 - The websocket cannot create a canvas, so a 9:16 canvas comes from a plugin or OBS's own UI.
 - One Quick Sync encoder already carries the recording, the stream and the 45 s replay buffer.
-- With only the buffer running, no output frames were skipped.
+- A 30 s sample during shake3 with all three active: 0 frames skipped, 60 fps, CPU 10.7%, render 0.78 ms per frame.
+  So there is probably room for a second encode, but that is one sample.
 
 ## What YouTube offers (not verified: this session had no web access)
 
