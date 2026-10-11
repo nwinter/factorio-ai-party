@@ -157,7 +157,7 @@ eq(bubble.text,'taking iron, you take copper'); eq(bubble.target.entity,c); eq(b
 bot('say',{text=string.rep('word ',30)})
 eq(bubble.obj.valid,false)
 local lines=0
-for i=#drawn,1,-1 do if drawn[i].obj.valid then lines=lines+1; assert(#drawn[i].text<=40) end end
+for i=#drawn,1,-1 do if drawn[i].obj.valid and drawn[i].time_to_live then lines=lines+1; assert(#drawn[i].text<=40) end end
 eq(lines,4)
 -- profiles: players and bots; camera clients (pog-cam*, pog-director) are
 -- excluded even before their first camera call.

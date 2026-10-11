@@ -9,7 +9,9 @@ export async function bundleRuntime(path: string, options: {compact?: boolean} =
   // Comments and indentation are dropped (line breaks kept) unless compact is false.
   const shrink = options.compact === false ? (text: string) => text : compactLua;
   const folder = dirname(path);
-  const files = (await readdir(folder)).filter(file => file.endsWith('.lua') && file !== 'control.lua' && file !== basename(path)).sort();
+  // control.lua is the transport; data-stage and settings files never run in the runtime.
+  const skip = /^(control|data|data-updates|data-final-fixes|settings|settings-updates|settings-final-fixes)\.lua$/;
+  const files = (await readdir(folder)).filter(file => file.endsWith('.lua') && !skip.test(file) && file !== basename(path)).sort();
   const preamble = `local original_require = require
 local factories, loaded = {}, {}
 local require
