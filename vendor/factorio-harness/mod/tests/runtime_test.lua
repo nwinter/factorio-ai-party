@@ -799,6 +799,11 @@ prototypes.entity['assembling-machine-2']={name='assembling-machine-2',crafting_
 local crafted=call('craft',{recipes={{recipe='iron-gear-wheel',count=3},{recipe='rocket'},{recipe='iron-gear-wheel',count=2},{recipe='pipe',count=1}}})
 eq(crafted.started['iron-gear-wheel'],5); eq(crafted.started.pipe,0); eq(crafted.errors.rocket,'recipe is unavailable')
 eq(crafted.no_assembler,nil); eq(crafted.blocks,nil) -- no assembler unlocked, short queue
+-- A machine-only recipe says so (shake3: Grok's engine-unit read "not hand-craftable now").
+p.force.recipes['engine-unit']={enabled=true,category='advanced-crafting'}
+eq(call('craft',{recipes={{recipe='engine-unit',count=1}}}).errors['engine-unit'],
+  'engine-unit (category advanced-crafting) cannot be hand-crafted by a character; an assembling machine can make it (configure recipe=engine-unit, then feed it)')
+p.force.recipes['engine-unit']=nil
 -- A long hand craft states the backlog and what an unlocked assembler would take.
 p.force.recipes['assembling-machine-2']={enabled=true}
 p.force.recipes['iron-gear-wheel'].energy=0.5; p.force.recipes['iron-gear-wheel'].products={{type='item',name='iron-gear-wheel',amount=1}}

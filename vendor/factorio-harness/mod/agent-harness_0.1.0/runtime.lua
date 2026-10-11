@@ -1520,6 +1520,12 @@ local function craft_shortfall(p,name,count,notes)
 end
 local function begin_craft(p,recipe,count,force,notes,shorts)
   assert(type(recipe)=='string' and p.force.recipes[recipe] and p.force.recipes[recipe].enabled,'recipe is unavailable')
+  -- Say why a machine-only recipe fails (shake3: Grok's engine-unit read
+  -- "not hand-craftable now" with force and the ingredients held).
+  local r,categories=p.force.recipes[recipe],p.character and p.character.prototype.crafting_categories
+  if categories and not takes(categories,r) then
+    error(string.format('%s (category %s) cannot be hand-crafted by a character; an assembling machine can make it (configure recipe=%s, then feed it)',recipe,r.category or 'crafting',recipe),0)
+  end
   count=integer(count,1,1,1000,'count')
   craft_stock(p,recipe,count,force,notes)
   local started=p.begin_crafting{recipe=recipe,count=count}
