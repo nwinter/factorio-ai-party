@@ -130,6 +130,17 @@ def handler():
     lines = fb.summary(log)
     assert lines[0] == "broker: haiku 2 forwarded, 3 refused; 3 refusals logged", lines
     assert "this socket acts for bot haiku, not sol" in lines[1] and "/sc game.speed=10" in lines[2], lines
+    # Agents as their own users (--uid BOT=UID): another user's connection is refused before any command; ours passes.
+    for uid, ok in ((os.getuid() + 1, False), (os.getuid(), True)):
+        b = fb.Broker(fake.port, "s3cret", log, uids={"haiku": uid})
+        ours, theirs = socket.socketpair()
+        threading.Thread(target=b.handler("haiku"), args=(theirs, "pair", None), daemon=True).start()
+        f = ours.makefile("rw")
+        f.write(json.dumps({"command": request({"id": f"u{uid}", "action": "status", "bot": "haiku"})}) + "\n")
+        f.flush()
+        r = json.loads(f.readline())
+        assert r["ok"] is ok and (ok or "haiku's user" in r["error"]), (uid, r)
+        ours.close()
     # A wrong password: the reply says the outcome is unknown, and the broker keeps serving.
     bad = fb.Broker(fake.port, "wrong", log)
     ours, theirs = socket.socketpair()

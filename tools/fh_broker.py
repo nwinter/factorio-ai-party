@@ -81,19 +81,25 @@ class Rcon(pog.Rcon):
                 return
 
 
-def peer_pid(conn):
+def peer(conn):
+    """(pid, uid) of the process on the other end of a Unix socket, None where unknown (a socket pair)."""
     try:
         if sys.platform == "darwin":
-            return conn.getsockopt(0, 2)  # SOL_LOCAL, LOCAL_PEERPID
-        return struct.unpack("3i", conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[0]
+            pid = conn.getsockopt(0, 2)  # SOL_LOCAL, LOCAL_PEERPID
+            uid = struct.unpack_from("<II", conn.getsockopt(0, 1, 76))[1]  # LOCAL_PEERCRED: struct xucred
+            return pid, uid
+        pid, uid, _ = struct.unpack("3i", conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))
+        return pid, uid
     except OSError:
-        return None
+        return None, None
 
 
 class Broker:
-    def __init__(self, port, password, log_path=None, host="127.0.0.1", rcon_timeout=60):
+    def __init__(self, port, password, log_path=None, host="127.0.0.1", rcon_timeout=60, group=None, uids=None):
         self.port, self.password, self.host, self.rcon_timeout = port, password, host, rcon_timeout
         self.log_path, self.lock = log_path, threading.Lock()
+        # Agents as other macOS users (docs/LAUNCH-NOTES.md): the sockets' group, and each bot's own uid if known.
+        self.group, self.uids = group, uids or {}
         self.counts = {}
         self.servers = []
 
@@ -116,7 +122,12 @@ class Broker:
 
         class Handler(socketserver.StreamRequestHandler):
             def handle(self):
-                rcon, pid = None, peer_pid(self.request)
+                rcon, (pid, uid) = None, peer(self.request)
+                if bot in broker.uids and uid != broker.uids[bot]:
+                    broker.count(bot, "refused")
+                    broker.log(event="refused", bot=bot, pid=pid, uid=uid, reason=f"uid {uid} is not {bot}'s user", command="")
+                    self.reply({"ok": False, "refused": True, "error": f"refused: this socket is for {bot}'s user"})
+                    return
                 try:
                     for raw in self.rfile:
                         try:
@@ -127,7 +138,7 @@ class Broker:
                             out = check(command, bot)
                         except Refused as e:
                             broker.count(bot, "refused")
-                            broker.log(event="refused", bot=bot, pid=pid, reason=str(e), command=str(command)[:300])
+                            broker.log(event="refused", bot=bot, pid=pid, uid=uid, reason=str(e), command=str(command)[:300])
                             self.reply({"ok": False, "refused": True, "error": f"refused: {e}"})
                             continue
                         try:
@@ -157,14 +168,21 @@ class Broker:
 
     def serve(self, directory, bots):
         os.makedirs(directory, exist_ok=True)
-        os.chmod(directory, 0o700)
+        gid = None
+        if self.group:
+            import grp
+            gid = grp.getgrnam(self.group).gr_gid
+            os.chown(directory, -1, gid)
+        os.chmod(directory, 0o750 if gid is not None else 0o700)
         for bot in bots:
             path = os.path.join(directory, f"{bot}.sock")
             if os.path.exists(path):
                 os.remove(path)
             server = socketserver.ThreadingUnixStreamServer(path, self.handler(bot))
             server.daemon_threads = True
-            os.chmod(path, 0o600)
+            if gid is not None:
+                os.chown(path, -1, gid)
+            os.chmod(path, 0o660 if gid is not None else 0o600)
             self.servers.append((bot, path, server))
             threading.Thread(target=server.serve_forever, daemon=True).start()
             self.log(event="listening", bot=bot, socket=path)
@@ -208,14 +226,19 @@ def main():
     ap.add_argument("--password-file", help="default ~/.config/pog/rcon-WORLD.pw")
     ap.add_argument("--dir", required=True, help="socket directory, e.g. runs/RUN/.sock")
     ap.add_argument("--log", help="JSON-lines log (default stdout)")
+    ap.add_argument("--group", default=os.environ.get("POG_AGENT_GROUP"),
+                    help="agents run as another user in this group: sockets 660 and their folder 750 in this group")
+    ap.add_argument("--uid", action="append", default=[], metavar="BOT=UID",
+                    help="this bot's socket accepts only this user (agents as one macOS user each)")
     ap.add_argument("bots", nargs="+")
     a = ap.parse_args()
     for b in a.bots:
         if not re.fullmatch(r"[a-z][a-z0-9_-]{0,15}", b):
             raise SystemExit(f"not a bot name: {b}")
+    uids = {k: int(v) for k, v in (u.split("=", 1) for u in a.uid)}
     port = a.port or pog.PORTS.get(a.world) or int(os.environ["POG_RCON_PORT"])
     pw = open(a.password_file or os.path.expanduser(f"~/.config/pog/rcon-{a.world}.pw")).read().strip()
-    broker = Broker(port, pw, a.log)
+    broker = Broker(port, pw, a.log, group=a.group, uids=uids)
     broker.serve(a.dir, a.bots)
     done = threading.Event()
     signal.signal(signal.SIGTERM, lambda *_: done.set())
