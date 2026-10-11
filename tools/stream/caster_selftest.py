@@ -32,6 +32,10 @@ check("accepts a rounded figure", caster.check_line("Over a hundred machines sta
                                                     dict(facts, starved=118), names, []) is None)
 check("parses spelled numbers", [n for _, n in caster.spelled_numbers("one hundred and twenty belts, forty-two")]
       == [120, 42])
+check("rejects the hosts joining the team", caster.check_line("We're one tech behind!", facts, names, []) is not None
+      and caster.check_line("Luna needs our help", facts, names, []) is not None)
+check("allows host phrasing", caster.check_line("And here we see Luna, stay with us!", facts, names, []) is None)
+check("reads 3,600 as one number", caster.check_line("Luna made 3,600 plates", dict(facts, made=3607), names, []) is None)
 check("rejects a repeat", caster.check_line("Luna is under attack!", facts, names, ["Luna is under attack, wow"]) is not None)
 check("strips speaker prefix and stage directions", caster.clean('Rook: "*leans in* Huge play!"') == "Huge play!")
 

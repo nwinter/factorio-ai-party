@@ -362,8 +362,10 @@ def check_line(line, facts, names, recent):
             return f"number not in facts: {words}"
     if len(line.split()) > 34:
         return "too long"
-    if re.search(r"\b(we|we're|we've|we'll|our|ours|us)\b", low.replace("’", "'")) and \
-            not re.search(r"\b(we're|we are) live\b|\bhere we go\b|\blet's\b|\blet us\b", low.replace("’", "'")):
+    host_we = re.sub(r"\b(?:here )?we (?:see|find|watch|observe|might see|can see|get to see)\b|\bwe(?:'ll| will) see\b|"
+                     r"\b(?:we're|we are) live\b|\bhere we go\b|\blet's\b|\blet us\b|\b(?:join|stay with|tell) us\b",
+                     "", low.replace("’", "'"))  # the hosts may speak as hosts: "here we see", "stay with us"
+    if re.search(r"\b(we|we're|we've|we'll|our|ours|us)\b", host_we):
         return "speaks as part of the team ('we')"
     words = set(re.findall(r"[a-z']+", low))
     for r in recent:
