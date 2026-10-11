@@ -512,13 +512,34 @@ def known_text(facts):
     return json.dumps(facts, ensure_ascii=False).lower()
 
 
+def supported_names(facts, names):
+    """The agents a line may name: on camera or anywhere in this beat's own facts, or the one who did something in an
+    earlier beat ("board at ...: Luna - ...", "aloud at ...: Grok - ..."). A name only mentioned inside an earlier beat
+    is not enough: shake4's "Luna idles, sparkless, at the crash site" (04:30:52) stood on a board post in
+    earlier_on_air while Luna was off camera at the workshop."""
+    here = known_text({k: v for k, v in facts.items() if k != "earlier_on_air"})
+    out = set()
+    for n in names:
+        if re.search(r"\b" + re.escape(n.lower()) + r"\b", here):
+            out.add(n.lower())
+    for beat in facts.get("earlier_on_air") or []:
+        doer = str(beat).split(": ", 1)[-1].lower()
+        out.update(n.lower() for n in names if re.match(re.escape(n.lower()) + r"\b", doer))
+    return out
+
+
 def check_line(line, facts, names, recent):
     """Return a reason the line is unusable, or None. Names and numbers must come from the facts."""
     blob = known_text(facts)
     low = line.lower()
+    backed = supported_names(facts, names)
     for n in names:
-        if re.search(r"\b" + re.escape(n.lower()) + r"\b", low) and n.lower() not in blob:
+        if re.search(r"\b" + re.escape(n.lower()) + r"\b", low) and n.lower() not in backed:
             return f"name not in facts: {n}"
+        # shake4 04:40:18, Vale: "two Sols freeze mid-thought" with Sol and Luna on camera
+        if re.search(r"\b(?:two|three|four|five|six|seven|eight|nine|ten|\d+|both|several|many|all the) "
+                     + re.escape(n.lower()) + r"(?:e?s)\b", low):
+            return f"more than one {n}"
     # numbers spelled out in the facts count too: shake3 rejected "Eleven labs" from Sol's "eleven labs are working"
     known = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", blob)] + [float(v) for _, v in spelled_numbers(blob)]
     # Kimi once aired "I will never doubt静止 again!" (Space Age pilot, 01:48)
@@ -1403,6 +1424,9 @@ class Caster:
                              {"type": "agent", "agent": m["agent"], "label": label, "line": text},
                              hold=lambda: self.caster_free)  # only a caster clip already pushed: agents go first
             self.agent_free = time.time() + dur + 0.4
+            if dur:  # the hosts may call back to it: shake4 rejected Grok 19 s after Grok spoke aloud (04:42:22)
+                self.history.append(f"aloud at {spoken_time(s.get('game_time'))}: "
+                                    f"{names.get(m['agent'], m['agent'])} - {text}")
 
     def voice(self, text, voice_id, caster, meta, rec, hold=None):
         """TTS + push. Returns the clip length in seconds (an estimate when nothing is pushed). `hold()` gives a time

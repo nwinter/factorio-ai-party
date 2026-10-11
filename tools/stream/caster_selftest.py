@@ -466,5 +466,24 @@ finally:
 check("a point on air is marked used once (POST /analyst/used)", marked == [("http://x/analyst/used", b'{"id": "tp3"}')]
       and "tp3" in cs4.used_points, str(marked))
 
+# Round 5 (shake4 study item 11): a roster name counts only when that agent is on camera, in this beat's facts, or did
+# something in an earlier beat; never "two Sols".
+roster5 = ["Sol", "Luna", "Grok", "Astra"]
+seg5 = {"event": "segment", "on_camera": [{"name": "Sol", "status": "planning the next step"}],
+        "earlier_on_air": ["board at 1 hour 38 minutes: Luna - Astra coal feed belt handoff",
+                           "aloud at 1 hour 52 minutes: Grok - Sixty-six biters coming, turrets up!"]}
+check("names: an agent on camera passes", caster.check_line("Sol plans the next furnace row.", seg5, roster5, []) is None)
+check("names: the agent behind an earlier beat passes (Grok spoke aloud)",
+      caster.check_line("Grok called that raid early, Vale!", seg5, roster5, []) is None)
+check("names: an agent who posted earlier passes", caster.check_line("Luna's handoff note still holds.", seg5, roster5,
+                                                                     []) is None)
+check("names: an agent only mentioned in an earlier beat is rejected",
+      caster.check_line("Astra stares at the crash site fire.", seg5, roster5, []) == "name not in facts: Astra")
+check("names: 'two Sols' is rejected", caster.check_line("Two Sols, one furnace row!", seg5, roster5, []) ==
+      "more than one Sol" and caster.check_line("both Sols agree.", seg5, roster5, []) == "more than one Sol")
+check("names: a possessive is not a plural", caster.check_line("Two of Sol's furnaces glow.", seg5, roster5, []) is None)
+check("supported_names", caster.supported_names(seg5, roster5) == {"sol", "luna", "grok"},
+      str(caster.supported_names(seg5, roster5)))
+
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)
