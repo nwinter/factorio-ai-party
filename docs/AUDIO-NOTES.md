@@ -4,6 +4,86 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Hosts, round 3 (HOSTS3.md, 2026-10-11, for the 17:00 shift change)
+
+The shake7 study (study/shake7, `docs/studies/shake7-early.md`) found the copy filter worked, but the plain style
+turned into mockery of idle agents ("Classic Opus. Big chat energy."). About 108 of 803 lines said an agent was walking,
+and 57 quoted a motto.
+
+- The shift and planet fix (84b8749) and the numbers fix (7385467) are on eng/audio, which merges cleanly with main.
+- Tone. The notes now say the agents are the stars and the hosts like them: curious about how they think, warm
+  about what they try, a gentle tease at most. They also say what to talk about when nothing much is happening: the
+  plan on the board, the factory, a number that changed, or a viewer's question. Never call a fact wrong.
+- Facts.
+  - An agent's `doing` is dropped when it is just travel ("walking", "moving").
+  - Each agent now carries `working_on`, the job it holds on the board.
+  - A lull's `busy_agents` lists only agents with a task or a job.
+  - The planning status reads "working out the next step"; "between tasks" is gone.
+  - Mottos appear only on the opener and the spotlight card.
+- Cuts in `check_line`, all as style faults:
+  - walking filler, when the facts don't mention walking;
+  - mockery shapes: "classic Opus", "big chat energy", "still planning", "planning again", "Planning, they call it",
+    "just waiting", "that motto aged fine";
+  - motto filler, when the facts carry no motto;
+  - calling a fact false ("that number is a lie").
+- Quote marks come off a line only in pairs. Shake7 aired 13 lines with a lone quote mark.
+- Cards. Each card on the overlay has a call (`CARD_CALLS`):
+  - recap: tell the best story of the last few minutes;
+  - production: what went up or down, and why it matters;
+  - spotlight: introduce the agent as someone to root for;
+  - research, overview and space have calls too.
+
+  Any non-urgent beat that lands while a card is up carries the card (`on_screen_now`) and `card_on_screen`, which
+  tells the hosts to talk about the card first.
+- One voice at a time (item 5, Nick). `static/audio.js` now has one queue for hosts and agents.
+  - A clip that matters more fades the current one out (`?fade=0.25` s) and plays next. Rank, high to low: urgent
+    (attack, death, loss, space moment), an agent speaking aloud, an answer to a viewer, banter.
+  - The rest of a Rook/Vale exchange goes before other clips of the same rank. An urgent line in between does not
+    break the exchange.
+  - A clip that expires while waiting is dropped, never played late.
+  - caster.py sends `rank` and `exchange` with each host line, and serve.py takes a `cut` report.
+  - `audio_selftest.mjs` overlaps five clips in a headless page and passes. It plays "A1 G U A2 B1": the agent fades
+    A1 out, the urgent line fades G out, the exchange's second line comes before the other banter, and the expired
+    clip never plays. Never two voices at once.
+  - Until the caster restarts with this code, its lines carry no rank. The page then treats every host line as
+    banter and every agent line as an agent, so urgent host lines don't interrupt yet.
+- copy_bench puts logged facts in today's shape before writing: no walking, mottos only on the opener and spotlight,
+  the shift by number, background numbers, card calls. `--match` picks the beats that went wrong.
+
+Replayed over shake7's 1,200 aired writer lines, with facts in today's shape, today's checks would cut 288 (24%):
+192 walking, 60 motto, 33 mockery. That assumes the writer keeps shake7's habits. Shake7's walking and motto lines came
+from facts that no longer carry them, and the notes now ask for the opposite, so the live cut rate should be well
+under that. The rewrite on a style fault catches most of the rest.
+
+15 shake7 beats that went wrong, picked with `--match "walk|motto|still|again|classic|energy"`, with today's post-filter
+on today's facts. The model's after lines for these beats could not be written from this session: the sandbox denies
+api.cloudflare.com. They come from the command below.
+
+| aired in shake7 | today |
+|---|---|
+| Rook: Grok's walking now. Engine or bust. | cut: walking filler |
+| Rook: Opus is writing commands again. Planning, they call it. | cut: mocks an agent |
+| Rook: Picking up turrets to walk west. Reuse, recycle, retrench. That's the motto almost. | cut: walking filler |
+| Vale: Water main. That's pipes, pumps, lots of walking. | cut: walking filler |
+| Rook: Their motto's "ore to orbit." Concrete fits. | cut: motto filler |
+| Rook: Astra's new drills are in. They said they'd repay the favor. Still waiting. | cut: mocks an agent |
+| Rook: Six and a half hours. First rocket's up, and Astra's still walking. | cut: walking filler |
+| Rook: Grok's still walking. Hope that shore's close. | cut: walking filler |
+| Rook: Opus is walking back to spawn again. | cut: walking filler |
+| Rook: Their motto says steam first. They took it literal. | cut: motto filler |
+| Vale: Sol's back from the dead and already writing orders. That's the motto talking. | cut: motto filler |
+| Vale: They need hands more than plans. Opus is still walking. | cut: walking filler |
+| Vale: Opus died, but the nest is gone. One for three spawners is a trade they take. | kept |
+| Rook: Astra just claimed the concrete cell job. | kept |
+| Vale: Twenty-eight. That's a whole suburb doing nothing. | kept |
+
+To get the model's after lines and compare writers:
+
+    L=~/code/player-of-games/tools/stream/logs
+    python3 tools/stream/copy_bench.py $L/caster-20261011-130031.jsonl --n 15 \
+        --match "walk|motto|still|again|classic|energy" \
+        --writers cf=@cf/moonshotai/kimi-k2.6,cf=@cf/zai-org/glm-5.3-flash --md /tmp/copy-bench7.md
+
 ## Hosts, round 2 (HOSTS2.md, 2026-10-11 afternoon)
 
 - Shift numbering (shake6 study P1 item 2). The `shift` fact is now `this_shift` ("shift 3"), `next_shift`
@@ -623,7 +703,7 @@ serve.py (state, /events SSE) --> caster.py --(writer: Workers AI | claude | tem
                                                                                    TTS (Aura-2 | Aura-1 | MeloTTS | say | tone)
                                                                                                    |
 overlay page (OBS browser source) <-- /audio-events <-- serve.py voice queue <-- POST /audio <------+
-   audio.js: caster channel + agent channel; casters duck to 30% while an agent speaks; captions
+   audio.js: one voice at a time; a clip that matters more fades the current one out; captions
 OBS: "stream game audio" (cam1 process capture, +4 dB, limiter) and "stream music bed" (-24 dB, disabled) each carry a
      compressor whose sidechain is "stream overlay", so game and music duck under every voice.
 ```
@@ -758,8 +838,8 @@ running, so stop the old `factorio-cam1.exe` first (as `rejoin.sh` does).
   limiter at -1 dB on the overlay source catches the rare spike (one clip metered +5.5 dBFS right after a page reload).
 - Ducking: compressor (ratio 2.5, threshold -40 dB, attack 15 ms, release 700 ms) with sidechain "stream overlay" on
   the game audio and the music bed. Measured 13-16 dB down while anyone speaks (game -25 to -38/-41 dBFS), back up
-  within a second after. Ratio 6 measured about 22 dB, which took the factory out entirely. Agents over casters is
-  done in the page (casters to 30%, `?duck=` to change).
+  within a second after. Ratio 6 measured about 22 dB, which took the factory out entirely. The page plays one voice
+  at a time (HOSTS3 item 5): an agent line fades a host line out instead of playing over it.
 - After restarting `serve.py`, reload the overlay sources (`obs.py reload-overlay`, or the source's Refresh button):
   a page loaded from an older service keeps its board running but never loads `audio.js`, so it plays nothing. The
   service's `/audio/status` `listeners` count shows how many pages are listening (2 with `audio-test` built).
@@ -786,7 +866,7 @@ fallback voice.
 Personas, priorities, rules and templates are at the top of `caster.py` (`CASTERS`, `PRIORITY`, `RULES`,
 `TemplateWriter.T`). `--push FILE` sends one audio file as a clip (stings, tests).
 
-Overlay URL: `?mute`, `?duck=0.3`, `?caster=0.9`, `?agent=1.0`, `?captions=0`. Captions show who is speaking above
+Overlay URL: `?mute`, `?caster=0.9`, `?agent=1.0`, `?fade=0.25` (seconds to fade out an interrupted clip), `?captions=0`. Captions show who is speaking above
 the bottom of the main camera (agents above casters). A desktop browser needs one click to start audio; OBS does not.
 
 OBS levels: `GAME_DB`, `MUSIC_DB`, `DUCK` at the top of the audio section in `tools/obs.py`.

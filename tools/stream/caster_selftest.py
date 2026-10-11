@@ -592,7 +592,8 @@ check("lull: busy agents are the ones with a job or a task", [b["name"] for b in
       ["Opus", "Sol"], str(fl.get("busy_agents")))
 check("style: walking filler, mockery, motto filler and calling a fact false are cut", all(sf_(t) for t in (
     "Opus is still walking. Four hours in.", "Classic Opus. Big chat energy.", "Haiku's still planning at spawn.",
-    "That motto aged fine.", "Science per minute says sixty. That number is a lie.")) and
+    "That motto aged fine.", "Science per minute says sixty. That number is a lie.",
+    "Opus is writing commands again. Planning, they call it.", "Gemini's just waiting.")) and
       sf_("Opus is on the courier run for blue science.") is None and
       sf_("Their motto is steam first.", '"motto": "steam first, questions later"') is None)
 check("quote marks come off in pairs only", caster.clean('"Steam first, questions later." Ran out of both.') ==

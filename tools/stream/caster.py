@@ -723,7 +723,9 @@ MOCK = re.compile(r"\bclassic (?:astra|sol|luna|opus|sonnet|haiku|grok|gemini|mu
                   r"\bsomeone else(?:'s)? (?:moves|does|brain|feet|hands|will)\b|"
                   r"\bstill (?:just )?(?:planning|thinking|talking|chatting|waiting|sleeping)\b|"
                   r"\b(?:planning|thinking|talking|chatting|sleeping) again\b|\bthey love (?:a|to) \w+|"
-                  r"\b(?:all|just) talk\b|\bkeeps? the brand\b|\baged (?:fine|well|badly)\b")
+                  r"\b(?:all|just) talk\b|\bkeeps? the brand\b|\baged (?:fine|well|badly)\b|"
+                  r"\b(?:planning|thinking|working), they call it\b|\bjust (?:waiting|sitting|standing)\b|"
+                  r"\bnow they wait\b")
 BUZZ_WORDS = re.compile(r"\b(?:humming|hums|symphony|ballet|orchestra\w*|heartbeat|masterclass)\b")
 BODY_WORDS = re.compile(r"\b(starv\w*|bleed\w*|bled|chok\w*|feast\w*|drown\w*|scream\w*|gasp\w*|thirst\w*|"
                         r"devour\w*|pray\w*|dreams?|dreaming)\b")
