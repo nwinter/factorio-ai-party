@@ -4,7 +4,7 @@
 -- character and are not agents (profiles and the turn clock ignore them).
 return function(api)
   local M = {}
-  local EASE, JUMP, MIN_ZOOM, MAX_ZOOM = 0.08, 200, 0.3, 2
+  local EASE, JUMP, MIN_ZOOM, MAX_ZOOM = 0.08, 200, 0.3, 4
   local function store()
     local s = api.state()
     s.cameras = s.cameras or {}
@@ -94,7 +94,7 @@ return function(api)
       cam.position = {x=pos.x, y=pos.y}
     end
     if args.zoom ~= nil then
-      assert(type(args.zoom) == 'number' and args.zoom >= MIN_ZOOM and args.zoom <= MAX_ZOOM, 'zoom must be 0.3..2')
+      assert(type(args.zoom) == 'number' and args.zoom >= MIN_ZOOM and args.zoom <= MAX_ZOOM, string.format('zoom must be %g..%g', MIN_ZOOM, MAX_ZOOM))
       cam.zoom = args.zoom
     end
     local old = cams[p.index]

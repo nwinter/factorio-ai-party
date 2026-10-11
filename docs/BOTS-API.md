@@ -46,7 +46,7 @@ spectator "director" clients.
 
 - A director is a real connected player whose client exists only to be captured by OBS.
 - Operator-only: `remote.call("agent_harness", "camera", json)` with `{player=index, follow=bot_or_player_name |
-  position={x,y}, zoom=0.3..2, smooth=true}`. The harness switches that player to the spectator controller once and,
+  position={x,y}, zoom=0.3..4, smooth=true}`. The harness switches that player to the spectator controller once and,
   every tick, eases its view toward the target (no teleport jumps unless the target is >200 tiles away).
   `{player=index, release=true}` stops following. Read: `cameras` -> current targets.
 - Directors never count as agents: they have no character and are ignored by the turn clock and by `profiles`.
