@@ -83,7 +83,9 @@ h1 { font-size: clamp(1.9rem, 4.2vw, 2.7rem); margin: 1.2rem 0 .6rem; }
 h2 { font-size: 1.5rem; margin: 2.4rem 0 .8rem; }
 h3 { font-size: 1.1rem; margin: 1.4rem 0 .4rem; }
 .h-sub { display: block; font-size: 1.05rem; font-weight: 400; color: var(--ink-2); margin-top: .3rem; }
-.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 0 16px; }
+/* The live page uses the whole screen: the video column grows with it (text pages keep .prose's line length). */
+.wrap:has(.live-app) { max-width: 1920px; padding: 0 24px; }
 .muted { color: var(--muted); }
 .small { font-size: .88rem; }
 .lede { font-size: 1.15rem; color: var(--ink-2); max-width: 46em; }
@@ -318,7 +320,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .live-head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
 .live-head-row h1 { margin-bottom: .4rem; }
 .live-head-meta { margin: 0; display: flex; gap: 10px; align-items: center; }
-.live-top { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(300px, 1fr); gap: 14px; align-items: stretch; }
+.live-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 14px; align-items: stretch; }
 @media (max-width: 960px) { .live-top { grid-template-columns: 1fr; } }
 .player-wrap { aspect-ratio: 16 / 9; background: #0d0c0d; border: 2px solid #111; border-radius: var(--fx-r-1); overflow: hidden; position: relative;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .10), var(--fx-inset-shadow), var(--fx-shadow-window); }
