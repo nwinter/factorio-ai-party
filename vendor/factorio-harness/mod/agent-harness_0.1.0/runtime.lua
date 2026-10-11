@@ -774,7 +774,7 @@ function handlers.map(p,a)
         end
         for _,kind in ipairs({'tree','rock'}) do
           if a[kind..'s'] then
-            local filter=kind=='tree' and {area=area,type={'tree','plant'}} or {area=area,type='simple-entity'}
+            local filter=kind=='tree' and {area=area,type=(script and script.active_mods['space-age']) and {'tree','plant'} or 'tree'} or {area=area,type='simple-entity'}
             for _,e in pairs(surface.find_entities_filtered(filter)) do
               local x,y=math.floor(e.position.x),math.floor(e.position.y)
               if math.floor(x/32)==cx and math.floor(y/32)==cy and (kind=='tree' or e.name:find('rock')) then
@@ -891,7 +891,7 @@ local scan_fields={
     local parts={}
     for _,name in ipairs(take_order) do
       local ok,inv=false,nil
-      if name~='fuel' then ok,inv=pcall(inventory,e,name) end
+      if name~='fuel' then ok,inv=pcall(inventory,e,name) else ok,inv=true,fuel_inventory(e) end
       local text=ok and spoil_text(inv,4)
       if text then parts[#parts+1]=text end
     end
@@ -1334,8 +1334,8 @@ function handlers.mine(p,a)
   assert(e.minable,'entity is not mineable')
   -- Space Age: some ores are not hand-mineable (tungsten-ore is hard-solid,
   -- big mining drills only). Ore is taken through mine_entity, which would
-  -- not check, so check the character's mining categories here.
-  local hand=e.type=='resource' and p.character and p.character.prototype.mining_categories
+  -- not check, so check the character's resource categories here.
+  local hand=e.type=='resource' and p.character and p.character.prototype.resource_categories
   local category=hand and e.prototype.resource_category
   assert(not category or hand[category],e.name..' is '..tostring(category)..': a character cannot mine it by hand (a drill that mines '..tostring(category)..' can)')
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')

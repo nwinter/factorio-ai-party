@@ -148,7 +148,7 @@ return function(api)
       table.sort(parts)
       row.asteroid_chunks=table.concat(parts,' ')
     end
-    local s=pl.surface
+    local s=try(function() return pl.surface end)
     if s then
       local thrusters=try(function() return s.find_entities_filtered{type='thruster'} end) or {}
       if #thrusters>0 then
@@ -296,7 +296,7 @@ return function(api)
     requests={target='character (default when no position/platform)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       returns='target, sections [{index, group, controlled (set by the game, not editable), requests ["item min..max from planet"]}]; call with no set/clear to just read'},
-    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks in reach by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
+    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule'},
     land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any)',returns='landing'},

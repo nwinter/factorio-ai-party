@@ -54,7 +54,7 @@ class Rcon:
 
 # Totals cover every surface (Space Age: planets and platforms; the base game has only nauvis). Names missing from
 # the loaded mods are skipped. Space Age fields: consumed (science packs used by labs, all surfaces), infinite
-# (levels researched past each infinite technology's first level), planets (surfaces with our entities), platforms.
+# (infinite levels completed per technology), planets (surfaces with our entities), platforms.
 SCORE_LUA = r"""
 local f = game.forces.player
 local all = {}
