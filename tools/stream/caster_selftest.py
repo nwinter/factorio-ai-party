@@ -608,7 +608,7 @@ check("style: 'X, not Y' and 'not X, but Y' are rejected", sf_("Those furnaces w
       sf_("Furnaces warm, science moving, not yet there.") is None)
 check("style: documentary narration, stock words, similes", sf_("Here in the wild, Grok marks water tiles.") and
       sf_("The labs are humming.") and sf_("Astra loops coal like a river finding its bed.") and
-      sf_("Looks like a coal run.") is None)
+      sf_("Looks like a coal run.") is None and sf_("Grok's back and talking like a shift supervisor.") is None)
 check("style: a body metaphor on machines unless the facts use the word", sf_("Twelve packs starve six labs.") and
       sf_("Twenty machines starved.", '"low power: 84 of 234 machines starved"') is None
       and sf_("Labs dream of green.") and sf_("Oh, there it is.") is None)

@@ -690,9 +690,11 @@ def style_fault(line, blob=""):
     for m in BODY_WORDS.finditer(low):
         if m.group(1)[:5] not in blob:
             return f"style: metaphor '{m.group(1)}'"
-    for m in re.finditer(r"\b(\w+) like (?:a|an) \w+", low):
+    # a drawn-out image ("like a river finding its bed"); a short one is plain talk ("talking like a shift
+    # supervisor", cut wrongly in shake7's first minutes)
+    for m in re.finditer(r"\b(\w+) like (?:a|an) ((?:[\w'-]+ ?){1,8})", low):
         if m.group(1) not in ("looks", "look", "sounds", "sound", "feels", "feel", "seems", "something", "more",
-                              "just", "much", "anything", "nothing"):
+                              "just", "much", "anything", "nothing") and len(m.group(2).split()) >= 4:
             return "style: simile"
     # "Forty-seven on circuits, twenty techs deep": 13% of shake4-6's lines said three numbers or more
     # per sentence: shake7's "Eleven gone now. Six pipes, two inserters." is a damage report said the way people do
