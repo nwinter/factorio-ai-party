@@ -49,7 +49,8 @@ for _,pl in ipairs(players) do pl.print=function() end end
 local tick=0
 game={tick=0,players=players,forces={player=force,enemy={name='enemy',get_evolution_factor=function() return 0 end,get_evolution_factor_by_time=function() return 0 end,
   get_evolution_factor_by_pollution=function() return 0 end,get_evolution_factor_by_killing_spawners=function() return 0 end}},
-  get_player=function(i) if type(i)=='string' then for _,p in ipairs(players) do if p.name==i then return p end end return nil end return players[i] end,
+  -- As the engine: a bot's index is no player index.
+  get_player=function(i) assert(type(i)=='string' or i<=65536,'Given player value is too big'); if type(i)=='string' then for _,p in ipairs(players) do if p.name==i then return p end end return nil end return players[i] end,
   get_surface=function() return surface end,print=function() end,connected_players=players,
   get_pollution_statistics=function() return {input_counts={},output_counts={},get_flow_count=function() return 0 end} end}
 local runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
@@ -190,6 +191,8 @@ eq((astra('status').team or {}).mentions,nil)
 -- A chat peek (overlay) does not consume hints.
 grok('say',{text='astra peek'})
 eq(astra('chat',{peek=true}).team,nil)
+eq(astra('status',{peek=true}).team,nil); eq(astra('board',{peek=true}).team,nil); eq(astra('profiles',{peek=true}).profiles~=nil,true)
+fails(function() astra('status',{peek='yes'}) end,'unknown argument peek')
 assert(astra('status').team.mentions)
 
 -- Alerts: attacks on our entities, my character being hit, groups, losses.

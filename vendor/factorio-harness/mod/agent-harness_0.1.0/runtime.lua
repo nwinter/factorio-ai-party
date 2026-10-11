@@ -3206,7 +3206,9 @@ M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) 
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
-M.board=require('board'){state=state,director=function(index) return M.cameras.director(index) end,bots=function() return M.bots.list() end,
+-- Bots are never directors (and game.get_player refuses their indices).
+function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
+M.board=require('board'){state=state,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
   submit=function(p,a) return handlers.queue_submit(p,a) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
@@ -3265,7 +3267,9 @@ function check_args(action,args)
     set=allowed_args[action]
   end
   for key in pairs(args) do
-    if not set[key] and not (key=='scope' and action~='observe' and VIEW_SCOPES[action]) then
+    -- peek (boolean) on any request: read without consuming this agent's
+    -- team hints (overlays polling as an agent).
+    if not set[key] and not (key=='scope' and action~='observe' and VIEW_SCOPES[action]) and not (key=='peek' and type(args.peek)=='boolean') then
       local valid={}
       for k in pairs(set) do valid[#valid+1]=k end
       table.sort(valid)
@@ -3334,7 +3338,7 @@ function M.dispatch(request)
     -- What is new for this agent (mentions, board, attacks/losses, reminders);
     -- directors and peeking readers (overlays) leave the agent's cursors alone.
     local peek=type(request.args)=='table' and request.args.peek==true
-    if p and p.valid and not peek and request.action~='board_events' and not M.cameras.director(p.index) then
+    if p and p.valid and not peek and request.action~='board_events' and not M.is_director(p.index) then
       result.team=M.board.team(p,unseen_losses(p))
     end
     if clock and request.action=='status' then result.time_mode=clock.report() end
@@ -3365,7 +3369,7 @@ dispatch_request=function(request)
     if M.board.needs_character[request.action] then p=player(request.player)
     else
       p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
-      if not M.board.open_reads[request.action] then assert(not M.cameras.director(p.index),'directors do not post on the board') end
+      if not M.board.open_reads[request.action] then assert(not M.is_director(p.index),'directors do not post on the board') end
     end
     local ok,result=pcall(board,p,request.args or {})
     if not ok then passive_failed=true; error(result,0) end
