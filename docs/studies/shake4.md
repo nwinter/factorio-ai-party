@@ -311,10 +311,10 @@ updates in hour one, 19 posts and 17 updates in hour two (Astra 12 of the 19).
 | muse | 1 | 3 / 0 | 4 |
 | sonnet | 4 | 1 / 0 | 1 |
 
-11 posts failed and were resent within seconds, all on argument shape: 7 with a `note` field (`unknown argument note
-for board_post; valid: area, kind, needs, owner, tags, ...`; Luna 02:53:45, Grok 02:53:40, Sol 03:27:50, Astra 03:29:54
-and 04:08:20, Haiku with `status` 03:21:32 and `requested_by` 04:15:57) and 3 with `needs` as an object instead of a
-list (`needs is text or an array of 1..16 item names or {...}`, Sol 03:27:54, Astra 03:29:59, 04:08:23). The prompt
+10 posts failed and were resent within seconds, all on argument shape: 7 with an argument a post does not take, 5 of
+them `note` (`unknown argument note for board_post; valid: area, kind, needs, owner, tags, ...`; Grok 02:53:40, Luna
+02:53:45, Sol 03:27:50, Astra 03:29:54 and 04:08:20) and Haiku's `status` (03:21:32) and `requested_by` (04:15:57);
+and 3 with `needs` as an object instead of a list (`needs is text or an array of 1..16 item names or {...}`, Sol 03:27:54, Astra 03:29:59, 04:08:23). The prompt
 offers `"note"` for updates (`agent/team.md:52`), so agents reached for it on posts too.
 
 ### Aloud and confessions
@@ -495,3 +495,79 @@ None arrived: both viewer logs are empty, while both endpoints were up (`analyst
 - `shot-sync.log` is 98,782 lines, 98,770 of them "skipped" re-reports of 24 stale screenshots from earlier runs, on
   each of 6,348 passes; 11 agent shots were copied. Nothing in it says a stream frame was skipped, and the noise hides
   real entries. `stream-service.log` has 18 harmless `ConnectionResetError` tracebacks from clients hanging up.
+
+## 7. Team size: the three-agent pilot against nine agents
+
+The pilot (`runs/sapilot`: Astra, Opus and Gemini, Space Age, the same seed, launched 01:38:49 to 01:40:17, 16
+snapshots to game 30.3m) against the nine-agent runs at the nearest snapshot:
+
+| Game minute | | sapilot (3) | shake4 (9) | shake3 (9) | shake2 (9) | shake1 (9, base game) |
+|---|---|---|---|---|---|---|
+| ~10 | red packs / techs | 9 / 3 | 10 / 3 | 10 / 3 | 16 / 3 | 0 / 2 |
+| ~20 | red packs / techs / labs | 89 / 6 / 5 | 72 / 6 / 4 | 89 / 6 / 4 | 75 / 7 / 3 | 15 / 6 / 4 |
+| ~30 | red / green packs | 247 / 21 | 234 / 25 | 202 / 8 | 148 / 2 | 136 / 34 |
+| ~30 | technologies | 9 | 9 | 7 | 8 | 9 |
+| ~30 | labs, assemblers | 5, 12 | 6, 19 | 7, 11 | 6, 9 | 5, 12 |
+| ~30 | iron plates | 2,685 | 3,797 | 4,278 | 3,511 | 5,069 |
+| ~30 | electric drills, furnaces | 3, 17 | 12, 42 | 17, 50 | 17, 31 | 12, 42 |
+
+(Pilot at 30.3m, shake4 30.6m, shake3 30.5m, shake2 30.5m, shake1 30.3m; `scores.jsonl` of each run.)
+
+What the data supports:
+- In the first 30 game minutes, three agents matched nine on research and science: the same 9 technologies as shake4,
+  13 more red packs, 4 fewer green, and more red than shake2 or shake3. Per agent, the pilot made three times as much.
+- Nine agents built more: 41% more iron than the pilot, 2.5 times the furnaces, 4 times the electric drills, 1.6 times
+  the assemblers. None of it turned into faster science by minute 30, because research then is bound by labs and
+  lab time (5 labs in the pilot, 6 in shake4), and the extra plates went into the base.
+
+What it does not support:
+- Anything past minute 32: the pilot ended there. Shake4's second hour (plastics, advanced circuits, chemical science
+  researched, 12 labs) has no three-agent counterpart, and neither does the cost of a bigger base: shake4's first
+  raid came at 34m, after the pilot's end, and the pilot saw no attack at all. Pollution, and so raids, grows with the
+  base, so the comparison would change in the second half hour in a direction these data cannot give.
+- A claim that fewer agents are better in general: one pilot, one seed, three particular agents (Astra, Opus
+  and Gemini), and no repeat. The pilot also ran on earlier code than shake4.
+- A claim about red packs from assemblers: `produced` counts hand-crafted packs too, and the first 20 minutes of every
+  run include hand-crafting.
+
+## 8. Recommendations
+
+P1 is at the top. Same rule: harness bugs, misleading prompts and launch hygiene; no strategy advice to the agents.
+
+### P2
+
+7. `board_post` arguments (section 4): 10 posts failed on shape and were resent. Accept `note` on a post, since
+   `agent/team.md:52` offers it for updates and agents carry it over, and accept `needs` as an object `{item: count}`
+   (`vendor/factorio-harness/mod/agent-harness_0.1.0/board.lua:126`); or show a post with `needs` in
+   `agent/team.md:48`.
+8. `observe` while dead (section 3): 26 failures. `sleep_check` already answers a dead character
+   (`runtime.lua:3650-3654`); have `observe` reply "dead until tick N" the same way.
+9. Baseline wording (section 6, mistake 2): `tools/stream/baseline.py:62` "the team's previous run on the same map" for
+   shake1 should say the base-game run on the same seed; on Space Age runs, name shake3 or the pilot as the previous
+   run if one is used.
+10. The analyst's "co-op" comparison (mistake 8): name coop1 for viewers in the analyst's knowledge base (what it was,
+    how many players), or leave it out of the comparisons it offers (`tools/stream/analyst.py` and its history).
+11. `check_line` names (mistakes 4 and 5, and the wrong Grok rejections): accept every roster name, but count a name as
+    supported only if that agent is on camera, in the event, or did something in `earlier_on_air`; reject "two
+    <Name>s" (`tools/stream/caster.py`, `check_line`).
+12. Haiku's compaction point (section 3): 8 compactions in two hours at 80K, with a floor that rose to 31K, so about
+    50K of working room by the end. Either raise `compact_at` for Haiku on two-hour runs (`agent/context.tsv:9`) or find
+    what grows the floor (the summary went from 7.7K to 11.4K characters, plus the notes print at session start).
+13. Codex compaction stalls (section 3): about 10 minutes each for Astra and Sol in two hours against 3.4 for Luna at
+    the same 140K. Their summaries carry 51 to 84K characters of `replacement_history`; look at why before a longer
+    shift.
+14. Profile colours (section 4): four agents chose oranges. Glyphs are already unique (`profiles.lua:98-107`); refuse
+    or warn on a colour too close to another agent's, in the same way, so the stream can tell them apart.
+
+### P3
+
+15. Recap timing: `tools/stream/segments.py:202` waits for an empty queue; let an overdue recap (10 minutes late) go
+    next.
+16. Replays: when two deaths fall 43 seconds apart, play both or keep the first (`stream-service.log:1806`, `:1866`).
+17. `shot-sync.log`: log each stale screenshot once, or clear the camera clients' old shots at launch (98,770 noise
+    lines).
+18. `observe` name filters: when a name is not a prototype ("tree", "rock-huge"), list the matching ones.
+19. Chat logistics (section 4): the share stayed at 91 to 94% after the board took claims and handovers. If less
+    logistics in chat is still wanted, the prompt lines that pull coordination into chat are "Answer teammates
+    promptly" and the repeating `chat_remaining` (`agent/team.md:29-31`), and every mention wakes a sleeper (section 3);
+    this is a reading of the data, not a measured cause.
