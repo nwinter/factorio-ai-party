@@ -1803,6 +1803,21 @@ local function build_direct(p,stack,pos,direction,quality,kind)
   else
     local args={name=proto.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual}
     assert(surface.can_place_entity(args),placement_error(p,proto,pos,direction))
+    -- The manual check allows a fast-replace, which create_entity without
+    -- fast_replace does not do: both machines stayed on the tiles (shake5:
+    -- assembling-machine-2 over -1, the old one kept running). Refuse instead.
+    local group=proto.fast_replaceable_group
+    if group then
+      local cb=proto.collision_box or {left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
+      local l,t,r,btm=cb.left_top.x,cb.left_top.y,cb.right_bottom.x,cb.right_bottom.y
+      if direction==4 or direction==12 then l,t,r,btm=-btm,l,-t,r end
+      for _,o in pairs(surface.find_entities_filtered{area={left_top={x=pos.x+l,y=pos.y+t},right_bottom={x=pos.x+r,y=pos.y+btm}},force=p.force}) do
+        if o.valid and o.type~='entity-ghost' and o.prototype and o.prototype.fast_replaceable_group==group then
+          error(string.format('placement blocked by %s (%g,%g) already on these tiles: building over it would leave both; mine it first (mine at its position), then build (its recipe and contents do not carry over)',
+            o.name,o.position.x,o.position.y),0)
+        end
+      end
+    end
     args.quality=quality; args.player=real(p); args.raise_built=true
     if proto.type=='underground-belt' then args.type=kind or underground_type(surface,proto,pos,direction) end
     e=surface.create_entity(args)

@@ -23,7 +23,7 @@ local function character(pos)
   local inv={get_item_count=function(q) return items[type(q)=='table' and q.name or q] or 0 end,
     find_item_stack=function(q)
       if (items[q.name] or 0)==0 then return nil end
-      local stack={prototype={place_result={name=q.name,type='container'}}}
+      local stack={prototype={place_result={name=q.name,type='container',fast_replaceable_group=q.name:match('^assembling%-machine') and 'assembling-machine' or nil}}}
       stack.clear=function() items[q.name]=0 end
       return setmetatable(stack,{__index=function(_,k) if k=='count' then return items[q.name] end end,
         __newindex=function(_,k,v) if k=='count' then items[q.name]=v end end})
@@ -151,6 +151,22 @@ assert(not ok and err:find('placement blocked by item-on-ground (iron-plate) (3.
 eq(c.items['stone-furnace'],1)
 surface.find_entities_filtered=function() return {} end
 surface.can_place_entity=function() return true end
+-- A machine over one of its fast-replace group passes the manual check, but the
+-- build would leave both (shake5: assembling-machine-2 over -1): refused, naming it.
+;(function()
+  local old={valid=true,type='assembling-machine',name='assembling-machine-1',position={x=3.5,y=0.5},force=force,prototype={fast_replaceable_group='assembling-machine'}}
+  surface.find_entities_filtered=function(a) if a.area and a.force then return {old} end return {} end
+  c.items['assembling-machine-2']=1
+  local made=#created
+  local ok2,err2=pcall(bot,'build',{item='assembling-machine-2',position={x=3.5,y=0.5}})
+  assert(not ok2 and err2:find('placement blocked by assembling-machine-1 (3.5,0.5) already on these tiles: building over it would leave both; mine it first',1,true),err2)
+  eq(c.items['assembling-machine-2'],1); eq(#created,made)
+  -- A stone furnace (another group) is not refused by it.
+  c.items['stone-furnace']=1
+  eq(bot('build',{item='stone-furnace',position={x=3,y=0}}).consumed,1)
+  c.items['assembling-machine-2']=0
+  surface.find_entities_filtered=function() return {} end
+end)()
 -- The bot's own character the only thing on the footprint (shake3: Grok's most
 -- common error): it walks off with real walking ticks, then builds.
 local function inside(pos,area) return pos.x>area.left_top.x and pos.x<area.right_bottom.x and pos.y>area.left_top.y and pos.y<area.right_bottom.y end
