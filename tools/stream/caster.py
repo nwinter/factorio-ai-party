@@ -387,6 +387,9 @@ def check_line(line, facts, names, recent):
             return f"number not in facts: {words}"
     if re.search(r"\bzero\b", low) and 0 not in known:  # "zero belts laid" was invented on the live world
         return "number not in facts: zero"
+    # "still no steam", "no walls yet", "no belts in sight": absences are never in the facts (live world, Nemotron, Kimi)
+    if re.search(r"\b(?:still|yet) no\b|\bno \w+(?: \w+)? (?:yet|in sight)\b|\bnot a single\b", low):
+        return "claims something is missing"
     # On the live world, Vale invented "last run they'd still be punching trees" on beats with no pace facts.
     if re.search(r"\b(last|previous|other|earlier) (run|time|game|session)\b|\bshake\d\b|\blast time\b", low) and \
             not re.search(r'"pace"|_finished_this_at', blob):

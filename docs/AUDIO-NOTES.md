@@ -91,8 +91,10 @@ touched). Two 5-minute casts:
    1.2 s median and 5.1 s at most, no overlaps, $1.69/hour. Fillers covered pace, explainer, naturalist, spotlight
    and production between the attacks: "Here at the watering hole, two specimens rest—Luna smoothing feathers, Opus
    preening a finished nest", "One tech up on shake1, yet two hundred fewer plates—smart or slow?" ("Smart books,
-   slow hands!"). One invented absence still got through ("Still no walls, still no turrets"); the fact check reads
-   names and numbers, not claims, so the prompt rule is the only guard there.
+   slow hands!"). One invented absence still got through ("Still no walls, still no turrets"), so the fact check now
+   also rejects "still no X", "no X yet", "no X in sight" and "not a single". Rechecking every logged second-pass line
+   (75 with facts): it would have rejected 7, all of them wrong ("still no steam power", "zero belts laid", "our iron's
+   crawling"), and nothing that was right.
 
 ## Segments (with eng/stream2)
 

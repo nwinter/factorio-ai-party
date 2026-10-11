@@ -39,6 +39,8 @@ check("reads 3,600 as one number", caster.check_line("Luna made 3,600 plates", d
 check("rejects a previous-run comparison without pace facts",
       caster.check_line("Last run they were still punching trees!", facts, names, []) is not None
       and caster.check_line("Last run they were slower.", dict(facts, pace={"verdict": "x"}), names, []) is None)
+check("rejects invented absences", all(caster.check_line(x, facts, names, []) for x in (
+    "Still no walls, still no turrets!", "No steam power yet.", "Belts down, no turrets in sight.")))
 check("rejects an invented zero", caster.check_line("Zero belts laid so far.", facts, names, []) is not None)
 check("rejects a repeat", caster.check_line("Luna is under attack!", facts, names, ["Luna is under attack, wow"]) is not None)
 check("strips speaker prefix and stage directions", caster.clean('Rook: "*leans in* Huge play!"') == "Huge play!")
