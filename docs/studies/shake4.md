@@ -55,7 +55,38 @@ sections named.
 
 ## 1. Summary
 
-PENDING
+1. Two hours of Space Age reached chemical science research but not a blue pack: 24 technologies, plastics at 88.7m,
+   advanced circuits at 96.8m, chemical-science-pack at 108.3m, 1,616 plastic and 211 advanced circuits. The sulfur
+   plant at base never got petroleum (the gas line from the oil field 350 tiles north ended about 130 tiles short), so
+   no blue pack and no rocket silo (section 2).
+2. The first hour ended level with shake3 by game time: 15 technologies, the same green packs and iron, 531 red
+   against 692. The opening lost 5 minutes on the first steam engine (13.1m against 8.0m), the middle gained them back
+   (logistic science 2 minutes and steel 6 minutes earlier), and oil was found at 52.0m against 25.5m on the same
+   field, which cost about 3 minutes because oil-gathering research finished at 61.8m anyway (section 2).
+3. Defence decided the second hour. Seven raids from 34m on, groups of 66, 45, 70 and 46 from the southeast nests, at
+   least 13 deaths (shake3 3). The 66-biter raid at 67.6m cut power to 197 machines and halved the labs, and science
+   consumption nearly stopped for 14 minutes; plastics took 26 minutes of research. The last raids took power to zero
+   and destroyed the advanced-circuit assemblers (sections 2 and 5).
+4. The shake3 fixes held: a 16-second launch, no early stops, summaries without stopping, 2 supervisor nudges and both
+   due, chat while dead, stumps and one's own footprint no longer blocking builds, Grok's clean profile, Codex's skills
+   block gone, and Gemini's quota intact. New harness gaps: `sleep` refused while dead (19 calls), an item on the ground
+   blocking builds with no hint (11), Claude Code ending its turn after compaction (2), and `board_post` rejecting
+   `note` (section 3, P1 items 2 to 4).
+5. Sleep spread through the run: Muse 77% of two hours asleep, Haiku 63%, Opus 48%, and mentions woke them most of
+   the time. Astra and Sol ran words together in a third to a half of their lines after 50m, in whole Codex context
+   segments, with no configuration change (section 3).
+6. Talk: the board took 2.5 times shake3's traffic (232 calls; 66 posts, 78 updates, in both hours), but chat kept the
+   same 547 messages in hour one at 94% logistics. Aloud doubled to 64, Sol made the run's one confession, three agents
+   set pronouns (all "they"), and Astra had the best joke: "Next delivery: plastic. Preferably before the biters place
+   another order." Two aloud lines announced blue and sulfur production that never ran (section 4).
+7. The stream was much better informed: hosts' numbers matched hits and losses, time left was right, no gendered
+   pronouns, OpenAI voices all run, the analyst ran 82 cycles without a failure and reached air in 29 exchanges, the
+   overview zoom worked, 15 replays aired, and the live feed never failed. The main mistake class was a stale caster
+   comparing with shake1 after shake1 had ended; the others are a few merged facts and about 30 "frozen" lines from the
+   naturalist brief. ElevenLabs had no credits, and no viewer question arrived (section 6).
+8. Team size: by minute 30 the three-agent pilot matched nine agents on research and red packs with a smaller
+   base (70% of shake4's iron, 40% of its furnaces). The data stop at 32 minutes, before the first raid and before any second-hour work, so they say nothing
+   about two-hour runs (section 7).
 
 ## 2. Progress and pace by milestone
 
@@ -571,3 +602,20 @@ P1 is at the top. Same rule: harness bugs, misleading prompts and launch hygiene
     logistics in chat is still wanted, the prompt lines that pull coordination into chat are "Answer teammates
     promptly" and the repeating `chat_remaining` (`agent/team.md:29-31`), and every mention wakes a sleeper (section 3);
     this is a reading of the data, not a measured cause.
+
+## Appendix: methods
+
+- Game time is `tick / 3600` from `scores.jsonl` (2-minute snapshots); event times come from chat (`tick` and
+  `logged_at`) and journals (`at`, UTC, shown here in PDT).
+- Chat classes use the shake3 keyword classifier unchanged (coordinates, or two or more item, chest, belt, claim or
+  delivery words, make a line logistics). "Squashed" lines contain a run of 22 or more letters; section 3's segment
+  counts use a slightly different rule (run-together words of 16 or more letters over 20% of a line).
+- Board, confession and profile counts are requests in the nine journals (`board`, `board_post`, `board_update`,
+  `confess`, `profile`), paired with their responses for failures.
+- Raids come from the `alerts` in each reply's `team:` block, deduplicated across agents; deaths from chat reports and
+  "your character died" alerts, so the count is a floor.
+- Stream figures come from the caster, analyst and director JSONL logs; host mistakes were checked against the facts
+  the writer was given for that exchange, and against chat and scores.
+- Sections 3 and 6 draw on two read-only sub-analyses of the transcripts and stream logs; their numbers were
+  spot-checked against the logs (caster quotes and times, ElevenLabs errors, `runtime.lua:3660`, `supervise.sh:46`,
+  `caster.py:43`).
