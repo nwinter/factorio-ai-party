@@ -5,6 +5,7 @@ Agents never get this tool: it runs privileged Lua. Usage:
   tools/pog.py [--world live] rcon '/time'
   tools/pog.py pause | resume | save | quit
   tools/pog.py score            # JSON snapshot: tick, research, production totals, entity counts
+  tools/pog.py peaceful         # Space Age: give every planet surface Nauvis's peaceful/no-enemies flags
 """
 import argparse, json, os, socket, struct, sys
 
@@ -111,11 +112,28 @@ rcon.print(helpers.table_to_json{tick = game.tick, ticks_played = game.ticks_pla
 """
 
 
+# Space Age: each planet surface has its own peaceful/no-enemies flags and is created on first arrival. Copy Nauvis's
+# to every planet surface (a world setting, like the map seed). Run after a new planet appears (score lists planets).
+PEACEFUL_LUA = r"""
+local n = game.surfaces.nauvis
+local out = {}
+for _, s in pairs(game.surfaces) do
+  if s.planet and s ~= n then
+    local changed = s.peaceful_mode ~= n.peaceful_mode or s.no_enemies_mode ~= n.no_enemies_mode
+    s.peaceful_mode = n.peaceful_mode
+    s.no_enemies_mode = n.no_enemies_mode
+    out[#out+1] = s.name .. (changed and " set" or " unchanged")
+  end
+end
+rcon.print(helpers.table_to_json{peaceful = n.peaceful_mode, no_enemies = n.no_enemies_mode, planets = out})
+"""
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--world", default=os.environ.get("POG_WORLD", "live"))
     ap.add_argument("--port", type=int)
-    ap.add_argument("cmd", choices=["rcon", "pause", "resume", "save", "quit", "score"])
+    ap.add_argument("cmd", choices=["rcon", "pause", "resume", "save", "quit", "score", "peaceful"])
     ap.add_argument("arg", nargs="?")
     a = ap.parse_args()
     port = a.port or PORTS.get(a.world) or int(os.environ["POG_RCON_PORT"])
@@ -132,6 +150,8 @@ def main():
     elif a.cmd == "quit":
         r.command("/server-save")
         out = r.command("/quit") or "quit sent"
+    elif a.cmd == "peaceful":
+        out = r.command("/silent-command " + " ".join(l.strip() for l in PEACEFUL_LUA.strip().splitlines()))
     else:
         out = r.command("/silent-command " + " ".join(l.strip() for l in SCORE_LUA.strip().splitlines()))
     sys.stdout.write(out if out.endswith("\n") else out + "\n")
