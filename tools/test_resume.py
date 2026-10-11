@@ -111,6 +111,7 @@ def dry_run():
         assert "prompt adds: This is a later shift" in out, out
         assert "WARNING quota codex_account_b (luna) Codex · Weekly: 100% used" in out, out
         assert "no ai-usage profile" in out and "(route claude-b)" in out, out
+        assert "code ok: " in out or "WARNING code: " in out, out
         assert not os.path.exists(os.path.join(ROOT, "runs", "resume-dry-test")), "the dry run made a run directory"
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "shake4", "10"], env=env,
                            capture_output=True, text=True, cwd=ROOT)
