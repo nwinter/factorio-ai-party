@@ -63,7 +63,7 @@ is never used, and checks for `data\space-age`. Clients then start with
 `start-client.ps1 -Factorio D:\pog\factorio-2.0.77-expansion`, keeping their own config folders and names as now.
 Nick's Steam install is not touched. Also check `D:\pog\factorio-2.0.77\data\space-age` (the server copy). If it is
 missing, run the server from the expansion folder too (point `new-instance.ps1` and `start-server.ps1` at it). Server
-and clients must both be exactly 2.0.77.
+and clients must both be 2.0.77.
 
 Clients are now needed only for watching: agents play as bots, and only the one to three director clients and any
 human player need the expansion build.
