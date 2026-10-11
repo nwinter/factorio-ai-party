@@ -81,6 +81,17 @@ p.can_reach_entity=function() return false end
 fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'within reach of the silo')
 p.can_reach_entity=function() return true end
 fails(function() space.launch(p,{position={x=20.5,y=20.5},ride=true}) end,'ride needs platform')
+-- Riding as the silo GUI allows: no other payload, nothing carried but armor and guns.
+defines.inventory.character_main=10; defines.inventory.character_ammo=11
+local carried={[10]=false,[11]=false}
+p.character.get_inventory=function(i) return {is_empty=function() return not carried[i] end} end
+carried[11]=true
+fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'put down everything in character_ammo')
+carried[11]=false
+local saved_cargo=silo_cargo
+silo_cargo={get_contents=function() return {{name='coal',count=5}} end}
+fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'only payload')
+silo_cargo=saved_cargo
 local rode=space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true})
 assert(rode.riding); eq(p.stopped,1)
 -- A bot (no LuaPlayer behind it) is refused before anything moves.

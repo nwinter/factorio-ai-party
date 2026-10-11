@@ -220,6 +220,15 @@ return function(api)
       assert(a.platform~=nil,'ride needs platform=<name>')
       assert(p.can_reach_entity(silo),'stand within reach of the silo to board its rocket')
       rider=p.character
+      assert(rider,'the player has no character here to board the rocket')
+      -- The silo's "Travel to platform": the rider is the only payload, and
+      -- only worn armor (with its equipment) and guns go along; ammo and the
+      -- rest of the inventory must be shipped as cargo first.
+      assert(cargo==nil,'a rider is the only payload: unload the rocket cargo first (holds '..tostring(cargo)..')')
+      for _,inv in ipairs({'character_main','character_ammo','character_trash'}) do
+        local items=defines.inventory[inv] and rider.get_inventory(defines.inventory[inv])
+        assert(not items or items.is_empty(),'only armor and guns travel with the rider: put down everything in '..inv..' first (ship it as rocket cargo)')
+      end
     end
     local destination,to
     if a.platform~=nil then
@@ -255,7 +264,7 @@ return function(api)
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule'},
     land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any)',returns='landing'},
-    launch={position='rocket silo {x,y} in a visible chunk',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it)',returns='launched, to, cargo'},
+    launch={position='rocket silo {x,y} in a visible chunk',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first)',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it)',returns='launched, to, cargo'},
   }
   return M
 end
