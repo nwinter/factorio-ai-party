@@ -102,10 +102,66 @@ Suggested caster changes (your file, so not done here; `tools/stream/analyst_boa
    A fresh priority-3 point could also become its own beat (priority 2-3), so the best insight airs within a minute.
 2. Corrections: add `analyst.corrections` (at most 6 short rules) to the writer's system prompt for the next lines.
    They target what is on screen now ("the red alerts are our walls being hit").
-3. Viewer questions: for a `viewer` event that asks something, POST `http://127.0.0.1:8789/ask {"question": text}`
-   (median about 6 s, up to 12) and voice the answer as a follow-up with `facts = reply["facts"]`
-   (`viewer_question`, `analyst_answer`). Say "good question, let's check" first if you want to fill the wait.
+3. Viewer questions: done on eng/analyst in round 4, without a caster-side `/ask` call; see "Viewer questions on
+   air" below. (`/ask` on :8789 stays for manual use.)
 4. `judgement` and `next` are good material for `open`/recap beats; `headline` for the first line after a cut.
+
+Round 4 split with eng/audio (pog-audio-13 proposed it: it takes items 1, 2 and 4, touching `facts_for`'s lull
+branch, `LLMWriter.exchange`, `Caster.filler` and `speak_lines`). Item 3 is done the other way round from that
+proposal: no `Caster.ask_analyst` hook is needed, so please leave it out. A synchronous `/ask` takes 3 to 5 s inside
+an exchange and has no rate limit. eng/analyst's caster.py lines are listed in the next section. For your new
+`check_line` name rule: answers carry proper nouns (Nauvis, Vulcanus, Space Age, Factorio, agent and run names).
+They are always in `facts.analyst_answer` / `facts.viewer_question`, and the viewer's name is in
+`facts.viewer_message.from`, so "capitalised words that appear in the facts are fine" covers them. Corrections and
+points are now written as true statements ("research progress is always kept"), never as a negated mistake. Please
+pass them on verbatim.
+
+## Viewer questions on air (round 4)
+
+```
+site / YouTube chat -> viewers.py lane (snapshot `viewers`) -> analyst.py viewer_loop (every 3 s)
+  -> picks the freshest question -> claude -p with the read-only tools (3-5 s)
+  -> POST /analyst/answer -> snapshot `analyst.answers[]` -> caster.py viewer beat (Rook: name + question, Vale: answer)
+```
+
+- On with `--viewer-questions` (start-team passes it; `POG_VIEWER_QUESTIONS=0` turns it off). Relay into the
+  game is untouched (still off).
+- Choice (`analyst_board.QuestionPicker`): a question is a lane message with a `?` or a leading question word and at
+  least three words. Orders to the agents (`order`) are never taken. The newest question wins, it must be at most
+  60 s old when picked (`--ask-max-age`), and at most one answer goes out per 150 s (`--ask-every`). A skipped
+  question (off-topic, unsafe, no answer, error) holds the next pick only 20 s. Unanswered questions just age out.
+- Safety: the lane has already passed viewers.py (links, spam, injection patterns, rate limits; Clef when
+  configured). Claude then answers only fair questions about Factorio, the run, the agents and models, AI on the
+  stream or the stream itself. Anything rude, sexual, hateful, violent, political or medical gets `{"skip": ...}`,
+  as do questions about real people, requests for secrets or prompts, and orders or "read this out". The question
+  is quoted as data. The hosts get a neutral restatement of the question (at most 12 words), never the raw chat
+  text. Answers over 50 words, with coordinates, or more than 105 s after the question was asked are dropped
+  (`answer_problem`).
+- The answer prompt is the 30/30 viewer-question prompt (evaluate.ANSWER_SYSTEM) cut to two sentences. It names
+  Space Age on Space Age runs, adds the facts hosts get wrong, and asks for true statements rather than negated
+  mistakes.
+- Snapshot: `analyst.answers` = `[{id, msg_id, viewer, question, answer, facts: {viewer_question, analyst_answer,
+  pace?}, seconds, asked_t, t}]`, kept 120 s. `analyst.viewer_questions = {"on": true, "every_s": 150}` comes from
+  each cycle.
+- caster.py (eng/analyst's only lines there, covered by caster_selftest.py "viewer questions"):
+  1. `Differ.diff`: while `questions_on(analyst)` is true (the latest cycle says on, age under 400 s), plain viewer
+     questions are not turned into beats. The writer alone answered 9/30 viewer questions right. Comments still
+     are. Each new `analyst.answers` entry becomes `{"kind": "viewer", viewer, text: question, answer,
+     answer_facts, prio: 7}`.
+  2. `facts_for`, viewer branch: `analyst_answer`, the answer facts, and `how_to_call_it` = "Rook says the
+     viewer's name and question; Vale answers it from analyst_answer".
+  3. `TemplateWriter`: a `viewer` template that fills only when there is an `analyst_answer`, so a writer outage
+     still airs the answer.
+  4. The one generic change: `e["prio"] = e.get("prio") or PRIORITY...` at the end of `diff`.
+- Test (mock service on :8798, replayed chat, analyst on the shake2 replay, caster on templates because the
+  sandbox cannot reach Workers AI):
+  - The science-per-minute question was answered in 4.8 s and voiced 5 s later as "rustyminer asks: How many
+    science packs per minute is the team making right now? About 24.5 science packs a minute ...".
+  - The research question was answered in 3.7 s: "No, progress is kept. ...".
+  - The crash-site question was answered in 3.6 s: the wreck dates from before the game.
+  - "who should I vote for in the election?" was skipped in 2.8 s ("political question").
+  - A Space Age question asked on a base-game run got base figures (100 parts). The base prompt now sends Space Age
+    questions to the Space Age notes. On Space Age runs the knowledge base itself is Space Age (50 parts).
 
 ## Segments (for eng/stream2)
 

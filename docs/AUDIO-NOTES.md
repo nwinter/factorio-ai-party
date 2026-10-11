@@ -143,6 +143,20 @@ first hint mentioned "muted" and the banner, and Kimi read those words on air ("
 banner"), so the hint now says only how to call it. On the bench: "Replay's up! Astra bites it twenty-one seconds
 ago." Not run against a real replay (needs OBS on the box); the selftest and the bench cover the facts and the writing.
 
+## Viewer questions answered by the analyst (eng/analyst, round 4)
+
+The analyst (`tools/stream/analyst.py --viewer-questions`, on in start-team) picks the freshest viewer question
+from the lane. It answers at most one every 150 s, takes nothing older than 60 s, and skips off-topic or unsafe
+questions. It posts the restated question and a checked answer as `analyst.answers` in the snapshot. In
+caster.py, eng/analyst owns only:
+- the viewer and answer loops in `Differ.diff` (plain questions wait for the analyst while
+  `questions_on(analyst)`; comments are unchanged);
+- the viewer branch of `facts_for` (`analyst_answer`, `how_to_call_it`);
+- a `viewer` template that fills only with an answer.
+These are covered by caster_selftest.py "viewer questions". No `ask_analyst` hook is needed in `say_exchange`.
+Details and the split with eng/audio's talking-points work are in docs/ANALYST-NOTES.md, "What the analyst
+writes" and "Viewer questions on air".
+
 ## Status
 
 | Part | State (2026-10-10) |
