@@ -261,9 +261,12 @@ test('tell takes recipients then text like say; tells reads with --since',async(
     const empty=await compact(port,['tell','sol','--bot','astra'],{},'');
     assert.match(empty.stdout,/error: client_error: tell needs text: fh tell NAME "text"/);
     await cli(port,['tells','--since','2','--bot','astra']);
+    await cli(port,['call','tell','sol','call','form','--bot','astra']);
+    await cli(port,['call','tell','--args','{"to":"sol","text":"json form"}','--bot','astra']);
   });
   assert.deepEqual(seen.map(r=>[r.action,r.args]),[['tell',{to:'sol',text:'29 plates in the chest at (-18.5,-34.5)'}],
-    ['tell',{to:'luna,sol',text:"it's in the mall chest"}],['tell',{to:'team',text:'north belt is down'}],['tells',{since:2}]]);
+    ['tell',{to:'luna,sol',text:"it's in the mall chest"}],['tell',{to:'team',text:'north belt is down'}],['tells',{since:2}],
+    ['tell',{to:'sol',text:'call form'}],['tell',{to:'sol',text:'json form'}]]);
 });
 test('fh call say with words sends them as text (it used to send {})',async()=>{
   const seen:any[]=[];

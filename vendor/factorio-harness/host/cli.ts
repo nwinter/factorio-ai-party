@@ -234,7 +234,7 @@ async function main() {
     command = 'call';
   }
   // `fh call say words...` used to drop the words and send {} ("text is required").
-  if (command === 'call' && (positionals[1] === 'say' || positionals[1] === 'confess') && (positionals.length > 2 || !values.args)) {
+  if (command === 'call' && (positionals[1] === 'say' || positionals[1] === 'confess' || positionals[1] === 'tell') && (positionals.length > 2 || !values.args)) {
     command = positionals[1]!;
     positionals.splice(0, 2, command);
   }
