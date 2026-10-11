@@ -51,7 +51,8 @@ SHOW = ("The show: nine AI models from different labs (each named in the facts w
         "automated green science, then oil, plastics, red circuits, blue science and on to the rocket silo. A pace "
         "comparison with the team's previous run, when given in the facts, tells viewers whether this run is "
         "faster or slower; judge how well the bots play from it and the other facts.")
-PRIORITY = {"attack": 9, "death": 9, "loss": 8, "research": 7, "viewer": 6, "power": 6, "harness": 5, "board": 4,
+PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "viewer": 6, "power": 6, "harness": 5,
+            "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
 URGENT = 8
 TEXT_MODELS = {  # Workers AI, USD per million tokens in/out (pricing page, 2026-10-10)
@@ -121,7 +122,7 @@ class Feed(threading.Thread):
 class Differ:
     def __init__(self):
         self.prev = None
-        self.alert_ids, self.chat_keys, self.board_seqs = set(), set(), set()
+        self.alert_ids, self.chat_keys, self.board_seqs, self.segments_seen = set(), set(), set(), set()
 
     def diff(self, s):
         ev = []
@@ -162,6 +163,10 @@ class Differ:
             self.chat_keys.add(key)
             if not first and now - v["t"] < 60:
                 ev.append({"kind": "viewer", "viewer": v["name"], "text": v["text"]})
+        seg = s.get("segment") or {}
+        if seg.get("id") and seg.get("state") in ("starting", "live") and seg["id"] not in self.segments_seen:
+            self.segments_seen.add(seg["id"])  # eng/stream2 shows a segment: talk over it (docs/AUDIO-NOTES "Segments")
+            ev.append({"kind": "segment", "segment": seg})
         res, pres = s.get("research") or {}, p.get("research") or {}
         if not first and res.get("current") and res.get("current") != pres.get("current"):
             ev.append({"kind": "research_start", "tech": res.get("label")})
@@ -260,6 +265,11 @@ def facts_for(e, s, baseline=None):
     f.update(context_facts(s, baseline if paced else None))
     if e["kind"] == "viewer":
         f["viewer_message"] = {"from": e.get("viewer"), "text": e.get("text")}
+    if e["kind"] == "segment":
+        seg = e.get("segment") or {}
+        f["on_screen_now"] = {"segment": seg.get("type"), "title": seg.get("title"),
+                              "seconds": round(seg["ends"] - seg["started"]) if seg.get("ends") and seg.get("started")
+                              else None, **(seg.get("facts") or {})}
     if e["kind"] == "research" and baseline and e.get("text"):
         tech = re.sub(r"^research complete:\s*", "", e["text"], flags=re.I).strip().lower().replace(" ", "-")
         mins = baseline.minutes(tech)
@@ -734,6 +744,7 @@ class Caster:
         self.agent_last = {}
         self.filler_i = 0
         self.history = deque(maxlen=4)  # the last story beats, as facts for callbacks
+        self.seg_cat, self.seg_cat_t, self.seg_req_t, self.seg_next_ok = {}, 0.0, 0.0, 0.0
         self.prep = []  # recent write+TTS times, to start the next exchange before the current one ends
         self.baseline = None
         if a.baseline and os.path.exists(a.baseline):
@@ -820,8 +831,59 @@ class Caster:
         self.events = deque([e for e in self.events if e["kind"] != best["kind"]], maxlen=60)
         return best
 
+    # -- segments (eng/stream2 shows them; the hosts talk over them). Inert until the service answers /segments.
+    def segment_types(self):
+        """eng/stream2's catalog: {"types": [{type, title, params, seconds, available, why}], "busy", "next_ok"}.
+        Types agreed 2026-10-10: production, research, spotlight {agent}, overview, recap, attack_replay."""
+        if time.time() - self.seg_cat_t > 30:
+            self.seg_cat_t = time.time()
+            try:
+                with urllib.request.urlopen(self.base + "/segments", timeout=3) as r:
+                    cat = json.load(r)
+                self.seg_cat = {t["type"]: t for t in (cat.get("types") or []) if t.get("available")}
+                self.seg_next_ok = 1e18 if cat.get("busy") else float(cat.get("next_ok") or 0)
+            except Exception:
+                self.seg_cat, self.seg_next_ok = {}, 0.0
+        return self.seg_cat if time.time() >= self.seg_next_ok else {}
+
+    def request_segment(self, options, reason):
+        """Ask the director for the first available segment of `options` [(type, params)]; at most one per
+        --segment-every (the director also allows one per 3 minutes whoever asks)."""
+        if self.a.dry_run or time.time() - self.seg_req_t < self.a.segment_every:
+            return None
+        cat = self.segment_types()
+        kind, params = next(((k, p) for k, p in options if k in cat), (None, None))
+        if not kind:
+            return None
+        self.seg_req_t = time.time()
+        body = {"type": kind, "params": params or {}, "seconds": 30, "by": "caster", "reason": reason}
+        req = urllib.request.Request(self.base + "/segment", data=json.dumps(body).encode(), method="POST",
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                out = json.load(r)
+        except urllib.error.HTTPError as x:
+            out = {"error": x.code, "detail": x.read()[:200].decode(errors="replace")}
+        except Exception as x:
+            out = {"error": type(x).__name__}
+        log(f"[segment] asked for {kind} ({reason}): {json.dumps(out)[:200]}")
+        self.record(type="segment_request", segment=kind, reason=reason, result=out)
+        return out
+
+    def live_segment(self, s):
+        seg = s.get("segment") or {}
+        return seg if seg.get("state") in ("starting", "live") and (seg.get("ends") or 0) > time.time() + 6 else None
+
     def filler(self, now, s):
         """Something to talk about when nothing happened: rotate through angles that need no event."""
+        seg = self.live_segment(s)
+        if seg:  # a segment is on screen: keep talking about it
+            return {"kind": "segment", "segment": seg, "t": now, "prio": 1}
+        main = ((s.get("cameras") or {}).get("main") or {}).get("agents") or []
+        pick = self.rng.choice(main or [a["name"] for a in s.get("agents") or []] or [None])
+        opts = [("production", {}), ("overview", {}), ("recap", {}), ("spotlight", {"agent": pick})]
+        self.rng.shuffle(opts)
+        self.request_segment(opts, "lull")
         options = [f for f in FILLERS if (f != "pace" or self.baseline)
                    and (f != "board" or (s.get("board") or {}).get("available"))]
         if self.rng.random() < self.a.naturalist:
@@ -864,6 +926,10 @@ class Caster:
         lo, hi = self.a.lines
         n = lo if e["prio"] >= URGENT else self.rng.randint(lo, hi)
         self.say_exchange(e, s, first, n)
+        if e["kind"] in ("attack", "loss"):
+            self.request_segment([("attack_replay", {})], "attack")
+        elif e["kind"] == "research":
+            self.request_segment([("research", {})], "research")
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
@@ -1185,6 +1251,8 @@ def main():
                     help="past run to compare pace with (tools/stream/baseline.py makes one); '' for none")
     ap.add_argument("--lines", type=int, nargs=2, default=[2, 3], metavar=("MIN", "MAX"),
                     help="lines per exchange between the hosts (urgent events use MIN)")
+    ap.add_argument("--segment-every", type=float, default=180,
+                    help="min seconds between segment requests to the director (replays, analyses; eng/stream2)")
     ap.add_argument("--naturalist", type=float, default=0.2,
                     help="share of chat/camera/board/filler exchanges where Vale narrates like a nature documentary")
     ap.add_argument("--tts", default="aura2", choices=list(voices.PRICE))
