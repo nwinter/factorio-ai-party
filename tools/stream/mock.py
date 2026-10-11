@@ -486,6 +486,13 @@ class MockSource:
                 totals = [self.score_at(max(0, gsec - k * 120))[0]["produced"] for k in range(30, -1, -1)]
                 obs["flows"] = {n: [max(0, totals[i + 1].get(n, 0) - totals[i].get(n, 0)) for i in range(30)]
                                 for n in score["produced"]}
+        if not getattr(self, "basemap_sent", False):  # the site's demo base, once: the mock has no buildings of its own
+            self.basemap_sent = True
+            try:
+                sample = json.load(open(os.path.join(ROOT, "site", "live", "state.example.json")))
+                obs["basemap"] = (sample.get("state") or sample).get("basemap")
+            except (OSError, ValueError):
+                pass
         if self.space_age:
             self.space_step(now, obs)
         return obs

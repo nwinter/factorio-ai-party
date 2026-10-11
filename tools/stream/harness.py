@@ -132,8 +132,36 @@ if x0 then
     nests[#nests+1] = {math.floor(e.position.x), math.floor(e.position.y), e.type == "unit-spawner" and "s" or "w"}
   end
 end
+local ore = nil
+if WITHORE and x0 then
+  local m = 64
+  local ax0, ay0, ax1, ay1 = x0 * C - m, y0 * C - m, (x1 + 1) * C + m, (y1 + 1) * C + m
+  local OL = {["iron-ore"]="i",["copper-ore"]="c",["coal"]="k",["stone"]="s",["crude-oil"]="o",["uranium-ore"]="u"}
+  local cnt = {}
+  for _, e in pairs(s.find_entities_filtered{area = {{ax0, ay0}, {ax1, ay1}}, type = "resource"}) do
+    local cx, cy = math.floor(e.position.x / C), math.floor(e.position.y / C)
+    local row = cnt[cy]
+    if not row then row = {} cnt[cy] = row end
+    local cell = row[cx]
+    if not cell then cell = {} row[cx] = cell end
+    local l = OL[e.name] or "x"
+    cell[l] = (cell[l] or 0) + 1
+  end
+  local ox0, oy0, ox1, oy1 = math.floor(ax0 / C), math.floor(ay0 / C), math.floor(ax1 / C), math.floor(ay1 / C)
+  local orows = {}
+  for cy = oy0, oy1 do
+    local row, buf = cnt[cy] or {}, {}
+    for cx = ox0, ox1 do
+      local best, bn = ".", 0
+      for l, n in pairs(row[cx] or {}) do if n > bn or (n == bn and l < best) then best, bn = l, n end end
+      buf[#buf+1] = best
+    end
+    orows[#orows+1] = (table.concat(buf):gsub("%.+$", ""))
+  end
+  ore = {cell = C, x0 = ox0 * C, y0 = oy0 * C, w = ox1 - ox0 + 1, rows = orows}
+end
 rcon.print(helpers.table_to_json{tick = game.tick, cell = C, x0 = x0 and x0 * C or 0, y0 = y0 and y0 * C or 0,
-  w = x0 and (x1 - x0 + 1) or 0, h = y0 and (y1 - y0 + 1) or 0, rows = rows, nests = nests, buildings = #pts})
+  w = x0 and (x1 - x0 + 1) or 0, h = y0 and (y1 - y0 + 1) or 0, rows = rows, nests = nests, buildings = #pts, ore = ore})
 """
 
 CAMERA_LUA = r"""
@@ -149,8 +177,9 @@ rcon.print(helpers.table_to_json{harness = i ~= nil, camera = (i and i.camera) ~
 """
 
 
-def basemap_lua(cell=4, max_cells=128):
-    return BASEMAP_LUA.replace("MAXCELLS", str(int(max_cells))).replace("CELL", str(int(cell)))
+def basemap_lua(cell=4, max_cells=128, ore=False):
+    return (BASEMAP_LUA.replace("MAXCELLS", str(int(max_cells))).replace("CELL", str(int(cell)))
+            .replace("WITHORE", "true" if ore else "false"))
 
 
 def lua_string(text):
@@ -227,12 +256,15 @@ class Harness:
         lua = FLOW_LUA.replace("ITEMS", "{" + ",".join(json.dumps(i) for i in items) + "}")
         return self.lua(lua)
 
-    def basemap(self, cell=4, max_cells=128):
-        """The base as a grid of category letters (BASEMAP_LUA); read-only, for the site's live map."""
-        m = self.lua(basemap_lua(cell, max_cells))
+    def basemap(self, cell=4, max_cells=128, ore=False):
+        """The base as a grid of category letters (BASEMAP_LUA); read-only, for the site's live map. With ore, also
+        the resource under and around it (64 tiles out), one letter per cell for the commonest resource there."""
+        m = self.lua(basemap_lua(cell, max_cells, ore))
         for key in ("rows", "nests"):  # table_to_json writes an empty table as {}
             if not isinstance(m.get(key), list):
                 m[key] = []
+        if isinstance(m.get("ore"), dict) and not isinstance(m["ore"].get("rows"), list):
+            m["ore"]["rows"] = []
         return m
 
     def probe(self):

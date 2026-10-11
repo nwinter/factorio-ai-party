@@ -32,6 +32,7 @@ local function want(e, f)
     if p.x < a[1][1] or p.y < a[1][2] or p.x > a[2][1] or p.y > a[2][2] then return false end
   end
   if f.force == "enemy" then return e.force == "enemy" end
+  if f.force == nil then return e.force == "neutral" and f.type == e.type end
   if e.force ~= "player" then return false end
   for _, t in ipairs(f.type) do if t == e.type then return true end end
   return false
@@ -39,6 +40,7 @@ end
 local all = {}
 for _, e in ipairs(OURS) do e.force = "player"; all[#all+1] = e end
 for _, e in ipairs(ENEMY) do e.force = "enemy"; all[#all+1] = e end
+for _, e in ipairs(ORE) do e.force = "neutral"; all[#all+1] = e end
 game = {tick = 600, forces = {player = {}}, surfaces = {nauvis = {find_entities_filtered = function(f)
   local out = {}
   for _, e in ipairs(all) do if want(e, f) then out[#out+1] = e end end
@@ -52,8 +54,9 @@ def lua_list(items):
                           for n, t, x, y in items) + "}"
 
 
-def run(entities, nests=(), cell=4, max_cells=128):
-    src = STUB.replace("ENTITIES", lua_list(entities)).replace("NESTS", lua_list(nests)) + one_line(basemap_lua(cell, max_cells))
+def run(entities, nests=(), cell=4, max_cells=128, ore=()):
+    src = STUB.replace("ENTITIES", lua_list(entities)).replace("NESTS", lua_list(nests)).replace("local OURS, ENEMY", "local ORE = " + lua_list(ore) + " local OURS, ENEMY") + \
+        one_line(basemap_lua(cell, max_cells, ore=bool(ore)))
     out = subprocess.run(["lua", "-e", src], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0, out.stderr
     return json.loads(out.stdout)
@@ -85,4 +88,15 @@ check("a wide base doubles the cell until it fits", wide["cell"] >= 16 and wide[
 
 empty = run([])
 check("no buildings: an empty grid", empty["rows"] == [] and empty["w"] == 0 and empty["nests"] == [])
+
+check("no ore unless asked", "ore" not in m)
+ores = [("iron-ore", "resource", 0.5 + dx, 0.5 + dy) for dx in range(3) for dy in range(3)] + \
+       [("copper-ore", "resource", 1.5, 2.5), ("copper-ore", "resource", 2.5, 2.5),
+        ("coal", "resource", 20.5, 20.5), ("crude-oil", "resource", -30.5, 8.5), ("stone", "resource", 500, 500)]
+o = run([("stone-furnace", "furnace", 0.5, 0.5)], ore=ores)["ore"]
+check("ore grid starts 64 tiles out from the base", o["cell"] == 4 and o["x0"] == -64 and o["y0"] == -64)
+row0 = o["rows"][16]  # tile y 0..3
+check("the commonest resource in a cell wins (iron 9 over copper 2)", row0[16] == "i")
+check("coal and crude oil get their own letters", o["rows"][21][21] == "k" and o["rows"][18][8] == "o")
+check("ore beyond the margin is left out", all("s" not in r for r in o["rows"]))
 print("all passed")

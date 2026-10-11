@@ -255,7 +255,8 @@ class Model:
         if obs.get("darkness") is not None:
             self.darkness = obs["darkness"]
         if obs.get("basemap"):
-            self.basemap = obs["basemap"]
+            ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
+            self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
         if obs.get("power"):
             self._ingest_power(obs["power"], now)
         for e in obs.get("board_events") or []:

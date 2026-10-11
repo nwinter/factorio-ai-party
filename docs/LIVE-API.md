@@ -91,6 +91,11 @@ building: `D` defence (turrets, walls, gates), `R` labs, `O` oil and chemistry (
 pumpjacks), `A` assembly (assemblers, the silo), `S` smelting, `M` mining (drills, offshore pumps), `E` power,
 `K` storage, `B` belts and inserters, `P` pipes, `.` nothing. Cell (c, r) covers tiles `x0 + c*cell` to
 `x0 + (c+1)*cell` and the same for y. Trailing empty cells are left off each row. It is absent until the first read.
+`basemap.ore` (read every 5 minutes, the last one kept between reads) is a second grid with its own `cell`, `x0`,
+`y0`, `w` and `rows`, covering the base plus 64 tiles: one letter per cell for its commonest resource, `i` iron ore,
+`c` copper ore, `k` coal, `s` stone, `o` crude oil, `u` uranium ore, `x` anything else. The page draws it faintly
+under the buildings. With a base, the page frames the base and pins an agent more than a base-width away to the
+map's edge (dashed, its distance in the tooltip).
 
 Field meanings are `serve.py`'s (see `docs/STREAM-NOTES.md`); dropped on purpose: `source`, `poll_ok`, `poll_error`,
 `errors`, per-agent `seen`, `interest` and `voice`, and camera zoom/player indices. To show something new on the
