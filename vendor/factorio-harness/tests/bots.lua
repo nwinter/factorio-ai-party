@@ -144,11 +144,21 @@ assert(not ok and err:find('placement blocked by burner-mining-drill (3,0)',1,tr
 eq(corpse.valid,false); eq(c.items['stone-furnace'],1)
 -- An item on the ground names its item and how to clear it (shake4: Grok's 9
 -- refused builds at one spot, no remedy).
-local dropped={valid=true,type='item-entity',name='item-on-ground',position={x=3.3,y=0.2},stack={valid_for_read=true,name='iron-plate'}}
+-- shake5: the build itself takes it into the inventory (Grok's pickup calls
+-- left the plate); one that does not fit stays, and the error says so.
+local dropped={valid=true,type='item-entity',name='item-on-ground',position={x=3.3,y=0.2},stack={valid_for_read=true,name='iron-plate',count=3}}
+dropped.destroy=function() dropped.valid=false end
 surface.find_entities_filtered=function(a) if a.area then return {dropped} end return {} end
+surface.can_place_entity=function() return not dropped.valid end
+local insert=c.insert
+c.insert=function() return 0 end -- a full inventory
 ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=0}})
-assert(not ok and err:find('placement blocked by item-on-ground (iron-plate) (3.3,0.2); pick the item up: stand on or next to it and fh call pickup',1,true),err)
-eq(c.items['stone-furnace'],1)
+assert(not ok and err:find('placement blocked by item-on-ground (iron-plate) (3.3,0.2); a build takes items on the ground into your inventory, and this one did not fit: free a slot',1,true),err)
+eq(c.items['stone-furnace'],1); eq(dropped.valid,true)
+c.insert=insert
+local plates=c.items['iron-plate'] or 0
+local placed=bot('build',{item='stone-furnace',position={x=3,y=0}})
+eq(placed.consumed,1); eq(placed.picked_up['iron-plate'],3); eq(c.items['iron-plate'],plates+3); eq(dropped.valid,false)
 surface.find_entities_filtered=function() return {} end
 surface.can_place_entity=function() return true end
 -- A machine over one of its fast-replace group passes the manual check, but the

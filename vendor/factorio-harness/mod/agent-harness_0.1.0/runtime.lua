@@ -151,6 +151,7 @@ local function finish(index, outcome)
   if action then s.last[index]={kind=action.kind, outcome=outcome, tick=game.tick, target=action.kind=='move_to' and action.position or nil} end
   if action and action.blocked_item then s.last[index].blocked_item=action.blocked_item end
   if action and action.kind=='mine' and action.mined then s.last[index].mined=action.mined end
+  if action and action.kind=='pickup' then s.last[index].picked=action.picked end
   if action and action.kind=='mine' and action.error then s.last[index].error=action.error end
   if action and action.kind=='build_path' then
     local last=s.last[index]
@@ -500,7 +501,7 @@ function handlers.describe()
         platform='optional platform name: place on that space platform (its hub builds ghosts from hub items); positions are platform coordinates, hub at 0,0',['repeat']='optional {count 1..64, dx, dy}: stamp the list count times, each shifted by dx,dy; per-copy rows',returns='placed, failed [{index,error}], bounds (construct defaults to them), obstacles_marked (trees/rocks under the ghosts, marked for deconstruction like a player placement; construct mines them)'},
       construct={area='optional {left_top,right_bottom} <=256x256; default: ghosts from the last paste',ticks='1..216000 (default 36000)',note='builds every ghost in reach from inventory and hand-mines every entity marked for deconstruction (timed like mine; contents to inventory, stops with inventory_full), then walks to the free stand point (never on a footprint) covering the most remaining ghosts near the nearest one; blocked ghosts retry once after moving; trees/rocks under ghosts are marked and mined first; ghosts whose item is in the hand-crafting queue are awaited (status awaiting_craft), not missing; status reports built/mined/remaining/missing/failed; outcomes: constructed (everything done) | incomplete (ghosts left for missing items or failures; a plan step fails) | nothing_to_do (a success, completes at once) | inventory_full | timed_out'},
       move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: engine pathfinder (a failed request retries from the nearest free tile centre with a slimmer box, then a wider goal); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',status='last reports replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity) | blocked | timed_out'},
-      pickup={ticks='1..600'},repair={position='{x,y}',ticks='1..600',item='repair-pack by default'},
+      pickup={ticks='1..600',note='takes items on the ground within your pickup distance (stand on or next to them; refused when none is in reach); outcomes picked_up | duration_elapsed | inventory_full | nothing_in_reach, last.picked {item: count}'},repair={position='{x,y}',ticks='1..600',item='repair-pack by default'},
       mine={position='{x,y}', ticks='1..600', name='optional', outcomes='target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       stock={item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance}; made_by (crafters set to a recipe making it); held (your inventory); summary line'},
@@ -1461,10 +1462,17 @@ function handlers.mine(p,a)
   -- LuaEntity cannot be serialized to JSON; only tick is returned.
   return {until_tick=action.until_tick}
 end
+-- Items on the ground within the character's pickup distance. shake5: a bot's
+-- pickup returned ok and the plate stayed (a bot's character does not pick up
+-- by itself), so the tick takes them and last reports what it took.
 function handlers.pickup(p,a)
   local ticks=integer(a.ticks,30,1,MAX_TICKS,'ticks')
+  local c=p.character
+  local reach=c and c.valid and c.prototype and c.prototype.item_pickup_distance or 1
+  local near=p.surface.find_entities_filtered{position=p.position,radius=reach,type='item-entity',limit=1}[1]
+  assert(near,string.format('nothing to pick up within %g tiles of (%.1f,%.1f): stand on or next to the item (observe lists item-on-ground)',reach,p.position.x,p.position.y))
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
-  state().active[p.index]={kind='pickup',until_tick=game.tick+ticks}
+  state().active[p.index]={kind='pickup',until_tick=game.tick+ticks,reach=reach}
   return {until_tick=game.tick+ticks}
 end
 function handlers.repair(p,a)
@@ -1778,7 +1786,7 @@ local function placement_error(p,proto,pos,direction)
   if character then found[#found+1]='the character standing on the footprint (move off it first)' end
   if #found>0 then
     return ' by '..table.concat(found,', ')..(clearable and '; mine it, or place_ghosts (marks it) + construct (clears it)' or '')
-      ..(items and '; pick the item up: stand on or next to it and fh call pickup' or '')
+      ..(items and '; a build takes items on the ground into your inventory, and this one did not fit: free a slot (or stand next to it and fh call pickup)' or '')
   end
   local tiles={}
   for _,tile in pairs(p.surface.find_tiles_filtered{area=area,limit=16}) do
@@ -1795,6 +1803,20 @@ end
 local function build_direct(p,stack,pos,direction,quality,kind)
   local proto,surface=stack.prototype.place_result,p.surface
   construction.clear_remnants(surface,proto,pos,direction)
+  -- Items on the ground in the footprint go into the inventory, as a player's
+  -- build takes them (shake5: Grok's six builds over one iron plate). One
+  -- that does not fit stays, and the placement error says so.
+  local picked
+  for _,it in pairs(surface.find_entities_filtered{area=construction.box(proto,pos,direction),type='item-entity'}) do
+    if it.valid and it.type=='item-entity' and it.stack and it.stack.valid_for_read then
+      local name,count=it.stack.name,it.stack.count
+      local n=p.insert{name=name,count=count,quality=it.stack.quality and it.stack.quality.name or nil}
+      if n>0 then
+        picked=picked or {}; picked[name]=(picked[name] or 0)+n
+        if n>=count then it.destroy() else it.stack.count=count-n end
+      end
+    end
+  end
   local ghost=surface.find_entities_filtered{position=pos,radius=0.1,ghost_name=proto.name,force=p.force,limit=1}[1]
   local e
   if ghost then
@@ -1824,7 +1846,7 @@ local function build_direct(p,stack,pos,direction,quality,kind)
   end
   assert(e,placement_error(p,proto,pos,direction))
   if stack.count>1 then stack.count=stack.count-1 else stack.clear() end
-  return e
+  return e,picked
 end
 local function build_reach(p,pos,what)
   assert_visible(p,pos,what)
@@ -1905,9 +1927,9 @@ local function build_one(p,a)
   -- Undergrounds are always placed directly with an explicit end: cursor
   -- building does not reliably make the exit of a pair from script.
   if direct then
-    local e=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type)
+    local e,picked=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type)
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
-    return {consumed=1,entity=built_summary(e),networks_joined=joined>0 and joined or nil}
+    return {consumed=1,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked}
   end
   local function held()
     local n=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'}
@@ -3921,6 +3943,21 @@ function M.tick_body(event)
       end
     elseif action.kind=='pickup' then
       p.picking_state=true
+      -- One item stack every 6 ticks; done when none is left in reach.
+      if event.tick>=(action.next_pick or 0) then
+        action.next_pick=event.tick+6
+        local item=p.surface.find_entities_filtered{position=p.position,radius=action.reach or 1,type='item-entity',limit=1}[1]
+        if not (item and item.valid and item.stack and item.stack.valid_for_read) then finish(index,action.picked and 'picked_up' or 'nothing_in_reach')
+        else
+          local name,count=item.stack.name,item.stack.count
+          local n=p.insert{name=name,count=count,quality=item.stack.quality and item.stack.quality.name or nil}
+          if n==0 then finish(index,'inventory_full')
+          else
+            action.picked=action.picked or {}; action.picked[name]=(action.picked[name] or 0)+n
+            if n>=count then item.destroy() else item.stack.count=count-n end
+          end
+        end
+      end
     elseif action.kind=='repair' then
       local e=action.entity
       if not e or not e.valid then finish(index,'target_lost')
