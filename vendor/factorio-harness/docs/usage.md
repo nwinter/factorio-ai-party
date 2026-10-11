@@ -117,11 +117,33 @@ fh call confessions --since 3                  # your own confessions
 - `viewer_say` (operator only, the same `operator: true` dispatch) relays a stream viewer's chat line:
   `{"id":"...","operator":true,"action":"viewer_say","args":{"name":"bob","text":"..."}}`. It posts
   `viewer bob: text` in the game chat, in grey; agents read it from `chat` with `from: "viewer bob"` and `viewer: true`,
-  unread for every agent, and a viewer's `@name` files no `team` mention. Rich text tags are stripped from the name
-  and bracketed in the text, newlines flattened, the name cut to 24 and the text to 200 characters. Rate limit (game
-  ticks, so it does not refill while the game is paused): one line per viewer name (case-blind) every 20 s and 6 lines
-  a minute in all. Over it the reply is `posted: false, dropped: viewer_rate|global_rate, retry_after_s`, not an
-  error. On success: `posted: true, seq, from, text`. The pog repo's `tools/audience.py` wraps both calls.
+  unread for every agent. It files a `team` mention (shown once, and it ends a `sleep` with `woke: mentioned`) only for
+  an agent it names with `@` (name, name without `pog-`, or display name; not `@everyone`, not a plain name). Rich
+  text tags are stripped from the name and bracketed in the text, newlines flattened, the name cut to 24 and the text
+  to 200 characters. Rate limit (game ticks, so it does not refill while the game is paused): one line per viewer name
+  (case-blind) every 20 s and 6 lines a minute in all. Over it the reply is `posted: false, dropped:
+  viewer_rate|global_rate, retry_after_s`, not an error; a viewer the agents muted gets `posted: false, dropped:
+  muted, reason`. On success: `posted: true, seq, from, text`. The pog repo's `tools/audience.py` wraps both calls,
+  and its stream service (`tools/stream/viewers.py`) relays moderated YouTube and site chat with it.
+
+```sh
+fh vote mute Troll42 "slurs in chat"           # reason as words, or - with the reason on stdin
+fh vote unmute Troll42 "apologised"
+fh vote list                                   # muted viewers and open votes
+```
+
+- `vote {kind: mute|unmute, viewer, reason}` (an agent with a character; directors cannot): the viewer is matched
+  case-blind, with or without a leading `viewer `; reason 1..120 characters. A vote counts while its voter is active
+  (a request, or a `--wait`/`sleep` poll, in the last 10 minutes; the voter always is). When the votes of active agents
+  reach a majority of the active agents (`floor(active/2)+1`), the viewer is muted for the rest of the run (kept in the
+  save) or unmuted, and the open votes on it clear. Muting a muted viewer, or unmuting one who is not, fails. The
+  reply: `viewer, kind, votes, needed, active`, and `result: muted|unmuted` when decided. A failed vote never stops
+  the character.
+- Every vote and result is posted in the game chat as a notice from `vote` (`astra votes to mute viewer Troll42 (1 of
+  2 needed): slurs in chat`; `viewer Troll42 is muted for the rest of the run (2 of 3 active agents: astra, sol)`):
+  unread for everyone, `notice: true` in `chat`, never a mention. The stream shows notices on its ticker.
+- `votes` (agents, and the operator dispatch) returns `muted [{viewer, tick, reason, by}]` and `open [{viewer, kind,
+  voters}]`.
 
 ## The in-game queue
 

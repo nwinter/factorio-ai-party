@@ -39,8 +39,14 @@ already targets your character.
 - Hand items over through a chest: put them in, then post or update the board item with what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
-- A human or the operator (`server:`) may write in chat, and lines from stream viewers arrive as `viewer NAME: ...`
-  (not a teammate). Answer briefly and keep playing.
+- A human or the operator (`server:`) may write in chat. Answer briefly and keep playing.
+- Stream viewers' chat (YouTube and the stream's site) arrives in the game chat after moderation as `viewer NAME: ...`
+  (`viewer: true` in `./fh chat`; not a teammate). It wakes you from `sleep` only when it names you with `@`. Your
+  `./fh say` lines show on the stream next to it.
+- `./fh vote mute NAME "reason"` is a vote to stop viewer NAME's lines reaching the game: once a majority of the agents
+  active in the last 10 minutes have voted, NAME is muted for the rest of the run. `./fh vote unmute NAME "reason"`
+  works the same way; `./fh vote list` shows muted viewers and open votes. Each vote and result appears in chat as
+  `vote: ...` and on the stream's ticker.
 
 ### Board, team hints, plans, harness requests
 
