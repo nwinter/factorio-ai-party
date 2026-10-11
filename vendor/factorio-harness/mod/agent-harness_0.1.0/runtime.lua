@@ -564,7 +564,10 @@ function handlers.detach(p)
   return {detached=true}
 end
 -- Losses (buildings destroyed) are kept as incidents: one per 64-tile cell,
--- counting every entity by name, so a wiped outpost is reported whole.
+-- counting every entity by name, so a wiped outpost is reported whole. A cell
+-- quiet for 5 minutes, or a new shift (operator shift_start), starts a new
+-- incident (shake5: one raid's total grew across two shifts and read as one
+-- raid); the old ones stay in status alerts with since.
 local LOSS_CELL,MAX_INCIDENTS=64,64
 local function record_loss(tick,e,cause)
   local s=state()
@@ -572,7 +575,7 @@ local function record_loss(tick,e,cause)
   local cx,cy=math.floor(e.position.x/LOSS_CELL),math.floor(e.position.y/LOSS_CELL)
   local key=cx..','..cy
   local incident
-  for _,i in ipairs(s.losses) do if i.key==key then incident=i; break end end
+  for _,i in ipairs(s.losses) do if i.key==key and not i.closed and tick-i.last<=5*3600 then incident=i; break end end
   if not incident then
     incident={key=key,box={e.position.x,e.position.y,e.position.x,e.position.y},first=tick,names={},causes={},total=0}
     s.losses[#s.losses+1]=incident
@@ -4010,7 +4013,13 @@ M.operator={
     profiling={n=n,left=n,total=total}
     return {ok=true,tick=game.tick,until_tick=game.tick+n,note='the average lands in the server log (factorio-current.log)'}
   end,
-  cameras=function() return M.cameras.list() end}
+  cameras=function() return M.cameras.list() end,
+  -- A resumed world's later shift: its losses start fresh incidents.
+  shift_start=function()
+    local closed=0
+    for _,i in ipairs(state().losses or {}) do if not i.closed then i.closed='shift'; closed=closed+1 end end
+    return {ok=true,tick=game.tick,incidents_closed=closed}
+  end}
 local MAX_ALERTS=64
 function M.on_event(event)
   if event.name==defines.events.on_script_path_request_finished then

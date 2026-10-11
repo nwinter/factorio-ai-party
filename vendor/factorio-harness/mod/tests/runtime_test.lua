@@ -129,6 +129,22 @@ eq(pushed.alerts.losses['transport-belt'],64); eq(pushed.alerts.losses['electric
 eq(loss_line(call('queue_status')),nil)
 runtime.on_event{name=11,tick=tick,entity={valid=true,name='inserter',position={x=205,y=-80},force={name='player'}}}
 assert(loss_line(call('queue_status')):find('81 destroyed',1,true))
+-- A cell quiet for 5 minutes, or a new shift, starts a new incident; the old
+-- one stays in status alerts with since (shake5: a raid total grew across two shifts).
+;(function()
+  local start=tick
+  tick=tick+5*3600+1; game.tick=tick
+  runtime.on_event{name=11,tick=tick,entity={valid=true,name='inserter',position={x=206,y=-80},force={name='player'}}}
+  local line=loss_line(call('queue_status'))
+  assert(line:find('losses in (206,-80) 1 destroyed: 1 inserter',1,true),line)
+  local closed=runtime.operator.shift_start(); eq(closed.ok,true); eq(closed.incidents_closed,3)
+  runtime.on_event{name=11,tick=tick,entity={valid=true,name='inserter',position={x=207,y=-80},force={name='player'}}}
+  line=loss_line(call('queue_status'))
+  assert(line:find('losses in (207,-80) 1 destroyed',1,true),line)
+  local history=call('status',{since=start-1}).alerts
+  eq(#history.latest,4); eq(history.losses.inserter,3); eq(history.losses['transport-belt'],64)
+  eq(#call('status').alerts.latest,2) -- the last 5 minutes: the two new incidents
+end)()
 -- Hits in the last 10 s lead status warnings, with where and by what.
 defines.events.on_entity_damaged=12
 runtime.on_event{name=12,tick=tick,entity={valid=true,name='gun-turret',position={x=40,y=40},force={name='player'}},force={name='enemy'},cause={valid=true,name='small-biter'},final_damage_amount=5}
