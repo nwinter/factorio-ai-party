@@ -11,10 +11,16 @@ Summary:
   Steam, user verification off.
 - Harness. Most of Space Age is already in the harness. It has platforms, hub requests, platform schedules, the silo
   launch, riding a rocket, landing, ghost construction on platforms, quality on build and transfer, and trigger
-  technologies. All of it has only been run against fake-engine tests. The two big gaps: bots (our multi-agent
-  architecture) cannot leave Nauvis, and nothing reads spoilage. I could not run the Space Age world on the box from
-  this session (section 2). The fixes from tonight and a one-command smoke test are on this branch.
-- Pace and cost. See section 4.
+  technologies. The space parts have only run against fake-engine tests; the core (walking, mining, crafting, building,
+  blueprints, combat) passed upstream's real-engine suite with Space Age enabled. The biggest gap: bots (our
+  multi-agent architecture) cannot leave Nauvis. I could not run the Space Age world on the box from this session
+  (section 2). Tonight's fixes are on this branch: multi-surface score and sparklines, spoilage reads, Space Age
+  recipe categories, Gleba plants, bot travel refusal. A one-command smoke test is there too.
+- Pace and cost. Reaching promethium science needs about 132k–152k science packs. Most of the work, though, is
+  building on four more planets. Central estimate: about 90 game hours, 105 wall hours and 370 agent-hours (range
+  230–800). With one Astra and the rest Claude agents, that is about 2.8 Codex and 2.6 Claude weekly allowances,
+  plus 45–60 engineer agent-hours. That means about three weeks with one allowance of each per week. After that, the
+  unbounded phase is a fixed weekly budget (section 4).
 
 ## 1. Access
 

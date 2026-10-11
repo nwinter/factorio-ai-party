@@ -27,6 +27,7 @@ Nick's own Factorio (`%APPDATA%\Factorio`, Steam install) is never touched.
 | live | 34197 | 27015 | pog-agent (dev/smoke tests) |
 | a | 34201 | 27021 | pog-a |
 | b | 34202 | 27022 | pog-b |
+| sa | 34210 | 27030 | bots (Space Age smoke tests, `tools/sa_smoke.py`; see `docs/SPACEAGE.md`) |
 
 Servers and clients start as scheduled tasks in Nick's desktop session (`pog-<world>-server`,
 `pog-<world>-client`), so they survive SSH disconnects and clients render on the desktop.
