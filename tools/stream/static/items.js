@@ -509,6 +509,114 @@
      ".ommmdmommmodo..",
      ".oooooooooooo...",
      ".ooooooooooo...."
+    ],
+    "furnace": [
+     "................",
+     "................",
+     "................",
+     "...oooooooooooo.",
+     "..olllllllllldo.",
+     ".ollllllllllddo.",
+     ".ommmmmmmmmmddo.",
+     ".odmmmdmmmdmddo.",
+     ".ommmkkkmmmmddo.",
+     ".ommkdkkkdmmddo.",
+     ".ommkkkkkmmmddo.",
+     ".ommkkkkkmmmddo.",
+     ".ommkHLMkmmmddo.",
+     ".ommkLhDkmmmdo..",
+     ".ommkHLHkmmmo...",
+     ".ooooooooooo...."
+    ],
+    "drill": [
+     "...........ppp..",
+     "...........prp..",
+     "...ooooooooprp..",
+     "..ollllllllprp..",
+     ".olllllllllprp..",
+     ".ommmmmmmmmppp..",
+     ".ommmmmmmmmddo..",
+     ".okkkkkkkkmddo..",
+     ".okXXXXXXkmddo..",
+     ".okkkkkkkkmdo...",
+     ".ommmmmmmmmo....",
+     ".oooooooooo.....",
+     ".....OHMDO......",
+     "......OMO.......",
+     ".......O........",
+     ".......O........"
+    ],
+    "assembler": [
+     "................",
+     "...ooooooooooooo",
+     "..ollllllllllldo",
+     ".olllllllllllddo",
+     ".ommmmmmmmmmmddo",
+     ".ohhmmXmmmmmmddo",
+     ".ommmXyXmmmmmddo",
+     ".omXXyyyXXmmmddo",
+     ".oXyyXXXyxXmmddo",
+     ".omXXmmmXXmmmddo",
+     ".omXXmmmXXmmmddo",
+     ".oXyyXXXxxXmmddo",
+     ".omXXxxxXXmmmddo",
+     ".ommmXxXmmmmmdo.",
+     ".ommmmXmmmmdmo..",
+     ".oooooooooooo..."
+    ],
+    "pole": [
+     "................",
+     "................",
+     ".OOO..oooo..OOO.",
+     ".OMO..ommo..OMO.",
+     ".OOOooooooooOOO.",
+     "..ommmmmmmmmmo..",
+     "..oooooooooooo..",
+     "......ommo......",
+     "......ommo......",
+     "......ommo......",
+     "......ommo......",
+     "......ommo......",
+     "......ommo......",
+     "......ommo......",
+     "......ommo......",
+     "......oooo......"
+    ],
+    "lab": [
+     "................",
+     "................",
+     "................",
+     ".....aaaaa......",
+     "....abbbbba.....",
+     "...abwbbbbba....",
+     "..abeHHLLLMba...",
+     "..aHHLLLMMMDa...",
+     "..aeLMMMMDDDaoo.",
+     ".oaMMMDDDDDDado.",
+     ".oaaaaaaaaaaado.",
+     ".ommmmmmmmmmmdo.",
+     ".ommmmmmmmmmmdo.",
+     ".ommmmmmmmmmmdo.",
+     ".ommmmmmmmmmmo..",
+     ".oooooooooooo..."
+    ],
+    "magazine": [
+     "................",
+     ".....O..O..O....",
+     "....OMOOMOOMO...",
+     "....OMOOMOOMO...",
+     "....OMOOMOOMO...",
+     "...oooooooooooo.",
+     "..olllllllllldo.",
+     "..ommmmmmmmmmdo.",
+     "..ommmmmmmmmmdo.",
+     "..odddddddddmdo.",
+     "..ommmmmmmmmmdo.",
+     "..odddddddddmdo.",
+     "..ommmmmmmmmmdo.",
+     "..ommmmmmmmmmo..",
+     "..ooooooooooo...",
+     "................"
     ]
    },
    "groups": [
@@ -586,6 +694,20 @@
       "low-density-structure",
       "rocket-fuel",
       "rocket-part"
+     ]
+    },
+    {
+     "name": "Buildings and ammo",
+     "items": [
+      "stone-furnace",
+      "burner-mining-drill",
+      "electric-mining-drill",
+      "assembling-machine-1",
+      "assembling-machine-2",
+      "assembling-machine-3",
+      "small-electric-pole",
+      "lab",
+      "firearm-magazine"
      ]
     }
    ],
@@ -855,6 +977,59 @@
      "c": "#d6dce2",
      "c2": "#d9432f",
      "c3": "#4aa3ff"
+    },
+    "stone-furnace": {
+     "label": "Stone furnace",
+     "t": "furnace",
+     "c": "#a8926e",
+     "c2": "#ff9a2e"
+    },
+    "burner-mining-drill": {
+     "label": "Burner drill",
+     "t": "drill",
+     "c": "#8a7560",
+     "c2": "#9aa3ad",
+     "c3": "#4a4442"
+    },
+    "electric-mining-drill": {
+     "label": "Electric drill",
+     "t": "drill",
+     "c": "#5f8a6a",
+     "c2": "#9aa3ad",
+     "c3": "#3e5c78"
+    },
+    "assembling-machine-1": {
+     "label": "Assembler 1",
+     "t": "assembler",
+     "c": "#9a9a86"
+    },
+    "assembling-machine-2": {
+     "label": "Assembler 2",
+     "t": "assembler",
+     "c": "#4f86b8"
+    },
+    "assembling-machine-3": {
+     "label": "Assembler 3",
+     "t": "assembler",
+     "c": "#8cae3c"
+    },
+    "small-electric-pole": {
+     "label": "Small pole",
+     "t": "pole",
+     "c": "#8a5a32",
+     "c2": "#dd844c"
+    },
+    "lab": {
+     "label": "Lab",
+     "t": "lab",
+     "c": "#8d97a3",
+     "c2": "#4aa3ff"
+    },
+    "firearm-magazine": {
+     "label": "Magazine",
+     "t": "magazine",
+     "c": "#c9a43a",
+     "c2": "#e6b25a"
     }
    },
    "fallback": {

@@ -409,6 +409,68 @@ T.crate = (() => {
   return cv;
 })();
 
+T.furnace = (() => {
+  const cv = canvas();
+  box(cv, 1, 6, 11, 15, 3, C);
+  fill(cv, or(rect(4, 10, 8, 14), circle(6.5, 10.5, 2.5)), GREY, 0, false);
+  fill(cv, and(or(rect(5, 11, 7, 14), circle(6.5, 11, 1.6)), (x, y) => y > 11.5), C2, "ball", false);
+  dots(cv, [[6, 13, "h"], [5, 14, "H"], [6, 14, "L"], [7, 14, "H"]]);
+  paint(cv, 2, 7, ["d...d...d", ".........", "...d...d.", "........."]);
+  paint(cv, 12, 5, ["d", ".", ".", "d"]);
+  return cv;
+})();
+
+T.drill = (() => {
+  const cv = canvas();
+  fill(cv, poly([[4.5, 11], [10.5, 11], [7.5, 15.8]]), C2, "cyly");
+  box(cv, 1, 5, 10, 11, 3, C);
+  fill(cv, rect(11, 0, 13, 5), C3, "cyly");
+  paint(cv, 2, 7, ["kkkkkkkk", "kXXXXXXk", "kkkkkkkk"]);
+  return cv;
+})();
+
+T.assembler = (() => {
+  const cv = canvas();
+  box(cv, 1, 4, 12, 15, 3, C);
+  const gear = (x, y) => {
+    const dx = x - 6.5, dy = y - 10, r = Math.hypot(dx, dy), a = Math.atan2(dy, dx) + Math.PI / 6;
+    return r <= (Math.cos(6 * a) > -0.2 ? 4.6 : 3.4) && r >= 1.5;
+  };
+  fill(cv, gear, GREY, 3, false);
+  fill(cv, and(gear, (x, y) => x + y > 17.5), GREY, 2, false);
+  outline(cv, gear, "X");
+  dots(cv, [[2, 5, "h"], [3, 5, "h"], [11, 14, "d"]]);
+  return cv;
+})();
+
+T.pole = (() => {
+  const cv = canvas();
+  fill(cv, rect(6, 2, 9, 15), C, "cyly");
+  fill(cv, rect(2, 4, 13, 6), C, "cylx");
+  fill(cv, rect(1, 2, 3, 4), C2, "ball");
+  fill(cv, rect(12, 2, 14, 4), C2, "ball");
+  return cv;
+})();
+
+T.lab = (() => {
+  const cv = canvas();
+  box(cv, 1, 10, 12, 15, 2, C);
+  fill(cv, and(circle(7.5, 8.5, 5.6), (x, y) => y < 11), GLASS, 2);
+  fill(cv, and(circle(7.5, 8.5, 4.4), (x, y) => y < 10 && y > 6), C2, "ball", false);
+  dots(cv, [[5, 5, "w"], [4, 6, "e"], [3, 8, "e"]]);
+  return cv;
+})();
+
+T.magazine = (() => {
+  const cv = canvas();
+  for (const x of [4, 7, 10]) {
+    fill(cv, or(rect(x, 3, x + 2, 7), circle(x + 1.5, 3, 1.5)), C2, "cyly");
+  }
+  box(cv, 2, 7, 12, 14, 2, C);
+  paint(cv, 3, 9, ["ddddddddd", ".........", "ddddddddd"]);
+  return cv;
+})();
+
 // ---------- items ----------
 // c, c2, c3: colours for the three ramps; color: signature colour (matches overlay.js's table where it had one).
 const GROUPS = [
@@ -469,6 +531,17 @@ const GROUPS = [
     "low-density-structure": { label: "Low density structure", t: "lattice", c: "#c4884a", c2: "#5b4636" },
     "rocket-fuel": { label: "Rocket fuel", t: "canister", c: "#d9532c", c2: "#8d97a3" },
     "rocket-part": { label: "Rocket part", t: "rocket", c: "#d6dce2", c2: "#d9432f", c3: "#4aa3ff" },
+  }],
+  ["Buildings and ammo", {
+    "stone-furnace": { label: "Stone furnace", t: "furnace", c: "#a8926e", c2: "#ff9a2e" },
+    "burner-mining-drill": { label: "Burner drill", t: "drill", c: "#8a7560", c2: "#9aa3ad", c3: "#4a4442" },
+    "electric-mining-drill": { label: "Electric drill", t: "drill", c: "#5f8a6a", c2: "#9aa3ad", c3: "#3e5c78" },
+    "assembling-machine-1": { label: "Assembler 1", t: "assembler", c: "#9a9a86" },
+    "assembling-machine-2": { label: "Assembler 2", t: "assembler", c: "#4f86b8" },
+    "assembling-machine-3": { label: "Assembler 3", t: "assembler", c: "#8cae3c" },
+    "small-electric-pole": { label: "Small pole", t: "pole", c: "#8a5a32", c2: "#dd844c" },
+    "lab": { label: "Lab", t: "lab", c: "#8d97a3", c2: "#4aa3ff" },
+    "firearm-magazine": { label: "Magazine", t: "magazine", c: "#c9a43a", c2: "#e6b25a" },
   }],
 ];
 
