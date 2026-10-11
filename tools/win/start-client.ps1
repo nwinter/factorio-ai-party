@@ -53,6 +53,12 @@ if ($Slot) {
   $exe = "$Factorio\bin\x64\factorio$Slot.exe"
   if (-not (Test-Path $exe)) { Copy-Item "$Factorio\bin\x64\factorio.exe" $exe }
 }
+if ($Human) {
+  # A person runs this from their own desktop (the shortcut): start the game directly. Registering a task fails when
+  # an elevated session created it first (Access is denied), and a task adds nothing in the person's own session.
+  Start-Process -FilePath $exe -ArgumentList "--config `"$dir\config\config.ini`" --mp-connect 127.0.0.1:$GamePort"
+  return
+}
 $action = New-ScheduledTaskAction -Execute $exe -Argument "--config `"$dir\config\config.ini`" --mp-connect 127.0.0.1:$GamePort"
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
