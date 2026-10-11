@@ -131,6 +131,41 @@ return function(api)
     end
     return table.concat(parts,' | ')
   end
+  -- One platform in full: what remote view shows of its flight, damage,
+  -- asteroid chunks in reach, thruster tanks and unbuilt ghosts. Each read is
+  -- guarded so a missing field never hides the rest.
+  local function try(fn) local ok,v=pcall(fn); if ok then return v end end
+  local function detail(pl,row)
+    row.speed=try(function() return pl.speed and math.floor(pl.speed*1000+0.5)/1000 end)
+    local damaged=try(function() return #pl.damaged_tiles end)
+    row.damaged_tiles=damaged and damaged>0 and damaged or nil
+    local chunks=try(function() return pl.find_asteroid_chunks_filtered{} end)
+    if chunks and #chunks>0 then
+      local by={}
+      for _,c in ipairs(chunks) do local n=type(c.name)=='string' and c.name or (c.name and c.name.name) or '?'; by[n]=(by[n] or 0)+1 end
+      local parts={}
+      for n,count in pairs(by) do parts[#parts+1]=n..'*'..count end
+      table.sort(parts)
+      row.asteroid_chunks=table.concat(parts,' ')
+    end
+    local s=pl.surface
+    if s then
+      local thrusters=try(function() return s.find_entities_filtered{type='thruster'} end) or {}
+      if #thrusters>0 then
+        local low=1
+        for _,t in ipairs(thrusters) do
+          for i=1,2 do
+            local f=try(function() return t.fluidbox[i] end)
+            local cap=try(function() return t.fluidbox.get_capacity(i) end)
+            low=math.min(low,f and cap and cap>0 and f.amount/cap or 0)
+          end
+        end
+        row.thrusters=string.format('%d, lowest tank %d%%',#thrusters,math.floor(low*100))
+      end
+      local ghosts=try(function() return s.count_entities_filtered{type={'entity-ghost','tile-ghost'}} end)
+      row.unbuilt_ghosts=ghosts and ghosts>0 and ghosts or nil
+    end
+  end
   function M.platforms(p,a)
     local out={platforms={}}
     for _,pl in pairs(p.force.platforms) do
@@ -150,6 +185,7 @@ return function(api)
           end
           row.leave_ok=pl.can_leave_current_location and pl.can_leave_current_location() or nil
         end
+        if a.platform then detail(pl,row) end
         out.platforms[#out.platforms+1]=row
       end
     end
@@ -260,7 +296,7 @@ return function(api)
     requests={target='character (default when no position/platform)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       returns='target, sections [{index, group, controlled (set by the game, not editable), requests ["item min..max from planet"]}]; call with no set/clear to just read'},
-    platforms={platform='optional name: only this one, with its full hub inventory',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
+    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks in reach by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule'},
     land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any)',returns='landing'},

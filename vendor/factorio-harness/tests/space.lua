@@ -62,6 +62,18 @@ fails(function() space.requests(p,{section=1,platform='alpha',set={{item='coal',
 local view=space.platforms(p,{})
 eq(view.platforms[1].state,'paused'); eq(view.platforms[1].at,'nauvis'); eq(view.platforms[1].hub_items,'iron-plate*5')
 eq(view.platforms[1].requests[1],'iron-plate 100..inf from nauvis'); eq(view.silos[1].parts,'10/50'); eq(view.silos[1].status,'building_rocket')
+eq(view.platforms[1].speed,nil,'details only for one named platform')
+-- One platform in full: speed, damage, chunks, thruster tanks, unbuilt ghosts.
+platform.speed=0.0123; platform.damaged_tiles={{position={x=1,y=1},damage=5}}
+platform.find_asteroid_chunks_filtered=function() return {{name='metallic-asteroid-chunk'},{name='metallic-asteroid-chunk'},{name='oxide-asteroid-chunk'}} end
+local tank=function(fuel,ox) return setmetatable({get_capacity=function() return 1000 end},{__index=function(_,i) return ({{amount=fuel},{amount=ox}})[i] end}) end
+platform.surface.find_entities_filtered=function(f) if f.type=='thruster' then return {{fluidbox=tank(800,500)},{fluidbox=tank(1000,900)}} end return {} end
+platform.surface.count_entities_filtered=function() return 7 end
+local one=space.platforms(p,{platform='alpha'}).platforms[1]
+eq(one.speed,0.012); eq(one.damaged_tiles,1); eq(one.asteroid_chunks,'metallic-asteroid-chunk*2 oxide-asteroid-chunk*1')
+eq(one.thrusters,'2, lowest tank 50%'); eq(one.unbuilt_ghosts,7)
+platform.find_asteroid_chunks_filtered=function() error('no chunks API') end
+eq(space.platforms(p,{platform='alpha'}).platforms[1].asteroid_chunks,nil,'a failing read is skipped')
 local sch=space.platform_schedule(p,{platform='alpha',stops={{station='vulcanus',wait={{type='time',ticks=600}}},{station='nauvis',wait={{type='all_requests_satisfied'}}}},paused=false})
 eq(sch.schedule,'>vulcanus (time 10s) | nauvis (all_requests_satisfied)'); eq(platform.paused,false)
 eq(platform.schedule.records[1].wait_conditions[1].ticks,600)
