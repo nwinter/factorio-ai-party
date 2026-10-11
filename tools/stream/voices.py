@@ -650,6 +650,9 @@ class Inworld(Provider):
 
 PROVIDERS = {"eleven": lambda: ElevenLabs("eleven"), "eleven-fast": lambda: ElevenLabs("eleven-fast"),
              "openai": OpenAITTS, "cartesia": Cartesia, "inworld": Inworld}
+# Under `auto`, caster lines (about 85% of the characters) on ElevenLabs voices use v4 Turbo: first on the arena and
+# half v4's price. POG_ELEVEN_CASTER=eleven puts them on v4.
+AUTO_CASTER_MODEL = {"eleven": os.environ.get("POG_ELEVEN_CASTER", "eleven-fast")}
 # Which provider family speaks a catalog voice (eleven-fast speaks the ElevenLabs voices too).
 FAMILY = {"eleven": "eleven", "eleven-fast": "eleven", "openai": "openai", "cartesia": "cartesia", "inworld": "inworld"}
 
@@ -758,6 +761,8 @@ class TTS:
         if self.backend == "auto":
             if prov == "aura2" or prov not in self.providers:
                 return "aura2", like
+            if caster and AUTO_CASTER_MODEL.get(prov) in self.providers:
+                return AUTO_CASTER_MODEL[prov], ref  # casters are most of the characters: the cheaper model
             return prov, ref
         if self.backend in PROVIDERS:
             if FAMILY.get(prov) == FAMILY[self.backend]:

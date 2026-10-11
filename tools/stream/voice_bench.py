@@ -40,9 +40,9 @@ LINES = [
     ("agent-deadpan-3", None, "I have sorted the chests by colour. Nobody asked. You are welcome."),
     ("agent-plan", None, "Plan for the next hour: Luna on smelting, Haiku on rails, and I take the oil field at Vulcanus."),
 ]
-# Planning volume per stream hour: docs/AUDIO-NOTES.md "Costs per hour" measured ~13k caster characters and 3-7k agent
-# characters an hour on the mock; agents now speak more (`say --aloud`), so plan for 25k (about 28 minutes of speech).
-CHARS_PER_HOUR = 25000
+# Planning volume per stream hour: eng/audio's two-host casters now talk ~80% of the time and put Aura-2 at ~$1.4 an
+# hour, i.e. ~47k characters at $0.030/1k (casters and agents together), so plan for 45k (about 50 minutes of speech).
+CHARS_PER_HOUR = 45000
 CHARS_PER_SECOND = 15.0  # speech rate used to convert per-minute prices before any audio is measured
 
 

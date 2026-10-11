@@ -66,8 +66,10 @@ def known(word):
         return True
     for suf, add in (("s", ""), ("es", ""), ("ed", ""), ("ed", "e"), ("ing", ""), ("ing", "e"), ("d", ""), ("ers", ""),
                      ("ers", "e"), ("er", ""), ("ly", "")):
-        if w.endswith(suf) and len(w) - len(suf) >= 3 and (w[:-len(suf)] + add) in words | costs.keys():
-            return True
+        if w.endswith(suf) and len(w) - len(suf) >= 3:
+            stem = w[:-len(suf)] + add
+            if stem in words or stem in costs:
+                return True
     return False
 
 

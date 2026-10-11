@@ -187,12 +187,14 @@ del voices.PREMIUM["ca-test"], voices.CATALOG["ca-test"]
 
 auto.speak("A big moment for the team!", "atlas", caster="pbp")
 check("auto caster takes the first available role voice", "TX3LPaxmHKxFdv7VOQHJ" in calls[-1]["url"])
-auto.providers["eleven"].API = "https://fail.example"
+check("auto casters on ElevenLabs use v4 Turbo, agents v4",
+      calls[-1]["body"]["model_id"] == "eleven_v4_turbo" and auto.last["provider"] == "eleven-fast")
+auto.providers["eleven"].API = auto.providers["eleven-fast"].API = "https://fail.example"
 auto.speak("A big moment for the team!", "atlas", caster="pbp")
 check("provider failure falls back to the voice's Aura-2 stand-in",
       calls[-1]["url"] == "cf:@cf/deepgram/aura-2-en" and calls[-1]["body"]["speaker"] == "aries"
       and auto.last["provider"] == "aura2", json.dumps(calls[-1]["body"]))
-auto.providers["eleven"].API = voices.ElevenLabs.API
+auto.providers["eleven"].API = auto.providers["eleven-fast"].API = voices.ElevenLabs.API
 
 # ---- voice design ----
 calls.clear()
