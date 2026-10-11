@@ -1571,6 +1571,10 @@ do
   p.character=saved; call('walk',{direction='east',ticks=600})
   local ok=pcall(call,'vote',{kind='kick',player='nobody',reason='x'}); eq(ok,false)
   eq(call('status').active.kind,'walk'); call('stop',{})
+  -- The operator reaches votes_open and vote_close through dispatch (tools/players.py).
+  local open=runtime.dispatch{action='votes_open',args={},operator=true}
+  eq(#open.votes,0); eq(open.window_ticks,36000)
+  eq(pcall(runtime.dispatch,{action='vote_close',args={id=99,outcome='failed'},operator=true}),false)
   game.players=nil
 end
 print('runtime: '..assertions..' assertions passed')

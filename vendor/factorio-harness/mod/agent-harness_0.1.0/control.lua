@@ -118,7 +118,7 @@ script.on_event(forwarded, function(event)
     log('Agent harness event error: ' .. tostring(err))
   end
 end)
-local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true, profiles = true, cameras = true, players = true, votes = true}
+local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true, profiles = true, cameras = true, players = true, votes = true, votes_open = true}
 -- Operator-only calls (bots, cameras): RCON/console only, never via dispatch.
 local function operator(name, arg)
   local ok, result = pcall(function()
