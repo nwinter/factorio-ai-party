@@ -75,14 +75,18 @@ Per-model values live in `agent/context.tsv` (model, kind, window, compact_at; `
   always sets both.
 - `ai-session spawn` has no way to pass `-c` flags, so the settings go in `DIR/.codex/config.toml`. Codex loads a
   project config layer only for trusted projects; run dirs are inside `/Users/owner/code/player-of-games`, which is
-  trusted in both `~/.codex/config.toml` and `~/.codex-account-b/config.toml`.
+  trusted in both `~/.codex/config.toml` and `~/.codex-account-b/config.toml`. Codex drops some keys from project
+  configs ("Ignored unsupported project-local config keys", provider, notify, profile and telemetry keys per the
+  config reference); the three keys we write are not among them. If a probe shows that warning for them, set the
+  values with `-c` instead (that needs launching Codex without ai-session).
 - Codex compacts remotely on OpenAI's servers (our rollouts show `"type":"compacted"` with an encrypted
   `compaction` item), and that path ignores `compact_prompt` / `experimental_compact_prompt_file`. The workspace
   config still points `experimental_compact_prompt_file` at `agent/compact.md` for the local fallback.
 - After a compaction Codex re-injects AGENTS.md (seen in a rollout), so the Memory section's "read notes.md first"
   survives. A `SessionStart` hook with matcher `^compact$` would print `notes.md` directly, but project hooks need
   persisted hook trust or `--dangerously-bypass-hook-trust`, which ai-session cannot pass; not used.
-- Docs: https://developers.openai.com/codex/config-reference, https://learn.chatgpt.com/docs/hooks.md.
+- Docs: https://developers.openai.com/codex/config-reference, https://learn.chatgpt.com/docs/config-file/config-reference,
+  https://developers.openai.com/codex/config-basic, https://learn.chatgpt.com/docs/hooks.md.
 
 ### Grok Build
 
