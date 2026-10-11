@@ -108,6 +108,19 @@ class BoardTest(unittest.TestCase):
         self.assertEqual([x["text"] for x in b.public()["talking_points"]], ["new"])  # same topic replaced
 
 
+class YoungGameTest(unittest.TestCase):
+    def test_rates_before_minute_ten(self):
+        import game as G
+        snap = {"tick": 8 * 3600, "items": {"iron-plate": {"total": 400, "m10": 400, "used10": 80, "h1": 400}}}
+        it = G.young_game(snap)["items"]["iron-plate"]
+        self.assertAlmostEqual(it["m10"] / 10, 50)      # 400 plates in 8 minutes, not 40 a minute
+        self.assertAlmostEqual(it["h1"] / 60, 50)
+        old = {"tick": 30 * 3600, "items": {"iron-plate": {"total": 900, "m10": 300, "h1": 900}}}
+        it = G.young_game(old)["items"]["iron-plate"]
+        self.assertEqual(it["m10"], 300)                 # the ten-minute window is full
+        self.assertAlmostEqual(it["h1"] / 60, 30)
+
+
 class ViewerQuestionsTest(unittest.TestCase):
     def test_is_question(self):
         from analyst_board import is_question
