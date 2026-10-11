@@ -13,6 +13,16 @@ dir=$("$root/tools/new-run.sh" "$run" "$world" "$player" "$minutes")
 # redirect that made it, and grep on the one-line file returned all of it).
 "$dir/fh" call describe --format json 2>/dev/null | python3 "$root/tools/describe-lines.py" > "$dir/describe.json" 2>/dev/null \
   || rm -f "$dir/describe.json"
+# Harness-specific notes (agent/harness-KIND.md) go before the compaction instructions at the end of AGENTS.md.
+if [ -f "$root/agent/harness-$kind.md" ]; then
+  python3 - "$dir/AGENTS.md" "$root/agent/harness-$kind.md" <<'EOP'
+import sys
+path, extra = sys.argv[1:]
+text, add = open(path).read(), open(extra).read().rstrip("\n") + "\n\n"
+i = text.find("## Compact instructions")
+open(path, "w").write(text[:i] + add + text[i:] if i >= 0 else text.rstrip("\n") + "\n\n" + add)
+EOP
+fi
 prompt="$root/runs/$run/prompt.md"
 test -f "$prompt" || cat > "$prompt" <<'EOP'
 Read AGENTS.md in this directory; it has your instructions, interface, rules, and deadline. Then play Factorio until the deadline in deadline.txt, keeping notes.md current, and finish with the final summary it asks for.
