@@ -29,8 +29,9 @@ sections named.
    shake1" (Rook, 04:35:01) aired. On a resumed world (game 123m on) no shake1 comparison should air at all; one that
    does means a stale caster. Main has also moved since shake4's code (33b21be): the harness mod (bot travel,
    `bots.lua`, `runtime.lua`, `waits.lua`) and Grok's run-local home, which shake4 ran without (b940b9f, merged at
-   04:54). Have `tools/start-team.sh` (the `POG_RESUME` path) print the code line and each helper's first line into
-   `runs/shake5/start.log`, and check Grok's first minute.
+   04:54). Start the shift with `tools/start-team.sh` (the `POG_RESUME` path) from main after the last merge, check
+   the code line in `runs/shake5/start.log` (start-team already logs each helper's pid and first line, which held in
+   shake4), and watch Grok's first minute.
 2. `sleep` is refused while the character is dead (section 3). 19 `./fh sleep` calls from 7 agents failed with "bot X
    is dead; it respawns at tick N" (Haiku 8, four tries in 6 seconds twice), so agents spun on `observe` instead (26
    more dead failures). `vendor/factorio-harness/mod/agent-harness_0.1.0/runtime.lua:3660` lets only `chat` and `say`
@@ -45,8 +46,9 @@ sections named.
    (`runtime.lua:1732`) names trees and rocks with a remedy; give `item-on-ground` one too (pick it up), or have the
    direct build pick items up as it already clears stumps.
 5. ElevenLabs has 0 credits (section 6): it answered `401 quota_exceeded` on the first agent clip and each time its
-   30-minute rest ran out (`runs/shake4/caster.log:18`, `:350`, `:606`), so Opus's pick `el-george` played as OpenAI `fable` in all 13 lines. Top up the key
-   or drop the `el-` voices from `agent/voices.md` while it is empty, so agents only pick voices the run can play.
+   30-minute rest ran out (`runs/shake4/caster.log:18`, `:350`, `:606`), so Opus's pick `el-george` played as OpenAI
+   `fable` in all 13 lines. Top up the key or drop the `el-` voices from `agent/voices.md` while it is empty, so agents
+   only pick voices the run can play.
 6. The naturalist brief still makes "frozen" lines (section 6): about 30 of 696 lines call a planning agent frozen,
    still or motionless (shake3 102 of 443), 19 of them in naturalist exchanges ("Here sits Grok, still as a heron",
    04:06:25). `tools/stream/caster.py:43` says "A specimen planning its next step is deep in thought"; say instead that
@@ -61,8 +63,9 @@ sections named.
    no blue pack and no rocket silo (section 2).
 2. The first hour ended level with shake3 by game time: 15 technologies, the same green packs and iron, 531 red
    against 692. The opening lost 5 minutes on the first steam engine (13.1m against 8.0m), the middle gained them back
-   (logistic science 2 minutes and steel 6 minutes earlier), and oil was found at 52.0m against 25.5m on the same
-   field, which cost about 3 minutes because oil-gathering research finished at 61.8m anyway (section 2).
+   (logistic science 2 minutes and steel 6 minutes earlier). Oil was found at 52.0m against 25.5m on the same field,
+   but research set when crude flowed in both runs: oil-gathering finished at 61.8m (shake3 58.8m) and a pumpjack ran
+   within a minute of it (section 2).
 3. Defence decided the second hour. Seven raids from 34m on, groups of 66, 45, 70 and 46 from the southeast nests, at
    least 13 deaths (shake3 3). The 66-biter raid at 67.6m cut power to 197 machines and halved the labs, and science
    consumption nearly stopped for 14 minutes; plastics took 26 minutes of research. The last raids took power to zero
@@ -84,9 +87,9 @@ sections named.
    overview zoom worked, 15 replays aired, and the live feed never failed. The main mistake class was a stale caster
    comparing with shake1 after shake1 had ended; the others are a few merged facts and about 30 "frozen" lines from the
    naturalist brief. ElevenLabs had no credits, and no viewer question arrived (section 6).
-8. Team size: by minute 30 the three-agent pilot matched nine agents on research and red packs with a smaller
-   base (70% of shake4's iron, 40% of its furnaces). The data stop at 32 minutes, before the first raid and before any second-hour work, so they say nothing
-   about two-hour runs (section 7).
+8. Team size: by minute 30 the three-agent pilot matched nine agents on research and red packs with a smaller base
+   (70% of shake4's iron, 40% of its furnaces). The data stop at 32 minutes, before the first raid and before any
+   second-hour work, so they say nothing about two-hour runs (section 7).
 
 ## 2. Progress and pace by milestone
 
@@ -120,9 +123,9 @@ was out of reach; on Space Age it needs blue packs (`docs/SPACEAGE.md:138`).
 | Refinery | ≤64.7m | 60.8m (unconnected) | | | 4 min later, and connected |
 
 The oil field is the same one in every run of this seed: shake3 found it at (-85,-397) at 25.5m, shake4 at 52.0m after
-Gemini went north along x=-40 "to chart new territory" (#443, 49.7m). In shake4 the oil-gathering research, not the
-find, set the time crude flowed (oil-gathering done at 61.8m, pumpjack running by 62.6m), so the late find cost about
-3 minutes against shake3.
+Gemini went north along x=-40 "to chart new territory" (#443, 49.7m). In both runs the oil-gathering research, not
+the find, set when crude flowed (shake4: done at 61.8m, a pumpjack running by 62.6m). Shake4 was 3 minutes behind
+shake3 there because its research was: engine and fluid handling came 2 to 3 minutes later.
 
 Factory at game 60.7m (`scores.jsonl:30`) against shake3 at 60.6m:
 
@@ -138,9 +141,9 @@ Factory at game 60.7m (`scores.jsonl:30`) against shake3 at 60.6m:
 The first hour ended level with shake3: the same technology count, the same green packs and iron, fewer red packs. The
 opening lost 5 minutes on power. The lab stood at 9.3m with 10 red packs and "automation queued, stalled only on power"
 (Opus #123, 11.1m) while three agents built one steam plant together: Gemini held the offshore pump, Grok the boiler
-with "8 iron plates" (#97), the engine needed 40 more plates, and Luna found the boiler "at 0 water, pipe network
-disconnected" (#127, 11.6m) and closed the pipe gap; Opus crafted the engine and placed it (#141, #146). From 20m on the
-team caught up (logistic-science-pack 2 minutes and steel 6 minutes before shake3) and then lost it again at engine and
+with "8 iron plates" (#97), the engine needed 40 more plates, and Luna found that the boiler "has 0 water, pipe
+network is disconnected from pump" (#127, 11.6m) and closed the pipe gap; Opus crafted the engine and placed it
+(#141, #146). From 20m on the team caught up (logistic-science-pack 2 minutes and steel 6 minutes before shake3) and then lost it again at engine and
 fluid handling.
 
 ### Second hour (shake4 only)
@@ -216,7 +219,7 @@ chat peeks and sleep checks.
 | muse | 577 (337 / 240) | 130 | 92.5, 77% (27.7) | 186 of 260 | 0 |
 
 - "Asleep" runs from a sleep's reply to the next decision, capped at the requested length plus 5 seconds. Shake3, one
-  hour: Haiku 74%, Opus 40%, Sonnet 32%. Sleep is now spread over the run, not piled at the end, and short: mentions
+  hour: Haiku 74%, Opus 40%, Sonnet 32%. Sleep now spreads over the whole run in short spells: mentions
   ended most sleeps, so the `@` traffic in chat sets the sleepers' pace.
 - Muse works through queues (101 `queue_submit`, 130 sleeps); its sleeps mostly overlap queued work, which the journal
   does not record, so its 77% is not all idle character time.
@@ -273,7 +276,7 @@ chat peeks and sleep checks.
 
 ### Squashed words in Astra's and Sol's chat
 
-The run-together words (section 4) follow Codex context segments, not a configuration change. Every `turn_context` in
+The run-together words (section 4) follow Codex context segments; no configuration changed. Every `turn_context` in
 the rollouts has the same model and effort (low), as in shake3 with the same CLI (0.162.1), where nobody squashed.
 Astra squashed in whole compaction segments: 0 of 43 lines before 03:15:45, 0 of 38 to 03:41:55, 25 of 33 to 04:04:26,
 0 of 49 to 04:28:23, 25 of 33 to 04:48:21, 0 of 5 after; the first squashed line came 3.7 minutes into a segment, at
@@ -311,7 +314,7 @@ compaction clears it or, through notes.md, carries it on.
 | Aloud | 42 | 22 | 32 | 21 |
 | Mean characters | 177 | 186 | 181 | 133 |
 
-The logistics share did not move: hour one has exactly shake3's 547 messages and 94% logistics, after the round-4
+The logistics share did not move: hour one has the same 547 messages as shake3 and 94% logistics, after the round-4
 prompt sent claims and handovers to the board (`agent/team.md:35-39`, "post or update the board item with what and
 where"). The board did take more traffic (below), so chat did not shrink because of it; chat kept the coordination that
 the board records, in the form of `@name` requests and status ("@opus I added 29 iron plates to your red-science chest
@@ -319,22 +322,23 @@ the board records, in the form of `@name` requests and status ("@opus I added 29
 68, Sonnet 64, Gemini 51. Lines whose point is a joke or a feeling are again about half a dozen (best moments below).
 
 Astra and Sol ran words together in 39% and 55% of their lines from 50m on: "Northbankrestartedverified1h05m:
-coalleftlane, oreclear, furnacesworking" (Astra #587). By 10-game-minute bin, Astra 0 lines before 50m, then 10 of 16 (50 to 60m), 13
-of 14 (60 to 70m), 2 of 20, 0, 0, 11 of 18 (100 to 110m), 11 of 15 (110 to 120m); Sol 10 of 11 (60 to 70m), 7 of 7, 1
-of 14, 11 of 14 (90 to 100m). Luna, also on Codex, never did; nobody did in shake3 (counted as a run of 22 or more
-letters). The hosts and the TTS receive these lines as written. Section 3 traces it to Codex context segments.
+coalleftlane, oreclear, furnacesworking" (Astra #587). By 10-game-minute bin, Astra 0 lines before 50m, then 10 of
+16 (50 to 60m), 13 of 14 (60 to 70m), 2 of 20, 0, 0, 11 of 18 (100 to 110m), 11 of 15 (110 to 120m); Sol 1 of 10 (50
+to 60m), 10 of 11, 7 of 7, 1 of 14, 11 of 14 (90 to 100m), 7 of 16, 9 of 12. Luna, also on Codex, never did; nobody
+did in shake3 (counted as a run of 22 or more letters). The hosts and the TTS receive these lines as written. Section 3 traces it to Codex context segments.
 
 ### Board
 
 232 board calls (shake3 93): 88 reads, 66 posts, 78 updates, plus 1 harness request (Astra). Posts by kind: 24 claims,
-19 requests, 18 notes, 5 tasks. Updates: 21 done, 20 doing, 8 dropped. Use was not only the opening: 47 posts and 61
-updates in hour one, 19 posts and 17 updates in hour two (Astra 12 of the 19).
+19 requests, 18 notes, 5 tasks (10 of the 66 failed and were resent, below). Updates: 21 done, 20 doing, 8 dropped.
+Use was not only the opening: 53 posts and 59 updates in hour one, 13 posts and 19 updates in hour two (Astra 8 and 12
+of those).
 
 | Agent | reads | posts (h1 / h2) | updates |
 |---|---|---|---|
 | luna | 57 | 8 / 0 | 19 |
 | astra | 7 | 15 / 8 | 25 |
-| sol | 7 | 11 / 2 | 18 |
+| sol | 7 | 11 / 2 | 19 |
 | haiku | 4 | 4 / 3 | 4 |
 | opus | 2 | 5 / 0 | 3 |
 | grok | 2 | 4 / 0 | 2 |
@@ -345,8 +349,9 @@ updates in hour one, 19 posts and 17 updates in hour two (Astra 12 of the 19).
 10 posts failed and were resent within seconds, all on argument shape: 7 with an argument a post does not take, 5 of
 them `note` (`unknown argument note for board_post; valid: area, kind, needs, owner, tags, ...`; Grok 02:53:40, Luna
 02:53:45, Sol 03:27:50, Astra 03:29:54 and 04:08:20) and Haiku's `status` (03:21:32) and `requested_by` (04:15:57);
-and 3 with `needs` as an object instead of a list (`needs is text or an array of 1..16 item names or {...}`, Sol 03:27:54, Astra 03:29:59, 04:08:23). The prompt
-offers `"note"` for updates (`agent/team.md:52`), so agents reached for it on posts too.
+and 3 with `needs` as an object instead of a list (`needs is text or an array of 1..16 item names or {...}`, Sol
+03:27:54, Astra 03:29:59 and 04:08:23). The prompt offers `"note"` for updates (`agent/team.md:52`), so agents reached
+for it on posts too.
 
 ### Aloud and confessions
 
@@ -420,10 +425,11 @@ minutes except a worm at a scout.
 
 - Deaths: at least 13 against shake3's 3, counted from chat reports and `your character died` alerts; 9 of them in
   raids 2, 6 and 7. One scout died to a worm.
-- Defence was organised in chat again, not on the board, apart from Astra's "Shared power defense wall screen" note
+- Defence was organised in chat again; the board carried only Astra's "Shared power defense wall screen" note
   (04:21:48) and Sol's defence handover chest claim (04:25:56).
 - The raid groups came from nests to the southeast ((83,93), (74,78), (50,94), (83,99)) and went for the power plant at
-  (28,3) four times. Turrets there were placed and topped up after each raid and destroyed in the next.
+  (28,3) four times. Turrets there were placed or topped up after raids 2 and 3 and lost in raids 4, 6 and 7 (#748;
+  Astra #847, "eastturrets gone"; Opus #936, "no turrets are left there").
 - The `kite` tool was the agents' discovery of the run: Astra used it in raid 2 and taught it to everyone aloud (#615),
   Sol coached "kite min7/max12" (#932).
 
@@ -478,8 +484,9 @@ writer $0.58, TTS $1.67, classifier $0.006 ($1.11 an hour); the analyst $4.49 AP
 | 8 | 04:52:39 Rook "Nineteen in the co-op, Vale!"; 04:53:39 Vale "co-op cruised at fifty-five" | "co-op" is the earlier coop1 test, never introduced to viewers | the analyst compares with coop1 from minute 44 without saying what it was |
 | 9 | about 30 lines: "Haiku stands frozen, deep in thought" (03:32:20), "Here sits Grok, still as a heron" (04:06:25), "the planning Opus, motionless in crisis" (04:43:21) | the agents were planning | the naturalist brief, `caster.py:43` (P1 item 6); shake3 had 102 of 443 |
 
-The hosts did not repeat the agents' own false "Blue science is live" (Muse #934) as fact, but closed on "sulfur
-finally has water" (Vale 04:51:53), which was true, and "Sulfur plant lives" (Rook 04:51:20), which was not.
+Muse's false "Blue science is live" (#934) was not quoted by the hosts; mistake 6 made the same error from Grok's
+lines. The hosts closed on "sulfur finally has water" (Vale 04:51:53), which was true, and "Sulfur plant lives" (Rook
+04:51:20), which was not: it never had petroleum.
 
 ### The analyst
 
@@ -601,7 +608,7 @@ P1 is at the top. Same rule: harness bugs, misleading prompts and launch hygiene
 19. Chat logistics (section 4): the share stayed at 91 to 94% after the board took claims and handovers. If less
     logistics in chat is still wanted, the prompt lines that pull coordination into chat are "Answer teammates
     promptly" and the repeating `chat_remaining` (`agent/team.md:29-31`), and every mention wakes a sleeper (section 3);
-    this is a reading of the data, not a measured cause.
+    this is a reading of the data, and the cause was not measured.
 
 ## Appendix: methods
 
