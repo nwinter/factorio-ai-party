@@ -404,6 +404,8 @@ def _http(method, url, headers, body=None, timeout=45):
         raise TTSError(f"{e.code} {e.read()[:300].decode(errors='replace')}") from None
     except urllib.error.URLError as e:
         raise TTSError(f"unreachable: {e.reason}") from None
+    except OSError as e:  # read timeouts and dropped connections
+        raise TTSError(f"{type(e).__name__}: {e}") from None
 
 
 def _json(method, url, headers, body=None, timeout=45):
@@ -742,7 +744,7 @@ class TTS:
                 return audio, "audio/mpeg", dur, time.time() - t0
         try:
             audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice)
-        except TTSError:
+        except (TTSError, KeyError, ValueError):  # KeyError/ValueError: a response not shaped as documented
             if self.backend != "auto" or prov == "aura2" or self.ai is None:
                 raise
             vid = self.effective(voice, caster)
