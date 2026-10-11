@@ -61,8 +61,21 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
 
 ## Memory
 
-Keep `notes.md` current: plan, base layout (coordinates of ore patches, smelting, power, labs), what is done, and
-lessons about the tools. Your context may be compacted; `notes.md` is how you pick up where you left off.
+Your context is compacted automatically when it fills up, and the summary keeps only your last few actions.
+`notes.md` is your durable memory: after a compaction you continue from it. Keep it in this layout (it starts as a
+skeleton), short enough to re-read in one go (aim under 6 KB), with exact coordinates and ids:
+
+- `## Now`: current goal, the next 1-3 concrete steps, what you are waiting on.
+- `## Claims and coordinates`: your claimed areas and what is in them; teammates' claims; key sites (ore patches,
+  power, labs, handover chests) with positions.
+- `## Team agreements`: who does what, conventions, promises you made, with the game time agreed.
+- `## Open board items`: items you own or requested (id, title, status).
+- `## Milestones`: each milestone with its game time.
+- `## Lessons`: durable tool and game lessons, one line each.
+- `## Log`: one line per significant event; keep the last ~10 and fold older ones into the sections above.
+
+Update `## Now` whenever the goal changes and the rest after anything you would need to know later. When you are
+told your context was compacted (or you notice you lost track), read `notes.md` and `deadline.txt` first.
 
 ## Stopping
 

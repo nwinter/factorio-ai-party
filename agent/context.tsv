@@ -1,0 +1,19 @@
+# Per-model context limits for tools/launch-agent.sh (applied by tools/context.py). docs/CONTEXT-NOTES.md explains them.
+# window: the model's context window in tokens. compact_at: token count at which the context should be compacted
+# (0 = leave the harness default). Rows match on model; "*" rows are the fallback for a kind.
+# model	kind	window	compact_at
+opus	claude	1000000	250000
+sonnet	claude	1000000	200000
+haiku	claude	1000000	80000
+*	claude	1000000	200000
+gpt-6-astra	codex	272000	180000
+gpt-6.1-sol	codex	272000	180000
+gpt-6-sol	codex	272000	180000
+gpt-6-luna	codex	272000	180000
+*	codex	272000	180000
+grok-4.7	grok	256000	154000
+*	grok	256000	154000
+gemini-3.8-flash-high	agy	1048576	200000
+*	agy	1048576	200000
+muse-spark-1.3	muse	1048576	0
+*	muse	1048576	0

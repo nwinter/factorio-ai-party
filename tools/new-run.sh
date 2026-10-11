@@ -27,11 +27,14 @@ print(open(tpl).read().replace("{{TEAM_SIZE}}", str(len(rows))).replace("{{ROSTE
 EOT
 )
 fi
+# AGENTS.md ends with the compaction instructions: Claude Code reads a "Compact instructions" section, and every
+# harness's summarizer sees the instructions file.
 python3 - "$root/agent/PLAYBOOK.md" "$dir/AGENTS.md" "$player" "$time_text" "$coop" "${POG_TEAMMATE:-}" \
-  "$root/runs/$run/${POG_TEAMMATE_WS:-}/notes.md" "${POG_ROLE:-}" <<'EOP'
+  "$root/runs/$run/${POG_TEAMMATE_WS:-}/notes.md" "${POG_ROLE:-}" "$root/agent/compact.md" <<'EOP'
 import sys
-src, dst, player, time_text, coop, mate, mate_notes, role = sys.argv[1:]
+src, dst, player, time_text, coop, mate, mate_notes, role, compact = sys.argv[1:]
 text = open(src).read().replace("{{TIME}}", time_text) + coop
+text = text.rstrip("\n") + "\n\n## Compact instructions\n\n" + open(compact).read()
 import os
 for k, v in {"PLAYER": player, "TEAMMATE": mate, "TEAMMATE_NOTES": mate_notes, "ROLE": role,
              "ENEMIES": os.environ.get("POG_ENEMIES", "peaceful"), "SEED": os.environ.get("POG_SEED", "20261010")}.items():
@@ -62,5 +65,24 @@ echo "screenshot failed: not delivered within 20 s" >&2; exit 1
 EOS
 chmod +x "$dir/fh" "$dir/shot"
 date -v+"${minutes}"M "+%Y-%m-%d %H:%M %Z" > "$dir/deadline.txt"
-printf '# Notes (%s, world %s)\n\n' "$player" "$world" > "$dir/notes.md"
+cat > "$dir/notes.md" <<EON
+# Notes ($player, world $world)
+
+## Now
+Goal:
+Next:
+Waiting on:
+
+## Claims and coordinates
+
+## Team agreements
+
+## Open board items
+
+## Milestones
+
+## Lessons
+
+## Log
+EON
 echo "$dir"

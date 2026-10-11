@@ -17,6 +17,8 @@ name="pog-${POG_WS:-$world}-$run"
 allow='"Read", "Grep", "Glob", "Edit(/**)", "Write(/**)", "Bash(./fh:*)", "Bash(./shot:*)", "Bash(echo:*)",
               "Bash(sleep:*)", "Bash(date:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)",
               "Bash(python3:*)", "Bash(jq:*)", "Bash(ls:*)", "Bash(wc:*)"'
+# Compaction settings per model: agent/context.tsv, applied by tools/context.py (docs/CONTEXT-NOTES.md).
+compact_rule='After any context compaction, read notes.md and deadline.txt before acting; notes.md is your memory.'
 
 # Claude-style settings: Claude Code uses the sandbox; Grok Build reads the same file for its allowlist.
 claude_settings() {
@@ -56,6 +58,8 @@ case $kind in
       claude_settings
       args=(--route "${POG_ROUTE:-claude-b}" --model "$model" --thinking "$effort" --permission-mode dontAsk)
     fi
+    # ai-session passes no extra flags or env, so compaction settings go in the workspace's own config.
+    python3 "$root/tools/context.py" setup "$kind" "$model" "$dir" >/dev/null
     out=$(/Users/owner/.local/bin/ai-session spawn "${args[@]}" -C "$dir" --name "$name" --herdr tab --prompt-file "$prompt" --start 2>&1)
     pane=$(printf '%s\n' "$out" | sed -n 's/.*Herdr pane \([^ .]*\).*/\1/p' | tail -1)
     test -n "$pane" || { printf '%s\n' "$out" >&2; exit 1; }
@@ -72,20 +76,31 @@ case $kind in
   grok)
     model=${6:-grok-4.7} effort=${7:-low}
     claude_settings nosandbox
+    ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
     pane=$(new_pane)
-    herdr pane run "$pane" "cd '$dir' && grok -m $model --effort $effort --permission-mode dontAsk \"\$(cat '$prompt')\"" >/dev/null
+    # --rules is part of the system prompt, which compaction keeps.
+    herdr pane run "$pane" "cd '$dir' && $ctx_env grok -m $model --effort $effort --permission-mode dontAsk --rules '$compact_rule' \"\$(cat '$prompt')\"" >/dev/null
     ;;
   agy)
     model=${6:-gemini-3.8-flash-high}
     pane=$(new_pane)
+    limit=$(python3 "$root/tools/context.py" limit agy "$model")
     # Antigravity's sandbox only works in print mode, so run sandboxed turns back to back until the deadline.
+    # agy has no compaction threshold setting (it compacts near 280K): past the limit, the next turn starts a fresh
+    # conversation that picks up from notes.md.
     cat > "$dir/.agy-loop.sh" <<EOL
 #!/usr/bin/env bash
 cd '$dir'
 deadline=\$(date -j -f "%Y-%m-%d %H:%M %Z" "\$(cat deadline.txt)" +%s)
 agy -p "\$(cat '$prompt')" --model $model --sandbox --dangerously-skip-permissions
 while [ "\$(date +%s)" -lt "\$deadline" ]; do
-  agy -c -p "Continue: the deadline in deadline.txt has not passed. Re-read notes.md, check ./fh call status and chat, and keep playing toward the next milestone." --model $model --sandbox --dangerously-skip-permissions
+  tokens=\$(python3 '$root/tools/context.py' agy-tokens '$dir')
+  if [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ]; then
+    echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
+    agy -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat." --model $model --sandbox --dangerously-skip-permissions
+  else
+    agy -c -p "Continue: the deadline in deadline.txt has not passed. Re-read notes.md, check ./fh call status and chat, and keep playing toward the next milestone." --model $model --sandbox --dangerously-skip-permissions
+  fi
 done
 EOL
     chmod +x "$dir/.agy-loop.sh"
@@ -93,6 +108,7 @@ EOL
     ;;
   muse)
     model=${6:-muse-spark-1.3} effort=${7:-low}
+    python3 "$root/tools/context.py" setup muse "$model" "$dir" >/dev/null
     pane=$(new_pane)
     herdr pane run "$pane" "cd '$dir' && muse --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" >/dev/null
     ;;
