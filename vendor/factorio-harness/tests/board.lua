@@ -112,6 +112,9 @@ eq(r.item.notes[1].by,'astra'); eq(r.item.status,'claimed')
 r=grok('board_update',{id=1,status='doing',note='placing assemblers'})
 eq(r.item.status,'doing')
 fails(function() grok('board_update',{id=1,status='finished'}) end,'status must be')
+-- A bad argument changes nothing, even with a valid owner beside it.
+fails(function() sol('board_update',{id=1,owner='astra',note=''}) end,'note is required')
+eq(grok('board',{id=1}).item.owner,'grok')
 fails(function() grok('board_update',{id=1}) end,'give status, owner or note')
 fails(function() grok('board_update',{id=4,owner='sol'}) end,'stays with its poster')
 -- The requester may reassign; the owner may release.

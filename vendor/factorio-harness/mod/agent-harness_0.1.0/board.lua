@@ -202,6 +202,9 @@ return function(api)
     local item = store().items[a.id]
     assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
     assert(a.status ~= nil or a.owner ~= nil or a.note ~= nil, 'give status, owner or note')
+    -- Check every argument before changing anything.
+    assert(a.status == nil or (type(a.status) == 'string' and STATUSES[a.status]), 'status must be open, claimed, doing, done, blocked or dropped')
+    local text = a.note ~= nil and required_text(a.note, 'note', NOTE) or nil
     local boss = by == OPERATOR or by == item.owner or by == item.requested_by
     local changes = {}
     if a.owner ~= nil then
@@ -223,7 +226,6 @@ return function(api)
       end
     end
     if a.status ~= nil then
-      assert(type(a.status) == 'string' and STATUSES[a.status], 'status must be open, claimed, doing, done, blocked or dropped')
       assert(boss, string.format('only the owner (%s) or requester (%s) can change the status of #%d; add a note instead',
         tostring(item.owner or 'none'), tostring(item.requested_by), item.id))
       if a.status ~= item.status then
@@ -232,9 +234,7 @@ return function(api)
         changes[#changes+1] = a.status
       end
     end
-    local text
-    if a.note ~= nil then
-      text = required_text(a.note, 'note', NOTE)
+    if text then
       item.notes[#item.notes+1] = {tick=game.tick, by=by, text=text}
       while #item.notes > MAX_NOTES do table.remove(item.notes, 1) end
     end
@@ -449,8 +449,12 @@ return function(api)
     local me, lines, extra = who(p), {}, 0
     local from = h.board or 0
     h.board = b.seq
-    for _, e in ipairs(b.events) do
-      if e.seq > from and e.by ~= me then
+    -- Events are in seq order: start at the first one after the cursor.
+    local first = #b.events + 1
+    while first > 1 and b.events[first - 1].seq > from do first = first - 1 end
+    for k = first, #b.events do
+      local e = b.events[k]
+      if e.by ~= me then
         local line
         if (e.change == 'posted' or e.change == 'assigned') and e.owner == me and e.kind ~= 'claim' and e.kind ~= 'note' then
           line = string.format('#%d assigned to you by %s: %s', e.id, e.by, e.title)
