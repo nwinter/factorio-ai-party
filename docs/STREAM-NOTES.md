@@ -149,6 +149,46 @@ stops a player.
   arrive within 3 minutes); and up to three active claims with avatars. Without a board runtime the panel is hidden
   and chat takes its height.
 
+## Vertical (9:16) page
+
+YouTube's phone views crop a 16:9 stream to its middle (x 656..1264 of 1920), which on this layout is the right
+half of the main camera and none of the panels. `http://HOST:PORT/portrait` (`static/portrait.html`) is a
+1080x1920 version of the overlay for a 9:16 canvas: the same elements and `overlay.js`, restyled by `portrait.css`,
+with camera holes from `static/layout-portrait.json`:
+
+| y (px) | what |
+|---|---|
+| 24-100 | title and clock |
+| 112-693 | main camera, full width, 16:9 (1032x581): the director feed scaled, not cropped |
+| 709-995 | cam2 and cam3 side by side (508x286 each) |
+| 1009-1329 | agents, 3x3 (avatar, name, model, current action; no mottos, harness or location) |
+| 1341-1417 | science per minute, pack chips, stage |
+| 1429-1896 | chat, 27 px text |
+
+Text is about 1.6x the landscape sizes, since a phone shows the canvas about 2.5-3x smaller. The board panel, the
+research card and the item cells are left to the landscape page. Alerts sit over the main camera as on landscape.
+Checked in jsdom against shake2's live state (cards, avatars, science strip, chat, the portrait layout file); not
+yet looked at in OBS.
+
+Getting it to viewers. This session could not reach the web or the OBS websocket (both refused by the permission
+mode), so the following is from what was known before October 2026 and needs checking against YouTube's and OBS's
+current docs before relying on it:
+
+- YouTube shows a 9:16 live stream full screen on phones (and can surface it in the Shorts feed). One stream is
+  one aspect ratio, so a horizontal and a vertical audience means either two live streams (two stream keys, one
+  channel) or YouTube's own dual-format support, if it now takes both from one encoder. Check that first: if it
+  exists, it decides the OBS side.
+- OBS side, cheapest first: (1) the free Aitum Vertical plugin adds a second 9:16 canvas with its own scenes and
+  its own stream output (its own key), sharing the sources already in OBS; (2) native multiple canvases, if the
+  installed OBS version has them; (3) a second OBS instance with its own profile (most CPU/GPU, two configs to keep
+  in sync).
+- Proposed: Aitum Vertical (or native canvases if present) with one vertical scene: a browser source on
+  `http://127.0.0.1:8787/portrait` at 1080x1920, plus the three director window captures scaled into the holes above
+  (main 1032x581 at 24,112; cam2 508x286 at 24,709; cam3 508x286 at 548,709). Cost: a second 1080x1920 encode
+  (NVENC handles both on one GPU) and a second YouTube live event. No change to the existing `pog` profile output.
+  Installing the plugin, adding the scene and the second stream are operator steps: the rules for this branch
+  exclude output settings and starting streams.
+
 ## Director
 
 `director.py`, run once per second over the latest snapshot. Main camera on the highest score (interest plus a small

@@ -143,7 +143,8 @@
 
   // ---------- layout ----------
   let layout = null;
-  fetch("/static/layout.json").then((r) => r.json()).then((l) => {
+  // portrait.html sets data-layout="layout-portrait" for the 9:16 canvas
+  fetch("/static/" + (document.body.dataset.layout || "layout") + ".json").then((r) => r.json()).then((l) => {
     layout = l;
     for (const [slot, [x, y, w, h]] of Object.entries(l.cams)) {
       const c = $("cam-" + slot);

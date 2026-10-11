@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pog stream overlay (portrait)</title>
+<meta name="viewport" content="width=1080, height=1920">
+<link rel="stylesheet" href="/static/factorio-ui.css">
+<link rel="stylesheet" href="/static/overlay.css">
+<link rel="stylesheet" href="/static/portrait.css">
+</head>
+<!-- 1080x1920 for a 9:16 canvas: same elements and overlay.js as index.html, laid out by portrait.css;
+     camera holes from layout-portrait.json. -->
+<body class="fx-overlay portrait" data-layout="layout-portrait">
+<div id="stage">
+  <div class="cam" id="cam-main" data-slot="main"><div class="cam-label"></div></div>
+  <div class="cam" id="cam-cam2" data-slot="cam2"><div class="cam-label"></div></div>
+  <div class="cam" id="cam-cam3" data-slot="cam3"><div class="cam-label"></div></div>
+  <div id="alerts"></div>
+
+  <aside id="side">
+    <header id="head" class="panel">
+      <div class="titles">
+        <div id="title">Player of Games</div>
+        <div id="subtitle"></div>
+      </div>
+      <div class="clock">
+        <div id="clock">0h00m</div>
+        <div id="clock-sub">game time</div>
+      </div>
+    </header>
+
+    <section id="cards"></section>
+
+    <section id="board" class="panel" hidden>
+      <div class="board-head">
+        <div class="panel-title">Team board</div>
+        <div id="board-stats"></div>
+      </div>
+      <div id="board-log"></div>
+      <div id="board-claims"></div>
+    </section>
+
+    <section id="prod" class="panel">
+      <div id="sci">
+        <span class="panel-title">Science</span>
+        <span id="spm">–</span><span class="unit">/min</span>
+        <svg id="spm-spark" viewBox="0 0 120 26" preserveAspectRatio="none"><path class="a"/><path class="l"/></svg>
+        <span id="packs"></span>
+        <span id="stage-label"></span>
+      </div>
+      <div id="sparks"></div>
+    </section>
+
+    <section id="chat" class="panel">
+      <div class="panel-title">Chat</div>
+      <div id="chat-list"></div>
+    </section>
+  </aside>
+</div>
+<script src="/static/avatar.js"></script>
+<script src="/static/items.js"></script>
+<script src="/static/overlay.js"></script>
+<script src="/static/audio.js"></script>
+</body>
+</html>

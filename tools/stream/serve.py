@@ -127,6 +127,8 @@ def make_handler(hub, decisions, audio=None):
             path = self.path.split("?", 1)[0]
             if path in ("/", "/index.html"):
                 path = "/static/index.html"
+            elif path in ("/portrait", "/portrait.html"):  # 1080x1920 page for a 9:16 canvas (docs/STREAM-NOTES.md)
+                path = "/static/portrait.html"
             if path == "/state.json":
                 return self.send(200, hub.payload, "application/json; charset=utf-8")
             if path == "/director.json":
