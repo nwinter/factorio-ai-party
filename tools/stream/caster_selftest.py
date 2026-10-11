@@ -764,6 +764,31 @@ check("clip ranks: urgent events and space moments, viewer answers, banter",
                                      {"kind": "viewer", "prio": 6}, {"kind": "chat", "prio": 4})] ==
       ["urgent", "urgent", "viewer", "banter"])
 
+# HOSTS3 item 6 (b): speak less. A low-value beat waits for --quiet; filler waits for --lull and something new.
+import threading  # noqa: E402
+fq = _FactsWriter([])
+cq = _caster(fq)
+cq.a = caster.argparse.Namespace(**{**vars(cq.a), "quiet": 20, "lull": 40, "stale": 45, "dry_run": True,
+                                    "always": True, "urgent_gap": 0.5, "naturalist": 0, "lines": (2, 2),
+                                    "segment_every": 1e9})
+cq.lock, cq.events, cq.prep, cq.next_gap, cq.filler_i = threading.Lock(), caster.deque(maxlen=60), [], 1.0, 0
+cq.seg_cat, cq.seg_cat_t, cq.seg_req_t, cq.seg_next_ok = {}, 0.0, 0.0, 0.0
+cq.snap = {"agents": [], "research": {"done_count": 40, "label": "Rocket silo"}, "science": {"spm": 30}}
+t = time.time()
+cq.caster_free = t - 5
+cq.events.append({"kind": "camera", "agents": [], "t": t, "prio": 2})
+cq.caster_tick(t, {})
+check("speak less: a camera cut 5 s after the hosts spoke is not said", not hasattr(fq, "facts"))
+cq.last_digest = caster.digest(cq.snap)
+cq.caster_free = t - 60
+cq.caster_tick(t, {})
+check("speak less: filler with nothing new stays silent", not hasattr(fq, "facts"))
+cq.snap = dict(cq.snap, research={"done_count": 41, "label": "Rocket part productivity"})
+cq.caster_free = t - 60
+cq.caster_tick(t, {})
+check("speak less: filler after news speaks", getattr(fq, "facts", {}).get("event") == "lull", str(getattr(fq, "facts", None))[:200])
+check("urgent beats stay on Kimi when the main writer changes", caster.URGENT_MODEL == caster.DEFAULT_MODEL)
+
 # Round 6 (shake5 P1 item 4): stage 3 is "Oil & blue science", and the stage fact says which packs are made
 import model  # noqa: E402
 check("stage 3 label names blue science", model.STAGE_LABELS[3] == "Oil & blue science")

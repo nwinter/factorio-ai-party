@@ -155,6 +155,18 @@ PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "sp
 URGENT = 8
 
 
+QUIET_KINDS = ("camera", "board", "harness", "research_start", "chat")
+
+
+def digest(s):
+    """What counts as news for a filler beat: technologies done, the research, the science rate (in steps of 5), the
+    stage, the board's claims and the latest losses."""
+    s = s or {}
+    res, sc, board = s.get("research") or {}, s.get("science") or {}, s.get("board") or {}
+    return (res.get("done_count"), res.get("label"), int((sc.get("spm") or 0) // 5), sc.get("stage_label"),
+            board.get("claims_total"), board.get("in_progress"), len(s.get("alerts") or []))
+
+
 def clip_rank(e):
     """The page's playback rank for a host line (static/audio.js): urgent events and space moments interrupt an
     agent speaking aloud, which interrupts answers to viewers, which interrupt host banter."""
@@ -192,7 +204,7 @@ MODEL_ARGS = {  # thinking models spend a small max_tokens on reasoning and retu
 DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6"  # exchange bench 2026-10-10: the liveliest Workers AI writer, ~3.5 s
 # A fast writer for attacks and deaths (e.g. @cf/nvidia/nemotron-3-120b-a12b, ~1.4 s). Off by default: on the live
 # world under a biter siege every beat was urgent, and Nemotron invented "still no steam" and "last run" lines.
-URGENT_MODEL = ""
+URGENT_MODEL = DEFAULT_MODEL  # urgent beats stay on fast Kimi when --model picks a bigger writer (HOSTS3 item 6)
 CLAUDE_BIN = os.path.expanduser("~/.local/bin/claude")  # personal profile: run it with CLAUDE_CONFIG_DIR unset
 CLEF_PRICE = 0.038  # @cf/cloudflare/clef-flash, USD per million input tokens
 
@@ -1413,7 +1425,7 @@ class Caster:
             for e in self.differ.diff(s):
                 if e["kind"] == "chat":
                     self.chat_q.append(e)
-                    if e["aloud"] or self.rng.random() < 0.25:  # some chat also feeds the casters
+                    if e["aloud"]:  # only what an agent says aloud feeds the hosts (HOSTS3 item 6: speak less)
                         self.events.append(dict(e, prio=2 if not e["aloud"] else 4))
                 else:
                     self.events.append(e)
@@ -1562,6 +1574,10 @@ class Caster:
             e["agents"] = list(main) if main and self.rng.random() < 0.6 else self.rng.sample(agents, min(2, len(agents)))
         return e
 
+    def news(self, s):
+        """Something changed since the hosts last spoke: research, the science rate, the board, the stage, losses."""
+        return digest(s) != getattr(self, "last_digest", None)
+
     def caster_tick(self, now, st):
         with self.lock:
             s = self.snap
@@ -1577,10 +1593,18 @@ class Caster:
             return
         with self.lock:
             e = self.pick_event(now)
+        # Speak less (HOSTS3 item 6, Nick: "kinda dumb", riffing on mottos and inconsequential notes): a low-value beat
+        # waits for --quiet seconds of silence, and filler for --lull seconds and something new to say.
+        if e and e["kind"] in QUIET_KINDS and now < self.caster_free + getattr(self.a, "quiet", 0):
+            return
         if not e:
             if now < self.caster_free + max(gap, self.a.lull) - lead:
                 return
             e = self.filler(now, s)
+            if self.a.lull and e["kind"] == "lull" and not e.get("point") and not self.news(s):
+                self.caster_free = now  # nothing new: stay quiet another --lull
+                return
+        self.last_digest = digest(s)
         if e["kind"] in ("chat", "camera", "board") and self.rng.random() < self.a.naturalist:
             e["naturalist"] = True
         first = "pbp" if e["prio"] >= PRIORITY["research"] or e["kind"] in (
@@ -2007,12 +2031,15 @@ def main():
     ap.add_argument("--backoff", type=float, default=120,
                     help="after 3 straight failures, skip a backend (writer, classifier, TTS) for this many seconds")
     ap.add_argument("--classifier", default="clef", choices=["clef", "heuristic"])
-    ap.add_argument("--gap", type=float, nargs=2, default=[1.0, 3.0], metavar=("MIN", "MAX"),
+    ap.add_argument("--gap", type=float, nargs=2, default=[3.0, 6.0], metavar=("MIN", "MAX"),
                     help="seconds of silence between exchanges (random in range); 20 40 for the old sparse cast")
     ap.add_argument("--urgent-gap", type=float, default=0.5, help="gap before an urgent exchange (attack, death)")
     ap.add_argument("--first-gap", type=float, default=3)
-    ap.add_argument("--lull", type=float, default=0,
-                    help="seconds of silence before the hosts fill with a topic of their own (0: never silent)")
+    ap.add_argument("--lull", type=float, default=40,
+                    help="seconds of silence before the hosts fill with a topic of their own, and only when something "
+                         "changed (0: never silent, the old continuous cast)")
+    ap.add_argument("--quiet", type=float, default=20,
+                    help="seconds of silence before a low-value beat (camera cut, board note, research start) is said")
     ap.add_argument("--stale", type=float, default=45, help="drop events older than this")
     ap.add_argument("--agent-gap", type=float, default=15,
                     help="min seconds between voiced agent lines (half for lines the agent marked aloud)")
