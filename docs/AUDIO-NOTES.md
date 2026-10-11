@@ -6,25 +6,26 @@ talks. Everything is mixed by OBS through the overlay's browser source.
 
 ## Status
 
-| Part | State |
+| Part | State (2026-10-10) |
 |---|---|
-| `caster.py` event feed, pacing, fact check, template writer, chat voicing, heuristic classifier | Built and run end to end against the mock (this branch and merged with eng/stream2) |
-| Overlay voice player (`static/audio.js`): queue per channel, caster ducking, captions, playback reports | Built; `audio_selftest.mjs` runs the real file in Node against the real service, 6/6 checks pass |
-| `serve.py` voice queue (`POST /audio`, `/audio-events`, `/audio/clip/ID`, `/audio/status`) | Built and exercised by both tests |
-| Workers AI writer, Aura-2 / Aura-1 / MeloTTS voices, Clef-flash classifier (`cfai.py`, `voices.py`) | Written from the current Cloudflare docs, **never called**: this session's sandbox refused `api.cloudflare.com` |
-| `claude -p --model haiku` writer | Written, **never run**: the session's permission mode refused running `claude` |
-| macOS `say` voices | Written, **produced no audio here**: the sandbox blocks the speech service (works in a normal terminal) |
-| OBS: game-audio capture, sidechain ducking, music slot, scratch scene, meter (`tools/obs.py`) | Written, **not applied**: the session could read OBS but its permission mode refused changing it, so no test recording was made |
-| Client music off (`start-client.ps1 -Sound`) | Written, not run (no SSH to the box from this session) |
+| `caster.py` live: Gemma 4 writer, Aura-2 voices, Clef-flash classifier, mock feed, OBS page listening | Four live runs (3 to 5 min each), all lines from the model, none rejected; results below |
+| All 41 Aura-2 voices, plus Aura-1 and MeloTTS | Rendered, loudness measured, transcribed back with Whisper (`voices.py --check`) |
+| Writers: Gemma 4 26B, Llama 3.3 70B, Llama 3.1 8B, gpt-oss-20b, `claude -p --model haiku` | Benched (`caster.py --bench`) |
+| OBS: cam1 process capture, limiter, sidechain ducking, music slot, overlay limiter (`obs.py stream-audio`) | Applied to scene `stream`; levels metered |
+| Scratch scene `audio-test`, two one-minute recordings | Made: `D:/pog/recordings/2026-10-10_20-04-57.mkv` and `..._20-08-27.mkv` (box clock); program scene back on `stream` |
+| cam1 with game sound, music off (`start-client.ps1 -Sound`) | cam1 in world n restarted with `-Sound`; `start-team.sh` now passes `-Sound` to cam1 |
+| Overlay player, voice queue, selftests | `caster_selftest.py` all pass; `audio_selftest.mjs` 6/6 (earlier session) |
+| macOS `say` voices | Not run (the sandbox blocks the speech service; works in a normal terminal) |
 
-So no real voice has been heard yet. The `tone` TTS backend (ffmpeg babble timed like speech) stood in for a voice in
-every test. Development spend: $0.00.
+Development spend on Workers AI: about $0.33 by the scripts' own counters (voice survey with Whisper $0.16, benches
+$0.01, four live runs $0.16).
+Nothing was streamed and the `pog` profile's output settings were not touched.
 
 ## Run it
 
 ```sh
 python3 tools/stream/serve.py --mock --port 8788                    # or --world live --run RUN.json (docs/STREAM-NOTES.md)
-python3 tools/stream/caster.py --feed http://127.0.0.1:8788          # Workers AI writer (llama-3.3-70b fast) + Aura-2 voices + Clef
+python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts-fallback aura1   # Gemma 4 writer + Aura-2 voices + Clef
 python3 tools/stream/caster.py --writer template --tts say --classifier heuristic   # free and offline (macOS)
 python3 tools/stream/caster.py --writer claude --tts aura2           # `claude -p --model haiku` writes, Aura-2 speaks
 python3 tools/stream/caster.py --dry-run --writer template           # print lines only, nothing synthesised or pushed
@@ -35,15 +36,18 @@ via OBS" (`reroute_audio`, already on in `tools/obs.py stream-scene`). By defaul
 while no page is listening (`/audio/status` listeners = 0), so a forgotten caster costs nothing; `--always` overrides.
 
 Credentials for the Cloudflare backends: `CLOUDFLARE_API_TOKEN` (+ `CLOUDFLARE_ACCOUNT_ID`), or else the wrangler
-login. The wrangler OAuth token lasts an hour; `npx wrangler whoami` refreshes it, and `cfai.py` re-reads the file. A
-stream longer than an hour should use a token scoped to Workers AI. The account picked is "the owner's Cloudflare account".
+login. The wrangler OAuth token lasts an hour; `cfai.py` re-reads the file and, once the token has expired, runs
+`npx wrangler whoami` to refresh it. The account picked is "the owner's Cloudflare account".
 
-First checks once the network allows Cloudflare (each costs well under a cent):
+Checks (the voice survey is about $0.16, a bench under a cent):
 
 ```sh
-python3 tools/stream/voices.py "Luna holds the west wall, what a defence!" --tts aura2 --voice all --out /tmp/voices
+python3 tools/stream/voices.py "Luna holds the west wall, what a defence!" --voice all --check --out /tmp/voices
 python3 tools/stream/caster.py --bench --feed http://127.0.0.1:8788    # latency, rejects and cost per writer
+python3 tools/stream/caster_report.py                                 # newest caster log: pacing, overlaps, cost
 ```
+
+The wrangler token had expired when this session started; `npx wrangler whoami` refreshed it.
 
 ## How it works
 
@@ -55,7 +59,7 @@ serve.py (state, /events SSE) --> caster.py --(writer: Workers AI | claude | tem
                                                                                                    |
 overlay page (OBS browser source) <-- /audio-events <-- serve.py voice queue <-- POST /audio <------+
    audio.js: caster channel + agent channel; casters duck to 30% while an agent speaks; captions
-OBS: "stream game audio" (cam1 process capture, -14 dB) and "stream music bed" (-24 dB, disabled) each carry a
+OBS: "stream game audio" (cam1 process capture, +4 dB, limiter) and "stream music bed" (-24 dB, disabled) each carry a
      compressor whose sidechain is "stream overlay", so game and music duck under every voice.
 ```
 
@@ -68,6 +72,10 @@ next beat, picks up chat and fills lulls.
 Pacing: one caster line, then a random 20-40 s gap (`--gap`), except urgent events (priority 8+) which wait only
 `--urgent-gap` 8 s. Nobody starts while a clip is playing (the page reports start and end; the caster also tracks
 clip lengths itself). Events older than 45 s are dropped. After 50 s of quiet Vale (or Rook) talks about the state.
+Between synthesis and push each clip waits for the other channel (at most 10 s): a caster clip waits for any agent
+clip, including one still in TTS; an agent clip waits only for a caster clip already playing, so agents keep
+priority and the two cannot deadlock. This went in after the first live run showed two caster lines landing on top
+of agent lines (each was written while the agent line was still being synthesised).
 
 Never inventing facts: each line gets a facts object built only from the snapshot (event text with map coordinates
 removed, the agent's display name, role, model, current action and place, research and its percent, technologies
@@ -81,79 +89,132 @@ service passes it through), or when the classifier calls it banter, strategy or 
 new messages of a poll in one call (one `choice` question per message: banter / strategy / emotion / logistics).
 Without Cloudflare the local heuristic is used; on the mock's labelled lines it voices 14/18 banter lines and skips
 32/36 logistics lines. Limits: one voiced line per agent per 60 s (`--agent-cooldown`), 15 s between voiced lines
-(7.5 s for `aloud`), lines older than 20 s are dropped, text is cut at a sentence near 200 characters, emoji,
-markdown, URLs and `@` signs are removed.
+(`--agent-gap`, `aloud` included), lines older than 20 s are dropped, text is cut at a sentence near 200 characters,
+emoji, markdown, URLs and `@` signs are removed.
+
+Clef live (three runs, 102 mock messages): 65 logistics, 9 strategy, 11 banter, none emotion, and 17 marked `aloud`
+by the mock (not classified). Its calls were right on the lines checked by hand: "Labs are hungry and I'm the only one feeding them!"
+banter, "Swapping to piercing ammo when we have steel to spare." strategy, "Blue science is starving for engines; Grok
+can you bump the engine row?" logistics, "Inserted 200 blue packs." logistics. Cost: about $0.002 an hour.
 
 ## Voices
 
 Voice ids are Deepgram Aura-2 speakers. Agents choose with `profile {voice: "orion"}` (see "Harness change" below).
 Without a choice each agent gets a distinct voice picked by a hash of its name (stable for a given roster).
 
-- Masculine: apollo, arcas, aries, atlas, hermes, hyperion (Australian), janus, jupiter, mars, neptune, odysseus,
-  orion, orpheus, pluto, saturn, zeus
-- Feminine: amalthea, andromeda, asteria, athena, aurora, callista, cora, cordelia, delia, electra, harmonia,
-  helena, hera, iris, juno, luna, minerva, ophelia, pandora (British), phoebe, theia (Australian), vesta
-- Reserved for the casters: draco (Rook, British) and thalia (Vale).
-- Default picks for the nine-agent mock roster: astra iris, gemini arcas, grok harmonia, haiku aurora, luna orion,
-  muse orpheus, opus amalthea, sol juno, sonnet theia.
+From Deepgram's Aura-2 catalogue (developers.deepgram.com/docs/tts-models, read 2026-10-10):
 
-The genders and accents above are my reading of Deepgram's catalogue; listen to `voices.py --voice all` before
-announcing them to agents. Aura-1 has 12 speakers, so each id maps to its nearest one (several agents may share a
-voice). MeloTTS has one voice: only usable for the casters. With `--tts say` each id maps to a macOS voice (Daniel,
-Karen, Moira, Tessa, Rishi, the Eddy/Flo/Reed/Rocko/Sandy/Shelley families); robotic, but free and distinct.
+- Masculine: apollo, arcas, aries, draco (British), hermes, hyperion (Australian), jupiter, mars, neptune,
+  odysseus, orion, orpheus, pluto, saturn, zeus
+- Feminine: amalthea (Filipino), andromeda, asteria, athena, aurora, callista, cora, cordelia, delia, electra,
+  harmonia, helena, hera, iris, janus (Southern), juno, luna, minerva, ophelia, pandora (British), phoebe, selene,
+  theia (Australian), vesta
+- Casters (reserved, never given to an agent): **atlas** for Rook (Deepgram: "enthusiastic, confident,
+  approachable, friendly", mature) and **thalia** for Vale ("clear, confident, energetic, enthusiastic").
+- Default picks for the nine-agent roster when nobody chooses: astra mars, gemini minerva, grok pandora, haiku
+  neptune, luna odysseus, muse helena, opus electra, sol juno, sonnet jupiter. (The mock sets opus to orpheus and
+  luna to theia through `profile.voice`.)
+
+Survey (`voices.py --voice all --check`, one 125-character caster line, Aura-2): every voice was intelligible. Whisper
+got every word from atlas, andromeda, apollo, aries, athena, helena, hera, hermes, juno, odysseus, orion and orpheus.
+The common misses were the game word "biters" (heard as fighters, eiders or lighters by about a third of the voices)
+and "Luna's" (Lunar, Luda, Linus). Raw loudness ranged from -18.8 LUFS (hera) to -29.7 LUFS (andromeda; harmonia,
+minerva and zeus were also quiet), so `voices.py` now brings every cloud clip to -18 LUFS with a -1.5 dBTP limiter
+(`TTS(target=...)`). Synthesis took 3.1-4.5 s for a 7-11 s clip (2.5 s median for the 5 s caster lines live).
+
+Why atlas and thalia: atlas came back word-perfect, is one of the loudest raw voices, and Deepgram pitches it for
+energetic advertising reads, which fits play-by-play better than draco (warm storytelling baritone, and Whisper
+missed "biters"). Thalia is the most energetic of the clear feminine voices and contrasts with atlas, so viewers can
+tell the two casters apart without captions. I chose from these measurements and Deepgram's descriptions; nobody has
+listened to the voices yet, so a listen to `aura2-atlas.mp3` and `aura2-thalia.mp3` before going live is worth it.
+Change them in `voices.CASTERS`.
+
+Other backends, same line: Aura-1 (`--tts aura1`, 12 speakers, each id mapped to the nearest) took 1.2 s and is half
+the price, but several agents share a voice; a good `--tts-fallback`. MeloTTS took 2.0 s, costs almost nothing and has
+one voice, so it only suits a single caster. With `--tts say` each id maps to a macOS voice; robotic, but free.
 
 ## Costs per hour
 
-Volumes measured from the 3.2-minute end-to-end mock run: a caster line averages 47 characters and 3.2 s; voiced
-agent lines average 48 characters. At the default pacing that is about 120 caster lines an hour (one per ~30 s); agent
-lines are capped near 60 an hour by the per-agent cooldown and gaps (the second mock run gave about 40). Prices are the Workers AI list prices
-(developers.cloudflare.com/workers-ai/platform/pricing, read 2026-10-10). Latency has not been measured.
+Measured on the four live mock runs (16 minutes, the caster's own spend counter, Workers AI list prices from
+developers.cloudflare.com/workers-ai/platform/pricing read 2026-10-10): **$0.53 to $0.63 per hour**, of which TTS was
+over 90%. Caster voices alone are about $0.39 an hour; agent voices add the rest, and the mock (constant chat, many
+lines marked `aloud`) is at the high end of that. Expect $0.50-0.60 an hour on a real team.
 
-| Piece | Model | Price | Per stream hour |
+Writer bench (`caster.py --bench`, 8 lines each: pbp and colour on attack, research, camera, lull):
+
+| Writer | Median latency | Rejected by the fact check | Cost per line | Notes |
+|---|---|---|---|---|
+| `@cf/google/gemma-4-26b-a4b-it` (default) | 0.8-1.2 s (0.75 s live) | 0/8, then 1/8 (a 30 s timeout, now capped at 12 s) | ~$0.00005 | Liveliest lines; needs `enable_thinking: false` or it returns nothing |
+| `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | 0.75-1.5 s (one 6.9 s) | 0/8 | ~$0.00014 | Accurate but flat ("Opus constructs offshore pump at power plant.") |
+| `@cf/meta/llama-3.1-8b-instruct-fp8-fast` | 0.5 s | 1/8 (invented "46 percent") | ~$0.00003 | Wordy, garbles facts ("GPT-6 Luna's east wall") |
+| `@cf/openai/gpt-oss-20b` | 3.4 s | 5/8 (empty or invented numbers) | ~$0.0002 | Reasoning eats the budget even at low effort |
+| `claude -p --model haiku` | 7.5 s | 0/8 | $0 metered | Good, grounded lines; too slow to call plays as they happen |
+
+Lines from the live runs, all Gemma: "Boom! Steel axe is officially online! They are charging toward oil gathering
+with eighty-three percent completed!", "Watch out! Grok the Unyielding Builder is fighting off a biter fifty meters
+southeast!", and Vale: "That little biter just punched a massive hole in their defenses. It is a setback while they are
+eighty percent through sulfur processing". Gemma spells numbers out, which the digit-only fact check missed, so
+`check_line` now also reads spelled numbers (eleven and up). A round figure passes when a fact is 0.75x to 1.5x of
+it ("over a hundred machines" for 140 starved). All 24 live lines pass the stricter check.
+
+| Piece | Model | Price | Per stream hour (live runs) |
 |---|---|---|---|
-| Caster lines | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | $0.293 / $2.253 per M tokens in/out | ~120 calls x ~550 in, ~40 out: **~$0.03** |
-| | `@cf/meta/llama-3.1-8b-instruct-fp8-fast` | $0.045 / $0.384 | ~$0.005 (weaker writing, more template fallbacks expected) |
-| | `claude -p --model haiku` | personal subscription | $0 metered; each call starts a CLI process (seconds). `--claude-bin PATH` picks the binary: from Python, `claude` resolves to the first one on PATH, not the shell's profile function |
-| Caster voices | `@cf/deepgram/aura-2-en` | $0.030 per 1k chars | ~5.6k chars: **~$0.17** |
-| Agent voices | `@cf/deepgram/aura-2-en` | $0.030 per 1k chars | ~2.9k chars: **~$0.09** |
+| Caster lines | `@cf/google/gemma-4-26b-a4b-it` | $0.10 / $0.30 per M tokens in/out | ~130 lines: **~$0.01** |
+| Caster voices | `@cf/deepgram/aura-2-en` | $0.030 per 1k chars | ~130 lines x ~100 chars: **~$0.39** |
+| Agent voices | `@cf/deepgram/aura-2-en` | $0.030 per 1k chars | ~48 chars a line; 60-150 lines: **$0.09-0.22** |
 | | `@cf/deepgram/aura-1` | $0.015 per 1k chars | half of the Aura-2 figures |
 | | `@cf/myshell-ai/melotts` | $0.0002 per audio minute | ~$0.002 (one voice) |
-| Chat classifier | `@cf/cloudflare/clef-flash` | $0.038 per M input tokens | ~300 messages x ~150 tokens: **<$0.01** |
-| **Total** | Llama 3.3 70B + Aura-2 + Clef-flash | | **~$0.30 per hour** |
+| Chat classifier | `@cf/cloudflare/clef-flash` | $0.038 per M input tokens | ~400 messages: **~$0.002** |
+| **Total** | Gemma 4 + Aura-2 + Clef-flash | | **~$0.50-0.60 per hour** (Aura-1 voices: about half) |
 
-The account's free 10,000 neurons a day (about $0.11) covers roughly the first 20 minutes. `caster.py` keeps a
-running estimate and logs it every 5 minutes (`[cost]` lines; `type: cost` rows in the log).
+The account's free 10,000 neurons a day (about $0.11) covers roughly the first 12 minutes. `caster.py` keeps a
+running estimate and logs it every 5 minutes and at exit (`[cost]` lines; `type: cost` rows in the log). The
+biggest saving knob is caster pacing: `--gap 30 50` cuts the caster voice bill by about a quarter.
 
 ## OBS
 
 ```sh
 PY=tools/.venv/bin/python
 $PY tools/obs.py stream-audio            # adds "stream game audio" + ducking + the music slot to scene "stream"
-tools/winps.sh tools/win/start-client.ps1 -Name live -Slot -cam1 -PlayerName pog-cam1 -Sound   # cam1 unmuted, music 0
+tools/winps.sh tools/win/start-client.ps1 -Name n -GamePort 34205 -Slot -cam1 -PlayerName pog-cam1 -Sound  # stop cam1 first
 $PY tools/obs.py meter --seconds 30 --inputs "stream overlay,stream game audio"   # check levels and ducking
 ```
 
+Applied 2026-10-10 to scene `stream` (and `audio-test`). `start-team.sh` now starts cam1 with `-Sound`, so a new team
+run has game sound without the manual restart. `start-client.ps1` does nothing while the client's task is still
+running, so stop the old `factorio-cam1.exe` first (as `rejoin.sh` does).
+
 - Game audio: an Application Audio Capture (`wasapi_process_output_capture`) of `factorio-cam1.exe` only, at
-  -14 dB. The three video captures get `capture_audio: false`, so nothing else can leak game sound. cam2 and cam3
-  stay muted (no `-Sound`). The pog profile has no Desktop Audio or mic devices, so nothing is doubled.
-- Factorio music: `start-client.ps1` now always writes `music-volume=0`; `-Sound` only unmutes the client. A running
-  client keeps its old config until it is restarted (`Stop-ScheduledTask`/`Start-ScheduledTask pog-<world>-client-cam1`).
-- Ducking: compressor (ratio 6, threshold -42 dB, attack 15 ms, release 700 ms) with sidechain "stream overlay" on
-  both the game audio and the music bed: roughly 10-12 dB down while anyone speaks. Agents over casters is done in
-  the page (casters to 30%, `?duck=` to change).
+  +4 dB, with a limiter at -12 dB in front of the fader. Measured: cam1 spectating a base peaks around -28 dBFS raw,
+  so the stream gets the factory at -23 to -26 dBFS peak between lines. The three video captures get
+  `capture_audio: false`; cam2 and cam3 stay muted (no `-Sound`). The pog profile has no Desktop Audio or mic.
+- Factorio music: `start-client.ps1` always writes `music-volume=0`; `-Sound` only unmutes the client.
+- Voices: the page plays clips at -18 LUFS (normalised in `voices.py`); OBS meters them at -2 to -9 dBFS peak. A
+  limiter at -1 dB on the overlay source catches the rare spike (one clip metered +5.5 dBFS right after a page reload).
+- Ducking: compressor (ratio 2.5, threshold -40 dB, attack 15 ms, release 700 ms) with sidechain "stream overlay" on
+  the game audio and the music bed. Measured 13-16 dB down while anyone speaks (game -25 to -38/-41 dBFS), back up
+  within a second after. Ratio 6 measured about 22 dB, which took the factory out entirely. Agents over casters is
+  done in the page (casters to 30%, `?duck=` to change).
+- After restarting `serve.py`, reload the overlay sources (`obs.py reload-overlay`, or the source's Refresh button):
+  a page loaded from an older service keeps its board running but never loads `audio.js`, so it plays nothing. The
+  service's `/audio/status` `listeners` count shows how many pages are listening (2 with `audio-test` built).
 - Music slot: "stream music bed" plays `D:\pog\music\bed.mp3` on loop at -24 dB, disabled in the scene until an
   original track is there; enable the scene item when it is.
 - Test without touching the stream scene: `$PY tools/obs.py audio-test --url http://HOST:PORT/ [--game-url URL]`
   builds scene "audio-test" with its own overlay source and the same mix. The box reaches the Mac either through the
   reverse tunnel (`ssh -N -R 8787:127.0.0.1:PORT pogwin`) or on the LAN (`serve.py --host 0.0.0.0`; the Mac is
   <mac-ip>). Switch the program scene to it, record a minute with `obs.py start`/`stop`, switch back.
+  Done twice on 2026-10-10 (reverse tunnel to `serve.py --mock --port 8788`, real cam1 audio, live casters). Meter
+  readings in the recording: game -23 to -26 dBFS peak between lines and -40 to -49 dBFS under voices at the old
+  ratio 6; voices -2 to -13 dBFS. Files: `D:/pog/recordings/2026-10-10_20-04-57.mkv`, `2026-10-10_20-08-27.mkv`.
 
 ## Knobs
 
 `caster.py`: `--gap 20 40`, `--urgent-gap 8`, `--lull 50`, `--stale 45`, `--agent-gap 15`, `--agent-cooldown 60`,
 `--chat-stale 20`, `--max-chars 200`, `--no-chat`, `--writer cf|claude|template`, `--model ID`,
 `--tts aura2|aura1|melotts|say|tone`, `--tts-fallback BACKEND`, `--classifier clef|heuristic`, `--backoff 120`,
-`--claude-bin PATH`, `--always`, `--dry-run`, `--duration S`. A backend that fails three times in a row is skipped
+`--claude-bin PATH`, `--always`, `--dry-run`, `--duration S`. Model-specific request arguments (thinking off for
+Gemma, low reasoning for gpt-oss) are in `MODEL_ARGS`. A backend that fails three times in a row is skipped
 for `--backoff` seconds: the writer falls back to templates, the classifier to the heuristic, TTS to
 `--tts-fallback` (or silence). Verified with Cloudflare unreachable: the cast carried on with templates and the
 fallback voice.
@@ -165,9 +226,9 @@ the bottom of the main camera (agents above casters). A desktop browser needs on
 
 OBS levels: `GAME_DB`, `MUSIC_DB`, `DUCK` at the top of the audio section in `tools/obs.py`.
 
-## Harness change needed (eng/board)
+## Harness change (eng/board)
 
-`profile` should accept `voice` (one of the ids above, lower case) and return it in `profile` and `profiles`; the
+Not in main as of the 2026-10-10 merge; eng/board is adding it. The spec: `profile` should accept `voice` (one of the ids above, lower case) and return it in `profile` and `profiles`; the
 stream service already passes `profiles[].voice` through to the caster. In `profiles.lua`:
 `if a.voice ~= nil then pr.voice = text_arg(a.voice, 'voice', 1, 16):lower(); changed = true end`, add
 `voice=pr.voice` to `public(pr)` and to the `profiles` rows, and list the ids in the schema text. Unknown ids are
@@ -195,10 +256,27 @@ The mock's chat (~10 messages a minute, a sixth of them banter) is busier than a
 expect fewer agent lines; loosen `--agent-cooldown` if the agents feel too quiet. Against eng/stream2's mock (2.5 min, dry run, short gaps): the casters called board
 posts, a harness request, base attacks, a death and low power.
 
+Live runs, 2026-10-10 (Gemma 4 + Aura-2 + Clef, `serve.py --mock` on 8788, OBS pages listening through the reverse
+tunnel; `caster_report.py` on each log):
+
+| Run | Minutes | Caster lines (median gap) | Agent lines | Caster over agent / agent over caster | Writer rejects | $/hour |
+|---|---|---|---|---|---|---|
+| 1 | 3.3 | 7 (27 s) | 6 | 2 / 0 | 0 | 0.60 |
+| 2 (pre-TTS busy flag) | 5.0 | 11 (29 s) | 7 | 1 / 2 | 0 | 0.53 |
+| 3 (hold between TTS and push) | 4.9 | 11 (25 s) | 13 | 0 / 0 | 0 | 0.63 |
+| 4 (`aloud` on the full gap) | 2.9 | 8 (25 s) | 5 | 0 / 0 | 0 | 0.63 |
+
+Every caster line came from the model (no template fallbacks). Run 3's 13 agent lines included 9 that the mock
+marked `aloud`, which then had half the gap; `aloud` now uses the full gap. Caster lines average about 100
+characters (6 s) with Gemma against 47 for the templates, so caster TTS is most of the bill; lowering the "at most 25
+words" in `RULES` is the lever if that matters.
+
 ## Next
 
-1. Allow `api.cloudflare.com` for the caster and run the two "first checks" above; pick Aura-2 vs Aura-1 by ear,
-   confirm each voice's gender/accent, and confirm the Clef `choice` answer shape (`pick_choice` accepts a few).
-2. Run `--bench` for writer latency; if Llama 3.3 70B is slower than ~2 s, try `gemma-4-26b-a4b-it` or the 8B model.
-3. `obs.py stream-audio`, restart cam1 with `-Sound`, then a one-minute recording in `audio-test` and a listen.
-4. The harness `voice` field (above), and an original music bed.
+1. Listen: `aura2-atlas.mp3` and `aura2-thalia.mp3` from the survey, and the two `audio-test` recordings on the box.
+   Nobody has heard the voices or the mix yet; everything above is meters, Whisper and Deepgram's descriptions.
+2. The harness `voice` field (above), then agents can pick voices; and the team brief line for `aloud`.
+3. An original music bed at `D:\pog\music\bed.mp3`, then enable "stream music bed".
+4. Optionally a `CLOUDFLARE_API_TOKEN` scoped to Workers AI. Without one, `cfai.py` runs `npx wrangler whoami` when
+   the hourly wrangler token expires (the same refresh that worked by hand today; the automatic path has not yet
+   been through an expiry).

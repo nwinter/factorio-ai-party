@@ -15,7 +15,7 @@ import hashlib, os, re, shutil, subprocess, tempfile, time, unicodedata
 
 # id: (gender, accent, aura-1 fallback, macOS say voice, say rate)
 VOICES = {
-    "amalthea": ("f", "us", "asteria", "Samantha", 185), "andromeda": ("f", "us", "luna", "Flo (English (US))", 185),
+    "amalthea": ("f", "ph", "asteria", "Samantha", 185), "andromeda": ("f", "us", "luna", "Flo (English (US))", 185),
     "apollo": ("m", "us", "orion", "Reed (English (US))", 190), "arcas": ("m", "us", "arcas", "Eddy (English (US))", 190),
     "aries": ("m", "us", "orpheus", "Rocko (English (US))", 190), "asteria": ("f", "us", "asteria", "Samantha", 190),
     "athena": ("f", "us", "athena", "Shelley (English (US))", 185), "atlas": ("m", "us", "zeus", "Grandpa (English (US))", 175),
@@ -25,7 +25,7 @@ VOICES = {
     "electra": ("f", "us", "stella", "Kathy", 195), "harmonia": ("f", "us", "athena", "Samantha", 180),
     "helena": ("f", "us", "hera", "Shelley (English (US))", 185), "hera": ("f", "us", "hera", "Grandma (English (US))", 175),
     "hermes": ("m", "us", "helios", "Eddy (English (US))", 200), "hyperion": ("m", "au", "perseus", "Rocko (English (UK))", 185),
-    "iris": ("f", "us", "luna", "Flo (English (US))", 195), "janus": ("m", "us", "orion", "Reed (English (US))", 185),
+    "iris": ("f", "us", "luna", "Flo (English (US))", 195), "janus": ("f", "us", "hera", "Shelley (English (US))", 185),
     "juno": ("f", "us", "asteria", "Sandy (English (US))", 185), "jupiter": ("m", "us", "zeus", "Grandpa (English (US))", 180),
     "luna": ("f", "us", "luna", "Samantha", 190), "mars": ("m", "us", "orion", "Rocko (English (US))", 195),
     "minerva": ("f", "us", "athena", "Shelley (English (UK))", 185), "neptune": ("m", "us", "orpheus", "Reed (English (UK))", 180),
@@ -33,11 +33,12 @@ VOICES = {
     "orion": ("m", "us", "orion", "Reed (English (US))", 200), "orpheus": ("m", "us", "orpheus", "Grandpa (English (UK))", 180),
     "pandora": ("f", "gb", "athena", "Moira", 185), "phoebe": ("f", "us", "luna", "Karen", 190),
     "pluto": ("m", "us", "perseus", "Rishi", 180), "saturn": ("m", "us", "zeus", "Aman", 180),
+    "selene": ("f", "us", "stella", "Kathy", 195),
     "thalia": ("f", "us", "stella", "Tessa", 195), "theia": ("f", "au", "asteria", "Karen", 190),
     "vesta": ("f", "us", "hera", "Tara", 185), "zeus": ("m", "us", "zeus", "Daniel", 175),
 }
 # The two casters. Kept out of the agent pool so a caster never sounds like a player.
-CASTERS = {"pbp": "draco", "color": "thalia"}
+CASTERS = {"pbp": "atlas", "color": "thalia"}  # why these two: docs/AUDIO-NOTES.md "Voices"
 CASTER_SAY = {"pbp": ("Daniel", 205), "color": ("Karen", 190)}
 
 PRICE = {  # USD, from developers.cloudflare.com/workers-ai/platform/pricing (checked 2026-10-10)
@@ -87,9 +88,10 @@ def speakable(text, limit=220):
 
 
 class TTS:
-    def __init__(self, backend="aura2", ai=None):
+    def __init__(self, backend="aura2", ai=None, target=-18.0):
         self.backend = backend
         self.ai = ai
+        self.target = target if shutil.which("ffmpeg") else None  # LUFS every cloud clip is brought to
         self.spent = 0.0
         self.chars = 0
         self.seconds = 0.0
@@ -114,6 +116,8 @@ class TTS:
             audio, ctype = _tone(text, voice)
         else:
             raise ValueError(f"unknown TTS backend {self.backend}")
+        if self.backend in MODEL and self.target is not None:
+            audio, ctype = normalize(audio, ctype, self.target)
         dur = duration(audio, ctype)
         unit, rate = PRICE[self.backend]
         self.spent += rate * (len(text) if unit == "chars" else dur / 60)
@@ -165,6 +169,62 @@ def duration(audio, ctype="audio/mpeg"):
     return len(audio) / 8000.0  # ~64 kbit/s mp3
 
 
+WHISPER = "@cf/openai/whisper-large-v3-turbo"
+WHISPER_PRICE = 0.00051  # USD per audio minute
+
+
+def loudness(path):
+    """Integrated loudness (LUFS) and true peak (dBTP) of a file, via ffmpeg's ebur128 filter."""
+    p = subprocess.run(["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-af", "ebur128=peak=true", "-f", "null", "-"],
+                       capture_output=True, text=True)
+    tail = p.stderr[p.stderr.rfind("Summary:"):]
+    lufs = re.search(r"I:\s+(-?[\d.]+) LUFS", tail)
+    peak = re.search(r"Peak:\s+(-?[\d.]+|-inf) dBFS", tail)
+    return {"lufs": float(lufs.group(1)) if lufs else None, "peak": peak.group(1) if peak else None}
+
+
+def normalize(audio, ctype, target=-18.0):
+    """Static gain to `target` LUFS with a -1.5 dBTP limiter: Aura-2 voices range from -19 to -30 LUFS raw."""
+    ext = {"audio/wav": ".wav", "audio/ogg": ".ogg"}.get(ctype.split(";")[0], ".mp3")
+    with tempfile.NamedTemporaryFile(suffix=ext) as f:
+        f.write(audio)
+        f.flush()
+        lufs = loudness(f.name)["lufs"]
+        if lufs is None or lufs < -70:
+            return audio, ctype
+        gain = max(-12.0, min(18.0, target - lufs))
+        mp3 = _ffmpeg(["-i", f.name, "-af", f"volume={gain:.1f}dB,alimiter=limit=0.84:level=false", "-ac", "1",
+                       "-b:a", "64k", "-f", "mp3", "-"])
+    return mp3, "audio/mpeg"
+
+
+def transcribe(ai, audio):
+    import base64
+    res = ai.run(WHISPER, {"audio": base64.b64encode(audio).decode()})
+    return (res.get("text") or "").strip()
+
+
+def word_accuracy(said, heard):
+    """Share of the intended words that come back from the transcript, in order (LCS over words)."""
+    ones = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen " \
+           "seventeen eighteen nineteen".split()
+    tens = "_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()
+    num = lambda m: ones[int(m)] if int(m) < 20 else tens[int(m) // 10] + ("" if int(m) % 10 == 0 else " " + ones[int(m) % 10])
+    norm = lambda s: re.findall(r"[a-z']+|\d+", re.sub(r"\b\d{1,2}\b", lambda m: num(m.group()),
+                                                     s.lower().replace("%", " percent").replace("per cent", "percent").replace("-", " ")))
+    a, b = norm(said), norm(heard)
+    if not a:
+        return 1.0
+    row = [0] * (len(b) + 1)
+    for x in a:
+        prev = 0
+        for j, y in enumerate(b, 1):
+            cur = row[j]
+            row[j] = prev + 1 if x == y else max(row[j], row[j - 1])
+            prev = cur
+    return row[-1] / len(a)
+
+
 if __name__ == "__main__":
     import argparse, json
     ap = argparse.ArgumentParser(description="Speak a line with a backend and voice; prints latency and cost.")
@@ -172,11 +232,21 @@ if __name__ == "__main__":
     ap.add_argument("--tts", default="aura2", choices=list(PRICE))
     ap.add_argument("--voice", default="orion", help="voice id, or 'all' to render every voice")
     ap.add_argument("--out", default=".", help="directory for the mp3 files")
+    ap.add_argument("--check", action="store_true",
+                    help="also measure loudness and transcribe each clip back with Whisper (word accuracy)")
     a = ap.parse_args()
+    os.makedirs(a.out, exist_ok=True)
     tts = TTS(a.tts)
+    whisper = 0.0
     for v in (voice_ids() if a.voice == "all" else [a.voice]):
         audio, ctype, dur, lat = tts.speak(speakable(a.text), v)
         path = os.path.join(a.out, f"{a.tts}-{v}.mp3")
         open(path, "wb").write(audio)
-        print(json.dumps({"voice": v, "file": path, "seconds": round(dur, 2), "latency": round(lat, 2)}))
-    print(f"spent ${tts.spent:.5f} for {tts.chars} chars, {tts.seconds:.1f} s of audio")
+        row = {"voice": v, "file": path, "seconds": round(dur, 2), "latency": round(lat, 2)}
+        if a.check:
+            row.update(loudness(path))
+            heard = transcribe(tts.ai, audio)
+            whisper += WHISPER_PRICE * dur / 60
+            row.update(heard=heard, accuracy=round(word_accuracy(a.text, heard), 2))
+        print(json.dumps(row), flush=True)
+    print(f"spent ${tts.spent + whisper:.5f} for {tts.chars} chars, {tts.seconds:.1f} s of audio")

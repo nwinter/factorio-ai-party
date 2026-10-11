@@ -27,7 +27,8 @@ import voices  # noqa: E402
 CASTERS = {
     "pbp": {"name": "Rook", "label": "Rook · play-by-play",
             "persona": "You are Rook, the play-by-play caster: punchy, present tense, high energy, you say what is "
-                       "happening right now and who is doing it, like an esports caster calling a big play."},
+                       "happening right now and who is doing it, like an esports caster calling a big play. Vivid "
+                       "verbs, exclamations welcome; never read the facts back like a log."},
     "color": {"name": "Vale", "label": "Vale · colour",
               "persona": "You are Vale, the colour commentator: you explain why it matters, read the team's "
                          "strategy, and bring warmth and dry humour. You sometimes riff on what Rook just said."},
@@ -42,6 +43,10 @@ TEXT_MODELS = {  # Workers AI, USD per million tokens in/out (pricing page, 2026
     "@cf/google/gemma-4-26b-a4b-it": (0.100, 0.300),
     "@cf/openai/gpt-oss-20b": (0.200, 0.300),
     "@cf/mistralai/mistral-small-3.1-24b-instruct": (0.351, 0.555),
+}
+MODEL_ARGS = {  # thinking models spend a small max_tokens on reasoning and return no content
+    "@cf/google/gemma-4-26b-a4b-it": {"chat_template_kwargs": {"enable_thinking": False}},
+    "@cf/openai/gpt-oss-20b": {"reasoning": {"effort": "low"}, "max_tokens": 500},
 }
 CLEF_PRICE = 0.038  # @cf/cloudflare/clef-flash, USD per million input tokens
 
@@ -191,8 +196,8 @@ def facts_for(e, s):
 RULES = ("Rules: one or two short sentences, at most 25 words, spoken aloud (no emoji, no lists, no stage "
          "directions, no quotation marks, do not start with your own name). Use ONLY the facts given; never invent "
          "names, numbers, places, items or outcomes. You may round numbers or skip them. Refer to agents by the "
-         "names given. Vary your openings; do not repeat phrasing from the recent lines. Be fun, like a great "
-         "esports cast, but never mean to a player.")
+         "names given, and as \"they\", never he or she. Vary your openings; do not repeat phrasing from the recent "
+         "lines. Be fun, like a great esports cast, but never mean to a player.")
 
 
 def known_text(facts):
@@ -206,9 +211,13 @@ def check_line(line, facts, names, recent):
     for n in names:
         if re.search(r"\b" + re.escape(n.lower()) + r"\b", low) and n.lower() not in blob:
             return f"name not in facts: {n}"
+    known = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", blob)]
     for num in re.findall(r"\d+(?:\.\d+)?", line):
-        if num not in blob:
+        if num not in blob and not near_round(float(num), known):
             return f"number not in facts: {num}"
+    for words, n in spelled_numbers(low):
+        if n > 10 and n not in known and not near_round(n, known):
+            return f"number not in facts: {words}"
     if len(line.split()) > 34:
         return "too long"
     words = set(re.findall(r"[a-z']+", low))
@@ -217,6 +226,47 @@ def check_line(line, facts, names, recent):
         if words and prev and len(words & prev) / len(words | prev) >= 0.6:
             return "repeats a recent line"
     return None
+
+
+UNITS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen "
+                                     "fourteen fifteen sixteen seventeen eighteen nineteen".split())}
+TENS = {w: 10 * i for i, w in enumerate("_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()) if i > 1}
+
+
+def spelled_numbers(text):
+    """[(words, value)] for numbers written out: 'eighty-three' 83, 'a hundred' 100, 'one hundred and twenty' 120."""
+    out, cur, words = [], None, []
+    for tok in re.findall(r"[a-z]+", text.replace("-", " ")):
+        if tok in UNITS or tok in TENS:
+            v = UNITS.get(tok, TENS.get(tok))
+            joins = cur is not None and ((cur >= 100 and cur % 100 == 0) or (cur >= 20 and cur % 10 == 0 and v < 10))
+            if joins:  # 'eighty' + 'three', 'one hundred' + 'twenty'
+                cur += v
+            elif cur is not None:
+                out.append((" ".join(words), cur))
+                cur, words = v, []
+            else:
+                cur = v
+            words.append(tok)
+        elif tok in ("hundred", "thousand"):
+            cur = (cur if cur else 1) * (100 if tok == "hundred" else 1000)
+            words.append(tok)
+        elif tok == "a" and cur is None:
+            continue
+        elif tok == "and" and cur is not None and cur >= 100:
+            words.append(tok)
+        else:
+            if cur is not None:
+                out.append((" ".join(words), cur))
+            cur, words = None, []
+    if cur is not None:
+        out.append((" ".join(words), cur))
+    return out
+
+
+def near_round(n, known):
+    """A rounded figure ('nearly fifty', 'over a hundred' for 140) is fine when a fact is from 0.75x to 1.5x of it."""
+    return n >= 10 and n % 10 == 0 and any(0.75 * n <= k <= 1.5 * n for k in known)
 
 
 def clean(line):
@@ -350,9 +400,10 @@ class LLMWriter:
         system, user = self.prompt(who, e, facts, recent)
         t0 = time.time()
         if self.kind == "cf":
-            out = self.ai.run(self.model, {"messages": [{"role": "system", "content": system},
-                                                        {"role": "user", "content": user}],
-                                           "max_tokens": 80, "temperature": 0.9})
+            out = self.ai.run(self.model, dict({"messages": [{"role": "system", "content": system},
+                                                             {"role": "user", "content": user}],
+                                                "max_tokens": 80, "temperature": 0.9}, **MODEL_ARGS.get(self.model, {})),
+                              timeout=self.timeout)
             text = out.get("response") if isinstance(out, dict) else str(out)
             if text is None and isinstance(out, dict) and out.get("choices"):  # OpenAI-style models (gpt-oss)
                 text = out["choices"][0]["message"].get("content")
@@ -483,7 +534,7 @@ class Caster:
         elif a.writer == "claude":
             self.writer = LLMWriter("claude", a.model or "haiku", bin=a.claude_bin)
         else:
-            self.writer = LLMWriter("cf", a.model or "@cf/meta/llama-3.3-70b-instruct-fp8-fast", ai=ai)
+            self.writer = LLMWriter("cf", a.model or "@cf/google/gemma-4-26b-a4b-it", ai=ai)
         self.tts = None if a.dry_run else voices.TTS(a.tts, ai=ai)
         self.tts_fallback = voices.TTS(a.tts_fallback, ai=ai) if a.tts_fallback and not a.dry_run else None
         self.breakers = {k: Breaker(k, cool=a.backoff) for k in ("writer", "classifier", "tts")}
@@ -609,7 +660,8 @@ class Caster:
         rec = {"type": "caster", "who": who, "event": e["kind"], "line": line, "backend": backend,
                "write_latency": round(lat, 2), "rejected": err, "facts": facts}
         dur = self.voice(line, voices.CASTERS[who], who, {"channel": "caster", "speaker": CASTERS[who]["label"],
-                                                         "who": who, "text": line, "expires_in": 25}, rec)
+                                                         "who": who, "text": line, "expires_in": 25}, rec,
+                         hold=lambda: self.agent_free)  # agent_free covers an agent line still in TTS
         self.caster_free = time.time() + dur + 0.6
 
     # -- agent chat
@@ -639,9 +691,9 @@ class Caster:
             self.record(type="chat_decision", agent=m["agent"], text=m["text"], voiced=ok, label=label)
             if not ok:
                 continue
-            # `aloud` is the agent's request, not a free pass: shorter team-wide gap, same per-agent cooldown
-            gap = self.a.agent_gap / 2 if m["aloud"] else self.a.agent_gap
-            if time.time() - self.last_agent_voice < gap:
+            # `aloud` skips the classifier, not the pacing: same team-wide gap and per-agent cooldown (the live mock run
+            # with half the gap for `aloud` voiced 13 agent lines in 5 minutes, too many next to the casters)
+            if time.time() - self.last_agent_voice < self.a.agent_gap:
                 self.record(type="chat_skip", agent=m["agent"], reason="agent_gap")
                 continue
             if time.time() - self.agent_last.get(m["agent"], 0) < self.a.agent_cooldown:
@@ -658,16 +710,20 @@ class Caster:
             if not text:
                 continue
             self.last_agent_voice = self.agent_last[m["agent"]] = time.time()
+            # hold the casters off while this clip is still being synthesised (the caster thread checks agent_free)
+            self.agent_free = time.time() + len(text) / 15.0 + 8.0
             self.stats["agent_lines"] += 1
             log(f"[voice:{names.get(m['agent'])}/{vmap.get(m['agent'])}] ({label}) {text}")
             dur = self.voice(text, vmap.get(m["agent"], "orion"), None,
                              {"channel": "agent", "speaker": names.get(m["agent"], m["agent"]), "agent": m["agent"],
                               "color": ag.get("color"), "glyph": ag.get("glyph"), "text": text, "expires_in": 20},
-                             {"type": "agent", "agent": m["agent"], "label": label, "line": text})
+                             {"type": "agent", "agent": m["agent"], "label": label, "line": text},
+                             hold=lambda: self.caster_free)  # only a caster clip already pushed: agents go first
             self.agent_free = time.time() + dur + 0.4
 
-    def voice(self, text, voice_id, caster, meta, rec):
-        """TTS + push. Returns the clip length in seconds (an estimate when nothing is pushed)."""
+    def voice(self, text, voice_id, caster, meta, rec, hold=None):
+        """TTS + push. Returns the clip length in seconds (an estimate when nothing is pushed). `hold()` gives a time
+        to wait for (at most 10 s) between synthesis and push, so the other channel's clip can finish first."""
         est = len(text) / 15.0
         if self.a.dry_run:
             self.record(**rec, voice=voice_id, pushed=False)
@@ -685,6 +741,10 @@ class Caster:
             if tts is self.tts:
                 self.breakers["tts"].good()
             meta = dict(meta, duration=round(dur, 2), voice=voice_id)
+            if hold:
+                stop = time.time() + 10
+                while time.time() < min(hold(), stop):
+                    time.sleep(0.2)
             self.push(meta, audio, ctype)
             self.record(**rec, voice=voice_id, pushed=True, tts=tts.backend, tts_latency=round(lat, 2),
                         seconds=round(dur, 2))
@@ -699,7 +759,7 @@ class Caster:
     def cost(self):
         hrs = max(1e-6, (time.time() - self.t0) / 3600)
         w = self.writer.spent if self.writer else 0.0
-        t = self.tts.spent if self.tts else 0.0
+        t = sum(x.spent for x in (self.tts, self.tts_fallback) if x)
         c = self.classifier.spent
         return {"minutes": round(hrs * 60, 1), "writer_usd": round(w, 4), "tts_usd": round(t, 4),
                 "classifier_usd": round(c, 5), "usd_per_hour": round((w + t + c) / hrs, 3), **self.stats}
@@ -805,8 +865,8 @@ def main():
     ap.add_argument("--seed", type=int)
     ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
     ap.add_argument("--bench", action="store_true", help="time writers on canned events from the live snapshot")
-    ap.add_argument("--bench-writers", default="template,cf=@cf/meta/llama-3.3-70b-instruct-fp8-fast,"
-                                               "cf=@cf/meta/llama-3.1-8b-instruct-fp8-fast,claude=haiku")
+    ap.add_argument("--bench-writers", default="template,cf=@cf/google/gemma-4-26b-a4b-it,"
+                                               "cf=@cf/meta/llama-3.3-70b-instruct-fp8-fast,claude=haiku")
     ap.add_argument("--push", metavar="FILE", help="push one audio file as a clip and exit (stings, tests)")
     ap.add_argument("--push-channel", default="caster", help="--push: caster | agent | anything else (not played)")
     ap.add_argument("--push-text", default="", help="--push: caption text")

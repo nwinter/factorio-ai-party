@@ -110,11 +110,13 @@ def stream_scene(c, url, scene="stream"):
 
 
 # ---- audio (docs/AUDIO-NOTES.md) ------------------------------------------------------------------------------------
-GAME_DB = -14.0    # Factorio effects under the voices; the client's music is off (start-client.ps1 -Sound)
+GAME_DB = 4.0      # cam1 spectating a base peaks near -28 dBFS raw (metered 2026-10-10); music off (-Sound)
+GAME_LIMIT = -12.0  # limiter on the game so a nearby explosion can't jump over the voices
 MUSIC_DB = -24.0   # slot for an original music bed
 MUSIC_FILE = r"D:\pog\music\bed.mp3"
-# Sidechain ducking from the overlay page (casters + agent voices): about -12 dB of gain reduction while anyone talks.
-DUCK = {"ratio": 6.0, "threshold": -42.0, "attack_time": 15, "release_time": 700, "output_gain": 0.0}
+# Sidechain ducking from the overlay page (casters + agent voices) while anyone talks. Ratio 6 measured ~22 dB down
+# (the game vanished); 2.5 aims at ~12-14 dB so the factory stays audible under the voices.
+DUCK = {"ratio": 2.5, "threshold": -40.0, "attack_time": 15, "release_time": 700, "output_gain": 0.0}
 
 
 def ensure_filter(c, source, name, kind, settings):
@@ -129,6 +131,7 @@ def stream_audio(c, scene="stream", overlay="stream overlay", prefix="stream", e
     """Game audio from the main director client only, ducked under the overlay page's voices, plus a music slot."""
     game = f"{prefix} game audio"
     if game_url:  # test stand-in: any audio URL looped through a media source
+        game = f"{prefix} game stand-in"
         scene_input(c, scene, game, "ffmpeg_source", {"is_local_file": False, "input": game_url, "looping": True,
                                                       "restart_on_activate": True, "close_when_inactive": False})
     else:
@@ -136,8 +139,11 @@ def stream_audio(c, scene="stream", overlay="stream overlay", prefix="stream", e
                     {"window": f"Factorio 2.0.77:Factorio:{exe}", "priority": 2})
     c.set_input_volume(game, vol_db=GAME_DB)
     ensure_filter(c, game, "duck under voices", "compressor_filter", dict(DUCK, sidechain_source=overlay))
+    ensure_filter(c, game, "limit peaks", "limiter_filter", {"threshold": GAME_LIMIT, "release_time": 60})
     c.set_input_settings(overlay, {"reroute_audio": True}, True)  # "Control audio via OBS"
     c.set_input_volume(overlay, vol_db=0.0)
+    # voices arrive at -18 LUFS / -1.5 dBTP; one clip metered +5.5 dBFS right after a page reload, so cap it
+    ensure_filter(c, overlay, "limit peaks", "limiter_filter", {"threshold": -1.0, "release_time": 60})
     inputs = {i["inputName"]: i["inputKind"] for i in c.get_input_list().inputs}
     for i in (1, 2, 3):  # the video captures stay silent; only the process capture above carries game sound
         if inputs.get(f"stream cam{i}") == "game_capture":
