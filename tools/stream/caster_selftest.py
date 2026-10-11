@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Offline checks for caster.py / voices.py (no network, no TTS service): python3 tools/stream/caster_selftest.py"""
-import os, sys, time
+import os, re, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -53,6 +53,10 @@ check("default voices distinct", len(set(v1.values())) == len(agents))
 check("default voices deterministic", v1 == v2)
 check("casters' voices reserved", not set(v1.values()) & set(voices.CASTERS.values()))
 check("unknown pick falls back", voices.assign_voices([{"name": "x", "voice": "nope"}])["x"] in voices.VOICES)
+said = voices.speakable("Power: 2 boilers + 4 steam engines online. Boiler 2 at 31.5,19, fuel chest 31.5,21.5. "
+                        "Coal chest(-71.5,-12.5) ok, belt S along x-82.5 to 1,000 plates")
+check("speakable strips map coordinates", not re.search(r"\d+\.\d|-\d|x-", said) and "1,000" in said
+      and "2 boilers + 4 steam engines" in said, said)
 check("speakable strips emoji/markdown/urls", voices.speakable("@Grok **wow** 😅 see https://a.b now") == "Grok wow see now")
 
 # differ: first snapshot only opens; later changes become events
@@ -89,6 +93,30 @@ for kind in caster.TemplateWriter.T:
             if not line or "{" in line or caster.check_line(line, f, names + ["Opus"], []):
                 bad.append((kind, who, line))
 check("templates fill cleanly and pass the fact check", not bad, str(bad[:3]))
+
+# exchanges: parse both hosts, tolerate markdown and quotes, ignore chatter
+ex = caster.parse_exchange('Here you go:\n**Rook:** "Huge fight at the wall!"\n\nVale: They needed that.\nnote: x')
+check("parse_exchange", ex == [("pbp", "Huge fight at the wall!"), ("color", "They needed that.")], str(ex))
+
+# viewer lane: accepts the likely shapes, drops links, becomes a viewer event
+vs = caster.viewer_messages({"viewers": [{"id": 1, "user": "ann", "text": "go opus!", "t": now}],
+                             "events": [{"kind": "viewer", "seq": 2, "name": "bo", "message": "why so slow?", "t": now},
+                                        {"kind": "viewer", "seq": 3, "name": "spam", "text": "see https://x.y"}]})
+check("viewer_messages shapes", [(v["name"], v["text"]) for v in vs] == [("ann", "go opus!"), ("bo", "why so slow?")],
+      str(vs))
+d2 = caster.Differ()
+d2.diff({"agents": []})
+vk = [e for e in d2.diff({"agents": [], "viewers": [{"id": 9, "user": "cy", "text": "hi hosts", "t": now}]})]
+check("differ: viewer event", [(e["kind"], e["viewer"]) for e in vk] == [("viewer", "cy")], str(vk))
+
+# pace against the shake1 baseline
+from baseline import Baseline  # noqa: E402
+bl = Baseline(os.path.join(HERE, "baselines", "shake1.json"))
+p = bl.pace(111171, 8, {"iron-plate": 3607}, ["logistics"])
+check("baseline pace facts", p and p["technologies_now"] == 8 and "verdict" in p and "shake1_next_research" in p, str(p))
+fp = caster.facts_for({"kind": "research", "text": "Research complete: Logistics", "t": now, "prio": 7},
+                      {"tick": 111171, "research": {"done_count": 8}, "agents": []}, bl)
+check("research facts carry the baseline time", "shake1_finished_this_at" in fp, str(fp))
 
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)

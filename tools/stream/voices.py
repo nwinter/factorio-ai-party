@@ -77,6 +77,12 @@ def assign_voices(agents, taken=()):
 def speakable(text, limit=220):
     """Strip what TTS reads badly: emoji, markdown, URLs, @handles, long numbers lists; cut at a sentence."""
     text = re.sub(r"https?://\S+", "", text)
+    # map coordinates read terribly aloud: "(23.5,-8.5)", "at 31.5,19", "x-82.5", "y21.5", "x22..32,y-10..8"
+    text = re.sub(r"\s*(?:\b(?:at|to|near)\s*)?\(\s*-?[\d.]+\s*,\s*-?[\d.]+\s*\)", "", text)
+    text = re.sub(r"\s*(?:\b(?:at|to|near)\s+)?-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?(?:\s*/\s*-?\d+(?:\.\d+)?)*\b",
+                  lambda m: m.group() if re.search(r"(?<![\d.\-])\d{1,3},\d{3}$", m.group()) else "", text)  # 1,000
+    text = re.sub(r"\b(?:along\s+)?[xy]\s*=?\s*-?\d+(?:\.\d+)?(?:\.\.-?\d+(?:\.\d+)?)?\b,?", "", text)
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
     text = re.sub(r"[*_`#>\[\]{}|~]", "", text)
     text = re.sub(r"@(\w+)", r"\1", text)
     text = "".join(ch for ch in text if unicodedata.category(ch)[0] != "S" or ch in "%$+=")
