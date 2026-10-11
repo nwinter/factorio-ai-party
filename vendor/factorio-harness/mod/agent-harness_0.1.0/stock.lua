@@ -102,9 +102,26 @@ return function(api)
     local want=api.integer(a.count,10000,1,100000,'count')
     local chests=a.chests==true
     local s=M.scan(p,a.item,{radius=radius,quality=a.quality,types=a.types or (chests and TYPES or NO_CHESTS)})
+    -- Another agent's claimed stock stays put; the result says whose it is.
+    local skipped,kept={},{}
+    for _,place in ipairs(api.claims and s.places or {}) do
+      local c=api.claims.other(p,place.position)
+      if c then
+        local key=api.claims.label(c)
+        if not skipped[key] then skipped[key]={places=0,count=0}; skipped[#skipped+1]=key end
+        skipped[key].places=skipped[key].places+1; skipped[key].count=skipped[key].count+place.count
+      else kept[#kept+1]=place end
+    end
+    if #skipped>0 then s.places=kept end
     local action={kind='gather',item=a.item,quality=a.quality,want=want,got=0,visited=0,
       targets=route(p.position,s.places),index=1,until_tick=game.tick+ticks}
     local out={item=a.item,want=want,stock=s.total,places=#action.targets}
+    if #skipped>0 then
+      out.skipped_claims={}
+      for i,key in ipairs(skipped) do
+        if i<=4 then out.skipped_claims[i]=string.format('%d %s in %d places of %s; ask the owner',skipped[key].count,a.item,skipped[key].places,key) end
+      end
+    end
     if not chests and not a.types then
       -- Say how much sits in chests that this trip leaves alone.
       local all=M.scan(p,a.item,{radius=radius,quality=a.quality})

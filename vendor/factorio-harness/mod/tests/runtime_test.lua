@@ -242,9 +242,15 @@ p.can_build_from_cursor=function() return false end
 local footprint,tiles={},{}
 p.surface.find_entities_filtered=function(a) return a.area and footprint or {} end
 p.surface.find_tiles_filtered=function() return tiles end
-footprint={{valid=true,type='tree',name='tree-02',position={x=2.1,y=0.3}},{valid=true,type='character',name='character',position={x=2,y=0}}}
+footprint={{valid=true,type='tree',name='tree-02',position={x=2.1,y=0.3}},p.character}
+p.character.type='character'; p.character.position={x=2,y=0}
 fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,
   'placement blocked by tree-02 (2.1,0.3), the character standing on the footprint (move off it first); mine it, or place_ghosts (marks it) + construct (clears it)')
+-- Someone else's character is named.
+footprint={{valid=true,type='character',name='character',position={x=2,y=0.2},player={valid=true,name='pog-sol'}}}
+fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,
+  "placement blocked by pog-sol's character standing at (2.0,0.2) (ask them to move, or build elsewhere)")
+p.character.type=nil; p.character.position=nil
 eq(wood.count,3); eq(p.cursor_stack.valid_for_read,false)
 footprint={}; tiles={{name='water',prototype={collision_mask={layers={water_tile=true}}}},{name='water',prototype={collision_mask={layers={water_tile=true}}}}}
 fails(function() call('build',{item='wooden-chest',position={x=2,y=0}}) end,'placement blocked by tiles: water (needs landfill')

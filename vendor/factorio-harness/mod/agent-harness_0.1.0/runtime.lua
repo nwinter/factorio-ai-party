@@ -44,6 +44,7 @@ local function state() return storage.agent_harness end
 -- Bots (script-driven characters), profiles/speech bubbles and director
 -- cameras. Bot indices sit above every player index (bots.BASE).
 M.crafting=require('crafting'){state=state}
+M.claims=require('claims'){state=state}
 M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
   profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)) end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
@@ -54,6 +55,12 @@ M.profiles=require('profiles'){state=state,is_bot=function(p) return M.bots.is(p
 function M.lookup(index)
   if M.bots.is_index(index) then return M.bots.lookup(index) end
   return game.get_player(index)
+end
+-- Who a character belongs to: a player's name, else a bot's (nil if neither).
+function M.character_owner(e)
+  local ok,pl=pcall(function() return e.player end)
+  if ok and pl and pl.valid then return pl.name end
+  for _,b in ipairs(M.bots.list()) do if b.character==e then return b.name end end
 end
 local function combat_targets()
   local s=state()
@@ -356,11 +363,13 @@ local inventories = {
   car_ammo = {'car'}, car_trunk = {'car'}, spider_ammo = {'spider-vehicle'}, spider_trunk = {'spider-vehicle'},
   cargo_wagon = {'cargo-wagon'}, roboport_robot = {'roboport'}, roboport_material = {'roboport'},
   assembling_machine_modules = {'assembling-machine','rocket-silo'}, furnace_modules = {'furnace'}, lab_modules = {'lab'},
-  mining_drill_modules = {'mining-drill'}, beacon_modules = {'beacon'}
+  mining_drill_modules = {'mining-drill'}, beacon_modules = {'beacon'},
+  -- A dead character's items: take them (never mine_entity it, which crashes for bots).
+  character_corpse = {'character-corpse'}
 }
 -- Inference order when a transfer omits its inventory (see infer_inventory).
 -- Ammo and modules only go where the item's kind says, as a player's click does.
-local take_order={'chest','cargo_landing_pad_main','hub_main','asteroid_collector_output','cargo_wagon','car_trunk','spider_trunk','furnace_result','assembling_machine_output','burnt_result','fuel',
+local take_order={'character_corpse','chest','cargo_landing_pad_main','hub_main','asteroid_collector_output','cargo_wagon','car_trunk','spider_trunk','furnace_result','assembling_machine_output','burnt_result','fuel',
   'furnace_source','assembling_machine_input','lab_input','turret_ammo','artillery_turret_ammo','artillery_wagon_ammo','car_ammo','spider_ammo',
   'roboport_robot','roboport_material','rocket_silo_rocket'}
 local give_order={'chest','cargo_landing_pad_main','hub_main','cargo_wagon','car_trunk','spider_trunk','furnace_source','assembling_machine_input','lab_input','roboport_robot','roboport_material','fuel','rocket_silo_rocket'}
@@ -1604,7 +1613,11 @@ local function placement_error(p,proto,pos,direction)
   local area={left_top={x=pos.x+l,y=pos.y+t},right_bottom={x=pos.x+r,y=pos.y+btm}}
   local found,character,clearable={},false,false
   for _,e in pairs(p.surface.find_entities_filtered{area=area,limit=16}) do
-    if e.valid and e.type=='character' then character=true
+    if e.valid and e.type=='character' and e==p.character then character=true
+    elseif e.valid and e.type=='character' and #found<4 then
+      -- Someone else stands there: say who, so the agent can ask them.
+      local who=M.character_owner(e)
+      found[#found+1]=string.format('%s standing at (%.1f,%.1f) (ask them to move, or build elsewhere)',who and who..'\'s character' or 'another character',e.position.x,e.position.y)
     elseif e.valid and e.type~='resource' and #found<4 then
       local name=e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.type=='tile-ghost' and 'tile ghost '..e.ghost_name or e.name
       if e.type=='tree' or e.type=='simple-entity' or e.type=='cliff' then clearable=true end
@@ -2109,6 +2122,8 @@ local function transfer_one(p,a,pos,e)
   end
   local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred,none_held=short and a.item or nil,target_has=short and count(target) or nil}
   if a.direction=='to_player' then out.inventory_full=full else out.entity_full=full end
+  -- An emptied corpse goes, as when a player takes everything from it.
+  if a.direction=='to_player' and e.type=='character-corpse' and sources[1].is_empty() then e.destroy(); out.corpse_removed=true end
   return out
 end
 -- Targets are {position} or {entity}. Each is independent: an unreachable one
@@ -2269,6 +2284,14 @@ function handlers.collect(p,a)
   args.count=a.item and integer(a.count,10000,1,10000,'count') or nil
   local targets=reachable(p,args,function() return true end)
   local out=transfer_batch(p,args,targets,true)
+  -- Named targets inside another agent's claim are taken from, but say whose.
+  local claimed={}
+  for _,t in ipairs(targets) do
+    local ok,at=pcall(position,t.entity and t.entity.valid and t.entity.position or t.position)
+    local c=ok and #claimed<4 and M.claims.other(p,at)
+    if c then claimed[#claimed+1]=string.format('(%g,%g) in %s',at.x,at.y,M.claims.label(c)) end
+  end
+  if #claimed>0 then out.claimed=claimed end
   if not a.positions and not a.types and not a.chests then
     local skipped=0
     for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=(p.reach_distance or 10)+3,force=p.force,type={'container','logistic-container'}}) do
@@ -3424,7 +3447,7 @@ rates=rates_module{position=position,status_name=function(e) return entity_statu
 space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,
   -- Riding or landing takes the character away: controls stop and a plan pauses.
   stop=function(p) M.stop_player(p.index) end}
-stock=stock_module{distance=distance,integer=integer,position=position,
+stock=stock_module{distance=distance,integer=integer,position=position,claims=M.claims,
   -- One stop of a rearm/refuel tour: top the entity up; stop when none is left.
   visit=function(p,action,e)
     if action.op=='feed' then
