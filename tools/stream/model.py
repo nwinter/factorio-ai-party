@@ -42,7 +42,8 @@ SCIENCE_STAGE = {"automation-science-pack": 1, "logistic-science-pack": 2, "mili
 SPARK_ITEMS = [n for _, names in STAGE_ITEMS for n in names] + SCIENCE
 VERBS = {"build": "building", "place": "placing", "construct": "constructing", "build_blueprint": "placing blueprint",
          "blueprint": "placing blueprint", "mine": "mining", "craft": "crafting", "insert": "loading", "take": "taking",
-         "feed": "feeding", "walk": "walking", "path": "walking", "shoot": "fighting", "attack": "fighting", "kite": "fighting",
+         "feed": "feeding", "walk": "walking", "path": "walking", "move_to": "walking", "gather": "gathering",
+         "build_path": "building", "repair": "repairing", "deconstruct": "removing", "follow": "following", "shoot": "fighting", "attack": "fighting", "kite": "fighting",
          "rotate": "rotating", "wait_until": "waiting", "wait": "waiting", "research": "researching"}
 THINK_WINDOW = 90  # seconds after an action ends during which an inactive agent counts as "thinking"
 CHANGELOG_RE = re.compile(r"^\s*(?:server:\s*)?harness (v[\w.]+):\s*(.+)$", re.I)  # operator chat "server: harness vN: ..."

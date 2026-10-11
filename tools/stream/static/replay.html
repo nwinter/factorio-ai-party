@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>pog replay banner</title>
+<meta name="viewport" content="width=1920, height=1080">
+<link rel="stylesheet" href="/static/factorio-ui.css">
+<!-- Browser source in the OBS "replay" scene (replays.py), over the replayed clip. Shows while an attack_replay
+     segment is live: a REPLAY tag with what happened, a time bar, and a red frame so nobody mistakes it for live. -->
+<style>
+  html, body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: transparent;
+    font-family: "Titillium Web", "Segoe UI", system-ui, sans-serif; color: var(--fx-text); }
+  #frame { position: absolute; inset: 0; box-shadow: inset 0 0 0 6px rgba(var(--fx-red-rgb), 0.85); opacity: 0; transition: opacity 400ms ease; }
+  #bar { position: absolute; left: 48px; top: 40px; display: flex; align-items: center; gap: 16px; padding: 8px 26px 8px 8px;
+    background: linear-gradient(90deg, rgba(var(--fx-red-rgb), 0.35), rgba(var(--fx-frame-rgb), 0.95) 55%);
+    border-left: 6px solid var(--fx-red); border-radius: 0 var(--fx-r-2) var(--fx-r-2) 0;
+    box-shadow: var(--fx-bevel), 0 6px 22px rgba(0, 0, 0, 0.6); opacity: 0; transform: translateY(-10px);
+    transition: opacity 400ms ease, transform 400ms ease; }
+  .on #frame, .on #bar { opacity: 1; transform: none; }
+  #tag { font-size: 30px; font-weight: 700; letter-spacing: 0.1em; padding: 2px 14px; border-radius: var(--fx-r-1);
+    background: linear-gradient(180deg, #ff8a70, var(--fx-red)); color: #fff; text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.5); }
+  #tag::before { content: "◀◀ "; font-size: 0.8em; }
+  #what { font-size: 30px; font-weight: 700; color: var(--fx-heading); white-space: nowrap; max-width: 1300px; overflow: hidden; text-overflow: ellipsis; }
+  #ago { font-size: 20px; color: var(--fx-muted); }
+  #time { position: absolute; left: 48px; right: 48px; bottom: 36px; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, 0.5); opacity: 0; transition: opacity 400ms ease; }
+  .on #time { opacity: 1; }
+  #time i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--fx-red); transition: width 1s linear; }
+</style>
+</head>
+<body>
+<div id="frame"></div>
+<div id="bar"><span id="tag">Replay</span><span id="what"></span><span id="ago"></span></div>
+<div id="time"><i></i></div>
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  function render(s) {
+    const seg = s && s.segment;
+    const on = !!seg && seg.type === "attack_replay" && seg.state === "live";
+    document.body.classList.toggle("on", on);
+    if (!on) return;
+    const f = seg.facts || {};
+    $("what").textContent = f.event || seg.title || "";
+    $("ago").textContent = f.ago_s != null ? Math.max(0, Math.round(f.ago_s + (s.now - seg.started))) + " s ago" : "";
+    const total = Math.max(1, seg.ends - seg.started);
+    $("time").firstChild.style.width = Math.max(0, Math.min(1, (s.now - seg.started) / total)) * 100 + "%";
+  }
+  let last = 0;
+  const es = new EventSource("/events");
+  es.onmessage = (e) => { last = Date.now(); try { render(JSON.parse(e.data)); } catch (err) { console.error(err); } };
+  setInterval(() => {
+    if (Date.now() - last < 6000) return;
+    fetch("/state.json", { cache: "no-store" }).then((r) => r.json()).then(render).catch(() => {});
+  }, 3000);
+})();
+</script>
+</body>
+</html>

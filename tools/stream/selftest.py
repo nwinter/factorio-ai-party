@@ -233,6 +233,123 @@ def main():
     names = [r["item"] for r in m4.production(time.time())]
     assert names == ["iron-plate", "copper-plate", "advanced-circuit", "iron-ore"], names  # ore is stage 0: last
 
+    # segments: request -> starting -> live -> ended; spacing; spotlight holds main; a fight cuts it; lulls fill
+    from segments import Segments
+    seg = Segments(lull_after=1e9)
+    sent5 = []
+    d5 = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], lambda b: sent5.append(b) or {"ok": True}, None)
+    m5 = Model({"agents": {"astra": {}, "luna": {}}})
+    m5.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "active": "build"},
+                          {"name": "luna", "position": {"x": 300, "y": 40}, "active": "mine"}], "tick": 0, "game_seconds": 0,
+               "produced": {"iron-plate": 0}})
+    m5.ingest({"tick": 7200, "game_seconds": 120, "produced": {"iron-plate": 600, "automation-science-pack": 60}})
+    m5.agents["astra"].interest = 10
+    t5 = time.time()
+    s5 = m5.snapshot(t5)
+    s5["segment"] = seg.step(s5, t5)
+    assert {r["type"]: r["available"] for r in seg.types(t5)["types"]}["attack_replay"] is False
+    code, rep = seg.request({"type": "nope"}, t5)
+    assert code == 400, rep
+    code, rep = seg.request({"type": "production", "seconds": 999, "by": "caster", "reason": "lull"}, t5)
+    assert code == 200 and rep["seconds"] == 45 and rep["facts"]["science_per_min"] == 30.0, rep
+    assert seg.request({"type": "research"}, t5)[0] == 409  # busy
+    assert seg.step(s5, t5 + 1)["state"] == "starting" and seg.step(s5, t5 + 4)["state"] == "live"
+    assert seg.camera() is None  # production leaves the cameras alone
+    assert seg.step(s5, t5 + 60)["state"] == "ended" and seg.step(s5, t5 + 66) is None
+    code, rep = seg.request({"type": "spotlight", "params": {"agent": "luna"}}, t5 + 70)
+    assert code == 409 and rep["error"] == "busy", rep  # 180 s spacing between starts
+    seg.last_start -= 200
+    code, rep = seg.request({"type": "spotlight", "params": {"agent": "luna"}}, t5 + 70)
+    assert code == 200 and rep["facts"]["agent"] == "Luna", rep
+    seg.step(s5, t5 + 70)
+    cams5 = d5.step(s5, t5 + 70, seg.camera())
+    assert cams5["main"]["agents"] == ["luna"] and cams5["main"]["segment"] == "Spotlight: Luna", cams5
+    assert cams5["cam2"]["agents"] == ["astra"] and sent5[-2]["follow"] == "luna", (cams5, sent5)
+    m5.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "combat": True}]})
+    s6 = m5.snapshot(time.time())  # alerts expire by wall time
+    assert seg.step(s6, t5 + 75)["state"] == "live"  # an alert alone does not end a segment...
+    now6 = time.time()
+    d5.step(s6, now6, seg.camera())
+    assert d5.last_attack_cut == now6, "the director should cut main to astra's fight"
+    seg.attack_cut(now6)  # ...the director's attack cut does (serve.py's ticker calls this)
+    st = seg.public()
+    assert st["state"] == "ended" and st["cut"] == "attack", st
+    seg.last_start = -1e9
+    rep = seg.request({"type": "overview"}, now6 + 5)[1]
+    assert rep.get("error") == "declined", rep  # the fight is still news
+    assert seg.request({"type": "overview"}, now6 + 25)[0] == 200  # 20 s after the cut it is not
+    lull = Segments(lull_after=0, spacing=0)
+    lull.step(s5, time.time() + 1)
+    assert lull.queue and lull.queue["by"] == "director" and lull.queue["type"] == "production", lull.queue
+
+    # replays: a death on the main camera -> save the buffer -> attack_replay segment -> replay scene -> back to stream
+    import replays as rp
+    rp.time.sleep = lambda s: None  # the fake OBS answers at once
+
+    class FakeOBS:
+        def __init__(self):
+            self.calls, self.program, self.saved = [], "stream", 0
+
+        def call(self, req, data=None):
+            self.calls.append((req, data))
+            if req == "GetSceneList":
+                return {"scenes": [{"sceneName": "stream"}]}
+            if req == "GetInputList":
+                return {"inputs": [{"inputName": "stream overlay"}]}
+            if req == "CreateSceneItem":
+                return {"sceneItemId": 7}
+            if req == "GetReplayBufferStatus":
+                return {"outputActive": True}
+            if req == "GetStats":
+                return {"cpuUsage": 5, "activeFps": 60, "renderSkippedFrames": 1, "outputSkippedFrames": 0}
+            if req == "SaveReplayBuffer":
+                self.saved += 1
+            if req == "GetLastReplayBufferReplay":
+                if not self.saved:
+                    raise rp.OBSError("GetLastReplayBufferReplay: 604 no replay")
+                return {"savedReplayPath": f"D:\\pog\\replays\\r{self.saved}.mkv"}
+            if req == "GetMediaInputStatus":
+                return {"mediaDuration": 45000, "mediaState": "OBS_MEDIA_STATE_PLAYING"}
+            if req == "SetCurrentProgramScene":
+                self.program = data["sceneName"]
+            if req == "GetCurrentProgramScene":
+                return {"currentProgramSceneName": self.program}
+            return {}
+
+    fobs = FakeOBS()
+    seg7 = Segments()
+    rpl = rp.Replays(seg7, obs=fobs, log=lambda *a: None, start=False)
+    t7 = time.time()
+    s7 = m5.snapshot(t7)
+    seg7.step(s7, t7)
+    rpl.work(t7)
+    created = [d["sceneName"] for r, d in fobs.calls if r == "CreateScene"]
+    assert created == ["replay"] and ("SetInputMute", {"inputName": "replay clip", "inputMuted": True}) in fobs.calls
+    assert seg7.why_unavailable("attack_replay", s7).startswith("no fresh clip")
+    for k in range(10):  # main has been on luna for 10 s
+        rpl.tick(s7, {"main": {"agents": ["luna"]}}, t7 + k)
+    rpl.on_attack_cut({"kind": "death", "agent": "luna", "text": "Luna died"}, s7, t7 + 10)
+    assert rpl.pending and rpl.pending["kind"] == "death"
+    rpl.on_attack_cut({"kind": "death", "agent": "ghost", "text": "Ghost died"}, s7, t7 + 10)  # never on main: ignored
+    assert rpl.pending["label"] == "Luna died"
+    rpl.work(t7 + 15)  # save_at = death + 5
+    assert fobs.saved == 1 and rpl.clip and rpl.clip["path"].endswith("r1.mkv"), rpl.clip
+    seg7.last_attack_cut = t7 - 100  # the death cut was long enough ago that segments are not declined
+    rpl.offer(t7 + 15)
+    seg7.step(s7, t7 + 15)
+    assert seg7.cur["type"] == "attack_replay" and seg7.cur["state"] == "starting" and seg7.cur["facts"]["event"] == "Luna died"
+    seg7.step(s7, t7 + 18)
+    rpl.follow_segment(t7 + 18)
+    assert fobs.program == "replay" and rpl.playing, fobs.calls[-4:]
+    cursor = [d for r, d in fobs.calls if r == "SetMediaInputCursor"][-1]["mediaCursor"]
+    assert 45000 - 16500 <= cursor <= 45000 - 15500, cursor  # 11 s before the death, clip saved 5 s after it
+    seg7.step(s7, t7 + 40)  # past its 15 s
+    rpl.follow_segment(t7 + 40)
+    assert fobs.program == "stream" and not rpl.playing
+    fobs.program = "replay"  # left on air by hand: the watchdog brings the stream back
+    rpl.follow_segment(t7 + 50)
+    assert fobs.program == "stream"
+
     log = os.path.join(os.environ.get("TMPDIR", "/tmp"), "selftest-director.jsonl")
     d = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], src.send_camera, log)
     cams = d.step(snap)
