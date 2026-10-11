@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent avatars</title>
+<link rel="stylesheet" href="factorio-ui.css">
+<style>
+  /* Gallery layout only; components come from factorio-ui.css. */
+  body { margin: 0; min-height: 100vh; }
+  .wrap { max-width: 1240px; margin: 0 auto; padding: 24px 16px 48px; display: flex; flex-direction: column; gap: 16px; }
+  .wrap > * { min-width: 0; }
+  .intro p { margin: 4px 0; max-width: 78ch; }
+  .builder { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+  @media (max-width: 760px) { .builder { grid-template-columns: minmax(0, 1fr); } }
+  .fields { display: grid; gap: 8px 12px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); }
+  .fields label { display: flex; flex-direction: column; gap: 4px; }
+  .fields select, .fields input[type=text] { width: 100%; box-sizing: border-box; }
+  .color-row { display: flex; gap: 6px; align-items: center; }
+  .color-row input[type=color] { width: 36px; height: 30px; padding: 0; border: 0; background: none; flex: none; }
+  .preview { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+  .preview figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .preview figcaption { font-size: var(--fx-fs-xs); }
+  .pic { display: block; line-height: 0; box-shadow: var(--fx-slot-shadow); }
+  .pic svg { display: block; }
+  pre.cmd { white-space: pre-wrap; word-break: break-all; margin: 0; }
+  .agents { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); }
+  .agent { display: flex; gap: 12px; align-items: center; padding: 8px; }
+  .agent .meta { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .agent .meta b { color: var(--fx-heading); }
+  .agent .meta span { font-size: var(--fx-fs-xs); overflow-wrap: anywhere; }
+  .gallery { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+  .gallery button { all: unset; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 2px; border-radius: 2px; }
+  .gallery button:hover, .gallery button:focus-visible { outline: 2px solid var(--fx-orange); }
+  .gallery span { font-size: 11px; color: var(--fx-muted); text-align: center; line-height: 1.2; }
+  .parts td:last-child { overflow-wrap: anywhere; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: space-between; }
+</style>
+</head>
+<body class="fx-root fx-backdrop">
+<main class="wrap">
+  <header class="intro">
+    <h1 style="font-size: var(--fx-fs-xl)">Agent avatars</h1>
+    <p>Each agent picks a pixel portrait with a few named parts in its harness <code class="fx-mono">profile</code>. The suit takes the agent's colour. Parts it leaves unset follow from its name, so an agent with no avatar still gets a stable portrait. Rendering is <code class="fx-mono">avatar.js</code> (browser and node) or <code class="fx-mono">tools/stream/avatar.py</code> (same output), and the art is original 24&times;24 pixels with no game sprites.</p>
+  </header>
+
+  <section class="fx-panel">
+    <header class="fx-panel-title">Builder</header>
+    <div class="fx-panel-body builder">
+      <div class="fields" id="fields">
+        <label><span class="fx-label">Name</span><input id="f-name" class="fx-textfield" type="text" value="astra"></label>
+        <label><span class="fx-label">Colour (suit)</span><span class="color-row"><input id="f-color-pick" type="color" value="#9977ff"><input id="f-color" class="fx-textfield" type="text" value="#9977ff"></span></label>
+        <label><span class="fx-label">Accent</span><span class="color-row"><input id="f-accent-pick" type="color" value="#ffb627"><select id="f-accent-on" class="fx-textfield"><option value="">from name</option><option value="1">this colour</option></select></span></label>
+      </div>
+      <div class="fx-inset" style="display:flex;flex-direction:column;gap:12px">
+        <div class="preview" id="preview"></div>
+        <div class="fx-muted" id="resolved"></div>
+        <div>
+          <div class="row"><span class="fx-label">Command for the agent</span><button class="fx-btn" id="copy" type="button">Copy</button></div>
+          <pre class="fx-mono fx-code cmd" id="cmd"></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="fx-panel">
+    <header class="fx-panel-title">The nine agents, defaults</header>
+    <div class="fx-panel-body">
+      <p class="fx-muted" style="margin:0 0 8px">Colours from the first shakedown (Sonnet never set one, so its colour also comes from its name). None has chosen an avatar yet; this is what the overlay draws for them until they do.</p>
+      <div class="agents" id="agents"></div>
+    </div>
+  </section>
+
+  <section class="fx-panel">
+    <header class="fx-panel-title">Random valid avatars</header>
+    <div class="fx-panel-body" style="display:flex;flex-direction:column;gap:8px">
+      <div class="row"><span class="fx-muted">40 random specs. Click one to load it into the builder.</span><button class="fx-btn" id="reroll" type="button">Reroll</button></div>
+      <div class="gallery" id="gallery"></div>
+    </div>
+  </section>
+
+  <section class="fx-panel">
+    <header class="fx-panel-title">Parts</header>
+    <div class="fx-panel-body demo-scroll" style="overflow-x:auto">
+      <table class="fx-table parts" id="parts"><thead><tr><th>Field</th><th>Values</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+</main>
+<script src="avatar.js"></script>
+<script>
+(function () {
+  "use strict";
+  var A = window.PogAvatar, P = A.PARTS;
+  var NINE = [["astra", "Astra", "#9977ff"], ["sol", "Sol", "#ffcb45"], ["luna", "Luna", "#b58cff"],
+    ["opus", "Opus", "#d97757"], ["sonnet", "Sonnet", null], ["haiku", "Haiku", "#e07a2f"],
+    ["grok", "Grok", "#1a1a1a"], ["gemini", "Gemini", "#4285f4"], ["muse", "Muse", "#7dd3fc"]];
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function pic(profile, size) { var s = el("span", "pic"); s.innerHTML = A.svg(profile, size); return s; }
+  function describe(spec) { return P.fields.map(function (f) { return spec[f]; }).join(" · ") + " · accent " + spec.accent; }
+
+  // Builder: one select per part, "" = follow from the name.
+  var fields = $("fields");
+  P.fields.forEach(function (f) {
+    var label = el("label"), sel = el("select", "fx-textfield");
+    sel.id = "f-" + f;
+    sel.append(new Option("from name", ""));
+    P.options[f].forEach(function (v) { sel.append(new Option(v, v)); });
+    label.append(el("span", "fx-label", f), sel);
+    fields.append(label);
+  });
+  function current() {
+    var color = $("f-color").value.trim(), avatar = {};
+    P.fields.forEach(function (f) { var v = $("f-" + f).value; if (v) avatar[f] = v; });
+    if ($("f-accent-on").value) avatar.accent = $("f-accent-pick").value;
+    return { name: $("f-name").value.trim() || "agent", color: /^#[0-9a-fA-F]{6}$/.test(color) ? color : undefined, avatar: avatar };
+  }
+  function render() {
+    var p = current(), prev = $("preview");
+    prev.textContent = "";
+    [96, 48, 32, 24].forEach(function (s) { var f = el("figure"); f.append(pic(p, s), el("figcaption", "fx-muted", s + "px")); prev.append(f); });
+    $("resolved").textContent = "Drawn: " + describe(A.resolve(p));
+    var args = {};
+    if (p.color) args.color = p.color;
+    args.avatar = p.avatar;
+    $("cmd").textContent = "./fh call profile --args '" + JSON.stringify(args) + "'";
+  }
+  $("f-color-pick").addEventListener("input", function () { $("f-color").value = this.value; render(); });
+  $("f-color").addEventListener("input", function () { if (/^#[0-9a-fA-F]{6}$/.test(this.value)) $("f-color-pick").value = this.value; render(); });
+  $("f-accent-pick").addEventListener("input", function () { $("f-accent-on").value = "1"; render(); });
+  fields.addEventListener("change", render);
+  $("f-name").addEventListener("input", render);
+  $("copy").addEventListener("click", function () {
+    var t = $("cmd").textContent;
+    if (navigator.clipboard) navigator.clipboard.writeText(t).catch(function () {});
+  });
+  function load(p) {
+    $("f-name").value = p.name;
+    if (p.color) { $("f-color").value = p.color; $("f-color-pick").value = p.color; }
+    P.fields.forEach(function (f) { $("f-" + f).value = (p.avatar && p.avatar[f]) || ""; });
+    $("f-accent-on").value = p.avatar && p.avatar.accent ? "1" : "";
+    if (p.avatar && p.avatar.accent) $("f-accent-pick").value = p.avatar.accent;
+    render();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  // The nine agents' defaults.
+  NINE.forEach(function (a) {
+    var p = { name: a[0], display_name: a[1], color: a[2] || undefined }, spec = A.resolve(p);
+    var card = el("div", "fx-subpanel agent fx-agent-edge");
+    card.style.setProperty("--fx-agent", spec.color);
+    var meta = el("div", "meta");
+    meta.append(el("b", "", a[1]), el("span", "fx-mono", a[2] ? a[2] : spec.color + " (from name)"), el("span", "fx-muted", describe(spec)));
+    card.append(pic(p, 72), meta);
+    card.addEventListener("click", function () { load({ name: p.name, color: spec.color, avatar: {} }); });
+    $("agents").append(card);
+  });
+
+  // Random gallery.
+  var round = 0;
+  function gallery() {
+    var g = $("gallery");
+    g.textContent = "";
+    for (var i = 0; i < 40; i++) {
+      var seed = round * 40 + i, av = A.random(seed);
+      var p = { name: "agent-" + seed, color: P.colors[(seed * 7 + round) % P.colors.length], avatar: av };
+      if (A.validate(av).length) throw new Error("invalid random spec " + JSON.stringify(av));
+      var b = el("button");
+      b.type = "button";
+      b.title = describe(A.resolve(p));
+      b.append(pic(p, 64), el("span", "", av.base + " · " + av.helmet));
+      b.addEventListener("click", load.bind(null, p));
+      g.append(b);
+    }
+  }
+  $("reroll").addEventListener("click", function () { round++; gallery(); });
+
+  var tbody = $("parts").querySelector("tbody");
+  P.fields.concat(["accent"]).forEach(function (f) {
+    var tr = el("tr");
+    tr.append(el("td", "fx-mono", f), el("td", "fx-mono", f === "accent" ? '"#rrggbb" (second colour; default picked from the name to contrast with the suit)' : P.options[f].join(" | ")));
+    tbody.append(tr);
+  });
+
+  gallery();
+  render();
+})();
+</script>
+</body>
+</html>

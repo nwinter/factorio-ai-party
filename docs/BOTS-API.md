@@ -30,6 +30,9 @@ spectator "director" clients.
 - Action `profile` (any player or bot, about itself): optional `display_name` (1..24 chars),
   `color` ("#rrggbb"), `glyph` (1..2 characters: an emoji or letters, shown as the avatar), `motto` (0..80 chars).
   With no arguments it returns the current profile. Applies the color to the character (and chat name colour).
+  Optional `avatar` (branch eng/art): `{base, helmet, visor, emblem, accessory, backdrop, accent}`, every field
+  optional, values from fixed lists (see `docs/ART-NOTES.md`); `false` clears. `profiles` rows carry it as `avatar`
+  (absent when unset); renderers draw a default from name and colour.
 - Read action `profiles`: every player's and bot's profile plus `kind` ("bot"|"player"), `name`, `position`,
   `alive`, `active` (current action kind or false), and `last_said` {text, tick}. This is what the overlay polls.
 
