@@ -149,6 +149,34 @@ stops a player.
   arrive within 3 minutes); and up to three active claims with avatars. Without a board runtime the panel is hidden
   and chat takes its height.
 
+## Segments (shots the casters or the director start)
+
+`segments.py`; API agreed with eng/audio, whose casters request them (docs/AUDIO-NOTES.md "Segments").
+
+- `GET /segments` -> `{types: [{type, title, params, seconds: [min, max], available, why?}], busy, next_ok}`.
+- `POST /segment {type, params, seconds, by, reason}` -> `200 {id, state: "queued", eta, seconds, title, facts}`,
+  `409 {error: busy | declined | unavailable, retry_after}`, or `400 {error: bad type | bad params}`.
+- The snapshot carries `segment: {id, type, state: starting | live | ended, started, ends, title, facts, by, reason,
+  cut?}` or null. starting is 2.5 s (fade in; the caster writes its lines), then live until `ends`, then ended for 5 s.
+- `facts` are every name and number the page shows, computed once at accept time; the page draws a segment from its
+  facts only, so the hosts (held to the facts by the caster's fact check) and the screen agree.
+
+| type | seconds | on screen | camera |
+|---|---|---|---|
+| production | 20-45 | panel over the main camera: SPM, pack rates, up to 6 items with icons, now vs 10 min ago, biggest gain and drop | unchanged |
+| research | 15-30 | panel: current technology, progress bar, done count, latest four | unchanged |
+| spotlight `{agent}` | 20-45 | lower-third card: model, motto, current action and location, latest chat line, claims | main follows the agent (zoom 0.9) |
+| overview | 15-30 | card: agents in the world, spread, areas | main on the agents' centre, zoom 0.2 or wider to fit |
+| recap `{minutes}` | 20-40 | panel: SPM, research finished, board items done, attacks, deaths in the window | unchanged |
+| attack_replay | 15-40 | listed, `available: false` until the replay buffer is set up (see What's left) | |
+
+Rules (the director has the last word): one segment start per 180 s whoever asks (`spacing`); none while a fight,
+death, base attack or loss alert is under 20 s old (`declined`); such an alert ends a running segment at once
+(`cut: "attack"`) and the director's attack cut takes over. After 6 quiet minutes (`lull_after`) the director starts
+the next of production, spotlight, research, overview, recap itself (`by: "director"`). Tune with `"segments": {...}`
+in the run config. Checked: selftest (states, spacing, spotlight hold, cut, lull), and all five types requested over
+HTTP on the mock and rendered in jsdom on both pages. Not yet seen in OBS.
+
 ## Vertical (9:16) page
 
 YouTube's phone views crop a 16:9 stream to its middle (x 656..1264 of 1920), which on this layout is the right
@@ -259,6 +287,12 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - World n's runtime still rejects `peek` on `status`; the merged eng/board runtime accepts it on any request, so
   worlds running the current runtime get peek reads.
 - The board has only been checked against the shapes in eng/board's code, not a running world with it.
+- Replays (requested by Nick): the plan is the OBS replay buffer on the program output, saved by the director
+  (`SaveReplayBuffer`) a few seconds after a death or a fight on camera, then a replay scene with a REPLAY banner and
+  a cut back. Blocked here: the replay buffer is part of the `pog` profile's output settings and switching the
+  program scene during a live stream goes beyond this branch's "switch for screenshots and switch back" rule, so
+  both need the operator's go-ahead; encoder headroom (Quick Sync with stream + recording + buffer) could not be
+  read because this session cannot reach the OBS websocket. Until then `attack_replay` stays unavailable.
 - Zoom levels are guesses from the director client at 1080p; tune `zoom_*` in the run config's `director` after
   seeing real fights and builds on the camera feeds.
 
