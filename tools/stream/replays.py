@@ -47,6 +47,10 @@ class Replays:
         self.ids = itertools.count(1)
         self.pending = None      # {kind, label, agent, save_at, show_from, show_to}
         self.clip = None         # saved, not yet played: {id, path, saved_t, show_from, show_to, label, kind, agent}
+        # Deaths close together each get a clip, played in order. In shake4 Haiku's clip was queued, Opus died 43 s
+        # later, that cut emptied the segment queue and Opus's clip replaced Haiku's: Haiku's death never aired.
+        self.more_pending = deque(maxlen=2)  # later deaths waiting behind self.pending
+        self.more_clips = deque(maxlen=2)    # saved clips waiting behind self.clip
         self.playing = None      # clip id on air
         self.last_replay = -1e9
         self.main_seen = deque(maxlen=60)  # (t, [agents on main])
@@ -93,9 +97,14 @@ class Replays:
                 if not name or not seen:
                     return  # it died off camera: there is nothing in the buffer worth showing
                 ag = next((a for a in snap.get("agents") or [] if a["name"] == name), {})
-                self.pending = {"kind": "death", "label": alert["text"], "agent": name,
-                                "agent_name": ag.get("display_name") or name, "save_at": now + self.cfg["death_save_after"],
-                                "show_from": now - self.cfg["death_before"], "show_to": now + self.cfg["death_after"]}
+                p = {"kind": "death", "label": alert["text"], "agent": name,
+                     "agent_name": ag.get("display_name") or name, "save_at": now + self.cfg["death_save_after"],
+                     "show_from": now - self.cfg["death_before"], "show_to": now + self.cfg["death_after"]}
+                if self.pending and self.pending["kind"] == "death":
+                    self.more_pending.append(p)  # saved after the earlier one
+                    self.log(f"[replays] pending death (after {self.pending['label']}): {p['label']}")
+                    return
+                self.pending = p  # a death wins over a pending fight
             elif not self.pending:  # a death already pending wins over the fight around it
                 save = now + self.cfg["fight_after"]
                 ag = next((a for a in snap.get("agents") or [] if a["name"] == alert.get("agent")), {})
@@ -163,11 +172,15 @@ class Replays:
                 time.sleep(0.5)  # let the muxer finish the file
                 break
         with self.lock:
-            self.pending = None
+            self.pending = self.more_pending.popleft() if self.more_pending else None
             if not path or path == before:
                 self.status["error"] = "SaveReplayBuffer produced no new file"
                 return
-            self.clip = dict(p, id=f"clip-{next(self.ids)}", path=path, saved_t=saved_t)
+            clip = dict(p, id=f"clip-{next(self.ids)}", path=path, saved_t=saved_t)
+            if self.clip:
+                self.more_clips.append(clip)  # plays after the one already waiting
+            else:
+                self.clip = clip
             self.status["replays"] += 1
         self.log(f"[replays] saved {path} for {p['label']}")
 
@@ -178,7 +191,7 @@ class Replays:
             return
         if now - c["show_to"] > self.cfg["max_age"]:
             self.log(f"[replays] dropped {c['id']} (never got a free moment)")
-            self.clip = None
+            self.next_clip()
             return
         cur = self.segments.cur
         if cur and cur["type"] == "attack_replay" and cur.get("clip") == c["id"]:
@@ -187,6 +200,10 @@ class Replays:
                                            "seconds": c["show_to"] - c["show_from"]}, now, ignore_spacing=True)
         if code == 200:
             self.log(f"[replays] queued {c['id']} as {rep['id']}")
+
+    def next_clip(self):
+        with self.lock:
+            self.clip = self.more_clips.popleft() if self.more_clips else None
 
     def follow_segment(self, now):
         """Switch to the replay scene when the replay segment goes live; back to stream when it is over."""
@@ -206,7 +223,7 @@ class Replays:
             self.play(c)
             self.playing = c["id"]
             self.last_replay = now
-            self.clip = None
+            self.next_clip()
             self.status["last"] = {"id": c["id"], "label": c["label"], "t": now, "path": c["path"]}
         elif self.playing and not live:
             self.to_stream("replay over")
@@ -297,5 +314,6 @@ class Replays:
     def public(self):
         s = dict(self.status)
         s.update(pending=self.pending and {k: self.pending[k] for k in ("kind", "label")},
-                 clip=self.clip and {k: self.clip[k] for k in ("id", "label", "path")}, playing=self.playing)
+                 clip=self.clip and {k: self.clip[k] for k in ("id", "label", "path")}, playing=self.playing,
+                 waiting=[c["label"] for c in list(self.more_pending) + list(self.more_clips)])
         return s

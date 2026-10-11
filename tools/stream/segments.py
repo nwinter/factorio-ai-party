@@ -51,6 +51,9 @@ class Segments:
         # lull clock, the rotation reached overview at 01:18 and the run ended before recap's turn: it never ran.
         self.recap_every = recap_every
         self.last_recap = time.time()
+        # An overdue recap (this long past due) goes next: other requests are refused until it starts. In shake4 the
+        # recap waited for an empty slot and replays kept taking it: one gap was 30 minutes.
+        self.recap_late = 600.0
         self.urgent_quiet = urgent_quiet  # no segment within this long of an attack cut on the main camera
         self.overview_zoom = overview_zoom
         self.spotlight_zoom = spotlight_zoom
@@ -109,6 +112,9 @@ class Segments:
                 out.append(row)
             return {"types": out, "busy": self.busy(), "next_ok": round(max(now, self.last_start + self.spacing), 1)}
 
+    def recap_overdue(self, now):
+        return now - self.last_recap >= self.recap_every + self.recap_late
+
     def busy(self):
         return self.queue is not None or (self.cur is not None and self.cur["state"] != "ended")
 
@@ -146,6 +152,8 @@ class Segments:
             if self.busy():
                 end = self.cur["ends"] if self.cur else now + 30
                 return 409, {"error": "busy", "retry_after": round(max(5, end - now + self.spacing), 1)}
+            if self.recap_overdue(now) and kind != "recap":
+                return 409, {"error": "busy", "why": "an overdue recap goes next", "retry_after": 60}
             if now - self.last_start < self.spacing and not ignore_spacing:
                 return 409, {"error": "busy", "retry_after": round(self.last_start + self.spacing - now, 1)}
             if self.urgent_since(snap, now) < self.urgent_quiet:
@@ -196,9 +204,14 @@ class Segments:
                 seg.update(state="starting", started=now, ends=now + STARTING_S + seg["seconds"])
                 self.cur = seg
                 self.last_start = now
-        if not self.busy() and self.moments(snap, fresh_only=True, now=now):
+        if not self.busy() and not self.recap_overdue(now) and self.moments(snap, fresh_only=True, now=now):
             # a Space Age moment is news: start it as soon as nothing else runs (spacing waived, attacks still win)
             self.request({"type": "space_moment", "by": "director", "reason": "moment"}, now, ignore_spacing=True)
+        elif self.recap_overdue(now) and not self.busy() and self.urgent_since(snap, now) >= self.urgent_quiet:
+            # 10 minutes late: right after whatever is on (spacing waived), and nothing else is accepted meanwhile
+            minutes = max(5, min(30, round((now - self.last_recap) / 60)))
+            self.request({"type": "recap", "params": {"minutes": minutes}, "by": "director", "reason": "recap overdue"},
+                         now, ignore_spacing=True)
         elif (self.cur is None and self.queue is None and now - self.last_recap >= self.recap_every
               and now - self.last_start >= self.spacing and self.urgent_since(snap, now) >= 60):
             minutes = max(5, min(30, round((now - self.last_recap) / 60)))

@@ -18,7 +18,10 @@ $fwd = $dir -replace '\\','/'
 $data = ($Factorio -replace '\\','/') + '/data'
 $muted = if ($Sound -or $Human) { 'false' } else { 'true' }
 $music = if ($Human) { '0.5' } else { '0' }
-$quality = if ($Human) { 'normal' } else { 'low' }
+# Factorio 2.0's graphics-quality takes only high or medium (sprite resolution); the old 'low'/'normal' were not valid,
+# so every client fell back to high ("[Graphics quality: high]" in shake5's cam3 log). Directors get medium-resolution
+# sprites (a quarter of the pixels) to cut the ~5.2 GB each Space Age client committed; see docs/STREAM-NOTES.md.
+$quality = if ($Human) { 'high' } else { 'medium' }
 $vram = if ($Human) { 'all' } else { 'low' }
 Set-Content -Encoding ascii "$dir\config\config.ini" @"
 [path]
@@ -34,6 +37,7 @@ music-volume=$music
 full-screen=false
 graphics-quality=$quality
 video-memory-usage=$vram
+texture-streaming=true
 "@
 if (-not (Test-Path "$dir\player-data.json")) {
   (@{'service-username'=$PlayerName} | ConvertTo-Json) | Set-Content -Encoding ascii "$dir\player-data.json"
