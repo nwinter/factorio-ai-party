@@ -38,16 +38,30 @@ return function(api)
     end
     c.read[index] = next(set) and set or nil
   end
-  local function append(from, text, index, aloud, viewer)
+  local function append(from, text, index, aloud, viewer, notice)
     local c = log()
     c.seq = c.seq + 1
-    local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil, viewer=viewer or nil}
+    local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil, viewer=viewer or nil, notice=notice or nil}
     c.messages[#c.messages+1] = m
     while #c.messages > MAX_LOG do table.remove(c.messages, 1) end
     -- Mentions are filed per agent as the message arrives (board.lua); a
-    -- viewer's @name is not a teammate's, so it files none.
-    if api.on_message and not viewer then api.on_message(m) end
+    -- viewer files one only for an agent it names with @ (on_viewer), and a
+    -- harness notice files none.
+    if viewer then
+      if api.on_viewer then api.on_viewer(m) end
+    elseif api.on_message and not notice then api.on_message(m) end
     return c.seq
+  end
+  -- A harness notice (audience.lua's mute votes) in grey: unread for every
+  -- agent, never a mention; the stream shows it on its ticker.
+  function M.notice(from, text)
+    local line = '[color=0.62,0.62,0.62]' .. from .. ': ' .. text .. '[/color]'
+    if api.audience then
+      for _, viewer in ipairs(api.audience()) do viewer.print(line) end
+    else
+      game.print(line)
+    end
+    return append(from, text, nil, nil, nil, true)
   end
   -- A stream viewer's line relayed by the operator (audience.lua rate-limits
   -- it): unread for every agent, from "viewer NAME", flagged viewer.
@@ -65,7 +79,7 @@ return function(api)
       aloud='optional boolean: also speak it aloud on the stream (use sparingly)'},
     chat = {since='optional sequence number: every message after it, yours included (default: your unread messages)',
       limit='1..100, newest kept (default 30)', peek='boolean: read without marking as read (overlays, spectators)',
-      returns='messages {seq,tick,from,text,aloud?,viewer?,mention?} oldest first: the newest `limit`, plus every older one that mentions you (mention: @|@everyone|name); viewer: a stream viewer\'s line the operator relayed, from "viewer NAME", not a teammate. cursor (latest seq); remaining and digest (one line: count, seq range and senders of the messages not returned; chat again for them). Only returned messages are marked read, unless peek; while a read left some unread, every reply\'s team hints carry chat_remaining'},
+      returns='messages {seq,tick,from,text,aloud?,viewer?,notice?,mention?} oldest first: the newest `limit`, plus every older one that mentions you (mention: @|@everyone|name); viewer: a stream viewer\'s line, moderated and relayed by the stream service, from "viewer NAME", not a teammate (it mentions you only with @your name); notice: a harness line (mute votes). cursor (latest seq); remaining and digest (one line: count, seq range and senders of the messages not returned; chat again for them). Only returned messages are marked read, unless peek; while a read left some unread, every reply\'s team hints carry chat_remaining'},
   }
   function M.handlers.say(p, a)
     local text = a.text
@@ -108,7 +122,7 @@ return function(api)
       local newest = i > #picked - limit
       if newest or (how and extra < MAX_MENTIONS) then
         if not newest then extra = extra + 1 end
-        out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, aloud=m.aloud, viewer=m.viewer, mention=how or nil}
+        out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, aloud=m.aloud, viewer=m.viewer, notice=m.notice, mention=how or nil}
       end
     end
     if a.peek ~= true then

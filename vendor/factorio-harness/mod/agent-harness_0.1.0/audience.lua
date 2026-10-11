@@ -5,7 +5,12 @@
 --                teammate sees it in chat, team hints or any agent read but
 --                the author's own.
 --   viewer_say   (operator only) a stream viewer's chat line posted into the
---                game chat as "viewer NAME: text" (chat.lua), rate-limited.
+--                game chat as "viewer NAME: text" (chat.lua), rate-limited;
+--                refused for a muted viewer.
+--   vote         an agent's vote to mute or unmute a viewer: a majority of
+--                the agents active in the last 10 minutes decides, for the
+--                rest of the run. Each vote and result is a chat notice
+--                ("vote: ..."), which the stream shows on its ticker.
 -- Rate limits count game ticks: while the game is paused they do not refill.
 return function(api)
   local M = {handlers={}, operator={}}
@@ -16,6 +21,8 @@ return function(api)
   local function store()
     local s = api.state()
     s.audience = s.audience or {seq=0, confessions={}, last={}, viewers={recent={}, by_name={}}}
+    s.audience.muted = s.audience.muted or {}
+    s.audience.votes = s.audience.votes or {}
     return s.audience
   end
   local function one_line(text, name, max)
@@ -31,6 +38,9 @@ return function(api)
       returns='seq; at most one every 15 s'},
     confessions = {since='optional sequence number', limit='1..100, newest kept (default 30)',
       returns='your own confessions {seq,tick,text} oldest first and cursor (the operator reads everyone\'s)'},
+    vote = {kind='mute|unmute', viewer='the viewer\'s name as in "viewer NAME: ..." (with or without "viewer ")', reason='1..120 characters',
+      returns='viewer, kind, votes (agents active in the last 10 minutes who voted so), needed (a majority of them), active, result (muted|unmuted once decided). A muted viewer\'s lines no longer reach the game for the rest of the run. Every vote and result is a "vote: ..." notice in chat and on the stream\'s ticker'},
+    votes = {returns='muted viewers {viewer, tick, reason, by} and open votes {viewer, kind, voters}'},
   }
   function M.handlers.confess(p, a)
     local text = one_line(a.text, 'text', MAX_LEN)
@@ -71,6 +81,80 @@ return function(api)
   function M.handlers.confessions(p, a) return read(a, p.index) end
   -- Operator (RCON, `operator: true` dispatch): every agent's confessions.
   function M.operator.confessions(a) return read(a, nil) end
+  -- Viewer names as viewer_say stores them; votes match them case-blind.
+  local function viewer_name(raw)
+    assert(type(raw) == 'string', 'viewer must be a name')
+    local name = raw:gsub('%b[]', ''):gsub('[%c%[%]]+', ''):gsub('%s+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
+    name = name:gsub('^[Vv]iewer ', '')
+    assert(#name > 0, 'viewer is required: the name after "viewer " in chat')
+    if #name > VIEWER_NAME then name = name:sub(1, VIEWER_NAME) end
+    return name, name:lower()
+  end
+  -- Agents who made a request (or a waiting poll) in the last 10 minutes.
+  local ACTIVE_TICKS, REASON_LEN = 36000, 120
+  local function active(me)
+    local clocks, out, seen = api.state().clocks or {}, {}, {}
+    for _, a in ipairs(api.agents()) do
+      local c = clocks[a.index]
+      local last = c and math.max(c.call_tick or 0, c.seen_tick or 0)
+      if a.name == me or (last and game.tick - last <= ACTIVE_TICKS) then out[#out+1] = a.name; seen[a.name] = true end
+    end
+    table.sort(out)
+    return out, seen
+  end
+  local function notice(text) if api.notice then api.notice('vote', text) end end
+  function M.handlers.vote(p, a)
+    assert(a.kind == 'mute' or a.kind == 'unmute', 'kind must be mute or unmute')
+    assert(not (api.director and api.director(p.index)), 'directors do not vote')
+    local name, key = viewer_name(a.viewer)
+    local reason = one_line(a.reason, 'reason', REASON_LEN)
+    local me = p.name ~= '' and p.name or ('player' .. p.index)
+    local s = store()
+    if a.kind == 'mute' then assert(not s.muted[key], 'viewer ' .. name .. ' is already muted')
+    else assert(s.muted[key], 'viewer ' .. name .. ' is not muted') end
+    local id = a.kind .. ':' .. key
+    local motion = s.votes[id] or {viewer=name, kind=a.kind, voters={}}
+    s.votes[id] = motion
+    motion.voters[me] = {tick=game.tick, reason=reason}
+    -- The name as the first vote spelt it (or as it was muted).
+    name = a.kind == 'unmute' and s.muted[key].viewer or motion.viewer
+    local list, seen = active(me)
+    local yes, by = 0, {}
+    for voter in pairs(motion.voters) do if seen[voter] then yes = yes + 1; by[#by+1] = voter end end
+    table.sort(by)
+    local needed = math.floor(#list / 2) + 1
+    local out = {viewer=name, kind=a.kind, votes=yes, needed=needed, active=#list}
+    if yes >= needed then
+      s.votes[id] = nil
+      if a.kind == 'mute' then
+        s.muted[key] = {viewer=name, tick=game.tick, reason=reason, by=by}
+        out.result = 'muted'
+        notice(string.format('viewer %s is muted for the rest of the run (%d of %d active agents: %s)', name, yes, #list, table.concat(by, ', ')))
+      else
+        s.muted[key] = nil
+        out.result = 'unmuted'
+        notice(string.format('viewer %s is unmuted (%d of %d active agents: %s)', name, yes, #list, table.concat(by, ', ')))
+      end
+    else
+      notice(string.format('%s votes to %s viewer %s (%d of %d needed): %s', me, a.kind, name, yes, needed, reason))
+    end
+    return out
+  end
+  local function votes()
+    local s, muted, open = store(), {}, {}
+    for _, m in pairs(s.muted) do muted[#muted+1] = {viewer=m.viewer, tick=m.tick, reason=m.reason, by=m.by} end
+    for _, v in pairs(s.votes) do
+      local voters = {}
+      for voter in pairs(v.voters) do voters[#voters+1] = voter end
+      table.sort(voters)
+      open[#open+1] = {viewer=v.viewer, kind=v.kind, voters=voters}
+    end
+    table.sort(muted, function(x, y) return x.tick < y.tick end)
+    table.sort(open, function(x, y) return x.viewer < y.viewer end)
+    return {muted=muted, open=open}
+  end
+  function M.handlers.votes() return votes() end
+  function M.operator.votes() return votes() end
   -- Operator: relay a viewer's chat line. Over the limit it is dropped (not an
   -- error): posted=false, dropped, retry_after_s.
   function M.operator.viewer_say(a)
@@ -87,6 +171,8 @@ return function(api)
     v.recent = recent
     for n, t in pairs(v.by_name) do if now - t >= VIEWER_GAP then v.by_name[n] = nil end end
     local key = name:lower()
+    local muted = store().muted[key]
+    if muted then return {posted=false, dropped='muted', reason=muted.reason, limit='muted by the agents\' vote for the rest of the run'} end
     if v.by_name[key] then
       return {posted=false, dropped='viewer_rate', retry_after_s=seconds(VIEWER_GAP - (now - v.by_name[key])),
         limit='one line per viewer every ' .. seconds(VIEWER_GAP) .. ' s'}

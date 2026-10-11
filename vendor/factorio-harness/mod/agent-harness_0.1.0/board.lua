@@ -471,13 +471,30 @@ return function(api)
   end
   M.resolve, M.agents, M.who = resolve, agents, who
   -- For chat reads (chat.lua): whether a logged message mentions this agent.
+  -- A viewer's line mentions only an agent it names with @ (not @everyone).
   function M.mention_of(index, m)
-    if m.player == index or m.viewer then return nil end
+    if m.player == index or m.notice then return nil end
     local text = m.text:lower()
     for _, a in ipairs(agents()) do
-      if a.index == index then return mention_how(a, text, to_everyone(text)) end
+      if a.index == index then
+        local how = mention_how(a, text, not m.viewer and to_everyone(text))
+        if m.viewer and how ~= '@' then return nil end
+        return how
+      end
     end
     return nil
+  end
+  -- A viewer's line (chat.lua, relayed by the stream service) files a
+  -- mention, which wakes a sleeper, only for an agent it names with @.
+  function M.on_viewer(m)
+    local text = m.text:lower()
+    for _, a in ipairs(agents()) do
+      if mention_how(a, text, false) == '@' then
+        local box = inbox(a.index)
+        box.list[#box.list+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, how='@', viewer=true}
+        while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end
+      end
+    end
   end
   function M.on_message(m)
     local text = m.text:lower()
