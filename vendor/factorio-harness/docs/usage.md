@@ -136,6 +136,61 @@ fh --bot astra call status                                                      
 - Director cameras (operator only): `remote.call("agent_harness","camera", json)` with `{"player":1,"follow":"astra","zoom":0.8}` or `{"player":1,"position":{"x":0,"y":0},"smooth":false}`; `{"player":1,"release":true}` stops following. The player becomes a spectator once (its character is removed), and its view eases toward the target every tick, jumping when the target is over 200 tiles away. `remote.call("agent_harness","cameras")` and the read action `cameras` list them. An attached agent cannot be made a director.
 - Directors: players that ever were cameras, spectators, and players named `pog-cam<N>` or `pog-director` (the camera clients, even before their first camera call). They never appear in `profiles`, and `say` lines are printed only to other players (camera views show the bubbles, not the chat console). A camera's view hides the GUI (minimap, research, side menu, quickbar, shortcut bar, crafting queue, alerts, tool bar, hotkey hints) but keeps entity info; if a camera player comes back with a character (a reconnect), it is made a spectator again within a tick, and its view settings are re-applied every 5 s.
 
+## Team board, reply hints, harness requests, saved plans
+
+Shared team memory kept in the save (contract: `docs/BOARD-API.md` in the pog repo).
+
+```sh
+fh board --args '{"status":"active"}'                       # newest first; mine, kind, since_tick, limit, id
+fh board post --args '{"kind":"request","title":"10 red science assemblers at 0,20","owner":"grok"}'
+fh board post --args '{"kind":"claim","title":"iron smelting","area":{"left_top":{"x":-60,"y":-30},"right_bottom":{"x":-40,"y":-20}}}'
+fh board update --args '{"id":4,"owner":"astra"}'           # take an open unowned item (your own name)
+fh board update --args '{"id":4,"status":"done","note":"6 assemblers running"}'
+fh board request --args '{"title":"...","problem":"...","proposal":"..."}'   # harness_request
+fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
+```
+
+- Items: `task`, `request`, `claim` (needs `area`; owner is the poster), `note`; `harness` items come from
+  `harness_request`. Status `open|claimed|doing|done|blocked|dropped`; naming an owner makes an open item `claimed`.
+- `owner` takes an agent name, display name or player name without `pog-`, any case; an unknown name fails with the
+  roster. Anyone may take an open unowned item or add a note; only the owner or requester changes status, reassigns or
+  releases (`owner: ""`). Titles are cut at 120 bytes and notes at 200 instead of failing; the last 10 notes are kept.
+- `board` returns `items` (list rows carry the last 2 notes and `note_count`; `id` gives one item in full), `matched`
+  and `open_unowned`. `status:"active"` means open, claimed, doing or blocked.
+- A claim overlapping another agent's active claim is posted with a warning. At most 300 items are kept (finished
+  ones pruned first, then notes, then the oldest).
+- `board_events {since_seq, limit}` (for overlays) returns `{seq,tick,by,id,change,title,kind,owner,requested_by,status,text}`
+  oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, or `note`.
+  `board` and `board_events` work for any player, including directors without a character.
+- Board actions never stop the character when they fail (like `say`), and work while a bot is dead.
+- Every reply carries a `team` block when something is new for that agent since its previous request, shown once.
+  `mentions` comes first: every chat message that mentions you and that you have not seen, oldest first, in full and
+  never cut by the other parts' caps (`from @you|@everyone, <age> ago: text`). Then `board` (items assigned to you,
+  changes and notes on your requests, notes on your items, a nudge when another open unowned request passes 2 game
+  minutes), `alerts` (your character being hit, attacked areas with attacker and entities hit, enemy groups
+  gathering, buildings destroyed; at most 8 lines; these replace the old top-level `losses` field) and `reminders`
+  (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
+  request leaves the hints for later.
+- Mentions: `@name` (bot or player name, the name without `pog-`, or the display name, any case) or `@everyone`
+  (also `@all`, `@team`); otherwise the plain name as a whole word. Never the sender. They are filed per agent when
+  the message arrives (from agents, people in a client, and the server), so chat log rotation does not lose them; a
+  `chat` read (not `peek`) delivers the ones it showed, and the rest ride on the next reply. At most 200 wait per
+  agent; beyond that the oldest are counted in a "did not fit" line.
+- `say {text, aloud: true}` marks a line to be spoken on the stream; `chat` (and `peek`) returns `aloud: true` with it.
+- `mention_counts` (read; any player, directors included, or the operator path): per agent `unread_mentions`,
+  `at_mentions` (@name/@everyone), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle
+  agent that was mentioned. It does not consume anything.
+- `harness_request {title, problem, proposal?}` posts a `harness` item owned by `operator` (at most 10 open per agent).
+  The operator answers with notes and a `server: harness vN: ...` chat line.
+- Saved plans: `plan_save {name, steps, guards?, note?}` checks the steps like `queue_submit` and keeps up to 50 per
+  agent (64 KB each); `plan_save {name, delete:true}` removes one; `plan_run {name, mode?, start?}` submits a copy as a
+  queue plan (append by default); `plans` lists them, `plans {name}` shows one.
+- Operator: `tools/harness-requests.py list|show|answer|board|events|mentions` in the pog repo. Underneath, a dispatch
+  request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`
+  and `mention_counts` as `operator`.
+- Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
+  request against a full backlog); nothing runs per tick.
+
 ## Live reload
 
 ```sh

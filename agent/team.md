@@ -23,3 +23,18 @@ already targets your character.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
 - A human or the operator (`server:`) may write in chat. Answer briefly and keep playing.
+
+### Board, team hints, plans, harness requests
+
+- The board is the team's shared list in the game save: `./fh board` (add `--args '{"mine":true}'` or
+  `'{"status":"active"}'`). Post with `./fh board post --args '{"kind":"request","title":"...","owner":"grok"}'`; kinds
+  are `task`, `request`, `claim` (with `"area":{"left_top":{x,y},"right_bottom":{x,y}}`) and `note`.
+- A request without an owner is shown to everyone until someone takes it; take one with
+  `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
+  (`"status":"doing"|"done"|"blocked"`, `"note":"..."`).
+- Address teammates with `@name` (or `@everyone`) in `say`; add `"aloud":true` only for what viewers should hear.
+- Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
+  board items assigned to you or changed, attacks, losses and hits on your character. Each is shown once.
+- `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
+- If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
+  You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.

@@ -163,6 +163,15 @@ return function(api)
     end
   end
   function M.handlers.queue_status(p) return snapshot(queue(p.index)) end
+  -- Checks a plan as queue_submit would (saved plans); returns its byte size.
+  function M.validate(a)
+    local items=steps(a)
+    assert(#items<=MAX_PENDING,'queue capacity exceeded')
+    guards(a)
+    local size=total(items)
+    assert(size<=MAX_BYTES,'queue argument byte budget exceeded')
+    return size
+  end
   function M.handlers.queue_submit(p,a)
     local q=queue(p.index); revision(q,a)
     local items=steps(a)

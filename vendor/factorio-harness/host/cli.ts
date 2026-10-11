@@ -40,6 +40,10 @@ const help = `fh — Factorio agent CLI
   fh blueprint list|inspect|capture|place|copy|cut|paste --args JSON
   fh queue submit --file plan.json           Queue in-game execution; optional --args for mode
   fh queue status|edit|cancel|resume          Inspect/revise pending work; cancel controls immediately
+  fh board [--args '{"mine":true}']          Team board (tasks, requests, claims, notes), newest first
+  fh board post|update|events|request --args JSON   board_post, board_update, board_events, harness_request
+  fh plan save NAME --file plan.json         Save a queue plan by name (yours, up to 50); plan run NAME submits it
+  fh plan run|show|delete NAME, fh plan list Run (--args '{"mode":"replace"}'), inspect or delete saved plans
   fh stream                                 JSON-lines requests in, replies out; one connection
   fh run --file plan.json                    Sequential actions, waits after each timed action
 
@@ -133,6 +137,32 @@ async function main() {
     }
     values.args = JSON.stringify(args);
     positionals[1] = `queue_${operation}`;
+    command = 'call';
+  }
+  if (command === 'board') {
+    const operation = positionals[1] ?? 'list';
+    const actions: Record<string, string> = {list:'board', post:'board_post', update:'board_update', events:'board_events', request:'harness_request'};
+    if (!actions[operation]) throw new Error('board expects list, post, update, events, or request');
+    positionals[1] = actions[operation]!;
+    command = 'call';
+  }
+  if (command === 'plan') {
+    const operation = positionals[1] ?? 'list';
+    if (!['save','run','show','delete','list'].includes(operation)) throw new Error('plan expects save, run, show, delete, or list');
+    const args = object(JSON.parse(values.args ?? '{}'),'args');
+    if (operation !== 'list') {
+      if (!positionals[2]) throw new Error(`plan ${operation} requires a plan NAME`);
+      args.name = positionals[2];
+    }
+    if (operation === 'save') {
+      if (!values.file) throw new Error('plan save requires --file plan.json (a JSON array of queue steps)');
+      const steps: unknown = JSON.parse(await readFile(values.file,'utf8'));
+      if (!Array.isArray(steps)) throw new Error('plan file must be a JSON array of steps: [{"action":...,"args":{...}}, ...]');
+      args.steps = steps;
+    }
+    if (operation === 'delete') args.delete = true;
+    values.args = JSON.stringify(args);
+    positionals[1] = operation === 'save' || operation === 'delete' ? 'plan_save' : operation === 'run' ? 'plan_run' : 'plans';
     command = 'call';
   }
   const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait']);

@@ -216,7 +216,7 @@ return function(api)
 
   -- Attack alerts: gathered groups in visible chunks, and damage to our
   -- entities by enemies summarised per chunk.
-  local MAX_GROUPS,MAX_AREAS=16,64
+  local MAX_GROUPS,MAX_AREAS,INCIDENT_GAP=16,64,3600
   function M.on_group(event)
     local g=event.group
     if not (g and g.valid and g.force.name=='enemy') then return end
@@ -229,7 +229,8 @@ return function(api)
     local command=g.command
     local target=command and (command.target and command.target.valid and command.target.position or command.destination)
     local s=api.state(); s.attack_groups=s.attack_groups or {}
-    table.insert(s.attack_groups,{tick=event.tick,size=#g.members,position={x=round(pos.x),y=round(pos.y)},
+    s.alert_seq=(s.alert_seq or 0)+1
+    table.insert(s.attack_groups,{seq=s.alert_seq,tick=event.tick,size=#g.members,position={x=round(pos.x),y=round(pos.y)},
       target=target and {x=round(target.x),y=round(target.y)} or nil})
     while #s.attack_groups>MAX_GROUPS do table.remove(s.attack_groups,1) end
   end
@@ -250,10 +251,16 @@ return function(api)
         s.damage[oldest]=nil
       end
       area={first=event.tick,hits=0,damage=0,entities={}}; s.damage[key]=area
+    elseif event.tick-area.last>INCIDENT_GAP then
+      -- A quiet minute ends an incident; the next hit starts a new one.
+      area.first,area.hits,area.damage,area.entities,area.by=event.tick,0,0,{},nil
     end
+    -- Every hit is numbered so reply hints can say exactly what is new.
+    s.alert_seq=(s.alert_seq or 0)+1; area.seq=s.alert_seq
     area.last=event.tick; area.hits=area.hits+1; area.damage=area.damage+(event.final_damage_amount or 0)
     area.entities[e.name]=(area.entities[e.name] or 0)+1
     area.by=event.cause and event.cause.valid and event.cause.name or area.by
+    if api.on_character_hit and e.type=='character' then api.on_character_hit(event) end
   end
   function M.alerts(since)
     local s,out=api.state(),{}

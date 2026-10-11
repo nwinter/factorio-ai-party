@@ -25,7 +25,7 @@ return function(api)
     if not (p and p.valid) then return false end
     if p.controller_type == defines.controllers.spectator then return true end
     for _, pattern in ipairs(DIRECTOR_NAMES) do
-      if p.name:match(pattern) then return true end
+      if (p.name or ''):match(pattern) then return true end
     end
     return false
   end

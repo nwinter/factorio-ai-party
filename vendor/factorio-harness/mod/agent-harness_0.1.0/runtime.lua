@@ -388,7 +388,7 @@ function handlers.describe()
       equipment={operation='insert|remove',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
       shoot={position='{x,y} or auto=true',ticks='1..600',radius='1..32',gun_slot='1..3'},equip={slot='gun|ammo|armor',item='owned item name',index='default 1'},
       describe={}, map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)'},
-      status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply as `losses`)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
+      status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
         reports='crafting (hand queue: items, seconds left, head entry); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches, next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name and incidents per 64-tile area with causes, attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | timed_out; status reports kills, ammo_used'},
@@ -453,6 +453,7 @@ function handlers.describe()
   for name,schema in pairs(M.chat and M.chat.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(space and space.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.profiles.schema) do description.actions[name]=schema end
+  for name,schema in pairs(M.board and M.board.schema or {}) do description.actions[name]=schema end
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
   return description
@@ -525,8 +526,8 @@ local function describe_incident(i)
   return string.format('in %s %d destroyed: %s%s, %s',where,i.total,table.concat(names,', '),
     #causes>0 and ' by '..table.concat(causes,', ') or '',span)
 end
--- Losses this player has not been told about, once, on any reply. Incidents
--- that grew since are repeated whole so the totals stay readable.
+-- Losses this player has not been told about, once, in the reply's team
+-- alerts. Incidents that grew since are repeated whole so the totals stay readable.
 local function unseen_losses(p)
   local s=state()
   s.losses_seen=s.losses_seen or {}
@@ -538,10 +539,10 @@ local function unseen_losses(p)
   table.sort(incidents,function(a,b) return a.seq>b.seq end)
   local lines={}
   for n,i in ipairs(incidents) do
-    if n>4 then lines[#lines+1]=string.format('+%d more areas; status alerts lists them',#incidents-4); break end
-    lines[#lines+1]=describe_incident(i)
+    if n>4 then lines[#lines+1]=string.format('+%d more areas with losses; status alerts lists them',#incidents-4); break end
+    lines[#lines+1]=describe_incident(i):gsub('^in ','losses in ',1)
   end
-  return 'buildings destroyed since your last request: '..table.concat(lines,'; ')
+  return lines
 end
 local function recent_alerts(a)
   local since=a.since or game.tick-18000
@@ -3201,9 +3202,17 @@ scheduler=scheduler_module{
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
 clock=clock_module{state=state,lookup=function(index) return M.lookup(index) end}
 for name,handler in pairs(clock.handlers) do handlers[name]=handler end
-M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end}
+M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
+  on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
+-- Team board, reply hints, harness requests and saved plans (board.lua).
+-- Bots are never directors (and game.get_player refuses their indices).
+function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
+M.board=require('board'){state=state,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
+  profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
+  submit=function(p,a) return handlers.queue_submit(p,a) end}
+for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 function handlers.cameras() return M.cameras.list() end
 -- wait_until as a direct call: a timed action that holds the character idle
 -- until the condition is met (outcome met) or the timeout passes (timed_out),
@@ -3234,7 +3243,8 @@ local DOC_ONLY={returns=true,note=true,reports=true,outcomes=true,status=true,us
 local TARGET={'name','unit_number'}
 local EXTRA_ARGS={attach={'offline'},build={'quality'},collect={'count','quality'},rearm={'quality'},refuel={'quality'},
   move_to={'within'},shoot={'auto'},transfer=TARGET,mine={'unit_number'},repair=TARGET,inspect=TARGET,rotate=TARGET,
-  configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET}
+  configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
+  board={'status'},board_update={'status','note'},plan_save={'note'}}
 -- observe forwards to the scoped views; a scoped call is checked as that view.
 local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true}
 local allowed_args
@@ -3258,7 +3268,9 @@ function check_args(action,args)
     set=allowed_args[action]
   end
   for key in pairs(args) do
-    if not set[key] and not (key=='scope' and action~='observe' and VIEW_SCOPES[action]) then
+    -- peek (boolean) on any request: read without consuming this agent's
+    -- team hints (overlays polling as an agent).
+    if not set[key] and not (key=='scope' and action~='observe' and VIEW_SCOPES[action]) and not (key=='peek' and type(args.peek)=='boolean') then
       local valid={}
       for k in pairs(set) do valid[#valid+1]=k end
       table.sort(valid)
@@ -3301,6 +3313,17 @@ local function idle_tick()
 end
 local dispatch_request
 function M.dispatch(request)
+  -- Operator tools (RCON, never fh) read and answer the board as `operator`
+  -- without a player. A failure must stop nobody (the bootstrap stops player 1).
+  if request.operator==true then
+    local ok,result=pcall(function()
+      assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
+      M.check_args(request.action,request.args)
+      return M.board.operator(request.action,request.args)
+    end)
+    if not ok then passive_failed=true; error(result,0) end
+    return result
+  end
   -- A bot is addressed by name and handled under its index from here on
   -- (the bootstrap's failure cleanup reads request.player too).
   if request.bot~=nil then
@@ -3312,7 +3335,13 @@ function M.dispatch(request)
   if request.action=='status' then M.bots.status(request.player,result) end
   if type(result)=='table' and request.action~='describe' and request.action~='profiles' and request.action~='cameras' then
     local p=M.lookup(request.player or 1)
-    if p and p.valid then result.clock=clock_line(p); result.losses=unseen_losses(p) end
+    if p and p.valid then result.clock=clock_line(p) end
+    -- What is new for this agent (mentions, board, attacks/losses, reminders);
+    -- directors and peeking readers (overlays) leave the agent's cursors alone.
+    local peek=type(request.args)=='table' and request.args.peek==true
+    if p and p.valid and not peek and request.action~='board_events' and not M.is_director(p.index) then
+      result.team=M.board.team(p,unseen_losses(p))
+    end
     if clock and request.action=='status' then result.time_mode=clock.report() end
     if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index) end
   end
@@ -3332,6 +3361,20 @@ dispatch_request=function(request)
     local a=request.args or {}
     assert(not p.cheat_mode or a.allow_cheat_mode==true,'cheat mode requires explicit testing opt-in')
     return handler(p,a)
+  end
+  -- Board actions never stop the character on failure. Board reads work for
+  -- any player (directors, overlays); posts work while a bot is dead.
+  local board=M.board.handlers[request.action]
+  if board then
+    local p
+    if M.board.needs_character[request.action] then p=player(request.player)
+    else
+      p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
+      if not M.board.open_reads[request.action] then assert(not M.is_director(p.index),'directors do not post on the board') end
+    end
+    local ok,result=pcall(board,p,request.args or {})
+    if not ok then passive_failed=true; error(result,0) end
+    return result
   end
   -- A peek at the chat is a read any player can make (directors and
   -- overlays have no character).
@@ -3375,7 +3418,7 @@ local function waypoint_goal(p,action,goal)
   return action.waypoint<=#action.waypoints and action.waypoints[action.waypoint].position or goal
 end
 kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions}
-threat=threat_module{state=state,known=known,distance=distance}
+threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event) M.board.on_character_hit(event) end}
 survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end}
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
 space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,

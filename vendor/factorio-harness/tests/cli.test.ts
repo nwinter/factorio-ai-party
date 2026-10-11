@@ -189,3 +189,24 @@ test('fh wait exits nonzero when the action ended badly or is still running at t
     });
   });
 });
+test('board and plan commands map to the board actions',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{}};},async port=>{
+    await cli(port,['board','--bot','astra']);
+    await cli(port,['board','post','--bot','astra','--args','{"kind":"task","title":"x"}']);
+    await cli(port,['board','request','--bot','astra','--args','{"title":"x","problem":"y"}']);
+    const dir=await (await import('node:fs/promises')).mkdtemp('.cache/plan-');
+    const file=`${dir}/plan.json`;
+    await (await import('node:fs/promises')).writeFile(file,'[{"action":"walk","args":{"direction":"east","ticks":5}}]');
+    await cli(port,['plan','save','east','--file',file,'--bot','astra']);
+    await cli(port,['plan','run','east','--bot','astra']);
+    await cli(port,['plan','delete','east','--bot','astra']);
+    await cli(port,['plan','list','--bot','astra']);
+  });
+  assert.deepEqual(seen.map(r=>r.action),['board','board_post','harness_request','plan_save','plan_run','plan_save','plans']);
+  assert.equal(seen[1].args.title,'x'); assert.equal(seen[1].bot,'astra');
+  assert.equal(seen[3].args.name,'east'); assert.equal(seen[3].args.steps[0].action,'walk');
+  assert.equal(seen[4].args.name,'east'); assert.equal(seen[5].args.delete,true);
+  await assert.rejects(cli(1,['plan','run']),(e:any)=>/requires a plan NAME/.test(e.stdout+e.stderr));
+  await assert.rejects(cli(1,['board','bogus']),(e:any)=>/board expects/.test(e.stdout+e.stderr));
+});
