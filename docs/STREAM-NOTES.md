@@ -75,7 +75,9 @@ Every poll (default 3 s), over one persistent RCON connection, using the same
 - `tools/pog.py`'s score Lua (tick, research done/current, production totals), plus `STREAM_LUA` in
   `tools/stream/harness.py`: research progress, the four costliest finished technologies (seeds "recent milestones" on
   start) and the count of electric machines in `low_power`/`no_power` status.
-- Every 30 s: per-item production for the last hour in 2-minute buckets (sparklines).
+- Every 30 s: per-item production for the last hour in 2-minute buckets, for every item in `model.STAGE_ITEMS`
+  plus the science packs (about 35 names; the Lua skips items the game does not know or never made, so a fresh map
+  costs little).
 
 `harness.Harness.dispatch` refuses anything outside `READ_ACTIONS` (`status`, `profiles`, `chat`, `power`, `cameras`)
 and refuses `chat` without `peek`. The only non-read call is the operator `camera` remote function, sent through a
@@ -101,18 +103,32 @@ stops a player.
   lines, the runtime's `describe_incident` text, when the newest hit is under 2 minutes old: "7 lost near (12, -40):
   4 stone wall, 3 gun turret (by 5 small biter)"), death, low power (more than 25% of at least 10 electric machines
   starved, not while paused), research complete. Each key is rate-limited and shown for up to 40 s.
-- Page (`static/`): agent cards (glyph avatar on the agent's colour, display name, harness tag, model label and role,
-  the agent's motto from `profiles` in italics, or a quiet "profile not set" while `profiles` reports no display
-  name, colour or glyph; status dot and current action, location, camera badge), research card with progress and latest milestones,
-  production sparklines (six series: two or more materials plus the newest science packs), chat with avatars,
-  game-time and relative timestamps and age fading, alert toasts over the main camera, and a label on each camera
-  frame naming who it shows. Updates are keyed DOM edits, so only changed parts animate.
-- Colour fallback: any colour works. Name text is lightened until it has 4.5:1 contrast on the panel; glyph ink is
-  black or white, whichever contrasts more with the fill; a fill that disappears into the panel gets a ring; emoji
-  glyphs sit on a dark tint of the colour with a ring in it. Invalid colours fall back to a hue hashed from the name.
-- Density: up to 7 agents use roomy 104 px cards, 8-9 use 86 px (5 rows of 2), both with four lines (name, model,
-  motto, action); 10-12 use 66 px (7 rows) and put the motto after the model on line two. The research card takes
-  the last grid cell and the chat panel gets whatever height is left.
+- Look: eng/art's `factorio-ui.css` (docs/ART-NOTES.md) is loaded before `overlay.css`, which uses its `--fx-*`
+  tokens: grey beveled panels, cream headings with the ridged title filler, deep inset wells for chat and production,
+  alert strips with a coloured left edge, corner brackets on the camera frames (agent colour, red during an attack).
+  The body gets `fx-overlay` only (not `fx-root`, whose box-sizing reset would shift the layout). No `color-mix()`:
+  OBS's browser is Chrome 103. Font: Titillium Web from Google Fonts, falling back to Segoe UI offline.
+- Avatars: `avatar.js` draws each agent's pixel avatar from its `profiles` row (`avatar` parts; unset parts come from
+  the name, so every agent has one before choosing). Cards 48-64 px, chat 32, board and camera labels 24. Without
+  `avatar.js` the old glyph circle is the fallback; the server/operator keep a gear glyph.
+- Page (`static/`): agent cards in three lines (name, harness tag and camera badge; model, then the motto in italics
+  or a quiet "profile not set"; status dot, current action and location), research card, production widget, chat,
+  alert toasts over the main camera, and a label on each camera naming who it shows. Updates are keyed DOM edits.
+- Production widget: a headline of science packs made per minute (all colours summed from flows or score deltas),
+  with a 1-hour trend, one chip per pack colour with its rate, and the stage the factory has reached (Raw resources,
+  Automation, Steel & logistics, Oil, Advanced, Rocket: the furthest stage any item or pack has been made in). Below
+  it four item cells with rate and sparkline. `model.production()` ranks the items made in the last few minutes:
+  weight 3 for the current stage, 2 for one stage back, 1 for two, 0.5 older (iron and copper plates at least 2),
+  times `1 + log10(1 + rate)`. With more than four, the top two stay and the other two cells page through the rest
+  every 10 s. With five or more pack colours the trend and stage label give way to the chips.
+- Chat: the largest panel, messages in a deep well, 18 px text up to three lines, the last ten messages (the oldest
+  fade under the mask), 🔊 on lines an agent marked `aloud`.
+- Colour fallback: any colour works. Name text is lightened until it has 4.5:1 contrast on the grey panel; glyph ink
+  is black or white; a fill that disappears into the panel gets a ring. Invalid colours fall back to a hue hashed from
+  the name (avatar.js has its own palette fallback for the pixel art).
+- Layout of the right column (1032 px): one-line 46 px header, cards, board (156 px, when present), production
+  (92 px), chat (the rest). Cards: up to 7 agents 84 px, 8-9 agents 70 px (5 rows of 2), 10-12 agents 60 px (7 rows).
+  Chat at 9 agents is about 316 px with the board (was 220) and 482 px without; at 12 agents with the board, 242 px.
 
 ## Team board (docs/BOARD-API.md, "Overlay")
 
@@ -125,13 +141,12 @@ stops a player.
   `change` = posted | taken | assigned | released | note | a status. The model keeps an item cache from events
   between `board` reads (a read always wins), drops notes and operator bookkeeping, and bumps interest a little for the
   agent who posted, took or finished something.
-- Panel (between the cards and production, 160 px): open unowned requests (amber when any), items in progress, active
+- Panel (between the cards and production, 156 px): open unowned requests (amber when any), items in progress, active
   claims; the last three events ("Luna posted REQUEST Piercing ammo...", "Grok took ...", "Gemini finished ...",
   "is blocked on" in red) with the agent's avatar and age; one "Harness v4 · plan_save / plan_run macros" line for 10
   minutes after a `harness` item is done (merged with the operator's `server: harness vN: ...` chat line when both
   arrive within 3 minutes); and up to three active claims with avatars. Without a board runtime the panel is hidden
-  and the layout is as before. With it, the header shrinks to 64 px and production to one 84 px strip (no title,
-  values per minute), leaving chat about 220 px (three messages) at 9 agents and about 185 px at 12.
+  and chat takes its height.
 
 ## Director
 
@@ -140,15 +155,24 @@ bonus for time off air, halved when idle). It holds a subject for at least `main
 `side_dwell` 12 s). After that a challenger needs 1.6x + 2 the current score to cut, or after `max_dwell` (60 s) the
 camera rotates to the best agent no camera is showing. Voluntary cuts are at least 4 s apart across cameras. Secondary
 cameras take the next best agents. When a free agent is within 40 tiles of a camera's subject, the camera frames both
-(midpoint, zoom `60 / (distance + 24)`, clamped 0.3..0.7), keeps that partner until 50 tiles, and re-sends the
+(midpoint, zoom `60 / (distance + 24)`, at least 0.3 and at most the activity zoom), keeps that partner until 50 tiles, and re-sends the
 midpoint when it moves 6 tiles (at most every 2 s). If a higher camera takes a lower camera's subject, the lower
 camera takes the higher camera's previous subject (swap).
 
-Attacks: a fresh (under 8 s old) attack or loss alert cuts the main camera at once, ignoring the dwell: to the
-attacked agent, else to the nearest agent within 50 tiles of the attacked area, else to the area itself (`camera`
-with `position`, zoom 0.5). It holds 20 s (`attack_hold`), at most one attack cut per 45 s (`attack_spacing`), and
-the camera label shows the alert text ("⚔ Base under attack near (-149, 117)"). `attack_cut: false` in the run
-config's `director` turns it off. A 30-minute mock run gets about five such cuts, all on the west wall.
+Zoom follows what the subject is doing (Factorio zoom, 1 = normal play view): fighting (`combat`, or a shoot / attack /
+kite action) 1.05, building 0.95, mining / crafting / loading 0.85, idle 0.75, walking 0.5. A new activity must last
+`zoom_settle` (5 s) before the zoom follows, so a short walk between two builds stays close and only long walks
+widen; while an agent is thinking between actions the last zoom is kept; changes under 0.1 are ignored and zoom
+changes are at most one per 5 s per camera. Zoom changes are smooth `camera` calls and do not count as cuts. A
+30-minute 9-agent mock: about 1.2 cuts and 0.6-0.9 zoom changes per camera per minute.
+
+Combat: a fresh (under 8 s old) attack or loss alert cuts the main camera at once, ignoring the dwell: to the agent
+in the fight (its status `combat` went true), else to the nearest agent within 50 tiles of the attacked area (zoom
+1.05, following), else to the area itself (`camera` with `position`, zoom 0.8). It holds 20 s (`attack_hold`), at most
+one such cut per 45 s (`attack_spacing`). A death cuts to where the agent fell (zoom 1.1, 12 s), even inside the
+spacing. The camera label shows the alert text with ⚔ or 💀 on a red edge. Status has no health field, so "taking
+damage" is the `combat` flag plus base areas in `alerts.attacked`. `attack_cut: false` in the run config's `director`
+turns all of it off.
 
 Each decision is appended to `tools/stream/logs/director-<start>.jsonl`: time, slot, reason, target agents and zoom,
 the exact `camera` body sent, the harness reply, and the top five scores. Tune with:
@@ -172,18 +196,29 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - Board, mottos and alerts (2026-10-10, eng/stream2): the page was run in jsdom against `/state.json` from the 9-agent
   mock (board stats, three events with avatars, claims, "profile not set" on Sonnet, power/attack/loss banners, the
   attack label on the main camera) and from world n, read-only with `--no-camera` (the real mottos, Sonnet "profile
-  not set", board panel hidden because n's runtime has no board). Not yet seen rendered: this session could not
-  reach OBS or a browser, so there is no new screenshot. The image at the top predates the board panel.
+  not set", board panel hidden because n's runtime has no board).
+- Art kit, avatars, chat, production, zoom and combat cuts (2026-10-10, after merging main with eng/board, eng/art
+  and eng/audio): `selftest.py` covers activity zoom (a 2 s walk keeps the build zoom, a 7 s one widens), the death
+  cut inside the attack spacing, the SPM headline and the stage ranking, and that no Lua sent through `one_line()`
+  carries a `--` comment (one did, and broke the flows query on world n until fixed). jsdom against the 9-agent mock
+  and world n (read-only, `--no-camera`): a pixel avatar on every card and chat line, the science row, four item cells,
+  and with injected late-game data five pack chips (313/min) and the item cells paging every 10 s. The mock director
+  cut main to "Luna died" at zoom 1.1. The flows query ran on world n (30 buckets per item, all zero: n is finished).
+- Not yet seen rendered: this session cannot reach OBS or a browser, so the layout above (heights, widths, the
+  science row at 640 px, fonts) is computed, not looked at. The image at the top predates the board panel and the
+  art kit.
 
 ## What's left
 
-- Screenshot of the board layout: `python3 tools/stream/serve.py --mock --port 8788` with the tunnel up, then
-  `tools/.venv/bin/python tools/stream/obs_shot.py docs/stream-overlay-board9.png --reload`, and check the 4-line cards
-  (86 px) and the 160 px board panel at 1280x720 (`--size 1280x720`) for readability.
-- eng/board accepts `peek` only on `chat`: `status`/`board` with `peek` fail as an unknown argument, so until eng/board
-  allows it the overlay's reads consume the reading bot's (the first configured agent's) `team` hints. Reported to
-  the eng/board session.
+- Screenshot of the new layout: `python3 tools/stream/serve.py --mock --run tools/stream/runs/mock9.json --port 8788`
+  with the tunnel up, then `tools/.venv/bin/python tools/stream/obs_shot.py docs/stream-overlay-fx9.png --reload`.
+  Check: the science row does not clip, three-line cards at 70 px, chat at about 316 px, pixel avatars crisp at 48
+  and 24 px, Titillium Web loads in OBS (else Segoe UI), and the same at 1280x720 (`--size 1280x720`).
+- World n's runtime still rejects `peek` on `status`; the merged eng/board runtime accepts it on any request, so
+  worlds running the current runtime get peek reads.
 - The board has only been checked against the shapes in eng/board's code, not a running world with it.
+- Zoom levels are guesses from the director client at 1080p; tune `zoom_*` in the run config's `director` after
+  seeing real fights and builds on the camera feeds.
 
 - The `camera` function and `profiles` exist only in the contract so far. Once eng/bots lands: confirm the `profiles`
   reply shape (`{profiles: [...]}` or a bare list; both are accepted), which identity the read should carry (the
@@ -196,6 +231,7 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - Base-attack alerts use status `alerts.attacked` (tested against the shape in `threat.lua`, not yet against a real
   attack: world c is peaceful). Loss banners parse `alerts.latest` text, which is not a structured field.
 - Research credit goes to the most recently active agents, since nothing says who fed the labs.
-- Production uses coloured lines, not Factorio item icons (the client has no Space Age data and the icons are not
-  served anywhere).
+- Production uses coloured lines and pack swatches, not Factorio item icons (no game images are copied, per
+  docs/ART-NOTES.md). `score` totals cover only `tools/pog.py`'s item list; other items get rates from flows (30 s
+  refresh).
 - The 8787 port conflict on the Mac (see above).

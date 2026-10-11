@@ -108,6 +108,10 @@ def main():
     else:
         raise AssertionError("chat without peek was not refused")
 
+    # Lua sent through one_line() must not carry `--` comments (they would swallow the rest of the joined line)
+    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA"):
+        assert "--" not in harness.one_line(getattr(harness, name)), f"{name} has a Lua comment"
+
     run = {"agents": {"astra": {"model": "GPT-6 Astra", "harness": "Codex"}, "luna": {"model": "GPT-6 Luna"}}}
     fake = FakeHarness()
     src = LiveSource("test", run, harness=fake)
@@ -194,6 +198,34 @@ def main():
     d2.last_attack_cut -= 60  # past attack_spacing
     cams3 = d2.step(m2.snapshot(now + 3), now + 3)
     assert cams3["main"]["agents"] == ["luna"], cams3  # luna is 10 tiles from this one: follow luna
+
+    # zoom follows activity once it has lasted zoom_settle; a death cuts to where the agent fell, spacing or not
+    sent3 = []
+    d3 = Director([{"slot": "main", "player": 3}], lambda body: sent3.append(body) or {"ok": True}, None)
+    m3 = Model({"agents": {"astra": {}}})
+    m3.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "active": "build"}]})
+    m3.agents["astra"].interest = 10
+    t = time.time()
+    assert d3.step(m3.snapshot(t), t)["main"]["zoom"] == d3.cfg["zoom_build"]
+    m3.ingest({"agents": [{"name": "astra", "position": {"x": 3, "y": 0}, "active": "walk"}]})
+    assert d3.step(m3.snapshot(t + 2), t + 2)["main"]["zoom"] == d3.cfg["zoom_build"]  # a short walk stays close
+    assert d3.step(m3.snapshot(t + 7.1), t + 7.1)["main"]["zoom"] == d3.cfg["zoom_walk"]   # a long one goes wide
+    assert len(sent3) == 2 and sent3[-1]["zoom"] == d3.cfg["zoom_walk"], sent3
+    d3.last_attack_cut = t + 7  # inside attack_spacing: deaths still cut
+    m3.ingest({"agents": [{"name": "astra", "position": {"x": 40, "y": 5}, "alive": False}]})
+    cams4 = d3.step(m3.snapshot(t + 7.5), t + 7.5)
+    assert cams4["main"]["agents"] == [] and cams4["main"]["alert"] == "death" and "died" in cams4["main"]["attack"], cams4
+    assert sent3[-1]["position"] == {"x": 40, "y": 5} and sent3[-1]["zoom"] == d3.cfg["death_zoom"], sent3[-1]
+
+    # production: science per minute headline, items ranked by the stage the factory has reached
+    m4 = Model({})
+    m4.ingest({"tick": 0, "game_seconds": 0, "produced": {"iron-plate": 0, "automation-science-pack": 0}})
+    m4.ingest({"tick": 7200, "game_seconds": 120, "produced": {"iron-plate": 600, "copper-plate": 300, "iron-ore": 900,
+               "advanced-circuit": 20, "automation-science-pack": 60, "chemical-science-pack": 30}})
+    sci = m4.science(time.time())
+    assert sci["spm"] == 45.0 and sci["stage"] == 3 and len(sci["packs"]) == 2, sci
+    names = [r["item"] for r in m4.production(time.time())]
+    assert names == ["iron-plate", "copper-plate", "advanced-circuit", "iron-ore"], names  # ore is stage 0: last
 
     log = os.path.join(os.environ.get("TMPDIR", "/tmp"), "selftest-director.jsonl")
     d = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], src.send_camera, log)

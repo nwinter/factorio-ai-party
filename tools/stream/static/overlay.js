@@ -4,7 +4,8 @@
   const params = new URLSearchParams(location.search);
   if (params.has("preview")) document.body.classList.add("preview");
 
-  const PANEL = [13, 15, 21];
+  const PANEL = [49, 48, 49]; // --fx-frame (factorio-ui.css)
+  const DEEP = [36, 35, 36];
   const SLOT_LABEL = { main: "Main", cam2: "Cam 2", cam3: "Cam 3" };
   const ITEM = {
     "iron-plate": ["Iron plate", "#9fb3c8"], "copper-plate": ["Copper plate", "#e0895a"],
@@ -14,7 +15,19 @@
     "military-science-pack": ["Military sci.", "#9aa0a6"], "chemical-science-pack": ["Blue science", "#4aa3ff"],
     "production-science-pack": ["Purple sci.", "#b06cf0"], "utility-science-pack": ["Yellow sci.", "#f5d142"],
     "space-science-pack": ["Space sci.", "#f0f0f0"],
+    "iron-ore": ["Iron ore", "#7d97b0"], "copper-ore": ["Copper ore", "#c8784a"], "coal": ["Coal", "#8d8d8d"],
+    "stone": ["Stone", "#b5a27a"], "stone-brick": ["Stone brick", "#c9b48a"], "iron-gear-wheel": ["Gears", "#a9b6c4"],
+    "copper-cable": ["Copper cable", "#e6965f"], "transport-belt": ["Belts", "#f2c230"], "inserter": ["Inserters", "#e8b04a"],
+    "firearm-magazine": ["Ammo", "#e3c25a"], "piercing-rounds-magazine": ["Piercing ammo", "#e07a5a"],
+    "stone-wall": ["Walls", "#b8b0a0"], "engine-unit": ["Engines", "#c4a383"], "sulfur": ["Sulfur", "#e8e05a"],
+    "battery": ["Batteries", "#b0c8a0"], "solid-fuel": ["Solid fuel", "#9a9a9a"], "processing-unit": ["Blue circuit", "#5a8cff"],
+    "electric-engine-unit": ["Elec. engines", "#7fc0e0"], "flying-robot-frame": ["Robot frames", "#9fb0c0"],
+    "low-density-structure": ["Low density", "#d0a070"], "rocket-fuel": ["Rocket fuel", "#f08a3a"],
+    "rocket-part": ["Rocket parts", "#e8e8e8"], "satellite": ["Satellite", "#d8e0e8"],
   };
+  const SHORT_PACK = { "automation-science-pack": "Red", "logistic-science-pack": "Green", "military-science-pack": "Military",
+    "chemical-science-pack": "Blue", "production-science-pack": "Purple", "utility-science-pack": "Yellow", "space-science-pack": "Space" };
+  const PROD_CELLS = 4, PROD_PINNED = 2, PROD_ROTATE_S = 10;
   const ALERT_ICON = { attack: "⚔️", loss: "🔥", death: "💀", power: "⚡", research: "🔬", info: "ℹ️" };
   // board event verbs as a viewer reads them ("Astra took: ...")
   const VERB = { posted: "posted", taken: "took", assigned: "assigned", released: "released", started: "started",
@@ -58,7 +71,8 @@
     const glyph = contrast(base, [255, 255, 255]) >= contrast(base, [17, 17, 17]) ? "#ffffff" : "#111111";
     // ring: when the fill nearly disappears into the panel, outline it in a lightened version of itself
     const ring = contrast(base, PANEL) < 1.8 ? toHex(mix(base, [255, 255, 255], 0.55)) : "rgba(0,0,0,0.22)";
-    const p = { fill: toHex(base), ink: toHex(ink), glyph, ring };
+    // edge: the ink at ~55% for camera rings; tint: a dark wash of the colour behind emoji glyphs (no color-mix in OBS)
+    const p = { fill: toHex(base), ink: toHex(ink), glyph, ring, edge: toHex(ink) + "8c", tint: toHex(mix(base, DEEP, 0.72)) };
     paletteCache.set(key, p);
     return p;
   }
@@ -68,6 +82,8 @@
     el.style.setProperty("--agent-ink", p.ink);
     el.style.setProperty("--glyph-ink", p.glyph);
     el.style.setProperty("--ring", p.ring);
+    el.style.setProperty("--agent-edge", p.edge);
+    el.style.setProperty("--agent-tint", p.tint);
   }
 
   // ---------- small DOM helpers ----------
@@ -98,6 +114,20 @@
     return a;
   }
   function fillAvatar(a, agent, size) {
+    // agent-designed pixel art (avatar.js, docs/ART-NOTES.md); unset parts are drawn from the name
+    if (window.PogAvatar && agent.name && !agent.tool) {
+      a.className = "avatar pix" + (size ? " " + size : "");
+      applyPalette(a, agent);
+      const sig = "pix|" + agent.name + "|" + (agent.color || "") + "|" + JSON.stringify(agent.avatar || null);
+      if (a.dataset.sig !== sig) {
+        a.dataset.sig = sig;
+        try {
+          a.innerHTML = window.PogAvatar.svg({ name: agent.name, display_name: agent.display_name, color: agent.color,
+            avatar: agent.avatar || undefined }, 48, { title: agent.display_name || agent.name });
+          return;
+        } catch (err) { console.error(err); }
+      } else return;
+    }
     const g = glyphOf(agent);
     a.className = "avatar" + (size ? " " + size : "") + (g.two ? " two" : "") + (g.emoji ? " emo" : "");
     applyPalette(a, agent);
@@ -159,13 +189,12 @@
         c.harness = el("div", "harness");
         r1.append(c.name, c.badge, c.harness);
         c.model = el("div", "model");
-        c.motto = el("div", "motto");
         const doing = el("div", "doing");
         c.dot = el("span", "dot");
         c.txt = el("span", "txt");
         c.where = el("span", "where");
         doing.append(c.dot, c.txt, c.where);
-        body.append(r1, c.model, c.motto, doing);
+        body.append(r1, c.model, doing);
         c.root.append(c.av, body);
         cards.set(a.name, c);
         box.appendChild(c.root);
@@ -178,15 +207,14 @@
       // motto from `profiles`; an agent that never called `profile` gets a quiet note instead
       const unset = a.profile_set === false;
       const motto = unset ? "profile not set" : a.motto ? "“" + clean(a.motto) + "”" : "";
-      const msig = [a.model, a.role, motto, density].join("|");
+      // line two: model, then the motto (or a quiet "profile not set"; the role when there is neither)
+      const msig = [a.model, a.role, motto].join("|");
       if (c.model.dataset.sig !== msig) {
         c.model.dataset.sig = msig;
         c.model.textContent = "";
         c.model.append(el("b", "", a.model || "model ?"));
-        if (density === "3" && motto) c.model.append(document.createTextNode(" · "), el("i", "", motto));
+        if (motto) c.model.append(document.createTextNode(" · "), el(unset ? "span" : "i", unset ? "unset" : "", motto));
         else if (a.role) c.model.append(document.createTextNode(" · " + a.role));
-        setText(c.motto, motto);
-        c.motto.classList.toggle("unset", unset);
       }
       c.dot.className = "dot " + a.activity;
       let doing = a.action || "";
@@ -207,7 +235,7 @@
       const top = el("div", "top");
       researchCard.tech = el("div", "tech");
       researchCard.pct = el("div", "pct");
-      top.append(researchCard.tech, researchCard.pct);
+      top.append(el("span", "rlabel", "Research"), researchCard.tech, researchCard.pct);
       const bar = el("div", "bar");
       researchCard.fill = el("i");
       bar.append(researchCard.fill);
@@ -236,9 +264,50 @@
     return { line, area: line + ` L ${w} ${h} L 0 ${h} Z` };
   }
   const fmtRate = (v) => (v == null ? "–" : v === 0 ? "0" : v >= 1000 ? (v / 1000).toFixed(1) + "k" : v >= 100 ? Math.round(v) : v >= 10 ? v.toFixed(0) : v.toFixed(1));
+  // production: science per minute (all packs) as the headline, then four item cells. The model ranks items by the
+  // stage the factory has reached; the top two stay put and the other two cells page through the rest.
   function renderProduction(s) {
+    const sci = s.science || {};
+    const spm = $("spm");
+    const has = sci.spm != null;
+    setText(spm, has ? fmtRate(sci.spm) : "none yet");
+    spm.classList.toggle("none", !has);
+    spm.nextElementSibling.style.display = has ? "" : "none";
+    const sp = sparkPath(sci.series, 120, 26);
+    const spark = $("spm-spark");
+    spark.style.display = sp ? "" : "none";
+    if (sp) { spark.querySelector(".l").setAttribute("d", sp.line); spark.querySelector(".a").setAttribute("d", sp.area); }
+    const packs = $("packs");
+    const psig = (sci.packs || []).map((p) => p.item + ":" + fmtRate(p.rate)).join(",");
+    if (packs.dataset.sig !== psig) {
+      packs.dataset.sig = psig;
+      packs.textContent = "";
+      for (const p of sci.packs || []) {
+        const [, color] = ITEM[p.item] || ["", "#ccc"];
+        const chip = el("span", "pack");
+        chip.title = SHORT_PACK[p.item] || p.item;
+        const swatch = el("i");
+        swatch.style.setProperty("--c", color);
+        chip.append(swatch, document.createTextNode(fmtRate(p.rate)));
+        packs.append(chip);
+      }
+    }
+    setText($("stage-label"), sci.stage_label ? sci.stage_label + " stage" : "");
+    $("sci").classList.toggle("many", (sci.packs || []).length >= 5); // five or more pack chips: drop spark + stage
+
+    const all = s.production || [];
+    let items = all;
+    if (all.length > PROD_CELLS) {
+      const rest = all.slice(PROD_PINNED);
+      const per = PROD_CELLS - PROD_PINNED;
+      const pages = Math.ceil(rest.length / per);
+      const page = Math.floor((s.now || 0) / PROD_ROTATE_S) % pages;
+      items = all.slice(0, PROD_PINNED).concat(rest.slice(page * per, page * per + per));
+    }
+    renderSparks(items);
+  }
+  function renderSparks(items) {
     const box = $("sparks");
-    const items = s.production || [];
     const sig = items.map((x) => x.item).join(",");
     if (box.dataset.sig !== sig) {
       box.dataset.sig = sig;
@@ -251,7 +320,7 @@
         const lbl = el("div", "lbl");
         lbl.append(el("span", "", label), el("span", "val"));
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svg.setAttribute("viewBox", "0 0 180 32");
+        svg.setAttribute("viewBox", "0 0 140 14");
         svg.setAttribute("preserveAspectRatio", "none");
         svg.innerHTML = `<defs><linearGradient id="g-${it.item}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity="0.35"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>` +
           `<path class="a" fill="url(#g-${it.item})"/><path class="l" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
@@ -263,7 +332,7 @@
       const cell = box.querySelector(`[data-item="${it.item}"]`);
       if (!cell) continue;
       setText(cell.querySelector(".val"), fmtRate(it.rate));
-      const p = sparkPath(it.series, 180, 32);
+      const p = sparkPath(it.series, 140, 14);
       if (p) {
         cell.querySelector("path.l").setAttribute("d", p.line);
         cell.querySelector("path.a").setAttribute("d", p.area);
@@ -285,7 +354,7 @@
   const shown = new Map();
   function renderChat(s) {
     const list = $("chat-list");
-    const msgs = (s.chat || []).slice(-7);
+    const msgs = (s.chat || []).slice(-10); // the well clips the oldest; the mask fades them out
     const keys = new Set();
     for (const m of msgs) {
       const key = String(m.seq ?? m.tick + m.from + m.text);
@@ -293,8 +362,8 @@
       let node = shown.get(key);
       const ag = agentFor(s, m);
       if (!node) {
-        node = el("div", "msg" + (ag ? "" : " server"));
-        node._av = avatar(ag || { name: m.from || "server", display_name: m.from || "server", color: "#3b4252", glyph: "⚙" }, "sm");
+        node = el("div", "msg" + (ag ? "" : " server") + (m.aloud ? " aloud" : ""));
+        node._av = avatar(ag || { name: m.from || "server", display_name: m.from || "server", color: "#5a4a2e", glyph: "⚙", tool: true }, "sm");
         const content = el("div", "content");
         const meta = el("div", "meta");
         node._from = el("span", "from");
@@ -455,18 +524,21 @@
       const cam = (s.cameras || {})[slot];
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
       const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "");
-      label.classList.toggle("attack", !!(cam && cam.attack));
-      if (cam && cam.attack && !agents.length) { // a base attack nobody is near: the camera shows the place
+      const death = !!(cam && cam.attack && cam.alert === "death");
+      label.classList.toggle("attack", !!(cam && cam.attack) && !death);
+      label.classList.toggle("death", death);
+      if (cam && cam.attack && !agents.length) { // a base attack nobody is near, or where an agent fell
         if (label.dataset.sig !== sig) {
           label.dataset.sig = sig;
           label.textContent = "";
-          label.append(el("span", "ico", "⚔️"), el("span", "", cam.attack));
+          label.append(el("span", "ico", death ? "💀" : ALERT_ICON[cam.alert] || "⚔️"), el("span", "", cam.attack));
         }
-        frame.style.borderColor = "rgba(248,113,113,0.55)";
+        frame.style.borderColor = "rgba(224,78,58,0.75)";
+        frame.style.setProperty("--bracket", "rgba(224,78,58,0.9)");
         label.classList.add("on");
         continue;
       }
-      if (!agents.length) { label.classList.remove("on"); frame.style.borderColor = ""; continue; }
+      if (!agents.length) { label.classList.remove("on"); frame.style.borderColor = ""; frame.style.removeProperty("--bracket"); continue; }
       if (label.dataset.sig !== sig) {
         label.dataset.sig = sig;
         label.textContent = "";
@@ -484,7 +556,9 @@
         : agents.length > 1 ? "working together" : lead.activity === "acting" && lead.action ? humanItem(lead.action)
         : lead.activity === "thinking" ? "thinking" : "";
       setText(label._doing, doing ? "· " + doing : "");
-      frame.style.borderColor = palette(lead).ink + "66";
+      frame.style.borderColor = cam.attack ? "rgba(224,78,58,0.75)" : palette(lead).ink + "66";
+      frame.style.setProperty("--bracket", cam.attack ? "rgba(224,78,58,0.9)" : palette(lead).ink + "b0");
+      applyPalette(label, lead);
       label.classList.add("on");
     }
   }

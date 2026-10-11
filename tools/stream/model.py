@@ -20,14 +20,29 @@ HALF_LIFE = 75.0  # seconds; interest decays toward 0 with this half-life
 ACTION_WEIGHT = {
     "build": 3.0, "place": 3.0, "construct": 3.5, "blueprint": 4.0, "build_blueprint": 4.0, "rotate": 1.0,
     "mine": 1.2, "craft": 1.0, "insert": 1.2, "take": 1.0, "feed": 1.2, "walk": 0.6, "path": 0.6,
-    "attack": 6.0, "shoot": 6.0, "research": 2.0, "wait_until": 0.2, "wait": 0.2,
+    "attack": 6.0, "shoot": 6.0, "kite": 6.0, "research": 2.0, "wait_until": 0.2, "wait": 0.2,
 }
 SCIENCE = ["automation-science-pack", "logistic-science-pack", "military-science-pack", "chemical-science-pack",
            "production-science-pack", "utility-science-pack", "space-science-pack"]
-SPARK_ITEMS = ["iron-plate", "copper-plate", "steel-plate", "electronic-circuit", "advanced-circuit", "plastic-bar"] + SCIENCE
+# Items the production widget can show, by game stage (0 raw .. 5 rocket). The widget leads with science per minute
+# and fills the rest with what is being made now, favouring the stage the factory has reached.
+STAGE_ITEMS = [
+    (0, ["iron-plate", "copper-plate", "stone-brick", "iron-ore", "copper-ore", "coal", "stone"]),
+    (1, ["iron-gear-wheel", "copper-cable", "electronic-circuit", "transport-belt", "inserter"]),
+    (2, ["steel-plate", "firearm-magazine", "piercing-rounds-magazine", "stone-wall", "engine-unit"]),
+    (3, ["plastic-bar", "sulfur", "advanced-circuit", "battery", "solid-fuel"]),
+    (4, ["processing-unit", "electric-engine-unit", "flying-robot-frame", "low-density-structure", "rocket-fuel"]),
+    (5, ["rocket-part", "satellite"]),
+]
+ITEM_STAGE = {n: s for s, names in STAGE_ITEMS for n in names}
+STAGE_LABELS = ["Raw resources", "Automation", "Steel & logistics", "Oil", "Advanced", "Rocket"]
+SCIENCE_STAGE = {"automation-science-pack": 1, "logistic-science-pack": 2, "military-science-pack": 2,
+                 "chemical-science-pack": 3, "production-science-pack": 4, "utility-science-pack": 4,
+                 "space-science-pack": 5}
+SPARK_ITEMS = [n for _, names in STAGE_ITEMS for n in names] + SCIENCE
 VERBS = {"build": "building", "place": "placing", "construct": "constructing", "build_blueprint": "placing blueprint",
          "blueprint": "placing blueprint", "mine": "mining", "craft": "crafting", "insert": "loading", "take": "taking",
-         "feed": "feeding", "walk": "walking", "path": "walking", "shoot": "fighting", "attack": "fighting",
+         "feed": "feeding", "walk": "walking", "path": "walking", "shoot": "fighting", "attack": "fighting", "kite": "fighting",
          "rotate": "rotating", "wait_until": "waiting", "wait": "waiting", "research": "researching"}
 THINK_WINDOW = 90  # seconds after an action ends during which an inactive agent counts as "thinking"
 CHANGELOG_RE = re.compile(r"^\s*(?:server:\s*)?harness (v[\w.]+):\s*(.+)$", re.I)  # operator chat "server: harness vN: ..."
@@ -102,6 +117,7 @@ class Agent:
         self.died_at = None
         self.connected = True
         self.voice = None  # profile.voice: a voice id from tools/stream/voices.py
+        self.avatar = None  # profile.avatar: parts for avatar.js (docs/ART-NOTES.md); None draws the name default
 
     def bump(self, amount, now):
         self.decay(now)
@@ -172,6 +188,8 @@ class Model:
         for key in ("kind", "display_name", "color", "glyph", "motto", "voice"):
             if a.get(key):
                 setattr(ag, key, a[key])
+        if "avatar" in a:
+            ag.avatar = a["avatar"] if isinstance(a["avatar"], dict) else None
         if "profile_set" in a:
             ag.profile_set = a["profile_set"]
         if a.get("position"):
@@ -434,33 +452,72 @@ class Model:
         dirs = ["E", "NE", "N", "NW", "W", "SW", "S", "SE"]
         return f"{int(round(d / 10) * 10)} m {dirs[int((ang + 22.5) // 45) % 8]}"
 
+    def _rates(self):
+        """Per-minute rates over the last ~2.5 game minutes from `score` total deltas (score's items only)."""
+        if len(self.prod_samples) < 2:
+            return {}
+        t1, g1, p1 = self.prod_samples[-1]
+        for t0, g0, p0 in self.prod_samples:
+            if g1 - g0 <= 150:
+                break
+        if g1 <= g0:
+            return {}
+        return {k: (p1.get(k, 0) - p0.get(k, 0)) * 60.0 / (g1 - g0) for k in p1}
+
+    def _item_row(self, n, latest, rate):
+        series = self.flows.get(n)
+        if series:
+            series = [round(c / 2.0, 1) for c in series]  # 2-minute buckets -> per minute
+        else:
+            series = self._series_from_totals(n)
+        total = latest.get(n) or (round(sum(self.flows.get(n) or [])) or 0)
+        r = rate[n] if n in rate else (sum(series[-2:]) / len(series[-2:]) if series else None)
+        return {"item": n, "total": total, "rate": None if r is None else round(r, 1), "series": series}
+
     def production(self, now):
-        items = []
+        """Items for the production widget, most relevant first (up to 12, science packs excluded: see science())."""
         latest = self.prod_samples[-1][2] if self.prod_samples else {}
-        # rate over the last ~2 game minutes from total deltas
-        rate = {}
-        if len(self.prod_samples) >= 2:
-            t1, g1, p1 = self.prod_samples[-1]
-            for t0, g0, p0 in self.prod_samples:
-                if g1 - g0 <= 150:
-                    break
-            if g1 > g0:
-                rate = {k: (p1.get(k, 0) - p0.get(k, 0)) * 60.0 / (g1 - g0) for k in p1}
-        names = [n for n in SPARK_ITEMS if latest.get(n, 0) > 0 or sum(self.flows.get(n) or []) > 0]
-        science = [n for n in names if n in SCIENCE]
-        materials = [n for n in names if n not in SCIENCE]
-        # keep the panel to 6 rows: newest science tiers matter most once there are many
-        pick = (materials[:max(2, 6 - len(science))] + science[-4:])[:6]
-        for n in pick:
-            series = self.flows.get(n)
-            if series:
-                series = [round(c / 2.0, 1) for c in series]  # 2-minute buckets -> per minute
-            else:
-                series = self._series_from_totals(n)
-            items.append({"item": n, "total": latest.get(n, 0),
-                          "rate": round(rate[n], 1) if n in rate else (series[-1] if series else None),
-                          "series": series})
-        return items
+        rate = self._rates()
+        stage = self.stage(latest)
+        rows = []
+        for n in ITEM_STAGE:
+            if not (latest.get(n, 0) > 0 or sum(self.flows.get(n) or []) > 0):
+                continue
+            row = self._item_row(n, latest, rate)
+            recent = sum((self.flows.get(n) or [])[-3:]) > 0 or (row["rate"] or 0) > 0
+            if not recent:
+                continue
+            d = stage - ITEM_STAGE[n]
+            w = 3.0 if d <= 0 else 2.0 if d == 1 else 1.0 if d == 2 else 0.5
+            if n in ("iron-plate", "copper-plate"):
+                w = max(w, 2.0)  # the base of everything stays on screen
+            row["stage"] = ITEM_STAGE[n]
+            row["score"] = round(w * (1 + math.log10(1 + max(0.0, row["rate"] or 0))), 3)
+            rows.append(row)
+        rows.sort(key=lambda r: -r["score"])
+        return rows[:12]
+
+    def stage(self, latest=None):
+        """Furthest stage the factory has produced anything from (0 raw .. 5 rocket)."""
+        latest = latest if latest is not None else (self.prod_samples[-1][2] if self.prod_samples else {})
+        made = [n for n in list(ITEM_STAGE) + SCIENCE if latest.get(n, 0) > 0 or sum(self.flows.get(n) or []) > 0]
+        return max([ITEM_STAGE.get(n, SCIENCE_STAGE.get(n, 0)) for n in made] or [0])
+
+    def science(self, now):
+        """Headline: science packs made per minute (all colours), with the per-pack split and a per-minute series."""
+        latest = self.prod_samples[-1][2] if self.prod_samples else {}
+        rate = self._rates()
+        packs = []
+        for n in SCIENCE:
+            if latest.get(n, 0) > 0 or sum(self.flows.get(n) or []) > 0:
+                packs.append(self._item_row(n, latest, rate))
+        spm = round(sum(p["rate"] or 0 for p in packs), 1) if packs else None
+        width = max((len(p["series"]) for p in packs), default=0)
+        series = [round(sum((p["series"][i - width + len(p["series"])] if i - width + len(p["series"]) >= 0 else 0)
+                            for p in packs), 1) for i in range(width)]
+        stage = self.stage(latest)
+        return {"spm": spm, "series": series, "stage": stage, "stage_label": STAGE_LABELS[stage],
+                "packs": [{"item": p["item"], "rate": p["rate"], "total": p["total"]} for p in packs]}
 
     def _series_from_totals(self, item, buckets=30):
         if len(self.prod_samples) < 2:
@@ -491,6 +548,7 @@ class Model:
                 "action": self.action_text(ag), "active": ag.active, "position": ag.position,
                 "location": self.location(ag), "interest": round(ag.interest, 2),
                 "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen, "voice": ag.voice,
+                "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at,
             })
         res = self.research
         return {
@@ -501,6 +559,7 @@ class Model:
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
             "production": self.production(now),
+            "science": self.science(now),
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
             "cameras": cameras or {},

@@ -2,7 +2,8 @@
 
 Rules (docs/BOTS-API.md): main camera on the most interesting agent with a minimum dwell (~20 s); secondary
 cameras on the next two; when another agent is within ~40 tiles of a camera's subject, frame both (midpoint,
-zoomed out). Every decision is appended to a JSONL log so the weights can be tuned after a stream.
+zoomed out). Zoom follows the subject's activity (close for fights and building, wide for walks that last), and
+fights, base attacks and deaths cut the main camera straight away. Every decision is appended to a JSONL log so the weights can be tuned after a stream.
 """
 import json, math, time
 
@@ -15,8 +16,14 @@ DEFAULTS = {
     "switch_bias": 2.0,
     "cut_spacing": 4.0,      # seconds between voluntary cuts on any camera, so cameras do not all cut at once
     "pair_distance": 40.0,   # tiles
-    "solo_zoom": 0.7,
-    "side_zoom": 0.6,
+    "solo_zoom": 0.75,       # idle / thinking / unknown activity (Factorio zoom: 1 = normal play view, higher = closer)
+    "side_zoom": 0.75,
+    "zoom_fight": 1.05,      # zoom follows the subject's activity: close for fights and building, wide for walks
+    "zoom_build": 0.95,
+    "zoom_work": 0.85,       # mining, crafting, loading machines
+    "zoom_walk": 0.5,
+    "zoom_settle": 5.0,      # an activity must last this long before the zoom follows it (short walks stay close)
+    "zoom_delta": 0.1,       # ignore smaller zoom changes
     "airtime_bonus": 0.015,  # interest per second since an agent was last on any camera (capped)
     "airtime_cap": 2.5,
     "onair_penalty": 0.8,    # main camera discounts agents a secondary camera already shows (fewer forced cuts)
@@ -26,9 +33,16 @@ DEFAULTS = {
     "attack_hold": 20.0,     # seconds the main camera stays on an attack
     "attack_spacing": 45.0,  # at most one attack cut this often
     "attack_fresh": 8.0,     # an alert older than this is no longer news
-    "attack_zoom": 0.5,
+    "attack_zoom": 1.05,     # following an agent in a fight
+    "area_zoom": 0.8,        # a base area under attack with nobody near
     "attack_near": 50.0,     # follow an agent within this many tiles of a base attack instead of a fixed position
+    "death_hold": 12.0,      # a death cuts to where the agent fell (ignores attack_spacing)
+    "death_zoom": 1.1,
 }
+FIGHT = {"shoot", "attack", "kite"}
+BUILD = {"build", "place", "construct", "blueprint", "build_blueprint", "build_path", "rotate", "repair", "deconstruct"}
+WORK = {"mine", "craft", "insert", "take", "feed", "gather", "research", "fuel"}
+WALK = {"walk", "path", "move_to", "follow"}
 
 
 def dist(a, b):
@@ -48,6 +62,7 @@ class Director:
         self.last_cut = 0.0
         self.last_attack_cut = -1e9
         self.attacks_seen = set()
+        self.want = {}  # slot -> (zoom the subject's activity asks for, since)
 
     # -- scoring ----------------------------------------------------------------------------------------------
     def scores(self, agents, now):
@@ -60,6 +75,21 @@ class Director:
             idle_penalty = 0.5 if a["activity"] == "idle" else 1.0
             out[a["name"]] = round((a["interest"] + bonus) * idle_penalty + (0.01 if a["activity"] == "acting" else 0), 3)
         return out
+
+    def zoom_for(self, a, base=None):
+        """Zoom for what an agent is doing now: fights and building close, walks wide."""
+        kind = str(a.get("active") or "").split(":")[0]
+        if a.get("combat") or kind in FIGHT:
+            return self.cfg["zoom_fight"]
+        if kind in BUILD:
+            return self.cfg["zoom_build"]
+        if kind in WORK:
+            return self.cfg["zoom_work"]
+        if kind in WALK:
+            return self.cfg["zoom_walk"]
+        if a.get("activity") == "thinking" and not kind:
+            return None  # between actions: keep whatever the last action asked for
+        return base or self.cfg["solo_zoom"]
 
     def frame(self, subject, agents_by_name, taken, zoom, partner=None):
         """Single follow, or a pair framing when someone free is close to the subject. A current partner is kept
@@ -87,13 +117,21 @@ class Director:
     def attack_target(self, snapshot, by_name, scores, now):
         """A fresh attack alert -> (subject agent or None, position or None, alert), or None. Each alert is
         considered once; cuts are spaced by attack_spacing."""
-        if not self.cfg["attack_cut"] or now - self.last_attack_cut < self.cfg["attack_spacing"]:
+        if not self.cfg["attack_cut"]:
             return None
+        spaced = now - self.last_attack_cut >= self.cfg["attack_spacing"]
         for al in sorted(snapshot.get("alerts") or [], key=lambda a: -a["t"]):
-            if al["kind"] not in ("attack", "loss") or al["id"] in self.attacks_seen:
+            if al["kind"] not in ("attack", "loss", "death") or al["id"] in self.attacks_seen:
                 continue
+            if al["kind"] != "death" and not spaced:
+                continue  # may still be news once the spacing has passed
             self.attacks_seen.add(al["id"])
             if now - al["t"] > self.cfg["attack_fresh"]:
+                continue
+            if al["kind"] == "death":  # the agent is down: show where it fell, close
+                p = (by_name.get(al.get("agent")) or {}).get("position") or al.get("position")
+                if p:
+                    return None, {"x": round(p["x"], 1), "y": round(p["y"], 1)}, al
                 continue
             if al.get("agent") in scores:
                 return al["agent"], None, al
@@ -123,21 +161,26 @@ class Director:
             cur = self.state.get(main)
             if subject and cur and cur["subject"] == subject:
                 cur["since"] = now - self.cfg["main_dwell"] + self.cfg["attack_hold"]  # already there: just stay
+                cur.update(label=al["text"], kind=al["kind"], attack_t=now)
                 self.last_attack_cut = now
             elif subject:
                 target = self.frame(subject, by_name, {subject}, self.cfg["attack_zoom"])
                 if cur:
                     released.append(cur["subject"])
-                self.apply(self.slots[0], dict(target, subject=subject, label=al["text"],
+                self.want[main] = (self.cfg["attack_zoom"], now)
+                self.apply(self.slots[0], dict(target, subject=subject, label=al["text"], kind=al["kind"], attack_t=now,
+                                               solo_zoom=self.cfg["attack_zoom"],
                                                since=now - self.cfg["main_dwell"] + self.cfg["attack_hold"]),
                            f"attack: {al['text']}", scores, now)
                 self.last_attack_cut = now
             else:
                 if cur and cur["subject"] in by_name:
                     released.append(cur["subject"])
+                death = al["kind"] == "death"
                 self.apply(self.slots[0], {"agents": [], "subject": "@attack", "position": position,
-                                           "zoom": self.cfg["attack_zoom"], "label": al["text"], "since": now,
-                                           "until": now + self.cfg["attack_hold"]},
+                                           "zoom": self.cfg["death_zoom" if death else "area_zoom"],
+                                           "label": al["text"], "kind": al["kind"], "since": now, "attack_t": now,
+                                           "until": now + self.cfg["death_hold" if death else "attack_hold"]},
                            f"attack: {al['text']}", scores, now)
                 self.last_attack_cut = now
         for i, slot in enumerate(self.slots):
@@ -153,7 +196,7 @@ class Director:
                     self.last_on_air[n] = now
                 continue
             dwell = self.cfg["main_dwell"] if i == 0 else self.cfg["side_dwell"]
-            zoom = slot.get("zoom") or (self.cfg["solo_zoom"] if i == 0 else self.cfg["side_zoom"])
+            base = slot.get("zoom") or (self.cfg["solo_zoom"] if i == 0 else self.cfg["side_zoom"])
             slot_scores = scores
             if i == 0:
                 shown = {t["subject"] for s2, t in self.state.items() if t and s2 != name}
@@ -173,7 +216,23 @@ class Director:
                 t = self.state.get(other["slot"])
                 if j != i and t and now - t["since"] < (self.cfg["main_dwell"] if j == 0 else self.cfg["side_dwell"]):
                     held.add(t["subject"])
+            # zoom follows the subject's activity once it has lasted zoom_settle (a two-second walk stays close)
+            want = self.zoom_for(by_name[subject], base)
+            same = cur is not None and cur["subject"] == subject
+            if want is None:
+                want = cur.get("solo_zoom", cur["zoom"]) if same else base
+            if same:
+                w = self.want.get(name)
+                if not w or abs(w[0] - want) > 1e-6:
+                    self.want[name] = w = (want, now)
+                zoom = want if now - w[1] >= self.cfg["zoom_settle"] else cur.get("solo_zoom", cur["zoom"])
+            else:
+                self.want[name] = (want, now)
+                zoom = want
             target = self.frame(subject, by_name, taken | held | {subject}, zoom, partner)
+            target["solo_zoom"] = zoom
+            if cur is not None and cur["subject"] == subject:
+                target.update({k: cur[k] for k in ("label", "kind", "attack_t") if k in cur})
             taken.update(target["agents"])
             if cur is None or cur["subject"] != subject:
                 if cur is not None:
@@ -182,11 +241,15 @@ class Director:
             elif cur["agents"] != target["agents"]:
                 self.apply(slot, dict(target, subject=subject, since=cur["since"]),
                            "pair" if len(target["agents"]) > 1 else "unpair", scores, now)
-            elif "position" in target:
-                moved = dist(cur["position"], target["position"])
-                if moved >= self.cfg["reframe_tiles"] and now - cur.get("sent", 0) >= self.cfg["reframe_every"]:
-                    self.apply(slot, dict(target, subject=subject, since=cur["since"]), "reframe", scores, now,
-                               quiet=True)
+            elif "position" in target and dist(cur["position"], target["position"]) >= self.cfg["reframe_tiles"] \
+                    and now - cur.get("sent", 0) >= self.cfg["reframe_every"]:
+                self.apply(slot, dict(target, subject=subject, since=cur["since"]), "reframe", scores, now,
+                           quiet=True)
+            elif abs(target["zoom"] - cur["zoom"]) >= self.cfg["zoom_delta"] - 1e-9 \
+                    and now - cur.get("sent", 0) >= self.cfg["zoom_settle"]:
+                act = str(by_name[subject].get("active") or "").split(":")[0]
+                self.apply(slot, dict(target, subject=subject, since=cur["since"]),
+                           f"zoom {target['zoom']} ({act or by_name[subject].get('activity') or 'idle'})", scores, now)
             for n in self.state[name]["agents"] if self.state.get(name) else []:
                 self.last_on_air[n] = now
         return self.public(now)
@@ -233,7 +296,7 @@ class Director:
             result = {"ok": False, "error": str(e)}
         if target is not None:
             target["sent"] = now
-        if reason not in ("reframe", "pair", "unpair"):
+        if reason not in ("reframe", "pair", "unpair") and not reason.startswith("zoom "):
             self.last_cut = now
         self.state[name] = target
         top = sorted(scores.items(), key=lambda kv: -kv[1])[:5]
@@ -257,6 +320,7 @@ class Director:
             if t:
                 out[slot["slot"]] = {"agents": t["agents"], "zoom": t["zoom"], "since": t["since"],
                                      "player": slot["player"], "pair": len(t["agents"]) > 1}
-                if t.get("label") and now - t.get("sent", now) < self.cfg["attack_hold"]:
+                if t.get("label") and now - t.get("attack_t", now) < self.cfg["attack_hold"]:
                     out[slot["slot"]]["attack"] = t["label"]
+                    out[slot["slot"]]["alert"] = t.get("kind") or "attack"
         return out
