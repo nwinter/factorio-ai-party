@@ -7,7 +7,8 @@
 
 Serves http://HOST:PORT/ (the overlay page for the OBS browser source), /state.json, /events (SSE, one full
 snapshot per update), /director.json (recent camera decisions), and the voice queue: POST /audio (caster.py pushes
-clips), /audio-events (SSE, new clips), /audio/clip/ID, POST /audio/played and /audio/status (page playback reports). Director decisions are appended to
+clips), /audio-events (SSE, new clips), GET /segments and POST /segment (timed shots for the casters and the
+director, tools/stream/segments.py), /audio/clip/ID, POST /audio/played and /audio/status (page playback reports). Director decisions are appended to
 tools/stream/logs/director-<start>.jsonl. Only read actions and the operator `camera` function are ever sent.
 """
 import argparse, json, mimetypes, os, sys, threading, time, traceback
@@ -18,6 +19,7 @@ sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 
 from director import Director  # noqa: E402
+from segments import Segments  # noqa: E402
 from model import Model  # noqa: E402
 
 STATIC = os.path.join(HERE, "static")
@@ -105,8 +107,9 @@ class AudioHub:
                     "clips": len(self.order)}
 
 
-def make_handler(hub, decisions, audio=None):
+def make_handler(hub, decisions, audio=None, segments=None):
     audio = audio or AudioHub()
+    segments = segments or Segments()
 
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
@@ -137,6 +140,8 @@ def make_handler(hub, decisions, audio=None):
                 return self.events()
             if path == "/audio-events":
                 return self.audio_events()
+            if path == "/segments":
+                return self.send(200, json.dumps(segments.types()).encode(), "application/json")
             if path == "/audio/status":
                 return self.send(200, json.dumps(audio.status()).encode(), "application/json")
             if path.startswith("/audio/clip/"):
@@ -170,6 +175,9 @@ def make_handler(hub, decisions, audio=None):
                 ctype = body.pop("ctype", "audio/mpeg")
                 meta = audio.push(body, data, ctype)
                 return self.send(200, json.dumps(meta).encode(), "application/json")
+            if path == "/segment":
+                code, reply = segments.request(body)
+                return self.send(code, json.dumps(reply, ensure_ascii=False).encode(), "application/json")
             if path == "/audio/played":
                 audio.played(body)
                 return self.send(200, b"{}", "application/json")
@@ -263,6 +271,7 @@ def main():
     os.makedirs(a.log_dir, exist_ok=True)
     log_path = os.path.join(a.log_dir, time.strftime("director-%Y%m%d-%H%M%S.jsonl"))
     director = Director(slots, camera, log_path, **(run.get("director") or {}))
+    segments = Segments(**(run.get("segments") or {}))
     model = Model(run)
     hub = Hub()
     lock = threading.Lock()
@@ -288,7 +297,8 @@ def main():
             try:
                 with lock:
                     snap = model.snapshot(now, cams)
-                cams = director.step(snap, now)
+                snap["segment"] = segments.step(snap, now)
+                cams = director.step(snap, now, segments.camera())
                 snap["cameras"] = cams
                 for ag in snap["agents"]:
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
@@ -308,7 +318,7 @@ def main():
     threading.Thread(target=poller, daemon=True).start()
     threading.Thread(target=ticker, daemon=True).start()
     try:
-        server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions))
+        server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

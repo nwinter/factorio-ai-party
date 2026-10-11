@@ -153,6 +153,7 @@
     }
     const m = l.cams.main;
     if (m) Object.assign($("alerts").style, { left: m[0] + "px", width: m[2] + "px", top: m[1] + 64 + "px" });
+    if (m) Object.assign($("segment").style, { left: m[0] + "px", top: m[1] + "px", width: m[2] + "px", height: m[3] + "px" });
   });
 
   // ---------- render ----------
@@ -582,6 +583,98 @@
     }
   }
 
+  // ---------- segments (tools/stream/segments.py): drawn from segment.facts only, so the casters match the screen ----------
+  const FULL = { production: 1, research: 1, recap: 1 }; // these cover the main camera; spotlight/overview are a card on it
+  function factRow(label, value, cls) {
+    const r = el("div", "srow" + (cls ? " " + cls : ""));
+    r.append(el("span", "k", label), el("span", "v", value == null || value === "" ? "–" : String(value)));
+    return r;
+  }
+  function segmentBody(seg) {
+    const f = seg.facts || {};
+    const body = el("div", "sbody");
+    if (seg.type === "production") {
+      const head = el("div", "shead");
+      head.append(el("span", "big", f.science_per_min != null ? fmtRate(f.science_per_min) : "–"), el("span", "unit", " science / min"),
+        el("span", "stage", f.stage ? f.stage + " stage" : ""));
+      body.append(head);
+      const packs = el("div", "spacks");
+      for (const [name, rate] of Object.entries(f.packs || {})) packs.append(el("span", "chip", name + " " + fmtRate(rate)));
+      body.append(packs);
+      const t = el("div", "stable");
+      t.append(el("div", "th", "Item"), el("div", "th num", "now /min"), el("div", "th num", "10 min ago"));
+      for (const it of f.items || []) {
+        const icon = itemIcon(it.id || it.item.replace(/ /g, "-"), 32);
+        const name = el("div", "td item");
+        if (icon) name.append(icon);
+        name.append(el("span", "", it.item));
+        const delta = it.rate_now != null && it.rate_10min_ago ? it.rate_now - it.rate_10min_ago : 0;
+        t.append(name, el("div", "td num" + (delta > 0 ? " up" : delta < 0 ? " down" : ""), fmtRate(it.rate_now)),
+          el("div", "td num faint", fmtRate(it.rate_10min_ago)));
+      }
+      body.append(t);
+      if (f.biggest_gain || f.biggest_drop)
+        body.append(el("div", "snote", [f.biggest_gain && "Up most: " + f.biggest_gain, f.biggest_drop && "Down most: " + f.biggest_drop].filter(Boolean).join("   ·   ")));
+    } else if (seg.type === "research") {
+      body.append(el("div", "shead big", f.current || "No research queued"));
+      const bar = el("div", "bar sbar");
+      const fill = el("i");
+      fill.style.width = (f.progress_pct || 0) + "%";
+      bar.append(fill);
+      body.append(bar, factRow("Progress", f.progress_pct != null ? f.progress_pct + "%" : null),
+        factRow("Technologies done", f.done_count), factRow("Latest", (f.recent || []).join(", ")));
+    } else if (seg.type === "recap") {
+      body.append(factRow("Science per minute", f.science_per_min != null ? fmtRate(f.science_per_min) : null),
+        factRow("Research finished", (f.research_done || []).join(", ") || "none"),
+        factRow("Board items done", (f.board_done || []).join(", ") || "none"),
+        factRow("Attacks", f.attacks || 0), factRow("Deaths", (f.deaths || []).length ? f.deaths.join(", ") : "none"));
+    } else if (seg.type === "spotlight") {
+      body.append(factRow(f.model || "model ?", f.motto ? "“" + clean(f.motto) + "”" : ""),
+        factRow("Now", [humanItem(f.doing || ""), f.location].filter(Boolean).join(" · ")));
+      if ((f.said || []).length) body.append(factRow("Said", "“" + clean(f.said[f.said.length - 1]) + "”", "said"));
+      if ((f.claims || []).length) body.append(factRow("Claims", f.claims.join(", ")));
+    } else if (seg.type === "overview") {
+      body.append(factRow("Agents in the world", f.agents_in_world + " of " + f.agents_total),
+        factRow("Spread", "about " + f.spread_tiles + " tiles from the centre"),
+        factRow("Areas", (f.locations || []).join(", ")));
+    }
+    return body;
+  }
+  function renderSegment(s) {
+    const box = $("segment");
+    const seg = s.segment;
+    const show = !!seg && seg.state !== "ended";
+    if (!show) {
+      if (!box.hidden && !box.classList.contains("out")) {
+        box.classList.add("out");
+        setTimeout(() => { box.hidden = true; box.classList.remove("out"); box.dataset.sig = ""; }, 700);
+      }
+      return;
+    }
+    const sig = seg.id;
+    if (box.dataset.sig !== sig) {
+      box.dataset.sig = sig;
+      box.classList.remove("out");
+      box.className = (FULL[seg.type] ? "full" : "lower") + " seg-" + seg.type;
+      box.textContent = "";
+      const panel = el("div", "spanel");
+      const title = el("div", "stitle");
+      title.append(el("span", "tag", seg.type === "spotlight" ? "Spotlight" : seg.type === "overview" ? "Overview" : "Analysis"),
+        el("span", "", seg.title));
+      if (seg.type === "spotlight") {
+        const ag = (s.agents || []).find((a) => a.name === (seg.facts || {}).name);
+        if (ag) { applyPalette(title, ag); title.prepend(avatar(ag, "sm")); }
+      }
+      box._time = el("div", "stime");
+      box._time.append(el("i"));
+      panel.append(title, segmentBody(seg), box._time);
+      box.append(panel);
+      box.hidden = false;
+    }
+    const total = Math.max(1, seg.ends - seg.started);
+    box._time.firstChild.style.width = Math.max(0, Math.min(1, (seg.ends - s.now) / total)) * 100 + "%";
+  }
+
   function render(s) {
     state = s;
     renderHead(s);
@@ -591,6 +684,7 @@
     renderBoard(s);
     renderAlerts(s);
     renderCams(s);
+    renderSegment(s);
   }
 
   // ---------- feed: SSE with a polling fallback ----------

@@ -227,6 +227,49 @@ def main():
     names = [r["item"] for r in m4.production(time.time())]
     assert names == ["iron-plate", "copper-plate", "advanced-circuit", "iron-ore"], names  # ore is stage 0: last
 
+    # segments: request -> starting -> live -> ended; spacing; spotlight holds main; a fight cuts it; lulls fill
+    from segments import Segments
+    seg = Segments(lull_after=1e9)
+    sent5 = []
+    d5 = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], lambda b: sent5.append(b) or {"ok": True}, None)
+    m5 = Model({"agents": {"astra": {}, "luna": {}}})
+    m5.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "active": "build"},
+                          {"name": "luna", "position": {"x": 300, "y": 40}, "active": "mine"}], "tick": 0, "game_seconds": 0,
+               "produced": {"iron-plate": 0}})
+    m5.ingest({"tick": 7200, "game_seconds": 120, "produced": {"iron-plate": 600, "automation-science-pack": 60}})
+    m5.agents["astra"].interest = 10
+    t5 = time.time()
+    s5 = m5.snapshot(t5)
+    s5["segment"] = seg.step(s5, t5)
+    assert {r["type"]: r["available"] for r in seg.types(t5)["types"]}["attack_replay"] is False
+    code, rep = seg.request({"type": "nope"}, t5)
+    assert code == 400, rep
+    code, rep = seg.request({"type": "production", "seconds": 999, "by": "caster", "reason": "lull"}, t5)
+    assert code == 200 and rep["seconds"] == 45 and rep["facts"]["science_per_min"] == 30.0, rep
+    assert seg.request({"type": "research"}, t5)[0] == 409  # busy
+    assert seg.step(s5, t5 + 1)["state"] == "starting" and seg.step(s5, t5 + 4)["state"] == "live"
+    assert seg.camera() is None  # production leaves the cameras alone
+    assert seg.step(s5, t5 + 60)["state"] == "ended" and seg.step(s5, t5 + 66) is None
+    code, rep = seg.request({"type": "spotlight", "params": {"agent": "luna"}}, t5 + 70)
+    assert code == 409 and rep["error"] == "busy", rep  # 180 s spacing between starts
+    seg.last_start -= 200
+    code, rep = seg.request({"type": "spotlight", "params": {"agent": "luna"}}, t5 + 70)
+    assert code == 200 and rep["facts"]["agent"] == "Luna", rep
+    seg.step(s5, t5 + 70)
+    cams5 = d5.step(s5, t5 + 70, seg.camera())
+    assert cams5["main"]["agents"] == ["luna"] and cams5["main"]["segment"] == "Spotlight: Luna", cams5
+    assert cams5["cam2"]["agents"] == ["astra"] and sent5[-2]["follow"] == "luna", (cams5, sent5)
+    m5.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "combat": True}]})
+    s6 = m5.snapshot(time.time())  # alerts expire by wall time
+    st = seg.step(s6, t5 + 75)
+    assert st["state"] == "ended" and st["cut"] == "attack", st
+    seg.last_start = -1e9
+    rep = seg.request({"type": "overview"}, time.time())[1]
+    assert rep.get("error") == "declined", rep  # the fight is still news
+    lull = Segments(lull_after=0, spacing=0)
+    lull.step(s5, time.time() + 1)
+    assert lull.queue and lull.queue["by"] == "director" and lull.queue["type"] == "production", lull.queue
+
     log = os.path.join(os.environ.get("TMPDIR", "/tmp"), "selftest-director.jsonl")
     d = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], src.send_camera, log)
     cams = d.step(snap)

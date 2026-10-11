@@ -146,7 +146,9 @@ class Director:
         return None
 
     # -- main loop --------------------------------------------------------------------------------------------
-    def step(self, snapshot, now=None):
+    def step(self, snapshot, now=None, segment=None):
+        """segment: Segments.camera() ({follow | position, zoom, until, label, id}) while a segment holds the main
+        camera; an attack still cuts in (and the segment ends itself when it sees the alert)."""
         now = now or time.time()
         agents = snapshot["agents"]
         by_name = {a["name"]: a for a in agents}
@@ -183,12 +185,33 @@ class Director:
                                            "until": now + self.cfg["death_hold" if death else "attack_hold"]},
                            f"attack: {al['text']}", scores, now)
                 self.last_attack_cut = now
+        cur = self.state.get(main) if main else None
+        if segment and not attack and not (cur and cur["subject"] == "@attack" and now < cur["until"]):
+            if not cur or cur.get("seg") != segment["id"]:
+                follow = segment.get("follow")
+                if follow and follow not in by_name:
+                    follow = None
+                target = {"agents": [follow] if follow else [], "subject": "@segment", "zoom": segment["zoom"],
+                          "seg": segment["id"], "until": segment["until"], "since": now, "segment": segment["label"]}
+                if follow:
+                    target["follow"] = follow
+                elif segment.get("position"):
+                    target["position"] = segment["position"]
+                if follow or "position" in target:
+                    if cur and cur["subject"] in by_name:
+                        released.append(cur["subject"])
+                    self.apply(self.slots[0], target, f"segment: {segment['label']}", scores, now)
+        elif cur and cur["subject"] == "@segment" and (not segment or cur.get("seg") != segment["id"]):
+            cur["until"] = 0  # the segment ended or was cut: back to normal directing below
         for i, slot in enumerate(self.slots):
             name = slot["slot"]
             cur = self.state.get(name)
-            if cur and cur["subject"] == "@attack":
+            if cur and cur["subject"] in ("@attack", "@segment"):
                 if now < cur["until"]:
-                    continue  # holding on a base attack nobody is near
+                    taken.update(cur["agents"])
+                    for n in cur["agents"]:
+                        self.last_on_air[n] = now
+                    continue  # holding on a base attack nobody is near, or a segment's shot
                 cur = None
             elif attack and i == 0 and attack[0]:
                 taken.update(cur["agents"])  # just cut to the attacked agent; secondaries take the rest
@@ -323,4 +346,6 @@ class Director:
                 if t.get("label") and now - t.get("attack_t", now) < self.cfg["attack_hold"]:
                     out[slot["slot"]]["attack"] = t["label"]
                     out[slot["slot"]]["alert"] = t.get("kind") or "attack"
+                if t.get("segment") and now < t.get("until", 0):
+                    out[slot["slot"]]["segment"] = t["segment"]
         return out
