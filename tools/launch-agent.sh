@@ -83,8 +83,9 @@ case $kind in
     claude_settings nosandbox
     ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
     pane=$(new_pane)
-    # --rules is part of the system prompt, which compaction keeps.
-    herdr pane run "$pane" "cd '$dir' && $ctx_env grok -m $model --effort $effort --permission-mode dontAsk --rules '$compact_rule' \"\$(cat '$prompt')\"" >/dev/null
+    # --rules is part of the system prompt, which compaction keeps. The GROK_CLAUDE_* switches stop Grok from loading
+    # the owner's Claude Code skills and MCP servers (shake1: a 17K-character skills reminder and MCP failure notices).
+    herdr pane run "$pane" "cd '$dir' && GROK_CLAUDE_SKILLS_ENABLED=false GROK_CLAUDE_MCPS_ENABLED=false $ctx_env grok -m $model --effort $effort --permission-mode dontAsk --rules '$compact_rule' \"\$(cat '$prompt')\"" >/dev/null
     ;;
   agy)
     model=${6:-gemini-3.8-flash-high}
