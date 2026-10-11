@@ -592,7 +592,20 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["agents"] = [agent_facts(s, a["name"]) for a in (s.get("agents") or [])][:12]
         f["title"] = s.get("title")
     analyst_facts(f, e, s)
-    return {k: v for k, v in f.items() if v not in (None, [], {})}
+    f = {k: v for k, v in f.items() if v not in (None, [], {})}
+    # Event beats carry the run's standing numbers as background: shake6's beats had a median of 13 numbers in the
+    # facts, and 13% of lines crammed three or more ("Rocket fuel at twenty two percent" on a raid, shake7 13:00).
+    if e["kind"] not in STORY_KINDS and e.get("angle") not in STORY_ANGLES:
+        bg = {k: f.pop(k) for k in BACKGROUND if k in f}
+        if bg:
+            f["background"] = dict(bg, note="standing numbers for context; mention one only if it matters here")
+    return f
+
+
+BACKGROUND = ("team_size", "game_minutes", "stage", "science_packs_made", "science_packs_per_minute", "researching",
+              "technologies_done", "latest_research", "production_per_minute")
+STORY_KINDS = ("open", "research", "research_start", "lull", "power")
+STORY_ANGLES = ("pace", "explain", "production", "research")
 
 
 # ---- writers -----------------------------------------------------------------------------------------------------
@@ -1008,7 +1021,7 @@ class TemplateWriter:
         self.recent = deque(maxlen=12)
 
     def write(self, who, e, facts, recent, names):
-        flat = dict(facts)
+        flat = dict(facts.get("background") or {}, **facts)
         for key in ("agent", "viewer_message"):
             for k, v in (facts.get(key) or {}).items():
                 flat[f"{key}_{k}"] = v
@@ -1023,7 +1036,7 @@ class TemplateWriter:
                 flat[f"{pre}_at"] = at_phrase(src["where"])
         if flat.get("cam_motto") and flat["cam_motto"][-1] not in ".!?":
             flat["cam_motto"] += "."
-        for k, v in (facts.get("researching") or {}).items():
+        for k, v in (flat.get("researching") or {}).items():
             flat[f"researching_{k}"] = v
         if (facts.get("on_screen_now") or {}).get("title"):
             flat["seg_title"] = facts["on_screen_now"]["title"]

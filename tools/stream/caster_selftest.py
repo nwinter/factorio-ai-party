@@ -562,6 +562,21 @@ with tempfile.TemporaryDirectory() as runs:
     cs6.a = caster.argparse.Namespace(run_dir=os.path.join(runs, "shake5"))
     check("Caster.shift reads --run-dir", cs6.shift()["this_shift"] == "shift 2", str(cs6.shift()))
 
+# Event beats carry the standing numbers as background; story beats keep them up front
+snapB = {"agents": [], "game_time": "3h10m", "science": {"stage_label": "Advanced", "spm": 30},
+         "research": {"label": "Rocket fuel", "progress": 0.22, "done_count": 32}}
+fa_ = caster.facts_for({"kind": "attack", "text": "Base under attack: boiler", "t": now, "prio": 9}, snapB)
+fr_ = caster.facts_for({"kind": "research", "text": "Research complete: Flammables", "t": now, "prio": 7}, snapB)
+check("background: an attack beat tucks research and science rate away; a research beat keeps them",
+      "researching" not in fa_ and fa_["background"]["researching"]["percent"] == 22 and "note" in fa_["background"]
+      and fr_.get("researching") and "background" not in fr_, str(fa_))
+tw_ = caster.TemplateWriter(caster.random.Random(2))
+tw_.T = {"attack": {"color": ["Meanwhile {researching_tech} sits at {researching_percent} percent."]}}
+check("background: templates still read it", tw_.write("color", {"kind": "attack"}, fa_, [], []) ==
+      "Meanwhile Rocket fuel sits at 22 percent.")
+check("background: numbers in it still count as facts", caster.check_line("Rocket fuel at twenty-two percent.", fa_,
+                                                                         [], []) is None)
+
 # Shake6 study P1 item 3: planets reached, and the base game gets no Space Age notes
 base_snap = {"space": {"space_age": False, "active": False, "planets": ["Nauvis"]}}
 sa_snap = {"space": {"space_age": True, "active": False, "planets": ["Nauvis"]}}
