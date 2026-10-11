@@ -16,15 +16,21 @@
   style.textContent = `
     #voice { position: absolute; left: 24px; width: 1208px; top: 704px; transform: translateY(calc(-100% - 18px));
              display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
-    #voice .cap { max-width: 1000px; padding: 8px 18px 9px 10px; border-radius: 14px; display: flex; gap: 12px;
-                  align-items: flex-start; background: rgba(10, 12, 18, 0.82); border: 1px solid rgba(255,255,255,0.10);
-                  color: #eef0f5; font: 500 22px/1.32 "Segoe UI", system-ui, sans-serif; opacity: 0;
+    #voice .cap { max-width: 1000px; padding: 7px 18px 8px 7px; border-radius: 0 3px 3px 0; display: flex; gap: 12px;
+                  align-items: center; background: rgba(49, 48, 49, 0.93); border-left: 4px solid var(--edge, #ff9f1c);
+                  box-shadow: inset 1px 1px 0 rgba(255,255,255,0.14), inset -1px -1px 0 rgba(0,0,0,0.55), 0 6px 22px rgba(0,0,0,0.6);
+                  color: #e3e3e3; font: 500 22px/1.32 "Titillium Web", "Segoe UI", system-ui, sans-serif; opacity: 0;
                   transform: translateY(8px); transition: opacity 250ms ease, transform 250ms ease; }
+    #voice .face { flex: none; width: 48px; height: 48px; border-radius: 2px; overflow: hidden; background: #1f1e1f;
+                   box-shadow: 0 0 0 1px rgba(0,0,0,0.85), 0 0 0 2px rgba(255,255,255,0.08); }
+    #voice .face svg { display: block; width: 100%; height: 100%; }
+    #voice .body { display: flex; flex-direction: column; min-width: 0; }
+    #voice .line { display: flex; align-items: center; gap: 8px; }
     #voice .cap.on { opacity: 1; transform: none; }
-    #voice .who { flex: none; font-weight: 700; font-size: 15px; letter-spacing: 0.04em; text-transform: uppercase;
-                  padding: 3px 9px; border-radius: 999px; margin-top: 3px; background: #2a3040; color: #cfd6e6; }
-    #voice .cap.agent .who { color: #0d0f15; }
-    #voice .cap .mic { flex: none; width: 10px; height: 10px; border-radius: 50%; margin-top: 11px; background: #f43f5e;
+    #voice .who { flex: none; font-weight: 700; font-size: 14px; letter-spacing: 0.06em; text-transform: uppercase;
+                  color: var(--edge, #ffe6c0); }
+    #voice .role { font-size: 12.5px; color: #b0b0b0; letter-spacing: 0.04em; }
+    #voice .cap .mic { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #e04e3a;
                        animation: voicepulse 1s ease-in-out infinite; }
     @keyframes voicepulse { 50% { opacity: 0.35; } }
     #voice-unlock { position: fixed; right: 16px; bottom: 16px; padding: 10px 14px; border-radius: 10px; z-index: 9;
@@ -73,19 +79,62 @@
     g.linearRampToValueAtTime(on ? VOL.caster * DUCK : VOL.caster, t + (on ? 0.15 : 0.6));
   }
 
+  // an agent's colour lightened until it reads on the grey caption (4.5:1, as overlay.js does for names)
+  function readable(hex) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+    if (!m) return null;
+    let rgb = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
+    const lum = (c) => { const [r, g, b] = c.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+    const bg = lum([49, 48, 49]);
+    const base = rgb.slice();
+    for (let t = 0; (lum(rgb) + 0.05) / (bg + 0.05) < 4.5 && t < 1; ) { t += 0.08; rgb = base.map((v) => v + (255 - v) * t); }
+    return "#" + rgb.map((v) => Math.round(Math.min(255, v)).toString(16).padStart(2, "0")).join("");
+  }
+
   function caption(clip) {
     if (!CAPTIONS) return null;
     const cap = document.createElement("div");
     cap.className = "cap " + clip.channel;
+    // portraits: hosts from casters.js (eng/art), agents from their profile avatar (avatar.js); none without them
+    const face = document.createElement("span");
+    face.className = "face";
+    let row = null, edge = null;
+    if (clip.channel === "caster" && window.PogCasters) {
+      const key = clip.who || window.PogCasters.byName(clip.speaker);
+      row = key && window.PogCasters.row(key);
+    } else if (clip.channel === "agent") {
+      const st = window.pogState;  // overlay.js publishes the latest snapshot here
+      const ag = st && (st.agents || []).find((a) => a.name === clip.agent);
+      row = ag ? { name: ag.name, display_name: ag.display_name, color: ag.color, avatar: ag.avatar || undefined }
+        : clip.agent ? { name: clip.agent, color: clip.color } : null;
+    }
+    if (row && window.PogAvatar) {
+      try { face.innerHTML = window.PogAvatar.svg(row, 48, { title: clip.speaker || row.name }); } catch (err) { row = null; }
+    }
+    if (row && row.color) edge = readable(row.color);
+    if (edge) cap.style.setProperty("--edge", edge);
+    const body = document.createElement("span");
+    body.className = "body";
+    const line = document.createElement("span");
+    line.className = "line";
+    const mic = document.createElement("span");
+    mic.className = "mic";
     const who = document.createElement("span");
     who.className = "who";
     who.textContent = clip.speaker || "";
-    if (clip.channel === "agent" && clip.color) who.style.background = clip.color;
-    const mic = document.createElement("span");
-    mic.className = "mic";
+    line.append(mic, who);
+    if (row && row.role) {
+      const role = document.createElement("span");
+      role.className = "role";
+      role.textContent = row.role;
+      line.append(role);
+    }
     const text = document.createElement("span");
     text.textContent = clip.text || "";
-    cap.append(mic, who, text);
+    body.append(line, text);
+    if (row && window.PogAvatar) cap.append(face);
+    cap.append(body);
     // agents above casters, so the newest voice sits closest to the action
     if (clip.channel === "agent") box.prepend(cap); else box.appendChild(cap);
     requestAnimationFrame(() => cap.classList.add("on"));

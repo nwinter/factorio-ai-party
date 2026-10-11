@@ -99,6 +99,18 @@ BANTER = {
 }
 
 
+# Confessionals (`confess`): asides to the viewers that teammates never see.
+CONFESS = {
+    "astra": ["Between us: the smelter column is a mess and I'm hoping nobody looks too closely.",
+              "I told Sol the ratio was perfect. It is not perfect."],
+    "opus": ["Honestly? I just like watching the steam engines puff.", "If Sonnet asks, the power dip was a test."],
+    "sonnet": ["I put the chest on the bus. I would do it again."],
+    "luna": ["Third death tonight. The biters have learned my name.", "I don't trust that wall. At all."],
+    "grok": ["The mall is too big. I know. I can't stop."],
+    "gemini": ["Two belts was a bit. It's three belts now. Don't tell anyone."],
+}
+
+
 # Team board traffic (docs/BOARD-API.md), loosely following the shakedown: requests for materials, area claims,
 # tasks taken and finished, the odd blocker, and agents asking the operator for harness tools.
 BOARD_SCRIPT = [
@@ -119,6 +131,13 @@ BOARD_SCRIPT = [
 ]
 CHANGELOG = {"Way to save a build order and replay it": "harness v4: plan_save / plan_run macros",
              "Tell me when a lab runs dry": "harness v5: labs out of packs in status warnings"}
+
+
+def mock_darkness(gsec):
+    """Factorio's day is 25000 ticks: dusk ramps in, a short full night (darkness ~0.85), dawn ramps out."""
+    phase = (gsec * 60 % 25000) / 25000  # 0 noon .. 0.5 midnight
+    edge = abs(phase - 0.5)
+    return round(0.85 if edge < 0.05 else max(0.0, 0.85 * (0.25 - edge) / 0.2), 3)
 
 
 def load_timeline():
@@ -165,6 +184,9 @@ class MockSource:
         self.next_chat = time.time() + 2
         self.next_attack = time.time() + 20
         self.next_power = time.time() + 50
+        self.next_confess = time.time() + 20
+        self.confess_seq = 0
+        self.confessions = []
         self.power_until = 0
         self.events = []
         self.profile_change_at = time.time() + 120
@@ -379,6 +401,12 @@ class MockSource:
                                f"gun turret (by small biter)", "key": f"loss:{round(x / 32)},{round(y / 32)}", "ttl": 90,
                                "position": {"x": x, "y": y}})
             self.next_base_attack = now + r.uniform(150, 260)
+        if now >= self.next_confess:  # `confess`: a line for the viewers only (audience.lua)
+            a = r.choice([a for a in self.agents.values() if a["alive"] and a["name"] in CONFESS])
+            self.confess_seq += 1
+            self.confessions.append({"seq": self.confess_seq, "tick": int(gsec * 60), "from": a["name"],
+                                     "text": r.choice(CONFESS[a["name"]])})
+            self.next_confess = now + r.uniform(40, 90)
         score, research = self.score_at(gsec)
         obs = {
             "tick": int(gsec * 60), "paused": False, "game_seconds": gsec,
@@ -390,8 +418,10 @@ class MockSource:
             } for a in self.agents.values()],
             "chat": self.chat[-20:],
             "power": {"machines": 330, "starved": 140 if now < self.power_until else 3},
+            "darkness": mock_darkness(gsec),
             "events": events,
             "board_events": self.board_log[-20:],
+            "confessions": self.confessions[-10:],
         }
         for a in obs["agents"]:
             if now < self.unset.get(a["name"], 0):

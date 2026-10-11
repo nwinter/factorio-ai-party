@@ -258,6 +258,10 @@ def main():
     ap.add_argument("--replays", dest="replays", action="store_true", default=None,
                     help="instant replays through the OBS replay buffer (default: on with --world, off with --mock)")
     ap.add_argument("--no-replays", dest="replays", action="store_false")
+    ap.add_argument("--night", dest="night", action="store_true", default=None,
+                    help="night lift: brighten the game captures in OBS when the game is dark (default: on with "
+                         "--world, off with --mock)")
+    ap.add_argument("--no-night", dest="night", action="store_false")
     ap.add_argument("--obs", default="127.0.0.1:4455", help="obs-websocket host:port (the SSH tunnel to the box)")
     ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
     import viewers
@@ -292,6 +296,12 @@ def main():
         from obsws import OBS
         host, _, port = a.obs.partition(":")
         replays = Replays(segments, obs=OBS(host, int(port or 4455)), **(run.get("replays") or {}))
+    night = None
+    if (a.night if a.night is not None else not a.mock) and run.get("night", True) is not False:
+        from obsws import OBS
+        from nightlift import NightLift
+        host, _, port = a.obs.partition(":")
+        night = NightLift(obs=OBS(host, int(port or 4455)), **(run.get("night") or {}))
     model = Model(run)
     hub = Hub()
     names = [n for k, cfg in (run.get("agents") or {}).items() for n in (k, (cfg or {}).get("display_name")) if n]
@@ -331,6 +341,9 @@ def main():
                 if replays:
                     replays.tick(snap, cams, now)
                     snap["replay"] = replays.public()
+                if night:
+                    night.set_darkness(snap.get("darkness"))
+                    snap["night"] = night.public()
                 snap["cameras"] = cams
                 for ag in snap["agents"]:
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
