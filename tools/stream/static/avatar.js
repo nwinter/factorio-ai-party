@@ -71,10 +71,10 @@
       "drone": {"top": 4, "eye": 9, "chest": [9, 17], "mirror": true, "rows": [
         "............", "............", "............", "............",
         "........oooo", "......oohhhh", ".....ohhssss", ".....ohsssss",
-        "....ohssssss", "....ohssssss", "....ohssssss", "....osssssss",
+        "....ohssssss", "....ohssggss", "....ohssggss", "....osssssss",
         "....oSssssss", ".....oSSssss", ".....ommmmmm", "......onnnnn",
-        "..oo...oMmmm", ".oMMo..oMsss", ".oMMooooMsss", "..oo...oMsss",
-        ".......oMSSS", "........oggg", ".........oGg", "..........og"]}
+        "oooooo.oMmmm", "nMMMMn.oMsss", "..on...oMsss", "..oMoooonsss",
+        "...o...oMSSS", "........oggg", ".........oGg", "..........og"]}
     },
     "helmets": {
       "hardhat": {"x": 4, "dy": -2, "mirror": true, "rows": [
