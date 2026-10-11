@@ -122,8 +122,28 @@ stops a player.
   weight 3 for the current stage, 2 for one stage back, 1 for two, 0.5 older (iron and copper plates at least 2),
   times `1 + log10(1 + rate)`. With more than four, the top two stay and the other two cells page through the rest
   every 10 s. With five or more pack colours the trend and stage label give way to the chips.
-- Chat: the largest panel, messages in a deep well, 18 px text up to three lines, the last ten messages (the oldest
-  fade under the mask), 🔊 on lines an agent marked `aloud`.
+- Chat: the largest panel, in three lanes.
+  - Talk (the deep well, 18 px text up to three lines, last ten): lines eng/audio's classifier heuristic
+    (`caster.heuristic_kind`) calls banter, strategy or emotion, lines an agent marked `aloud` (🔊), and confessionals.
+  - Viewers (below it, only while a viewer message is under 5 minutes old): see Viewer chat.
+  - Ticker (two 19 px lines at the bottom): coordination (coordinates, counts, "on it") and server lines.
+  - `model.chat_lane()` labels every line talk / log / viewer. Relayed viewer lines in the game chat (`viewer: true`)
+    are left to the viewers lane. The snapshot's `chat` keeps the last 12 talk and the last 8 other lines, so a burst
+    of logistics cannot push conversation off the page.
+- Confessionals (eng/board `confess`, audience.lua): read with the operator `confessions` read (`operator: true`,
+  no player; a failure stops nobody), every poll from a cursor, only once `describe` lists `confessions` (on an
+  older runtime the request would count as player 1's unknown action and stop it). They show in the talk lane with a
+  "to camera" tag, italic cream text and the agent's colour edge.
+- Captions (audio.js, eng/audio's voice player): each caption shows the speaker's portrait. Hosts come from
+  `casters.js` (eng/art) via the clip's `who` key, with their role; agents use their own avatar, looked up in the
+  latest snapshot (`window.pogState`). The edge and name are in the speaker's colour, lightened to 4.5:1 on the grey
+  frame (Luna's near-black becomes grey).
+- Night lift (`nightlift.py`): `STREAM_LUA` reads `LuaSurface.darkness` (0 by day, about 0.85 at midnight; world n
+  at dusk read 0.24). A "night lift" colour correction filter on `stream cam1..3` (created if missing) ramps gamma
+  up to 0.6, brightness 0.03, contrast 0.12 and saturation 0.15 as darkness goes from 0.2 to 0.75, at most 0.04 of
+  the lift per second, and is sent only when it moves 0.03. The game is not touched. On by default with `--world`
+  (`--no-night`; `"night": {...}` in the run config to tune; `night` in the snapshot shows darkness, lift and the
+  values sent).
 - Colour fallback: any colour works. Name text is lightened until it has 4.5:1 contrast on the grey panel; glyph ink
   is black or white; a fill that disappears into the panel gets a ring. Invalid colours fall back to a hue hashed from
   the name (avatar.js has its own palette fallback for the pixel art).
@@ -153,7 +173,9 @@ stops a player.
 
 `--viewers-youtube TARGET`, `--viewers-site`, `--viewers-replay JSONL` start `tools/stream/viewers.py` inside the
 service; the snapshot then carries `viewers` (filtered messages, oldest first) and `viewers_status`. Without these
-options `viewers` is an empty list and `viewers_status` null. The page does not draw the lane yet.
+options `viewers` is an empty list and `viewers_status` null. The page draws the last two messages under five minutes
+old in a blue lane in the chat panel: a YT or SITE tag, the name (yellow for YouTube staff), the text on one line,
+and "to the agents" on messages flagged as orders. Viewer names and text are set as text, never HTML.
 
 ## Segments (shots the casters or the director start)
 
@@ -329,8 +351,12 @@ about 60 s on every camera, and main-camera time for all nine agents. Combat-hea
 - The board has only been checked against the shapes in eng/board's code, not a running world with it.
 - Replays: the banner over a real replay has not been seen. On the box the clip played, but the reverse tunnel
   (8787 on the box -> the Mac) was down, so the banner page could not load. Check it with the tunnel up during
-  shake3. Encoder load with stream + recording + replay buffer together is unmeasured: watch
-  `skipped_since_last.outputSkippedFrames` in `/replays.json` during the first live run.
+  shake3.
+- Encoder load: one 30 s sample during shake3 (00:28, `/replays.json` from the operator's service) with the stream,
+  the recording and the replay buffer all active: 0 output and 0 render frames skipped of 1824, 60 fps, CPU 10.7%,
+  render 0.78 ms. One sample; keep an eye on `skipped_since_last` over a whole run.
+- Night lift: tested against a fake OBS only (shake3 was live); check it on the box at night and tune `gamma`.
+- Vertical: see docs/VERTICAL-PROPOSAL.md.
 - Zoom levels are guesses from the director client at 1080p; tune `zoom_*` in the run config's `director` after
   seeing real fights and builds on the camera feeds.
 
