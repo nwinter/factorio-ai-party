@@ -4,6 +4,30 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Round 5: fixes from the shake4 study (2026-10-11)
+
+What docs/studies/shake4.md P2 items 9 and 11 and section 6 asked of the casters, each covered by `caster_selftest.py`:
+
+- Baseline wording (item 9). `baseline.py` now says what each stored run was (`RUNS`, or `--about` and
+  `--space-age` when building one): shake1 is "the team's first nine-agent run, in the base game on the same seed",
+  never "the previous run". When the current run plays Space Age and the baseline is a base-game run, `compared_with`
+  adds "this run plays Space Age, so only the start compares", and research facts carry `<run>_was` with the same
+  text. Space Age snapshots now compare with `baselines/shake4.json` (the first Space Age run on the seed;
+  `--space-baseline`, '' for none); base-game ones keep shake1. A resumed shift past shake4's game 123 minutes gets
+  no comparison, as before. The show notes say "an earlier run of the team's" and tell the hosts to name it as
+  `compared_with` describes it.
+- Names (item 11). A roster name in a line counts only when that agent is on camera or anywhere in this beat's own
+  facts, or is the one who did an earlier beat (`earlier_on_air` entries "board at ...: Luna - ..."). A name only
+  mentioned inside an earlier beat fails. Agents' voiced lines now join `earlier_on_air` ("aloud at ...: Grok - ..."),
+  so the hosts may call back to them (shake4 rejected Grok twice right after Grok spoke aloud). "Two Sols", "both
+  Sols" and the like are rejected. Replayed over shake4's 696 aired lines, 21 name lines and the "two Sols" line
+  would now be cut; the old logs have no aloud beats, so the Grok case is not in that replay.
+- Section 6 mistakes. Loss facts say "engineers killed (an engineer respawns); no building was lost" when only
+  engineers died (mistake 7), and "buildings destroyed and engineers killed" for a mix. Pace facts call electronic
+  circuits "green circuits" (mistake 3). The rules say researching a technology unlocks it and does not mean
+  anything was built or made (mistake 6). The naturalist wording (mistake 9) was already fixed on main. Mistake 8,
+  the analyst's "co-op", is eng/analyst's (item 10).
+
 ## Round 4: fixes from the shake3 study, the analyst's points, Space Age (2026-10-11)
 
 What docs/studies/shake3.md P1 items 1, 2 (caster part) and 3 and P2 item 12 asked for, each covered by
