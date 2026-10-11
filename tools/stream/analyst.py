@@ -648,6 +648,7 @@ def main():
     ap.add_argument("--log-digest", action="store_true")
     ap.add_argument("--eval", action="store_true", help="run the viewer-question check (tools/analyst/evaluate.py)")
     ap.add_argument("--eval-only", choices=["analyst", "host"])
+    ap.add_argument("--eval-viewer", action="store_true", help="--eval through the on-air viewer-question prompt")
     ap.add_argument("--eval-ids", help="comma-separated question ids")
     ap.add_argument("--eval-parallel", type=int, default=5)
     ap.add_argument("--eval-grade", help="re-grade a results file (with --eval-relay: add the relay condition to it)")
@@ -663,6 +664,14 @@ def main():
         elif a.eval_grade:
             evaluate.regrade(a.eval_grade)
         else:
+            if a.eval_viewer:  # the 30 questions through the on-air path (JSON reply, skip allowed)
+                def to_text(raw):
+                    try:
+                        out = parse_json(raw)
+                    except ValueError:
+                        return raw
+                    return f"SKIP: {out['skip']}" if out.get("skip") else str(out.get("answer") or "")
+                a.eval_onair = (viewer_system(), lambda q: f"Viewer \"viewer\" asks: {json.dumps(q)}", to_text)
             evaluate.run(a, run_claude)
         return
     if a.ask_test:

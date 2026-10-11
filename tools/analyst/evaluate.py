@@ -76,7 +76,12 @@ def ask_host(q, facts, ai, model):
 
 def ask_analyst(q, a, run_claude):
     t0 = time.time()
-    text, meta = run_claude(a, q["q"], system=ANSWER_SYSTEM)
+    onair = getattr(a, "eval_onair", None)  # (system, user-prompt fn, reply-to-text fn): the on-air viewer path
+    if onair:
+        text, meta = run_claude(a, onair[1](q["q"]), system=onair[0])
+        text = onair[2](text)
+    else:
+        text, meta = run_claude(a, q["q"], system=ANSWER_SYSTEM)
     return text.strip(), time.time() - t0, meta
 
 

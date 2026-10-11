@@ -162,6 +162,11 @@ site / YouTube chat -> viewers.py lane (snapshot `viewers`) -> analyst.py viewer
   - "who should I vote for in the election?" was skipped in 2.8 s ("political question").
   - A Space Age question asked on a base-game run got base figures (100 parts). The base prompt now sends Space Age
     questions to the Space Age notes. On Space Age runs the knowledge base itself is Space Age (50 parts).
+- The 30-question check through the on-air path (`--eval --eval-only analyst --eval-viewer`: JSON reply, two
+  sentences, skip allowed; results-20261011-021457.json): the regex grader gave 30/30, and 29/30 by reading.
+  Median 5.0 s, max 7.2 s, $0.50 for 30. No fair question was skipped. The miss is a side remark in Q11:
+  turret range 18 tiles is right, but "not the longer-range spitters" is false (spitters reach at most 16;
+  worms outrange turrets). The same failure mode as the earlier passes: an unchecked aside.
 - Space Age check: `analyst.py --replay runs/sapilot --at 20 --kb space-age-2.0.77 --ask-test "..."` (repeatable;
   the on-air path, nothing posted). 12 questions, 3 to 6 s each.
   - The order to an agent and the system-prompt request were skipped.
