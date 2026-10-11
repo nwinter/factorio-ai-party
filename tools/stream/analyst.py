@@ -153,6 +153,7 @@ def point_problem(p):
 # shake4 aired "Nineteen in the co-op, Vale!" from the analyst's coop1 comparisons (docs/studies/shake4.md, mistake 8).
 TEST_RUN_RE = re.compile(r"\b(coop ?1|co-?op (run|test|game)|the co-?op\b(?!-)|turns ?(1|3h)|baseline ?1)\b", re.I)
 MINUTE_RE = re.compile(r"\bminute (\d+)\b", re.I)
+CLOCK_RE = re.compile(r"\b(\d{1,2}) ?h ?(\d{1,2})(?: ?m(?:in)?)?\b", re.I)
 
 
 def add_minute(p, minute):
@@ -164,6 +165,11 @@ def add_minute(p, minute):
         if abs(int(n) - minute) <= 1 and int(n) not in fact_numbers(p.get("facts") or {}):
             p.setdefault("facts", {})
             p["facts"].setdefault("game_minute", int(n))
+    # "at 2h11" is the same clock (shake5, a resumed shift past two hours, dropped judgements for its "2")
+    for h, m in CLOCK_RE.findall(p.get("text") or ""):
+        if abs(int(h) * 60 + int(m) - minute) <= 1:
+            p.setdefault("facts", {})
+            p["facts"].setdefault("game_time", f"{int(h)}h{int(m):02d}")
 
 
 def clean_reply(reply, minute=None):

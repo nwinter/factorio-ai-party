@@ -158,6 +158,11 @@ class PointsTest(unittest.TestCase):
         reply, dropped = analyst.clean_reply(reply, minute=19)
         self.assertEqual([p["facts"].get("game_minute") for p in reply["talking_points"]], [20])
         self.assertIn("28", dropped[0]["why"])  # a forecast minute still needs its own fact
+        reply = {"judgement": {"pace": "behind", "text": "Only 25 technologies are done at 2h11.", "facts": {"techs": 25}},
+                 "talking_points": [{"text": "Blue usually starts by 3h05.", "facts": {}}]}
+        reply, dropped = analyst.clean_reply(reply, minute=131)
+        self.assertEqual(reply["judgement"]["facts"].get("game_time"), "2h11")  # the game clock, a resumed shift
+        self.assertEqual(len(dropped), 1)                                      # another clock time is a claim
 
 
 class BoardTest(unittest.TestCase):
