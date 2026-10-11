@@ -65,6 +65,11 @@ Llama 4 Scout and Mistral Small (quote marks and markdown in the lines) were dro
 cast runs ~250 exchanges an hour: Kimi about $0.35/hour; Sonnet through `claude -p` would be ~$75/hour of
 API-equivalent subscription quota, so it is not the default.
 
+`--writer claude --model haiku` in the continuous loop (3 min dry run on the mock): 5.5 s per exchange, hidden by
+writing during the previous exchange; Nemotron still took the urgent beats in about 1 s. Its rejects were all
+callbacks to agents from earlier beats ("Sonnet's still nursing that smelter"), so each beat's facts now carry the
+last four story beats (`earlier_on_air`).
+
 Mock runs with the new pacing (4 min each, Node page listening, Aura-2): voices on air 78-81% of the time, median
 silence 0.5-1.6 s, longest 5 s, no clip over another; 18-19 exchanges and 29 caster lines per 4 minutes; 4 of 18
 exchanges naturalist. Cost rose with the airtime: **$1.6-1.7 per hour**, of which Aura-2 speech is $1.4. `--tts
