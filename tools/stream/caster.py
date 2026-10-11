@@ -813,6 +813,8 @@ class Caster:
             top = max((e["prio"] for e in self.events if now - e["t"] < self.a.stale), default=0)
         if not s:
             return
+        if not self.a.dry_run and not self.a.always and not st.get("listeners"):
+            return  # nobody hears it: write nothing (a continuous cast would otherwise spend ~250 calls an hour)
         # Start writing early enough that the next line is ready when this one ends (plus a breath of --gap).
         lead = sorted(self.prep[-9:])[len(self.prep[-9:]) // 2] if self.prep else 4.0
         gap = self.a.urgent_gap if top >= URGENT else self.next_gap
@@ -892,7 +894,9 @@ class Caster:
             self.caster_free = max(self.caster_free, time.time()) + sum(len(x) for _, x in lines) / 15.0
             return
         tts = self.tts if self.breakers["tts"].ok() else self.tts_fallback
-        if tts is None:
+        est = sum(len(x) for _, x in lines) / 15.0
+        if tts is None:  # no voice right now: still take the time the lines would have, or the loop rewrites at once
+            self.caster_free = max(self.caster_free, time.time()) + est
             return
 
         def synth(item):
@@ -906,6 +910,8 @@ class Caster:
         with ThreadPoolExecutor(max_workers=len(lines)) as ex:
             clips = list(ex.map(synth, lines))
         self.prep.append(time.time() - t_start)
+        if all(isinstance(c, Exception) for c in clips):
+            self.caster_free = max(self.caster_free, time.time()) + est
         for i, ((who, line), clip) in enumerate(zip(lines, clips)):
             if isinstance(clip, Exception):
                 log(f"[tts:{tts.backend}] {type(clip).__name__}: {clip}")
