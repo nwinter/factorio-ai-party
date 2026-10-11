@@ -810,10 +810,13 @@
     }
     return body;
   }
+  const isFull = (seg) => !!FULL[seg.type] || (seg.type === "space_moment" && !(seg.facts || {}).agent); // a landing shows the agent
   function renderSegment(s) {
     const box = $("segment");
     const seg = s.segment;
     const show = !!seg && seg.state !== "ended";
+    // a full panel shares the camera with at most the newest alert banner (overlay.css body.seg-full)
+    document.body.classList.toggle("seg-full", show && isFull(seg));
     if (!show) {
       if (!box.hidden && !box.classList.contains("out")) {
         box.classList.add("out");
@@ -825,8 +828,7 @@
     if (box.dataset.sig !== sig) {
       box.dataset.sig = sig;
       box.classList.remove("out");
-      const full = FULL[seg.type] || (seg.type === "space_moment" && !(seg.facts || {}).agent); // a landing shows the agent
-      box.className = (full ? "full" : "lower") + " seg-" + seg.type;
+      box.className = (isFull(seg) ? "full" : "lower") + " seg-" + seg.type;
       box.textContent = "";
       const panel = el("div", "spanel");
       const title = el("div", "stitle");
@@ -861,10 +863,23 @@
     renderCams(s);
     renderSegment(s);
     watchVoice();
+    watchAlerts();
   }
 
   // Voice captions (audio.js #voice) grow up from the main camera's bottom edge. Their height goes to --voice-clear
   // (caption stack + gap, 0 without captions) so segment and replay cards keep clear of them (overlay.css).
+  // Alert banners stack down from the main camera's top: a full panel starts below them (--alerts-clear).
+  let alertsWatched = false;
+  function watchAlerts() {
+    const a = $("alerts"), seg = $("segment");
+    if (alertsWatched || !a || !seg || !window.ResizeObserver) return;
+    alertsWatched = true;
+    new ResizeObserver(() => {
+      const r = a.getBoundingClientRect(), top = parseFloat(getComputedStyle(seg).top) || 0; // valid while hidden too
+      const clear = a.children.length && r.height > 1 ? Math.ceil(r.bottom - top + 14) : 0;
+      document.body.style.setProperty("--alerts-clear", clear + "px");
+    }).observe(a);
+  }
   let voiceWatched = false;
   function watchVoice() {
     const v = $("voice");

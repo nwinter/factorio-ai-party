@@ -442,9 +442,12 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
 #segment[hidden] { display: none; }
 #segment.out { animation: fade-out 700ms ease both; }
 /* Captions (#voice, audio.js) sit on the main camera's bottom edge: a full panel keeps a caption band under it
-   (taller when a caption needs more), a lower card rises above a caption. --voice-clear comes from overlay.js. */
-#segment.full { padding: 56px 90px max(124px, var(--voice-clear, 0px)); background: rgba(22, 21, 22, 0.55); transition: padding-bottom 250ms ease; }
+   (taller when a caption needs more), a lower card rises above a caption; alert banners at the top push a full panel
+   down while they show. --voice-clear and --alerts-clear come from overlay.js. */
+#segment.full { padding: max(56px, var(--alerts-clear, 0px)) 90px max(124px, var(--voice-clear, 0px)); background: rgba(22, 21, 22, 0.55);
+  transition: padding-top 250ms ease, padding-bottom 250ms ease; }
 #segment.full .spanel { height: 100%; }
+body.seg-full #alerts .alert:not(:last-child) { display: none; }
 #segment.lower { display: flex; align-items: flex-end; padding: 0 0 max(22px, var(--voice-clear, 0px)) 22px; transition: padding-bottom 250ms ease; }
 #segment.lower .spanel { width: 620px; }
 .spanel { box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; padding: 14px 22px 16px; overflow: hidden;
@@ -479,7 +482,7 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
 .sbar { height: 18px; }
 .stime { flex: none; height: 4px; border-radius: 2px; background: var(--fx-deep); overflow: hidden; }
 .stime > i { display: block; height: 100%; width: 100%; background: var(--fx-orange); transition: width 1s linear; }
-body.portrait #segment.full { padding: 24px 24px max(130px, var(--voice-clear, 0px)); }
+body.portrait #segment.full { padding: max(24px, var(--alerts-clear, 0px)) 24px max(130px, var(--voice-clear, 0px)); }
 body.portrait #segment.lower .spanel { width: 100%; margin-right: 22px; }
 
 /* ---- density: the card grid shrinks with the lineup (<=7 roomy, 8-9 standard, 10-12 compact) ---- */
