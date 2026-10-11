@@ -178,7 +178,10 @@ def claude_tokens(transcript, since=0):
     return 0
 
 
-LATE_ROOM = 8000   # Claude Code refuses requests a little past compact_at + 13000 (claude_window); stay well under
+# Blocking stops once the context passes compact_at + LATE_ROOM. The transcript lags Claude Code's own count by the
+# pending tool result (probe: hook 48.4K, compaction at 59.7K with 8K files), and the hard limit sits a little past
+# compact_at + 13000 (claude_window), so the room stays small.
+LATE_ROOM = 5000
 
 
 def seconds_left(d):

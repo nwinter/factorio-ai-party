@@ -19,12 +19,26 @@ if [ "${1:-}" = --profile ]; then
   shift
   exec bash "$root/tools/profile-probe.sh" "$base" "$@"
 fi
+# --late (claude): deadline 10 minutes out and the PreCompact skip window widened from 120 s to 15 minutes, so the
+# first automatic compaction is blocked (context.log: pre-compact skip-late) until the context passes compact_at + 8000.
+late=; [ "${1:-}" = --late ] && { late=1; shift; }
 kind=$1 model=$2
 [ -n "${3:-}" ] && export POG_CTX_AT=$3
 ws=probe-$kind
 rm -rf "$base/runs/ctxtest/$ws"
 dir=$(POG_WS=$ws "$base/tools/new-run.sh" ctxtest n "$ws" 30)
 env_words=$(python3 "$root/tools/context.py" setup "$kind" "$model" "$dir")
+if [ -n "$late" ]; then
+  date -v+10M "+%Y-%m-%d %H:%M %Z" > "$dir/deadline.txt"
+  python3 - "$dir/.claude/settings.json" <<'EOF'
+import json, sys
+p = sys.argv[1]; cfg = json.load(open(p))
+for g in cfg["hooks"]["PreCompact"]:
+    for h in g["hooks"]:
+        h["command"] = h["command"].replace("--skip-late 120", "--skip-late 900")
+json.dump(cfg, open(p, "w"), indent=2)
+EOF
+fi
 at=${POG_CTX_AT:-$(python3 "$root/tools/context.py" limit "$kind" "$model")}
 # ~8K tokens per file (Claude counted ~38 tokens per 12-word line); enough files to pass the compaction point once.
 # Keep files well under compact_at minus the starting context, or Claude Code stops with "Autocompact is thrashing".
