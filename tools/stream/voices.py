@@ -78,7 +78,7 @@ COORDS = re.compile(r"\(?\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)?|\b[xy]\s
 
 
 def has_coords(text):
-    return bool(COORDS.search(str(text)))
+    return any(not re.fullmatch(r"\(?\s*\d{1,3},\d{3}\s*\)?", m.group().strip()) for m in COORDS.finditer(str(text)))
 
 
 # Spoken forms for names TTS gets wrong; applied only to the audio, captions keep the written name.
@@ -93,10 +93,18 @@ def pronounce(text):
 
 def speakable(text, limit=220):
     """Strip what TTS reads badly: emoji, markdown, URLs, @handles, map coordinates; cut at a sentence."""
-    text = re.sub(r"\s*(?:\b(?:at|near|to|from)\s+)?(?:" + COORDS.pattern + ")", "", text)
+    text = re.sub(r"\s*(?:\b(?:at|near|to|from|along)\s+)?(?:" + COORDS.pattern + ")",
+                  lambda m: m.group() if re.search(r"(?<![\d.\-])\d{1,3},\d{3}\s*$", m.group()) else "", text)  # 1,000
     text = re.sub(r"\(\s*\)", "", re.sub(r"(?:,\s*)+(?=[,.;:!?)]|$)", "", text))
     text = re.sub(r"\s+([,.;:!?])", r"\1", text)
     text = re.sub(r"https?://\S+", "", text)
+    # map coordinates read terribly aloud: "(23.5,-8.5)", "at 31.5,19", "x-82.5", "y21.5", "x22..32,y-10..8"
+    text = re.sub(r"\s*(?:\b(?:at|to|near)\s*)?\(\s*-?[\d.]+\s*,\s*-?[\d.]+\s*\)", "", text)
+    text = re.sub(r"\s*(?:\b(?:at|to|near)\s+)?-?\d+(?:\.\d+)?,\s*-?\d+(?:\.\d+)?(?:\s*/\s*-?\d+(?:\.\d+)?)*\b",
+                  lambda m: m.group() if re.search(r"(?<![\d.\-])\d{1,3},\d{3}$", m.group()) else "", text)  # 1,000
+    text = re.sub(r"\s*\b(?:(?:at|to|near|along)\s+)?[xy]\s*=?\s*-?\d+(?:\.\d+)?(?:\s*\.\.\s*-?\d+(?:\.\d+)?)?\b"
+                  r"(?:,?\s*[xy]\s*=?\s*-?\d+(?:\.\d+)?(?:\s*\.\.\s*-?\d+(?:\.\d+)?)?\b)?", "", text)
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
     text = re.sub(r"[*_`#>\[\]{}|~]", "", text)
     text = re.sub(r"@(\w+)", r"\1", text)
     text = "".join(ch for ch in text if unicodedata.category(ch)[0] != "S" or ch in "%$+=")

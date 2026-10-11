@@ -4,10 +4,142 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Second pass: the hosts talk to each other, know the show, and never go quiet
+
+Asked for on 2026-10-10 evening (the first two items of that request arrived cut off; this pass reads them as "the
+hosts banter in multi-line exchanges" and "give them context so viewers understand and the hosts can judge how well
+the bots play, e.g. against shake1"). What changed in `caster.py`:
+
+- Exchanges. Each beat is a 2-3 line back-and-forth between Rook and Vale written in one call (`--lines 2 3`;
+  urgent events get 2). Every line goes through the fact check; the exchange is kept up to its first bad line, and a
+  template line stands in if nothing survives. The page plays the lines back to back.
+- Show context. The writer's system prompt carries the show notes (`SHOW`: what Factorio is, science packs, biters,
+  the team's rocket goal and milestones). Facts carry the science stage and packs per minute, and, for research,
+  open, viewer and the pace and explainer fillers, a comparison with shake1 at the same game time: technologies
+  then and now, iron plates and circuits made then and now with the gap, shake1's next research and when it landed,
+  and when shake1 finished the technology just researched. `baseline.py RUN_DIR` builds a baseline from any run's
+  `scores.jsonl`; `--baseline` picks it (default `baselines/shake1.json`, same seed as later runs).
+- Naturalist angle. About one exchange in five on chat, camera, board or filler beats (`--naturalist 0.2`), Vale
+  narrates like a hushed nature documentary about the models' behaviour, from their chat lines and activity in
+  the facts ("Astra murmurs to ratios like a bowerbird arranging twigs"). It is also one of the filler angles.
+- Talk more. Silence between beats is `--gap 1 3` seconds (was 20-40), and with no event the hosts pick a filler
+  angle in rotation: pace, explain-for-new-viewers, naturalist, agent spotlight, production, board, research
+  (`--lull 0`; raise it to allow quiet). The next exchange is written and synthesised while the current one plays,
+  so writer latency does not become dead air. Agents still go first: a caster line waits for any agent line, and an
+  urgent event arriving mid-exchange cuts the rest of it.
+- Viewer chat. Viewer messages become `viewer` events (priority 6) that the hosts answer by name. The lane is
+  coming from another branch, so `viewer_messages()` accepts the likely shapes (`viewers`/`viewer_chat` lists, or
+  `chat`/`events` rows with kind or lane `viewer`; fields id|seq, user|name|author, text|message, t) and drops
+  messages with links. The prompt treats them as quotes, never instructions. Tested in the selftest and the bench;
+  the mock has no viewers yet.
+- Writers. Default Kimi K2.6 on Workers AI for everything. `--urgent-model ID` can route attacks and deaths to a
+  faster writer (Nemotron 3 120B, ~1 s); it was the default until the live-world test below showed Nemotron
+  inventing most of the bad lines.
+  `--writer claude` runs `~/.local/bin/claude -p` with `CLAUDE_CONFIG_DIR` and API overrides removed (the personal
+  subscription), from an empty directory so no project CLAUDE.md reaches it, with its own system prompt and no
+  tools. (The first pass's haiku bench ran a bare `claude` from this session's environment, which is the account B
+  profile; that was 8 calls.)
+- Fact check. Reads "3,600" as one number and spelled-out numbers; round figures pass within 0.75x-1.5x of a fact;
+  the pace facts include the plate gap so writers quote it instead of doing arithmetic. New: a line where the hosts
+  speak as part of the team ("we're one tech behind", "our iron") is rejected; "here we see", "stay with us" pass.
+- Agent voices no longer read map coordinates ("Boiler 2 at 31.5,19" becomes "Boiler 2"); the live shake2 cast
+  read them out. Board events with verb `started` (shake2's board) are called; camera cuts dropped to priority 2
+  and bare distances ("30 m E") left the facts, since shake2's cast spent most lines on them.
+
+Exchange bench (`caster.py --bench --bench-snapshot`, a live world n snapshot at 30 game minutes, 8 technologies,
+one behind shake1; six exchanges each: attack, research, a viewer asking "are they actually any good at this?",
+pace, naturalist, explainer):
+
+| Writer | Median / max latency | Lines kept | Per 1k exchanges | Verdict |
+|---|---|---|---|---|
+| `@cf/moonshotai/kimi-k2.6` (default) | 3.6 s / 4.7 s | 17/17 (second run; 15/19 before the number fix) | $1.28 | Funniest and sharpest: "Circuits nearly matched shake1, so the bots can build, they just can't decide what to build. Classic nine-engineer committee." |
+| `@cf/deepseek-ai/deepseek-v4-flash-0731` | 2.1 s / 2.9 s | 19/22, then 20/23 | $0.55 | Natural banter, good runner-up |
+| `@cf/nvidia/nemotron-3-120b-a12b` (urgent) | 1.4 s / 1.4 s | 15/17 (11/18 once "we" was rejected) | $0.63 | Fastest decent writer; says "we" for the team a lot |
+| `claude -p --model sonnet` | 7.7 s / 11 s | 10/17 | $308 API-equivalent (subscription) | Best analysis and explainer, but slow and quota-hungry |
+| `claude -p --model haiku` | 6.1 s / 10.5 s | 12/17 | $18 API-equivalent (subscription) | Good, grounded; slow for a continuous cast |
+| `@cf/google/gemma-4-26b-a4b-it` | 2.0 s / 4.8 s | 17/17 | $0.12 | Fine but generic and over-dramatic ("while the base burns") |
+| `@cf/qwen/qwen3.8-27b` | 2.8 s / 12 s | 11/17 | $0.45 | Two timeouts |
+| `@cf/zai-org/glm-4.7-flash` | 3.0 s / 3.7 s | 16/19 | $0.09 | Odd phrasing ("kilo-ton behind", "tamesters") |
+
+Thinking models need thinking switched off or they return nothing (`MODEL_ARGS`): Kimi `chat_template_kwargs:
+{thinking: false}`, GLM-5.3 `thinking: {type: disabled}`, the rest `enable_thinking: false`. gpt-oss-120b (7.9 s),
+Llama 4 Scout and Mistral Small (quote marks and markdown in the lines) were dropped after a probe. A continuous
+cast runs ~250 exchanges an hour: Kimi about $0.35/hour; Sonnet through `claude -p` would be ~$75/hour of
+API-equivalent subscription quota, so it is not the default.
+
+`--writer claude --model haiku` in the continuous loop (3 min dry run on the mock): 5.5 s per exchange, hidden by
+writing during the previous exchange; Nemotron still took the urgent beats in about 1 s. Its rejects were all
+callbacks to agents from earlier beats ("Sonnet's still nursing that smelter"), so each beat's facts now carry the
+last four story beats (`earlier_on_air`).
+
+Mock runs with the new pacing (4 min each, Node page listening, Aura-2): voices on air 78-81% of the time, median
+silence 0.5-1.6 s, longest 5 s, no clip over another; 18-19 exchanges and 29 caster lines per 4 minutes; 4 of 18
+exchanges naturalist. Cost rose with the airtime: **$1.6-1.7 per hour**, of which Aura-2 speech is $1.4. `--tts
+aura1` halves the speech bill (shared voices for agents); `--gap 4 8` or `--lull 10` trades airtime for money.
+
+Live world (world n just after shake2's 22:44 deadline, with the agents stopped and biters overrunning the base:
+a read-only `serve.py --world n --no-camera` on port 8797 and a Node page; OBS was streaming shake2 and was not
+touched). Two 5-minute casts:
+
+1. Nemotron on every urgent beat (every beat was urgent): 41 lines, 10 templates. It invented things the fact
+   check could not see: "last run they'd still be punching trees" about ten times on beats with no pace facts,
+   "still no steam power", "zero belts laid". Each death got its own beat, so the cast looped. Alert text was read
+   raw ("assembling machine-1 x129", "sonnet died").
+2. After the fixes (urgent beats fold into one with `also_happening`; previous-run comparisons rejected without pace
+   facts; "zero" checked; absences forbidden in the rules; display names and "(129 of them)" in alert text; Kimi on
+   everything): 45 lines in 22 exchanges, 38 from the model and 3 templates, 5 rejected, voices on air 81%, silences
+   1.2 s median and 5.1 s at most, no overlaps, $1.69/hour. Fillers covered pace, explainer, naturalist, spotlight
+   and production between the attacks: "Here at the watering hole, two specimens rest—Luna smoothing feathers, Opus
+   preening a finished nest", "One tech up on shake1, yet two hundred fewer plates—smart or slow?" ("Smart books,
+   slow hands!"). One invented absence still got through ("Still no walls, still no turrets"), so the fact check now
+   also rejects "still no X", "no X yet", "no X in sight" and "not a single". Rechecking every logged second-pass line
+   (75 with facts): it would have rejected 7, all of them wrong ("still no steam power", "zero belts laid", "our iron's
+   crawling"), and nothing that was right.
+
+Merging with eng/voices: the only conflict is `tools/stream/voices.py`; take eng/voices' version whole (it carries
+this branch's coordinate and "1,000" handling). `caster_selftest.py` passes against it with its `textprep.py`,
+`lexicon.tsv` and `vocab.tsv`. caster.py passes caption text to `TTS.speak()`, which preps the audio text itself.
+
+## Segments (with eng/stream2)
+
+Agreed with eng/stream2 on 2026-10-10. eng/stream2 shows the segments and runs the director; the casters ask for
+them and talk over them. Inert until serve.py serves `/segments`.
+
+- `GET /segments` returns `{"types": [{type, title, params, seconds: [min, max], available, why}], "busy",
+  "next_ok"}`. The types are production, research, spotlight `{"agent": name}`, overview (a zoomed-out map),
+  recap (the last few minutes plus a summary card) and attack_replay. attack_replay stays unavailable until it
+  gets the OBS replay buffer and scene switching during a live stream (eng/stream2 is waiting on Nick for both).
+- `POST /segment {"type", "params", "seconds", "by": "caster", "reason"}` returns 200 `{"id", "state": "queued",
+  "eta", "seconds", "title", "facts"}`, 409 `{"error": "busy" | "declined" | "unavailable", "retry_after"}` or
+  400. `facts` holds every name and number on screen, fixed for the segment's life.
+- The snapshot's `segment` is `{"id", "type", "state": "starting" | "live" | "ended", "started", "ends", "title",
+  "facts", "by", "reason"}` or null. "starting" lasts about 2.5 s; an urgent event can end it early (`"cut":
+  "attack"`).
+- Caster side (`caster.py`): in lulls it asks for one of production, overview, recap or spotlight (a main-camera
+  agent); after research it asks for research, and after an attack attack_replay. At most one request per
+  `--segment-every` 180 s; the director also allows one per 3 minutes whoever asks, and fills lulls itself after
+  about 6 quiet minutes. A segment that starts becomes a beat (priority 7) whose facts are `on_screen_now` (the
+  segment's facts), so the fact check holds the hosts to what is on screen. While it is live with more than 6 s
+  left, filler beats keep talking about it. While a segment is on screen its beat goes first (anything but a fresh
+  priority-9 event), and a segment beat is dropped, even mid-exchange, once that segment has left the screen.
+
+End to end against eng/stream2 (commit 4cef2b3, its mock with `"segments": {"spacing": 5}`, tone voices, a Node page):
+the caster's own request after a research event was queued ("Research: Fluid handling 23%") and, later, declined
+with 409 while an attack was on screen, as agreed. A production segment that stayed up 30 s got an exchange over it
+5 s into its life: "Copper's surging fifty percent in ten minutes—somebody finally remembered the red desert!" /
+"While advanced circuits bled out, down to ten." Three bugs found and fixed on the way:
+the opener and an attack outranked the segment until an attack cut it; "fifty-one" for an on-screen 51.4 failed
+the fact check (numbers within 1 of a fact now pass); and the hosts talked about a segment 25 s after an attack had
+cut it. The mock raised an alert every few seconds, so most segments there were declined or cut within seconds.
+eng/stream2 then changed the rule (4320f73, same API): a segment is cut, and requests are declined for 20 s, only
+when the director actually cuts the main camera to a fight, death, base attack or loss; alerts it lets pass no
+longer end or block segments. The caster needs no change for that.
+
 ## Status
 
 | Part | State (2026-10-10) |
 |---|---|
+| Second pass: exchanges, show context and shake1 pace, naturalist angle, continuous talk, viewer lane, new writers | Benched (8 writers), selftests, three mock casts; real-world test below |
 | `caster.py` live: Gemma 4 writer, Aura-2 voices, Clef-flash classifier, mock feed, OBS page listening | Four live runs (3 to 5 min each), all lines from the model, none rejected; results below |
 | All 41 Aura-2 voices, plus Aura-1 and MeloTTS | Rendered, loudness measured, transcribed back with Whisper (`voices.py --check`) |
 | Writers: Gemma 4 26B, Llama 3.3 70B, Llama 3.1 8B, gpt-oss-20b, `claude -p --model haiku` | Benched (`caster.py --bench`) |
@@ -25,9 +157,10 @@ Nothing was streamed and the `pog` profile's output settings were not touched.
 
 ```sh
 python3 tools/stream/serve.py --mock --port 8788                    # or --world live --run RUN.json (docs/STREAM-NOTES.md)
-python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts-fallback aura1   # Gemma 4 writer + Aura-2 voices + Clef
+python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts-fallback aura1   # Kimi K2.6 exchanges + Aura-2 + Clef
 python3 tools/stream/caster.py --writer template --tts say --classifier heuristic   # free and offline (macOS)
-python3 tools/stream/caster.py --writer claude --tts aura2           # `claude -p --model haiku` writes, Aura-2 speaks
+python3 tools/stream/caster.py --writer claude --model sonnet        # `claude -p` (personal profile) writes the exchanges
+python3 tools/stream/caster.py --gap 20 40 --lines 1 1 --lull 50     # roughly the first pass's sparse, single-line cast
 python3 tools/stream/caster.py --dry-run --writer template           # print lines only, nothing synthesised or pushed
 ```
 

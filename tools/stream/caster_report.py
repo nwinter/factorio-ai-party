@@ -22,6 +22,25 @@ print(f"{os.path.basename(path)}: {span / 60:.1f} min, {len(cast)} caster clips,
 if len(cast) > 1:
     gaps = [b["t"] - a["t"] for a, b in zip(cast, cast[1:])]
     print(f"caster gap: median {statistics.median(gaps):.0f} s, min {min(gaps):.0f} s")
+    # silence: time between the end of one clip (either channel) and the start of the next
+    spans = sorted((r["t"], r["t"] + r.get("seconds", 0)) for r in clips)
+    quiet, end = [], spans[0][1]
+    for s, e in spans[1:]:
+        if s > end:
+            quiet.append(s - end)
+        end = max(end, e)
+    talk = sum(e - s for s, e in spans)
+    first, last = spans[0][0], max(e for _, e in spans)
+    print(f"airtime: voices {100 * min(1, talk / max(1e-6, last - first)):.0f}% of the cast; silences median "
+          f"{statistics.median(quiet) if quiet else 0:.1f} s, longest {max(quiet) if quiet else 0:.1f} s")
+    ex = {}
+    for r in cast:
+        ex.setdefault(r.get("exchange"), []).append(r)
+    if len(ex) > 1 or None not in ex:
+        sizes = [len(v) for k, v in ex.items() if k is not None]
+        print(f"exchanges: {len(sizes)}, lines per exchange {statistics.mean(sizes):.1f}; angles "
+              f"{sorted({r.get('angle') or r.get('event') for r in cast})}; naturalist "
+              f"{sum(1 for v in ex.values() if v[0].get('naturalist') or v[0].get('angle') == 'naturalist')}")
 for key in ("write_latency", "tts_latency", "seconds"):
     vals = [r[key] for r in clips if isinstance(r.get(key), (int, float))]
     if vals:

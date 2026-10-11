@@ -1,0 +1,415 @@
+{
+ "name": "shake1",
+ "source": "shake1",
+ "samples": [
+  {
+   "tick": 15128,
+   "techs": 1,
+   "produced": {
+    "iron-plate": 44,
+    "copper-plate": 15
+   }
+  },
+  {
+   "tick": 22380,
+   "techs": 2,
+   "produced": {
+    "iron-plate": 165,
+    "copper-plate": 82
+   }
+  },
+  {
+   "tick": 29601,
+   "techs": 2,
+   "produced": {
+    "iron-plate": 420,
+    "copper-plate": 232
+   }
+  },
+  {
+   "tick": 36818,
+   "techs": 2,
+   "produced": {
+    "iron-plate": 877,
+    "copper-plate": 368
+   }
+  },
+  {
+   "tick": 44049,
+   "techs": 2,
+   "produced": {
+    "iron-plate": 1126,
+    "copper-plate": 519
+   }
+  },
+  {
+   "tick": 51266,
+   "techs": 2,
+   "produced": {
+    "iron-plate": 1578,
+    "copper-plate": 542
+   }
+  },
+  {
+   "tick": 58475,
+   "techs": 3,
+   "produced": {
+    "iron-plate": 2017,
+    "copper-plate": 649
+   }
+  },
+  {
+   "tick": 65688,
+   "techs": 5,
+   "produced": {
+    "iron-plate": 2265,
+    "copper-plate": 769,
+    "electronic-circuit": 34
+   }
+  },
+  {
+   "tick": 72898,
+   "techs": 6,
+   "produced": {
+    "iron-plate": 2612,
+    "copper-plate": 964,
+    "electronic-circuit": 112,
+    "automation-science-pack": 15
+   }
+  },
+  {
+   "tick": 80112,
+   "techs": 6,
+   "produced": {
+    "iron-plate": 3035,
+    "copper-plate": 1205,
+    "electronic-circuit": 148,
+    "automation-science-pack": 51
+   }
+  },
+  {
+   "tick": 87326,
+   "techs": 7,
+   "produced": {
+    "iron-plate": 3547,
+    "copper-plate": 1449,
+    "electronic-circuit": 223,
+    "automation-science-pack": 83,
+    "logistic-science-pack": 3
+   }
+  },
+  {
+   "tick": 94536,
+   "techs": 8,
+   "produced": {
+    "iron-plate": 3985,
+    "copper-plate": 1727,
+    "electronic-circuit": 240,
+    "automation-science-pack": 107,
+    "logistic-science-pack": 10
+   }
+  },
+  {
+   "tick": 101759,
+   "techs": 8,
+   "produced": {
+    "iron-plate": 4436,
+    "copper-plate": 2005,
+    "electronic-circuit": 247,
+    "automation-science-pack": 131,
+    "logistic-science-pack": 22
+   }
+  },
+  {
+   "tick": 108968,
+   "techs": 9,
+   "produced": {
+    "iron-plate": 5069,
+    "copper-plate": 2283,
+    "electronic-circuit": 247,
+    "automation-science-pack": 136,
+    "logistic-science-pack": 34
+   }
+  },
+  {
+   "tick": 115995,
+   "techs": 9,
+   "produced": {
+    "iron-plate": 5656,
+    "copper-plate": 2515,
+    "electronic-circuit": 247,
+    "automation-science-pack": 138,
+    "logistic-science-pack": 50
+   }
+  },
+  {
+   "tick": 123211,
+   "techs": 9,
+   "produced": {
+    "iron-plate": 6337,
+    "copper-plate": 2717,
+    "electronic-circuit": 247,
+    "automation-science-pack": 156,
+    "logistic-science-pack": 62
+   }
+  },
+  {
+   "tick": 130420,
+   "techs": 10,
+   "produced": {
+    "iron-plate": 7000,
+    "copper-plate": 2920,
+    "electronic-circuit": 271,
+    "automation-science-pack": 191,
+    "logistic-science-pack": 73
+   }
+  },
+  {
+   "tick": 137640,
+   "techs": 11,
+   "produced": {
+    "iron-plate": 7610,
+    "copper-plate": 3125,
+    "electronic-circuit": 329,
+    "automation-science-pack": 215,
+    "logistic-science-pack": 87
+   }
+  },
+  {
+   "tick": 144854,
+   "techs": 11,
+   "produced": {
+    "iron-plate": 8396,
+    "copper-plate": 3379,
+    "electronic-circuit": 384,
+    "automation-science-pack": 260,
+    "logistic-science-pack": 104
+   }
+  },
+  {
+   "tick": 152068,
+   "techs": 11,
+   "produced": {
+    "iron-plate": 9283,
+    "copper-plate": 3657,
+    "electronic-circuit": 457,
+    "automation-science-pack": 298,
+    "logistic-science-pack": 120
+   }
+  },
+  {
+   "tick": 159282,
+   "techs": 11,
+   "produced": {
+    "iron-plate": 9880,
+    "copper-plate": 3931,
+    "electronic-circuit": 528,
+    "automation-science-pack": 362,
+    "logistic-science-pack": 132
+   }
+  },
+  {
+   "tick": 166491,
+   "techs": 11,
+   "produced": {
+    "iron-plate": 10206,
+    "copper-plate": 4145,
+    "electronic-circuit": 607,
+    "automation-science-pack": 405,
+    "logistic-science-pack": 156
+   }
+  },
+  {
+   "tick": 173705,
+   "techs": 11,
+   "produced": {
+    "iron-plate": 10936,
+    "copper-plate": 4347,
+    "electronic-circuit": 676,
+    "automation-science-pack": 451,
+    "logistic-science-pack": 158
+   }
+  },
+  {
+   "tick": 180918,
+   "techs": 12,
+   "produced": {
+    "iron-plate": 11746,
+    "copper-plate": 4550,
+    "electronic-circuit": 745,
+    "automation-science-pack": 487,
+    "logistic-science-pack": 188
+   }
+  },
+  {
+   "tick": 187825,
+   "techs": 13,
+   "produced": {
+    "iron-plate": 12285,
+    "copper-plate": 4745,
+    "electronic-circuit": 810,
+    "automation-science-pack": 499,
+    "logistic-science-pack": 236
+   }
+  },
+  {
+   "tick": 195041,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12368,
+    "copper-plate": 4941,
+    "electronic-circuit": 885,
+    "automation-science-pack": 523,
+    "logistic-science-pack": 298
+   }
+  },
+  {
+   "tick": 202250,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12416,
+    "copper-plate": 5071,
+    "electronic-circuit": 954,
+    "automation-science-pack": 547,
+    "logistic-science-pack": 343
+   }
+  },
+  {
+   "tick": 209464,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12465,
+    "copper-plate": 5213,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 358
+   }
+  },
+  {
+   "tick": 216673,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12470,
+    "copper-plate": 5314,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 362
+   }
+  },
+  {
+   "tick": 223888,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12470,
+    "copper-plate": 5389,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 362
+   }
+  },
+  {
+   "tick": 231097,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12470,
+    "copper-plate": 5423,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 362
+   }
+  },
+  {
+   "tick": 238306,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12470,
+    "copper-plate": 5423,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 362
+   }
+  },
+  {
+   "tick": 245520,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12470,
+    "copper-plate": 5423,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 362
+   }
+  },
+  {
+   "tick": 252729,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12470,
+    "copper-plate": 5423,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 362
+   }
+  },
+  {
+   "tick": 259944,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12470,
+    "copper-plate": 5423,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 362
+   }
+  },
+  {
+   "tick": 267158,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12470,
+    "copper-plate": 5423,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 362
+   }
+  },
+  {
+   "tick": 274366,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12470,
+    "copper-plate": 5423,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 362
+   }
+  },
+  {
+   "tick": 281580,
+   "techs": 14,
+   "produced": {
+    "iron-plate": 12470,
+    "copper-plate": 5423,
+    "electronic-circuit": 998,
+    "automation-science-pack": 572,
+    "logistic-science-pack": 362
+   }
+  }
+ ],
+ "first_done": {
+  "electronics": 15128,
+  "steam-power": 22380,
+  "automation-science-pack": 58475,
+  "automation": 65688,
+  "electric-mining-drill": 65688,
+  "logistics": 72898,
+  "logistic-science-pack": 87326,
+  "steel-processing": 94536,
+  "gun-turret": 108968,
+  "automation-2": 130420,
+  "steel-axe": 137640,
+  "engine": 180918,
+  "fast-inserter": 187825,
+  "fluid-handling": 195041
+ }
+}
