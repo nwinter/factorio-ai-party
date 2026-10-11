@@ -378,6 +378,59 @@ python3 tools/stream/selftest.py      # eng/bots shapes, read-only guard, camera
 With the current defaults a 30-minute 9-agent mock gives about one main-camera cut per minute, a median dwell of
 about 60 s on every camera, and main-camera time for all nine agents. Combat-heavy agents get the most.
 
+## Director client memory
+
+Shake5's cam3 director crashed at load (05:20, 2026-10-11): the box was at 51.8 of 54.5 GB commit and each Space Age
+director commits about 5.2 GB (cam1 5,266 MB, cam2 5,253 MB private). `start-client.ps1` wrote
+`graphics-quality=low`, but Factorio 2.0's `[graphics]` section takes only `high` or `medium` for that key
+(`; Options: high, medium` in a 2.0 generated config.ini). The invalid value was dropped and the client ran at high
+("[Graphics quality: high] [Video memory usage: low]" in cam3's log); `video-memory-usage=low` was valid and applied.
+The `-Human` value `normal` was invalid too. Source: the commented defaults in a Factorio 2.0 config.ini (format
+version 13, with the Space Age debug keys) on the operator Mac. The box's own config.ini was not read: the sandbox
+here has no network path to the box, and shake5 was running.
+
+What directors (every client without `-Human`) now get, in `[graphics]`:
+
+| Key | Value | What it does | Expected saving |
+|---|---|---|---|
+| `graphics-quality` | `medium` (was the invalid `low`, so high) | Sprite resolution. High loads the high-resolution sprite sheets; medium loads the normal ones, half the width and height, so a quarter of the pixels. The config comment ties the streamed atlas to it ("64 MB for high resolution and 32 MB for medium resolution"). | The largest one. My estimate, not measured: 1.5 to 3 GB of the ~5.2 GB per client, since most of a client's commit is sprite data and medium sprites hold a quarter of the pixels. The box test below decides. |
+| `video-memory-usage` | `low` (unchanged) | How many sprite atlases are kept resident rather than streamed. | Already applied in shake5; no further change. |
+| `texture-streaming` | `true` (the default, now written out) | Sprites are streamed into a virtual atlas on demand instead of all loaded at start. | None compared with shake5 (it was already on); written so a changed default cannot raise memory. |
+
+`-Human` now gets `graphics-quality=high` and `video-memory-usage=all` (valid values; the game's own defaults).
+
+Picture: medium is the sprite resolution the harness's own client uses (`vendor/factorio-harness/host/session.ts`
+passes `--graphics-quality medium`). At the directors' zooms (0.45 to 2.73, median 1.3 in shake4) sprites are drawn
+at or below their medium size most of the time, so a 1080p stream should look much the same. Close zooms above about
+2 will be softer. Check on the first OBS frame after the restart.
+
+Kept as they are, in case medium is not enough: `optimize-for-low-vram` (default false) targets video memory, not
+the commit charge, and its effect is not documented. `texture-compression-level=low-quality` (default
+`high-quality`) compresses harder with visible artefacts. `max-texture-size` (default 0, auto) caps atlas pages. The
+`high-quality-animations`, `-shadows` and `-terrain` switches mostly cost GPU time. Try them one at a time with the
+test below if a client still commits too much.
+
+Box test (world n free after shake5 ends at 06:21; run from the repo root on the Mac). Restart one director with the
+new settings, leave cam1 and cam2 as they are (old settings) for comparison:
+
+```sh
+git log -1 --format=%h -- tools/win/start-client.ps1        # the medium change must be in this checkout
+tools/winps.sh tools/win/client-mem.ps1 -Name n -Slot -cam3  # before: every factorio process's private MB, commit
+tools/winps.sh tools/win/stop-client.ps1 -Name n -Slot -cam3
+tools/winps.sh tools/win/start-client.ps1 -Name n -GamePort 34205 -PlayerName pog-cam3 -Slot -cam3 \
+  -Factorio 'D:\pog\factorio-2.0.77-expansion'
+tools/winps.sh tools/win/client-mem.ps1 -Name n -Slot -cam3  # after load (~2 min), and again after ~10 min
+```
+
+`client-mem.ps1` is read-only: it lists each `factorio*` process's private and working-set MB with its start time,
+the box's commit charge against its limit, and the lines of the client's log that name its graphics settings.
+The log should now say `[Graphics quality: medium] [Video memory usage: low]`. Compare `factorio-cam3`'s private MB
+with cam1 and cam2 at the same moment. Streaming grows memory as a camera sees new sprites, so the 10-minute reading
+with the director service moving cam3 is the fair one. If the saving holds, restart cam1 and cam2 the same way
+(cam1 with `-Sound`, as `start-team.sh` does), or let the next `start-team.sh` start them. `start-client.ps1` rewrites
+config.ini on every start, so nothing on the box needs editing by hand. To go back: `git revert` the
+start-client.ps1 commit and restart the client.
+
 ## Verified
 
 - Mock (9 and 12 agents) and world c (paused co-op 1 save; read-only polls only) both render in OBS through the
