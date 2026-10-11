@@ -72,6 +72,36 @@ and `build_direct` are unchanged since 41f8a20.
    have `build_direct` take ground items in the footprint into the inventory next to `clear_remnants`
    (`runtime.lua:1794`), and make `pickup` report what it took or fail when nothing is in reach.
 
+## Summary
+
+1. The handover worked. Each agent read its notes, said in chat what it was going back to, and did it within a
+   minute. Roles, claims, board items, action queues and chat cursors all carried over. The notes shrank from 83.5K
+   to 74.8K in all.
+2. The shift made the team's first blue science:
+   - Gemini finished the gas trunk with pumps at 05:38:48, 17 minutes in, and blue followed a minute later.
+   - Research went from 24 technologies to 29 (advanced oil processing, logistics 2, battery and two more), with
+     processing-unit at 74% at the end.
+   - It made 566 blue, 615 red and 695 green packs, and 26,658 iron plates.
+   - Sulfur stopped at 06:03 when the one refinery's petroleum went to plastics, and blue ran on stock after that.
+3. The raids grew from 60 to 100 biters a group. Power went down once (06:03) and was rebuilt with more steam. There
+   were at least 4 deaths, three of them in the first two minutes, because the world ran unattended through a raid
+   at the boundary.
+4. New harness faults:
+   - Loss incidents never close, so alerts add up two shifts of losses.
+   - `build` over a machine leaves both machines in place.
+   - `pickup` did not clear an item that blocked a build.
+   - Gemini's agy loop spun on a quota error for its last 13.5 minutes.
+5. Of shake4's fixes, sleep while dead held, as did the naturalist wording and Grok's home. Observe while dead
+   reached main four minutes after the agents launched, so the shift ran without it. The supervisor fix was not
+   tested. An old ElevenLabs pick survived the
+   voice change.
+6. Chat logistics fell to 84% (shake4 91 to 94%), the lowest yet. Aloud stayed at shake4's rate and there was no
+   confession.
+7. On the stream:
+   - The hosts did not know this was a later shift and called the deadline the end of the processing-unit research.
+   - Reading the stage label "Oil" as a missing resource, they said the oil was dry long after blue science started.
+   - No stale comparison aired, and the analyst ran all 42 cycles.
+
 ## 1. Continuity
 
 The handover worked. Each agent started from its own shake4 notes.md and the sentence in `prompt.md` ("This is a
@@ -441,3 +471,76 @@ Director and frames:
   director cam3 joining".
 - `shot-sync.log` has 51,428 lines, 51,426 of them "skipped ... no workspace" for the same 8 old screenshots, logged
   every 2.5 s for the hour (shake4 P3 item 17, again).
+
+## 5. What a long run of shifts needs
+
+Shake5 showed that notes.md is enough for a handover. Every agent took up its role within a minute, and the notes did
+not grow (section 1). The P1 items above that matter most for many shifts are:
+
+- item 1, loss incidents that never close;
+- item 3, a shift fact for the hosts;
+- item 6, quota checked before each shift and a loop that waits on a quota error;
+- item 7, launching from the code the fixes are in.
+
+The rest, by priority.
+
+### P2
+
+9. The world plays itself at each shift boundary, about four game minutes per handover:
+   - `tools/stop-team.sh` saved at 04:54:39, 2.6 minutes after shake4's deadline.
+   - `tools/start-team.sh:103` unpaused the resumed world at 05:18:52, before the directors joined and 2.3 minutes
+     before the first agent call.
+
+   This shift opened in a raid, and three agents died in its first two minutes. Fix: run the save at the deadline,
+   and on resume move the `resume` call (`start-team.sh:101-106`) to after the agents are launched. The save itself
+   can stay unpaused, as the comment at `:102` requires.
+10. `tools/chat-log.py:18-22` starts from seq 0 when the run's chat.jsonl is new, so a resumed run logs the last
+    shift's in-game chat again (126 messages at 05:20:58). Seed `seen` from the resumed run's chat.jsonl (or the
+    resume tick) when `runs/<run>/resumed-from` exists.
+11. Camera clients:
+    - The cam3 director client crashed at load (box commit memory 51.8 of 54.5 GB, per the brief) and was black
+      until 05:26.
+    - No run log records it, and the director kept cutting to it.
+    - Main now has `tools/win/client-mem.ps1` and directors at graphics-quality medium (077b8ae).
+    - Fix: run `client-mem.ps1` before each shift and refuse to start above a set commit charge. Add a liveness check
+      for each camera (`tools/start-team.sh` step 2), so the director drops a dead camera from its rotation or the
+      launcher restarts it.
+12. Baseline past its end. The analyst labelled 30 of 42 points "behind", several of them saying that past runs had
+    ended before this stage. The facts still carried a shake1 time at minute 151. Past the last minute of the
+    reference run, `tools/stream/baseline.py` should give "no baseline", and the analyst's label should follow.
+13. The caster's facts:
+    - Old deaths stay in `earlier_on_air` and `also_happening` with no respawn fact, so "Gemini's corpse still warm"
+      aired 25 minutes after Gemini respawned. Add a respawn or alive fact.
+    - Mottos read as current plans; label them as mottos in the agent facts.
+    - Both are in `tools/stream/caster.py`.
+14. Replays of the same place. Skip a loss replay at a place replayed in the last 10 minutes, so raids don't fill
+    every segment slot (`tools/stream/replays.py` or `segments.py`).
+15. Haiku's compaction floor rises about 0.7K each time, three times an hour (section 3). `agent/context.tsv:9`
+    (shake4 P2 item 12 still applies). Watch it over the next shifts.
+16. Astra's `harness_request` (06:19:37): a queued `transfer` with `keep` and `up_to` returned "Given amount
+    value(-1) too small" when the player was near the cap. The clamp at `runtime.lua:2279-2280` does not cover the
+    path taken (not traced; the queue's transfer near `runtime.lua:3760` is a candidate). Reproduce in
+    `vendor/factorio-harness/tests/`.
+
+### P3
+
+17. `shot-sync.log` repeats the same 8 skipped files every 2.5 s: log each skipped file once, or clear the cam
+    clients' script-output folders at launch.
+18. `check_line` misses "still as a heron" (2 lines) and pronouns read out as words ("Luna they-them"):
+    `tools/stream/caster.py`.
+19. Run-together words carried across the shift in notes.md (section 3), and two squashed aloud lines went to the
+    voices. If the voices stumble on them, the text prep for speech (`tools/stream/textprep.py`) can split a word
+    from a digit glued to it. The agents' own writing is theirs.
+
+## Appendix: methods
+
+- Game minutes are tick/3600 from shake4's start; journal `at` is UTC and is shown in PDT. Score snapshots are every
+  2 minutes, so a milestone time from scores.jsonl can be up to 2 minutes late.
+- Chat counts use only messages with tick ≥ 446842 (the resume), classified with the same keyword rules as the
+  shake3 and shake4 studies.
+- Deaths are distinct respawn ticks seen in journal errors and sleep answers, a floor.
+- Sleep share, errors, compactions and the shake4 fix checks come from each agent's journal, supervisor.log,
+  context.log, the Claude and Codex transcripts and the agy logs.
+- Host lines and mistakes come from `caster.log` and `tools/stream/logs/caster-20261011-052058.jsonl`, checked
+  against scores.jsonl and chat.jsonl.
+- I did not watch the recording; captions and the cam3 black minutes are not checked against video.
