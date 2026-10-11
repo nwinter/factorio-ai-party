@@ -106,7 +106,7 @@ Karen, Moira, Tessa, Rishi, the Eddy/Flo/Reed/Rocko/Sandy/Shelley families); rob
 
 Volumes measured from the 3.2-minute end-to-end mock run: a caster line averages 47 characters and 3.2 s; voiced
 agent lines average 48 characters. At the default pacing that is about 120 caster lines an hour (one per ~30 s); agent
-lines are capped near 60 an hour by the per-agent cooldown and gaps. Prices are the Workers AI list prices
+lines are capped near 60 an hour by the per-agent cooldown and gaps (the second mock run gave about 40). Prices are the Workers AI list prices
 (developers.cloudflare.com/workers-ai/platform/pricing, read 2026-10-10). Latency has not been measured.
 
 | Piece | Model | Price | Per stream hour |
@@ -187,9 +187,12 @@ node --experimental-eventsource tools/stream/audio_selftest.mjs http://127.0.0.1
 python3 tools/stream/caster.py --feed http://127.0.0.1:8796 --writer template --classifier heuristic --tts tone --duration 190
 ```
 
-End-to-end result (mock, 3.2 min, tone voices): 7 caster lines (one per ~27 s), 10 agent lines (before the per-agent
-cooldown was added), 17 clips played by the page, no two clips on one channel at once, and no caster line started
-while an agent was speaking. Against eng/stream2's mock (2.5 min, dry run, short gaps): the casters called board
+End-to-end results (mock, 3.2 min each, tone voices, Node page as listener): first run 7 caster lines (one per
+~27 s) and 10 agent lines, 17 clips played; that was too much agent talk, so the per-agent cooldown went in. Second
+run with the current defaults: 6 caster lines (one per ~32 s) and 2 agent lines (both marked `aloud`), 8 clips
+played. In both, no two clips played on one channel at once and no caster line started while an agent was speaking.
+The mock's chat (~10 messages a minute, a sixth of them banter) is busier than a real team's, so on a real run
+expect fewer agent lines; loosen `--agent-cooldown` if the agents feel too quiet. Against eng/stream2's mock (2.5 min, dry run, short gaps): the casters called board
 posts, a harness request, base attacks, a death and low power.
 
 ## Next

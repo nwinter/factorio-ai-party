@@ -132,6 +132,17 @@ def spoken(text):
     text = re.sub(r"\s*(?:near|at)?\s*\(\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)", "", str(text))
     text = re.sub(r"(?<=[a-z])-(?=[a-z])", " ", re.sub(r"\s*:\s*", ": ", text))  # gun-turret -> gun turret
     return re.sub(r"\s+", " ", text).strip(" :")
+def spoken_time(gt):
+    """'1h03m' -> '1 hour 3 minutes' (what TTS should read)."""
+    m = re.match(r"(\d+)h(\d+)m", gt or "")
+    if not m:
+        return gt
+    h, mins = int(m.group(1)), int(m.group(2))
+    parts = ([f"{h} hour" + ("s" if h != 1 else "")] if h else []) + \
+        ([f"{mins} minute" + ("s" if mins != 1 else "")] if mins or not h else [])
+    return " ".join(parts)
+
+
 def agent_facts(s, name):
     a = next((x for x in s.get("agents") or [] if x["name"] == name), None)
     if not a:
@@ -144,7 +155,7 @@ def agent_facts(s, name):
 
 
 def facts_for(e, s):
-    f = {"event": e["kind"], "game_time": s.get("game_time"), "team_size": len(s.get("agents") or [])}
+    f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
     for k in ("text", "change", "title", "tech", "item"):
         if e.get(k):
             f[k] = spoken(e[k]) if k in ("text", "title") else e[k]
@@ -216,6 +227,15 @@ def clean(line):
     return line
 
 
+def at_phrase(where):
+    """'iron smelting' -> 'at the iron smelting', 'spawn' -> 'at spawn', '50 m W' -> '50 metres west of spawn'."""
+    m = re.match(r"(\d+) m ([NSEW]{1,2})$", where)
+    if m:
+        dirs = {"N": "north", "S": "south", "E": "east", "W": "west"}
+        return f"{m.group(1)} metres {'-'.join(dirs[c] for c in m.group(2))} of spawn"
+    return "at spawn" if where == "spawn" else f"at the {where}"
+
+
 class TemplateWriter:
     """Fact-safe fallback: fills hand-written lines from the facts. Never says anything not in them."""
     name = "template"
@@ -247,16 +267,25 @@ class TemplateWriter:
         "harness": {"pbp": ["Tool request on the board: {title}. Status: {change}."],
                     "color": ["When the agents ask for better tools, that's the meta-game."]},
         "camera": {"pbp": ["Let's check in on {cam_name}, {cam_doing}.", "Over to {cam_name} now: {cam_doing}.",
-                           "Here's {cam_name}, at the {cam_where}.", "Cameras find {cam_name}. Let's watch."],
+                           "Here's {cam_name}, {cam_at}.", "Cameras find {cam_name}. Let's watch.",
+                           "{cam_name}, {cam_model} under the hood, {cam_doing}.",
+                           "And here's {cam_name} {cam_at}, {cam_doing}."],
                    "color": ["{cam_name}'s role is {cam_role}. Let's see how it's going.",
-                             "Keep an eye on {cam_name} here."]},
-        "chat": {"pbp": ["{agent_name} on comms: they're talking it through."],
-                 "color": ["I like hearing {agent_name} think out loud.", "That's the chatter you want from a team."]},
+                             "Keep an eye on {cam_name} here.", "{cam_name}'s motto: {cam_motto} Let's see if it holds.",
+                             "{cam_name} runs on {cam_model}. Let's see what it does with the time.",
+                             "Love watching {cam_name} work {cam_at}."]},
+        "chat": {"pbp": ["{agent_name} on comms: they're talking it through.", "{agent_name} on the mic!",
+                         "Comms from {agent_name}."],
+                 "color": ["I like hearing {agent_name} think out loud.", "That's the chatter you want from a team.",
+                           "That's {agent_name} in a nutshell.", "{agent_name} has opinions, and I'm here for it."]},
         "lull": {"pbp": ["{researching_tech} is at {researching_percent} percent in the labs.",
-                         "Game clock {game_time}, and the factory hums along."],
+                         "Game clock {game_time}, and the factory hums along.",
+                         "Meanwhile, {busy_name} is {busy_doing}.", "{busy_name} is {busy_doing} {busy_at}."],
                  "color": ["Quiet moments are when a factory grows the most.",
                            "{technologies_done} technologies down. Plenty more to go.",
-                           "The labs are working on {researching_tech}. That'll open things up."]},
+                           "The labs are working on {researching_tech}. That'll open things up.",
+                           "{busy_name}, on {busy_role}, never seems to stop.",
+                           "Clock says {game_time}, {technologies_done} technologies in. Not bad for a team with no boss."]},
     }
 
     def __init__(self, rng=None):
@@ -271,6 +300,14 @@ class TemplateWriter:
         cam = (facts.get("on_camera") or [{}])[0]
         for k, v in cam.items():
             flat[f"cam_{k}"] = v
+        busy = (facts.get("busy_agents") or [{}])[0]
+        for k, v in busy.items():
+            flat[f"busy_{k}"] = v
+        for pre, src in (("cam", cam), ("busy", busy)):
+            if src.get("where"):
+                flat[f"{pre}_at"] = at_phrase(src["where"])
+        if flat.get("cam_motto") and flat["cam_motto"][-1] not in ".!?":
+            flat["cam_motto"] += "."
         for k, v in (facts.get("researching") or {}).items():
             flat[f"researching_{k}"] = v
         if facts.get("change"):

@@ -71,9 +71,11 @@ bad = []
 for kind in caster.TemplateWriter.T:
     for who in ("pbp", "color"):
         e = {"kind": kind, "t": now, "prio": 5}
-        f = {"event": kind, "game_time": "1h03m", "team_size": 9, "text": "Luna is under attack", "change": "done",
+        f = {"event": kind, "game_time": "1 hour 3 minutes", "team_size": 9, "text": "Luna is under attack", "change": "done",
              "title": "Wall west", "tech": "Oil gathering", "agent": {"name": "Luna", "role": "Defense"},
-             "on_camera": [{"name": "Opus", "doing": "building boiler", "where": "power plant", "role": "Power"}],
+             "on_camera": [{"name": "Opus", "doing": "building boiler", "where": "power plant", "role": "Power",
+                            "model": "Claude Opus 5.5", "motto": "Power is a promise"}],
+             "busy_agents": [{"name": "Luna", "doing": "building gun turret", "where": "50 m W", "role": "Defense"}],
              "researching": {"tech": "Oil gathering", "percent": 67}, "technologies_done": 14}
         for _ in range(4):
             line = tw.write(who, e, f, [], names + ["Opus"])
