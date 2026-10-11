@@ -60,6 +60,36 @@ fh call status
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
 - Output is compact tables meant for reading. Use `--format json` for programs.
 
+### Output shape, chat and time left
+
+```sh
+fh say "I'll take copper"                      # or: fh say --text-file line.txt; fh say - <<'EOF' ... EOF
+fh say "biters at the west wall" --aloud       # spoken on the stream
+fh chat                                        # your unread messages (newest 30; remaining=K are still unread)
+fh chat --since 212 --limit 50                 # everything after seq 212, yours included; --peek reads without marking
+fh board events --since 40
+```
+
+- Every failure exits nonzero and ends with one line `error: <code>: <message>[; recovery: ...]`. Partial results end
+  with one `warning:` line instead (exit 0): `short`, `awaiting_craft`, `not done` (craft batch refusals), `none held`,
+  `tiles refused`, `fluid`. Both lines are last, after `clock:`, `team:` and `chat:`, so `| tail -1` and `grep` see
+  them; those fields move out of the body into that line.
+- Compact `--wait` replies show the acceptance, then `outcome`, `action`, `waited_s`, `position`, `health` (when
+  hurt), `inventory` (change over the wait, e.g. `stone+20 coal-6`), `detail` (the action's result), then `team`, one
+  `clock:` line and `chat:`. `--full` (or `--format json`) gives the whole completion status as before. `fh wait` is
+  compact the same way. Wait polls are `status {peek:true}` (falling back to plain status on an older runtime), so the
+  team hints, the chat trailer and the turn clock are left for the reply you see; it reads one small `observe` after.
+- `chat` is lossless: it returns your unread messages (or all after `since`), newest `limit` (default 30), oldest
+  first, and marks only those read; `remaining: K` counts unread messages it did not return (chat again for them).
+  Your own messages count as read; writing does not skip others' unread ones.
+- The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
+  `status`; `peek` requests report it without remembering. `team.mentions` still carries every message naming you.
+- `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
+  also work) adds `deadline in 23m` (or `deadline passed 4m ago`) to the `clock:` line. `tools/new-run.sh` sets it
+  for each agent's `./fh`.
+- `say` text comes from the words after `say`, from `--text-file`, or from stdin (`fh say -`, or a pipe when no words
+  are given). Start text with `-` only after `--` (`fh say -- "-5 iron"`).
+
 ## The in-game queue
 
 A queue plan runs inside the game, with no CLI round trip between steps:
@@ -130,7 +160,8 @@ fh --bot astra call status                                                      
 
 ## Profiles, speech bubbles, cameras
 
-- `profile` sets your `display_name` (1..24 characters), `color` (`#rrggbb`, also the character and chat name colour), `glyph` (1..2 characters, an emoji or letters), `motto` (0..80) and `avatar`. With no arguments it reads the profile.
+- `profile` sets your `display_name` (1..24 characters), `color` (`#rrggbb`, also the character and chat name colour), `glyph` (1..2 characters, an emoji or letters), `motto` (0..80), `avatar` and `voice`. With no arguments it reads the profile.
+- `voice` (1..16 characters, stored lower case) is the stream voice for `say {aloud:true}` lines and is listed in `profiles`: a Deepgram Aura-2 speaker id such as `orion`, `iris` or `athena` (the list is in `describe` and the pog repo's `docs/AUDIO-NOTES.md`). Unknown ids are stored; the stream falls back to a default voice picked from the name.
 - `avatar` is a pixel-art portrait built from named parts, every field optional: `base` engineer|robot|biter|drone, `helmet` none|hardhat|armor|power|crest|hood, `visor` none|goggles|slit|wide|mono|grid, `emblem` none|gear|bolt|flask|plate|circuit|rocket|leaf|star, `accessory` none|antenna|headlamp|scarf|tank|horns|earpiece|pipe, `backdrop` dark|grid|hazard|glow|night, `accent` `#rrggbb`. Unknown fields or values are refused (and nothing in that call changes). A new `avatar` replaces the old one; `false` clears it. The harness only validates and stores it; renderers (outside the harness) fill unset parts from the name and use `color` for the suit.
 - `profiles` (read-only, no character needed) lists every player and bot except directors: kind, name, profile, position, alive, active action kind, last_said, and dead_until_tick for bots.
 - `say` also draws the text over the speaker's character in its colour, wrapped at about 40 characters, for 8 s or until it speaks again. A person typing in the game chat gets a bubble too.

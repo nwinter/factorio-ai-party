@@ -3283,13 +3283,16 @@ M.check_args=check_args
 -- request, and how much of it the character had nothing to do (no active
 -- action and no running plan) or stood waiting for hand-crafted items.
 -- Hand crafting runs alongside and is listed.
-local function clock_line(p)
+-- A peeking request (fh --wait polls) reports without restarting the count,
+-- so the reply after a wait covers the whole wait; it still counts as seen.
+local function clock_line(p,peek)
   local clocks=state().clocks or {}; state().clocks=clocks
   local c=clocks[p.index]
   local since=c and game.tick-c.call_tick or 0
   local idle=c and c.idle or 0
   local waited=c and c.craft_wait or 0
-  clocks[p.index]={call_tick=game.tick,idle=0,craft_wait=0}
+  if peek and c then c.seen_tick=game.tick
+  else clocks[p.index]={call_tick=game.tick,idle=0,craft_wait=0} end
   local function t(ticks)
     local sec=math.floor(ticks/60)
     if sec>=3600 then return string.format('%dh%02dm',math.floor(sec/3600),math.floor(sec/60)%60) end
@@ -3335,15 +3338,16 @@ function M.dispatch(request)
   if request.action=='status' then M.bots.status(request.player,result) end
   if type(result)=='table' and request.action~='describe' and request.action~='profiles' and request.action~='cameras' then
     local p=M.lookup(request.player or 1)
-    if p and p.valid then result.clock=clock_line(p) end
+    local peek=type(request.args)=='table' and request.args.peek==true
+    if p and p.valid then result.clock=clock_line(p,peek) end
     -- What is new for this agent (mentions, board, attacks/losses, reminders);
     -- directors and peeking readers (overlays) leave the agent's cursors alone.
-    local peek=type(request.args)=='table' and request.args.peek==true
     if p and p.valid and not peek and request.action~='board_events' and not M.is_director(p.index) then
       result.team=M.board.team(p,unseen_losses(p))
     end
     if clock and request.action=='status' then result.time_mode=clock.report() end
-    if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index) end
+    -- The unread trailer repeats only when a newer message arrived (status always shows it).
+    if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index,peek and 'peek' or request.action=='status' and 'always' or nil) end
   end
   return result
 end

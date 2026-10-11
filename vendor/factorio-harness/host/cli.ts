@@ -10,6 +10,7 @@ import { RconClient, RconOutcomeUnknown } from './rcon.js';
 import { Harness, type Reply } from './harness.js';
 import { renderMap } from './view.js';
 import { formatCompact } from './format.js';
+import { parseDeadline, deadlineText } from './deadline.js';
 import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
 import { BridgeClient, BridgeOutcomeUnknown } from './bridge.js';
@@ -44,13 +45,18 @@ const help = `fh — Factorio agent CLI
   fh board post|update|events|request --args JSON   board_post, board_update, board_events, harness_request
   fh plan save NAME --file plan.json         Save a queue plan by name (yours, up to 50); plan run NAME submits it
   fh plan run|show|delete NAME, fh plan list Run (--args '{"mode":"replace"}'), inspect or delete saved plans
+  fh say "text" [--aloud]                   Post in chat; or --text-file F, or stdin (fh say - <<'EOF' ... EOF)
+  fh chat [--since SEQ] [--limit N] [--peek] Your unread messages (newest N; remaining=K are still unread), or all after SEQ
   fh stream                                 JSON-lines requests in, replies out; one connection
   fh run --file plan.json                    Sequential actions, waits after each timed action
 
 Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT), --host HOST, --port N, --timeout MS (default 5000; deploy/watch 60000),
          --session NAME (default: auto-use default session), --bridge-socket PATH (bridge without a session),
          --wait, --wait-timeout MS (default: until the action's own end tick, at least 30000), --journal PATH, --args-file PATH
+         --full (after --wait: the whole status instead of outcome, position and inventory change)
+         --since SEQ (chat, board events), --limit N, --deadline-file PATH (FH_DEADLINE_FILE: time left on the clock line)
          --format json|compact (default compact; stream always uses JSONL)
+Failures exit nonzero and end with an error: line; partial results (short, awaiting_craft, not done) end with a warning: line.
 Credentials: FACTORIO_RCON_PASSWORD or FACTORIO_RCON_PASSWORD_FILE
 Endpoint: FACTORIO_RCON_HOST (127.0.0.1), FACTORIO_RCON_PORT (27015)
 Stream input: {"action":"observe","args":{},"id":"optional-stable-id"}
@@ -68,7 +74,44 @@ function integer(value: string | undefined, fallback: number): number {
   return result;
 }
 let outputFormat: 'json' | 'compact' = 'compact';
-function output(value: unknown) { process.stdout.write(outputFormat === 'compact' ? formatCompact(value) : JSON.stringify(value) + '\n'); }
+let deadline: number | undefined;
+// The clock line carries the time left when the workspace has a deadline.
+function withDeadline(value: unknown): unknown {
+  const result = value && typeof value === 'object' ? (value as Reply).result : undefined;
+  if (deadline === undefined || !result || typeof result.clock !== 'string') return value;
+  return {...value as Reply, result:{...result, clock:`${result.clock}; ${deadlineText(deadline)}`}};
+}
+function output(value: unknown) {
+  value = withDeadline(value);
+  process.stdout.write(outputFormat === 'compact' ? formatCompact(value) : JSON.stringify(value) + '\n');
+}
+async function readStdin(waitMs?: number): Promise<string> {
+  const chunks: Buffer[] = [];
+  return new Promise((resolve, reject) => {
+    const timer = waitMs === undefined ? undefined : setTimeout(() => { if (!chunks.length) { process.stdin.pause(); resolve(''); } }, waitMs);
+    process.stdin.on('data', chunk => chunks.push(Buffer.from(chunk)));
+    process.stdin.on('end', () => { clearTimeout(timer); resolve(Buffer.concat(chunks).toString('utf8')); });
+    process.stdin.on('error', reject);
+  });
+}
+// Item counts by name@quality from an observe player inventory.
+function counts(inventory: unknown): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const stack of Array.isArray(inventory) ? inventory : []) {
+    if (!stack || typeof stack.name !== 'string') continue;
+    const key = stack.quality && stack.quality !== 'normal' ? `${stack.name}@${stack.quality}` : stack.name;
+    out.set(key, (out.get(key) ?? 0) + Number(stack.count ?? 0));
+  }
+  return out;
+}
+function inventoryChange(before: unknown, after: unknown): string | undefined {
+  const a = counts(before), b = counts(after), parts: string[] = [];
+  for (const key of new Set([...a.keys(), ...b.keys()])) {
+    const delta = (b.get(key) ?? 0) - (a.get(key) ?? 0);
+    if (delta) parts.push(`${key}${delta > 0 ? '+' : ''}${delta}`);
+  }
+  return parts.length ? parts.join(' ') : 'unchanged';
+}
 async function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
@@ -78,11 +121,19 @@ async function main() {
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'},
+    full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'},
+    'text-file':{type:'string'}, 'deadline-file':{type:'string'},
   }});
   let command = positionals[0];
   if (!command || values.help || command === 'help') { process.stdout.write(help); return; }
   if (values.format && !['json','compact'].includes(values.format)) throw new Error('--format must be json or compact');
   outputFormat = command === 'stream' || values.format === 'json' ? 'json' : 'compact';
+  const deadlineFile = values['deadline-file'] ?? process.env.FH_DEADLINE_FILE;
+  if (deadlineFile) {
+    // A missing or unreadable deadline only drops the time left, never the request.
+    try { deadline = parseDeadline(await readFile(deadlineFile,'utf8')); }
+    catch (error) { process.stderr.write(`deadline: ${String(error)}\n`); }
+  }
   // FH_NIRI=1 makes Niri isolation the default for graphical clients.
   const niri = values.niri ?? (!values.headless && process.env.FH_NIRI === '1');
   if (command === 'start') {
@@ -164,6 +215,38 @@ async function main() {
     values.args = JSON.stringify(args);
     positionals[1] = operation === 'save' || operation === 'delete' ? 'plan_save' : operation === 'run' ? 'plan_run' : 'plans';
     command = 'call';
+  }
+  if (command === 'say') {
+    // Text as arguments, a file or stdin: no JSON quoting, apostrophes are fine.
+    const args = object(JSON.parse(values.args ?? '{}'),'args');
+    const words = positionals.slice(1);
+    let text: string | undefined;
+    if (values['text-file']) text = await readFile(values['text-file'],'utf8');
+    else if (words.length === 1 && words[0] === '-') text = await readStdin();
+    else if (words.length) text = words.join(' ');
+    else if (args.text === undefined && !process.stdin.isTTY) text = await readStdin(1000);
+    if (text !== undefined) args.text = text.trim();
+    if (typeof args.text !== 'string' || !args.text) throw new Error('say needs text: fh say "text", fh say --text-file F, or fh say - with the text on stdin');
+    if (values.aloud) args.aloud = true;
+    values.args = JSON.stringify(args);
+    positionals.splice(1, positionals.length - 1, 'say');
+    command = 'call';
+  }
+  if (command === 'chat') { positionals.splice(1, positionals.length - 1, 'chat'); command = 'call'; }
+  // --since/--limit/--peek for the reads that take them.
+  if (values.since !== undefined || values.limit !== undefined || values.peek) {
+    const action = positionals[1];
+    const args = object(JSON.parse(values.args ?? '{}'),'args');
+    if (values.since !== undefined) {
+      const since = Number(values.since);
+      if (!Number.isSafeInteger(since) || since < 0) throw new Error('--since must be a sequence number (0 or more)');
+      if (action === 'chat') args.since = since;
+      else if (action === 'board_events') args.since_seq = since;
+      else throw new Error('--since applies to fh chat and fh board events');
+    }
+    if (values.limit !== undefined) args.limit = integer(values.limit, 30);
+    if (values.peek) args.peek = true;
+    values.args = JSON.stringify(args);
   }
   const known = new Set(['doctor','describe','observe','call','view','deploy','watch','stream','run','wait']);
   if (!known.has(command)) throw new Error(`Unknown command ${command}; use fh help`);
@@ -253,12 +336,58 @@ async function main() {
     if (active?.until_tick === undefined || tick === undefined) return 250;
     return Math.min(400, Math.max(100, Math.round((active.until_tick - tick) / 60 * 1000 / 4)));
   }
-  async function waitForAction(action: string, untilTick?: number, nowTick?: number): Promise<Reply> {
+  // Polls peek, so the team hints and chat trailer they would carry stay
+  // pending for the one reply the agent sees. A runtime without peek gets
+  // plain polls.
+  let peekable = !bridged;
+  async function poll(): Promise<Reply> {
+    if (peekable) {
+      const reply = await harness.request('status',{peek:true});
+      if (reply.ok || !/peek/.test(String(reply.error?.message ?? ''))) return reply;
+      peekable = false;
+    }
+    return harness.request('status');
+  }
+  // The finished wait's own reply: full status, or (compact) outcome,
+  // position and inventory change from one small observe.
+  async function finalReply(status: Reply): Promise<Reply> {
+    if (!peekable) return status;
+    const fresh = await harness.request('status');
+    if (!fresh.ok) return status;
+    return {...fresh, ok:status.ok, ...(status.error ? {error:status.error} : {})};
+  }
+  const compactWaits = !bridged && !values.full && outputFormat === 'compact';
+  const OBSERVE_SELF = {radius:1,limit:1,exclude_resources:true,entity_types:['character']};
+  async function brief(status: Reply, started: number, before?: unknown): Promise<Reply> {
+    const self = await harness.request('observe',OBSERVE_SELF);
+    // A dead character cannot observe; status still carries the hints.
+    const carrier = self.ok ? self : await harness.request('status');
+    const last = status.result?.last;
+    const player = self.ok ? self.result?.player : undefined;
+    const result: Record<string, unknown> = {
+      outcome: last?.outcome ?? (status.result?.active ? 'running' : 'idle'), action: last?.kind,
+      waited_s: Math.round((Date.now()-started)/100)/10,
+      position: player?.position ?? status.result?.position,
+      health: player && player.health < player.max_health ? `${Math.round(player.health)}/${Math.round(player.max_health)}` : undefined,
+      inventory: before !== undefined && player ? inventoryChange(before, player.inventory) : undefined,
+      detail: last?.result, alive: status.result?.alive === false ? false : undefined,
+      team: carrier.result?.team, clock: carrier.result?.clock, chat: carrier.result?.chat,
+    };
+    for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];
+    return {...status, tick:carrier.tick ?? status.tick, result};
+  }
+  async function waitForAction(action: string, untilTick?: number, nowTick?: number, before?: unknown): Promise<Reply> {
     if (bridged) return waitForBridgeAction(action);
     const started = Date.now();
+    const done = await waitForActionEnd(action, untilTick, nowTick, started);
+    // A timeout or a failed poll is reported as it is.
+    if (done.error?.code === 'wait_timeout' || (!done.ok && done.error?.code !== 'action_interrupted')) return done;
+    return compactWaits ? brief(done, started, before) : finalReply(done);
+  }
+  async function waitForActionEnd(action: string, untilTick: number | undefined, nowTick: number | undefined, started: number): Promise<Reply> {
     const deadline = started+waitBudget(untilTick,nowTick);
     while (!stopping && Date.now()<deadline) {
-      const status = await harness.request('status');
+      const status = await poll();
       const active = action === 'shoot' ? status.result?.combat : status.result?.active;
       // active may report shooting when movement has already finished. A
       // transfer/refuel/rearm short of items waits for the hand-craft queue as
@@ -281,7 +410,7 @@ async function main() {
   // fh wait: block until whatever the character is doing (and any combat) ends.
   async function waitForIdle(): Promise<Reply> {
     const started = Date.now();
-    let first = await harness.request('status');
+    let first = await poll();
     if (!first.ok) return first;
     const untilTick = first.result?.active?.until_tick ?? first.result?.combat?.until_tick;
     const deadline = started+waitBudget(untilTick,first.tick ?? first.result?.tick);
@@ -290,11 +419,14 @@ async function main() {
       if (!status.result?.active && !status.result?.combat) {
         const last = status.result?.last;
         const ok = !last?.outcome || successfulOutcomes.includes(last.outcome);
-        return {...status, ok, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started},
-          ...(ok ? {} : {error:{code:'action_interrupted',message:`Control ended: ${last.outcome}`}})};
+        const ended = {...status, ok, ...(ok ? {} : {error:{code:'action_interrupted',message:`Control ended: ${last.outcome}`}})};
+        if (compactWaits) return brief(ended, started);
+        const full = await finalReply(ended);
+        return {...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
+          team:full.result?.team, clock:full.result?.clock, chat:full.result?.chat}};
       }
       await delay(pollDelay(status));
-      status = await harness.request('status');
+      status = await poll();
       if (!status.ok) return status;
     }
     if (stopping) throw new Error('Stopped waiting; inspect status.');
@@ -302,6 +434,12 @@ async function main() {
   }
   async function execute(action: string, args: Record<string,unknown>, id?: string, wait = false, onAccepted?: (reply: Reply) => void): Promise<Reply> {
     const requestId = id ?? randomUUID();
+    // The compact wait reports the inventory change, so read it first (peek: no hints consumed).
+    let before: unknown;
+    if (wait && compactWaits) {
+      const self = await harness.request('observe',{...OBSERVE_SELF,peek:true}).catch(() => undefined);
+      if (self?.ok) before = self.result?.player?.inventory;
+    }
     let reply: Reply;
     try { reply = await harness.request(action,args,requestId); }
     catch (error) {
@@ -315,8 +453,14 @@ async function main() {
         || (['transfer','rearm','refuel'].includes(action) && reply.result?.awaiting_craft !== undefined);
     if (wait && reply.ok && waits) {
       onAccepted?.(reply);
-      const completion = await waitForAction(action, reply.result?.until_tick, reply.tick);
+      const completion = await waitForAction(action, reply.result?.until_tick, reply.tick, before);
       if (completion.error?.code === 'wait_timeout') return {...reply, ok:false, result:{accepted:reply.result, ...completion.result}, error:completion.error};
+      // Compact: the brief completion only (the acceptance was printed already when onAccepted is set).
+      if (compactWaits && completion.error?.code !== undefined && completion.error.code !== 'action_interrupted') {
+        return {...reply, ok:false, result:{accepted:reply.result}, error:completion.error};
+      }
+      if (compactWaits) return {...reply, tick:completion.tick ?? reply.tick, ok:completion.ok,
+        result:onAccepted ? completion.result : {accepted:reply.result, ...completion.result}, ...(completion.ok ? {} : {error:completion.error})};
       return {...reply, ok:completion.ok, result:{accepted:reply.result, completion:completion.result}, ...(completion.ok ? {} : {error:completion.error})};
     }
     return reply;
@@ -406,7 +550,9 @@ async function main() {
       // A long wait shows its acceptance first, so an interrupted client still
       // saw what the game took on (compact output only; JSON stays one reply).
       const reply = await execute(action,args,values.id,values.wait,
-        outputFormat === 'compact' ? accepted => output({...accepted, waiting:`until completion (poll status if interrupted)`}) : undefined);
+        outputFormat === 'compact' ? accepted => output({...accepted, waiting:`until completion (poll status if interrupted)`,
+          // The completion carries the clock line.
+          ...(compactWaits && accepted.result ? {result:{...accepted.result, clock:undefined}} : {})}) : undefined);
       if (reply.ok && action === 'blueprint_export' && !args.layout && values.out) {
         await mkdir(dirname(resolve(values.out)),{recursive:true});
         await writeFile(values.out,reply.result.blueprint+'\n');
