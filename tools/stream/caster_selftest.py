@@ -301,6 +301,25 @@ gmf = caster.facts_for({"kind": "lull", "angle": "explain", "t": now, "prio": 1}
 check("game minutes past the hour are a fact ('sixty-five minutes in')", gmf.get("game_minutes") == 65 and
       caster.check_line("Sixty-five minutes in and the labs hum.", gmf, names, []) is None, str(gmf))
 
+# eng/stream2's Space Age segments (143eb0d): talk over them, never say the unchecked platform speed
+sp = {"id": "s1", "type": "space", "state": "live", "started": now, "ends": now + 20, "title": "Space Age progress",
+      "facts": {"planets": ["Nauvis", "Vulcanus"], "rockets": 2, "platforms": [
+          {"name": "Ember", "where": "Nauvis → Vulcanus", "speed_kms": 61.2, "paused": False}]}}
+spf = caster.facts_for({"kind": "segment", "segment": sp, "t": now, "prio": 7}, {})
+check("space segment facts drop speed_kms", "speed_kms" not in json.dumps(spf) and
+      spf["on_screen_now"]["platforms"][0]["name"] == "Ember", str(spf))
+check("a speed line is rejected (no speed fact)", caster.check_line(
+    "Ember cruises at sixty-one kilometres a second!", spf, names, []) is not None)
+mo = {"id": "s2", "type": "space_moment", "state": "live", "started": now, "ends": now + 15, "title": "Landing: Vulcanus",
+      "facts": {"moment": "landing", "planet": "Vulcanus", "agent": "Astra", "planets_reached": 2}}
+mof = caster.facts_for({"kind": "segment", "segment": mo, "t": now, "prio": 7}, {})
+check("a space moment is called as a milestone", "milestone" in mof.get("how_to_call_it", ""), str(mof))
+check("a line about the landing passes", caster.check_line("Astra lands on Vulcanus! Two planets reached!", mof,
+                                                            ["Astra"], []) is None)
+check("space alerts rank with research, not as urgent", caster.PRIORITY["space"] == 7 < caster.URGENT)
+check("space alert template", caster.TemplateWriter(caster.random.Random(1)).write(
+    "pbp", {"kind": "space"}, {"text": "First rocket launched"}, [], []) is not None)
+
 # TTS: the record names who spoke; Workers AI 8008 retries once on a second voice (P1 item 2, P2 item 12)
 class _FakeTTS:
     backend = "auto"

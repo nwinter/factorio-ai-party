@@ -51,7 +51,19 @@ SHOW = ("The show: nine AI models from different labs (each named in the facts w
         "automated green science, then oil, plastics, red circuits, blue science and on to the rocket silo. A pace "
         "comparison with the team's previous run, when given in the facts, tells viewers whether this run is "
         "faster or slower; judge how well the bots play from it and the other facts.")
-PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "viewer": 6, "power": 6, "harness": 5,
+SHOW_SPACE = (" This run plays the Space Age expansion: after blue science the goal is a rocket silo that launches a "
+              "space platform, space science made on the platform, then the planets Vulcanus (metallurgic science), "
+              "Fulgora (electromagnetic), Gleba (agricultural) and Aquilo (cryogenic). Many Space Age technologies are "
+              "unlocked by a trigger (mine calcite, build an asteroid collector) instead of lab research.")
+
+
+def show_for(s):
+    """The show notes for this snapshot: Space Age runs carry a `space` block (eng/stream2)."""
+    return SHOW + (SHOW_SPACE if (s or {}).get("space") else "")
+
+
+PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "power": 6,
+            "harness": 5,
             "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
 URGENT = 8
@@ -243,6 +255,15 @@ def agent_facts(s, name, said=False):
     return {k: v for k, v in f.items() if v}
 
 
+def drop_keys(x, keys):
+    """`x` without `keys` at any depth (facts the hosts must not say)."""
+    if isinstance(x, dict):
+        return {k: drop_keys(v, keys) for k, v in x.items() if k not in keys}
+    if isinstance(x, list):
+        return [drop_keys(v, keys) for v in x]
+    return x
+
+
 def pronouns_of(a):
     """An agent's chosen pronouns ("he/him"), else "they/them" (shake3: Grok chose he/him; the rules forced "they")."""
     p = re.sub(r"\s+", "", str(a.get("pronouns") or "")).lower()
@@ -351,6 +372,10 @@ def facts_for(e, s, baseline=None, deadline=None):
         if seg.get("type") == "attack_replay":
             # not "muted" or "banner": the first version read those production notes out on air
             f["how_to_call_it"] = "as an instant replay, in the past tense, like a replay breakdown"
+        if seg.get("type") == "space_moment":
+            f["how_to_call_it"] = "a milestone for the team: celebrate it and say what it opens up"
+        # eng/stream2: platform speed_kms is LuaSpacePlatform.speed x 60, not yet checked against the game's km/s
+        f["on_screen_now"] = drop_keys(f["on_screen_now"], ("speed_kms",))
     if e["kind"] == "research" and baseline and e.get("text"):
         tech = re.sub(r"^research complete:\s*", "", e["text"], flags=re.I).strip().lower().replace(" ", "-")
         mins = baseline.minutes(tech)
@@ -468,7 +493,7 @@ def check_line(line, facts, names, recent):
             return f"name not in facts: {n}"
     # numbers spelled out in the facts count too: shake3 rejected "Eleven labs" from Sol's "eleven labs are working"
     known = [float(x) for x in re.findall(r"\d+(?:\.\d+)?", blob)] + [float(v) for _, v in spelled_numbers(blob)]
-    why = off_roster(line, blob + " " + SHOW.lower(), names) or wrong_pronoun(low, facts) or wrong_deadline(low, facts)
+    why = off_roster(line, blob + " " + (SHOW + SHOW_SPACE).lower(), names) or wrong_pronoun(low, facts) or wrong_deadline(low, facts)
     if why:
         return why
     for num in re.findall(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", line):  # "3,600" is one number
@@ -669,6 +694,8 @@ class TemplateWriter:
                           "{agent_name} {did} {title}. The board keeps moving."],
                   "color": ["That team board is how {team_size} agents avoid stepping on each other.",
                             "Good teamwork there from {agent_name}.", "Somebody has to do the chores. Thanks, {agent_name}."]},
+        "space": {"pbp": ["Big moment: {text}!", "{text}! That's history for this team!"],
+                  "color": ["That changes what this run can reach.", "A milestone. The map just got bigger."]},
         "segment": {"pbp": ["On screen now: {seg_title}.", "Let's take a closer look: {seg_title}."],
                     "color": ["Here's the picture: {seg_title}.", "Worth a look: {seg_title}."]},
         "harness": {"pbp": ["Tool request on the board: {title}. Status: {change}."],
@@ -790,10 +817,10 @@ class LLMWriter:
             raise RuntimeError(str(j.get("result"))[:200])
         return j.get("result") or ""
 
-    def exchange(self, e, facts, recent, first="pbp", n=2, naturalist=False):
+    def exchange(self, e, facts, recent, first="pbp", n=2, naturalist=False, show=SHOW):
         """A short back-and-forth: [(who, line)], not yet fact-checked."""
         system = (f"You write both hosts of a livestream cast of AI agents playing Factorio. Rook is "
-                  f"{CASTERS['pbp']['brief']}. Vale is {CASTERS['color']['brief']}. {SHOW}")
+                  f"{CASTERS['pbp']['brief']}. Vale is {CASTERS['color']['brief']}. {show}")
         user = (f"Event: {e['kind']}. Facts (the only game facts you may state):\n"
                 f"{json.dumps(facts, ensure_ascii=False)}\n"
                 f"Recent lines on air:\n" + ("\n".join(f"- {r}" for r in recent[-8:]) or "- none") + "\n"
@@ -1095,7 +1122,7 @@ class Caster:
             return {"kind": "segment", "segment": seg, "t": now, "prio": 1}
         main = ((s.get("cameras") or {}).get("main") or {}).get("agents") or []
         pick = self.rng.choice(main or [a["name"] for a in s.get("agents") or []] or [None])
-        opts = [("production", {}), ("overview", {}), ("recap", {}), ("spotlight", {"agent": pick})]
+        opts = [("production", {}), ("overview", {}), ("recap", {}), ("spotlight", {"agent": pick}), ("space", {})]
         self.rng.shuffle(opts)
         self.request_segment(opts, "lull")
         options = [f for f in FILLERS if (f != "pace" or self.baseline)
@@ -1168,7 +1195,7 @@ class Caster:
         if writer and self.breakers["writer"].ok():
             try:
                 cand = writer.exchange(e, facts, recent, first, n, naturalist=bool(
-                    e.get("naturalist") or e.get("angle") == "naturalist"))
+                    e.get("naturalist") or e.get("angle") == "naturalist"), show=show_for(s))
                 self.breakers["writer"].good()
                 err = None if cand else "empty"
                 for who, line in cand[:n + 1]:  # keep the exchange up to its first unusable line
@@ -1488,7 +1515,7 @@ def bench(a):
             facts = facts_for(e, snap, base, read_deadline(a.deadline))
             t0 = time.time()
             try:
-                lines = w.exchange(e, facts, [], first, n, naturalist=label == "naturalist")
+                lines = w.exchange(e, facts, [], first, n, naturalist=label == "naturalist", show=show_for(snap))
                 errs = []
                 for _, line in lines:
                     errs.append(check_line(line, facts, names, []))
