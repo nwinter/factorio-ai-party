@@ -1,6 +1,62 @@
 # Harness3 notes: the shake2 harness bugs (branch eng/harness3)
 
-Round 5 (the agents' own tool requests) comes first, then round 4 (shake3 fixes), then the shake2 round.
+Round 6 (the runtime.lua locals guard and refactor plan) comes first, then round 5 (the agents' own tool requests),
+round 4 (shake3 fixes) and the shake2 round.
+
+## Round 6: runtime.lua locals
+
+### The guard
+
+`tests/locals.lua` (in `npm test` through `tests/lua.test.ts`, and runnable as `lua tests/locals.lua`) compiles
+`mod/agent-harness_0.1.0/runtime.lua` and `control.lua` with N extra locals put in front of the first line, finds the
+largest N that still compiles, and fails when fewer than 3 slots are free:
+
+```
+locals: runtime.lua has 3 of 200 top-level local slots free
+locals: control.lua has 186 of 200 top-level local slots free
+```
+
+The failure says to move helpers into a module (require) or group them in a table, and points here. Why it matters: a
+fresh world loads runtime.lua through the mod as its own chunk, so a 201st top-level local breaks every new world at
+load, even though the hot-deploy bundle (73066da) wraps the body in a function and would still deploy. The count is the
+peak of locals alive at once in the main chunk, so a top-level `for` loop's hidden locals count too (the Lua 5.5 used by the tests keeps one more hidden
+local per generic `for` than Factorio's 5.2, so the test can only be stricter than the game). Checked: with one local
+added to a copy of runtime.lua the test fails with that message; the counter's own assertions (200 locals leave 0,
+199 leave 1, 198 leave 2) run every time.
+
+### Refactor plan (for tomorrow, after eng/spaceage's runtime.lua changes land)
+
+runtime.lua's main chunk holds about 200 locals in 4012 lines. Three steps, smallest diff first; run `lua
+tests/locals.lua` after each.
+
+1. Module constructors, 13 slots, mechanical. `blueprint_module`, `scheduler_module`, `construction_module`,
+   `kite_module`, `threat_module`, `survey_module`, `conditions_module`, `route_module`, `pipes_module`, `rates_module`,
+   `stock_module`, `space_module`, `clock_module` (lines 5-21) are each called once, where the module is built (lines
+   3005, 3422-3456, 3690-3700, 3782-3784). Call `require('x'){...}` there instead, as `M.chat_module` already avoids a
+   local. No behaviour change; one line each at the top and at the call.
+2. Constants, about 20 slots. One `local K={...}` (or fields on `M`) for `MAX_TICKS` (6 uses), `WATCH_TICKS`,
+   `STUCK_TICKS`, `LOSS_CELL`, `MAX_INCIDENTS`, `STOCK_RADIUS`, `STOCK_REFUSE_S`, `HAND_BACKLOG_S`,
+   `COPPER_GROUP_LIMIT`, `FEED_CHECK` (4), `PIPE_LEG`, `PADDED_BOX`, `SLIM_BOX`, `STALL_TICKS`, `SIDESTEP_TICKS`,
+   `MAX_STALLS`, `MAX_REPLANS`, `PROGRESS_TICKS`, `MAX_ALERTS`: 19 names, about 33 use sites, each `X` becoming `K.X`.
+   The lookup tables used once or twice can join a second table `T` for another ~10 slots: `give_order`, `kind_order`,
+   `collect_types`, `GRID_TYPES`, `GRID_SKIP`, `ARROWS`, `ASSEMBLERS`, `STEP`, `drawn_enemy`, `timed_kind`,
+   `repeat_shift`, `live_fields`, `DOC_ONLY`, `EXTRA_ARGS`, `VIEW_SCOPES`.
+3. Subsystems into modules, when more room is needed (each frees its helpers and moves code out of the 4000 lines):
+   - hand crafting, 12 functions: `hand_speed`, `crafting_left`, `crafting_count`, `crafting_line`, `craft_stock`,
+     `takes`, `hand_recipe`, `craft_shortfall`, `begin_craft`, `craft_cost`, `best_assembler`, `craft_facts` (plus
+     `STOCK_RADIUS`, `STOCK_REFUSE_S`, `ASSEMBLERS`, `HAND_BACKLOG_S`) into the existing `crafting.lua`, with `stock`
+     and `survey` passed in;
+   - losses and alerts, 7: `record_loss`, `losses_since`, `ago`, `counted`, `describe_incident`, `unseen_losses`,
+     `recent_alerts` (plus `LOSS_CELL`, `MAX_INCIDENTS`, `MAX_ALERTS`) into an `alerts.lua`;
+   - research, 7: `queue_names`, `trigger_text`, `research_block`, `with_prerequisites`, `set_research_queue`,
+     `array_of_names`, `feed_research_plans` into a `research.lua`;
+   - pipe routing, 5: `PIPE_LEG`, `free_pipe_tile`, `pipe_leg`, `joined_box`, `route_pumps` into the existing
+     `pipes.lua`.
+
+Leave alone: the locals the hot path and many handlers share (`state`, `player`, `body`, `real`, `entity`, `finish`,
+`stop`, `steer`, `position`, `distance`, `integer`, `handlers`, `reads`, `passive`, `check_args`): moving them costs
+an extra table lookup per call and touches hundreds of lines. Step 1 alone gets back to 16 free; steps 1 and 2 to over
+40, enough for the Space Age work.
 
 ## Round 5: the agents' tool requests (shake3, sapilot)
 
