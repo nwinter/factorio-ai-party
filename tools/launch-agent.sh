@@ -12,6 +12,51 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 resume_sentence='This is a later shift of the same world: your bot and the factory are as the last shift left them, and notes.md is where you left off.'
 if [ "${1:-}" = --resume-sentence ]; then echo "$resume_sentence"; exit 0; fi
 . "$root/tools/profile-flags.sh"
+# agy's loop (.agy-loop.sh) for workspace $dir, model $model, fresh-start limit $limit and prompt file $prompt.
+agy_loop_script() {
+  cat > "$dir/.agy-loop.sh" <<EOL
+#!/usr/bin/env bash
+cd '$dir'
+# deadline.txt has minutes only; without explicit seconds date -j takes the current ones (shake2: a turn at 22:46:12).
+d=\$(cat deadline.txt)
+deadline=\$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "\${d% *}:00 \${d##* }" +%s)
+# One agy run. On a quota error (shake5: 277 relaunches 2.5 s apart on the same 429) tools/agy-quota.py logs it to
+# context.log and the loop sleeps until the reset, or stops when that is past the deadline. Any other run shorter
+# than 15 s waits 30 s before the next. started stays 0 until a run gets past the quota, so the first prompt is sent
+# again rather than "Continue" to a conversation that never began.
+started=0
+turn() {
+  touch .agy-stamp
+  t0=\$(date +%s)
+  agy "\$@" --model $model --dangerously-skip-permissions
+  q=\$(python3 '$root/tools/agy-quota.py' '$dir' .agy-stamp "\$deadline")
+  case "\$q" in
+    stop) exit 0 ;;
+    "") started=1; [ "\$((\$(date +%s) - t0))" -ge 15 ] || sleep "\${POG_AGY_RETRY_WAIT:-30}" ;;
+    *) sleep "\$q" ;;
+  esac
+}
+turn -p "\$(cat '$prompt')"
+${POG_ONE_TURN:+exit 0  # POG_ONE_TURN: smoke tests run the first turn only}
+while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
+  tokens=\$(python3 '$root/tools/context.py' agy-tokens '$dir')
+  left=\$(( (deadline - \$(date +%s) + 59) / 60 ))
+  # No fresh start in the last 2 minutes: it costs a re-read of notes.md (shake3: Grok's compaction 39 s before its
+  # deadline ended its play).
+  if [ "\$started" = 0 ]; then
+    turn -p "\$(cat '$prompt') The deadline is \$left minutes away."
+  elif [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ] && [ "\$((deadline - \$(date +%s)))" -gt 120 ]; then
+    echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
+    turn -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away."
+  else
+    turn -c -p "Continue: the deadline in deadline.txt is \$left minutes away (the clock: line shows it) and it is the only stop condition. Re-read notes.md, check ./fh call status, ./fh call chat and ./fh board, and keep playing until the deadline has passed."
+  fi
+done
+EOL
+  chmod +x "$dir/.agy-loop.sh"
+}
+# tools/test_quota.py writes the loop on its own: --agy-loop DIR MODEL LIMIT PROMPT
+if [ "${1:-}" = --agy-loop ]; then dir=$2 model=$3 limit=$4 prompt=$5; agy_loop_script; exit 0; fi
 run=$1 world=$2 player=$3 minutes=$4 kind=$5
 dir=$("$root/tools/new-run.sh" "$run" "$world" "$player" "$minutes")
 # describe.json, one action per line, ready before the agent starts (in shake1 Grok Build's permissions blocked the
@@ -132,28 +177,7 @@ case $kind in
     # agy has no compaction threshold setting (it compacts near 280K): past the limit, the next turn starts a fresh
     # conversation that picks up from notes.md. The check runs only between turns, and one turn can last the hour
     # (shake2: 53 minutes); agy's own compaction covers that case.
-    cat > "$dir/.agy-loop.sh" <<EOL
-#!/usr/bin/env bash
-cd '$dir'
-# deadline.txt has minutes only; without explicit seconds date -j takes the current ones (shake2: a turn at 22:46:12).
-d=\$(cat deadline.txt)
-deadline=\$(date -j -f "%Y-%m-%d %H:%M:%S %Z" "\${d% *}:00 \${d##* }" +%s)
-agy -p "\$(cat '$prompt')" --model $model --dangerously-skip-permissions
-${POG_ONE_TURN:+exit 0  # POG_ONE_TURN: smoke tests run the first turn only}
-while [ "\$(date +%s)" -lt "\$((deadline - 20))" ]; do
-  tokens=\$(python3 '$root/tools/context.py' agy-tokens '$dir')
-  left=\$(( (deadline - \$(date +%s) + 59) / 60 ))
-  # No fresh start in the last 2 minutes: it costs a re-read of notes.md (shake3: Grok's compaction 39 s before its
-  # deadline ended its play).
-  if [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ] && [ "\$((deadline - \$(date +%s)))" -gt 120 ]; then
-    echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
-    agy -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat. The deadline is \$left minutes away." --model $model --dangerously-skip-permissions
-  else
-    agy -c -p "Continue: the deadline in deadline.txt is \$left minutes away (the clock: line shows it) and it is the only stop condition. Re-read notes.md, check ./fh call status, ./fh call chat and ./fh board, and keep playing until the deadline has passed." --model $model --dangerously-skip-permissions
-  fi
-done
-EOL
-    chmod +x "$dir/.agy-loop.sh"
+    agy_loop_script
     herdr pane run "$pane" "'$dir/.agy-loop.sh'" >/dev/null
     ;;
   muse)

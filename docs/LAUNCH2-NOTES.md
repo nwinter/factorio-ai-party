@@ -181,6 +181,66 @@ What came back after each of Haiku's 8 compactions (characters, except the floor
   could keep that going longer. That trade is the operator's call before a longer shift; the rows are
   `agent/context.tsv:11-13`.
 
+## Quota and code checks after shake5 (round 6)
+
+### agy on a quota error (shake5 P1 item 6)
+
+- Each agy run writes its own `~/.gemini/antigravity-cli/log/cli-YYYYMMDD_HHMMSS.log`. The log names its workspace
+  (`workspaceDirs=[...]`), and on a quota stop it holds
+  `RESOURCE_EXHAUSTED (code 429): Individual quota reached ... Resets in 1h7m24s`. In shake5 there were 277 such
+  logs between 06:07:54 and 06:20:40.
+- `.agy-loop.sh` now sends each agy run through a `turn` function. Afterwards `tools/agy-quota.py DIR .agy-stamp
+  DEADLINE` reads the logs written since the run began. A quota error from this workspace adds an event to
+  `context.log`: `agy-quota`, with the reset time, the sleep and the error. The loop then sleeps until 30 s past
+  the reset. When the reset falls after the deadline it logs `agy-quota-stop` and exits.
+- A 429 without "quota" or "Resets in" in the line counts as a passing rate limit and is ignored. A quota error with
+  no reset time waits 5 minutes.
+- Until one run gets past the quota, the loop sends the first prompt again instead of "Continue". Any other run
+  shorter than 15 s waits 30 s before the next.
+- On shake5's logs the parser finds the stop at 06:20:42 with a reset at 07:15:17, which matches ai-usage's 07:15.
+- Test: `tools/test_quota.py` writes the loop with `tools/launch-agent.sh --agy-loop` and runs it with a fake agy
+  through three runs: a 429 that resets in 2 s, a normal run, and a 429 that resets after the deadline. The calls are
+  `-p` with the first prompt, `-p` with the first prompt again, then `-c -p`. `context.log` ends up with
+  `agy-quota` then `agy-quota-stop`.
+- Not run live: no agy run was started for this, and Gemini's window was full until 07:15.
+
+### Quota headroom before a run
+
+- `tools/quota_check.py TEAM MINUTES` maps each member's route to an ai-usage profile, by the profile's `command`;
+  route `-` uses the harness's own login. It projects every window over the run: current percent, plus the hourly
+  burn per agent from `agent/quota-burn.tsv` times the agents on that profile. A window that resets during the run
+  starts again from 0.
+- Scoped windows count only for their models: agy's Gemini windows for Gemini models, its Claude/GPT windows for
+  the others, and Claude's Fable windows for Fable.
+- It prints a `WARNING quota ...` line with the projected time a window runs dry, and an `ok` line otherwise. If
+  `ai-usage agent --json` fails (for example in a sandbox that cannot write `~/.cache`), it uses ai-usage's cached
+  `agent-brief.json` and says how old it is.
+- Burn rates come from ai-usage's quota history (`~/.cache/ai-usage/quota-history.json`): the hourly rise per window
+  over shake4 (team-nine, two hours) and shake5 (one hour), whichever is higher, divided by the agents on that
+  account. Examples: Gemini 5-hour 36%/h, Muse 5-hour 7.8%/h, Claude GS 5-hour 7.2%/h for Opus, Codex GS weekly
+  1.3%/h per agent. They include anything else run on those accounts at the time, so they lean high.
+- On shake5's start (Gemini at 72% at 05:21, one hour) it warns that Gemini runs dry at about 06:07; Gemini stopped
+  at 06:07:53. At 06:44 today it warned that Gemini was full until 07:15 and passed every other route for a
+  two-hour run.
+
+### Launch code (shake5 P1 item 7)
+
+- The three shake4 fixes shake5 missed (1658a13, 30c3964, 7c23228) changed the Lua runtime and were committed on
+  eng/harness3 at 05:24 to 05:27, after the 05:21 launch. They were merged at 06:23. The runtime and the mod are
+  deployed from the launching checkout at each start (`fh deploy`, `scp`), so the gap was code that existed only on
+  a branch. The built host (`dist`, what `bin/fh` runs) can also lag its sources.
+- `tools/code_check.py` (read-only) prints these warnings, which `start-team.sh` logs and the dry run prints:
+  - main has commits to `vendor/factorio-harness` or `tools/stream` that HEAD lacks;
+  - another local branch has such commits from the last 24 hours that neither HEAD nor main has;
+  - `dist/host/cli.js` is older than the newest `host/*.ts`.
+- Otherwise it prints `code ok`. The deploy line now logs the commit and the runtime's sha256 (`fh deploy --format
+  json`); a failed deploy still stops the start.
+- Run here at 06:55, it listed eng/audio, eng/harness3 (its item-on-ground fix, shake5 P1 item 8) and
+  research/spaceage. It also found that this worktree's `dist` (built 10-10 18:41) is older than host changes from
+  73066da (01:32). The main checkout's `dist` was rebuilt at 06:23.
+- Test: `tools/test_code_check.py` builds a scratch repository for each case: a commit on main, one on a branch, a
+  docs-only commit that is ignored, and a newer host source.
+
 ## Still open
 
 - Muse: no documented per-run switch for user skills (the skill-reminder agent and memory are off, round 4).

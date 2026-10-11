@@ -39,8 +39,14 @@ if [ -n "$resume" ]; then
   export POG_RESUME POG_RESUME_DIR=$prev_dir   # tools/new-run.sh and tools/launch-agent.sh read them
 fi
 members=$(awk -F'\t' '!/^#/ && NF {print $1}' "$team")
+# Quota headroom per route from ai-usage, read-only (docs/studies/shake5.md, P1 item 6: Gemini began shake5 at 72% of
+# its 5-hour window and ran dry 47 minutes in). Warnings only; the run starts anyway. POG_QUOTA_BRIEF: a saved
+# `ai-usage agent --json` to use instead (tests).
+quota() { python3 tools/quota_check.py "$team" "$minutes" ${POG_QUOTA_BRIEF:+--brief "$POG_QUOTA_BRIEF"} || true; }
 if [ "${POG_DRY_RUN:-0}" = 1 ]; then
   echo "plan for $run ($minutes min) on world $world (game $game, rcon $rcon), team $team: $(echo $members)"
+  quota
+  python3 tools/code_check.py || true
   if [ -n "$resume" ]; then
     echo "1. resume: tools/winps.sh tools/win/resume-save.ps1 -Name $world -From $resume -Check (refuse unless space_age=$POG_SPACE_AGE);"
     echo "   stop world $world; copy the newest of saves\\$resume.zip and later autosaves to saves\\$run.zip; refresh the instance's harness mod;"
@@ -66,6 +72,10 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
 fi
 rundir="runs/$run"; mkdir -p "$rundir"
 log() { printf '%s %s\n' "$(date +%H:%M:%S)" "$*" | tee -a "$rundir/start.log"; }
+quota | while read -r line; do log "$line"; done
+# Launch from the code the fixes are in (docs/studies/shake5.md, P1 item 7): harness and stream commits on main or a
+# recent branch that this checkout lacks, and a built host older than its sources. Warnings only.
+{ python3 tools/code_check.py || true; } | while read -r line; do log "$line"; done
 
 if [ -n "$resume" ]; then
   # 1. A later shift: the same instance and save (docs/HARNESS3-NOTES.md, round 7).
@@ -97,7 +107,10 @@ else
 fi
 tools/winps.sh tools/win/start-server.ps1 -Name "$world" -Save "$run" -GamePort $game -RconPort $rcon >/dev/null
 POG_WORLD=$world bin/fh call describe >/dev/null 2>&1 || true          # first command on a fresh save is swallowed
-POG_WORLD=$world bin/fh deploy >/dev/null
+deployed=$(POG_WORLD=$world bin/fh deploy --format json 2>/dev/null || true)
+deploy_status=$(printf '%s' "$deployed" | python3 tools/code_check.py --deploy-reply)
+log "runtime deployed from $(git rev-parse --short HEAD): $deploy_status"
+case $deploy_status in ok*) ;; *) exit 1 ;; esac   # as before: no agents on a world without the runtime
 if [ -n "$resume" ]; then
   # A save made while tick-paused would load paused; team runs are real time. Game time goes on from the save's tick.
   python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true

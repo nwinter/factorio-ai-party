@@ -95,8 +95,11 @@ def dry_run():
         team = os.path.join(tmp, "team.tsv")
         open(team, "w").write("haiku\tclaude\tclaude-b\thaiku\tlow\tHaiku 5.5\tClaude Code\n"
                               "luna\tcodex\tcodex-b\tgpt-6-luna\tlow\tLuna\tCodex\n")
+        qb = os.path.join(tmp, "brief.json")   # quota: Gemini-style full window on Luna's route
+        json.dump({"profiles": [{"id": "codex_account_b", "command": "codex-b", "windows": [
+            {"label": "Codex · Weekly", "percent": 100, "resets_at": 4102444800}]}]}, open(qb, "w"))
         env = dict(os.environ, POG_DRY_RUN="1", POG_RESUME="shake4", POG_RESUME_DIR=prev, POG_TEAM_FILE=team,
-                   POG_CASTER="0", POG_ANALYST="0")
+                   POG_CASTER="0", POG_ANALYST="0", POG_QUOTA_BRIEF=qb)
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "resume-dry-test", "10"], env=env,
                            capture_output=True, text=True, cwd=ROOT)
         assert r.returncode == 0, r.stderr
@@ -106,6 +109,9 @@ def dry_run():
         assert "bot haiku: kept if the save has it, else created; notes.md from" in out, out
         assert "bot luna: kept if the save has it, else created; fresh notes.md (none in shake4)" in out, out
         assert "prompt adds: This is a later shift" in out, out
+        assert "WARNING quota codex_account_b (luna) Codex · Weekly: 100% used" in out, out
+        assert "no ai-usage profile" in out and "(route claude-b)" in out, out
+        assert "code ok: " in out or "WARNING code: " in out, out
         assert not os.path.exists(os.path.join(ROOT, "runs", "resume-dry-test")), "the dry run made a run directory"
         r = subprocess.run(["bash", os.path.join(ROOT, "tools", "start-team.sh"), "shake4", "10"], env=env,
                            capture_output=True, text=True, cwd=ROOT)
