@@ -162,3 +162,142 @@ main inventory, as the silo's "Travel to platform" button does.
 
 Total: about 15–20 sessions (45–60 engineer agent-hours), of which about 8 come before the first planet: rockets,
 platforms, thrusters, collection and bot travel.
+
+## 4. Pace and cost
+
+### Our pace so far (base game, seed 20261010)
+
+From `runs/*/scores.jsonl` (operator score snapshots; packs are produced red, green and blue packs):
+
+| Run | Agents | Mode | Wall h | Game h | Techs | Packs | Packs per agent-hour | Packs/min at the end |
+|---|---|---|---|---|---|---|---|---|
+| baseline1 world a | 1 | real time | 0.8 | 0.84 | 13 | 898 | ~1,100 | — |
+| turns3h world a (Astra) | 1 | turns | 3.0 | 1.35 | 19 | 2,286 | ~760 | ~52 |
+| coop1 (Astra + Opus) | 2 | real time | 2.4 | 2.00 | 25 | 3,971 | ~830 | ~57 |
+| shake1 (9 agents, enemies on) | 9 | real time | 1.0 | ~1.0 | 14 | 934 | ~100 | — |
+
+Small teams in real time get the most science per agent-hour; nine agents in one world got an eighth of that
+(`docs/studies/shake1.md` explains why: coordination and hand logistics). In real time, game time runs at about 0.8 to
+1.0 hours per wall hour once pauses are counted.
+
+### What Space Age asks for
+
+Totals from the 2.0.77 technology data, summing each milestone's prerequisites (count × packs). Lab-hours assume one
+speed-1 lab with no bonuses:
+
+| Milestone | Packs | Lab-hours |
+|---|---|---|
+| rocket-silo (Space Age: 1000 × red, green, blue) | 10,965 | 43 |
+| space-platform-thruster | 12,965 | 51 |
+| Vulcanus, Gleba or Fulgora discovery | ~17,000 each | ~70 |
+| all three inner planets discovered | 25,605 | 104 |
+| Aquilo discovery | 80,580 | 221 |
+| promethium-science-pack (unlocks the solar system edge and the Shattered Planet) | 131,980 | 314 |
+| the same plus railgun (needed in practice) | 151,980 | 347 |
+| every finite technology (about 250) | 682,255 | 1,569 |
+| base game rocket-silo, for comparison | 17,695 | 62 |
+
+The pack counts alone are within reach. coop1 had made 36% of the Space Age silo's packs by game hour 2 and was
+running at 57 packs/min. At that rate the rest takes about 2 more game hours. 152k packs at 57/min would take 44 game
+hours, so the factory has to grow several-fold, but that is the normal shape of a run. The packs are not the hard part.
+The hard part is that from Vulcanus on, every new pack needs a working base on another planet, built with that
+planet's rules, and new mechanics are where our agents slow down. Oil took single agents over an hour, and nobody got
+there in shake1.
+
+Human references: a first base-game rocket averages about 42 hours on HowLongToBeat (quoted in a
+[2018 forum thread](https://forums.factorio.com/viewtopic.php?p=380886)). The Space Age multiplayer any% record is
+6 h 51 min according to a speedrun.com profile page; I could not open the full
+[leaderboard](https://www.speedrun.com/factorio). I found no reliable figure for a first Space Age playthrough, so
+the brief's "a hundred hours or more" stands.
+
+### Estimate to promethium science
+
+Game hours per stage, with 2 agents on Nauvis rising to 4 (one per planet or platform). The low end assumes the early
+game pace holds; the high end assumes each new planet
+stalls the team the way oil stalled single agents:
+
+| Stage | Low | Central | High |
+|---|---|---|---|
+| Nauvis to a platform making space science, thrusters | 5 | 8 | 15 |
+| Vulcanus base shipping metallurgic packs | 8 | 12 | 25 |
+| Fulgora (electromagnetic) | 8 | 12 | 25 |
+| Gleba (agricultural; spoilage, pentapods) | 10 | 15 | 35 |
+| Aquilo prerequisites and base (cryogenic) | 12 | 20 | 40 |
+| Captivity, fusion, quantum processors, railgun platform, promethium run | 12 | 20 | 50 |
+| Total game hours | 55 | 87 | 190 |
+| Wall hours (×1.2 in real time) | 66 | 105 | 230 |
+| Agent-hours (about 3.5 agents on average) | 230 | 370 | 800 |
+
+Plus harness engineering (section 3): 15 to 20 sessions, 45 to 60 agent-hours.
+
+### Subscription quota
+
+Measured: Codex (Astra) about 2.5% of a weekly allowance per agent-hour, so one weekly allowance buys about 40
+agent-hours. Claude agents use about 1%, so about 100 agent-hours.
+
+| Team mix (central 370 agent-hours) | Codex weekly allowances | Claude weekly allowances |
+|---|---|---|
+| Half Astra, half Claude | 4.6 | 1.9 |
+| One Astra, the rest Claude (about 30% Astra) | 2.8 | 2.6 |
+| All Claude | 0 | 3.7 |
+
+With one Codex and one Claude allowance per week, the one-Astra mix takes about 3 weeks of play for the central case,
+2 for the low and 6 to 7 for the high, plus the engineering sessions. Each extra profile shortens that in proportion.
+Codex is the constraint in every mix with more than one Astra, so Astra should hold the role where it has done best
+(science and the main Nauvis factory) and Claude agents take the other planets.
+
+After promethium the game has no end. Research-productivity levels 1–10 cost about 374k packs, which at 600
+packs/min is about 10 game hours. The unbounded phase is a budget choice, not a finish line. For example, 2 agents
+for 20 wall hours a week costs about 50% of a Codex allowance plus 20% of a Claude allowance a week. Score it by
+packs consumed per hour over all surfaces and the research-productivity level (both now in `tools/pog.py score`).
+
+### Staged plan
+
+Each stage has a gate; budgets are central estimates.
+
+0. Access and smoke test (this week). Nick links Steam on factorio.com (section 1, 10 minutes). One engineer
+   session:
+   - download the expansion build;
+   - run `tools/sa_smoke.py` on world `sa`;
+   - join with a director client and a human or player client, and test `launch ride`, `land`, platform creation
+     and hub construction for real;
+   - test whether a playerless character can ride a rocket.
+
+   Gate: smoke test clean; a platform built from hub items; one ride up and down.
+1. Nauvis to orbit.
+   - Team and setup: 2 agents (Astra + Opus), real time, peaceful, Nauvis enemy bases on (promethium needs them
+     later), sessions of about 3 hours.
+   - Engineering in parallel: bot travel, platform reads, thrusters, asteroids (about 6 sessions).
+   - Gate: space science packs made on a platform and consumed in Nauvis labs; thrusters researched.
+   - Budget: about 10 wall hours, 20 agent-hours (Codex 25%, Claude 10%).
+   - This stage is also the Space Age version of the base-game rocket goal in `docs/PLAN.md`.
+2. Vulcanus.
+   - A third agent rides to Vulcanus.
+   - Gate: metallurgic packs consumed on Nauvis.
+   - About 15 wall hours, 45 agent-hours.
+3. Fulgora and Gleba.
+   - A fourth agent; spoilage feeding done before Gleba.
+   - Gate: electromagnetic and agricultural packs consumed.
+   - About 30 wall hours, 120 agent-hours.
+4. Aquilo, captivity, fusion, railgun platform, promethium.
+   - Gate: promethium packs consumed. The Shattered Planet trip itself is a turn-back route, as the game intends.
+   - About 50 wall hours, 200 agent-hours.
+5. Unbounded.
+   - Fixed weekly budget; score is packs per hour and research-productivity level.
+   - Stream it from here on.
+
+Stop early and rethink if any planet stage runs past the high column. The usual cause will be a missing harness read
+or action, which costs an engineer session, not agent-hours.
+
+## Open questions to settle on the box
+
+- A player's Lua state in a hub (`character`, `controller_type`, `physical_surface`, `hub`). One line:
+  `/c local p=game.player rcon.print(serpent.line{p.controller_type,p.physical_controller_type,p.character and {p.character.surface.name,p.character.position},p.hub and p.hub.surface.name,p.physical_surface.name})`
+- Whether the game strips a rider's inventory, and whether a rider can use their inventory in the hub.
+- Where `land_on_planet` puts the character (landing pad or spawn).
+- Whether a playerless character can ride (`launch_rocket(dest, character)` for a bot).
+- Space Age freeplay: crash site, starting items, `freeplay` remote interface, and whether the victory screen comes
+  from `space-finish-script` (switch it off for an unbounded game).
+- Whether `peaceful_mode` set on a new planet surface at creation calms demolishers and pentapods.
+- Which hub inventory is "drop to planet".
+- Whether lightning hits characters on Fulgora.
