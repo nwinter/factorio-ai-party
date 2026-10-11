@@ -633,6 +633,8 @@
         factRow("Now", [humanItem(f.doing || ""), f.location].filter(Boolean).join(" · ")));
       if ((f.said || []).length) body.append(factRow("Said", "“" + clean(f.said[f.said.length - 1]) + "”", "said"));
       if ((f.claims || []).length) body.append(factRow("Claims", f.claims.join(", ")));
+    } else if (seg.type === "attack_replay") { // shown on the stream page for the 2.5 s before the replay scene cuts in
+      body.append(factRow("Coming up", f.event), factRow("Length", f.seconds != null ? f.seconds + " s" : null));
     } else if (seg.type === "overview") {
       body.append(factRow("Agents in the world", f.agents_in_world + " of " + f.agents_total),
         factRow("Spread", "about " + f.spread_tiles + " tiles from the centre"),
@@ -659,7 +661,8 @@
       box.textContent = "";
       const panel = el("div", "spanel");
       const title = el("div", "stitle");
-      title.append(el("span", "tag", seg.type === "spotlight" ? "Spotlight" : seg.type === "overview" ? "Overview" : "Analysis"),
+      title.append(el("span", "tag", seg.type === "spotlight" ? "Spotlight" : seg.type === "overview" ? "Overview"
+        : seg.type === "attack_replay" ? "Replay" : "Analysis"),
         el("span", "", seg.title));
       if (seg.type === "spotlight") {
         const ag = (s.agents || []).find((a) => a.name === (seg.facts || {}).name);

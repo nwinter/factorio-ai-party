@@ -61,6 +61,7 @@ class Director:
         self.started = time.time()
         self.last_cut = 0.0
         self.last_attack_cut = -1e9
+        self.last_attack_alert = None
         self.attacks_seen = set()
         self.want = {}  # slot -> (zoom the subject's activity asks for, since)
 
@@ -160,6 +161,7 @@ class Director:
         main = self.slots[0]["slot"] if self.slots else None
         if attack:
             subject, position, al = attack
+            self.last_attack_alert = al  # replays.py reads it when last_attack_cut == now
             cur = self.state.get(main)
             if subject and cur and cur["subject"] == subject:
                 cur["since"] = now - self.cfg["main_dwell"] + self.cfg["attack_hold"]  # already there: just stay

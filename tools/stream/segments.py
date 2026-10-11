@@ -52,11 +52,12 @@ class Segments:
         self.snap = None
         self.history = deque(maxlen=200)  # (t, kind, text) of alerts seen, for recaps
         self.seen = set()
+        self.replays = None  # replays.Replays sets itself here
 
     # ---- availability ------------------------------------------------------------------------------------------
     def why_unavailable(self, kind, snap):
         if kind == "attack_replay":
-            return "needs the OBS replay buffer (not set up yet)"
+            return self.replays.why() if self.replays else "replays are off (serve.py --no-replays, or the mock)"
         if snap is None:
             return "no game state yet"
         if kind == "production" and not (snap.get("production") or (snap.get("science") or {}).get("packs")):
@@ -104,8 +105,8 @@ class Segments:
             self.queue = None
 
     # ---- requests ----------------------------------------------------------------------------------------------
-    def request(self, body, now=None):
-        """-> (http status, reply dict)."""
+    def request(self, body, now=None, ignore_spacing=False):
+        """-> (http status, reply dict). ignore_spacing: replays.py's own clips skip the 180 s segment spacing."""
         now = now or time.time()
         kind = body.get("type")
         if kind not in TYPES:
@@ -121,7 +122,7 @@ class Segments:
             if self.busy():
                 end = self.cur["ends"] if self.cur else now + 30
                 return 409, {"error": "busy", "retry_after": round(max(5, end - now + self.spacing), 1)}
-            if now - self.last_start < self.spacing:
+            if now - self.last_start < self.spacing and not ignore_spacing:
                 return 409, {"error": "busy", "retry_after": round(self.last_start + self.spacing - now, 1)}
             if self.urgent_since(snap, now) < self.urgent_quiet:
                 return 409, {"error": "declined", "why": "urgent event on screen", "retry_after": 30}
@@ -135,7 +136,11 @@ class Segments:
                 title, facts, camera = self.build(kind, params, snap, now)
             except ValueError as e:
                 return 400, {"error": "bad params", "why": str(e)}
-            seg = {"id": f"seg-{next(self.ids)}", "type": kind, "state": "queued", "seconds": seconds, "title": title,
+            clip = None
+            if kind == "attack_replay":
+                facts, clip = self.replays.facts(now)
+                title = "Replay: " + facts["event"]
+            seg = {"id": f"seg-{next(self.ids)}", "type": kind, "clip": clip, "state": "queued", "seconds": seconds, "title": title,
                    "facts": facts, "by": str(body.get("by") or "caster"), "reason": str(body.get("reason") or ""),
                    "camera": camera, "queued": now}
             self.queue = seg
@@ -200,6 +205,9 @@ class Segments:
     # ---- facts per type ----------------------------------------------------------------------------------------
     def build(self, kind, params, snap, now):
         return getattr(self, "build_" + kind)(params, snap, now)
+
+    def build_attack_replay(self, params, snap, now):
+        return "Replay", {}, None  # filled in request() from the saved clip (replays.py)
 
     def build_production(self, params, snap, now):
         sci = snap.get("science") or {}

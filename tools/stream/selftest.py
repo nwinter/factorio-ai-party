@@ -276,6 +276,74 @@ def main():
     lull.step(s5, time.time() + 1)
     assert lull.queue and lull.queue["by"] == "director" and lull.queue["type"] == "production", lull.queue
 
+    # replays: a death on the main camera -> save the buffer -> attack_replay segment -> replay scene -> back to stream
+    import replays as rp
+    rp.time.sleep = lambda s: None  # the fake OBS answers at once
+
+    class FakeOBS:
+        def __init__(self):
+            self.calls, self.program, self.saved = [], "stream", 0
+
+        def call(self, req, data=None):
+            self.calls.append((req, data))
+            if req == "GetSceneList":
+                return {"scenes": [{"sceneName": "stream"}]}
+            if req == "GetInputList":
+                return {"inputs": [{"inputName": "stream overlay"}]}
+            if req == "CreateSceneItem":
+                return {"sceneItemId": 7}
+            if req == "GetReplayBufferStatus":
+                return {"outputActive": True}
+            if req == "GetStats":
+                return {"cpuUsage": 5, "activeFps": 60, "renderSkippedFrames": 1, "outputSkippedFrames": 0}
+            if req == "SaveReplayBuffer":
+                self.saved += 1
+            if req == "GetLastReplayBufferReplay":
+                if not self.saved:
+                    raise rp.OBSError("GetLastReplayBufferReplay: 604 no replay")
+                return {"savedReplayPath": f"D:\\pog\\replays\\r{self.saved}.mkv"}
+            if req == "GetMediaInputStatus":
+                return {"mediaDuration": 45000, "mediaState": "OBS_MEDIA_STATE_PLAYING"}
+            if req == "SetCurrentProgramScene":
+                self.program = data["sceneName"]
+            if req == "GetCurrentProgramScene":
+                return {"currentProgramSceneName": self.program}
+            return {}
+
+    fobs = FakeOBS()
+    seg7 = Segments()
+    rpl = rp.Replays(seg7, obs=fobs, log=lambda *a: None, start=False)
+    t7 = time.time()
+    s7 = m5.snapshot(t7)
+    seg7.step(s7, t7)
+    rpl.work(t7)
+    created = [d["sceneName"] for r, d in fobs.calls if r == "CreateScene"]
+    assert created == ["replay"] and ("SetInputMute", {"inputName": "replay clip", "inputMuted": True}) in fobs.calls
+    assert seg7.why_unavailable("attack_replay", s7).startswith("no fresh clip")
+    for k in range(10):  # main has been on luna for 10 s
+        rpl.tick(s7, {"main": {"agents": ["luna"]}}, t7 + k)
+    rpl.on_attack_cut({"kind": "death", "agent": "luna", "text": "Luna died"}, s7, t7 + 10)
+    assert rpl.pending and rpl.pending["kind"] == "death"
+    rpl.on_attack_cut({"kind": "death", "agent": "ghost", "text": "Ghost died"}, s7, t7 + 10)  # never on main: ignored
+    assert rpl.pending["label"] == "Luna died"
+    rpl.work(t7 + 15)  # save_at = death + 5
+    assert fobs.saved == 1 and rpl.clip and rpl.clip["path"].endswith("r1.mkv"), rpl.clip
+    seg7.last_attack_cut = t7 - 100  # the death cut was long enough ago that segments are not declined
+    rpl.offer(t7 + 15)
+    seg7.step(s7, t7 + 15)
+    assert seg7.cur["type"] == "attack_replay" and seg7.cur["state"] == "starting" and seg7.cur["facts"]["event"] == "Luna died"
+    seg7.step(s7, t7 + 18)
+    rpl.follow_segment(t7 + 18)
+    assert fobs.program == "replay" and rpl.playing, fobs.calls[-4:]
+    cursor = [d for r, d in fobs.calls if r == "SetMediaInputCursor"][-1]["mediaCursor"]
+    assert 45000 - 16500 <= cursor <= 45000 - 15500, cursor  # 11 s before the death, clip saved 5 s after it
+    seg7.step(s7, t7 + 40)  # past its 15 s
+    rpl.follow_segment(t7 + 40)
+    assert fobs.program == "stream" and not rpl.playing
+    fobs.program = "replay"  # left on air by hand: the watchdog brings the stream back
+    rpl.follow_segment(t7 + 50)
+    assert fobs.program == "stream"
+
     log = os.path.join(os.environ.get("TMPDIR", "/tmp"), "selftest-director.jsonl")
     d = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], src.send_camera, log)
     cams = d.step(snap)
