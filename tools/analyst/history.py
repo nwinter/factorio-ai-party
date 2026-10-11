@@ -32,6 +32,9 @@ LABELS = {"2026-10-10-baseline1/a": "solo GPT-6 Astra, real time, peaceful",
           "shake2": "nine-agent team, normal enemies, real time (docs/studies/shake2.md)"}
 
 
+SP = " "
+
+
 def label(name):
     return f"{name} ({LABELS[name]})" if name in LABELS else name
 
@@ -110,12 +113,12 @@ def at_text(series, minute):
         r = row_at(rows, minute)
         last = rows[-1]["tick"] / 3600
         if not r or last < minute - 3:
-            lines.append(f"- {label(name)}:run ended at minute {last:.0f}")
+            lines.append(f"- {label(name)}:{SP}run ended at minute {last:.0f}")
             continue
         s = rate(rows, minute, PACKS)
         fe = rate(rows, minute, ["iron-plate"])
         done = r.get("research_done") or []
-        lines.append(f"- {label(name)}:{len(done)} techs" + (f", researching {r['current_research']}" if r.get("current_research") else "")
+        lines.append(f"- {label(name)}:{SP}{len(done)} techs" + (f", researching {r['current_research']}" if r.get("current_research") else "")
                      + (f", SPM {s:.1f}" if s is not None else "") + (f", iron plates {fe:.0f}/min" if fe is not None else "")
                      + f", labs {(r.get('entities') or {}).get('lab', 0)}, assemblers "
                      f"{sum(v for k, v in (r.get('entities') or {}).items() if k.startswith('assembling'))}")
@@ -127,8 +130,8 @@ def runs_text(series):
     for name, rows in series.items():
         last = rows[-1]
         s = rate(rows, last["tick"] / 3600, PACKS)
-        lines.append(f"- {label(name)}:{len(rows)} snapshots to game {last['tick'] / 3600:.0f} min; {len(last.get('research_done') or [])} techs; "
-                     f"final SPM {s:.1f}" if s is not None else f"- {label(name)}:{len(rows)} snapshots to game {last['tick'] / 3600:.0f} min")
+        lines.append(f"- {label(name)}:{SP}{len(rows)} snapshots to game {last['tick'] / 3600:.0f} min; {len(last.get('research_done') or [])} techs; "
+                     f"final SPM {s:.1f}" if s is not None else f"- {label(name)}:{SP}{len(rows)} snapshots to game {last['tick'] / 3600:.0f} min")
     return "\n".join(lines)
 
 
@@ -136,7 +139,7 @@ def when_text(series, tech):
     lines = [f"when past runs finished {tech}:"]
     for name, rows in series.items():
         m = milestones(rows).get(tech)
-        lines.append(f"- {label(name)}:" + (f"game minute {m:.0f}" if m is not None else f"not reached (run ended at minute {rows[-1]['tick'] / 3600:.0f})"))
+        lines.append(f"- {label(name)}:{SP}" + (f"game minute {m:.0f}" if m is not None else f"not reached (run ended at minute {rows[-1]['tick'] / 3600:.0f})"))
     return "\n".join(lines)
 
 
