@@ -51,6 +51,8 @@ const help = `fh — Factorio agent CLI
   fh confess "text"                         A line for the stream audience only (teammates never see it); input as for say
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
   fh tells [--since SEQ]                    Tells you sent or received
+  fh vote mute|unmute VIEWER "reason"       Vote to mute (or unmute) a stream viewer; a majority of active agents decides
+  fh vote list                              Muted viewers and open votes
   fh stream                                 JSON-lines requests in, replies out; one connection
   fh run --file plan.json                    Sequential actions, waits after each timed action
 
@@ -262,6 +264,22 @@ async function main() {
     values.args = JSON.stringify(args);
     positionals.splice(1, positionals.length - 1, command);
     command = 'call';
+  }
+  // fh vote mute|unmute VIEWER reason... (or - for the reason on stdin); fh vote list.
+  if (command === 'vote') {
+    const kind = positionals[1];
+    if (kind === 'list' || kind === undefined) { positionals.splice(1, positionals.length - 1, 'votes'); command = 'call'; }
+    else {
+      if (kind !== 'mute' && kind !== 'unmute') throw new Error('vote takes mute, unmute or list: fh vote mute VIEWER "reason"');
+      const viewer = positionals[2];
+      if (!viewer) throw new Error(`vote ${kind} needs a viewer: fh vote ${kind} VIEWER "reason"`);
+      const words = positionals.slice(3);
+      const reason = words.length === 1 && words[0] === '-' ? (await readStdin()).trim() : words.join(' ');
+      if (!reason) throw new Error(`vote ${kind} needs a reason: fh vote ${kind} ${viewer} "reason"`);
+      values.args = JSON.stringify({kind, viewer, reason});
+      positionals.splice(1, positionals.length - 1, 'vote');
+      command = 'call';
+    }
   }
   if (command === 'chat' || command === 'tells') { positionals.splice(1, positionals.length - 1, command); command = 'call'; }
   // --since/--limit/--peek for the reads that take them.

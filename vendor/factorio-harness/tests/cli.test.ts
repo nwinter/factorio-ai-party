@@ -268,6 +268,20 @@ test('tell takes recipients then text like say; tells reads with --since',async(
     ['tell',{to:'luna,sol',text:"it's in the mall chest"}],['tell',{to:'team',text:'north belt is down'}],['tells',{since:2}],
     ['tell',{to:'sol',text:'call form'}],['tell',{to:'sol',text:'json form'}]]);
 });
+test('vote mute|unmute VIEWER reason maps to the vote action; vote list to votes',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{votes:1,needed:2,active:3}};},async port=>{
+    await cli(port,['vote','mute','Troll42','slurs','in','chat','--bot','astra']);
+    assert.equal((await compact(port,['vote','unmute','Troll42','-','--bot','astra'],{},"he's sorry\n")).code,0);
+    await cli(port,['vote','list','--bot','astra']);
+    const bad=await compact(port,['vote','ban','x','y','--bot','astra']);
+    assert.equal(bad.code,1); assert.match(bad.stdout,/vote takes mute, unmute or list/);
+    assert.match((await compact(port,['vote','mute','--bot','astra'])).stdout,/vote mute needs a viewer/);
+    assert.match((await compact(port,['vote','mute','bob','--bot','astra'])).stdout,/vote mute needs a reason/);
+  });
+  assert.deepEqual(seen.map(r=>[r.action,r.args]),[['vote',{kind:'mute',viewer:'Troll42',reason:'slurs in chat'}],
+    ['vote',{kind:'unmute',viewer:'Troll42',reason:"he's sorry"}],['votes',{}]]);
+});
 test('fh call say with words sends them as text (it used to send {})',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request);return {ok:true,result:{seq:1}};},async port=>{
