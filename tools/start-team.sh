@@ -97,3 +97,5 @@ while read -r name pane kind; do
   echo $! >> "$rundir/supervisors.pid"
 done < "$rundir/panes.txt"
 log "supervisors running"
+nohup tools/score-loop.sh "$rundir" 120 "$world" >/dev/null 2>&1 &
+echo $! > "$rundir/score-loop.pid"
