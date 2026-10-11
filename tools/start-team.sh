@@ -95,6 +95,12 @@ fi
 tools/winps.sh tools/win/start-server.ps1 -Name "$world" -Save "$run" -GamePort $game -RconPort $rcon >/dev/null
 POG_WORLD=$world bin/fh call describe >/dev/null 2>&1 || true          # first command on a fresh save is swallowed
 POG_WORLD=$world bin/fh deploy >/dev/null
+if [ -n "$resume" ]; then
+  # A save made while tick-paused would load paused; team runs are real time. Game time goes on from the save's tick.
+  python3 tools/pog.py --world "$world" resume >/dev/null 2>&1 || true
+  tick=$(python3 tools/pog.py --world "$world" score 2>/dev/null | python3 -c 'import json,sys; t=json.load(sys.stdin)["tick"]; print(f"{t} (game {t // 3600}m)")' 2>/dev/null || echo '?')
+  log "world $world: resumed at tick $tick"
+fi
 
 # 2. Director clients (players 1-3, spectators once a camera is set). They keep the server from auto-pausing.
 for cam in cam1 cam2 cam3; do
