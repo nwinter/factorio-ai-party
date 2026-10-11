@@ -617,6 +617,60 @@
      "..ommmmmmmmmmo..",
      "..ooooooooooo...",
      "................"
+    ],
+    "wall": [
+     "................",
+     "................",
+     "...ooooooooooooo",
+     "..olhhlllllllldo",
+     ".olhlllllllloddo",
+     "ollllllllllldddo",
+     "ommmmmmmmmmmoddo",
+     "ommmommmmmomoddo",
+     "ooooooooooomdddo",
+     "oommmmmommmmoddo",
+     "ooooooooooomoddo",
+     "ommmommmmmomddo.",
+     "ooooooooooomdo..",
+     "oommmmmommmmo...",
+     "oooooooooooo....",
+     "................"
+    ],
+    "frame": [
+     "................",
+     "................",
+     "................",
+     "......oooo......",
+     ".....ohlllo.....",
+     ".OOOohkkkkmoOOO.",
+     ".OLOohksssmoOLO.",
+     "OLMohlkkkkmmoMMO",
+     "OMMolllmmmmdoMDO",
+     ".OMollmmmmddoMO.",
+     ".OOOommmmddoOOO.",
+     "....oddddddo....",
+     ".....oddddo.....",
+     "......oooo......",
+     "................",
+     "................"
+    ],
+    "satellite": [
+     "................",
+     ".........y.o....",
+     ".........yolo...",
+     "........yolo....",
+     "........y.o.....",
+     "OOOOOooooooOOOOO",
+     "OLDMOommmmoOLDMO",
+     "OMDMOommmmoOMDMO",
+     "ODDDOohmmmoODDDO",
+     "OMDMOolmmmoOMDMO",
+     "OMDMOommmmoOMDMO",
+     "OOOOOommmmoOOOOO",
+     ".....ooooo......",
+     "................",
+     "................",
+     "................"
     ]
    },
    "groups": [
@@ -693,7 +747,9 @@
      "items": [
       "low-density-structure",
       "rocket-fuel",
-      "rocket-part"
+      "rocket-part",
+      "flying-robot-frame",
+      "satellite"
      ]
     },
     {
@@ -707,7 +763,9 @@
       "assembling-machine-3",
       "small-electric-pole",
       "lab",
-      "firearm-magazine"
+      "firearm-magazine",
+      "piercing-rounds-magazine",
+      "stone-wall"
      ]
     }
    ],
@@ -716,26 +774,29 @@
      "label": "Iron ore",
      "t": "ore",
      "c": "#6f8ba6",
-     "c2": "#b9d0e0"
+     "c2": "#b9d0e0",
+     "color": "#7d97b0"
     },
     "copper-ore": {
      "label": "Copper ore",
      "t": "ore",
      "c": "#c06a3c",
-     "c2": "#5fc2a4"
+     "c2": "#5fc2a4",
+     "color": "#c8784a"
     },
     "stone": {
      "label": "Stone",
      "t": "ore",
      "c": "#a48e6c",
-     "c2": "#d8c8a8"
+     "c2": "#d8c8a8",
+     "color": "#b5a27a"
     },
     "coal": {
      "label": "Coal",
      "t": "ore",
      "c": "#2c2b2b",
      "c2": "#a8a49e",
-     "color": "#8a8a8a"
+     "color": "#8d8d8d"
     },
     "uranium-ore": {
      "label": "Uranium ore",
@@ -782,17 +843,20 @@
     "stone-brick": {
      "label": "Stone brick",
      "t": "brick",
-     "c": "#b49c76"
+     "c": "#b49c76",
+     "color": "#c9b48a"
     },
     "iron-gear-wheel": {
      "label": "Gear",
      "t": "gear",
-     "c": "#a3adb8"
+     "c": "#a3adb8",
+     "color": "#a9b6c4"
     },
     "copper-cable": {
      "label": "Copper cable",
      "t": "cable",
-     "c": "#dd844c"
+     "c": "#dd844c",
+     "color": "#e6965f"
     },
     "electronic-circuit": {
      "label": "Green circuit",
@@ -812,7 +876,7 @@
      "label": "Blue circuit",
      "t": "board2",
      "c": "#2f62c4",
-     "color": "#4a8af0"
+     "color": "#5a8cff"
     },
     "plastic-bar": {
      "label": "Plastic",
@@ -823,34 +887,37 @@
     "sulfur": {
      "label": "Sulfur",
      "t": "powder",
-     "c": "#e0cb36"
+     "c": "#e0cb36",
+     "color": "#e8e05a"
     },
     "battery": {
      "label": "Battery",
      "t": "battery",
      "c": "#5b6a78",
      "c2": "#d4553a",
-     "color": "#9aa7b4"
+     "color": "#b0c8a0"
     },
     "engine-unit": {
      "label": "Engine",
      "t": "engine",
      "c": "#8e98a2",
      "c2": "#c9733a",
-     "c3": "#6b7680"
+     "c3": "#6b7680",
+     "color": "#c4a383"
     },
     "electric-engine-unit": {
      "label": "Electric engine",
      "t": "engine",
      "c": "#4f86a8",
      "c2": "#d48a4a",
-     "c3": "#3a5c78"
+     "c3": "#3a5c78",
+     "color": "#7fc0e0"
     },
     "solid-fuel": {
      "label": "Solid fuel",
      "t": "block",
      "c": "#6e6258",
-     "color": "#b0a090"
+     "color": "#9a9a9a"
     },
     "pipe": {
      "label": "Pipe",
@@ -860,7 +927,8 @@
     "transport-belt": {
      "label": "Belt",
      "t": "belt",
-     "c": "#e3b22c"
+     "c": "#e3b22c",
+     "color": "#f2c230"
     },
     "fast-transport-belt": {
      "label": "Fast belt",
@@ -880,7 +948,8 @@
     "inserter": {
      "label": "Inserter",
      "t": "inserter",
-     "c": "#e3b22c"
+     "c": "#e3b22c",
+     "color": "#e8b04a"
     },
     "long-handed-inserter": {
      "label": "Long inserter",
@@ -963,20 +1032,38 @@
      "label": "Low density structure",
      "t": "lattice",
      "c": "#c4884a",
-     "c2": "#5b4636"
+     "c2": "#5b4636",
+     "color": "#d0a070"
     },
     "rocket-fuel": {
      "label": "Rocket fuel",
      "t": "canister",
      "c": "#d9532c",
-     "c2": "#8d97a3"
+     "c2": "#8d97a3",
+     "color": "#f08a3a"
     },
     "rocket-part": {
      "label": "Rocket part",
      "t": "rocket",
      "c": "#d6dce2",
      "c2": "#d9432f",
-     "c3": "#4aa3ff"
+     "c3": "#4aa3ff",
+     "color": "#e8e8e8"
+    },
+    "flying-robot-frame": {
+     "label": "Robot frame",
+     "t": "frame",
+     "c": "#9aa8b6",
+     "c2": "#5e6a76",
+     "c3": "#4aa3ff",
+     "color": "#9fb0c0"
+    },
+    "satellite": {
+     "label": "Satellite",
+     "t": "satellite",
+     "c": "#d8dee6",
+     "c2": "#3a6ab8",
+     "color": "#d8e0e8"
     },
     "stone-furnace": {
      "label": "Stone furnace",
@@ -1029,7 +1116,21 @@
      "label": "Magazine",
      "t": "magazine",
      "c": "#c9a43a",
-     "c2": "#e6b25a"
+     "c2": "#e6b25a",
+     "color": "#e3c25a"
+    },
+    "piercing-rounds-magazine": {
+     "label": "Piercing ammo",
+     "t": "magazine",
+     "c": "#b4453a",
+     "c2": "#d98a4a",
+     "color": "#e07a5a"
+    },
+    "stone-wall": {
+     "label": "Wall",
+     "t": "wall",
+     "c": "#aaa494",
+     "color": "#b8b0a0"
     }
    },
    "fallback": {

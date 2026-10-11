@@ -473,14 +473,60 @@ T.magazine = (() => {
   return cv;
 })();
 
+T.wall = (() => {
+  const cv = canvas();
+  box(cv, 0, 6, 11, 14, 4, C);
+  paint(cv, 1, 7, [
+    "...o.....o.",
+    "oooooooooo.",
+    "o.....o....",
+    "oooooooooo.",
+    "...o.....o.",
+    "oooooooooo.",
+    "o.....o....",
+  ]);
+  paint(cv, 12, 4, ["o", ".", "o", "o", ".", "o", "o"]);
+  dots(cv, [[3, 4, "h"], [4, 3, "h"], [5, 3, "h"]]);
+  return cv;
+})();
+
+T.frame = (() => {
+  const cv = canvas();
+  fill(cv, seg([[1.5, 8], [14.5, 8]], 2.4), GREY, 2);
+  fill(cv, ellipse(2.5, 8, 2.2, 3.4), C2, "ball");
+  fill(cv, ellipse(13.5, 8, 2.2, 3.4), C2, "ball");
+  fill(cv, ellipse(8, 8.5, 4.6, 5.6), C);
+  fill(cv, ellipse(8, 6.6, 2.4, 1.8), GREY, 0, false);
+  fill(cv, ellipse(8.4, 6.6, 1.3, 0.9), C3, 3, false);
+  paint(cv, 5, 11, ["dddddd", ".d..d."]);
+  return cv;
+})();
+
+T.satellite = (() => {
+  const cv = canvas();
+  const panel = (x0, x1) => {
+    fill(cv, rect(x0, 5, x1, 11), C2, 2);
+    for (let y = 6; y <= 10; y++) for (let x = x0 + 1; x < x1; x++) if ((x - x0) % 2 === 0 || y === 8) cv[y][x] = "D";
+    dots(cv, [[x0 + 1, 6, "L"]]);
+  };
+  fill(cv, rect(0, 8, 15, 8), GREY, 1);
+  panel(0, 4);
+  panel(11, 15);
+  box(cv, 5, 6, 9, 12, 1, C);
+  fill(cv, seg([[8, 5], [9.5, 1.5]], 1), GREY, 3, false);
+  fill(cv, and(circle(10.5, 2.5, 2.2), (x, y) => x + y > 12.6), C, 3);
+  dots(cv, [[6, 8, "h"], [6, 9, "l"]]);
+  return cv;
+})();
+
 // ---------- items ----------
 // c, c2, c3: colours for the three ramps; color: signature colour (matches overlay.js's table where it had one).
 const GROUPS = [
   ["Raw resources", {
-    "iron-ore": { label: "Iron ore", t: "ore", c: "#6f8ba6", c2: "#b9d0e0" },
-    "copper-ore": { label: "Copper ore", t: "ore", c: "#c06a3c", c2: "#5fc2a4" },
-    "stone": { label: "Stone", t: "ore", c: "#a48e6c", c2: "#d8c8a8" },
-    "coal": { label: "Coal", t: "ore", c: "#2c2b2b", c2: "#a8a49e", color: "#8a8a8a" },
+    "iron-ore": { label: "Iron ore", t: "ore", c: "#6f8ba6", c2: "#b9d0e0", color: "#7d97b0" },
+    "copper-ore": { label: "Copper ore", t: "ore", c: "#c06a3c", c2: "#5fc2a4", color: "#c8784a" },
+    "stone": { label: "Stone", t: "ore", c: "#a48e6c", c2: "#d8c8a8", color: "#b5a27a" },
+    "coal": { label: "Coal", t: "ore", c: "#2c2b2b", c2: "#a8a49e", color: "#8d8d8d" },
     "uranium-ore": { label: "Uranium ore", t: "ore", c: "#4c9c34", c2: "#a6ff6a", color: "#7ddc4c" },
     "wood": { label: "Wood", t: "log", c: "#7a4f2a", c2: "#d9b07a" },
     "crude-oil": { label: "Crude oil", t: "drop", c: "#2e2620", color: "#8c7a6a" },
@@ -490,26 +536,26 @@ const GROUPS = [
     "iron-plate": { label: "Iron plate", t: "plate", c: "#9fb0c0", color: "#9fb3c8" },
     "copper-plate": { label: "Copper plate", t: "plate", c: "#d77e4a", color: "#e0895a" },
     "steel-plate": { label: "Steel", t: "beam", c: "#bcc6d2", color: "#c7ccd6" },
-    "stone-brick": { label: "Stone brick", t: "brick", c: "#b49c76" },
-    "iron-gear-wheel": { label: "Gear", t: "gear", c: "#a3adb8" },
-    "copper-cable": { label: "Copper cable", t: "cable", c: "#dd844c" },
+    "stone-brick": { label: "Stone brick", t: "brick", c: "#b49c76", color: "#c9b48a" },
+    "iron-gear-wheel": { label: "Gear", t: "gear", c: "#a3adb8", color: "#a9b6c4" },
+    "copper-cable": { label: "Copper cable", t: "cable", c: "#dd844c", color: "#e6965f" },
     "electronic-circuit": { label: "Green circuit", t: "board", c: "#3f9a3e", c3: "#e6c25a", color: "#5fd068" },
     "advanced-circuit": { label: "Red circuit", t: "board", c: "#b8372f", c3: "#e6c25a", color: "#ef5b5b" },
-    "processing-unit": { label: "Blue circuit", t: "board2", c: "#2f62c4", color: "#4a8af0" },
+    "processing-unit": { label: "Blue circuit", t: "board2", c: "#2f62c4", color: "#5a8cff" },
     "plastic-bar": { label: "Plastic", t: "bar", c: "#e6e6e6", color: "#e8e8e8" },
-    "sulfur": { label: "Sulfur", t: "powder", c: "#e0cb36" },
-    "battery": { label: "Battery", t: "battery", c: "#5b6a78", c2: "#d4553a", color: "#9aa7b4" },
-    "engine-unit": { label: "Engine", t: "engine", c: "#8e98a2", c2: "#c9733a", c3: "#6b7680" },
-    "electric-engine-unit": { label: "Electric engine", t: "engine", c: "#4f86a8", c2: "#d48a4a", c3: "#3a5c78" },
-    "solid-fuel": { label: "Solid fuel", t: "block", c: "#6e6258", color: "#b0a090" },
+    "sulfur": { label: "Sulfur", t: "powder", c: "#e0cb36", color: "#e8e05a" },
+    "battery": { label: "Battery", t: "battery", c: "#5b6a78", c2: "#d4553a", color: "#b0c8a0" },
+    "engine-unit": { label: "Engine", t: "engine", c: "#8e98a2", c2: "#c9733a", c3: "#6b7680", color: "#c4a383" },
+    "electric-engine-unit": { label: "Electric engine", t: "engine", c: "#4f86a8", c2: "#d48a4a", c3: "#3a5c78", color: "#7fc0e0" },
+    "solid-fuel": { label: "Solid fuel", t: "block", c: "#6e6258", color: "#9a9a9a" },
   }],
   ["Logistics", {
     "pipe": { label: "Pipe", t: "pipe", c: "#8d97a3" },
-    "transport-belt": { label: "Belt", t: "belt", c: "#e3b22c" },
+    "transport-belt": { label: "Belt", t: "belt", c: "#e3b22c", color: "#f2c230" },
     "fast-transport-belt": { label: "Fast belt", t: "belt", c: "#d9433a" },
     "express-transport-belt": { label: "Express belt", t: "belt", c: "#3a95dd" },
     "burner-inserter": { label: "Burner inserter", t: "inserter", c: "#8c6a4c" },
-    "inserter": { label: "Inserter", t: "inserter", c: "#e3b22c" },
+    "inserter": { label: "Inserter", t: "inserter", c: "#e3b22c", color: "#e8b04a" },
     "long-handed-inserter": { label: "Long inserter", t: "inserter", c: "#d9433a" },
     "fast-inserter": { label: "Fast inserter", t: "inserter", c: "#3a95dd" },
   }],
@@ -530,9 +576,11 @@ const GROUPS = [
     "sulfuric-acid": { label: "Sulfuric acid", t: "drop", c: "#c6d43a" },
   }],
   ["Rocket", {
-    "low-density-structure": { label: "Low density structure", t: "lattice", c: "#c4884a", c2: "#5b4636" },
-    "rocket-fuel": { label: "Rocket fuel", t: "canister", c: "#d9532c", c2: "#8d97a3" },
-    "rocket-part": { label: "Rocket part", t: "rocket", c: "#d6dce2", c2: "#d9432f", c3: "#4aa3ff" },
+    "low-density-structure": { label: "Low density structure", t: "lattice", c: "#c4884a", c2: "#5b4636", color: "#d0a070" },
+    "rocket-fuel": { label: "Rocket fuel", t: "canister", c: "#d9532c", c2: "#8d97a3", color: "#f08a3a" },
+    "rocket-part": { label: "Rocket part", t: "rocket", c: "#d6dce2", c2: "#d9432f", c3: "#4aa3ff", color: "#e8e8e8" },
+    "flying-robot-frame": { label: "Robot frame", t: "frame", c: "#9aa8b6", c2: "#5e6a76", c3: "#4aa3ff", color: "#9fb0c0" },
+    "satellite": { label: "Satellite", t: "satellite", c: "#d8dee6", c2: "#3a6ab8", color: "#d8e0e8" },
   }],
   ["Buildings and ammo", {
     "stone-furnace": { label: "Stone furnace", t: "furnace", c: "#a8926e", c2: "#ff9a2e" },
@@ -543,7 +591,9 @@ const GROUPS = [
     "assembling-machine-3": { label: "Assembler 3", t: "assembler", c: "#8cae3c" },
     "small-electric-pole": { label: "Small pole", t: "pole", c: "#8a5a32", c2: "#dd844c" },
     "lab": { label: "Lab", t: "lab", c: "#8d97a3", c2: "#4aa3ff" },
-    "firearm-magazine": { label: "Magazine", t: "magazine", c: "#c9a43a", c2: "#e6b25a" },
+    "firearm-magazine": { label: "Magazine", t: "magazine", c: "#c9a43a", c2: "#e6b25a", color: "#e3c25a" },
+    "piercing-rounds-magazine": { label: "Piercing ammo", t: "magazine", c: "#b4453a", c2: "#d98a4a", color: "#e07a5a" },
+    "stone-wall": { label: "Wall", t: "wall", c: "#aaa494", color: "#b8b0a0" },
   }],
 ];
 

@@ -145,11 +145,11 @@ A director client must be connected (or `auto_pause` off) for bots on `live`.
 
 ## Item icons
 
-![All 55 item icons in gallery order on kit-coloured slots, then the crate fallback (here for repair-pack)](items-sheet.png)
+![All 59 item icons in gallery order on kit-coloured slots, then the crate fallback (here for repair-pack)](items-sheet.png)
 
 Original 16x16 pixel art in the avatars' style: dark outline from each material's own colour, light from the top
 left, flat shading bands. Icons are keyed by the game's internal item names, so the production feed's `item` goes
-straight in. 55 icons:
+straight in. 59 icons:
 
 | Group | Items |
 |---|---|
@@ -158,8 +158,8 @@ straight in. 55 icons:
 | Logistics | pipe, transport-belt, fast-transport-belt, express-transport-belt, burner-inserter, inserter, long-handed-inserter, fast-inserter |
 | Science | the seven packs, automation through space (round flask: red, green, space; conical: military, blue; vial: purple, yellow, so they differ by shape as well as colour) |
 | Oil and fluids | petroleum-gas, heavy-oil, light-oil, lubricant, sulfuric-acid (crude-oil and water are under raw) |
-| Rocket | low-density-structure, rocket-fuel, rocket-part |
-| Buildings and ammo | stone-furnace, burner-mining-drill, electric-mining-drill, assembling-machine-1/2/3, small-electric-pole, lab, firearm-magazine |
+| Rocket | low-density-structure, rocket-fuel, rocket-part, flying-robot-frame, satellite |
+| Buildings and ammo | stone-furnace, burner-mining-drill, electric-mining-drill, assembling-machine-1/2/3, small-electric-pole, lab, firearm-magazine, piercing-rounds-magazine, stone-wall |
 
 Any other name renders as a crate tinted from a hash of the name, with a label made from the name
 ("my_modded--thing" -> "My modded thing"), so new items never break a widget.
@@ -190,10 +190,12 @@ they still read but edges land between pixels.
 ### Adopting it
 
 - Overlay production widget (eng/stream2): add `<script src="items.js"></script>` to `index.html`. In
-  `renderProduction` (`overlay.js`), put `PogItems.svg(it.item, 20)` in front of the label, and take
-  `[label, color]` from `[PogItems.label(it.item), PogItems.color(it.item)]` instead of the `ITEM` table. The labels
-  and colours equal that table for the 13 items it lists, so sparklines keep their colours; other items gain a
-  proper label and colour instead of `humanItem` and grey. `model.SPARK_ITEMS` is covered (the test checks it).
+  `renderProduction` (`overlay.js`), put `PogItems.svg(it.item, 20)` in front of the label. `PogItems.color` equals
+  the `ITEM` table's colour for all 36 items it lists, so sparklines keep their colours. The table's labels are
+  widget wording for rates ("Belts", "Ammo", "Elec. engines"), while `PogItems.label` names one item ("Belt",
+  "Magazine", "Electric engine"), so keep the table's labels and use `[PogItems.label(it.item),
+  PogItems.color(it.item)]` only as the fallback in place of `[humanItem(it.item), "#cccccc"]`. Every item in
+  `model.SPARK_ITEMS` (all `STAGE_ITEMS` plus science) has its own icon; the test checks it.
 - Site: inline `items.svg(name, 32)` from `site/build.py`, or write files once with `--all --out`.
 
 ### Changing or adding an icon
@@ -222,7 +224,7 @@ plus a few unknown names to show the fallback.
 ### Tests
 
 `python3 tools/stream/test_items.py`: JS (under node) and Python give identical SVG, labels, colours and `has`
-for all 55 icons and 8 unknown names (empty, unicode, escaped, long); every template is 16x16 and every letter it
+for all 59 icons and 8 unknown names (empty, unicode, escaped, long); every template is 16x16 and every letter it
 uses has a colour for each item drawn with it; every item in `model.SPARK_ITEMS` has its own icon; `items.js` holds
 what `items_art.js` generates. The icons were checked visually from PNG contact sheets at 6x and 2x; like the other
 pages, `items.html` was run against a stub DOM but not opened in a browser in this session.
