@@ -138,33 +138,63 @@ platform.space_location=nil; platform.space_connection={from={name='nauvis'},to=
 fails(function() space.land(p,{}) end,'not stopped at a planet (at nauvis->vulcanus 25%)')
 p.surface.platform=nil
 -- Drop: hub items go down in a cargo pod to the planet below a stopped platform.
+-- The hub's own stacks move (freshness kept); repeated entries add up.
 defines.inventory.cargo_unit=30
-local hub_have={['iron-plate']=5}
-hub_inv.get_item_count=function(q) return hub_have[q.name] or 0 end
-hub_inv.remove=function(q) hub_have[q.name]=hub_have[q.name]-q.count; return q.count end
+local function stack(name,count,spoil)
+  local st={valid_for_read=count>0,name=name,count=count,quality={name='normal'},spoil_percent=spoil or 0}
+  st.clear=function() st.valid_for_read=false; st.count=0 end
+  st.transfer_stack=function(o) st.name,st.count,st.quality,st.spoil_percent,st.valid_for_read=o.name,o.count,o.quality,o.spoil_percent,true; o.clear(); return true end
+  return st
+end
+local function slots(list,n) local inv={}; for i=1,n do inv[i]=list[i] or stack(nil,0) end; return inv end
+local hub_slots=slots({stack('iron-plate',3,0.25),stack('coal',5),stack('iron-plate',4,0.5)},4)
+for i=1,#hub_slots do hub_inv[i]=hub_slots[i] end
+hub_inv.get_item_count=function(q) local n=0; for i=1,#hub_slots do local st=hub_slots[i]; if st.valid_for_read and st.name==q.name then n=n+st.count end end; return n end
+hub_inv.insert=function(st) for i=1,#hub_slots do if not hub_slots[i].valid_for_read then hub_slots[i].transfer_stack(st); return hub_slots[i].count end end; return 0 end
 local vulcanus_surface={name='vulcanus',pads={}}
 vulcanus_surface.find_entities_filtered=function() return vulcanus_surface.pads end
 game={planets={vulcanus={surface=vulcanus_surface}}}
 p.force.get_spawn_position=function() return {x=0,y=0} end
-local pod_items,drop_pod={},nil
+local drop_pod,inserted
+local refuse=false
 platform.hub.create_cargo_pod=function()
-  drop_pod={valid=true}
-  local inv={insert=function(st) local n=math.min(st.count,3); pod_items[st.name]=(pod_items[st.name] or 0)+n; return n end,
-    is_empty=function() return next(pod_items)==nil end}
-  drop_pod.get_inventory=function(i) eq(i,30); return inv end
-  drop_pod.destroy=function() drop_pod.valid=false end
+  local cargo=slots({},2)
+  cargo.find_empty_stack=function() for i=1,#cargo do if not cargo[i].valid_for_read then return cargo[i],i end end end
+  cargo.insert=function(def) inserted=def; local st=cargo.find_empty_stack(); if not st then return 0 end
+    st.name,st.count,st.spoil_percent,st.valid_for_read=def.name,def.count,def.spoil_percent or 0,true; return def.count end
+  cargo.is_empty=function() for i=1,#cargo do if cargo[i].valid_for_read then return false end end return true end
+  local pod={valid=true,cargo=cargo}
+  drop_pod=setmetatable({},{__index=pod,__newindex=function(_,k,v) if k=='cargo_pod_destination' and refuse then error('refused') end pod[k]=v end})
+  pod.get_inventory=function(i) eq(i,30); return cargo end
+  pod.destroy=function() pod.valid=false end
   return drop_pod
 end
 platform.space_location={name='vulcanus',type='planet'}
-fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=9}}}) end,'holds 5 iron-plate, not 9')
-local d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=5}}})
-eq(d.dropped[1],'iron-plate*3'); eq(d.not_sent[1],'iron-plate*2'); eq(hub_have['iron-plate'],2,'only what fit left the hub')
+fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=5},{item='iron-plate',count=5}}}) end,'holds 7 iron-plate, not 10')
+local d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=3},{item='iron-plate',count=2}}})
+eq(d.dropped[1],'iron-plate*5'); eq(#d.dropped,1,'repeated entries add up')
+eq(drop_pod.cargo[1].count,3); eq(drop_pod.cargo[1].spoil_percent,0.25,'a whole stack moves as is')
+eq(drop_pod.cargo[2].count,2); eq(inserted.spoil_percent,0.5,'part of a stack keeps its freshness')
+eq(hub_inv.get_item_count{name='iron-plate'},2,'only what left the hub was sent')
 eq(drop_pod.cargo_pod_destination.surface,vulcanus_surface); eq(drop_pod.cargo_pod_destination.position.x,0); eq(d.to,'vulcanus')
+-- Two items in one drop, each from its own hub stack.
+d=space.drop(p,{platform='alpha',items={{item='coal',count=5},{item='iron-plate',count=2}}})
+eq(d.dropped[1],'coal*5'); eq(d.dropped[2],'iron-plate*2'); eq(d.not_sent,nil)
+hub_inv.insert(stack('coal',4)); hub_inv.insert(stack('iron-plate',1))
+d=space.drop(p,{platform='alpha',items={{item='coal',count=2},{item='iron-plate',count=1}}})
+eq(d.not_sent,nil)
+hub_inv.insert(stack('coal',3))
 vulcanus_surface.pads={{position={x=9,y=9}}}
-d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=1}},position={x=4,y=4}})
+d=space.drop(p,{platform='alpha',items={{item='coal',count=1}},position={x=4,y=4}})
 eq(d.pad.x,9); eq(drop_pod.cargo_pod_destination.position,nil,'a pad takes it')
+-- A refused destination puts the items back.
+local coal_before=hub_inv.get_item_count{name='coal'}
+refuse=true
+fails(function() space.drop(p,{platform='alpha',items={{item='coal',count=2}}}) end,'items stay in the hub')
+eq(hub_inv.get_item_count{name='coal'},coal_before); eq(drop_pod.valid,false)
+refuse=false
 platform.space_location=nil
-fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=1}}}) end,'not stopped at a planet')
+fails(function() space.drop(p,{platform='alpha',items={{item='coal',count=1}}}) end,'not stopped at a planet')
 -- Creating a platform goes through the force like the platform GUI.
 p.force.create_space_platform=function(args) return {name=args.name,state=0,planet=args.planet} end
 local made=space.platform_create(p,{name='beta'})

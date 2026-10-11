@@ -38,7 +38,14 @@ game.tick=1060; table.insert(s.mentions[1].list,{tick=1060,from='opus',text='@as
 r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'mentioned'); eq(r.mention,'opus: @astra coal at the boilers')
 -- Death wakes.
 W.handlers.sleep(p,{seconds=60}); s.mentions=nil
-p.character=nil; eq(W.handlers.sleep_check(p,{}).woke,'died')
+p.character=nil
+-- A bot riding a cargo pod or aboard a platform has no body and keeps sleeping.
+local riding=true
+local Wt=dofile('mod/agent-harness_0.1.0/waits.lua'){state=function() return s end,integer=integer,
+  replace=function() end,advance=function() end,clock_mode=function() return 'realtime' end,traveling=function() return riding end}
+eq(Wt.handlers.sleep_check(p,{peek=true}).woke,nil)
+riding=false
+eq(W.handlers.sleep_check(p,{}).woke,'died')
 -- In turns mode the clock is asked to run for the sleep (advance caps at 36000).
 p.character={valid=true,health=250}; mode='turns'
 W.handlers.sleep(p,{seconds=900}); eq(advanced,36000)

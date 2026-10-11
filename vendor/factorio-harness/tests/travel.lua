@@ -106,6 +106,8 @@ eq(cameras.describe(2).surface,'platform-1')
 -- Delivered: aboard, at the hub, remote view only.
 pod.valid=false
 advance(1)
+eq(b.travel.state,'ascending','a ride lasts at least 20 s, whatever the pod entity does')
+advance(100+1200-game.tick)
 eq(b.travel.state,'aboard'); eq(b.surface,'platform-1'); eq(b.position.x,0.5)
 st=bots.status(b.index,{})
 eq(st.travel.state,'aboard'); eq(st.platform,'alpha'); eq(st.surface,'platform-1')
@@ -138,6 +140,8 @@ advance(1); eq(b.surface,'vulcanus')
 -- Down: the body stands where the pod landed, wearing what it rode up in.
 hub_pod.valid=false
 advance(1)
+eq(b.travel.state,'descending','a descent lasts at least 10 s')
+advance(600-(game.tick-b.travel.since))
 eq(b.travel,nil); eq(b.planet,'vulcanus'); eq(b.surface,'vulcanus')
 local c2=b.character
 eq(c2.surface,vulcanus); eq(c2.position.x,3); eq(c2.position.y,4)
@@ -145,7 +149,7 @@ eq(c2.invs[5][1].name,'modular-armor'); eq(c2.invs[5][1].grid,'grid-1'); eq(c2.i
 eq(c2.items['iron-plate'],nil,'a landing brings no starting items')
 eq(kits[1].valid,false)
 st=bots.status(b.index,{})
-eq(st.travel,nil); eq(st.surface,'vulcanus'); eq(st.planet,'vulcanus'); eq(st.landed.surface,'vulcanus'); eq(st.landed.ticks,303)
+eq(st.travel,nil); eq(st.surface,'vulcanus'); eq(st.planet,'vulcanus'); eq(st.landed.surface,'vulcanus'); eq(st.landed.ticks,600)
 -- Deaths on Vulcanus respawn on Vulcanus, as for a player.
 c2.valid=false
 advance(1); eq(b.dead_until_tick,game.tick+600)
@@ -175,10 +179,27 @@ eq(bots.land(b).pad.x,20); eq(hub_pod.cargo_pod_destination.position,nil)
 hub_pod.surface=nauvis; hub_pod.position={x=20,y=19}; hub_pod.cargo_pod_state='descending'
 advance(1); eq(b.travel.state,'descending')
 hub_pod.cargo_pod_state='parking' -- parked at the pad, still valid: down all the same
-advance(1)
+advance(600)
 eq(b.character.surface,nauvis); eq(b.character.position.y,19); eq(b.planet,'nauvis')
--- No free hatch: nothing changes.
+-- No body can be made where the pod came down: a death, not an error in the tick.
 bots.board(b,platform,nil); advance(2400)
+hub_pod={valid=true,position={x=0,y=0},surface=platform_surface,cargo_pod_state='ascending'}
+hub.create_cargo_pod=function() return hub_pod end
+bots.land(b)
+local real_create=nauvis.create_entity
+nauvis.create_entity=function() return nil end
+local deaths=b.deaths
+hub_pod.valid=false; advance(600)
+eq(b.travel,nil); eq(b.deaths,deaths+1); assert(b.lost:find('no body could be made on nauvis',1,true),b.lost)
+nauvis.create_entity=real_create
+advance(600); eq(b.character.surface,nauvis)
+-- A renamed platform keeps its riders (rides follow the index).
+platform.index=7
+bots.board(b,platform,nil); advance(2400)
+platform.name='alpha-2'
+advance(1); eq(b.travel.state,'aboard'); eq(b.travel.platform,'alpha-2')
+platform.name='alpha'
+-- No free hatch: nothing changes (still aboard from above).
 hub.create_cargo_pod=function() return nil end
 fails(function() bots.land(b) end,'no free cargo hatch')
 eq(b.travel.state,'aboard')

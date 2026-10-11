@@ -36,16 +36,20 @@ return function(api)
   -- delivering them; the reply's team block delivers them as usual.
   local function why(p, record, out)
     local c = p.character
-    if not (c and c.valid) then return 'died' end
-    -- Enemy hits are also kept per character (board.lua's alerts), so a hit
-    -- healed again between two checks still counts, with its attacker.
-    local hits = api.state().char_hits
-    local hit = hits and c.unit_number and hits[c.unit_number]
-    if hit and hit.last and hit.last >= record.start_tick then out.by = hit.by end
-    if out.by or (record.health and c.health < record.health - 0.01) then
-      out.health = math.floor(c.health)
-      if record.health and c.health < record.health then out.lost = math.floor(record.health - c.health + 0.5) end
-      return 'damaged'
+    if not (c and c.valid) then
+      -- A bot riding a cargo pod or aboard a platform has no body and is not dead.
+      if not (api.traveling and api.traveling(p.index)) then return 'died' end
+    else
+      -- Enemy hits are also kept per character (board.lua's alerts), so a hit
+      -- healed again between two checks still counts, with its attacker.
+      local hits = api.state().char_hits
+      local hit = hits and c.unit_number and hits[c.unit_number]
+      if hit and hit.last and hit.last >= record.start_tick then out.by = hit.by end
+      if out.by or (record.health and c.health < record.health - 0.01) then
+        out.health = math.floor(c.health)
+        if record.health and c.health < record.health then out.lost = math.floor(record.health - c.health + 0.5) end
+        return 'damaged'
+      end
     end
     local box = api.state().mentions and api.state().mentions[p.index]
     for i = #(box and box.list or {}), 1, -1 do

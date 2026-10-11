@@ -163,6 +163,7 @@ return function(api)
   -- landing cargo pod came down (at).
   local function spawn(b, kind, at)
     local force, surface = force_of(b), home_of(b)
+    if at then pcall(function() surface.request_to_generate_chunks(at, 1); surface.force_generate_chunk_requests() end) end
     local pos = at and (surface.find_non_colliding_position('character', at, 32, 0.5) or at)
       or spot_for(b, surface, force.get_spawn_position(surface))
     local c = surface.create_entity{name='character', position=pos, force=force}
@@ -213,7 +214,9 @@ return function(api)
   -- down, wearing the same armor and guns. Same payload and the game's own
   -- ascent and descent time as a player's trip.
   M.ABOARD_NOTE = 'platforms, platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet), ghost tools and grid/scan with platform=, research, recipes/technologies, chat and board, then land'
-  local ASCENT_TICKS, MAX_TRAVEL_TICKS, LAUNCH_WAIT = 2400, 18000, 300
+  -- A ride never ends sooner than MIN_*: should the engine replace a pod
+  -- entity on its way (unverified), the ride still takes its time.
+  local ASCENT_TICKS, MAX_TRAVEL_TICKS, LAUNCH_WAIT, MIN_ASCENT, MIN_DESCENT = 2400, 18000, 300, 1200, 600
   local KIT = {'character_armor', 'character_guns'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   -- What a rider must leave behind first (the same rule as the silo's ride
@@ -226,9 +229,10 @@ return function(api)
     local held = try(function() return c.cursor_stack end)
     assert(not (held and held.valid_for_read), 'put the held stack away first (only worn armor and guns travel)')
   end
-  local function find_platform(b, name)
+  -- The platform a ride belongs to, by index (names can change or repeat).
+  local function find_platform(b, t)
     for _, pl in pairs(force_of(b).platforms or {}) do
-      if pl.valid and pl.name == name then return pl end
+      if pl.valid and (t.platform_index and pl.index == t.platform_index or not t.platform_index and pl.name == t.platform) then return pl end
     end
   end
   -- The rider is in the rocket: armor and guns into the kit, body gone, and
@@ -252,7 +256,7 @@ return function(api)
     b.position = c.position
     b.character = nil
     c.destroy()
-    b.travel = {state='ascending', platform=platform.name, from=b.planet, pod=pod, since=game.tick, kit=kit, slots=slots}
+    b.travel = {state='ascending', platform=platform.name, platform_index=platform.index, from=b.planet, pod=pod, since=game.tick, kit=kit, slots=slots}
     b.trips = (b.trips or 0) + 1
     return b.travel
   end
@@ -262,8 +266,9 @@ return function(api)
   function M.land(b)
     local t = b.travel
     assert(t and t.state == 'aboard', 'bot ' .. b.name .. ' is not aboard a platform')
-    local pl = find_platform(b, t.platform)
+    local pl = find_platform(b, t)
     assert(pl and pl.hub and pl.hub.valid, 'platform ' .. t.platform .. ' has no hub')
+    t.platform = pl.name
     local loc = pl.space_location
     assert(loc and loc.type == 'planet', 'platform ' .. pl.name .. ' is not stopped at a planet')
     local planet = game.planets[loc.name]
@@ -295,19 +300,24 @@ return function(api)
   end
   local function arrive(b, tick)
     local t = b.travel
-    local pl = find_platform(b, t.platform)
+    local pl = find_platform(b, t)
     if not (pl and pl.surface and pl.surface.valid) then return lost(b, tick, 'platform ' .. t.platform .. ' is gone') end
     t.state = 'aboard'; t.pod = nil; t.since = tick; t.arrived = tick
     b.surface = pl.surface.name
     b.position = pl.hub and pl.hub.valid and pl.hub.position or {x=0, y=0}
   end
+  -- The body where the pod came down, else by the planet's spawn point; if
+  -- neither can be made the ride ends like a death (never an error in the tick).
   local function touch_down(b, tick)
     local t = b.travel
+    local was = b.planet
     b.planet = t.to
     local at = t.last_surface == t.to and t.last_position or t.at
     local kit, slots = t.kit, t.slots
+    local ok, c = pcall(spawn, b, 'land', at)
+    if not ok then ok, c = pcall(spawn, b, 'land') end
+    if not ok then b.planet = was; return lost(b, tick, 'no body could be made on ' .. t.to .. ': ' .. tostring(c)) end
     b.travel = nil
-    local c = spawn(b, 'land', at)
     for _, s in ipairs(slots or {}) do
       local inv = c.get_inventory(defines.inventory[s.inv])
       local stack = kit[s.kit]
@@ -329,13 +339,14 @@ return function(api)
       if follow_pod(b, t.pod) then
         -- Delivered pods go away; one that parks on the platform has arrived too.
         local parked = t.last_surface ~= t.from and try(function() return t.pod.cargo_pod_state end) == 'parking'
-        if parked or tick - t.since > MAX_TRAVEL_TICKS then arrive(b, tick) end
-      elseif t.pod ~= nil or tick - t.since >= ASCENT_TICKS then
+        if (parked and tick - t.since >= MIN_ASCENT) or tick - t.since > MAX_TRAVEL_TICKS then arrive(b, tick) end
+      elseif (t.pod ~= nil and tick - t.since >= MIN_ASCENT) or tick - t.since >= ASCENT_TICKS then
         arrive(b, tick)
       end
     elseif t.state == 'aboard' then
-      local pl = find_platform(b, t.platform)
+      local pl = find_platform(b, t)
       if not (pl and pl.surface and pl.surface.valid) then return lost(b, tick, 'platform ' .. t.platform .. ' is gone') end
+      t.platform = pl.name
       if tick % 30 == 0 and pl.hub and pl.hub.valid then b.position = pl.hub.position end
     elseif t.state == 'descending' then
       local pod = t.pod
@@ -347,8 +358,8 @@ return function(api)
           pcall(function() pod.force_finish_ascending() end)
         end
         local parked = t.last_surface == t.to and try(function() return pod.cargo_pod_state end) == 'parking'
-        if parked or tick - t.since > MAX_TRAVEL_TICKS then touch_down(b, tick) end
-      else
+        if (parked and tick - t.since >= MIN_DESCENT) or tick - t.since > MAX_TRAVEL_TICKS then touch_down(b, tick) end
+      elseif tick - t.since >= MIN_DESCENT then
         touch_down(b, tick)
       end
     end

@@ -157,6 +157,7 @@ class LiveSource:
                     a[key] = p[key]
             if p:  # `profile` never called: profiles reports no display name, colour or glyph
                 a["profile_set"] = any(p.get(k) for k in ("display_name", "color", "glyph"))
+                a["travel"] = p.get("travel")  # None once a bot has landed: the model must see the ride end
             if st:
                 if not p:  # without profiles, status is the only source of position/alive/active
                     act = st.get("active")  # status: {kind, until_tick, ...} or false

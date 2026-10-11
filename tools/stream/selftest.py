@@ -222,8 +222,13 @@ def main():
     assert by_sa["astra"]["location"] == "Vulcanus spawn", by_sa["astra"]
     msa.ingest({"agents": [{"name": "luna", "position": {"x": 0, "y": -3}, "surface": "platform-1", "where": "platform alpha", "travel": "aboard"}]})
     assert {a["name"]: a for a in msa.snapshot(t_sa + 2)["agents"]}["luna"]["location"] == "platform alpha"
-    msa.ingest({"agents": [{"name": "luna", "position": {"x": 0, "y": -3}, "surface": "platform-1", "where": "cargo pod to vulcanus", "travel": "descending"}]})
-    assert {a["name"]: a for a in msa.snapshot(t_sa + 3)["agents"]}["luna"]["location"] == "cargo pod to vulcanus"
+    msa.ingest({"agents": [{"name": "luna", "position": {"x": 0, "y": -3}, "surface": "platform-1", "where": "cargo pod to vulcanus", "travel": "descending", "alive": False}]})
+    luna = {a["name"]: a for a in msa.snapshot(t_sa + 3)["agents"]}["luna"]
+    assert luna["location"] == "cargo pod to vulcanus" and luna["alive"], luna  # bodiless in a pod, not dead
+    assert not [al for al in msa.snapshot(t_sa + 3).get("alerts") or [] if al["kind"] == "death"], "boarding is no death"
+    msa.ingest({"agents": [{"name": "luna", "position": {"x": 2, "y": 2}, "surface": "vulcanus", "where": "vulcanus", "travel": None,
+                            "alive": True}]})
+    assert {a["name"]: a for a in msa.snapshot(t_sa + 4)["agents"]}["luna"]["travel"] is None  # landed: the ride ends
 
     # zoom follows activity once it has lasted zoom_settle; a death cuts to where the agent fell, spacing or not
     sent3 = []

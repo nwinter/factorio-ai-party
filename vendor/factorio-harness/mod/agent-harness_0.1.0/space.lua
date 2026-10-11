@@ -303,26 +303,51 @@ return function(api)
     assert(loc and loc.type=='planet','platform '..pl.name..' is not stopped at a planet (at '..tostring(location(pl))..')')
     assert(type(a.items)=='table' and #a.items>=1 and #a.items<=20,'items requires 1..20 {item,count,quality?}')
     local hub_inv=pl.hub.get_inventory(defines.inventory.hub_main)
-    local want={}
+    -- Repeated entries add up; the hub must hold the total.
+    local want,by={},{}
     for i,r in ipairs(a.items) do
       assert(type(r)=='table','items['..i..'] is {item,count,quality?}')
       local name,quality=item_name(r.item),r.quality or 'normal'
       local count=api.integer(r.count,1,1,100000,'count')
-      local have=hub_inv.get_item_count{name=name,quality=quality}
-      assert(have>=count,'the hub of '..pl.name..' holds '..have..' '..name..(quality~='normal' and '@'..quality or '')..', not '..count)
-      want[i]={name=name,quality=quality,count=count}
+      local key=name..'@'..quality
+      if by[key] then by[key].count=by[key].count+count
+      else by[key]={name=name,quality=quality,count=count}; want[#want+1]=by[key] end
+    end
+    for _,w in ipairs(want) do
+      local have=hub_inv.get_item_count{name=w.name,quality=w.quality}
+      assert(have>=w.count,'the hub of '..pl.name..' holds '..have..' '..w.name..(w.quality~='normal' and '@'..w.quality or '')..', not '..w.count)
     end
     local planet=game.planets[loc.name]
     local surface=planet.surface or planet.create_surface()
     local pod=try(function() return pl.hub.create_cargo_pod() end)
     assert(pod and pod.valid,'the hub has no free cargo hatch right now; try again shortly')
     local cargo=pod.get_inventory(defines.inventory.cargo_unit)
+    -- The hub's own stacks move (freshness, grids and other item data go
+    -- along): whole stacks by transfer_stack, the last part of one as a copy
+    -- with its spoil progress, taken off the hub stack.
     local sent,left={},{}
     for _,w in ipairs(want) do
-      local moved=cargo.insert(w)
-      if moved>0 then hub_inv.remove{name=w.name,quality=w.quality,count=moved} end
+      local need=w.count
+      for i=1,#hub_inv do
+        if need<=0 then break end
+        local st=hub_inv[i]
+        if st.valid_for_read and st.name==w.name and (st.quality and st.quality.name or 'normal')==w.quality then
+          if st.count<=need then
+            local n=st.count
+            local slot=cargo.find_empty_stack()
+            if slot and slot.transfer_stack(st) then need=need-n end
+          else
+            local def={name=w.name,quality=w.quality,count=need}
+            local spoil=try(function() return st.spoil_percent end)
+            if spoil and spoil>0 then def.spoil_percent=spoil end
+            local moved=cargo.insert(def)
+            if moved>0 then st.count=st.count-moved; need=need-moved end
+          end
+        end
+      end
+      local moved=w.count-need
       sent[#sent+1]=w.name..(w.quality~='normal' and '@'..w.quality or '')..'*'..moved
-      if moved<w.count then left[#left+1]=w.name..'*'..(w.count-moved) end
+      if need>0 then left[#left+1]=w.name..'*'..need end
     end
     if cargo.is_empty() then pod.destroy(); error('nothing fit in the cargo pod',0) end
     local pad=surface.find_entities_filtered{type='cargo-landing-pad',force=p.force,limit=1}[1]
@@ -331,7 +356,12 @@ return function(api)
       local b=api.bot and api.bot(p)
       dest.position=a.position~=nil and api.position(a.position) or (b and b.spots and b.spots[surface.name]) or p.force.get_spawn_position(surface)
     end
-    pod.cargo_pod_destination=dest
+    -- A refused destination puts the items back in the hub, never strands them.
+    if not pcall(function() pod.cargo_pod_destination=dest end) then
+      for i=1,#cargo do if cargo[i].valid_for_read then hub_inv.insert(cargo[i]); cargo[i].clear() end end
+      pod.destroy()
+      error('the game refused the cargo pod destination '..surface.name..'; the items stay in the hub',0)
+    end
     return {dropped=sent,not_sent=#left>0 and left or nil,to=surface.name,pad=pad and pad.position or nil,near=dest.position,
       note=pad and 'lands in the landing pad in ~20 s' or 'lands near that spot in ~20 s as a cargo pod container: take the items with transfer (it vanishes when empty)'}
   end

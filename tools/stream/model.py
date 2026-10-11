@@ -229,7 +229,8 @@ class Model:
         for key in ("surface", "where", "travel"):
             if key in a:
                 setattr(ag, key, a[key])
-        alive = a.get("alive", True)
+        # A bot riding a cargo pod or aboard a platform has no body; it is not dead.
+        alive = a.get("alive", True) or bool(a.get("travel"))
         connected = a.get("connected", True)
         if ag.seen and ag.alive and not alive and connected and ag.connected:
             ag.died_at = now

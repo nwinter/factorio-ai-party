@@ -3335,7 +3335,8 @@ for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 -- Direct wait_ticks and sleep/sleep_check (waits.lua).
 M.waits=require('waits'){state=state,integer=integer,
   replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
-  advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end}
+  advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
+  traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
