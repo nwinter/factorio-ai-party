@@ -352,11 +352,13 @@ def analyst_facts(f, e, s):
             f["next_milestone"] = dict((an["next"].get("facts") or {}), text=an["next"]["text"])
 
 
-def context_facts(s, baseline=None, deadline=None):
+def context_facts(s, baseline=None, deadline=None, clock=True):
     """What viewers need to follow along and what lets the hosts judge the play: stage, science rate, pace, time left."""
     f = {}
-    if deadline:  # shake3: "forty more minutes of biter bait" with 4.5 left; there was no time-left fact
-        left = (deadline - time.time()) / 60
+    left = (deadline - time.time()) / 60 if deadline else None
+    # shake3: "forty more minutes of biter bait" with 4.5 left; there was no time-left fact. On every beat the hosts
+    # said "forty-six minutes left" four exchanges running (mock), so only where time matters or it is running out.
+    if deadline and (clock or left <= 15):
         f["minutes_to_deadline"] = round(left) if left >= 1 else "under a minute" if left > 0 else "the deadline has passed"
     sc = s.get("science") or {}
     if sc.get("stage_label"):
@@ -380,7 +382,7 @@ def facts_for(e, s, baseline=None, deadline=None):
         f["game_minutes"] = int(gm.group(1)) * 60 + int(gm.group(2))
     # the pace comparison only where it is the story; on every line it turned the cast into a scoreboard
     paced = e["kind"] in ("research", "open", "viewer") or e.get("angle") in ("pace", "explain")
-    f.update(context_facts(s, baseline if paced else None, deadline))
+    f.update(context_facts(s, baseline if paced else None, deadline, clock=paced or e["kind"] == "segment"))
     if e["kind"] == "viewer":
         f["viewer_message"] = {"from": e.get("viewer"), "text": e.get("text")}
         if e.get("answer"):  # the analyst's answer, checked with its tools; the hosts put it in their own words
@@ -403,6 +405,10 @@ def facts_for(e, s, baseline=None, deadline=None):
         mins = baseline.minutes(tech)
         if mins is not None:
             f[f"{baseline.name}_finished_this_at"] = f"{mins} minutes"
+            if s.get("tick"):  # the hosts derived "fifteen minutes late to shake1's party" and the check rejected it
+                d = round(s["tick"] / 3600 - float(mins))
+                f[f"compared_with_{baseline.name}"] = (f"{abs(d)} minutes {'later' if d > 0 else 'earlier'}" if d
+                                                       else "at the same time")
     for k in ("text", "change", "title", "tech", "item"):
         if e.get(k):
             f[k] = spoken(e[k]) if k in ("text", "title") else e[k]

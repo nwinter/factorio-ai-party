@@ -443,7 +443,7 @@ class MockSource:
             "tick": int(gsec * 60), "paused": False, "game_seconds": gsec,
             "agents": [{
                 "name": a["name"], "kind": "bot", "display_name": a["display_name"], "color": a["color"],
-                "glyph": a["glyph"], "motto": a.get("motto", ""), "voice": a.get("voice"), "avatar": a.get("avatar"), "position": {"x": round(a["pos"][0], 1), "y": round(a["pos"][1], 1)},
+                "glyph": a["glyph"], "motto": a.get("motto", ""), "voice": a.get("voice"), "pronouns": a.get("pronouns"), "avatar": a.get("avatar"), "position": {"x": round(a["pos"][0], 1), "y": round(a["pos"][1], 1)},
                 "alive": a["alive"], "dead_until_tick": int((gsec + (a["dead_until"] - now) * self.speed) * 60) if not a["alive"] else None,
                 "active": a["active"], "last": a["last"], "combat": now < a["combat_until"], "last_said": a["last_said"],
             } for a in self.agents.values()],

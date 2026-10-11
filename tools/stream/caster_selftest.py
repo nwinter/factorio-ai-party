@@ -242,6 +242,8 @@ check("baseline pace facts", p and p["technologies_now"] == 8 and "verdict" in p
 fp = caster.facts_for({"kind": "research", "text": "Research complete: Logistics", "t": now, "prio": 7},
                       {"tick": 111171, "research": {"done_count": 8}, "agents": []}, bl)
 check("research facts carry the baseline time", "shake1_finished_this_at" in fp, str(fp))
+check("research facts carry the difference from the baseline", re.fullmatch(
+    r"\d+ minutes (later|earlier)|at the same time", fp.get("compared_with_shake1", "")), str(fp))
 
 # ---- round 4 (docs/studies/shake3.md P1 items 1-3, P2 item 12) ----
 import live  # noqa: E402
@@ -287,6 +289,10 @@ check("deadline glob: the latest agent deadline", caster.read_deadline(os.path.j
       caster.read_deadline("2026-10-11 01:28"))
 dl = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"}, {"agents": []}, None, time.time() + 270)
 check("facts carry minutes_to_deadline", dl.get("minutes_to_deadline") == 4 or dl.get("minutes_to_deadline") == 5, str(dl))
+cam_far = caster.facts_for({"kind": "camera", "agents": [], "t": now, "prio": 2}, {"agents": []}, None, time.time() + 2400)
+cam_near = caster.facts_for({"kind": "camera", "agents": [], "t": now, "prio": 2}, {"agents": []}, None, time.time() + 600)
+check("the clock only where it matters, or in the last 15 minutes", "minutes_to_deadline" not in cam_far
+      and cam_near.get("minutes_to_deadline") == 10, f"{cam_far} {cam_near}")
 dfacts = {"minutes_to_deadline": 4, "game_time": "57 minutes"}
 check("rejects 'ends the run' with minutes left",
       caster.check_line("One small biter ends the run!", dfacts, names, []) is not None)
