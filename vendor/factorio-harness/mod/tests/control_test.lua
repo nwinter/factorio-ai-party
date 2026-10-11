@@ -45,9 +45,9 @@ local conflict=interface.dispatch(request('one','craft')); eq(encoded[conflict].
 local failing=request('two','fail'); local failure=interface.dispatch(failing)
 eq(encoded[failure].ok,false); eq(interface.dispatch(failing),failure); eq(calls,2)
 local observation=request('read','observe'); interface.dispatch(observation); interface.dispatch(observation); eq(calls,4)
--- The operator's 5-second votes_open poll is a read: it never fills the replay cache.
+-- The operator's 5-second votes_pending poll is a read: it never fills the replay cache.
 local polled=#storage.agent_harness.order
-for i=1,3 do interface.dispatch(request('poll-'..i,'votes_open')) end
+for i=1,3 do interface.dispatch(request('poll-'..i,'votes_pending')) end
 eq(#storage.agent_harness.order,polled)
 local stopped_before=stops
 local invalid_read=helpers.table_to_json{id='invalid-read',action='observe',args={fail=true}}

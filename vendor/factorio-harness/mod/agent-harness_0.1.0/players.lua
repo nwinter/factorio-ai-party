@@ -4,11 +4,8 @@
 --            vehicle), their pending deconstruction and upgrade orders, and
 --            big inventory moves between them and chests or vehicles.
 --   players  the agents' read of it: who is on the map, where, what each did.
---   vote     agents' ballots to kick, ban or trust a player. The operator
---            (tools/players.py) tallies them with tools/votes.py, runs the
---            server's own /kick or /ban or the permission change, and closes
---            the vote (operator vote_close). Every step is a chat line from
---            `vote`, which the stream shows.
+--   votes    kick, ban and trust votes on a human are votes.lua's; this
+--            module finds the player and their group for it.
 --   restore  cancels a player's pending orders and places ghosts of what they
 --            removed: orders only, robots and agents build them with real items.
 -- New players land in the guest permission group from control.lua (on_player_created).
@@ -17,11 +14,6 @@ return function(api)
   local MAX_BUILT, MAX_REMOVED, MAX_MOVES, MAX_ORDERS = 2000, 2000, 200, 5000
   local BIG_MOVE = 50
   local MINUTE = 3600
-  local VOTE_TICKS = 10 * MINUTE   -- who counts as active, and how long a vote stays open
-  local GRACE = MINUTE             -- the operator closes votes; past this the runtime expires them itself
-  local COOLDOWN = 5 * MINUTE      -- after a vote closes, the same kind on the same player waits this long
-  local KINDS = {kick=true, ban=true, trust=true}
-  local OUTCOMES = {carried=true, failed=true, expired=true, cancelled=true}
   local GUEST = 'pog-guest'
   -- A burst of removals or orders is a chat line from `players`: BURST within
   -- BURST_TICKS, then at most one line per player and kind every QUIET_TICKS.
@@ -42,7 +34,7 @@ return function(api)
 
   local function store()
     local s = api.state()
-    s.humans = s.humans or {by_index={}, orders={}, order_count=0, dropped_orders=0, votes={}, vote_seq=0}
+    s.humans = s.humans or {by_index={}, orders={}, order_count=0, dropped_orders=0}
     return s.humans
   end
   local function human(index)
@@ -370,40 +362,10 @@ return function(api)
     assert(p and p.valid and api.is_human(p.index), 'no human player named ' .. name .. ' (players lists them)')
     return p
   end
-  local function view(v)
-    local yes, no = {}, {}
-    for voter, b in pairs(v.ballots) do table.insert(b.yes and yes or no, voter) end
-    table.sort(yes); table.sort(no)
-    return {id=v.id, kind=v.kind, player=v.target, reason=v.reason, opened_by=v.opened_by, yes=yes, no=no,
-      closes_in_s=not v.closed and math.max(0, seconds(v.expires_tick - game.tick)) or nil,
-      outcome=v.closed and v.closed.outcome or 'open', note=v.closed and v.closed.note or nil}
-  end
-  local function active()
-    local names = api.active_agents(VOTE_TICKS)
-    table.sort(names)
-    return names
-  end
-  -- Open votes; one left open past its time (no operator closed it) expires here.
-  local function open_votes()
-    local out = {}
-    for _, v in ipairs(store().votes) do
-      if not v.closed and game.tick > v.expires_tick + GRACE then
-        v.closed = {outcome='expired', tick=game.tick, note='no operator tally'}
-      end
-      if not v.closed then out[#out+1] = v end
-    end
-    return out
-  end
-  local function electorate_note(n)
-    return string.format('%d agents active in the last %d minutes; %d yes carry it', n, VOTE_TICKS / MINUTE, math.floor(n / 2) + 1)
-  end
+  M.find, M.group = find, group
   M.schema = {
     players = {minutes='optional 1..240: the window for builds, removals and moves (default 10)', player='optional name: only that player',
-      returns='human players (bots and camera clients excluded) with online, group (guest|normal|...), position, and in the window: built and removed (count, items by name, area, how: mined|robot|destroyed, not_restored), pending_orders (deconstruct, upgrade), moves (big inventory moves: entity, position, took, put); open votes; active (agents active in the last 10 minutes)'},
-    votes = {returns='open votes and the 10 most recent closed ones {id,kind,player,reason,opened_by,yes,no,closes_in_s,outcome,note}, and active'},
-    vote = {kind='kick|ban|trust', player='the human player\'s name', reason='1..200 characters (required to open a vote)',
-      yes='optional boolean (default true); false votes against an open vote',
-      returns='the vote {id,kind,player,yes,no,closes_in_s,outcome}. A vote is open 10 minutes; a majority of the agents active in the last 10 minutes carries it; after one closes, the same kind on the same player can open again 5 minutes later; the operator then runs it (kick, ban, or the move from the guest group to the normal one) and every step is a chat line from vote'},
+      returns='human players (bots and camera clients excluded) with online, group (guest|normal|...), position, and in the window: built and removed (count, items by name, area, how: mined|robot|destroyed, not_restored), pending_orders (deconstruct, upgrade), moves (big inventory moves: entity, position, took, put); votes on them (open or carried)'},
     restore = {player='the human player\'s name', minutes='optional 1..240 (default 30)',
       returns='cancelled (their pending deconstruction and upgrade orders), ghosts (placed where they removed something in the window), already (still there or a ghost already), blocked (something else stands there now), items. Ghosts are orders: robots or agents build them with real items'},
   }
@@ -412,58 +374,8 @@ return function(api)
     local out = {}
     if a.player ~= nil then out[1] = summary(find(a.player), from)
     else for _, p in ipairs(humans()) do out[#out+1] = summary(p, from) end end
-    local votes = {}
-    for _, v in ipairs(open_votes()) do votes[#votes+1] = view(v) end
-    return {players=out, votes=#votes > 0 and votes or nil, active=active(),
-      note=#out == 0 and 'no human players have joined this map' or nil}
-  end
-  function M.handlers.votes()
-    local open, closed = {}, {}
-    open_votes()
-    for _, v in ipairs(store().votes) do table.insert(v.closed and closed or open, view(v)) end
-    local recent = {}
-    for i = math.max(1, #closed - 9), #closed do recent[#recent+1] = closed[i] end
-    return {open=open, closed=recent, active=active()}
-  end
-  function M.handlers.vote(p, a)
-    assert(KINDS[a.kind], 'kind must be kick, ban or trust')
-    local target = find(a.player)
-    assert(a.yes == nil or type(a.yes) == 'boolean', 'yes must be true or false')
-    local reason = a.reason
-    assert(reason == nil or type(reason) == 'string', 'reason must be a string')
-    if reason then reason = reason:gsub('[%c]+', ' '):gsub('%[', '('):gsub('%]', ')'):sub(1, 200) end
-    local yes = a.yes ~= false
-    local v
-    for _, open in ipairs(open_votes()) do if open.kind == a.kind and open.target == target.name then v = open end end
-    local s = store()
-    if not v then
-      assert(yes, 'no open vote to ' .. a.kind .. ' ' .. target.name .. ' to vote against')
-      assert(reason and reason:match('%S'), 'reason is required to open a vote')
-      for _, done in ipairs(s.votes) do
-        if done.closed and done.kind == a.kind and done.target == target.name and game.tick - done.closed.tick < COOLDOWN then
-          error(string.format('vote #%d to %s %s closed %s %ds ago; another can open in %ds', done.id, a.kind, target.name,
-            done.closed.outcome, seconds(game.tick - done.closed.tick), seconds(COOLDOWN - (game.tick - done.closed.tick))), 0)
-        end
-      end
-      if a.kind == 'trust' then assert(group(target) == 'guest', target.name .. ' is not in the guest group (group ' .. group(target) .. ')') end
-      s.vote_seq = s.vote_seq + 1
-      v = {id=s.vote_seq, kind=a.kind, target=target.name, reason=reason, opened_by=p.name, opened_tick=game.tick,
-        expires_tick=game.tick + VOTE_TICKS, ballots={}}
-      s.votes = push(s.votes, v, 50)
-    end
-    local again = v.ballots[p.name]
-    v.ballots[p.name] = {yes=yes, tick=game.tick, reason=reason}
-    local out = view(v)
-    local voters = {[p.name]=true}
-    for _, name in ipairs(active()) do voters[name] = true end
-    local n = 0
-    for _ in pairs(voters) do n = n + 1 end
-    if not again or again.yes ~= yes then
-      api.notice('vote', string.format('#%d %s %s: %s votes %s%s (yes %d, no %d; %s)', v.id, v.kind, v.target, p.name,
-        yes and 'yes' or 'no', reason and (' - ' .. reason) or '', #out.yes, #out.no, electorate_note(n)))
-    end
-    out.electorate = electorate_note(n)
-    return out
+    local votes = api.votes_on and api.votes_on('player') or {}
+    return {players=out, votes=#votes > 0 and votes or nil, note=#out == 0 and 'no human players have joined this map' or nil}
   end
   function M.handlers.restore(p, a)
     local target = find(a.player)
@@ -503,7 +415,7 @@ return function(api)
     out.area = box(placed)
     out.note = 'ghosts are orders: robots or agents build them with real items'
     if out.cancelled + out.ghosts > 0 then
-      api.notice('vote', string.format('%s restored %s\'s last %d minutes: %d orders cancelled, %d ghosts placed', p.name, target.name,
+      api.notice('players', string.format('%s restored %s\'s last %d minutes: %d orders cancelled, %d ghosts placed', p.name, target.name,
         (game.tick - from) / MINUTE, out.cancelled, out.ghosts))
     end
     return out
@@ -512,31 +424,6 @@ return function(api)
   -- Operator (RCON, `operator: true` dispatch) ------------------------------
   function M.operator.players(a)
     return M.handlers.players(nil, a)
-  end
-  -- What tools/players.py tallies: open votes with every ballot, and who is active.
-  function M.operator.votes_open()
-    local out = {}
-    for _, v in ipairs(open_votes()) do
-      local ballots = {}
-      for voter, b in pairs(v.ballots) do ballots[voter] = b.yes end
-      out[#out+1] = {id=v.id, kind=v.kind, player=v.target, reason=v.reason, opened_by=v.opened_by, opened_tick=v.opened_tick,
-        expires_tick=v.expires_tick, ballots=ballots}
-    end
-    return {tick=game.tick, votes=out, active=active(), window_ticks=VOTE_TICKS}
-  end
-  function M.operator.vote_close(a)
-    assert(type(a.id) == 'number', 'id must be a vote id')
-    assert(OUTCOMES[a.outcome], 'outcome must be carried, failed, expired or cancelled')
-    assert(a.note == nil or type(a.note) == 'string', 'note must be a string')
-    local v
-    for _, x in ipairs(store().votes) do if x.id == a.id then v = x end end
-    assert(v, 'no vote ' .. a.id)
-    if v.closed then return view(v) end
-    v.closed = {outcome=a.outcome, tick=game.tick, note=a.note and a.note:sub(1, 200)}
-    local out = view(v)
-    api.notice('vote', string.format('#%d %s %s %s (yes %d, no %d)%s', v.id, v.kind, v.target, a.outcome, #out.yes, #out.no,
-      a.note and (': ' .. v.closed.note) or ''))
-    return out
   end
   -- trusted: the normal (Default) group; guest: the guest group. control.lua
   -- keeps trusted names out of the guest group when they first join a world.

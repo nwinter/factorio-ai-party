@@ -86,14 +86,14 @@ except Exception:  # caster.py missing or failing to import: everything from age
 
 def chat_lane(entry):
     """'talk' (banter, strategy, emotion, `aloud`, confessionals: the big chat lane), 'log' (coordinates, counts,
-    acknowledgements, server lines: the small ticker; `vote` lines go to the big lane), or 'viewer' (a viewer line relayed into the game chat, already
-    in the viewers lane)."""
+    acknowledgements, server lines, harness notices such as votes and player lines: the small ticker), or 'viewer' (a viewer line
+    relayed into the game chat: the overlay shows it in the chat feed, marked as a viewer)."""
     frm = (entry.get("from") or "").lower()
+    if entry.get("notice"):  # a harness notice ("vote: ...", "players: ..."; votes.lua, players.lua): the ticker
+        return "log"
     if entry.get("viewer") or frm.startswith("viewer") or clean_text(entry.get("text")).lower().startswith("viewer "):
         return "viewer"
     if entry.get("confess") or entry.get("aloud"):
-        return "talk"
-    if frm == "vote":   # votes on human players and restores (players.lua): a moment for the big lane
         return "talk"
     if not entry.get("agent"):
         return "log"
@@ -335,6 +335,8 @@ class Model:
             entry["aloud"] = True
         if m.get("viewer"):  # a viewer's line the operator relayed into the game chat (audience.lua)
             entry["viewer"] = m["viewer"]
+        if m.get("notice"):  # a harness notice: the agents' mute votes and their results (audience.lua)
+            entry["notice"] = True
         entry["lane"] = chat_lane(entry)
         self.chat.append(entry)
         cl = None if sender else CHANGELOG_RE.match(clean_text(entry["text"]))

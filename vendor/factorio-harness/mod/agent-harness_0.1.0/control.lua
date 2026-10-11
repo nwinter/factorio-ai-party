@@ -185,7 +185,7 @@ local function console_log(since)
   table.sort(list,function(x,y) return x.seq<y.seq end)
   return helpers.table_to_json{ok=true,tick=game.tick,seq=a.seq,harness=a.harness,other=a.other,dropped=a.dropped,entries=list}
 end
-local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true, profiles = true, cameras = true, players = true, votes = true, votes_open = true}
+local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true, profiles = true, cameras = true, players = true, votes = true, votes_pending = true}
 -- Operator-only calls (bots, cameras): RCON/console only, never via dispatch.
 local function operator(name, arg)
   local ok, result = pcall(function()

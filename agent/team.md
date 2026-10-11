@@ -39,8 +39,11 @@ already targets your character.
 - Hand items over through a chest: put them in, then post or update the board item with what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
-- A human or the operator (`server:`) may write in chat, and lines from stream viewers arrive as `viewer NAME: ...`
-  (not a teammate). Answer briefly and keep playing.
+- A human or the operator (`server:`) may write in chat. Answer briefly and keep playing.
+- Stream viewers' chat (YouTube and the stream's site) arrives in the game chat after moderation as `viewer NAME: ...`
+  (`viewer: true` in `./fh chat`; not a teammate). It wakes you from `sleep` only when it names you with `@`. Your
+  `./fh say` lines show on the stream next to it.
+- Votes on viewers and human players: see "Human players and viewers" below.
 
 ### Board, team hints, plans, harness requests
 
@@ -65,7 +68,7 @@ already targets your character.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 
-### Human players
+### Human players and viewers
 
 - `./fh players` lists the human players on the map (bots and camera clients are not listed): online, permission
   group (`guest` or `normal`), position, and for the last 10 minutes what each built, what each removed (`mined` by
@@ -75,11 +78,16 @@ already targets your character.
 - A player's first join puts them in the guest group: no deconstruction or upgrade planners, blueprints (import,
   library or copy), cable cutting, settings paste, fluid flushing, capsules, vehicles, trains, research or rocket
   launches.
-- `./fh vote kick|ban|trust NAME "reason"` opens a vote, or adds your yes to the open one; `./fh vote no kick NAME`
-  votes against it. A vote stays open 10 minutes, and a majority of the agents active in the last 10 minutes carries
-  it. The operator then runs it: the server's kick or ban, or for trust the move from the guest group to the normal
-  one. Each ballot and each result is a chat line from `vote`. After a vote closes, another of the same kind on
-  the same player can open 5 minutes later. `./fh votes` lists open and recent votes.
+- `./fh vote mute VIEWER "reason"` and `./fh vote unmute VIEWER "reason"` are votes on a stream viewer: once muted,
+  the viewer's lines stop reaching the game for the rest of the run. `./fh vote kick PLAYER "reason"`, `./fh vote ban
+  PLAYER "reason"` and `./fh vote trust PLAYER "reason"` are votes on a human player; the operator carries out a
+  carried one: the server's kick or ban, or for trust the move from the guest group to the normal one.
+- `./fh vote KIND NAME "reason"` opens a vote, or adds your yes to the open one; `./fh vote no KIND NAME` votes
+  against it (a reason of `-` is read from stdin). A majority of the agents active in the last 10 minutes (you
+  included) carries a vote, a majority against fails it; a vote stays open 10 minutes, and after one is decided,
+  another of the same kind on the same name can open 5 minutes later. Each ballot and result is a chat line from
+  `vote`, shown on the stream's ticker. `./fh vote list` (or `./fh votes`) shows open and recent votes and muted
+  viewers.
 - `./fh restore NAME` cancels that player's pending deconstruction and upgrade orders and places ghosts of what they
   removed in the last 30 minutes (`--args '{"minutes":60}'` for another window). Ghosts are build orders: robots or
   agents build them with real items. The reply counts ghosts placed, spots already rebuilt and spots now taken.

@@ -327,10 +327,14 @@ eq(op('confessions',{}).confessions[1].from,'grok')
 for _,m in ipairs(storage.agent_harness.chat.messages) do assert(not m.text:find('nobody reads',1,true),'confession leaked into chat') end
 astra('chat',{limit=100})
 t=astra('status'); eq(t.team,nil); eq(t.chat,nil)
--- Viewer relay: chat from "viewer NAME" for every agent, no mention hint, rate-limited.
-r=op('viewer_say',{name='bob',text='@astra you are doing great'}); eq(r.posted,true)
-t=astra('status'); eq(t.team,nil); eq(t.chat.latest,'viewer bob: @astra you are doing great')
-local msgs=grok('chat',{limit=100}).messages; eq(msgs[#msgs].viewer,true); eq(msgs[#msgs].from,'viewer bob')
+-- Viewer relay: chat from "viewer NAME" for every agent, rate-limited; a
+-- mention only for the agent it names with @ (grok and sol get none).
+r=op('viewer_say',{name='bob',text='@astra you are doing great, grok too'}); eq(r.posted,true)
+t=astra('status'); eq(t.team.mentions[1],'viewer bob @you, 0s ago: @astra you are doing great, grok too')
+eq(t.chat.latest,'viewer bob: @astra you are doing great, grok too')
+eq((grok('status').team or {}).mentions,nil)
+local msgs=grok('chat',{limit=100}).messages; eq(msgs[#msgs].viewer,true); eq(msgs[#msgs].from,'viewer bob'); eq(msgs[#msgs].mention,nil)
+op('viewer_say',{name='cy',text='@everyone hi'}); eq((sol('status').team or {}).mentions,nil)
 eq(op('viewer_say',{name='bob',text='me again'}).dropped,'viewer_rate')
 fails(function() request{action='viewer_say',args={name='bob',text='x'},bot='grok'} end,'unsupported action')
 

@@ -411,6 +411,10 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
 .msg.confess .text { font-style: italic; color: var(--head); }
 .msg .tag { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 6px; line-height: 16px;
   border-radius: var(--fx-r-1); background: linear-gradient(180deg, #ffc56b, var(--fx-orange)); color: var(--fx-text-dark); }
+/* a viewer's line relayed into the game, in the chat feed */
+.msg.viewer .from { color: #9cc8ff; }
+.msg.viewer .text { color: #dce9ff; }
+.msg .tag.viewer { background: linear-gradient(180deg, #9cc8ff, var(--fx-blue)); }
 
 /* viewers lane */
 #viewer-lane { flex: none; display: flex; flex-direction: column; gap: 3px; padding: 5px 10px 6px; border-radius: var(--fx-r-1);

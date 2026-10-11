@@ -77,3 +77,11 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
   sleep "$poll"
 done
 log "deadline reached after $nudges nudges"
+# The final summary comes after the deadline (agent/PLAYBOOK.md, Stopping), so the last minutes are played, not slept
+# through. An agent still mid-turn writes it once its clock: line says the deadline passed; one whose turn has ended
+# is asked once.
+status=$(agent_status)
+if [ "$status" = idle ] || [ "$status" = done ]; then
+  log "after the deadline (status $status): asking for the final summary"
+  deliver "${POG_SUMMARY_TEXT:-The deadline in deadline.txt has passed. Add your final summary to notes.md now (milestones with game times, what slowed you down, harness problems you hit, the tool changes that would have helped most), then end your turn.}"
+fi

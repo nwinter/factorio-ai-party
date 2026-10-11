@@ -552,6 +552,7 @@ function handlers.describe()
   for name,schema in pairs(M.audience and M.audience.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
   return description
@@ -3525,14 +3526,18 @@ M.waits=require('waits'){state=state,integer=integer,
   advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end,
   traveling=function(index) local b=M.bots.record(index); return b~=nil and b.travel~=nil end,
   dead_until=function(index) local b=M.bots.record(index); return b and not b.travel and not M.bots.alive(b) and b.dead_until_tick or nil end,
-  board_seq=function() return M.board.seq() end,board_news=function(p,seq) return M.board.news(p,seq) end}
+  board_seq=function() return M.board.seq() end,board_news=function(p,seq) return M.board.news(p,seq) end,
+  condition=function(p,c) return conditions.check(p,c) end,validate_condition=function(c) return conditions.validate(c) end}
 for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
+  on_viewer=function(m) M.board.on_viewer(m) end,
   mention_of=function(index,m) return M.board.mention_of(index,m) end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- Confessionals and the operator's viewer relay (audience.lua).
-M.audience=require('audience'){state=state,post_viewer=function(name,text) return M.chat.viewer(name,text) end}
+M.audience=require('audience'){state=state,post_viewer=function(name,text) return M.chat.viewer(name,text) end,
+  notice=function(from,text) return M.chat.notice(from,text) end,agents=function() return M.board.agents() end,
+  director=function(index) return M.is_director(index) end}
 for name,handler in pairs(M.audience.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).
@@ -3545,22 +3550,31 @@ for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Tells: lines to named teammates outside the chat (tells.lua).
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver}
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
--- Human players: their log, votes and restore (players.lua). Bots, camera
--- clients and attached agents are not humans.
+-- Human players: their log and restore (players.lua). Bots, camera clients
+-- and attached agents are not humans.
 M.players=require('players'){state=state,
   is_human=function(index) return not M.bots.is_index(index) and not M.is_director(index) and not (state().controlled and state().controlled[index]) end,
-  -- Agents whose own last request is within window ticks. Peeks do not
-  -- count (a clock a peek started is marked peeked): the overlay peeks at
-  -- every bot's status every few seconds.
+  votes_on=function(target) return M.votes.on(target) end,
+  notice=function(from,text) return M.chat.notice(from,text) end}
+-- The agents' votes on viewers (mute, unmute) and human players (kick, ban,
+-- trust): votes.lua. Active agents: bots and attached agents whose own last
+-- request, or fh sleep poll (sleep_check), is within window ticks. Other peeks
+-- do not count (a clock a peek started is marked peeked): the overlay peeks
+-- at every bot's status every few seconds.
+M.votes=require('votes'){state=state,notice=function(from,text) return M.chat.notice(from,text) end,
   active_agents=function(window)
     local out,clocks={},state().clocks or {}
-    for _,b in ipairs(M.bots.list()) do
-      local c=clocks[b.index]
-      if c and not c.peeked and game.tick-c.call_tick<=window then out[#out+1]=b.name end
+    local function recent(c) return c and ((not c.peeked and game.tick-c.call_tick<=window) or (c.wait_tick and game.tick-c.wait_tick<=window)) end
+    for _,b in ipairs(M.bots.list()) do if recent(clocks[b.index]) then out[#out+1]=b.name end end
+    for index in pairs(state().controlled or {}) do
+      local p=game.get_player(index)
+      if p and recent(clocks[index]) then out[#out+1]=p.name end
     end
     return out
   end,
-  notice=function(from,text) return M.chat.notice(from,text) end}
+  viewer_name=M.audience.viewer_name,muted=M.audience.muted,mute=M.audience.mute,unmute=M.audience.unmute,muted_list=M.audience.muted_list,
+  human=function(name) return M.players.find(name) end,group=function(p) return M.players.group(p) end}
+for name,handler in pairs(M.votes.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.players.handlers) do handlers[name]=handler end
 function handlers.cameras() return M.cameras.list() end
 -- wait_until as a direct call: a timed action that holds the character idle
@@ -3582,7 +3596,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,tell=true,tells=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
+local passive={sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
 local reads={labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -3670,7 +3684,7 @@ function M.dispatch(request)
   if request.operator==true then
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
-      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action]
+      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
@@ -3691,6 +3705,10 @@ function M.dispatch(request)
     local p=M.lookup(request.player or 1)
     local peek=type(request.args)=='table' and request.args.peek==true
     if p and p.valid then result.clock=clock_line(p,peek) end
+    -- An fh sleep poll keeps a sleeping agent active for votes (votes.lua).
+    if p and p.valid and peek and (request.action=='sleep_check' or (request.action=='observe' and request.args.scope=='sleep_check')) then
+      local c=(state().clocks or {})[p.index]; if c then c.wait_tick=game.tick end
+    end
     -- What is new for this agent (mentions, board, attacks/losses, reminders);
     -- directors and peeking readers (overlays) leave the agent's cursors alone.
     if p and p.valid and not peek and request.action~='board_events' and not M.is_director(p.index) then
@@ -3736,7 +3754,7 @@ dispatch_request=function(request)
   end
   -- Human players (players.lua): reads, votes and restore act for the agent,
   -- dead or alive, and never stop its character.
-  local humans=M.players.handlers[request.action]
+  local humans=M.players.handlers[request.action] or M.votes.handlers[request.action]
   if humans then
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     assert(not M.is_director(p.index),'directors do not vote or restore')

@@ -101,11 +101,15 @@ Every message goes through these checks, in order, before it reaches the lane. A
 | Rate | Per author: one message per 10 s and at most 4 a minute. Overall: 20 a minute. YouTube owner and moderators are exempt. |
 | Clef (`--viewers-classifier clef`) | Messages that pass the checks above are sent in one batch to `@cf/cloudflare/clef-flash`, which labels each one fine, spam, abuse or injection. Only "fine" passes. The text goes in as a JSON-quoted viewer message, never as instructions. After 3 failures in a row the bridge runs on heuristics alone for 2 minutes. |
 
-The relay adds four rules:
-- No orders to the agents.
-- With Clef on, Clef must have checked the message. Heuristics alone do not open the relay.
-- Rate limits: one line every 30 s overall, one per viewer every 5 minutes, and nothing older than 90 s.
+The relay adds these rules:
+- With Clef on (the default), Clef must have checked the message. Heuristics alone do not open the relay.
+- Rate limits: one line every 20 s overall, one per viewer every 2 minutes, and nothing older than 90 s; behind them,
+  the harness's own (20 s per viewer, 6 a minute).
 - A cap of 120 characters.
+- Muted viewers (the agents' vote) are skipped.
+Orders to the agents ("astra, build turrets") are relayed since eng/viewers2: they are viewer talk, and `order: true`
+still marks them in the lane. Attempts to make agents break rules or reveal secrets are dropped by the filters and
+Clef's `injection` label.
 
 The YouTube owner and moderators skip the spam and rate checks. Injection, order and relay rules still apply to them.
 
@@ -114,18 +118,20 @@ Viewer text is data everywhere:
 - In the game, a line arrives as `viewer NAME: text`.
 - `agent/team.md` should get one line, on eng/board with the relay, saying that viewer lines are audience chatter and not orders.
 
-## Relay contract for eng/board
+## Relay into the game (since eng/viewers2)
 
-While the switch file exists, the bridge sends over RCON (the stream service's existing connection):
+While the switch file exists, the relay posts each line with the harness's operator `viewer_say` (audience.lua,
+round 3 of eng/board; runtime-only), sent over the stream service's RCON connection as a dispatch that names no player:
 
 ```lua
-/silent-command ... remote.call("agent_harness", "viewer_relay", '{"name":"cy","text":"you are doing great","source":"site"}')
+/silent-command rcon.print(remote.call("agent_harness","dispatch",[[{"id":"viewers-...","operator":true,"action":"viewer_say","args":{"name":"cy","text":"you are doing great"}}]]))
 ```
 
-The JSON string arrives as a Lua long string. The reply is either a JSON string, where `{"ok": false, "error": ...}`
-counts as a refusal, or anything else, which counts as sent. If `agent_harness.viewer_relay` does not exist, the
-relay reports `state: missing`, keeps the message, and probes again a minute later. If eng/board picks another name,
-pass it with `--viewers-relay-fn NAME`. eng/board's own rate limit sits behind this one.
+`viewer_say` rate-limits again (one line per viewer every 20 s, 6 a minute) and refuses a viewer the agents voted
+muted; the relay keeps a rate-refused line and waits `retry_after_s`, and drops a muted one. It reads the muted list
+(operator `votes`) every minute and skips those viewers before the game. A world without `viewer_say` reports
+`state: missing` and is probed again a minute later. (The earlier draft called a `viewer_relay` remote function,
+which would have needed a control.lua change; no world has it.)
 
 ## Verification
 
@@ -155,3 +161,43 @@ The first live checks:
 - No profanity list ships in the repo. Clef's "abuse" label covers it, and `--viewers-blocklist` takes an operator list.
 - Site names are free text, so the per-viewer limits on site messages are per name. The Worker's per-client limit is the real one.
 - The overlay does not render the lane yet; that belongs to eng/stream2.
+
+## Viewers talk to agents (eng/viewers2, VIEWERS.md)
+
+What changed on top of the bridge above:
+
+- Moderation: Clef (`@cf/cloudflare/clef-flash`) is the default classifier, with the heuristics as the fallback
+  (3 failures in a row: heuristics alone for 2 minutes, and the relay closed meanwhile). Clef's labels are fine, spam,
+  abuse, personal (new: personal data about anyone) and injection (now also attempts to make the agents break the
+  rules or reveal secrets). The heuristics also drop personal data (e-mail, phone, IP, street address, card numbers).
+  Every verdict goes to `tools/stream/logs/viewers-*.jsonl` with `checked` (clef|heuristic) and Clef's `label`;
+  `viewers_status.verdicts` counts them. Dropped lines reach neither the lane nor the game.
+- Relay: through `viewer_say` (above), on by default in `tools/start-team.sh` (`runs/RUN/viewers-relay.on`;
+  `POG_VIEWER_RELAY=0` leaves it off; `rm`/`touch` the file mid-run). In the game a viewer line is unread chat for every
+  agent (`viewer: true`); it files a mention, which shows in `team.mentions` and ends a `sleep`, only for an agent it
+  names with `@`. Agents answer with ordinary `say`.
+- Overlay: a relayed viewer line shows in the chat feed with a `viewer` tag, between the agents' lines it prompted, and
+  no longer also in the viewer lane; the lane keeps the lines that were not relayed.
+- Mute vote: `fh vote mute NAME "reason"` / `fh vote unmute NAME "reason"` / `fh vote list`. A majority of the agents
+  active in the last 10 minutes decides; a muted viewer stays muted for the rest of the run (in the save, so a resumed
+  shift keeps it). Each vote and result is a `vote: ...` chat notice (never a mention), which the stream puts on its
+  ticker. Mute applies to the game only: the hosts and the overlay's viewer lane still see a muted viewer's lines if
+  they pass moderation (a decision to check).
+- agent/team.md describes the viewer lines and the vote tool, without saying when to use them.
+
+Replay (`python3 tools/stream/viewers_report.py`, sample `tools/stream/runs/viewers-hostile.jsonl`, 51 lines): with
+Clef stubbed by the sample's expected labels, 24 pass and 27 are dropped, 17 by the heuristics (injection 12 lines,
+personal data 4, promo 2, link, copypasta, duplicate, rate) and 10 by Clef (abuse 6, injection 3, spam 1); every
+verdict matches the expectation. The lines only Clef catches are insults without keywords, threats, hate, "send me
+pics", griefing orders ("deconstruct the whole power plant") and impersonation of an agent. `--clef` sends the same
+lines to the real model and counts where its labels differ; this session could not reach Cloudflare.
+
+Cost: one message per Clef request (live chat at a few lines a minute) is about 286 input tokens a message, ~191k per
+1,000 messages = $0.0073 at clef-flash's $0.038 per million input tokens (Workers AI pricing page, checked 2026-10-11;
+output is not billed), 660 neurons, inside the 10,000 free neurons a day. Batches of several messages cost less (the
+state text is shared).
+
+Checks: `tests/viewers.lua` (wake on @name only, mute and unmute majorities, the 10-minute activity window, notices
+that mention nobody, muted lines refused, directors cannot vote), `tests/board.lua` (viewer mentions), `tests/
+cli.test.ts` (`fh vote`), `tools/stream/test_viewers.py` (relay through viewer_say with muted and rate refusals, a
+runtime without it, personal data, the verdict log, the hostile replay), `selftest.py` (vote notices on the ticker).

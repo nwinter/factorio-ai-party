@@ -489,11 +489,18 @@ ab.character=nil; ab.travel={state='aboard',platform='alpha',platform_index=1,si
 advance(3600-tick%3600)
 eq(storage.agent_harness.runtime_fault,nil); eq(ab.travel.state,'aboard')
 ab.travel=nil; ab.character=ab_body; force.platforms=nil
--- Votes on human players (players.lua): the electorate is the bots whose own
--- requests are recent; the overlay's peeks at every bot's status do not count.
+-- Votes (votes.lua): the electorate is the bots whose own requests (or fh
+-- sleep polls) are recent; the overlay's peeks at every bot's status do not count.
 game.tick=game.tick+40000
 runtime.dispatch{action='status',args={},bot='astra'}
 runtime.dispatch{action='status',args={peek=true},bot='sol'}
-local electorate=runtime.dispatch{action='votes_open',args={},operator=true}.active
+local electorate=runtime.dispatch{action='votes',args={},operator=true}.active
 eq(#electorate,1); eq(electorate[1],'astra')
+-- A sleeping agent's sleep_check poll keeps it active: 40000 ticks on, astra
+-- and sol's own requests are old, and only sol's poll is recent.
+runtime.dispatch{action='sleep',args={seconds=900},bot='sol'}
+game.tick=game.tick+40000
+pcall(runtime.dispatch,{action='sleep_check',args={peek=true},bot='sol'})
+electorate=runtime.dispatch{action='votes',args={},operator=true}.active
+eq(#electorate,1); eq(electorate[1],'sol')
 print('bots: ok')

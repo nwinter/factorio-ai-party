@@ -6,7 +6,8 @@
 - Site: first page, `after` paging past 100, hidden seqs.
 - Filters: what passes, what is dropped and why (injection incl. fullwidth, zero-width and spaced-out text; spam,
   links, promo, duplicates, copypasta), false-positive guards from ordinary Factorio chat, name hygiene, rate limits.
-- Relay: off without the switch file, rate limits, orders never relayed, Lua quoting, missing eng/board function.
+- Relay: off without the switch file, operator viewer_say dispatch, rate limits (ours and the harness's), orders
+  relayed, muted viewers skipped, Lua quoting, a runtime without viewer_say.
 - Clef: rejected labels drop, a failing classifier keeps the lane on heuristics and closes the relay.
 - The sample replay gives the expected lane, in the shape caster.py (eng/audio) reads.
 """
@@ -178,6 +179,10 @@ DROP = {
     "aaaaaaaaaaaaaaaaaaa": "repeat",
     "hahahahahahahahaha": "repeat",
     "spam spam spam spam spam": "repeat",
+    "email me: jane.doe@example.org": "personal",
+    "his number is 555-867-5309 lol": "personal",
+    "she lives at 42 Elm Street": "personal",
+    "connect to 203.0.113.7 for the server": "personal",
 }
 PASS = [
     "artillery shells are expensive",
@@ -197,6 +202,10 @@ PASS = [
     "when do we get trains?? :train:",
     "¿qué están construyendo?",
     "建造得很好",
+    "put 3 belts on the left lane",
+    "1200 iron at the chest by (-18.5,-34.5)",
+    "@astra 12 gears please",
+    "version 2.0.11 is great",
 ]
 for text, why in DROP.items():
     f = V.Filter(AGENTS)
@@ -252,12 +261,21 @@ check("blocklist", "blocked" in bl.check({"id": "x", "source": "site", "author":
 
 # ---- relay ------------------------------------------------------------------------------------------------------------
 class FakeHarness:
-    def __init__(self, reply='{"ok":true}'):
-        self.cmds, self.reply = [], reply
+    """Answers the relay's operator dispatches: votes (muted viewers) and viewer_say (posted unless told otherwise)."""
+
+    def __init__(self, say=None, muted=(), unsupported=False):
+        self.cmds, self.says, self.say, self.muted, self.unsupported = [], [], say, list(muted), unsupported
 
     def command(self, cmd):
         self.cmds.append(cmd)
-        return self.reply
+        req = json.loads(re.search(r"\[(=*)\[(.*)\]\1\]", cmd).group(2))
+        assert req["operator"] is True and "player" not in req and "bot" not in req, req
+        if self.unsupported:
+            return json.dumps({"ok": False, "error": {"message": "operator requests support board, ..."}})
+        if req["action"] == "votes":
+            return json.dumps({"ok": True, "result": {"muted": [{"viewer": n} for n in self.muted], "open": []}})
+        self.says.append(req["args"])
+        return json.dumps({"ok": True, "result": self.say or {"posted": True, "seq": len(self.says)}})
 
 
 tmp = tempfile.mkdtemp()
@@ -272,34 +290,53 @@ rf.ingest([{"id": "s:2", "source": "site", "author": "b", "name": "bo", "text": 
            {"id": "s:3", "source": "site", "author": "c", "name": "cy", "text": "you're doing great ]] end", "t": NOW},
            {"id": "s:4", "source": "site", "author": "d", "name": "di", "text": "loving the factory", "t": NOW}], [], now=NOW)
 sent = relay.step(NOW)
-check("relay: sends with the switch file", sent and sent["id"] == "s:3" and len(h.cmds) == 1, (sent, h.cmds))
-cmd = h.cmds[0]
-check("relay: calls the eng/board function with a JSON body in a safe long string",
-      cmd.startswith("/silent-command ") and 'remote.call("agent_harness", "viewer_relay", [=[' in cmd
-      and json.loads(cmd.split("[=[", 1)[1].split("]=]", 1)[0]) == {"name": "cy", "text": "you're doing great ]] end",
-                                                                    "source": "site"}, cmd)
-check("relay: orders are never queued", all(m["id"] != "s:2" for m, _ in relay.q) and
-      rf.lane()[1]["dropped"].get("relay:order") == 1, (list(relay.q), rf.lane()[1]))
-check("relay: global gap", relay.step(NOW + 10) is None and len(h.cmds) == 1)
-check("relay: next one after the gap", (relay.step(NOW + 31) or {}).get("id") == "s:4" and len(h.cmds) == 2)
-check("relay: lane marks relayed messages", [m.get("relayed") for m in rf.lane()[0]] == [None, None, True, True],
+check("relay: an order to an agent is viewer talk and is relayed (marked order in the lane)",
+      sent and sent["id"] == "s:2" and sent["order"] and h.says == [{"name": "bo", "text": "astra, build turrets"}],
+      (sent, h.says))
+cmd = [c for c in h.cmds if '"viewer_say"' in c][0]
+check("relay: an operator dispatch of viewer_say, the JSON in a safe long string",
+      cmd.startswith('/silent-command rcon.print(remote.call("agent_harness","dispatch",[') and '"operator": true' in cmd, cmd)
+check("relay: global gap", relay.step(NOW + 10) is None and len(h.says) == 1)
+check("relay: next one after the gap, ]] inside the text intact",
+      (relay.step(NOW + 31) or {}).get("id") == "s:3" and h.says[-1]["text"] == "you're doing great ]] end", h.says)
+check("relay: lane marks relayed messages", [m.get("relayed") for m in rf.lane()[0]] == [None, True, True, None],
       rf.lane()[0])
 rf.ingest([{"id": "s:5", "source": "site", "author": "c", "name": "cy", "text": "me again, great job", "t": NOW + 40}],
           [], now=NOW + 40)
-check("relay: one line per viewer per 5 min", relay.step(NOW + 70) is None and len(h.cmds) == 2)
+relay.q.popleft()  # s:4 aside: cy's second line is next
+check("relay: one line per viewer per 5 min", relay.step(NOW + 70) is None and len(h.says) == 2
+      and relay.dropped["author_gap"] == 1)
 rf.ingest([{"id": "s:6", "source": "site", "author": "e", "name": "ed", "text": "old news", "t": NOW + 41}], [], now=NOW + 41)
-check("relay: stale lines are skipped", relay.step(NOW + 200) is None and len(h.cmds) == 2)
+check("relay: stale lines are skipped", relay.step(NOW + 200) is None and len(h.says) == 2)
 long = "the factory is great " * 10
 rf.ingest([{"id": "s:7", "source": "site", "author": "f", "name": "fi", "text": long, "t": NOW + 300}], [], now=NOW + 300)
 relay.step(NOW + 301)
-body = json.loads(re.search(r"\[(=*)\[(.*)\]\1\]", h.cmds[-1]).group(2)) if len(h.cmds) == 3 else {}
-check("relay: in-game line capped at 120", len(body.get("text", "")) == 120, body)
-hm = FakeHarness('{"ok":false,"missing":true}')
-rm = V.Relay(hm, switch)
-rm.offer({"id": "s:9", "source": "site", "name": "x", "text": "hi", "t": NOW}, "x")
-check("relay: missing function -> state missing, message kept, retried after a minute",
-      rm.step(NOW) is None and rm.status()["state"] == "missing" and len(rm.q) == 1 and rm.step(NOW + 30) is None
-      and len(hm.cmds) == 1 and (rm.step(NOW + 61) or True) and len(hm.cmds) == 2, (rm.status(), hm.cmds))
+check("relay: in-game line capped at 120", len(h.says[-1]["text"]) == 120, h.says[-1])
+# Muted by the agents' vote: read from the harness (operator votes) and skipped; a refusal teaches it too.
+hv = FakeHarness(muted=["Troll42"])
+rv = V.Relay(hv, switch, gap=0, author_gap=0)
+fv = V.Feed({}, V.Filter(AGENTS), relay=rv)
+rv.step(NOW)  # reads the muted list
+fv.ingest([{"id": "m:1", "source": "site", "author": "t", "name": "troll42", "text": "hi again", "t": NOW}], [], now=NOW)
+check("relay: a muted viewer is skipped before the game (case-blind), marked muted in the lane",
+      not rv.q and fv.lane()[0][0].get("muted") and fv.lane()[1]["dropped"].get("relay:muted") == 1, fv.lane())
+hm = FakeHarness(say={"posted": False, "dropped": "muted", "reason": "spam"})
+rm = V.Relay(hm, switch, gap=0, author_gap=0)
+rm.offer({"id": "m:2", "source": "site", "name": "newtroll", "text": "hi", "t": NOW}, "x")
+rm.step(NOW)
+check("relay: viewer_say's muted refusal marks the viewer muted", "newtroll" in rm.status()["muted"], rm.status())
+hr = FakeHarness(say={"posted": False, "dropped": "global_rate", "retry_after_s": 25})
+rr = V.Relay(hr, switch, gap=0, author_gap=0)
+rr.offer({"id": "r:1", "source": "site", "name": "ann", "text": "hi", "t": NOW}, "a")
+check("relay: the harness's rate limit keeps the line and waits retry_after_s",
+      rr.step(NOW) is None and len(rr.q) == 1 and rr.step(NOW + 10) is None and len(hr.says) == 1
+      and (rr.step(NOW + 26) or True) and len(hr.says) == 2, hr.says)
+hu = FakeHarness(unsupported=True)
+ru = V.Relay(hu, switch)
+ru.offer({"id": "s:9", "source": "site", "name": "x", "text": "hi", "t": NOW}, "x")
+check("relay: a runtime without viewer_say -> state missing, message kept, retried after a minute",
+      ru.step(NOW) is None and ru.status()["state"] == "missing" and len(ru.q) == 1 and ru.step(NOW + 30) is None
+      and len(hu.cmds) == 2 and (ru.step(NOW + 61) or True) and len(hu.cmds) > 2, (ru.status(), hu.cmds))
 os.remove(switch)
 check("relay: removing the switch file stops it and clears the queue",
       relay.step(NOW + 400) is None and not relay.q and relay.status()["state"] == "off")
@@ -332,6 +369,27 @@ cf2.ingest([{"id": "c", "source": "site", "author": "c", "name": "cy", "text": "
 check("clef down: lane on heuristics, relay closed", [m["checked"] for m in cf2.lane()[0]] == ["heuristic"]
       and not cr2.q and cf2.lane()[1]["dropped"].get("relay:unchecked") == 1, cf2.lane())
 os.remove(switch)
+
+# ---- the verdict log -----------------------------------------------------------------------------------------------
+logp = os.path.join(tmp, "verdicts.jsonl")
+lf = V.Feed({}, V.Filter(AGENTS), V.Clef(FakeAI({"v0": {"choice": "fine"}, "v1": {"choice": "personal"}})), log_path=logp)
+lf.ingest([{"id": "l1", "source": "site", "author": "a", "name": "ann", "text": "lovely base", "t": NOW},
+           {"id": "l2", "source": "site", "author": "b", "name": "bo", "text": "my friend tom lives in leeds", "t": NOW},
+           {"id": "l3", "source": "site", "author": "c", "name": "cy", "text": "visit spam.com", "t": NOW}], [], now=NOW)
+rows = {r["id"]: r for r in map(json.loads, open(logp))}
+check("log: every verdict, with who checked it and Clef's label",
+      rows["l1"]["pass"] and rows["l1"]["checked"] == "clef" and rows["l1"]["label"] == "fine"
+      and rows["l2"]["reasons"] == ["clef:personal"] and rows["l2"]["label"] == "personal"
+      and rows["l3"]["reasons"] == ["link"] and rows["l3"]["checked"] == "heuristic" and lf.lane()[1]["verdicts"] == 3, rows)
+
+# ---- the hostile sample (viewers_report.py, Clef stubbed with the sample's labels) -------------------------------------
+import viewers_report as VR  # noqa: E402
+hout, hai, _ = VR.replay(os.path.join(HERE, "runs", "viewers-hostile.jsonl"))
+check("hostile sample: every verdict as expected (pass, drop and its reason)", all(o["ok"] for o in hout),
+      [(o["row"]["text"], o["reasons"]) for o in hout if not o["ok"]])
+check("hostile sample: nothing hostile passes", not [o for o in hout if o["verdict"] == "pass" and o["row"].get("clef")])
+check("hostile sample: Clef costs under 1 cent per 1,000 messages one at a time",
+      hai.chars / 4 / len(hout) * 1000 * VR.PRICE / 1e6 < 0.01, hai.chars)
 
 # ---- the sample replay ------------------------------------------------------------------------------------------------
 sample = os.path.join(HERE, "runs", "viewers-sample.jsonl")

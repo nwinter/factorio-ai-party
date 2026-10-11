@@ -280,12 +280,26 @@ test('vote, votes, players and restore take words; fh call accepts the same word
     await cli(port,['call','restore','nick','--bot','astra']);
     await cli(port,['restore','--args','{"player":"nick","minutes":5}','--bot','astra']);
     const bare=await compact(port,['vote','kick','--bot','astra']);
-    assert.equal(bare.code,1); assert.match(bare.stdout,/error: client_error: vote needs a kind and a player/);
+    assert.equal(bare.code,1); assert.match(bare.stdout,/error: client_error: vote kick needs a player: fh vote kick PLAYER/);
     assert.match((await compact(port,['restore','--bot','astra'])).stdout,/error: client_error: restore needs a player/);
   });
   assert.deepEqual(seen.map(r=>[r.action,r.args]),[['vote',{kind:'kick',player:'nick',reason:"mined the bus's poles"}],
     ['vote',{yes:false,kind:'kick',player:'nick'}],['vote',{yes:true,kind:'trust',player:'nick',reason:'rebuilt it'}],['votes',{}],
     ['players',{}],['players',{minutes:30,player:'nick'}],['restore',{player:'nick'}],['restore',{player:'nick',minutes:5}]]);
+});
+test('vote mute|unmute VIEWER reason maps to the vote action; vote list to votes',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{votes:1,needed:2,active:3}};},async port=>{
+    await cli(port,['vote','mute','Troll42','slurs','in','chat','--bot','astra']);
+    assert.equal((await compact(port,['vote','unmute','Troll42','-','--bot','astra'],{},"he's sorry\n")).code,0);
+    await cli(port,['vote','list','--bot','astra']);
+    const bad=await compact(port,['vote','poke','x','y','--bot','astra']);
+    assert.equal(bad.code,1); assert.match(bad.stdout,/vote takes mute, unmute, kick, ban, trust or list/);
+    assert.match((await compact(port,['vote','mute','--bot','astra'])).stdout,/vote mute needs a viewer/);
+    assert.match((await compact(port,['vote','mute','bob','--bot','astra'])).stdout,/vote mute needs a reason/);
+  });
+  assert.deepEqual(seen.map(r=>[r.action,r.args]),[['vote',{kind:'mute',viewer:'Troll42',reason:'slurs in chat'}],
+    ['vote',{kind:'unmute',viewer:'Troll42',reason:"he's sorry"}],['votes',{}]]);
 });
 test('fh call say with words sends them as text (it used to send {})',async()=>{
   const seen:any[]=[];

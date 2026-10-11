@@ -540,10 +540,12 @@ def main():
         {"seq": 2, "tick": 2, "from": "luna", "text": "Wall held. Barely. Somebody send ammo!"},
         {"seq": 3, "tick": 3, "from": "astra", "text": "on it", "aloud": True},
         {"seq": 4, "tick": 4, "from": "viewer cy", "text": "you are doing great", "viewer": True},
-        {"seq": 5, "tick": 5, "from": "server", "text": "server: harness v5: board"}],
+        {"seq": 5, "tick": 5, "from": "server", "text": "server: harness v5: board"},
+        {"seq": 6, "tick": 5, "from": "vote", "text": "viewer Troll42 is muted for the rest of the run (2 of 3 active "
+         "agents: astra, sol)", "notice": True}],
         "confessions": [{"seq": 1, "tick": 6, "from": "luna", "text": "I don't trust that wall."}]})
     lanes = [(c["seq"], c["lane"]) for c in m9.snapshot(time.time())["chat"]]
-    assert lanes == [(1, "log"), (2, "talk"), (3, "talk"), (4, "viewer"), (5, "log"), ("c1", "talk")], lanes
+    assert lanes == [(1, "log"), (2, "talk"), (3, "talk"), (4, "viewer"), (5, "log"), (6, "log"), ("c1", "talk")], lanes
     m9.ingest({"confessions": [{"seq": 1, "tick": 6, "from": "luna", "text": "I don't trust that wall."}]})
     assert sum(1 for c in m9.chat if c.get("confess")) == 1  # confessions dedup by their own seq
     # tells (agent -> teammates outside the chat) always go to the ticker, with the recipients, once each

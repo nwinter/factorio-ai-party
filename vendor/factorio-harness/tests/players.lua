@@ -58,9 +58,10 @@ game={tick=1000,players=players,permissions={get_group=group_of},
 local s={}
 local notices={}
 local active={'luna','sol','grok'}
+local votes_module
 local M=dofile('mod/agent-harness_0.1.0/players.lua'){state=function() return s end,
   is_human=function(index) return index~=2 end,
-  active_agents=function(window) eq(window,36000); local out={}; for i,n in ipairs(active) do out[i]=n end; return out end,
+  votes_on=function(target) return votes_module and votes_module.on(target) or {} end,
   notice=function(from,text) notices[#notices+1]=from..': '..text end}
 local luna={index=1000001,name='luna',force=force}
 local sol={index=1000002,name='sol',force=force}
@@ -81,7 +82,7 @@ eq(r.players[2].name,'eve'); eq(r.players[2].group,'normal'); eq(r.players[2].po
 local b=r.players[1].built
 eq(b.count,4); eq(b.items['transport-belt'],3); eq(b.items.inserter,1)
 eq(b.area.left_top.x,10); eq(b.area.left_top.y,3); eq(b.area.right_bottom.x,14); eq(b.area.right_bottom.y,6)
-eq(table.concat(r.active,','),'grok,luna,sol')
+eq(r.votes,nil)  -- no votes on players yet (votes.lua)
 
 -- Removals: by hand (settings kept for the ghost), trees are play, not work; destroyed by the player's character.
 local asm=entity('assembling-machine-2','assembling-machine',20,20,{get_recipe=function() return {name='iron-gear-wheel'} end})
@@ -178,39 +179,54 @@ r=M.handlers.players(luna,{})
 eq(r.players[1].built,nil); eq(r.players[1].removed,nil); eq(r.players[1].moves,nil); eq(r.players[1].pending_orders.deconstruct.count,1)
 eq(M.handlers.players(luna,{minutes=20}).players[1].built.count,4)
 
--- Votes: a reason opens one; the operator reads every ballot and who is active.
-fails(function() M.handlers.vote(luna,{kind='mute',player='nick',reason='x'}) end,'kind must be kick, ban or trust')
-fails(function() M.handlers.vote(luna,{kind='kick',player='nick'}) end,'reason is required to open a vote')
-fails(function() M.handlers.vote(luna,{kind='kick',player='nick',reason='x',yes=false}) end,'no open vote to kick nick to vote against')
-fails(function() M.handlers.vote(luna,{kind='trust',player='eve',reason='helped'}) end,'eve is not in the guest group (group normal)')
-fails(function() M.handlers.vote(luna,{kind='kick',player='luna',reason='x'}) end,'no human player named luna')
-local v=M.handlers.vote(luna,{kind='kick',player='nick',reason='mined the [b]main[/b] bus'})
-eq(v.id,1); eq(v.outcome,'open'); eq(v.yes[1],'luna'); eq(v.closes_in_s,600); eq(v.reason,'mined the (b)main(/b) bus')
-eq(v.electorate,'3 agents active in the last 10 minutes; 2 yes carry it')
-eq(notices[#notices],'vote: #1 kick nick: luna votes yes - mined the (b)main(/b) bus (yes 1, no 0; 3 agents active in the last 10 minutes; 2 yes carry it)')
+-- Votes (votes.lua, the one vote module) on human players: players.lua finds the player and their group.
+local V=dofile('mod/agent-harness_0.1.0/votes.lua'){state=function() return s end,notice=function(from,text) notices[#notices+1]=from..': '..text end,
+  active_agents=function(window) eq(window,36000); local out={}; for i,n in ipairs(active) do out[i]=n end; return out end,
+  human=M.find,group=M.group,viewer_name=function(raw) return raw,raw:lower() end,muted=function() return nil end,muted_list=function() return {} end}
+votes_module=V
+fails(function() V.handlers.vote(luna,{kind='poke',player='nick',reason='x'}) end,'kind must be mute, unmute, kick, ban or trust')
+fails(function() V.handlers.vote(luna,{kind='kick',player='nick'}) end,'reason is required to open a vote')
+fails(function() V.handlers.vote(luna,{kind='kick',player='nick',reason='x',yes=false}) end,'no open vote to kick nick to vote against')
+fails(function() V.handlers.vote(luna,{kind='trust',player='eve',reason='helped'}) end,'eve is not in the guest group (group normal)')
+fails(function() V.handlers.vote(luna,{kind='kick',player='luna',reason='x'}) end,'no human player named luna')
+fails(function() V.handlers.vote(luna,{kind='kick',viewer='nick',reason='x'}) end,'kick needs player')
+local v=V.handlers.vote(luna,{kind='kick',player='nick',reason='mined the [b]main[/b] bus'})
+eq(v.id,1); eq(v.outcome,'open'); eq(v.player,'nick'); eq(v.yes[1],'luna'); eq(v.votes,1); eq(v.needed,2); eq(v.active,3); eq(v.closes_in_s,600)
+eq(v.reason,'mined the (b)main(/b) bus'); eq(v.result,nil)
+eq(notices[#notices],'vote: luna votes to kick nick (1 of 2 needed): mined the (b)main(/b) bus')
+-- A majority against fails it; the same ballot again says nothing.
 active={'luna','sol','grok','haiku'}
-v=M.handlers.vote(sol,{kind='kick',player='nick',yes=false})
-eq(v.id,1); eq(#v.yes,1); eq(v.no[1],'sol')
+v=V.handlers.vote(sol,{kind='kick',player='nick',yes=false})
+eq(v.id,1); eq(#v.yes,1); eq(v.no[1],'sol'); eq(v.needed,3)
+eq(notices[#notices],'vote: sol votes against: kick nick (1 yes, 1 no; 3 needed)')
 local n=#notices
-M.handlers.vote(sol,{kind='kick',player='nick',yes=false}); eq(#notices,n) -- the same ballot again says nothing
-local open=M.operator.votes_open()
-eq(#open.votes,1); eq(open.votes[1].ballots.luna,true); eq(open.votes[1].ballots.sol,false); eq(#open.active,4); eq(open.window_ticks,36000)
-M.handlers.vote(grok,{kind='trust',player='nick',reason='rebuilt the bus'})
-eq(#M.handlers.votes(luna).open,2)
--- The operator closes it; a closed vote stays closed and a new one may open.
-fails(function() M.operator.vote_close({id=1,outcome='won'}) end,'outcome must be')
-v=M.operator.vote_close({id=1,outcome='failed',note='1 of 3 needed'})
-eq(v.outcome,'failed'); eq(notices[#notices],'vote: #1 kick nick failed (yes 1, no 1): 1 of 3 needed')
-eq(M.operator.vote_close({id=1,outcome='carried'}).outcome,'failed')
-fails(function() M.handlers.vote(luna,{kind='kick',player='nick',reason='again'}) end,'vote #1 to kick nick closed failed 0s ago; another can open in 300s')
+V.handlers.vote(sol,{kind='kick',player='nick',yes=false}); eq(#notices,n)
+V.handlers.vote(grok,{kind='kick',player='nick',yes=false})
+v=V.handlers.vote({index=1000004,name='haiku'},{kind='kick',player='nick',yes=false})
+eq(v.outcome,'failed'); eq(v.result,'failed'); eq(notices[#notices],'vote: #1 kick nick failed (3 of 4 active agents: grok, haiku, sol against)')
+fails(function() V.handlers.vote(luna,{kind='kick',player='nick',reason='again'}) end,'vote #1 to kick nick closed failed 0s ago; another can open in 300s')
+-- Trust carries at 3 of 4; the operator carries it out and closes it.
+V.handlers.vote(grok,{kind='trust',player='nick',reason='rebuilt the bus'})
+V.handlers.vote(luna,{kind='trust',player='nick',reason='agreed'})
+v=V.handlers.vote(sol,{kind='trust',player='nick',reason='yes'})
+eq(v.outcome,'carried'); eq(v.result,'carried')
+eq(notices[#notices],'vote: #2 trust nick carried (3 of 4 active agents: grok, luna, sol); the operator carries it out')
+fails(function() V.handlers.vote(luna,{kind='trust',player='nick',reason='x'}) end,'trust nick is carried already')
+eq(M.handlers.players(luna,{player='nick'}).votes[1].kind,'trust')    -- the players read shows votes on players
+local pending=V.operator.votes_pending()
+eq(#pending.votes,1); eq(pending.votes[1].id,2); eq(pending.votes[1].player,'nick'); eq(table.concat(pending.votes[1].yes,','),'grok,luna,sol')
+fails(function() V.operator.vote_close({id=2,outcome='won'}) end,'outcome must be done or cancelled')
+v=V.operator.vote_close({id=2,outcome='done',note='nick moved to the normal group'})
+eq(v.outcome,'done'); eq(notices[#notices],'vote: #2 trust nick done: nick moved to the normal group')
+eq(V.operator.vote_close({id=2,outcome='cancelled'}).outcome,'done')
+eq(#V.operator.votes_pending().votes,0)
+-- An open vote expires after 10 minutes and may open again at once.
 game.tick=game.tick+5*3600
-eq(M.handlers.vote(luna,{kind='kick',player='nick',reason='again'}).id,3)
-local list=M.handlers.votes(luna)
-eq(#list.open,2); eq(#list.closed,1); eq(list.closed[1].note,'1 of 3 needed')
--- A vote nobody closed expires a minute after its 10.
-game.tick=game.tick+11*3600+1
-list=M.handlers.votes(luna)
-eq(#list.open,0); eq(list.closed[3].outcome,'expired'); eq(list.closed[3].note,'no operator tally')
+eq(V.handlers.vote(luna,{kind='kick',player='nick',reason='again'}).id,3)
+game.tick=game.tick+10*3600+1
+local list=V.handlers.votes(luna)
+eq(#list.open,0); eq(list.closed[3].outcome,'expired'); eq(#list.muted,0); eq(#list.active,4)
+eq(V.handlers.vote(luna,{kind='kick',player='nick',reason='still at it'}).id,4)
 
 -- Restore: pending orders cancelled, ghosts where the player removed something, settings kept; nothing twice.
 game.tick=1000+11*3600
@@ -222,7 +238,7 @@ eq(r.ghosts,3); eq(r.already,1); eq(r.blocked,1)
 eq(created[1].ghost_name,'assembling-machine-2'); eq(created[1].recipe,'iron-gear-wheel'); eq(created[1].args.expires,false)
 eq(created[2].args.type,'output'); eq(created[3].ghost_name,'medium-electric-pole'); eq(created[1].args.force,force)
 eq(r.items['assembling-machine-2'],1); eq(r.note,'ghosts are orders: robots or agents build them with real items')
-eq(notices[#notices],"vote: luna restored nick's last 20 minutes: 2 orders cancelled, 3 ghosts placed")
+eq(notices[#notices],"players: luna restored nick's last 20 minutes: 2 orders cancelled, 3 ghosts placed")
 r=M.handlers.restore(luna,{player='nick',minutes=20})
 eq(r.cancelled,0); eq(r.ghosts,0); eq(r.already,0); eq(r.blocked,1)
 eq(blocker.valid,true); eq(#created,3)

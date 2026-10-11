@@ -5,7 +5,10 @@
 --                teammate sees it in chat, team hints or any agent read but
 --                the author's own.
 --   viewer_say   (operator only) a stream viewer's chat line posted into the
---                game chat as "viewer NAME: text" (chat.lua), rate-limited.
+--                game chat as "viewer NAME: text" (chat.lua), rate-limited;
+--                refused for a muted viewer.
+--   muted        viewers the agents voted muted (votes.lua decides; the
+--                list lives here, where viewer_say refuses them).
 -- Rate limits count game ticks: while the game is paused they do not refill.
 return function(api)
   local M = {handlers={}, operator={}}
@@ -16,6 +19,7 @@ return function(api)
   local function store()
     local s = api.state()
     s.audience = s.audience or {seq=0, confessions={}, last={}, viewers={recent={}, by_name={}}}
+    s.audience.muted = s.audience.muted or {}
     return s.audience
   end
   local function one_line(text, name, max)
@@ -71,6 +75,26 @@ return function(api)
   function M.handlers.confessions(p, a) return read(a, p.index) end
   -- Operator (RCON, `operator: true` dispatch): every agent's confessions.
   function M.operator.confessions(a) return read(a, nil) end
+  -- Viewer names as viewer_say stores them; votes match them case-blind.
+  local function viewer_name(raw)
+    assert(type(raw) == 'string', 'viewer must be a name')
+    local name = raw:gsub('%b[]', ''):gsub('[%c%[%]]+', ''):gsub('%s+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
+    name = name:gsub('^[Vv]iewer ', '')
+    assert(#name > 0, 'viewer is required: the name after "viewer " in chat')
+    if #name > VIEWER_NAME then name = name:sub(1, VIEWER_NAME) end
+    return name, name:lower()
+  end
+  -- The muted list, for votes.lua: keyed by the lower-case name.
+  function M.viewer_name(raw) return viewer_name(raw) end
+  function M.muted(key) return store().muted[key] end
+  function M.mute(key, record) store().muted[key] = record end
+  function M.unmute(key) store().muted[key] = nil end
+  function M.muted_list()
+    local out = {}
+    for _, m in pairs(store().muted) do out[#out+1] = {viewer=m.viewer, tick=m.tick, reason=m.reason, by=m.by} end
+    table.sort(out, function(x, y) return x.tick < y.tick end)
+    return out
+  end
   -- Operator: relay a viewer's chat line. Over the limit it is dropped (not an
   -- error): posted=false, dropped, retry_after_s.
   function M.operator.viewer_say(a)
@@ -87,6 +111,8 @@ return function(api)
     v.recent = recent
     for n, t in pairs(v.by_name) do if now - t >= VIEWER_GAP then v.by_name[n] = nil end end
     local key = name:lower()
+    local muted = store().muted[key]
+    if muted then return {posted=false, dropped='muted', reason=muted.reason, limit='muted by the agents\' vote for the rest of the run'} end
     if v.by_name[key] then
       return {posted=false, dropped='viewer_rate', retry_after_s=seconds(VIEWER_GAP - (now - v.by_name[key])),
         limit='one line per viewer every ' .. seconds(VIEWER_GAP) .. ' s'}

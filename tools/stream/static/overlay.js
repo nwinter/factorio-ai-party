@@ -385,8 +385,9 @@
   function renderChat(s) {
     const list = $("chat-list");
     const all = s.chat || [];
-    // talk lane: conversation and confessionals (model.chat_lane); logistics go to the ticker, viewers to their lane
-    const msgs = all.filter((m) => (m.lane || "talk") === "talk").slice(-10); // the well clips the oldest
+    // talk lane: conversation, confessionals and the viewer lines relayed into the game (model.chat_lane), so a
+    // viewer's question and the agents' answers read together; logistics go to the ticker
+    const msgs = all.filter((m) => (m.lane || "talk") === "talk" || m.lane === "viewer").slice(-10); // the well clips the oldest
     renderTicker(s, all.filter((m) => m.lane === "log").slice(-2));
     const keys = new Set();
     for (const m of msgs) {
@@ -395,14 +396,17 @@
       let node = shown.get(key);
       const ag = agentFor(s, m);
       if (!node) {
-        node = el("div", "msg" + (ag ? "" : " server") + (m.aloud ? " aloud" : "") + (m.confess ? " confess" : ""));
-        node._av = avatar(ag || { name: m.from || "server", display_name: m.from || "server", color: "#5a4a2e", glyph: "⚙", tool: true }, "sm");
+        const viewer = m.lane === "viewer";
+        node = el("div", "msg" + (viewer ? " viewer" : ag ? "" : " server") + (m.aloud ? " aloud" : "") + (m.confess ? " confess" : ""));
+        node._av = avatar(ag || (viewer ? { name: m.from, display_name: m.from, color: "#3d6aa8", glyph: "💬", tool: true }
+          : { name: m.from || "server", display_name: m.from || "server", color: "#5a4a2e", glyph: "⚙", tool: true }), "sm");
         const content = el("div", "content");
         const meta = el("div", "meta");
         node._from = el("span", "from");
         node._when = el("span", "when");
         meta.append(node._from);
         if (m.confess) meta.append(el("span", "tag", "to camera"));
+        if (viewer) meta.append(el("span", "tag viewer", "viewer"));
         meta.append(node._when);
         node._text = el("div", "text", clean(m.text));
         content.append(meta, node._text);
@@ -411,7 +415,7 @@
         shown.set(key, node);
       }
       if (ag) { applyPalette(node, ag); fillAvatar(node._av, ag, "sm"); }
-      setText(node._from, ag ? ag.display_name : m.from);
+      setText(node._from, ag ? ag.display_name : m.lane === "viewer" ? String(m.from || "").replace(/^viewer /, "") : m.from);
       const age = s.now - (m.t || s.now);
       setText(node._when, (m.tick != null ? gameTime(m.tick) + " · " : "") + ago(age));
       node.classList.toggle("old", age > 90 && age <= 240);
@@ -455,7 +459,8 @@
   function renderViewers(s) {
     const lane = $("viewer-lane");
     const list = $("viewer-list");
-    const msgs = (s.viewers || []).filter((v) => s.now - (v.t || 0) < VIEWER_RECENT_S).slice(-2);
+    // a line relayed into the game shows in the chat feed instead (marked viewer), next to the agents' answers
+    const msgs = (s.viewers || []).filter((v) => s.now - (v.t || 0) < VIEWER_RECENT_S && !v.relayed).slice(-2);
     lane.hidden = !msgs.length;
     const keys = new Set();
     for (const v of msgs) {

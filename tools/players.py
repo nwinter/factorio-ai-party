@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Operator side of the human-player votes (players.lua in the harness, the tally in tools/votes.py).
+"""Operator side of the agents' votes on human players (votes.lua and players.lua in the harness).
 
     players.py --world W watch [--interval 5] [--protect nick] [--log runs/RUN/votes.jsonl] [--dry-run]
-    players.py --world W once [...]            one tally pass
+    players.py --world W once [...]            one pass
     players.py --world W show [--minutes 10]   the players read, as the agents see it
     players.py --world W trust NAME            move a player out of the guest group (and keep them out on a later world)
     players.py --world W guest NAME            move a player into the guest group
     players.py --world W trust-names NAME...   names kept out of the guest group when they first join (a fresh save)
 
-Each pass reads the open votes and the agents active in the last 10 minutes (operator `votes_open`), tallies each
-with votes.RULES["agents"], runs a carried one with the server's own command (/kick NAME reason, /ban NAME reason)
-or the permission change (operator `player_group`), and closes it (operator `vote_close`), which posts the result
-as a chat line from `vote`: the stream and the agents see it. A protected name is never kicked or banned (its
-votes close as cancelled). --dry-run tallies and prints without acting or closing.
+The harness decides every vote when a ballot is cast (votes.lua: a majority of the agents active in the last 10
+minutes). Mute and unmute act in the game; a carried kick, ban or trust waits for this. Each pass reads them (operator
+`votes_pending`), runs each with the server's own command (/kick NAME reason, /ban NAME reason) or the permission
+change (operator `player_group`), and closes it as done (operator `vote_close`), which posts the result as a chat
+line from `vote`: the stream and the agents see it. A protected name is never kicked or banned (its votes close as
+cancelled). --dry-run prints what it would carry out without acting or closing.
 """
 import argparse
 import json
@@ -24,7 +25,6 @@ import uuid
 
 sys.dont_write_bytecode = True  # tools/__pycache__ is tracked in git; do not rewrite it
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import votes  # noqa: E402
 from stream.harness import Harness, lua_string  # noqa: E402
 
 NAME = re.compile(r"[A-Za-z0-9_.\-]{1,60}")
@@ -63,43 +63,37 @@ def execute(game, vote, protect):
         return "cancelled", f"{name} is protected by the operator"
     if kind == "trust":
         out = game.operator("player_group", {"name": name, "group": "trusted"})
-        return "carried", f"{name} moved to the {out.get('group', 'normal')} group"
+        return "done", f"{name} moved to the {out.get('group', 'normal')} group"
     if kind in ("kick", "ban"):
         reply = (game.command(f"/{kind} {name} {clean_reason(vote.get('reason'))}") or "").strip()
-        return "carried", f"/{kind} {name}" + (f": {reply[:120]}" if reply else "")
+        return "done", f"/{kind} {name}" + (f": {reply[:120]}" if reply else "")
     return "cancelled", f"unknown kind {kind}"
 
 
-def tally_pass(game, protect=(), dry_run=False, log=None, out=sys.stdout):
-    """One pass: tally every open vote, act on the decided ones. Returns [(vote, result, outcome, note)]."""
-    state = game.operator("votes_open")
-    rule = votes.RULES["agents"]
+def run_pass(game, protect=(), dry_run=False, log=None, out=sys.stdout):
+    """One pass: carry out every carried kick, ban and trust vote. Returns [(vote, outcome, note)]."""
+    state = game.operator("votes_pending")
     done = []
     for vote in state.get("votes", []):
-        result = votes.tally(vote.get("ballots") or {}, state.get("active") or [], state["tick"], vote["expires_tick"], rule)
-        if result["outcome"] == "open":
-            continue
-        outcome, note = result["outcome"], votes.describe(result)
         if dry_run:
-            print(f"dry run: #{vote['id']} {vote['kind']} {vote['player']} would be {outcome} ({note})", file=out)
-            done.append((vote, result, outcome, note))
+            print(f"dry run: #{vote['id']} {vote['kind']} {vote['player']} (yes: {', '.join(vote.get('yes') or [])}) "
+                  "would be carried out", file=out)
+            done.append((vote, "dry run", ""))
             continue
-        if outcome == "carried":
-            try:
-                outcome, ran = execute(game, vote, protect)
-            except Exception as e:  # the vote stays open; the next pass tries again
-                print(f"#{vote['id']} {vote['kind']} {vote['player']}: carried but not run: {e}", file=out)
-                continue
-            note = f"{note}; {ran}"
+        try:
+            outcome, note = execute(game, vote, protect)
+        except Exception as e:  # the vote stays carried; the next pass tries again
+            print(f"#{vote['id']} {vote['kind']} {vote['player']}: carried but not run: {e}", file=out)
+            continue
         game.operator("vote_close", {"id": vote["id"], "outcome": outcome, "note": note[:200]})
-        line = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "tick": state["tick"], "id": vote["id"], "kind": vote["kind"],
+        line = {"time": time.strftime("%Y-%m-%dT%H:%M:%S"), "tick": state.get("tick"), "id": vote["id"], "kind": vote["kind"],
                 "player": vote["player"], "reason": vote.get("reason"), "opened_by": vote.get("opened_by"),
-                "outcome": outcome, "note": note, "yes": result["yes"], "no": result["no"]}
+                "outcome": outcome, "note": note, "yes": vote.get("yes") or []}
         print(json.dumps(line), file=out, flush=True)
         if log:
             with open(log, "a") as f:
                 f.write(json.dumps(line) + "\n")
-        done.append((vote, result, outcome, note))
+        done.append((vote, outcome, note))
     return done
 
 
@@ -129,7 +123,7 @@ def main(argv=None):
         return 0
     while True:
         try:
-            tally_pass(game, protect, a.dry_run, a.log)
+            run_pass(game, protect, a.dry_run, a.log)
         except Exception as e:  # an older runtime, a restart, a dropped connection: report and keep going
             print(f"{time.strftime('%H:%M:%S')} pass failed: {e}", file=sys.stderr, flush=True)
             if a.command == "once":

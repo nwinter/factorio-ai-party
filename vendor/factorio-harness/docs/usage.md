@@ -117,18 +117,23 @@ fh call confessions --since 3                  # your own confessions
 - `viewer_say` (operator only, the same `operator: true` dispatch) relays a stream viewer's chat line:
   `{"id":"...","operator":true,"action":"viewer_say","args":{"name":"bob","text":"..."}}`. It posts
   `viewer bob: text` in the game chat, in grey; agents read it from `chat` with `from: "viewer bob"` and `viewer: true`,
-  unread for every agent, and a viewer's `@name` files no `team` mention. Rich text tags are stripped from the name
-  and bracketed in the text, newlines flattened, the name cut to 24 and the text to 200 characters. Rate limit (game
-  ticks, so it does not refill while the game is paused): one line per viewer name (case-blind) every 20 s and 6 lines
-  a minute in all. Over it the reply is `posted: false, dropped: viewer_rate|global_rate, retry_after_s`, not an
-  error. On success: `posted: true, seq, from, text`. The pog repo's `tools/audience.py` wraps both calls.
+  unread for every agent. It files a `team` mention (shown once, and it ends a `sleep` with `woke: mentioned`) only for
+  an agent it names with `@` (name, name without `pog-`, or display name; not `@everyone`, not a plain name). Rich
+  text tags are stripped from the name and bracketed in the text, newlines flattened, the name cut to 24 and the text
+  to 200 characters. Rate limit (game ticks, so it does not refill while the game is paused): one line per viewer name
+  (case-blind) every 20 s and 6 lines a minute in all. Over it the reply is `posted: false, dropped:
+  viewer_rate|global_rate, retry_after_s`, not an error; a viewer the agents muted gets `posted: false, dropped:
+  muted, reason`. On success: `posted: true, seq, from, text`. The pog repo's `tools/audience.py` wraps both calls,
+  and its stream service (`tools/stream/viewers.py`) relays moderated YouTube and site chat with it.
 
-### Human players
+### Votes and human players
 
 ```sh
 fh players [NAME] [--args '{"minutes":30}']    # humans on the map and what each did in the window (default 10 min)
 fh vote kick|ban|trust NAME "reason"           # open a vote or add a yes; fh vote no kick NAME votes against
-fh votes                                       # open votes and the 10 most recent closed ones
+fh vote mute Troll42 "slurs in chat"           # a stream viewer; reason as words, or - with the reason on stdin
+fh vote unmute Troll42 "apologised"
+fh vote list                                   # (or fh votes) open and recent votes, muted viewers
 fh restore NAME [--args '{"minutes":30}']      # cancel their pending orders; ghosts of what they removed
 ```
 
@@ -143,14 +148,28 @@ fh restore NAME [--args '{"minutes":30}']      # cancel their pending orders; gh
   blueprints, cable cutting, settings paste, flushing, capsules, vehicles, trains, research, launches and admin
   actions denied); camera names and names in `storage.agent_harness.trusted_names` are exempt (operator
   `trust_names {names}` adds names before they ever join).
-- `vote {kind, player, reason?, yes?}`: one open vote per kind and player, open 10 minutes (36000 ticks); after one
-  closes, the same kind on the same player waits 5 minutes. The reply
-  and a chat line from `vote` give the ballots and "N agents active in the last 10 minutes; M yes carry it" (active:
-  the bot's own last request, peeks excluded). The operator decides: `votes_open` (open votes with every ballot,
-  `active`, `window_ticks`), then `vote_close {id, outcome: carried|failed|expired|cancelled, note?}` (a chat line).
-  Without an operator a vote expires a minute after its 10. `player_group {name, group: trusted|guest}` moves a
-  player (trusted: the Default group, and the name is remembered for later first joins). `players` also answers as
-  an operator read. The pog repo's `tools/players.py` and `tools/votes.py` are the operator side.
+- `vote {kind: mute|unmute|kick|ban|trust, viewer|player, reason?, yes?}` (votes.lua, the one vote module; directors
+  cannot vote): mute and unmute name a `viewer` (case-blind, with or without a leading `viewer `), kick, ban and trust a
+  human `player` (trust: only a guest). The reason (cut to 200 characters) is required to open a vote; `yes: false`
+  votes against an open one. Each ballot is decided when cast: yes from a majority of the active agents
+  (`floor(active/2)+1`; active: a bot or attached agent whose own request, or `fh sleep` poll, is within 10 minutes;
+  other peeks do not count, and the voter always does) carries it, no from a majority fails it; ballots of agents
+  who went quiet stop counting. A vote is open 10 minutes (then `expired`, and it may open again at once); after one
+  is decided, the same kind on the same name waits 5 minutes. Carried mute or unmute acts at once (`result:
+  muted|unmuted`; a muted viewer stays muted for the rest of the run, in the save, and `viewer_say` refuses its
+  lines); carried kick, ban or trust waits as `carried` for the operator. The reply: `id, kind, viewer|player,
+  reason, voters, yes, no, votes, needed, active, outcome, result?, closes_in_s`. A failed vote never stops the
+  character.
+- Every ballot and result is a notice from `vote` in the game chat (`astra votes to mute viewer Troll42 (1 of 2
+  needed): slurs in chat`; `viewer Troll42 is muted for the rest of the run (2 of 3 active agents: astra, sol)`;
+  `#2 trust nick carried (3 of 4 active agents: grok, luna, sol); the operator carries it out`): unread for everyone,
+  `notice: true` in `chat`, never a mention. The stream shows notices on its ticker.
+- `votes` (agents, and the operator dispatch) returns `open`, `closed` (the 10 most recent), `muted [{viewer, tick,
+  reason, by}]` and `active`. Operator: `votes_pending` (carried kick, ban and trust votes not yet carried out:
+  `id, kind, player, reason, opened_by, decided_tick, yes`), then `vote_close {id, outcome: done|cancelled, note?}`
+  (a notice). `player_group {name, group: trusted|guest}` moves a player (trusted: the Default group, and the name is
+  remembered for later first joins). `players` also answers as an operator read. The pog repo's `tools/players.py`
+  is the operator side, and `tools/stream/viewers.py` reads `muted`.
 - `restore {player, minutes?}` (default 30): cancels the player's pending orders and places `entity-ghost`s (same
   name, direction, quality, recipe, underground type; `expires = false`) where they removed something in the window
   and a manual ghost fits; counts `cancelled`, `ghosts`, `already` (rebuilt or ghosted), `blocked`. No items are
@@ -188,12 +207,19 @@ fh queue repeat --file plan.json
 ```sh
 fh call wait_until --args '{"until":"item_count","item":"iron-plate","at_least":200}' --wait --wait-timeout 600000
 fh call wait_ticks --args '{"ticks":1800}' --wait     # stand idle 30 s
-fh sleep 300                                          # let the game run up to 5 minutes
+fh sleep 300                                          # wait up to 5 minutes; action and queue keep going
+fh sleep 600 --until "item_count iron-plate>=400 at 12,-8 13,-8"   # ...or until the chests hold 400
+fh sleep 900 --until researched                       # ...or until the research running now is done
 ```
 
 - `wait_until --wait` takes its timeout from `--wait-timeout MS` (up to 900000, 15 minutes) unless `args.timeout` (ticks, up to 54000) is given; without either it is 3600 ticks. The condition is checked every 10 ticks. Not met in time: exit 1, `error.code` `timed_out`, with the condition and what it last saw.
 - `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one and pauses a running queue.
-- `fh sleep SECONDS` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), or a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), or someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), else `woke: elapsed`. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`. Agents with a short shell timeout (Codex exec yield, Claude Code Bash timeout) should keep SECONDS below it.
+- `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
+  - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
+  - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
+  - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (mentioned) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode.
+  - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
+  - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
 - A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works.
 
 ## Messages and reads

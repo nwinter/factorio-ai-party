@@ -34,7 +34,9 @@ const help = `fh — Factorio agent CLI
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
   fh call walk --args '{"direction":"east","ticks":60}' --wait
   fh wait                                   Block until the character's current action (and combat) ends
-  fh sleep SECONDS                          Let the game run up to 900 s; wakes early on damage, death or a mention
+  fh sleep SECONDS [--until COND]           Wait up to 900 s (never past the deadline) while your action and queue keep going;
+                                            wakes on damage, death, a mention, a tell, board news, your queue finishing or
+                                            stalling, or COND: researched [TECH] | crafting_done | item_count ITEM>=N [at X,Y X,Y]
   fh view --out artifacts/map.png            Render a local schematic PNG, also works headless
   fh deploy [--file runtime.lua]             Validate and replace live Lua runtime
   fh watch [--file runtime.lua]              Deploy changed Lua; retain old code on invalid update
@@ -53,8 +55,10 @@ const help = `fh — Factorio agent CLI
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
   fh tells [--since SEQ]                    Tells you sent or received
   fh players [NAME] [--args '{"minutes":10}'] Human players on the map: where, group, what each built, removed, ordered, moved
-  fh vote [no] kick|ban|trust PLAYER "reason" Vote on a human player; a majority of the agents active in the last 10 minutes carries it
-  fh votes                                  Open and recent votes
+  fh vote [no] mute|unmute|kick|ban|trust NAME "reason"
+                                            Vote on a stream viewer (mute, unmute) or a human player (kick, ban, trust);
+                                            a majority of the agents active in the last 10 minutes carries it; reason - reads stdin
+  fh vote list (or fh votes)                Muted viewers, open and recent votes
   fh restore PLAYER [--args '{"minutes":30}'] Cancel the player's pending orders; ghosts of what they removed (built with real items)
   fh stream                                 JSON-lines requests in, replies out; one connection
   fh run --file plan.json                    Sequential actions, waits after each timed action
@@ -79,6 +83,44 @@ function object(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
+/**
+ * `fh sleep --until`: a wait_until condition as JSON, or as words:
+ * `researched [TECH]`, `crafting_done`, `item_count ITEM>=N|ITEM<N [at X,Y X,Y ...]`,
+ * or any condition name followed by key=value pairs (`ammo_below count=5`).
+ */
+function parseUntil(text: string): Record<string, unknown> {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{')) return object(JSON.parse(trimmed),'--until');
+  const [kind = '', ...rest] = trimmed.split(/\s+/);
+  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N [at X,Y X,Y], or a wait_until condition as JSON';
+  if (kind === 'researched' || kind === 'research') {
+    if (rest.length > 1) throw new Error(usage);
+    return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
+  }
+  if (kind === 'crafting_done' || kind === 'crafted') return {until:'crafting_done'};
+  const value = (v: string): unknown => /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
+  if ((kind === 'item_count' || kind === 'items') && /[<>]/.test(rest.join(' '))) {
+    const match = rest.join(' ').match(/^([\w-]+)\s*(>=|<)\s*(\d+)(?:\s+(?:at|in)\s+(.+))?$/);
+    if (!match) throw new Error(usage);
+    const condition: Record<string, unknown> = {until:'item_count', item:match[1], [match[2] === '>=' ? 'at_least' : 'below']:Number(match[3])};
+    if (match[4]) {
+      condition.positions = match[4].split(/[\s;]+/).filter(Boolean).map(pair => {
+        const xy = pair.match(/^\(?(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)?$/);
+        if (!xy) throw new Error(`--until positions are X,Y pairs separated by spaces: ${pair}`);
+        return {x:Number(xy[1]), y:Number(xy[2])};
+      });
+    }
+    return condition;
+  }
+  if (!/^[a-z_]+$/.test(kind)) throw new Error(usage);
+  const condition: Record<string, unknown> = {until:kind};
+  for (const pair of rest) {
+    const at = pair.indexOf('=');
+    if (at < 1) throw new Error(usage);
+    condition[pair.slice(0, at)] = value(pair.slice(at + 1));
+  }
+  return condition;
+}
 function integer(value: string | undefined, fallback: number): number {
   const result = value === undefined ? fallback : Number(value);
   if (!Number.isSafeInteger(result) || result < 1) throw new Error('Numeric options must be positive integers');
@@ -145,7 +187,7 @@ async function main() {
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
     full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'},
-    'text-file':{type:'string'}, 'deadline-file':{type:'string'},
+    'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'},
   }});
   let command = positionals[0];
   if (!command || values.help || command === 'help') { process.stdout.write(help); return; }
@@ -270,23 +312,34 @@ async function main() {
     positionals.splice(1, positionals.length - 1, command);
     command = 'call';
   }
-  // Human players: fh vote [yes|no] kick|ban|trust PLAYER "reason", fh votes, fh players [NAME], fh restore PLAYER
-  // (also as fh call vote|players|restore with the same words).
+  // One vote command: fh vote [yes|no] mute|unmute VIEWER|kick|ban|trust PLAYER reason... (or - for the reason on
+  // stdin), fh vote list (= fh votes); fh players [NAME], fh restore PLAYER (also after fh call with the same words).
   if (command === 'call' && ['vote','players','restore'].includes(positionals[1] ?? '') && positionals.length > 2) {
     command = positionals[1]!;
     positionals.splice(0, 2, command);
   }
   if (command === 'vote') {
-    const args = object(JSON.parse(values.args ?? '{}'),'args');
     const words = positionals.slice(1);
-    if (words[0] === 'yes' || words[0] === 'no') args.yes = words.shift() === 'yes';
-    if (words.length) args.kind = words.shift();
-    if (words.length) args.player = words.shift();
-    if (words.length) args.reason = words.join(' ');
-    if (typeof args.kind !== 'string' || typeof args.player !== 'string') throw new Error('vote needs a kind and a player: fh vote kick|ban|trust PLAYER "reason", or fh vote no kick PLAYER');
-    values.args = JSON.stringify(args);
-    positionals.splice(1, positionals.length - 1, 'vote');
-    command = 'call';
+    if (words.length === 0 || words[0] === 'list') { positionals.splice(1, positionals.length - 1, 'votes'); command = 'call'; }
+    else {
+      const args = object(JSON.parse(values.args ?? '{}'),'args');
+      if (words[0] === 'yes' || words[0] === 'no') args.yes = words.shift() === 'yes';
+      const kind = words.shift()!;
+      const viewerKind = kind === 'mute' || kind === 'unmute';
+      if (!viewerKind && !['kick','ban','trust'].includes(kind)) throw new Error('vote takes mute, unmute, kick, ban, trust or list: fh vote mute VIEWER "reason", fh vote kick PLAYER "reason"');
+      const who = viewerKind ? 'viewer' : 'player';
+      const name = words.shift();
+      if (!name) throw new Error(`vote ${kind} needs a ${who}: fh vote ${kind} ${who.toUpperCase()} "reason"`);
+      const reason = words.length === 1 && words[0] === '-' ? (await readStdin()).trim() : words.join(' ');
+      // A no needs no reason; the harness asks for one only to open a vote.
+      if (!reason && args.yes !== false) throw new Error(`vote ${kind} needs a reason: fh vote ${kind} ${name} "reason"`);
+      args.kind = kind;
+      args[who] = name;
+      if (reason) args.reason = reason;
+      values.args = JSON.stringify(args);
+      positionals.splice(1, positionals.length - 1, 'vote');
+      command = 'call';
+    }
   }
   if (command === 'players' || command === 'restore') {
     const args = object(JSON.parse(values.args ?? '{}'),'args');
@@ -500,22 +553,48 @@ async function main() {
       `the timeout comes from --wait-timeout MS (up to 900000) or args.timeout ticks (up to 54000)` : `${action} timed_out at its own tick limit`;
     return {code:'timed_out',message:what};
   }
+  // The sleep request's own reply carries the team hints pending when it
+  // started (they are shown once): keep them for the reply the agent sees.
+  function mergeTeam(started: Reply, final: Reply): Reply {
+    const early = started.result?.team;
+    if (!early || !final.result) return final;
+    const team: Record<string, unknown> = {...early};
+    for (const [key, value] of Object.entries(final.result.team ?? {})) {
+      const before = team[key];
+      team[key] = Array.isArray(before) && Array.isArray(value) ? [...before, ...value] : value;
+    }
+    return {...final, result:{...final.result, team}};
+  }
   // fh sleep: the game runs; poll the read-only sleep_check (peek: mentions
   // stay unread) about once a second, then read it once more normally so the
-  // reply carries the team block with whatever woke the agent.
-  async function sleep(seconds: number): Promise<Reply> {
-    const started = await harness.request('sleep',{seconds});
+  // reply carries the team block with whatever woke the agent. A sleep never
+  // runs past the workspace deadline: it is cut to the time left and ends there.
+  async function sleep(seconds: number, condition?: Record<string,unknown>): Promise<Reply> {
+    const left = deadline === undefined ? undefined : deadline-Date.now();
+    if (left !== undefined && left <= 1000) {
+      return {ok:true, result:{woke:'deadline', slept_s:0, note:`no sleep: ${deadlineText(deadline!)}`}};
+    }
+    const capped = left !== undefined && left < seconds*1000;
+    if (capped) seconds = Math.max(1, Math.floor(left/1000));
+    const started = await harness.request('sleep',condition ? {seconds,condition} : {seconds});
     if (!started.ok) return started;
-    const deadline = Date.now()+seconds*1250+10000;
-    while (!stopping && Date.now()<deadline) {
+    // What keeps going, at once (a shell that returns early, as Codex's, shows it before the wake).
+    if (outputFormat === 'compact' && typeof started.result?.while_asleep === 'string') process.stdout.write(`while_asleep: ${started.result.while_asleep}\n`);
+    let until = Date.now()+seconds*1250+10000;
+    if (capped) until = Math.min(until, deadline!+1000);
+    while (!stopping && Date.now()<until) {
       const check = await harness.request('sleep_check',{peek:true});
       if (!check.ok || check.result?.woke) break;
       await delay(1000);
     }
     if (stopping) throw new Error('Stopped sleeping; the game keeps running.');
-    const final = await harness.request('sleep_check',{});
-    if (final.ok && !final.result?.woke) return {...final, ok:false, error:{code:'timed_out',message:`sleep timed_out: the game advanced less than ${seconds} s in ${Math.round(seconds*1.25+10)} s of real time (paused or slow server)`}};
-    if (final.ok && final.result?.woke === 'died') return {...final, ok:false, error:{code:'died',message:'your character died while sleeping'}};
+    const final = mergeTeam(started, await harness.request('sleep_check',{}));
+    const woke = final.result?.woke;
+    if (final.ok && capped && (!woke || woke === 'elapsed')) {
+      return {...final, result:{...final.result, woke:'deadline', note:'this sleep was cut to end at the deadline'}};
+    }
+    if (final.ok && !woke) return {...final, ok:false, error:{code:'timed_out',message:`sleep timed_out: the game advanced less than ${seconds} s in ${Math.round(seconds*1.25+10)} s of real time (paused or slow server)`}};
+    if (final.ok && woke === 'died') return {...final, ok:false, error:{code:'died',message:'your character died while sleeping'}};
     return final;
   }
   // fh wait: block until whatever the character is doing (and any combat) ends.
@@ -545,6 +624,14 @@ async function main() {
   }
   async function execute(action: string, args: Record<string,unknown>, id?: string, wait = false, onAccepted?: (reply: Reply) => void): Promise<Reply> {
     const requestId = id ?? randomUUID();
+    // `fh call sleep` (with or without --wait) blocks like fh sleep: the raw
+    // action only starts a sleep (shake4-6: Luna's 103 sleeps that never waited).
+    if (action === 'sleep' && !bridged) {
+      const seconds = args.seconds;
+      if (typeof seconds !== 'number' || !Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires seconds 1..900: fh sleep SECONDS');
+      if (args.condition !== undefined && (typeof args.condition !== 'object' || args.condition === null)) throw new Error('sleep condition must be an object; or use fh sleep SECONDS --until ...');
+      return sleep(seconds, args.condition as Record<string,unknown> | undefined);
+    }
     // A waited wait_until runs as long as the CLI waits: --wait-timeout MS
     // becomes its timeout in ticks (up to 15 minutes) unless args name one.
     if (action === 'wait_until' && wait && args.timeout === undefined && values['wait-timeout'] !== undefined) {
@@ -644,7 +731,7 @@ async function main() {
       if (bridged) throw new Error('sleep needs the harness mod (not a bridge session)');
       const seconds = Number(positionals[1]);
       if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires SECONDS 1..900');
-      const reply = await sleep(seconds);
+      const reply = await sleep(seconds, values.until === undefined ? undefined : parseUntil(values.until));
       output(reply);
       if (!reply.ok) process.exitCode=1;
     } else if (command === 'wait') {
