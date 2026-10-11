@@ -582,12 +582,13 @@ P1 is at the top of this document.
 
 ### P2: harness and launch
 
-6. Stop text (`agent/team.md` or the stopping section of AGENTS.md, and the summary nudge in `tools/supervise.sh`). The
-   rule fixed early stops, but agents read "keep playing until the clock line says the deadline has passed" as
-   permission to sleep through the last 10 minutes, and wrote their final summary 10 minutes early (Opus at 50m50s,
-   Sonnet at about 51m). Say the final summary goes in the last three minutes by the `clock:` line, and that a team
-   message about the deadline should quote the `clock:` line (Sonnet's "Deadline reached" at 01:23:08 was a minute
-   early for it and four minutes early for Muse).
+6. Stop text (`agent/PLAYBOOK.md:105-112`, "Stopping"). The rule ended early stops, but the agents that wrote their
+   final summary early (Opus at 50m50s, Sonnet at about 51m, both against "In the last three minutes") then treated
+   the time to the deadline as time to wait (Sonnet and Haiku from about 01:13, Gemini from 01:16), and Sonnet told
+   the team "Deadline reached" at 01:23:08, a minute before its own deadline and five before Muse's. Two wording fixes
+   that steer nothing about play: say that deadlines differ per agent (so "deadline reached" is personal), and say that
+   the summary written early is a draft to finish in the last three minutes. Whether to also say that sleeping is not
+   playing is a judgement for Nick under the no-thumb rule.
 7. Supervisor "done" test (`tools/supervise.sh`): it nudged Grok mid-turn (00:48:57, a backgrounded `move_to --wait`
    and a 120 s tool call in flight) and Muse five times while it built the pumpjacks and refinery. Treat an agent with
    a request in the last 2 minutes of its journal as working.
@@ -639,8 +640,8 @@ P1 is at the top of this document.
   standing on its own build footprint; its last compaction ended its play 39 s early.
 - Gemini: ammo assembler, mall supply, played past its deadline without a restart; slept through the 01:22 boiler
   outage; error rate up to 7.3% (24 `inspect` misses).
-- Muse: claimed and built the oil site (two pumpjacks, the refinery), compacted once at the intended 200K, the lowest
-  error rate of the three non-Codex, non-Claude agents (2.6%). Joined last and owned labs, which made the opening
+- Muse: claimed and built the oil site (two pumpjacks, the refinery), compacted once at the intended 200K, and cut its
+  error rate from 8.3% to 2.6%. Joined last and owned labs, which made the opening
   slower.
 
 ## Appendix: methods
