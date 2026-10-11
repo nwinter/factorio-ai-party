@@ -240,8 +240,36 @@ def new_run():
     print("new-run: ok")
 
 
+def claude_settings():
+    """launch-agent.sh's claude_settings: earlier runs' keys denied; with the broker, its own too, and its socket allowed."""
+    text = open(os.path.join(ROOT, "tools", "launch-agent.sh")).read()
+    start = text.index("claude_settings() {")
+    end = text.index("\nEOS\n}\n", start) + len("\nEOS\n}\n")
+    body = text[start:end]
+    tmp = tempfile.mkdtemp()
+    try:
+        for r in ("shake6", "now"):
+            os.makedirs(os.path.join(tmp, "runs", r, ".keys"))
+        ws = os.path.join(tmp, "runs", "now", "haiku")
+        os.makedirs(ws)
+        for broker in ("0", "1"):
+            script = f'root={tmp!r} run=now dir={ws!r} allow=\'"Read"\'\n{body}\nclaude_settings\n'
+            subprocess.run(["bash", "-c", script], env=dict(os.environ, POG_BROKER=broker, POG_BOT="haiku"), check=True)
+            cfg = json.load(open(os.path.join(ws, ".claude", "settings.json")))
+            deny_read, deny = cfg["sandbox"]["filesystem"]["denyRead"], cfg["permissions"]["deny"]
+            old, own = os.path.join(tmp, "runs", "shake6", ".keys"), os.path.join(tmp, "runs", "now", ".keys")
+            assert old in deny_read and f"Read(/{old}/**)" in deny and f"Read({old}/**)" in deny, cfg
+            assert (own in deny_read) == (broker == "1"), (broker, deny_read)
+            sockets = cfg["sandbox"]["network"].get("allowUnixSockets")
+            assert sockets == ([os.path.join(tmp, "runs", "now", ".sock", "haiku.sock")] if broker == "1" else None), sockets
+    finally:
+        shutil.rmtree(tmp)
+    print("claude settings: ok")
+
+
 if __name__ == "__main__":
     check()
     new_run()
+    claude_settings()
     handler()
     end_to_end()

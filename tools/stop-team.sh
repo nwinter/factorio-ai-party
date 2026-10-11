@@ -18,6 +18,9 @@ python3 tools/console_audit.py --world "$world" --out "$rundir/console-audit.jso
 # POG_BROKER=1 runs: what the RCON broker forwarded and refused (it stopped with the helpers above).
 [ -f "$rundir/broker.log" ] && { sleep 1; python3 tools/fh_broker.py summary "$rundir/broker.log" || true; }
 python3 tools/pog.py --world "$world" save
+# The run's copy of the world password is only for its agents' fh: gone with the shift, so later agents cannot read
+# it (docs/LAUNCH-NOTES.md). A resumed shift copies it again (tools/new-run.sh).
+rm -rf "$rundir/.keys"
 # Between shifts (POG_STOP_WORLD=1) the server and its directors stop too, so game time moves only while agents
 # play; the next shift resumes from this save (tools/start-team.sh, POG_RESUME).
 if [ "${POG_STOP_WORLD:-0}" = 1 ]; then

@@ -99,8 +99,17 @@ claude_settings() {
   # POG_BROKER=1: fh talks to the RCON broker's socket for this bot; the sandbox allows that one Unix socket.
   local sockets=""
   [ "${POG_BROKER:-0}" = 1 ] && sockets=", \"allowUnixSockets\": [\"$(dirname "$dir")/.sock/${POG_BOT:-$(basename "$dir")}.sock\"]"
+  # Earlier runs' key copies (runs/*/.keys) hold the same world passwords: denied, apart from this run's own while
+  # fh reads it (no broker). Rules in both forms: Claude Code reads "//" as absolute, Grok Build "/".
+  local keys_read="" keys_rules="" k
+  for k in "$root"/runs/*/.keys; do
+    [ -d "$k" ] || continue
+    [ "${POG_BROKER:-0}" != 1 ] && [ "$k" = "$root/runs/$run/.keys" ] && continue
+    keys_read="$keys_read, \"$k\""
+    keys_rules="$keys_rules, \"Read(/$k/**)\", \"Read($k/**)\""
+  done
   local sandbox="\"sandbox\": {\"enabled\": true, \"autoAllowBashIfSandboxed\": true, \"allowUnsandboxedCommands\": false,
-    \"network\": {\"allowLocalBinding\": true$sockets}, \"filesystem\": {\"denyRead\": [\"$HOME/.config/pog\"]}},"
+    \"network\": {\"allowLocalBinding\": true$sockets}, \"filesystem\": {\"denyRead\": [\"$HOME/.config/pog\"$keys_read]}},"
   [ "${1:-}" = nosandbox ] && sandbox=''   # Grok Build: allowlist only (its own sandbox flags differ)
   cat > "$dir/.claude/settings.json" <<EOS
 {
@@ -108,7 +117,7 @@ claude_settings() {
   "permissions": {
     "defaultMode": "dontAsk",
     "allow": [$allow],
-    "deny": ["Read(~/.config/pog/**)", "Read($HOME/.config/pog/**)", "Edit(~/.config/pog/**)", "Edit($HOME/.config/pog/**)"]
+    "deny": ["Read(~/.config/pog/**)", "Read($HOME/.config/pog/**)", "Edit(~/.config/pog/**)", "Edit($HOME/.config/pog/**)"$keys_rules]
   }
 }
 EOS
