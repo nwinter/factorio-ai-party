@@ -104,7 +104,17 @@ def main():
         assert js_hosts[k] == avatar.svg(row, 48), "caster %s: JS and Python differ" % k
         renamed = dict(row, name="Someone Else", display_name="Someone Else")
         assert avatar.pixels(renamed) == avatar.pixels(row), "caster %s: a rename changes the portrait" % k
-    print("avatar: ok (%d profiles and %d casters, JS and Python identical)" % (len(items), len(hosts)))
+    # Factorio sprite layers: regenerate into a temp dir, run the composite/Lua check, compare with the committed files.
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        r = subprocess.run(["node", os.path.join(HERE, "avatar_sprites.js"), "--check", "--out", tmp],
+                           capture_output=True, text=True)
+        assert r.returncode == 0, "avatar_sprites.js --check failed:\n" + r.stdout + r.stderr
+        for f in ("avatar-parts.png", "avatar_sprites.lua"):
+            with open(os.path.join(tmp, f), "rb") as a, open(os.path.join(HERE, "sprites", f), "rb") as b:
+                assert a.read() == b.read(), "tools/stream/sprites/%s is stale: run node tools/stream/avatar_sprites.js" % f
+    print("avatar: ok (%d profiles and %d casters, JS and Python identical; sprites: %s)"
+          % (len(items), len(hosts), r.stdout.strip().splitlines()[-1].replace("check: ", "")))
 
 
 def node_casters():
