@@ -278,10 +278,6 @@ class Clef:
         state = ("Live chat on a family-friendly stream where AI agents play Factorio together and two AI hosts "
                  "commentate. Messages may be shown on screen, read by the hosts and posted into the game.")
         try:
-            from caster import pick_choice
-        except Exception:  # caster.py pulls in voices; keep a local copy of the answer parsing
-            pick_choice = _pick_choice
-        try:
             out = self.ai.run("@cf/cloudflare/clef-flash", {"model": "clef-flash", "state": state, "questions": qs})
             self.calls += 1
             self.fails = 0
@@ -295,7 +291,8 @@ class Clef:
         return {m["id"]: pick_choice(answers.get(f"v{i}")) or "unknown" for i, m in enumerate(msgs[:48])}
 
 
-def _pick_choice(a):
+def pick_choice(a):
+    """Clef `choice` answers in the shapes caster.py accepts (same parsing; caster.py imports voices)."""
     if isinstance(a, str):
         return a
     if not isinstance(a, dict):
