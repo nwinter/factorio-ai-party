@@ -4,6 +4,25 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Hosts, round 2 (HOSTS2.md, 2026-10-11 afternoon)
+
+- Shift numbering (shake6 study P1 item 2). The `shift` fact is now `this_shift` ("shift 3"), `next_shift`
+  ("shift 4"), `earlier_shifts`, `resumed_at_game_minute` and `at_the_deadline` ("the world is saved and shift 4
+  continues it from there"), with no run names. It rides on every beat of a resumed run; the time left keeps its
+  clock rule. `check_line` cuts a "shift N" that is neither this shift nor the next, and a run name ("Shake five",
+  "shake5") that is not in the facts (pace facts still name their baseline). Shake6 aired "Shift five inherits smoke
+  and debt" and "Shake five gets low density at ninety" in shift three.
+- Planets (item 3). On Space Age runs the facts carry `planets_reached` (from the snapshot's `space.planets`, Nauvis
+  at least) and `planets_not_reached_yet`. The show notes say only the planets reached have been visited, and
+  `check_line` cuts a line that names an unreached planet unless it talks about the future ("next", "goal", "will",
+  "on the way" and so on). Vale's "won't rebuild Vulcanus" is cut; "Vulcanus is the next big goal" passes.
+- Base-game runs had the Space Age notes. model.py sends a `space` block on every run (`space_age` false in the base
+  game), and `show_for` took any block as Space Age. `is_space_age` now reads the flag.
+- `tools/stream/copy_report.py runs/<run>/caster.log [--last 30]` reads a running shift's caster log, read only: the
+  template share and the `[cost]` fallbacks count, cuts by reason (style cuts by kind), and the tells left in writer
+  lines next to the shake4-6 shares. On shake6 (before the copy changes) it gives 5% templates, 0 style cuts and
+  62% dash pivots.
+
 ## Hosts that sound human (COPY.md, 2026-10-11)
 
 Nick: the hosts' lines "seem super AI-format-ty". This section counts the tells, sums up how live casters talk,
