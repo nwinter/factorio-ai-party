@@ -1,11 +1,12 @@
 # Study: shake3, the round-3 run (board, talk, stream)
 
-Run: 2026-10-11, agents launched 00:24:21 to 00:28:54 PDT (45 s apart), one shared deadline 01:24, world `n`, seed
-20261010, normal enemies, base game, real time, streamed unlisted. Same nine agents, models, harnesses and efforts as
+Run: 2026-10-11, agents launched 00:24:21 to 00:28:54 PDT, world `n`, seed 20261010, normal enemies, base game, real time, streamed unlisted. Same nine agents, models, harnesses and efforts as
 shake1 and shake2 (`runs/shake3/start.log`, `team.txt`). New this round: the board for logistics and chat for talk,
 `say --aloud`, `confess`, pronouns, voice and avatar picks, in-game name tags, director zoom and pair framing, segments
 and attack replays, two hosts (Rook and Vale, Kimi K2.6 on Cloudflare, OpenAI voices), the site's live feed and viewer
-chat. World tick 0 was about 00:22:19 (tick 23,603 at 00:28:55 in `scores.jsonl:1`), so game minute is about wall
+chat. Deadlines were staggered by launch (each `deadline.txt`): astra, sol, luna 01:24; opus, sonnet 01:25; haiku
+01:26; grok, gemini 01:27; muse 01:28. The last score snapshot is 01:25:02, so the final score misses the last 2 to 3
+minutes of Haiku, Grok, Gemini and Muse. World tick 0 was about 00:22:19 (tick 23,603 at 00:28:55 in `scores.jsonl:1`), so game minute is about wall
 minute minus 00:22:19.
 
 Sources, all read-only: `runs/shake3/` in the main checkout (chat.jsonl, scores.jsonl, caster.log, stream-service.log,
@@ -17,7 +18,42 @@ score snapshots.
 
 ## P1: before tonight's run (05:00)
 
-PENDING
+Harness bugs, misleading prompts and launch hygiene only; no strategy advice to the agents. Evidence is in the
+sections named.
+
+1. Attack and loss text on the stream (section 6, cause A and B). The number after `x` in an attack alert is a hit
+   count, and the "(by N small biter)" in a loss alert is the kill count. Stop rendering `xN` as "(N of them)"
+   (`tools/stream/caster.py:210`; say "hit N times" or drop it), stop prefixing "the biters are damaging:" to it
+   (`caster.py:284-287`), render loss attribution as "by small biters" (`tools/stream/live.py:257`), and fix the banner
+   and replay titles that carry the raw "character x3" (`live.py:271`; the replay titles are built from the same alert
+   text).
+   Add to `EXCHANGE_RULES` (`caster.py:343`): attack numbers are hits on the team's buildings, never enemies, and
+   "character" means one of the team's engineers. This covers "nine biters chew their boots", "fourteen turrets",
+   "thirteen poles" and "One small biter ends the run".
+2. Start the stream services from the final code and say so in `start.log` (`tools/start-team.sh:86-106`). The caster
+   started at 00:24:12 on code from before the OpenAI-voice commit 19b4c72 (00:28:18), so the hosts most likely spoke
+   with the Aura-2 stand-ins; and no `analyst.log` exists although the start script launches the analyst by default.
+   Start the caster, push-live, viewer relay and analyst after the last merge, and have start-team print each one's
+   pid and first line (or failure) into `start.log`. Log which provider spoke each clip in the caster record
+   (`caster.py:1021` logs a constant). Check ElevenLabs credit before agents keep `el-` voices (Opus, Sol).
+3. Facts the hosts need (section 6, causes C and D), all in `tools/stream/caster.py`:
+   - `context_facts` (`:243`): add minutes to the deadline, and reject "ends the run" before it ("forty more minutes of
+     biter bait" with 4.5 left; "ends the run at thirty flat").
+   - `agent_facts` (`:232`): replace the status "thinking (standing still)" with "planning its next step"; 102 of 443
+     host lines mocked agents as frozen or statues.
+   - `agent_facts` (`:223`) and the rules at `:341` and `:350`: pass each agent's chosen pronouns and say "use the
+     pronouns given, else they" (Grok chose he/him; the rules forced "they", and Rook still called Luna "she").
+   - `check_line` (`:376`): catch "isn't there" absences and capitalised names outside the roster ("Gear and Sol").
+4. Overview zoom (section 6): `tools/stream/segments.py:262` floors the zoom at 0.05; the runtime accepts 0.3 to 4 and
+   refused 0.129 at 01:18:39, so the hosts described an overview the camera never showed. Clamp to the runtime's
+   minimum there (or in the director before sending).
+5. Talk prompt that contradicts itself (section 4). `agent/team.md:25-28` says the board is for "requests, claims,
+   handoffs" and "Chat is for talking", but `team.md:36-37` gives a chat example of a claim and `team.md:39` says "Hand
+   items over through a chest: put them in, then say what and where", which sends every handover to chat. 92% of the
+   547 lines were logistics, more than in shake2. Make line 39 "put them in, then post or update the board item" and
+   move the claim example to `board post`, so the prompt says one thing. `confess` was used 0 times by 9 agents; it
+   has one line and no occasion (`team.md:55`): say when viewers would want one (what you think of the plan, a
+   teammate, a mistake), at the same "a few times an hour" rate given for `--aloud` (`team.md:53-54`).
 
 ## 1. Summary
 
@@ -101,7 +137,143 @@ What still held the middle game back:
 
 ## 3. Agents: activity, stops, errors, compactions
 
-PENDING
+### Turn ends
+
+No agent ended its turn before its deadline, for the first time in three runs (shake2: six of nine, about 31
+agent-minutes; shake1: about 50). Every transcript holds one turn for the whole hour, and the six supervisor logs of
+the Codex and Claude agents read "deadline reached after 0 nudges".
+
+| Agent | Turn end (deadline) | Last request | Requests last 10 min / 10 before | shake2 |
+|---|---|---|---|---|
+| astra | 01:24:19 (01:24) | 01:24:08 | 108 / 113 | 2.9 min early |
+| sol | 01:24:51 (01:24) | 01:24:11 | 61 / 36 | 1.5 min early |
+| luna | 01:24:15 (01:24) | 01:23:52 | 71 / 223 | on time |
+| opus | 01:25:18 (01:25) | 01:24:44 | 32 / 55 | 5.4 min early, 3 nudges |
+| sonnet | 01:25:14 (01:25) | 01:24:23 | 14 / 109 | 10.7 min early, 5 nudges |
+| haiku | 01:26:19 (01:26) | 01:25:55 | 9 / 44 | 48.4 min early, 16 nudges |
+| grok | never ended; play stopped at 01:26:21 when a second compaction began 39 s before 01:27 and did not finish | 01:26:21 | 117 / 233 | 3.3 min early |
+| gemini | 01:27:18, after the `clock:` line said "deadline passed 6s ago"; the agy loop never had to restart it | 01:27:01 | 35 / 104 | 8 final summaries from 22:39:50 |
+| muse | never ended; "Waiting out the clock" from 01:24:04 | 01:27:02 | 63 / 35 | 7.3 min early, nudges undelivered |
+
+The stop rule from shake2's P1 worked as written ("In the last three minutes, add a final summary to notes.md, then
+keep playing until the clock line says the deadline has passed", quoted in `opus/compactions.md`), but the wind-down
+moved inside the turn:
+- Sonnet wrote its summary at 01:13:53, then slept (`./fh sleep 240` at 01:14:00, then 170, 70, 45), with 14 requests
+  in its last 10 minutes against 109 in the 10 before. At 01:23:08 it told the team "Deadline reached, final notes
+  written" while its clock line said "deadline in 1m" (chat #539); Luna noticed and kept to her own clock.
+- Haiku made eight `./fh sleep 240..300` calls from 01:12:57 ("Let the factory run for five minutes"; after its summary
+  at 01:21:27, "Let the game run until the deadline passes").
+- Opus wrote its "Final summary (written 50m50s)" (`opus/notes.md:34`) ten minutes early, ran its ferry plan between
+  sleeps, found at 01:23:05 that "the coal belt is empty, nothing in reach", and then slept ("Wait out the deadline").
+- Gemini polled research and slept 60 s at a time from 01:16:22 to its deadline, through the 01:22 boiler outage that
+  Astra (#537), Grok (#541) and Opus were reporting.
+- Muse held at the oil site from about 01:08 waiting for oil-gathering (one wait 01:14:24 to 01:19:49), then built the
+  pumpjacks and refinery; from 01:24:04 it waited out its last 4 minutes.
+- The Codex trio did not wind down (Astra 108 against 113, Sol 61 against 36). Luna's drop is one 5-minute
+  `wait_until researched oil-gathering`, after which she queued plastics and sulfur research (01:21:32).
+
+Supervisor nudges misfired twice (`tools/supervise.sh`): Grok was nudged at 00:48:57 ("status done, 39m left",
+`grok/supervisor.log:1`) while it was mid-turn, and the nudge never reached the model; Muse got 5 nudges from 01:21:01
+to 01:26:24 while it was building the pumpjacks and refinery. Each Muse nudge failed `herdr agent prompt` with
+`agent_not_ready`, then went through `pane send-text`, and Muse Code drained it into the live run as a steer
+(`inbox_item_drained` 01:21:06 to 01:26:25), so nudges now reach Muse (shake2 0 of 5); these bought nothing because
+Muse was working.
+
+### Activity and idle
+
+Action gap is computed stricter than in shake2 (each timed action is capped at the agent's next request), so compare it
+within shake3. Clock idle (shake2's definition) is given where it was computed.
+
+| Agent | Action gap | Think share s3 (s2) | Steps, median / p90 think s3 (s2) | `./fh sleep`: calls, asked, asleep (s2 asleep) | Queues and plans |
+|---|---|---|---|---|---|
+| astra | 83% | 86% (80%) | 326, 6.8 / 17.0 s (248, 8.6 / 21.3) | 17, 9.4 min, ~4.3 min | 11 submits, 10 repeats, 3 plan saves, 1 run |
+| sol | 96% (queued work not counted) | 95% (88%) | 197, 11.9 / 32.7 s (253, 8.2 / 24.5) | 8, 2.9, ~2.4 | 49 submits |
+| luna | 70% | 49% (42%) | 473, 2.0 / 8.7 s (451, 2.2 / 6.5) | 7, 3.2, ~2.3 | none |
+| opus | 80% | 30% (39%) | | 47, 88 min, ~23.8 (8.8) | 9 submits, 5 saves, 9 runs |
+| sonnet | 80% | 22% (21%) | | 26, 40, ~19.1 (15.2) | 1 submit, 1 save, 3 runs |
+| haiku | 86% | 10% | | 52, 203, ~44.5 (19.8) | none |
+| grok | clock idle 60% (s2 60%) | | | 5, 175 s; 27 `wait_until` | |
+| gemini | clock idle 72% (s2 92%) | | | 12, 600 s; 6 `wait_until` | |
+| muse | clock idle 49% (s2 77%) | | | 21, 716 s; 6 `wait_until` | |
+
+- The Claude agents are idle mainly because they sleep, more than in shake2: Haiku about 44.5 of its 60 minutes inside
+  `./fh sleep` (52 calls asking for 203 minutes, 50 of them woken early by a mention or event), Opus 23.8, Sonnet 19.1.
+- Queue plans came back: 9 `plan save` and 13 `plan run` in the six Codex and Claude agents (shake2: none), 70
+  submissions and 11 repeats. Opus's ferry plan (`opus/solferry.json`) ran while it slept.
+- Sol took fewer, longer steps (197 against 253; median reasoning 378 to 516 tokens per step in the 10-20m and 30-40m
+  windows) and moved its work into 49 large queue submissions (about 60 plan files in `runs/shake3/sol/`).
+- Muse and Gemini idled much less than in shake2 (49% and 72% against 77% and 92%).
+
+### Errors and denied commands
+
+| Agent | Errors s3 (rate) | s2 (rate) | Largest classes |
+|---|---|---|---|
+| astra | 15 (1.7%) | 14 (2.2%) | `observe` fields as one string, dead (2) |
+| sol | 11 (2.3%) | 17 (2.7%) | argument names (6 of 11) |
+| luna | 37 (3.4%) | 57 (7.7%) | `inspect` outside the visible area (9), reach |
+| opus | 42 (5.4%) | 57 (9.0%) | reach and visibility, water placement, `collect want` in a queue (2, as in shake2) |
+| sonnet | 62 (7.7%) | 45 (10.0%) | builds blocked by trees and stumps (9), `mine` out of reach (8), dead (6) |
+| haiku | 31 (6.2%) | 31 (8.6%) | `mine` not found or out of reach (10), trees (6) |
+| grok | 56 (5.7%) | 22 (4.4%) | placement blocked (20; 9 "character standing on the footprint"), reach (6) |
+| gemini | 46 (7.3%) | 28 (5.6%) | `inspect` "entity not found" (24) |
+| muse | 18 (2.6%) | 46 (8.3%) | argument names (7); no post-compaction cluster |
+
+- Rates fell for seven of nine (Grok and Gemini rose). Placement, reach and trees replaced argument errors as the
+  largest class.
+- `inventory` exists now and is used (Luna 71 calls, Opus 38, Haiku 25, Astra 19); shake2 had 15 failures there.
+- Harness bugs: reading chat fails while the character is dead (Sonnet's `chat`, 3 times, "bot sonnet is dead; it
+  respawns at tick N", 00:54:02 and 01:05:30); one Grok build at 01:02 was "placement blocked by small-biter-corpse
+  (-59.9,-13.2)"; Sol's harness item #17 (tree stumps block placement) stayed open.
+- Denials: Claude Code's dontAsk mode denied 6 commands (Opus 4, Sonnet 2): a `for` loop with a variable, a `python3`
+  heredoc redirected to a file, `$(cat ghosts.json)`, `sed -i` on notes.md, `cat > notes.md <<EOF`. Every one was
+  rewritten within 2 to 6 s ("The loop isn't allowed; using separate commands.", Sonnet 00:32:20) and none ended a turn
+  (shake2: Haiku lost about 17 minutes). Opus's last notes edit at 01:23:03 was dropped. Codex, Grok, Gemini and Muse
+  had no denials (Grok: 306 permission checks, all allowed).
+
+### Compactions
+
+| Agent | Setting | When | Context before to after | Stall | notes.md back |
+|---|---|---|---|---|---|
+| astra | Codex 140K | 00:44:30, 01:06:08 | 139.4K, 140.0K to 22.9K, 23.9K | 160 s, 110 s (s2 108, 118) | re-read by the agent, 2 of 2 |
+| sol | Codex 140K | 00:46:04, 01:12:43 | 139.1K, 139.8K to 23.4K, 25.0K | 107 s, 148 s (s2 76 to 98) | re-read, 2 of 2 |
+| luna | Codex 140K | 00:33:29, 00:42:54, 00:57:28, 01:09:39 | ~140K to ~21K | 18 to 26 s | re-read, 4 of 4 |
+| opus | Claude Code 250K | 01:00:36 | 250.8K to 28.9K | 16 s | hook (7.2K chars); summary followed the 5-item compact instructions |
+| sonnet | Claude Code 200K | 00:52:56 | 200.3K to 23.7K | 23 s | hook (5.3K); default 9-section summary |
+| haiku | Claude Code 80K | 00:33:38, 00:59:14 | 80.4K, 80.1K to 23.4K, 23.9K | 20 s each | hook (5.8K, 8.2K); default summary |
+| grok | 60% of 256K | 00:54:58; second at 01:26:21 unfinished | 154.0K to 19.1K | 54 s | reinjected 00:56:00 |
+| gemini | agy's own | 00:57:53 | 271.7K to 26.9K | ~38 s | Gemini wrote notes at 00:57:37 and re-read them at 00:58:17 |
+| muse | soft 0.391 of 512K | 01:02:30 to 01:03:04 | 201.5K to 57.6K | none (async) | reinjected 01:03:07 |
+
+- Claude Code's floor halved: starting context 17.7 to 19.9K (shake2 44.9 to 47.4K), post-compaction 23 to 29K
+  (shake2 51 to 59K). Haiku compacted twice instead of six times and lost no state that we found.
+- Muse's threshold fix worked (fired at 200,192 tokens; shake2 about 98K).
+- Codex compaction stalls grew for Astra and Sol: about 4.5 and 4.3 minutes of their hour (shake2 3.8 and 4.2).
+- Grok's second compaction started 39 s before its deadline and ended its play.
+- Context at the end: Astra 123.5K, Sol 81.8K, Luna 111.4K, Opus 88.8K, Sonnet 87.5K, Haiku 66.0K, Grok 153.9K,
+  Gemini 188.6K, Muse 152.2K.
+- Space-dropping is gone from chat as a measure: characters per word in `say` texts stayed at 5.4 to 7.5 for the Codex
+  and Claude agents (Sol 15.9 in shake2). Individual run-together tokens remain ("DONE at58m50"), and Sol's notes.md is
+  still spaceless ("Final mallfeed gave301iron55copper to9machines").
+
+### What the harness or launch did wrong
+
+1. Codex profile still not clean: every request starts with a 5.4K-character `<skills_instructions>` block (shake2 12
+   to 13K) rooted at the owner's Dropbox skills folder, listing five of the owner's skills (ai-usage, aws-spot,
+   find-skills, herdr, lifelog), plus the 2,400-character `<multi_agent_role>` block and its revocation; both return
+   after every compaction. Route `codex` was also used by six of the owner's own `codex exec` sessions from 00:30 to
+   00:44 during the run; they did not touch Sol's session.
+2. Claude Code still sends "The user hasn't heard from you in a while" (Opus 36, Sonnet 29), and route claude-b still
+   attaches the owner's email and the repo's git log at start and after compaction.
+3. Grok Build still loads `~/.grok/rules/agent-tooling.md` ("Nick's shared agent tooling"), 3 MCP servers that all fail
+   at start, and the global herdr and local-session-profile hooks; its events.jsonl still holds 2 secret-like strings
+   (values not printed here). Muse Code still runs the owner's hooks from `~/.config/muse/settings.json` and proposed
+   skill reminders 356 times.
+4. The supervisor's "done" test misfired on Grok and Muse (above).
+5. Launch was slow: 4.5 minutes for nine agents (shake2 2.4). The gaps before Luna, Sonnet, Haiku, Gemini and Muse were
+   44 to 49 s (`start.log`), which matches the 40-iteration readiness loop in `tools/launch-agent.sh:166-177` running to
+   its end without seeing a trust prompt or a "Working" line (inference from the timing). Each later agent got its full
+   hour, but Muse, who owned labs, joined at game minute 6.6.
+6. Sol's harness item #17 was never answered.
 
 ## 4. Talk: chat, board, aloud, confessions, identity
 
@@ -202,15 +374,175 @@ Whether the identities came through on the stream (voices played, pronouns used 
 
 ### Board
 
-PENDING
+93 board calls (shake2 112) and 1 `harness_request` (Sol). Items 1 to 23: 14 claims, 5 requests, 2 tasks, 1 note, 1
+harness item.
+
+| Agent | board / post / update |
+|---|---|
+| luna | 21 / 2 / 11 |
+| astra | 5 / 8 / 10 |
+| sol | 5 / 4 / 2, + 1 harness request |
+| muse | 5 / 3 / 1 |
+| opus | 2 / 3 / 1 |
+| grok | 1 / 3 / 0 |
+| gemini | 2 / 1 / 0 |
+| haiku | 1 / 1 / 0 |
+| sonnet | 0 / 0 / 0 |
+
+| # | By to owner | Posted | Closed | Title | Outcome |
+|---|---|---|---|---|---|
+| 5 | astra to luna | 3m00s | 5m26s, by Astra | Coal for copper drill | Astra supplied herself |
+| 6 | sol to luna | 3m19s | 6m20s | Coal and stone for northern iron | delivered |
+| 8 | astra to luna | 3m45s | 4m31s, by Astra | 10 stone for copper furnaces | Astra mined it |
+| 13 | opus to luna | 8m18s | 19m37s | Keep lake boiler fueled | Luna hand-fed it; superseded by Opus's coal belt (task #15) |
+| 22 | astra to sol | 47m52s | 48m02s | Authorize surplus iron collection | granted in chat 8 s earlier |
+
+- The board was a claim registry and an early queue: 20 of 23 items were posted in the first 15 minutes. After 15m05s
+  only #19 to #23 went up. Mid- and late-game asks went to chat (section 4).
+- Its best use was Astra's oil note #19 at 25m30s, with all 8 wells and bounds, which Muse claimed as #20 at 30m06s.
+- Luna was again the board's worker (34 calls, 11 updates); Sonnet never called it.
+- No defence or warden item was posted; Sol's harness item #17 stayed open.
+- Against shake2 (10 requests, 7 done, median 4m17s) the board carried fewer requests (5), which fits the brief (board
+  for logistics) only for claims: the logistics moved to chat rather than to the board.
 
 ## 5. Combat and defence
 
-PENDING
+Gun turret was researched between 30m32s and 32m32s, queued first by Sonnet at 29m32s right after the first raid
+(chat #285). Shake2 researched it at 20m44s but placed its first turret 21 minutes later.
+
+| Raid | Game time | Where | Losses (team `losses` alerts) | Response |
+|---|---|---|---|---|
+| 1 | 28m40s to 29m07s | copper yard and coal trunk near (-48,16) | 1 belt; Astra down to 47 hp | Opus alerted at 28m49s (#274); Astra shot them (#279, #286); Luna, Sol, Haiku came |
+| 2 | 31m12s to 31m49s | (-48,16) and the iron edge (-48,-16) | 2 belts, 1 chest; Astra died at (-43,0), Sonnet at (-59,-14) carrying 2 turrets and 234 iron | Astra #304: "Turrets urgently needed south" |
+| 3 | 35m30s to 36m12s | lake power plant | 27: 22 belts, a boiler, a steam engine, an inserter, a pipe, a chest | Opus aloud #341 "URGENT"; Astra, Grok, Luna, Muse, Haiku, Sol came; coal gap rebuilt by 36m53s (Astra #359); boiler 3 and a turret at (22,23) by 37m41s (Opus #372) |
+| 4 | 42m43s to 43m29s | west coal and power drill field (-88..-73, -22..-14) | 21: 9 belts, 5 burner drills, 3 electric drills, 2 poles, a chest; Sonnet died | Haiku shot; Muse, Luna, Grok came; Sonnet placed 3 turrets at 44m46s; Opus a fifth at (-78,-22) |
+| 5 | 49m33s | (-48,16) | none; turrets took 224 damage (Astra #466) | |
+| 6 | 63m27s | (-48,16) | none | after the Codex deadlines |
+
+- Deaths: 3, all to small biters near base (Astra once, Sonnet twice). No scout died: Astra's oil route went north by
+  x -170, "clear of mapped nests" (#249). Shake2: 4 deaths, 3 of them oil scouts to worms; shake1 about 10, to biters.
+- Turrets: 11 placed (Sonnet 6, Opus 5), the first at 32m28s, within 2 minutes of the technology (shake2 4, shake1
+  about 12). Sonnet (-45,-13), (-55,-13), (-54,9) at 32m28s to 33m06s and three on the west coal field at 44m46s; Opus
+  (-54,16), (-46,23), (-36,4) at 33m38s to 33m47s, (22,23) at 37m22s, (-78,-22) at about 43m42s. Nine placements
+  failed (blocked or out of reach). Gemini built an ammo assembler at 34m00s (#328), which Haiku kept fed.
+- Defence ownership was set in chat (Astra to Sonnet at 29m42s, #287, acknowledged #292), not on the board.
+- Each response covered the area just hit, and responders mostly arrived to "no live biters" (Haiku 29m22s, Luna
+  29m30s, Muse 36m35s, Grok 43m19s). The raids that hurt (3 and 4) hit places the earlier turrets did not cover. After
+  turrets covered all three hit areas, raids 5 and 6 caused no losses.
+- Production cost: the dip from 406 to 177 iron plates a minute between 36.6m and 44.6m spans raids 3 and 4; power
+  dropped to 4 engines for about 3 minutes after raid 3 (Opus #350).
 
 ## 6. The stream
 
-PENDING
+Sources: `runs/shake3/caster.log` (535 lines), `tools/stream/logs/caster-20261011-002412.jsonl` (1,054 records),
+`director-20261011-002409.jsonl` (1,052), `viewers-20261011-002409.jsonl` (0 bytes), `runs/shake3/stream-service.log`
+(916 lines). The caster started at 00:24:12 on main 30d52c9 (00:23:16). Line numbers below are in the current tree
+(611b6a5), where the cited code is unchanged.
+
+### Hosts
+
+- 441 lines written, 428 aired, 214 each for Rook and Vale, 00:24:15 to 01:26:55: 6.8 lines a minute in 195
+  exchanges; the longest silence was 34 s (01:05:45). Events voiced: chat 138, camera 69, board 58, lull 54, research
+  33, attack 30, segment 22, power 14, loss 10.
+- Writer (Kimi K2.6 on Workers AI): median 2.65 s, p90 5.88 s, max 12.1 s; 9 timeouts (`[writer] failed:
+  TimeoutError`, caster.log lines 130 to 359) and 18 exchanges written by the template fallback ("Cameras find Opus.
+  Let's watch.", 00:40:30).
+- `check_line` (`tools/stream/caster.py:376`) rejected 37 lines, 14 for a number not in the facts; some were true
+  ("Eleven labs" at 01:24, from Sol's chat but not in that event's facts).
+- Cost: $1.53 for the hour (writer $0.26, TTS $1.30).
+- TTS: median 3.1 s, p90 4.2 s, max 19.1 s. 11 lines never aired because synthesis failed, all `CFError: 500 ...
+  AiError ... 8008` from Workers AI: 9 host lines (00:40:49, 00:42:28, 00:49:46, 01:05:58 twice, 01:08:24, 01:14:16)
+  and 2 agent lines (Luna 00:35:43; Opus 00:52:51, the aloud "power line to oil is DONE").
+
+The hosts were most likely not on OpenAI voices. The caster ran code in which `--tts auto` tried ElevenLabs first and
+fell back to Deepgram Aura-2 (atlas, thalia) without logging it. The commit that moved the hosts to OpenAI (19b4c72,
+"voices: auto prefers OpenAI for shake3 ... a provider out of credits rests") landed at 00:28:18, four minutes after
+the caster started, so it never ran. The logged TTS spend ($1.305) matches Aura-2's rate on every aired character
+(43,930 characters, $1.318); ElevenLabs would have been about $1.76 and OpenAI about $0.75. The caster record logs
+`voice: atlas/thalia` from a constant (`caster.py:1021`), not the provider that spoke, so this is an inference from cost.
+The agents' el- voices (Opus el-george, Sol el-charlie) most likely went the same way.
+
+### Factual mistakes and their causes
+
+Four causes in the facts the hosts were given:
+
+- A. Attack counts are hits, and the stream presents them as counts. The runtime's attack alert lists `<entity> x<hits>`
+  (shake1 logged `crash-site-spaceship x820` with `hits=820`). `tools/stream/live.py:271` puts the first entry into the
+  banner ("Base under attack near (-48, 16): character x3"), `caster.py:210` rewrites `x3` as "(3 of them)", and
+  `caster.py:284-287` adds "the biters are damaging:". The hosts then read the number as enemies or as buildings.
+- B. Loss alerts end "(by N small biter)", where N equals the loss total in every alert (1 of 1, 3 of 3, 21 of 21, 27
+  of 27): kills credited to small biters, not biters (`live.py:257`).
+- C. An agent between actions gets the status "thinking (standing still)" (`caster.py:232`). 102 of 443 host lines (23%)
+  call agents frozen, statues, standing still or idle, against the rule "never mean to a player" (`caster.py:342`,
+  `:356`): "nine statues in the dirt" (00:24:39), "Steady is code for watching spiders chew their homework" (01:06:51).
+- D. No time-left fact: `context_facts` (`caster.py:243`) gives the game time but not the deadline.
+
+| Time | Host | Line | What was true | Cause |
+|---|---|---|---|---|
+| 00:40:14 | Vale | "Nineteen machines starved now, worse than last minute's twenty-one of thirty-nine" | 19 of 55 is better | arithmetic |
+| 00:40:37 | Vale | "Seventeen minutes of low power" | 17 minutes was the game time | game time read as a duration |
+| 00:41:12 | Vale | "Astra scouts for oil that isn't there" | the field was found at 00:48 | invented absence; `check_line` misses "isn't there" |
+| 00:51:36 | Rook | "three teammates bleed at spawn" | 3 hits on characters | A |
+| 00:53:04 | Rook | "One small biter ends the run at thirty flat!" | 1 belt lost; the run went on 31 minutes | B; "ends the run" also in shake2 |
+| 00:53:55 | Rook (template) | "the biters are damaging: character (1 of them)!" | raw alert read out | A |
+| 00:54:01 | Rook | "Nine engineers bleeding out! Astra down, three belts gone" | 9 hits; 2 belts and Astra lost | A, B |
+| 00:54:01 | Vale | "forty minutes to a turret that can't save them now" | gun turret was researched at game minute 31 | invented |
+| 00:54:45 | Rook | "nine biters chew their boots" | 9 hits on characters | A: our damage read as enemy count |
+| 00:55:58 | Rook | "they fall to two small biters" | 2 kills | B |
+| 00:57:59 | Rook | "Biters chew fourteen belts" | 14 hits on belts | A |
+| 01:05:14 | Rook, Vale | "thirteen poles crack" | 13 hits; 2 poles lost | A |
+| 01:07:00 | Rook (template) | "21 lost: 9 transport belt, 5 burner mining drill (by 21 small biter)" | 21 kills | B |
+| 01:12:04 | Rook | "Biters chewing fourteen turrets at forty-nine!" | 14 hits on turrets | A |
+| 01:12:04 | Vale | "before the wall's a memory" | no walls were built | invented |
+| 01:13:28 | Rook | "Fourteen turrets took hits" | 14 hits | A |
+| 01:15:06 | Vale | "two thousand down on shake1" | 1,614 fewer iron plates | rounding |
+| 01:16:28 | Vale | "calculating doomsday at nineteen percent and falling" | research progress never falls | invented |
+| 01:19:25 | Vale | "Oil gathering crawls at sixty-five, forty more minutes of biter bait" | 4.5 minutes to the deadline; done at 01:21 | D |
+| 01:21:39 | Vale | "Shake1 made fewer plates, fewer circuits too" | shake3 made 54 fewer circuits than shake1 | half wrong |
+| 01:24:26 | Rook | "Gear and Sol do the heavy lifting" | no agent named Gear | name check passes it |
+| 01:25:38 | Rook | "biters chew ten turrets" | 10 hits | A |
+
+On Nick's three reports: the mix-up of damaged buildings with enemy counts is cause A (00:54:45 and the rows marked
+A). No logged host line contains "crash" or says research progress is lost; the overlay banner and the replay titles
+carried the raw alert, such as "Base under attack near (-48, 16): character x3" (replay saved 00:51:19), which reads as
+characters attacking the base, and the nearest research line is "nineteen percent and falling" (01:16:28). The 9 lines
+lost to TTS failures and 4 cut for urgent events were not aired, so what Nick heard is most likely these lines or the
+banner.
+
+Identity on air: the caster never receives pronouns (`agent_facts`, `caster.py:223`, has no pronoun field) and its
+rules force "they" (`caster.py:341`, `:350`), so Grok's "he/him" never reached the hosts; Rook once called Luna "she"
+(01:10:25). Display names and mottos do reach the hosts. 34 agent lines were voiced (49 picked, 15 skipped by spacing
+rules): Opus 7, Astra 6, Grok 4, Sol 4, Sonnet 3, Haiku 3, Muse 3, Luna 2, Gemini 2. Sonnet and Haiku, who picked no
+voice, got el-jessica and oa-coral from their names. The stream's own classifier put 498 of 547 chat lines (91%) as
+logistics.
+
+### Director, segments, replays
+
+- 1,052 camera commands on 3 cameras: 331 reframes, 274 pair and 177 unpair, about 80 rotations, 28 score cuts, 59
+  action zooms, 13 attack cuts, 3 segment moves. Pair framing held the main camera for 55.0 of 62.8 minutes.
+- Main-camera share (pair time split): Astra 22%, Opus 14, Luna 12, Muse 10, Sol 10, Grok 9, Gemini 8, Sonnet 7, Haiku
+  5. Zoom 0.5 for 22 minutes and 0.75 for 22.
+- One command failed: the overview at 01:18:39 asked for zoom 0.129 and the runtime refused ("zoom must be 0.3..4",
+  stream-service.log line 788). `segments.py:262` floors the overview zoom at 0.05, and the team's spread was 202
+  tiles with the oil field 400 tiles north. The hosts talked over an overview the camera never showed ("Nine agents
+  scattered like seeds", 01:18:55).
+- Segments that ran: overview 00:24:37; research 00:28:44, 00:48:18, 01:03:03, 01:11:50, 01:22:17; production
+  00:35:04; spotlight on Sol 00:41:44; overview 01:18:59 (camera failed). Recap never ran.
+- 6 attack replays were saved and aired (~00:51:31, ~00:54:17 Astra's death, ~00:58:17, ~01:05:28, ~01:12:19, ~01:26:00
+  after the Codex deadlines). Their titles carry the raw hit counts. The caster at 30d52c9 asked for `attack_replay`
+  segments that never came, so no host line was written as a replay breakdown; 262ef78 (merged 01:27) changes this.
+
+### Live feed, viewer chat, screenshots, analyst
+
+- `push-live.log` is empty because `site/push_live.py` prints only on failure (lines 85, 90); it started and logged
+  none, so the pushes most likely went through. The logs do not show whether anyone watched.
+- Viewer chat: `viewers-20261011-002409.jsonl` is 0 bytes and no `viewer` event reached the caster; no viewer line
+  reached the game chat either.
+- `shot-sync.log` is empty by design (`tools/shot-sync.sh` sends all output to /dev/null); 6 screenshots reached the
+  agents' `shots/` folders.
+- The analyst did not run: start-team at 30d52c9 writes `analyst.log` to the run directory, and there is none, nor any
+  analyst log in `tools/stream/logs` before 01:38:41.
+- `stream-service.log` holds 7 `ConnectionResetError` tracebacks from client disconnects.
 
 ## 7. Recommendations
 
