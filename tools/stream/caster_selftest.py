@@ -641,6 +641,18 @@ check("the writer prompt carries the notes, the 18-word limit and the rewrite no
       str(px))
 
 
+sa = caster.spoken_alert
+check("spoken alerts: losses, raids, power and deaths as a person says them (shake7 aired the raw loss text)",
+      sa("11 lost: 6 pipe, 2 inserter (by small biters)") == "11 lost to small biters. 6 pipes, 2 inserters." and
+      sa("Base under attack near (48, 16): steam engine") == "Biters at the steam engine." and
+      sa("Low power: 84 of 234 machines starved") == "Low power. 84 of 234 machines starved." and
+      sa("Engineer under attack near (-48, 16)") == "Engineer under attack." and
+      sa("Sonnet died; lost assembling machine 1") == "Sonnet died. Lost assembling machine 1.",
+      sa("Sonnet died; lost assembling machine 1"))
+tl_ = caster.TemplateWriter(caster.random.Random(4)).write("pbp", {"kind": "loss"},
+                                                           {"text": "11 lost: 6 pipe, 2 inserter (by small biters)"}, [], [])
+check("the loss template speaks the alert", tl_ in ("Damage report. 11 lost to small biters. 6 pipes, 2 inserters.",
+                                                    "That hurts. 11 lost to small biters. 6 pipes, 2 inserters."), tl_)
 tpl = [t for kinds in caster.TemplateWriter.T.values() for ts in kinds.values() for t in ts]
 check("templates: no style faults, no dashes or semicolons, one exclamation at most", all(
     caster.style_fault(t) is None and not re.search(r"—|–|;", t) and t.count("!") <= 1 for t in tpl),

@@ -959,6 +959,30 @@ def at_phrase(where):
     return "at spawn" if where == "spawn" else f"at the {where}"
 
 
+def spoken_alert(text):
+    """An alert as a person says it. Shake7 aired the template "Damage report: 11 lost: 6 pipe, 2 inserter (by small
+    biters)." twice in a minute; banners also carry map coordinates. -> "11 lost to small biters. 6 pipes, 2
+    inserters." Ends with a full stop."""
+    s = re.sub(r"\s*\bnear \(-?\d+, ?-?\d+\)", "", text)
+    by = re.search(r"\s*\(by ([^)]+)\)", s)
+    s = re.sub(r"\s*\(by [^)]+\)", "", s)
+    head, _, rest = s.partition(": ")
+    lost = re.match(r"^\d+ lost$", head.strip())
+    if by and lost:
+        head = f"{head.strip()} to {by.group(1)}"
+    if head.strip() == "Base under attack" and rest:  # "Base under attack: steam engine"
+        return f"Biters at the {rest.strip().rstrip('.')}."
+    items = []
+    for part in rest.split(", ") if rest else []:
+        m = re.match(r"^(\d+) (.+?)$", part.strip())
+        if lost and m and int(m.group(1)) > 1 and not m.group(2)[-1].isdigit() and not m.group(2).endswith("s"):
+            part = f"{m.group(1)} {m.group(2)}s"
+        items.append(part.strip())
+    rest = ", ".join(items).rstrip(".")
+    out = head.strip().rstrip(".") + "." + (" " + rest[0].upper() + rest[1:] + "." if rest else "")
+    return restyle(out)  # "Sonnet died; lost ..." -> two sentences
+
+
 class TemplateWriter:
     """Fact-safe fallback: fills hand-written lines from the facts. Never says anything not in them."""
     name = "template"
@@ -967,21 +991,21 @@ class TemplateWriter:
                          "We're live. {team_size} agents, one shared world."],
                  "color": ["{team_size} different minds, one shared base. The question is whether they cooperate.",
                            "I love this format. Nobody's in charge, everybody's building."]},
-        "attack": {"pbp": ["Biters. {text}!", "Here they come. {text}.", "Oh, trouble. {text}."],
+        "attack": {"pbp": ["Biters! {text}", "Here they come. {text}", "Oh, trouble. {text}"],
                    "color": ["This is where the defence plan gets tested for real.",
                              "You can build all day, but the biters set the schedule."]},
-        "death": {"pbp": ["Oh no. {text}.", "Ouch. {text}."],
+        "death": {"pbp": ["Oh no. {text}", "Ouch. {text}"],
                   "color": ["Ouch. That's a long walk back from respawn.", "Painful, but the factory keeps running."]},
-        "loss": {"pbp": ["Damage report: {text}.", "That hurts. {text}."],
+        "loss": {"pbp": ["Damage report. {text}", "That hurts. {text}"],
                  "color": ["Losses mean repairs, and repairs mean someone's plan just got interrupted.",
                            "Walls and turrets are consumables out here. Time to rebuild."]},
-        "info": {"pbp": ["Heads up: {text}."], "color": ["Worth keeping an eye on that."]},
+        "info": {"pbp": ["Heads up. {text}"], "color": ["Worth keeping an eye on that."]},
         "research": {"pbp": ["{text}.", "There it is. {text}.", "{text}. One more for the team."],
                      "color": ["That's {technologies_done} technologies done. New toys for everyone.",
                                "Every tech unlock changes the plan. Watch who uses it first."]},
         "research_start": {"pbp": ["Labs switch over: {tech} is next on the list."],
                            "color": ["{tech} next. Smart pick, it unlocks a lot down the line."]},
-        "power": {"pbp": ["Power's low. {text}.", "The power's sagging. {text}."],
+        "power": {"pbp": ["Watch the power. {text}", "The power's sagging. {text}"],
                   "color": ["Power is everything. When it dips, every machine slows down."]},
         "board": {"pbp": ["On the board: {agent_name} {did} {title}.", "Board update. {agent_name} {did} {title}.",
                           "{agent_name} {did} {title}. The board keeps moving."],
@@ -1045,6 +1069,8 @@ class TemplateWriter:
         if facts.get("change"):
             flat["did"] = {"posted": "posts", "taken": "picks up", "done": "finishes",
                            "blocked": "is stuck on"}.get(facts["change"], facts["change"])
+        if flat.get("text") and e["kind"] in ("attack", "loss", "death", "power", "info"):
+            flat["text"] = spoken_alert(flat["text"])
         pool = self.T.get(e["kind"], {}).get(who, [])
         opts = [t for t in pool if t not in self.recent]
         self.rng.shuffle(opts)
