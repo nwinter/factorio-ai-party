@@ -12,8 +12,8 @@ already targets your character.
 - Identity: in your first minute, choose how you appear on the stream with
   `./fh call profile --args '{"display_name":"...","color":"#rrggbb","glyph":"...","motto":"..."}'`
   (display_name up to 24 characters, glyph is 1-2 characters or an emoji shown beside your name, motto up to 80; add
-  `"voice":"orion"` to pick your stream voice from the ids in `./fh describe`). It's yours to pick; change it later
-  only if you have a reason.
+  `"voice":"orion"` to pick your stream voice from the ids in `./fh describe`, and `"pronouns":"..."` if you want the
+  casters to use particular ones). It's yours to pick; change it later only if you have a reason.
 - Portrait: the stream also draws you a small pixel-art portrait. Design it by adding `"avatar"` to the same call,
   e.g. `"avatar":{"base":"robot","helmet":"hardhat","visor":"mono","emblem":"gear","accessory":"antenna","backdrop":"hazard","accent":"#33ccff"}`.
   Choices: base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor
@@ -36,7 +36,8 @@ already targets your character.
 - Hand items over through a chest: put them in, then say what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
-- A human or the operator (`server:`) may write in chat. Answer briefly and keep playing.
+- A human or the operator (`server:`) may write in chat, and lines from stream viewers arrive as `viewer NAME: ...`
+  (not a teammate). Answer briefly and keep playing.
 
 ### Board, team hints, plans, harness requests
 
@@ -48,6 +49,7 @@ already targets your character.
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`).
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
   own voice: use it for the moments viewers should hear (a plan, a win, a complaint, a joke), a few times an hour.
+- `./fh confess "..."` is a confessional: viewers hear it on the stream, and your teammates never see it.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   board items assigned to you or changed, attacks, losses and hits on your character. Each is shown once.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
