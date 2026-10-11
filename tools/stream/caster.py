@@ -649,6 +649,11 @@ def style_fault(line, blob=""):
         if m.group(1) not in ("looks", "look", "sounds", "sound", "feels", "feel", "seems", "something", "more",
                               "just", "much", "anything", "nothing"):
             return "style: simile"
+    # "Forty-seven on circuits, twenty techs deep": 13% of shake4-6's lines said three numbers or more
+    nums = [float(x.replace(",", "")) for x in re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", low)] + \
+        [n for _, n in spelled_numbers(re.sub(r"\d", " ", low))]
+    if sum(n != 1 for n in nums) >= 3:
+        return "style: too many numbers in one line"
     return None
 
 

@@ -572,6 +572,10 @@ check("style: documentary narration, stock words, similes", sf_("Here in the wil
 check("style: a body metaphor on machines unless the facts use the word", sf_("Twelve packs starve six labs.") and
       sf_("Twenty machines starved.", '"low power: 84 of 234 machines starved"') is None
       and sf_("Labs dream of green.") and sf_("Oh, there it is.") is None)
+check("style: three numbers in a line is too many; 'one' and two numbers are fine",
+      sf_("Forty-seven on circuits, twenty techs deep, and 12 labs.") == "style: too many numbers in one line" and
+      sf_("One more lab. Thirty-three science a minute, up from twenty.") is None and
+      sf_("Logistics 2 at sixty-nine percent.") is None)
 check("style faults go through check_line", caster.check_line("The furnaces bleed coal.", {"event": "lull"}, [], [])
       == "style: metaphor 'bleed'")
 tx = caster.tidy_exchange([("pbp", "Biters at the wall!"), ("color", "Oh no!"), ("pbp", "Holding!"),
