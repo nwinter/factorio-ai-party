@@ -902,6 +902,28 @@ function handlers.map(p,a)
   for i=1,math.min(limit,#regions) do out.regions[i]=regions[i] end
   return out
 end
+-- A name filter the engine does not know ("Unknown entity name: tree",
+-- shake4): list the entity names holding every dash-separated part of it
+-- ("rock-huge" finds huge-rock), and say when it is an entity type.
+function M.find_named(surface,filter)
+  local ok,found=pcall(surface.find_entities_filtered,filter)
+  if ok then return found end
+  local bad=tostring(found):match('[Uu]nknown entity name:? *([%w%-_]+)')
+  if not bad then error(found,0) end
+  local parts,matches,is_type={},{},false
+  for part in bad:lower():gmatch('[^%-_]+') do parts[#parts+1]=part end
+  for name,proto in pairs(prototypes.entity) do
+    if proto.type==bad then is_type=true end
+    local all=true
+    for _,part in ipairs(parts) do if not name:find(part,1,true) then all=false end end
+    if all then matches[#matches+1]=name end
+  end
+  table.sort(matches)
+  local shown={}
+  for i=1,math.min(#matches,12) do shown[i]=matches[i] end
+  error(bad..' is not an entity name'..(#matches>0 and '; matching names: '..table.concat(shown,', ')..(#matches>12 and ' ('..#matches..' in all)' or '') or '')
+    ..(is_type and '; '..bad..' is an entity type: filter with type instead' or ''),0)
+end
 -- Cheap targeting: the nearest matches around the player or any charted
 -- position, limited to what the player's map shows.
 function handlers.nearest(p,a)
@@ -913,7 +935,7 @@ function handlers.nearest(p,a)
   local radius=integer(a.radius,32,1,128,'radius')
   local limit=integer(a.limit,5,1,64,'limit')
   local origin,rows=center(p,a),{}
-  for _,e in pairs(p.surface.find_entities_filtered{position=origin,radius=radius,name=a.name,type=a.type}) do
+  for _,e in pairs(M.find_named(p.surface,{position=origin,radius=radius,name=a.name,type=a.type})) do
     if e.valid and e~=p.character and known(p,e) then rows[#rows+1]={entity=e,distance=distance(origin,e.position)} end
   end
   table.sort(rows,function(x,y)
@@ -1054,11 +1076,11 @@ function handlers.scan(p,a)
     local seen={}
     for _,raw in ipairs(a.positions) do
       local pos=position(raw)
-      for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=0.3,name=a.name,type=a.type}) do
+      for _,e in pairs(M.find_named(p.surface,{position=pos,radius=0.3,name=a.name,type=a.type})) do
         if not seen[e] then seen[e]=true; candidates[#candidates+1]=e end
       end
     end
-  else candidates=p.surface.find_entities_filtered{area=area,name=a.name,type=a.type} end
+  else candidates=M.find_named(p.surface,{area=area,name=a.name,type=a.type}) end
   for _,e in pairs(candidates) do
     if e.valid and e~=p.character and known(p,e) then
       if e.type=='resource' and a.ore then ores[#ores+1]=e end
@@ -1293,7 +1315,7 @@ function handlers.observe(p,a)
     active=active(p.index)}
   if a.group then out.entities=nil; out.groups={} end
   local origin=center(p,a)
-  local candidates=p.surface.find_entities_filtered{position=origin, radius=radius,type=a.entity_types,name=a.entity_names}
+  local candidates=M.find_named(p.surface,{position=origin, radius=radius,type=a.entity_types,name=a.entity_names})
   table.sort(candidates,function(x,y)
     local dx,dy=distance(origin,x.position),distance(origin,y.position)
     if dx ~= dy then return dx < dy end
@@ -3507,7 +3529,7 @@ local TARGET={'name','unit_number'}
 local EXTRA_ARGS={attach={'offline'},build={'quality'},collect={'count','quality'},rearm={'quality'},refuel={'quality'},
   move_to={'within'},shoot={'auto'},transfer=TARGET,mine={'unit_number'},repair=TARGET,inspect=TARGET,rotate=TARGET,
   configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
-  board={'status'},board_update={'status','note'},plan_save={'note'}}
+  board={'status'},board_post={'note'},board_update={'status','note'},plan_save={'note'}}
 -- observe forwards to the scoped views; a scoped call is checked as that view.
 local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,sleep_check=true}
 local allowed_args
@@ -3656,6 +3678,15 @@ dispatch_request=function(request)
   if peek or sleeping or request.action=='status' or request.action=='queue_status' or request.action=='queue_cancel' then
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     return handler(body(p),request.args or {})
+  end
+  -- A dead bot's observe answers when it respawns, as sleep_check does
+  -- (shake4: 26 observe calls failed with "is dead").
+  if (request.action=='observe' or VIEW_SCOPES[request.action]) and M.bots.is_index(request.player) then
+    local b=M.bots.record(request.player)
+    if b and not b.travel and not M.bots.alive(b) then
+      return {dead=true,dead_until_tick=b.dead_until_tick,respawns_in_s=b.dead_until_tick and math.max(0,math.ceil((b.dead_until_tick-game.tick)/60)) or nil,
+        note=string.format('bot %s is dead until tick %s; fh sleep SECONDS wakes at the respawn (respawned)',b.name,tostring(b.dead_until_tick))}
+    end
   end
   -- A dead bot still talks (and sleeps until it respawns): it reads and answers the team while it waits to
   -- respawn (or rides a cargo pod). Otherwise a bot aboard a platform (or in a

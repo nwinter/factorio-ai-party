@@ -211,6 +211,13 @@ eq(bot('profile',{glyph='👩‍🚀'}).glyph,'👩‍🚀') -- setting your own
 eq(as_opus({glyph='✦'}).glyph,'✦')
 fails(function() bot('profile',{glyph='✦\239\184\143'}) end,'is taken by opus')
 eq(as_opus({glyph='O'}).glyph,'O')
+-- A colour too close to another agent's is refused the same way (shake4: four
+-- oranges); a far one is fine, and your own colour again is fine.
+fails(function() as_opus({color='#ff9010'}) end,"color #ff9010 is too close to Astra (astra)'s #ff8000")
+fails(function() as_opus({color='#FF8000',glyph='Q'}) end,'pick another, e.g. #e6194b')
+eq(as_opus({}).glyph,'O') -- refused before anything changed
+eq(as_opus({color='#4363d8'}).color,'#4363d8')
+eq(bot('profile',{color='#ff8000'}).color,'#ff8000')
 -- voice: the stream's speaker id, stored lower case, listed in profiles.
 eq(bot('profile',{voice='Orion'}).voice,'orion'); eq(bot('profile',{}).voice,'orion')
 local listed; for _,row in ipairs(bot('profiles',{}).profiles) do if row.name=='astra' then listed=row end end
@@ -339,6 +346,10 @@ end
 -- Sleep works while dead too (shake4: 19 refused sleeps): it sleeps until the
 -- respawn and wakes with respawned; the refusal of other actions points to it.
 fails(function() bot('walk',{direction='east',ticks=5}) end,'fh sleep SECONDS waits and wakes with respawned')
+-- observe answers when the bot respawns instead of failing (shake4: 26 failures).
+local seen=bot('observe',{scope='nearest',name='iron-ore'}); eq(seen.dead,true); eq(seen.dead_until_tick,dead.dead_until_tick)
+assert(seen.note:find('bot astra is dead until tick '..dead.dead_until_tick,1,true),seen.note)
+eq(bot('observe',{}).dead,true)
 local zz=bot('sleep',{seconds=30}); eq(zz.dead,true); eq(zz.respawns_at_tick,dead.dead_until_tick)
 eq(bot('observe',{scope='sleep_check',peek=true}).woke,nil)
 advance(599); eq(bot('status',{}).alive,false)

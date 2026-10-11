@@ -46,7 +46,8 @@ already targets your character.
 
 - The board is the team's shared list in the game save: `./fh board` (add `--args '{"mine":true}'` or
   `'{"status":"active"}'`). Post with `./fh board post --args '{"kind":"request","title":"...","owner":"grok"}'`; kinds
-  are `task`, `request`, `claim` (with `"area":{"left_top":{x,y},"right_bottom":{x,y}}`) and `note`.
+  are `task`, `request`, `claim` (with `"area":{"left_top":{x,y},"right_bottom":{x,y}}`) and `note`. A post may add
+  `"needs":{"iron-plate":200}` and a first `"note":"..."`.
 - Name an owner in a request when you know who should do it. A request without an owner is shown to everyone until someone takes it; take one with
   `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`).

@@ -374,4 +374,10 @@ eq(#storage.agent_harness.board.events<=1000,true)
 local d=runtime.dispatch{action='describe'}
 assert(d.actions.board_post and d.actions.harness_request and d.actions.plan_run and d.actions.board_events)
 eq(request{action='status',args={},player=2}.team,nil)
+-- shake4: posts with note, or needs as {item: count}, failed on shape and were resent.
+r=sol('board_post',{kind='request',title='plates for the mall',needs={['iron-plate']=200,['copper-plate']=100},note='at the mall chest'})
+eq(r.item.needs[1].name,'copper-plate'); eq(r.item.needs[1].count,100); eq(r.item.needs[2].name,'iron-plate'); eq(r.item.needs[2].count,200)
+eq(r.item.notes[1].text,'at the mall chest'); eq(r.item.notes[1].by,'sol')
+fails(function() sol('board_post',{kind='task',title='x',needs={['iron-plate']='lots'}}) end,'maps item names to counts')
+fails(function() sol('board_post',{kind='task',title='x',note='  '}) end,'note is required')
 print('board: ok')
