@@ -321,6 +321,16 @@ def request_segment(base, seg):
         return "unavailable"
     if types.get("busy"):
         return "busy"
+    params = dict(seg.get("params") or {})
+    if seg["type"] == "spotlight" and params.get("agent"):  # the model uses display names; the service wants ids
+        feed = fetch_feed(base) or {}
+        want = str(params["agent"]).lower()
+        hit = next((x["name"] for x in feed.get("agents") or [] if want in (str(x.get("name")).lower(), str(x.get("display_name") or "").lower())), None)
+        if hit:
+            params["agent"] = hit
+        else:
+            params.pop("agent")
+    seg = dict(seg, params=params)
     try:
         r = http_json(base.rstrip("/") + "/segment", {"type": seg["type"], "params": seg.get("params") or {},
                                                        "by": "analyst", "reason": seg.get("reason")})
@@ -347,9 +357,13 @@ def cycle(a, dg, prev, logf):
         except Exception as e:
             log(f"[analyst] POST /analyst failed: {type(e).__name__}: {e}")
         if a.segments:
-            for seg in sorted(reply.get("segments") or [], key=lambda s: -int(s.get("urgency") or 1))[:1]:
-                if int(seg.get("urgency") or 1) >= 2:
-                    reply.setdefault("segment_requests", []).append({**seg, "result": request_segment(a.feed, seg)})
+            for seg in sorted(reply.get("segments") or [], key=lambda s: -int(s.get("urgency") or 1)):
+                if int(seg.get("urgency") or 1) < 2:
+                    break
+                res = request_segment(a.feed, seg)
+                reply.setdefault("segment_requests", []).append({**seg, "result": res})
+                if res != "unavailable":  # one request per cycle; the director allows one segment per 3 minutes
+                    break
     if logf:
         logf.write(json.dumps({"reply": reply, "dropped": dropped, "digest": text if a.log_digest else None}, ensure_ascii=False) + "\n")
         logf.flush()
@@ -420,6 +434,8 @@ def show(reply, dropped):
         print("  next:", (reply["next"] or {}).get("text"))
     for s in reply.get("segments") or []:
         print(f"  segment {s.get('type')} u{s.get('urgency')}: {s.get('reason')}")
+    for s in reply.get("segment_requests") or []:
+        print(f"  requested segment {s.get('type')}: {s.get('result')}")
     for c in reply.get("corrections") or []:
         print("  correction:", c)
     for d in dropped:

@@ -83,7 +83,7 @@ fi
 # Analyst: talking points for the casters every 90 s, read-only (docs/ANALYST-NOTES.md); POG_ANALYST=0 turns it off.
 if [ "${POG_ANALYST:-1}" != 0 ]; then
   nohup python3 tools/stream/analyst.py --world "$world" --bot "$first_bot" --feed http://127.0.0.1:8788 \
-    --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every 90 >"$rundir/analyst.log" 2>&1 &
+    --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every 90 --ask-port 8789 >"$rundir/analyst.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
 fi
 
