@@ -187,7 +187,14 @@ def main():
         s.lua("move platform (operator)", MOVE_LUA)
         poll(s, "platform at vulcanus (moved)", lambda: quiet(READY_LUA), at_v, 120, 3)
 
-    # 4. Land: a hub cargo pod down to Vulcanus; the body is made where it lands.
+    # 4. Cargo first: the hub holds a furnace and coal (loaded by the operator here; in play a rocket brings them),
+    #    the bot drops them to Vulcanus from remote view. Then it lands: a hub cargo pod; the body is made where it lands.
+    s.lua("hub cargo (operator)", '''
+      local pl
+      for _, p in pairs(game.forces.player.platforms) do if p.valid and p.name == "travel-test" then pl = p end end
+      local inv = pl.hub.get_inventory(defines.inventory.hub_main)
+      rcon.print(helpers.table_to_json{furnace = inv.insert{name = "stone-furnace", count = 1}, coal = inv.insert{name = "coal", count = 10}})''')
+    s.fh("drop furnace and coal (aboard)", "drop", {"items": [{"item": "stone-furnace", "count": 1}, {"item": "coal", "count": 10}]})
     land = s.fh("land", "land")
     t1 = tick_of(s.fh("status after land", "status"))
     down = poll(s, "standing on vulcanus", lambda: s.fh("status (landing)", "status"),
@@ -195,16 +202,23 @@ def main():
     s.record("descent ticks", down is not None, {"land_tick": t1, "standing_tick": tick_of(down), "landed": find(down, "landed"), "at": find(land, "at")})
     s.fh("inventory on vulcanus", "inventory")
 
-    # 5. Mine and build on Vulcanus (a stone furnace given by the operator: the hub drop of cargo is not built yet).
+    # 5. Unpack the dropped container, mine and build on Vulcanus.
+    box = find(s.fh("nearest cargo-pod-container", "nearest", {"name": "cargo-pod-container", "radius": 48, "limit": 1}), "entities")
+    if box:
+        s.fh("move_to container", "move_to", {"position": box[0]["position"], "tolerance": 2}, wait=True)
+        s.fh("take the cargo", "transfer", {"position": box[0]["position"], "direction": "to_player", "inventory": "chest"}, wait=True)
     for res in ("coal", "calcite"):
         rows = find(s.fh(f"nearest {res}", "nearest", {"name": res, "radius": 64, "limit": 1}), "entities")
         if rows:
             s.fh(f"move_to {res}", "move_to", {"position": rows[0]["position"], "tolerance": 1.5}, wait=True)
             s.fh(f"mine {res}", "mine", {"position": rows[0]["position"], "ticks": 300}, wait=True)
-    s.lua("give stone-furnace (operator)", f'''
-      local n = 0
-      for _, e in pairs(game.surfaces.vulcanus.find_entities_filtered{{name = "character", force = "player"}}) do n = n + e.insert{{name = "stone-furnace", count = 1}} end
-      rcon.print(helpers.table_to_json{{given = n}})''')
+    inv = s.fh("inventory before build", "inventory") or {}
+    if not any(isinstance(i, dict) and i.get("name") == "stone-furnace" for i in inv.get("inventory") or []):
+        s.record("furnace arrived by drop", False, inv)
+        s.lua("give stone-furnace (operator fallback)", '''
+          local n = 0
+          for _, e in pairs(game.surfaces.vulcanus.find_entities_filtered{name = "character", force = "player"}) do n = n + e.insert{name = "stone-furnace", count = 1} end
+          rcon.print(helpers.table_to_json{given = n})''')
     me = s.fh("status before build", "status") or {}
     p = me.get("position") or {"x": 0, "y": 0}
     s.fh("build stone-furnace on vulcanus", "build", {"item": "stone-furnace", "position": {"x": round(p["x"]) + 3, "y": round(p["y"])}})

@@ -137,6 +137,34 @@ eq(space.land(p,{}).landing,'nauvis'); eq(p.stopped,2)
 platform.space_location=nil; platform.space_connection={from={name='nauvis'},to={name='vulcanus'}}; platform.distance=0.25
 fails(function() space.land(p,{}) end,'not stopped at a planet (at nauvis->vulcanus 25%)')
 p.surface.platform=nil
+-- Drop: hub items go down in a cargo pod to the planet below a stopped platform.
+defines.inventory.cargo_unit=30
+local hub_have={['iron-plate']=5}
+hub_inv.get_item_count=function(q) return hub_have[q.name] or 0 end
+hub_inv.remove=function(q) hub_have[q.name]=hub_have[q.name]-q.count; return q.count end
+local vulcanus_surface={name='vulcanus',pads={}}
+vulcanus_surface.find_entities_filtered=function() return vulcanus_surface.pads end
+game={planets={vulcanus={surface=vulcanus_surface}}}
+p.force.get_spawn_position=function() return {x=0,y=0} end
+local pod_items,drop_pod={},nil
+platform.hub.create_cargo_pod=function()
+  drop_pod={valid=true}
+  local inv={insert=function(st) local n=math.min(st.count,3); pod_items[st.name]=(pod_items[st.name] or 0)+n; return n end,
+    is_empty=function() return next(pod_items)==nil end}
+  drop_pod.get_inventory=function(i) eq(i,30); return inv end
+  drop_pod.destroy=function() drop_pod.valid=false end
+  return drop_pod
+end
+platform.space_location={name='vulcanus',type='planet'}
+fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=9}}}) end,'holds 5 iron-plate, not 9')
+local d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=5}}})
+eq(d.dropped[1],'iron-plate*3'); eq(d.not_sent[1],'iron-plate*2'); eq(hub_have['iron-plate'],2,'only what fit left the hub')
+eq(drop_pod.cargo_pod_destination.surface,vulcanus_surface); eq(drop_pod.cargo_pod_destination.position.x,0); eq(d.to,'vulcanus')
+vulcanus_surface.pads={{position={x=9,y=9}}}
+d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=1}},position={x=4,y=4}})
+eq(d.pad.x,9); eq(drop_pod.cargo_pod_destination.position,nil,'a pad takes it')
+platform.space_location=nil
+fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=1}}}) end,'not stopped at a planet')
 -- Creating a platform goes through the force like the platform GUI.
 p.force.create_space_platform=function(args) return {name=args.name,state=0,planet=args.planet} end
 local made=space.platform_create(p,{name='beta'})

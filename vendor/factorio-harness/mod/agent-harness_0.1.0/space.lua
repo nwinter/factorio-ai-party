@@ -291,6 +291,50 @@ return function(api)
     assert(silo.launch_rocket(destination,rider),'the game refused the launch')
     return {launched=true,to=to,cargo=cargo or 'empty',riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil}
   end
+  -- The hub's drop slots: items from the hub inventory go down to the planet
+  -- below a stopped platform in a cargo pod, to the force's landing pad there,
+  -- else near position (default: a bot's last spot there, else the spawn
+  -- point), where the pod lands as a temporary container to empty by hand.
+  function M.drop(p,a)
+    local own=p.surface and p.surface.platform
+    local pl=M.platform(p,a.platform or (own and own.name))
+    assert(pl.hub and pl.hub.valid,'platform '..pl.name..' has no hub yet')
+    local loc=pl.space_location
+    assert(loc and loc.type=='planet','platform '..pl.name..' is not stopped at a planet (at '..tostring(location(pl))..')')
+    assert(type(a.items)=='table' and #a.items>=1 and #a.items<=20,'items requires 1..20 {item,count,quality?}')
+    local hub_inv=pl.hub.get_inventory(defines.inventory.hub_main)
+    local want={}
+    for i,r in ipairs(a.items) do
+      assert(type(r)=='table','items['..i..'] is {item,count,quality?}')
+      local name,quality=item_name(r.item),r.quality or 'normal'
+      local count=api.integer(r.count,1,1,100000,'count')
+      local have=hub_inv.get_item_count{name=name,quality=quality}
+      assert(have>=count,'the hub of '..pl.name..' holds '..have..' '..name..(quality~='normal' and '@'..quality or '')..', not '..count)
+      want[i]={name=name,quality=quality,count=count}
+    end
+    local planet=game.planets[loc.name]
+    local surface=planet.surface or planet.create_surface()
+    local pod=try(function() return pl.hub.create_cargo_pod() end)
+    assert(pod and pod.valid,'the hub has no free cargo hatch right now; try again shortly')
+    local cargo=pod.get_inventory(defines.inventory.cargo_unit)
+    local sent,left={},{}
+    for _,w in ipairs(want) do
+      local moved=cargo.insert(w)
+      if moved>0 then hub_inv.remove{name=w.name,quality=w.quality,count=moved} end
+      sent[#sent+1]=w.name..(w.quality~='normal' and '@'..w.quality or '')..'*'..moved
+      if moved<w.count then left[#left+1]=w.name..'*'..(w.count-moved) end
+    end
+    if cargo.is_empty() then pod.destroy(); error('nothing fit in the cargo pod',0) end
+    local pad=surface.find_entities_filtered{type='cargo-landing-pad',force=p.force,limit=1}[1]
+    local dest={type=defines.cargo_destination.surface,surface=surface}
+    if not pad then
+      local b=api.bot and api.bot(p)
+      dest.position=a.position~=nil and api.position(a.position) or (b and b.spots and b.spots[surface.name]) or p.force.get_spawn_position(surface)
+    end
+    pod.cargo_pod_destination=dest
+    return {dropped=sent,not_sent=#left>0 and left or nil,to=surface.name,pad=pad and pad.position or nil,near=dest.position,
+      note=pad and 'lands in the landing pad in ~20 s' or 'lands near that spot in ~20 s as a cargo pod container: take the items with transfer (it vanishes when empty)'}
+  end
   -- The hub's "drop to planet": the character descends in a cargo pod to the
   -- planet the platform is stopped at (a landing pad if there is one).
   function M.land(p,a)
@@ -314,6 +358,8 @@ return function(api)
     platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule'},
+    drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',
+      note='the hub\'s drop slots, from remote view: a cargo pod takes the items to the planet below a stopped platform (the landing pad if any, else a temporary container on the ground)',returns='dropped, not_sent, to, pad, near'},
     land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any). A bot lands where it last stood on that planet, else at its spawn point, wearing the armor and guns it rode up with',returns='landing (and for a bot: at, pad)'},
     launch={position='rocket silo {x,y} in a visible chunk',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it)',returns='launched, to, cargo'},
   }

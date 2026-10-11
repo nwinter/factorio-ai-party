@@ -212,7 +212,7 @@ return function(api)
   -- cargo pod down from the hub; the body is made again where that pod comes
   -- down, wearing the same armor and guns. Same payload and the game's own
   -- ascent and descent time as a player's trip.
-  M.ABOARD_NOTE = 'platforms, platform_schedule, platform_create, requests (platform= or position=), ghost tools and grid/scan with platform=, research, recipes/technologies, chat and board, then land'
+  M.ABOARD_NOTE = 'platforms, platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet), ghost tools and grid/scan with platform=, research, recipes/technologies, chat and board, then land'
   local ASCENT_TICKS, MAX_TRAVEL_TICKS, LAUNCH_WAIT = 2400, 18000, 300
   local KIT = {'character_armor', 'character_guns'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
@@ -354,7 +354,7 @@ return function(api)
     end
   end
   -- Aboard, the bot does what a player in the hub can: remote view.
-  local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, land=true,
+  local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, land=true, drop=true,
     research=true, research_next=true, technologies=true, recipes=true, say=true, chat=true, confess=true, confessions=true,
     profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true,
     blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true}

@@ -30,7 +30,9 @@ What differs from the base game:
 - Aboard a platform you have no body. You act by remote view only: `platforms`, `platform_schedule`, `requests`,
   ghost tools with `platform=`, `research`, chat and the board. `land` drops you in a cargo pod to the planet below
   a stopped platform. You land on its landing pad if there is one, else where you last stood on that planet, else
-  near its spawn, in about 20 s. Ship what you need down there first: you land with only your armor and guns.
+  near its spawn, in about 20 s. You land with only your armor and guns, so send what you need down first: `drop`
+  (the hub's drop slots) sends hub items to the planet below in a cargo pod. It goes to the landing pad if there
+  is one, else it lands as a container near where you will land. Take the items out with `transfer`.
 - If you die on another planet, you respawn on the planet where you last stood. If your platform is destroyed
   while you are aboard, you die.
 - Quality: items and machines have a quality (`normal`, `uncommon`, `rare`, `epic`, `legendary`). Counts are per

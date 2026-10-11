@@ -383,7 +383,7 @@ local function summary(e)
 end
 local function contents(inv) return inv and inv.get_contents() or {} end
 local inventories = {
-  chest = {'container','logistic-container','linked-container'},
+  chest = {'container','logistic-container','linked-container','temporary-container'},
   fuel = {'furnace','assembling-machine','boiler','burner-generator','inserter','mining-drill','lab','car','locomotive','reactor'},
   burnt_result = {'furnace','assembling-machine','boiler','burner-generator','mining-drill','car','locomotive','reactor'},
   furnace_source = {'furnace'}, furnace_result = {'furnace'},
@@ -1216,7 +1216,7 @@ function handlers.rates(p,a) return rates.rates(p,a) end
 function handlers.bottleneck(p,a) return rates.bottleneck(p,a) end
 function handlers.stock(p,a) return stock.view(p,a) end
 function handlers.platforms(p,a) return space.platforms(p,a) end
-for _,name in ipairs({'requests','platform_create','platform_schedule','launch','land'}) do
+for _,name in ipairs({'requests','platform_create','platform_schedule','launch','land','drop'}) do
   handlers[name]=function(p,a) return space[name](p,a) end
 end
 local views={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,sleep_check=true}
@@ -3372,7 +3372,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
+local passive={sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
 local reads={labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
