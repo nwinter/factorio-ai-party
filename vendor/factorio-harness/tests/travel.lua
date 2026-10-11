@@ -173,6 +173,7 @@ advance(600); eq(b.character.surface,vulcanus)
 platform_surface.valid=true
 -- With a landing pad, the hub pod goes to the pad (no fixed position).
 bots.board(b,platform,nil); advance(2400)
+eq(b.lost,nil,'a new ride clears the last loss (live on sa it stayed in status)'); eq(bots.status(b.index,{}).lost,nil)
 platform.space_location={name='nauvis',type='planet'}
 nauvis.pads={{position={x=20,y=20}}}
 hub_pod={valid=true,position={x=0,y=0},surface=platform_surface,cargo_pod_state='ascending'}

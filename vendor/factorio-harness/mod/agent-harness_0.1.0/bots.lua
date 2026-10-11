@@ -258,6 +258,7 @@ return function(api)
     c.destroy()
     b.travel = {state='ascending', platform=platform.name, platform_index=platform.index, from=b.planet, pod=pod, since=game.tick, kit=kit, slots=slots}
     b.trips = (b.trips or 0) + 1
+    b.lost = nil; b.landed = nil  -- a new ride: the last one's outcome is stale
     return b.travel
   end
   -- The hub's drop to the planet below: a cargo pod out of the hub's hatch,
