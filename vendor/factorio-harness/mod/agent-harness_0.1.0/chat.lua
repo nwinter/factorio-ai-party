@@ -37,22 +37,34 @@ return function(api)
     end
     c.read[index] = next(set) and set or nil
   end
-  local function append(from, text, index, aloud)
+  local function append(from, text, index, aloud, viewer)
     local c = log()
     c.seq = c.seq + 1
-    local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil}
+    local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil, viewer=viewer or nil}
     c.messages[#c.messages+1] = m
     while #c.messages > MAX_LOG do table.remove(c.messages, 1) end
-    -- Mentions are filed per agent as the message arrives (board.lua).
-    if api.on_message then api.on_message(m) end
+    -- Mentions are filed per agent as the message arrives (board.lua); a
+    -- viewer's @name is not a teammate's, so it files none.
+    if api.on_message and not viewer then api.on_message(m) end
     return c.seq
+  end
+  -- A stream viewer's line relayed by the operator (audience.lua rate-limits
+  -- it): unread for every agent, from "viewer NAME", flagged viewer.
+  function M.viewer(name, text)
+    local line = '[color=0.62,0.62,0.62]viewer ' .. name .. ':[/color] ' .. text
+    if api.audience then
+      for _, viewer in ipairs(api.audience()) do viewer.print(line) end
+    else
+      game.print(line)
+    end
+    return append('viewer ' .. name, text, nil, nil, true)
   end
   M.schema = {
     say = {text='1..500 characters: posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
       aloud='optional boolean: also speak it aloud on the stream (use sparingly)'},
     chat = {since='optional sequence number: every message after it, yours included (default: your unread messages)',
       limit='1..100, newest kept (default 30)', peek='boolean: read without marking as read (overlays, spectators)',
-      returns='messages {seq,tick,from,text,aloud?} oldest first, cursor (latest seq) and remaining (unread messages not returned: older than the newest `limit`; chat again for them). Only returned messages are marked read, unless peek'},
+      returns='messages {seq,tick,from,text,aloud?,viewer?} oldest first (viewer: a stream viewer\'s line the operator relayed, from "viewer NAME"; not a teammate), cursor (latest seq) and remaining (unread messages not returned: older than the newest `limit`; chat again for them). Only returned messages are marked read, unless peek'},
   }
   function M.handlers.say(p, a)
     local text = a.text
@@ -88,7 +100,7 @@ return function(api)
     end
     for i = math.max(1, #picked - limit + 1), #picked do
       local m = picked[i]
-      out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, aloud=m.aloud}
+      out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, aloud=m.aloud, viewer=m.viewer}
     end
     if a.peek ~= true then
       mark(c, p.index, out)

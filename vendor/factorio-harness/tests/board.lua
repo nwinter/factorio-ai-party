@@ -303,6 +303,23 @@ local last=request{action='board_events',args={since_seq=0,limit=200},player=2}
 eq(last.events[#last.events].kind,'harness'); eq(last.events[#last.events].change,'done')
 eq(last.events[#last.events].text,'harness v2: collect skips chests in claims')
 
+-- Confessions (audience.lua): the author and the operator read them; never chat, hints or teammates.
+astra('status'); grok('status')
+r=grok('confess',{text='@astra nobody reads the board but me'}); eq(r.seq,1)
+fails(function() grok('confess',{text='again'}) end,'one confession every 15 s')
+fails(function() astra('confess',{text='x',bogus=1}) end,'unknown argument bogus')
+eq(grok('confessions').confessions[1].text,'@astra nobody reads the board but me'); eq(#astra('confessions').confessions,0)
+eq(op('confessions',{}).confessions[1].from,'grok')
+for _,m in ipairs(storage.agent_harness.chat.messages) do assert(not m.text:find('nobody reads',1,true),'confession leaked into chat') end
+astra('chat',{limit=100})
+t=astra('status'); eq(t.team,nil); eq(t.chat,nil)
+-- Viewer relay: chat from "viewer NAME" for every agent, no mention hint, rate-limited.
+r=op('viewer_say',{name='bob',text='@astra you are doing great'}); eq(r.posted,true)
+t=astra('status'); eq(t.team,nil); eq(t.chat.latest,'viewer bob: @astra you are doing great')
+local msgs=grok('chat',{limit=100}).messages; eq(msgs[#msgs].viewer,true); eq(msgs[#msgs].from,'viewer bob')
+eq(op('viewer_say',{name='bob',text='me again'}).dropped,'viewer_rate')
+fails(function() request{action='viewer_say',args={name='bob',text='x'},bot='grok'} end,'unsupported action')
+
 -- Saved plans: validated like queue plans, per agent, run as a queue submit.
 local plan={{action='walk',args={direction='north',ticks=5}},{action='wait_ticks',args={ticks=10}}}
 r=sol('plan_save',{name='north',steps=plan,note='step north'})

@@ -74,7 +74,7 @@ return function(api)
   function M.get(index) return store()[index] end
   local function public(pr)
     if not pr then return {} end
-    return {display_name=pr.display_name, color=pr.color, glyph=pr.glyph, motto=pr.motto, avatar=pr.avatar, voice=pr.voice}
+    return {display_name=pr.display_name, color=pr.color, glyph=pr.glyph, motto=pr.motto, avatar=pr.avatar, voice=pr.voice, pronouns=pr.pronouns}
   end
   -- Paint the character (and, for a player, the player and chat name colour).
   function M.apply(p)
@@ -90,9 +90,10 @@ return function(api)
     profile = {display_name='1..24 characters', color='"#rrggbb" (character and chat name colour)', glyph='1..2 characters: an emoji or letters (a short tag beside your name)',
       motto='0..80 characters',
       voice='your stream voice (Deepgram Aura-2 speaker, lower case): apollo arcas aries atlas hermes hyperion janus jupiter mars neptune odysseus orion orpheus pluto saturn zeus (masculine); amalthea andromeda asteria athena aurora callista cora cordelia delia electra harmonia helena hera iris juno luna minerva ophelia pandora phoebe theia vesta (feminine); unset or unknown: a default picked from your name',
+      pronouns='optional, 0..32 characters of free text (e.g. "she/her", "they/them", "it"); casters use them when they talk about you; "" clears',
       avatar='pixel portrait, every field optional (unset ones follow from your name): base engineer|robot|biter|drone, helmet none|hardhat|armor|power|crest|hood, visor none|goggles|slit|wide|mono|grid, emblem none|gear|bolt|flask|plate|circuit|rocket|leaf|star, accessory none|antenna|headlamp|scarf|tank|horns|earpiece|pipe, backdrop dark|grid|hazard|glow|night, accent "#rrggbb" (second colour; suit is your color); false clears',
       returns='your profile; with no arguments just reads it'},
-    profiles = {returns='every player and bot (directors excluded): kind bot|player, name, display_name, color, glyph, motto, avatar, voice, position, alive, active (current action kind or false), last_said {text,tick}'},
+    profiles = {returns='every player and bot (directors excluded): kind bot|player, name, display_name, color, glyph, motto, avatar, voice, pronouns, position, alive, active (current action kind or false), last_said {text,tick}'},
   }
   function M.handlers.profile(p, a)
     local all = store()
@@ -103,6 +104,10 @@ return function(api)
     if a.motto ~= nil then pr.motto = text_arg(a.motto, 'motto', 0, 80); changed = true end
     if a.glyph ~= nil then pr.glyph = text_arg(a.glyph, 'glyph', 1, 2); changed = true end
     if a.voice ~= nil then pr.voice = text_arg(a.voice, 'voice', 1, 16):lower(); changed = true end
+    if a.pronouns ~= nil then
+      local v = text_arg(a.pronouns, 'pronouns', 0, 32)
+      pr.pronouns = v:match('%S') and v or nil; changed = true
+    end
     if a.avatar ~= nil then pr.avatar = avatar; changed = true end
     if a.color ~= nil then
       assert(type(a.color) == 'string', 'color must be "#rrggbb"')
