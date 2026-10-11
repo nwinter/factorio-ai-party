@@ -292,8 +292,8 @@ class TemplateWriter:
 class LLMWriter:
     """Workers AI chat model or `claude -p`; output is checked against the facts, templates fill in on failure."""
 
-    def __init__(self, kind, model=None, ai=None, timeout=12):
-        self.kind, self.model, self.ai, self.timeout = kind, model, ai, timeout
+    def __init__(self, kind, model=None, ai=None, timeout=12, bin="claude"):
+        self.kind, self.model, self.ai, self.timeout, self.bin = kind, model, ai, timeout, bin
         self.name = f"{kind}:{model}" if model else kind
         self.spent, self.calls, self.latency = 0.0, 0, []
         if kind == "cf" and ai is None:
@@ -324,9 +324,9 @@ class LLMWriter:
             self.spent += (usage.get("prompt_tokens", len(system + user) / 4) * pin
                            + usage.get("completion_tokens", 40) * pout) / 1e6
         else:
-            if not shutil.which("claude"):
-                raise RuntimeError("claude CLI not found")
-            p = subprocess.run(["claude", "-p", "--model", self.model or "haiku", system + "\n\n" + user],
+            if not shutil.which(self.bin):
+                raise RuntimeError(f"{self.bin} not found")
+            p = subprocess.run([self.bin, "-p", "--model", self.model or "haiku", system + "\n\n" + user],
                                capture_output=True, text=True, timeout=self.timeout * 3)
             if p.returncode:
                 raise RuntimeError(p.stderr.strip()[:200] or f"claude exited {p.returncode}")
@@ -400,6 +400,24 @@ def pick_choice(a):
 
 
 # ---- the service -------------------------------------------------------------------------------------------------
+class Breaker:
+    """Skip a failing backend for a while instead of paying a timeout on every line."""
+
+    def __init__(self, name, limit=3, cool=120):
+        self.name, self.limit, self.cool = name, limit, cool
+        self.fails, self.until = 0, 0.0
+
+    def ok(self):
+        return time.time() >= self.until
+
+    def good(self):
+        self.fails = 0
+
+    def fail(self):
+        self.fails += 1
+        if self.fails >= self.limit:
+            self.fails, self.until = 0, time.time() + self.cool
+            log(f"[{self.name}] {self.limit} failures in a row; using the fallback for {self.cool:.0f} s")
 class Caster:
     def __init__(self, a):
         self.a = a
@@ -426,10 +444,12 @@ class Caster:
         if a.writer == "template":
             self.writer = None
         elif a.writer == "claude":
-            self.writer = LLMWriter("claude", a.model or "haiku")
+            self.writer = LLMWriter("claude", a.model or "haiku", bin=a.claude_bin)
         else:
             self.writer = LLMWriter("cf", a.model or "@cf/meta/llama-3.3-70b-instruct-fp8-fast", ai=ai)
         self.tts = None if a.dry_run else voices.TTS(a.tts, ai=ai)
+        self.tts_fallback = voices.TTS(a.tts_fallback, ai=ai) if a.tts_fallback and not a.dry_run else None
+        self.breakers = {k: Breaker(k, cool=a.backoff) for k in ("writer", "classifier", "tts")}
         self.classifier = Classifier(a.classifier, ai=ai)
         os.makedirs(a.log_dir, exist_ok=True)
         self.log_path = os.path.join(a.log_dir, time.strftime("caster-%Y%m%d-%H%M%S.jsonl"))
@@ -517,10 +537,11 @@ class Caster:
         names = list(self.names(s).values())
         recent = list(self.recent)
         line, backend, err, lat = None, "template", None, 0.0
-        if self.writer:
+        if self.writer and self.breakers["writer"].ok():
             t0 = time.time()
             try:
                 cand = self.writer.write(who, e, facts, recent, names)
+                self.breakers["writer"].good()
                 err = check_line(cand, facts, names, recent) if cand else "empty"
                 if not err:
                     line, backend = cand, self.writer.name
@@ -529,6 +550,7 @@ class Caster:
             except Exception as x:
                 err = f"{type(x).__name__}: {x}"
                 log(f"[{who}] writer failed: {err}")
+                self.breakers["writer"].fail()
             lat = time.time() - t0
         if not line:
             if self.writer:
@@ -566,9 +588,14 @@ class Caster:
         verdict = {}
         if need:
             try:
+                if not self.breakers["classifier"].ok():
+                    raise RuntimeError("backing off")
                 verdict = self.classifier.classify(need, names)
+                self.breakers["classifier"].good()
             except Exception as x:
-                log(f"[chat] classifier failed ({type(x).__name__}: {x}); using heuristic")
+                if str(x) != "backing off":
+                    log(f"[chat] classifier failed ({type(x).__name__}: {x}); using heuristic")
+                    self.breakers["classifier"].fail()
                 verdict = Classifier("heuristic").classify(need, names)
         for m in pending:
             ok, label = (True, "aloud") if m["aloud"] else verdict.get(m["seq"], (False, "?"))
@@ -612,15 +639,23 @@ class Caster:
             self.stats["skipped_no_listener"] += 1
             self.record(**rec, voice=voice_id, pushed=False, reason="no page listening")
             return est
+        tts = self.tts if self.breakers["tts"].ok() else self.tts_fallback
+        if tts is None:
+            self.record(**rec, voice=voice_id, pushed=False, reason="tts backing off")
+            return est
         try:
-            audio, ctype, dur, lat = self.tts.speak(text, voice_id, caster=caster)
+            audio, ctype, dur, lat = tts.speak(text, voice_id, caster=caster)
+            if tts is self.tts:
+                self.breakers["tts"].good()
             meta = dict(meta, duration=round(dur, 2), voice=voice_id)
             self.push(meta, audio, ctype)
-            self.record(**rec, voice=voice_id, pushed=True, tts=self.a.tts, tts_latency=round(lat, 2),
+            self.record(**rec, voice=voice_id, pushed=True, tts=tts.backend, tts_latency=round(lat, 2),
                         seconds=round(dur, 2))
             return dur
         except Exception as x:
-            log(f"[tts] {type(x).__name__}: {x}")
+            log(f"[tts:{tts.backend}] {type(x).__name__}: {x}")
+            if tts is self.tts:
+                self.breakers["tts"].fail()
             self.record(**rec, voice=voice_id, pushed=False, error=str(x)[:200])
             return est
 
@@ -708,7 +743,12 @@ def main():
     ap.add_argument("--feed", default="http://127.0.0.1:8788", help="stream service base URL (serve.py)")
     ap.add_argument("--writer", default="cf", choices=["cf", "claude", "template"])
     ap.add_argument("--model", help="writer model (cf: Workers AI model id; claude: haiku)")
+    ap.add_argument("--claude-bin", default="claude", help="claude CLI to run (pick the personal-subscription one)")
     ap.add_argument("--tts", default="aura2", choices=list(voices.PRICE))
+    ap.add_argument("--tts-fallback", choices=list(voices.PRICE),
+                    help="TTS to use while the main one is backing off (e.g. aura1, say)")
+    ap.add_argument("--backoff", type=float, default=120,
+                    help="after 3 straight failures, skip a backend (writer, classifier, TTS) for this many seconds")
     ap.add_argument("--classifier", default="clef", choices=["clef", "heuristic"])
     ap.add_argument("--gap", type=float, nargs=2, default=[20, 40], metavar=("MIN", "MAX"),
                     help="seconds between caster lines (random in range)")
