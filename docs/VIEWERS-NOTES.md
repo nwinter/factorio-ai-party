@@ -182,7 +182,10 @@ What changed on top of the bridge above:
   active in the last 10 minutes decides; a muted viewer stays muted for the rest of the run (in the save, so a resumed
   shift keeps it). Each vote and result is a `vote: ...` chat notice (never a mention), which the stream puts on its
   ticker. Mute applies to the game only: the hosts and the overlay's viewer lane still see a muted viewer's lines if
-  they pass moderation (a decision to check).
+  they pass moderation (a decision to check). Since the merge into eng/players the mute vote is one kind of the one
+  vote module (votes.lua, with kick, ban and trust on human players): the same `fh vote`, plus `fh vote no`, a
+  10-minute expiry and a 5-minute wait after a decided vote; overlay peeks no longer make an agent active
+  (docs/PLAYERS-NOTES.md, "Votes").
 - agent/team.md describes the viewer lines and the vote tool, without saying when to use them.
 
 Replay (`python3 tools/stream/viewers_report.py`, sample `tools/stream/runs/viewers-hostile.jsonl`, 51 lines): with
