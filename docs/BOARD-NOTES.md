@@ -404,8 +404,9 @@ shake6 0-10m is lower by share, but its talk is the shift-start roll call.
 - `say` is the only way to reach a teammate. shake1 had no board, no @mention inbox, no `chat_remaining` and almost
   no @ (0.3%), and ran at 94%: before any of the later pulls existed, chat was already the coordination channel
   because it was the only one. Every later run carries @ on 92-97% of lines: chat became a set of addressed messages.
-- Mentions wake sleepers (`sleep` returned on a mention only), and the supervisor's idle check counts mentions only.
-  Board changes woke nobody, so a requester who wanted an owner to act had to `say "@owner ..."` as well.
+- Mentions wake sleepers (`sleep` returned early on a mention, never on a board change), and `mention_counts`, the
+  read meant for supervisors, counted mentions only (tools/supervise.sh does not read it; it nudges idle agents on
+  its own timer). Board changes woke nobody, so a requester who wanted an owner to act had to `say "@owner ..."` as well.
 - Board items did not notify their owner when someone else changed them: the requester marking an item done, dropped
   or blocked, reassigning it away, or a claim posted over theirs reached the owner only by chat. New unowned requests
   reached nobody until the 2-minute nudge, so posters announced them with `@everyone`.
