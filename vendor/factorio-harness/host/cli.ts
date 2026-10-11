@@ -51,6 +51,10 @@ const help = `fh — Factorio agent CLI
   fh confess "text"                         A line for the stream audience only (teammates never see it); input as for say
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
   fh tells [--since SEQ]                    Tells you sent or received
+  fh players [NAME] [--args '{"minutes":10}'] Human players on the map: where, group, what each built, removed, ordered, moved
+  fh vote [no] kick|ban|trust PLAYER "reason" Vote on a human player; a majority of the agents active in the last 10 minutes carries it
+  fh votes                                  Open and recent votes
+  fh restore PLAYER [--args '{"minutes":30}'] Cancel the player's pending orders; ghosts of what they removed (built with real items)
   fh stream                                 JSON-lines requests in, replies out; one connection
   fh run --file plan.json                    Sequential actions, waits after each timed action
 
@@ -263,7 +267,33 @@ async function main() {
     positionals.splice(1, positionals.length - 1, command);
     command = 'call';
   }
-  if (command === 'chat' || command === 'tells') { positionals.splice(1, positionals.length - 1, command); command = 'call'; }
+  // Human players: fh vote [yes|no] kick|ban|trust PLAYER "reason", fh votes, fh players [NAME], fh restore PLAYER
+  // (also as fh call vote|players|restore with the same words).
+  if (command === 'call' && ['vote','players','restore'].includes(positionals[1] ?? '') && positionals.length > 2) {
+    command = positionals[1]!;
+    positionals.splice(0, 2, command);
+  }
+  if (command === 'vote') {
+    const args = object(JSON.parse(values.args ?? '{}'),'args');
+    const words = positionals.slice(1);
+    if (words[0] === 'yes' || words[0] === 'no') args.yes = words.shift() === 'yes';
+    if (words.length) args.kind = words.shift();
+    if (words.length) args.player = words.shift();
+    if (words.length) args.reason = words.join(' ');
+    if (typeof args.kind !== 'string' || typeof args.player !== 'string') throw new Error('vote needs a kind and a player: fh vote kick|ban|trust PLAYER "reason", or fh vote no kick PLAYER');
+    values.args = JSON.stringify(args);
+    positionals.splice(1, positionals.length - 1, 'vote');
+    command = 'call';
+  }
+  if (command === 'players' || command === 'restore') {
+    const args = object(JSON.parse(values.args ?? '{}'),'args');
+    if (positionals[1] !== undefined) args.player = positionals[1];
+    if (command === 'restore' && typeof args.player !== 'string') throw new Error('restore needs a player: fh restore PLAYER [--args \'{"minutes":30}\']');
+    values.args = JSON.stringify(args);
+    positionals.splice(1, positionals.length - 1, command);
+    command = 'call';
+  }
+  if (command === 'chat' || command === 'tells' || command === 'votes') { positionals.splice(1, positionals.length - 1, command); command = 'call'; }
   // --since/--limit/--peek for the reads that take them.
   if (values.since !== undefined || values.limit !== undefined || values.peek) {
     const action = positionals[1];

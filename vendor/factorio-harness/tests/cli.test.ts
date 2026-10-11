@@ -268,6 +268,25 @@ test('tell takes recipients then text like say; tells reads with --since',async(
     ['tell',{to:'luna,sol',text:"it's in the mall chest"}],['tell',{to:'team',text:'north belt is down'}],['tells',{since:2}],
     ['tell',{to:'sol',text:'call form'}],['tell',{to:'sol',text:'json form'}]]);
 });
+test('vote, votes, players and restore take words; fh call accepts the same words',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{id:1}};},async port=>{
+    await cli(port,['vote','kick','nick','mined',"the","bus's","poles",'--bot','astra']);
+    await cli(port,['vote','no','kick','nick','--bot','astra']);
+    await cli(port,['call','vote','yes','trust','nick','rebuilt it','--bot','astra']);
+    await cli(port,['votes','--bot','astra']);
+    await cli(port,['players','--bot','astra']);
+    await cli(port,['players','nick','--args','{"minutes":30}','--bot','astra']);
+    await cli(port,['call','restore','nick','--bot','astra']);
+    await cli(port,['restore','--args','{"player":"nick","minutes":5}','--bot','astra']);
+    const bare=await compact(port,['vote','kick','--bot','astra']);
+    assert.equal(bare.code,1); assert.match(bare.stdout,/error: client_error: vote needs a kind and a player/);
+    assert.match((await compact(port,['restore','--bot','astra'])).stdout,/error: client_error: restore needs a player/);
+  });
+  assert.deepEqual(seen.map(r=>[r.action,r.args]),[['vote',{kind:'kick',player:'nick',reason:"mined the bus's poles"}],
+    ['vote',{yes:false,kind:'kick',player:'nick'}],['vote',{yes:true,kind:'trust',player:'nick',reason:'rebuilt it'}],['votes',{}],
+    ['players',{}],['players',{minutes:30,player:'nick'}],['restore',{player:'nick'}],['restore',{player:'nick',minutes:5}]]);
+});
 test('fh call say with words sends them as text (it used to send {})',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request);return {ok:true,result:{seq:1}};},async port=>{
