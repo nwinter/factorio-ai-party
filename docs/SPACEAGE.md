@@ -5,10 +5,11 @@ reach the Shattered Planet, make promethium science, then keep raising science o
 
 Summary:
 
-- Access. The server already has what it needs. Only the director clients are blocked: each one must run the
-  expansion build of Factorio, and our factorio.com account can't download that build until Nick links the Steam
-  account that owns Space Age (steps in section 1). After that the setup stays as it is: N standalone clients, no
-  Steam, user verification off.
+- Access. The server already has what it needs. Each director client needs the expansion build of Factorio.
+  Nick has now linked Steam on factorio.com and downloaded the installer. `tools/win/setup-expansion.ps1` makes a
+  portable copy in `D:\pog`, from the download API zip or, as a fallback, from that installer (section 1). It is not
+  run yet: this session cannot reach the box. After that the setup stays as it is: N standalone clients, no Steam,
+  user verification off.
 - Harness. Most of Space Age is already in the harness. It has platforms, hub requests, platform schedules, the silo
   launch, riding a rocket, landing, ghost construction on platforms, quality on build and transfer, and trigger
   technologies. The space parts have only run against fake-engine tests; the core (walking, mining, crafting, building,
@@ -18,10 +19,13 @@ Summary:
   recipe categories, Gleba plants, no hand-mining of hard-solid ore, the rocket-ride payload rule, bot travel
   refusal, and per-planet peaceful flags. A one-command smoke test is there too.
 - Pace and cost. Reaching promethium science needs about 132k–152k science packs. Most of the work, though, is
-  building on four more planets. Central estimate: about 90 game hours, 105 wall hours and 370 agent-hours (range
-  230–800). With one Astra and the rest Claude agents, that is about 2.8 Codex and 2.6 Claude weekly allowances,
-  plus 45–60 engineer agent-hours. That means about three weeks with one allowance of each per week. After that, the
-  unbounded phase is a fixed weekly budget (section 4).
+  building on four more planets. Reference: a solo Astra reportedly finished all planets in about 44 game hours.
+  Team estimate (option A, 2 to 4 agents): 60 game hours central (range 38–140), about 250 agent-hours, run as 4-hour
+  shifts. The world is paused between shifts. A normal week is 9 shifts, about 30 game hours: 72 Astra hours
+  across both Codex profiles (90% of each, resetting Saturdays) and 72 Claude hours. That is 2 weeks of play after
+  stage 0 for the central case. Option B, a solo Astra like the reference, needs about 105–145 Codex agent-hours
+  (about 1.5 weeks on both Codex profiles), and it isn't blocked on bot travel. After that, the unbounded phase is a
+  fixed weekly budget (section 4).
 
 ## 1. Access
 
@@ -37,19 +41,29 @@ Findings (web research; sources inline; nothing logged in or downloaded):
 | Can the Steam copy run clients instead? | It restarts itself through Steam. A `steam_appid.txt` next to the exe used to stop that (a Wube developer in 2019, same thread). It is unsupported and untested on 2.0, so don't use it. | low |
 | 2.0.77 or 2.1? | Stay on 2.0.77. 2.1 is experimental (2.1.21). It breaks Lua APIs we use (`LuaEntity.fluidbox` removed, `fuel_category` → `fuel_categories`) and changes platforms: drag depends on weight, and characters can't travel to platforms until the first planet research ([2.1.0 notes](https://wiki.factorio.com/Version_history/2.1.0)). | medium-high |
 
-What Nick must do (about 10 minutes; nothing on the box changes until step 4):
+Update (2026-10-10, 23:40): Nick logged in to factorio.com with Steam on the box. The site then offered Space Age,
+and he downloaded the installer (`C:\Users\player\Downloads\Setup_FactorioSpaceAge_2.0.77.exe.zip`, 4.2 GB). So the
+linking step is done. From this session I could not reach the box (SSH blocked) and found no factorio.com token on
+the Mac, so I did not retry the download API, extract the installer or install anything. What I left instead is
+`tools/win/setup-expansion.ps1`, written but not run (there is no PowerShell here to parse-check it). It always
+installs to `D:\pog\factorio-2.0.77-expansion`:
 
-1. Log in at factorio.com with the account whose token we use, open the profile page, and link the Steam account that
-   owns Space Age ("Link Steam account", or log in once with "Log in with Steam").
-2. Check that the download page now offers Space Age, not "Buy". If it doesn't, log out and back in, or relink. If it
-   still doesn't, email support@factorio.com with the factorio.com username and the Steam ID64.
-3. If the token was regenerated, put the new one where the earlier download used it.
-4. Then an engineer downloads `https://www.factorio.com/get-download/2.0.77/expansion/win64-manual` with that
-   username and token and unzips it to `D:\pog\factorio-2.0.77-expansion`. Clients start with
-   `start-client.ps1 -Factorio D:\pog\factorio-2.0.77-expansion` and keep their own config folders and names as now.
-   Nick's Steam install and `%APPDATA%\Factorio` are not touched.
-5. Check `D:\pog\factorio-2.0.77\data\space-age` exists (the server copy). If not, run the server from the expansion
-   zip as well (point `new-instance.ps1` and `start-server.ps1` at it).
+1. Preferred: the portable zip from the download API
+   (`get-download/2.0.77/expansion/win64-manual?username=...&token=...`). The token is on Nick's factorio.com
+   profile page; save it on the box (for example `D:\pog\factorio-token.txt`), then run
+   `tools/winps.sh tools/win/setup-expansion.ps1 -Username NAME -TokenFile D:\pog\factorio-token.txt`.
+   A 403 now would mean the token belongs to a different account from the one Nick linked.
+2. Fallback: `-Installer` unzips Nick's installer into `D:\pog\downloads`. It runs it only if it is an Inno Setup
+   installer, with `/VERYSILENT /CURRENTUSER /NOICONS /TASKS="" /DIR=D:\pog\factorio-2.0.77-expansion`: no Program
+   Files, no shortcuts. Inno still writes an uninstall entry in the registry. If the installer insists on admin
+   rights, it may show a UAC prompt nobody can answer over SSH; the script gives up after an hour. Prefer option 1.
+
+Either way the script writes a `config-path.cfg` that keeps write data next to the install, so `%APPDATA%\Factorio`
+is never used, and checks for `data\space-age`. Clients then start with
+`start-client.ps1 -Factorio D:\pog\factorio-2.0.77-expansion`, keeping their own config folders and names as now.
+Nick's Steam install is not touched. Also check `D:\pog\factorio-2.0.77\data\space-age` (the server copy). If it is
+missing, run the server from the expansion folder too (point `new-instance.ps1` and `start-server.ps1` at it). Server
+and clients must both be exactly 2.0.77.
 
 Clients are now needed only for watching: agents play as bots, and only the one to three director clients and any
 human player need the expansion build.
@@ -225,83 +239,113 @@ Human references: a first base-game rocket averages about 42 hours on HowLongToB
 [leaderboard](https://www.speedrun.com/factorio). I found no reliable figure for a first Space Age playthrough, so
 the brief's "a hundred hours or more" stands.
 
+### Reference: a solo Astra through all planets
+
+Nick reports that a solo Astra finished all planets in about 44 game hours. The source is not in this repo.
+`docs/PLAN.md` records Mira's run, a base-game win with enemies, also at about 44 game hours (4 d 11 h on the Codex
+`/goal` clock, about $4,500 API-equivalent). Check that the two are different runs. If this one is a Space Age run, it
+is the best anchor we have: one strong agent, writing its own tools on top of honest primitives, gets through every
+planet in about 44 game hours, roughly a third of the brief's human estimate. If it ran at Mira's ratio (about 2.4
+wall hours per game hour, since the agent's thinking time counts), it took about 105 wall hours. On one Codex
+profile that is about 105 agent-hours, or 2.6 weekly allowances at our measured 2.5% per hour.
+
 ### Estimate to promethium science
 
-Game hours per stage, with 2 agents on Nauvis rising to 4 (one per planet or platform). The low end assumes the early
-game pace holds; the high end assumes each new planet stalls the team the way oil stalled single agents:
+Game hours per stage, with 2 agents on Nauvis rising to 4. Fulgora and Gleba run in parallel shifts, one agent each,
+so their game hours overlap. The low end is the solo-Astra reference reached by a team. The central case adds our
+harness gaps (bot travel, per-planet reads) and coordination cost. The high end assumes each new planet stalls the
+team the way oil stalled single agents.
 
 | Stage | Low | Central | High |
 |---|---|---|---|
-| Nauvis to a platform making space science, thrusters | 5 | 8 | 15 |
-| Vulcanus base shipping metallurgic packs | 8 | 12 | 25 |
-| Fulgora (electromagnetic) | 8 | 12 | 25 |
-| Gleba (agricultural; spoilage, pentapods) | 10 | 15 | 35 |
-| Aquilo prerequisites and base (cryogenic) | 12 | 20 | 40 |
-| Captivity, fusion, quantum processors, railgun platform, promethium run | 12 | 20 | 50 |
-| Total game hours | 55 | 87 | 190 |
-| Wall hours (×1.2 in real time) | 66 | 105 | 230 |
-| Agent-hours (about 3.5 agents on average) | 230 | 370 | 800 |
+| Nauvis to a platform making space science, thrusters | 5 | 7 | 12 |
+| Vulcanus base shipping metallurgic packs | 5 | 9 | 20 |
+| Fulgora and Gleba in parallel (electromagnetic, agricultural) | 9 | 15 | 40 |
+| Aquilo prerequisites and base (cryogenic) | 9 | 14 | 30 |
+| Captivity, fusion, quantum processors, railgun platform, promethium run | 10 | 15 | 38 |
+| Total game hours | 38 | 60 | 140 |
+| Wall hours (×1.2 in real time) | 46 | 72 | 168 |
+| Agent-hours (about 3.5 agents on average) | 160 | 250 | 590 |
 
-Plus harness engineering (section 3): 15 to 20 sessions, 45 to 60 agent-hours.
+Plus harness engineering (section 3): 15 to 20 sessions, 45 to 60 agent-hours, mostly before and during stage 1.
 
-### Subscription quota
+Option B, the cheap route: run a solo Astra as in the reference. It plays a real player through a client, so it is
+not blocked on bot travel: `launch ride` and `land` already exist for players. About 44 to 60 game hours and 105 to
+145 Codex agent-hours. That is 2.6 to 3.6 weekly allowances, or about 1.5 weeks on both Codex profiles. It is less to
+watch and has no Claude in it. The team (option A) is the stream; option B is the fastest test that the harness
+carries an agent to promethium. Both can share stage 0.
 
-Measured: Codex (Astra) about 2.5% of a weekly allowance per agent-hour, so one weekly allowance buys about 40
-agent-hours. Claude agents use about 1%, so about 100 agent-hours.
+### Quota: weekly resets, shifts and pauses
 
-| Team mix (central 370 agent-hours) | Codex weekly allowances | Claude weekly allowances |
-|---|---|---|
-| Half Astra, half Claude | 4.6 | 1.9 |
-| One Astra, the rest Claude (about 30% Astra) | 2.8 | 2.6 |
-| All Claude | 0 | 3.7 |
+Live quota (ai-usage cache, Sat Oct 10 23:39):
 
-With one Codex and one Claude allowance per week, the one-Astra mix takes about 3 weeks of play for the central case,
-2 for the low and 6 to 7 for the high, plus the engineering sessions. Each extra profile shortens that in proportion.
-Codex is the constraint in every mix with more than one Astra, so Astra should hold the role where it has done best
-(science and the main Nauvis factory) and Claude agents take the other planets.
+| Profile | Weekly used | Weekly reset | Budget per week at our burn rates |
+|---|---|---|---|
+| `codex` (personal) | 1% | Sat Oct 17, ~21:00 | ~40 Astra agent-hours |
+| `codex-b` (account B) | 2% | Sat Oct 17, ~21:00 | ~40 Astra agent-hours |
+| `claude` (personal) | 60% | Tue Oct 13, 10:00 | ~100 Claude agent-hours per full week |
+| `claude-c` (account C) | 39% | Mon Oct 12, 13:00 | ~100 |
+| `claude-b` (account B) | 38% | Fri Oct 16, 16:00 | ~100 |
+
+The run uses five subscription accounts. The Claude ones have 5-hour session windows, so plan on about 100 Claude agent-hours a week spread across them. Rotate the
+profile per shift rather than running one profile hot.
+
+Run the game in shifts, never as one continuous burn:
+
+- A shift is a 4-hour wall block with 2 to 4 agents. At the start the operator resumes the world
+  (`tools/pog.py --world W resume`); at the end, agents write `notes.md` and the operator pauses and saves
+  (`pause`, `save`). Between shifts the world stays paused, so game time moves only while agents play: the score
+  stays comparable and nothing runs unattended.
+- Bots live in the world across shifts. A shift's agent takes over a bot and continues from its `notes.md` and a
+  fresh `status`. The next shift's agent may be a different model or profile.
+- A normal week is 9 shifts (36 wall hours, about 30 game hours) with 2 Astra and 2 Claude agents: 72 Astra hours
+  (90% of both Codex profiles) and 72 Claude hours.
+- Codex resets Saturday around 21:00. Put Astra shifts early in the week and keep Friday and Saturday for
+  Claude-only shifts and engineering, so an overrun never leaves a stage waiting for Codex.
+- When a stage stalls on a missing harness read or action, pause the world (no agent-hours spent) and run engineer
+  sessions on Claude until it is fixed. Don't let agents burn shifts working around it.
+
+At about 30 game hours a week, the central case (60 game hours) takes 2 weeks of play, the low case 1.5 and the high
+about 5, after stage 0.
 
 After promethium the game has no end. Research-productivity levels 1–10 cost about 374k packs, which at 600
-packs/min is about 10 game hours. The unbounded phase is a budget choice, not a finish line. For example, 2 agents
-for 20 wall hours a week costs about 50% of a Codex allowance plus 20% of a Claude allowance a week. Score it by
-packs consumed per hour over all surfaces and the research-productivity level (both now in `tools/pog.py score`).
+packs/min is about 10 game hours. The unbounded phase is a fixed weekly budget, not a finish line. For example, 4
+shifts a week with 2 agents is 32 agent-hours: 16 Astra (40% of one Codex profile) and 16 Claude. Score it by packs
+consumed per hour over all surfaces and the research-productivity level (both now in `tools/pog.py score`).
 
-### Staged plan
+### Staged plan by week
 
 Each stage has a gate; budgets are central estimates.
 
-0. Access and smoke test (this week). Nick links Steam on factorio.com (section 1, 10 minutes). One engineer
-   session:
-   - download the expansion build;
-   - run `tools/sa_smoke.py` on world `sa`;
-   - join with a director client and a human or player client, and test `launch ride`, `land`, platform creation
-     and hub construction for real;
+0. Week of Oct 10 (Codex fresh until Sat Oct 17): access and smoke test. One engineer session with box access:
+   - install the expansion build (`tools/win/setup-expansion.ps1`, section 1);
+   - run `tools/sa_smoke.py` on world `sa`, plus one base-game smoke test, since tonight's harness changes are only
+     fake-tested;
+   - join with a director client and a player client, and test `launch ride`, `land`, platform creation and hub
+     construction for real;
    - test whether a playerless character can ride a rocket.
 
-   Gate: smoke test clean; a platform built from hub items; one ride up and down.
-1. Nauvis to orbit.
+   Gate: smoke tests clean; a platform built from hub items; one ride up and down.
+1. Same week: Nauvis to orbit.
    - Team and setup: 2 agents (Astra + Opus), real time, peaceful, Nauvis enemy bases on (promethium needs them
-     later), sessions of about 3 hours.
-   - Engineering in parallel: bot travel, platform reads, thrusters, asteroids (about 6 sessions).
+     later), 2 to 3 shifts.
+   - Engineering in parallel: bot travel, platform reads, thrusters, asteroids (about 6 sessions, on Claude).
    - Gate: space science packs made on a platform and consumed in Nauvis labs; thrusters researched.
-   - Budget: about 10 wall hours, 20 agent-hours (Codex 25%, Claude 10%).
-   - This stage is also the Space Age version of the base-game rocket goal in `docs/PLAN.md`.
-2. Vulcanus.
-   - A third agent rides to Vulcanus.
-   - Gate: metallurgic packs consumed on Nauvis.
-   - About 15 wall hours, 45 agent-hours.
-3. Fulgora and Gleba.
-   - A fourth agent; spoilage feeding done before Gleba.
-   - Gate: electromagnetic and agricultural packs consumed.
-   - About 30 wall hours, 120 agent-hours.
-4. Aquilo, captivity, fusion, railgun platform, promethium.
+   - Budget: about 9 wall hours, 18 agent-hours. If stage 0 goes fast, start option B in the same week on the
+     spare Codex quota.
+2. Week of Oct 17: Vulcanus, then Fulgora and Gleba.
+   - A third agent rides to Vulcanus. Then a fourth agent; spoilage feeding is done before Gleba.
+   - Gate: metallurgic, electromagnetic and agricultural packs consumed on Nauvis.
+   - About 30 wall hours, 105 agent-hours.
+3. Week of Oct 24: Aquilo, captivity, fusion, railgun platform, promethium.
    - Gate: promethium packs consumed. The Shattered Planet trip itself is a turn-back route, as the game intends.
-   - About 50 wall hours, 200 agent-hours.
-5. Unbounded.
-   - Fixed weekly budget; score is packs per hour and research-productivity level.
+   - About 35 wall hours, 125 agent-hours. The high case spills into November.
+4. Unbounded.
+   - Fixed weekly budget in shifts; score is packs per hour and research-productivity level.
    - Stream it from here on.
 
-Stop early and rethink if any planet stage runs past the high column. The usual cause will be a missing harness read
-or action, which costs an engineer session, not agent-hours.
+Stop early and rethink if any stage runs past the high column. The usual cause will be a missing harness read or
+action, which costs an engineer session, not agent-hours.
 
 ## Open questions to settle on the box
 
