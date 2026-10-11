@@ -186,8 +186,7 @@ Research order changed hands three times:
 - 05:43:00: Opus put advanced-oil-processing back at the front.
 - 05:45:43: Opus put fast-inserter at the front.
 
-Advanced-oil-processing took 12 minutes from first being queued at the front. No team alert tells an agent that
-someone else changed the queue (section 5, P2).
+Advanced-oil-processing took 12 minutes from first being queued at the front.
 
 ### Power and defence
 
@@ -228,3 +227,101 @@ The loss alerts for the two raided cells add up across both shifts (P1 item 1):
 - Workshop: 69 destroyed at the end of shake4, 157 at 06:20.
 
 So the totals cannot be split between the shifts from the alerts alone.
+
+## 3. Agents
+
+The launch went through in one pass:
+
+- Nine agents launched from 05:21:11 to 05:21:29, and all were journaling by 05:21:49 (`start.log`).
+- The nine bots were "kept (alive)" at their old positions (`start.log:14-22`).
+- First game calls came from 05:21:07 (Astra) to 05:21:28 (Muse).
+- Every agent except Gemini played to 06:19 to 06:21. Gemini stopped at 06:07:52 (P1 item 6).
+- The supervisors made 0 nudges. Grok's six checks were all "skip nudge (status done): last request 0-1s ago,
+  working" (`grok/supervisor.log`).
+
+Sleep share is the time from a `sleep` or `wait_until` to the next request other than a sleep poll. The shake4 column
+is from that study, whose method may differ slightly, so read the direction only.
+
+| agent | requests (not polls) | sleep / wait_until | asleep | shake4 asleep (2 h) | failures |
+|---|---|---|---|---|---|
+| Astra | 1,398 (579) | 36 / 2 | 18% | 28% | 16 (1.1%) |
+| Sol | 2,368 (607) | 67 / 1 | 50% | 8% | 15 (0.6%) |
+| Luna | 1,905 (1,567) | 35 / 2 | 9% | 6% | 46 (2.4%) |
+| Opus | 3,484 (275) | 64 / 2 | 86% | 48% | 9 (0.3%) |
+| Sonnet | 2,190 (539) | 39 / 6 | 66% | 13% | 27 (1.2%) |
+| Haiku | 3,073 (580) | 62 / 1 | 73% | 63% | 20 (0.7%) |
+| Grok | 1,136 (869) | 12 / 16 | 30% | 13% | 28 (2.5%) |
+| Gemini (46.5 min) | 646 (642) | 1 / 2 | 6% | 2% | 95 (14.7%) |
+| Muse | 2,863 (652) | 42 / 2 | 70% | 77% | 16 (0.6%) |
+
+Sleep rose for most agents. Opus made 275 calls in the hour other than polls, with 64 sleeps, most of them 300 s. It
+ran its science courier as a saved queue and woke to check it. Sonnet went from 13% to 66% and posted 14 chat
+messages all hour.
+
+Errors:
+
+- Gemini made 73 of its 95 failures on one mistake: `inspect` on pipe positions 50 to 60 tiles away ("target is
+  outside local visible area ... (limit 32 tiles)", 05:22:42 to 05:59:52). The message states the limit, and Gemini
+  kept asking.
+- Luna had 11 target errors and 6 "entity not found".
+- Haiku had 10 placements blocked.
+- About 15 calls across the team used unknown arguments: `placements` for build, `note` for board, `center`,
+  `names` or `left_top` for scan, and others.
+- Of the 10 "is dead" failures, none was a sleep (P1 item 7). Sleep while dead now works: 4 calls were answered
+  "dead: true ... wakes_on: respawn" (Haiku, Gemini, Grok at 05:23, Luna at 05:45). Shake4 had 17 refused.
+- 8 builds were blocked by an item on the ground (Grok 6, Gemini 2; shake4 11). Each named the item and gave the hint.
+  Gemini got past it, and Grok did not (P1 item 8).
+- 4 commands were denied to Claude Code (Haiku 1, Sonnet 2, Opus 1; shake4 7). None ended a turn.
+- Two agents filed a `harness_request`: Opus for the build overlap (P1 item 2), and Astra at 06:19:37 for "queue
+  transfer ammo count50 keep20 up_to80 returned Given amount value(-1) too small" (P2).
+
+Compactions:
+
+| agent | setting | compactions (at) | after | end of run |
+|---|---|---|---|---|
+| Astra | Codex | 3 (05:39, 05:59, 06:16) at about 139K | | 54.9K |
+| Sol | Codex | 2 (05:39, 06:00) at about 139K | | 117.7K |
+| Luna | Codex | 4 (05:31, 05:40, 05:51, 06:03) at 138.5-139.9K | | 139.5K |
+| Opus | Claude | 0 | | 114.1K |
+| Sonnet | Claude 200K | 0 (context nudge at 160.1K, 06:04:54) | | 181.4K |
+| Haiku | Claude 80K | 3 (05:29:45, 05:47:29, 06:10:38) at about 80.5K | 26.2K, 26.9K, 27.7K | 57.1K |
+| Grok | 60% | 1 (06:02:18 to 06:02:59) | | |
+| Gemini | agy | none before the quota stop | | |
+
+Haiku's floor is still rising:
+
+- It came back 0.7K higher after each compaction (26.2K, 26.9K, 27.7K), as in shake4 (24.5K to 31.1K over eight
+  compactions).
+- This session was new, yet its first floor was higher than shake4's first.
+- Its summaries were 8.2K to 9.1K characters (`haiku/context.log:4`, `:8`, `:12`).
+- At 80K it compacts about three times an hour and keeps about 52K of working room.
+- Over the next shifts the room shrinks by about 2K an hour unless notes.md shrinks. Luna's rewrite in this shift
+  shows that can happen.
+
+Codex compaction stalls were shorter than shake4's: Astra about 1.8 minutes each, Sol one of 1.6 minutes, and Luna
+none over 60 s. No Claude turn ended after a compaction, so shake4's supervisor fix was not tested.
+
+Shake4's P1 fixes:
+
+| fix | held? | evidence |
+|---|---|---|
+| Stream helpers from current main | partly | caster code 41f8a20 had the shake1 cutoff (no stale comparison aired) but not the 05:24 to 05:27 harness fixes (P1 item 7) |
+| Sleep while dead | yes | 4 accepted while dead, 0 refused (shake4 17) |
+| Observe while dead (a shake4 P2) | not deployed | landed 05:24:56, after launch; 5 observe failures |
+| Supervisor after a Claude turn ends | not tested | no turn ended after a compaction; 0 nudges |
+| Item on the ground | hint yes, remedy no | P1 item 8 |
+| ElevenLabs voices | hidden for new picks, an old pick remained | P1 item 5 |
+| Naturalist "frozen" | yes | 0 "frozen" in 42 naturalist lines; "still as a heron" twice (Vale 05:58:44, 06:18:22) |
+| Grok run-local home | yes | one start at 05:21:31 from `runs/shake5/grok/.grok-home` |
+
+Astra and Sol still run words together, now from the start of a fresh Codex session:
+
+- Astra at 05:22:41: "has116 iron plus20 magazines".
+- Sol at 05:45:43: "Fourthengineasm2 verifiedworking2h29".
+- With digits glued to words counted, 43 of Astra's 82 messages and 58 of Sol's 82 are squashed. Every other agent
+  has 0, except Luna with 9.
+- In shake4 the squashing began after about 50 minutes, and I put it down to their long Codex contexts. That
+  explanation does not fit a session two minutes old. Sol's shake4 notes.md already holds words like
+  "actualproductionnotyetverified" and "bufferedatOpusblueinput", so the habit probably passed across the shift
+  through the notes.
+- Some squashed lines go to air as aloud lines (section 4).
