@@ -17,12 +17,13 @@ The site uses root-relative links (`/runs/...`), so open it through a server, no
 ## Deploy
 
 ```sh
-npx wrangler pages deploy site/dist --project-name player-of-games
+npx wrangler pages deploy site/dist --project-name player-of-games --branch preview
 ```
 
-The Cloudflare Pages project `player-of-games` has `main` as its production branch. Deploying from any other
-branch (such as `site`) makes a preview deployment with its own URL; the production domain stays empty until
-something is deployed from `main` (or with `--branch main`).
+The Cloudflare Pages project `player-of-games` has `main` as its production branch. Any other `--branch` makes a
+preview deployment: each gets its own URL, and the branch also gets a stable alias
+(`https://preview.player-of-games.pages.dev` for `--branch preview`). Without `--branch`, wrangler uses the current
+git branch. The production domain stays empty until something is deployed with `--branch main`.
 
 The site is unlisted for now. Three things keep it out of search engines; remove all three when it goes public:
 
@@ -39,7 +40,9 @@ The site is unlisted for now. Three things keep it out of search engines; remove
 | Run timelines, charts, end-of-run numbers | `runs/*/scores.jsonl` (the score logger, every ~2 wall minutes); `runs/*/final-score.json` when present supersedes later snapshots |
 | Agent cards: final summary | the "Final summary" section of each agent's `runs/<run>/<agent>/notes.md` |
 | Team chat and quotes | `runs/shake1/chat-full.jsonl` (rebuilt chat); quoted lines are picked by `seq` in `notable_chat` |
-| Study pages | `docs/studies/*.md`, rendered by the small Markdown renderer in `build.py` |
+| Study pages | `docs/studies/*.md`, rendered by the small Markdown renderer in `build.py`, after the study's `rewrite` list in `site.json` |
+| Look and feel | `tools/stream/static/factorio-ui.css` (the art kit shared with the stream overlay, see `docs/ART-NOTES.md`), copied into `dist/static/` at build time; `site/static/style.css` maps the site onto its tokens |
+| Agent portraits | `tools/stream/avatar.py` renders `/static/avatars/<name>.svg` from each agent's name, colour and optional `avatar` parts in `site.json`; the live page draws them in the browser with `tools/stream/static/avatar.js` |
 | Agent pages (`/agents/<name>/`) | every run in `site.json` the agent played, with its role, outcome, stats and chat lines |
 | Operator interventions per run | `incidents` in each run's `site.json` entry (from `operator-interventions.log`, agent notes and `docs/PLAN.md`) |
 | Everything written by hand | `site/content/site.json`: agent identities, experiment write-ups, milestone tables (from `docs/PLAN.md` and agent notes), per-agent stats (from the study), harness changes (from `docs/HARNESS-CHANGES.md` and `docs/BOTS-NOTES.md`) |
@@ -47,7 +50,13 @@ The site is unlisted for now. Three things keep it out of search engines; remove
 
 Adding a run: put its entry under `runs` in `site/content/site.json` (directory, players, milestones, summary;
 `kind` is `versus` for separate worlds or `team` for one shared world), add it to an experiment's `runs`, rebuild.
-Adding a study: drop the Markdown in `docs/studies/` and add an entry under `studies`.
+Adding a study: drop the Markdown in `docs/studies/` and add an entry under `studies` (`title`, `short` for the
+button on the experiments page, `run`, `date`, `summary`). Run pages and the experiments page link every study whose
+`run` matches.
+
+When an agent designs its avatar in game (`profile` with `avatar`, see `docs/ART-NOTES.md`), copy the parts object
+into that agent's entry in `site.json` as `"avatar": {...}` and rebuild. Until then the portraits are the
+renderer's defaults for the name and colour, the same ones the stream overlay shows.
 
 Agents are named by their game names everywhere. Model labels and harness names come from `site.json`, never from
 agents.
@@ -59,6 +68,14 @@ Nothing personal goes on the site. `clean()` in `build.py` redacts e-mail addres
 studies, and the build fails if an e-mail address or local path survives into `dist/`. The repo's prompts,
 `AGENTS.md`/`CLAUDE.md`, quota files, supervisor logs and stream logs are never read. If you add a new source,
 pass its text through `clean()`.
+
+Some studies describe the owner's own machine setup (account routes, personal config, tool names). Those passages
+are rewritten at build time by the study's `rewrite` list in `site.json` (regex, replacement pairs). Each pattern
+must still match or the build stops, so an edit to the study can't slip the original text through. The build also
+fails if any name in `_BLOCKED` in `build.py` (the owner's name, account and personal-tool names) reaches `dist/`.
+
+The only third-party request is the Titillium Web font from Google Fonts, which the art kit uses. Without it the
+pages fall back to Segoe UI or the system font.
 
 ## Configuration (`site/config.json`)
 
@@ -100,7 +117,8 @@ at `/live/?demo=1`.
   },
   "agents": [{
     "id": "astra", "name": "Astra", "model": "GPT-6 Astra", "harness": "Codex",
-    "color": "#9977ff", "glyph": "AS", "motto": "...",      // from profiles; null falls back to a hashed colour
+    "color": "#9977ff", "glyph": "AS", "motto": "...",      // from profiles; null lets the avatar renderer pick
+    "avatar": {"base": "robot", "visor": "mono"},            // optional: the profile's avatar parts, as in ART-NOTES
     "state": "acting|thinking|idle|dead|offline",
     "action": "construct", "location": "green science",
     "camera": "main|cam2|cam3",                              // optional: which director camera shows them
@@ -112,6 +130,8 @@ at `/live/?demo=1`.
 ```
 
 All text is escaped before display, colours must be `#rrggbb`, and links in `last_run.url` must be site-relative.
+`id` is the bot name the portrait is seeded from, so use the same name as the harness `profiles` row; unknown avatar
+parts are ignored by the renderer.
 `_headers` serves `/live/status.json` with `Cache-Control: no-store`.
 
 ## Files
@@ -120,6 +140,7 @@ All text is escaped before display, colours must be `#rrggbb`, and links in `las
 - `check.py`: post-build checks
 - `content/site.json`: hand-written content
 - `config.json`: settings
-- `static/`: `style.css` (light/dark tokens, layout), `site.js` (theme toggle, chart hover), `live.js` (live page)
+- `static/`: `style.css` (light/dark tokens on top of the art kit, layout), `site.js` (theme toggle, chart hover),
+  `live.js` (live page). `factorio-ui.css`, `avatar.js` and `avatars/` are added to `dist/static/` by the build.
 - `live/`: default and sample status files
 - `dist/`: build output (not committed)
