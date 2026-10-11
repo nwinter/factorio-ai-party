@@ -133,15 +133,22 @@ nohup python3 tools/stream/serve.py --world "$world" --run "$rundir/stream.json"
   >"$rundir/stream-service.log" 2>&1 &
 echo $! > "$rundir/stream-service.pid"
 helpers=("stream-service:$!:$rundir/stream-service.log")
-nohup ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
-  -R 8787:127.0.0.1:8788 pogwin >/dev/null 2>&1 &
-echo $! > "$rundir/overlay-tunnel.pid"
-sleep 3
-tools/.venv/bin/python tools/obs.py stream-scene >/dev/null
-tools/.venv/bin/python tools/obs.py scene stream >/dev/null
-tools/.venv/bin/python tools/obs.py reload-overlay >/dev/null || true
-tools/.venv/bin/python tools/obs.py start
-[ "$stream" = --stream ] && tools/.venv/bin/python tools/obs.py stream-start
+# POG_OBS=0: no overlay tunnel, scene, recording or stream (test shifts). OBS control needs the obsws venv; a worktree
+# without one uses the main checkout's.
+if [ "${POG_OBS:-1}" != 0 ]; then
+  py=tools/.venv/bin/python; [ -x "$py" ] || py=$HOME/code/player-of-games/tools/.venv/bin/python
+  nohup ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
+    -R 8787:127.0.0.1:8788 pogwin >/dev/null 2>&1 &
+  echo $! > "$rundir/overlay-tunnel.pid"
+  sleep 3
+  "$py" tools/obs.py stream-scene >/dev/null
+  "$py" tools/obs.py scene stream >/dev/null
+  "$py" tools/obs.py reload-overlay >/dev/null || true
+  "$py" tools/obs.py start
+  [ "$stream" = --stream ] && "$py" tools/obs.py stream-start
+else
+  log "POG_OBS=0: no overlay tunnel, recording or stream"
+fi
 
 first_bot=$(awk -F'\t' '!/^#/ && NF {print $1; exit}' "$team")
 nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$rundir/chat.jsonl" >"$rundir/chat-log.err" 2>&1 &

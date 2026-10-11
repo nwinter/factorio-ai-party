@@ -115,7 +115,29 @@ def dry_run():
     print("start-team dry run: ok")
 
 
+def check():
+    import resume_check
+    s = "This is a later shift."
+    prev = {"tick": 216000, "research_done": ["automation", "logistics", "electronics"], "entities": {"stone-furnace": 40}}
+    now = {"tick": 214000, "research_done": ["automation", "logistics", "electronics"], "entities": {"stone-furnace": 40}}
+    ws = {"haiku": ("(Carried over from the previous shift, run shake4: ...)\n\n# Notes\nGoal: x\n", "# Notes\nGoal: x\n"),
+          "luna": ("# Notes (luna, world n)\n", None)}
+    bots = {"haiku": {"alive": True, "position": {"x": 1, "y": 2}}, "luna": {"alive": True, "position": {"x": 3, "y": 4}}}
+    lines, problems = resume_check.compare(prev, now, None, bots, ["haiku", "luna"], ws, s, s + "\n")
+    assert problems == [], problems
+    assert any("notes.md carried over (2 lines)" in l for l in lines) and any("fresh notes.md" in l for l in lines), lines
+    fresh = {"tick": 600, "research_done": [], "entities": {}}
+    _, problems = resume_check.compare(prev, fresh, None, {"haiku": bots["haiku"]}, ["haiku", "luna"],
+                                       {"haiku": ("# Notes\n", "# Notes\nGoal: x\n")}, s, "")
+    text = " | ".join(problems)
+    for want in ("first game minute", "technologies done", "buildings", "bot luna: missing", "haiku: notes.md is not",
+                 "resume sentence"):
+        assert want in text, (want, text)
+    print("resume_check compare: ok")
+
+
 if __name__ == "__main__":
+    check()
     for script in ("start-team.sh", "new-run.sh", "launch-agent.sh", "stop-team.sh"):
         subprocess.run(["bash", "-n", os.path.join(ROOT, "tools", script)], check=True)
     bots()
