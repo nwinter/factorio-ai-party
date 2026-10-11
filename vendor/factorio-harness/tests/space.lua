@@ -62,6 +62,18 @@ fails(function() space.requests(p,{section=1,platform='alpha',set={{item='coal',
 local view=space.platforms(p,{})
 eq(view.platforms[1].state,'paused'); eq(view.platforms[1].at,'nauvis'); eq(view.platforms[1].hub_items,'iron-plate*5')
 eq(view.platforms[1].requests[1],'iron-plate 100..inf from nauvis'); eq(view.silos[1].parts,'10/50'); eq(view.silos[1].status,'building_rocket')
+eq(view.platforms[1].speed,nil,'details only for one named platform')
+-- One platform in full: speed, damage, chunks, thruster tanks, unbuilt ghosts.
+platform.speed=0.0123; platform.damaged_tiles={{position={x=1,y=1},damage=5}}
+platform.find_asteroid_chunks_filtered=function() return {{name='metallic-asteroid-chunk'},{name='metallic-asteroid-chunk'},{name='oxide-asteroid-chunk'}} end
+local tank=function(fuel,ox) return setmetatable({get_capacity=function() return 1000 end},{__index=function(_,i) return ({{amount=fuel},{amount=ox}})[i] end}) end
+platform.surface.find_entities_filtered=function(f) if f.type=='thruster' then return {{fluidbox=tank(800,500)},{fluidbox=tank(1000,900)}} end return {} end
+platform.surface.count_entities_filtered=function() return 7 end
+local one=space.platforms(p,{platform='alpha'}).platforms[1]
+eq(one.speed,0.012); eq(one.damaged_tiles,1); eq(one.asteroid_chunks,'metallic-asteroid-chunk*2 oxide-asteroid-chunk*1')
+eq(one.thrusters,'2, lowest tank 50%'); eq(one.unbuilt_ghosts,7)
+platform.find_asteroid_chunks_filtered=function() error('no chunks API') end
+eq(space.platforms(p,{platform='alpha'}).platforms[1].asteroid_chunks,nil,'a failing read is skipped')
 local sch=space.platform_schedule(p,{platform='alpha',stops={{station='vulcanus',wait={{type='time',ticks=600}}},{station='nauvis',wait={{type='all_requests_satisfied'}}}},paused=false})
 eq(sch.schedule,'>vulcanus (time 10s) | nauvis (all_requests_satisfied)'); eq(platform.paused,false)
 eq(platform.schedule.records[1].wait_conditions[1].ticks,600)
@@ -81,8 +93,27 @@ p.can_reach_entity=function() return false end
 fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'within reach of the silo')
 p.can_reach_entity=function() return true end
 fails(function() space.launch(p,{position={x=20.5,y=20.5},ride=true}) end,'ride needs platform')
+-- Riding as the silo GUI allows: no other payload, nothing carried but armor and guns.
+defines.inventory.character_main=10; defines.inventory.character_ammo=11
+local carried={[10]=false,[11]=false}
+p.character.get_inventory=function(i) return {is_empty=function() return not carried[i] end} end
+carried[11]=true
+fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'put down everything in character_ammo')
+carried[11]=false
+local saved_cargo=silo_cargo
+silo_cargo={get_contents=function() return {{name='coal',count=5}} end}
+fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'only payload')
+silo_cargo=saved_cargo
 local rode=space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true})
 assert(rode.riding); eq(p.stopped,1)
+-- A bot (no LuaPlayer behind it) is refused before anything moves.
+local bot=setmetatable({__bot='astra'},{__index=p})
+local real_of=function(q) if rawget(q,'__bot') then return nil end return q end
+local bot_space=dofile('mod/agent-harness_0.1.0/space.lua'){position=function(v) return v end,integer=function(v) return v end,
+  remote_entity=function() return silo end,real=real_of,stop=function(q) q.stopped=(q.stopped or 0)+1 end}
+fails(function() bot_space.launch(bot,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'bots cannot ride rockets')
+fails(function() bot_space.land(bot,{}) end,'bots cannot ride rockets')
+eq(p.stopped,1)
 -- Landing: only from our platform stopped at a planet.
 fails(function() space.land(p,{}) end,'not on a space platform')
 p.surface.platform=platform; platform.force=p.force

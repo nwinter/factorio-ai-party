@@ -6,7 +6,7 @@ run=$1 world=$2 player=$3 minutes=$4
 # Co-op overrides: POG_WS (workspace name), POG_CLIENT (client dir on the box), POG_PLAYER_INDEX,
 # POG_TEAMMATE, POG_TEAMMATE_WS, POG_ROLE.
 # Team (bot) runs: POG_BOT (bot name, replaces --player), POG_TEAM (file: "name|model" per line), POG_MODEL,
-# POG_ENEMIES (peaceful|normal, default peaceful).
+# POG_ENEMIES (peaceful|normal, default peaceful), POG_SPACE_AGE=1 (Space Age world: appends agent/spaceage.md).
 ws=${POG_WS:-$world}
 client=${POG_CLIENT:-$world-client}
 index=${POG_PLAYER_INDEX:-1}
@@ -41,9 +41,12 @@ python3 - "$root/agent/PLAYBOOK.md" "$dir/AGENTS.md" "$player" "$time_text" "$co
   "$root/runs/$run/${POG_TEAMMATE_WS:-}/notes.md" "${POG_ROLE:-}" "$root/agent/compact.md" <<'EOP'
 import sys
 src, dst, player, time_text, coop, mate, mate_notes, role, compact = sys.argv[1:]
-text = open(src).read().replace("{{TIME}}", time_text) + coop
-text = text.rstrip("\n") + "\n\n## Compact instructions\n\n" + open(compact).read()
 import os
+text = open(src).read().replace("{{TIME}}", time_text) + coop
+if os.environ.get("POG_SPACE_AGE") == "1":
+    text = text.replace("base game, default map", "Space Age (with Quality and Elevated Rails), default map")
+    text = text.rstrip("\n") + "\n" + open(os.path.join(os.path.dirname(src), "spaceage.md")).read()
+text = text.rstrip("\n") + "\n\n## Compact instructions\n\n" + open(compact).read()
 for k, v in {"PLAYER": player, "TEAMMATE": mate, "TEAMMATE_NOTES": mate_notes, "ROLE": role,
              "ENEMIES": os.environ.get("POG_ENEMIES", "peaceful"), "SEED": os.environ.get("POG_SEED", "20261010")}.items():
     text = text.replace("{{%s}}" % k, v)

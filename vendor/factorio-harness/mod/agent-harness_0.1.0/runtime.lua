@@ -97,6 +97,31 @@ local function real(p)
   return rawget(p,'__player') or p
 end
 local function in_map_view(p) local r=real(p); return r~=nil and r.controller_type==defines.controllers.remote end
+-- Space Age spoilage: per spoilable item in an inventory, the count and the
+-- stalest stack's freshness ("yumako*20 61%"), stalest first; nil when
+-- nothing in it spoils (always, in the base game).
+local function spoil_text(inv,limit)
+  if not (inv and inv.valid) then return nil end
+  local rows,by={},{}
+  for i=1,#inv do
+    local s=inv[i]
+    if s.valid_for_read then
+      local ok,spoiled=pcall(function() return s.prototype.get_spoil_ticks(s.quality)>0 and s.spoil_percent end)
+      if ok and spoiled then
+        local key=s.name..(s.quality.name~='normal' and '@'..s.quality.name or '')
+        local r=by[key]
+        if not r then r={key=key,count=0,fresh=1}; by[key]=r; rows[#rows+1]=r end
+        r.count=r.count+s.count; r.fresh=math.min(r.fresh,1-spoiled)
+      end
+    end
+  end
+  if #rows==0 then return nil end
+  table.sort(rows,function(x,y) if x.fresh~=y.fresh then return x.fresh<y.fresh end return x.key<y.key end)
+  local parts={}
+  for i=1,math.min(#rows,limit or 8) do parts[i]=string.format('%s*%d %d%%',rows[i].key,rows[i].count,math.floor(rows[i].fresh*100)) end
+  return table.concat(parts,' ')..(#rows>(limit or 8) and string.format(' +%d more',#rows-(limit or 8)) or '')
+end
+local function main_inventory(p) local ok,inv=pcall(function() return p.get_main_inventory() end); return ok and inv or nil end
 local function player(index)
   if M.bots.is_index(index) then return M.bots.actor(index) end
   local p = game.get_player(index or 1)
@@ -409,7 +434,7 @@ function handlers.describe()
       describe={}, inventory={returns='the character inventory: inventory (main), guns, ammo, armor, free (slots), crafting (hand queue), warnings (nearly full, hoarding); the same as observe player and status inv'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
-        reports='crafting (hand queue: items, seconds left, head entry); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches, next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name and incidents per 64-tile area with causes, attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
+        reports='crafting (hand queue: items, seconds left, head entry); spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches, next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name and incidents per 64-tile area with causes, attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | timed_out; status reports kills, ammo_used'},
       belt_route={from='{x,y} first belt tile, or an existing belt end to extend; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
@@ -442,7 +467,7 @@ function handlers.describe()
         note='inserter rates are estimates (arm rotation x stack size)'},
       grid={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',returns='one character per tile: rows [{y,row}] from origin, ruler, legend {char: names}. Upper case buildings by type, belts ^>v<, U/J underground in/out, S splitter, ? ghost, @ character, # other; lower case ore; ~ water'},
       power={area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',limit='unpowered rows 1..256 (default 32)',note='networks with a pole in the area: poles, production/consumption kW (5 s average) by prototype, unpowered machines (no_power|low_power|unconnected)'},
-      scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)'},
+      scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)'},
       nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..64 (default 32); map-known entities only',limit='1..64 (default 5)'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait)'},
       wire={from='pole {x,y} (optional name/unit_number) in reach',to='pole {x,y} in reach',disconnect='boolean: remove the copper wire instead'},
       inspect={position='{x,y}',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach'}, rotate={position='{x,y}',reverse='boolean'},
@@ -684,6 +709,7 @@ function handlers.status(p,a)
     evolution=threats.evolution,pollution=threats.pollution,enemies=threats.enemies,chart=threats.chart,threats_as_of=threats.as_of,
     alerts=recent_alerts(a),runtime_fault=state().runtime_fault or false,connected=p.connected,alive=p.character and p.character.valid or false,cheat_mode=p.cheat_mode,
     supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,
+    spoiling=alive and spoil_text(main_inventory(p)) or nil,
     surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,riding=p.driving or nil, last=state().last and state().last[p.index] or false, combat=state().combat and state().combat[p.index] or false, last_combat=state().last_combat and state().last_combat[p.index] or false, tick=game.tick, position=p.position}
 end
 -- The character's inventory on its own (shake2: `call inventory` failed 15
@@ -766,7 +792,7 @@ function handlers.map(p,a)
         end
         for _,kind in ipairs({'tree','rock'}) do
           if a[kind..'s'] then
-            local filter=kind=='tree' and {area=area,type='tree'} or {area=area,type='simple-entity'}
+            local filter=kind=='tree' and {area=area,type=(script and script.active_mods['space-age']) and {'tree','plant'} or 'tree'} or {area=area,type='simple-entity'}
             for _,e in pairs(surface.find_entities_filtered(filter)) do
               local x,y=math.floor(e.position.x),math.floor(e.position.y)
               if math.floor(x/32)==cx and math.floor(y/32)==cy and (kind=='tree' or e.name:find('rock')) then
@@ -879,6 +905,16 @@ local scan_fields={
     return any and stacks_text(all) or nil
   end,
   output=function(e) local ok,inv=pcall(e.get_output_inventory); return ok and inv and stacks_text(inv.get_contents()) or nil end,
+  spoil=function(e)
+    local parts={}
+    for _,name in ipairs(take_order) do
+      local ok,inv=false,nil
+      if name~='fuel' then ok,inv=pcall(inventory,e,name) else ok,inv=true,fuel_inventory(e) end
+      local text=ok and spoil_text(inv,4)
+      if text then parts[#parts+1]=text end
+    end
+    return #parts>0 and table.concat(parts,' | ') or nil
+  end,
   status=function(e) return entity_status_names[e.status] end,
   recipe=function(e) local ok,r=pcall(e.get_recipe); return ok and r and r.name or nil end,
   direction=function(e) return e.supports_direction and e.direction or nil end,
@@ -921,7 +957,7 @@ local scan_fields={
   end,
 }
 -- Fields that change over time; hidden for other forces' entities under fog.
-local live_fields={hp=true,fuel=true,inventory=true,output=true,status=true,ammo=true,target=true,amount=true,lanes=true,fluids=true}
+local live_fields={hp=true,fuel=true,inventory=true,output=true,spoil=true,status=true,ammo=true,target=true,amount=true,lanes=true,fluids=true}
 -- Ore letters are stable per name within one reply: the first unused letter
 -- of the name, upper-cased.
 local function ore_letters(names)
@@ -954,7 +990,7 @@ function handlers.scan(p,a)
     assert(v==nil or type(v)=='string' or (type(v)=='table' and #v<=32),key..' must be a string or up to 32 strings')
   end
   local fields=type(a.fields)=='string' and {a.fields} or a.fields or {}
-  for _,f in ipairs(fields) do assert(scan_fields[f],'unknown field '..tostring(f)..'; use hp|fuel|inventory|output|status|recipe|direction|amount|range|ammo|target|lanes|io|fluids') end
+  for _,f in ipairs(fields) do assert(scan_fields[f],'unknown field '..tostring(f)..'; use hp|fuel|inventory|output|spoil|status|recipe|direction|amount|range|ammo|target|lanes|io|fluids') end
   local limit=integer(a.limit,256,1,1024,'limit')
   local filtered=a.name~=nil or a.type~=nil
   local out={entities={},truncated=false}
@@ -1314,6 +1350,12 @@ end
 function handlers.mine(p,a)
   local e=entity(p,a); friendly(p,e)
   assert(e.minable,'entity is not mineable')
+  -- Space Age: some ores are not hand-mineable (tungsten-ore is hard-solid,
+  -- big mining drills only). Ore is taken through mine_entity, which would
+  -- not check, so check the character's resource categories here.
+  local hand=e.type=='resource' and p.character and p.character.prototype.resource_categories
+  local category=hand and e.prototype.resource_category
+  assert(not category or hand[category],e.name..' is '..tostring(category)..': a character cannot mine it by hand (a drill that mines '..tostring(category)..' can)')
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local action={kind='mine',entity=e,until_tick=game.tick+ticks,products={}}
@@ -1387,10 +1429,17 @@ end
 -- Why a hand craft started fewer than asked: the raw items it runs out of,
 -- following hand-craftable intermediates (gears, cables) down like the
 -- engine does, with where our factory holds each.
+-- Whether a crafter with these categories takes the recipe: its own category
+-- or one of its additional ones (Space Age: pressing, electronics, ...).
+local function takes(categories,recipe)
+  if categories[recipe.category or 'crafting'] then return true end
+  for _,extra in ipairs(recipe.additional_categories or {}) do if categories[extra] then return true end end
+  return false
+end
 local function hand_recipe(p,item)
   local recipe=p.force.recipes[item]
   local categories=p.character and p.character.prototype.crafting_categories or {}
-  if recipe and recipe.enabled and categories[recipe.category or 'crafting'] then return recipe end
+  if recipe and recipe.enabled and takes(categories,recipe) then return recipe end
 end
 local function craft_shortfall(p,name,count,notes)
   local have,short={},{}
@@ -1456,7 +1505,7 @@ local function best_assembler(p,recipe)
   for _,name in ipairs(ASSEMBLERS) do
     local proto=prototypes.entity[name]
     local unlocked=p.force.recipes[name] and p.force.recipes[name].enabled
-    if proto and unlocked and (proto.crafting_categories or {})[recipe.category or 'crafting'] then
+    if proto and unlocked and takes(proto.crafting_categories or {},recipe) then
       local ok,speed=pcall(function() return proto.get_crafting_speed() end)
       return name,ok and speed or proto.crafting_speed or 1
     end
@@ -1511,11 +1560,7 @@ function handlers.craftable(p,a)
   local names=type(a.recipes)=='string' and {a.recipes} or a.recipes
   local out={}
   local categories=p.character.prototype.crafting_categories or {}
-  local function by_hand(recipe)
-    local hand=categories[recipe.category]
-    for _,extra in ipairs(recipe.additional_categories or {}) do hand=hand or categories[extra] end
-    return hand
-  end
+  local function by_hand(recipe) return takes(categories,recipe) end
   if names then
     assert(type(names)=='table' and #names>=1 and #names<=64,'recipes requires 1..64 names')
     for _,name in ipairs(names) do
@@ -1642,7 +1687,7 @@ local function placement_error(p,proto,pos,direction)
       found[#found+1]=string.format('%s standing at (%.1f,%.1f) (ask them to move, or build elsewhere)',who and who..'\'s character' or 'another character',e.position.x,e.position.y)
     elseif e.valid and e.type~='resource' and #found<4 then
       local name=e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.type=='tile-ghost' and 'tile ghost '..e.ghost_name or e.name
-      if e.type=='tree' or e.type=='simple-entity' or e.type=='cliff' then clearable=true end
+      if e.type=='tree' or e.type=='plant' or e.type=='simple-entity' or e.type=='cliff' then clearable=true end
       found[#found+1]=string.format('%s (%g,%g)',name,e.position.x,e.position.y)
     end
   end

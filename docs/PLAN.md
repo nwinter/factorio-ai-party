@@ -93,7 +93,7 @@ of the live world. World queries are limited to charted chunks.
 4. Self-improvement loop: harness engineer works from failure logs, tests in
    sandbox, hot-reloads skills.
 5. Real run: base game, default settings, enemies on, recorded, replay kept.
-6. Space Age.
+6. Space Age: access, harness gaps, cost and staged plan in `docs/SPACEAGE.md`.
 
 ## Results so far (2026-10-10)
 

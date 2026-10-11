@@ -169,7 +169,7 @@ return function(api)
   function M.mark_obstacles(p,g)
     local found,marked={},0
     local lt,rb=footprint(g)
-    for _,e in pairs(p.surface.find_entities_filtered{area={left_top={x=lt.x+0.05,y=lt.y+0.05},right_bottom={x=rb.x-0.05,y=rb.y-0.05}},type={'tree','simple-entity'},force='neutral'}) do
+    for _,e in pairs(p.surface.find_entities_filtered{area={left_top={x=lt.x+0.05,y=lt.y+0.05},right_bottom={x=rb.x-0.05,y=rb.y-0.05}},type=((script and script.active_mods['space-age']) and {'tree','plant','simple-entity'} or {'tree','simple-entity'}),force='neutral'}) do
       if e.valid and e.minable then
         -- The engine takes a LuaPlayer or nothing: a bot or map-view proxy
         -- here fails with "Invalid PlayerIdentification".
