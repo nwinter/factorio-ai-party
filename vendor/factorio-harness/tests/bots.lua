@@ -297,4 +297,19 @@ helpers.create_profiler=function() timers=timers+1; return {stop=function() end,
 eq(runtime.operator.profile_ticks(5).until_tick,tick+5)
 advance(4); eq(#logged,0); advance(1); eq(#logged,1); eq(logged.divided,5); eq(logged[1][5],9)
 advance(5); eq(#logged,1)
+-- A bot's screenshot is rendered by one director client, centred on the bot
+-- (shake1/2: with no by_player every client rendered it into its own folder
+-- and ./shot never delivered); none connected is an error, not a silent no-op.
+local shots={}
+game.take_screenshot=function(t) shots[#shots+1]=t end
+local shot=bot('screenshot',{path='pog/astra/look-1.png'})
+eq(#shots,1); eq(shots[1].by_player,director); eq(shots[1].player,nil); eq(shots[1].path,'pog/astra/look-1.png')
+eq(shots[1].position.x,storage.agent_harness.bots.by_name.astra.character.position.x); eq(shot.client,'pog-director'); eq(shot.queued,true)
+-- A player's screenshot stays on the player's own client.
+eq(runtime.dispatch{action='screenshot',args={path='pog/nick/a.png'},player=1}.client,'nick'); eq(shots[2].by_player,nick)
+game.connected_players={nick}
+eq(bot('screenshot',{path='pog/astra/b.png'}).client,'nick')
+game.connected_players={}
+fails(function() bot('screenshot',{path='pog/astra/c.png'}) end,'no graphical client is connected')
+game.connected_players=players
 print('bots: ok')

@@ -114,7 +114,10 @@ tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_ha
 - `--wait-timeout` is in milliseconds.
 - `fh describe` and `fh doctor` fail with "Invalid bridge response" on the first command to a fresh save
   (Factorio's one-time "commands disable achievements" warning eats it). Repeat the call.
-- Screenshots need the graphical client; they land in `D:\pog\inst\<world>-client\script-output\`.
+- Screenshots need a graphical client: a player's own, or for a bot the first connected director. `./shot` writes
+  `script-output\pog\<ws>\` in that client's folder (`D:\pog\inst\<world>-client<slot>\`), and
+  `tools/shot-sync.sh RUN_DIR CLIENT_DIR...` copies it into the workspace (start-team.sh starts it for the cam clients;
+  for other runs start it by hand, e.g. `tools/shot-sync.sh runs/RUN a-client b-client`).
 - The server answers harness queries while `game.tick_paused` is set, so a turn-based mode is possible.
 - A failed non-read call stops that player's current action. Tools that poll (overlay, watchers) must use read-only
   calls (`status`, `chat` with `peek`) and the world must run the current runtime (`fh deploy`).

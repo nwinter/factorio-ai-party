@@ -2747,10 +2747,28 @@ local function catalog(p,a,kind)
 end
 function handlers.recipes(p,a) return catalog(p,a,'recipes') end
 function handlers.technologies(p,a) return catalog(p,a,'technologies') end
+-- The client that renders a screenshot: a player's own. A bot has none, and
+-- without by_player every connected client rendered it into its own
+-- script-output (shake1/2: ./shot never delivered), so one is chosen: the
+-- first connected director, else the first connected player.
+local function screenshot_client(p)
+  local own=real(p)
+  if own then return own end
+  local pick
+  for _,pl in pairs(game.connected_players) do
+    if pl.valid then
+      local rank=M.is_director(pl.index) and 0 or 1
+      if not pick or rank<pick.rank or (rank==pick.rank and pl.index<pick.player.index) then pick={player=pl,rank=rank} end
+    end
+  end
+  return pick and pick.player
+end
 function handlers.screenshot(p,a)
   assert(type(a.path)=='string' and #a.path<=160 and a.path:match('^[%w_/-]+%.png$') and not a.path:find('..',1,true) and a.path:sub(1,1)~='/','path must be a relative PNG path')
-  game.take_screenshot{player=real(p),by_player=real(p),surface=p.surface,position=p.position,path=a.path,resolution={x=integer(a.width,1280,320,1920,'width'),y=integer(a.height,720,240,1080,'height')},zoom=1,show_entity_info=true}
-  return {queued=true,path=a.path,requires_graphical_client=true}
+  local client=screenshot_client(p)
+  assert(client,'no graphical client is connected to render a screenshot')
+  game.take_screenshot{player=real(p),by_player=client,surface=p.surface,position=p.position,path=a.path,resolution={x=integer(a.width,1280,320,1920,'width'),y=integer(a.height,720,240,1080,'height')},zoom=1,show_entity_info=true}
+  return {queued=true,path=a.path,client=client.name,requires_graphical_client=true}
 end
 function handlers.revive_ghost(p,a)
   local e=entity(p,a); friendly(p,e)

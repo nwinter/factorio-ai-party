@@ -74,6 +74,10 @@ tools/.venv/bin/python tools/obs.py start
 first_bot=$(awk -F'\t' '!/^#/ && NF {print $1; exit}' "$team")
 nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$rundir/chat.jsonl" >"$rundir/chat-log.err" 2>&1 &
 echo $! >> "$rundir/stream-service.pid"
+# ./shot: bots have no client, so a director renders each screenshot; this copies them into the workspaces.
+nohup tools/shot-sync.sh "$rundir" "$world-client-cam1" "$world-client-cam2" "$world-client-cam3" \
+  >"$rundir/shot-sync.log" 2>&1 &
+echo $! >> "$rundir/stream-service.pid"
 # Shoutcasters and voiced agent lines (docs/AUDIO-NOTES.md); POG_CASTER=0 turns them off.
 if [ "${POG_CASTER:-1}" != 0 ]; then
   nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts-fallback aura1 >"$rundir/caster.log" 2>&1 &
