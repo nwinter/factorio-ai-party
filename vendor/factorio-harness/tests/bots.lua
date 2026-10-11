@@ -338,4 +338,13 @@ eq(bot('screenshot',{path='pog/astra/b.png'}).client,'nick')
 game.connected_players={}
 fails(function() bot('screenshot',{path='pog/astra/c.png'}) end,'no graphical client is connected')
 game.connected_players=players
+-- The hourly survey skips a bot aboard a platform (no body): live on sa, tick
+-- 72000, it raised in the tick and quarantined the runtime.
+local ab=storage.agent_harness.bots.by_name.astra
+local ab_body=ab.character
+force.platforms={{valid=true,name='alpha',index=1,surface={valid=true,name='platform-1'},hub=nil}}
+ab.character=nil; ab.travel={state='aboard',platform='alpha',platform_index=1,since=tick}
+advance(3600-tick%3600)
+eq(storage.agent_harness.runtime_fault,nil); eq(ab.travel.state,'aboard')
+ab.travel=nil; ab.character=ab_body; force.platforms=nil
 print('bots: ok')

@@ -43,6 +43,9 @@ if not pl then
   pl = f.create_space_platform{name = "travel-test", planet = "nauvis", starter_pack = "space-platform-starter-pack"}
   pl.apply_starter_pack()
 end
+pl.schedule = nil
+pl.paused = true
+if not (pl.space_location and pl.space_location.name == "nauvis") then pcall(function() pl.space_location = prototypes.space_location.nauvis end) end
 out.platform = {name = pl.name, state = pl.state, at = pl.space_location and pl.space_location.name or nil}
 rcon.print(helpers.table_to_json(out))
 """
@@ -111,6 +114,11 @@ rcon.print(helpers.table_to_json(out))
 """
 
 
+def R(reply):
+    """The result of an fh reply ({id, ok, tick, result})."""
+    return reply.get("result") or {} if isinstance(reply, dict) else {}
+
+
 def tick_of(value):
     t = find(value, "tick")
     return t if isinstance(t, int) else None
@@ -150,7 +158,7 @@ def main():
     # 1. The bot, standing somewhere on Nauvis; setup next to it.
     s.lua("bot_create", f'local ok,r=pcall(remote.call,"agent_harness","bot_create","{a.bot}") rcon.print(helpers.table_to_json({{ok=ok,r=r}}))')
     st = s.fh("status", "status")
-    pos = (st or {}).get("position") or {"x": 0, "y": 0}
+    pos = R(st).get("position") or {"x": 0, "y": 0}
     setup = s.lua("setup (operator)", SETUP_LUA.replace("AT_X", str(pos["x"])).replace("AT_Y", str(pos["y"])))
     poll(s, "rocket ready, hub built", lambda: quiet(READY_LUA), lambda v: v.get("ready") and v.get("hub"), 120)
     silo = (setup or {}).get("silo")
@@ -165,7 +173,7 @@ def main():
       local c = s.create_entity{{name = "wooden-chest", position = s.find_non_colliding_position("wooden-chest", {{{silo["x"] - 8}, {silo["y"]}}}, 8, 1), force = "player"}}
       rcon.print(helpers.table_to_json{{chest = c.position}})''')
     chest = find(s.fh("nearest chest", "nearest", {"name": "wooden-chest", "radius": 16, "limit": 1}), "entities")
-    inv = s.fh("inventory", "inventory") or {}
+    inv = R(s.fh("inventory", "inventory"))
     for key in ("inventory", "ammo"):
         for item in (inv.get(key) or []):
             if chest and isinstance(item, dict) and item.get("name"):
@@ -198,7 +206,7 @@ def main():
     land = s.fh("land", "land")
     t1 = tick_of(s.fh("status after land", "status"))
     down = poll(s, "standing on vulcanus", lambda: s.fh("status (landing)", "status"),
-                lambda v: v.get("surface") == "vulcanus" and v.get("alive") is True, 180, 3)
+                lambda v: R(v).get("surface") == "vulcanus" and R(v).get("alive") is True, 180, 3)
     s.record("descent ticks", down is not None, {"land_tick": t1, "standing_tick": tick_of(down), "landed": find(down, "landed"), "at": find(land, "at")})
     s.fh("inventory on vulcanus", "inventory")
 
@@ -212,15 +220,14 @@ def main():
         if rows:
             s.fh(f"move_to {res}", "move_to", {"position": rows[0]["position"], "tolerance": 1.5}, wait=True)
             s.fh(f"mine {res}", "mine", {"position": rows[0]["position"], "ticks": 300}, wait=True)
-    inv = s.fh("inventory before build", "inventory") or {}
+    inv = R(s.fh("inventory before build", "inventory"))
     if not any(isinstance(i, dict) and i.get("name") == "stone-furnace" for i in inv.get("inventory") or []):
         s.record("furnace arrived by drop", False, inv)
         s.lua("give stone-furnace (operator fallback)", '''
           local n = 0
           for _, e in pairs(game.surfaces.vulcanus.find_entities_filtered{name = "character", force = "player"}) do n = n + e.insert{name = "stone-furnace", count = 1} end
           rcon.print(helpers.table_to_json{given = n})''')
-    me = s.fh("status before build", "status") or {}
-    p = me.get("position") or {"x": 0, "y": 0}
+    p = R(s.fh("status before build", "status")).get("position") or {"x": 0, "y": 0}
     s.fh("build stone-furnace on vulcanus", "build", {"item": "stone-furnace", "position": {"x": round(p["x"]) + 3, "y": round(p["y"])}})
     s.fh("refuel", "refuel", {"radius": 8}, wait=True)
     s.fh("map on vulcanus", "map", {"radius": 16})

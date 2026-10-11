@@ -3816,13 +3816,14 @@ function M.tick_body(event)
   if event.tick%3600==0 then
     for _,connected in pairs(game.connected_players) do
       local ok,p=pcall(player,connected.index)
-      if ok then survey.sample(p) end
+      if ok then pcall(survey.sample,p) end
     end
   end
   if event.tick%3600==0 then
     for _,b in ipairs(M.bots.list()) do
       local ok,p=pcall(player,b.index)
-      if ok then survey.sample(p) end
+      -- A bot aboard a platform has no body to sample (live on sa, tick 72000).
+      if ok and p.character then pcall(survey.sample,p) end
     end
   end
   scheduler.tick()
