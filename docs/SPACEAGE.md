@@ -385,3 +385,18 @@ avoid them:
 Space Age note: `clear_remnants` removes type `corpse` (stumps, biter corpses, ruins) under a new building, as a
 player's build does; `only_obstacles` counts neutral `tree`, `plant` (wild Gleba plants; a force's own farm plants
 are not), `simple-entity` (rocks) and remnants as what a ghost may go over. Details: `docs/HARNESS3-NOTES.md`.
+
+eng/harness3 round 5 (2026-10-11, agents' tool requests). `bots.lua` is still not touched. Hunks:
+- `runtime.lua`: `position()` (accepts `[x,y]`); `assert_visible` (message); `entity()` (footprint pick, miss lists
+  nearby entities, ambiguous names both, an item on the ground is a fallback like ore); `summary()` and
+  `scan_fields.io` (a mining drill's drop tile); `build_one` (own-character check before placing) and
+  `handlers.build` (step aside, `skip_failed`); the `feed` branch of `M.tick_body` (walks off the footprint, then
+  reruns the build); `handlers.inspect` (drill drop); `begin_craft` (machine-only recipe error); describe `target`,
+  `build`, `inspect`. No new top-level locals.
+- `construction.lua`: new `M.in_box`, `M.aside`. `M.aside` reads `p.surface` and `p.character`, so it follows the
+  bot to whatever surface it is on.
+- `scheduler.lua`: `snapshot(q,recent)`; the changing queue calls return the newest 3 history entries.
+- Tests: `tests/bots.lua`, `tests/scheduler.lua`, `mod/tests/runtime_test.lua`.
+
+For bot travel: the step-aside walk uses `steer` and `p.walking_state` like `move_to`; on a platform or after a
+landing it works unchanged as long as the bot proxy's `character`, `surface` and `position` follow the bot.
