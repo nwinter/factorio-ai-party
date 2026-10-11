@@ -168,15 +168,16 @@
   }
 
   function connect() {
-    const es = new EventSource("/audio-events");
-    es.onmessage = (e) => {
+    // the page's one event stream (overlay.js opens it first; /events?audio=1 sends new clips as `audio` events)
+    const es = window.pogEvents || (window.pogEvents = new EventSource("/events?audio=1"));
+    es.addEventListener("audio", (e) => {
       try {
         const clip = JSON.parse(e.data);
         const ch = clip.channel === "agent" ? "agent" : "caster";
         queues[ch].push(clip);
         playNext(ch);
       } catch (err) { console.error(err); }
-    };
+    });
   }
   connect();
 })();

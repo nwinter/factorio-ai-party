@@ -177,9 +177,31 @@ stops a player.
 
 `--viewers-youtube TARGET`, `--viewers-site`, `--viewers-replay JSONL` start `tools/stream/viewers.py` inside the
 service; the snapshot then carries `viewers` (filtered messages, oldest first) and `viewers_status`. Without these
-options `viewers` is an empty list and `viewers_status` null. The page draws the last two messages under five minutes
-old in a blue lane in the chat panel: a YT or SITE tag, the name (yellow for YouTube staff), the text on one line,
-and "to the agents" on messages flagged as orders. Viewer names and text are set as text, never HTML.
+options `viewers` is an empty list and `viewers_status` null. The page puts messages under five minutes old (the last
+four) into the main chat feed in time order with the agents' lines, so they scroll away like the rest (shake7: in a
+lane of their own, Nick's line stayed up): a YT or SITE badge where agents have an avatar, the name in blue (yellow
+for YouTube staff), a "viewer" tag, and "to the agents" on messages flagged as orders. Viewer names and text are set
+as text, never HTML.
+
+## Shake7 notes (2026-10-11): what changed for the 17:00 shift
+
+- One event stream per page. A browser keeps 6 connections per host and an open event stream holds one for good; in
+  shake7 the overlay, portrait and audio-test pages each held `/events` and `/audio-events`, all 6 were taken and the
+  voice clips never downloaded, so the hosts were silent. Now `/events?audio=1` carries the clips as `audio` events
+  and overlay.js and audio.js share one EventSource (`window.pogEvents`); the replay banner keeps its plain
+  `/events`. Overlay, audio-test, portrait and replay on one host hold 4, leaving 2 for clips
+  (`tools/stream/test_connections.py`, which also checks a clip downloads with all four open). `/audio-events` stays
+  for pages loaded before the change. Pages pick this up when OBS reloads them (`tools/obs.py reload-overlay`).
+- Analysis segments are a small card (540 px) in the main camera's lower left, never the whole camera; production,
+  research, recap and Space run 10 to 20 s. Production only runs when a line moved 25% in 10 minutes (or started),
+  and shows the top three movers; a recap only when its window has research, board items done, attacks or deaths (a
+  due recap with nothing in it is skipped and its 20-minute clock restarts, so it never holds the queue).
+- Science, team board and Space take turns in one 124 px slot, 18 s each (portrait: science and Space), so chat keeps
+  its room.
+- A Space platform counts once its hub exists: the score read carries `hub`, and a record waiting for its starter
+  pack (the New platform button) is not a platform. Shake7 announced "First space platform: Solstice" on that record.
+- Checked: selftest, test_connections.py and jsdom renders of both pages from the mock (one event stream, viewer
+  lines in order and escaped, the production card, the widget rotation). Not looked at in OBS.
 
 ## Segments (shots the casters or the director start)
 

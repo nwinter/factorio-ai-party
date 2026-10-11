@@ -102,7 +102,9 @@ for _, s in ipairs(all) do
   if s.planet and s.count_entities_filtered{force = f, limit = 1} > 0 then planets[#planets+1] = s.name end
 end
 for _, p in pairs(f.platforms or {}) do
-  if p.valid then platforms[#platforms+1] = {name = p.name, at = p.space_location and p.space_location.name or "in transit"} end
+  -- hub: false for a platform record still waiting for its starter pack (the New platform button), before any rocket
+  if p.valid then platforms[#platforms+1] = {name = p.name, at = p.space_location and p.space_location.name or "in transit",
+    hub = (p.hub ~= nil and p.hub.valid) or false} end
 end
 local cur = f.current_research
 rcon.print(helpers.table_to_json{tick = game.tick, ticks_played = game.ticks_played, paused = game.tick_paused,

@@ -130,6 +130,10 @@ def space_checks():
     snap = m.snapshot(t)
     assert snap["space"]["active"] and snap["space"]["rockets"] == 1 and snap["space"]["summary"] == "1 rocket", snap["space"]
     plat = {"name": "Orbital One", "at": "nauvis"}
+    # the New platform button: a record waiting for its starter pack, no hub yet -> not a platform (shake7, Solstice)
+    m.ingest({"agents": base, "space": {"rockets": 1, "planets": ["nauvis"], "platforms": [
+        {"name": "Solstice", "at": "nauvis", "hub": False}, {"name": "Dawn", "at": "nauvis", "state": "waiting_for_starter_pack"}]}}, t + 0.5)
+    assert not m.moments and not m.snapshot(t + 0.5)["space"]["platforms"], list(m.moments)
     m.ingest({"agents": base, "space": {"rockets": 2, "planets": ["nauvis"], "platforms": [plat]}}, t + 1)
     assert [x["kind"] for x in m.moments] == ["first_platform"], list(m.moments)
     away = [base[0], dict(base[1], surface="vulcanus")]
@@ -377,8 +381,16 @@ def main():
     assert {r["type"]: r["available"] for r in seg.types(t5)["types"]}["attack_replay"] is False
     code, rep = seg.request({"type": "nope"}, t5)
     assert code == 400, rep
+    rep = seg.request({"type": "production"}, t5)[1]
+    assert rep.get("why") == "no item's rate moved by 25% in 10 minutes", rep  # no history: nothing worth a card
+    # iron plates tripled over 10 minutes (2-minute buckets), gears steady: the card shows the mover only
+    s5["production"] = [{"item": "iron-plate", "rate": 300.0, "series": [100.0] * 6 + [300.0]},
+                        {"item": "iron-gear-wheel", "rate": 50.0, "series": [48.0] * 6 + [50.0]}]
+    seg.snap = s5
     code, rep = seg.request({"type": "production", "seconds": 999, "by": "caster", "reason": "lull"}, t5)
-    assert code == 200 and rep["seconds"] == 45 and rep["facts"]["science_per_min"] == 30.0, rep
+    assert code == 200 and rep["seconds"] == 20 and rep["facts"]["science_per_min"] == 30.0, rep
+    assert [i["item"] for i in rep["facts"]["items"]] == ["iron plate"] and rep["facts"]["items"][0]["change_pct"] == 200
+    assert rep["title"] == "Production: iron plate +200% in 10 min", rep["title"]
     assert seg.request({"type": "research"}, t5)[0] == 409  # busy
     assert seg.step(s5, t5 + 1)["state"] == "starting" and seg.step(s5, t5 + 4)["state"] == "live"
     assert seg.camera() is None  # production leaves the cameras alone
@@ -410,8 +422,15 @@ def main():
     assert lull.queue and lull.queue["by"] == "director" and lull.queue["type"] == "production", lull.queue
 
     # recap: due every recap_every, ahead of the lull rotation, even when requests keep the lull clock from running
+    # a recap with nothing in its window is skipped and its clock restarts (it never blocks the queue)
+    re0 = Segments(lull_after=1e9)
+    t9 = re0.last_recap
+    re0.step(s5, t9 + 1201)
+    assert re0.queue is None and re0.last_recap == t9 + 1201, (re0.queue, re0.last_recap - t9)
+    assert re0.request({"type": "recap"}, t9 + 1300)[1].get("why") == "nothing happened in the window"
     rc = Segments(lull_after=1e9, spacing=180)
     t9 = rc.last_recap
+    rc.history.append((t9 + 1000, "death", "Astra died"))
     rc.last_start = t9 + 1100  # a host request 100 s before the recap is due
     rc.step(s5, t9 + 1201)
     assert rc.queue is None, "spacing still holds"
@@ -426,6 +445,7 @@ def main():
     # overdue (10 minutes late, shake4's replays kept the slot): next after the running segment, others refused
     ro = Segments(lull_after=1e9, spacing=180)
     t9 = ro.last_recap
+    ro.history.append((t9 + 1500, "attack", "Base under attack"))
     ro.step(s5, t9 + 1)
     rep = ro.request({"type": "overview"}, t9 + 1790, ignore_spacing=True)  # a replay-like request
     assert rep[0] == 200, rep
