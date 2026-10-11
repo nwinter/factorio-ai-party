@@ -150,7 +150,120 @@ What limited the second hour, in order of cost:
 
 ## 3. Agents
 
-PENDING
+Sources: each workspace's journal.jsonl.gz, supervisor.log, context.log, compactions.md and notes.md; the Codex
+rollouts (`~/.codex-account-b/sessions/2026/10/11/` for Astra and Luna, `~/.codex/sessions/2026/10/11/` for Sol), the
+Claude Code transcripts for the three `runs-shake4-<agent>` project dirs, Grok's session under `~/.grok/sessions/`,
+agy's `brain/.../transcript.jsonl` and `log/cli-20261011_*.log`. "Decisions" are requests other than status reads,
+chat peeks and sleep checks.
+
+### Launch and stops
+
+- One-pass launch held: nine agents from 02:52:17 to 02:52:33, all journaling by 02:52:57 (`start.log:13-32`; shake3
+  4.5 minutes, five agents waiting out the readiness loop).
+- No early stops. Every harness kept one turn to the deadline: Codex turn ends 04:52:05 to 04:52:37, Claude 04:52:06 to
+  04:52:25, Grok 04:52:15; last decisions 04:51:16 to 04:52:26 for all nine.
+- All nine wrote a final summary into notes.md (Luna's headed "(draft, deadline 04:52 PDT)", `luna/notes.md:69`;
+  Sonnet's "(final, 1h53m)") and kept playing after it. The shake3 stop-rule change held.
+- Two mid-run turn ends, both Claude Code, 7 to 44 seconds after an auto-compaction: Sonnet (compacted 03:41:32, turn
+  end 03:41:39, nudged 03:44:05) and Haiku (04:20:44, 04:21:28, 04:23:50) (P1 item 3).
+- Supervisor: 2 nudges in the run, both after a real turn end. Grok's 5 checks were correct skips ("status done: last
+  request 0-1s ago, working", `grok/supervisor.log:1-5`), and Muse got none (shake3: 5 while it was building). The
+  shake3 misfire did not recur. Gemini's agy loop never had to restart it: one conversation, 02:52:39 to 04:52:08.
+
+### Activity and sleep
+
+| Agent | Decisions (h1 / h2) | `./fh sleep` calls | Asleep, whole run (last 30 min) | Woken by a mention | Gaps >120 s outside sleep |
+|---|---|---|---|---|---|
+| astra | 994 (547 / 447) | 118 | 33.9 min, 28% (5.8) | 169 of 233 | 8.9 min, compaction stalls |
+| sol | 1,233 (568 / 665) | 27 | 9.7, 8% (0) | 40 of 52 | 10.7 min, compaction stalls |
+| luna | 2,030 (1,067 / 963) | 81 | 7.7, 6% (2.4) | 30 of 38 | 5.3 min |
+| opus | 1,175 (753 / 422) | 104 | 57.0, 48% (23.0) | 196 of 208 | 0 |
+| sonnet | 1,310 (716 / 594) | 32 | 16.0, 13% (7.3) | 52 of 64 | 2.5 min, turn end |
+| haiku | 1,075 (487 / 588) | 122 | 75.4, 63% (20.5) | 218 of 244 | 2.5 min, turn end |
+| grok | 1,816 (864 / 952) | 38 | 15.6, 13% (6.4) | 20 of 76 | 0 |
+| gemini | 1,212 (719 / 493) | 4 | 2.1, 2% (2.1) | 6 of 8 | 0 |
+| muse | 577 (337 / 240) | 130 | 92.5, 77% (27.7) | 186 of 260 | 0 |
+
+- "Asleep" runs from a sleep's reply to the next decision, capped at the requested length plus 5 seconds. Shake3, one
+  hour: Haiku 74%, Opus 40%, Sonnet 32%. Sleep is now spread over the run, not piled at the end, and short: mentions
+  ended most sleeps, so the `@` traffic in chat sets the sleepers' pace.
+- Muse works through queues (101 `queue_submit`, 130 sleeps); its sleeps mostly overlap queued work, which the journal
+  does not record, so its 77% is not all idle character time.
+- Opus's decisions fell from 753 to 422 in the second hour, 32.8 of its 57 asleep minutes there, after the 67.6m raid
+  destroyed its science block (`opus/compactions.md:16-17`).
+- The harness's per-reply "character idle" share could not be summed: the clock line is on a fraction of replies and
+  its windows overlap.
+
+### Errors and denied commands
+
+| Agent | Errors (rate; h1 / h2) | shake3 rate | Largest classes |
+|---|---|---|---|
+| astra | 23 (2.3%; 2.2 / 2.5) | 1.7% | `board_post` argument shape, reach, visibility, dead (4) |
+| sol | 27 (2.2%; 2.8 / 1.7) | 2.3% | placement blocked (6), "Unknown entity name: tree" (2) |
+| luna | 98 (4.8%; 5.2 / 4.5) | 3.4% | `inspect` outside the visible area (7), transfer out of reach (7), `board` with `note` (4) |
+| opus | 43 (3.7%; 2.9 / 5.0) | 5.4% | dead (6), transfer out of reach (5) |
+| sonnet | 54 (4.1%; 4.7 / 3.4) | 7.7% | dead (9 across observe, sleep, wait_until, transfer), `wait` (unsupported) |
+| haiku | 64 (6.0%; 4.9 / 6.8) | 6.2% | placement blocked (11), sleep while dead (8), rearm with no magazines (6) |
+| grok | 73 (4.0%; 4.4 / 3.7) | 5.7% | transfer out of reach (10), placement blocked (10, 9 of them item-on-ground at one spot) |
+| gemini | 71 (5.9%; 5.4 / 6.5) | 7.3% | placement blocked (13), `inspect` outside the visible area (7) |
+| muse | 29 (5.0%; 4.5 / 5.8) | 2.6% | dead (9) |
+
+- Rates fell for Opus, Sonnet, Grok, Gemini and Haiku, rose for Luna, Muse and Astra; Sol flat.
+- Harness gaps behind the errors: `sleep` refused while dead (19 calls, 7 agents; P1 item 2) and `observe` while dead
+  (26 more); item-on-ground in a build footprint (11; P1 item 4); `board_post` rejecting `note` and object `needs`
+  (section 4); `observe` name filters wanting exact prototype names ("Unknown entity name: tree", Sol 2, Gemini 1).
+- Denials (Claude Code dontAsk): 7 (Opus 4, Sonnet 2, Haiku 1; shake3 6): `for` loops, `python3 - <<'EOF'`
+  heredocs, a pipe into `grep -E`, two chained transfers, and one `./fh say` (Haiku 02:53:54). None ended a turn.
+  Codex, Grok (549 permission requests, all resolved), Gemini and Muse: none found.
+
+### Compactions and context
+
+| Agent | Setting | Compactions | Before to after | Stall | Notes back |
+|---|---|---|---|---|---|
+| astra | Codex 140K | 5 (03:15:45 to 04:48:21) | ~139K to a new window | 108 to 141 s, 10.6 min total | re-read 2 to 3 s after, 5 of 5 |
+| sol | Codex 140K | 5 (03:18:32 to 04:52:10) | ~139K | 61 to 200 s, 10.1 min | re-read, 5 of 5 |
+| luna | Codex 140K | 8 (03:05:24 to 04:45:22) | ~139K | 18 to 45 s, 3.4 min | re-read, 8 of 8 |
+| opus | Claude 250K | 1 (04:00:46) | 250.1K to 36.5K | 30 s | hook (5,270 chars) |
+| sonnet | Claude 200K | 2 (03:41:32, 04:18:39) | 200K to 22.6K, 26.8K | 26 s, 40 s | hook; turn ended after the first |
+| haiku | Claude 80K | 8 (03:07:17 to 04:42:20) | 80K to 24.5K, rising to 31.1K | 18 to 103 s | hook; turn ended after the sixth |
+| grok | 154K | 3 (03:21:55, 03:52:12, 04:24:12) | not logged | 57 to 62 s | reinjected 3 s after |
+| gemini | agy's own, ~280K | 3 (03:33:18, 04:09:22, 04:48:43) | 275 to 284K to ~19.5K | | agy checkpoint summary |
+| muse | 0.391 of 512K | 2 (03:43, 04:14) | not logged | async | reinjected |
+
+- Haiku compacted 8 times in two hours (shake3 2 in one) at the same 80K setting (`agent/context.tsv:9`); its floor
+  after compaction rose from 24.5K to 31.1K, so the usable window shrank to about 50K and compactions came every 8 to
+  14 minutes in the second hour.
+- Codex compactions stalled Astra and Sol about 10 minutes each in two hours (shake3: 4.5 and 4.3 in one), against 3.4
+  for Luna at the same setting. Astra's fifth (04:48:21) took 136 seconds of its last 4 minutes.
+- Context at the end: Astra 52.9K, Sol 26.2K (just compacted), Luna 89.5K, Opus 122.2K, Sonnet 83.9K, Haiku 47.7K,
+  Gemini 62.0K; Grok and Muse log no token counts.
+- Gemini's 5-hour quota held: no quota or rate-limit event in the transcript or the agy logs (only routine
+  `doRefreshQuota` reloads), and decisions continued to 04:51:22.
+
+### Squashed words in Astra's and Sol's chat
+
+The run-together words (section 4) follow Codex context segments, not a configuration change. Every `turn_context` in
+the rollouts has the same model and effort (low), as in shake3 with the same CLI (0.162.1), where nobody squashed.
+Astra squashed in whole compaction segments: 0 of 43 lines before 03:15:45, 0 of 38 to 03:41:55, 25 of 33 to 04:04:26,
+0 of 49 to 04:28:23, 25 of 33 to 04:48:21, 0 of 5 after; the first squashed line came 3.7 minutes into a segment, at
+56K. Sol began at 133K (03:44:46) and stayed squashed through later compactions, re-reading a notes.md that is itself
+squashed ("As ofgame1h58", `sol/notes.md:41-42`). Only tool-call arguments are squashed, never the visible assistant
+text or reasoning summaries. The likely reading is that the model copies its own style within a context segment; a
+compaction clears it or, through notes.md, carries it on.
+
+### Did the shake3 fixes hold
+
+| Fix | Held | Evidence |
+|---|---|---|
+| Chat while dead | yes | 0 `say`/`chat` failures while dead (shake3 3); `sleep` still fails (P1 item 2) |
+| Build over stumps and corpses | yes | 0 stump blocks (shake3 7), 0 biter-corpse blocks; 1 character-corpse among other blockers |
+| Step aside from one's own footprint | yes | no build failed with the agent's own character as the only blocker (shake3: Grok alone 9) |
+| `collect want` | not exercised | 2 direct calls (Luna), 0 errors |
+| Glyph uniqueness | yes | no profile failure; glyphs all distinct (colours are not, section 4) |
+| No supervisor nudges to working agents | yes | 2 nudges, both after real turn ends |
+| One-pass launch | yes | 16 seconds |
+| Clean profiles | mostly | Codex's skills block gone (shake3 5.4K chars on every request); Grok's prompt 5,423 chars with no owner rules, MCP servers, hooks or secret-like strings; Codex's `multi_agent` text remains (Astra 17, Sol 17, Luna 26 occurrences) |
+| Per-agent deadlines and draft summaries | yes | all nine summaries, no stop after writing them |
 
 ## 4. Talk
 
@@ -174,11 +287,11 @@ the board records, in the form of `@name` requests and status ("@opus I added 29
 (-18.5,-34.5)", Luna #693). Per agent: Luna 230 (222 logistics), Astra 201, Sol 148, Haiku 97, Opus 78, Grok 74, Muse
 68, Sonnet 64, Gemini 51. Lines whose point is a joke or a feeling are again about half a dozen (best moments below).
 
-Astra and Sol ran words together in a third of their lines from 52m on: "Northbankrestartedverified1h05m: coalleftlane,
-oreclear, furnacesworking" (Astra #587). By 10-game-minute bin, Astra 0 lines before 50m, then 10 of 16 (50 to 60m), 13
+Astra and Sol ran words together in 39% and 55% of their lines from 50m on: "Northbankrestartedverified1h05m:
+coalleftlane, oreclear, furnacesworking" (Astra #587). By 10-game-minute bin, Astra 0 lines before 50m, then 10 of 16 (50 to 60m), 13
 of 14 (60 to 70m), 2 of 20, 0, 0, 11 of 18 (100 to 110m), 11 of 15 (110 to 120m); Sol 10 of 11 (60 to 70m), 7 of 7, 1
 of 14, 11 of 14 (90 to 100m). Luna, also on Codex, never did; nobody did in shake3 (counted as a run of 22 or more
-letters). The hosts and the TTS receive these lines as written. Section 3 checks whether it follows their context.
+letters). The hosts and the TTS receive these lines as written. Section 3 traces it to Codex context segments.
 
 ### Board
 
