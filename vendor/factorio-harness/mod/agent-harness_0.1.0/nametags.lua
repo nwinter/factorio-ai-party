@@ -8,7 +8,8 @@
 return function(api)
   local M = {}
   local RECHECK_TICKS = 300
-  local TAG_Y, TAG_SCALE, LINE = -2.2, 1.15, 0.5   -- text bottom above the feet; height of one tag line
+  local TAG_Y, TAG_SCALE, LINE = -1.75, 1.15, 0.5  -- text bottom above the feet (just over the head); one tag line
+  local LAYOUT = 2                                   -- bump to restyle existing tags on the next recheck
   local BADGE = 1.0                                  -- avatar size in tiles
   local avatar = api.avatar
   local function store()
@@ -30,7 +31,7 @@ return function(api)
     local parts = {}
     for _, f in ipairs(api.parts.fields) do parts[#parts+1] = av[f] or '' end
     return table.concat({c.unit_number or 0, b.name, pr and pr.display_name or '', pr and pr.glyph or '', pr and pr.color or '',
-      table.concat(parts, ','), av.accent or '', M.sprites() and 'a' or ''}, '|')
+      table.concat(parts, ','), av.accent or '', M.sprites() and 'a' or '', LAYOUT}, '|')
   end
   local function destroy(ids)
     for _, id in ipairs(ids or {}) do

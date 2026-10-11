@@ -55,10 +55,10 @@ profiles[1000001]={display_name='Astra',glyph='A',color='#9977ff',rgb={r=0x99/25
 tags.refresh(bots[1])
 local c=bots[1].character
 local t=live('text',c)
-check(#t,1); check(t[1].args.text,'A Astra'); check(t[1].args.target.offset[2]<-2,true); check(t[1].args.use_rich_text,false)
+check(#t,1); check(t[1].args.text,'A Astra'); check(t[1].args.target.offset[2]<-1.5,true); check(t[1].args.use_rich_text,false)
 check(t[1].args.color.b,1); check(c.color.r,0x99/255)
 check(#live('sprite',c),0) -- an old world has no avatar sprites: tag only
-check(tags.bubble_y(1000001)<-2.6,true)
+check(tags.bubble_y(1000001)<t[1].args.target.offset[2]-0.4,true) -- bubbles start above the tag
 
 -- No profile: the name and the avatar's default colour (what the overlay shows); dark colours are lifted for text.
 tags.refresh(bots[2])
