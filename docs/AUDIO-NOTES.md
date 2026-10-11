@@ -290,7 +290,7 @@ Goal: livelier voices than Aura-2, agents choosing their own, names said right, 
 | Part | State |
 |---|---|
 | Adapters in `voices.py`: ElevenLabs v4 (`eleven`) and v4 Turbo / Flash v2.5 (`eleven-fast`), OpenAI gpt-4o-mini-tts (`openai`), Cartesia Sonic 3.6 (`cartesia`), Inworld TTS-2 (`inworld`), plus `auto` | Written; request shapes checked against each provider's docs (read 2026-10-10) and by `voices_selftest.py` with HTTP mocked. **No real request made to any of them** |
-| Bench `voice_bench.py` (20 lines, every provider and voice, spend cap, listening page) | Runs end to end on the `tone` backend (60 clips, summary, `index.html`). Not run on a real voice |
+| Bench `voice_bench.py` (20 lines, every provider and voice, spend cap, listening page) | Run 1 (Nick's terminal, 2026-10-10 23:53, cut off at 15 minutes): 315 clips, all 13 OpenAI voices, 21 ElevenLabs clips before the account refused, 33 Aura-2. Resumable now (below) |
 | Voice catalog for agents (70 voices, sound descriptions, ids of 16 characters or fewer) | `agent/voices.md`; `team.md` gets the list for the providers with keys at launch (`new-run.sh`) |
 | `profile {"voice_description": ...}`: a designed voice per agent (ElevenLabs, else Inworld) | `voices.py` and the stream service (`model.py`, `live.py`) ready; needs the harness field (ask below) |
 | Lexicon `tools/stream/lexicon.tsv`: roster, casters, model names, Factorio words | Done; inline IPA for providers that read it, respellings elsewhere |
@@ -298,9 +298,73 @@ Goal: livelier voices than Aura-2, agents choosing their own, names said right, 
 
 | TTS text prep (`textprep.py`): spaces back in glued lines, spoken forms, optional spaces-only model pass | Done; `textprep_selftest.py` on real `runs/shake2` lines (below) |
 
-Why nothing was heard: Nick has since added `elevenlabs.key` and `openai.key`, but this session's sandbox refuses
-`api.elevenlabs.io`, `api.openai.com` and `api.cloudflare.com`, so no provider could be called from here. Run the
-bench from a normal terminal. **Test spend: $0.00.**
+This session's sandbox refuses `api.elevenlabs.io`, `api.openai.com` and `api.cloudflare.com`, so the bench runs from
+Nick's terminal. **Test spend so far: $0.67** (bench run 1 by the scripts' counters: OpenAI $0.44, ElevenLabs $0.14,
+Aura-2 $0.08, Whisper under $0.01; refused ElevenLabs requests are not billed).
+
+### Bench run 1 (2026-10-10 23:53, `runs/voice-bench/20261010-2353/`)
+
+`voice_bench.py --providers eleven,eleven-fast,openai,aura2 --check`, cut off by a 15-minute timeout in Aura-2
+(`andromeda`, 13 of 20 lines). On disk: OpenAI 13 voices x 20 lines, ElevenLabs `el-alice` 19 (v4), `el-chris` 2
+(v4), `el-eric` 1 (`eleven-fast`), Aura-2 `amalthea` 20 and `andromeda` 13. The run died before writing
+`results.jsonl`, so the error texts went only to the terminal. `voice_bench.py --index` rebuilt `index.html` and
+`summary.md` from the files.
+
+Why ElevenLabs stopped, from the file times:
+
+- `el-alice` lines 1-19 were written 2 s apart (23:53:15 to 23:53:54). Then 86 requests failed in 12 s (`el-alice`
+  line 20, every line of `el-bill`, `el-brian`, `el-callum`, `el-charlie`, `el-chris` lines 1-5): about 0.14 s each,
+  a refusal before any synthesis. `el-chris` lines 6 and 7 then succeeded (23:54:08, 23:54:10), and about 610 more
+  requests failed in the same way until 23:55:45 (about 0.15 s each), with one exception: `eleven-fast` `el-eric` line 17 at 23:55:12,
+  the shortest line (49 characters).
+- Not the voice ids: `el-chris` and `el-eric` failed on some lines and succeeded on others with the same id and
+  model. A wrong id fails every line. Not the model either: v4 served `el-alice` throughout.
+- Most likely the account ran out of character credits after about 1,900 characters. ElevenLabs answers
+  `401 quota_exceeded` when a request needs more credits than remain, so a short line can still fit while longer ones
+  are refused, which matches the pattern. It does not fit perfectly (`el-chris` line 5 at 97 characters failed, then
+  lines 6 and 7 at 96 and 98 went through), so a rate limit (429) is the other candidate. The resumed run settles it:
+  it prints the account's plan and credits first, and the exact error when it drops a provider.
+
+Fixed in the bench: results are appended clip by clip (a cut-off run keeps its record and errors), `--give-up 4`
+drops a provider after four failures in a row and prints the error, `--resume DIR` renders only the clips a folder
+lacks, `--redo` re-renders named lines, `--account` prints plan and credits, and `--index DIR` rebuilds the page.
+Under `--tts auto` the stream now handles the same failure: an account out of credits (401/402, "quota") rests for 30
+minutes after one refusal, a 429 for a minute, other errors after three in a row for two minutes. Meanwhile its voices
+go to a steady stand-in (a caster's next voice, an agent's closest voice on another working provider, else Aura-2)
+instead of flipping provider clip by clip as short lines still fit the last credits.
+
+The bench also caught a text-prep bug: `textprep` split real words it did not know, so every provider read "lab
+elling", "co lour", "a go" and "Vulcan us" (lines 8, 16, 19, 20). British spellings (colour, labelling, organise,
+centre), words of three letters or fewer, and lexicon names are now left alone. A short capitalised token splits only
+into team-vocabulary words ("Myred", "Oilgather"). The mood guess was also wrong on four lines: "never placing a
+chest by hand again!" got `[sighs]`, and two deadpan lines came out neutral and frustrated. It now scores strong and
+weak words, so "again" alone is weak, and short flat sentences read as deadpan. The completion command re-renders
+those 8 lines.
+
+Measured (`summary.md`; latency is an upper bound, the time between clips written, including normalisation):
+
+| Provider | Clips | Per clip | Speech rate | $/stream hour at 45k chars | Pitch movement, caster lines |
+|---|---|---|---|---|---|
+| `eleven` (v4) | 21 | ≤2.0 s | 12.8 chars/s | $3.60 | `el-alice` 13.2, `el-chris` 17.4 semitones |
+| `openai` | 260 | ≤1.8 s (p90 ≤3.0 s) | 12.5 chars/s | $0.90 | `oa-verse` 10.9, `oa-ballad` 10.2, `oa-echo` 10.2 ... `oa-shimmer` 6.8, `oa-onyx` 5.2 |
+| `aura2` | 33 | ≤5.8 s (includes Whisper) | 12.5 chars/s | $1.35 | `amalthea` 4.7, `andromeda` 8.0 |
+
+Pitch movement is the 10th-to-90th-percentile spread of a voice's pitch over a clip (`voice_bench.pitch_movement`),
+a liveliness proxy: it puts numbers on "Aura-2 is flat" and Eleven v4 well above OpenAI, but it is no verdict on
+quality. The page has the full table under "Voices by pitch movement". OpenAI's measured 12.5 chars/s (not the
+assumed 15) puts it at $0.90 an hour.
+
+Complete run 1 (only the missing clips, plus the 8 lines above; about $3.67, of which ElevenLabs about $3.45, which
+needs about 45k credits if the account bills v4 at 1 credit and Turbo at 0.5 a character). A second cut-off resumes
+with the same command:
+
+```sh
+python3 tools/stream/voice_bench.py --resume runs/voice-bench/20261010-2353 --providers openai,eleven,eleven-fast \
+  --redo color-lull,agent-excited-2,agent-excited-3,agent-frustrated-3,agent-deadpan-1,agent-deadpan-2,agent-deadpan-3,agent-plan
+```
+
+The remaining 39 Aura-2 voices (787 clips, about $2, over an hour with `--check`) are left out: they are today's
+voices and only the baseline. Add `aura2` to `--providers` for the full set.
 
 ### Run it once keys are in place
 
@@ -343,7 +407,27 @@ table uses the regular rate.
 Left out: Hume Octave (Hume is shutting down its TTS API on 2026-11-13), Google Gemini 3.8 Flash TTS (#5, $16.5/M;
 a good next adapter if Inworld disappoints), Qwen-Audio TTS (#3, Alibaba Cloud account needed).
 
-### Recommendation per role (provisional: from the leaderboard and features, not by ear)
+### Defaults for shake3 (2026-10-11; provisional, from bench run 1's measurements, not by ear)
+
+Use `--tts auto` (with `--tts-fallback aura1`). With the keys on this machine (`elevenlabs.key`, `openai.key`):
+
+- Casters on OpenAI: play-by-play (Rook) `oa-verse`, colour (Vale) `oa-ballad`. They move their pitch most of the 13
+  OpenAI voices on the caster lines (10.9 and 10.2 semitones), and the colour voice is British-leaning like
+  `ROLE_DESIGN["color"]`. If they sound too alike, `oa-coral` (brighter, about 5 semitones above `oa-verse`) is the
+  colour alternative. Change it in `voices.ROLE_VOICES`.
+- Agents: their own pick. Without one, each gets a distinct OpenAI voice by name hash. `oa-onyx` and `oa-shimmer`,
+  the flattest, are left out of the defaults (`voices.DEFAULT_SKIP`), leaving exactly nine besides the casters'. With
+  today's nine names: astra `oa-ash`, gemini `oa-coral`, grok `oa-marin`, haiku `oa-alloy`, luna `oa-cedar`, muse
+  `oa-echo`, opus `oa-fable`, sol `oa-nova`, sonnet `oa-sage`. An agent who picks an ElevenLabs voice gets it while
+  the account works, else a steady OpenAI stand-in.
+- Why OpenAI first: it rendered all 260 clips, while the ElevenLabs account refused most requests (above). At the
+  measured speech rate everything costs about $0.90 a stream hour, about 26 hours a day within $24.
+  `voices.PREFER` sets the order; `POG_TTS_PREFER=eleven` puts ElevenLabs first (casters `el-liam` and `el-alice` on v4
+  Turbo, $1.80 an hour, agents on v4). Switch once `voice_bench.py --account` shows credits, the completed bench has
+  been heard, and `el-liam` (not yet rendered) sounds right. Eleven v4 moved its pitch most in run 1 (13 to 17
+  semitones).
+
+### Recommendation per role before the bench (kept for reference; superseded by the defaults above)
 
 - Casters: ElevenLabs v4 Turbo (`--tts auto` with `elevenlabs.key` puts caster lines on v4 Turbo: first on the arena,
   $1.80 an hour, 13 hours a day within $24). Casters take the first available voice in `voices.ROLE_VOICES`: `el-liam`
@@ -355,8 +439,8 @@ a good next adapter if Inworld disappoints), Qwen-Audio TTS (#3, Alibaba Cloud a
   longer Aura-2 once a key exists. Agent lines stay on v4 (the most expressive model); agents speak far less than the
   casters (about 15% of the characters), so that adds about $0.50 an hour. Together: about $2.10 an hour, 11 hours a
   day within $24.
-- Fallback: `--tts-fallback aura1` stays; under `auto` a failing provider falls back per clip to the voice's own Aura-2
-  stand-in (`like` in the catalog), so a voice keeps a similar sound.
+- Fallback: `--tts-fallback aura1` stays. Under `auto` a failing provider now rests and its voices go to a steady
+  stand-in (bench run 1, above).
 
 Listen before deciding: the voice descriptions for ElevenLabs and Cartesia come from provider listings, and nobody
 has heard any of these voices yet.
@@ -365,8 +449,9 @@ has heard any of these voices yet.
 
 - `CATALOG`: `id -> (provider, provider voice, description, Aura-2 stand-in)`. The 41 Aura-2 ids are entries too, so
   existing picks (`orpheus`, `theia` in the mock) still work. Premium ids carry a prefix: `el-`, `oa-`, `ca-`, `in-`.
-- `TTS("auto")` routes each voice to its provider; a provider without a key, or a failed request, falls back to the
-  stand-in on Aura-2. `TTS("eleven")` (or any one provider) speaks everything through that provider: its own voices
+- `TTS("auto")` routes each voice to its provider. A provider without a key, or resting after failures, hands its
+  voices to a stand-in: the caster's next voice in `ROLE_VOICES`, an agent's closest voice on the most preferred
+  working provider (`PREFER`), else the Aura-2 `like`. A single failed request does the same for that clip. `TTS("eleven")` (or any one provider) speaks everything through that provider: its own voices
   as themselves, Aura-2 ids through a voice of that provider with the same stand-in.
 - Delivery: `mood()` guesses excited, frustrated, deadpan or neutral from the words; casters add a role style
   (`ROLE_STYLE`). Eleven v4 gets a leading audio tag, OpenAI and Inworld a one-sentence instruction, Cartesia an
@@ -465,6 +550,9 @@ the two branches conflict only in `tools/stream/voices.py`; take eng/voices' fil
 
 ### Not verified (check on the first bench)
 
-ElevenLabs default-voice ids on Nick's account; whether `eleven_v4_turbo` is served on the HTTP endpoint; inline IPA
-on Eleven v4 and Inworld; the Cartesia `Cartesia-Version: 2026-08-14` header; OpenAI's per-minute cost; latency of
-any premium provider from this network (the bench measures full-response time, not time to first byte).
+Verified by bench run 1: OpenAI requests for all 13 voices; ElevenLabs v4 requests with the `el-alice` and `el-chris`
+ids, and `eleven-fast` with `el-eric`. Still open: the other 15 ElevenLabs ids; whether `eleven_v4_turbo` is served
+on the HTTP endpoint (the bench's results now record the model each clip used); whether Eleven v4 and Inworld read
+inline IPA right (listen to "Sol", "Gemini", "Nauvis" in lines 1, 3, 4); the Cartesia `Cartesia-Version:
+2026-08-14` header; OpenAI's per-minute cost against the bill; time to first byte (the bench measures full
+responses).
