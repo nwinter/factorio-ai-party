@@ -31,7 +31,7 @@ while [ "$pending" -gt 0 ] && [ "$(date +%s)" -lt "$end" ]; do
       herdr agent send-keys "$pane" enter >/dev/null; s=trust
     elif grep -qiE "trust this (folder|project|directory)" <<<"$screen"; then
       herdr pane send-keys "$pane" enter >/dev/null; s=trust
-    elif grep -qE "Working|esc to interrupt|thinking|Thinking" <<<"$screen"; then
+    elif grep -qE "Working|esc to interrupt|thinking|Thinking|Starting session|Waiting for response" <<<"$screen"; then
       s=working
     elif [ "$(size "$dir/journal.jsonl")" -gt "${base[$i]}" ]; then
       s=journal

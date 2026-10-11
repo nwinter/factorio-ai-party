@@ -113,9 +113,15 @@ case $kind in
     model=${6:-grok-4.7} effort=${7:-low}
     claude_settings nosandbox
     ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
+    # Run-local GROK_HOME; the owner's login must last the run plus 15 minutes (tools/grok-home.py refreshes it).
+    home_env=$(python3 "$root/tools/grok-home.py" setup "$dir" $((minutes * 60 + 900)))
     pane=$(new_pane)
-    # --rules is part of the system prompt, which compaction keeps. $grok_env and $grok_allow: tools/profile-flags.sh.
-    herdr pane run "$pane" "cd '$dir' && $grok_env $ctx_env grok -m $model --effort $effort $grok_allow --rules '$compact_rule' \"\$(cat '$prompt')\"" >/dev/null
+    # --rules is part of the system prompt, which compaction keeps. $grok_env, $grok_allow, $grok_bin:
+    # tools/profile-flags.sh. Started from a script: the full command is about 1,450 characters, and typed into a
+    # pane whose shell is not ready yet, input past the terminal's 1,024-byte line limit can be cut (smoke-l4g's
+    # Grok never started). grok-start.log shows that the script ran.
+    grok_run_script "$dir" "$home_env $ctx_env" "$model" "$effort" "$prompt" "$compact_rule"
+    herdr pane run "$pane" "'$dir/.grok-run.sh'" >/dev/null
     ;;
   agy)
     model=${6:-gemini-3.8-flash-high}

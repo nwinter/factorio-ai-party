@@ -118,6 +118,17 @@ for line in open(os.path.join(rundir, "panes.txt")):
             if os.path.realpath(d) in text[:20000]:
                 start = (f" skills_instructions={text.count('<skills_instructions>')}"
                          f" multi_agent_role={text.count('<multi_agent_role>')}")
+    if kind == "grok":     # run-local GROK_HOME: did .grok-run.sh start, and did the TUI log (smoke-l4g: it never did)
+        started = open(os.path.join(d, "grok-start.log")).read().split()[:1] if os.path.exists(os.path.join(d, "grok-start.log")) else []
+        pids = set()
+        log = os.path.join(d, ".grok-home", "logs", "unified.jsonl")
+        if os.path.exists(log):
+            for l in open(log, errors="replace"):
+                try:
+                    pids.add(json.loads(l).get("pid"))
+                except ValueError:
+                    pass
+        start = f" grok_started={started[0] if started else 'no'} grok_processes_logged={len(pids)}"
     if kind == "muse":     # no owner hooks, no skill-reminder decisions
         import glob, re
         for f in sorted(glob.glob(os.path.expanduser("~/.local/share/muse/sessions/*/*/*/*/session.jsonl")), key=os.path.getmtime)[-20:]:
