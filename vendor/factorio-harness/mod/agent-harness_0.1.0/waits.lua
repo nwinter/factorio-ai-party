@@ -53,8 +53,33 @@ return function(api)
     end
     return string.format('no queue and no action: your character stands idle for up to %d s%s', seconds, held)
   end
+  -- A sleep started right after a wake on an event (a shell loop of sleeps:
+  -- shake5-6, Opus and Sonnet) ends at once and repeats that wake, so the
+  -- loop reaches its end and the agent reads the wake. Bounded: within
+  -- REPEAT_TICKS of the wake, at most REPEATS times per wake, never in turns
+  -- mode (game time stands still between requests there); a sleep that ran
+  -- out (elapsed) or ended in death is not repeated. It cannot spin: every
+  -- repeat needs a wake, and every wake a real event.
+  local REPEAT_TICKS, REPEATS = 600, 3
+  local REPEAT = {mentioned=true, told=true, board=true, damaged=true, condition=true, queue_done=true, queue_stalled=true}
+  local function repeat_of(p, seconds)
+    local prev = sleeps()[p.index]
+    local woke = prev and prev.out and prev.out.woke
+    if not (woke and REPEAT[woke] and prev.read_tick and game.tick - prev.read_tick <= REPEAT_TICKS) then return nil end
+    if (prev.repeats or 0) >= REPEATS or api.clock_mode() == 'turns' then return nil end
+    local out = {}
+    for k, v in pairs(prev.out) do out[k] = v end
+    local ago = math.floor((game.tick - prev.read_tick) / 60)
+    out['repeat'] = true; out.slept_s = 0
+    local record = {start_tick=game.tick, until_tick=game.tick, woke=woke, out=out, read_tick=prev.read_tick, repeats=(prev.repeats or 0) + 1}
+    sleeps()[p.index] = record
+    return {while_asleep=string.format('this sleep did not start: you woke (%s) %d s ago; it ends at once and repeats that wake', woke, ago),
+      sleeping_s=0, until_tick=game.tick, ['repeat']=true, woke=woke, mention=out.mention, tell=out.tell, board=out.board, queue=out.queue}
+  end
   function M.handlers.sleep(p, a)
     local seconds = api.integer(a.seconds, nil, 1, MAX_TICKS / 60, 'seconds (1..900)')
+    local again = repeat_of(p, seconds)
+    if again then return again end
     local condition
     if a.condition ~= nil then
       assert(type(a.condition) == 'table', 'condition is a wait_until condition: {until=..., ...}')
@@ -195,6 +220,8 @@ return function(api)
     end
     -- The first reason sticks, so the final (non-peek) read repeats it.
     if out.woke then record.woke = out.woke; record.out = record.out or out end
+    -- The agent has read the wake: a sleep right after it repeats it (repeat_of).
+    if record.out and a.peek ~= true and not record.read_tick then record.read_tick = game.tick end
     return record.out or out
   end
   return M

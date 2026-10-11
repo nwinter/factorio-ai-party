@@ -90,6 +90,8 @@ surface.find_entities_filtered=function(f)
   return find(f)
 end
 local function check(who) return who('sleep_check',{peek=true}) end
+-- The final read, then past the 10 s in which a new sleep repeats that wake.
+local function wake(who) local r=who('sleep_check',{}); jump(601); return r end
 
 -- The reply says first what keeps going: nothing.
 local r=astra('sleep',{seconds=60})
@@ -109,7 +111,7 @@ assert(r.wakes_on:find('your queue finishing or stalling',1,true))
 advance(100); eq(check(sol).woke,nil)
 advance(100)
 r=check(sol); eq(r.woke,'queue_done'); eq(r.queue,'finished'); eq(r.queue_steps,2)
-eq(sol('sleep_check',{}).woke,'queue_done')
+eq(wake(sol).woke,'queue_done')
 -- A repeating plan never finishes; it does not end the sleep between cycles.
 sol('queue_repeat',{steps={{action='wait_ticks',args={ticks=60}}},interval_ticks=60}); advance(1)
 r=sol('sleep',{seconds=10})
@@ -124,7 +126,7 @@ grok('sleep',{seconds=600})
 advance(40)
 r=check(grok); eq(r.woke,'queue_stalled')
 assert(r.queue:find('^board_update failed: no board item #999'),r.queue)
-grok('sleep_check',{})
+wake(grok)
 -- Sleeping with that queue paused says so.
 r=grok('sleep',{seconds=30})
 eq(r.while_asleep,'no queue and no action: your character stands idle for up to 30 s (your queue is paused with 1 steps pending)')
@@ -139,7 +141,7 @@ eq(check(astra).woke,nil) -- first look at the position
 advance(1700); eq(check(astra).woke,nil)
 advance(110); r=check(astra); eq(r.woke,'queue_stalled')
 assert(r.queue:find('^move_to has not moved your character for 30 s'),r.queue)
-astra('sleep_check',{}); astra('queue_cancel',{})
+wake(astra); astra('queue_cancel',{})
 
 -- --until: an item count in the character's inventory.
 r=astra('sleep',{seconds=60,condition={['until']='item_count',item='iron-plate',at_least=20}})
@@ -149,20 +151,20 @@ advance(10); eq(check(astra).woke,nil)
 local body=runtime.lookup(runtime.bots.index_of('astra')).character
 body.insert{name='iron-plate',count=12}
 r=check(astra); eq(r.woke,'condition'); eq(r.saw,'iron-plate 20')
-astra('sleep_check',{})
+wake(astra)
 -- Over a list of chests (also in wait_until).
 r=astra('sleep',{seconds=60,condition={['until']='item_count',item='iron-plate',at_least=50,positions={{x=3,y=3},{x=9,y=9}}}})
 eq(r.saw,'iron-plate 0 in 1 entities')
 chest_items['iron-plate']=50
 r=check(astra); eq(r.woke,'condition'); eq(r.saw,'iron-plate 50 in 1 entities')
-astra('sleep_check',{})
+wake(astra)
 fails(function() astra('sleep',{seconds=60,condition={['until']='item_count',item='iron-plate',at_least=1,positions={}}}) end,'positions takes 1..64')
 r=astra('queue_submit',{steps={{action='wait_until',args={['until']='item_count',item='iron-plate',at_least=50,positions={{x=3,y=3}}}}}})
 eq(#r.pending,1); advance(3); eq(#astra('queue_status').history>=1,true)
 -- Met already: the first check ends it.
 r=astra('sleep',{seconds=60,condition={['until']='item_count',item='iron-plate',at_least=5}})
 eq(r.already_met,true); r=check(astra); eq(r.woke,'condition'); eq(r.slept_s,0)
-astra('sleep_check',{})
+wake(astra)
 
 -- researched: a named technology, or without one the research running now.
 fails(function() astra('sleep',{seconds=60,condition={['until']='researched'}}) end,'no research is running')
@@ -171,11 +173,11 @@ r=astra('sleep',{seconds=60,condition={['until']='researched'}}); eq(r.condition
 -- A mention still ends a condition sleep first.
 sol('say',{text='@astra the gears are in'})
 eq(check(astra).woke,'mentioned')
-astra('sleep_check',{})
+wake(astra)
 r=astra('sleep',{seconds=60,condition={['until']='researched',technology='logistics'}})
 techs.logistics.researched=true
 r=check(astra); eq(r.woke,'condition'); eq(r.saw,'logistics researched')
-astra('sleep_check',{})
+wake(astra)
 fails(function() astra('sleep',{seconds=60,condition='researched'}) end,'condition is a wait_until condition')
 fails(function() astra('sleep',{seconds=60,condition={['until']='bogus'}}) end,'until must be one of')
 print('sleep: ok')
