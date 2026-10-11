@@ -4,6 +4,8 @@
   python3 tools/stream/serve.py --mock                         # synthetic 7-agent session
   python3 tools/stream/serve.py --world c --run tools/stream/runs/coop1.json
   python3 tools/stream/serve.py --world live --run RUN.json --cameras 3,4,5
+  python3 tools/stream/serve.py --world live --run RUN.json --viewers-youtube @HANDLE --viewers-site   # + viewer chat
+  python3 tools/stream/serve.py --mock --viewers-replay tools/stream/runs/viewers-sample.jsonl         # synthetic chat
 
 Serves http://HOST:PORT/ (the overlay page for the OBS browser source), /state.json, /events (SSE, one full
 snapshot per update), /director.json (recent camera decisions), and the voice queue: POST /audio (caster.py pushes
@@ -238,6 +240,9 @@ def main():
     ap.add_argument("--mock-speed", type=float, default=4.0, help="mock: game seconds per wall second")
     ap.add_argument("--mock-start", type=float, default=40.0, help="mock: game minute to start the replay at")
     ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
+    import viewers
+    viewers.add_args(ap.add_argument_group("viewer chat (tools/stream/viewers.py; snapshot lane `viewers`)"),
+                     prefix="viewers-")
     a = ap.parse_args()
 
     run_path = a.run or os.path.join(HERE, "runs", "mock9.json" if a.mock else "coop1.json")
@@ -263,6 +268,10 @@ def main():
     director = Director(slots, camera, log_path, **(run.get("director") or {}))
     model = Model(run)
     hub = Hub()
+    names = [n for k, cfg in (run.get("agents") or {}).items() for n in (k, (cfg or {}).get("display_name")) if n]
+    feed = viewers.build(a, "viewers_", names, harness=getattr(source, "h", None), log_dir=a.log_dir, loop=a.mock)
+    if feed:
+        feed.start()
     lock = threading.Lock()
     source_info = {"source": getattr(source, "name", "mock"), "poll_ok": None, "poll_error": None}
 
@@ -291,6 +300,7 @@ def main():
                 for ag in snap["agents"]:
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
                 snap.update(source_info)
+                snap["viewers"], snap["viewers_status"] = feed.lane() if feed else ([], None)
                 hub.publish(snap)
             except Exception:
                 traceback.print_exc()

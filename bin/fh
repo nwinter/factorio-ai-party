@@ -9,5 +9,7 @@ case $world in
   n) port=27025 ;;
   *) port=${POG_RCON_PORT:?set POG_RCON_PORT for world $world} ;;
 esac
-export FACTORIO_RCON_HOST=127.0.0.1 FACTORIO_RCON_PORT=$port FACTORIO_RCON_PASSWORD_FILE=$HOME/.config/pog/rcon-$world.pw
+# Agent workspaces pass POG_RCON_PASSWORD_FILE (a per-run copy of this world's password, tools/new-run.sh).
+export FACTORIO_RCON_HOST=127.0.0.1 FACTORIO_RCON_PORT=$port
+export FACTORIO_RCON_PASSWORD_FILE=${POG_RCON_PASSWORD_FILE:-$HOME/.config/pog/rcon-$world.pw}
 exec node "$(dirname "$0")/../vendor/factorio-harness/dist/host/cli.js" "$@"
