@@ -135,6 +135,7 @@ ul.crosses li::before { content: "✕"; position: absolute; left: 0; color: var(
 .avatar.sm { width: 20px; height: 20px; border-radius: 6px; font-size: .62rem; }
 .avatar.lg { width: 44px; height: 44px; border-radius: 12px; font-size: 1rem; }
 .chip { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
+.chip.operator { color: var(--muted); font-style: italic; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: .4rem 0 0; font-size: .9rem; }
 
 /* team */

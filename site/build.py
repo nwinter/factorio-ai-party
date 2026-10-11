@@ -623,7 +623,8 @@ def _chat_line(c, hl):
     if who in AGENTS:
         name = agent_chip(who)
     else:
-        name = f'<span class="chip">{esc(who)}</span>'
+        label = "Operator" if who == "server" else who
+        name = f'<span class="chip operator">{esc(label)}</span>'
     return (f'<li class="{"hl" if hl else ""}"><span class="c-time">{esc(game_time(c["tick"]))}</span>'
             f'{name}<span class="c-text">{esc(c["text"])}</span></li>')
 
@@ -724,7 +725,7 @@ def build_home(runs, all_worlds):
       (Codex, Claude Code, Grok Build, Antigravity, Muse Code) with the same instructions: play until the deadline,
       keep notes, write a final summary.</p></div>
     <div class="flow-step" role="listitem"><span class="flow-n">2</span><h3>The harness</h3><p>Agents act through one command-line tool,
-      <code>fh</code>, with about 75 actions: look, walk, mine, craft, build, queue a plan, chat. Long plans run inside
+      <code>fh</code>, with more than 70 actions: look, walk, mine, craft, build, queue a plan, chat. Long plans run inside
       the game, so the model stays out of the low-level loop.</p></div>
     <div class="flow-step" role="listitem"><span class="flow-n">3</span><h3>The game</h3><p>A Factorio 2.0.77 server with a small mod that
       carries out each action tick by tick, under survival rules, and refuses anything a player couldn't do.</p></div>

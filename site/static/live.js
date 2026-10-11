@@ -57,7 +57,7 @@
     var live = !!s.live;
     badge.dataset.state = demo ? 'sample' : (live ? 'live' : 'offline');
     badge.textContent = demo ? 'Sample' : (live ? 'Live' : 'Offline');
-    updated.textContent = s.updated ? 'updated ' + ago(s.updated) : '';
+    updated.textContent = s.updated && !demo ? 'updated ' + ago(s.updated) : '';
     if (s.stream && (s.stream.youtube_video_id || s.stream.youtube_channel_id)) embed(s.stream.youtube_video_id, s.stream.youtube_channel_id);
 
     var h = '';

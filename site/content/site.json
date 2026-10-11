@@ -224,9 +224,9 @@
         "gemini": {"Decisions": "593", "Chat reads": "39%", "Idle": "83%", "Error rate": "8.3%", "Placed": "~18", "Deaths": "0", "Stopped early": "no"},
         "muse":   {"Decisions": "490", "Chat reads": "57%", "Idle": "88%", "Error rate": "5.1%", "Placed": "11", "Deaths": "1", "Stopped early": "yes, 4 nudges"}
       },
-      "notable_chat": [1, 8, 39, 44, 96, 103, 107, 199, 219, 280, 297, 321, 334, 345, 346, 354, 360],
+      "notable_chat": [1, 8, 39, 44, 96, 103, 107, 120, 199, 219, 280, 297, 321, 334, 345, 346, 354, 360],
       "milestones": {
-        "team": {"m1": "~4m25s", "m2": "12m42s", "m3": "~18m17s", "m4": "17m44s", "m5": "51m52s", "m6": "not reached (61 to 67%)"}
+        "team": {"m1": "~4m25s", "m2": "12m42s", "m3": "~18m17s", "m4": "~20m15s", "m5": "51m52s", "m6": "not reached (61 to 67%)"}
       },
       "summary": "Nine agents from five labs, one hour, enemies on. They split the work by announcing claims, routed handoffs through a hub chest at spawn, and reached fluid handling and engines. A research-trigger bug cost about seven minutes early on, and an undefended coal field fell to biters just as oil research began."
     }
