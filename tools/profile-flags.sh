@@ -27,3 +27,11 @@ grok_allow="--permission-mode dontAsk --allow 'Bash(./fh *)' --allow 'Bash(./sho
 # The real binary: `grok` on PATH is the owner's herdr-session wrapper, which refuses a GROK_HOME it does not know.
 # The launch adds a run-local GROK_HOME (tools/grok-home.py): no home rules, hooks, ~/.agents/skills or bundled skills.
 grok_bin="$HOME/.grok/bin/grok"
+
+# Write DIR/.grok-run.sh, the Grok launch (tools/launch-agent.sh; tools/profile-probe.sh tui runs the same script):
+#   grok_run_script DIR "EXTRA ENV WORDS" MODEL EFFORT PROMPT_FILE RULES
+grok_run_script() {
+  printf '%s\n' '#!/usr/bin/env bash' "cd '$1'" "echo \"\$(date '+%H:%M:%S') starting grok\" >> grok-start.log" \
+    "exec env $grok_env $2 '$grok_bin' -m $3 --effort $4 $grok_allow --rules '$6' \"\$(cat '$5')\"" > "$1/.grok-run.sh"
+  chmod +x "$1/.grok-run.sh"
+}

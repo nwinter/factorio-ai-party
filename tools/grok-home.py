@@ -36,6 +36,10 @@ CONFIG = """# Written by tools/grok-home.py for a game workspace (not the owner'
 [cli]
 auto_update = false
 
+# A fresh home opens the TUI with the "Help improve Grok [Opt out] [Opt in]" prompt; the owner's home has answered it.
+[privacy]
+privacy_banner_acked = "{acked}"
+
 [compat.claude]
 skills = false
 rules = false
@@ -116,7 +120,8 @@ def setup(d, ensure):
     with open(os.path.join(home, "config.toml"), "w") as f:
         f.write(CONFIG.replace("{ignore}", ", ".join(json.dumps(s) for s in dict.fromkeys(skills)))
                 .replace("{plugins}", ", ".join(json.dumps(p) for p in dict.fromkeys(plugins)))
-                .replace("{bundled}", ", ".join(json.dumps(b) for b in BUNDLED)))
+                .replace("{bundled}", ", ".join(json.dumps(b) for b in BUNDLED))
+                .replace("{acked}", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())))
     link = os.path.join(home, "sessions")
     if not os.path.lexists(link):
         os.symlink(os.path.join(OWNER, "sessions"), link)

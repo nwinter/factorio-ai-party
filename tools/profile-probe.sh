@@ -98,6 +98,16 @@ EOF
     say "owner login before setup: $(left)"
     home_env=$(python3 "$root/tools/grok-home.py" setup "$dir" 5400)
     say "owner login after setup: $(left)"
+    if [ "${1:-}" = tui ]; then   # the TUI the agents run, with the launch's env and flags (smoke-l4g stalled there)
+      shift
+      # The launch's own script (tools/profile-flags.sh grok_run_script); remaining args are extra env words.
+      grok_run_script "$dir" "$home_env $ctx_env" "$model" low "$root/agent/grok-probe-prompt.txt" "probe"
+      eval "env TERM=xterm-256color $* python3 '$root/tools/tui-capture.py' 40 -- '$dir/.grok-run.sh'" > tui.txt 2>&1 || true
+      say "grok-start.log: $(cat grok-start.log 2>/dev/null)"
+      tee -a $out < tui.txt
+      say "session updates: $(ls ~/.grok/sessions/*/*/updates.jsonl 2>/dev/null | xargs grep -l "$dir" 2>/dev/null | wc -l | tr -d ' ')"
+      exit 0
+    fi
     eval "env $grok_env $home_env $ctx_env '$grok_bin' inspect" > inspect.txt 2>&1 || true
     say "--- grok inspect (bundled skills omitted)"
     grep -v " bundled" inspect.txt | grep -vE "^\s*$" | tee -a $out
