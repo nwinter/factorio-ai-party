@@ -36,7 +36,7 @@ def game():
         else:
             p = os.environ.get("ANALYST_PLAYER")
             _game = G.LiveGame(os.environ.get("ANALYST_WORLD", "live"), os.environ.get("ANALYST_BOT") or None,
-                               int(p) if p else None, os.environ.get("ANALYST_SURFACE", "nauvis"))
+                               int(p) if p else None, os.environ.get("ANALYST_SURFACE", "all"))
     return _game
 
 

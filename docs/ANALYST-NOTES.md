@@ -169,11 +169,16 @@ played from the shake2 score log at minute 50 (snapshot 0h48m, shake2 itself lef
   properties and qualities, trigger types beyond the base ones, and Space Age entity types; base worlds dump cleanly.
 - `notes/space-age.md` covers planets, platforms, spoilage, quality, the edge and the Shattered Planet from the wiki;
   marked uncertain: the edge technology's name and default-settings speedrun times.
-- `game.py` reads one surface (`--surface`, default nauvis). Space Age needs per-surface production summed (as
-  research/spaceage did for `pog.py score`) and platform reads; not done.
+- `game.py` sums production, kills, losses, buildings and machine status over every surface by default
+  (`--surface all`; planets and platforms) and lists the surfaces with our buildings; `--surface nauvis` reads one.
+  Evolution and pollution are Nauvis's. Platform details (speed, location, hub stock) are not read yet; research/spaceage
+  added a harness `platforms` read that could join `READ_ACTIONS` once it is in the runtime.
 
 ## What's left
 
+- Production rates use `get_flow_count{count=true}` without a sample index, which the 2.0 API documents as the
+  whole 1-minute / 10-minute / 1-hour window. Only checked on an empty world; compare one cycle's SPM with the overlay
+  headline on the first live run.
 - Not yet run during a live team run: the live reads were exercised on world `live` (empty) and the cycles on the
   shake1/shake2 score logs, which have production and research but no machine status, power or alerts.
 - The caster does not consume the points yet (eng/audio; suggested changes above). The overlay shows nothing of the

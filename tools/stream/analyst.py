@@ -451,7 +451,7 @@ def main():
     ap.add_argument("--world", default=os.environ.get("POG_WORLD", "live"))
     ap.add_argument("--bot", help="bot identity for harness reads (peek); default player --player or 1")
     ap.add_argument("--player", type=int)
-    ap.add_argument("--surface", default="nauvis")
+    ap.add_argument("--surface", default="all", help="a surface name, or all (planets and platforms summed)")
     ap.add_argument("--replay", help="a past run directory (scores.jsonl) instead of a live world")
     ap.add_argument("--at", type=float, help="game minute for --replay")
     ap.add_argument("--run-dir", help="the run's directory (agents' notes.md)")

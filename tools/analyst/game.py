@@ -28,21 +28,28 @@ PACKS = ["automation-science-pack", "logistic-science-pack", "military-science-p
 
 SNAPSHOT_LUA = r"""
 local f = game.forces.player
-local s = game.surfaces[SURFACE] or game.surfaces.nauvis
+local want = SURFACE
+local surfaces = {}
+if want == "all" then for _, x in pairs(game.surfaces) do surfaces[#surfaces+1] = x end
+else surfaces[1] = game.surfaces[want] or game.surfaces.nauvis end
+local s = game.surfaces.nauvis or surfaces[1]
 local P = defines.flow_precision_index
-local function flows(st, inputs)
-  local out = {}
-  for name, total in pairs(inputs) do
-    local m1 = st.get_flow_count{name=name, category="input", precision_index=P.one_minute, count=true}
-    local m10 = st.get_flow_count{name=name, category="input", precision_index=P.ten_minutes, count=true}
-    local h1 = st.get_flow_count{name=name, category="input", precision_index=P.one_hour, count=true}
-    local c10 = st.get_flow_count{name=name, category="output", precision_index=P.ten_minutes, count=true}
-    out[name] = {total=total, m1=m1, m10=m10, h1=h1, used10=c10}
+local function flows(out, st)
+  for name, total in pairs(st.input_counts) do
+    local o = out[name] or {total=0, m1=0, m10=0, h1=0, used10=0}
+    o.total = o.total + total
+    o.m1 = o.m1 + st.get_flow_count{name=name, category="input", precision_index=P.one_minute, count=true}
+    o.m10 = o.m10 + st.get_flow_count{name=name, category="input", precision_index=P.ten_minutes, count=true}
+    o.h1 = o.h1 + st.get_flow_count{name=name, category="input", precision_index=P.one_hour, count=true}
+    o.used10 = o.used10 + st.get_flow_count{name=name, category="output", precision_index=P.ten_minutes, count=true}
+    out[name] = o
   end
-  return out
 end
-local ist = f.get_item_production_statistics(s)
-local fst = f.get_fluid_production_statistics(s)
+local items, fluids = {}, {}
+for _, x in ipairs(surfaces) do
+  flows(items, f.get_item_production_statistics(x))
+  flows(fluids, f.get_fluid_production_statistics(x))
+end
 local cur = f.current_research
 local queue = {}
 for i, t in ipairs(f.research_queue or {}) do queue[#queue+1] = t.name end
@@ -57,27 +64,32 @@ for name, t in pairs(f.technologies) do
   if not ok then p = nil end
   if p and p > 0 and not t.researched then partial[name] = p end
 end
-local counts = {}
-for _, e in pairs(s.find_entities_filtered{force=f, type={"assembling-machine","furnace","mining-drill","lab","boiler",
-  "generator","solar-panel","accumulator","reactor","offshore-pump","rocket-silo","roboport","ammo-turret",
-  "electric-turret","fluid-turret","artillery-turret","radar","inserter","transport-belt","wall","electric-pole",
-  "construction-robot","logistic-robot","pumpjack","beacon","car","locomotive","cargo-wagon"}}) do
-  counts[e.name] = (counts[e.name] or 0) + 1
-end
-local kst = f.get_kill_count_statistics(s)
-local killed, lost = {}, {}
-for n, c in pairs(kst.input_counts) do killed[n] = c end
-for n, c in pairs(kst.output_counts) do lost[n] = c end
-local lost10 = {}
-for n in pairs(kst.output_counts) do
-  local c = kst.get_flow_count{name=n, category="output", precision_index=P.ten_minutes, count=true}
-  if c > 0 then lost10[n] = c end
+local counts, where = {}, {}
+local killed, lost, lost10 = {}, {}, {}
+for _, x in ipairs(surfaces) do
+  local n = 0
+  for _, e in pairs(x.find_entities_filtered{force=f, type={"assembling-machine","furnace","mining-drill","lab","boiler",
+    "generator","solar-panel","accumulator","reactor","offshore-pump","rocket-silo","roboport","ammo-turret",
+    "electric-turret","fluid-turret","artillery-turret","radar","inserter","transport-belt","wall","electric-pole",
+    "construction-robot","logistic-robot","beacon","car","locomotive","cargo-wagon","asteroid-collector","thruster",
+    "space-platform-hub","agricultural-tower","cargo-landing-pad"}}) do
+    counts[e.name] = (counts[e.name] or 0) + 1
+    n = n + 1
+  end
+  if n > 0 then where[x.name] = n end
+  local kst = f.get_kill_count_statistics(x)
+  for k, c in pairs(kst.input_counts) do killed[k] = (killed[k] or 0) + c end
+  for k, c in pairs(kst.output_counts) do
+    lost[k] = (lost[k] or 0) + c
+    local c10 = kst.get_flow_count{name=k, category="output", precision_index=P.ten_minutes, count=true}
+    if c10 > 0 then lost10[k] = (lost10[k] or 0) + c10 end
+  end
 end
 local players = {}
 for _, p in pairs(game.connected_players) do players[#players+1] = p.name end
-rcon.print(helpers.table_to_json{tick=game.tick, paused=game.tick_paused, surface=s.name,
+rcon.print(helpers.table_to_json{tick=game.tick, paused=game.tick_paused, surface=want, surfaces_with_buildings=where,
   research=cur and cur.name or nil, progress=cur and f.research_progress or nil, queue=queue, done=done,
-  saved_progress=partial, items=flows(ist, ist.input_counts), fluids=flows(fst, fst.input_counts), entities=counts,
+  saved_progress=partial, items=items, fluids=fluids, entities=counts,
   killed=killed, lost=lost, lost10=lost10, rockets=f.rockets_launched,
   evolution=game.forces.enemy.get_evolution_factor(s), pollution=s.get_total_pollution(),
   peaceful=s.peaceful_mode, players=players})
@@ -85,11 +97,17 @@ rcon.print(helpers.table_to_json{tick=game.tick, paused=game.tick_paused, surfac
 
 MACHINES_LUA = r"""
 local f = game.forces.player
-local s = game.surfaces[SURFACE] or game.surfaces.nauvis
+local surfaces = {}
+if SURFACE == "all" then for _, x in pairs(game.surfaces) do surfaces[#surfaces+1] = x end
+else surfaces[1] = game.surfaces[SURFACE] or game.surfaces.nauvis end
 local names = {}
 for k, v in pairs(defines.entity_status) do names[v] = k end
 local out = {}
-for _, e in pairs(s.find_entities_filtered{force=f, type={"assembling-machine","furnace","lab","mining-drill","rocket-silo","boiler","generator"}}) do
+local list = {}
+for _, x in ipairs(surfaces) do
+  for _, e in pairs(x.find_entities_filtered{force=f, type={"assembling-machine","furnace","lab","mining-drill","rocket-silo","boiler","generator"}}) do list[#list+1] = e end
+end
+for _, e in ipairs(list) do
   local r = nil
   if e.type == "assembling-machine" or e.type == "furnace" or e.type == "rocket-silo" then
     local ok, rec = pcall(e.get_recipe)
@@ -128,7 +146,7 @@ def game_time(tick):
 
 
 class LiveGame:
-    def __init__(self, world="live", bot=None, player=None, surface="nauvis", port=None):
+    def __init__(self, world="live", bot=None, player=None, surface="all", port=None):
         self.world, self.bot, self.player, self.surface = world, bot, player, surface
         port = port or pog.PORTS.get(world) or int(os.environ["POG_RCON_PORT"])
         pw = open(os.path.expanduser(f"~/.config/pog/rcon-{world}.pw")).read().strip()
@@ -286,6 +304,10 @@ def snapshot_text(snap, kb=None):
     if fl:
         lines.append("fluids per minute: " + ", ".join(fl[:8]))
     ents = snap.get("entities") or {}
+    where = snap.get("surfaces_with_buildings") or {}
+    if len(where) > 1:
+        lines.append("surfaces with our buildings (planets and platforms; numbers above are summed over all): "
+                     + ", ".join(f"{k} {v}" for k, v in sorted(where.items(), key=lambda kv: -kv[1])))
     lines.append("buildings: " + ", ".join(f"{n} {c}" for n, c in sorted(ents.items(), key=lambda kv: -kv[1])))
     if "evolution" in snap:
         lines.append(f"enemy evolution {snap['evolution'] * 100:.1f}%" + (" (peaceful mode)" if snap.get("peaceful") else "")
@@ -329,7 +351,7 @@ def main():
     ap.add_argument("--world", default=os.environ.get("POG_WORLD", "live"))
     ap.add_argument("--bot", default=os.environ.get("ANALYST_BOT"))
     ap.add_argument("--player", type=int)
-    ap.add_argument("--surface", default="nauvis")
+    ap.add_argument("--surface", default="all", help="a surface name, or all (planets and platforms summed)")
     ap.add_argument("--replay", help="run directory with scores.jsonl instead of a live world")
     ap.add_argument("--at", type=float, help="game minute for --replay")
     ap.add_argument("--json", action="store_true")
