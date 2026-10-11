@@ -53,6 +53,61 @@ def main():
                               "--now", str(now)], capture_output=True, text=True)
         assert out.returncode == 0 and out.stdout.startswith("quota data: from "), out
     print("quota_check: ok")
+    agy_loop()
+
+
+# A fake agy: logs its arguments; run 1 hits the quota (resets in 2 s), run 2 plays, run 3 hits a quota that resets
+# after the deadline. agy writes one log per run naming its workspace, as the real one does.
+FAKE_AGY = r'''#!/usr/bin/env python3
+import os, sys, time
+calls = os.path.join(os.environ["FAKE_DIR"], "calls.log")
+n = sum(1 for _ in open(calls)) + 1 if os.path.exists(calls) else 1
+open(calls, "a").write(" ".join(sys.argv[1:3]) + "\n")
+def quota(reset):
+    t = time.localtime()
+    stamp = time.strftime("%m%d %H:%M:%S", t)
+    log = os.path.join(os.environ["POG_AGY_LOGS"], f"cli-{n}.log")
+    open(log, "w").write(
+        f"I{stamp}.000001       1 server.go:334] Creating CLI server backend: product=antigravity "
+        f"workspaceDirs=[{os.path.realpath(os.getcwd())}] appDataDir=x\n"
+        f"E{stamp}.000002   31004 errorreport.go:224] agent executor error: generating and executing: "
+        f"RESOURCE_EXHAUSTED (code 429): Individual quota reached. Please upgrade. Resets in {reset}.\n")
+if n == 1:
+    quota("2s")
+elif n == 2:
+    time.sleep(1.5)
+else:
+    quota("5h0m0s")
+'''
+
+
+def agy_loop():
+    with tempfile.TemporaryDirectory() as d:
+        ws, logs, bindir = os.path.join(d, "ws"), os.path.join(d, "logs"), os.path.join(d, "bin")
+        for p in (ws, logs, bindir):
+            os.makedirs(p)
+        open(os.path.join(bindir, "agy"), "w").write(FAKE_AGY)
+        os.chmod(os.path.join(bindir, "agy"), 0o755)
+        open(os.path.join(ws, "deadline.txt"), "w").write(time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(time.time() + 1800)) + "\n")
+        prompt = os.path.join(d, "prompt.md")
+        open(prompt, "w").write("Play.\n")
+        subprocess.run(["bash", os.path.join(ROOT, "tools", "launch-agent.sh"), "--agy-loop", ws, "gemini-x", "200000",
+                        prompt], check=True)
+        env = dict(os.environ, PATH=bindir + os.pathsep + os.environ["PATH"], FAKE_DIR=d, POG_AGY_LOGS=logs,
+                   POG_AGY_SLACK="0", POG_AGY_MIN_WAIT="1", POG_AGY_RETRY_WAIT="0")
+        t0 = time.time()
+        r = subprocess.run([os.path.join(ws, ".agy-loop.sh")], env=env, capture_output=True, text=True, timeout=60)
+        assert r.returncode == 0, r.stderr
+        calls = open(os.path.join(d, "calls.log")).read().splitlines()
+        # The first prompt again after the quota wait (no conversation began), then Continue; the last 429 stops it.
+        assert calls == ["-p Play.", "-p Play. The deadline is 30 minutes away.", "-c -p"] or \
+            (len(calls) == 3 and calls[0] == "-p Play." and calls[1].startswith("-p Play. The deadline is")
+             and calls[2] == "-c -p"), calls
+        events = [json.loads(l) for l in open(os.path.join(ws, "context.log"))]
+        assert [e["event"] for e in events] == ["agy-quota", "agy-quota-stop"], events
+        assert "Individual quota reached" in events[0]["error"] and events[0]["sleep"] >= 1, events
+        assert time.time() - t0 < 30, "slept on the quota, did not spin"
+    print("agy loop on a quota error: ok")
 
 
 if __name__ == "__main__":
