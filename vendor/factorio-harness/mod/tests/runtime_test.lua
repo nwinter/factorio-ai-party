@@ -1429,6 +1429,12 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   world={drill}
   local seen=call('inspect',{position={x=30,y=0}})
   eq(seen.drop.x,29.5); eq(seen.drop.y,-1.5); eq(seen.drop_into,'wooden-chest'); eq(seen.io,'-> 29.7,-1.3 wooden-chest'); eq(seen.pickup_position,nil)
+  -- Ore under a drill's footprint: inspect takes the drill, mine still means the ore
+  -- (the ore here is not hand-mineable, so the error shows which was picked).
+  drill.minable=true
+  world={drill,{valid=true,name='iron-ore',type='resource',position={x=30.5,y=0.5},half=0.5,minable=false,force={name='neutral'}}}
+  eq(call('inspect',{position={x=30.5,y=0.5}}).name,'burner-mining-drill')
+  fails(function() call('mine',{position={x=30.5,y=0.5}}) end,'entity is not mineable')
   p.surface.find_entities_filtered=find
 end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed

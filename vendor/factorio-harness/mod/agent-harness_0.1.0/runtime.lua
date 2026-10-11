@@ -337,8 +337,10 @@ local function entity(p,args,read_only)
     end
   end
   -- Any tile of a building's footprint picks it, as a player's cursor does
-  -- (shake3: Gemini's inspect missed buildings off their centre).
-  if not found then
+  -- (shake3: Gemini's inspect missed buildings off their centre). Ore at the
+  -- point stays the target of an action (mine there means the ore, never the
+  -- drill over it); a read takes the building.
+  if not found and (read_only or not resource) then
     local cover
     for _, e in pairs(p.surface.find_entities_filtered{position=pos, name=args.name}) do
       if wanted(e) and e.type ~= 'resource' and e.type ~= 'item-entity' then
