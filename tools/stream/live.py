@@ -148,7 +148,8 @@ class LiveSource:
             p = profiles.get(name, {})
             st = self.status_cache.get(name, {})
             a = {"name": name, "kind": p.get("kind") or cfg.get("kind", "bot")}
-            for key in ("display_name", "color", "glyph", "motto", "voice", "avatar", "position", "last_said", "alive", "active"):
+            for key in ("display_name", "color", "glyph", "motto", "voice", "voice_description", "avatar", "position",
+                        "last_said", "alive", "active"):
                 if p.get(key) is not None:
                     a[key] = p[key]
             if p:  # `profile` never called: profiles reports no display name, colour or glyph

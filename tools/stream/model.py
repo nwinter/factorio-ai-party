@@ -117,6 +117,7 @@ class Agent:
         self.died_at = None
         self.connected = True
         self.voice = None  # profile.voice: a voice id from tools/stream/voices.py
+        self.voice_description = None  # profile.voice_description: words for a designed voice (voices.py)
         self.avatar = None  # profile.avatar: parts for avatar.js (docs/ART-NOTES.md); None draws the name default
 
     def bump(self, amount, now):
@@ -185,7 +186,7 @@ class Model:
 
     def _ingest_agent(self, a, now):
         ag = self.agent(a["name"])
-        for key in ("kind", "display_name", "color", "glyph", "motto", "voice"):
+        for key in ("kind", "display_name", "color", "glyph", "motto", "voice", "voice_description"):
             if a.get(key):
                 setattr(ag, key, a[key])
         if "avatar" in a:
@@ -548,7 +549,7 @@ class Model:
                 "action": self.action_text(ag), "active": ag.active, "position": ag.position,
                 "location": self.location(ag), "interest": round(ag.interest, 2),
                 "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen, "voice": ag.voice,
-                "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at,
+                "voice_description": ag.voice_description, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at,
             })
         res = self.research
         return {

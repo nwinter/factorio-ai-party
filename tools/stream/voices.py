@@ -199,7 +199,9 @@ def provider_of(voice):
 
 def assign_voices(agents, taken=(), tts=None):
     """{agent name: voice id}. An agent's own valid `voice` wins, then a designed voice from its `voice_description`
-    (when `tts` can design one), and the rest get distinct voices by name hash."""
+    (when `tts`, by default the latest premium-backend TTS made, can design one), and the rest get distinct voices
+    by name hash."""
+    tts = tts or _designer
     out, used = {}, set(taken) | set(CASTERS.values()) | {v for vs in ROLE_VOICES.values() for v in vs}
     for a in agents:
         v = (a.get("voice") or "").strip().lower()
@@ -632,6 +634,7 @@ def available_providers():
 
 # Designed voices: {catalog id: (provider, ref, description, like)}, loaded from STATE_DIR/designed.json.
 DESIGNED = {}
+_designer = None  # the latest TTS on a premium backend: assign_voices() designs voices with it (caster.py unchanged)
 
 
 def _load_designed():
@@ -660,6 +663,9 @@ class TTS:
                     self.providers[name] = p
         if backend in PROVIDERS and backend not in self.providers:
             raise TTSError(f"{backend}: no key at {os.path.join(KEY_DIR, PROVIDER_KEY[backend] + '.key')}")
+        if self.providers:
+            global _designer
+            _designer = self
         if (backend in MODEL or backend == "auto") and ai is None:
             try:
                 from cfai import WorkersAI
