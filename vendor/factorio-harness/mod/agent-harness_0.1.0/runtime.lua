@@ -774,7 +774,7 @@ function handlers.map(p,a)
         end
         for _,kind in ipairs({'tree','rock'}) do
           if a[kind..'s'] then
-            local filter=kind=='tree' and {area=area,type='tree'} or {area=area,type='simple-entity'}
+            local filter=kind=='tree' and {area=area,type={'tree','plant'}} or {area=area,type='simple-entity'}
             for _,e in pairs(surface.find_entities_filtered(filter)) do
               local x,y=math.floor(e.position.x),math.floor(e.position.y)
               if math.floor(x/32)==cx and math.floor(y/32)==cy and (kind=='tree' or e.name:find('rock')) then
@@ -1663,7 +1663,7 @@ local function placement_error(p,proto,pos,direction)
       found[#found+1]=string.format('%s standing at (%.1f,%.1f) (ask them to move, or build elsewhere)',who and who..'\'s character' or 'another character',e.position.x,e.position.y)
     elseif e.valid and e.type~='resource' and #found<4 then
       local name=e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.type=='tile-ghost' and 'tile ghost '..e.ghost_name or e.name
-      if e.type=='tree' or e.type=='simple-entity' or e.type=='cliff' then clearable=true end
+      if e.type=='tree' or e.type=='plant' or e.type=='simple-entity' or e.type=='cliff' then clearable=true end
       found[#found+1]=string.format('%s (%g,%g)',name,e.position.x,e.position.y)
     end
   end
