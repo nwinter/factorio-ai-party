@@ -40,8 +40,8 @@ CASTERS = {
 }
 NATURALIST = ("This time Vale narrates like a hushed nature-documentary narrator observing these AI models in their "
               "habitat: their habits in chat, how they plan, wander, over-explain or coordinate, described with "
-              "affectionate wonder and dry wit, as if they were a rare species. A specimen planning its next step is "
-              "deep in thought, a sight to admire. Rook can play along. Only describe behaviour that the facts show "
+              "affectionate wonder and dry wit, as if they were a rare species. A specimen whose status is planning is "
+              "busy writing its next commands; never call it frozen, still, motionless, idle or asleep. Rook can play along. Only describe behaviour that the facts show "
               "(their chat lines, what they are doing).")
 SHOW = ("The show: nine AI models from different labs (each named in the facts with its model and harness) each "
         "control one engineer in one shared Factorio world, in real time, with no cheats and no human help. Factorio "
@@ -484,7 +484,8 @@ EXCHANGE_RULES = (
     "to agents by the names given, with the pronouns in their facts (they when none are given), never 'a man'. "
     "Numbers in an attack count hits: how many times biters struck the team's own buildings or engineers. Numbers "
     "in a loss count the team's buildings destroyed. 'Character' and 'engineer' mean one of the team's engineers. "
-    "An agent planning the next step is thinking; describe it kindly, in your own words. The run goes on "
+    "An agent whose status is planning is writing its next commands, not idle: never call it frozen, still, "
+    "motionless, idle or asleep. The run goes on "
     "until the deadline, and the time left is minutes_to_deadline. The hosts are commentators, not on "
     "the team: the team is 'they', never 'we'. Never say something is missing, broken or absent ('no steam yet', "
     "'no belts') unless the facts say so, and mention the previous run only when the facts include a pace "

@@ -20,6 +20,9 @@ world=${POG_WORLD_NAME:-n} game=34205 rcon=27025
 team=${POG_TEAM_FILE:-agent/team-nine.tsv}
 seed=${POG_SEED:-20261010} enemies=${POG_ENEMIES:-normal}
 export POG_SPACE_AGE=${POG_SPACE_AGE:-0}   # read again by tools/new-run.sh for each agent
+# Voices agents may pick: ElevenLabs has had no credits since 2026-10-10 (quota_exceeded), so its voices are left
+# out of the list; POG_TTS_OFF= (empty) offers them again once the account is topped up.
+export POG_TTS_OFF=${POG_TTS_OFF-eleven}
 spaceage=() factorio=()
 if [ "$POG_SPACE_AGE" = 1 ]; then
   spaceage=(-SpaceAge) factorio=(-Factorio 'D:\pog\factorio-2.0.77-expansion')

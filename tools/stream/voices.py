@@ -738,8 +738,11 @@ def respace_model(tts=None):
 
 
 def available_providers():
-    """Provider names whose key file exists (no network)."""
-    return [p for p in PROVIDERS if read_key(PROVIDER_KEY[p])]
+    """Provider names whose key file exists (no network), minus those in POG_TTS_OFF (comma-separated, e.g. "eleven"
+    while that account has no credits), so agents are only offered voices the run can play."""
+    off = {x.strip() for x in os.environ.get("POG_TTS_OFF", "").split(",") if x.strip()}
+    off |= {f"{x}-fast" for x in off}
+    return [p for p in PROVIDERS if p not in off and read_key(PROVIDER_KEY[p])]
 
 
 # Designed voices: {catalog id: (provider, ref, description, like)}, loaded from STATE_DIR/designed.json.
