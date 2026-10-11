@@ -258,8 +258,10 @@ class Segments:
         ys = [a["position"]["y"] for a in live]
         cx, cy = round((min(xs) + max(xs)) / 2, 1), round((min(ys) + max(ys)) / 2, 1)
         spread = max(math.hypot(x - cx, y - cy) for x, y in zip(xs, ys))
-        # ~60 tiles across at zoom 1 on a 1080p client: fit the spread plus margin, but never closer than overview_zoom
-        zoom = round(max(0.05, min(self.overview_zoom, 60.0 / (2 * spread + 60))), 3)
+        # ~60 tiles across at zoom 1 on a 1080p client: fit the spread plus margin, but never closer than overview_zoom.
+        # The game camera refuses zoom below 0.3 (cameras.lua MIN_ZOOM; shake3's 0.129 was refused), so a wider spread
+        # than ~200 tiles shows only the middle.
+        zoom = round(max(0.3, min(self.overview_zoom, 60.0 / (2 * spread + 60))), 3)
         facts = {"agents_in_world": len(live), "agents_total": len(snap.get("agents") or []),
                  "centre": [cx, cy], "spread_tiles": round(spread), "locations": sorted({a["location"] for a in live
                                                                                         if a.get("location")})[:6]}

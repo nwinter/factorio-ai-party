@@ -74,6 +74,7 @@ viewers=(--viewers-site); [ -n "${POG_YOUTUBE:-}" ] && viewers+=(--viewers-youtu
 nohup python3 tools/stream/serve.py --world "$world" --run "$rundir/stream.json" --port 8788 "${viewers[@]}" \
   >"$rundir/stream-service.log" 2>&1 &
 echo $! > "$rundir/stream-service.pid"
+helpers=("stream-service:$!:$rundir/stream-service.log")
 nohup ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
   -R 8787:127.0.0.1:8788 pogwin >/dev/null 2>&1 &
 echo $! > "$rundir/overlay-tunnel.pid"
@@ -87,19 +88,23 @@ tools/.venv/bin/python tools/obs.py start
 first_bot=$(awk -F'\t' '!/^#/ && NF {print $1; exit}' "$team")
 nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$rundir/chat.jsonl" >"$rundir/chat-log.err" 2>&1 &
 echo $! >> "$rundir/stream-service.pid"
+helpers+=("chat-log:$!:$rundir/chat-log.err")
 # ./shot: bots have no client, so a director renders each screenshot; this copies them into the workspaces.
 nohup tools/shot-sync.sh "$rundir" "$world-client-cam1" "$world-client-cam2" "$world-client-cam3" \
   >"$rundir/shot-sync.log" 2>&1 &
 echo $! >> "$rundir/stream-service.pid"
+helpers+=("shot-sync:$!:$rundir/shot-sync.log")
 # Shoutcasters and voiced agent lines (docs/AUDIO-NOTES.md); POG_CASTER=0 turns them off.
 if [ "${POG_CASTER:-1}" != 0 ]; then
   nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts auto --tts-fallback aura1 >"$rundir/caster.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
+  helpers+=("caster:$!:$rundir/caster.log")
 fi
 # The companion site's live page (site/push_live.py; token in site/worker/.secrets.json, gitignored).
 if [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; then
   nohup python3 site/push_live.py --source http://127.0.0.1:8788/state.json >"$rundir/push-live.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
+  helpers+=("push-live:$!:$rundir/push-live.log")
 fi
 # Analyst: talking points for the casters every 90 s, read-only (docs/ANALYST-NOTES.md); POG_ANALYST=0 turns it off.
 if [ "${POG_ANALYST:-1}" != 0 ]; then
@@ -111,7 +116,16 @@ if [ "${POG_ANALYST:-1}" != 0 ]; then
     "${aenv[@]}" ENABLE_CLAUDEAI_MCP_SERVERS=false python3 tools/stream/analyst.py --world "$world" --bot "$first_bot" --feed http://127.0.0.1:8788 \
     --run-dir "$rundir" --model "${POG_ANALYST_MODEL:-sonnet}" --every 90 --ask-port 8789 >"$rundir/analyst.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
+  helpers+=("analyst:$!:$rundir/analyst.log")
 fi
+# What code the helpers run, and whether each came up (docs/studies/shake3.md, P1 item 2).
+log "code $(git rev-parse --short HEAD)$(git diff --quiet HEAD -- tools agent vendor 2>/dev/null || echo ' plus uncommitted changes')"
+sleep 8
+for h in "${helpers[@]}"; do
+  IFS=: read -r hname hpid hlog <<<"$h"
+  if kill -0 "$hpid" 2>/dev/null; then log "helper $hname pid $hpid up: $(head -1 "$hlog" 2>/dev/null | cut -c1-120)"
+  else log "helper $hname pid $hpid FAILED: $(tail -2 "$hlog" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"; fi
+done
 
 # 5. Agents: three per Herdr tab, real time, team playbook.
 POG_TEAM="$rundir/team.txt"
