@@ -24,6 +24,12 @@ repo's own `.grok/hooks/`.
    `tools/context.py report runs/RUN_ID` prints compactions, re-injects, nudges, agy fresh starts and the token count
    at each compaction per agent. (Codex agents write no `context.log`; their compactions show as
    `"type":"compacted"` in the rollout JSONL.)
+5. No compaction in the last 2 minutes (shake3: Grok's began 39 s before its deadline and ended its play). Claude
+   Code's `PreCompact` hook runs `pre-compact --skip-late 120 --at N` and exits 2, which blocks an automatic
+   compaction while the deadline is under 120 s away and the context under compact_at + 5,000 (`skip-late` in
+   `context.log`; probe `tools/context-probe.sh --late claude haiku 40000`). The agy loop starts no fresh conversation
+   then. Grok's `PreCompact` cannot block, Codex hooks need trust in the owner's config, and Muse compacts in the
+   background (`docs/LAUNCH4-NOTES.md`).
 
 ## Per-harness settings
 

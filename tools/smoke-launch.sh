@@ -111,6 +111,20 @@ for line in open(os.path.join(rundir, "panes.txt")):
             # Clean profile, round 4: no git status in the session context, no silent-turn reminder.
             text = open(t).read()
             start += f" gitStatus={text.count(chr(34) + 'gitStatus' + chr(34))} silent_reminders={text.count('t heard from you')}"
+    if kind == "codex":    # clean profile, round 4: no skills list or multi-agent role in the TUI session either
+        import glob
+        for f in sorted(glob.glob(os.path.expanduser("~/.codex-account-b/sessions/*/*/*/*.jsonl")), key=os.path.getmtime)[-30:]:
+            text = open(f, errors="replace").read()
+            if os.path.realpath(d) in text[:20000]:
+                start = (f" skills_instructions={text.count('<skills_instructions>')}"
+                         f" multi_agent_role={text.count('<multi_agent_role>')}")
+    if kind == "muse":     # no owner hooks, no skill-reminder decisions
+        import glob, re
+        for f in sorted(glob.glob(os.path.expanduser("~/.local/share/muse/sessions/*/*/*/*/session.jsonl")), key=os.path.getmtime)[-20:]:
+            text = open(f, errors="replace").read()
+            if os.path.realpath(d) in text:
+                owner = sum(1 for k in re.findall(r'"kind":"hook_run_started","run_id":"([^"]+)"', text) if ".config/muse" in k)
+                start = f" owner_hooks={owner} skill_reminders={text.count('skill_reminder_decision')}"
     print(f"{name:13} {kind:6} requests={reqs} say={says} failed={fails} describe_lines={desc} hooks_seen={hooks}{start}")
     print("    notes: " + (" | ".join(notes) or "no tools/rules/blocked/nudge lines"))
     print("    supervisor: " + (" | ".join(sup) or "none"))
