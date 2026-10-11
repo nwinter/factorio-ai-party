@@ -26,7 +26,7 @@ Pronunciation: lexicon.tsv (next to this file). `speak()` applies it for the pro
 provider reads it, respellings elsewhere; POG_TTS_IPA=0 forces respellings); captions keep the written text. Callers
 pass the caption text: a line already through pronounce() loses the IPA forms (respellings still apply).
 """
-import base64, hashlib, json, os, re, shutil, subprocess, tempfile, time, unicodedata
+import base64, hashlib, json, os, re, shutil, subprocess, sys, tempfile, time, unicodedata
 import urllib.error, urllib.parse, urllib.request
 
 import textprep
@@ -162,12 +162,26 @@ PREMIUM = {
 CATALOG = {v: ("aura2", v, AURA_DESC[v], v) for v in VOICES}
 CATALOG.update(PREMIUM)
 
-# The two casters, by role. With `--tts auto` each role takes the first voice in its list whose provider is
-# available; with a single-provider backend it takes the first voice of that provider. Never given to an agent.
-ROLE_VOICES = {  # not yet chosen by ear: see docs/AUDIO-NOTES.md "Voices round 2"
-    "pbp": ["el-liam", "ca-daniel", "in-alex", "oa-ash", "atlas"],
-    "color": ["el-alice", "ca-gemma", "in-ashley", "oa-coral", "thalia"],
+# Provider families in order of preference for `--tts auto`: the casters' voices and the agents' default voices come
+# from the first family with a working key. OpenAI first for shake3 (2026-10-11): it rendered all 260 bench clips,
+# while the ElevenLabs account refused most requests (docs/AUDIO-NOTES.md "Bench run 1"). POG_TTS_PREFER=eleven puts
+# ElevenLabs first once its credits are confirmed (`voice_bench.py --account`).
+PREFER = [f for f in os.environ.get("POG_TTS_PREFER", "").split(",") if f] + ["openai", "eleven", "cartesia", "inworld"]
+
+
+def family_rank(fam):
+    return PREFER.index(fam) if fam in PREFER else len(PREFER)
+
+
+# The two casters, by role. With `--tts auto` each role takes the first voice in its list (in PREFER order) whose
+# provider is available; with a single-provider backend it takes the first voice of that provider. Never given to an
+# agent. Provisional picks from bench run 1's measurements (see docs/AUDIO-NOTES.md), not yet chosen by ear.
+ROLE_VOICES = {  # oa-verse and oa-ballad move their pitch most of the OpenAI voices on the caster lines
+    "pbp": ["oa-verse", "el-liam", "ca-daniel", "in-alex", "atlas"],
+    "color": ["oa-ballad", "el-alice", "ca-gemma", "in-ashley", "thalia"],
 }
+# Left out of the agents' default voices (an agent can still pick them): the flattest in bench run 1.
+DEFAULT_SKIP = {"oa-onyx", "oa-shimmer"}
 # Caster voices to design (ElevenLabs or Inworld voice design) as bench candidates: `voice_bench.py --design`.
 ROLE_DESIGN = {
     "pbp": "Energetic esports play-by-play commentator in his thirties, American, bright and punchy mid-range voice, "
@@ -219,10 +233,11 @@ def assign_voices(agents, taken=(), tts=None):
             v = tts.designed_voice(a["name"], a["voice_description"])
             if v:
                 out[a["name"]] = v
-    # defaults: the premium voices this TTS can speak first, then Aura-2 (deterministic for a given set of keys)
-    fams = {FAMILY[p] for p in tts.providers} if tts is not None and tts.providers else set()
-    pools = [sorted(v for v, e in PREMIUM.items() if FAMILY.get(e[0]) in fams),
-             [v for v in voice_ids() if v not in CASTERS.values()]]
+    # defaults: the premium voices this TTS can speak, a family at a time in PREFER order, then Aura-2 (deterministic
+    # for a given set of keys)
+    fams = sorted({FAMILY[p] for p in tts.providers} if tts is not None and tts.providers else set(), key=family_rank)
+    pools = [sorted(v for v, e in PREMIUM.items() if FAMILY.get(e[0]) == f and v not in DEFAULT_SKIP) for f in fams]
+    pools.append([v for v in voice_ids() if v not in CASTERS.values()])
     for a in sorted(agents, key=lambda a: a["name"]):
         if a["name"] in out:
             continue
@@ -233,7 +248,7 @@ def assign_voices(agents, taken=(), tts=None):
             v = next((x for x in free if x not in used), None)
             if v:
                 break
-        v = v or pools[1][h % len(pools[1])]
+        v = v or pools[-1][h % len(pools[-1])]
         out[a["name"]] = v
         used.add(v)
     return out
@@ -526,6 +541,17 @@ class ElevenLabs(Provider):
                     continue
                 raise
 
+    def account(self):
+        """Plan and credits ('creator: 81234 of 100000 credits used, resets 2026-11-02'), or why it is unknown."""
+        try:
+            s = _json("GET", f"{self.API}/v1/user/subscription", {"xi-api-key": self.key}, timeout=20)
+        except TTSError as x:
+            return f"unknown ({str(x)[:160]})"
+        reset = s.get("next_character_count_reset_unix")
+        when = time.strftime("%Y-%m-%d", time.localtime(reset)) if reset else "?"
+        return (f"{s.get('tier')}: {s.get('character_count')} of {s.get('character_limit')} credits used, "
+                f"resets {when}")
+
     def voices(self):
         out, token = [], None
         while True:
@@ -740,6 +766,8 @@ class TTS:
         self.seconds = 0.0
         self.last = {}  # provider, voice, mood, cached of the latest clip
         self.respacer = None  # textprep.Respacer, made on first use (it needs self.ai)
+        self.down = {}  # provider family -> time it may be tried again (auto: a provider out of credits stays out)
+        self.fails = {}  # provider family -> failures in a row
         self.providers = {}
         for name, make in PROVIDERS.items():
             if backend in ("auto", name):
@@ -766,12 +794,49 @@ class TTS:
             return self.caster_voice(caster)
         return voice
 
+    def up(self, prov):
+        """`prov` has a key and is not resting after failures (auto)."""
+        return prov in self.providers and self.down.get(FAMILY.get(prov, prov), 0) <= time.time()
+
+    def _failed(self, prov, err):
+        """Auto: an account that is out of credits or refuses the key rests for 30 minutes, a rate limit for a
+        minute, anything else after 3 failures in a row for 2 minutes. Its voices meanwhile go to a stand-in, so a
+        voice does not flip between providers clip by clip (short lines still fitting the last credits)."""
+        fam = FAMILY.get(prov, prov)
+        self.fails[fam] = self.fails.get(fam, 0) + 1
+        msg = str(err).lower()
+        if msg[:3] in ("401", "402") or "quota" in msg or "credit" in msg:
+            rest = 1800
+        elif msg[:3] == "429":
+            rest = 60
+        elif self.fails[fam] >= 3:
+            rest = 120
+        else:
+            return
+        self.down[fam] = time.time() + rest
+        print(f"[tts] {fam} resting {rest // 60 or 1} min after: {str(err)[:160]}", file=sys.stderr, flush=True)
+
+    def substitute(self, voice, avoid=None):
+        """(provider, ref) for a voice whose provider is down or keyless under auto: the closest voice (same Aura-2
+        stand-in, else by hash) of the most preferred working family other than `avoid`, else its Aura-2 stand-in."""
+        like = (CATALOG.get(voice) or DESIGNED.get(voice) or CATALOG["orion"])[3]
+        held = {v for vs in ROLE_VOICES.values() for v in vs}
+        for fam in sorted({FAMILY[p] for p in self.providers if self.up(p)} - {avoid}, key=family_rank):
+            prov = next(p for p in self.providers if FAMILY[p] == fam and self.up(p))
+            pool = sorted((v, e[1], e[3]) for v, e in PREMIUM.items() if FAMILY.get(e[0]) == fam and v not in held)
+            same = [r for _, r, lk in pool if lk == like]
+            if same or pool:
+                return prov, same[0] if same else pool[int(hashlib.sha1(voice.encode()).hexdigest(), 16) % len(pool)][1]
+        return "aura2", like
+
     def route(self, voice, caster=None):
         voice = self.effective(voice, caster)
         prov, ref, _, like = CATALOG.get(voice) or DESIGNED.get(voice) or CATALOG["orion"]
         if self.backend == "auto":
-            if prov == "aura2" or prov not in self.providers:
+            if prov == "aura2":
                 return "aura2", like
+            if not self.up(prov):
+                return self.substitute(voice)
             if caster and AUTO_CASTER_MODEL.get(prov) in self.providers:
                 return AUTO_CASTER_MODEL[prov], ref  # casters are most of the characters: the cheaper model
             return prov, ref
@@ -782,9 +847,9 @@ class TTS:
         return self.backend, like
 
     def caster_voice(self, role):
-        for v in ROLE_VOICES.get(role, []):
+        for v in sorted(ROLE_VOICES.get(role, []), key=lambda v: family_rank(FAMILY.get(provider_of(v), "aura2"))):
             p = provider_of(v)
-            if self.backend == "auto" and (p == "aura2" or p in self.providers):
+            if self.backend == "auto" and (p == "aura2" or self.up(p)):
                 return v
             if self.backend in PROVIDERS and FAMILY.get(p) == FAMILY[self.backend]:
                 return v
@@ -818,13 +883,31 @@ class TTS:
                 return audio, "audio/mpeg", dur, time.time() - t0
         try:
             audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice)
-        except (TTSError, KeyError, ValueError):  # KeyError/ValueError: a response not shaped as documented
-            if self.backend != "auto" or prov == "aura2" or self.ai is None:
+            self.fails[FAMILY.get(prov, prov)] = 0
+        except (TTSError, KeyError, ValueError) as x:  # KeyError/ValueError: a response not shaped as documented
+            if self.backend != "auto" or prov == "aura2":
                 raise
+            self._failed(prov, x)
+            key = None  # a stand-in's clip is not cached as the voice's
             vid = self.effective(voice, caster)
-            like = (CATALOG.get(vid) or DESIGNED.get(vid) or CATALOG["orion"])[3]
-            prov, ref = "aura2", like  # a premium provider failed: the voice's Aura-2 stand-in speaks
-            audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice)
+            # this clip: the caster's next voice or the closest voice of another working provider, else the voice's
+            # Aura-2 stand-in
+            avoid = FAMILY.get(prov)
+            alt = caster and next((v for v in sorted(ROLE_VOICES.get(caster, []), key=lambda v: family_rank(
+                FAMILY.get(provider_of(v), "aura2"))) if FAMILY.get(provider_of(v)) not in (None, avoid)
+                and self.up(provider_of(v))), None)
+            prov, ref = (provider_of(alt), CATALOG[alt][1]) if alt else self.substitute(vid, avoid=avoid)
+            audio = None
+            if prov != "aura2":
+                try:
+                    audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice)
+                except (TTSError, KeyError, ValueError) as y:
+                    self._failed(prov, y)
+                    prov, ref = "aura2", (CATALOG.get(vid) or DESIGNED.get(vid) or CATALOG["orion"])[3]
+            if audio is None:
+                if self.ai is None:
+                    raise TTSError(f"{x}; no Workers AI for the Aura-2 fallback") from None
+                audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice)
         if prov not in ("say", "tone") and self.target is not None:
             audio, ctype = normalize(audio, ctype, self.target)
         dur = duration(audio, ctype)
