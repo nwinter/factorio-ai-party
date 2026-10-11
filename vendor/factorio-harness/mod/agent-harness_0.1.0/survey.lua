@@ -187,7 +187,7 @@ return function(api)
     local machines,order,warnings={},{},{}
     local fuel,fuel_order={},{}
     local labs,missing,lab_count={},{},0
-    local powered,starved,unpowered=0,0,0
+    local powered,starved,unpowered,unconnected=0,0,0,0
     local turrets,turret_order={},{}
     local tech=force.current_research
     local status_ids=defines.entity_status
@@ -213,7 +213,10 @@ return function(api)
         elseif e.electric_buffer_size and e.electric_buffer_size>0 and e.type~='boiler' then
           powered=powered+1
           if e.status==status_ids.low_power then starved=starved+1
-          elseif e.status==status_ids.no_power then unpowered=unpowered+1 end
+          -- no_power without a network id: no pole reaches it.
+          elseif e.status==status_ids.no_power then
+            if e.electric_network_id then unpowered=unpowered+1 else unconnected=unconnected+1 end
+          end
         end
         if e.type=='ammo-turret' then
           local t=turrets[e.name]
@@ -269,8 +272,13 @@ return function(api)
       end
     end
     if #ammo_parts>0 then warnings[#warnings+1]='ammo: '..table.concat(ammo_parts,'; ')..'; rearm radius=R walks every turret below count' end
-    if starved+unpowered>0 then
-      warnings[#warnings+1]=string.format('power: %d/%d electric machines low_power',starved,powered)..(unpowered>0 and ', '..unpowered..' no_power' or '')
+    -- Only when something lacks power: 'power: 3 of 78 machines low_power; 1 unconnected'.
+    if starved+unpowered+unconnected>0 then
+      local parts={}
+      for _,c in ipairs{{starved,'low_power'},{unpowered,'no_power'},{unconnected,'unconnected'}} do
+        if c[1]>0 then parts[#parts+1]=(#parts==0 and c[1]..' of '..powered..' machines ' or c[1]..' ')..c[2] end
+      end
+      warnings[#warnings+1]='power: '..table.concat(parts,'; ')..' (fh call power lists them)'
     end
     local packs={}
     for name,n in pairs(missing) do packs[#packs+1]=name..' ('..n..' labs)' end
