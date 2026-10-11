@@ -170,3 +170,89 @@ Live, world `live` (fresh non-peaceful map `board1`, director client `pog-direct
 - Not exercised live: pruning order beyond the open-item case, `board_events` paging past 200, and a dead bot
   posting (covered in the fake test).
 - World `live` was left running on `board1` with 9 bots, the filler board and the director client.
+
+## Round 2: fh output shape (transcript study P1 item 5, P2 items 6 and 9, P1 item 3)
+
+Source: `docs/studies/shake1-transcripts.md` section 5. Runtime-only again (chat.lua, profiles.lua, two lines in
+runtime.lua's dispatch and clock_line, one in board.lua); control.lua is unchanged. The rest is the CLI
+(`host/cli.ts`, `host/format.ts`, new `host/deadline.ts`) and `tools/new-run.sh`.
+
+### What changed
+
+- Lossless `chat` (chat.lua): a message is read only when a reply returned it, or when you wrote it. The default
+  read returns your unread messages, newest `limit` (30), oldest first, with `remaining: K` for the unread ones it
+  left out; `since` returns everything after a seq. The cursor covers the read prefix; a per-player set (at most the
+  log's 200) holds read messages above it. `say` no longer moves the cursor over others' unread messages (the old
+  `max(cursor, own seq)` did).
+- The `chat: unread=N latest=...` trailer repeats only when the newest unread message changed since the agent was
+  last told; `status` always shows it; `peek` requests show it without remembering.
+- `error:` last: compact failures print `id`, `tick` and `error_result` first and end with one line
+  `error: <code>: <message>[; recovery: ...]` (newlines flattened). Successes with `short`, `awaiting_craft`, `errors`
+  (craft batch refusals, shown as `not done`), `none_held`, `tiles_refused` or `extent_warning` end with one
+  `warning:` line; those fields leave the body. Exit codes: every failure was already nonzero (call, run, wait,
+  deploy, client errors); warnings exit 0.
+- Compact `--wait` (compact output only; JSON and `--full` keep `{accepted, completion}`): before the action one
+  `observe {peek}` of the character's inventory; polls are `status {peek:true}`; after, one small `observe` (radius 1,
+  the character only) gives `outcome`, `action`, `waited_s`, `position`, `health` (when hurt), `inventory` change,
+  `detail` (the action's result), `team`, `clock`, `chat`. The acceptance print drops its clock so the reply has one
+  clock line. `fh wait` is compact the same way. On a runtime that rejects `peek`, polls fall back to plain status.
+- Peek polls fixed a round-1 bug: `--wait` polls were consuming team hints that the CLI then threw away. Peek
+  requests now also leave the turn clock running (`clock_line(p, peek)`), so the reply after a wait reads
+  `+4s since your last request`; `mention_counts.last_request_tick` takes the later of the last request and the last
+  peek, so a waiting agent does not look idle to a supervisor.
+- Deadline: `--deadline-file` or `FH_DEADLINE_FILE` appends `deadline in 23m` / `deadline in 1h05m` /
+  `deadline passed 4m ago` to `clock:`. The file's first line is parsed as `YYYY-MM-DD HH:MM[:SS] [ZONE]` with common
+  US/EU zone abbreviations or a numeric offset; no or unknown zone means local time. `tools/new-run.sh` exports it in
+  each agent's `./fh` wrapper. A missing file only drops the suffix (a note on stderr).
+- `fh say "text"` (words joined), `--text-file F`, `fh say -` (stdin), or a pipe with no words (read for up to 1 s);
+  `--aloud`. `fh chat [--since SEQ] [--limit N] [--peek]`; `--since` also works for `fh board events` and
+  `fh call chat`, and refuses other actions.
+- `profile {voice}` (1..16 characters, lower-cased, listed in `profile` and `profiles`, ids listed in `describe`),
+  as `docs/AUDIO-NOTES.md` specified.
+- Docs: usage.md ("Output shape, chat and time left", profile voice), agent/team.md (chat, output, voice, aloud),
+  agent/coop.md (chat).
+
+### Decisions to check
+
+- "Never mark read what wasn't printed": fh prints every message a `chat` reply returns, so the guarantee is at the
+  reply level. An agent that pipes `./fh chat | tail -2` still loses lines; `remaining` cannot see that.
+- The compact `--wait` costs two extra small requests per wait (observe before and after; a third status when the
+  character died). Full mode costs one extra status at the end (the hints carrier).
+- Compact wait output applies to compact format only, so scripts using `--format json` see the same shape as before.
+- Warnings do not change the exit code. Making `short` exit nonzero would break `&&` chains on partial crafts that
+  agents rely on.
+- Failure replies built by control.lua carry no `clock:` line, so no deadline either.
+
+### Verification
+
+- Fake-engine tests: `tests/chat.lua` (lossless reads, remaining, since, own messages, trailer modes, bounded read
+  set), `tests/board.lua` (trailer through dispatch, peek keeps the clock and counts as activity), `tests/bots.lua`
+  (voice), `tests/format.test.ts` (error/warning last), `tests/deadline.test.ts`, `tests/cli.test.ts` (say from words,
+  file, stdin, pipe and empty; chat/board `--since`; deadline via env, flag and a missing file; compact `--wait` with
+  peek polls, inventory change and one clock line; `--full`; compact `fh wait`; interrupted wait ends with `error:`;
+  fallback without peek). `npm test`: 75 pass; the 4 failures are the `bridge.test.ts` sandbox `listen EPERM` ones
+  from round 1. All Lua tests pass on eng/board and on a merge with eng/harness2.
+- Live on world `live`, with a runtime built from a scratch merge of eng/board and eng/harness2 (so the other
+  engineer's verified Lua stayed deployed): grok posted three lines by plain words with an apostrophe, bare words,
+  and stdin with `$HOME` and quotes; astra's `board` showed the trailer once, the next `board` did not; `fh chat
+  --limit 2` returned seq 218-219 with `remaining: 1`, the next `fh chat` returned 217, `--since 216 --peek` all
+  three. A failing `build` printed `error: action_failed: ...` as the last line with exit 1. `walk --wait`,
+  `move_to --wait` and `mine --wait` printed the brief reply (`inventory: stone+20` after mining a rock) with
+  `deadline in 1h43m` on the clock. A craft batch printed `warning: not done: boiler="recipe is unavailable"`.
+  `profile {voice:"Iris"}` stored `iris`, listed in `profiles`. `fh wait` after a walk was compact.
+
+### Coordination with eng/harness2
+
+- Both branches change `host/cli.ts`; merging them conflicts in three places: the `known` command set (harness2 adds
+  `sleep`; eng/board adds the say/chat/--since block just above it), `waitForAction` (eng/board split it into
+  `waitForAction` plus `waitForActionEnd`; harness2's `waitBudget(..., action === 'wait_until')` belongs on the
+  deadline line of `waitForActionEnd`), and the idle branch of `waitForIdle`. The Lua merges cleanly. Both engineers
+  were told; `fh sleep` polling with `peek` would keep hints for its final reply.
+
+### Gaps
+
+- The 1 s stdin wait for `fh say` with no words: a harness that keeps stdin open without data gets
+  `say needs text` after 1 s instead of hanging.
+- Zone abbreviations are a fixed table (US, UK/EU, India, Japan, Australia east). Others fall back to local time.
+- The trailer's "changed" state is per player in the save; a reconnecting client or a new wrapper does not reset it,
+  and `status` is the way to see it again.
