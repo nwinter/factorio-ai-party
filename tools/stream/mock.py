@@ -12,8 +12,10 @@ SCORES = os.path.join(ROOT, "runs", "2026-10-10-coop1", "scores.jsonl")
 # What the agents "chose" with `profile`. Deliberately awkward picks (near-white, near-black, long name, emoji)
 # so the page's contrast fallback and truncation get exercised.
 PROFILES = {
-    "astra": {"display_name": "Astra", "color": "#7c5cff", "glyph": "✦", "motto": "Ratios first."},
-    "opus": {"display_name": "Opus", "color": "#e8743b", "glyph": "♪", "motto": "Power is a promise.", "voice": "orpheus"},
+    "astra": {"display_name": "Astra", "color": "#7c5cff", "glyph": "✦", "motto": "Ratios first.",
+              "avatar": {"base": "robot", "visor": "mono", "emblem": "gear", "accent": "#33ccff"}},
+    "opus": {"display_name": "Opus", "color": "#e8743b", "glyph": "♪", "motto": "Power is a promise.", "voice": "orpheus",
+             "avatar": {"helmet": "hardhat", "emblem": "bolt", "backdrop": "hazard"}},
     "sonnet": {"display_name": "Sonnet", "color": "#f4f4f0", "glyph": "S", "motto": "Fourteen belts, one rhyme."},
     "haiku": {"display_name": "Haiku", "color": "#2fbf71", "glyph": "🌸", "motto": "ore falls, plates rise"},
     "sol": {"display_name": "Sol", "color": "#ffd400", "glyph": "☀", "motto": "Keep the labs lit."},
@@ -382,7 +384,7 @@ class MockSource:
             "tick": int(gsec * 60), "paused": False, "game_seconds": gsec,
             "agents": [{
                 "name": a["name"], "kind": "bot", "display_name": a["display_name"], "color": a["color"],
-                "glyph": a["glyph"], "motto": a.get("motto", ""), "voice": a.get("voice"), "position": {"x": round(a["pos"][0], 1), "y": round(a["pos"][1], 1)},
+                "glyph": a["glyph"], "motto": a.get("motto", ""), "voice": a.get("voice"), "avatar": a.get("avatar"), "position": {"x": round(a["pos"][0], 1), "y": round(a["pos"][1], 1)},
                 "alive": a["alive"], "dead_until_tick": int((gsec + (a["dead_until"] - now) * self.speed) * 60) if not a["alive"] else None,
                 "active": a["active"], "last": a["last"], "combat": now < a["combat_until"], "last_said": a["last_said"],
             } for a in self.agents.values()],
