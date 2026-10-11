@@ -133,14 +133,13 @@ This needs a deploy first: the new control.lua and the runtime (see "What I need
 4. **Vote.** Two bots run `fh vote kick nick "test"`, then `python3 tools/players.py --world n once --dry-run` should print "would be carried". Run it without `--dry-run` to be kicked for real. To check the stream lines without the kick, set `POG_PLAYERS_PROTECT=nick`.
 5. **Guest on first join.** On a fresh smoke world (not a, b, c, n), a client joining as a new name should be in `pog-guest` (`fh players` shows `group guest`).
 
-## Console audit (eng/broker)
+## Console audit (eng/broker, merged here)
 
-`tools/players.py` sends `/kick`, `/ban` and operator dispatches over RCON. On eng/broker's console audit:
+This branch merges eng/broker, which goes into main at the 17:00 shift change.
 
-- the dispatches fit the harness request form and are counted, not logged;
-- `/kick` and `/ban` would be logged as UNKNOWN until `tools/console_audit.py` learns them.
-
-Once eng/broker is in main, this branch merges main and adds them as operator lines.
+- `tools/players.py`'s operator dispatches use the stream service's request form, so the audit counts them as harness requests and does not log them.
+- `/kick`, `/ban` and the other moderation commands (`/unban`, `/mute`, `/whitelist`, `/promote`, ...) are labelled `moderation` and listed one by one in the stop-team audit. Each one there should match a carried vote in `runs/RUN/votes.jsonl`.
+- With the broker on, agents can only send harness requests for their own bot, so a moderation command can only come from the operator.
 
 ## Opening the server later (not done)
 
