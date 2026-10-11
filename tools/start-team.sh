@@ -6,6 +6,7 @@
 # POG_YOUTUBE (@handle or video id for the YouTube chat bridge; default @NickWinter), POG_SPACE_AGE=1 (Space Age world, expansion-build
 # directors, the agents' Space Age playbook section and the analyst's Space Age knowledge base).
 # POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-b).
+# POG_VIEWER_RELAY (default 1: viewer lines that pass the filters and Clef reach the agents in game chat; 0: off).
 # POG_RESUME=PREVIOUS_RUN: a later shift of the same world (docs/SPACEAGE.md, shifts): no new instance; the server
 # starts on the newest of saves\PREVIOUS_RUN.zip and the autosaves after it (copied to saves\RUN_ID.zip), existing bots
 # are kept, and each agent starts from its notes.md of that run. POG_SPACE_AGE must match the instance's mods.
@@ -152,6 +153,10 @@ json.dump({"title": f"{words.get(len(agents), len(agents))} AIs, one factory", "
 EOF
 # Viewer chat: the companion site's chat always; YouTube when POG_YOUTUBE (an @handle, channel id or video id) is set.
 viewers=(--viewers-site); [ -n "${POG_YOUTUBE:-}" ] && viewers+=(--viewers-youtube "$POG_YOUTUBE")
+# Viewer lines that pass the filters and Clef go into the game as `viewer NAME: text` while this switch file exists:
+# on unless POG_VIEWER_RELAY=0; `rm runs/RUN/viewers-relay.on` stops it mid-run, `touch` starts it (checked every 2 s).
+viewers+=(--viewers-relay "$rundir/viewers-relay.on")
+if [ "${POG_VIEWER_RELAY:-1}" = 1 ]; then touch "$rundir/viewers-relay.on"; else rm -f "$rundir/viewers-relay.on"; fi
 nohup python3 tools/stream/serve.py --world "$world" --run "$rundir/stream.json" --port 8788 "${viewers[@]}" \
   >"$rundir/stream-service.log" 2>&1 &
 echo $! > "$rundir/stream-service.pid"
