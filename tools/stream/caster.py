@@ -63,7 +63,9 @@ SPOKEN = (
     "try. A gentle tease is fine. Never mock an agent for waiting, planning, sleeping, walking, chatting or their "
     "motto. That is how they work, and viewers should end up liking them. Don't narrate someone walking. When "
     "nothing much is happening, talk about the plan on the board, the factory, a number that changed, or a viewer's "
-    "question. Trust the facts. Never call a fact wrong.\n"
+    "question. Trust the facts. Never call a fact wrong. Say what an agent is trying to do (intent, working_on) and "
+    "what changed (since_last_beat). An agent with nothing new is not worth a line. Every line needs a reason: news, "
+    "a cause, a number that moved. No line just to fill air, and no riffs on mottos or small notes.\n"
     "Written English sounds wrong out loud, so never use these. Dashes, semicolons, colons and ellipses. The 'X, not "
     "Y' or 'not X, but Y' turn. Lists of three. Metaphors and similes: furnaces and labs do not starve, bleed, choke, "
     "gasp, feast, sing, hum, dream or pray. Nature-documentary narration. The words humming, cooking, symphony, ballet, "
@@ -354,6 +356,23 @@ def spoken_time(gt):
     return " ".join(parts)
 
 
+def agent_intent(s, a, fresh=600):
+    """What an agent last said it would do: its latest say or tell (the ticker's "-> Sol: ..."), if under 10 minutes
+    old, cleaned for speech. Nick (HOSTS3 item 6): 'walking' should read 'walking to restock the silo Sol asked for'."""
+    now = time.time()
+    names = {a.get("name"), a.get("display_name")}
+    cands = [m for m in s.get("chat") or [] if m.get("agent") in names and m.get("text")]
+    said = a.get("last_said") or {}
+    if said.get("text"):
+        cands.append({"text": said["text"], "t": said.get("t")})
+    cands = [m for m in cands if not m.get("t") or now - float(m["t"]) <= fresh]
+    if not cands:
+        return None
+    m = max(cands, key=lambda m: float(m.get("t") or 0))
+    text = re.sub(r"^\u2192\s*", "", m["text"]).replace("\u2192", "to")
+    return spoken(voices.speakable(text, 140)) or None
+
+
 TRAVEL = re.compile(r"^(?:walk|mov|travel|last: move|going|heading|run(?:ning)? to)", re.I)
 
 
@@ -368,17 +387,17 @@ def agent_facts(s, name, said=False, motto=False):
     if where and re.fullmatch(r"\d+ m [NSEW]{1,2}", where):  # "30 m E" is noise on air; named places are not
         where = None
     doing = a.get("action") if a.get("activity") == "acting" else None
-    if doing and TRAVEL.match(doing):
-        doing = None
     names = {name, a.get("display_name")}
     job = next((c.get("title") for c in (s.get("board") or {}).get("claims") or []
                 if c.get("title") and (c.get("agent") in names or c.get("owner") in names)), None)
+    if doing and TRAVEL.match(doing):  # "walking" only with where it leads (HOSTS3 item 6)
+        doing = f"heading off for {job}" if job else None
     # "thinking (standing still)" became 102 of 443 shake3 host lines mocking agents as frozen or statues
     f = {"name": a.get("display_name") or name, "pronouns": pronouns_of(a), "role": a.get("role"),
          "model": a.get("model"), "harness": a.get("harness"), "working_on": job, "doing": doing,
          "status": {"dead": "down, waiting to respawn", "offline": "offline",
                     "thinking": "working out the next step"}.get(a.get("activity")),
-         "where": where, "motto": (a.get("motto") or None) if motto else None}
+         "where": where, "motto": (a.get("motto") or None) if motto else None, "intent": agent_intent(s, a)}
     if said and (a.get("last_said") or {}).get("text"):
         f["last_said"] = spoken(voices.speakable(a["last_said"]["text"], 160))
     return {k: v for k, v in f.items() if v}
@@ -1574,6 +1593,30 @@ class Caster:
             e["agents"] = list(main) if main and self.rng.random() < 0.6 else self.rng.sample(agents, min(2, len(agents)))
         return e
 
+    def mark_changes(self, facts):
+        """Each agent in the facts gets `since_last_beat`: what changed since the hosts last had it in their facts (a
+        new board job, something new said, back from respawn, a new task). HOSTS3 item 6: news, not 'still walking'."""
+        seen = self.__dict__.setdefault("agent_seen", {})
+        groups = [facts.get("agent")] + [x for k in ("on_camera", "busy_agents", "observed") for x in facts.get(k) or []]
+        for ag in groups:
+            if not isinstance(ag, dict) or not ag.get("name"):
+                continue
+            now = {k: ag.get(k) for k in ("working_on", "intent", "status", "doing")}
+            before = seen.get(ag["name"])
+            seen[ag["name"]] = now
+            if before is None:
+                continue
+            ch = []
+            if now["working_on"] and now["working_on"] != before["working_on"]:
+                ch.append(f"took a new job: {now['working_on']}")
+            if now["intent"] and now["intent"] != before["intent"]:
+                ch.append("said something new")
+            if before["status"] == "down, waiting to respawn" and now["status"] != before["status"]:
+                ch.append("back from respawn")
+            if now["doing"] and now["doing"] != before["doing"]:
+                ch.append(f"now {now['doing']}")
+            ag["since_last_beat"] = ch or ["nothing new since the hosts last saw them"]
+
     def news(self, s):
         """Something changed since the hosts last spoke: research, the science rate, the board, the stage, losses."""
         return digest(s) != getattr(self, "last_digest", None)
@@ -1623,6 +1666,7 @@ class Caster:
         facts = facts_for(e, s, self.base_for(s), self.deadline(), self.shift())
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
+        self.mark_changes(facts)
         live = self.live_segment(s, margin=3) if hasattr(self, "live_segment") else None
         if live and e["kind"] != "segment" and e["prio"] < URGENT and "on_screen_now" not in facts:
             # a card stays up about 30 s, and the beats after its own went on as if it were not there
