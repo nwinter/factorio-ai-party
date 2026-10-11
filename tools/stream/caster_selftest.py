@@ -99,7 +99,8 @@ for kind in caster.TemplateWriter.T:
              "on_camera": [{"name": "Opus", "doing": "building boiler", "where": "power plant", "role": "Power",
                             "model": "Claude Opus 5.5", "motto": "Power is a promise"}],
              "busy_agents": [{"name": "Luna", "doing": "building gun turret", "where": "50 m W", "role": "Defense"}],
-             "researching": {"tech": "Oil gathering", "percent": 67}, "technologies_done": 14}
+             "researching": {"tech": "Oil gathering", "percent": 67}, "technologies_done": 14,
+             "on_screen_now": {"segment": "production", "title": "Production: 9.1 science per minute"}}
         for _ in range(4):
             line = tw.write(who, e, f, [], names + ["Opus"])
             if not line or "{" in line or caster.check_line(line, f, names + ["Opus"], []):
@@ -146,6 +147,8 @@ check("differ: segment event once", [e["kind"] for e in se] == ["segment"]
 sf = caster.facts_for(dict(se[0], prio=7), {"agents": []})
 check("segment facts are the on-screen facts", sf["on_screen_now"]["rate_now"] == 224
       and caster.check_line("Iron at 224 a minute!", sf, [], []) is None, str(sf))
+check("a rounded rate passes", caster.check_line("Plastic surges fifty-one a minute!", {"rate": 51.4}, [], []) is None
+      and caster.check_line("Plastic surges fifty-three a minute!", {"rate": 51.4}, [], []) is not None)
 
 
 class _Resp:

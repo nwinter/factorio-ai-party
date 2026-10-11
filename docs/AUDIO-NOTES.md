@@ -120,8 +120,18 @@ them and talk over them. Inert until serve.py serves `/segments`.
   `--segment-every` 180 s; the director also allows one per 3 minutes whoever asks, and fills lulls itself after
   about 6 quiet minutes. A segment that starts becomes a beat (priority 7) whose facts are `on_screen_now` (the
   segment's facts), so the fact check holds the hosts to what is on screen. While it is live with more than 6 s
-  left, filler beats keep talking about it. Selftests cover the event, the facts, and the request path against a
-  fake catalog; untested end to end until eng/stream2's side lands.
+  left, filler beats keep talking about it. While a segment is on screen its beat goes first (anything but a fresh
+  priority-9 event), and a segment beat is dropped, even mid-exchange, once that segment has left the screen.
+
+End to end against eng/stream2 (commit 4cef2b3, its mock with `"segments": {"spacing": 5}`, tone voices, a Node page):
+the caster's own request after a research event was queued ("Research: Fluid handling 23%") and, later, declined
+with 409 while an attack was on screen, as agreed. A production segment that stayed up 30 s got an exchange over it
+5 s into its life: "Copper's surging fifty percent in ten minutes—somebody finally remembered the red desert!" /
+"While advanced circuits bled out, down to ten." Three bugs found and fixed on the way:
+the opener and an attack outranked the segment until an attack cut it; "fifty-one" for an on-screen 51.4 failed
+the fact check (numbers within 1 of a fact now pass); and the hosts talked about a segment 25 s after an attack had
+cut it. The mock raises an alert every few seconds, so most segments there are declined or cut within seconds; a
+real run is calmer.
 
 ## Status
 

@@ -383,7 +383,7 @@ def check_line(line, facts, names, recent):
         if num not in blob and not near_round(float(num), known):
             return f"number not in facts: {num}"
     for words, n in spelled_numbers(low):
-        if n > 10 and n not in known and not near_round(n, known):
+        if n > 10 and not near_round(n, known):
             return f"number not in facts: {words}"
     if re.search(r"\bzero\b", low) and 0 not in known:  # "zero belts laid" was invented on the live world
         return "number not in facts: zero"
@@ -446,7 +446,10 @@ def spelled_numbers(text):
 
 
 def near_round(n, known):
-    """A rounded figure ('nearly fifty', 'over a hundred' for 140) is fine when a fact is from 0.75x to 1.5x of it."""
+    """A rounded figure is fine: 'fifty-one' for 51.4, and 'nearly fifty' or 'over a hundred' (for 140) when a fact
+    is from 0.75x to 1.5x of a round number."""
+    if any(abs(n - k) < 1 for k in known):  # segment facts carry rates like 51.4 a minute
+        return True
     return n >= 10 and n % 10 == 0 and any(0.75 * n <= k <= 1.5 * n for k in known)
 
 
@@ -495,6 +498,8 @@ class TemplateWriter:
                           "{agent_name} {did} {title}. The board keeps moving."],
                   "color": ["That team board is how {team_size} agents avoid stepping on each other.",
                             "Good teamwork there from {agent_name}.", "Somebody has to do the chores. Thanks, {agent_name}."]},
+        "segment": {"pbp": ["On screen now: {seg_title}.", "Let's take a closer look: {seg_title}."],
+                    "color": ["Here's the picture: {seg_title}.", "Worth a look: {seg_title}."]},
         "harness": {"pbp": ["Tool request on the board: {title}. Status: {change}."],
                     "color": ["When the agents ask for better tools, that's the meta-game."]},
         "camera": {"pbp": ["Let's check in on {cam_name}, {cam_doing}.", "Over to {cam_name} now: {cam_doing}.",
@@ -541,6 +546,8 @@ class TemplateWriter:
             flat["cam_motto"] += "."
         for k, v in (facts.get("researching") or {}).items():
             flat[f"researching_{k}"] = v
+        if (facts.get("on_screen_now") or {}).get("title"):
+            flat["seg_title"] = facts["on_screen_now"]["title"]
         if facts.get("change"):
             flat["did"] = {"posted": "posts", "taken": "picks up", "done": "finishes",
                            "blocked": "is stuck on"}.get(facts["change"], facts["change"])
@@ -816,11 +823,19 @@ class Caster:
 
     # -- casters
     def pick_event(self, now):
-        fresh = [e for e in self.events if now - e["t"] < self.a.stale]
+        live = self.live_segment(self.snap, margin=3) if getattr(self, "snap", None) else None
+        # a segment beat is only worth saying while that segment is on screen (an attack can cut it at once)
+        fresh = [e for e in self.events if now - e["t"] < self.a.stale and
+                 (e["kind"] != "segment" or (live and live.get("id") == (e.get("segment") or {}).get("id")))]
         self.events = deque(fresh, maxlen=60)
         if not fresh:
             return None
         best = max(fresh, key=lambda e: (e["prio"], e["t"]))
+        segs = [e for e in fresh if e["kind"] == "segment"]
+        if segs and best["prio"] < 9:
+            # what is on screen wins: on stream2's mock the opener and an attack outranked a production segment
+            # until an attack cut it, and the hosts never talked over it
+            best = segs[-1]
         self.events.remove(best)
         if best["prio"] >= URGENT:
             # an overrun base sends an attack, a loss or a death every few seconds; on the live world each got its
@@ -873,9 +888,9 @@ class Caster:
         self.record(type="segment_request", segment=kind, reason=reason, result=out)
         return out
 
-    def live_segment(self, s):
+    def live_segment(self, s, margin=6):
         seg = s.get("segment") or {}
-        return seg if seg.get("state") in ("starting", "live") and (seg.get("ends") or 0) > time.time() + 6 else None
+        return seg if seg.get("state") in ("starting", "live") and (seg.get("ends") or 0) > time.time() + margin else None
 
     def filler(self, now, s):
         """Something to talk about when nothing happened: rotate through angles that need no event."""
@@ -1027,6 +1042,11 @@ class Caster:
             if tts is self.tts:
                 self.breakers["tts"].good()
             audio, ctype, dur, tlat = clip
+            if e["kind"] == "segment":
+                live = self.live_segment(self.snap, margin=1) if self.snap else None
+                if not live or live.get("id") != (e.get("segment") or {}).get("id"):
+                    self.record(**base, who=who, line=line, pushed=False, reason="segment left the screen")
+                    break
             if i > 0 and e["prio"] < URGENT:  # an urgent exchange is not cut by the next urgent event (a siege)
                 with self.lock:
                     urgent = any(x["prio"] >= URGENT and x["t"] > t_start for x in self.events)
