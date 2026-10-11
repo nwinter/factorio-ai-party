@@ -468,7 +468,7 @@ function handlers.describe()
       grid={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',returns='one character per tile: rows [{y,row}] from origin, ruler, legend {char: names}. Upper case buildings by type, belts ^>v<, U/J underground in/out, S splitter, ? ghost, @ character, # other; lower case ore; ~ water'},
       power={area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',limit='unpowered rows 1..256 (default 32)',note='networks with a pole in the area: poles, production/consumption kW (5 s average) by prototype, unpowered machines (no_power|low_power|unconnected)'},
       scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)'},
-      nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..64 (default 32); map-known entities only',limit='1..64 (default 5)'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait)'},
+      nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..64 (default 32); map-known entities only',limit='1..64 (default 5)'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
       wire={from='pole {x,y} (optional name/unit_number) in reach',to='pole {x,y} in reach',disconnect='boolean: remove the copper wire instead'},
       inspect={position='{x,y}',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach'}, rotate={position='{x,y}',reverse='boolean'},
       configure={position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',recipe='enabled recipe',filters='or: item names for a filtering inserter/loader ([] clears; slot count from the entity)',filter_mode='whitelist|blacklist (inserters)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
@@ -1796,6 +1796,12 @@ local function build_one(p,a)
   end
   local proto=stack.prototype.place_result
   assert(a.type==nil or proto.type=='underground-belt' and (a.type=='input' or a.type=='output'),'type is input|output for underground belts only')
+  -- Only the agent's own character in the way: handlers.build walks it off
+  -- the footprint first, once per entry.
+  if not a.stepped then
+    local aside=construction.aside(p,proto,pos,direction)
+    if aside then return {aside=aside} end
+  end
   -- Undergrounds are always placed directly with an explicit end: cursor
   -- building does not reliably make the exit of a pair from script.
   if direct then
@@ -1852,23 +1858,51 @@ function handlers.build(p,a)
       if waiting then return waiting end
     end
   end
-  if not a.builds then return build_one(p,a) end
+  -- The character stands on the footprint and nothing else does: walk it off
+  -- (real walking, a timed action) and build then, as a player steps aside.
+  -- The rest of the call reruns from that entry (outcome fed | failed | timed_out).
+  local function step_aside(aside,rest)
+    rest.awaited=true; rest.stepped=true
+    -- A later batch entry from a rerun replaces the running step-aside itself.
+    local current=state().active[p.index]
+    if current and not current.running then finish(p.index,'replaced') elseif not current then stop(p) end
+    local until_tick=game.tick+180
+    state().active[p.index]={kind='feed',handler='build',args=rest,aside=aside,until_tick=until_tick,next_check=game.tick}
+    return {stepping_aside={from=p.position,to=aside.to},until_tick=until_tick}
+  end
+  if not a.builds then
+    local r=build_one(p,a)
+    if not r.aside then return r end
+    local rest={}
+    for k,v in pairs(a) do rest[k]=v end
+    return step_aside(r.aside,rest)
+  end
   assert(type(a.builds)=='table' and #a.builds>=1 and #a.builds<=64,'builds requires 1..64 {item,position,direction} entries')
   local placed={}
   for i,b in ipairs(a.builds) do
     local ok,result=pcall(function()
       assert(type(b)=='table','each build must be an object')
-      local r=build_one(p,{item=b.item or a.item,position=b.position,direction=b.direction or a.direction,quality=b.quality or a.quality,type=b.type,size=b.size or a.size})
-      assert(r.consumed>0,'nothing was placed')
+      local r=build_one(p,{item=b.item or a.item,position=b.position,direction=b.direction or a.direction,quality=b.quality or a.quality,type=b.type,size=b.size or a.size,
+        stepped=a.stepped and i==1})
+      assert(r.aside or r.consumed>0,'nothing was placed')
       return r
     end)
     -- A partial batch is a failure, so plan on_fail policies see it; the
     -- entries before it stay built.
     if not ok then error(string.format('build %d/%d failed after %d built: %s',i,#a.builds,#placed,reason(result))) end
+    if result.aside then
+      local rest={builds={}}
+      for k,v in pairs(a) do if k~='builds' then rest[k]=v end end
+      for j=i,#a.builds do rest.builds[#rest.builds+1]=a.builds[j] end
+      rest.built_before=(a.built_before or 0)+#placed
+      local out=step_aside(result.aside,rest)
+      out.built=#placed; out.placed=#placed>0 and placed or nil
+      return out
+    end
     local e=result.entity or (result.entities and result.entities[1])
     placed[i]=e and e.position or b.position
   end
-  return {built=#placed,placed=placed}
+  return {built=#placed,placed=placed,built_before=a.built_before}
 end
 -- Copper wire between two poles, both in the character's reach like a player
 -- dragging a wire; the wire itself must span the distance.
@@ -3743,13 +3777,19 @@ function M.tick_body(event)
       local outcome=stock.tick(p,action)
       if outcome then finish(index,outcome) end
     elseif action.kind=='feed' then
-      if event.tick>=action.next_check then
+      -- A build stepping aside walks until the character is off the footprint.
+      if action.aside and construction.in_box(p.position,action.aside.box) then steer(p,action.aside.to,action)
+      elseif event.tick>=action.next_check then
+        if action.aside then stop(p); action.aside=nil end
         action.next_check=event.tick+FEED_CHECK
-        if held(p,action.item,action.args.quality)>=action.need or crafting_count(p,action.item)==0 then
+        if not action.item or held(p,action.item,action.args.quality)>=action.need or crafting_count(p,action.item)==0 then
           action.awaiting_craft=nil
+          action.running=true
           local ok,result=pcall(handlers[action.handler],p,action.args)
+          action.running=nil
           if ok then action.result=result else action.error=reason(result) end
-          finish(index,ok and 'fed' or 'failed')
+          -- A later batch entry stepping aside installed a new action: keep it.
+          if state().active[index]==action then finish(index,ok and 'fed' or 'failed') end
         end
       end
     elseif action.kind=='pickup' then

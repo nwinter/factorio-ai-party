@@ -144,6 +144,39 @@ assert(not ok and err:find('placement blocked by burner-mining-drill (3,0)',1,tr
 eq(corpse.valid,false); eq(c.items['stone-furnace'],1)
 surface.find_entities_filtered=function() return {} end
 surface.can_place_entity=function() return true end
+-- The bot's own character the only thing on the footprint (shake3: Grok's most
+-- common error): it walks off with real walking ticks, then builds.
+local function inside(pos,area) return pos.x>area.left_top.x and pos.x<area.right_bottom.x and pos.y>area.left_top.y and pos.y<area.right_bottom.y end
+surface.find_entities_filtered=function(a) if a.area and inside(c.position,a.area) then return {c} end return {} end
+surface.count_entities_filtered=function() return 0 end
+c.position={x=3.3,y=0}; c.items['stone-furnace']=2
+local step=bot('build',{item='stone-furnace',position={x=3,y=0}})
+eq(step.stepping_aside.to.x,3.85); eq(step.stepping_aside.to.y,0); eq(c.items['stone-furnace'],2)
+advance(1); eq(c.walking_state.walking,true); eq(c.walking_state.direction,4)
+eq(bot('status',{}).active.kind,'feed')
+c.position={x=3.5,y=0}; advance(1); eq(c.walking_state.walking,true) -- still on it (0.4 + 0.2 of character)
+c.position={x=3.7,y=0}; advance(1)
+eq(c.walking_state.walking,false); eq(c.items['stone-furnace'],1)
+local done=bot('status',{}).last; eq(done.outcome,'fed'); eq(done.result.consumed,1)
+-- In a batch the entries before stay built, the rest go on after the step.
+c.position={x=6.1,y=0}; c.items['stone-furnace']=2
+local batch=bot('build',{item='stone-furnace',builds={{position={x=3,y=3}},{position={x=6,y=0}}}})
+eq(batch.built,1); assert(math.abs(batch.stepping_aside.to.x-6.85)<1e-9); eq(c.items['stone-furnace'],1)
+c.position={x=6.7,y=0}; advance(1)
+done=bot('status',{}).last; eq(done.outcome,'fed'); eq(done.result.built,1); eq(done.result.built_before,1); eq(c.items['stone-furnace'],0)
+-- A queued build waits through the step and succeeds.
+c.position={x=3.3,y=-3}; c.items['stone-furnace']=1
+bot('queue_submit',{steps={{action='build',args={item='stone-furnace',position={x=3,y=-3}}},{action='wait_ticks',args={ticks=50}}}})
+advance(1); eq(bot('queue_status',{}).active.action,'build')
+c.position={x=3.7,y=-3}; advance(2)
+local hist=bot('queue_status',{}).history; eq(hist[#hist].action,'build'); eq(hist[#hist].ok,true); eq(c.items['stone-furnace'],0)
+bot('queue_cancel',{})
+-- With nowhere to stand in reach it fails as before, naming the character.
+c.items['stone-furnace']=1; c.position={x=3,y=0}; surface.can_place_entity=function(a) return a.name~='character' and false end
+fails(function() bot('build',{item='stone-furnace',position={x=3,y=0}}) end,'the character standing on the footprint')
+surface.find_entities_filtered=function() return {} end
+surface.can_place_entity=function() return true end
+c.position={x=4,y=0}
 
 -- Profiles: set, read back, colour the character; bubbles over the speaker.
 local pr=bot('profile',{display_name='Astra',color='#FF8000',glyph='🚀',motto='iron first'})
