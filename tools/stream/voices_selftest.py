@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline checks for voices.py: lexicon, routing, provider request shapes (HTTP mocked), voice design, cache.
 No network, no keys needed: python3 tools/stream/voices_selftest.py"""
-import json, os, sys, tempfile
+import json, os, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -130,9 +130,12 @@ inw_only = voices.TTS("inworld", ai=FakeAI())
 d3 = voices.assign_voices(nine, tts=inw_only)
 check("a provider with few voices fills up (casters keep theirs), then Aura-2", len(set(d3.values())) == 9
       and {v for v in d3.values() if voices.provider_of(v) == "inworld"} == {"in-dennis"}, str(d3))
-check("with ElevenLabs, other providers' caster candidates are free for agents",
-      "ca-daniel" not in {auto.caster_voice(r) for r in voices.ROLE_VOICES}
-      and {auto.caster_voice(r) for r in voices.ROLE_VOICES} == {"el-liam", "el-alice"})
+check("all keys: casters on OpenAI (PREFER), other providers' caster candidates free for agents",
+      {auto.caster_voice(r) for r in voices.ROLE_VOICES} == {"oa-verse", "oa-ballad"}
+      and not set(d1.values()) & voices.DEFAULT_SKIP
+      and voices.provider_of(d1["sol"]) == "openai" and voices.assign_voices(
+          [{"name": "x", "voice": "ca-daniel"}], tts=auto)["x"] == "ca-daniel",
+      str({auto.caster_voice(r) for r in voices.ROLE_VOICES}))
 check("auto loads every provider with a key",
       sorted(auto.providers) == ["cartesia", "eleven", "eleven-fast", "inworld", "openai"],
       str(sorted(auto.providers)))
@@ -192,15 +195,47 @@ check("cartesia voice by name is looked up once", calls[-2]["url"].endswith("q=B
 del voices.PREMIUM["ca-test"], voices.CATALOG["ca-test"]
 
 auto.speak("A big moment for the team!", "atlas", caster="pbp")
-check("auto caster takes the first available role voice", "TX3LPaxmHKxFdv7VOQHJ" in calls[-1]["url"])
+check("auto caster takes the first role voice of the preferred provider", calls[-1]["body"].get("voice") == "verse")
+voices.PREFER.insert(0, "eleven")  # POG_TTS_PREFER=eleven
+auto.speak("A big moment for the team!", "atlas", caster="pbp")
+check("POG_TTS_PREFER=eleven: the caster's ElevenLabs voice", "TX3LPaxmHKxFdv7VOQHJ" in calls[-1]["url"])
 check("auto casters on ElevenLabs use v4 Turbo, agents v4",
       calls[-1]["body"]["model_id"] == "eleven_v4_turbo" and auto.last["provider"] == "eleven-fast")
 auto.providers["eleven"].API = auto.providers["eleven-fast"].API = "https://fail.example"
 auto.speak("A big moment for the team!", "atlas", caster="pbp")
-check("provider failure falls back to the voice's Aura-2 stand-in",
-      calls[-1]["url"] == "cf:@cf/deepgram/aura-2-en" and calls[-1]["body"]["speaker"] == "aries"
-      and auto.last["provider"] == "aura2", json.dumps(calls[-1]["body"]))
+check("one provider failure: this clip goes to the caster's next voice",
+      calls[-1]["body"].get("voice") == "verse" and auto.last["provider"] == "openai" and not auto.down,
+      json.dumps(calls[-1]["body"]))
+auto.providers["openai"].URL = "https://fail.example"
+auto.speak("A big moment for the team!", "atlas", caster="pbp")
+check("both failing: the voice's Aura-2 stand-in", calls[-1]["url"] == "cf:@cf/deepgram/aura-2-en"
+      and calls[-1]["body"]["speaker"] == "aries" and auto.last["provider"] == "aura2", json.dumps(calls[-1]["body"]))
+auto.providers["openai"].URL = voices.OpenAITTS.URL
+auto.speak("A big moment for the team!", "atlas", caster="pbp")
+check("three failures in a row: ElevenLabs rests, the caster moves to its next voice",
+      "eleven" in auto.down and auto.caster_voice("pbp") == "oa-verse" and calls[-1]["body"].get("voice") == "verse",
+      json.dumps(calls[-1]["body"]))
+auto.speak("Howdy, partner.", "el-george")
+check("while it rests, an agent's ElevenLabs voice has a steady OpenAI stand-in",
+      calls[-1]["url"] == "https://api.openai.com/v1/audio/speech" and auto.route("el-george")[0] == "openai")
 auto.providers["eleven"].API = auto.providers["eleven-fast"].API = voices.ElevenLabs.API
+auto.down.clear()
+real_http = voices._http
+
+
+def out_of_credits(method, url, headers, body=None, timeout=45):
+    if "elevenlabs" in url:
+        raise voices.TTSError('401 {"detail":{"status":"quota_exceeded","message":"This request exceeds your quota"}}')
+    return real_http(method, url, headers, body, timeout)
+
+
+voices._http = out_of_credits
+auto.speak("Howdy, partner.", "el-george")
+check("out of credits: rests 30 minutes after one failure", auto.down.get("eleven", 0) - time.time() > 1700
+      and auto.last["provider"] == "openai")
+voices._http = real_http
+auto.down.clear()
+voices.PREFER.remove("eleven")
 
 # ---- voice design ----
 calls.clear()

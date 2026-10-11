@@ -19,8 +19,9 @@
 - `el-will`: young adult, relaxed optimist, American
 - `in-dennis`: middle-aged, smooth, calm and friendly, lower
 - `oa-alloy`: neutral, even, mid pitch
-- `oa-ballad`: soft, melodic, British-leaning
+- `oa-ash`: mid-low, clear and direct
 - `oa-cedar`: natural and grounded, mid-low, conversational
+- `oa-coral`: bright, warm and friendly
 - `oa-echo`: mid-low, calm, resonant
 - `oa-fable`: expressive storyteller, British accent
 - `oa-marin`: natural and warm, bright, conversational
@@ -28,7 +29,6 @@
 - `oa-onyx`: deep and authoritative
 - `oa-sage`: calm, gentle and thoughtful
 - `oa-shimmer`: bright, clear and upbeat
-- `oa-verse`: expressive, animated, mid pitch
 - `amalthea`: bright young voice, Filipino accent, cheerful and natural
 - `andromeda`: bright, casual and expressive, American, easygoing
 - `apollo`: mid-low, confident and casual, American
