@@ -97,6 +97,9 @@ end
 local function real(p)
   if type(p)~='table' then return p end
   if rawget(p,'__bot') then return nil end
+  -- A bot's platform proxy has no __player: never hand the engine the proxy
+  -- table ("Invalid PlayerIdentification" for every bot's ghosts in shake7).
+  if rawget(p,'__platform') then return rawget(p,'__player') end
   return rawget(p,'__player') or p
 end
 local function in_map_view(p) local r=real(p); return r~=nil and r.controller_type==defines.controllers.remote end
