@@ -12,4 +12,3 @@ runs/*/*/journal.jsonl
 runs/*/*/journal.jsonl.gz
 runs/voice-bench/
 runs/*/.keys/
-runs/*/*/.grok-home/
