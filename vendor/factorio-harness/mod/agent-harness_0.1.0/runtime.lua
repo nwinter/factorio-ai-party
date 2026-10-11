@@ -466,6 +466,7 @@ function handlers.describe()
   for name,schema in pairs(M.profiles.schema) do description.actions[name]=schema end
   for name,schema in pairs(M.board and M.board.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.waits and M.waits.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.labs and M.labs.schema or {}) do description.actions[name]=schema end
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
   return description
@@ -1164,7 +1165,7 @@ function handlers.platforms(p,a) return space.platforms(p,a) end
 for _,name in ipairs({'requests','platform_create','platform_schedule','launch','land'}) do
   handlers[name]=function(p,a) return space[name](p,a) end
 end
-local views={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true}
+local views={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,sleep_check=true}
 function handlers.observe(p,a)
   -- Newer read-only views travel as observe scopes: an already loaded
   -- bootstrap treats unknown action names as cached mutations.
@@ -3283,7 +3284,7 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={sleep=true,profile=true,say=true,chat=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
-local reads={sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true}
+local reads={labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -3295,7 +3296,7 @@ local EXTRA_ARGS={attach={'offline'},build={'quality'},collect={'count','quality
   configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
   board={'status'},board_update={'status','note'},plan_save={'note'}}
 -- observe forwards to the scoped views; a scoped call is checked as that view.
-local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true}
+local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,sleep_check=true}
 local allowed_args
 function check_args(action,args)
   if not allowed_args then
@@ -3428,7 +3429,9 @@ dispatch_request=function(request)
   -- A peek at the chat is a read any player can make (directors and
   -- overlays have no character).
   local peek=request.action=='chat' and type(request.args)=='table' and request.args.peek==true
-  if peek or request.action=='status' or request.action=='sleep_check' or request.action=='queue_status' or request.action=='queue_cancel' then
+  -- sleep_check (an observe scope) also answers for a dead character.
+  local sleeping=request.action=='observe' and type(request.args)=='table' and request.args.scope=='sleep_check'
+  if peek or sleeping or request.action=='status' or request.action=='queue_status' or request.action=='queue_cancel' then
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     return handler(body(p),request.args or {})
   end
@@ -3469,6 +3472,9 @@ end
 kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions}
 threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event) M.board.on_character_hit(event) end}
 survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end}
+-- labs: research line diagnostics (labs.lua), an observe scope.
+M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end}
+function handlers.labs(p,a) return M.labs.view(p,a) end
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
 space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,
   -- Riding or landing takes the character away: controls stop and a plan pauses.
