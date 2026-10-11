@@ -425,9 +425,9 @@ def cycle(a, dg, prev, logf):
 
 def serve_ask(a, port):
     """POST /ask {"question": "..."} -> {"answer", "seconds", "facts"}: a viewer question answered with the tools
-    (about 6 s; tools/analyst/evaluate.py measured 30/30 on the viewer-question set). For the casters' viewer beats."""
+    (about 6 s; tools/analyst/evaluate.py measured 30/30 on the viewer-question set). For manual use: on air, viewer
+    questions go through viewer_loop (--viewer-questions), which rate-limits and screens them."""
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    import evaluate
     from analyst_board import compares_runs
     sem = threading.Semaphore(3)
 
@@ -457,7 +457,7 @@ def serve_ask(a, port):
                 return self.reply(429, {"error": "busy"})
             try:
                 t0 = time.time()
-                text, meta = run_claude(a, q, system=evaluate.ANSWER_SYSTEM)
+                text, meta = run_claude(a, q, system=viewer_system(on_air=False))
                 text = text.strip()
                 log(f"[ask] {q[:80]!r} -> {time.time() - t0:.1f} s")
                 facts = {"viewer_question": q, "analyst_answer": text}
@@ -488,12 +488,15 @@ neutrally in at most 12 words", "answer": "at most two short spoken sentences, a
 in a few words"}."""
 
 
-def viewer_system():
+def viewer_system(on_air=True):
+    """The answer prompt for viewer questions: version-aware, with the facts hosts get wrong. on_air: the JSON reply
+    with a restated question or a skip (viewer_loop); else plain text for POST /ask."""
     import evaluate
     base = evaluate.ANSWER_SYSTEM
     sa = kb_version().startswith("space-age")
-    for old, new in (("in at most three short spoken sentences", "in at most two short spoken sentences"),
-                     ("Reply with the answer only.", ""),
+    for old, new in (("in at most three short spoken sentences",
+                      "in at most two short spoken sentences" if on_air else "in at most three short spoken sentences"),
+                     ("Reply with the answer only.", "" if on_air else "Reply with the answer only."),
                      ("(base game; Space Age questions are about the expansion)",
                       "(with the Space Age expansion; the team starts on Nauvis)" if sa else
                       "(base game; Space Age questions are about the expansion)")):
@@ -505,6 +508,8 @@ def viewer_system():
              "'we', 'our' or 'it'.\n"
              + (SPACE_AGE_FACTS if sa else "- The kb_* tools hold the base game. For a Space Age question, read notes "
                 "space-age first (Space Age differs: 50 rocket parts of 1 each, space science made on platforms).\n"))
+    if not on_air:
+        return base.rstrip() + facts.rstrip()
     return base.rstrip() + facts.rstrip() + VIEWER_RULES
 
 
