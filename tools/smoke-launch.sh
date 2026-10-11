@@ -52,15 +52,23 @@ for k in $kinds; do read -r name _ <<<"$(row "$k")"
 done
 
 : > "$rundir/panes.txt"
+t0=$(date +%s)
 for k in $kinds; do read -r name route model effort label harness <<<"$(row "$k")"
-  out=$(POG_WS="$name" POG_BOT="$name" POG_TEAM="$rundir/team.txt" POG_MODEL="${label//_/ } (${harness//_/ })" \
+  # All panes first, then one pass for trust prompts, as tools/start-team.sh does.
+  out=$(POG_NO_WAIT=1 POG_WS="$name" POG_BOT="$name" POG_TEAM="$rundir/team.txt" POG_MODEL="${label//_/ } (${harness//_/ })" \
         POG_ROUTE="$route" POG_TIME_MODE=realtime POG_ONE_TURN=1 tools/launch-agent.sh "$run" "$world" "$name" "$minutes" "$k" "$model" "$effort")
   pane=$(echo "$out" | awk '{print $1}')
   echo "$name $pane $k" >> "$rundir/panes.txt"
-  echo "launched $name ($k): $out"
+  echo "launched $name ($k) after $(( $(date +%s) - t0 )) s: $out"
+done
+prompt_args=()
+while read -r name pane kind; do prompt_args+=("$pane" "$rundir/$name"); done < "$rundir/panes.txt"
+tools/clear-prompts.sh 90 "${prompt_args[@]}" | sed 's/^/prompts: /'
+echo "launch: $(wc -l < "$rundir/panes.txt" | tr -d ' ') agents ready or timed out after $(( $(date +%s) - t0 )) s"
+while read -r name pane k; do
   # agy runs one turn (POG_ONE_TURN) and has no supervisor in team runs either.
   [ "$k" = agy ] || POG_NUDGE_TEXT="$nudge_text" nohup tools/supervise.sh "$pane" "$rundir/$name" >/dev/null 2>&1 &
-done
+done < "$rundir/panes.txt"
 
 sleep $((minutes * 60 + 30))
 
@@ -100,6 +108,23 @@ for line in open(os.path.join(rundir, "panes.txt")):
                 if u:
                     start = f" start_context={sum(int(u.get(k) or 0) for k in ('input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'))}"
                     break
+            # Clean profile, round 4: no git status in the session context, no silent-turn reminder.
+            text = open(t).read()
+            start += f" gitStatus={text.count(chr(34) + 'gitStatus' + chr(34))} silent_reminders={text.count('t heard from you')}"
+    if kind == "codex":    # clean profile, round 4: no skills list or multi-agent role in the TUI session either
+        import glob
+        for f in sorted(glob.glob(os.path.expanduser("~/.codex-account-b/sessions/*/*/*/*.jsonl")), key=os.path.getmtime)[-30:]:
+            text = open(f, errors="replace").read()
+            if os.path.realpath(d) in text[:20000]:
+                start = (f" skills_instructions={text.count('<skills_instructions>')}"
+                         f" multi_agent_role={text.count('<multi_agent_role>')}")
+    if kind == "muse":     # no owner hooks, no skill-reminder decisions
+        import glob, re
+        for f in sorted(glob.glob(os.path.expanduser("~/.local/share/muse/sessions/*/*/*/*/session.jsonl")), key=os.path.getmtime)[-20:]:
+            text = open(f, errors="replace").read()
+            if os.path.realpath(d) in text:
+                owner = sum(1 for k in re.findall(r'"kind":"hook_run_started","run_id":"([^"]+)"', text) if ".config/muse" in k)
+                start = f" owner_hooks={owner} skill_reminders={text.count('skill_reminder_decision')}"
     print(f"{name:13} {kind:6} requests={reqs} say={says} failed={fails} describe_lines={desc} hooks_seen={hooks}{start}")
     print("    notes: " + (" | ".join(notes) or "no tools/rules/blocked/nudge lines"))
     print("    supervisor: " + (" | ".join(sup) or "none"))

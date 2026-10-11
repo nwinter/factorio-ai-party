@@ -8,13 +8,14 @@
   tools/context.py agy-tokens DIR          context size of DIR's latest Antigravity conversation (0 if unknown)
   tools/context.py grok-tokens DIR         context size of DIR's latest Grok Build session (0 if unknown)
   tools/context.py report RUN_DIR          per-workspace compaction counts from each context.log
-  tools/context.py hook EVENT [--at N] [--mark]   hook handler; reads the hook payload on stdin
+  tools/context.py hook EVENT [--at N] [--mark] [--skip-late S]   hook handler; reads the hook payload on stdin
 
 Hook events: pre-compact and post-compact log to DIR/context.log (post-compact also saves the summary to
 DIR/compactions.md; --mark leaves a marker so the next post-tool hook re-injects notes.md, for harnesses without
 a SessionStart "compact" hook). session-compact prints notes.md for a SessionStart(compact) hook. post-tool
 re-injects notes.md after a marked compaction and, with --at N (Claude), warns once per context window when the
-transcript is within reach of the compaction point so the agent updates notes.md first.
+transcript is within reach of the compaction point so the agent updates notes.md first. pre-compact with
+--skip-late S --at N (Claude) blocks an automatic compaction in the last S seconds before DIR/deadline.txt.
 """
 import json
 import os
@@ -50,6 +51,7 @@ def hook_cmd(event, *extra):
 
 
 CLAUDE_RESERVE = 20000    # Claude Code keeps this much of the window for the summary before computing the threshold
+LATE_SECONDS = 120        # no compaction in an agent's last 2 minutes where a hook or our loop can stop it
 
 
 def claude_window(at):
@@ -77,7 +79,8 @@ def setup(kind, model, d):
             elif "env" in cfg:
                 cfg["env"].pop("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", None)
         cfg["hooks"] = {
-            "PreCompact": [{"hooks": [hook_cmd("pre-compact")]}],
+            # Exit 2 from a PreCompact hook blocks the compaction and Claude Code continues uncompacted.
+            "PreCompact": [{"hooks": [hook_cmd("pre-compact", "--skip-late", str(LATE_SECONDS), "--at", str(at))]}],
             "PostCompact": [{"hooks": [hook_cmd("post-compact")]}],
             "SessionStart": [{"matcher": "compact", "hooks": [hook_cmd("session-compact")]}],
             "PostToolUse": [{"hooks": [hook_cmd("post-tool", "--at", str(at))]}],
@@ -175,6 +178,21 @@ def claude_tokens(transcript, since=0):
     return 0
 
 
+# Blocking stops once the context passes compact_at + LATE_ROOM. The transcript lags Claude Code's own count by the
+# pending tool result (probe: hook 48.4K, compaction at 59.7K with 8K files), and the hard limit sits a little past
+# compact_at + 13000 (claude_window), so the room stays small.
+LATE_ROOM = 5000
+
+
+def seconds_left(d):
+    """Seconds to the deadline in DIR/deadline.txt ("2026-10-11 04:15 PDT", local time), None if unreadable."""
+    try:
+        text = open(os.path.join(d, "deadline.txt")).read().strip()
+        return int(time.mktime(time.strptime(text[:16], "%Y-%m-%d %H:%M")) - time.time())
+    except (OSError, ValueError):
+        return None
+
+
 def notes_block(d, why):
     try:
         notes = open(os.path.join(d, "notes.md")).read()
@@ -212,6 +230,15 @@ def hook(event, args):
     transcript = payload.get("transcript_path")
     if event == "pre-compact":
         tokens = claude_tokens(transcript) if transcript else payload.get("context_tokens")
+        left = seconds_left(d)
+        # --skip-late S --at N (Claude): exit 2 blocks an automatic compaction in the last S seconds while the context
+        # is under N + LATE_ROOM (shake3: Grok's compaction began 39 s before its deadline and ended its play).
+        if "--skip-late" in args and payload.get("trigger") == "auto" and left is not None:
+            late, at = int(args[args.index("--skip-late") + 1]), int(args[args.index("--at") + 1])
+            if 0 < left <= late and (not tokens or tokens < at + LATE_ROOM):
+                log(trigger="auto", tokens=tokens, action="skip-late", seconds_left=left)
+                print(f"Skipped: the deadline is {left} s away.", file=sys.stderr)
+                sys.exit(2)
         log(trigger=payload.get("trigger"), tokens=tokens, window=payload.get("context_window_size"))
     elif event == "post-compact":
         summary = payload.get("compact_summary") or ""
