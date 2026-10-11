@@ -83,7 +83,85 @@ def main():
     reqs = {d["requestType"]: d["requestData"] for r, d in f.calls if r == "CallVendorRequest"}
     assert reqs["update_stream_key"]["stream_key"] == "abcd-efgh" and reqs["update_stream_key"]["index"] == 0
     assert reqs["update_stream_server"]["stream_server"] == "rtmp://a.rtmp.youtube.com/live2"
+    settings_tests()
     print("vertical: ok")
+
+
+# A config as Aitum Vertical 1.6.6 writes it on exit (SaveSettings keys; fresh install: no outputs, main settings)
+FRESH = {"canvas": [{"width": 1080, "height": 1920, "current_scene": "stream vertical", "streaming_video_bitrate": 0,
+                     "streaming_match_main": False, "stream_advanced_settings": False, "stream_audio_track": 0,
+                     "stream_encoder": "", "stream_encoder_settings": {}, "stream_outputs": [],
+                     "backtrack": False, "record_path": "", "transitions": [{"name": "Fade"}]}]}
+
+
+def settings_tests():
+    import copy, subprocess
+    cfg = copy.deepcopy(FRESH)
+    lines = v.apply_settings(cfg, server="rtmps://a.rtmps.youtube.com:443/live2")
+    c = cfg["canvas"][0]
+    assert c["stream_advanced_settings"] is True and c["stream_encoder"] == "obs_qsv11_v2"
+    assert c["stream_encoder_settings"] == {"rate_control": "CBR", "bitrate": 6000, "max_bitrate": 6000, "keyint_sec": 2}
+    assert c["stream_audio_track"] == 1 and c["streaming_video_bitrate"] == 6000
+    assert c["stream_outputs"] == [{"name": "YouTube vertical", "stream_server": "rtmps://a.rtmps.youtube.com:443/live2",
+                                    "stream_key": "", "enabled": False}]
+    assert c["streaming_match_main"] is False and "OFF until" in lines[2], lines  # no key: never the dialog
+    assert c["transitions"] == [{"name": "Fade"}] and c["current_scene"] == "stream vertical"  # the rest kept
+    v.apply_settings(cfg, bitrate=4500, key="abcd-efgh")
+    assert c["stream_outputs"][0]["enabled"] is True and c["stream_outputs"][0]["stream_key"] == "abcd-efgh"
+    assert c["streaming_match_main"] is True and c["stream_encoder_settings"]["bitrate"] == 4500
+    v.apply_settings(cfg, match_main=False)
+    assert c["streaming_match_main"] is False and c["stream_outputs"][0]["stream_key"] == "abcd-efgh"  # key kept
+    legacy = {"canvas": [{"width": 1080, "height": 1920, "stream_server": "rtmp://x/live2", "stream_key": "old"}]}
+    v.apply_settings(legacy)
+    assert legacy["canvas"][0]["stream_outputs"][0]["stream_key"] == "old" and "stream_key" not in legacy["canvas"][0]
+    try:
+        v.apply_settings({"canvas": [{"width": 1080, "height": 1920}, {"width": 720, "height": 1280}]}, width=1920)
+        raise AssertionError("two canvases, none matching: must refuse")
+    except SystemExit:
+        pass
+
+    # settings_on_box over stand-in ssh/scp: refuses while OBS runs, keeps a dated copy, writes the new config
+    with tempfile.TemporaryDirectory() as d:
+        boxdir, bindir = os.path.join(d, "box"), os.path.join(d, "bin")
+        os.makedirs(boxdir), os.makedirs(bindir)
+        open(os.path.join(boxdir, "config.json"), "w").write("﻿" + json.dumps(FRESH))  # BOM: read anyway
+        state = os.path.join(d, "obs-running")
+        open(state, "w").write("1")
+        open(os.path.join(bindir, "ssh"), "w").write(f"""#!/bin/sh
+cmd="$2"
+echo "$cmd" >> {d}/ssh.log
+case "$cmd" in
+  tasklist*) if [ "$(cat {state})" = 1 ]; then echo "obs64.exe 1234 Console 1 500,000 K"; else echo "INFO: No tasks are running"; fi;;
+  copy*) cp {boxdir}/config.json {boxdir}/config.json.bak-copy;;
+esac
+""")
+        open(os.path.join(bindir, "scp"), "w").write(f"""#!/bin/sh
+src="$2"; dst="$3"
+case "$src" in pogwin:*) cp {boxdir}/config.json "$dst";; *) cp "$src" {boxdir}/config.json;; esac
+""")
+        os.chmod(os.path.join(bindir, "ssh"), 0o755), os.chmod(os.path.join(bindir, "scp"), 0o755)
+        keyf = os.path.join(d, "vertical.key")
+        open(keyf, "w").write("wxyz-1234\n")
+        old_path = os.environ["PATH"]
+        os.environ["PATH"] = bindir + os.pathsep + old_path
+        args = type("A", (), dict(key_file=keyf, bitrate=6000, encoder="obs_qsv11_v2", keyint=2, track=1,
+                                  server="rtmps://a.rtmps.youtube.com:443/live2", no_match_main=False, dry_run=False))
+        try:
+            try:
+                v.settings_on_box(args)
+                raise AssertionError("OBS running: must refuse")
+            except SystemExit as e:
+                assert "OBS is running" in str(e), e
+            assert json.load(open(os.path.join(boxdir, "config.json"), encoding="utf-8-sig")) == FRESH
+            open(state, "w").write("0")
+            v.settings_on_box(args)
+        finally:
+            os.environ["PATH"] = old_path
+        out = json.load(open(os.path.join(boxdir, "config.json")))["canvas"][0]
+        assert out["stream_outputs"][0]["stream_key"] == "wxyz-1234" and out["stream_outputs"][0]["enabled"]
+        assert out["streaming_match_main"] is True and out["stream_encoder_settings"]["keyint_sec"] == 2
+        assert os.path.exists(os.path.join(boxdir, "config.json.bak-copy"))  # the dated copy was made first
+        assert not open(os.path.join(boxdir, "config.json"), "rb").read().startswith(b"\xef\xbb\xbf")  # no BOM
 
 
 if __name__ == "__main__":

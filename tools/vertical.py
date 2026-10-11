@@ -6,7 +6,9 @@ Through the same SSH tunnel as tools/obs.py (127.0.0.1:4455):
 
   tools/.venv/bin/python tools/vertical.py check                  # read-only: versions, canvases, the plugin's scenes
   tools/.venv/bin/python tools/vertical.py scene [--url http://127.0.0.1:8787/portrait]
-  tools/.venv/bin/python tools/vertical.py key [--server URL]     # key: ~/.config/pog/youtube-vertical.key
+  tools/.venv/bin/python tools/vertical.py settings [--dry-run]  # OBS CLOSED: encoder, CBR, bitrate, keyframes,
+                                                                  # audio track, output + key, start/stop with main
+  tools/.venv/bin/python tools/vertical.py key [--server URL]     # an existing output's key, live (see `settings`)
   tools/.venv/bin/python tools/vertical.py status|start|stop
   tools/.venv/bin/python tools/vertical.py shot OUT.png           # the vertical scene, 540x960
 
@@ -118,6 +120,112 @@ def set_key(c, server, key_file=KEY_FILE):
     return server
 
 
+# ---- the plugin's output settings (config.json on the box, edited with OBS closed) ----------------------------------
+# Aitum Vertical 1.6.6 reads %APPDATA%\obs-studio\plugin_config\vertical-canvas\config.json once at load
+# ({"canvas": [one object per canvas]}) and writes it back only when OBS exits (save_canvas on
+# OBS_FRONTEND_EVENT_EXIT), so an edit made while OBS runs is overwritten. Facts from vertical-canvas.cpp at 1.6.6:
+#   - stream_advanced_settings true ("Use main OBS settings" unticked): the encoder is stream_encoder with
+#     stream_encoder_settings passed as they are (bitrate, rate_control, keyint_sec live in there);
+#     stream_audio_track N uses mixer N-1. streaming_video_bitrate is used only with main settings, set it anyway so
+#     the dialog shows the same number.
+#   - stream_outputs: [{name, stream_server, stream_key, enabled}]; rtmp_custom service. The vendor requests
+#     update_stream_key/update_stream_server change an existing entry only (an index past the end does nothing and
+#     still answers success) and never enable it.
+#   - streaming_match_main: MainStreamStart() calls StartStream(); with no enabled output StartStream() opens a
+#     QMessageBox ("No output server") on the box. So it is only turned on together with an enabled output that has
+#     a key.
+CONFIG_ON_BOX = "C:/Users/player/AppData/Roaming/obs-studio/plugin_config/vertical-canvas/config.json"
+QSV_H264 = "obs_qsv11_v2"   # OBS's Quick Sync H.264 (texture) encoder id, as the landscape stream
+
+
+def apply_settings(cfg, bitrate=6000, encoder=QSV_H264, keyint=2, track=1, server=None, key=None, match_main=True,
+                   width=W, height=H):
+    """Edit the plugin's config dict in place -> list of lines saying what was set."""
+    canvases = cfg.get("canvas") or []
+    mine = [c for c in canvases if (c.get("width"), c.get("height")) == (width, height)]
+    if not mine and len(canvases) == 1:
+        mine = canvases
+    if len(mine) != 1:
+        raise SystemExit(f"expected one {width}x{height} canvas in the plugin's config, found "
+                         f"{[(c.get('width'), c.get('height')) for c in canvases]}")
+    c = mine[0]
+    c["stream_advanced_settings"] = True
+    c["stream_encoder"] = encoder
+    es = dict(c.get("stream_encoder_settings") or {})
+    es.update(rate_control="CBR", bitrate=bitrate, max_bitrate=bitrate, keyint_sec=keyint)
+    c["stream_encoder_settings"] = es
+    c["streaming_video_bitrate"] = bitrate
+    c["stream_audio_track"] = track
+    outs = c.get("stream_outputs") or []
+    if not outs:  # seeded from the legacy single output if an older config had one
+        outs = [{"name": "YouTube vertical", "stream_server": c.get("stream_server") or "",
+                 "stream_key": c.get("stream_key") or "", "enabled": False}]
+    o = outs[0]
+    if server:
+        o["stream_server"] = server
+    if key is not None:
+        o["stream_key"] = key
+    o["enabled"] = bool(o.get("stream_server") and o.get("stream_key"))
+    c["stream_outputs"] = outs
+    c.pop("stream_server", None), c.pop("stream_key", None)  # the legacy single output, read only without outputs
+    c["streaming_match_main"] = bool(match_main and o["enabled"])
+    lines = [f"encoder {encoder}: CBR {bitrate} Kbps, keyframe every {keyint} s, audio track {track}",
+             f"output '{o.get('name')}': {o.get('stream_server') or '(no server)'}, key "
+             f"{'set (' + str(len(o['stream_key'])) + ' chars)' if o.get('stream_key') else 'not set'}, "
+             f"{'enabled' if o['enabled'] else 'disabled'}"]
+    if match_main and not o["enabled"]:
+        lines.append("start/stop with main: OFF until the output has a server and a key (with no enabled output the "
+                     "plugin opens a 'No output server' dialog whenever the main stream starts)")
+    else:
+        lines.append(f"start/stop with main: {'on' if c['streaming_match_main'] else 'off'}")
+    return lines
+
+
+def box(*args, host=None):
+    import subprocess
+    host = host or os.environ.get("POG_WIN_HOST", "pogwin")
+    return subprocess.run([args[0], *([host] if args[0] == "ssh" else []), *args[1:]], capture_output=True, text=True)
+
+
+def settings_on_box(a):
+    """Copy the plugin's config.json from the box, apply_settings, keep a dated copy there, copy it back."""
+    import tempfile, time
+    host = os.environ.get("POG_WIN_HOST", "pogwin")
+    r = box("ssh", 'tasklist /FI "IMAGENAME eq obs64.exe" /NH')
+    if r.returncode or "obs64.exe" in r.stdout:
+        raise SystemExit("OBS is running on the box (or tasklist failed): exit OBS first (File > Exit); the plugin "
+                         f"rewrites its config.json when OBS exits. {r.stdout.strip()} {r.stderr.strip()}")
+    tmp = tempfile.mkdtemp()
+    local = os.path.join(tmp, "config.json")
+    r = box("scp", "-q", f"{host}:{CONFIG_ON_BOX}", local)
+    if r.returncode:
+        raise SystemExit(f"could not copy {CONFIG_ON_BOX}: {r.stderr.strip()} (the plugin writes it when OBS exits "
+                         "for the first time after the install)")
+    raw = open(local, encoding="utf-8-sig").read()
+    cfg = json.loads(raw)
+    key = None
+    if os.path.exists(a.key_file):
+        key = open(a.key_file).read().strip() or None
+    for line in apply_settings(cfg, a.bitrate, a.encoder, a.keyint, a.track, a.server, key, not a.no_match_main):
+        print(line)
+    if a.dry_run:
+        print("dry run: nothing written")
+        return
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    win = CONFIG_ON_BOX.replace("/", "\\")
+    r = box("ssh", f'copy /Y "{win}" "{win}.pog-{stamp}"')
+    if r.returncode:
+        raise SystemExit(f"could not back up the config on the box: {r.stdout} {r.stderr}")
+    with open(local, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=4)
+    r = box("scp", "-q", local, f"{host}:{CONFIG_ON_BOX}")
+    if r.returncode:
+        raise SystemExit(f"copy back failed: {r.stderr.strip()}; check {CONFIG_ON_BOX} against its copy "
+                         f"{CONFIG_ON_BOX}.pog-{stamp} before starting OBS")
+    os.unlink(local)
+    print(f"written; the previous config is {CONFIG_ON_BOX}.pog-{stamp}")
+
+
 def shot(c, out):
     cv = find_canvas(c)
     img = send(c, "GetSourceScreenshot", {"sourceName": SCENE, "canvasUuid": cv["canvasUuid"], "imageFormat": "png",
@@ -128,12 +236,21 @@ def shot(c, out):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["check", "scene", "key", "status", "start", "stop", "shot"])
+    ap.add_argument("cmd", choices=["check", "scene", "settings", "key", "status", "start", "stop", "shot"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--url", default="http://127.0.0.1:8787/portrait", help="scene: the portrait page as the box sees it")
     ap.add_argument("--server", default="rtmps://a.rtmps.youtube.com:443/live2",
-                    help="key: YouTube's ingest (the landscape stream uses this RTMPS one, docs/SETUP.md)")
+                    help="settings, key: YouTube's ingest (the landscape stream uses this RTMPS one, docs/SETUP.md)")
+    ap.add_argument("--key-file", default=KEY_FILE, help="settings, key: the vertical stream key (on this Mac)")
+    ap.add_argument("--bitrate", type=int, default=6000, help="settings: video Kbps, CBR")
+    ap.add_argument("--encoder", default=QSV_H264, help="settings: OBS encoder id")
+    ap.add_argument("--keyint", type=int, default=2, help="settings: seconds between keyframes (YouTube: 2)")
+    ap.add_argument("--track", type=int, default=1, help="settings: audio mixer track (1-based)")
+    ap.add_argument("--no-match-main", action="store_true", help="settings: do not start/stop with the main stream")
+    ap.add_argument("--dry-run", action="store_true", help="settings: print what would be set, write nothing")
     a = ap.parse_args()
+    if a.cmd == "settings":  # over ssh/scp with OBS closed; no websocket
+        return settings_on_box(a)
     from obs import client
     c = client()
     if a.cmd == "check":
@@ -141,7 +258,9 @@ def main():
     elif a.cmd == "scene":
         print("scene", SCENE, build_scene(c, a.url))
     elif a.cmd == "key":
-        print("vertical output ->", set_key(c, a.server), "(key from", KEY_FILE + ")")
+        print("vertical output 1 ->", set_key(c, a.server, a.key_file), "(key from", a.key_file + ")")
+        print("note: this changes an output that already exists and does not enable it; on a fresh install "
+              "the plugin has none and answers success anyway. Use `settings` with OBS closed instead.")
     elif a.cmd == "status":
         print(vendor(c, "status"))
     elif a.cmd == "start":
