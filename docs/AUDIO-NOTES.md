@@ -157,6 +157,18 @@ These are covered by caster_selftest.py "viewer questions". No `ask_analyst` hoo
 Details and the split with eng/audio's talking-points work are in docs/ANALYST-NOTES.md, "What the analyst
 writes" and "Viewer questions on air".
 
+Two suggestions for `SHOW`, from the Space Age pilot (your text, so not edited here):
+- The crash site. At 01:39 the hosts called the replay of the burning wreck "pure biter buffet". Suggested
+  sentence: "Every game starts beside the wreck of the engineers' crashed spaceship (the crash site): scenery
+  from before the game, with a few starting items; its fire is harmless, and the engineers never crash."
+- The goal. On Space Age runs (the stream's subtitle names Space Age, POG_SPACE_AGE=1), "The team's goal is a rocket
+  launch" is wrong. Suggested: "In Space Age a rocket launch is a milestone: rockets carry a space platform starter
+  pack to orbit, space science is made on the platform, and the expansion's goal is reaching the solar system
+  edge. A 2 h run will mostly be the Nauvis start: oil, plastics and blue science are the big milestones."
+- Write true statements in rules and facts ("research progress is always kept"), never negated mistakes. In
+  the pilot, 31 of the analyst's 37 corrections were negated ("not because progress was lost"); the analyst's
+  prompt now avoids them.
+
 ## Status
 
 | Part | State (2026-10-10) |

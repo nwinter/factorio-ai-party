@@ -226,26 +226,79 @@ played from the shake2 score log at minute 50 (snapshot 0h48m, shake2 itself lef
 
 ## Space Age
 
-- research/spaceage plans world `sa` (game 34210, RCON 27030); it does not exist yet (no `~/.config/pog/rcon-sa.pw`).
-  When it runs: `python3 tools/analyst/dump_prototypes.py --world sa --port 27030 --out tools/analyst/kb/space-age-2.0.77`,
-  then `POG_KB=space-age-2.0.77` for the analyst. The dumper already reads planets, space connections, surface
-  properties and qualities, trigger types beyond the base ones, and Space Age entity types; base worlds dump cleanly.
-- `notes/space-age.md` covers planets, platforms, spoilage, quality, the edge and the Shattered Planet from the wiki;
-  marked uncertain: the edge technology's name and default-settings speedrun times.
+- The knowledge base `kb/space-age-2.0.77/` was dumped from world `sa` on main (659 recipes, 275 technologies,
+  planets, routes, qualities). `POG_SPACE_AGE=1` runs set `POG_KB=space-age-2.0.77`. The analyst's prompt then
+  names Space Age and adds what the hosts get wrong there: the crash site is scenery from before the game, a
+  rocket needs 50 parts of 1 each, a launch is a milestone and victory is the solar system edge, space science is
+  made on a platform, and past runs are base-game unless labelled.
+- `kb_map_settings` describes the dump world, and world `sa` is peaceful. A run's enemies are in `game_snapshot`
+  (peaceful flag, evolution) and its start log.
+- `notes/space-age.md` was rewritten in round 4 for a newcomer following a Space Age Nauvis start and the first
+  platform, with every number checked against the dump. It covers:
+  - the Nauvis start (what is the same as base, the crash site entities, trigger techs, the tree to blue
+    science, what Space Age changes before space);
+  - the rocket (silo tech 1,000 each of red, green and blue; rocket part 1+1+1; 50 parts; cargo landing pad);
+  - the first platform (starter pack, hub, collector, crusher outputs, space science only at gravity 0,
+    thrusters and fuel, distances, what goes wrong);
+  - a "what hosts get wrong" list, pacing and short planet notes.
+
+  It corrected the old notes on asteroid crushing outputs and the edge's unlocking tech (Promethium science pack).
+  Not verified: Space Age freeplay starting items and wreck contents. The small wrecks and asteroid entities are
+  not in the dump (their numbers come from the wiki and factorio-data).
+- Pacing (from the notes): the Space Age silo path is 2,585 lab-minutes, over 2 h of lab time even with 20 fed labs.
+  For a 2 h run, oil, plastics and blue science are the realistic headlines, and a rocket would be far beyond any
+  run so far.
 - `game.py` sums production, kills, losses, buildings and machine status over every surface by default
   (`--surface all`; planets and platforms) and lists the surfaces with our buildings; `--surface nauvis` reads one.
   Evolution and pollution are Nauvis's. Platform details (speed, location, hub stock) are not read yet; research/spaceage
   added a harness `platforms` read that could join `READ_ACTIONS` once it is in the runtime.
 
+## Round 4: the Space Age pilot (sapilot, world n, 01:38-02:08, three agents)
+
+The first live run with the analyst (main's code: Sonnet, every 90 s, route claude-b). Reviewed from
+runs/sapilot/analyst.log, the analyst jsonl log, caster.log and scores.jsonl only. World n was not read: it was
+in a run.
+- 18 cycles by minute 25, none failed. Latency: median 10.8 s, max 28.8 s. Cost: median $0.043 a cycle,
+  $0.76 in total, about $1.70 an hour API-equivalent on the subscription route. Every cycle took 1 turn: the digest
+  had what the model needed, so it called no tools.
+- Points: 123 kept and 10 dropped (7.5%). Three of the drops were true statements about the clock ("at minute
+  20") whose minute was missing from the facts. The current game minute (±1) now counts as a fact. The other drops
+  were forecasts with unsourced numbers ("usually around minute 20"), which were right to drop.
+- Facts checked against the Space Age dump, all correct:
+  - trigger techs (electronics: 10 copper plates; steam power: 50 iron plates; automation science: craft a lab);
+  - burner drill 15 ore a minute, electric drill 30, stone furnace 18.75 plates a minute;
+  - red pack recipe; tech costs (logistics 20 red, logistic science pack 75, electric mining drill 25);
+  - assembler capacity (3 AM1 on red = 18 a minute); the path to oil (11 techs, 425 red, 290 green).
+
+  The first cycle got the crash site right ("the wrecked spaceship pieces being flagged, not biters").
+- Rates against the game: production statistics are the flow counts over the window (checked live: minute 14,
+  iron 82.8 a minute in the digest vs (924 − 87) / 10 = 83.7 from scores.jsonl). Before minute 10, though, the
+  10-minute total was divided by 10 and understated rates (38.6 a minute at minute 8 when 48.5 a minute had been
+  made). Rates before minute 10 are now per minute over the game so far.
+- Wrong or risky, now fixed:
+  - The current run was its own benchmark: history read runs/sapilot/scores.jsonl. The live run directory is now
+    excluded, and sapilot and shake3 are labelled.
+  - The prompt still said "base game; Space Age later" on a Space Age run. It is now version-aware.
+  - 31 of 37 corrections were negations ("not because progress was lost", "not destroyed", "not a biter
+    attack"). A fast writer can drop the "not" and air the very mistake Nick heard. The prompt now asks for the true
+    statement ("research progress is always kept") and gives the reason.
+  - Segment suggestions: production on 14 cycles of 18. With `--segments`, each type is now requested at most once
+    per 6 minutes.
+  - Pollution appeared both as "695 on the map" and "271 per minute". Both were right (the snapshot gives the total,
+    the harness status the emission rate); the digest now labels the total as a total.
+- What the hosts got wrong (caster.log): they do not read the analyst yet (eng/audio is adding points and
+  corrections in round 4). At 01:39 they called the attack replay of the burning wreck "pure biter buffet" and
+  "biters dined". main's 6c3571e stopped zero-damage hits from becoming alerts. Two items for eng/audio's SHOW
+  text (in AUDIO-NOTES, "Viewer questions answered by the analyst"): a crash-site sentence, and Space Age's goal
+  (on Space Age runs, a rocket launch is a milestone, not the goal).
+
 ## What's left
 
-- Production rates use `get_flow_count{count=true}` without a sample index, which the 2.0 API documents as the
-  whole 1-minute / 10-minute / 1-hour window. Only checked on an empty world; compare one cycle's SPM with the overlay
-  headline on the first live run.
-- Not yet run during a live team run: the live reads were exercised on world `live` (empty) and the cycles on the
-  shake1/shake2 score logs, which have production and research but no machine status, power or alerts.
-- The caster does not consume the points yet (eng/audio; suggested changes above). The overlay shows nothing of the
-  analyst (eng/stream2's call).
+- Validated live in the pilot: the flow-count semantics, and the analyst under a live team run (machine status,
+  power, board, chat, status). Not yet seen live: viewer questions with real chat (mock-tested end to end),
+  segment requests (`--segments` is still off in start-team), and Space Age surfaces beyond Nauvis.
+- The caster consumes viewer answers; talking points and corrections are eng/audio's round 4. The overlay shows
+  nothing of the analyst (eng/stream2's call).
 - Replay sources come from 2-minute score snapshots, so their "last 10 minutes" rates are interpolated and their
   science is "produced", not consumed.
 - `history.py` labels the solo runs from PLAN.md's tables (world a = GPT-6 Astra, b = Fable 5.1); check if that
