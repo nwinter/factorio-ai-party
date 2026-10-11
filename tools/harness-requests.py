@@ -10,6 +10,7 @@ Agents never get this tool. It reads and answers the board as `operator` (dispat
                                       [--chat "harness v3: collect skips claimed chests"]
   tools/harness-requests.py board [--all]                     the whole team board (active items by default)
   tools/harness-requests.py events [--since SEQ]              board event log
+  tools/harness-requests.py mentions                          unread @mentions per agent, last request time
 
 --chat also posts the line in game chat, where agents see it as `server: ...`. Add --json for raw replies.
 """
@@ -65,6 +66,7 @@ def main():
     p.add_argument("--chat", help="also post this line in game chat (agents see server: ...)")
     p = sub.add_parser("board"); p.add_argument("--all", action="store_true")
     p = sub.add_parser("events"); p.add_argument("--since", type=int, default=0)
+    sub.add_parser("mentions")
     a = ap.parse_args()
     port = a.port or PORTS.get(a.world) or int(os.environ["POG_RCON_PORT"])
     pw = open(os.path.expanduser(f"~/.config/pog/rcon-{a.world}.pw")).read().strip()
@@ -104,6 +106,18 @@ def main():
         show_item(result["item"], result["item"]["updated_tick"], full=True)
         if a.chat:
             print(f"chat: server: {a.chat}")
+    elif a.cmd == "mentions":
+        result = dispatch(rcon, "mention_counts", {})
+        if a.json:
+            print(json.dumps(result)); return
+        now = result["tick"]
+        for row in result["agents"]:
+            last = row.get("last_request_tick")
+            seen = f"last request {ago(last, now)}" if last is not None else "no request yet"
+            line = f"{row['name']}: {row['unread_mentions']} unread mentions ({row['at_mentions']} @), {seen}"
+            if row.get("latest"):
+                line += f"; latest {row['latest']}"
+            print(line)
     else:
         result = dispatch(rcon, "board_events", {"since_seq": a.since, "limit": 200})
         if a.json:

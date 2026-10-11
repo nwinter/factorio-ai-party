@@ -387,6 +387,7 @@ return function(api)
       note='optional description', delete='true removes the saved plan', returns='name, steps, bytes'},
     plan_run = {name='saved plan name', mode='append|replace pending (default append)', start='default true', returns='as queue_submit'},
     plans = {name='optional: show one plan in full', returns='your saved plans (at most 50): name, steps, note, runs'},
+    mention_counts = {returns='per agent: unread_mentions (not yet shown in a reply or chat read), at_mentions (@name or @everyone), oldest_tick, latest, last_request_tick (supervisors: wake idle mentioned agents)'},
   }
   -- Handlers take the acting agent's name, so the operator path can share them.
   M.handlers.board = function(p, a) return read(who(p), a) end
@@ -406,44 +407,101 @@ return function(api)
     a = a or {}
     if action == 'board' then return read(OPERATOR, a) end
     if action == 'board_events' then return events(a) end
+    if action == 'mention_counts' then return M.handlers.mention_counts() end
     if action == 'board_update' then return update(OPERATOR, a) end
     if action == 'board_post' then return post(OPERATOR, a) end
-    error('operator requests support board, board_events, board_update and board_post', 0)
+    error('operator requests support board, board_events, board_update, board_post and mention_counts', 0)
   end
 
   -- The `team` hint block: what is new for this agent since its previous
   -- request. Each part is shown once; nil when there is nothing.
-  local function escape(s) return (s:gsub('[%^%$%(%)%%%.%[%]%*%+%-%?]', '%%%0')) end
-  local function mention_patterns(p)
-    local names, out = {}, {}
-    local name = who(p):lower()
-    names[name] = true
-    names[(name:gsub('^pog%-', ''))] = true
-    local pr = api.profile(p.index)
-    if pr and pr.display_name then names[pr.display_name:lower()] = true end
-    for n in pairs(names) do if #n >= 2 then out[#out+1] = '%f[%w]' .. escape(n) .. '%f[^%w]' end end
-    return out
+  -- Mentions are filed per agent when a message arrives, so none is lost to
+  -- the chat log's rotation or to a chat read cut short by its limit. A
+  -- message mentions an agent by @name, @display name, @everyone (@all,
+  -- @team), or else by the plain name as a word; the sender is left out.
+  local EVERYONE, MAX_PENDING = {'everyone', 'all', 'team'}, 200
+  local function edge(ch) return ch == '' or not ch:find('[%w_%-]') end
+  local function has_word(text, word)
+    local init = 1
+    while true do
+      local i, j = text:find(word, init, true)
+      if not i then return false end
+      if edge(text:sub(i - 1, i - 1)) and edge(text:sub(j + 1, j + 1)) then return true end
+      init = i + 1
+    end
   end
-  local function mentions(p, h)
-    local c = api.state().chat
-    if not c then return nil end
-    local from = math.max(c.cursors[p.index] or 0, h.mention or 0)
-    h.mention = c.seq
-    local patterns, n, latest = nil, 0, nil
-    for k = #c.messages, 1, -1 do
-      local m = c.messages[k]
-      if m.seq <= from then break end
-      if m.player ~= p.index then
-        patterns = patterns or mention_patterns(p)
-        local text = m.text:lower()
-        for _, pat in ipairs(patterns) do
-          if text:find(pat) then n = n + 1; latest = latest or m; break end
+  local function inbox(index)
+    local s = api.state()
+    s.mentions = s.mentions or {}
+    s.mentions[index] = s.mentions[index] or {list={}, dropped=0}
+    return s.mentions[index]
+  end
+  function M.on_message(m)
+    local text = m.text:lower()
+    local everyone = false
+    for _, word in ipairs(EVERYONE) do if has_word(text, '@' .. word) then everyone = true; break end end
+    for _, a in ipairs(agents()) do
+      if a.index ~= m.player then
+        local names = {a.name:lower(), (a.name:lower():gsub('^pog%-', ''))}
+        if a.display_name then names[3] = a.display_name:lower() end
+        local how
+        for _, n in ipairs(names) do if #n >= 2 and has_word(text, '@' .. n) then how = '@'; break end end
+        if not how and everyone then how = '@everyone' end
+        if not how then
+          for _, n in ipairs(names) do if #n >= 2 and has_word(text, n) then how = 'name'; break end end
+        end
+        if how then
+          local box = inbox(a.index)
+          box.list[#box.list+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, how=how, aloud=m.aloud}
+          while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end
         end
       end
     end
-    if n == 0 then return nil end
-    return string.format('%d unread message%s name%s you; latest: %s: %s', n, n == 1 and '' or 's', n == 1 and 's' or '', latest.from, clip(latest.text, 240))
   end
+  -- A (non-peek) chat read delivers the mentions it showed.
+  function M.on_read(index, messages)
+    local box = api.state().mentions and api.state().mentions[index]
+    if not (box and #box.list > 0 and #messages > 0) then return end
+    local shown = {}
+    for _, m in ipairs(messages) do shown[m.seq] = true end
+    local keep = {}
+    for _, m in ipairs(box.list) do if not shown[m.seq] then keep[#keep+1] = m end end
+    box.list = keep
+  end
+  -- Every pending mention, oldest first; never cut by the other parts' caps.
+  local function mentions(p)
+    local box = api.state().mentions and api.state().mentions[p.index]
+    if not (box and (#box.list > 0 or box.dropped > 0)) then return nil end
+    local lines = {}
+    if box.dropped > 0 then
+      lines[1] = string.format('%d older mentions did not fit (%d kept); read chat', box.dropped, MAX_PENDING)
+    end
+    for _, m in ipairs(box.list) do
+      local tag = m.how == '@' and ' @you' or m.how == '@everyone' and ' @everyone' or ''
+      lines[#lines+1] = string.format('%s%s, %s ago: %s', m.from, tag, ago(game.tick - m.tick), m.text)
+    end
+    box.list, box.dropped = {}, 0
+    return lines
+  end
+  -- Operator/supervisor read: pending mentions per agent and when each agent
+  -- last made a request (to wake an idle agent that was mentioned).
+  local function mention_counts()
+    local s, out = api.state(), {}
+    for _, a in ipairs(agents()) do
+      local box = s.mentions and s.mentions[a.index]
+      local list = box and box.list or {}
+      local direct = 0
+      for _, m in ipairs(list) do if m.how ~= 'name' then direct = direct + 1 end end
+      local last = list[#list]
+      local clock = s.clocks and s.clocks[a.index]
+      out[#out+1] = {name=a.name, display_name=a.display_name, unread_mentions=#list + (box and box.dropped or 0), at_mentions=direct,
+        oldest_tick=list[1] and list[1].tick or nil, latest=last and clip(last.from .. ': ' .. last.text, 160) or nil,
+        last_request_tick=clock and clock.call_tick or nil}
+    end
+    return {agents=out, tick=game.tick}
+  end
+  M.handlers.mention_counts = function() return mention_counts() end
+  M.open_reads.mention_counts = true
   local function board_lines(p, h)
     local b = store()
     local me, lines, extra = who(p), {}, 0
@@ -546,7 +604,12 @@ return function(api)
   end
   function M.team(p, losses)
     local h = hints(p.index)
-    local out = {mentions=mentions(p, h), board=board_lines(p, h), alerts=alert_lines(p, h, losses), reminders=reminders(p, h)}
+    -- Mentions go first (insertion order is the JSON order).
+    local out = {}
+    out.mentions = mentions(p)
+    out.board = board_lines(p, h)
+    out.alerts = alert_lines(p, h, losses)
+    out.reminders = reminders(p, h)
     return next(out) and out or nil
   end
   -- Engine hook (from threat.on_damaged): enemy hits on a character, kept

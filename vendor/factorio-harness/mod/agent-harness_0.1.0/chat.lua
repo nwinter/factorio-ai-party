@@ -10,22 +10,27 @@ return function(api)
     s.chat = s.chat or {seq=0, messages={}, cursors={}}
     return s.chat
   end
-  local function append(from, text, index)
+  local function append(from, text, index, aloud)
     local c = log()
     c.seq = c.seq + 1
-    c.messages[#c.messages+1] = {seq=c.seq, tick=game.tick, from=from, player=index, text=text}
+    local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil}
+    c.messages[#c.messages+1] = m
     while #c.messages > MAX_LOG do table.remove(c.messages, 1) end
+    -- Mentions are filed per agent as the message arrives (board.lua).
+    if api.on_message then api.on_message(m) end
     return c.seq
   end
   M.schema = {
-    say = {text='1..500 characters: posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s'},
+    say = {text='1..500 characters: posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
+      aloud='optional boolean: also speak it aloud on the stream (use sparingly)'},
     chat = {since='optional sequence number (default: what this player has not read yet)',
       limit='1..100, newest kept (default 30)', peek='boolean: read without marking as read (overlays, spectators)',
-      returns='messages {seq,tick,from,text} and cursor; marks them read unless peek'},
+      returns='messages {seq,tick,from,text,aloud?} and cursor; marks them read unless peek'},
   }
   function M.handlers.say(p, a)
     local text = a.text
     assert(type(text) == 'string' and #text > 0, 'text is required')
+    assert(a.aloud == nil or type(a.aloud) == 'boolean', 'aloud must be true or false')
     text = text:gsub('[\r\n]+', ' ')
     if #text > MAX_LEN then text = text:sub(1, MAX_LEN) end
     local name = p.name ~= '' and p.name or ('player ' .. p.index)
@@ -37,7 +42,7 @@ return function(api)
     else
       game.print(line)
     end
-    local seq = append(name, text, p.index)
+    local seq = append(name, text, p.index, a.aloud == true)
     local c = log()
     c.cursors[p.index] = math.max(c.cursors[p.index] or 0, seq)
     -- The speech bubble is decoration: it never fails the message.
@@ -52,10 +57,14 @@ return function(api)
     assert(type(limit) == 'number' and limit >= 1 and limit <= 100, 'limit must be 1..100')
     local out = {}
     for _, m in ipairs(c.messages) do
-      if m.seq > since then out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text} end
+      if m.seq > since then out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, aloud=m.aloud} end
     end
     while #out > limit do table.remove(out, 1) end
-    if a.peek ~= true then c.cursors[p.index] = c.seq end
+    if a.peek ~= true then
+      c.cursors[p.index] = c.seq
+      -- Mentions shown here are delivered; ones cut by limit stay pending.
+      if api.on_read then api.on_read(p.index, out) end
+    end
     return {messages=out, cursor=c.seq}
   end
   -- Summary for other replies: count and newest unread message from someone else.

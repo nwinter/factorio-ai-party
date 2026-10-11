@@ -33,8 +33,32 @@ mod refresh).
 - CLI: `fh board [post|update|events|request]` and `fh plan save NAME --file plan.json | run NAME | show NAME |
   delete NAME | list`.
 - `tools/harness-requests.py`: operator `list [--all] | show ID | answer ID --note ... [--status ...] [--chat ...] |
-  board [--all] | events [--since SEQ]` over RCON. `--chat` sends the line as plain RCON text, so agents see
-  `server: ...`.
+  board [--all] | events [--since SEQ] | mentions` over RCON. `--chat` sends the line as plain RCON text, so agents
+  see `server: ...`.
+
+### Scope addition (operator, same session): @mentions, aloud, mention counts
+
+Still runtime-only.
+
+- `chat.lua` calls two new hooks: `on_message` for every appended message (agents' `say`, people typing, server
+  lines) and `on_read` with the messages a non-peek `chat` read returned.
+- Mentions are filed into a per-agent inbox (`storage.agent_harness.mentions[index]`) when the message arrives. The
+  match order is: `@name` (bot/player name, the name without `pog-`, or the display name, 2+ characters, any case),
+  then `@everyone`/`@all`/`@team`, then the plain name as a whole word (word characters are letters, digits, `_`
+  and `-`, so `solar` and `sol-2` don't match `sol`). The sender is never mentioned, and directors are not agents.
+- `team.mentions` is now a list with every pending mention in full (`from @you|@everyone, <age> ago: text`),
+  inserted first so it is the first key of `team` in the JSON (checked live). The board/alerts caps don't apply to
+  it. A `chat` read delivers the mentions it showed; ones cut by its `limit` stay pending and ride on that same reply.
+  The inbox keeps 200 per agent; overflow is counted in a "did not fit" line, so none disappears silently.
+- `say {aloud: true}` stores `aloud=true` on the message; `chat` and `peek` return it. A bad value fails.
+- `mention_counts`: a read for any player (directors too) and for the operator path. Per agent it returns
+  `unread_mentions`, `at_mentions`, `oldest_tick`, `latest`, `last_request_tick` (the agent's previous request, from
+  the clock). It consumes nothing; `tools/harness-requests.py mentions` prints it.
+- Verified live after `fh deploy`: grok `@Astra ...`, luna `@everyone ...` with `aloud:true`, opus `sol your belt
+  ...`, and a server line `@everyone harness v3 ...`. `mentions` then showed astra 3 (3 @), sol 3 (2 @, opus's
+  plain-name line), the others 1-2. The 4 bots idle for 6 minutes showed `last request 6m ago`. Astra's reply listed
+  all three in order. Sol's reply had keys `['mentions', 'alerts']` in that order. A director `chat` peek showed
+  `aloud=true` on luna's line only.
 
 ### Decisions to check
 
@@ -44,8 +68,9 @@ mod refresh).
   and how to take it). An unowned item does not repeat on every reply.
 - `reminders`: the profile reminder repeats at most once per game minute until display_name, glyph and color are all
   set. The contract says "until set" without a rate; every reply seemed too noisy.
-- `mentions` match the bot/player name, the name without `pog-`, and the display name (2+ characters), any case, as
-  whole words; `@name` works. A `chat` read clears them, like `unread`.
+- A plain-name mention (no `@`) still counts, as a fallback, and shows without a tag. A short or common display
+  name (say "Iron") could produce false mentions. The 2-character minimum is the only guard.
+- `@all` and `@team` are aliases of `@everyone`.
 - Board alerts cover every attack on the team's entities, not only the agent's own buildings: the contract's raid
   problem was that nobody noticed. A teammate's character under attack shows as `character xN` in the area line;
   the agent's own character gets its own `you were hit ...` line, also after it died (the last character is
@@ -86,7 +111,9 @@ Fake-engine tests:
   overlap warnings, take/assign/release and status permissions, a failed board call leaving a running walk alone,
   note bounds, every `board` filter, `board_events` paging and director access, directors refused for posting,
   team hints (assignment, requester status/notes, notes on my items, own changes silent, once only), the unowned
-  nudge, mentions (name, display name, `@`, `pog-` stripping, chat read and peek), alerts (own hits, also after death,
+  nudge, mentions (@name, @display name, @everyone/@all, plain-name fallback and its word boundaries, people and
+  server lines, all listed beyond 12, chat read with a limit delivering only what it showed, peek, the 200 cap and
+  its overflow line), `say aloud` kept in chat and peek, `mention_counts` via the operator and a director, alerts (own hits, also after death,
   areas, losses, each once, incident reset), reminders, harness request plus operator answer and the requester's
   hint, operator argument checks, saved plans (validation, run as queue, copies, 50 cap, delete), pruning order,
   `describe`. The fake `game.get_player` raises for bot indices like the engine does.
@@ -130,7 +157,9 @@ Live, world `live` (fresh non-peaceful map `board1`, director client `pog-direct
   `status.alerts` (`attacked`, `latest`) as before; there is no separate overlay-only incident feed.
 - The unowned nudge goes to every agent, including the requester. Nothing escalates a request that stays unowned
   (no repeat until another one ages).
-- Mentions don't understand group words ("everyone", "all"); those count only as unread chat.
+- Mention matching is done when a message arrives against the roster at that moment. A bot created later, or a
+  display name set later, is not matched against older messages.
+- `aloud` is only stored; voicing it is the audio engineer's side.
 - Alerts cover attacks on anything of ours anywhere on the map. In a big base with constant turret fights this may
   be noisy: zero-damage hits are dropped, at most 3 areas and 2 groups are listed, and at most 8 lines are shown.
 - The operator flag is trusted like any RCON caller. An agent with raw RCON could act as operator, but agents only

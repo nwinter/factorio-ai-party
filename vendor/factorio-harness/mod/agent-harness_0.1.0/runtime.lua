@@ -3202,7 +3202,8 @@ scheduler=scheduler_module{
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
 clock=clock_module{state=state,lookup=function(index) return M.lookup(index) end}
 for name,handler in pairs(clock.handlers) do handlers[name]=handler end
-M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end}
+M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
+  on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 -- Team board, reply hints, harness requests and saved plans (board.lua).

@@ -179,24 +179,59 @@ eq(grok('status').team,nil)
 sol('board_post',{kind='task',title='second unowned'}); jump(7200)
 assert(has(grok('status').team.board,'2 open requests nobody owns (oldest 4m'))
 
--- Mentions: by name, display name or player name without pog-; once; a chat
--- read clears them; my own messages never count.
+-- Mentions: @name, @display name, @everyone (@all, @team), else the plain
+-- name as a word; each listed in full, once; my own messages never count.
 sol('say',{text='astra can you bring gears?'})
 t=astra('status').team
-eq(t.mentions,'1 unread message names you; latest: sol: astra can you bring gears?')
+eq(#t.mentions,1); eq(t.mentions[1],'sol, 0s ago: astra can you bring gears?')
 eq(astra('status').team,nil)
-grok('say',{text='Sunny, iron is low'}); grok('say',{text='solar is later'}); grok('say',{text='@SOL ping'})
+grok('say',{text='@Sunny iron is low'}); grok('say',{text='solar is later'}); grok('say',{text='@SOL ping'}); grok('say',{text='sol-2 is a drill'})
 t=sol('status').team
-assert(t.mentions:find('^2 unread messages name you; latest: grok: @SOL ping'),t.mentions)
-sol('say',{text='sol here'}); eq((sol('status').team or {}).mentions,nil)
-grok('say',{text='astra: again'}); astra('chat',{})
+eq(#t.mentions,2); eq(t.mentions[1],'grok @you, 0s ago: @Sunny iron is low'); eq(t.mentions[2],'grok @you, 0s ago: @SOL ping')
+sol('say',{text='sol here, @sol'}); eq((sol('status').team or {}).mentions,nil)
+grok('say',{text='@everyone turrets now'}); grok('say',{text='@all: rearm'})
+t=astra('status').team.mentions
+eq(t[1],'grok @everyone, 0s ago: @everyone turrets now'); eq(t[2],'grok @everyone, 0s ago: @all: rearm')
+eq(#sol('status').team.mentions,2); eq((grok('status').team or {}).mentions,nil)
+-- People in a client and the server (RCON text) mention too.
+runtime.on_event{name=13,player_index=1,message='astra, nice base'}
+runtime.on_event{name=13,message='@everyone harness v3: board is live'}
+t=astra('status').team
+eq(t.mentions[1],'nick, 0s ago: astra, nice base'); eq(t.mentions[2],'server @everyone, 0s ago: @everyone harness v3: board is live')
+-- Never dropped: all of them, beyond the caps of the other parts.
+for i=1,12 do grok('say',{text='@astra item '..i}) end
+eq(#astra('status').team.mentions,12)
+-- A chat read delivers what it showed; ones cut by its limit ride on that reply.
+grok('say',{text='astra one'}); grok('say',{text='astra two'}); grok('say',{text='astra three'})
+local read=astra('chat',{limit=1})
+eq(read.messages[1].text,'astra three'); eq(#read.team.mentions,2); eq(read.team.mentions[1],'grok, 0s ago: astra one')
 eq((astra('status').team or {}).mentions,nil)
--- A chat peek (overlay) does not consume hints.
+-- A peek (overlays) does not consume hints.
 grok('say',{text='astra peek'})
 eq(astra('chat',{peek=true}).team,nil)
 eq(astra('status',{peek=true}).team,nil); eq(astra('board',{peek=true}).team,nil); eq(astra('profiles',{peek=true}).profiles~=nil,true)
 fails(function() astra('status',{peek='yes'}) end,'unknown argument peek')
-assert(astra('status').team.mentions)
+-- Supervisors: pending mention counts per agent, without consuming them.
+grok('say',{text='@everyone regroup at spawn'})
+local counts={}
+for _,row in ipairs(op('mention_counts').agents) do counts[row.name]=row end
+eq(counts.astra.unread_mentions,2); eq(counts.astra.at_mentions,1); eq(counts.astra.latest,'grok: @everyone regroup at spawn')
+eq(counts.sol.unread_mentions,2); eq(counts.grok.unread_mentions,0); eq(counts.astra.last_request_tick,tick)
+eq(counts['pog-director'],nil)
+eq(#request{action='mention_counts',args={},player=2}.agents,4)
+eq(#astra('status').team.mentions,2)
+-- The pending list is bounded; the overflow is counted, not hidden.
+for i=1,205 do grok('say',{text='@astra flood '..i}) end
+eq(op('mention_counts').agents[2].unread_mentions,205)
+t=astra('status').team.mentions
+eq(#t,201); eq(t[1],'5 older mentions did not fit (200 kept); read chat'); eq(t[2]:sub(-8),' flood 6')
+-- say aloud=true is kept with the message (the audio engineer voices it).
+sol('say',{text='@everyone power is back',aloud=true})
+local peeked=astra('chat',{peek=true,limit=1}).messages[1]
+eq(peeked.text,'@everyone power is back'); eq(peeked.aloud,true)
+eq(astra('chat',{limit=1}).messages[1].aloud,true)
+grok('say',{text='quiet line'}); eq(astra('chat',{peek=true,limit=1}).messages[1].aloud,nil)
+fails(function() sol('say',{text='x',aloud='yes'}) end,'aloud must be')
 
 -- Alerts: attacks on our entities, my character being hit, groups, losses.
 local biter={valid=true,name='small-biter'}

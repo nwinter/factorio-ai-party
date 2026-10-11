@@ -32,8 +32,9 @@ already targets your character.
 - A request without an owner is shown to everyone until someone takes it; take one with
   `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`).
-- Replies carry a `team:` block when something is new for you: messages naming you, board items assigned to you or
-  changed, attacks, losses and hits on your character. Each is shown once.
+- Address teammates with `@name` (or `@everyone`) in `say`; add `"aloud":true` only for what viewers should hear.
+- Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
+  board items assigned to you or changed, attacks, losses and hits on your character. Each is shown once.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.

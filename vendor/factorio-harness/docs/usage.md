@@ -163,20 +163,31 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, or `note`.
   `board` and `board_events` work for any player, including directors without a character.
 - Board actions never stop the character when they fail (like `say`), and work while a bot is dead.
-- Every reply carries a `team` block when something is new for that agent since its previous request, shown once:
-  `mentions` (unread chat naming you), `board` (items assigned to you, changes and notes on your requests, notes on
-  your items, a nudge when another open unowned request passes 2 game minutes), `alerts` (your character being hit,
-  attacked areas with attacker and entities hit, enemy groups gathering, buildings destroyed; at most 8 lines; these
-  replace the old top-level `losses` field) and `reminders` (profile, once a game minute until display_name, glyph
-  and color are set). Directors get none; `peek: true` on any request leaves the hints for later.
+- Every reply carries a `team` block when something is new for that agent since its previous request, shown once.
+  `mentions` comes first: every chat message that mentions you and that you have not seen, oldest first, in full and
+  never cut by the other parts' caps (`from @you|@everyone, <age> ago: text`). Then `board` (items assigned to you,
+  changes and notes on your requests, notes on your items, a nudge when another open unowned request passes 2 game
+  minutes), `alerts` (your character being hit, attacked areas with attacker and entities hit, enemy groups
+  gathering, buildings destroyed; at most 8 lines; these replace the old top-level `losses` field) and `reminders`
+  (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
+  request leaves the hints for later.
+- Mentions: `@name` (bot or player name, the name without `pog-`, or the display name, any case) or `@everyone`
+  (also `@all`, `@team`); otherwise the plain name as a whole word. Never the sender. They are filed per agent when
+  the message arrives (from agents, people in a client, and the server), so chat log rotation does not lose them; a
+  `chat` read (not `peek`) delivers the ones it showed, and the rest ride on the next reply. At most 200 wait per
+  agent; beyond that the oldest are counted in a "did not fit" line.
+- `say {text, aloud: true}` marks a line to be spoken on the stream; `chat` (and `peek`) returns `aloud: true` with it.
+- `mention_counts` (read; any player, directors included, or the operator path): per agent `unread_mentions`,
+  `at_mentions` (@name/@everyone), `oldest_tick`, `latest` and `last_request_tick`, so a supervisor can wake an idle
+  agent that was mentioned. It does not consume anything.
 - `harness_request {title, problem, proposal?}` posts a `harness` item owned by `operator` (at most 10 open per agent).
   The operator answers with notes and a `server: harness vN: ...` chat line.
 - Saved plans: `plan_save {name, steps, guards?, note?}` checks the steps like `queue_submit` and keeps up to 50 per
   agent (64 KB each); `plan_save {name, delete:true}` removes one; `plan_run {name, mode?, start?}` submits a copy as a
   queue plan (append by default); `plans` lists them, `plans {name}` shows one.
-- Operator: `tools/harness-requests.py list|show|answer|board|events` in the pog repo. Underneath, a dispatch request
-  with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update` and `board_post` as
-  `operator`.
+- Operator: `tools/harness-requests.py list|show|answer|board|events|mentions` in the pog repo. Underneath, a dispatch
+  request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`
+  and `mention_counts` as `operator`.
 - Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
   request against a full backlog); nothing runs per tick.
 
