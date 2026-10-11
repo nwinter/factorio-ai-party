@@ -894,7 +894,9 @@
   // ---------- feed: SSE with a polling fallback ----------
   let lastMsg = 0;
   function connect() {
-    const es = new EventSource("/events");
+    // One event stream per page, shared with audio.js (voice clips arrive on it as `audio` events): a browser keeps
+    // 6 connections per host and each open stream holds one (shake7: all 6 held, the voice clips never loaded).
+    const es = window.pogEvents || (window.pogEvents = new EventSource("/events?audio=1"));
     es.onmessage = (e) => { lastMsg = Date.now(); try { render(JSON.parse(e.data)); } catch (err) { console.error(err); } };
     es.onerror = () => { /* EventSource retries by itself */ };
   }
