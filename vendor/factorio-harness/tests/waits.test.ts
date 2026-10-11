@@ -84,7 +84,8 @@ test('wait_ticks and a build awaiting a hand craft are waited for',async()=>{
       return {ok:true,result:polls===1?{active:{kind,until_tick:31}}:{active:false,last:{kind,outcome:kind==='feed'?'fed':'duration_elapsed'}}};
     },async port=>{
       const {stdout}=await cli(port,['call',action,'--args',args,'--wait']);
-      assert.equal(JSON.parse(stdout).ok,true); assert.equal(polls,2,action);
+      // At least the running poll and the finished one (a final plain status read may follow).
+      assert.equal(JSON.parse(stdout).ok,true); assert.ok(polls>=2,action);
     });
   }
 });
