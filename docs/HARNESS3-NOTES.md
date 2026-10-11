@@ -32,7 +32,9 @@ tiles), 1 ambiguous, 1 `position: [-5,-6]`.
 
 Fix (`entity()`, so every targeted action gains it):
 - A point inside a building's footprint picks that building when no entity has its centre there, as a player's cursor
-  does (any tile of an assembler).
+  does (any tile of an assembler). This holds for actions too (`transfer`, `rotate`, `mine` on any tile of a building
+  act on it), except that ore at the point stays the target of an action: `mine` on an ore tile under a drill mines
+  the ore, never the drill; only `inspect` takes the building there.
 - A miss says what is near: "entity not found at (25.5,0.5): nearest small-electric-pole (24.5,0.5) 1.0 tiles; target
   an entity's position as scan lists it (observe scope=scan position={x=25.5,y=0.5} radius=3)", or "nothing within 3
   tiles".
