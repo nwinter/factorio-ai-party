@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Offline check for tools/supervise.sh with a fake herdr that always reports the agent idle: an agent whose journal
 has a request in the last 2 minutes is working and is never nudged (shake3: Grok and Muse were nudged mid-turn); one
-whose last request is older is nudged. python3 tools/test_supervise.py"""
+whose last request is older is nudged. Claude Code's idle means its turn ended (shake4), so a claude agent is nudged
+anyway. python3 tools/test_supervise.py"""
 import datetime
 import os
 import subprocess
@@ -25,7 +26,7 @@ def iso(seconds_ago):
     return t.strftime("%Y-%m-%dT%H:%M:%S.") + "%03dZ" % (t.microsecond // 1000)
 
 
-def run(last_request_ago):
+def run(last_request_ago, kind=None):
     """Supervise for a few seconds against a journal whose last request is that old; return supervisor.log."""
     tmp = tempfile.mkdtemp()
     bindir, ws = os.path.join(tmp, "bin"), os.path.join(tmp, "ws")
@@ -36,6 +37,8 @@ def run(last_request_ago):
     os.chmod(herdr, 0o755)
     open(os.path.join(ws, "deadline.txt"), "w").write(
         time.strftime("%Y-%m-%d %H:%M %Z", time.localtime(time.time() + 240)) + "\n")
+    if kind:
+        open(os.path.join(ws, ".context-hooks"), "w").write(kind + " 0 0 0\n")
     with open(os.path.join(ws, "journal.jsonl"), "w") as j:
         if last_request_ago is not None:
             j.write('{"at":"%s","event":"request","request":{"id":"a","action":"status","bot":"grok","args":{}}}\n'
@@ -61,6 +64,9 @@ def main():
     log, calls = run(300)
     assert "nudge 1 (status idle" in log and "agent prompt" in calls, (log, calls)
     print("idle agent (request 5 min ago): nudged")
+    log, calls = run(10, "claude")
+    assert "nudge 1 (status idle" in log and "skip nudge" not in log, log
+    print("claude agent idle (request 10 s ago): nudged, its turn has ended")
     log, calls = run(None)
     assert "nudge 1 (status idle" in log, log
     print("no journal yet: nudged")

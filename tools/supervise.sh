@@ -43,7 +43,10 @@ while [ "$(date +%s)" -lt "$deadline" ]; do
     status=$(agent_status)
     now=$(date +%s)
     ago=$(since_request)
-    if { [ "$status" = idle ] || [ "$status" = done ]; } && [ "$now" -lt "$((deadline - 30))" ] && [ "$ago" -lt 120 ]; then
+    # Claude Code reports idle only once its turn has ended, so a recent request means nothing there (shake4: Sonnet
+    # and Haiku ended turns right after an auto-compaction and this skip held the nudge another round).
+    if { [ "$status" = idle ] || [ "$status" = done ]; } && [ "$now" -lt "$((deadline - 30))" ] && [ "$ago" -lt 120 ] \
+        && [ "$kind" != claude ]; then
       log "skip nudge (status $status): last request ${ago}s ago, working"
     elif { [ "$status" = idle ] || [ "$status" = done ]; } && [ "$now" -lt "$((deadline - 30))" ]; then
       left=$(( (deadline - now + 59) / 60 ))

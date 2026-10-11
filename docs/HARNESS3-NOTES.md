@@ -1,7 +1,47 @@
 # Harness3 notes: the shake2 harness bugs (branch eng/harness3)
 
-Round 7 (shifts: resuming a team world) comes first, then round 6 (the runtime.lua locals guard and refactor plan),
-round 5 (the agents' own tool requests), round 4 (shake3 fixes) and the shake2 round.
+Round 8 (shake4 P1 items 2 to 4) comes first, then round 7 (shifts: resuming a team world), round 6 (the runtime.lua
+locals guard and refactor plan), round 5 (the agents' own tool requests), round 4 (shake3 fixes) and the shake2 round.
+
+## Round 8: shake4 P1 items 2, 3, 4
+
+Main merged first (19df587).
+
+- Item 2, sleep while dead (19 refused sleeps in shake4). `runtime.dispatch` lets `sleep` through for a dead bot, as
+  it does `chat` and `say`. `waits.lua` records `dead_until` at the start of the sleep (from the bot record, through a
+  new `dead_until` in the waits api; nil while alive or traveling). The reply says `dead: true`, `respawns_at_tick`
+  and `wakes_on='respawn, a message mentioning you'`; `sleep_check` answers `respawned` once the new character
+  exists, and a mention or the requested time still wake it first. The requested seconds are not stretched to the
+  respawn, so `fh sleep 5` on a 10-second respawn wakes `elapsed`. `wait_until` stays refused while dead: as a
+  direct action it holds the character idle and checks conditions per tick, and a dead bot has no character, so the
+  dead refusal for every action now ends "fh sleep SECONDS waits and wakes with respawned". The CLI treats
+  `respawned` as an ordinary wake (exit 0); `docs/usage.md` says so.
+- Item 3, supervisor after a Claude Code turn end. For kind `claude` (from the workspace's `.context-hooks`), an idle
+  or done status is the end of the turn, so the "request in the last 2 minutes, working" skip no longer applies and
+  the nudge goes after the quiet minute. Other kinds keep the skip.
+- Item 4, `item-on-ground` in a build footprint (11 failures). `placement_error` names the item
+  (`item-on-ground (iron-plate) (36.5,-28.3)`) and adds "; pick the item up: stand on or next to it and fh call
+  pickup". The direct build does not pick items up itself: a remedy keeps the time honest and the change small.
+
+Files: `mod/agent-harness_0.1.0/{runtime,waits,bots}.lua`, `tests/bots.lua`, `tests/waits.test.ts`,
+`docs/usage.md`, `tools/supervise.sh`, `tools/test_supervise.py`. runtime.lua still has 3 free top-level locals.
+
+Tests: every `lua tests/*.lua` passes; `tools/test_supervise.py` passes (new case: a claude agent idle 10 s after a
+request is nudged). `npm test`: 97 of 101 pass here; the 4 failures are the bridge tests, which cannot listen on a
+unix socket inside this sandbox (`listen EPERM ... bridge.sock`), the same before these changes.
+
+Live check (world `live`, not run from this session; `bin/fh` against live is refused here):
+
+```sh
+tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","bot_create","h3-a"))'
+POG_WORLD=live bin/fh --bot h3-a call status                                   # X,Y
+# kill h3-a's character (as in round 4), then within the 10 s respawn wait:
+tools/pog.py --world live rcon '/silent-command local c=game.surfaces.nauvis.find_entities_filtered{type="character",position={X,Y},radius=1}[1] if c and not c.player then c.die() end'
+POG_WORLD=live bin/fh --bot h3-a sleep 30     # expect woke: respawned after about 10 s
+# item on the ground: drop an iron plate at a free spot, build a stone furnace over it
+POG_WORLD=live bin/fh --bot h3-a call build --args '{"item":"stone-furnace","position":{"x":X,"y":Y}}'  # expect the pickup remedy
+tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","bot_remove","h3-a"))'
+```
 
 ## Round 7: shifts, resuming a team world
 

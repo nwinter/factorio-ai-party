@@ -103,7 +103,7 @@ return function(api)
     if b.travel and b.travel.state == 'aboard' then return M.proxy(b) end
     if b.travel then error(no_body(b), 0) end
     if not alive(b) then
-      error(string.format('bot %s is dead; it respawns at tick %s (status reports dead_until_tick)', b.name, tostring(b.dead_until_tick)), 0)
+      error(string.format('bot %s is dead; it respawns at tick %s (status reports dead_until_tick; fh sleep SECONDS waits and wakes with respawned)', b.name, tostring(b.dead_until_tick)), 0)
     end
     assert(not b.character.driving, 'the character is in a vehicle; vehicles are unsupported')
     return M.proxy(b)

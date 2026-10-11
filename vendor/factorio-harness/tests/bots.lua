@@ -142,6 +142,13 @@ c.items['stone-furnace']=1
 local ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=0}})
 assert(not ok and err:find('placement blocked by burner-mining-drill (3,0)',1,true) and not err:find('corpse'),err)
 eq(corpse.valid,false); eq(c.items['stone-furnace'],1)
+-- An item on the ground names its item and how to clear it (shake4: Grok's 9
+-- refused builds at one spot, no remedy).
+local dropped={valid=true,type='item-entity',name='item-on-ground',position={x=3.3,y=0.2},stack={valid_for_read=true,name='iron-plate'}}
+surface.find_entities_filtered=function(a) if a.area then return {dropped} end return {} end
+ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=0}})
+assert(not ok and err:find('placement blocked by item-on-ground (iron-plate) (3.3,0.2); pick the item up: stand on or next to it and fh call pickup',1,true),err)
+eq(c.items['stone-furnace'],1)
 surface.find_entities_filtered=function() return {} end
 surface.can_place_entity=function() return true end
 -- The bot's own character the only thing on the footprint (shake3: Grok's most
@@ -329,8 +336,15 @@ for _,row in ipairs(runtime.dispatch{action='profiles',args={},player=1}.profile
   if row.name=='astra' then eq(row.alive,false); eq(row.dead_until_tick,dead.dead_until_tick) end
   assert(row.name~='pog-director','a released director is still a spectator, not an agent')
 end
+-- Sleep works while dead too (shake4: 19 refused sleeps): it sleeps until the
+-- respawn and wakes with respawned; the refusal of other actions points to it.
+fails(function() bot('walk',{direction='east',ticks=5}) end,'fh sleep SECONDS waits and wakes with respawned')
+local zz=bot('sleep',{seconds=30}); eq(zz.dead,true); eq(zz.respawns_at_tick,dead.dead_until_tick)
+eq(bot('observe',{scope='sleep_check',peek=true}).woke,nil)
 advance(599); eq(bot('status',{}).alive,false)
+eq(bot('observe',{scope='sleep_check',peek=true}).woke,nil)
 advance(1)
+eq(bot('observe',{scope='sleep_check'}).woke,'respawned')
 local again=bot('status',{}); eq(again.alive,true); eq(again.dead_until_tick,nil); eq(again.deaths,1)
 local c2=storage.agent_harness.bots.by_name.astra.character
 assert(c2~=c,'a new character'); eq(c2.items.pistol,1); eq(c2.items['iron-plate'],nil)

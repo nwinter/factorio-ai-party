@@ -90,7 +90,7 @@ test('wait_ticks and a build awaiting a hand craft are waited for',async()=>{
   }
 });
 test('fh sleep polls sleep_check with peek, then reads once normally; death exits nonzero',async()=>{
-  for (const woke of ['mentioned','died']) {
+  for (const woke of ['mentioned','died','respawned']) {
     const seen:any[]=[];let checks=0;
     await engine(request=>{
       seen.push(request);
@@ -100,7 +100,7 @@ test('fh sleep polls sleep_check with peek, then reads once normally; death exit
     },async port=>{
       const run=cli(port,['sleep','30']);
       if (woke==='died') await assert.rejects(run,(error:any)=>JSON.parse(error.stdout).error.code==='died');
-      else assert.equal(JSON.parse((await run).stdout).result.woke,'mentioned');
+      else assert.equal(JSON.parse((await run).stdout).result.woke,woke); // a dead bot's sleep ends at its respawn
     });
     assert.equal(seen[0].args.seconds,30);
     assert.deepEqual(seen.slice(1,-1).map(r=>r.args.peek),[true,true]);
