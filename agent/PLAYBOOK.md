@@ -21,7 +21,8 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
 
 ## Your interface: `./fh`
 
-- `./fh call describe --format json > describe.json` once at the start; grep it for arguments. It lists every action.
+- `describe.json` lists every action with its arguments, one action per line: `grep '"build"' describe.json`. (If it
+  is missing, make it with `./fh call describe --format json > describe.json`.) Check it before guessing arguments.
 - Look: `./fh observe`, `./fh call map`, `./fh call scan`, `./fh call nearest`, `./fh call status`,
   `./fh call rates`, `./fh call bottleneck`, `./fh call recipes`, `./fh call technologies`.
 - Act: `./fh call ACTION --args '{...}'`. Timed actions (move_to, mine, build_path, construct, ...) take
@@ -30,6 +31,18 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
 - Pictures: `./fh view --out view.png` draws a schematic map; `./shot NAME` saves a real game screenshot to
   `shots/NAME.png` that you can open and look at. Use pictures to check layouts (inserter directions, belt flow).
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
+
+## Pace
+
+Your character stands still while you think, and the clock does not.
+
+- Before a step that needs real thought, leave a queue plan or a long timed action running.
+- Don't poll. Check `research` at most once a minute; let the factory run with `wait_until` or a queue plan; use one
+  `status` per cycle instead of chains of `research`, `date` and `inspect` calls.
+- Batch: chain a move and the action at its end with `&&`, and put many placements in one `build`.
+- Read every failure. A nonzero exit means the action failed. Don't send `./fh` output to `/dev/null` or through
+  `head`/`tail`: a pipe hides the exit status and can cut off the error. Check a result before you announce it.
+- Once assemblers make a science pack, stop hand-crafting it. Build more labs and science assemblers before oil.
 
 ## Harness notes from earlier runs
 
@@ -79,6 +92,8 @@ told your context was compacted (or you notice you lost track), read `notes.md` 
 
 ## Stopping
 
-Check `date` every so often. At the deadline, stop acting and finish `notes.md` with a final summary: milestones
-reached with game times, what slowed you down, harness problems you hit, and the tool changes that would have helped
-most. Then end your turn.
+The deadline is the only stop condition; there is no wind-down period. If your job is finished, blocked or
+destroyed, run `./fh call status` and `./fh call chat` and take the most useful open item: unfuelled burners, starved
+labs, turrets low on ammo, requests naming you, open board items. Check `date` every so often. Three minutes before
+the deadline, finish `notes.md` with a final summary: milestones reached with game times, what slowed you down,
+harness problems you hit, and the tool changes that would have helped most. Then end your turn.
