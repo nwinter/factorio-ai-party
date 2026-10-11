@@ -19,11 +19,19 @@ coop=""
 if [ -n "${POG_TEAMMATE:-}" ]; then coop=$(cat "$root/agent/coop.md"); fi
 if [ -n "${POG_TEAM:-}" ]; then
   coop=$(python3 - "$root/agent/team.md" "$POG_TEAM" "$player" "${POG_MODEL:-}" <<'EOT'
-import sys
+import os, sys
 tpl, team, me, model = sys.argv[1:]
 rows = [l.strip().split("|", 1) for l in open(team) if l.strip()]
 roster = "\n".join(f"- `{n}`: {m}" for n, m in rows if n != me)
-print(open(tpl).read().replace("{{TEAM_SIZE}}", str(len(rows))).replace("{{ROSTER}}", roster).replace("{{MODEL}}", model), end="")
+try:  # stream voices this machine can speak (tools/stream/voices.py: providers with a key, plus Aura-2)
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(tpl)), "..", "tools", "stream"))
+    import voices
+    voice_list = voices.catalog_markdown(voices.available_providers()).rstrip("\n")
+except Exception:
+    voice_list = open(os.path.join(os.path.dirname(tpl), "voices.md")).read().rstrip("\n")
+voice_list = "\n".join("  " + line for line in voice_list.splitlines())  # nested under the "Voice:" item
+print(open(tpl).read().replace("{{TEAM_SIZE}}", str(len(rows))).replace("{{ROSTER}}", roster).replace("{{MODEL}}", model)
+      .replace("{{VOICES}}", voice_list), end="")
 EOT
 )
 fi

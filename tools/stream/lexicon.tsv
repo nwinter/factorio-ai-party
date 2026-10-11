@@ -1,0 +1,49 @@
+# Spoken forms for words TTS gets wrong (tools/stream/voices.py pronounce()). Applied to the audio only; captions
+# keep the written text. Columns, tab-separated:
+#   written   a word or phrase as it appears in a line, matched as a whole word. Case-insensitive, except a written
+#             form in capitals (GPT, SPM) matches only capitals, so "ups" in "power-ups" is left alone.
+#   say       a respelling every voice reads right, for providers without phoneme tags. Blank: leave the word.
+#   ipa       IPA for providers with phoneme tags (ElevenLabs Flash, Cartesia, Inworld, Google). Blank: use `say`.
+#   note
+# Respell only what a voice gets wrong: a respelling can sound worse than the real word on a good model.
+#
+# Agents (agent/team-nine.tsv) and the models they run
+GPT-6.1	G P T six point one		model label
+GPT-6	G P T six		model label
+GPT	G P T
+Sol	Soul	soʊl	agent; Aura-2 said "Sole"/"Sawl"; said like "Soul" (Nick)
+Gemini	Jemminai	ˈdʒɛmɪnaɪ	agent; "Jemminee" otherwise
+Grok	Grock	ɡɹɑk	agent; some voices say "Growk"
+Haiku		ˈhaɪkuː	agent
+Luna		ˈluːnə	agent; Whisper heard "Lunar"/"Linus" from Aura-2
+Luna's		ˈluːnəz
+Muse		mjuːz	agent; one syllable
+Astra		ˈæstɹə	agent
+Opus		ˈoʊpəs	agent; some voices say "Opp-us"
+Sonnet		ˈsɑnɪt	agent
+Claude	Clawed	klɔːd	model family; "Cloud" otherwise
+Codex		ˈkoʊdɛks	harness
+# Casters (caster.py CASTERS)
+Rook		ɹʊk	play-by-play
+Vale	Vail	veɪl	colour
+# Factorio
+Factorio		fækˈtɔːɹioʊ
+Nauvis	Naw-vis	ˈnɔːvɪs	home planet
+Vulcanus		vʌlˈkeɪnəs
+Fulgora		fʊlˈɡɔːɹə
+Gleba	Gleeba	ˈɡliːbə
+Aquilo	Ackwilo	ˈækwɪloʊ
+biters	byters	ˈbaɪtɚz	a third of Aura-2 voices were heard as "fighters"/"lighters"
+biter	byter	ˈbaɪtɚ
+Kovarex	Kova-rex	ˈkoʊvəɹɛks	uranium enrichment
+roboport	robo-port	ˈɹoʊboʊpɔːɹt
+roboports	robo-ports	ˈɹoʊboʊpɔːɹts
+inserter		ɪnˈsɝːtɚ
+inserters		ɪnˈsɝːtɚz
+SPM	science per minute
+UPS	U P S		updates per second
+LDS	low density structures
+AM1	assembler one
+AM2	assembler two
+AM3	assembler three
+logi	lodgy	ˈlɑdʒi	logistics, slang

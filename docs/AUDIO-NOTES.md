@@ -413,3 +413,191 @@ words" in `RULES` is the lever if that matters.
 4. Optionally a `CLOUDFLARE_API_TOKEN` scoped to Workers AI. Without one, `cfai.py` runs `npx wrangler whoami` when
    the hourly wrangler token expires (the same refresh that worked by hand today; the automatic path has not yet
    been through an expiry).
+
+## Voices round 2 (eng/voices, 2026-10-10)
+
+Goal: livelier voices than Aura-2, agents choosing their own, names said right, within about $24 a day of TTS.
+
+### Status
+
+| Part | State |
+|---|---|
+| Adapters in `voices.py`: ElevenLabs v4 (`eleven`) and v4 Turbo / Flash v2.5 (`eleven-fast`), OpenAI gpt-4o-mini-tts (`openai`), Cartesia Sonic 3.6 (`cartesia`), Inworld TTS-2 (`inworld`), plus `auto` | Written; request shapes checked against each provider's docs (read 2026-10-10) and by `voices_selftest.py` with HTTP mocked. **No real request made to any of them** |
+| Bench `voice_bench.py` (20 lines, every provider and voice, spend cap, listening page) | Runs end to end on the `tone` backend (60 clips, summary, `index.html`). Not run on a real voice |
+| Voice catalog for agents (70 voices, sound descriptions, ids of 16 characters or fewer) | `agent/voices.md`; `team.md` gets the list for the providers with keys at launch (`new-run.sh`) |
+| `profile {"voice_description": ...}`: a designed voice per agent (ElevenLabs, else Inworld) | `voices.py` and the stream service (`model.py`, `live.py`) ready; needs the harness field (ask below) |
+| Lexicon `tools/stream/lexicon.tsv`: roster, casters, model names, Factorio words | Done; inline IPA for providers that read it, respellings elsewhere |
+| Loudness | Unchanged: every clip to -18 LUFS, -1.5 dBTP limiter, now including the premium providers |
+
+| TTS text prep (`textprep.py`): spaces back in glued lines, spoken forms, optional spaces-only model pass | Done; `textprep_selftest.py` on real `runs/shake2` lines (below) |
+
+Why nothing was heard: Nick has since added `elevenlabs.key` and `openai.key`, but this session's sandbox refuses
+`api.elevenlabs.io`, `api.openai.com` and `api.cloudflare.com`, so no provider could be called from here. Run the
+bench from a normal terminal. **Test spend: $0.00.**
+
+### Run it once keys are in place
+
+Keys are one file each in `~/.config/pog/`: `elevenlabs.key`, `openai.key`, `cartesia.key`, `inworld.key` (the Base64
+credential exactly as the Inworld portal shows it). A provider without its file is skipped. Keys go only to their
+own provider; nothing prints or logs them.
+
+```sh
+python3 tools/stream/voice_bench.py --dry-run          # what would render and the estimated cost
+python3 tools/stream/voice_bench.py --check            # every provider with a key + Aura-2, Whisper accuracy
+python3 tools/stream/voice_bench.py --design --providers eleven --lines pbp-open,color-banter   # designed casters
+python3 tools/stream/voice_bench.py --list eleven      # voices this key can use (ElevenLabs ids change, see below)
+open runs/voice-bench/<stamp>/index.html               # each line across every voice; summary.md has the numbers
+python3 tools/stream/caster.py --tts auto --tts-fallback aura1   # live: each voice on its provider
+```
+
+The full bench (18 ElevenLabs voices on both models, 13 OpenAI, 5 Cartesia, 3 Inworld, 41 Aura-2; 20 lines,
+1,684 characters) is estimated at **$6.61**. `--max-spend` (default $8) refuses a bigger plan and stops a run that
+goes over. `--check` adds Whisper at about $0.0005 a minute.
+
+### Providers, prices, cost per hour
+
+Prices are list prices read 2026-10-10 (elevenlabs.io/pricing/api, developers.openai.com pricing, cartesia.ai/pricing,
+inworld.ai/pricing). Cost per stream hour assumes **45,000 characters an hour**: eng/audio's two-host casters talk
+about 80% of the time and put Aura-2 at about $1.4 an hour (about 47k characters), agents included
+(`voice_bench.CHARS_PER_HOUR`).
+
+| Backend | Model | Price | $/stream hour | Hours a day in $24 | Arena Elo* | Why |
+|---|---|---|---|---|---|---|
+| `eleven` | Eleven v4 | $0.08 / 1k chars | $3.60 | 6.7 | 1323 (#2) | Most expressive: audio tags `[excited]`, `[sighs]`; inline IPA |
+| `eleven-fast` | Eleven v4 Turbo, else Flash v2.5 | $0.04 / 1k chars | $1.80 | 13 | 1327 (#1) | ~100 ms; Turbo on the HTTP endpoint is unconfirmed, so a refusal drops to Flash v2.5 |
+| `cartesia` | Sonic 3.6 | ~$0.049 / 1k (1 credit a char) | $2.21 | 11 | 1284 (#4) | Emotion and speed per line; inline IPA |
+| `inworld` | TTS-2 | $0.025 / 1k chars | $1.12 | 21 | 1257 (#7) | Delivery instruction in words, inline IPA, voice design; cheapest good one |
+| `openai` | gpt-4o-mini-tts | ~$0.015 / min (launch estimate; $12/M audio tokens) | ~$0.75 | 32 | not in top 15 | Steerable with a free-text instruction; 13 voices |
+| `aura2` | Deepgram Aura-2 | $0.030 / 1k chars | $1.35 | 18 | | Today's voices; the stand-in for every other voice |
+
+\* artificialanalysis.ai TTS leaderboard as read 2026-10-10. Eleven v4's launch promo ($0.022/1k) ends Oct 12; the
+table uses the regular rate.
+
+Left out: Hume Octave (Hume is shutting down its TTS API on 2026-11-13), Google Gemini 3.8 Flash TTS (#5, $16.5/M;
+a good next adapter if Inworld disappoints), Qwen-Audio TTS (#3, Alibaba Cloud account needed).
+
+### Recommendation per role (provisional: from the leaderboard and features, not by ear)
+
+- Casters: ElevenLabs v4 Turbo (`--tts auto` with `elevenlabs.key` puts caster lines on v4 Turbo: first on the arena,
+  $1.80 an hour, 13 hours a day within $24). Casters take the first available voice in `voices.ROLE_VOICES`: `el-liam`
+  for Rook, `el-alice` for Vale, then the Cartesia, Inworld, OpenAI and Aura-2 picks. `POG_ELEVEN_CASTER=eleven` puts
+  casters on v4 ($3.60 an hour, under 7 hours a day). After the bench, prefer the designed caster voices (`--design`,
+  `voices.ROLE_DESIGN`) if they sound better: a designed voice belongs to the account and does not expire.
+- Agents: their own pick on its own provider (`auto`), or a designed voice. An agent without either gets a distinct
+  voice from the premium providers that have keys (by name hash; Aura-2 only once those run out), so defaults are no
+  longer Aura-2 once a key exists. Agent lines stay on v4 (the most expressive model); agents speak far less than the
+  casters (about 15% of the characters), so that adds about $0.50 an hour. Together: about $2.10 an hour, 11 hours a
+  day within $24.
+- Fallback: `--tts-fallback aura1` stays; under `auto` a failing provider falls back per clip to the voice's own Aura-2
+  stand-in (`like` in the catalog), so a voice keeps a similar sound.
+
+Listen before deciding: the voice descriptions for ElevenLabs and Cartesia come from provider listings, and nobody
+has heard any of these voices yet.
+
+### How `voices.py` works now
+
+- `CATALOG`: `id -> (provider, provider voice, description, Aura-2 stand-in)`. The 41 Aura-2 ids are entries too, so
+  existing picks (`orpheus`, `theia` in the mock) still work. Premium ids carry a prefix: `el-`, `oa-`, `ca-`, `in-`.
+- `TTS("auto")` routes each voice to its provider; a provider without a key, or a failed request, falls back to the
+  stand-in on Aura-2. `TTS("eleven")` (or any one provider) speaks everything through that provider: its own voices
+  as themselves, Aura-2 ids through a voice of that provider with the same stand-in.
+- Delivery: `mood()` guesses excited, frustrated, deadpan or neutral from the words; casters add a role style
+  (`ROLE_STYLE`). Eleven v4 gets a leading audio tag, OpenAI and Inworld a one-sentence instruction, Cartesia an
+  emotion and speed.
+- `TTS(cache=DIR)` or `POG_TTS_CACHE=DIR`: identical lines are served from disk (off by default; the bench uses
+  none). `tts.last` tells which provider, voice and mood spoke the latest clip; `tts.spent` uses that provider's rate.
+- ElevenLabs default voices: ElevenLabs retires them on 2026-12-31, and only accounts made before March 2026 have
+  them. The catalog ids come from a third-party list that matches ElevenLabs' docs where they show ids; one v4 docs
+  example labels a different id "George". Check with `voice_bench.py --list eleven` and replace any that 404.
+
+### Agent voice choice and designed voices
+
+`team.md` now carries a "Voice" item with the voice list, filled at launch by `new-run.sh` from
+`voices.catalog_markdown()` for the providers whose keys exist on this machine, plus Aura-2. With no keys that is the
+39 Aura-2 voices (caster voices are left out). `agent/voices.md` is the full list, generated with
+`python3 tools/stream/voices.py catalog`. Descriptions say how a voice sounds (pitch, age, accent, energy) and
+avoid gender labels.
+
+`profile {"voice_description": "gravelly old prospector, slow drawl, amused"}`: the first time the caster sees it,
+`assign_voices` designs a voice (ElevenLabs voice design with `eleven_ttv_v3`, keeping the first preview, else
+Inworld voice design), saves it to the account, and remembers it in `~/.cache/pog/voices/designed.json` keyed by agent
+and description, so it is made once. The voice's id is `my-<agent>`. An explicit `voice` wins over a description; a
+failed design is remembered and not retried for the same description. ElevenLabs bills the preview text (about 170
+characters, under $0.02) and the voice takes a slot on the plan.
+
+### Pronunciation
+
+`tools/stream/lexicon.tsv`: written form, respelling, IPA, note. It covers the nine agents, the model names (GPT-6.1
+is "G P T six point one", Claude), the casters (Vale as "Vail"), and Factorio words (biters as "byters": a third of
+Aura-2 voices were heard as "fighters"; Nauvis, Gleba, Aquilo, Kovarex, roboport, SPM, UPS, AM2, logi). Matching is
+on whole words, case-insensitive, except all-capital entries (SPM) which match only capitals, so "power-ups" is left
+alone. `speak()` applies it for the provider that speaks: inline `/IPA/` for Eleven v4 and Inworld, `<<s|oʊ|l>>` for
+Cartesia, respellings for the rest. If a model reads the IPA aloud, `POG_TTS_IPA=0` forces respellings everywhere.
+Captions keep the written text. Provider pronunciation dictionaries (ElevenLabs, Cartesia) would do the same as the
+inline forms with server-side state to keep in sync, so they are not used.
+
+### TTS text prep: glued lines (`textprep.py`)
+
+Late in long sessions Sol stops writing spaces ("deadline17:59", "fixingall12", "Coalchestisfull",
+"Delivered2assemblers5electricinserters3poles"); in `runs/shake2` 58 of Sol's 92 lines are glued. TTS read these as
+one mangled word. `TTS.speak()` now sends `textprep` output to the provider; captions keep the agent's text.
+
+1. Spoken forms: the game clock (`41m35` is "41 minutes 35", `57m00` "57 minutes"), units and rates (`540kW`,
+   `1.56MW`, `189/min` "per minute"), `~90` "about 90", `+` "plus"/"and", `#13` "number 13", arrows "to", compass
+   points (`NW` "north-west", `facesN` "faces north"), `AM`/`AMs`/`asm` "assembler(s)".
+2. Boundaries: letter/digit (`100iron`), camelCase (`thanksGemini`, `AMworking`, `NWscout`, a plural acronym glued to
+   the next word `AMsto8` "assemblers to 8"), punctuation followed by a letter.
+3. Word segmentation of tokens that are not words: Viterbi over `vocab.tsv` (1,690 words counted from the team's own
+   chat and notes, unglued lines only, so "inserter", "handoff", "courier" are cheap) with the system dictionary as
+   a costly fallback, plurals and -ed/-ing forms included. 1-3 letter pieces come only from the team vocabulary or a
+   short built-in list, which keeps out dictionary junk like "ama" and "ere". About 0.5 ms a line.
+4. If a long token is still glued after that, `textprep.Respacer` asks a cheap model (OpenAI `gpt-4.1-nano`, else
+   `gpt-5-nano`, when `openai.key` exists; else Workers AI Llama 3.1 8B) to insert spaces. Its answer is used only if
+   it equals the input with whitespace removed, so it cannot change a word; anything else (or a timeout) keeps the
+   heuristic text. Answers are cached per line. `POG_RESPACE=0` turns the model pass off. On shake2 the heuristics
+   alone unglue all 58 lines, so the model should rarely be called; it has not been called for real yet.
+
+Results on shake2 (`textprep_selftest.py`, which also reads `runs/shake2/chat.jsonl` from the main checkout when
+present): seq 237 "Delivered2assemblers5electricinserters3poles sciencechest6.5,6.5." becomes "Delivered 2 assemblers 5
+electric inserters 3 poles science chest."; seq 385 "all9labs greenempty50m07 despitefourgreenAMs" becomes "all 9
+labs green empty 50 minutes 07 despite four green assemblers"; seq 394 "At9packs/min each they'lldraininsertersquickly"
+becomes "At 9 packs per minute each they'll drain inserters quickly". On 619 unglued lines from shake1 and shake2 the
+changes are spoken forms and words glued by the coordinate stripping (next paragraph); clean caster-style lines come
+back unchanged.
+
+`speakable()` had a bug that glued words for every agent: the coordinate patterns also ate the space after a
+coordinate, so "in chest -58.5,-23.5 for mall" became "in chestfor mall" (16 "chestfor" in two runs). A removed
+coordinate now leaves a space. eng/audio's `speakable()`/`has_coords()` (ranges, `along x-82.5`, "1,000" kept) are
+ported into this branch, plus that fix, a strip for bare map ranges with a minus (`-68..-48`), and `~` kept before a
+number (captions show "~90" as written; the TTS text says "about 90").
+
+### For eng/audio (`caster.py`)
+
+Status 2026-10-10 23:10: item 1 done on eng/audio ("Casters: pass caption text to TTS"). eng/audio checked the merge:
+the two branches conflict only in `tools/stream/voices.py`; take eng/voices' file whole. eng/audio's
+`caster_selftest.py` passes against it (including the coordinate and "1,000" cases).
+
+1. Drop the `voices.pronounce(...)` around the text passed to `tts.speak(...)`: `speak()` applies the lexicon itself,
+   per provider, and a line already respelled loses the IPA forms (it still works, just less precisely). Keep passing
+   the caption text: `speak()` also restores spaces and spoken forms (`textprep`), for the audio only.
+   `speakable()` now matches eng/audio's version plus the fixes above, so merging eng/voices after eng/audio should
+   take this branch's `voices.py`.
+2. `--tts auto` (with `--tts-fallback aura1`) is the setting once keys exist. Caster voices then come from
+   `voices.ROLE_VOICES`; `voices.CASTERS` still names the Aura-2 and `say` voices.
+3. Optional: log `tts.last` (provider, voice, mood, cached) with each clip.
+
+### For eng/board (harness `profile`)
+
+1. `voice_description`: `if a.voice_description ~= nil then pr.voice_description = text_arg(a.voice_description,
+   'voice_description', 1, 300); changed = true end`, returned in `public(pr)` and in the `profiles` rows. The stream
+   service passes it through already. Then add to `team.md`'s "Voice" item: `or describe the voice you want with
+   "voice_description":"..." (up to 300 characters) and the stream designs one for you`.
+2. The `voice` schema text in `profiles.lua` lists the Aura-2 names; change it to "a voice id from the list in your
+   team brief (unknown or unset: a default from your name)" so agents see the premium voices. Ids stay within 16
+   characters.
+
+### Not verified (check on the first bench)
+
+ElevenLabs default-voice ids on Nick's account; whether `eleven_v4_turbo` is served on the HTTP endpoint; inline IPA
+on Eleven v4 and Inworld; the Cartesia `Cartesia-Version: 2026-08-14` header; OpenAI's per-minute cost; latency of
+any premium provider from this network (the bench measures full-response time, not time to first byte).
