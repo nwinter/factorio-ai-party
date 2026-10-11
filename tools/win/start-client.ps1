@@ -21,7 +21,7 @@ $music = if ($Human) { '0.5' } else { '0' }
 # Factorio 2.0's graphics-quality takes only high or medium (sprite resolution); the old 'low'/'normal' were not valid,
 # so every client fell back to high ("[Graphics quality: high]" in shake5's cam3 log). Directors get medium-resolution
 # sprites (a quarter of the pixels) to cut the ~5.2 GB each Space Age client committed; see docs/STREAM-NOTES.md.
-$quality = if ($Human) { 'high' } else { 'medium' }
+$quality = 'medium'   # a person too: high took 6 GB next to the stream's three cameras (2026-10-11)
 $vram = if ($Human) { 'all' } else { 'low' }
 Set-Content -Encoding ascii "$dir\config\config.ini" @"
 [path]
