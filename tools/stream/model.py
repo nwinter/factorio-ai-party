@@ -262,7 +262,13 @@ class Model:
         for e in obs.get("events", []):
             self._ingest_event(e, now)
         if obs.get("space") is not None:
-            self.space = obs["space"]
+            # a platform counts once its hub exists: shake7's "First space platform: Solstice" fired on the record the
+            # New platform button makes (waiting_for_starter_pack), before any rocket. Rows without the field (older
+            # score reads) count as before.
+            sp = dict(obs["space"])
+            sp["platforms"] = [p for p in sp.get("platforms") or []
+                               if p.get("hub", True) and p.get("state") != "waiting_for_starter_pack"]
+            self.space = sp
         if obs.get("space") is not None or any(a.get("surface") for a in obs.get("agents", [])):
             self._space_moments(now)
         self.errors = obs.get("errors", {})

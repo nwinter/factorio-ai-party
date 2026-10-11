@@ -130,6 +130,10 @@ def space_checks():
     snap = m.snapshot(t)
     assert snap["space"]["active"] and snap["space"]["rockets"] == 1 and snap["space"]["summary"] == "1 rocket", snap["space"]
     plat = {"name": "Orbital One", "at": "nauvis"}
+    # the New platform button: a record waiting for its starter pack, no hub yet -> not a platform (shake7, Solstice)
+    m.ingest({"agents": base, "space": {"rockets": 1, "planets": ["nauvis"], "platforms": [
+        {"name": "Solstice", "at": "nauvis", "hub": False}, {"name": "Dawn", "at": "nauvis", "state": "waiting_for_starter_pack"}]}}, t + 0.5)
+    assert not m.moments and not m.snapshot(t + 0.5)["space"]["platforms"], list(m.moments)
     m.ingest({"agents": base, "space": {"rockets": 2, "planets": ["nauvis"], "platforms": [plat]}}, t + 1)
     assert [x["kind"] for x in m.moments] == ["first_platform"], list(m.moments)
     away = [base[0], dict(base[1], surface="vulcanus")]
