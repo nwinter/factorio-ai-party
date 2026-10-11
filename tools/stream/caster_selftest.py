@@ -522,5 +522,34 @@ check("pace facts call electronic circuits green circuits", any(k.startswith("gr
 check("rules: research unlocks, it does not mean anything was made", "does not mean anything has been built or made"
       in caster.EXCHANGE_RULES)
 
+# Round 6 (shake5 P1 item 3): a resumed run tells the hosts which shift this is, and the deadline is a handover
+import tempfile
+with tempfile.TemporaryDirectory() as runs:
+    for name, prev in (("shake4", None), ("shake5", "shake4"), ("shake6", "shake5")):
+        os.makedirs(os.path.join(runs, name))
+        if prev:
+            open(os.path.join(runs, name, "resumed-from"), "w").write(prev + "\n")
+    open(os.path.join(runs, "shake6", "start.log"), "w").write("05:18:52 world n: resumed at tick 446842 (game 124m)\n")
+    sh = caster.read_shift(os.path.join(runs, "shake6"))
+    check("shift: number, the run it continues, the first shift, the resume minute", sh and sh["number"] == 3 and
+          sh["continues"] == "shake5" and sh["first_shift"] == "shake4" and sh["resumed_at_game_minute"] == 124
+          and "next shift continues it" in sh["at_the_deadline"], str(sh))
+    check("shift: a first shift has none", caster.read_shift(os.path.join(runs, "shake4")) is None
+          and caster.read_shift(None) is None)
+    so = caster.facts_for({"kind": "open", "t": 0, "prio": 8}, {"agents": []}, None, time.time() + 3600, sh)
+    check("shift: the opener carries it and welcomes viewers back", so.get("shift") == sh
+          and "later shift" in so.get("how_to_call_it", ""), str(so))
+    far = caster.facts_for({"kind": "camera", "agents": [], "t": 0, "prio": 2}, {"agents": []}, None, time.time() + 2400, sh)
+    near = caster.facts_for({"kind": "camera", "agents": [], "t": 0, "prio": 2}, {"agents": []}, None, time.time() + 300, sh)
+    check("shift: with the clock (time-left beats and the last 15 minutes)", "shift" not in far and near.get("shift"))
+    check("shift: 'ends the run' is wrong at a handover", caster.check_line(
+        "That horn ends the run for them!", dict(near, minutes_to_deadline="under a minute"), [], []) ==
+        "says the run ends, but the next shift continues it")
+    check("rules: the deadline is a handover when the facts carry a shift", "the deadline is a handover"
+          in caster.EXCHANGE_RULES)
+    cs6 = caster.Caster.__new__(caster.Caster)
+    cs6.a = caster.argparse.Namespace(run_dir=os.path.join(runs, "shake5"))
+    check("Caster.shift reads --run-dir", cs6.shift()["number"] == 2, str(cs6.shift()))
+
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)

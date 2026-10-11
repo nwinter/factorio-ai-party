@@ -314,6 +314,35 @@ def read_deadline(spec, now=None):
     return max(out) if out else None
 
 
+def read_shift(run_dir):
+    """The shift fact for a resumed run (runs/RUN/resumed-from, written by tools/start-team.sh with POG_RESUME), or None
+    for a first shift. Shake5's hosts were never told and closed the hour as the end of the run."""
+    if not run_dir:
+        return None
+    try:
+        prev = open(os.path.join(run_dir, "resumed-from")).read().strip()
+    except OSError:
+        return None
+    if not prev:
+        return None
+    root, chain, run = os.path.dirname(os.path.normpath(run_dir)), [], prev
+    while run and run not in chain and len(chain) < 50:  # the earlier shifts of this world, newest first
+        chain.append(run)
+        try:
+            run = open(os.path.join(root, run, "resumed-from")).read().strip()
+        except OSError:
+            run = None
+    f = {"number": len(chain) + 1, "continues": prev, "first_shift": chain[-1],
+         "at_the_deadline": "the world is saved and the next shift continues it from there"}
+    try:
+        m = re.search(r"resumed at tick (\d+)", open(os.path.join(run_dir, "start.log")).read())
+        if m:
+            f["resumed_at_game_minute"] = round(int(m.group(1)) / 3600)
+    except OSError:
+        pass
+    return f
+
+
 FILLERS = ["pace", "explain", "naturalist", "spotlight", "production", "board", "research"]
 # which of the analyst's point kinds fit each filler angle (docs/ANALYST-NOTES.md "What the analyst writes")
 POINT_KINDS = {"pace": ("comparison", "judgement"), "explain": ("explainer", "prediction", "trivia"),
@@ -352,14 +381,17 @@ def analyst_facts(f, e, s):
             f["next_milestone"] = dict((an["next"].get("facts") or {}), text=an["next"]["text"])
 
 
-def context_facts(s, baseline=None, deadline=None, clock=True):
-    """What viewers need to follow along and what lets the hosts judge the play: stage, science rate, pace, time left."""
+def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
+    """What viewers need to follow along and what lets the hosts judge the play: stage, science rate, pace, time left,
+    and on a resumed run which shift this is."""
     f = {}
     left = (deadline - time.time()) / 60 if deadline else None
     # shake3: "forty more minutes of biter bait" with 4.5 left; there was no time-left fact. On every beat the hosts
     # said "forty-six minutes left" four exchanges running (mock), so only where time matters or it is running out.
     if deadline and (clock or left <= 15):
         f["minutes_to_deadline"] = round(left) if left >= 1 else "under a minute" if left > 0 else "the deadline has passed"
+    if shift and (clock or left is None or left <= 15):  # with the clock: the deadline is a handover
+        f["shift"] = shift
     sc = s.get("science") or {}
     if sc.get("stage_label"):
         f["stage"] = sc["stage_label"]
@@ -375,14 +407,18 @@ def context_facts(s, baseline=None, deadline=None, clock=True):
     return f
 
 
-def facts_for(e, s, baseline=None, deadline=None):
+def facts_for(e, s, baseline=None, deadline=None, shift=None):
     f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
     gm = re.match(r"(\d+)h(\d+)m", s.get("game_time") or "")
     if gm and int(gm.group(1)):  # "sixty-five minutes in" for 1h05m
         f["game_minutes"] = int(gm.group(1)) * 60 + int(gm.group(2))
     # the pace comparison only where it is the story; on every line it turned the cast into a scoreboard
     paced = e["kind"] in ("research", "open", "viewer") or e.get("angle") in ("pace", "explain")
-    f.update(context_facts(s, baseline if paced else None, deadline, clock=paced or e["kind"] == "segment"))
+    f.update(context_facts(s, baseline if paced else None, deadline, clock=paced or e["kind"] == "segment",
+                           shift=shift))
+    if e["kind"] == "open" and shift:  # shake5 opened with "Two hours in and the team's cracking oil!"
+        f["how_to_call_it"] = ("welcome viewers back: this is a later shift of the same world, picking up where the "
+                               "last one was saved")
     if e["kind"] == "viewer":
         f["viewer_message"] = {"from": e.get("viewer"), "text": e.get("text")}
         if e.get("answer"):  # the analyst's answer, checked with its tools; the hosts put it in their own words
@@ -492,8 +528,10 @@ EXCHANGE_RULES = (
     "in a loss count the team's buildings destroyed and engineers killed, as numbers_mean says. Researching a "
     "technology unlocks it; it does not mean anything has been built or made yet. 'Character' and 'engineer' mean one of the team's engineers. "
     "An agent whose status is planning is writing its next commands, not idle: never call it frozen, still, "
-    "motionless, idle or asleep. The run goes on "
-    "until the deadline, and the time left is minutes_to_deadline. The hosts are commentators, not on "
+    "motionless, idle or asleep. The agents play until the deadline, and the time left is minutes_to_deadline. When "
+    "the facts carry a shift, the run is a series of shifts on one saved world: this shift picks up the world where "
+    "the last one left it, and at the deadline the world is saved and the next shift continues it, so research in "
+    "progress and the base carry over and the deadline is a handover. The hosts are commentators, not on "
     "the team: the team is 'they', never 'we'. Never say something is missing, broken or absent ('no steam yet', "
     "'no belts') unless the facts say so, and mention an earlier run only when the facts include a pace "
     "comparison. Skip map distances and directions unless they "
@@ -642,6 +680,8 @@ def wrong_deadline(low, facts):
     """'Ends the run' and 'N minutes left' must agree with minutes_to_deadline (shake3: "One small biter ends the run
     at thirty flat!", "forty more minutes of biter bait" with 4.5 left)."""
     left = facts.get("minutes_to_deadline")
+    if ENDS_RUN.search(low) and facts.get("shift"):  # shake5 06:20:37: "Horn swallows them whole" at the handover
+        return "says the run ends, but the next shift continues it"
     if ENDS_RUN.search(low) and not (left in ("under a minute", "the deadline has passed") or (
             isinstance(left, (int, float)) and left <= 1)):
         return "says the run ends before the deadline"
@@ -1105,6 +1145,13 @@ class Caster:
             self.deadline_t = (time.time(), read_deadline(getattr(self.a, "deadline", None)))
         return self.deadline_t[1]
 
+    def shift(self):
+        """The shift fact (read_shift), re-read every 30 s: start.log gets the resume tick as the world comes up."""
+        t, f = getattr(self, "shift_t", (0.0, None))
+        if time.time() - t > 30:
+            self.shift_t = (time.time(), read_shift(getattr(self.a, "run_dir", None)))
+        return self.shift_t[1]
+
     def names(self, s):
         return {a["name"]: a.get("display_name") or a["name"] for a in s.get("agents") or []}
 
@@ -1252,7 +1299,7 @@ class Caster:
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
-        facts = facts_for(e, s, self.base_for(s), self.deadline())
+        facts = facts_for(e, s, self.base_for(s), self.deadline(), self.shift())
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
         names = list(self.names(s).values())
@@ -1583,7 +1630,7 @@ def bench(a):
         lat, kept, total = [], 0, 0
         for label, e, first, n in bench_events(snap):
             e = dict(e, t=time.time())
-            facts = facts_for(e, snap, base, read_deadline(a.deadline))
+            facts = facts_for(e, snap, base, read_deadline(a.deadline), read_shift(a.run_dir))
             t0 = time.time()
             try:
                 lines = w.exchange(e, facts, [], first, n, naturalist=label == "naturalist", show=show_for(snap))
@@ -1621,6 +1668,8 @@ def main():
     ap.add_argument("--writer-timeout", type=float, default=12, help="seconds per Workers AI call (claude: 3x)")
     ap.add_argument("--urgent-model", default=URGENT_MODEL,
                     help="fast Workers AI writer for urgent events ('' to use the main writer for everything)")
+    ap.add_argument("--run-dir", help="the run's directory (runs/RUN): a resumed-from file there makes this a later "
+                                      "shift, and the hosts get a shift fact")
     ap.add_argument("--deadline", help="when the run ends, for minutes_to_deadline: 'YYYY-MM-DD HH:MM', 'HH:MM', or "
                     "a deadline.txt file or glob (the latest wins), e.g. 'runs/shake4/*/deadline.txt'")
     ap.add_argument("--baseline", default=os.path.join(HERE, "baselines", "shake1.json"),
