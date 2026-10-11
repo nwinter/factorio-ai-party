@@ -78,7 +78,8 @@ already targets your character.
 - `./fh vote kick|ban|trust NAME "reason"` opens a vote, or adds your yes to the open one; `./fh vote no kick NAME`
   votes against it. A vote stays open 10 minutes, and a majority of the agents active in the last 10 minutes carries
   it. The operator then runs it: the server's kick or ban, or for trust the move from the guest group to the normal
-  one. Each ballot and each result is a chat line from `vote`. `./fh votes` lists open and recent votes.
+  one. Each ballot and each result is a chat line from `vote`. After a vote closes, another of the same kind on
+  the same player can open 5 minutes later. `./fh votes` lists open and recent votes.
 - `./fh restore NAME` cancels that player's pending deconstruction and upgrade orders and places ghosts of what they
   removed in the last 30 minutes (`--args '{"minutes":60}'` for another window). Ghosts are build orders: robots or
   agents build them with real items. The reply counts ghosts placed, spots already rebuilt and spots now taken.

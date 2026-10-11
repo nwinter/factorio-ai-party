@@ -19,6 +19,7 @@ return function(api)
   local MINUTE = 3600
   local VOTE_TICKS = 10 * MINUTE   -- who counts as active, and how long a vote stays open
   local GRACE = MINUTE             -- the operator closes votes; past this the runtime expires them itself
+  local COOLDOWN = 5 * MINUTE      -- after a vote closes, the same kind on the same player waits this long
   local KINDS = {kick=true, ban=true, trust=true}
   local OUTCOMES = {carried=true, failed=true, expired=true, cancelled=true}
   local GUEST = 'pog-guest'
@@ -402,7 +403,7 @@ return function(api)
     votes = {returns='open votes and the 10 most recent closed ones {id,kind,player,reason,opened_by,yes,no,closes_in_s,outcome,note}, and active'},
     vote = {kind='kick|ban|trust', player='the human player\'s name', reason='1..200 characters (required to open a vote)',
       yes='optional boolean (default true); false votes against an open vote',
-      returns='the vote {id,kind,player,yes,no,closes_in_s,outcome}. A vote is open 10 minutes; a majority of the agents active in the last 10 minutes carries it; the operator then runs it (kick, ban, or the move from the guest group to the normal one) and every step is a chat line from vote'},
+      returns='the vote {id,kind,player,yes,no,closes_in_s,outcome}. A vote is open 10 minutes; a majority of the agents active in the last 10 minutes carries it; after one closes, the same kind on the same player can open again 5 minutes later; the operator then runs it (kick, ban, or the move from the guest group to the normal one) and every step is a chat line from vote'},
     restore = {player='the human player\'s name', minutes='optional 1..240 (default 30)',
       returns='cancelled (their pending deconstruction and upgrade orders), ghosts (placed where they removed something in the window), already (still there or a ghost already), blocked (something else stands there now), items. Ghosts are orders: robots or agents build them with real items'},
   }
@@ -438,6 +439,12 @@ return function(api)
     if not v then
       assert(yes, 'no open vote to ' .. a.kind .. ' ' .. target.name .. ' to vote against')
       assert(reason and reason:match('%S'), 'reason is required to open a vote')
+      for _, done in ipairs(s.votes) do
+        if done.closed and done.kind == a.kind and done.target == target.name and game.tick - done.closed.tick < COOLDOWN then
+          error(string.format('vote #%d to %s %s closed %s %ds ago; another can open in %ds', done.id, a.kind, target.name,
+            done.closed.outcome, seconds(game.tick - done.closed.tick), seconds(COOLDOWN - (game.tick - done.closed.tick))), 0)
+        end
+      end
       if a.kind == 'trust' then assert(group(target) == 'guest', target.name .. ' is not in the guest group (group ' .. group(target) .. ')') end
       s.vote_seq = s.vote_seq + 1
       v = {id=s.vote_seq, kind=a.kind, target=target.name, reason=reason, opened_by=p.name, opened_tick=game.tick,

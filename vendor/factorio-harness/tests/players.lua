@@ -202,6 +202,8 @@ fails(function() M.operator.vote_close({id=1,outcome='won'}) end,'outcome must b
 v=M.operator.vote_close({id=1,outcome='failed',note='1 of 3 needed'})
 eq(v.outcome,'failed'); eq(notices[#notices],'vote: #1 kick nick failed (yes 1, no 1): 1 of 3 needed')
 eq(M.operator.vote_close({id=1,outcome='carried'}).outcome,'failed')
+fails(function() M.handlers.vote(luna,{kind='kick',player='nick',reason='again'}) end,'vote #1 to kick nick closed failed 0s ago; another can open in 300s')
+game.tick=game.tick+5*3600
 eq(M.handlers.vote(luna,{kind='kick',player='nick',reason='again'}).id,3)
 local list=M.handlers.votes(luna)
 eq(#list.open,2); eq(#list.closed,1); eq(list.closed[1].note,'1 of 3 needed')

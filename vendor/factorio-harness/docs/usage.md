@@ -143,7 +143,8 @@ fh restore NAME [--args '{"minutes":30}']      # cancel their pending orders; gh
   blueprints, cable cutting, settings paste, flushing, capsules, vehicles, trains, research, launches and admin
   actions denied); camera names and names in `storage.agent_harness.trusted_names` are exempt (operator
   `trust_names {names}` adds names before they ever join).
-- `vote {kind, player, reason?, yes?}`: one open vote per kind and player, open 10 minutes (36000 ticks). The reply
+- `vote {kind, player, reason?, yes?}`: one open vote per kind and player, open 10 minutes (36000 ticks); after one
+  closes, the same kind on the same player waits 5 minutes. The reply
   and a chat line from `vote` give the ballots and "N agents active in the last 10 minutes; M yes carry it" (active:
   the bot's own last request, peeks excluded). The operator decides: `votes_open` (open votes with every ballot,
   `active`, `window_ticks`), then `vote_close {id, outcome: carried|failed|expired|cancelled, note?}` (a chat line).
