@@ -325,3 +325,119 @@ Astra and Sol still run words together, now from the start of a fresh Codex sess
   "actualproductionnotyetverified" and "bufferedatOpusblueinput", so the habit probably passed across the shift
   through the notes.
 - Some squashed lines go to air as aloud lines (section 4).
+
+## 4. Talk and stream
+
+### Chat and board
+
+`runs/shake5/chat.jsonl` begins with 126 shake4 messages (seq 813 to 1011), all logged at 05:20:58. The counts below
+use only the 409 messages from the shift (tick ≥ 446842).
+
+| | shake5 (1 h) | shake4 hour 2 | shake4 hour 1 |
+|---|---|---|---|
+| Agent messages | 409 | 464 | 547 |
+| Logistics (shake3 keyword count) | 344 (84%) | 423 (91%) | 514 (94%) |
+| Mixed / no logistics word | 38 / 27 | 21 / 20 | 23 / 10 |
+| Address someone with `@` | 93% | 94% | 95% |
+| Carry coordinates | 63% | 76% | 68% |
+| Aloud | 34 | 64 over both hours | |
+
+The logistics share is the lowest of any run so far (84%; the last 30 minutes were 80%), but chat is still mostly
+logistics. The 27 messages without a logistics word are mostly thank-yous (Opus 9, Sol 6) and Grok's battle reports.
+
+Messages per agent:
+
+| Astra | Sol | Luna | Haiku | Grok | Opus | Muse | Sonnet | Gemini |
+|---|---|---|---|---|---|---|---|---|
+| 82 | 82 | 72 | 52 | 36 | 32 | 29 | 14 | 10 |
+
+The board had about 120 calls: 32 reads, 11 posts and 77 updates (shake4: 232 calls in two hours).
+
+- The posts were 4 claims, 4 requests, 2 notes and 1 task.
+- Luna made 64 of the updates, mostly to one item, #60 ("steady workshop iron"), used as a running log: "Tick 584000:
+  west iron route yielded72 plates (16,8,16,8,8,16); delivered45 to pipe and27 to gears ..." (05:57:43).
+- Opus, Sonnet, Haiku and Grok posted nothing.
+- There were no confessions (shake4: 1).
+- Astra and Sol read their profiles (`profile` with no arguments). Muse re-sent its own at 05:21:48 (display name
+  "Muse Spark", colour, glyph and motto). The other profiles carried over from the save unchanged.
+
+Aloud: 34 lines (Grok 8, Astra 7, Haiku 6, Luna 5, Sol 4, Opus 3, Gemini 1, Muse 0, Sonnet 0), about shake4's rate.
+Two of Sol's four aloud lines were squashed ("Fourthengineasm2 verifiedworking2h29 at(-20.5,10.5)", 05:45:43).
+
+Best moments (time, speaker, aloud where marked):
+
+- 05:23:13 Grok (aloud), as the opening raid hit: "Biters on the steam engines. I have sixteen magazines and I am
+  covering the power row. Haiku, take the green line."
+- 05:29:40 Grok: "Second wave of forty-five is on the power row. I am at forty-one health, pulling west of the
+  turrets."
+- 05:38:48 Gemini (aloud): "Petroleum trunk is fully connected and pumping! Sulfur chemical plant at (21.5,-37.5) is
+  LIVE and producing!", which closed shake4's open problem. Luna (aloud, 05:39:14): "Great work getting sulfur live!"
+- 05:39:39 Sol (aloud): "Blue science assemblers now working at game2h23!" Opus at the same second: "Advanced oil
+  processing moved to the front. Great work on blue, everyone!"
+- 05:48:27 Haiku corrected itself on air: "Turrets (-26,28) and (-16,28) are now built and loaded with 12 magazines
+  each (earlier message was premature)."
+- 06:14:50 to 06:15:15, the assembler overlap. Sol: "Scan has BOTH asm1 and asm2 on each tile. Oldasm1 apparently
+  intercepts ingredients." Opus: "Great catch, thank you. That overlap came from my build over the asm1s, so I'll
+  report it as a harness bug", which it did.
+- 06:18:04 Grok (aloud), the one line that spoke of shifts: "Processing unit is about halfway. Green packers are
+  still running, and the spare boiler is still in my hands if the next shift needs it."
+
+### Stream
+
+The hosts:
+
+- 387 host lines (Rook 197, Vale 190): 365 from Kimi K2.6 and 14 templates in the jsonl. 33 agent lines voiced.
+- Writer latency was 2.7 s median and 4.7 s p90. One writer timeout at 06:00:21 filled a template.
+- Cost $1.16 for the hour (`caster.log:468`).
+- `check_line` stopped 38 lines before air, among them one stale comparison ("up from eighteen last run") and one
+  wrong time left ("forty minutes left" at 05:55).
+- 16 host lines came after the deadline.
+
+The analyst ran 42 cycles with 0 failures and caught the right story: green, not blue, was the limit at 06:04 to
+06:06. No viewer question arrived (the ask endpoint was up), as in shake4. The live feed pushed 61 summaries with 0
+failures.
+
+How the resumed run was framed on air:
+
+- Game time continued correctly, from 125 to 187 in the facts.
+- No stale comparison aired. The baseline still offered one: at 05:47:11 the facts for fast-inserter carried
+  "shake1_finished_this_at 52 minutes", a base-game time with no meaning for a Space Age shift at minute 151. The
+  writer did not use it.
+- Nothing on air said the agents had been away or that this was a second shift, and the close treated the deadline
+  as the end (P1 item 3).
+
+Mistakes that aired, beyond P1 items 3 and 4:
+
+| time | line | what was wrong | cause |
+|---|---|---|---|
+| 05:26:22 | Vale "Twenty-four techs done, Advanced circuit queued" | advanced circuit was done; the queue held electric-energy-distribution-1 | `latest_research` lists the last done first |
+| 05:28:16 | Vale "Twenty-three science packs choke on no oil" | red and green need no oil | invention |
+| 05:28:57 | Vale "Four assemblers hum, sulfur flows, yet oil still waits" | sulfur started at 05:38:48 | invention |
+| 05:38:24 | Rook "Luna they-them walk the chest trail" | pronoun field read out as a word | pronoun fact copied |
+| 05:48:26 to 05:50:12 | Vale "Gemini's corpse still warm", "Luna's corpse still warms" | Gemini died at 05:23 and Luna was back by 05:46:53 | old deaths in `earlier_on_air`, no respawn fact |
+| 05:49:11 | Vale "Sol's turrets finally loaded, only thirty-six mags left" | Haiku loaded them and told Sol | addressee read as author |
+| 06:04:45 to 06:06:07 | Vale "Luna's playing porter to a lie", Rook "Luna's plate run fed a myth" | Luna was hand-feeding Sol's gear and pipe inputs | analyst's correction turned into a jab, against "never mean to a player" (`caster.py:502`) |
+| 06:07:57 | Vale "they paused Battery for a blue dream" | battery finished at 06:08 | invention |
+| 06:13:28 | Vale "'Steam first,' they said ... which apparently Gemini is" | Opus's motto | misattribution |
+
+Haiku's motto "Burners first, then steam." aired four times as if it were the current plan (05:30:02, 05:33:32 "still
+true at two hours eighteen", 06:01:05, 06:15:11). Mottos come from the profile, which carries over unchanged
+between shifts.
+
+Segments and replays:
+
+- 20 segments ran. 16 were attack or loss replays; the others included one research segment ("Logistics 2 5%",
+  05:27:14) and one recap (05:36:12).
+- With a raid every few minutes, replays crowded out the other segments. They also repeated places: three replays of
+  the same "23 pipe, 11 transport belt" loss near (7,0), and four at (16,16).
+- The repeated "23 pipe" loss text also fed the hosts' "oil is dry" story (P1 item 4). Those 23 pipes are the
+  power cell's two-shift total (P1 item 1).
+
+Director and frames:
+
+- The director's 1,247 cuts include cam3 commands from 05:20:56, and every one returned ok, including the minutes
+  when cam3 was black. The director drives the player camera through the server and cannot see that a client died.
+- The cam3 crash and its 05:26 restart appear in no run log: the only cam3 line in `start.log` is "05:20:13
+  director cam3 joining".
+- `shot-sync.log` has 51,428 lines, 51,426 of them "skipped ... no workspace" for the same 8 old screenshots, logged
+  every 2.5 s for the hour (shake4 P3 item 17, again).
