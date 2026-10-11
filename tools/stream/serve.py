@@ -299,6 +299,9 @@ def main():
                     snap = model.snapshot(now, cams)
                 snap["segment"] = segments.step(snap, now)
                 cams = director.step(snap, now, segments.camera())
+                if director.last_attack_cut == now:  # main just cut to a fight or death: the segment gives way
+                    segments.attack_cut(now)
+                    snap["segment"] = segments.public()
                 snap["cameras"] = cams
                 for ag in snap["agents"]:
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)

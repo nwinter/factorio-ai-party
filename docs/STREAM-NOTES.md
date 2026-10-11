@@ -170,9 +170,10 @@ stops a player.
 | recap `{minutes}` | 20-40 | panel: SPM, research finished, board items done, attacks, deaths in the window | unchanged |
 | attack_replay | 15-40 | listed, `available: false` until the replay buffer is set up (see What's left) | |
 
-Rules (the director has the last word): one segment start per 180 s whoever asks (`spacing`); none while a fight,
-death, base attack or loss alert is under 20 s old (`declined`); such an alert ends a running segment at once
-(`cut: "attack"`) and the director's attack cut takes over. After 6 quiet minutes (`lull_after`) the director starts
+Rules (the director has the last word): one segment start per 180 s whoever asks (`spacing`). When the director
+cuts the main camera to a fight, death, base attack or loss, a running segment ends at once (`cut: "attack"`) and
+requests are declined for 20 s after that cut (`declined`). Alerts the director lets pass (a fight inside its 45 s
+attack spacing, or `attack_cut: false`) neither end nor block segments, so a busy stretch does not wipe them out. After 6 quiet minutes (`lull_after`) the director starts
 the next of production, spotlight, research, overview, recap itself (`by: "director"`). Tune with `"segments": {...}`
 in the run config. Checked: selftest (states, spacing, spotlight hold, cut, lull), and all five types requested over
 HTTP on the mock and rendered in jsdom on both pages. Not yet seen in OBS.

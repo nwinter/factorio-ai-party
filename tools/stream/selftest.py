@@ -261,11 +261,17 @@ def main():
     assert cams5["cam2"]["agents"] == ["astra"] and sent5[-2]["follow"] == "luna", (cams5, sent5)
     m5.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "combat": True}]})
     s6 = m5.snapshot(time.time())  # alerts expire by wall time
-    st = seg.step(s6, t5 + 75)
+    assert seg.step(s6, t5 + 75)["state"] == "live"  # an alert alone does not end a segment...
+    now6 = time.time()
+    d5.step(s6, now6, seg.camera())
+    assert d5.last_attack_cut == now6, "the director should cut main to astra's fight"
+    seg.attack_cut(now6)  # ...the director's attack cut does (serve.py's ticker calls this)
+    st = seg.public()
     assert st["state"] == "ended" and st["cut"] == "attack", st
     seg.last_start = -1e9
-    rep = seg.request({"type": "overview"}, time.time())[1]
+    rep = seg.request({"type": "overview"}, now6 + 5)[1]
     assert rep.get("error") == "declined", rep  # the fight is still news
+    assert seg.request({"type": "overview"}, now6 + 25)[0] == 200  # 20 s after the cut it is not
     lull = Segments(lull_after=0, spacing=0)
     lull.step(s5, time.time() + 1)
     assert lull.queue and lull.queue["by"] == "director" and lull.queue["type"] == "production", lull.queue

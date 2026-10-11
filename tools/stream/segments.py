@@ -38,7 +38,7 @@ class Segments:
     def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9):
         self.spacing = spacing            # seconds between segment starts, whoever asks
         self.lull_after = lull_after      # the director fills a lull this long after the last segment ended
-        self.urgent_quiet = urgent_quiet  # no segment within this long of a fight, death, attack or loss
+        self.urgent_quiet = urgent_quiet  # no segment within this long of an attack cut on the main camera
         self.overview_zoom = overview_zoom
         self.spotlight_zoom = spotlight_zoom
         self.lock = threading.Lock()
@@ -46,6 +46,7 @@ class Segments:
         self.queue = None   # accepted, not yet started
         self.cur = None     # starting / live / ended
         self.last_start = -1e9
+        self.last_attack_cut = -math.inf  # set by attack_cut() when the director cuts main to a fight
         self.last_end = time.time()
         self.lull_rr = 0
         self.snap = None
@@ -87,9 +88,20 @@ class Segments:
         return self.queue is not None or (self.cur is not None and self.cur["state"] != "ended")
 
     def urgent_since(self, snap, now):
-        """Seconds since the newest fight / death / attack / loss alert (inf when none)."""
-        ts = [a["t"] for a in snap.get("alerts") or [] if a["kind"] in URGENT]
-        return now - max(ts) if ts else math.inf
+        """Seconds since the director last cut the main camera to a fight, death, attack or loss (inf when never).
+        Alerts the director lets pass (inside its attack spacing, or attack_cut off) neither decline nor cut."""
+        return now - self.last_attack_cut
+
+    def attack_cut(self, now=None):
+        """The director just cut the main camera to an attack or death: a running segment gives way."""
+        now = now or time.time()
+        with self.lock:
+            self.last_attack_cut = now
+            cur = self.cur
+            if cur and cur["state"] in ("starting", "live"):
+                cur.update(state="ended", cut="attack", ends=now)
+                self.last_end = now
+            self.queue = None
 
     # ---- requests ----------------------------------------------------------------------------------------------
     def request(self, body, now=None):
@@ -140,9 +152,7 @@ class Segments:
                     self.history.append((a["t"], a["kind"], a["text"]))
             cur = self.cur
             if cur and cur["state"] in ("starting", "live"):
-                if any(a["kind"] in URGENT and a["id"] not in cur["before"] for a in snap.get("alerts") or []):
-                    cur.update(state="ended", cut="attack", ends=now)  # the director cuts to the fight
-                elif cur["state"] == "starting" and now >= cur["started"] + STARTING_S:
+                if cur["state"] == "starting" and now >= cur["started"] + STARTING_S:
                     cur["state"] = "live"
                 elif now >= cur["ends"]:
                     cur["state"] = "ended"
@@ -152,8 +162,7 @@ class Segments:
                 self.cur = None
             if self.queue and (self.cur is None or self.cur["state"] == "ended"):
                 seg, self.queue = self.queue, None
-                seg.update(state="starting", started=now, ends=now + STARTING_S + seg["seconds"],
-                           before={a["id"] for a in snap.get("alerts") or []})  # alerts already on screen
+                seg.update(state="starting", started=now, ends=now + STARTING_S + seg["seconds"])
                 self.cur = seg
                 self.last_start = now
         if self.cur is None and self.queue is None and now - self.last_end >= self.lull_after:
