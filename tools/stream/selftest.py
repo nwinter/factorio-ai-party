@@ -233,7 +233,7 @@ def main():
         {"chunk_centre": {"x": 16, "y": 16}, "hits": 9, "damage": 140, "last_tick": 4000, "entities": "gun-turret x2, stone-wall x5"},
         {"chunk_centre": {"x": -16, "y": -16}, "hits": 820, "damage": 0, "last_tick": 4500, "entities": "crash-site-spaceship x820"},
         {"chunk_centre": {"x": 500, "y": 16}, "hits": 1, "damage": 5, "last_tick": 10}]}, 5000)
-    assert len(ev) == 1 and ev[0]["text"] == "Base under attack near (16, 16): gun-turret x2", ev
+    assert len(ev) == 1 and ev[0]["text"] == "Base under attack near (16, 16): gun turret", ev
     before = m.agents["astra"].interest
     m.ingest({"events": ev}, time.time())
     assert m.agents["astra"].interest > before + 3, "astra is 15 tiles from the attack"
@@ -274,7 +274,12 @@ def main():
     losses = LiveSource.loss_events({"latest": [
         "in (12,-40)-(20,-31) 7 destroyed: 4 stone-wall, 3 gun-turret by 5 small-biter, 1m10s-0s ago",
         "in (300,5) 1 destroyed: 1 inserter, 4m20s ago"]})
-    assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by 5 small biter)", losses
+    assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by small biters)", losses
+    # hit counts ("x3") and kill counts never reach the banner or the replay title (shake3: read on air as enemies)
+    hits = LiveSource.attack_events({"attacked": [
+        {"chunk_centre": {"x": -48, "y": 16}, "damage": 40, "last_tick": 100, "entities": "character x3"},
+        {"chunk_centre": {"x": 64, "y": 0}, "damage": 9, "last_tick": 100, "entities": "gun-turret x12, stone-wall x2"}]}, 100)
+    assert [h["text"] for h in hits] == ["Engineer under attack near (-48, 16)", "Base under attack near (64, 0): gun turret"], hits
 
     # an attack cuts the main camera straight away, even inside its dwell
     sent_s = []
@@ -375,6 +380,21 @@ def main():
     lull = Segments(lull_after=0, spacing=0)
     lull.step(s5, time.time() + 1)
     assert lull.queue and lull.queue["by"] == "director" and lull.queue["type"] == "production", lull.queue
+
+    # recap: due every recap_every, ahead of the lull rotation, even when requests keep the lull clock from running
+    rc = Segments(lull_after=1e9, spacing=180)
+    t9 = rc.last_recap
+    rc.last_start = t9 + 1100  # a host request 100 s before the recap is due
+    rc.step(s5, t9 + 1201)
+    assert rc.queue is None, "spacing still holds"
+    rc.step(s5, t9 + 1281)
+    assert rc.queue and rc.queue["type"] == "recap" and rc.queue["by"] == "director" and rc.queue["facts"]["minutes"] == 21, rc.queue
+    rc.step(s5, t9 + 1282)
+    rc.cur["ends"] = t9 + 1290
+    for k in range(1290, 1600, 10):
+        rc.step(s5, t9 + k)
+    assert rc.cur is None or rc.cur["type"] == "recap", "no second recap within recap_every"
+    assert rc.last_recap == t9 + 1281
 
     # replays: a death on the main camera -> save the buffer -> attack_replay segment -> replay scene -> back to stream
     import replays as rp

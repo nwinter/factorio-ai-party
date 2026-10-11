@@ -49,6 +49,14 @@ backends = {}
 for r in cast:
     backends[r.get("backend")] = backends.get(r.get("backend"), 0) + 1
 print("caster writer:", backends, "| rejected:", sum(1 for r in cast if r.get("rejected")))
+spoke = {}
+for r in clips:  # logged since round 4: the provider and provider voice that spoke each clip
+    if r.get("pushed") and r.get("provider"):
+        k = f"{r.get('who') or r.get('agent')}: {r['provider']}/{r.get('voice')}"
+        spoke[k] = spoke.get(k, 0) + 1
+if spoke:
+    print("spoken by:", dict(sorted(spoke.items())), "| 8008 retries:", sum(1 for r in clips if r.get("retried")),
+          "| TTS failures:", sum(1 for r in rows if r.get("type") in ("caster", "agent") and r.get("error")))
 dec = [r for r in rows if r.get("type") == "chat_decision"]
 labels = {}
 for r in dec:

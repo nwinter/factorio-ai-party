@@ -42,9 +42,15 @@ def human(item):
 
 
 class Segments:
-    def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9):
+    def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9,
+                 recap_every=1200.0):
         self.spacing = spacing            # seconds between segment starts, whoever asks
         self.lull_after = lull_after      # the director fills a lull this long after the last segment ended
+        # A recap is due this long after the last one (or the service start): the director starts it at the first
+        # free slot, ahead of the lull rotation. In shake3 the hosts' research requests kept resetting the 6-minute
+        # lull clock, the rotation reached overview at 01:18 and the run ended before recap's turn: it never ran.
+        self.recap_every = recap_every
+        self.last_recap = time.time()
         self.urgent_quiet = urgent_quiet  # no segment within this long of an attack cut on the main camera
         self.overview_zoom = overview_zoom
         self.spotlight_zoom = spotlight_zoom
@@ -162,6 +168,8 @@ class Segments:
                    "facts": facts, "by": str(body.get("by") or "caster"), "reason": str(body.get("reason") or ""),
                    "camera": camera, "queued": now}
             self.queue = seg
+            if kind == "recap":
+                self.last_recap = now
             return 200, {k: seg[k] for k in ("id", "state", "seconds", "title", "facts")} | {"eta": STARTING_S}
 
     # ---- the clock (called once a second with the latest snapshot) ---------------------------------------------
@@ -191,6 +199,10 @@ class Segments:
         if not self.busy() and self.moments(snap, fresh_only=True, now=now):
             # a Space Age moment is news: start it as soon as nothing else runs (spacing waived, attacks still win)
             self.request({"type": "space_moment", "by": "director", "reason": "moment"}, now, ignore_spacing=True)
+        elif (self.cur is None and self.queue is None and now - self.last_recap >= self.recap_every
+              and now - self.last_start >= self.spacing and self.urgent_since(snap, now) >= 60):
+            minutes = max(5, min(30, round((now - self.last_recap) / 60)))
+            self.request({"type": "recap", "params": {"minutes": minutes}, "by": "director", "reason": "recap due"}, now)
         elif self.cur is None and self.queue is None and now - self.last_end >= self.lull_after:
             self.lull(snap, now)
         return self.public()

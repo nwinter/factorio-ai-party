@@ -61,11 +61,18 @@ def main():
     ap.add_argument("--source", default="http://127.0.0.1:8787/state.json", help="serve.py state URL")
     ap.add_argument("--api", default=CONFIG.get("live_api_url"), help="live API base URL (default from site/config.json)")
     ap.add_argument("--interval", type=float, default=10.0, help="seconds between pushes")
+    ap.add_argument("--report", type=float, default=60.0, help="seconds between ok lines in the log")
     ap.add_argument("--once", action="store_true", help="push one snapshot and exit")
     ap.add_argument("--print", action="store_true", help="print the filtered JSON instead of pushing")
     a = ap.parse_args()
     tok = None if a.print else token()
     fails = 0
+    # once a minute an ok line (shake3's push-live.log was empty: this printed only on failure, so a quiet log could
+    # not tell pushes that went through from a process that never ran)
+    window = {"ok": 0, "failed": 0, "bytes": 0, "tick": None, "agents": 0}
+    next_report = time.time() + a.report
+    if not a.print:
+        print(f"[push] {time.strftime('%H:%M:%S')} start: {a.source} -> {a.api} every {a.interval:g} s", flush=True)
     while True:
         t0 = time.time()
         try:
@@ -81,15 +88,24 @@ def main():
                                                       "User-Agent": "pog-push-live/1"})
                 with urllib.request.urlopen(req, timeout=10) as r:
                     r.read()
+                window.update(ok=window["ok"] + 1, bytes=window["bytes"] + len(body), tick=state.get("tick"),
+                              agents=len(state.get("agents") or []))
                 if fails:
-                    print(f"[push] ok again after {fails} failures", flush=True)
+                    print(f"[push] {time.strftime('%H:%M:%S')} ok again after {fails} failures", flush=True)
                 fails = 0
         except (urllib.error.URLError, OSError, ValueError) as e:
             fails += 1
+            window["failed"] += 1
             if fails in (1, 3) or fails % 30 == 0:
-                print(f"[push] failed ({fails}): {type(e).__name__}: {e}", flush=True)
+                print(f"[push] {time.strftime('%H:%M:%S')} failed ({fails}): {type(e).__name__}: {e}", flush=True)
         if a.once:
             return 1 if fails else 0
+        if not a.print and time.time() >= next_report:
+            next_report = time.time() + a.report
+            print(f"[push] {time.strftime('%H:%M:%S')} {'ok' if window['ok'] else 'NO PUSHES'}: {window['ok']} pushed, "
+                  f"{window['failed']} failed in the last {a.report:g} s, {window['bytes'] // max(1, window['ok'])} bytes each, "
+                  f"tick {window['tick']}, {window['agents']} agents", flush=True)
+            window = dict(window, ok=0, failed=0, bytes=0)
         time.sleep(max(1.0, a.interval - (time.time() - t0)))
 
 

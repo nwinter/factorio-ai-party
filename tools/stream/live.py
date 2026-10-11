@@ -15,6 +15,19 @@ LOSS_RE = re.compile(r"^(?:losses )?in \((-?\d+),(-?\d+)\)(?:-\(-?\d+,-?\d+\))? 
 RECENT_AGO = re.compile(r"^(?:.*-)?(?:\d+s|1m\d\ds)$")  # last part of the span under 2 minutes
 
 
+def hit_label(entities):
+    """status.alerts.attacked `entities` ("character x3", "gun-turret x12"): the x is a hit count, which the hosts read
+    as a number of enemies or turrets on air (shake3), so the banner and replay titles name only what was hit."""
+    name = re.sub(r"\s*x\d+$", "", (entities or "").strip()).replace("-", " ")
+    return "an engineer" if name == "character" else name
+
+
+def attacker_label(by):
+    """describe_incident's "by 5 small-biter, 2 medium-biter" counts kills by each kind: "small biters"."""
+    name = re.sub(r"^\d+\s+", "", (by or "").split(",")[0].strip()).replace("-", " ")
+    return name + "s" if name and not name.endswith("s") else name
+
+
 class LiveSource:
     def __init__(self, world, run, profiles="auto", flow_every=30.0, harness=None, status_share=3):
         self.name = f"live:{world}"
@@ -159,7 +172,7 @@ class LiveSource:
             st = self.status_cache.get(name, {})
             a = {"name": name, "kind": p.get("kind") or cfg.get("kind", "bot")}
             for key in ("display_name", "color", "glyph", "motto", "voice", "voice_description", "avatar", "position",
-                        "last_said", "alive", "active"):
+                        "last_said", "alive", "active", "pronouns"):
                 if p.get(key) is not None:
                     a[key] = p[key]
             if p:  # `profile` never called: profiles reports no display name, colour or glyph
@@ -181,7 +194,7 @@ class LiveSource:
         for name, p in profiles.items():
             if name not in self.agents_cfg:
                 obs["agents"].append(dict({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto", "avatar",
-                                                                  "position", "alive", "active", "last_said")},
+                                                                  "position", "alive", "active", "last_said", "pronouns")},
                                           profile_set=any(p.get(k) for k in ("display_name", "color", "glyph"))))
 
         try:
@@ -282,7 +295,7 @@ class LiveSource:
             if not RECENT_AGO.match(ago):
                 continue  # the alert window is 5 game minutes; only show losses from the last minute or so
             what = ", ".join(n.strip().replace("-", " ") for n in names.split(",")[:2])
-            text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {by.split(',')[0].strip().replace('-', ' ')})" if by else "")
+            text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {attacker_label(by)})" if by else "")
             out.append({"kind": "loss", "text": text, "key": f"loss:{x},{y}", "ttl": 90,
                         "position": {"x": float(x), "y": float(y)}})
         return out
@@ -297,8 +310,10 @@ class LiveSource:
             if not area.get("damage"):
                 continue  # zero-damage hits: the crash site's fire, not an attack
             c = area.get("chunk_centre") or {}
-            what = (area.get("entities") or "").split(",")[0].strip()
-            text = f"Base under attack near ({round(c.get('x', 0))}, {round(c.get('y', 0))})" + (f": {what}" if what else "")
+            what = hit_label((area.get("entities") or "").split(",")[0])
+            near = f"near ({round(c.get('x', 0))}, {round(c.get('y', 0))})"
+            text = f"Engineer under attack {near}" if what == "an engineer" else \
+                f"Base under attack {near}" + (f": {what}" if what else "")
             out.append({"kind": "attack", "text": text, "key": f"area:{c.get('x')},{c.get('y')}", "ttl": 60,
                         "position": c})
         return out

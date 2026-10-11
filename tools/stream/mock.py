@@ -20,7 +20,7 @@ PROFILES = {
     "haiku": {"display_name": "Haiku", "color": "#2fbf71", "glyph": "🌸", "motto": "ore falls, plates rise"},
     "sol": {"display_name": "Sol", "color": "#ffd400", "glyph": "☀", "motto": "Keep the labs lit."},
     "luna": {"display_name": "Luna", "color": "#14141c", "glyph": "🌙", "motto": "Night shift.", "voice": "theia"},
-    "grok": {"display_name": "Grok the Unyielding Builder", "color": "#00c8e0", "glyph": "Gk", "motto": ""},
+    "grok": {"display_name": "Grok the Unyielding Builder", "color": "#00c8e0", "glyph": "Gk", "motto": "", "pronouns": "he/him"},
     "gemini": {"display_name": "Gemini", "color": "#5aa9ff", "glyph": "♊", "motto": "Two belts are better than one."},
     "muse": {"display_name": "Muse", "color": "#ff8fb1", "glyph": "Mu", "motto": "Every blueprint a sketch."},
     # extras for the 12-agent density test (tools/stream/runs/mock12.json)
@@ -425,11 +425,11 @@ class MockSource:
             # biters hit the west wall: an attacked area (no agent necessarily there), then sometimes losses
             x, y = SITES["defense line"]
             x, y = x + r.uniform(-20, 20), y + r.uniform(-20, 20)
-            events.append({"kind": "attack", "text": f"Base under attack near ({round(x)}, {round(y)}): gun-turret",
+            events.append({"kind": "attack", "text": f"Base under attack near ({round(x)}, {round(y)}): gun turret",
                            "key": f"area:{round(x / 32)},{round(y / 32)}", "ttl": 60, "position": {"x": x, "y": y}})
             if r.random() < 0.6:
                 events.append({"kind": "loss", "text": f"{r.randint(2, 9)} lost near ({round(x)}, {round(y)}): stone wall, "
-                               f"gun turret (by small biter)", "key": f"loss:{round(x / 32)},{round(y / 32)}", "ttl": 90,
+                               f"gun turret (by small biters)", "key": f"loss:{round(x / 32)},{round(y / 32)}", "ttl": 90,
                                "position": {"x": x, "y": y}})
             self.next_base_attack = now + r.uniform(150, 260)
         if now >= self.next_confess:  # `confess`: a line for the viewers only (audience.lua)
@@ -443,7 +443,7 @@ class MockSource:
             "tick": int(gsec * 60), "paused": False, "game_seconds": gsec,
             "agents": [{
                 "name": a["name"], "kind": "bot", "display_name": a["display_name"], "color": a["color"],
-                "glyph": a["glyph"], "motto": a.get("motto", ""), "voice": a.get("voice"), "avatar": a.get("avatar"), "position": {"x": round(a["pos"][0], 1), "y": round(a["pos"][1], 1)},
+                "glyph": a["glyph"], "motto": a.get("motto", ""), "voice": a.get("voice"), "pronouns": a.get("pronouns"), "avatar": a.get("avatar"), "position": {"x": round(a["pos"][0], 1), "y": round(a["pos"][1], 1)},
                 "alive": a["alive"], "dead_until_tick": int((gsec + (a["dead_until"] - now) * self.speed) * 60) if not a["alive"] else None,
                 "active": a["active"], "last": a["last"], "combat": now < a["combat_until"], "last_said": a["last_said"],
             } for a in self.agents.values()],

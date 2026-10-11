@@ -121,6 +121,11 @@ They are always in `facts.analyst_answer` / `facts.viewer_question`, and the vie
 points are now written as true statements ("research progress is always kept"), never as a negated mistake. Please
 pass them on verbatim.
 
+eng/audio's side (8a127f9 and later; details in docs/AUDIO-NOTES.md "Round 4"): points by angle plus a beat of
+their own for priority 3, `POST /analyst/used` once the writer has built lines on a point, corrections passed
+verbatim on every beat, and the headline and next milestone on the opener. The `ask_analyst` lines in
+`say_exchange` do nothing; a hook blocked removing them, so a person needs to delete them.
+
 ## Viewer questions on air (round 4)
 
 ```
