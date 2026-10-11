@@ -166,6 +166,119 @@ it automatically once `D:\pog\mods` holds the current mod. A chunked upload is n
 chunk reply leaves the upload pending until the next `fh deploy`, which starts over at chunk 1. Save files carry the
 stored runtime source (now compacted, so smaller than before).
 
+## Round 3: telling the bots apart on stream
+
+All of it is rendering attached to the bot's character, so it follows the character exactly, costs nothing per tick,
+and every client (the directors too) sees it.
+
+| Item | What | Where | Needs |
+|---|---|---|---|
+| 1. Tint | The character is tinted with the profile `color`. With no colour set, the avatar's default colour from the name (what the overlay already shows), so even Sonnet-style "never set a colour" bots differ. `LuaEntity.color` works on playerless characters: confirmed live. | `nametags.lua` (plus the existing `profiles.apply`) | hot deploy |
+| 2. Name tag | `glyph display_name` (or the bot name) just over the head, in that colour; colours darker than luma 0.35 are lightened for the text. Speech bubbles now start above the tag (and above the avatar when there is one). | `nametags.lua`, `profiles.lua` (bubble base) | hot deploy |
+| 3. Avatar | The pixel avatar above the tag, 1 tile wide, made from tinted layers. | `data.lua`, `graphics/avatar-parts.png`, `avatar_parts.lua`, `avatar.lua`, generator `tools/stream/avatar_sprites_mod.js` | a world started with this mod |
+| 4. Zoom | `cameras.lua` MAX_ZOOM 2 -> 4; the error names the range (`zoom must be 0.3..4`). | `cameras.lua`, `docs/BOTS-API.md` | hot deploy |
+
+When it draws: on spawn and respawn (the bots.lua `on_spawn` hook), right after a `profile` change, and on a recheck
+every 300 ticks that redraws a bot whose character, profile or layout changed or whose tag object is gone. The recheck
+also tags existing bots after a hot deploy and drops records of dead or removed bots. Cost on live, measured with
+`profile_ticks 600`: 16 bots, 0.079 ms per tick on average with the recheck included (11 bots measured 0.048 ms in
+round 1, before tags; the difference is mostly the extra bots' charting).
+
+### The avatar in game
+
+- The parts and the palette come from eng/art's `tools/stream/static/avatar.js` (the `/*@parts*/` block). Each part
+  splits into a fixed-colour layer plus one white mask per palette letter that depends on the suit or the accent
+  (`o s S h a A b g G V`; `o` because near-black suits get a light rim). The runtime tints each mask with that
+  letter's colour, so the result is the overlay's picture pixel for pixel. Parts whose place depends on the base
+  (helmets and accessories by the head's top row, visors by the eye row, emblems by the chest) get one variant per
+  place. The glow backdrop is 4 ring masks tinted from the suit, and night stars 4..7 are separate layers shown by the
+  name's hash, as in avatar.js.
+- That makes 165 layers on one 3072x576 sheet (21 KB). Each cell is 96 px (the 24 px art upscaled 4x, so it stays
+  crisp without filtering flags) at sprite scale 0.25. `avatar_parts.lua` (4 KB) lists the layers for both `data.lua`
+  and the runtime.
+- `avatar.lua` is a Lua port of avatar.js's `resolve` (FNV-1a and mulberry32 with 32-bit arithmetic: `bit32` in
+  Factorio, plain arithmetic under the test Lua) and its `palette`. Unset parts follow from the bot name, as on the
+  overlay.
+- Regenerate after any art change in avatar.js: `node tools/stream/avatar_sprites_mod.js --check` (run from anywhere). It
+  rewrites the sheet and the table, then composites the runtime's draw list (avatar.lua run under `lua`) for 400
+  profiles and compares it with `PogAvatar.pixels`. It reported all 400 equal, covering random specs, no colour,
+  near-black suits, no avatar, and biter with hood plus antenna.
+- The runtime detects the sprites with `helpers.is_valid_sprite_path`. A world started before this mod has none and
+  shows the tag alone. When the sprites appear (after a restart with the new mod), the next recheck adds the avatar.
+- `fh deploy` bundles skip `data.lua` (and the other data and settings stage files).
+
+### Asking eng/art
+
+The layers are cut from eng/art's art by script, so their avatar.js stays the single source. Requests for eng/art:
+(a) check the in-game look at stream zoom once a fresh world shows it (1 tile per avatar at 24 px art); (b) if they
+would rather hand-export parts (for example a 2x detailed version for close-ups), export the same layer split as PNGs,
+one per part and layer key, and `avatar_sprites_mod.js` can read them instead of cutting the JSON. Until then nothing is
+needed from them.
+
+### Verification
+
+- Fake engine: `tests/nametags.lua` (379 assertions) covers the data stage (one sprite per layer, cells inside the
+  sheet), `resolve` against avatar.js for three profiles (astra, sonnet, grok dark with accent), the tag text, colour
+  and tint, the dark-colour lift, no sprites (tag only), redraw on profile change, respawn and hot deploy (no
+  records), nothing off the recheck tick, sprites present (layer count, order above the tag, scale, bubbles above the
+  avatar), and death and removal. `tests/bots.lua` checks the zoom range and that bubbles still wrap and replace.
+  `npm test`: 90 pass, plus the same 4 bridge `listen EPERM` failures as always.
+- Live on `live` (runtime only, protocol 1 control.lua): deployed, then took director screenshots (`screenshot` from
+  h2-a, copied from `live-client-director\script-output\pog`). Every bot was tinted and tagged, existing ones
+  included. Astra showed as "A Astra" in #9977ff, and bots without a profile showed their name in their default
+  colour. A `glyph` change on h2-a ("H2") showed in the next screenshot; the `profile` call itself redraws the tag (the fake test checks that). h2-b's `say` bubble sat just above its tag. A first
+  version put the tag a tile above the head; it now sits at -1.75 (second screenshot).
+- An emoji glyph (`🔧`) renders blank: Factorio's font has no emoji. The tag then shows only the name. Letters read
+  better; `agent/team.md` could say so.
+- Not verified: the avatar sprites in a real engine (data stage, sheet loading, draw order of overlapping layers in
+  one render layer, the look at stream zoom). That needs a world started with this mod; see Operator requests.
+  An RCON test drawing two overlapping item sprites on live to check draw order was refused by the session's
+  permission mode.
+
+### Live deploys and eng/board
+
+eng/board reported that two of their deploys to live (about 23:55 and 00:00) carried only ca7e2fc, so they may have
+briefly replaced the name-tag runtime. My screenshots at about 00:01 and 00:02 came after my own deploys and showed
+the tags. At about 00:09 they deployed eng/board merged with 7491ca8 (sha 83e5705d), and a screenshot after that
+still shows every bot tagged and tinted. Merging the two branches conflicts only in the `tests/lua.test.ts` file
+list: keep both `tests/audience.lua` and `tests/nametags.lua`. Any later deploy from here should be built from a
+merge with eng/board.
+
+### For eng/stream2
+
+`tools/stream/director.py` still has `"max_zoom": 2.0` with the comment "the mod's camera limit". The mod now allows 4.
+I left their file alone.
+
+### Operator requests
+
+1. A fresh test world with the new mod, to see the avatars (item 3). Nothing here touches a, b, c, n or live; the
+   ports are unused ones. From the repo root on eng/harness2:
+
+   ```sh
+   scp -r vendor/factorio-harness/mod/agent-harness_0.1.0 pogwin:D:/pog/mods/      # D:\pog\mods feeds new instances
+   tools/winps.sh tools/win/new-instance.ps1 -Name t3 -Peaceful
+   tools/winps.sh tools/win/start-server.ps1 -Name t3 -GamePort 34209 -RconPort 27029
+   tools/winps.sh tools/win/start-client.ps1 -Name t3 -GamePort 34209 -Slot -director -PlayerName pog-director
+   scp pogwin:D:/pog/inst/t3/rcon.pw ~/.config/pog/rcon-t3.pw
+   ```
+
+   Then the check (as the operator or in my next session):
+
+   ```sh
+   POG_WORLD=t3 POG_RCON_PORT=27029 bin/fh deploy                     # expect protocol: 2
+   tools/pog.py --world t3 --port 27029 rcon '/silent-command rcon.print(remote.call("agent_harness","bot_create","h2-av"))'
+   POG_WORLD=t3 POG_RCON_PORT=27029 bin/fh --bot h2-av call profile --args '{"display_name":"Avatar","glyph":"AV","color":"#33cc66","avatar":{"base":"robot","helmet":"hardhat","visor":"mono","emblem":"gear","accessory":"antenna","backdrop":"hazard","accent":"#ffb627"}}'
+   POG_WORLD=t3 POG_RCON_PORT=27029 bin/fh --bot h2-av call say --args '{"text":"bubble above the avatar"}'
+   POG_WORLD=t3 POG_RCON_PORT=27029 bin/fh --bot h2-av call screenshot --args '{"path":"pog/avatar.png"}'
+   scp pogwin:D:/pog/inst/t3-client-director/script-output/pog/avatar.png .
+   ```
+
+   Expect the avatar above the tag, matching `tools/stream/static/avatars.html` with the same spec. If the layers
+   stack in the wrong order, `nametags.lua` needs one render layer per part. The same world also covers the round 2
+   gap (a chunked deploy into new control.lua).
+2. Once the avatars look right, the copied `D:\pog\mods` gives every new team run the sprites. Existing worlds keep
+   working with the tag and tint only.
+
 ## Merging with eng/board
 
 Lua merges cleanly. `host/cli.ts` conflicts in 4 hunks; the resolution used for testing (merged tree: `npm test`

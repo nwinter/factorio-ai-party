@@ -116,6 +116,7 @@ return function(api)
     if changed then
       all[p.index] = pr
       M.apply(p)
+      if api.on_apply then api.on_apply(p) end -- name tag and avatar (nametags.lua)
     end
     local out = public(all[p.index])
     out.name = p.name; out.kind = api.is_bot(p) and 'bot' or 'player'
@@ -187,9 +188,10 @@ return function(api)
     if not (c and c.valid) then return end
     local color = pr.rgb or p.chat_color or {r=1, g=1, b=1}
     local lines = wrap(text)
+    local base = api.bubble_y and api.bubble_y(p.index) or -2.6
     pr.bubble = {}
     for i, line in ipairs(lines) do
-      local obj = rendering.draw_text{text=line, surface=c.surface, target={entity=c, offset={0, -2.6 - (#lines - i) * 0.55}},
+      local obj = rendering.draw_text{text=line, surface=c.surface, target={entity=c, offset={0, base - (#lines - i) * 0.55}},
         color=color, scale=1.4, alignment='center', vertical_alignment='bottom', time_to_live=BUBBLE_TICKS, use_rich_text=false}
       pr.bubble[#pr.bubble+1] = obj.id
     end

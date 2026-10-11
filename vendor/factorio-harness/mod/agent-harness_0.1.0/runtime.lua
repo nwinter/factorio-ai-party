@@ -46,11 +46,14 @@ local function state() return storage.agent_harness end
 M.crafting=require('crafting'){state=state}
 M.claims=require('claims'){state=state}
 M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
-  profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)) end}
+  profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)); M.nametags.refresh(b) end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
   controlled=function(index) return state().controlled and state().controlled[index]~=nil end}
 M.profiles=require('profiles'){state=state,is_bot=function(p) return M.bots.is(p) end,director=function(index) return M.cameras.director(index) end,
-  bots=function() return M.bots.list() end,active=function(index) local a=M.active(index); return a and a.kind or false end}
+  bots=function() return M.bots.list() end,active=function(index) local a=M.active(index); return a and a.kind or false end,
+  on_apply=function(p) if M.bots.is(p) then M.nametags.refresh(M.bots.record(p.index)) end end,bubble_y=function(index) return M.nametags.bubble_y(index) end}
+M.nametags=require('nametags'){state=state,bots=function() return M.bots.list() end,profile=function(index) return M.profiles.get(index) end,
+  parts=require('avatar_parts'),avatar=require('avatar')(require('avatar_parts'))}
 -- A player or bot by index, dead or alive (cleanup and status).
 function M.lookup(index)
   if M.bots.is_index(index) then return M.bots.lookup(index) end
@@ -3604,6 +3607,7 @@ end
 function M.tick_body(event)
   idle_tick()
   M.bots.tick(event.tick)
+  M.nametags.tick(event.tick)
   for index,action in pairs(state().active) do
     local ok,p=pcall(player,index)
     if not ok then

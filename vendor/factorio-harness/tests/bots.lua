@@ -164,7 +164,7 @@ eq(bubble.text,'taking iron, you take copper'); eq(bubble.target.entity,c); eq(b
 bot('say',{text=string.rep('word ',30)})
 eq(bubble.obj.valid,false)
 local lines=0
-for i=#drawn,1,-1 do if drawn[i].obj.valid then lines=lines+1; assert(#drawn[i].text<=40) end end
+for i=#drawn,1,-1 do if drawn[i].obj.valid and drawn[i].time_to_live then lines=lines+1; assert(#drawn[i].text<=40) end end
 eq(lines,4)
 -- profiles: players and bots; camera clients (pog-cam*, pog-director) are
 -- excluded even before their first camera call.
@@ -178,10 +178,11 @@ eq(by.astra.last_said.text:sub(1,4),'word'); eq(by.nick.kind,'player'); eq(by.ni
 
 -- Director cameras: operator-only, spectator once, eased follow, release.
 fails(function() runtime.operator.camera({player=2,follow='nobody'}) end,'no bot or player named nobody')
-fails(function() runtime.operator.camera({player=2,follow='astra',zoom=5}) end,'zoom must be 0.3..2')
+fails(function() runtime.operator.camera({player=2,follow='astra',zoom=5}) end,'zoom must be 0.3..4')
 local old=director.character
 local cam=runtime.operator.camera({player=2,follow='astra',zoom=0.5})
 eq(cam.ok,true); eq(director.controller_type,2); eq(old.valid,false)
+eq(runtime.operator.camera({player=2,follow='astra',zoom=4}).camera.zoom,4); cam=runtime.operator.camera({player=2,follow='astra',zoom=0.5})
 -- A clean view: GUI hidden, entity info kept.
 eq(director.game_view_settings.show_minimap,false); eq(director.game_view_settings.show_quickbar,false)
 eq(director.game_view_settings.show_crafting_queue,false); eq(director.game_view_settings.show_entity_info,true)
