@@ -902,6 +902,28 @@ function handlers.map(p,a)
   for i=1,math.min(limit,#regions) do out.regions[i]=regions[i] end
   return out
 end
+-- A name filter the engine does not know ("Unknown entity name: tree",
+-- shake4): list the entity names holding every dash-separated part of it
+-- ("rock-huge" finds huge-rock), and say when it is an entity type.
+function M.find_named(surface,filter)
+  local ok,found=pcall(surface.find_entities_filtered,filter)
+  if ok then return found end
+  local bad=tostring(found):match('[Uu]nknown entity name:? *([%w%-_]+)')
+  if not bad then error(found,0) end
+  local parts,matches,is_type={},{},false
+  for part in bad:lower():gmatch('[^%-_]+') do parts[#parts+1]=part end
+  for name,proto in pairs(prototypes.entity) do
+    if proto.type==bad then is_type=true end
+    local all=true
+    for _,part in ipairs(parts) do if not name:find(part,1,true) then all=false end end
+    if all then matches[#matches+1]=name end
+  end
+  table.sort(matches)
+  local shown={}
+  for i=1,math.min(#matches,12) do shown[i]=matches[i] end
+  error(bad..' is not an entity name'..(#matches>0 and '; matching names: '..table.concat(shown,', ')..(#matches>12 and ' ('..#matches..' in all)' or '') or '')
+    ..(is_type and '; '..bad..' is an entity type: filter with type instead' or ''),0)
+end
 -- Cheap targeting: the nearest matches around the player or any charted
 -- position, limited to what the player's map shows.
 function handlers.nearest(p,a)
@@ -913,7 +935,7 @@ function handlers.nearest(p,a)
   local radius=integer(a.radius,32,1,128,'radius')
   local limit=integer(a.limit,5,1,64,'limit')
   local origin,rows=center(p,a),{}
-  for _,e in pairs(p.surface.find_entities_filtered{position=origin,radius=radius,name=a.name,type=a.type}) do
+  for _,e in pairs(M.find_named(p.surface,{position=origin,radius=radius,name=a.name,type=a.type})) do
     if e.valid and e~=p.character and known(p,e) then rows[#rows+1]={entity=e,distance=distance(origin,e.position)} end
   end
   table.sort(rows,function(x,y)
@@ -1054,11 +1076,11 @@ function handlers.scan(p,a)
     local seen={}
     for _,raw in ipairs(a.positions) do
       local pos=position(raw)
-      for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=0.3,name=a.name,type=a.type}) do
+      for _,e in pairs(M.find_named(p.surface,{position=pos,radius=0.3,name=a.name,type=a.type})) do
         if not seen[e] then seen[e]=true; candidates[#candidates+1]=e end
       end
     end
-  else candidates=p.surface.find_entities_filtered{area=area,name=a.name,type=a.type} end
+  else candidates=M.find_named(p.surface,{area=area,name=a.name,type=a.type}) end
   for _,e in pairs(candidates) do
     if e.valid and e~=p.character and known(p,e) then
       if e.type=='resource' and a.ore then ores[#ores+1]=e end
@@ -1293,7 +1315,7 @@ function handlers.observe(p,a)
     active=active(p.index)}
   if a.group then out.entities=nil; out.groups={} end
   local origin=center(p,a)
-  local candidates=p.surface.find_entities_filtered{position=origin, radius=radius,type=a.entity_types,name=a.entity_names}
+  local candidates=M.find_named(p.surface,{position=origin, radius=radius,type=a.entity_types,name=a.entity_names})
   table.sort(candidates,function(x,y)
     local dx,dy=distance(origin,x.position),distance(origin,y.position)
     if dx ~= dy then return dx < dy end

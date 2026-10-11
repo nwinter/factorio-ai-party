@@ -876,6 +876,21 @@ eq(near.entities[2].distance,5); eq(near.entities[1].name,nil)
 p.surface.find_entities_filtered=function() return {rock(2,0,'rock-huge')} end
 eq(call('observe',{scope='nearest',type='simple-entity'}).entities[1].name,'rock-huge')
 fails(function() call('observe',{scope='nearest'}) end,'name or type')
+-- A name that is not a prototype lists the matching ones (shake4: "Unknown
+-- entity name: tree" for Sol and Gemini); a type name says to filter by type.
+;(function()
+  local saved_entity=prototypes.entity
+  prototypes.entity={['huge-rock']={type='simple-entity'},['big-rock']={type='simple-entity'},['tree-01']={type='tree'},['tree-02']={type='tree'},['dead-tree-desert']={type='tree'}}
+  p.surface.find_entities_filtered=function(f)
+    for _,n in ipairs(type(f.name)=='table' and f.name or {f.name}) do if not prototypes.entity[n] then error('Unknown entity name: '..n) end end
+    return {}
+  end
+  fails(function() call('observe',{scope='nearest',name='tree'}) end,'tree is not an entity name; matching names: dead-tree-desert, tree-01, tree-02; tree is an entity type: filter with type instead')
+  fails(function() call('observe',{scope='nearest',name='rock-huge'}) end,'rock-huge is not an entity name; matching names: huge-rock')
+  fails(function() call('observe',{entity_names={'stone-rock'}}) end,'stone-rock is not an entity name')
+  eq(call('observe',{scope='nearest',name='huge-rock'}).total,0)
+  prototypes.entity=saved_entity
+end)()
 -- Up to 128 tiles; nothing found says why (only charted ground counts: little after a landing).
 p.surface.find_entities_filtered=function(f) eq(f.radius,128); return {} end
 do
