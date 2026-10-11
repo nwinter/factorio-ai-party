@@ -123,6 +123,37 @@ fh call confessions --since 3                  # your own confessions
   a minute in all. Over it the reply is `posted: false, dropped: viewer_rate|global_rate, retry_after_s`, not an
   error. On success: `posted: true, seq, from, text`. The pog repo's `tools/audience.py` wraps both calls.
 
+### Human players
+
+```sh
+fh players [NAME] [--args '{"minutes":30}']    # humans on the map and what each did in the window (default 10 min)
+fh vote kick|ban|trust NAME "reason"           # open a vote or add a yes; fh vote no kick NAME votes against
+fh votes                                       # open votes and the 10 most recent closed ones
+fh restore NAME [--args '{"minutes":30}']      # cancel their pending orders; ghosts of what they removed
+```
+
+- A human is a LuaPlayer that is not a bot, a camera client (`pog-cam*`, `pog-director*`, spectators) or an attached
+  agent. `players.lua` logs each human's builds, removals (`mined`, `robot` on their deconstruction order,
+  `destroyed` by their character or vehicle; trees, rocks, ore and ghosts excluded), pending deconstruction and
+  upgrade orders, and inventory moves of 50+ items with chests and vehicles (GUI open/close diff; ctrl-click paired
+  with the same tick's main inventory change). Chat lines from `players`: joins, leaves, and bursts (20 removals or
+  orders within 5 minutes, then quiet for 2 minutes per player and kind). A fault in the log is counted in
+  `player_log_errors` and never quarantines the runtime.
+- `control.lua` puts a player's first join (`on_player_created`) in the `pog-guest` permission group (planners,
+  blueprints, cable cutting, settings paste, flushing, capsules, vehicles, trains, research, launches and admin
+  actions denied); camera names and names in `storage.agent_harness.trusted_names` are exempt.
+- `vote {kind, player, reason?, yes?}`: one open vote per kind and player, open 10 minutes (36000 ticks). The reply
+  and a chat line from `vote` give the ballots and "N agents active in the last 10 minutes; M yes carry it" (active:
+  the bot's own last request, peeks excluded). The operator decides: `votes_open` (open votes with every ballot,
+  `active`, `window_ticks`), then `vote_close {id, outcome: carried|failed|expired|cancelled, note?}` (a chat line).
+  Without an operator a vote expires a minute after its 10. `player_group {name, group: trusted|guest}` moves a
+  player (trusted: the Default group, and the name is remembered for later first joins). `players` also answers as
+  an operator read. The pog repo's `tools/players.py` and `tools/votes.py` are the operator side.
+- `restore {player, minutes?}` (default 30): cancels the player's pending orders and places `entity-ghost`s (same
+  name, direction, quality, recipe, underground type; `expires = false`) where they removed something in the window
+  and a manual ghost fits; counts `cancelled`, `ghosts`, `already` (rebuilt or ghosted), `blocked`. No items are
+  created; each removal is restored once.
+
 ## The in-game queue
 
 A queue plan runs inside the game, with no CLI round trip between steps:
