@@ -87,7 +87,7 @@ return function(api)
     end
   end
   M.schema = {
-    profile = {display_name='1..24 characters', color='"#rrggbb" (character and chat name colour)', glyph='1..2 characters: an emoji or letters (a short tag beside your name)',
+    profile = {display_name='1..24 characters', color='"#rrggbb" (character and chat name colour)', glyph='1..2 characters: an emoji or letters (a short tag beside your name); one another agent holds is refused',
       motto='0..80 characters',
       voice='your stream voice (Deepgram Aura-2 speaker, lower case): apollo arcas aries atlas hermes hyperion janus jupiter mars neptune odysseus orion orpheus pluto saturn zeus (masculine); amalthea andromeda asteria athena aurora callista cora cordelia delia electra harmonia helena hera iris juno luna minerva ophelia pandora phoebe theia vesta (feminine); unset or unknown: a default picked from your name',
       pronouns='optional, 0..32 characters of free text (e.g. "she/her", "they/them", "it"); casters use them when they talk about you; "" clears',
@@ -95,11 +95,31 @@ return function(api)
       returns='your profile; with no arguments just reads it'},
     profiles = {returns='every player and bot (directors excluded): kind bot|player, name, display_name, color, glyph, motto, avatar, voice, pronouns, position, alive, active (current action kind or false), last_said {text,tick}'},
   }
+  -- A glyph tags one agent: one another agent holds is refused, naming the
+  -- holder (shake3: Astra and Muse both had ✦, Sol and Sonnet both S). Case
+  -- and an emoji variation selector (U+FE0F) do not make a different glyph.
+  local function same_glyph(g) return (g:lower():gsub('\239\184\143', '')) end
+  local function holder(index)
+    for _, b in ipairs(api.bots()) do if b.index == index then return b.name end end
+    local pl = game.get_player(index)
+    return pl and pl.valid and pl.name or nil
+  end
+  local function check_glyph(index, glyph)
+    local mine = same_glyph(glyph)
+    for other, pr in pairs(store()) do
+      local name = other ~= index and pr.glyph and same_glyph(pr.glyph) == mine and holder(other)
+      if name then
+        local who = pr.display_name and pr.display_name ~= name and pr.display_name .. ' (' .. name .. ')' or name
+        error(string.format('glyph %s is taken by %s; pick another (profiles lists every glyph in use)', pr.glyph, who), 0)
+      end
+    end
+  end
   function M.handlers.profile(p, a)
     local all = store()
     local pr = all[p.index] or {}
     local changed = false
     local avatar = a.avatar ~= nil and avatar_arg(a.avatar) or nil -- validated before anything changes
+    if a.glyph ~= nil then check_glyph(p.index, text_arg(a.glyph, 'glyph', 1, 2)) end -- likewise
     if a.display_name ~= nil then pr.display_name = text_arg(a.display_name, 'display_name', 1, 24); changed = true end
     if a.motto ~= nil then pr.motto = text_arg(a.motto, 'motto', 0, 80); changed = true end
     if a.glyph ~= nil then pr.glyph = text_arg(a.glyph, 'glyph', 1, 2); changed = true end
