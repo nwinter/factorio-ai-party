@@ -86,12 +86,14 @@ except Exception:  # caster.py missing or failing to import: everything from age
 
 def chat_lane(entry):
     """'talk' (banter, strategy, emotion, `aloud`, confessionals: the big chat lane), 'log' (coordinates, counts,
-    acknowledgements, server lines: the small ticker), or 'viewer' (a viewer line relayed into the game chat, already
+    acknowledgements, server lines: the small ticker; `vote` lines go to the big lane), or 'viewer' (a viewer line relayed into the game chat, already
     in the viewers lane)."""
     frm = (entry.get("from") or "").lower()
     if entry.get("viewer") or frm.startswith("viewer") or clean_text(entry.get("text")).lower().startswith("viewer "):
         return "viewer"
     if entry.get("confess") or entry.get("aloud"):
+        return "talk"
+    if frm == "vote":   # votes on human players and restores (players.lua): a moment for the big lane
         return "talk"
     if not entry.get("agent"):
         return "log"

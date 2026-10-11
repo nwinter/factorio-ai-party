@@ -145,6 +145,11 @@ mv=s.humans.by_index[1].moves
 eq(#mv,3); eq(mv[2].took['iron-gear-wheel'],100); eq(mv[3].put['iron-gear-wheel'],100); eq(mv[3].position.x,70)
 r=M.handlers.players(luna,{player='nick'})
 eq(#r.players[1].moves,3); eq(r.players[1].moves[3].s_ago,0)
+-- Humans joining and leaving are chat lines from `players`; camera clients are not.
+M.on_event(fire('on_player_joined_game',{player_index=1})); eq(notices[#notices],'players: nick joined the game (guest group)')
+M.on_event(fire('on_player_joined_game',{player_index=2})); eq(notices[#notices],'players: nick joined the game (guest group)')
+M.on_event(fire('on_player_left_game',{player_index=3})); eq(notices[#notices],'players: eve left the game')
+eq(M.handlers.players(luna,{player='eve'}).players[1].left_s_ago,0)
 -- Errors name the player; the window drops older activity.
 fails(function() M.handlers.players(luna,{player='pog-cam1'}) end,'no human player named pog-cam1')
 fails(function() M.handlers.players(luna,{minutes=0}) end,'minutes must be a whole number 1..240')

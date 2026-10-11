@@ -228,11 +228,16 @@ return function(api)
   end
   function on.on_player_joined_game(event)
     local p = human(event.player_index)
-    if p then record(p).joined_tick = game.tick end
+    if not p then return end
+    record(p).joined_tick = game.tick
+    local guest = p.permission_group and p.permission_group.name == GUEST
+    api.notice('players', p.name .. ' joined the game' .. (guest and ' (guest group)' or ''))
   end
   function on.on_player_left_game(event)
     local p = human(event.player_index)
-    if p then record(p).left_tick = game.tick end
+    if not p then return end
+    record(p).left_tick = game.tick
+    api.notice('players', p.name .. ' left the game')
   end
   function M.on_event(event)
     local name = M.events[event.name]

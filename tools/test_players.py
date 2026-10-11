@@ -8,6 +8,7 @@ python3 tools/test_players.py
 - tally_pass against a fake world: a carried kick runs `/kick NAME reason` and closes the vote, trust moves the player
   with the operator `player_group`, a protected name is cancelled, a bad name is refused, a failure to run leaves
   the vote open, --dry-run acts on nothing.
+- Vote lines go to the overlay's big chat lane; join and leave lines to the ticker.
 - The harness says the same "N yes carry it" as votes.needed (players.lua, run with lua).
 """
 import io
@@ -168,7 +169,16 @@ def parity():
     print("harness parity: ok")
 
 
+def stream_lane():
+    sys.path.insert(0, os.path.join(ROOT, "tools", "stream"))
+    import model
+    assert model.chat_lane({"from": "vote", "text": "#1 kick nick carried (yes 2, no 0)"}) == "talk"
+    assert model.chat_lane({"from": "players", "text": "nick joined the game (guest group)"}) == "log"
+    print("stream lane: ok")
+
+
 if __name__ == "__main__":
+    stream_lane()
     tally()
     book()
     operator_pass()
