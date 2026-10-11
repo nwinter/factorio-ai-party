@@ -3,7 +3,7 @@
 #   tools/start-team.sh RUN_ID MINUTES [--stream]
 # Env: POG_TEAM_FILE (default agent/team-nine.tsv), POG_SEED (default 20261010), POG_ENEMIES (normal|peaceful, default
 # normal), POG_WORLD_NAME (default n; game port 34205, RCON 27025), POG_CASTER (default 1: shoutcasters on),
-# POG_YOUTUBE (@handle or video id for the YouTube chat bridge), POG_SPACE_AGE=1 (Space Age world, expansion-build
+# POG_YOUTUBE (@handle or video id for the YouTube chat bridge; default @NickWinter), POG_SPACE_AGE=1 (Space Age world, expansion-build
 # directors, the agents' Space Age playbook section and the analyst's Space Age knowledge base).
 # POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-b).
 # POG_RESUME=PREVIOUS_RUN: a later shift of the same world (docs/SPACEAGE.md, shifts): no new instance; the server
@@ -20,9 +20,12 @@ world=${POG_WORLD_NAME:-n} game=34205 rcon=27025
 team=${POG_TEAM_FILE:-agent/team-nine.tsv}
 seed=${POG_SEED:-20261010} enemies=${POG_ENEMIES:-normal}
 export POG_SPACE_AGE=${POG_SPACE_AGE:-0}   # read again by tools/new-run.sh for each agent
-# Voices agents may pick: ElevenLabs has had no credits since 2026-10-10 (quota_exceeded), so its voices are left
-# out of the list; POG_TTS_OFF= (empty) offers them again once the account is topped up.
-export POG_TTS_OFF=${POG_TTS_OFF-eleven}
+# Voices agents may pick: POG_TTS_OFF=eleven leaves ElevenLabs' voices out (as when it ran out of credits on
+# 2026-10-10; working again 2026-10-11 with auto top-up). The hosts stay on OpenAI unless POG_TTS_PREFER=eleven.
+export POG_TTS_OFF=${POG_TTS_OFF-}
+# YouTube chat: Nick's channel by default. An unlisted broadcast may not show on the channel's /live page; then
+# pass the video id instead (POG_YOUTUBE=VIDEO_ID).
+export POG_YOUTUBE=${POG_YOUTUBE-@NickWinter}
 spaceage=() factorio=()
 if [ "$POG_SPACE_AGE" = 1 ]; then
   spaceage=(-SpaceAge) factorio=(-Factorio 'D:\pog\factorio-2.0.77-expansion')
