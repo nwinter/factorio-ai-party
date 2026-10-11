@@ -279,7 +279,7 @@ consistently turned fast steps into long in-game work through queue plans.
 
 No harness had a compaction threshold set for this workload. Claude Code never compacted (Haiku reached 431K). Codex
 compacted at 95% of a 258K window (Astra, Luna) or not at all (Sol, 354K window). Grok compacted at 80% of 256K twice;
-Gemini at about 280K twice. Costs: Codex step latency tripled to sextupled; Sol's text degraded; compactions took 13 to
+Gemini at about 280K twice. Costs: Codex median step latency rose 4 to 8-fold (Astra 7 to 29 s, Sol 5 to 38 s); Sol's text degraded; compactions took 13 to
 124 s with the character standing still; and argument schemas were lost after compaction (Grok 5 errors in 20 s,
 Astra's `placements`, Luna's `transfer`). Starting contexts were inflated by personal config: Claude Code began at 46
 to 50K tokens, of which roughly 12 to 30K was the owner's skills, MCP tool lists and output style.
