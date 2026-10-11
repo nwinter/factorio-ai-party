@@ -8,3 +8,5 @@ tools/.venv/
 CLAUDE.local.md
 .claude/settings.local.json
 __pycache__/
+runs/*/*/journal.jsonl
+runs/*/*/journal.jsonl.gz
