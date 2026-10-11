@@ -21,6 +21,7 @@ BEFORE = {"dash pivot": 62, "ends on '!'": 39, "machine metaphor": 26, "three-pa
           "opens on a number": 24}
 LINE = re.compile(r"^(\d\d:\d\d:\d\d) \[(Rook|Vale)\] \(([^,]+), ([^,]+), [\d.]+s\) (.+)$")
 CUT = re.compile(r"^(\d\d:\d\d:\d\d) \[(pbp|color)\] rejected \((.+?)\): (.+)$")
+REWRITE = re.compile(r"^(\d\d:\d\d:\d\d) \[writer\] rewrite after (.+)$")
 COST = re.compile(r"^(\d\d:\d\d:\d\d) \[cost\] (\{.+\})$")
 
 
@@ -52,7 +53,7 @@ def numbers(line):
     return len(re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", low)) + len(caster.spelled_numbers(re.sub(r"\d", " ", low)))
 
 
-def report(rows, cuts, costs, title):
+def report(rows, cuts, costs, title, rewrites=()):
     writer = [r for r in rows if r[3] != "template"]
     tmpl = [r for r in rows if r[3] == "template"]
     print(f"== {title}: {len(rows)} aired host lines, {len(writer)} by a writer model, {len(tmpl)} templates "
@@ -64,7 +65,7 @@ def report(rows, cuts, costs, title):
               f", usd_per_hour {b.get('usd_per_hour')}" + (f" (fallbacks in this window: {fb})" if title != "whole run" else ""))
     by = collections.Counter(reason_key(c[2]) for c in cuts)
     style = sum(v for k, v in by.items() if k.startswith("style"))
-    print(f"   cuts: {len(cuts)} ({style} for style)")
+    print(f"   cuts: {len(cuts)} ({style} for style)" + (f"; style rewrites asked: {len(rewrites)}" if rewrites else ""))
     for k, v in by.most_common():
         ex = next(c[3] for c in cuts if reason_key(c[2]) == k)
         print(f"     {v:4d}  {k:40.40}  e.g. {ex[:90]}")
@@ -86,7 +87,7 @@ def main():
     ap.add_argument("--since", help="HH:MM: only from this time on")
     ap.add_argument("--last", type=int, help="also report the last N minutes alone")
     a = ap.parse_args()
-    rows, cuts, costs = [], [], []
+    rows, cuts, costs, rewrites = [], [], [], []
     start = secs(a.since + ":00") if a.since else 0
     for raw in open(a.log, errors="replace"):
         raw = raw.rstrip("\n")
@@ -98,6 +99,10 @@ def main():
         if m and secs(m.group(1)) >= start:
             cuts.append(m.groups())
             continue
+        m = REWRITE.match(raw)
+        if m and secs(m.group(1)) >= start:
+            rewrites.append(m.groups())
+            continue
         m = COST.match(raw)
         if m and secs(m.group(1)) >= start:
             try:
@@ -106,12 +111,12 @@ def main():
                 pass
     if not rows:
         sys.exit(f"{a.log}: no aired host lines" + (f" since {a.since}" if a.since else ""))
-    report(rows, cuts, costs, "whole run")
+    report(rows, cuts, costs, "whole run", rewrites)
     if a.last:
         end = secs(rows[-1][0])
         keep = lambda x: secs(x[0]) >= end - a.last * 60
         report([r for r in rows if keep(r)], [c for c in cuts if keep(c)], [c for c in costs if keep(c)],
-               f"last {a.last} minutes")
+               f"last {a.last} minutes", [w for w in rewrites if keep(w)])
 
 
 if __name__ == "__main__":

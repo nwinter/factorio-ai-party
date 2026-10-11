@@ -682,10 +682,12 @@ def style_fault(line, blob=""):
                               "just", "much", "anything", "nothing"):
             return "style: simile"
     # "Forty-seven on circuits, twenty techs deep": 13% of shake4-6's lines said three numbers or more
-    nums = [float(x.replace(",", "")) for x in re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", low)] + \
-        [n for _, n in spelled_numbers(re.sub(r"\d", " ", low))]
-    if sum(n != 1 for n in nums) >= 3:
-        return "style: too many numbers in one line"
+    # per sentence: shake7's "Eleven gone now. Six pipes, two inserters." is a damage report said the way people do
+    for sent in re.split(r"(?<=[.!?])\s+", low):
+        nums = [float(x.replace(",", "")) for x in re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", sent)] + \
+            [n for _, n in spelled_numbers(re.sub(r"\d", " ", sent))]
+        if sum(n != 1 for n in nums) >= 3:
+            return "style: too many numbers in one line"
     return None
 
 
@@ -1506,6 +1508,7 @@ class Caster:
                         break
                     note = (f"Your last draft had a line that sounds written, not spoken ({err}): "
                             f"\"{line}\". Write the exchange again as plain talk.")
+                    log(f"[writer] rewrite after {err}")  # copy_report.py counts these
                 lines = tidy_exchange(lines)
                 if lines:
                     backend = writer.name
