@@ -127,9 +127,9 @@ EOL
     ;;
   muse)
     model=${6:-muse-spark-1.3} effort=${7:-low}
-    python3 "$root/tools/context.py" setup muse "$model" "$dir" >/dev/null
+    ctx_args=$(python3 "$root/tools/context.py" setup muse "$model" "$dir")   # -c context_compaction.* options
     pane=$(new_pane)
-    herdr pane run "$pane" "cd '$dir' && muse --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" >/dev/null
+    herdr pane run "$pane" "cd '$dir' && muse $ctx_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" >/dev/null
     ;;
   *) echo "unknown kind $kind" >&2; exit 1 ;;
 esac

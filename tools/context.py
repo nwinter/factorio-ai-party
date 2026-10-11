@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Per-harness context compaction for agent workspaces (see docs/CONTEXT-NOTES.md).
 
-  tools/context.py setup KIND MODEL DIR    write the workspace's compaction settings and hooks; prints launch env
-                                           (KEY=VALUE words, may be empty) for harnesses configured by env.
+  tools/context.py setup KIND MODEL DIR    write the workspace's compaction settings and hooks; prints extra launch
+                                           words (may be empty): KEY=VALUE env words for grok, -c options for muse.
                                            POG_CTX_AT=N overrides compact_at (tools/context-probe.sh).
   tools/context.py limit KIND MODEL        print compact_at from agent/context.tsv
   tools/context.py agy-tokens DIR          context size of DIR's latest Antigravity conversation (0 if unknown)
@@ -23,6 +23,7 @@ import time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NOTES_CAP = 9000          # characters of notes.md injected after a compaction (hook outputs are capped by harnesses)
 STATE = ".context-state.json"
+MARKER = ".context-hooks"  # written by setup; hooks do nothing elsewhere (the repo-wide Grok hooks see every session)
 
 
 def limits(kind, model):
@@ -47,13 +48,17 @@ def hook_cmd(event, *extra):
                                                     event, *extra]), "timeout": 20}
 
 
+CLAUDE_RESERVE = 20000    # Claude Code keeps this much of the window for the summary before computing the threshold
+
+
 def claude_window(at):
     """autoCompactWindow and CLAUDE_AUTOCOMPACT_PCT_OVERRIDE that make Claude Code compact at `at` tokens.
 
-    Claude Code 2.1.296 fires at min(floor(W * pct / 100), W - 13000) for window W (W >= 100000)."""
-    if at + 13000 >= 100000:
-        return at + 13000, None
-    return 100000, str(at * 100 // 100000)
+    Claude Code 2.1.296 fires at min(floor(E * pct / 100), E - 13000) for E = W - 20000 and window W >= 100000
+    (probe: W=100000 with pct 80 and 60 compacted at about 64K and 48K)."""
+    if at + 13000 + CLAUDE_RESERVE >= 100000:
+        return at + 13000 + CLAUDE_RESERVE, None
+    return 100000, str(at * 100 // (100000 - CLAUDE_RESERVE))
 
 
 def setup(kind, model, d):
@@ -68,6 +73,8 @@ def setup(kind, model, d):
             cfg["autoCompactWindow"] = min(w, window)
             if pct:
                 cfg.setdefault("env", {})["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"] = pct
+            elif "env" in cfg:
+                cfg["env"].pop("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", None)
         cfg["hooks"] = {
             "PreCompact": [{"hooks": [hook_cmd("pre-compact")]}],
             "PostCompact": [{"hooks": [hook_cmd("post-compact")]}],
@@ -86,20 +93,27 @@ def setup(kind, model, d):
                 f.write(f"model_auto_compact_token_limit = {at}\n")
             f.write(f'experimental_compact_prompt_file = "{os.path.join(ROOT, "agent", "compact.md")}"\n')
     elif kind == "grok":
+        # Grok loads project hooks only from the git root's .grok/hooks (the repo's .grok/hooks/context.json, which
+        # acts in workspaces carrying MARKER), never from the run dir.
         if at:
             env.append(f"GROK_AUTO_COMPACT_THRESHOLD_PERCENT={at * 100 // window}")
-        write_json(os.path.join(d, ".grok", "hooks", "context.json"), {"hooks": {
-            "PreCompact": [{"hooks": [hook_cmd("pre-compact")]}],
-            "PostCompact": [{"hooks": [hook_cmd("post-compact", "--mark")]}],
-            "PostToolUse": [{"hooks": [hook_cmd("post-tool")]}],
-        }})
     elif kind == "muse":
+        # Fractions of the window: past soft Muse compacts in the background, at hard it blocks the turn to compact.
+        if at:
+            soft = at / window
+            env += [f"-c context_compaction.soft_threshold={soft:.3f}",
+                    f"-c context_compaction.hard_threshold={min(soft + 0.05, 0.95):.3f}"]
+        # Muse 1.4.4 did not fire SessionStart(compact) after its own compactions (probe), so re-inject on the next
+        # tool call as for Grok; SessionStart stays for a manual /compact and clears the marker if it does fire.
         write_json(os.path.join(d, ".muse", "hooks.json"), {"hooks": {
             "PreCompact": [{"hooks": [hook_cmd("pre-compact")]}],
-            "PostCompact": [{"hooks": [hook_cmd("post-compact")]}],
+            "PostCompact": [{"hooks": [hook_cmd("post-compact", "--mark")]}],
             "SessionStart": [{"matcher": "compact", "hooks": [hook_cmd("session-compact")]}],
+            "PostToolUse": [{"hooks": [hook_cmd("post-tool")]}],
         }})
     # agy: no threshold or compaction hooks; .agy-loop.sh starts a fresh conversation past compact_at (agy-tokens).
+    with open(os.path.join(d, MARKER), "w") as f:
+        f.write(f"{kind} {model} {at}\n")
     print(" ".join(env))
 
 
@@ -164,6 +178,8 @@ def hook(event, args):
     except ValueError:
         payload = {}
     d = payload.get("cwd") or os.getcwd()
+    if not os.path.exists(os.path.join(d, MARKER)):
+        return
     state_path = os.path.join(d, STATE)
     try:
         state = json.load(open(state_path))
@@ -211,7 +227,9 @@ def hook(event, args):
         elif "--at" in args and transcript and not state.get("nudged"):
             at = int(args[args.index("--at") + 1])
             tokens = claude_tokens(transcript, state.get("since", 0))
-            if at and tokens >= at - max(12000, at // 10):
+            # Claude Code compacts as soon as a tool result would cross the threshold; with a 12K margin the probe's
+            # nudge and compaction landed in the same step, too late for the agent to update notes.md.
+            if at and tokens >= at - max(20000, at // 5):
                 state["nudged"] = True
                 save()
                 log(action="nudge", tokens=tokens, at=at)
