@@ -22,8 +22,9 @@ Backends (`--tts`):
 Keys are files in ~/.config/pog/ (POG_KEY_DIR overrides): elevenlabs.key, openai.key, cartesia.key, inworld.key. A
 provider without its key is skipped. Keys are sent only to their own provider and never printed or logged.
 
-Pronunciation: lexicon.tsv (next to this file). `speak()` applies it for the provider in use (IPA phoneme tags where
-the provider has them, respellings elsewhere); captions keep the written text.
+Pronunciation: lexicon.tsv (next to this file). `speak()` applies it for the provider in use (inline IPA where the
+provider reads it, respellings elsewhere; POG_TTS_IPA=0 forces respellings); captions keep the written text. Callers
+pass the caption text: a line already through pronounce() loses the IPA forms (respellings still apply).
 """
 import base64, hashlib, json, os, re, shutil, subprocess, tempfile, time, unicodedata
 import urllib.error, urllib.parse, urllib.request
@@ -754,7 +755,8 @@ class TTS:
     def _synth(self, prov, text, ref, m, instruction, caster, voice):
         if prov in self.providers:
             p = self.providers[prov]
-            return p.synth(pronounce(text, p.phonemes)[:p.max_chars], ref, m, instruction)
+            style = p.phonemes if os.environ.get("POG_TTS_IPA", "1") != "0" else "respell"  # 0: respellings only
+            return p.synth(pronounce(text, style)[:p.max_chars], ref, m, instruction)
         said = pronounce(text)
         if prov == "aura2":
             return self.ai.run(MODEL["aura2"], {"text": said, "speaker": ref, "encoding": "mp3"}, raw=True)

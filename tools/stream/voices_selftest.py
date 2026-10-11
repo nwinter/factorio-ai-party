@@ -205,6 +205,11 @@ check("inworld voice design: design, publish, cache", v4["muse"] == "my-muse"
       and voices.DESIGNED["my-muse"][:2] == ("inworld", "workspace__pog-my-muse")
       and [c["url"].rsplit("/", 1)[-1] for c in calls] == ["voices:design", "draft__pog:publish"], str(v4))
 
+os.environ["POG_TTS_IPA"] = "0"
+auto.speak("Sol, again.", "in-dennis")
+check("POG_TTS_IPA=0 forces respellings", calls[-1]["body"]["text"] == "Soul, again.", calls[-1]["body"]["text"])
+del os.environ["POG_TTS_IPA"]
+
 # ---- cache ----
 cached = voices.TTS("auto", ai=FakeAI(), cache=os.path.join(TMP, "cache"))
 calls.clear()
