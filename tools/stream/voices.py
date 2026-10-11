@@ -737,11 +737,16 @@ def respace_model(tts=None):
     return None
 
 
-def available_providers():
-    """Provider names whose key file exists (no network), minus those in POG_TTS_OFF (comma-separated, e.g. "eleven"
-    while that account has no credits), so agents are only offered voices the run can play."""
+def tts_off():
+    """Providers turned off in POG_TTS_OFF (comma-separated, e.g. "eleven" while that account has no credits)."""
     off = {x.strip() for x in os.environ.get("POG_TTS_OFF", "").split(",") if x.strip()}
-    off |= {f"{x}-fast" for x in off}
+    return off | {f"{x}-fast" for x in off}
+
+
+def available_providers():
+    """Provider names whose key file exists (no network), minus those in POG_TTS_OFF, so agents are only offered
+    voices the run can play."""
+    off = tts_off()
     return [p for p in PROVIDERS if p not in off and read_key(PROVIDER_KEY[p])]
 
 
@@ -773,7 +778,12 @@ class TTS:
         self.down = {}  # provider family -> time it may be tried again (auto: a provider out of credits stays out)
         self.fails = {}  # provider family -> failures in a row
         self.providers = {}
+        # auto leaves out providers in POG_TTS_OFF, so a voice picked before it was turned off goes straight to its
+        # stand-in (shake5: Opus's saved el-george pick drew a 401 "0 credits" from ElevenLabs on each rest's end)
+        off = tts_off() if backend == "auto" else set()
         for name, make in PROVIDERS.items():
+            if name in off:
+                continue
             if backend in ("auto", name):
                 p = make()
                 if p.available():
