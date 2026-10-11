@@ -13,11 +13,11 @@ SCORES = os.path.join(ROOT, "runs", "2026-10-10-coop1", "scores.jsonl")
 # so the page's contrast fallback and truncation get exercised.
 PROFILES = {
     "astra": {"display_name": "Astra", "color": "#7c5cff", "glyph": "✦", "motto": "Ratios first."},
-    "opus": {"display_name": "Opus", "color": "#e8743b", "glyph": "♪", "motto": "Power is a promise."},
+    "opus": {"display_name": "Opus", "color": "#e8743b", "glyph": "♪", "motto": "Power is a promise.", "voice": "orpheus"},
     "sonnet": {"display_name": "Sonnet", "color": "#f4f4f0", "glyph": "S", "motto": "Fourteen belts, one rhyme."},
     "haiku": {"display_name": "Haiku", "color": "#2fbf71", "glyph": "🌸", "motto": "ore falls, plates rise"},
     "sol": {"display_name": "Sol", "color": "#ffd400", "glyph": "☀", "motto": "Keep the labs lit."},
-    "luna": {"display_name": "Luna", "color": "#14141c", "glyph": "🌙", "motto": "Night shift."},
+    "luna": {"display_name": "Luna", "color": "#14141c", "glyph": "🌙", "motto": "Night shift.", "voice": "theia"},
     "grok": {"display_name": "Grok the Unyielding Builder", "color": "#00c8e0", "glyph": "Gk", "motto": ""},
     "gemini": {"display_name": "Gemini", "color": "#5aa9ff", "glyph": "♊", "motto": "Two belts are better than one."},
     "muse": {"display_name": "Muse", "color": "#ff8fb1", "glyph": "Mu", "motto": "Every blueprint a sketch."},
@@ -80,6 +80,20 @@ LINES = {
                "Balancer down, both lanes even now.", "Need 200 more belts, Grok?"],
     "muse": ["New blueprint: 6-refinery block with cracking.", "Sketched a compact lab ring for blue + purple.",
              "Placed the oil block ghost; filling it by hand for now.", "Blueprint string in notes if anyone wants the smelter."],
+}
+
+# Lines worth hearing on stream (banter, strategy, emotion). About half carry `aloud: true` the way an agent would
+# mark them with `say {aloud: true}`; the rest are left to the caster's classifier.
+BANTER = {
+    "astra": ["Okay, that ratio is beautiful. I could cry.", "Plan: we go all-in on green circuits before oil. Objections?"],
+    "opus": ["Lights are on, everybody. You're welcome.", "If the power dips again I am taking it personally."],
+    "sonnet": ["Whoever keeps putting chests on my bus, we need to talk.", "Spaghetti is a valid architecture. Fight me."],
+    "haiku": ["Short version: we're fine. Probably.", "Drills hum. I like it here."],
+    "sol": ["Construction robots soon. I can feel it.", "Labs are hungry and I'm the only one feeding them!"],
+    "luna": ["They're coming from the west, I need hands at the wall now!", "Wall held. Barely. Somebody send ammo."],
+    "grok": ["Behold, the mall. Take what you need, return nothing.", "I built it bigger than planned. No regrets."],
+    "gemini": ["Two belts, perfectly balanced, as all things should be.", "Strategy check: bus first, then blue science."],
+    "muse": ["This blueprint is my best work. Nobody touch it.", "What if the refinery block was pretty, though?"],
 }
 
 
@@ -196,10 +210,13 @@ class MockSource:
         else:
             a["phase"], a["active"], a["until"] = "act", r.choice(ACTIONS[a["site"]]), now + r.uniform(6, 35)
 
-    def say(self, a, text, gsec):
+    def say(self, a, text, gsec, aloud=False):
         self.seq += 1
         a["last_said"] = {"text": text, "tick": int(gsec * 60)}
-        self.chat.append({"seq": self.seq, "tick": int(gsec * 60), "from": a["display_name"], "text": text})
+        msg = {"seq": self.seq, "tick": int(gsec * 60), "from": a["display_name"], "text": text}
+        if aloud:
+            msg["aloud"] = True
+        self.chat.append(msg)
         self.chat = self.chat[-50:]
 
     def observe(self):
@@ -211,7 +228,10 @@ class MockSource:
             self.step_agent(a, now, gsec)
         if now >= self.next_chat:
             a = r.choice([a for a in self.agents.values() if a["alive"]])
-            self.say(a, r.choice(LINES.get(a["name"], ["Working on it."])), gsec)
+            if r.random() < 0.3 and a["name"] in BANTER:
+                self.say(a, r.choice(BANTER[a["name"]]), gsec, aloud=r.random() < 0.5)
+            else:
+                self.say(a, r.choice(LINES.get(a["name"], ["Working on it."])), gsec)
             if r.random() < 0.35:  # a reply
                 b = r.choice([b for b in self.agents.values() if b is not a and b["alive"]])
                 self.next_chat = now + r.uniform(2, 4)
@@ -250,7 +270,7 @@ class MockSource:
             "tick": int(gsec * 60), "paused": False, "game_seconds": gsec,
             "agents": [{
                 "name": a["name"], "kind": "bot", "display_name": a["display_name"], "color": a["color"],
-                "glyph": a["glyph"], "motto": a.get("motto", ""), "position": {"x": round(a["pos"][0], 1), "y": round(a["pos"][1], 1)},
+                "glyph": a["glyph"], "motto": a.get("motto", ""), "voice": a.get("voice"), "position": {"x": round(a["pos"][0], 1), "y": round(a["pos"][1], 1)},
                 "alive": a["alive"], "dead_until_tick": int((gsec + (a["dead_until"] - now) * self.speed) * 60) if not a["alive"] else None,
                 "active": a["active"], "last": a["last"], "combat": now < a["combat_until"], "last_said": a["last_said"],
             } for a in self.agents.values()],

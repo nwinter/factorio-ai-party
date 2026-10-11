@@ -6,7 +6,8 @@
   python3 tools/stream/serve.py --world live --run RUN.json --cameras 3,4,5
 
 Serves http://HOST:PORT/ (the overlay page for the OBS browser source), /state.json, /events (SSE, one full
-snapshot per update), /director.json (recent camera decisions). Director decisions are appended to
+snapshot per update), /director.json (recent camera decisions), and the voice queue: POST /audio (caster.py pushes
+clips), /audio-events (SSE, new clips), /audio/clip/ID, POST /audio/played and /audio/status (page playback reports). Director decisions are appended to
 tools/stream/logs/director-<start>.jsonl. Only read actions and the operator `camera` function are ever sent.
 """
 import argparse, json, mimetypes, os, sys, threading, time, traceback
@@ -43,7 +44,70 @@ class Hub:
             return self.version, self.payload
 
 
-def make_handler(hub, decisions):
+class AudioHub:
+    """Queued voice clips for the overlay page (pushed by caster.py, played by the OBS browser source).
+
+    POST /audio {channel: caster|agent, speaker, text, audio_b64, ctype, duration, expires_in, ...} stores a clip and
+    announces it on /audio-events. The page reports playback with POST /audio/played {id, state: start|end}, which
+    caster.py reads from /audio/status to avoid talking over a clip that is still playing.
+    """
+
+    MAX_CLIPS = 120
+
+    def __init__(self):
+        self.cond = threading.Condition()
+        self.clips = {}  # id -> (bytes, ctype, meta)
+        self.order = []
+        self.seq = 0
+        self.playing = {}  # id -> {meta, started}
+        self.listeners = 0
+        self.last_report = None
+
+    def push(self, meta, audio, ctype):
+        with self.cond:
+            self.seq += 1
+            cid = f"{int(time.time())}-{self.seq}"
+            meta = dict(meta, id=cid, url=f"/audio/clip/{cid}", t=time.time())
+            meta["expires"] = meta["t"] + float(meta.pop("expires_in", 30))
+            self.clips[cid] = (audio, ctype, meta)
+            self.order.append(cid)
+            while len(self.order) > self.MAX_CLIPS:
+                self.clips.pop(self.order.pop(0), None)
+            self.cond.notify_all()
+            return meta
+
+    def wait(self, seq, timeout):
+        with self.cond:
+            self.cond.wait_for(lambda: self.seq != seq, timeout=timeout)
+            return self.seq, [self.clips[c][2] for c in self.order if int(c.split("-")[1]) > seq and c in self.clips]
+
+    def played(self, report):
+        cid, st = report.get("id"), report.get("state")
+        with self.cond:
+            self.last_report = time.time()
+            if cid in self.clips and st == "start":
+                self.playing[cid] = {"started": time.time(), **self.clips[cid][2]}
+            elif st in ("end", "skip", "error"):
+                self.playing.pop(cid, None)
+            # a page that reloads mid-clip never reports the end; forget clips well past their length
+            now = time.time()
+            for k, v in list(self.playing.items()):
+                if now - v["started"] > float(v.get("duration") or 20) + 5:
+                    self.playing.pop(k)
+
+    def status(self):
+        now = time.time()
+        with self.cond:
+            playing = [{"id": k, "channel": v.get("channel"), "speaker": v.get("speaker"),
+                        "ends_in": round(max(0.0, v["started"] + float(v.get("duration") or 0) - now), 2)}
+                       for k, v in self.playing.items() if now - v["started"] <= float(v.get("duration") or 20) + 5]
+            return {"listeners": self.listeners, "playing": playing, "last_report": self.last_report,
+                    "clips": len(self.order)}
+
+
+def make_handler(hub, decisions, audio=None):
+    audio = audio or AudioHub()
+
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -69,6 +133,14 @@ def make_handler(hub, decisions):
                 return self.send(200, json.dumps(list(decisions())).encode(), "application/json")
             if path == "/events":
                 return self.events()
+            if path == "/audio-events":
+                return self.audio_events()
+            if path == "/audio/status":
+                return self.send(200, json.dumps(audio.status()).encode(), "application/json")
+            if path.startswith("/audio/clip/"):
+                clip = audio.clips.get(path.rsplit("/", 1)[-1])
+                if clip:
+                    return self.send(200, clip[0], clip[1])
             if path.startswith("/static/"):
                 full = os.path.normpath(os.path.join(STATIC, path[len("/static/"):]))
                 if full.startswith(STATIC) and os.path.isfile(full):
@@ -78,13 +150,62 @@ def make_handler(hub, decisions):
                     return self.send(200, open(full, "rb").read(), ctype)
             self.send(404, b"not found", "text/plain")
 
-        def events(self):
+        def do_POST(self):
+            path = self.path.split("?", 1)[0]
+            n = int(self.headers.get("Content-Length") or 0)
+            if n > 8 << 20:
+                return self.send(413, b"too large", "text/plain")
+            try:
+                body = json.loads(self.rfile.read(n) or b"{}")
+            except ValueError:
+                return self.send(400, b"bad json", "text/plain")
+            if path == "/audio":
+                import base64
+                try:
+                    data = base64.b64decode(body.pop("audio_b64"))
+                except (KeyError, ValueError):
+                    return self.send(400, b"audio_b64 missing", "text/plain")
+                ctype = body.pop("ctype", "audio/mpeg")
+                meta = audio.push(body, data, ctype)
+                return self.send(200, json.dumps(meta).encode(), "application/json")
+            if path == "/audio/played":
+                audio.played(body)
+                return self.send(200, b"{}", "application/json")
+            self.send(404, b"not found", "text/plain")
+
+        def sse_head(self):
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-store")
             self.send_header("Connection", "keep-alive")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
+
+        def audio_events(self):
+            """New clips only (a page that reconnects does not replay old lines)."""
+            self.sse_head()
+            seq = audio.seq
+            with audio.cond:
+                audio.listeners += 1
+            try:
+                self.wfile.write(b": hello\n\n")
+                self.wfile.flush()
+                while True:
+                    new, clips = audio.wait(seq, 15)
+                    if new == seq:
+                        self.wfile.write(b": keepalive\n\n")
+                    seq = new
+                    for c in clips:
+                        self.wfile.write(b"data: " + json.dumps(c, ensure_ascii=False).encode() + b"\n\n")
+                    self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                return
+            finally:
+                with audio.cond:
+                    audio.listeners -= 1
+
+        def events(self):
+            self.sse_head()
             version = -1
             try:
                 while True:

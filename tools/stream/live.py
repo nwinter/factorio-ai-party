@@ -120,7 +120,7 @@ class LiveSource:
             p = profiles.get(name, {})
             st = self.status_cache.get(name, {})
             a = {"name": name, "kind": p.get("kind") or cfg.get("kind", "bot")}
-            for key in ("display_name", "color", "glyph", "motto", "position", "last_said", "alive", "active"):
+            for key in ("display_name", "color", "glyph", "motto", "voice", "position", "last_said", "alive", "active"):
                 if p.get(key) is not None:
                     a[key] = p[key]
             if st:
@@ -137,7 +137,7 @@ class LiveSource:
             obs["agents"].append(a)
         for name, p in profiles.items():
             if name not in self.agents_cfg:
-                obs["agents"].append({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto",
+                obs["agents"].append({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto", "voice",
                                                              "position", "alive", "active", "last_said")})
 
         try:
