@@ -79,6 +79,7 @@ class KB:
         self.entities = {e["name"]: e for e in load("entities")}
         self.fluids = {f["name"]: f for f in load("fluids")}
         self.settings = load("settings", {})
+        self.locations = load("locations", {})
         self.unlocked_by, self.leads_to, self.made_by = {}, {}, {}
         for t in self.techs.values():
             for e in t.get("effects") or []:
@@ -383,6 +384,23 @@ class KB:
             lines.append(f"(a yellow belt carries {fmt(belt * 60)} items/min, both lanes)")
         return "\n".join(lines)
 
+    def planets_text(self):
+        """Planets, space locations and routes (Space Age; a base dump has only Nauvis)."""
+        d = self.locations or {}
+        locs = [l for l in d.get("locations") or [] if not l["name"].endswith("-unknown")]
+        if not locs:
+            return "no space locations in this knowledge base"
+        lines = []
+        for l in sorted(locs, key=lambda x: x.get("order") or x["name"]):
+            props = ", ".join(f"{k} {fmt(v)}" for k, v in (l.get("surface_properties") or {}).items())
+            lines.append(f"{l['type']} {l['name']}: solar power in space {fmt(l.get('solar_power_in_space'))}%"
+                         + (f", gravity pull {fmt(l['gravity_pull'])}" if l.get("gravity_pull") else "") + (f"; {props}" if props else ""))
+        for c in d.get("connections") or []:
+            lines.append(f"route {c.get('from')} -> {c.get('to')}: {fmt(c.get('length'))} km")
+        if self.version.startswith("base"):
+            lines.append("(base game dump: Space Age planets are not in it; see notes space-age)")
+        return "\n".join(lines)
+
     def output_text(self, recipe, machine=None, count=1):
         """What N machines make per minute on one recipe, and what they consume."""
         r = self.recipes.get(recipe) or self.recipe_for(self.resolve(recipe) or recipe)
@@ -425,7 +443,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", default=DEFAULT_VERSION)
     ap.add_argument("cmd", choices=["search", "recipe", "tech", "path", "ratio", "entity", "item", "compare",
-                                    "research-time", "settings", "made-by", "output"])
+                                    "research-time", "settings", "made-by", "output", "planets"])
     ap.add_argument("args", nargs="*")
     ap.add_argument("--done", default="", help="comma-separated researched technologies (for path)")
     ap.add_argument("--assembler")
@@ -465,6 +483,8 @@ def main():
         print(kb.compare_text(actual, a.args[1], float(a.args[2])))
     elif a.cmd == "research-time":
         print(kb.research_time_text(kb.resolve(q) or q, a.labs, a.lab_speed))
+    elif a.cmd == "planets":
+        print(kb.planets_text())
     elif a.cmd == "settings":
         print(json.dumps(kb.settings, indent=1))
 

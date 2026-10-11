@@ -187,6 +187,32 @@ for i = START, math.min(#list, START + COUNT - 1) do
 end
 rcon.print(helpers.table_to_json({total=#list, items=out}))
 """,
+    "locations": r"""
+local locs, conns = {}, {}
+local ok_l, L = pcall(function() return prototypes.space_location end)
+if ok_l and L then
+  for name, l in pairs(L) do
+    locs[#locs+1] = {name=name, type=g(function() return l.type end), distance=g(function() return l.distance end),
+      orientation=g(function() return l.orientation end), gravity_pull=g(function() return l.gravity_pull end),
+      solar_power_in_space=g(function() return l.solar_power_in_space end), magnitude=g(function() return l.magnitude end),
+      surface_properties=g(function() return l.surface_properties end), order=g(function() return l.order end)}
+  end
+end
+local ok_c, C = pcall(function() return prototypes.space_connection end)
+if ok_c and C then
+  for name, c in pairs(C) do
+    conns[#conns+1] = {name=name, from=g(function() return c.from.name end), to=g(function() return c.to.name end),
+      length=g(function() return c.length end)}
+  end
+end
+local props = {}
+local ok_p, SP = pcall(function() return prototypes.surface_property end)
+if ok_p and SP then for name, p in pairs(SP) do props[#props+1] = {name=name, default=g(function() return p.default_value end)} end end
+local quals = {}
+local ok_q, Q = pcall(function() return prototypes.quality end)
+if ok_q and Q then for name, q in pairs(Q) do quals[#quals+1] = {name=name, level=q.level, hidden=q.hidden} end end
+rcon.print(helpers.table_to_json({total=1, items={{locations=locs, connections=conns, surface_properties=props, qualities=quals}}}))
+""",
     "settings": r"""
 local ms = game.map_settings
 local function copy(t, keys) local r = {} for _, k in ipairs(keys) do r[k] = g(function() return t[k] end) end return r end
@@ -209,7 +235,8 @@ rcon.print(helpers.table_to_json({items={{
 """,
 }
 
-PAGE = {"recipes": 60, "technologies": 40, "items": 80, "fluids": 80, "entities": 40, "settings": 1}
+PAGE = {"recipes": 60, "technologies": 40, "items": 80, "fluids": 80, "entities": 40, "locations": 1, "settings": 1}
+SINGLE = ("settings", "locations")
 
 
 def dump(rc, cat):
@@ -240,7 +267,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     for cat in (a.only.split(",") if a.only else LUA):
         rows = dump(rc, cat)
-        if cat == "settings":
+        if cat in SINGLE:
             rows = rows[0]
         path = os.path.join(a.out, f"{cat}.json")
         with open(path, "w") as f:

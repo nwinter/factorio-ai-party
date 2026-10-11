@@ -1,0 +1,62 @@
+{
+"connections": {},
+"locations": [
+{
+"distance": 0,
+"gravity_pull": 0,
+"magnitude": 1,
+"name": "space-location-unknown",
+"order": "",
+"orientation": 0,
+"solar_power_in_space": 1,
+"type": "space-location"
+},
+{
+"distance": 15,
+"gravity_pull": 0.16666666666666666,
+"magnitude": 1,
+"name": "nauvis",
+"order": "a[nauvis]",
+"orientation": 0.2750000059604645,
+"solar_power_in_space": 300,
+"surface_properties": {
+"day-night-cycle": 25200
+},
+"type": "planet"
+}
+],
+"qualities": [
+{
+"hidden": true,
+"level": 0,
+"name": "normal"
+},
+{
+"hidden": true,
+"level": 0,
+"name": "quality-unknown"
+}
+],
+"surface_properties": [
+{
+"default": 300,
+"name": "day-night-cycle"
+},
+{
+"default": 10,
+"name": "gravity"
+},
+{
+"default": 90,
+"name": "magnetic-field"
+},
+{
+"default": 1000,
+"name": "pressure"
+},
+{
+"default": 100,
+"name": "solar-power"
+}
+]
+}

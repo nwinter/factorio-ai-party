@@ -107,6 +107,8 @@ TOOLS = {
     "kb_research_time": (S("How long a technology takes with N labs, and the pack rate that needs.",
                            tech=STR("technology"), labs=NUM("number of labs")),
                          lambda a: kb().research_time_text(kb().resolve(a["tech"]) or a["tech"], int(a["labs"]))),
+    "kb_planets": (S("Planets, space locations and route lengths (from a Space Age dump; the base dump has only Nauvis)."),
+                   lambda a: kb().planets_text()),
     "kb_map_settings": (S("This world's map settings: pollution, evolution factors, expansion, peaceful, mods."),
                         lambda a: json.dumps(kb().settings, indent=0)[:4000]),
     "game_snapshot": (S("Current game: time, research and progress, SPM, production and use per minute (10-min "
