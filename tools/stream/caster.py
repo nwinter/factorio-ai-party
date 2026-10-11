@@ -102,16 +102,43 @@ SHOW = ("The show: nine AI models from different labs (each named in the facts w
 SHOW_SPACE = (" This run plays the Space Age expansion, where a rocket launch is a milestone on the way: rockets "
               "carry a space platform starter pack to orbit, space science is made on the platform, the planets "
               "Vulcanus (metallurgic science), Fulgora (electromagnetic), Gleba (agricultural) and Aquilo (cryogenic) "
-              "follow, and the expansion's goal is reaching the edge of the solar system. A two-hour run is mostly the "
+              "follow, and the expansion's goal is reaching the edge of the solar system. Only the planets in planets_reached "
+              "have been visited; the others are future goals, with nothing of the team's there. A two-hour run is mostly the "
               "start on Nauvis, the home planet: oil, plastics and blue science are its big milestones. Many Space Age "
               "technologies unlock by a trigger, such as mining calcite or building an asteroid collector.")
 
 
-def show_for(s):
-    """The show notes for this snapshot: Space Age runs carry a `space` block (eng/stream2)."""
+def is_space_age(s):
+    """A Space Age run: the snapshot's `space` block says so (model.py sends the block on every run, with
+    `space_age` false in the base game), or the subtitle or POG_SPACE_AGE=1 does."""
     s = s or {}
-    space = s.get("space") or "space age" in str(s.get("subtitle") or "").lower() or os.environ.get("POG_SPACE_AGE") == "1"
-    return SHOW + (SHOW_SPACE if space else "")
+    sp = s.get("space")
+    space = sp.get("space_age") if isinstance(sp, dict) and "space_age" in sp else bool(sp)
+    return bool(space or "space age" in str(s.get("subtitle") or "").lower() or os.environ.get("POG_SPACE_AGE") == "1")
+
+
+def show_for(s):
+    """The show notes for this snapshot: Space Age runs get SHOW_SPACE too."""
+    return SHOW + (SHOW_SPACE if is_space_age(s) else "")
+
+
+PLANETS = ("Vulcanus", "Fulgora", "Gleba", "Aquilo")
+
+
+def planet_facts(s):
+    """Space Age: where the team has been. Shake6, Vale at 07:22:20: "thirty science packs a minute won't rebuild
+    Vulcanus" with nobody ever off Nauvis; the show notes named the planets and nothing said none was reached."""
+    if not is_space_age(s):
+        return {}
+    sp = s.get("space") if isinstance(s.get("space"), dict) else {}
+    reached = [p for p in sp.get("planets") or [] if p] or ["Nauvis"]
+    if "Nauvis" not in reached:
+        reached = ["Nauvis"] + reached
+    ahead = [p for p in PLANETS if p not in reached]
+    f = {"planets_reached": reached}
+    if ahead:
+        f["planets_not_reached_yet"] = ahead
+    return f
 
 
 PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "power": 6,
@@ -376,8 +403,11 @@ def read_shift(run_dir):
             run = open(os.path.join(root, run, "resumed-from")).read().strip()
         except OSError:
             run = None
-    f = {"number": len(chain) + 1, "continues": prev, "first_shift": chain[-1],
-         "at_the_deadline": "the world is saved and the next shift continues it from there"}
+    # Numbers only, said outright: shake6's fact had the run name ("continues": "shake5") next to the number, and the
+    # hosts mixed them into "shift five" and "Shake five" by the end.
+    n = len(chain) + 1
+    f = {"this_shift": f"shift {n}", "next_shift": f"shift {n + 1}", "earlier_shifts": n - 1,
+         "at_the_deadline": f"the world is saved and shift {n + 1} continues it from there"}
     try:
         m = re.search(r"resumed at tick (\d+)", open(os.path.join(run_dir, "start.log")).read())
         if m:
@@ -440,8 +470,9 @@ def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
     # said "forty-six minutes left" four exchanges running (mock), so only where time matters or it is running out.
     if deadline and (clock or left <= 15):
         f["minutes_to_deadline"] = round(left) if left >= 1 else "under a minute" if left > 0 else "the deadline has passed"
-    if shift and (clock or left is None or left <= 15):  # with the clock: the deadline is a handover
+    if shift:  # every beat: shake6's hosts numbered shifts on beats without the fact (and check_line checks it)
         f["shift"] = shift
+    f.update(planet_facts(s))
     sc = s.get("science") or {}
     if sc.get("stage_label"):
         f["stage"] = sc["stage_label"]
@@ -585,7 +616,8 @@ EXCHANGE_RULES = (
     "motionless, idle or asleep. The agents play until the deadline, and the time left is minutes_to_deadline. When "
     "the facts carry a shift, the run is a series of shifts on one saved world: this shift picks up the world where "
     "the last one left it, and at the deadline the world is saved and the next shift continues it, so research in "
-    "progress and the base carry over and the deadline is a handover. The hosts are commentators, not on "
+    "progress and the base carry over and the deadline is a handover. Call shifts only by the numbers in this_shift "
+    "and next_shift. The hosts are commentators, not on "
     "the team: the team is 'they', never 'we'. Never say something is missing, broken or absent ('no steam yet', "
     "'no belts') unless the facts say so, and mention an earlier run only when the facts include a pace "
     "comparison. Skip map distances and directions unless they "
@@ -710,7 +742,7 @@ def check_line(line, facts, names, recent):
     if re.search(r"[Ѐ-ӿ֐-ۿ฀-๿　-鿿가-힯＀-￯]", line):
         return "not English"
     why = off_roster(line, blob + " " + (SHOW + SHOW_SPACE).lower(), names) or wrong_pronoun(low, facts) or \
-        wrong_deadline(low, facts) or style_fault(line, blob)
+        wrong_deadline(low, facts) or wrong_place(low, facts) or style_fault(line, blob)
     if why:
         return why
     for num in re.findall(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", line):  # "3,600" is one number
@@ -794,6 +826,31 @@ ENDS_RUN = re.compile(r"\b(?:ends?|ending|ended|finish(?:es|ed)?|over for) (?:th
 TIME_LEFT = re.compile(r"\b([a-z\d-]+(?: [a-z-]+)?) (?:more |last |final )?minutes? (?:left|to go|remaining|on the clock|"
                        r"of (?:[a-z]+ )?(?:bait|play|this|it)|before the (?:deadline|end|buzzer|bell))\b|"
                        r"\b([a-z\d-]+(?: [a-z-]+)?) more minutes?\b")
+
+
+FUTURE = re.compile(r"\b(?:next|later|someday|one day|eventually|goal|road to|on the way|way to|until|before|"
+                    r"could|will|'ll|want|wants|aim\w*|dream of|hope|plan\w*|future|far off|far away|yet)\b")
+
+
+def wrong_place(low, facts):
+    """Shift numbers and planets must match the facts. Shake6 mixed "shift four", "shift five" and "Shake five" in one
+    shift (07:57-08:03), and Vale's "won't rebuild Vulcanus" (07:22:20) had nobody ever off Nauvis."""
+    sh = facts.get("shift") or {}
+    ok = {int(m) for v in (sh.get("this_shift"), sh.get("next_shift")) for m in re.findall(r"\d+", str(v or ""))}
+    for m in re.finditer(r"\bshift (\w+)\b", low):
+        n = int(m.group(1)) if m.group(1).isdigit() else UNITS.get(m.group(1))
+        if n is not None and n not in ok:
+            return f"shift number not in facts: {m.group(0)}"
+    for m in re.finditer(r"\bshake ?(\d+|" + "|".join(UNITS) + r")\b", low):
+        num = m.group(1) if m.group(1).isdigit() else str(UNITS[m.group(1)])
+        if f"shake{num}" not in json.dumps(facts).lower():
+            return f"run name not in facts: {m.group(0)}"
+    reached = facts.get("planets_reached")
+    if reached:
+        for p in PLANETS:
+            if p.lower() in low and p not in reached and not FUTURE.search(low.replace("’", "'")):
+                return f"planet not reached: {p}"
+    return None
 
 
 def wrong_deadline(low, facts):

@@ -536,9 +536,10 @@ with tempfile.TemporaryDirectory() as runs:
             open(os.path.join(runs, name, "resumed-from"), "w").write(prev + "\n")
     open(os.path.join(runs, "shake6", "start.log"), "w").write("05:18:52 world n: resumed at tick 446842 (game 124m)\n")
     sh = caster.read_shift(os.path.join(runs, "shake6"))
-    check("shift: number, the run it continues, the first shift, the resume minute", sh and sh["number"] == 3 and
-          sh["continues"] == "shake5" and sh["first_shift"] == "shake4" and sh["resumed_at_game_minute"] == 124
-          and "next shift continues it" in sh["at_the_deadline"], str(sh))
+    check("shift: this shift, the next one, the resume minute; no run names (shake6 study P1 item 2)", sh and
+          sh["this_shift"] == "shift 3" and sh["next_shift"] == "shift 4" and sh["earlier_shifts"] == 2 and
+          sh["resumed_at_game_minute"] == 124 and "shift 4 continues it" in sh["at_the_deadline"]
+          and "shake" not in json.dumps(sh), str(sh))
     check("shift: a first shift has none", caster.read_shift(os.path.join(runs, "shake4")) is None
           and caster.read_shift(None) is None)
     so = caster.facts_for({"kind": "open", "t": 0, "prio": 8}, {"agents": []}, None, time.time() + 3600, sh)
@@ -546,7 +547,12 @@ with tempfile.TemporaryDirectory() as runs:
           and "later shift" in so.get("how_to_call_it", ""), str(so))
     far = caster.facts_for({"kind": "camera", "agents": [], "t": 0, "prio": 2}, {"agents": []}, None, time.time() + 2400, sh)
     near = caster.facts_for({"kind": "camera", "agents": [], "t": 0, "prio": 2}, {"agents": []}, None, time.time() + 300, sh)
-    check("shift: with the clock (time-left beats and the last 15 minutes)", "shift" not in far and near.get("shift"))
+    check("shift: on every beat (time left only with the clock)", far.get("shift") == sh and near.get("shift") == sh
+          and "minutes_to_deadline" not in far and near.get("minutes_to_deadline"))
+    check("shift numbers: this shift and the next pass, others and run names fail", caster.check_line(
+        "Shift three keeps rolling. Shift four gets this world next.", far, [], []) is None and caster.check_line(
+        "Shift five inherits it.", far, [], []) == "shift number not in facts: shift five" and caster.check_line(
+        "Shake five gets low density at ninety.", far, [], []) == "run name not in facts: shake five")
     check("shift: 'ends the run' is wrong at a handover", caster.check_line(
         "That horn ends the run for them!", dict(near, minutes_to_deadline="under a minute"), [], []) ==
         "says the run ends, but the next shift continues it")
@@ -554,7 +560,23 @@ with tempfile.TemporaryDirectory() as runs:
           in caster.EXCHANGE_RULES)
     cs6 = caster.Caster.__new__(caster.Caster)
     cs6.a = caster.argparse.Namespace(run_dir=os.path.join(runs, "shake5"))
-    check("Caster.shift reads --run-dir", cs6.shift()["number"] == 2, str(cs6.shift()))
+    check("Caster.shift reads --run-dir", cs6.shift()["this_shift"] == "shift 2", str(cs6.shift()))
+
+# Shake6 study P1 item 3: planets reached, and the base game gets no Space Age notes
+base_snap = {"space": {"space_age": False, "active": False, "planets": ["Nauvis"]}}
+sa_snap = {"space": {"space_age": True, "active": False, "planets": ["Nauvis"]}}
+check("show notes: a base-game snapshot's space block is not Space Age", caster.show_for(base_snap) == caster.SHOW
+      and caster.show_for(sa_snap) != caster.SHOW and caster.planet_facts(base_snap) == {})
+pf = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"}, sa_snap)
+check("planets: Nauvis reached, the four others ahead", pf.get("planets_reached") == ["Nauvis"] and
+      pf.get("planets_not_reached_yet") == ["Vulcanus", "Fulgora", "Gleba", "Aquilo"], str(pf))
+check("planets: a line about a planet nobody reached is cut; a future goal is fine", caster.check_line(
+    "Thirty packs a minute won't rebuild Vulcanus.", pf, [], []) == "planet not reached: Vulcanus" and caster.check_line(
+    "Vulcanus is the next big goal.", pf, [], []) is None)
+pv = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"},
+                      {"space": {"space_age": True, "planets": ["Nauvis", "Vulcanus"]}})
+check("planets: once reached, it may be named", pv["planets_reached"] == ["Nauvis", "Vulcanus"] and caster.check_line(
+    "Vulcanus has a foothold now.", pv, [], []) is None, str(pv))
 
 # Hosts that sound human (COPY.md): the post-filter and the one rewrite
 rs = caster.restyle
