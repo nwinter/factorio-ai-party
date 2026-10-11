@@ -49,6 +49,8 @@ const help = `fh — Factorio agent CLI
   fh say "text" [--aloud]                   Post in chat; or --text-file F, or stdin (fh say - <<'EOF' ... EOF)
   fh chat [--since SEQ] [--limit N] [--peek] Your unread messages (newest N; remaining=K are still unread), or all after SEQ
   fh confess "text"                         A line for the stream audience only (teammates never see it); input as for say
+  fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
+  fh tells [--since SEQ]                    Tells you sent or received
   fh stream                                 JSON-lines requests in, replies out; one connection
   fh run --file plan.json                    Sequential actions, waits after each timed action
 
@@ -236,9 +238,14 @@ async function main() {
     command = positionals[1]!;
     positionals.splice(0, 2, command);
   }
-  if (command === 'say' || command === 'confess') {
+  if (command === 'say' || command === 'confess' || command === 'tell') {
     // Text as arguments, a file or stdin: no JSON quoting, apostrophes are fine.
     const args = object(JSON.parse(values.args ?? '{}'),'args');
+    // fh tell NAME[,NAME]|team text...: the first word names the recipients.
+    if (command === 'tell' && args.to === undefined) {
+      if (!positionals[1]) throw new Error('tell needs a name: fh tell luna "text", fh tell luna,sol "text" or fh tell team "text"');
+      args.to = positionals.splice(1, 1)[0];
+    }
     const words = positionals.slice(1);
     let text: string | undefined;
     if (values['text-file']) text = await readFile(values['text-file'],'utf8');
@@ -246,16 +253,17 @@ async function main() {
     else if (words.length) text = words.join(' ');
     else if (args.text === undefined && !process.stdin.isTTY) text = await readStdin(1000);
     if (text !== undefined) args.text = text.trim();
-    if (typeof args.text !== 'string' || !args.text) throw new Error(`${command} needs text: fh ${command} "text", fh ${command} --text-file F, or fh ${command} - with the text on stdin`);
+    const usage = command === 'tell' ? 'tell NAME' : command;
+    if (typeof args.text !== 'string' || !args.text) throw new Error(`${command} needs text: fh ${usage} "text", fh ${usage} --text-file F, or fh ${usage} - with the text on stdin`);
     if (values.aloud) {
-      if (command === 'confess') throw new Error('--aloud applies to say; a confession always goes to the stream');
+      if (command !== 'say') throw new Error(`--aloud applies to say; ${command === 'tell' ? 'a tell stays off the chat and the voice' : 'a confession always goes to the stream'}`);
       args.aloud = true;
     }
     values.args = JSON.stringify(args);
     positionals.splice(1, positionals.length - 1, command);
     command = 'call';
   }
-  if (command === 'chat') { positionals.splice(1, positionals.length - 1, 'chat'); command = 'call'; }
+  if (command === 'chat' || command === 'tells') { positionals.splice(1, positionals.length - 1, command); command = 'call'; }
   // --since/--limit/--peek for the reads that take them.
   if (values.since !== undefined || values.limit !== undefined || values.peek) {
     const action = positionals[1];
@@ -263,9 +271,9 @@ async function main() {
     if (values.since !== undefined) {
       const since = Number(values.since);
       if (!Number.isSafeInteger(since) || since < 0) throw new Error('--since must be a sequence number (0 or more)');
-      if (action === 'chat' || action === 'confessions') args.since = since;
+      if (action === 'chat' || action === 'confessions' || action === 'tells') args.since = since;
       else if (action === 'board_events') args.since_seq = since;
-      else throw new Error('--since applies to fh chat, fh board events and fh call confessions');
+      else throw new Error('--since applies to fh chat, fh tells, fh board events and fh call confessions');
     }
     if (values.limit !== undefined) args.limit = integer(values.limit, 30);
     if (values.peek) args.peek = true;
