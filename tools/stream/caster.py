@@ -270,6 +270,9 @@ def facts_for(e, s, baseline=None):
         f["on_screen_now"] = {"segment": seg.get("type"), "title": seg.get("title"),
                               "seconds": round(seg["ends"] - seg["started"]) if seg.get("ends") and seg.get("started")
                               else None, **(seg.get("facts") or {})}
+        if seg.get("type") == "attack_replay":
+            # not "muted" or "banner": the first version read those production notes out on air
+            f["how_to_call_it"] = "as an instant replay, in the past tense, like a replay breakdown"
     if e["kind"] == "research" and baseline and e.get("text"):
         tech = re.sub(r"^research complete:\s*", "", e["text"], flags=re.I).strip().lower().replace(" ", "-")
         mins = baseline.minutes(tech)
@@ -416,6 +419,13 @@ TENS = {w: 10 * i for i, w in enumerate("_ _ twenty thirty forty fifty sixty sev
 
 def spelled_numbers(text):
     """[(words, value)] for numbers written out: 'eighty-three' 83, 'a hundred' 100, 'one hundred and twenty' 120."""
+    out = []
+    for chunk in re.split(r"[,.;:!?()—–]", text):  # "minute thirty, two specimens" is not thirty-two
+        out += _spelled(chunk)
+    return out
+
+
+def _spelled(text):
     out, cur, words = [], None, []
     for tok in re.findall(r"[a-z]+", text.replace("-", " ")):
         if tok in UNITS or tok in TENS:
@@ -944,9 +954,8 @@ class Caster:
         lo, hi = self.a.lines
         n = lo if e["prio"] >= URGENT else self.rng.randint(lo, hi)
         self.say_exchange(e, s, first, n)
-        if e["kind"] in ("attack", "loss"):
-            self.request_segment([("attack_replay", {})], "attack")
-        elif e["kind"] == "research":
+        # attack replays: the director queues each saved clip itself (eng/stream2), so the hosts only talk over them
+        if e["kind"] == "research":
             self.request_segment([("research", {})], "research")
 
     def say_exchange(self, e, s, first, n):
@@ -1213,6 +1222,11 @@ def bench_events(snap):
         ("pace", {"kind": "lull", "angle": "pace", "prio": 1}, "color", 3),
         ("naturalist", {"kind": "lull", "angle": "naturalist", "agents": main, "prio": 1}, "color", 3),
         ("explain", {"kind": "lull", "angle": "explain", "prio": 1}, "pbp", 3),
+        ("replay", {"kind": "segment", "prio": 7, "segment": {
+            "id": "bench", "type": "attack_replay", "state": "live", "started": 0, "ends": 15,
+            "title": f"Replay: {agents[0].title()} died",
+            "facts": {"event": f"{agents[0].title()} died", "kind": "death", "agent": agents[0].title(), "seconds": 15,
+                      "ago_s": 21}}}, "pbp", 3),
     ]
 
 
@@ -1251,12 +1265,12 @@ def bench(a):
                 print(f"   (nothing: {errs[0] if errs else 'unparseable'})")
         cost = w.spent or w.equiv
         print(f"== {w.name}: median {sorted(lat)[len(lat) // 2]:.2f}s, max {max(lat):.2f}s, kept {kept}/{total} lines, "
-              f"${cost:.4f} for 6 exchanges{' (API-equivalent; subscription)' if w.kind == 'claude' else ''}",
+              f"${cost:.4f} for {len(lat)} exchanges{' (API-equivalent; subscription)' if w.kind == 'claude' else ''}",
               flush=True)
-        out.append((w.name, sorted(lat)[len(lat) // 2], kept, total, cost))
+        out.append((w.name, sorted(lat)[len(lat) // 2], kept, total, cost, len(lat)))
     print("\nsummary:")
-    for name, med, kept, total, cost in out:
-        print(f"  {name:48s} median {med:5.2f}s  kept {kept:2d}/{total:2d}  ${cost * 1000 / 6:.3f} per 1k exchanges")
+    for name, med, kept, total, cost, n in out:
+        print(f"  {name:48s} median {med:5.2f}s  kept {kept:2d}/{total:2d}  ${cost * 1000 / n:.3f} per 1k exchanges")
 
 
 def main():

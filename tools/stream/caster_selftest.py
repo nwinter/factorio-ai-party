@@ -30,6 +30,8 @@ check("rejects a spelled-out invented number",
       caster.check_line("Eighty-three percent done!", facts, names, []) is not None)
 check("accepts a rounded figure", caster.check_line("Over a hundred machines starve!",
                                                     dict(facts, starved=118), names, []) is None)
+check("spelled numbers stop at punctuation", [n for _, n in caster.spelled_numbers("minute thirty, two specimens")]
+      == [30, 2])
 check("parses spelled numbers", [n for _, n in caster.spelled_numbers("one hundred and twenty belts, forty-two")]
       == [120, 42])
 check("rejects the hosts joining the team", caster.check_line("We're one tech behind!", facts, names, []) is not None
@@ -147,6 +149,12 @@ check("differ: segment event once", [e["kind"] for e in se] == ["segment"]
 sf = caster.facts_for(dict(se[0], prio=7), {"agents": []})
 check("segment facts are the on-screen facts", sf["on_screen_now"]["rate_now"] == 224
       and caster.check_line("Iron at 224 a minute!", sf, [], []) is None, str(sf))
+rf = caster.facts_for({"kind": "segment", "t": now, "prio": 7, "segment": {
+    "id": "r1", "type": "attack_replay", "state": "live", "started": now, "ends": now + 15, "title": "Replay: Luna died",
+    "facts": {"event": "Luna died", "kind": "death", "agent": "Luna", "seconds": 15, "ago_s": 21}}}, {"agents": []})
+check("replay facts: event, agent and how to call it", rf["on_screen_now"]["agent"] == "Luna"
+      and "how_to_call_it" in rf and caster.check_line("Run it back: Luna died at the wall.", rf, ["Luna"], []) is None,
+      str(rf))
 check("a rounded rate passes", caster.check_line("Plastic surges fifty-one a minute!", {"rate": 51.4}, [], []) is None
       and caster.check_line("Plastic surges fifty-three a minute!", {"rate": 51.4}, [], []) is not None)
 
