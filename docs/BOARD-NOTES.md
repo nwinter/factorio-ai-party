@@ -310,4 +310,57 @@ so no new remote function was needed.
   `team` block; the same name again printed `dropped: viewer_rate ...; retry in 13 s` (exit 3). Pronouns `she/her`
   showed in `profiles`, then I cleared them so no agent carries pronouns it did not choose. Fixed after the live run
   (and redeployed): the agent cursor leak and whole-tag stripping in names (`Bob [color=red]42[/color]` had come out as
-  `Bob color=red42/color`).
+  `Bob color=red42/color`; then `viewer Ann 42` for `Ann [color=red]42[/color]`). An empty `confessions` list comes back
+  as `{}` (Factorio's JSON for an empty table), like other empty lists; readers should accept both.
+
+## Round 3, if time allows: shake2 study P2 items 7 to 9
+
+### What changed
+
+- Item 7, chat that gets drained. A `chat` read returns the newest `limit` plus every older unread message that
+  mentions the reader (`mention: @|@everyone|name`, matched by board.lua's rules via the new `board.mention_of`, up to
+  100 more), and `digest`, one line for the unread ones it left: `11 older messages not shown (seq 220..232): h2-b 3,
+  smoke-grok 2, ...; chat again for them`. Only returned messages are marked read (round 2's lossless rule stands), so
+  the digest does not drain by itself; instead, after a non-peek, non-since read that left some, every reply's `team`
+  block carries `chat_remaining: K` (the current unread count) until it is 0. Viewer lines never count as mentions.
+- Item 8, quote-safe `say`. Luna's 6 `text is required` failures sent `say` with `args: {}` (journal). The current
+  `fh say` refuses empty text before sending, so these came another way; the one path I found is `fh call say words...`,
+  which dropped the words. It now sends them as text (also `call confess`), and with neither words nor `--args` it goes
+  the `fh say` way (stdin or a client error). Her transcript is not in the run folder, so the exact command is not
+  confirmed. The Lua error now names the working forms. agent/team.md, agent/coop.md and usage.md document only the
+  heredoc for text with apostrophes or quotes (the old `fh say "I'll take copper"` example is gone).
+- Item 9. With `--format json`, stdout stays one JSON document (tools/overlay.py and tools/chat-log.py `json.loads` it)
+  and the same `error:` (or `warning:`) line compact output ends with goes to stderr. `fh stream` prints none.
+
+### Decisions to check
+
+- Mentions past the limit include plain-name mentions (`name`), not only `@`; with chatty teams that can return many
+  more than `limit` lines. The 100 cap bounds it.
+- `chat_remaining` sits in `team` (as the study asks) in addition to the `chat:` trailer, which still shows only when
+  a newer message arrived (and on `status`).
+- The error line on stderr: an agent that pipes only stdout (`| tail -1` without `2>&1`) still sees just the JSON
+  (which has `"ok":false`). Putting it on stdout would break the repo's JSON readers.
+
+### Verification
+
+- `tests/chat.lua` (mentions past the limit, digest text, `left` counts, peek and since leave it alone),
+  `tests/board.lua` (dispatch: mention in full past `limit=1`, `team.chat_remaining` on status and board, not on peek,
+  gone after draining), `tests/cli.test.ts` (`call say words`, `call confess`, json error and warning on stderr with
+  stdout still JSON, nothing on stderr for a clean reply). `npm test`: 93 pass, the same 4 sandbox failures.
+- Live, after deploying a merge of eng/board and eng/harness2 at 7491ca8 (sha 83e5705d, about 00:09): grok's
+  `@astra item 7 check` followed by two sol lines; `fh chat --limit 2` as astra returned the mention (`mention: @`) and
+  both newer lines, `remaining: 11` and the digest; `fh board` then showed `team: chat_remaining=11`; a full read
+  returned the 11 (viewer line flagged) and the next `fh board` had no `chat_remaining`. `fh call say "it's call say
+  with words now"` posted seq 236. A failing `build --format json` printed the JSON on stdout and `error:
+  action_failed: unknown argument name for build; ...` on stderr, exit 1. World saved.
+
+### Coordination
+
+- My first two deploys tonight (about 23:57 and 00:02) carried only harness2's ca7e2fc; harness2 had meanwhile
+  committed name tags, tint and avatar sprites (341d688, e1e0d5e, 7491ca8), so if their runtime was on live those
+  deploys replaced it for about ten minutes. The 00:09 deploy includes them. Merging eng/harness2 into eng/board
+  conflicts only in the `tests/lua.test.ts` file list (keep both `tests/audience.lua` and `tests/nametags.lua`);
+  all Lua suites pass on the merge. pog-harness2-b3 was told. A session named pog-harness3-ed started shortly
+  before midnight; I did not contact it, and do not know whether it deploys to live.
+- The scratch worktrees `scratchpad/merge` (round 2) and `scratchpad/merge3` (this round, with a throwaway detached
+  commit and an unfinished merge) are still registered; a hook blocked `merge --abort` and `worktree remove --force`.

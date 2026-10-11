@@ -63,7 +63,10 @@ fh call status
 ### Output shape, chat and time left
 
 ```sh
-fh say "I'll take copper"                      # or: fh say --text-file line.txt; fh say - <<'EOF' ... EOF
+fh say "taking copper"                         # or: fh say --text-file line.txt
+fh say - <<'EOF'                               # text with apostrophes or quotes: always this form
+I'll take copper, you've got iron
+EOF
 fh say "biters at the west wall" --aloud       # spoken on the stream
 fh chat                                        # your unread messages (newest 30; remaining=K are still unread)
 fh chat --since 212 --limit 50                 # everything after seq 212, yours included; --peek reads without marking
@@ -79,16 +82,23 @@ fh board events --since 40
   `clock:` line and `chat:`. `--full` (or `--format json`) gives the whole completion status as before. `fh wait` is
   compact the same way. Wait polls are `status {peek:true}` (falling back to plain status on an older runtime), so the
   team hints, the chat trailer and the turn clock are left for the reply you see; it reads one small `observe` after.
-- `chat` is lossless: it returns your unread messages (or all after `since`), newest `limit` (default 30), oldest
-  first, and marks only those read; `remaining: K` counts unread messages it did not return (chat again for them).
-  Your own messages count as read; writing does not skip others' unread ones.
+- `chat` is lossless: it returns your unread messages (or all after `since`), newest `limit` (default 30), plus every
+  older one that mentions you (`mention: @|@everyone|name`, up to 100 more), oldest first, and marks only those
+  read; `remaining: K` counts unread messages it did not return, and `digest` sums them up in one line (`35 older
+  messages not shown (seq 1..37): sol 23, luna 12; chat again for them`). Your own messages count as read; writing
+  does not skip others' unread ones. After a (non-peek, non-since) read that left some unread, every reply's `team`
+  block carries `chat_remaining: K` (the current unread count) until it reaches 0.
+- With `--format json`, stdout stays one JSON document and the `error:` (or `warning:`) line goes to stderr; `fh
+  stream` prints none.
 - The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
   `status`; `peek` requests report it without remembering. `team.mentions` still carries every message naming you.
 - `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
   also work) adds `deadline in 23m` (or `deadline passed 4m ago`) to the `clock:` line. `tools/new-run.sh` sets it
   for each agent's `./fh`.
 - `say` text comes from the words after `say`, from `--text-file`, or from stdin (`fh say -`, or a pipe when no words
-  are given). Start text with `-` only after `--` (`fh say -- "-5 iron"`).
+  are given). Start text with `-` only after `--` (`fh say -- "-5 iron"`). Text with an apostrophe or quote: use the
+  heredoc, `fh say - <<'EOF'`, the text, `EOF`. `fh call say words...` and `fh call confess words...` take the words
+  as text too (they used to send no text and fail with `text is required`).
 
 ### Confessionals and viewer lines
 

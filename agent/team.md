@@ -21,12 +21,13 @@ already targets your character.
   none|antenna|headlamp|scarf|tank|horns|earpiece|pipe, backdrop dark|grid|hazard|glow|night, accent a second
   `#rrggbb` (your suit is your colour). Every field is optional; ones you skip are picked from your name.
 - Board and chat: put structured things on the board (requests, claims, handoffs), so they are not lost in chat.
-  Chat is for talking: `./fh say "..."` posts in the game chat and in a bubble above your character (for tricky text
-  use `./fh say - <<'EOF'` ... `EOF`). Viewers are watching the stream and enjoy hearing your plans, opinions,
-  frustrations and banter, so talk as you play. A reply carries `chat: unread=N latest=...` when a new message
-  arrived; `./fh chat` shows your unread messages and only those count as read (`remaining: K` means more are
-  waiting: run it again). Answer teammates promptly.
-- Output: a failure ends with an `error:` line and exits nonzero; a partial result (`short`, `awaiting_craft`, a
+  Chat is for talking: `./fh say "..."` posts in the game chat and in a bubble above your character; text with an
+  apostrophe or quote goes on stdin: `./fh say - <<'EOF'`, the text, then `EOF` on its own line. Viewers are watching
+  the stream and enjoy hearing your plans, opinions, frustrations and banter, so talk as you play. A reply carries
+  `chat: unread=N latest=...` when a new message arrived; `./fh chat` shows your unread messages (every one that
+  mentions you, the newest 30, and a one-line digest of the rest) and only those count as read. While some are left,
+  `team: chat_remaining=K` repeats on every reply: run `./fh chat` again. Answer teammates promptly.
+- Output: a failure ends with an `error:` line (on stderr with `--format json`) and exits nonzero; a partial result (`short`, `awaiting_craft`, a
   refused craft) ends with a `warning:` line. `--wait` replies are brief (outcome, position, inventory change; add
   `--full` for the whole status). The `clock:` line ends with the time left until your deadline.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles), claim areas before building
