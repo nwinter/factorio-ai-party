@@ -876,6 +876,13 @@ eq(near.entities[2].distance,5); eq(near.entities[1].name,nil)
 p.surface.find_entities_filtered=function() return {rock(2,0,'rock-huge')} end
 eq(call('observe',{scope='nearest',type='simple-entity'}).entities[1].name,'rock-huge')
 fails(function() call('observe',{scope='nearest'}) end,'name or type')
+-- Up to 128 tiles; nothing found says why (only charted ground counts: little after a landing).
+p.surface.find_entities_filtered=function(f) eq(f.radius,128); return {} end
+do
+  local none=call('observe',{scope='nearest',name='coal',radius=128})
+  eq(none.total,0); assert(none.note:find('walk out to explore',1,true),none.note)
+end
+fails(function() call('observe',{scope='nearest',name='coal',radius=129}) end,'radius out of range')
 -- Research queue replacement keeps order, honours queued prerequisites and
 -- reports what the engine did not accept; front makes a tech active.
 local function tech(name,researched,prerequisites)

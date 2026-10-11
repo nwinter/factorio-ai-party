@@ -549,8 +549,9 @@ covers Space Age Nauvis).
 
 - A real thruster flight. The test platform had none, so the operator moved it. A live run with a director camera
   pointed at the bot, to see cameras and the overlay on a platform and on Vulcanus.
-- `nearest` reaches only 64 tiles. On Vulcanus the first resources were 90 tiles from spawn. Either widen it or tell
-  agents to use `map` after landing.
+- Done after the merge: `nearest` reaches 128 tiles (it was 64). The real limit after a landing is charting: only
+  about 48 tiles around a bot are charted (`bots.lua` SIGHT). So when nothing is found, `nearest` now says to walk
+  out and explore or build a radar, and the agent brief says the same.
 - Riding up in the real body: possible (see the probe), but there is no way back down. Stay with the script plan.
 - A real director client following a bot onto a platform: cameras teleport a spectator across surfaces, which the
   API allows. Whether the client renders a platform surface well enough for the stream is a question for the run.

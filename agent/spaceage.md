@@ -33,6 +33,8 @@ What differs from the base game:
   near its spawn, in about 20 s. You land with only your armor and guns, so send what you need down first: `drop`
   (the hub's drop slots) sends hub items to the planet below in a cargo pod. It goes to the landing pad if there
   is one, else it lands as a container near where you will land. Take the items out with `transfer`.
+- On a new planet only about 48 tiles around you are charted, so `nearest` and `map` see little at first. Walk out to
+  explore, or build a radar. On Vulcanus the first coal can be 90 tiles from the landing spot.
 - If you die on another planet, you respawn on the planet where you last stood. If your platform is destroyed
   while you are aboard, you die.
 - Quality: items and machines have a quality (`normal`, `uncommon`, `rare`, `epic`, `legendary`). Counts are per
