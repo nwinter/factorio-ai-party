@@ -235,6 +235,19 @@ test('say takes plain text, a file or stdin, without JSON quoting',async()=>{
   assert.deepEqual(seen.map(r=>[r.action,r.args.text,r.args.aloud]),[
     ['say',"I'll bring gears",undefined],['say','it\'s "done" $HOME',true],['say',"from stdin, it's fine",undefined],['say','piped',undefined]]);
 });
+test('confess takes text like say and maps to the confess action',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{seq:seen.length,note:'viewers hear this; teammates do not'}};},async port=>{
+    await cli(port,['confess',"I","don't","trust","grok's","belts",'--bot','astra']);
+    assert.equal((await compact(port,['confess','-','--bot','astra'],{},"it's going fine\n")).code,0);
+    const loud=await compact(port,['confess','x','--aloud','--bot','astra']);
+    assert.equal(loud.code,1); assert.match(loud.stdout,/error: client_error: --aloud applies to say/);
+    const empty=await compact(port,['confess','--bot','astra'],{},'');
+    assert.match(empty.stdout,/error: client_error: confess needs text/);
+    await cli(port,['call','confessions','--since','4','--bot','astra']);
+  });
+  assert.deepEqual(seen.map(r=>[r.action,r.args]),[['confess',{text:"I don't trust grok's belts"}],['confess',{text:"it's going fine"}],['confessions',{since:4}]]);
+});
 test('chat and board events take --since; chat --limit and --peek',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request);return {ok:true,result:{messages:[],cursor:9}};},async port=>{
