@@ -25,6 +25,12 @@ game.tick=1000; W.handlers.sleep(p,{seconds=60})
 p.character.health=200
 local r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.lost,50); eq(r.health,200)
 p.character.health=250; eq(W.handlers.sleep_check(p,{}).woke,'damaged')
+-- A recorded enemy hit counts even after the health came back; an older one does not.
+p.character.unit_number=7; s.char_hits={[7]={hits=1,damage=10,last=990,by='small-biter'}}
+game.tick=1000; W.handlers.sleep(p,{seconds=60}); eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
+s.char_hits[7].last=1005; game.tick=1010
+r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r.by,'small-biter'); eq(r.lost,nil)
+s.char_hits=nil
 -- A mention filed after the sleep began wakes it; an older one does not.
 s.mentions={[1]={list={{tick=900,from='sol',text='old news'}},dropped=0}}
 W.handlers.sleep(p,{seconds=60}); eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)

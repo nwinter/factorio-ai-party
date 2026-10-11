@@ -37,8 +37,14 @@ return function(api)
   local function why(p, record, out)
     local c = p.character
     if not (c and c.valid) then return 'died' end
-    if record.health and c.health < record.health - 0.01 then
-      out.health = math.floor(c.health); out.lost = math.floor(record.health - c.health + 0.5)
+    -- Enemy hits are also kept per character (board.lua's alerts), so a hit
+    -- healed again between two checks still counts, with its attacker.
+    local hits = api.state().char_hits
+    local hit = hits and c.unit_number and hits[c.unit_number]
+    if hit and hit.last and hit.last >= record.start_tick then out.by = hit.by end
+    if out.by or (record.health and c.health < record.health - 0.01) then
+      out.health = math.floor(c.health)
+      if record.health and c.health < record.health then out.lost = math.floor(record.health - c.health + 0.5) end
       return 'damaged'
     end
     local box = api.state().mentions and api.state().mentions[p.index]

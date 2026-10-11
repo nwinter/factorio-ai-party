@@ -23,7 +23,8 @@ New Lua lives in sibling modules: `waits.lua`, `labs.lua`, `claims.lua`. `runtim
 - `fh sleep SECONDS` (1..900): the `sleep` action (passive: it never stops the current action or the queue) records
   the start tick and health; in `turns` clock mode it asks the clock to run (`advance`, at most 36000 ticks). The CLI
   polls `sleep_check {peek:true}` once a second and finishes with one plain `sleep_check`, so the final reply carries
-  the `team` block. Wake reasons: `damaged` (health below the start; `health`, `lost`), `died` (exit 1), `mentioned`
+  the `team` block. Wake reasons: `damaged` (health below the start, or an enemy hit on the character recorded by
+  board.lua's alerts since the start; `health`, `lost`, `by`), `died` (exit 1), `mentioned`
   (a message filed in the board's per-agent mention inbox after the start, read there without delivering it; the
   `team.mentions` of the final reply delivers it as usual), `elapsed`. If the game advanced less than SECONDS within
   1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`. Nothing runs per tick.
@@ -129,8 +130,8 @@ Lua merges cleanly. `host/cli.ts` conflicts in 4 hunks; the resolution used for 
   `bundle.ts` and in `control.lua`'s `install`). About 17 KB remain for everyone. Raising it needs a `control.lua`
   change (and a client mod refresh); trimming describe text in `runtime.lua` is the cheaper route.
 - `fh sleep` mention detection reads `storage.agent_harness.mentions` (board.lua's inbox) directly; if eng/board
-  changes that layout, `waits.lua`'s `why()` must follow. Damage is detected by health at poll time (once a second),
-  so a hit fully regenerated within one poll would be missed; characters only regenerate after 10 s without damage.
+  changes that layout, `waits.lua`'s `why()` must follow; the same holds for `char_hits` (enemy hits). Damage from
+  non-enemy sources (fire, own turrets) is seen only as lower health at a check, once a second.
 - A shell timeout shorter than the sleep or wait still cuts the agent off (Claude Code Bash timeout, Codex exec
   yield, Grok's auto-background): the brief's harness-side half only. Launch settings must allow it (P1 item 1).
 - `labs`: the ETA ignores lab modules, beacons and lab-to-lab supply limits; belts are judged by their current
