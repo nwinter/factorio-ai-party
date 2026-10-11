@@ -847,6 +847,24 @@ def pick_choice(a):
     return None
 
 
+# ---- TTS: who spoke, and one retry ---------------------------------------------------------------------------------
+WORKERS_8008 = re.compile(r'"code"\s*:\s*8008\b|\bAiError\b.*\b8008\b')
+
+
+def spoke_by(tts):
+    """{provider, voice} of the clip this thread just made (voices.TTS.last_here; `last` on older TTS objects)."""
+    last = tts.last_here() if hasattr(tts, "last_here") else dict(getattr(tts, "last", None) or {})
+    return {k: last[k] for k in ("provider", "voice", "cached") if last.get(k) is not None} or {"provider": tts.backend}
+
+
+def second_voice(voice):
+    """Another Aura-2 voice of the same gender as `voice`'s Aura-2 stand-in, for the 8008 retry."""
+    like = (voices.CATALOG.get(voice) or voices.DESIGNED.get(voice) or voices.CATALOG["orion"])[3]
+    gender = voices.VOICES.get(like, voices.VOICES["orion"])[0]
+    pool = sorted(v for v, e in voices.VOICES.items() if e[0] == gender and v != like)
+    return next((v for v in pool if v > like), pool[0])
+
+
 # ---- the service -------------------------------------------------------------------------------------------------
 class Breaker:
     """Skip a failing backend for a while instead of paying a timeout on every line."""
@@ -1159,7 +1177,7 @@ class Caster:
         def synth(item):
             who, line = item
             try:
-                return tts.speak(line, voices.CASTERS[who], caster=who)  # eng/voices' TTS preps the audio text
+                return self.speak_clip(tts, line, voices.CASTERS[who], caster=who)  # eng/voices' TTS preps the text
             except Exception as x:
                 return x
 
@@ -1178,7 +1196,7 @@ class Caster:
                 continue
             if tts is self.tts:
                 self.breakers["tts"].good()
-            audio, ctype, dur, tlat = clip
+            audio, ctype, dur, tlat, spoke = clip
             if e["kind"] == "segment":
                 live = self.live_segment(self.snap, margin=1) if self.snap else None
                 if not live or live.get("id") != (e.get("segment") or {}).get("id"):
@@ -1195,9 +1213,9 @@ class Caster:
             while time.time() < min(max(self.agent_free, self.caster_free + gap), stop):
                 time.sleep(0.1)
             self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
-                       "expires_in": 25, "duration": round(dur, 2), "voice": voices.CASTERS[who]}, audio, ctype)
+                       "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice")}, audio, ctype)
             self.caster_free = time.time() + dur
-            self.record(**base, who=who, line=line, voice=voices.CASTERS[who], pushed=True, tts=tts.backend,
+            self.record(**base, who=who, line=line, pushed=True, tts=tts.backend, **spoke,
                         tts_latency=round(tlat, 2), seconds=round(dur, 2), **({"facts": facts} if i == 0 else {}))
 
     # -- agent chat
@@ -1275,17 +1293,17 @@ class Caster:
             self.record(**rec, voice=voice_id, pushed=False, reason="tts backing off")
             return est
         try:
-            audio, ctype, dur, lat = tts.speak(text, voice_id, caster=caster)
+            audio, ctype, dur, lat, spoke = self.speak_clip(tts, text, voice_id, caster=caster)
             if tts is self.tts:
                 self.breakers["tts"].good()
-            meta = dict(meta, duration=round(dur, 2), voice=voice_id)
+            meta = dict(meta, duration=round(dur, 2), voice=spoke.get("voice") or voice_id)
             if hold:
                 stop = time.time() + 10
                 while time.time() < min(hold(), stop):
                     time.sleep(0.2)
             self.push(meta, audio, ctype)
-            self.record(**rec, voice=voice_id, pushed=True, tts=tts.backend, tts_latency=round(lat, 2),
-                        seconds=round(dur, 2))
+            self.record(**rec, pushed=True, tts=tts.backend, **dict({"voice": voice_id}, **spoke),
+                        voice_id=voice_id, tts_latency=round(lat, 2), seconds=round(dur, 2))
             return dur
         except Exception as x:
             log(f"[tts:{tts.backend}] {type(x).__name__}: {x}")
@@ -1294,8 +1312,23 @@ class Caster:
             self.record(**rec, voice=voice_id, pushed=False, error=str(x)[:200])
             return est
 
+    def speak_clip(self, tts, text, voice, caster=None):
+        """tts.speak -> (audio, ctype, seconds, latency, {provider, voice[, retried]}): the record logs who spoke
+        (shake3 logged a constant, so whether the hosts were on OpenAI or Aura-2 had to be guessed from cost). A
+        Workers AI 8008 error ("Internal server error", 11 lines lost in shake3) retries once on a second voice."""
+        try:
+            audio, ctype, dur, lat = tts.speak(text, voice, caster=caster)
+            return audio, ctype, dur, lat, spoke_by(tts)
+        except Exception as x:
+            if not WORKERS_8008.search(str(x)):
+                raise
+            alt = second_voice(voice)
+            log(f"[tts:{tts.backend}] Workers AI 8008 on {voice}; retrying once on {alt}")
+            audio, ctype, dur, lat = tts.speak(text, alt)
+            return audio, ctype, dur, lat, dict(spoke_by(tts), retried="8008")
+
     def cost(self):
-        hrs = max(1e-6, (time.time() - self.t0) / 3600)
+        hrs =max(1e-6, (time.time() - self.t0) / 3600)
         w = sum(x.spent for x in (self.writer, self.fast) if x)
         t = sum(x.spent for x in (self.tts, self.tts_fallback) if x)
         c = self.classifier.spent

@@ -296,5 +296,50 @@ check("a number spelled in the chat text counts as a fact ('Eleven labs')", cast
 check("a number glued in the chat text counts too", caster.check_line(
     "Plastics at twelve percent!", cf, ["Sol"], []) is None)
 
+# TTS: the record names who spoke; Workers AI 8008 retries once on a second voice (P1 item 2, P2 item 12)
+class _FakeTTS:
+    backend = "auto"
+
+    def __init__(self, fail=0):
+        self.fail, self.calls, self.last = fail, [], {}
+
+    def speak(self, text, voice, caster=None):
+        self.calls.append((voice, caster))
+        if len(self.calls) <= self.fail:
+            raise RuntimeError('500 {"errors":[{"message":"AiError: AiError: Internal server error (x)","code":8008}]}')
+        self.last = {"provider": "aura2" if self.fail else "openai", "voice": voice if self.fail else "verse",
+                     "mood": None, "cached": False}
+        return b"mp3", "audio/mpeg", 1.5, 0.3
+
+
+cs3 = caster.Caster.__new__(caster.Caster)
+ok_tts = _FakeTTS()
+r = cs3.speak_clip(ok_tts, "Hello", "atlas", caster="pbp")
+check("speak_clip reports the provider and voice that spoke", r[4] == {"provider": "openai", "voice": "verse",
+                                                                      "cached": False}, str(r[4]))
+bad_tts = _FakeTTS(fail=1)
+r = cs3.speak_clip(bad_tts, "Hello", "atlas", caster="pbp")
+alt = bad_tts.calls[1][0]
+check("8008 retries once on a second voice of the same gender", len(bad_tts.calls) == 2 and alt != "atlas"
+      and voices.VOICES[alt][0] == voices.VOICES["atlas"][0] and r[4].get("retried") == "8008", str(bad_tts.calls))
+worse = _FakeTTS(fail=2)
+try:
+    cs3.speak_clip(worse, "Hello", "thalia", caster="color")
+    raised = False
+except RuntimeError:
+    raised = True
+check("a second 8008 drops the line (one retry only)", raised and len(worse.calls) == 2)
+other = _FakeTTS()
+other.speak = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("401 unauthorized"))
+try:
+    cs3.speak_clip(other, "Hello", "atlas")
+    raised = False
+except RuntimeError:
+    raised = True
+check("other TTS errors are not retried here", raised)
+real = voices.TTS("say")
+real.last = {"provider": "x"}
+check("voices.TTS.last_here falls back to last before this thread spoke", real.last_here() == {"provider": "x"})
+
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)

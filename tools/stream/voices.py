@@ -26,7 +26,7 @@ Pronunciation: lexicon.tsv (next to this file). `speak()` applies it for the pro
 provider reads it, respellings elsewhere; POG_TTS_IPA=0 forces respellings); captions keep the written text. Callers
 pass the caption text: a line already through pronounce() loses the IPA forms (respellings still apply).
 """
-import base64, hashlib, json, os, re, shutil, subprocess, sys, tempfile, time, unicodedata
+import base64, hashlib, json, os, re, shutil, subprocess, sys, tempfile, threading, time, unicodedata
 import urllib.error, urllib.parse, urllib.request
 
 import textprep
@@ -765,6 +765,7 @@ class TTS:
         self.chars = 0
         self.seconds = 0.0
         self.last = {}  # provider, voice, mood, cached of the latest clip
+        self._here = threading.local()  # the same for this thread's latest clip (caster.py synthesises in parallel)
         self.respacer = None  # textprep.Respacer, made on first use (it needs self.ai)
         self.down = {}  # provider family -> time it may be tried again (auto: a provider out of credits stays out)
         self.fails = {}  # provider family -> failures in a row
@@ -878,7 +879,7 @@ class TTS:
             if os.path.exists(path):
                 audio = open(path, "rb").read()
                 dur = duration(audio)
-                self.last = {"provider": prov, "voice": ref, "mood": m, "cached": True}
+                self.last = self._here.last = {"provider": prov, "voice": ref, "mood": m, "cached": True}
                 self.seconds += dur
                 return audio, "audio/mpeg", dur, time.time() - t0
         try:
@@ -915,11 +916,15 @@ class TTS:
         self.spent += rate * (len(text) if unit == "chars" else dur / 60)
         self.chars += len(text)
         self.seconds += dur
-        self.last = {"provider": prov, "voice": ref, "mood": m, "cached": False}
+        self.last = self._here.last = {"provider": prov, "voice": ref, "mood": m, "cached": False}
         if key:
             os.makedirs(os.path.dirname(path), exist_ok=True)
             open(path, "wb").write(audio)
         return audio, ctype, dur, time.time() - t0
+
+    def last_here(self):
+        """`last` for the clip this thread made most recently: {provider, voice, mood, cached}."""
+        return dict(getattr(self._here, "last", None) or self.last)
 
     def prep(self, text):
         """The words TTS reads: spaces restored and spoken forms (textprep), coordinates the new spaces expose
