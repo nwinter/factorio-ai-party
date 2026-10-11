@@ -492,6 +492,31 @@ def main():
     rpl.follow_segment(t7 + 50)
     assert fobs.program == "stream"
 
+    # two deaths 43 s apart (shake4: Haiku, then Opus): the second cut drops the queued replay, both clips still air
+    t9 = t7 + 300
+    for k in range(10):
+        rpl.tick(s7, {"main": {"agents": ["luna", "astra"]}}, t9 + k)
+    rpl.on_attack_cut({"kind": "death", "agent": "luna", "text": "Luna died"}, s7, t9 + 10)
+    rpl.work(t9 + 15)
+    seg7.last_attack_cut = t9 - 100
+    rpl.offer(t9 + 16)
+    assert seg7.queue and seg7.queue["clip"] == rpl.clip["id"]
+    for k in range(40, 53):
+        rpl.tick(s7, {"main": {"agents": ["astra"]}}, t9 + k)
+    seg7.attack_cut(t9 + 53)  # Astra dies: main cuts to it, the queue empties
+    rpl.on_attack_cut({"kind": "death", "agent": "astra", "text": "Astra died"}, s7, t9 + 53)
+    assert seg7.queue is None and rpl.clip["label"] == "Luna died" and rpl.pending["label"] == "Astra died"
+    rpl.work(t9 + 58)
+    assert rpl.clip["label"] == "Luna died" and [c["label"] for c in rpl.more_clips] == ["Astra died"]
+    aired = []
+    for k in range(58, 160):  # one tick a second: segments, then the replay worker
+        seg7.step(s7, t9 + k)
+        rpl.offer(t9 + k)
+        rpl.follow_segment(t9 + k)
+        if rpl.playing and rpl.status["last"]["label"] not in aired:
+            aired.append(rpl.status["last"]["label"])
+    assert aired == ["Luna died", "Astra died"] and not rpl.clip and fobs.program == "stream", aired
+
     # chat lanes: conversation and confessionals talk, coordination goes to the ticker, relayed viewer lines skip both
     m9 = Model({"agents": {"astra": {}, "luna": {}}})
     m9.ingest({"chat": [
