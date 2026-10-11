@@ -25,11 +25,11 @@ sys.dont_write_bytecode = True
 import voices  # noqa: E402
 
 CASTERS = {
-    "pbp": {"name": "Rook", "label": "Rook · play-by-play",
+    "pbp": {"name": "Rook", "label": "Rook",
             "persona": "You are Rook, the play-by-play caster: punchy, present tense, high energy, you say what is "
                        "happening right now and who is doing it, like an esports caster calling a big play. Vivid "
                        "verbs, exclamations welcome; never read the facts back like a log."},
-    "color": {"name": "Vale", "label": "Vale · colour",
+    "color": {"name": "Vale", "label": "Vale",
               "persona": "You are Vale, the colour commentator: you explain why it matters, read the team's "
                          "strategy, and bring warmth and dry humour. You sometimes riff on what Rook just said."},
 }
@@ -688,6 +688,8 @@ class Caster:
                 verdict = Classifier("heuristic").classify(need, names)
         for m in pending:
             ok, label = (True, "aloud") if m["aloud"] else verdict.get(m["seq"], (False, "?"))
+            if ok and not m["aloud"] and voices.has_coords(m["text"]):
+                ok, label = False, "logistics"  # coordinates mean routine coordination, however it was classified
             self.record(type="chat_decision", agent=m["agent"], text=m["text"], voiced=ok, label=label)
             if not ok:
                 continue
@@ -737,7 +739,7 @@ class Caster:
             self.record(**rec, voice=voice_id, pushed=False, reason="tts backing off")
             return est
         try:
-            audio, ctype, dur, lat = tts.speak(text, voice_id, caster=caster)
+            audio, ctype, dur, lat = tts.speak(voices.pronounce(text), voice_id, caster=caster)
             if tts is self.tts:
                 self.breakers["tts"].good()
             meta = dict(meta, duration=round(dur, 2), voice=voice_id)

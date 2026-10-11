@@ -24,6 +24,9 @@ DEFAULTS = {
     "zoom_walk": 0.5,
     "zoom_settle": 5.0,      # an activity must last this long before the zoom follows it (short walks stay close)
     "zoom_delta": 0.1,       # ignore smaller zoom changes
+    "main_scale": 1.5,       # every zoom above is multiplied by this on the main camera when sent
+    "side_scale": 2.6,       # and by this on the secondary cameras (small tiles need a closer view)
+    "max_zoom": 2.0,         # the mod's camera limit (cameras.lua MAX_ZOOM)
     "airtime_bonus": 0.015,  # interest per second since an agent was last on any camera (capped)
     "airtime_cap": 2.5,
     "onair_penalty": 0.8,    # main camera discounts agents a secondary camera already shows (fewer forced cuts)
@@ -290,6 +293,12 @@ class Director:
             body = {"player": slot["player"], "position": target["position"], "zoom": target["zoom"], "smooth": True}
         else:
             body = {"player": slot["player"], "follow": target["follow"], "zoom": target["zoom"], "smooth": True}
+        if target is not None:
+            scale = self.cfg["main_scale"] if slot is self.slots[0] else self.cfg["side_scale"]
+            z = target["zoom"] * scale
+            if "distance" in target:  # a pair: ~60 tiles across at zoom 1, keep both in frame
+                z = min(z, 60.0 / (target["distance"] + 24.0) * (2.0 if slot is not self.slots[0] else 1.0))
+            body["zoom"] = round(min(self.cfg["max_zoom"], z), 2)
         try:
             result = self.sender(body)
         except Exception as e:  # keep directing even if the harness call fails; the log shows it

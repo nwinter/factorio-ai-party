@@ -183,6 +183,11 @@ def main():
     assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by 5 small biter)", losses
 
     # an attack cuts the main camera straight away, even inside its dwell
+    sent_s = []
+    ds = Director([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}], lambda body: sent_s.append(body) or {"ok": True}, None)
+    ds.apply(ds.slots[0], {"agents": ["a"], "follow": "a", "zoom": 1.0}, "test", {}, 0.0, quiet=True)
+    ds.apply(ds.slots[1], {"agents": ["b"], "follow": "b", "zoom": 1.0}, "test", {}, 0.0, quiet=True)
+    assert sent_s[0]["zoom"] == round(ds.cfg["main_scale"], 2) and sent_s[1]["zoom"] == round(min(ds.cfg["max_zoom"], ds.cfg["side_scale"]), 2), sent_s
     d2 = Director([{"slot": "main", "player": 3}], lambda body: {"ok": True}, None)
     m2 = Model({"agents": {"astra": {}, "luna": {}}})
     m2.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "active": "build"},
@@ -202,6 +207,7 @@ def main():
     # zoom follows activity once it has lasted zoom_settle; a death cuts to where the agent fell, spacing or not
     sent3 = []
     d3 = Director([{"slot": "main", "player": 3}], lambda body: sent3.append(body) or {"ok": True}, None)
+    d3.cfg.update(main_scale=1.0, side_scale=1.0)  # zoom-following checks below compare the unscaled config values
     m3 = Model({"agents": {"astra": {}}})
     m3.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "active": "build"}]})
     m3.agents["astra"].interest = 10

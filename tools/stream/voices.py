@@ -74,8 +74,28 @@ def assign_voices(agents, taken=()):
     return out
 
 
+COORDS = re.compile(r"\(?\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)?|\b[xy]\s*=?\s*-?\d+(?:\.\d+)?(?:\s*\.\.\s*-?\d+(?:\.\d+)?)?")
+
+
+def has_coords(text):
+    return bool(COORDS.search(str(text)))
+
+
+# Spoken forms for names TTS gets wrong; applied only to the audio, captions keep the written name.
+SAY_AS = [(re.compile(r"\bSol\b"), "Soul"), (re.compile(r"\bSOL\b"), "Soul"), (re.compile(r"\bGemini\b"), "Jemminai")]
+
+
+def pronounce(text):
+    for pat, rep in SAY_AS:
+        text = pat.sub(rep, text)
+    return text
+
+
 def speakable(text, limit=220):
-    """Strip what TTS reads badly: emoji, markdown, URLs, @handles, long numbers lists; cut at a sentence."""
+    """Strip what TTS reads badly: emoji, markdown, URLs, @handles, map coordinates; cut at a sentence."""
+    text = re.sub(r"\s*(?:\b(?:at|near|to|from)\s+)?(?:" + COORDS.pattern + ")", "", text)
+    text = re.sub(r"\(\s*\)", "", re.sub(r"(?:,\s*)+(?=[,.;:!?)]|$)", "", text))
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
     text = re.sub(r"https?://\S+", "", text)
     text = re.sub(r"[*_`#>\[\]{}|~]", "", text)
     text = re.sub(r"@(\w+)", r"\1", text)
