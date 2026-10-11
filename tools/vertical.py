@@ -6,7 +6,7 @@ Through the same SSH tunnel as tools/obs.py (127.0.0.1:4455):
 
   tools/.venv/bin/python tools/vertical.py check                  # read-only: versions, canvases, the plugin's scenes
   tools/.venv/bin/python tools/vertical.py scene [--url http://127.0.0.1:8787/portrait]
-  tools/.venv/bin/python tools/vertical.py key [--server rtmp://a.rtmp.youtube.com/live2]   # key: ~/.config/pog/youtube-vertical.key
+  tools/.venv/bin/python tools/vertical.py key [--server URL]     # key: ~/.config/pog/youtube-vertical.key
   tools/.venv/bin/python tools/vertical.py status|start|stop
   tools/.venv/bin/python tools/vertical.py shot OUT.png           # the vertical scene, 540x960
 
@@ -131,7 +131,8 @@ def main():
     ap.add_argument("cmd", choices=["check", "scene", "key", "status", "start", "stop", "shot"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--url", default="http://127.0.0.1:8787/portrait", help="scene: the portrait page as the box sees it")
-    ap.add_argument("--server", default="rtmp://a.rtmp.youtube.com/live2", help="key: YouTube's RTMP ingest")
+    ap.add_argument("--server", default="rtmps://a.rtmps.youtube.com:443/live2",
+                    help="key: YouTube's ingest (the landscape stream uses this RTMPS one, docs/SETUP.md)")
     a = ap.parse_args()
     from obs import client
     c = client()
