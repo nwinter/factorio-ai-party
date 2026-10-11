@@ -7,8 +7,8 @@ return function(api)
   local MAX_TICKS = 54000 -- 15 minutes
   M.schema = {
     wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed; use --wait), or a queue step'},
-    sleep = {seconds='1..900', note='fh sleep SECONDS: the game runs (in turns mode too) while you wait; current actions and queues keep going. Returns early when your character takes damage or dies, or a message mentions you; a dead bot sleeps until it respawns; sleep_check reports woke=damaged|died|respawned|mentioned|elapsed'},
-    sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, mention when mentioned'},
+    sleep = {seconds='1..900', note='fh sleep SECONDS: the game runs (in turns mode too) while you wait; current actions and queues keep going. Returns early when your character takes damage or dies, a message mentions you, a teammate tells you something (tell), or a board item of yours is assigned or changed by someone else; a dead bot sleeps until it respawns; sleep_check reports woke=damaged|died|respawned|mentioned|told|board|elapsed'},
+    sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, mention when mentioned, tell when told, board when a board item changed'},
   }
   local function sleeps()
     local s = api.state()
@@ -28,13 +28,14 @@ return function(api)
     local record = {start_tick=game.tick, until_tick=game.tick + seconds * 60, health=c and c.valid and c.health or nil}
     -- A dead bot sleeps until it respawns (or a mention, or time up).
     record.dead_until = api.dead_until and api.dead_until(p.index) or nil
+    record.board_seq = api.board_seq and api.board_seq() or nil
     sleeps()[p.index] = record
     -- In turns mode time only runs when asked to.
     if api.clock_mode() == 'turns' then api.advance(p, math.min(seconds * 60, 36000)) end
     if record.dead_until then
-      return {sleeping_s=seconds, until_tick=record.until_tick, dead=true, respawns_at_tick=record.dead_until, wakes_on='respawn, a message mentioning you'}
+      return {sleeping_s=seconds, until_tick=record.until_tick, dead=true, respawns_at_tick=record.dead_until, wakes_on='respawn, a message mentioning you, a tell, a board item of yours'}
     end
-    return {sleeping_s=seconds, until_tick=record.until_tick, wakes_on='damage, death, a message mentioning you'}
+    return {sleeping_s=seconds, until_tick=record.until_tick, wakes_on='damage, death, a message mentioning you, a tell, a board item of yours'}
   end
   -- Why the sleeper should wake now, or nil. Mentions are read from the
   -- board's per-agent inbox (filed when a message arrives) without
@@ -62,10 +63,17 @@ return function(api)
     for i = #(box and box.list or {}), 1, -1 do
       local m = box.list[i]
       if m.tick >= record.start_tick then
+        if m.tell then
+          out.tell = string.format('%s: %s', m.from, m.text)
+          return 'told'
+        end
         out.mention = string.format('%s: %s', m.from, m.text)
         return 'mentioned'
       end
     end
+    -- A board item assigned to the sleeper or changed by someone else.
+    local news = record.board_seq and api.board_news(p, record.board_seq)
+    if news then out.board = news; return 'board' end
     if game.tick >= record.until_tick then return 'elapsed' end
   end
   function M.handlers.sleep_check(p, a)

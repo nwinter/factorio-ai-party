@@ -243,6 +243,8 @@ class Model:
             self._ingest_chat(m, now)
         for c in obs.get("confessions") or []:
             self._ingest_confession(c, now)
+        for t in obs.get("tells") or []:
+            self._ingest_tell(t, now)
         if obs.get("research"):
             self._ingest_research(obs["research"], now)
         if obs.get("produced") is not None:
@@ -361,6 +363,24 @@ class Model:
         self.chat.append(entry)
         if sender:
             self.agents[sender].bump(2.5, now)
+
+    def _ingest_tell(self, t, now):
+        """tells.lua `tells` (operator read): {seq, tick, from, to (names or "team"), text}, logistics an agent sent to
+        teammates outside the game chat. Always the ticker, shown as "-> Sol: text"; never voiced."""
+        key = ("tell", t.get("seq"))
+        if key in self.chat_seen:
+            return
+        self.chat_seen.add(key)
+        sender = self._match_sender(t.get("from", ""))
+        to = t.get("to")
+        names = ["team"] if to == "team" else [n for n in (to or []) if isinstance(n, str)]
+        shown = ", ".join("team" if n == "team" else (self.agents[m].display_name or n) if (m := self._match_sender(n))
+                          else n for n in names)
+        entry = {"seq": f"t{t.get('seq')}", "tick": t.get("tick"), "from": t.get("from"), "agent": sender,
+                 "text": f"\u2192 {shown}: {t.get('text', '')}", "t": t.get("t", now), "tell": True, "lane": "log"}
+        self.chat.append(entry)
+        if sender:
+            self.agents[sender].bump(1, now)
 
     def _match_sender(self, frm):
         frm = (frm or "").lower()

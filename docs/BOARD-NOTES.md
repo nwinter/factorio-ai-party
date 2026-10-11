@@ -364,3 +364,105 @@ so no new remote function was needed.
   before midnight; I did not contact it, and do not know whether it deploys to live.
 - The scratch worktrees `scratchpad/merge` (round 2) and `scratchpad/merge3` (this round, with a throwaway detached
   commit and an unfinished merge) are still registered; a hook blocked `merge --abort` and `worktree remove --force`.
+
+## Chat and board by tool design (CHAT.md)
+
+### 1. Logistics share, every run with chat
+
+The studies' classifier, recovered from the study session and now `tools/analysis/chat_logistics.py` (it reproduces
+every published count: shake3 505/28/14, shake2 416/13/5, shake4 hours 514/23/10 and 423/21/20, shake5 344/38/27,
+sapilot 86/8/4). Logistics = coordinates or two logistics words; mixed = one; none = zero.
+
+| Run | Agents | Msgs | Logistics | With @ | With coordinates |
+|---|---|---|---|---|---|
+| coop1 (rebuilt from Opus's transcript, partial) | 2 | 46 | 91% | 0% | 74% |
+| shake1 | 9 | 363 | 94% | 0.3% | 76% |
+| shake2 | 9 | 434 | 96% | 94% | 76% |
+| shake3 | 9 | 547 | 92% | 92% | 65% |
+| sapilot | 3 | 98 | 88% | 97% | 45% |
+| shake4 | 9 | 1011 | 93% | 95% | 72% |
+| shake5 (the shift only) | 9 | 409 | 84% | 93% | 63% |
+| shake6 | 9 | 298 | 86% | 95% | 63% |
+
+The smoke runs (0 to 6 lines, one scripted line per agent) and shift-test1 (3 lines) say nothing about banter;
+baseline1, turns1, turns3h and the sa-* probes have no agent-to-agent chat. Lowest 10-game-minute windows with at
+least 10 messages: shake6 0-10m 73% (60 msgs), shake5 30-40m 75%, shake5 50-60m 79%; with a 1-minute step, shake5's
+last minutes (54-64m of the shift, 06:14 to 06:21 PDT) reach 70% of 30 messages.
+
+What Nick most likely saw: the end of shake5. Same nine agents and models, same `agent/team.md` (555e884) and the
+same tools as shake4, which ran at 93-94%. What differed was the phase of play: a resumed world with the layout
+built (fewer coordinates: 63% against 72-76%), research waiting on processing units, upgrades being approved, three
+biter waves on the power plant, Gemini out of quota from 06:07, and Sonnet and Muse signing off at their deadlines.
+The ends of runs are lower in every long run (shake2 50-60m 86%, shake3 50-60m 85%). The extra non-logistics lines
+are thanks, approvals and status ("Thanks @sonnet and @sol! Green line fully fed and on asm2", Opus #1394; "Great
+catch, thank you ... I'll report it as a harness bug", Opus #1400); jokes stay at about one per run. If Nick meant
+fun rather than share, shake3 20-30m has the highest tone-word share of any window (23.5%) and Astra's joke (#230).
+shake6 0-10m is lower by share, but its talk is the shift-start roll call.
+
+### 2. What pulls logistics into chat
+
+- `say` is the only way to reach a teammate. shake1 had no board, no @mention inbox, no `chat_remaining` and almost
+  no @ (0.3%), and ran at 94%: before any of the later pulls existed, chat was already the coordination channel
+  because it was the only one. Every later run carries @ on 92-97% of lines: chat became a set of addressed messages.
+- Mentions wake sleepers (`sleep` returned early on a mention, never on a board change), and `mention_counts`, the
+  read meant for supervisors, counted mentions only (tools/supervise.sh does not read it; it nudges idle agents on
+  its own timer). Board changes woke nobody, so a requester who wanted an owner to act had to `say "@owner ..."` as well.
+- Board items did not notify their owner when someone else changed them: the requester marking an item done, dropped
+  or blocked, reassigning it away, or a claim posted over theirs reached the owner only by chat. New unowned requests
+  reached nobody until the 2-minute nudge, so posters announced them with `@everyone`.
+- `chat_remaining` (since shake3) and "Answer teammates promptly" (in team.md since shake1). Neither moved the share:
+  shake2 without `chat_remaining` was 96%, shake3 to shake6 with it 84-93%, and the line was there in all of them. I
+  left both alone (the first is the shake2 study's item 7, the second is an instruction, not a tool).
+
+### 3. What changed (runtime only; control.lua unchanged)
+
+- `tell {to, text}` (`fh tell luna "..."`, `luna,sol`, `team`; text as for say): one line to named teammates outside
+  the game chat (tells.lua). It is filed in each recipient's inbox, so it arrives in their next reply under
+  `team.tells`, wakes a sleeper (`woke: told`) and counts in `mention_counts`; it never enters the chat log, chat reads,
+  the `chat:` trailer or `chat_remaining`. `tells` lists your own sent and received; the operator read returns all.
+- The stream shows tells on the logistics ticker as `-> Sol: text` (live.py polls the operator `tells` once describe
+  lists it; model.py files them in the `log` lane; the casters never voice them).
+- Board events reach their owner: any change or note by someone else on an item you own (not only notes), an item
+  reassigned or released away from you (`(was yours)`), a claim posted over yours, and an assigned item now carries
+  its first note. These also end a `sleep` (`woke: board`) and count as `unread_board` in `mention_counts`.
+- A new unowned task or request reaches every other agent's `team.board` once, after their own items; it wakes nobody.
+- `tools/analysis/chat_logistics.py runs/<run> [--since-tick T]`: share per run and per window, request counts (say,
+  tell, board_post, board_update, confess) from the journals, and the tells classified the same way.
+- agent/team.md describes `tell` and the wider `team:` block (three lines and one changed line); PLAYBOOK.md's sleep
+  line names the new wakes. No line tells agents when to use them.
+
+### Decisions to check
+
+- Tells are not in the game chat at all, so a human in a client does not see them; viewers see them on the ticker.
+  Printing them grey in the console (like viewer lines) would put them back on the stream's game view.
+- No digest that labels chat lines as logistics or talk: the harness would be classifying teammates' words, and with
+  tells the two are separated at the source. A labelled digest could still be added to `chat` if tells go unused.
+- `tell team` reaches every agent but the sender, including human players who are not directors.
+- New unowned requests wake nobody (an `@everyone` mention does): a sleeping agent hears of them on its next reply.
+- Tells have no rate limit; they are capped at 300 characters and the log keeps the last 300.
+
+### Expected change and how to measure it next shift
+
+- Expected: logistics moves from chat to tells and the board, so chat gets fewer messages and a lower logistics share
+  (from 84-93% toward the 70-75% of the best windows or lower), with fewer @ and coordinate lines; the share of talk
+  lines rises even if the number of jokes does not. If agents ignore `tell`, nothing changes; if they move talk into
+  tells, viewers lose it (tells are only on the ticker).
+- Measure: `tools/analysis/chat_logistics.py runs/<next>` (add `--since-tick` for a resumed shift). Compare chat
+  share, @ share and coordinate share with the table above; the `requests:` line shows says against tells and board
+  changes; the `tells` row should be mostly logistics (if it is not, talk is leaking into tells). `tools/harness-
+  requests.py mentions` during the run shows tells and board lines waiting per agent. Watch also whether owners act
+  on board changes sooner (journal time from a `board_update` by a requester to the owner's next update).
+
+### Verification
+
+- `tests/tells.lua` (new): tell to one name (display name and `@`), several, `team`; yourself left out; errors;
+  passive on failure; not in the chat log, chat reads or unread counts; a chat read never delivers a tell (separate
+  seq spaces); reads for agents and the operator; `mention_counts` tells and `unread_board`; sleep wakes `told` and
+  `board`, not on your own changes; owner lines for status by the requester, reassignment away, a claim over yours;
+  new unowned requests once, after own items, not to the poster, waking nobody. `tests/board.lua` updated for the
+  owner's new `done` line. `tests/cli.test.ts`: `fh tell` forms, `--aloud` refused, missing name or text, `fh tells
+  --since`. Stream: `selftest.py` (tells in the ticker lane, display names, dedup) and `caster_selftest.py` (no chat
+  event for a tell). `npm test`: 99 pass, the same 4 bridge tests fail on the sandbox's listen EPERM.
+- Not verified live: the box is Nick's this morning (CHAT.md), so nothing was deployed. When it is free:
+  `bin/fh deploy` (world live), then `fh tell` between two bots, `fh sleep` on one woken by the other's tell and by a
+  board update, `tools/harness-requests.py mentions`, and the overlay's ticker.

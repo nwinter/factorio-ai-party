@@ -55,8 +55,8 @@ Your character stands still while you think, and the clock does not.
 - `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait` (also `item_count`,
   `crafting_done`) lets the factory run until a condition holds, without polling. Add `--wait-timeout 600000` to
   wait up to 10 minutes (15 at most); hitting the limit fails with `timed_out`.
-- `./fh sleep 120` lets the game run (your queue keeps going) and returns early if you are hit or mentioned, but not
-  when a machine starves; your character is idle for the whole sleep.
+- `./fh sleep 120` lets the game run (your queue keeps going) and returns early if you are hit or mentioned, a
+  teammate tells you something, or someone changes your board item, but not when a machine starves; your character is idle for the whole sleep.
 - Which wait fits: a queue plan for rounds that should keep going while you think (courier, refuel; `./fh plan save`
   once, then `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes (a
   `researched` wait can hold you for the whole research); `./fh sleep` when only a teammate or an attack should wake

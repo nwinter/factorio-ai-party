@@ -248,6 +248,26 @@ test('confess takes text like say and maps to the confess action',async()=>{
   });
   assert.deepEqual(seen.map(r=>[r.action,r.args]),[['confess',{text:"I don't trust grok's belts"}],['confess',{text:"it's going fine"}],['confessions',{since:4}]]);
 });
+test('tell takes recipients then text like say; tells reads with --since',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{seq:seen.length,to:['sol']}};},async port=>{
+    await cli(port,['tell','sol',"29","plates","in","the","chest","at","(-18.5,-34.5)",'--bot','astra']);
+    assert.equal((await compact(port,['tell','luna,sol','-','--bot','astra'],{},"it's in the mall chest\n")).code,0);
+    await cli(port,['tell','team','north belt is down','--bot','astra']);
+    const loud=await compact(port,['tell','sol','x','--aloud','--bot','astra']);
+    assert.equal(loud.code,1); assert.match(loud.stdout,/error: client_error: --aloud applies to say; a tell stays off/);
+    const noname=await compact(port,['tell','--bot','astra']);
+    assert.match(noname.stdout,/error: client_error: tell needs a name/);
+    const empty=await compact(port,['tell','sol','--bot','astra'],{},'');
+    assert.match(empty.stdout,/error: client_error: tell needs text: fh tell NAME "text"/);
+    await cli(port,['tells','--since','2','--bot','astra']);
+    await cli(port,['call','tell','sol','call','form','--bot','astra']);
+    await cli(port,['call','tell','--args','{"to":"sol","text":"json form"}','--bot','astra']);
+  });
+  assert.deepEqual(seen.map(r=>[r.action,r.args]),[['tell',{to:'sol',text:'29 plates in the chest at (-18.5,-34.5)'}],
+    ['tell',{to:'luna,sol',text:"it's in the mall chest"}],['tell',{to:'team',text:'north belt is down'}],['tells',{since:2}],
+    ['tell',{to:'sol',text:'call form'}],['tell',{to:'sol',text:'json form'}]]);
+});
 test('fh call say with words sends them as text (it used to send {})',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request);return {ok:true,result:{seq:1}};},async port=>{

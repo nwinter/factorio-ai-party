@@ -86,12 +86,15 @@ return function(api)
     error('unknown agent ' .. name .. '; agents: ' .. table.concat(names, ', '), 0)
   end
 
-  local function event(by, item, change, text)
+  -- extra: prev_owner (an owner who lost the item in this change) and
+  -- overlaps (owner -> their claim id, for a claim posted over theirs).
+  local function event(by, item, change, text, extra)
     local b = store()
     b.aged = nil
     b.seq = b.seq + 1
     b.events[#b.events+1] = {seq=b.seq, tick=game.tick, by=by, id=item.id, change=change, title=item.title,
-      kind=item.kind, owner=item.owner, requested_by=item.requested_by, status=item.status, text=text}
+      kind=item.kind, owner=item.owner, requested_by=item.requested_by, status=item.status, text=text,
+      prev_owner=extra and extra.prev_owner, overlaps=extra and extra.overlaps}
     while #b.events > MAX_EVENTS do table.remove(b.events, 1) end
   end
   -- Over the cap, finished items go first (oldest update first), then notes,
@@ -182,7 +185,7 @@ return function(api)
       needs=needs_arg(a.needs), tags=tags_arg(a.tags), notes={}, created_tick=game.tick, updated_tick=game.tick}
     -- A first note (shake4: agents carried update's note over to posts).
     if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', NOTE)} end
-    local warnings = {}
+    local warnings, over = {}, nil
     if kind == 'claim' then
       assert(item.area, 'a claim needs area {left_top, right_bottom}')
       item.owner = by
@@ -196,6 +199,8 @@ return function(api)
       for _, other in pairs(store().items) do
         if other.kind == 'claim' and ACTIVE[other.status] and other.owner ~= by and overlaps(other.area, item.area) then
           warnings[#warnings+1] = string.format('overlaps claim #%d by %s: %s', other.id, other.owner, other.title)
+          over = over or {}
+          over[other.owner] = over[other.owner] or other.id
         end
       end
     end
@@ -205,7 +210,8 @@ return function(api)
     local b = store()
     item.id = b.next_id; b.next_id = b.next_id + 1
     b.items[item.id] = item; b.count = b.count + 1
-    event(by, item, 'posted')
+    -- The first note rides on the event, so an assigned owner reads it.
+    event(by, item, 'posted', item.notes[1] and item.notes[1].text, over and {overlaps=over})
     prune()
     return {item=view(item, true), warnings=#warnings > 0 and warnings or nil}
   end
@@ -219,7 +225,7 @@ return function(api)
     assert(a.status == nil or (type(a.status) == 'string' and STATUSES[a.status]), 'status must be open, claimed, doing, done, blocked or dropped')
     local text = a.note ~= nil and required_text(a.note, 'note', NOTE) or nil
     local boss = by == OPERATOR or by == item.owner or by == item.requested_by
-    local changes = {}
+    local changes, was = {}, item.owner
     if a.owner ~= nil then
       assert(item.kind ~= 'claim' and item.kind ~= 'note' and item.kind ~= 'harness', 'a ' .. item.kind .. ' stays with its poster')
       if a.owner == '' or a.owner == false then
@@ -252,7 +258,8 @@ return function(api)
       while #item.notes > MAX_NOTES do table.remove(item.notes, 1) end
     end
     item.updated_tick = game.tick
-    for _, change in ipairs(changes) do event(by, item, change, text) end
+    local extra = was and was ~= item.owner and {prev_owner=was} or nil
+    for _, change in ipairs(changes) do event(by, item, change, text, extra) end
     if text and #changes == 0 then event(by, item, 'note', text) end
     return {item=view(item, true), changed=#changes > 0 and changes or nil}
   end
@@ -462,6 +469,7 @@ return function(api)
     for _, n in ipairs(names) do if #n >= 2 and has_word(text, n) then return 'name' end end
     return nil
   end
+  M.resolve, M.agents, M.who = resolve, agents, who
   -- For chat reads (chat.lua): whether a logged message mentions this agent.
   function M.mention_of(index, m)
     if m.player == index or m.viewer then return nil end
@@ -485,6 +493,13 @@ return function(api)
       end
     end
   end
+  -- A tell (tells.lua) is filed in the same inbox, so it wakes a sleeper and
+  -- counts for supervisors like a mention; chat reads never deliver it.
+  function M.deliver(index, t)
+    local box = inbox(index)
+    box.list[#box.list+1] = {tell=t.seq, tick=t.tick, from=t.from, text=t.text, how='tell', team=t.team}
+    while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end
+  end
   -- A (non-peek) chat read delivers the mentions it showed.
   function M.on_read(index, messages)
     local box = api.state().mentions and api.state().mentions[index]
@@ -492,23 +507,28 @@ return function(api)
     local shown = {}
     for _, m in ipairs(messages) do shown[m.seq] = true end
     local keep = {}
-    for _, m in ipairs(box.list) do if not shown[m.seq] then keep[#keep+1] = m end end
+    for _, m in ipairs(box.list) do if m.tell or not shown[m.seq] then keep[#keep+1] = m end end
     box.list = keep
   end
-  -- Every pending mention, oldest first; never cut by the other parts' caps.
+  -- Every pending mention and tell, oldest first; never cut by the other
+  -- parts' caps. Tells (logistics sent to this agent) are listed apart.
   local function mentions(p)
     local box = api.state().mentions and api.state().mentions[p.index]
     if not (box and (#box.list > 0 or box.dropped > 0)) then return nil end
-    local lines = {}
+    local lines, tells = {}, {}
     if box.dropped > 0 then
       lines[1] = string.format('%d older mentions did not fit (%d kept); read chat', box.dropped, MAX_PENDING)
     end
     for _, m in ipairs(box.list) do
-      local tag = m.how == '@' and ' @you' or m.how == '@everyone' and ' @everyone' or ''
-      lines[#lines+1] = string.format('%s%s, %s ago: %s', m.from, tag, ago(game.tick - m.tick), m.text)
+      if m.tell then
+        tells[#tells+1] = string.format('%s%s, %s ago: %s', m.from, m.team and ' to team' or '', ago(game.tick - m.tick), m.text)
+      else
+        local tag = m.how == '@' and ' @you' or m.how == '@everyone' and ' @everyone' or ''
+        lines[#lines+1] = string.format('%s%s, %s ago: %s', m.from, tag, ago(game.tick - m.tick), m.text)
+      end
     end
     box.list, box.dropped = {}, 0
-    return lines
+    return #lines > 0 and lines or nil, #tells > 0 and tells or nil
   end
   -- Operator/supervisor read: pending mentions per agent and when each agent
   -- last made a request (to wake an idle agent that was mentioned).
@@ -517,11 +537,15 @@ return function(api)
     for _, a in ipairs(agents()) do
       local box = s.mentions and s.mentions[a.index]
       local list = box and box.list or {}
-      local direct = 0
-      for _, m in ipairs(list) do if m.how ~= 'name' then direct = direct + 1 end end
+      local direct, tells = 0, 0
+      for _, m in ipairs(list) do
+        if m.how ~= 'name' then direct = direct + 1 end
+        if m.tell then tells = tells + 1 end
+      end
       local last = list[#list]
       local clock = s.clocks and s.clocks[a.index]
       out[#out+1] = {name=a.name, display_name=a.display_name, unread_mentions=#list + (box and box.dropped or 0), at_mentions=direct,
+        tells=tells > 0 and tells or nil, unread_board=M.unread_board(a),
         oldest_tick=list[1] and list[1].tick or nil, latest=last and clip(last.from .. ': ' .. last.text, 160) or nil,
         last_request_tick=clock and math.max(clock.call_tick, clock.seen_tick or 0) or nil}
     end
@@ -529,30 +553,74 @@ return function(api)
   end
   M.handlers.mention_counts = function() return mention_counts() end
   M.open_reads.mention_counts = true
+  -- What a board event tells agent `me`, or nil: an item assigned to them
+  -- (with its first note), any change by someone else to an item they own or
+  -- requested, an item taken from them, a claim posted over theirs.
+  local function event_line(e, me)
+    if e.by == me then return nil end
+    local tail = e.text and ' - ' .. e.text or ''
+    if e.overlaps and e.overlaps[me] then
+      return string.format('#%d claim by %s overlaps your claim #%d: %s', e.id, e.by, e.overlaps[me], e.title)
+    elseif (e.change == 'posted' or e.change == 'assigned') and e.owner == me and e.kind ~= 'claim' and e.kind ~= 'note' then
+      return string.format('#%d assigned to you by %s: %s%s', e.id, e.by, e.title, tail)
+    elseif e.requested_by == me and e.change ~= 'posted' then
+      return e.change == 'note' and string.format('#%d (your %s) note by %s: %s', e.id, e.kind, e.by, e.text)
+        or string.format('#%d (your %s) %s by %s: %s%s', e.id, e.kind, e.change, e.by, e.title, tail)
+    elseif e.owner == me and e.change ~= 'posted' then
+      return e.change == 'note' and string.format('#%d (yours) note by %s: %s', e.id, e.by, e.text)
+        or string.format('#%d (yours) %s by %s: %s%s', e.id, e.change, e.by, e.title, tail)
+    elseif e.prev_owner == me then
+      return string.format('#%d (was yours) %s by %s%s: %s%s', e.id, e.change, e.by, e.owner and ' to ' .. e.owner or '', e.title, tail)
+    elseif e.change == 'posted' and not e.owner and (e.kind == 'request' or e.kind == 'task') then
+      -- Everyone hears of a new unowned request once; it wakes nobody.
+      return string.format('#%d new unowned %s by %s: %s%s; take it with board_update {id, owner: "%s"}', e.id, e.kind, e.by, e.title, tail, me), true
+    end
+  end
+  -- Events after `cursor`, oldest first, by index into the event log.
+  local function first_after(b, cursor)
+    local first = #b.events + 1
+    while first > 1 and b.events[first - 1].seq > cursor do first = first - 1 end
+    return first
+  end
+  -- For a sleeping agent (waits.lua): the newest board line for them after
+  -- event `seq` (M.seq() when the sleep began), without delivering it (the
+  -- reply's team block does).
+  function M.seq() return store().seq end
+  function M.news(p, seq)
+    local b, me = store(), who(p)
+    for k = #b.events, 1, -1 do
+      local e = b.events[k]
+      if e.seq <= seq then return nil end
+      local line, broadcast = event_line(e, me)
+      if line and not broadcast then return line end
+    end
+  end
+  -- Board lines waiting for an agent's next reply (mention_counts).
+  function M.unread_board(a)
+    local h = api.state().team_hints and api.state().team_hints[a.index]
+    local b, n = store(), 0
+    for k = first_after(b, h and h.board or 0), #b.events do
+      local line, broadcast = event_line(b.events[k], a.name)
+      if line and not broadcast then n = n + 1 end
+    end
+    return n > 0 and n or nil
+  end
   local function board_lines(p, h)
     local b = store()
     local me, lines, extra = who(p), {}, 0
     local from = h.board or 0
     h.board = b.seq
-    -- Events are in seq order: start at the first one after the cursor.
-    local first = #b.events + 1
-    while first > 1 and b.events[first - 1].seq > from do first = first - 1 end
-    for k = first, #b.events do
-      local e = b.events[k]
-      if e.by ~= me then
-        local line
-        if (e.change == 'posted' or e.change == 'assigned') and e.owner == me and e.kind ~= 'claim' and e.kind ~= 'note' then
-          line = string.format('#%d assigned to you by %s: %s', e.id, e.by, e.title)
-        elseif e.requested_by == me and e.change ~= 'posted' then
-          line = e.change == 'note' and string.format('#%d (your %s) note by %s: %s', e.id, e.kind, e.by, e.text)
-            or string.format('#%d (your %s) %s by %s: %s%s', e.id, e.kind, e.change, e.by, e.title, e.text and ' - ' .. e.text or '')
-        elseif e.owner == me and e.change == 'note' then
-          line = string.format('#%d (yours) note by %s: %s', e.id, e.by, e.text)
-        end
-        if line then
-          if #lines < MAX_BOARD_LINES then lines[#lines+1] = line else extra = extra + 1 end
-        end
+    -- Lines about my items first; new unowned requests fill what is left.
+    local news = {}
+    for k = first_after(b, from), #b.events do
+      local line, broadcast = event_line(b.events[k], me)
+      if line and broadcast then news[#news+1] = line
+      elseif line then
+        if #lines < MAX_BOARD_LINES then lines[#lines+1] = line else extra = extra + 1 end
       end
+    end
+    for _, line in ipairs(news) do
+      if #lines < MAX_BOARD_LINES then lines[#lines+1] = line else extra = extra + 1 end
     end
     if extra > 0 then lines[#lines+1] = string.format('+%d more: board mine=true', extra) end
     -- Unowned requests: nudge once each time another one passes 2 minutes.
@@ -633,7 +701,7 @@ return function(api)
     local h = hints(p.index)
     -- Mentions go first (insertion order is the JSON order).
     local out = {}
-    out.mentions = mentions(p)
+    out.mentions, out.tells = mentions(p)
     out.board = board_lines(p, h)
     out.alerts = alert_lines(p, h, losses)
     out.reminders = reminders(p, h)
