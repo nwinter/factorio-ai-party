@@ -117,9 +117,12 @@ return function(api)
   function M.describe(index)
     local c = store()[index]
     if not c then return nil end
-    local pos = c.position
-    if c.follow then pos = locate(c.follow) end
-    return {player=index, follow=c.follow, position=pos, zoom=c.zoom, smooth=c.smooth}
+    local pos, surface = c.position, nil
+    if c.follow then pos, surface = locate(c.follow) end
+    -- Space Age: the planet or platform surface the target is on.
+    local p = game.get_player(index)
+    surface = surface or (p and p.valid and p.surface)
+    return {player=index, follow=c.follow, position=pos, surface=surface and surface.name or nil, zoom=c.zoom, smooth=c.smooth}
   end
   function M.list()
     local out = {}

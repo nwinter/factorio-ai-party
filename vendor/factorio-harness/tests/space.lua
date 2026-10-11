@@ -106,14 +106,28 @@ fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=
 silo_cargo=saved_cargo
 local rode=space.launch(p,{position={x=20.5,y=20.5},platform='alpha',ride=true})
 assert(rode.riding); eq(p.stopped,1)
--- A bot (no LuaPlayer behind it) is refused before anything moves.
+-- A bot (no LuaPlayer behind it) rides through bots.lua: the same checks
+-- first, then the rocket flies with no character and the bot boards its pod.
 local bot=setmetatable({__bot='astra'},{__index=p})
 local real_of=function(q) if rawget(q,'__bot') then return nil end return q end
+local boarded,landed,checked
+local record={name='astra'}
 local bot_space=dofile('mod/agent-harness_0.1.0/space.lua'){position=function(v) return v end,integer=function(v) return v end,
-  remote_entity=function() return silo end,real=real_of,stop=function(q) q.stopped=(q.stopped or 0)+1 end}
-fails(function() bot_space.launch(bot,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'bots cannot ride rockets')
-fails(function() bot_space.land(bot,{}) end,'bots cannot ride rockets')
-eq(p.stopped,1)
+  remote_entity=function() return silo end,real=real_of,stop=function(q) q.stopped=(q.stopped or 0)+1 end,
+  bot=function(q) return rawget(q,'__bot') and record or nil end,
+  bots={can_board=function(b) checked=b end,board=function(b,pl,pod) boarded={b=b,pl=pl,pod=pod} end,
+    land=function(b) landed=b; return {landing='nauvis',at={x=1,y=2}} end}}
+silo.rocket={valid=true,attached_cargo_pod={valid=true,name='cargo-pod'}}
+carried[10]=true
+fails(function() bot_space.launch(bot,{position={x=20.5,y=20.5},platform='alpha',ride=true}) end,'put down everything in character_main')
+eq(boarded,nil,'nothing moves when the rule fails')
+carried[10]=false
+launched=nil
+local br=bot_space.launch(bot,{position={x=20.5,y=20.5},platform='alpha',ride=true})
+eq(checked,record); eq(boarded.b,record); eq(boarded.pl,platform); eq(boarded.pod,silo.rocket.attached_cargo_pod)
+eq(launched.surface,platform.surface,'the rocket flies to the platform'); assert(br.riding:find('aboard alpha',1,true))
+eq(p.stopped,1,'boarding stops the bot in bots.lua, not here')
+eq(bot_space.land(bot,{}).landing,'nauvis'); eq(landed,record)
 -- Landing: only from our platform stopped at a planet.
 fails(function() space.land(p,{}) end,'not on a space platform')
 p.surface.platform=platform; platform.force=p.force

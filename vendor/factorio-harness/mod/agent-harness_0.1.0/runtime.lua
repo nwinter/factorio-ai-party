@@ -3533,6 +3533,8 @@ dispatch_request=function(request)
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     return handler(body(p),request.args or {})
   end
+  -- A bot aboard a platform (or in a cargo pod) has no body: remote view only.
+  if M.bots.is_index(request.player) then M.bots.check_action(request.player,request.action,request.args) end
   local p=player(request.player)
   if not reads[request.action] and not passive[request.action] and not request.action:match('^queue_') then
     local q=state().queues and state().queues[p.index]
@@ -3574,7 +3576,8 @@ survey=survey_module{state=state,status_name=function(e) return entity_status_na
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end}
 function handlers.labs(p,a) return M.labs.view(p,a) end
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
-space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,
+space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,
+  bot=function(p) return M.bots.is(p) and M.bots.named(rawget(p,'__bot')) or nil end,
   -- Riding or landing takes the character away: controls stop and a plan pauses.
   stop=function(p) M.stop_player(p.index) end}
 stock=stock_module{distance=distance,integer=integer,position=position,claims=M.claims,

@@ -35,7 +35,20 @@ return function(api)
   local function alive(b) return b.character ~= nil and b.character.valid end
   M.alive = alive
   local function force_of(b) return game.forces[b.force or 'player'] end
+  -- Where the bot is (b.surface: a planet or a platform's surface) and the
+  -- planet it last stood on (b.planet), where it respawns, as a player does.
   local function surface_of(b) return game.get_surface(b.surface or 'nauvis') or game.get_surface(1) end
+  local function home_of(b) return game.get_surface(b.planet or b.surface or 'nauvis') or game.get_surface(1) end
+  -- Why a bot has no body to act with: dead, riding a cargo pod, or aboard.
+  local function no_body(b)
+    local t = b.travel
+    if t and t.state == 'aboard' then
+      return string.format('bot %s is aboard platform %s with no body (remote view only): %s', b.name, t.platform, M.ABOARD_NOTE)
+    elseif t then
+      return string.format('bot %s is riding a cargo pod (%s since tick %d); the ride ends by itself: poll status', b.name, t.state, t.since)
+    end
+    return 'bot ' .. b.name .. ' is dead'
+  end
   local function colour(b)
     local pr = api.profile and api.profile(b.index)
     return pr and pr.rgb or {r=1, g=0.63, b=0.26}
@@ -65,7 +78,7 @@ return function(api)
     print=function() return function() end end,
   }
   function M.change_queue(b, method, args)
-    assert(alive(b), 'bot ' .. b.name .. ' is dead')
+    assert(alive(b), no_body(b))
     if api.crafting then api.crafting.flush(b) end
     local result = b.character[method](args)
     if api.crafting then api.crafting.snapshot(b) end
@@ -76,7 +89,7 @@ return function(api)
       __index=function(_, k)
         local own = OWN[k]
         if own then return own(b) end
-        assert(alive(b), 'bot ' .. b.name .. ' is dead')
+        assert(alive(b), no_body(b))
         return b.character[k]
       end,
       __newindex=function(_, k, v) if alive(b) then b.character[k] = v end end})
@@ -85,6 +98,10 @@ return function(api)
   function M.actor(index)
     local b = bots().by_index[index]
     assert(b, 'bot does not exist')
+    -- Aboard a platform: a bodiless proxy on the platform's surface, for the
+    -- remote-view actions check_action lets through.
+    if b.travel and b.travel.state == 'aboard' then return M.proxy(b) end
+    if b.travel then error(no_body(b), 0) end
     if not alive(b) then
       error(string.format('bot %s is dead; it respawns at tick %s (status reports dead_until_tick)', b.name, tostring(b.dead_until_tick)), 0)
     end
@@ -142,15 +159,19 @@ return function(api)
     end
     return first
   end
-  local function spawn(b, kind)
-    local force, surface = force_of(b), surface_of(b)
-    local pos = spot_for(b, surface, force.get_spawn_position(surface))
+  -- A body on the bot's planet: at its spot by the spawn point, or where a
+  -- landing cargo pod came down (at).
+  local function spawn(b, kind, at)
+    local force, surface = force_of(b), home_of(b)
+    local pos = at and (surface.find_non_colliding_position('character', at, 32, 0.5) or at)
+      or spot_for(b, surface, force.get_spawn_position(surface))
     local c = surface.create_entity{name='character', position=pos, force=force}
     assert(c, 'could not create the character')
-    for name, count in pairs(items(kind)) do
+    for name, count in pairs(at and {} or items(kind)) do
       if count > 0 then c.insert{name=name, count=count} end
     end
     b.character = c; b.position = c.position; b.dead_until_tick = nil
+    b.surface = surface.name; b.planet = surface.name
     look(c)
     if api.on_spawn then api.on_spawn(b) end
     return c
@@ -160,7 +181,7 @@ return function(api)
     local all = bots()
     assert(not all.by_name[name], 'a bot named ' .. name .. ' already exists')
     for _, p in pairs(game.players) do assert(p.name ~= name, 'a player is named ' .. name) end
-    local b = {name=name, index=BASE+all.next, slot=all.next, force='player', surface='nauvis', created_tick=game.tick}
+    local b = {name=name, index=BASE+all.next, slot=all.next, force='player', surface='nauvis', planet='nauvis', created_tick=game.tick}
     spawn(b, 'created')
     all.next = all.next + 1
     all.by_name[name] = b; all.by_index[b.index] = b
@@ -173,6 +194,7 @@ return function(api)
     assert(b, 'no bot named ' .. tostring(name))
     if api.stop then api.stop(b.index, 'removed') end
     local died = false
+    if b.travel and b.travel.kit and b.travel.kit.valid then b.travel.kit.destroy() end
     if alive(b) then
       local c = b.character
       b.character = nil
@@ -182,12 +204,187 @@ return function(api)
     all.by_name[name] = nil; all.by_index[b.index] = nil
     return {name=name, removed=true, died=died}
   end
+  -- Travel (Space Age) ---------------------------------------------------------
+  -- A bot has no LuaPlayer to sit in a platform hub, so its body does not ride:
+  -- boarding moves the worn armor and guns into a script inventory and removes
+  -- the body, and the bot follows the rocket's own cargo pod up. Aboard, it
+  -- acts by remote view, as a player in the hub does. Landing sends a real
+  -- cargo pod down from the hub; the body is made again where that pod comes
+  -- down, wearing the same armor and guns. Same payload and the game's own
+  -- ascent and descent time as a player's trip.
+  M.ABOARD_NOTE = 'platforms, platform_schedule, platform_create, requests (platform= or position=), ghost tools and grid/scan with platform=, research, recipes/technologies, chat and board, then land'
+  local ASCENT_TICKS, MAX_TRAVEL_TICKS, LAUNCH_WAIT = 2400, 18000, 300
+  local KIT = {'character_armor', 'character_guns'}
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- What a rider must leave behind first (the same rule as the silo's ride
+  -- button, checked in space.launch): crafting in progress and a held stack
+  -- would be lost with the body.
+  function M.can_board(b)
+    assert(alive(b), no_body(b))
+    local c = b.character
+    assert((try(function() return c.crafting_queue_size end) or 0) == 0, 'finish or cancel hand crafting first: the queue would be lost with the body')
+    local held = try(function() return c.cursor_stack end)
+    assert(not (held and held.valid_for_read), 'put the held stack away first (only worn armor and guns travel)')
+  end
+  local function find_platform(b, name)
+    for _, pl in pairs(force_of(b).platforms or {}) do
+      if pl.valid and pl.name == name then return pl end
+    end
+  end
+  -- The rider is in the rocket: armor and guns into the kit, body gone, and
+  -- the bot rides the rocket's cargo pod (pod may be nil: then a fixed time).
+  function M.board(b, platform, pod)
+    M.can_board(b)
+    local c = b.character
+    local size = 0
+    for _, k in ipairs(KIT) do local inv = c.get_inventory(defines.inventory[k]); size = size + (inv and #inv or 0) end
+    local kit = game.create_inventory(math.max(size, 1))
+    local slots, n = {}, 0
+    for _, k in ipairs(KIT) do
+      local inv = c.get_inventory(defines.inventory[k])
+      for j = 1, inv and #inv or 0 do
+        n = n + 1
+        if inv[j].valid_for_read then kit[n].transfer_stack(inv[j]); slots[#slots+1] = {inv=k, slot=j, kit=n} end
+      end
+    end
+    if api.stop then api.stop(b.index, 'boarded') end
+    if api.crafting then api.crafting.forget(b) end
+    b.position = c.position
+    b.character = nil
+    c.destroy()
+    b.travel = {state='ascending', platform=platform.name, from=b.planet, pod=pod, since=game.tick, kit=kit, slots=slots}
+    b.trips = (b.trips or 0) + 1
+    return b.travel
+  end
+  -- The hub's drop to the planet below: a cargo pod out of the hub's hatch,
+  -- bound for the force's landing pad there, else where the bot last stood on
+  -- that planet, else its spawn point.
+  function M.land(b)
+    local t = b.travel
+    assert(t and t.state == 'aboard', 'bot ' .. b.name .. ' is not aboard a platform')
+    local pl = find_platform(b, t.platform)
+    assert(pl and pl.hub and pl.hub.valid, 'platform ' .. t.platform .. ' has no hub')
+    local loc = pl.space_location
+    assert(loc and loc.type == 'planet', 'platform ' .. pl.name .. ' is not stopped at a planet')
+    local planet = game.planets[loc.name]
+    assert(planet, 'no planet ' .. loc.name)
+    local surface = planet.surface or planet.create_surface()
+    local force = force_of(b)
+    local pad = surface.find_entities_filtered{type='cargo-landing-pad', force=force, limit=1}[1]
+    local at = pad and pad.position or (b.spots and b.spots[surface.name]) or force.get_spawn_position(surface)
+    local pod = try(function() return pl.hub.create_cargo_pod() end)
+    assert(pod and pod.valid, 'the hub has no free cargo hatch right now; try again shortly')
+    local dest = {type=defines.cargo_destination.surface, surface=surface}
+    if not pad then dest.position = at; dest.land_at_exact_position = true end
+    local ok = pcall(function() pod.cargo_pod_destination = dest end)
+    if not ok then dest.land_at_exact_position = nil; ok = pcall(function() pod.cargo_pod_destination = dest end) end
+    if not ok then pod.destroy(); error('the game refused the cargo pod destination ' .. surface.name, 0) end
+    t.state = 'descending'; t.pod = pod; t.since = game.tick; t.to = surface.name; t.at = at; t.pad = pad and true or nil
+    t.launch_tick = game.tick
+    return {landing=surface.name, at=at, pad=pad and pad.position or nil}
+  end
+  local function lost(b, tick, why)
+    local t = b.travel
+    if t.kit and t.kit.valid then t.kit.destroy() end
+    b.travel = nil
+    b.surface = b.planet
+    b.dead_until_tick = tick + RESPAWN_TICKS
+    b.deaths = (b.deaths or 0) + 1
+    b.lost = why
+    if api.stop then api.stop(b.index, 'died') end
+  end
+  local function arrive(b, tick)
+    local t = b.travel
+    local pl = find_platform(b, t.platform)
+    if not (pl and pl.surface and pl.surface.valid) then return lost(b, tick, 'platform ' .. t.platform .. ' is gone') end
+    t.state = 'aboard'; t.pod = nil; t.since = tick; t.arrived = tick
+    b.surface = pl.surface.name
+    b.position = pl.hub and pl.hub.valid and pl.hub.position or {x=0, y=0}
+  end
+  local function touch_down(b, tick)
+    local t = b.travel
+    b.planet = t.to
+    local at = t.last_surface == t.to and t.last_position or t.at
+    local kit, slots = t.kit, t.slots
+    b.travel = nil
+    local c = spawn(b, 'land', at)
+    for _, s in ipairs(slots or {}) do
+      local inv = c.get_inventory(defines.inventory[s.inv])
+      local stack = kit[s.kit]
+      if stack.valid_for_read and not (inv and inv[s.slot].transfer_stack(stack)) then c.insert(stack); stack.clear() end
+    end
+    if kit and kit.valid then kit.destroy() end
+    b.landed = {surface=t.to, tick=tick, position=c.position, ticks=tick - t.launch_tick}
+  end
+  local function follow_pod(b, pod)
+    if not (pod and pod.valid) then return false end
+    local t = b.travel
+    t.last_position = pod.position; t.last_surface = pod.surface.name
+    b.position = pod.position; b.surface = pod.surface.name
+    return true
+  end
+  function M.travel_tick(b, tick)
+    local t = b.travel
+    if t.state == 'ascending' then
+      if follow_pod(b, t.pod) then
+        if tick - t.since > MAX_TRAVEL_TICKS then arrive(b, tick) end
+      elseif t.pod ~= nil or tick - t.since >= ASCENT_TICKS then
+        arrive(b, tick)
+      end
+    elseif t.state == 'aboard' then
+      local pl = find_platform(b, t.platform)
+      if not (pl and pl.surface and pl.surface.valid) then return lost(b, tick, 'platform ' .. t.platform .. ' is gone') end
+      if tick % 30 == 0 and pl.hub and pl.hub.valid then b.position = pl.hub.position end
+    elseif t.state == 'descending' then
+      local pod = t.pod
+      if follow_pod(b, pod) then
+        -- A pod still sitting in the hatch is pushed off once (it should leave
+        -- by itself; the descent stays the game's).
+        if not t.pushed and tick - t.since > LAUNCH_WAIT and t.last_surface ~= t.to and try(function() return pod.cargo_pod_state end) == 'awaiting_launch' then
+          t.pushed = tick
+          pcall(function() pod.force_finish_ascending() end)
+        end
+        if tick - t.since > MAX_TRAVEL_TICKS then touch_down(b, tick) end
+      else
+        touch_down(b, tick)
+      end
+    end
+  end
+  -- Aboard, the bot does what a player in the hub can: remote view.
+  local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, land=true,
+    research=true, research_next=true, technologies=true, recipes=true, say=true, chat=true, confess=true, confessions=true,
+    profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true,
+    blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true}
+  local ON_PLATFORM = {place_ghosts=true, deconstruct=true, cancel_deconstruction=true, paste=true, blueprint_place=true, grid=true, scan=true}
+  local VIEWS = {platforms=true, sleep_check=true}
+  function M.check_action(index, action, args)
+    local b = bots().by_index[index]
+    if not (b and b.travel) then return end
+    if b.travel.state ~= 'aboard' then
+      if action == 'status' or action == 'describe' or action == 'queue_status' or action == 'queue_cancel' then return end
+      error(no_body(b), 0)
+    end
+    args = type(args) == 'table' and args or {}
+    if ABOARD[action] then return end
+    if ON_PLATFORM[action] and args.platform ~= nil then return end
+    if action == 'requests' and (args.platform ~= nil or args.position ~= nil) then return end
+    if action == 'observe' and VIEWS[args.scope] then return end
+    error(no_body(b), 0)
+  end
   -- Deaths and respawns, like a player's: the normal respawn delay, then a
   -- fresh character at the spawn point with what a respawning player gets.
   function M.tick(tick)
     for _, b in pairs(bots().by_index) do
-      if b.character and b.character.valid then
-        if tick % 30 == 0 then b.position = b.character.position end
+      if b.travel then
+        M.travel_tick(b, tick)
+      elseif b.character and b.character.valid then
+        if tick % 30 == 0 then
+          local c = b.character
+          b.position = c.position
+          -- A planet surface remembers the bot's last spot there (landing).
+          if c.surface.name ~= b.surface then b.surface = c.surface.name end
+          if c.surface.planet then b.planet = c.surface.name; b.spots = b.spots or {}; b.spots[c.surface.name] = c.position end
+        end
         if (tick + b.index) % SIGHT_TICKS == 0 then look(b.character) end
         if api.crafting then api.crafting.tick(b, tick) end
       elseif not b.dead_until_tick then
@@ -205,6 +402,16 @@ return function(api)
     local b = bots().by_index[index]
     if not b or type(out) ~= 'table' then return out end
     out.bot = true; out.name = b.name; out.dead_until_tick = b.dead_until_tick; out.deaths = b.deaths
+    -- Where it is: a planet, a platform (aboard) or a cargo pod between them.
+    out.surface = alive(b) and b.character.surface.name or b.surface; out.planet = b.planet
+    local t = b.travel
+    if t then
+      out.platform = t.platform
+      out.travel = {state=t.state, platform=t.platform, from=t.from, to=t.to, since_tick=t.since,
+        note=t.state == 'aboard' and M.ABOARD_NOTE or 'riding a cargo pod; it arrives by itself'}
+    end
+    if b.landed then out.landed = b.landed end
+    if b.lost then out.lost = b.lost end
     return out
   end
   -- Mining through the engine, except a character corpse: the engine's

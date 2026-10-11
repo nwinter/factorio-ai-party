@@ -5,9 +5,10 @@
 return function(api)
   local M={}
   local function invert(t) local out={} for k,v in pairs(t or {}) do out[v]=k end return out end
-  -- Riding a rocket and dropping from the hub are LuaPlayer moves; a bot is a
-  -- character with no player to sit in the hub, so it stays on its planet.
-  local BOT_TRAVEL='bots cannot ride rockets or land yet: a bot is a character with no player to sit in a platform hub; send cargo instead'
+  -- Riding a rocket and dropping from the hub are LuaPlayer moves; a bot (no
+  -- player to sit in the hub) travels through bots.lua instead: same payload
+  -- rule, the rocket's and the hub's own cargo pods, its body made again on
+  -- landing (api.bot: the bot record behind a bot proxy, nil for players).
   local platform_states=invert(defines.space_platform_state)
   local silo_states=invert(defines.rocket_silo_status)
   local function item_name(v)
@@ -249,10 +250,11 @@ return function(api)
     local cargo=top_items(silo.get_inventory(defines.inventory.rocket_silo_rocket),8)
     -- Riding: the character climbs into the rocket, as a player does
     -- standing at the silo, and arrives in the platform hub.
-    local rider
+    local rider,bot
     if a.ride then
       assert(a.ride==true,'ride must be true')
-      assert(api.real(p)~=nil,BOT_TRAVEL)
+      bot=api.real(p)==nil and api.bot and api.bot(p) or nil
+      assert(api.real(p)~=nil or bot,'only a player or a bot can ride')
       assert(a.platform~=nil,'ride needs platform=<name>')
       assert(p.can_reach_entity(silo),'stand within reach of the silo to board its rocket')
       rider=p.character
@@ -277,6 +279,14 @@ return function(api)
       assert(a.orbit==true,'give platform=<name>, or orbit=true to launch into orbit with no platform (cargo is lost unless it has launch products)')
       destination={type=defines.cargo_destination.orbit}; to='orbit'
     end
+    if bot then
+      -- The rocket flies with its own cargo pod; the bot rides it (bots.lua).
+      api.bots.can_board(bot)
+      local pod=try(function() local r=silo.rocket; return r and r.valid and r.attached_cargo_pod or nil end)
+      assert(silo.launch_rocket(destination),'the game refused the launch')
+      api.bots.board(bot,M.platform(p,a.platform),pod)
+      return {launched=true,to=to,cargo='empty',riding='the bot rides the rocket\'s cargo pod (~40 s), then is aboard '..a.platform..' with remote view only: poll status (travel)'}
+    end
     if rider then api.stop(p) end
     assert(silo.launch_rocket(destination,rider),'the game refused the launch')
     return {launched=true,to=to,cargo=cargo or 'empty',riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil}
@@ -284,7 +294,12 @@ return function(api)
   -- The hub's "drop to planet": the character descends in a cargo pod to the
   -- planet the platform is stopped at (a landing pad if there is one).
   function M.land(p,a)
-    assert(api.real(p)~=nil,BOT_TRAVEL)
+    local bot=api.real(p)==nil and api.bot and api.bot(p) or nil
+    if bot then
+      local out=api.bots.land(bot)
+      out.note='the cargo pod comes down by itself (~20 s); actions fail until the bot stands on '..out.landing..': poll status'
+      return out
+    end
     local pl=p.surface.platform
     assert(pl and pl.force==p.force,'the character is not on a space platform')
     assert(pl.space_location and pl.space_location.type=='planet','platform '..pl.name..' is not stopped at a planet (at '..tostring(location(pl))..')')
@@ -299,8 +314,8 @@ return function(api)
     platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule'},
-    land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any)',returns='landing'},
-    launch={position='rocket silo {x,y} in a visible chunk',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first)',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it)',returns='launched, to, cargo'},
+    land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any). A bot lands where it last stood on that planet, else at its spawn point, wearing the armor and guns it rode up with',returns='landing (and for a bot: at, pad)'},
+    launch={position='rocket silo {x,y} in a visible chunk',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it)',returns='launched, to, cargo'},
   }
   return M
 end
