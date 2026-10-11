@@ -60,7 +60,13 @@ return function(api)
       local c = picked[i]
       out[#out+1] = {seq=c.seq, tick=c.tick, from=index == nil and c.from or nil, text=c.text}
     end
-    return {confessions=out, cursor=s.seq, tick=game.tick}
+    -- An agent's cursor is its own latest seq: the log's would count others' confessions.
+    local cursor = s.seq
+    if index ~= nil then
+      cursor = 0
+      for _, c in ipairs(s.confessions) do if c.player == index then cursor = c.seq end end
+    end
+    return {confessions=out, cursor=cursor, tick=game.tick}
   end
   function M.handlers.confessions(p, a) return read(a, p.index) end
   -- Operator (RCON, `operator: true` dispatch): every agent's confessions.
@@ -70,7 +76,7 @@ return function(api)
   function M.operator.viewer_say(a)
     assert(type(a.name) == 'string', 'name must be a string')
     -- Names and text cannot carry rich text tags into the game console.
-    local name = a.name:gsub('[%c%[%]]+', ''):gsub('%s+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
+    local name = a.name:gsub('%b[]', ''):gsub('[%c%[%]]+', ''):gsub('%s+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
     assert(#name > 0, 'name is required')
     if #name > VIEWER_NAME then name = name:sub(1, VIEWER_NAME) end
     local text = one_line(a.text, 'text', VIEWER_LEN):gsub('%[', '('):gsub('%]', ')')

@@ -22,7 +22,8 @@ game.tick=600+5*60; aud.handlers.confess(grok,{text='I think we need more power'
 game.tick=600+15*60; aud.handlers.confess(astra,{text=string.rep('x',400)})
 eq(#s.audience.confessions[3].text,300)
 -- An agent reads only its own; the operator reads everyone's with names, since and limit.
-r=aud.handlers.confessions(grok,{}); eq(#r.confessions,1); eq(r.confessions[1].text,'I think we need more power'); eq(r.confessions[1].from,nil); eq(r.cursor,3)
+r=aud.handlers.confessions(grok,{}); eq(#r.confessions,1); eq(r.confessions[1].text,'I think we need more power'); eq(r.confessions[1].from,nil); eq(r.cursor,2)
+eq(aud.handlers.confessions({index=9,name='nobody'},{}).cursor,0)
 r=aud.operator.confessions({}); eq(#r.confessions,3); eq(r.confessions[2].from,'grok')
 r=aud.operator.confessions({since=1}); eq(#r.confessions,2); eq(r.confessions[1].seq,2)
 r=aud.operator.confessions({limit=1}); eq(#r.confessions,1); eq(r.confessions[1].seq,3)
@@ -41,14 +42,16 @@ eq(chat.unread(1).latest,'viewer Bob_42: @grok build more turrets!'); eq(chat.un
 local m=chat.handlers.chat(grok,{}).messages[1]; eq(m.from,'viewer Bob_42'); eq(m.viewer,true); eq(m.text,'@grok build more turrets!')
 -- Rich text cannot pass through the name or text; newlines are flattened.
 r=aud.operator.viewer_say({name='[color=red]server[/color]',text='[img=item/iron-plate] hi\nthere'})
-eq(r.from,'viewer color=redserver/color'); eq(r.text,'(img=item/iron-plate) hi there')
+eq(r.from,'viewer server'); eq(r.text,'(img=item/iron-plate) hi there')
+eq(aud.operator.viewer_say({name='[x]] Ann [',text='hi'}).from,'viewer Ann')
+fails(function() aud.operator.viewer_say({name='[color=red][/color]',text='x'}) end,'name is required')
 fails(function() aud.operator.viewer_say({name='  ',text='x'}) end,'name is required')
 fails(function() aud.operator.viewer_say({name='a',text=''}) end,'text is required')
 r=aud.operator.viewer_say({name=string.rep('n',40),text=string.rep('t',300)}); eq(#r.text,200); eq(r.from,'viewer '..string.rep('n',24))
 -- One line per viewer every 20 s (names compared case-blind); dropped lines are not errors.
 r=aud.operator.viewer_say({name='bob_42',text='again'}); eq(r.posted,false); eq(r.dropped,'viewer_rate'); eq(r.retry_after_s,20)
 -- At most 6 viewer lines a minute in all.
-for i=1,3 do eq(aud.operator.viewer_say({name='v'..i,text='hi'}).posted,true) end
+for i=1,2 do eq(aud.operator.viewer_say({name='v'..i,text='hi'}).posted,true) end
 r=aud.operator.viewer_say({name='v9',text='hi'}); eq(r.posted,false); eq(r.dropped,'global_rate'); eq(r.retry_after_s,60)
 game.tick=game.tick+20*60
 r=aud.operator.viewer_say({name='bob_42',text='later'}); eq(r.dropped,'global_rate'); eq(r.retry_after_s,40)
