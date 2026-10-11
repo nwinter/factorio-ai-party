@@ -323,9 +323,10 @@ our own vertical feed on a second stream key as part of the same broadcast (one 
 Control Room before going live. On the box, the Aitum Vertical plugin (1.6.6) adds a 1080x1920 canvas with its own
 output; `tools/win/install-aitum-vertical.ps1` installs it, and `tools/vertical.py scene` builds "stream vertical" in
 that canvas: the three director captures (shared with "stream") in the holes above and a muted browser source on
-`http://127.0.0.1:8787/portrait` on top. `vertical.py key` sets the output's key from
-`~/.config/pog/youtube-vertical.key`; with the plugin's "start and stop with main" ticked, `obs.py stream-start`
-starts both feeds. Not yet run on the box.
+`http://127.0.0.1:8787/portrait` on top. `vertical.py settings` (OBS closed; the plugin's
+config.json over scp) sets the plugin's encoder, output and key from `~/.config/pog/youtube-vertical.key`, and "start
+and stop with main", so `obs.py stream-start` starts both feeds. Installed and the scene built on the box
+(2026-10-11); the output settings and a look at the scene are next.
 
 ## Director
 
