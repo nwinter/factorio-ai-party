@@ -124,12 +124,7 @@
     who.className = "who";
     who.textContent = clip.speaker || "";
     line.append(mic, who);
-    if (row && row.role) {
-      const role = document.createElement("span");
-      role.className = "role";
-      role.textContent = row.role;
-      line.append(role);
-    }
+    // No role label ("play-by-play", "colour") on captions: the hosts go by name only.
     const text = document.createElement("span");
     text.textContent = clip.text || "";
     body.append(line, text);

@@ -268,7 +268,8 @@ return function(api)
     for _,g in ipairs(s.attack_groups or {}) do if g.tick>since then groups[#groups+1]=g end end
     local areas={}
     for key,v in pairs(s.damage or {}) do
-      if v.last>since then
+      -- Zero-damage hits (the crash site's fire) are not an attack: readers took the wreck for one.
+      if v.last>since and round(v.damage)>0 then
         local cx,cy=key:match('^(-?%d+),(-?%d+)$')
         local names={}
         for name,n in pairs(v.entities) do names[#names+1]=name..' x'..n end

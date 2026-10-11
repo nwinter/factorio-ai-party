@@ -137,8 +137,9 @@ def main():
 
     # base attacks from status.alerts become alerts and pull interest toward agents near them
     ev = LiveSource.attack_events({"attacked": [
-        {"chunk_centre": {"x": 16, "y": 16}, "hits": 9, "last_tick": 4000, "entities": "gun-turret x2, stone-wall x5"},
-        {"chunk_centre": {"x": 500, "y": 16}, "hits": 1, "last_tick": 10}]}, 5000)
+        {"chunk_centre": {"x": 16, "y": 16}, "hits": 9, "damage": 140, "last_tick": 4000, "entities": "gun-turret x2, stone-wall x5"},
+        {"chunk_centre": {"x": -16, "y": -16}, "hits": 820, "damage": 0, "last_tick": 4500, "entities": "crash-site-spaceship x820"},
+        {"chunk_centre": {"x": 500, "y": 16}, "hits": 1, "damage": 5, "last_tick": 10}]}, 5000)
     assert len(ev) == 1 and ev[0]["text"] == "Base under attack near (16, 16): gun-turret x2", ev
     before = m.agents["astra"].interest
     m.ingest({"events": ev}, time.time())

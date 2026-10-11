@@ -266,6 +266,8 @@ class LiveSource:
         for area in alerts.get("attacked") or []:
             if tick - (area.get("last_tick") or 0) > ATTACK_RECENT_TICKS:
                 continue
+            if not area.get("damage"):
+                continue  # zero-damage hits: the crash site's fire, not an attack
             c = area.get("chunk_centre") or {}
             what = (area.get("entities") or "").split(",")[0].strip()
             text = f"Base under attack near ({round(c.get('x', 0))}, {round(c.get('y', 0))})" + (f": {what}" if what else "")
