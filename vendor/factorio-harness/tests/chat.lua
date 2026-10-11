@@ -30,8 +30,39 @@ r=chat.handlers.chat(opus,{since=0,limit=5}); eq(#r.messages,5); eq(r.messages[5
 fails(function() chat.handlers.chat(opus,{limit=0}) end,'limit must be')
 -- peek reads without moving the cursor.
 chat.handlers.say(astra,{text='peek test'})
-local before=chat.unread(2).unread
-eq(#chat.handlers.chat(opus,{since=0,limit=3,peek=true}).messages,3); eq(chat.unread(2).unread,before)
+local before=chat.unread(2,'peek').unread
+eq(#chat.handlers.chat(opus,{since=0,limit=3,peek=true}).messages,3); eq(chat.unread(2,'peek').unread,before)
+-- Lossless: a read marks only what it returned; the older unread stay unread and are counted.
+local s3={}
+local c3=dofile('mod/agent-harness_0.1.0/chat.lua'){state=function() return s3 end}
+for i=1,10 do c3.handlers.say(astra,{text='a'..i}) end
+r=c3.handlers.chat(opus,{limit=3})
+eq(#r.messages,3); eq(r.messages[1].text,'a8'); eq(r.messages[3].text,'a10'); eq(r.remaining,7); eq(r.cursor,10)
+eq(c3.unread(2,'peek').unread,7); eq(c3.unread(2,'peek').latest,'pog-astra: a7')
+r=c3.handlers.chat(opus,{limit=5}); eq(r.messages[1].text,'a3'); eq(r.messages[5].text,'a7'); eq(r.remaining,2)
+r=c3.handlers.chat(opus,{}); eq(#r.messages,2); eq(r.messages[2].text,'a2'); eq(r.remaining,nil)
+eq(s3.chat.cursors[2],10); eq(s3.chat.read[2],nil)
+-- Writing does not mark others' unread messages read (the old cursor jumped over them).
+c3.handlers.say(astra,{text='b1'}); c3.handlers.say(opus,{text='reply'}); c3.handlers.say(astra,{text='b2'})
+r=c3.handlers.chat(opus,{}); eq(#r.messages,2); eq(r.messages[1].text,'b1'); eq(r.messages[2].text,'b2')
+-- since returns everything after it, the reader's own lines included, and marks those read.
+r=c3.handlers.chat(opus,{since=10,peek=true}); eq(#r.messages,3); eq(r.messages[2].text,'reply')
+c3.handlers.say(astra,{text='c1'}); c3.handlers.say(astra,{text='c2'})
+r=c3.handlers.chat(opus,{since=14,limit=1}); eq(r.messages[1].text,'c2'); eq(r.remaining,1)
+eq(c3.unread(2,'peek').latest,'pog-astra: c1')
+-- The reply trailer repeats only when a newer message arrived; 'always' (status) shows it anyway.
+eq(c3.unread(2).unread,1); eq(c3.unread(2),nil); eq(c3.unread(2,'always').unread,1); eq(c3.unread(2),nil)
+c3.handlers.say(astra,{text='c3'}); eq(c3.unread(2).unread,2); eq(c3.unread(2),nil)
+-- peek neither shows-and-forgets nor hides: it always reports and remembers nothing.
+c3.handlers.say(astra,{text='c4'}); eq(c3.unread(2,'peek').unread,3); eq(c3.unread(2).unread,3)
+-- After everything is read the trailer is gone and a new message shows again.
+c3.handlers.chat(opus,{}); eq(c3.unread(2),nil)
+c3.handlers.say(astra,{text='d1'}); eq(c3.unread(2).latest,'pog-astra: d1')
+-- The read set stays bounded by the log when a reader keeps cherry-picking the newest.
+for i=1,300 do c3.handlers.say(astra,{text='e'..i}); if i%2==0 then c3.handlers.chat(opus,{limit=1}) end end
+local n=0; for _ in pairs(s3.chat.read[2] or {}) do n=n+1 end
+assert(n<=200,'read set bounded: '..n)
+eq(#s3.chat.messages,200)
 -- With an audience (players minus camera clients), lines go to those players only.
 local heard={}
 local viewer={index=1,print=function(m) heard[#heard+1]=m end}

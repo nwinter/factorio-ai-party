@@ -4,9 +4,10 @@
 <meta charset="utf-8">
 <title>pog stream overlay</title>
 <meta name="viewport" content="width=1920, height=1080">
+<link rel="stylesheet" href="/static/factorio-ui.css">
 <link rel="stylesheet" href="/static/overlay.css">
 </head>
-<body>
+<body class="fx-overlay">
 <div id="stage">
   <div class="cam" id="cam-main" data-slot="main"><div class="cam-label"></div></div>
   <div class="cam" id="cam-cam2" data-slot="cam2"><div class="cam-label"></div></div>
@@ -37,7 +38,13 @@
     </section>
 
     <section id="prod" class="panel">
-      <div class="panel-title">Production <span class="unit">per minute</span></div>
+      <div id="sci">
+        <span class="panel-title">Science</span>
+        <span id="spm">–</span><span class="unit">/min</span>
+        <svg id="spm-spark" viewBox="0 0 120 26" preserveAspectRatio="none"><path class="a"/><path class="l"/></svg>
+        <span id="packs"></span>
+        <span id="stage-label"></span>
+      </div>
       <div id="sparks"></div>
     </section>
 
@@ -47,6 +54,8 @@
     </section>
   </aside>
 </div>
+<script src="/static/avatar.js"></script>
+<script src="/static/items.js"></script>
 <script src="/static/overlay.js"></script>
 <script src="/static/audio.js"></script>
 </body>

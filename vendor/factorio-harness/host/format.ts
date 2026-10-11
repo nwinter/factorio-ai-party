@@ -104,13 +104,49 @@ export function formatCompact(value: unknown): string {
     }
   }
   if (record(value) && typeof value.ok === 'boolean') {
-    const { ok, id, result, ...rest } = value;
-    if (!ok) render({ error: value.error, id, ...rest, error_result: result }, '', 0);
-    else {
+    const { ok, id, result, error, ...rest } = value;
+    const { body, notes } = lift(result);
+    if (!ok) {
+      render({ id, ...rest, error_result: body }, '', 0);
+      lines.push(`error: ${errorText(error)}${notes.length ? '; ' + notes.join('; ') : ''}`);
+    } else {
       render(rest, '', 0);
-      if (record(result)) render(result, '', 0);
-      else if (!empty(result)) render(result, 'result', 0);
+      if (record(body)) render(body, '', 0);
+      else if (!empty(body)) render(body, 'result', 0);
+      if (notes.length) lines.push(`warning: ${notes.join('; ')}`);
     }
   } else render(value, '', 0);
   return lines.join('\n') + '\n';
+}
+/** One line, whatever the value. */
+function oneLine(value: unknown): string {
+  const shown = typeof value === 'string' ? value : inline(value) ?? JSON.stringify(value);
+  return shown.replace(/\s*\n\s*/g, ' ');
+}
+function errorText(error: unknown): string {
+  if (!record(error)) return oneLine(error ?? 'failed');
+  const { code, message, ...more } = error;
+  const extra = Object.entries(more).filter(([, entry]) => !empty(entry)).map(([key, entry]) => `${keyLabel(key)}: ${oneLine(entry)}`);
+  return [[code, message].filter(part => !empty(part)).map(oneLine).join(': '), ...extra].join('; ');
+}
+// Partial results agents must not miss: what a craft or transfer could not do.
+// They move from the body to the final error/warning line, so `| tail -1`
+// still shows them; copies nested in a --wait reply are reported too.
+const NOTES: Record<string, string> = { short: 'short', awaiting_craft: 'awaiting_craft', errors: 'not done',
+  none_held: 'none held', tiles_refused: 'tiles refused', extent_warning: 'fluid' };
+function lift(result: unknown): { body: unknown; notes: string[] } {
+  if (!record(result)) return { body: result, notes: [] };
+  const notes: string[] = [];
+  const body: Json = {};
+  for (const [key, entry] of Object.entries(result)) {
+    if (NOTES[key] && !empty(entry)) notes.push(`${NOTES[key]}: ${oneLine(entry)}`);
+    else body[key] = entry;
+  }
+  for (const nested of [result.accepted, result.completion]) {
+    if (!record(nested)) continue;
+    for (const [key, entry] of Object.entries(nested)) {
+      if (NOTES[key] && !empty(entry)) notes.push(`${NOTES[key]}: ${oneLine(entry)}`);
+    }
+  }
+  return { body, notes };
 }

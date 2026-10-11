@@ -496,7 +496,7 @@ return function(api)
       local clock = s.clocks and s.clocks[a.index]
       out[#out+1] = {name=a.name, display_name=a.display_name, unread_mentions=#list + (box and box.dropped or 0), at_mentions=direct,
         oldest_tick=list[1] and list[1].tick or nil, latest=last and clip(last.from .. ': ' .. last.text, 160) or nil,
-        last_request_tick=clock and clock.call_tick or nil}
+        last_request_tick=clock and math.max(clock.call_tick, clock.seen_tick or 0) or nil}
     end
     return {agents=out, tick=game.tick}
   end

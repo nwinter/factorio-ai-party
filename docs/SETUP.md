@@ -62,19 +62,22 @@ tools/pog.py --world a save && tools/winps.sh tools/win/stop-world.ps1 -Name a
 `tools/launch-agent.sh` runs `tools/context.py setup KIND MODEL DIR`, which applies the per-model compaction point
 from `agent/context.tsv` (model, kind, window, compact_at) without touching global CLI config:
 
-- Claude Code: workspace `.claude/settings.json` gets `autoCompactWindow` (Haiku also
-  `env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE`) and hooks: `SessionStart`/`compact` prints `notes.md` after a compaction,
+- Claude Code (Haiku 80K, Sonnet 200K, Opus 250K): workspace `.claude/settings.json` gets
+  `autoCompactWindow = compact_at + 33000` and hooks: `SessionStart`/`compact` prints `notes.md` after a compaction,
   `PostToolUse` warns the agent to update `notes.md` shortly before one, `Pre/PostCompact` log.
-- Codex: workspace `.codex/config.toml` (`model_context_window`, `model_auto_compact_token_limit`); loads because
-  run dirs are inside the trusted repo.
-- Grok: `GROK_AUTO_COMPACT_THRESHOLD_PERCENT` on the launch command, `--rules`, and `.grok/hooks/context.json`.
-- Antigravity: no setting; `.agy-loop.sh` starts a fresh conversation once `context.py agy-tokens` passes the limit.
-- Muse: no setting; `.muse/hooks.json` re-injects `notes.md` after a compaction.
+- Codex (140K): workspace `.codex/config.toml` (`model_context_window`, `model_auto_compact_token_limit`); loads
+  because run dirs are inside the trusted repo.
+- Grok (60%): `GROK_AUTO_COMPACT_THRESHOLD_PERCENT` on the launch command, `--rules`, and the repo's
+  `.grok/hooks/context.json` (Grok reads project hooks only from the git root; they act only in run dirs).
+- Antigravity (200K): no setting; `.agy-loop.sh` starts a fresh conversation once `context.py agy-tokens` passes it.
+- Muse (200K): `muse -c context_compaction.soft_threshold=... -c context_compaction.hard_threshold=...`;
+  `.muse/hooks.json` re-injects `notes.md` after a compaction.
 
 `AGENTS.md` ends with `## Compact instructions` (`agent/compact.md`) and `notes.md` starts as a structured skeleton.
-Hook events go to `DIR/context.log`, summaries to `DIR/compactions.md`. Live check per harness:
-`tools/context-probe.sh KIND MODEL [COMPACT_AT]`; offline tests: `python3 tools/test_context.py`. Details and the
-evidence behind each setting: `docs/CONTEXT-NOTES.md`.
+Hook events go to `DIR/context.log`, summaries to `DIR/compactions.md`; `tools/context.py report runs/RUN_ID`
+summarizes them. Live check per harness (outside the sandbox; all five verified 2026-10-10):
+`tools/context-probe.sh [-C CHECKOUT] KIND MODEL [COMPACT_AT]`; offline tests: `python3 tools/test_context.py`.
+Details and the evidence behind each setting: `docs/CONTEXT-NOTES.md`.
 
 ## Co-op worlds and recording
 
@@ -120,6 +123,9 @@ tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_ha
 - NVENC is unavailable in OBS 32 ("outdated_driver": NVIDIA driver 535.98 from 2023); recordings use Intel Quick Sync.
   OBS applies output settings changed over WebSocket only when a profile loads: switch to a temporary profile and back.
 - OBS's NDI plugin keeps an output running, which blocks frame-rate/resolution changes (stays 1080p60).
+- Runtime size: `fh deploy` compacts the bundle (about 411 KB in October 2026) and sends bundles over 512 KiB in
+  chunks, which needs the server's mod to have the chunked install (`control.lua` from eng/harness2, October 2026).
+  A world started before that takes at most 524288 bytes per deploy; restart it with the current mod to go higher.
 - After a `control.lua` change, restarting the server on the same save works, but each client's mod copy must be
   refreshed too (`scp -r .../agent-harness_0.1.0 pogwin:D:/pog/inst/<world>-client<slot>/mods/`), else joining fails
   with `multiplayer.script-mismatch`. Re-running `start-client.ps1` while its task exists printed nothing and did not

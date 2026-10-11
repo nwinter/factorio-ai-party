@@ -26,10 +26,16 @@ class Clock:
 
 
 def stats(rows, minutes):
-    cuts = [r for r in rows if r["reason"] not in ("reframe", "pair", "unpair")]
+    cuts = [r for r in rows if r["reason"] not in ("reframe", "pair", "unpair") and not r["reason"].startswith("zoom ")]
+    zooms = [r for r in rows if r["reason"].startswith("zoom ")]
     out = {}
     for slot in sorted({r["slot"] for r in rows}):
         times = [r["t"] for r in cuts if r["slot"] == slot]
+        zoom_by = {}
+        for r in zooms:
+            if r["slot"] == slot:
+                kind = r["reason"].rsplit("(", 1)[-1].rstrip(")")
+                zoom_by[kind] = zoom_by.get(kind, 0) + 1
         dwell = [b - a for a, b in zip(times, times[1:])]
         pairs = [r for r in rows if r["slot"] == slot and r["target"] and len(r["target"]["agents"]) > 1]
         subjects = {}
@@ -42,6 +48,8 @@ def stats(rows, minutes):
             "dwell_median_s": round(statistics.median(dwell), 1) if dwell else None,
             "dwell_min_s": round(min(dwell), 1) if dwell else None,
             "pair_decisions": len(pairs),
+            "zoom_changes_per_min": round(sum(zoom_by.values()) / max(minutes, 1e-9), 2),
+            "zoom_changes_by_activity": dict(sorted(zoom_by.items(), key=lambda kv: -kv[1])),
             "subjects": dict(sorted(subjects.items(), key=lambda kv: -kv[1])),
         }
     reasons = {}

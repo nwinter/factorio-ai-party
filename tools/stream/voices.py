@@ -74,8 +74,29 @@ def assign_voices(agents, taken=()):
     return out
 
 
+COORDS = re.compile(r"\(?\s*-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?\s*\)?|\b[xy]\s*=?\s*-?\d+(?:\.\d+)?(?:\s*\.\.\s*-?\d+(?:\.\d+)?)?")
+
+
+def has_coords(text):
+    return any(not re.fullmatch(r"\(?\s*\d{1,3},\d{3}\s*\)?", m.group().strip()) for m in COORDS.finditer(str(text)))
+
+
+# Spoken forms for names TTS gets wrong; applied only to the audio, captions keep the written name.
+SAY_AS = [(re.compile(r"\bSol\b"), "Soul"), (re.compile(r"\bSOL\b"), "Soul"), (re.compile(r"\bGemini\b"), "Jemminai")]
+
+
+def pronounce(text):
+    for pat, rep in SAY_AS:
+        text = pat.sub(rep, text)
+    return text
+
+
 def speakable(text, limit=220):
-    """Strip what TTS reads badly: emoji, markdown, URLs, @handles, long numbers lists; cut at a sentence."""
+    """Strip what TTS reads badly: emoji, markdown, URLs, @handles, map coordinates; cut at a sentence."""
+    text = re.sub(r"\s*(?:\b(?:at|near|to|from|along)\s+)?(?:" + COORDS.pattern + ")",
+                  lambda m: m.group() if re.search(r"(?<![\d.\-])\d{1,3},\d{3}\s*$", m.group()) else "", text)  # 1,000
+    text = re.sub(r"\(\s*\)", "", re.sub(r"(?:,\s*)+(?=[,.;:!?)]|$)", "", text))
+    text = re.sub(r"\s+([,.;:!?])", r"\1", text)
     text = re.sub(r"https?://\S+", "", text)
     # map coordinates read terribly aloud: "(23.5,-8.5)", "at 31.5,19", "x-82.5", "y21.5", "x22..32,y-10..8"
     text = re.sub(r"\s*(?:\b(?:at|to|near)\s*)?\(\s*-?[\d.]+\s*,\s*-?[\d.]+\s*\)", "", text)

@@ -9,9 +9,9 @@ Two AI agents share this world, and the game is being recorded for viewers:
 You are `{{PLAYER}}`; your teammate is `{{TEAMMATE}}`. You share the factory, research and power; each of you
 controls only your own character and inventory. Your `./fh` already targets your character.
 
-- Chat: `./fh call say --args '{"text":"..."}'` posts in the game chat as you (viewers see it: keep it short, specific
-  and friendly). Every reply carries `chat: unread=N latest=...` when your teammate or a human has written; read
-  with `./fh call chat`. Answer questions from your teammate promptly.
+- Chat: `./fh say "..."` posts in the game chat as you (viewers see it: keep it short, specific and friendly). A reply
+  carries `chat: unread=N latest=...` when a new message arrived; `./fh chat` shows your unread messages (only those
+  count as read; `remaining: K` means run it again). Answer questions from your teammate promptly.
 - In your first minute, agree on a split of work. Suggested start: {{ROLE}}. Renegotiate as the base grows.
 - Claim areas before building ("smelting at x -60..-40, y -30..-20 is mine") and don't build inside your
   teammate's claim without asking. Announce shared infrastructure (power poles, main belts) when you build it.

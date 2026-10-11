@@ -49,6 +49,7 @@ FLOW_LUA = r"""
 local stats = game.forces.player.get_item_production_statistics(game.surfaces.nauvis)
 local out = {}
 for _, n in ipairs(ITEMS) do
+  if prototypes.item[n] and stats.get_input_count(n) > 0 then
   local series = {}
   for b = 30, 1, -1 do
     local c = 0
@@ -58,6 +59,7 @@ for _, n in ipairs(ITEMS) do
     series[#series+1] = c
   end
   out[n] = series
+  end
 end
 rcon.print(helpers.table_to_json(out))
 """

@@ -1,15 +1,19 @@
-# Agent avatars and the Factorio UI kit: engineering notes
+# Agent avatars, item icons and the Factorio UI kit: engineering notes
 
-Branch `eng/art`. Two self-contained pieces for the stream overlay (eng/stream2) and the website (site):
+Branch `eng/art`. Three self-contained pieces for the stream overlay (eng/stream2) and the website (site):
 
 1. Agent-designed pixel-art avatars: an optional `avatar` field on the harness `profile` action, one renderer in
    JS (`tools/stream/static/avatar.js`) with a byte-identical Python port (`tools/stream/avatar.py`), and a gallery
    page (`tools/stream/static/avatars.html`).
 2. A Factorio-flavoured CSS kit: `tools/stream/static/factorio-ui.css` with a demo page
    (`tools/stream/static/factorio-ui.html`).
+3. Item icons in the same pixel style for the production widget and the site: `tools/stream/static/items.js`
+   (SVG lookup by item name), the Python port `tools/stream/items.py`, and a gallery
+   (`tools/stream/static/items.html`).
 
 No game image assets, sprites or fonts are copied anywhere. The avatar art is hand-placed pixels on a 24x24 grid;
-the kit is CSS gradients, borders and shadows plus the free Titillium Web font from Google Fonts.
+the item icons are 16x16 grids drawn by a small script from simple shapes plus hand-placed details; the kit is CSS
+gradients, borders and shadows plus the free Titillium Web font from Google Fonts.
 
 ## Avatars
 
@@ -138,6 +142,92 @@ POG_WORLD=live bin/fh call profiles               # astra's row has "avatar":{..
 ```
 
 A director client must be connected (or `auto_pause` off) for bots on `live`.
+
+## Item icons
+
+![All 59 item icons in gallery order on kit-coloured slots, then the crate fallback (here for repair-pack)](items-sheet.png)
+
+Original 16x16 pixel art in the avatars' style: dark outline from each material's own colour, light from the top
+left, flat shading bands. Icons are keyed by the game's internal item names, so the production feed's `item` goes
+straight in. 59 icons:
+
+| Group | Items |
+|---|---|
+| Raw resources | iron-ore, copper-ore, stone, coal, uranium-ore, wood, crude-oil, water |
+| Intermediates | iron-plate, copper-plate, steel-plate, stone-brick, iron-gear-wheel, copper-cable, electronic-circuit, advanced-circuit, processing-unit, plastic-bar, sulfur, battery, engine-unit, electric-engine-unit, solid-fuel |
+| Logistics | pipe, transport-belt, fast-transport-belt, express-transport-belt, burner-inserter, inserter, long-handed-inserter, fast-inserter |
+| Science | the seven packs, automation through space (round flask: red, green, space; conical: military, blue; vial: purple, yellow, so they differ by shape as well as colour) |
+| Oil and fluids | petroleum-gas, heavy-oil, light-oil, lubricant, sulfuric-acid (crude-oil and water are under raw) |
+| Rocket | low-density-structure, rocket-fuel, rocket-part, flying-robot-frame, satellite |
+| Buildings and ammo | stone-furnace, burner-mining-drill, electric-mining-drill, assembling-machine-1/2/3, small-electric-pole, lab, firearm-magazine, piercing-rounds-magazine, stone-wall |
+
+Any other name renders as a crate tinted from a hash of the name, with a label made from the name
+("my_modded--thing" -> "My modded thing"), so new items never break a widget.
+
+### API
+
+```js
+// browser: <script src="items.js"></script>      node: const PogItems = require("./items.js")
+PogItems.svg("electronic-circuit", 32)   // SVG string; opts.title overrides the aria-label (default: the label)
+PogItems.label("electronic-circuit")     // "Green circuit"
+PogItems.color("electronic-circuit")     // "#5fd068": signature colour for sparklines and badges
+PogItems.has("repair-pack")              // false: drawn as the crate fallback
+PogItems.pixels(name)                    // 16 rows of 16 "#rrggbb" | null (transparent background)
+PogItems.names, PogItems.ITEMS.groups    // every drawn item; the gallery's groups
+```
+
+```sh
+python3 tools/stream/items.py iron-plate --size 64 > iron-plate.svg
+python3 tools/stream/items.py --all --out site/static/items --size 32    # one NAME.svg per drawn item
+```
+
+In Python: `from items import svg, label, color, has` (add `tools/stream` to `sys.path`). Output is
+byte-identical to the JS. Each SVG is one `<path>` per colour with `shape-rendering="crispEdges"`, about 0.7 to
+1.7 KB at any size. Icons have a transparent background, so put them in a `.fx-slot` (or any dark tile); they are
+drawn for the kit's slot colour `#242324` and stay crisp at 16, 32, 48 px (integer multiples of 16). At 20 or 24 px
+they still read but edges land between pixels.
+
+### Adopting it
+
+- Overlay production widget (eng/stream2): add `<script src="items.js"></script>` to `index.html`. In
+  `renderProduction` (`overlay.js`), put `PogItems.svg(it.item, 20)` in front of the label. `PogItems.color` equals
+  the `ITEM` table's colour for all 36 items it lists, so sparklines keep their colours. The table's labels are
+  widget wording for rates ("Belts", "Ammo", "Elec. engines"), while `PogItems.label` names one item ("Belt",
+  "Magazine", "Electric engine"), so keep the table's labels and use `[PogItems.label(it.item),
+  PogItems.color(it.item)]` only as the fallback in place of `[humanItem(it.item), "#cccccc"]`. Every item in
+  `model.SPARK_ITEMS` (all `STAGE_ITEMS` plus science) has its own icon; the test checks it.
+- Site: inline `items.svg(name, 32)` from `site/build.py`, or write files once with `--all --out`.
+
+### Changing or adding an icon
+
+The art source is `tools/stream/items_art.js`. Each template is drawn there with a few primitives (`fill` a shape
+with a shading mode, `box` for iso boxes, `outline`, `paint` for hand-placed rows), and each item names a template
+plus up to three colours. Template letters: `o d m l h` are outline, dark, mid, light and highlight of the item's
+colour `c`; `O D M L H` the same for `c2`; `p q r s t` for `c3`; `k X x y w` fixed greys; `a b e` fixed glass. Very
+dark colours (coal, crude oil) get a lighter outline so they read on dark slots. Then:
+
+```sh
+node tools/stream/items_art.js            # rewrites the JSON between /*@items*/ and /*@end*/ in items.js
+node tools/stream/items_art.js --print    # the templates as text, to eyeball a change
+python3 tools/stream/test_items.py
+```
+
+Do not edit the JSON in `items.js` by hand: the test fails if it differs from what the script generates.
+
+### Gallery (`tools/stream/static/items.html`)
+
+Open the file directly. Every icon by group in kit slots with its label; click one to see it at 16/24/32/48/96 px
+with its name, colour and the JS and Python calls. A sketch of the production widget (icon, label, rate, sparkline
+in the item colour, with made-up numbers) and an inventory strip with `.fx-slot-count` counts show it in context,
+plus a few unknown names to show the fallback.
+
+### Tests
+
+`python3 tools/stream/test_items.py`: JS (under node) and Python give identical SVG, labels, colours and `has`
+for all 59 icons and 8 unknown names (empty, unicode, escaped, long); every template is 16x16 and every letter it
+uses has a colour for each item drawn with it; every item in `model.SPARK_ITEMS` has its own icon; `items.js` holds
+what `items_art.js` generates. The icons were checked visually from PNG contact sheets at 6x and 2x; like the other
+pages, `items.html` was run against a stub DOM but not opened in a browser in this session.
 
 ## Factorio UI kit
 

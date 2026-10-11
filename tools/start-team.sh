@@ -2,7 +2,7 @@
 # Start a team run on a fresh world with bots, director cameras, overlay, recording and (optionally) the stream.
 #   tools/start-team.sh RUN_ID MINUTES [--stream]
 # Env: POG_TEAM_FILE (default agent/team-nine.tsv), POG_SEED (default 20261010), POG_ENEMIES (normal|peaceful, default
-# normal), POG_WORLD_NAME (default n; game port 34205, RCON 27025).
+# normal), POG_WORLD_NAME (default n; game port 34205, RCON 27025), POG_CASTER (default 1: shoutcasters on).
 # Each team line: name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -74,6 +74,11 @@ tools/.venv/bin/python tools/obs.py start
 first_bot=$(awk -F'\t' '!/^#/ && NF {print $1; exit}' "$team")
 nohup python3 tools/chat-log.py --world "$world" --bot "$first_bot" "$rundir/chat.jsonl" >"$rundir/chat-log.err" 2>&1 &
 echo $! >> "$rundir/stream-service.pid"
+# Shoutcasters and voiced agent lines (docs/AUDIO-NOTES.md); POG_CASTER=0 turns them off.
+if [ "${POG_CASTER:-1}" != 0 ]; then
+  nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts-fallback aura1 >"$rundir/caster.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+fi
 
 # 5. Agents: three per Herdr tab, real time, team playbook.
 POG_TEAM="$rundir/team.txt"

@@ -7,7 +7,8 @@ test('failures keep the error and request ID, with hostile strings escaped in ta
     {name:'belt',position:{x:1,y:2},extra:null},
     {name:'line\n | spoof',position:{x:3.456,y:4},enabled:7},
   ]});
-  assert.match(output,/^error: code=action_failed message="bad thing"\nid: retry-id\n/);
+  assert.match(output,/^id: retry-id\n/);
+  assert.match(output,/\nerror: action_failed: bad thing\n$/);
   assert.match(output,/name \| position \| enabled/);
   assert.match(output,/belt \| 1,2 \| -/);
   assert.match(output,/"line\\n \| spoof" \| 3.46,4 \| 7/);
@@ -28,6 +29,18 @@ test('literal dotted keys cannot overwrite nested column paths', () => {
   assert.match(output,/a.b \| a.c \| "a.b"/);
   assert.match(output,/1 \| \[1\] \| 2/);
   assert.match(output,/3 \| \[2\] \| 4/);
+});
+test('the last line names a failure, or what a partial success left undone', () => {
+  const failed = formatCompact({ok:false,id:'r1',tick:9,error:{code:'craft_refused',message:'not crafted: 75\nheld by our factory',recovery:'force=true'},result:{short:'wood short 18 (held 2)',stock:['x']}});
+  assert.equal(failed.trimEnd().split('\n').at(-1),'error: craft_refused: not crafted: 75 held by our factory; recovery: force=true; short: wood short 18 (held 2)');
+  assert.doesNotMatch(failed,/error_result:\n  short/);
+  const partial = formatCompact({ok:true,tick:3,result:{started:{gear:5},errors:{boiler:'missing stone-furnace'},short:{boiler:'stone short 5'},clock:'game 1m',chat:{unread:1}}});
+  const lines = partial.trimEnd().split('\n');
+  assert.equal(lines.at(-1),'warning: not done: boiler="missing stone-furnace"; short: boiler="stone short 5"');
+  assert.equal(lines.at(-2),'chat: unread=1');
+  const waiting = formatCompact({ok:true,result:{accepted:{awaiting_craft:{item:'lab',held:0,need:1,crafting:1}},completion:{outcome:'fed'}}});
+  assert.match(waiting,/\nwarning: awaiting_craft: item=lab held=0 need=1 crafting=1\n$/);
+  assert.doesNotMatch(formatCompact({ok:true,result:{transferred:5,clock:'c'}}),/warning/);
 });
 test('arrays of records nested inside records keep every row', () => {
   const base = (x: number, extra: Record<string, unknown> = {}) => ({spawners:2,absorbing:0,position:{x,y:-27},distance:205,direction:'E',...extra});

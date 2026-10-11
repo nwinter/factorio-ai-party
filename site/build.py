@@ -14,10 +14,16 @@ import html
 import json
 import re
 import shutil
+import sys
+import urllib.parse
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
 REPO = SITE.parent
+# The art kit lives with the stream overlay; the site copies it so there is one source for both.
+ART = REPO / "tools" / "stream" / "static"
+sys.path.insert(0, str(ART.parent))
+import avatar as avatar_art  # noqa: E402  (tools/stream/avatar.py, reads the part lists from avatar.js)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -36,6 +42,11 @@ _REDACTIONS = [
     (re.compile(r"\b(?:sk|pk|ghp|gho|xox[abp])[-_][A-Za-z0-9_-]{12,}"), "[key]"),
     (re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"), "[ip]"),
 ]
+
+
+# Names of the owner, their accounts and personal tools that appear in some studies. The build fails if any reach
+# dist/; site.json's per-study `rewrite` list is where they get replaced.
+_BLOCKED = re.compile(r"\bNick\b|(?i:account-b|codex-b|claude-b|dropbox|cygnal|peon-ping|account-d)")
 
 
 def clean(text):
@@ -405,14 +416,23 @@ def agent(key):
     return AGENTS.get(key, {"name": key.title(), "model": "", "harness": "", "color": "#888888", "glyph": key[:1].upper()})
 
 
-def avatar(key, size=""):
+def profile_row(key):
+    """The harness `profiles` row the avatar renderer expects: bot name, colour, optional avatar parts."""
     a = agent(key)
-    color = a.get("color") or "#888888"
-    r, g, b = (int(color[i:i + 2], 16) for i in (1, 3, 5))
-    lum = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    ink = "#111" if lum > 140 else "#fff"
-    return (f'<span class="avatar {size}" style="--ac:{color};color:{ink}" aria-hidden="true">'
-            f'{esc(a.get("glyph") or a["name"][:1])}</span>')
+    return {"name": key, "display_name": a["name"], "color": a.get("color"), "avatar": a.get("avatar")}
+
+
+AVATAR_PX = {"sm": 24, "": 32, "lg": 48, "xl": 96}
+
+
+def avatar(key, size=""):
+    # Pixel portrait from the art kit, served as /static/avatars/<key>.svg so long pages don't repeat 4 KB per use.
+    a = agent(key)
+    px = AVATAR_PX.get(size, 32)
+    ring = " fx-agent-ring" if size in ("lg", "xl") else ""
+    src = f"/static/avatars/{key}.svg" if key in AGENTS else "data:image/svg+xml," + urllib.parse.quote(avatar_art.svg(profile_row(key), px))
+    return (f'<span class="fx-slot avatar {size}{ring}" style="--fx-agent:{a.get("color") or "#888888"}" aria-hidden="true">'
+            f'<img src="{src}" alt="" width="{px}" height="{px}" loading="lazy" decoding="async"></span>')
 
 
 def agent_chip(key):
@@ -437,17 +457,21 @@ def page(title, body, active="/", description="", extra_head=""):
 <title>{esc(full)}</title>
 <meta name="description" content="{esc(description or CONFIG.get('description', ''))}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&amp;display=swap">
+<link rel="stylesheet" href="/static/factorio-ui.css">
 <link rel="stylesheet" href="/static/style.css">
 <script>try{{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
 {extra_head}
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="site-header">
+<header class="site-header fx-root">
   <div class="wrap header-row">
     <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"></span>{esc(site_title)}</a>
     <nav class="site-nav" aria-label="Main">{nav}</nav>
-    <button class="theme-toggle" type="button" aria-label="Toggle light or dark theme" title="Toggle theme">
+    <button class="theme-toggle fx-btn fx-btn--icon" type="button" aria-label="Toggle light or dark theme" title="Toggle theme">
       <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" fill="currentColor"/></svg>
     </button>
   </div>
@@ -506,9 +530,10 @@ def build_run_page(rid, run, worlds, chat):
     meta = [run["date"], run["wall"], run["mode"], f'enemies {run["enemies"]}', "seed 20261010"]
     body.append('<p class="meta">' + " · ".join(esc(m) for m in meta) + "</p>")
     body.append(f'<p class="lede">{esc(run["summary"])}</p>')
-    if run.get("study"):
-        st = CONTENT["studies"][run["study"]]
-        body.append(f'<p><a class="button" href="/studies/{run["study"]}/">Read the study: {esc(st["title"])} →</a></p>')
+    studies = [(sid, st) for sid, st in CONTENT["studies"].items() if st["run"] == rid]
+    if studies:
+        body.append('<p class="actions">' + " ".join(
+            f'<a class="fx-btn" href="/studies/{sid}/">Study: {esc(st["title"])} →</a>' for sid, st in studies) + "</p>")
 
     pw = run_players_worlds(run, worlds)
 
@@ -685,9 +710,10 @@ def build_experiments(runs, all_worlds):
                 f'<div class="table-wrap"><table class="milestones wide"><thead><tr><th>Milestone</th>{head}</tr></thead><tbody>{"".join(rows)}</tbody></table></div>')
 
     for n, e in enumerate(CONTENT["experiments"], 1):
-        run_links = " ".join(f'<a class="button small" href="/runs/{r}/">{esc(runs[r]["title"])} →</a>' for r in e["runs"])
+        run_links = " ".join(f'<a class="fx-btn small" href="/runs/{r}/">{esc(runs[r]["title"])} →</a>' for r in e["runs"])
         lessons = "".join(f"<li>{esc(l)}</li>" for l in e["lessons"])
-        study = f' <a class="button small" href="/studies/{e["study"]}/">Study →</a>' if e.get("study") else ""
+        study = "".join(f' <a class="fx-btn small" href="/studies/{sid}/">{esc(st.get("short", "Study"))} →</a>'
+                        for sid, st in CONTENT["studies"].items() if st["run"] in e["runs"])
         # a small chart per experiment
         ser = []
         for r in e["runs"]:
@@ -722,7 +748,7 @@ def build_home(runs, all_worlds):
   <p class="lede">Nine models from five labs share one factory. They can't spawn items, teleport or see the
   unexplored map. They walk, mine, craft and build at the speed a person would, talk to each other in game chat,
   and try to get from a crashed ship to a rocket launch. The runs will be streamed.</p>
-  <p class="actions"><a class="button" href="/experiments/">See the experiments →</a> <a class="button ghost" href="/live/">Live stream</a></p>
+  <p class="actions"><a class="fx-btn" href="/experiments/">See the experiments →</a> <a class="fx-btn ghost" href="/live/">Live stream</a></p>
   <div class="stats hero-stats">
     {stat("runs so far", len(runs))}
     {stat("technologies in co-op", cf["techs"], "Astra + Opus, 2 hours")}
@@ -783,7 +809,9 @@ def build_home(runs, all_worlds):
 
 <section>
   <h2>The team</h2>
-  <p class="muted">Names, colours and glyphs are the ones each agent chose for itself in the shakedown.</p>
+  <p class="muted">Names and colours are the ones each agent chose for itself in the shakedown. The pixel portraits
+  come from the stream's avatar renderer, which draws a default from each name and colour; agents can now design
+  their own in game, and these will change when they do.</p>
   <ul class="team">{"".join(team)}</ul>
   <p class="muted small">Earlier solo and versus runs also used <a href="/agents/fable/">{esc(fable["model"])}</a> ({esc(fable["harness"])}).</p>
 </section>
@@ -841,15 +869,17 @@ def build_agent_page(key, runs, all_worlds, chats):
             f'<div class="agent-head" style="--ac:{a["color"]}">{avatar(key, "xl")}<div><h1>{esc(a["name"])}</h1>'
             f'<p class="model">{esc(a["model"])} · {esc(a["harness"])}</p>'
             f'{f"<p class=motto>“{esc(motto)}”</p>" if motto else ""}</div></div>')
-    return page(a["name"], head + '<div class="agent-runs" style="--ac:' + a["color"] + '">' + "".join(rows) + "</div>", "/",
+    # active=None: agent pages belong to no nav section, so nothing is highlighted
+    return page(a["name"], head + '<div class="agent-runs" style="--ac:' + a["color"] + '">' + "".join(rows) + "</div>", None,
                 f'{a["name"]} ({a["model"]}) in Player of Games.')
 
 
 def build_studies_index():
     items = []
     for sid, st in CONTENT["studies"].items():
+        summary = f'<p>{esc(st["summary"])}</p>' if st.get("summary") else ""
         items.append(f'<a class="run-row" href="/studies/{sid}/"><div><h2>{esc(st["title"])}</h2><p class="muted">{esc(st["date"])} · '
-                     f'from <span>{esc(CONTENT["runs"][st["run"]]["title"])}</span></p></div></a>')
+                     f'from <span>{esc(CONTENT["runs"][st["run"]]["title"])}</span></p>{summary}</div></a>')
     body = '<h1>Studies</h1><p class="lede">Close readings of individual runs: who did what, how the team talked, and what to change next.</p><div class="run-list">' + "".join(items) + "</div>"
     return page("Studies", body, "/studies/")
 
@@ -858,6 +888,12 @@ def build_study(sid, st):
     src = (REPO / st["file"]).read_text()
     # drop the first H1; we render our own title
     src = re.sub(r"\A# .*\n", "", src)
+    # Per-study rewrites from site.json (personal setup details the site must not repeat). Each must still match,
+    # so an edit to the study that moves the text fails the build instead of leaking it.
+    for pattern, repl in st.get("rewrite", []):
+        src, n = re.subn(pattern, repl, src, flags=re.M)
+        if not n:
+            raise SystemExit(f"study {sid}: rewrite pattern no longer matches: {pattern}")
     html_body = markdown(src, heading_shift=0)
     toc = "".join(f'<li><a href="#{m.group(1)}">{m.group(2)}</a></li>'
                   for m in re.finditer(r'<h2 id="([^"]+)">(.*?)</h2>', html_body))
@@ -882,15 +918,16 @@ def build_live():
       <p class="muted">The first public run hasn't been scheduled. This space will hold the YouTube player.</p>
     </div>
   </div>
-  <aside class="live-panel" id="live" data-src="{esc(CONFIG.get('live_status_url', '/live/status.json'))}" data-poll="{int(CONFIG.get('live_poll_seconds', 15))}" aria-live="polite">
-    <div class="live-head"><span class="live-badge" data-state="offline">Offline</span><span class="live-updated muted small"></span></div>
-    <div class="live-body"><p class="muted">Waiting for status…</p></div>
+  <aside class="live-panel fx-root fx-panel" id="live" data-src="{esc(CONFIG.get('live_status_url', '/live/status.json'))}" data-poll="{int(CONFIG.get('live_poll_seconds', 15))}" aria-live="polite">
+    <header class="fx-panel-title">Team status<span class="fx-panel-actions"><span class="live-badge fx-chip fx-chip--grey">Offline</span></span></header>
+    <p class="live-updated fx-muted small"></p>
+    <div class="live-body fx-inset"><p class="fx-muted">Waiting for status…</p></div>
   </aside>
 </div>
 <p class="muted small">Status refreshes every {int(CONFIG.get('live_poll_seconds', 15))} seconds. <a href="/live/?demo=1">See it with sample data</a>.</p>
 """
     return page("Live", body, "/live/", "Live stream and team status.",
-                extra_head='<script src="/static/live.js" defer></script>')
+                extra_head='<script src="/static/avatar.js" defer></script>\n<script src="/static/live.js" defer></script>')
 
 
 FAVICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#e39827"/>
@@ -929,10 +966,17 @@ def main():
     write("live/index.html", build_live())
     shutil.copy(SITE / "live" / "status.example.json", out / "live" / "status.example.json")
     shutil.copy(SITE / "live" / "status.json", out / "live" / "status.json")
-    write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>'))
+    write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>', None))
     for f in (SITE / "static").iterdir():
         (out / "static").mkdir(exist_ok=True)
         shutil.copy(f, out / "static" / f.name)
+    # Art kit from the stream overlay: the CSS (font comes from the <link> in page(), not a blocking @import)
+    # and the avatar renderer for the live page; one portrait file per agent for the static pages.
+    kit = (ART / "factorio-ui.css").read_text()
+    write("static/factorio-ui.css", re.sub(r"^@import url\([^)]*\);\n", "", kit, flags=re.M))
+    shutil.copy(ART / "avatar.js", out / "static" / "avatar.js")
+    for key in AGENTS:
+        write(f"static/avatars/{key}.svg", avatar_art.svg(profile_row(key), 96, title=agent(key)["name"]))
     write("favicon.svg", FAVICON)
     write("robots.txt", "User-agent: *\nDisallow: /\n")
     # Cloudflare Pages: keep everything out of search engines while unlisted; no caching of live status
@@ -944,9 +988,8 @@ def main():
     for p in out.rglob("*"):
         if p.is_file() and p.suffix in (".html", ".json", ".js", ".css", ".txt"):
             t = p.read_text()
-            for pat, _ in _REDACTIONS[:3]:
+            for pat in [r for r, _ in _REDACTIONS[:3]] + [_BLOCKED]:
                 for m in pat.finditer(t):
-                    # allow the YouTube/CDN-free site's own example addresses only
                     bad.append(f"{p.relative_to(out)}: {m.group(0)[:60]}")
     if bad:
         raise SystemExit("privacy check failed:\n" + "\n".join(bad[:20]))

@@ -21,7 +21,8 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
 
 ## Your interface: `./fh`
 
-- `./fh call describe --format json > describe.json` once at the start; grep it for arguments. It lists every action.
+- `describe.json` lists every action with its arguments, one action per line: `grep '"build"' describe.json`. (If it
+  is missing, make it with `./fh call describe --format json > describe.json`.) Check it before guessing arguments.
 - Look: `./fh observe`, `./fh call map`, `./fh call scan`, `./fh call nearest`, `./fh call status`,
   `./fh call rates`, `./fh call bottleneck`, `./fh call recipes`, `./fh call technologies`.
 - Act: `./fh call ACTION --args '{...}'`. Timed actions (move_to, mine, build_path, construct, ...) take
@@ -31,13 +32,28 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
   `shots/NAME.png` that you can open and look at. Use pictures to check layouts (inserter directions, belt flow).
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
 
+## Pace
+
+Your character stands still while you think, and the clock does not.
+
+- Before a step that needs real thought, leave a queue plan or a long timed action running.
+- Don't poll. Check `research` at most once a minute; let the factory run with `wait_until` or a queue plan; use one
+  `status` per cycle instead of chains of `research`, `date` and `inspect` calls.
+- Batch: chain a move and the action at its end with `&&`, and put many placements in one `build`.
+- Read every failure. A nonzero exit means the action failed. Don't send `./fh` output to `/dev/null` or through
+  `head`/`tail`: a pipe hides the exit status and can cut off the error. Check a result before you announce it.
+- Once assemblers make a science pack, stop hand-crafting it. Build more labs and science assemblers before oil.
+
 ## Harness notes from earlier runs
 
 - `--wait` now lasts until the action's own end tick. A nonzero exit means it failed or is still running: read
   `error.code`. On `wait_timeout`, run `./fh wait` (never a new move/mine/build, which would interrupt it) until it
   reports `idle`. In-game queue plans (`./fh queue submit --file plan.json`, a JSON array of steps) avoid round trips.
 - `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait` (also `item_count`,
-  `crafting_done`) lets the factory run until a condition holds, without polling.
+  `crafting_done`) lets the factory run until a condition holds, without polling. Add `--wait-timeout 600000` to
+  wait up to 10 minutes (15 at most); hitting the limit fails with `timed_out`.
+- `./fh sleep 120` lets the game run (your queue keeps going) and returns early if you are hit or mentioned.
+  `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
 - `feed` tops up every machine in reach (or `"radius":20` to walk a line) with its recipe ingredients, lab science
   packs and burner fuel; `keep` holds back a reserve. Use it instead of one `transfer` per machine.
 - `collect` takes machine outputs only; it leaves chests alone unless you name their positions or pass `chests:true`.
@@ -79,6 +95,8 @@ told your context was compacted (or you notice you lost track), read `notes.md` 
 
 ## Stopping
 
-Check `date` every so often. At the deadline, stop acting and finish `notes.md` with a final summary: milestones
-reached with game times, what slowed you down, harness problems you hit, and the tool changes that would have helped
-most. Then end your turn.
+The deadline is the only stop condition; there is no wind-down period. If your job is finished, blocked or
+destroyed, run `./fh call status` and `./fh call chat` and take the most useful open item: unfuelled burners, starved
+labs, turrets low on ammo, requests naming you, open board items. Check `date` every so often. Three minutes before
+the deadline, finish `notes.md` with a final summary: milestones reached with game times, what slowed you down,
+harness problems you hit, and the tool changes that would have helped most. Then end your turn.

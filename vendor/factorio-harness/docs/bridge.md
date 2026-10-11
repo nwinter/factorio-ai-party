@@ -51,6 +51,13 @@ fh --session mp call build --args '{"item":"burner-mining-drill","x":-68,"y":-53
 fh stop-session mp
 ```
 
+Bridge actions take top-level `x`/`y` as above. The harness mod's actions (`fh` against a server running agent-harness, bots included) take a `position` object instead and refuse top-level `x`/`y`:
+
+```sh
+fh call mine --args '{"position":{"x":70.5,"y":1.5},"ticks":600}' --wait
+fh call build --args '{"item":"burner-mining-drill","position":{"x":-68,"y":-53},"direction":"east"}'
+```
+
 `connect` launches a graphical client the same way `start` does (including `--niri`). It waits until the bridge reports a multiplayer game with a player. Use `--player-data` for servers that verify accounts: the file carries your Factorio username and token. It is copied privately (0600) into the session directory. The server password goes on Factorio's command line, which Factorio requires; other local users can see it in the process list. `stream`, `run`, `describe`, `doctor`, `observe` and `call` work with bridge sessions. `deploy`, `watch` and `view` need the harness mod and are rejected. A bridge can also be addressed directly with `--bridge-socket PATH`.
 
 ## Commands and outcomes

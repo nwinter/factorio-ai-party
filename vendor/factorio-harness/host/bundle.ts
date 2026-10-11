@@ -1,10 +1,13 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { dirname, basename, join } from 'node:path';
-import { luaString } from './harness.js';
+import { luaString, MAX_RUNTIME_BYTES } from './harness.js';
+import { compactLua } from './compact.js';
 
 /** Bundle sibling Lua modules into one atomic, save-persistent reload payload.
  * Standard require remains available for Factorio's libraries. */
-export async function bundleRuntime(path: string): Promise<string> {
+export async function bundleRuntime(path: string, options: {compact?: boolean} = {}): Promise<string> {
+  // Comments and indentation are dropped (line breaks kept) unless compact is false.
+  const shrink = options.compact === false ? (text: string) => text : compactLua;
   const folder = dirname(path);
   const files = (await readdir(folder)).filter(file => file.endsWith('.lua') && file !== 'control.lua' && file !== basename(path)).sort();
   const preamble = `local original_require = require
@@ -21,8 +24,8 @@ require = function(name)
 end
 `;
   const modules = await Promise.all(files.map(async file =>
-    `factories[ ${luaString(file.slice(0,-4))} ] = function()\n${await readFile(join(folder,file),'utf8')}\nend\n`));
-  const source = preamble + modules.join('') + await readFile(path,'utf8');
-  if (Buffer.byteLength(source) > 524288) throw new Error('Bundled runtime exceeds 512 KiB deployment limit');
+    `factories[ ${luaString(file.slice(0,-4))} ] = function()\n${shrink(await readFile(join(folder,file),'utf8'))}\nend\n`));
+  const source = preamble + modules.join('') + shrink(await readFile(path,'utf8'));
+  if (Buffer.byteLength(source) > MAX_RUNTIME_BYTES) throw new Error(`Bundled runtime exceeds the ${MAX_RUNTIME_BYTES} byte deployment limit`);
   return source;
 }

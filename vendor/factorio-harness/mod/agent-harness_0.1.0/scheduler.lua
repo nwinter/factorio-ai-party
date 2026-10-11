@@ -30,11 +30,11 @@ return function(api)
       assert(on_fail==nil or on_fail=='abort' or on_fail=='skip' or (type(on_fail)=='string' and on_fail:match('^goto:.+')),'on_fail must be abort, skip or goto:<label>')
       if step.action=='wait_ticks' then
         local ticks=step.args and step.args.ticks
-        assert(type(ticks)=='number' and ticks==math.floor(ticks) and ticks>=1 and ticks<=36000,'wait_ticks requires ticks 1..36000')
+        assert(type(ticks)=='number' and ticks==math.floor(ticks) and ticks>=1 and ticks<=54000,'wait_ticks requires ticks 1..54000')
       end
       if step.action=='wait_until' then
         local timeout=step.args and step.args.timeout
-        assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=36000),'wait_until timeout must be 1..36000 ticks')
+        assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=54000),'wait_until timeout must be 1..54000 ticks')
         api.validate_condition(step.args)
       end
       out[#out+1]={action=step.action,args=step.args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail}
@@ -312,10 +312,10 @@ return function(api)
     queue_edit={expected_revision='required from queue_status',index='1-based pending index',remove='count to remove',steps='replacement steps'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
-    wait_ticks={ticks='queue-only delay: 1..36000 simulation ticks'},
+    wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)'},
     wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|crafting_done|researched; a queue step, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw',
       position='area predicates: centre (default character)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items',fraction='health_*: 0..1',
-      item='item_count',at_least='item_count',below='item_count',technology='researched',timeout='ticks 1..36000 (default 3600); timing out fails the step',
+      item='item_count',at_least='item_count',below='item_count',technology='researched',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)'},
     step_options={label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)'},
     guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step',max=MAX_GUARDS}

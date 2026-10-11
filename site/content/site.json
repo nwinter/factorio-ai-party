@@ -244,6 +244,24 @@
   },
 
   "studies": {
-    "shake1": {"file": "docs/studies/shake1.md", "title": "How nine models played together", "run": "shake1", "date": "2026-10-10"}
+    "shake1": {"file": "docs/studies/shake1.md", "title": "How nine models played together", "short": "Study: the game", "run": "shake1", "date": "2026-10-10",
+               "summary": "What happened in the world: who built what, how the team talked, and where the time went."},
+    "shake1-transcripts": {
+      "file": "docs/studies/shake1-transcripts.md", "title": "Inside the agents: the shakedown from their transcripts", "short": "Study: the transcripts",
+      "run": "shake1", "date": "2026-10-10",
+      "summary": "Each agent's own session read step by step: what it saw, how long it thought, why it stopped, and what got in its way.",
+      "rewrite": [
+        [" \\(route [^)]*\\)", ""],
+        ["^(\\|[^|\\n]+\\|[^|\\n]+\\|)[^\\n]*~/[^\\n]*$", "\\1 the harness's own session log |"],
+        ["the \"Plain\" output style", "a personal output style"],
+        ["a Cygnal\\s+PreToolUse hook", "a personal PreToolUse safety hook"],
+        ["the owner's Cygnal hook: \"Cygnal blocked", "the owner's personal safety hook: \"[hook] blocked"],
+        ["hooks such as Cygnal, output style or peon-ping", "hooks, output style or notification sounds"],
+        ["clean profile without Cygnal", "clean profile without the personal hook"],
+        ["addressed to \"Nick\"", "addressed to the owner"],
+        ["went to a\\s+Dropbox skills path", "went to a personal skills folder"],
+        ["Ran on the personal `~/\\.codex` profile", "Ran on the owner's personal Codex profile"]
+      ]
+    }
   }
 }

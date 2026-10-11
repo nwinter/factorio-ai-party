@@ -9,6 +9,20 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 run=$1 world=$2 player=$3 minutes=$4 kind=$5
 dir=$("$root/tools/new-run.sh" "$run" "$world" "$player" "$minutes")
+# describe.json, one action per line, ready before the agent starts (in shake1 Grok Build's permissions blocked the
+# redirect that made it, and grep on the one-line file returned all of it).
+"$dir/fh" call describe --format json 2>/dev/null | python3 "$root/tools/describe-lines.py" > "$dir/describe.json" 2>/dev/null \
+  || rm -f "$dir/describe.json"
+# Harness-specific notes (agent/harness-KIND.md) go before the compaction instructions at the end of AGENTS.md.
+if [ -f "$root/agent/harness-$kind.md" ]; then
+  python3 - "$dir/AGENTS.md" "$root/agent/harness-$kind.md" <<'EOP'
+import sys
+path, extra = sys.argv[1:]
+text, add = open(path).read(), open(extra).read().rstrip("\n") + "\n\n"
+i = text.find("## Compact instructions")
+open(path, "w").write(text[:i] + add + text[i:] if i >= 0 else text.rstrip("\n") + "\n\n" + add)
+EOP
+fi
 prompt="$root/runs/$run/prompt.md"
 test -f "$prompt" || cat > "$prompt" <<'EOP'
 Read AGENTS.md in this directory; it has your instructions, interface, rules, and deadline. Then play Factorio until the deadline in deadline.txt, keeping notes.md current, and finish with the final summary it asks for.
@@ -16,7 +30,7 @@ EOP
 name="pog-${POG_WS:-$world}-$run"
 allow='"Read", "Grep", "Glob", "Edit(/**)", "Write(/**)", "Bash(./fh:*)", "Bash(./shot:*)", "Bash(echo:*)",
               "Bash(sleep:*)", "Bash(date:*)", "Bash(cat:*)", "Bash(head:*)", "Bash(tail:*)", "Bash(grep:*)",
-              "Bash(python3:*)", "Bash(jq:*)", "Bash(ls:*)", "Bash(wc:*)"'
+              "Bash(python3:*)", "Bash(jq:*)", "Bash(ls:*)", "Bash(wc:*)", "Bash(rg:*)", "Bash(sort:*)"'
 # Compaction settings per model: agent/context.tsv, applied by tools/context.py (docs/CONTEXT-NOTES.md).
 compact_rule='After any context compaction, read notes.md and deadline.txt before acting; notes.md is your memory.'
 
@@ -49,17 +63,27 @@ new_pane() {
 }
 
 case $kind in
-  codex|claude)
-    if [ "$kind" = codex ]; then
-      model=${6:-gpt-6-astra} effort=${7:-low}
-      args=(--route "${POG_ROUTE:-codex-b}" --model "$model" --thinking "$effort" --sandbox workspace-write --network --approval never)
-    else
-      model=${6:-opus} effort=${7:-low}
-      claude_settings
-      args=(--route "${POG_ROUTE:-claude-b}" --model "$model" --thinking "$effort" --permission-mode dontAsk)
-    fi
+  claude)
+    model=${6:-opus} effort=${7:-low}
+    route=${POG_ROUTE:-claude-b}
+    claude_settings
+    python3 "$root/tools/context.py" setup claude "$model" "$dir" >/dev/null
+    python3 "$root/tools/clean-profile.py" claude "$dir"
+    # Started directly instead of through ai-session, which cannot pass flags: with the same environment ai-session
+    # sets for the route (CLAUDE_CONFIG_DIR = the route's root, except for the default profile, and no API keys), plus
+    # no MCP servers but our own (the user-scope cube-local leaked in smoke-2145), no Claude in Chrome, no skills.
+    croot=$(/Users/owner/.local/bin/ai-session routes | awk -v r="$route" '$1 == r && $2 == "claude" {print $NF}')
+    test -n "$croot" || { echo "unknown Claude route $route" >&2; exit 1; }
+    cenv="-u CLAUDE_CONFIG_DIR"; [ "$route" = claude ] || cenv="CLAUDE_CONFIG_DIR='$croot'"
+    pane=$(new_pane)
+    herdr pane run "$pane" "cd '$dir' && env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_USE_BEDROCK -u CLAUDE_CODE_USE_VERTEX -u CLAUDE_CODE_USE_FOUNDRY -u CLAUDE_CODE_SESSION_ID -u CLAUDECODE $cenv ENABLE_CLAUDEAI_MCP_SERVERS=false CLAUDE_CODE_ENABLE_CFC=false /Users/owner/.local/bin/claude --model $model --effort $effort --permission-mode dontAsk --strict-mcp-config --mcp-config '{\"mcpServers\":{}}' --no-chrome --disable-slash-commands \"\$(cat '$prompt')\"" >/dev/null
+    ;;
+  codex)
+    model=${6:-gpt-6-astra} effort=${7:-low}
+    args=(--route "${POG_ROUTE:-codex-b}" --model "$model" --thinking "$effort" --sandbox workspace-write --network --approval never)
     # ai-session passes no extra flags or env, so compaction settings go in the workspace's own config.
     python3 "$root/tools/context.py" setup "$kind" "$model" "$dir" >/dev/null
+    python3 "$root/tools/clean-profile.py" "$kind" "$dir"
     out=$(/Users/owner/.local/bin/ai-session spawn "${args[@]}" -C "$dir" --name "$name" --herdr tab --prompt-file "$prompt" --start 2>&1)
     pane=$(printf '%s\n' "$out" | sed -n 's/.*Herdr pane \([^ .]*\).*/\1/p' | tail -1)
     test -n "$pane" || { printf '%s\n' "$out" >&2; exit 1; }
@@ -78,28 +102,32 @@ case $kind in
     claude_settings nosandbox
     ctx_env=$(python3 "$root/tools/context.py" setup grok "$model" "$dir")
     pane=$(new_pane)
-    # --rules is part of the system prompt, which compaction keeps.
-    herdr pane run "$pane" "cd '$dir' && $ctx_env grok -m $model --effort $effort --permission-mode dontAsk --rules '$compact_rule' \"\$(cat '$prompt')\"" >/dev/null
+    # --rules is part of the system prompt, which compaction keeps. The GROK_CLAUDE_* switches stop Grok from loading
+    # the owner's Claude Code skills and MCP servers (shake1: a 17K-character skills reminder and MCP failure notices).
+    herdr pane run "$pane" "cd '$dir' && GROK_CLAUDE_SKILLS_ENABLED=false GROK_CLAUDE_MCPS_ENABLED=false $ctx_env grok -m $model --effort $effort --permission-mode dontAsk --rules '$compact_rule' \"\$(cat '$prompt')\"" >/dev/null
     ;;
   agy)
     model=${6:-gemini-3.8-flash-high}
     pane=$(new_pane)
     limit=$(python3 "$root/tools/context.py" limit agy "$model")
-    # Antigravity's sandbox only works in print mode, so run sandboxed turns back to back until the deadline.
+    # Print-mode turns back to back until the deadline. No --sandbox: it blocked ./fh (its target is outside the
+    # workspace) and the model bypassed it on 576 calls in shake1 (auto-approved), so it only cost time.
     # agy has no compaction threshold setting (it compacts near 280K): past the limit, the next turn starts a fresh
     # conversation that picks up from notes.md.
     cat > "$dir/.agy-loop.sh" <<EOL
 #!/usr/bin/env bash
 cd '$dir'
 deadline=\$(date -j -f "%Y-%m-%d %H:%M %Z" "\$(cat deadline.txt)" +%s)
-agy -p "\$(cat '$prompt')" --model $model --sandbox --dangerously-skip-permissions
+agy -p "\$(cat '$prompt')" --model $model --dangerously-skip-permissions
+${POG_ONE_TURN:+exit 0  # POG_ONE_TURN: smoke tests run the first turn only}
 while [ "\$(date +%s)" -lt "\$deadline" ]; do
   tokens=\$(python3 '$root/tools/context.py' agy-tokens '$dir')
   if [ "$limit" -gt 0 ] && [ "\$tokens" -ge "$limit" ]; then
     echo "{\"time\": \"\$(date '+%Y-%m-%d %H:%M:%S')\", \"event\": \"agy-fresh\", \"tokens\": \$tokens}" >> context.log
-    agy -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat." --model $model --sandbox --dangerously-skip-permissions
+    agy -p "\$(cat '$prompt') This is a fresh conversation: your previous one was closed at \$tokens tokens to keep your context small. notes.md is your memory from it: read it and deadline.txt first, then check ./fh call status and chat." --model $model --dangerously-skip-permissions
   else
-    agy -c -p "Continue: the deadline in deadline.txt has not passed. Re-read notes.md, check ./fh call status and chat, and keep playing toward the next milestone." --model $model --sandbox --dangerously-skip-permissions
+    left=\$(( (deadline - \$(date +%s)) / 60 ))
+    agy -c -p "Continue: the deadline in deadline.txt is \$left minutes away and it is the only stop condition. Re-read notes.md, check ./fh call status and chat, and take the most useful open item. Write the final summary only in the last three minutes." --model $model --dangerously-skip-permissions
   fi
 done
 EOL
@@ -108,9 +136,9 @@ EOL
     ;;
   muse)
     model=${6:-muse-spark-1.3} effort=${7:-low}
-    python3 "$root/tools/context.py" setup muse "$model" "$dir" >/dev/null
+    ctx_args=$(python3 "$root/tools/context.py" setup muse "$model" "$dir")   # -c context_compaction.* options
     pane=$(new_pane)
-    herdr pane run "$pane" "cd '$dir' && muse --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" >/dev/null
+    herdr pane run "$pane" "cd '$dir' && muse $ctx_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" >/dev/null
     ;;
   *) echo "unknown kind $kind" >&2; exit 1 ;;
 esac

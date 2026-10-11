@@ -44,6 +44,7 @@ local function state() return storage.agent_harness end
 -- Bots (script-driven characters), profiles/speech bubbles and director
 -- cameras. Bot indices sit above every player index (bots.BASE).
 M.crafting=require('crafting'){state=state}
+M.claims=require('claims'){state=state}
 M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
   profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)) end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
@@ -54,6 +55,12 @@ M.profiles=require('profiles'){state=state,is_bot=function(p) return M.bots.is(p
 function M.lookup(index)
   if M.bots.is_index(index) then return M.bots.lookup(index) end
   return game.get_player(index)
+end
+-- Who a character belongs to: a player's name, else a bot's (nil if neither).
+function M.character_owner(e)
+  local ok,pl=pcall(function() return e.player end)
+  if ok and pl and pl.valid then return pl.name end
+  for _,b in ipairs(M.bots.list()) do if b.character==e then return b.name end end
 end
 local function combat_targets()
   local s=state()
@@ -269,7 +276,7 @@ local function known(p,e)
   return e.force==p.force or (e.force.name=='neutral' and e.type~='unit') or drawn_enemy[e.type]==true
 end
 local attached={['rocket-silo-rocket']=true,['rocket-silo-rocket-shadow']=true,['cargo-pod']=true}
-local function entity(p,args)
+local function entity(p,args,read_only)
   local pos = position(args.position)
   assert_visible(p,pos,'target')
   local candidates = p.surface.find_entities_filtered{position=pos, radius=0.2, name=args.name}
@@ -289,6 +296,8 @@ local function entity(p,args)
   end
   found = found or resource
   assert(found, 'entity not found')
+  -- Reads (inspect) only need sight, as scan does.
+  if read_only then return found end
   assert(p.can_reach_entity(found), string.format('entity is out of reach (%.1f tiles from the character)',distance(p.position,found.position)))
   return found
 end
@@ -356,11 +365,13 @@ local inventories = {
   car_ammo = {'car'}, car_trunk = {'car'}, spider_ammo = {'spider-vehicle'}, spider_trunk = {'spider-vehicle'},
   cargo_wagon = {'cargo-wagon'}, roboport_robot = {'roboport'}, roboport_material = {'roboport'},
   assembling_machine_modules = {'assembling-machine','rocket-silo'}, furnace_modules = {'furnace'}, lab_modules = {'lab'},
-  mining_drill_modules = {'mining-drill'}, beacon_modules = {'beacon'}
+  mining_drill_modules = {'mining-drill'}, beacon_modules = {'beacon'},
+  -- A dead character's items: take them (never mine_entity it, which crashes for bots).
+  character_corpse = {'character-corpse'}
 }
 -- Inference order when a transfer omits its inventory (see infer_inventory).
 -- Ammo and modules only go where the item's kind says, as a player's click does.
-local take_order={'chest','cargo_landing_pad_main','hub_main','asteroid_collector_output','cargo_wagon','car_trunk','spider_trunk','furnace_result','assembling_machine_output','burnt_result','fuel',
+local take_order={'character_corpse','chest','cargo_landing_pad_main','hub_main','asteroid_collector_output','cargo_wagon','car_trunk','spider_trunk','furnace_result','assembling_machine_output','burnt_result','fuel',
   'furnace_source','assembling_machine_input','lab_input','turret_ammo','artillery_turret_ammo','artillery_wagon_ammo','car_ammo','spider_ammo',
   'roboport_robot','roboport_material','rocket_silo_rocket'}
 local give_order={'chest','cargo_landing_pad_main','hub_main','cargo_wagon','car_trunk','spider_trunk','furnace_source','assembling_machine_input','lab_input','roboport_robot','roboport_material','fuel','rocket_silo_rocket'}
@@ -423,9 +434,9 @@ function handlers.describe()
       grid={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',returns='one character per tile: rows [{y,row}] from origin, ruler, legend {char: names}. Upper case buildings by type, belts ^>v<, U/J underground in/out, S splitter, ? ghost, @ character, # other; lower case ore; ~ water'},
       power={area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',limit='unpowered rows 1..256 (default 32)',note='networks with a pole in the area: poles, production/consumption kW (5 s average) by prototype, unpowered machines (no_power|low_power|unconnected)'},
       scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)'},
-      nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..64 (default 32); map-known entities only',limit='1..64 (default 5)'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles'},
+      nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..64 (default 32); map-known entities only',limit='1..64 (default 5)'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait)'},
       wire={from='pole {x,y} (optional name/unit_number) in reach',to='pole {x,y} in reach',disconnect='boolean: remove the copper wire instead'},
-      inspect={position='{x,y}'}, rotate={position='{x,y}',reverse='boolean'},
+      inspect={position='{x,y}',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach'}, rotate={position='{x,y}',reverse='boolean'},
       configure={position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',recipe='enabled recipe',filters='or: item names for a filtering inserter/loader ([] clears; slot count from the entity)',filter_mode='whitelist|blacklist (inserters)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
       transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|cargo_landing_pad_main|hub_main|asteroid_collector_output|...; inferred when omitted (fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out)',direction='to_entity|to_player; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',up_to='optional target total cap'},
       feed={note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel; each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items)',
@@ -454,6 +465,8 @@ function handlers.describe()
   for name,schema in pairs(space and space.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.profiles.schema) do description.actions[name]=schema end
   for name,schema in pairs(M.board and M.board.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.waits and M.waits.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.labs and M.labs.schema or {}) do description.actions[name]=schema end
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
   return description
@@ -1152,7 +1165,7 @@ function handlers.platforms(p,a) return space.platforms(p,a) end
 for _,name in ipairs({'requests','platform_create','platform_schedule','launch','land'}) do
   handlers[name]=function(p,a) return space[name](p,a) end
 end
-local views={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true}
+local views={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,sleep_check=true}
 function handlers.observe(p,a)
   -- Newer read-only views travel as observe scopes: an already loaded
   -- bootstrap treats unknown action names as cached mutations.
@@ -1604,7 +1617,11 @@ local function placement_error(p,proto,pos,direction)
   local area={left_top={x=pos.x+l,y=pos.y+t},right_bottom={x=pos.x+r,y=pos.y+btm}}
   local found,character,clearable={},false,false
   for _,e in pairs(p.surface.find_entities_filtered{area=area,limit=16}) do
-    if e.valid and e.type=='character' then character=true
+    if e.valid and e.type=='character' and e==p.character then character=true
+    elseif e.valid and e.type=='character' and #found<4 then
+      -- Someone else stands there: say who, so the agent can ask them.
+      local who=M.character_owner(e)
+      found[#found+1]=string.format('%s standing at (%.1f,%.1f) (ask them to move, or build elsewhere)',who and who..'\'s character' or 'another character',e.position.x,e.position.y)
     elseif e.valid and e.type~='resource' and #found<4 then
       local name=e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.type=='tile-ghost' and 'tile ghost '..e.ghost_name or e.name
       if e.type=='tree' or e.type=='simple-entity' or e.type=='cliff' then clearable=true end
@@ -1755,6 +1772,22 @@ end
 -- (tiles report the tile instead of an entity)
 -- returning only the placed positions; earlier placements stay built.
 function handlers.build(p,a)
+  -- Short of an item the hand-craft queue is making: wait for it
+  -- (awaiting_craft, outcome fed | failed | timed_out), as transfer does.
+  if not a.awaited then
+    local need,order={},{}
+    for _,b in ipairs(a.builds or {a}) do
+      local item=type(b)=='table' and b.item or a.item
+      if type(item)=='string' then
+        if not need[item] then order[#order+1]=item end
+        need[item]=(need[item] or 0)+1
+      end
+    end
+    for _,item in ipairs(order) do
+      local waiting=crafting_count(p,item)>0 and M.await_feed(p,'build',a,item,need[item])
+      if waiting then return waiting end
+    end
+  end
   if not a.builds then return build_one(p,a) end
   assert(type(a.builds)=='table' and #a.builds>=1 and #a.builds<=64,'builds requires 1..64 {item,position,direction} entries')
   local placed={}
@@ -1829,8 +1862,9 @@ function handlers.construct(p,a)
   return {until_tick=action.until_tick,total=#action.pending}
 end
 function handlers.inspect(p,a)
-  local e=entity(p,a)
+  local e=entity(p,a,true)
   local out=summary(e); out.inventories={}
+  out.in_reach=p.can_reach_entity(e)
   out.health=e.health; out.max_health=e.max_health; out.direction=e.direction
   out.status=e.status
   out.status_name=entity_status_names[out.status]
@@ -2109,6 +2143,8 @@ local function transfer_one(p,a,pos,e)
   end
   local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred,none_held=short and a.item or nil,target_has=short and count(target) or nil}
   if a.direction=='to_player' then out.inventory_full=full else out.entity_full=full end
+  -- An emptied corpse goes, as when a player takes everything from it.
+  if a.direction=='to_player' and e.type=='character-corpse' and sources[1].is_empty() then e.destroy(); out.corpse_removed=true end
   return out
 end
 -- Targets are {position} or {entity}. Each is independent: an unreachable one
@@ -2176,6 +2212,7 @@ local function await_feed(p,handler,a,item,need)
   state().active[p.index]={kind='feed',handler=handler,args=args,item=item,need=need,awaiting_craft=true,until_tick=until_tick,next_check=game.tick+FEED_CHECK}
   return {awaiting_craft={item=item,held=have,need=need,crafting=coming},until_tick=until_tick}
 end
+M.await_feed=await_feed
 -- Own entities in reach (or at explicit positions) matching a predicate,
 -- nearest first so a short supply goes to the closest machines.
 local function reachable(p,a,wanted)
@@ -2269,6 +2306,14 @@ function handlers.collect(p,a)
   args.count=a.item and integer(a.count,10000,1,10000,'count') or nil
   local targets=reachable(p,args,function() return true end)
   local out=transfer_batch(p,args,targets,true)
+  -- Named targets inside another agent's claim are taken from, but say whose.
+  local claimed={}
+  for _,t in ipairs(targets) do
+    local ok,at=pcall(position,t.entity and t.entity.valid and t.entity.position or t.position)
+    local c=ok and #claimed<4 and M.claims.other(p,at)
+    if c then claimed[#claimed+1]=string.format('(%g,%g) in %s',at.x,at.y,M.claims.label(c)) end
+  end
+  if #claimed>0 then out.claimed=claimed end
   if not a.positions and not a.types and not a.chests then
     local skipped=0
     for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=(p.reach_distance or 10)+3,force=p.force,type={'container','logistic-container'}}) do
@@ -3170,9 +3215,9 @@ handlers.equipment=function(p,a)
   assert(not p.permission_group or p.permission_group.allows_action(defines.input_action[input]),'permission denied: '..input)
   return equipment_handler(p,a)
 end
-local timed={walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true}
+local timed={walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true}
 -- The active action kind a step's handler starts, where it differs from its name.
-local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true},collect={gather=true},feed={gather=true}}
+local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true},build={feed=true},collect={gather=true},feed={gather=true}}
 local conditions=conditions_module{known=known,position=position}
 scheduler=scheduler_module{
   state=state,player=player,handlers=handlers,
@@ -3202,6 +3247,11 @@ scheduler=scheduler_module{
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
 clock=clock_module{state=state,lookup=function(index) return M.lookup(index) end}
 for name,handler in pairs(clock.handlers) do handlers[name]=handler end
+-- Direct wait_ticks and sleep/sleep_check (waits.lua).
+M.waits=require('waits'){state=state,integer=integer,
+  replace=function(p) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end end,
+  advance=function(p,ticks) return clock.handlers.advance(p,{ticks=ticks}) end,clock_mode=function() return clock.report().mode end}
+for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
@@ -3220,7 +3270,7 @@ function handlers.cameras() return M.cameras.list() end
 -- clock runs for it like any timed action).
 function handlers.wait_until(p,a)
   conditions.validate(a)
-  local timeout=integer(a.timeout,3600,1,36000,'timeout')
+  local timeout=integer(a.timeout,3600,1,54000,'timeout (1..54000 ticks)')
   local condition={}
   for k,v in pairs(a) do if k~='timeout' then condition[k]=v end end
   -- Met already: done at once, like construct with nothing to do.
@@ -3233,8 +3283,8 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={profile=true,say=true,chat=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
-local reads={describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true}
+local passive={sleep=true,profile=true,say=true,chat=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
+local reads={labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -3246,7 +3296,7 @@ local EXTRA_ARGS={attach={'offline'},build={'quality'},collect={'count','quality
   configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
   board={'status'},board_update={'status','note'},plan_save={'note'}}
 -- observe forwards to the scoped views; a scoped call is checked as that view.
-local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true}
+local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,sleep_check=true}
 local allowed_args
 function check_args(action,args)
   if not allowed_args then
@@ -3283,13 +3333,16 @@ M.check_args=check_args
 -- request, and how much of it the character had nothing to do (no active
 -- action and no running plan) or stood waiting for hand-crafted items.
 -- Hand crafting runs alongside and is listed.
-local function clock_line(p)
+-- A peeking request (fh --wait polls) reports without restarting the count,
+-- so the reply after a wait covers the whole wait; it still counts as seen.
+local function clock_line(p,peek)
   local clocks=state().clocks or {}; state().clocks=clocks
   local c=clocks[p.index]
   local since=c and game.tick-c.call_tick or 0
   local idle=c and c.idle or 0
   local waited=c and c.craft_wait or 0
-  clocks[p.index]={call_tick=game.tick,idle=0,craft_wait=0}
+  if peek and c then c.seen_tick=game.tick
+  else clocks[p.index]={call_tick=game.tick,idle=0,craft_wait=0} end
   local function t(ticks)
     local sec=math.floor(ticks/60)
     if sec>=3600 then return string.format('%dh%02dm',math.floor(sec/3600),math.floor(sec/60)%60) end
@@ -3335,15 +3388,16 @@ function M.dispatch(request)
   if request.action=='status' then M.bots.status(request.player,result) end
   if type(result)=='table' and request.action~='describe' and request.action~='profiles' and request.action~='cameras' then
     local p=M.lookup(request.player or 1)
-    if p and p.valid then result.clock=clock_line(p) end
+    local peek=type(request.args)=='table' and request.args.peek==true
+    if p and p.valid then result.clock=clock_line(p,peek) end
     -- What is new for this agent (mentions, board, attacks/losses, reminders);
     -- directors and peeking readers (overlays) leave the agent's cursors alone.
-    local peek=type(request.args)=='table' and request.args.peek==true
     if p and p.valid and not peek and request.action~='board_events' and not M.is_director(p.index) then
       result.team=M.board.team(p,unseen_losses(p))
     end
     if clock and request.action=='status' then result.time_mode=clock.report() end
-    if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index) end
+    -- The unread trailer repeats only when a newer message arrived (status always shows it).
+    if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index,peek and 'peek' or request.action=='status' and 'always' or nil) end
   end
   return result
 end
@@ -3379,7 +3433,9 @@ dispatch_request=function(request)
   -- A peek at the chat is a read any player can make (directors and
   -- overlays have no character).
   local peek=request.action=='chat' and type(request.args)=='table' and request.args.peek==true
-  if peek or request.action=='status' or request.action=='queue_status' or request.action=='queue_cancel' then
+  -- sleep_check (an observe scope) also answers for a dead character.
+  local sleeping=request.action=='observe' and type(request.args)=='table' and request.args.scope=='sleep_check'
+  if peek or sleeping or request.action=='status' or request.action=='queue_status' or request.action=='queue_cancel' then
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     return handler(body(p),request.args or {})
   end
@@ -3420,11 +3476,14 @@ end
 kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions}
 threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event) M.board.on_character_hit(event) end}
 survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end}
+-- labs: research line diagnostics (labs.lua), an observe scope.
+M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end}
+function handlers.labs(p,a) return M.labs.view(p,a) end
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
 space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,
   -- Riding or landing takes the character away: controls stop and a plan pauses.
   stop=function(p) M.stop_player(p.index) end}
-stock=stock_module{distance=distance,integer=integer,position=position,
+stock=stock_module{distance=distance,integer=integer,position=position,claims=M.claims,
   -- One stop of a rearm/refuel tour: top the entity up; stop when none is left.
   visit=function(p,action,e)
     if action.op=='feed' then

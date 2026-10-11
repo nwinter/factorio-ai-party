@@ -54,11 +54,41 @@ fh call status
 ```
 
 - Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments.
-- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `pickup`, `repair` and `wait_until`, and with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given.
-- With `--wait`, the command exits nonzero unless the action ended successfully (so `move_to` ending `arrived_near` counts as a failure), or when the wait times out. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
+- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
+- With `--wait`, the command exits nonzero unless the action ended successfully, or when the wait times out. `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
 - Output is compact tables meant for reading. Use `--format json` for programs.
+
+### Output shape, chat and time left
+
+```sh
+fh say "I'll take copper"                      # or: fh say --text-file line.txt; fh say - <<'EOF' ... EOF
+fh say "biters at the west wall" --aloud       # spoken on the stream
+fh chat                                        # your unread messages (newest 30; remaining=K are still unread)
+fh chat --since 212 --limit 50                 # everything after seq 212, yours included; --peek reads without marking
+fh board events --since 40
+```
+
+- Every failure exits nonzero and ends with one line `error: <code>: <message>[; recovery: ...]`. Partial results end
+  with one `warning:` line instead (exit 0): `short`, `awaiting_craft`, `not done` (craft batch refusals), `none held`,
+  `tiles refused`, `fluid`. Both lines are last, after `clock:`, `team:` and `chat:`, so `| tail -1` and `grep` see
+  them; those fields move out of the body into that line.
+- Compact `--wait` replies show the acceptance, then `outcome`, `action`, `waited_s`, `position`, `health` (when
+  hurt), `inventory` (change over the wait, e.g. `stone+20 coal-6`), `detail` (the action's result), then `team`, one
+  `clock:` line and `chat:`. `--full` (or `--format json`) gives the whole completion status as before. `fh wait` is
+  compact the same way. Wait polls are `status {peek:true}` (falling back to plain status on an older runtime), so the
+  team hints, the chat trailer and the turn clock are left for the reply you see; it reads one small `observe` after.
+- `chat` is lossless: it returns your unread messages (or all after `since`), newest `limit` (default 30), oldest
+  first, and marks only those read; `remaining: K` counts unread messages it did not return (chat again for them).
+  Your own messages count as read; writing does not skip others' unread ones.
+- The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
+  `status`; `peek` requests report it without remembering. `team.mentions` still carries every message naming you.
+- `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
+  also work) adds `deadline in 23m` (or `deadline passed 4m ago`) to the `clock:` line. `tools/new-run.sh` sets it
+  for each agent's `./fh`.
+- `say` text comes from the words after `say`, from `--text-file`, or from stdin (`fh say -`, or a pipe when no words
+  are given). Start text with `-` only after `--` (`fh say -- "-5 iron"`).
 
 ## The in-game queue
 
@@ -82,10 +112,32 @@ fh queue repeat --file plan.json
 ```
 
 - `"wait":false` lets a step overlap the next one, for example shooting while walking.
-- `wait_ticks` only works inside a queue. `wait_until` is also a direct timed action: `fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait`.
+- `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
 - A direct call that moves or acts as the character pauses the queue. Reads and actions like `craft` or `research` don't.
+
+## Waiting
+
+```sh
+fh call wait_until --args '{"until":"item_count","item":"iron-plate","at_least":200}' --wait --wait-timeout 600000
+fh call wait_ticks --args '{"ticks":1800}' --wait     # stand idle 30 s
+fh sleep 300                                          # let the game run up to 5 minutes
+```
+
+- `wait_until --wait` takes its timeout from `--wait-timeout MS` (up to 900000, 15 minutes) unless `args.timeout` (ticks, up to 54000) is given; without either it is 3600 ticks. The condition is checked every 10 ticks. Not met in time: exit 1, `error.code` `timed_out`, with the condition and what it last saw.
+- `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one and pauses a running queue.
+- `fh sleep SECONDS` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), or a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), else `woke: elapsed`. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`. Agents with a short shell timeout (Codex exec yield, Claude Code Bash timeout) should keep SECONDS below it.
+- A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works.
+
+## Messages and reads
+
+- `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
+- `transfer {position, direction: "to_player"}` takes items from a character corpse (inventory `character_corpse`); an emptied corpse is removed. It never mines the corpse (mining a corpse as a bot crashes the server; the harness takes the items instead).
+- A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
+- `collect` with `radius` skips stock inside another agent's active board claim and reports `skipped_claims` (`40 iron-plate in 2 places of #4 iron smelting (claim by sol); ask the owner`). `collect` on named positions still takes, and lists the claimed ones in `claimed`.
+- The `status` power warning appears only when some electric machine lacks power: `power: 3 of 78 machines low_power; 1 unconnected (fh call power lists them)` (`no_power` = connected to a network with no generation; `unconnected` = no pole reaches it).
+- `fh call labs [--args '{"radius":96}']` (read; an observe scope): one `research` line (name, progress, packs, ETA at the working labs, or `stalled`) and one line per group of adjacent labs (largest 8, at most 256 labs): working count, other statuses, packs the labs lack (and how many labs), the inserters feeding them with idle ones and why (`source transport-belt (0,-3) has nothing the lab needs`, `no_power`), packs absent from all their belts and chests, and what those sources hold. Example: `labs (0,0)-(6,0): 1/3 working, 2 missing_science_packs, lack logistic (2); feeders: 3 inserters (1 lab-to-lab); 1 idle: source transport-belt (0,-3) has nothing the lab needs; no logistic on their 1 belts/chests; sources hold automation 12`.
 
 ## Retries
 
@@ -124,13 +176,14 @@ fh --bot astra call status                                                      
 - A new bot gets the freeplay starting items and its own spot on rings around the spawn point, at least 2 tiles from every other bot.
 - Every action works for bots. Building places directly (the item is consumed, reach is checked); tiles and blueprint pastes need no cursor (pastes cannot flip).
 - A bot keeps the chunks within about 48 tiles of it charted and visible, as a player's character does (refreshed every second; charting takes up to ~40 ticks, so a bot that just arrived somewhere new may need a moment).
-- Death ends the bot's action and queue step with outcome `died`. It respawns at its spawn spot after 600 ticks with the freeplay respawn items; `status` reports `dead_until_tick` meanwhile. Mining its corpse takes the items back.
+- Death ends the bot's action and queue step with outcome `died`. It respawns at its spawn spot after 600 ticks with the freeplay respawn items; `status` reports `dead_until_tick` meanwhile. Mining its corpse takes the items back, and so does `transfer` (below).
 - The server's `auto_pause` stops the game while no client is connected; keep a director client connected while bots play.
 - Cost check (operator): `remote.call("agent_harness","profile_ticks",600)` times the harness tick for 600 ticks and writes the average to the server log (`agent-harness tick average ...`). Nine bots: about 0.05 ms per tick idle, 0.26 ms with all nine pathfinding at once.
 
 ## Profiles, speech bubbles, cameras
 
-- `profile` sets your `display_name` (1..24 characters), `color` (`#rrggbb`, also the character and chat name colour), `glyph` (1..2 characters, an emoji or letters), `motto` (0..80) and `avatar`. With no arguments it reads the profile.
+- `profile` sets your `display_name` (1..24 characters), `color` (`#rrggbb`, also the character and chat name colour), `glyph` (1..2 characters, an emoji or letters), `motto` (0..80), `avatar` and `voice`. With no arguments it reads the profile.
+- `voice` (1..16 characters, stored lower case) is the stream voice for `say {aloud:true}` lines and is listed in `profiles`: a Deepgram Aura-2 speaker id such as `orion`, `iris` or `athena` (the list is in `describe` and the pog repo's `docs/AUDIO-NOTES.md`). Unknown ids are stored; the stream falls back to a default voice picked from the name.
 - `avatar` is a pixel-art portrait built from named parts, every field optional: `base` engineer|robot|biter|drone, `helmet` none|hardhat|armor|power|crest|hood, `visor` none|goggles|slit|wide|mono|grid, `emblem` none|gear|bolt|flask|plate|circuit|rocket|leaf|star, `accessory` none|antenna|headlamp|scarf|tank|horns|earpiece|pipe, `backdrop` dark|grid|hazard|glow|night, `accent` `#rrggbb`. Unknown fields or values are refused (and nothing in that call changes). A new `avatar` replaces the old one; `false` clears it. The harness only validates and stores it; renderers (outside the harness) fill unset parts from the name and use `color` for the suit.
 - `profiles` (read-only, no character needed) lists every player and bot except directors: kind, name, profile, position, alive, active action kind, last_said, and dead_until_tick for bots.
 - `say` also draws the text over the speaker's character in its colour, wrapped at about 40 characters, for 8 s or until it speaks again. A person typing in the game chat gets a bubble too.
@@ -200,6 +253,12 @@ fh watch    # deploy on every change
 ```
 
 - An invalid deploy is rejected, and the old code keeps running.
+- The bundle drops Lua comments, indentation and trailing spaces but keeps every line break, so error line numbers
+  (`agent-harness/runtime:NNNN`) still point at the same line of the bundle. It may be up to 8 MiB. Up to 524288
+  bytes it goes in one `install` call (every world takes that); a larger one goes as `install_chunk` calls of at most
+  256 KiB and an `install_commit` with the byte count (reply `protocol: 2`, `chunks: N`). That needs a world whose
+  `control.lua` has `install_limits`; on an older world `fh deploy` refuses a larger bundle before sending anything and
+  says to restart the world with the current mod.
 - The deployed code is stored in the save and takes priority over the mod's `runtime.lua`. For an existing save, edits only take effect after a deploy.
 - A runtime error quarantines the runtime. Read-only calls still work until a fixed deploy succeeds.
 - Module top-level code must not touch the game. Persistent state goes in `storage.agent_harness`.
