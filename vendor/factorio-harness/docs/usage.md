@@ -253,6 +253,12 @@ fh watch    # deploy on every change
 ```
 
 - An invalid deploy is rejected, and the old code keeps running.
+- The bundle drops Lua comments, indentation and trailing spaces but keeps every line break, so error line numbers
+  (`agent-harness/runtime:NNNN`) still point at the same line of the bundle. It may be up to 8 MiB. Up to 524288
+  bytes it goes in one `install` call (every world takes that); a larger one goes as `install_chunk` calls of at most
+  256 KiB and an `install_commit` with the byte count (reply `protocol: 2`, `chunks: N`). That needs a world whose
+  `control.lua` has `install_limits`; on an older world `fh deploy` refuses a larger bundle before sending anything and
+  says to restart the world with the current mod.
 - The deployed code is stored in the save and takes priority over the mod's `runtime.lua`. For an existing save, edits only take effect after a deploy.
 - A runtime error quarantines the runtime. Read-only calls still work until a fixed deploy succeeds.
 - Module top-level code must not touch the game. Persistent state goes in `storage.agent_harness`.
