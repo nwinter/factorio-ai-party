@@ -52,6 +52,16 @@ class KBTest(unittest.TestCase):
         self.assertIn("nothing is lost", self.kb.tech_text("automation"))
 
 
+class SpaceAgeKBTest(unittest.TestCase):
+    def test_space_age_facts(self):
+        k = KB("space-age-2.0.77")
+        self.assertEqual(k.default_machine("electronics"), "assembling-machine-2")  # circuits moved category
+        self.assertIn("gravity is 0", k.recipe_text("space-science-pack"))
+        self.assertNotIn("hand-craftable", k.recipe_text("space-science-pack"))
+        self.assertIn("build an asteroid collector", k.tech_text("space-science-pack"))
+        self.assertEqual(k.entities["rocket-silo"]["rocket_parts_required"], 50)
+
+
 class HistoryTest(unittest.TestCase):
     def test_runs_load(self):
         s = H.load_runs()

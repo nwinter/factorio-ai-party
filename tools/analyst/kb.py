@@ -170,6 +170,14 @@ class KB:
         return [e["name"] for e in self.entities.values() if category in (e.get("crafting_categories") or {})
                 and e["type"] in ("assembling-machine", "furnace", "rocket-silo") and not e.get("hidden")]
 
+    def default_machine(self, category):
+        """The machine a team typically uses: the table above, else assembling-machine-2 when it can (Space Age moved
+        circuits to 'electronics' and gears to 'pressing'), else the first machine for the category."""
+        ms = self.machines_for(category)
+        if category in DEFAULT_MACHINE:
+            return DEFAULT_MACHINE[category]
+        return "assembling-machine-2" if "assembling-machine-2" in ms else (ms or ["?"])[0]
+
     # ---- technologies ----------------------------------------------------------------------------------------------
     def tech_cost(self, t):
         """{pack: total}, total seconds at one lab of speed 1, trigger text (2.0 trigger techs cost no packs)."""
@@ -339,7 +347,9 @@ class KB:
                 return m
             if cat == "chemistry" and chem:
                 return chem
-            return DEFAULT_MACHINE.get(cat) or (self.machines_for(cat) or ["?"])[0]
+            if assembler and assembler in self.machines_for(cat):  # Space Age's electronics, pressing, ...
+                return assembler
+            return self.default_machine(cat)
 
         def add(it, rate, depth=0):
             if depth > 30:
@@ -428,7 +438,7 @@ class KB:
         r = self.recipes.get(recipe) or self.recipe_for(self.resolve(recipe) or recipe)
         if not r:
             return f"no recipe {recipe}"
-        machine = machine or DEFAULT_MACHINE.get(r["category"]) or (self.machines_for(r["category"]) or ["?"])[0]
+        machine = machine or self.default_machine(r["category"])
         speed = self.machine_speed(machine)
         crafts = 60 * speed / r["energy"] * count
         prod = ", ".join(f"{fmt(crafts * (p.get('amount') or 1) * (p.get('probability') or 1), 2)} {pretty(p['name'])}" for p in r["products"])
