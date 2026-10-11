@@ -1728,14 +1728,14 @@ end
 -- What sits in a refused footprint: entities and ghosts (name and position),
 -- the character itself, else the tiles it may not go on (water, space).
 -- Trees and rocks are called out: place_ghosts marks them and construct
--- clears them, where a direct build cannot.
+-- clears them, where a direct build cannot. Items on the ground: pick them up.
 local function placement_error(p,proto,pos,direction)
  local function blockers()
   local b=proto.collision_box or {left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
   local l,t,r,btm=b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y
   if direction==4 or direction==12 then l,t,r,btm=-btm,l,-t,r end
   local area={left_top={x=pos.x+l,y=pos.y+t},right_bottom={x=pos.x+r,y=pos.y+btm}}
-  local found,character,clearable={},false,false
+  local found,character,clearable,items={},false,false,false
   for _,e in pairs(p.surface.find_entities_filtered{area=area,limit=16}) do
     if e.valid and e.type=='character' and e==p.character then character=true
     elseif e.valid and e.type=='character' and #found<4 then
@@ -1744,6 +1744,8 @@ local function placement_error(p,proto,pos,direction)
       found[#found+1]=string.format('%s standing at (%.1f,%.1f) (ask them to move, or build elsewhere)',who and who..'\'s character' or 'another character',e.position.x,e.position.y)
     elseif e.valid and e.type~='resource' and #found<4 then
       local name=e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.type=='tile-ghost' and 'tile ghost '..e.ghost_name or e.name
+      -- An item on the ground (shake4: Grok's 9 tries at one spot): say which.
+      if e.type=='item-entity' then items=true; name=name..(e.stack and e.stack.valid_for_read and ' ('..e.stack.name..')' or '') end
       if e.type=='tree' or e.type=='plant' or e.type=='simple-entity' or e.type=='cliff' then clearable=true end
       found[#found+1]=string.format('%s (%g,%g)',name,e.position.x,e.position.y)
     end
@@ -1751,6 +1753,7 @@ local function placement_error(p,proto,pos,direction)
   if character then found[#found+1]='the character standing on the footprint (move off it first)' end
   if #found>0 then
     return ' by '..table.concat(found,', ')..(clearable and '; mine it, or place_ghosts (marks it) + construct (clears it)' or '')
+      ..(items and '; pick the item up: stand on or next to it and fh call pickup' or '')
   end
   local tiles={}
   for _,tile in pairs(p.surface.find_tiles_filtered{area=area,limit=16}) do

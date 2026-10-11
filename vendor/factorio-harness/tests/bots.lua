@@ -142,6 +142,13 @@ c.items['stone-furnace']=1
 local ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=0}})
 assert(not ok and err:find('placement blocked by burner-mining-drill (3,0)',1,true) and not err:find('corpse'),err)
 eq(corpse.valid,false); eq(c.items['stone-furnace'],1)
+-- An item on the ground names its item and how to clear it (shake4: Grok's 9
+-- refused builds at one spot, no remedy).
+local dropped={valid=true,type='item-entity',name='item-on-ground',position={x=3.3,y=0.2},stack={valid_for_read=true,name='iron-plate'}}
+surface.find_entities_filtered=function(a) if a.area then return {dropped} end return {} end
+ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=0}})
+assert(not ok and err:find('placement blocked by item-on-ground (iron-plate) (3.3,0.2); pick the item up: stand on or next to it and fh call pickup',1,true),err)
+eq(c.items['stone-furnace'],1)
 surface.find_entities_filtered=function() return {} end
 surface.can_place_entity=function() return true end
 -- The bot's own character the only thing on the footprint (shake3: Grok's most
