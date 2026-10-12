@@ -41,6 +41,8 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
   - Nuclear: build the reactor and heat pipes; transfer or refuel with uranium-fuel-cell.
   - Quality: configure {recipe, quality}; quality on build, transfer and requests.
   - Grenades and capsules: use_item {item, position}.
+  - Vehicles: vehicle {position, enter: true} gets into a car, tank, spidertron, locomotive or wagon; vehicle {exit:
+    true}; vehicle {drive: {x,y}} drives a car or tank (timed); vehicle {position, go_to: {x,y}} walks a spidertron.
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
 
 ## Pace
