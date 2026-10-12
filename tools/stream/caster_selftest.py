@@ -829,6 +829,26 @@ check("an absence the facts back passes; another does not", caster.check_line(
     "Logistic robotics is done, but still no roboports.", nb, [], []) is None and caster.check_line(
     "Still no trains.", nb, [], []) == "claims something is missing")
 
+# HOSTS4 item 3: an agent answering a viewer (the relay reaches the agents from shake11) is its own beat
+dv = caster.Differ()
+dv.diff({"agents": [], "chat": []})
+tnow = time.time()
+evv = dv.diff({"agents": [], "chat": [
+    {"seq": 50, "from": "viewer", "viewer": "NickWinter", "lane": "viewer", "text": "viewer NickWinter: why no roboports yet?",
+     "t": tnow - 20},
+    {"seq": 51, "agent": "sol", "from": "Sol", "text": "@NickWinter good question: roboports right after the silo.",
+     "t": tnow - 2}]})
+vr = [e for e in evv if e["kind"] == "viewer_reply"]
+check("an agent's line naming a recent viewer becomes a viewer_reply beat", len(vr) == 1 and vr[0]["viewer"] ==
+      "NickWinter" and vr[0]["question"] == "why no roboports yet?" and vr[0]["prio"] == 7, str(evv))
+fvr = caster.facts_for(vr[0], {"agents": [{"name": "sol", "display_name": "Sol"}]})
+check("viewer_reply facts: the question, the agent's answer, how to call it", fvr["viewer_message"]["from"] ==
+      "NickWinter" and "roboports right after the silo" in fvr["agent_answer"] and "answered a viewer" in
+      fvr["how_to_call_it"] and caster.clip_rank(vr[0]) == "viewer", str(fvr)[:300])
+evn = dv.diff({"agents": [], "chat": [{"seq": 52, "agent": "sol", "from": "Sol", "text": "Silo next, then rails.",
+                                       "t": time.time()}]})
+check("a line that names no viewer is plain chat", not [e for e in evn if e["kind"] == "viewer_reply"])
+
 # HOSTS4: Opus on shake10 aired cut-off lines, verdict openers and lowercase names
 check("a line cut off mid-word is cut", caster.check_line("They scanned before leaving. Two ass", {"event": "lull"}, [],
                                                            []) == "cut off mid-sentence")

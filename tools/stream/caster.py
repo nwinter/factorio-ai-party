@@ -151,7 +151,8 @@ def planet_facts(s):
     return f
 
 
-PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "power": 6,
+PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "viewer_reply": 7,
+            "power": 6,
             "harness": 5,
             "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
@@ -176,7 +177,7 @@ def clip_rank(e):
     if e.get("prio", 0) >= URGENT or e.get("kind") == "space" or (
             e.get("kind") == "segment" and (e.get("segment") or {}).get("type") == "space_moment"):
         return "urgent"
-    return "viewer" if e.get("kind") == "viewer" else "banter"
+    return "viewer" if e.get("kind") in ("viewer", "viewer_reply") else "banter"
 TEXT_MODELS = {  # Workers AI, USD per million tokens in/out (pricing page, 2026-10-10)
     "@cf/meta/llama-3.3-70b-instruct-fp8-fast": (0.293, 2.253),
     "@cf/meta/llama-3.1-8b-instruct-fp8-fast": (0.045, 0.384),
@@ -245,12 +246,29 @@ class Differ:
     def __init__(self):
         self.prev = None
         self.alert_ids, self.chat_keys, self.board_seqs, self.segments_seen = set(), set(), set(), set()
+        self.recent_viewers = {}  # lower-case name -> {name, text, t}: viewers who wrote in the last 10 minutes
+
+    def answers_viewer(self, text, now, window=600):
+        """The viewer an agent's line answers: one who wrote in the last 10 minutes and whom the line names ("@Nick",
+        "NickWinter, ..."). Viewer names of 3 letters or fewer must be @-mentioned."""
+        low = (text or "").lower()
+        for key, v in list(self.recent_viewers.items()):
+            if now - v["t"] > window:
+                self.recent_viewers.pop(key, None)
+                continue
+            if re.search(r"@" + re.escape(key) + r"\b", low) or (
+                    len(key) > 3 and re.search(r"\b" + re.escape(key) + r"\b", low)):
+                return v
+        return None
 
     def diff(self, s):
         ev = []
         now = time.time()
         first = self.prev is None
         p = self.prev or {}
+        for v in viewer_messages(s):  # before the chat: an answer can arrive in the same snapshot as the question
+            if now - float(v["t"]) < 600 and v["name"].lower() not in ("a viewer",):
+                self.recent_viewers[v["name"].lower()] = {"name": v["name"], "text": v["text"], "t": float(v["t"])}
         for a in s.get("alerts") or []:
             if a["id"] in self.alert_ids:
                 continue
@@ -264,6 +282,10 @@ class Differ:
                 continue
             self.chat_keys.add(key)
             if not first and m.get("agent") and not m.get("tell") and now - float(m.get("t") or now) < 30:
+                asked = self.answers_viewer(m.get("text", ""), now)
+                if asked:  # HOSTS4 item 3: viewer lines reach the agents (shake11 on); an answer is its own beat
+                    ev.append({"kind": "viewer_reply", "agent": m["agent"], "viewer": asked["name"],
+                               "question": asked["text"], "text": m.get("text", "")})
                 ev.append({"kind": "chat", "agent": m["agent"], "text": m.get("text", ""), "aloud": bool(m.get("aloud")),
                            "seq": m.get("seq")})
         board = s.get("board") or {}
@@ -327,7 +349,12 @@ def viewer_messages(s):
         if not isinstance(r, dict):
             continue
         text = str(r.get("text") or r.get("message") or "").strip()
-        name = str(r.get("user") or r.get("name") or r.get("author") or "a viewer").strip()[:40]
+        relayed = re.match(r"^viewer ([^:]{1,40}):\s*(.+)$", text)  # the game chat's "viewer NAME: ..." (audience.lua)
+        if relayed:
+            text = relayed.group(2)
+        name = str(r.get("user") or r.get("name") or r.get("author") or
+                   (r.get("viewer") if isinstance(r.get("viewer"), str) else None) or
+                   (relayed.group(1) if relayed else None) or "a viewer").strip()[:40]
         if not text or re.search(r"https?://|www\.", text):
             continue
         out.append({"id": r.get("id") or r.get("seq") or (name, text), "name": name, "text": text[:200],
@@ -603,6 +630,11 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         if e.get("answer"):  # the analyst's answer, checked with its tools; the hosts put it in their own words
             f.update(e.get("answer_facts") or {}, analyst_answer=e["answer"])
             f["how_to_call_it"] = "Rook says the viewer's name and question; Vale answers it from analyst_answer"
+    if e["kind"] == "viewer_reply":  # HOSTS4 item 3: an agent answered a viewer in the game chat
+        f["viewer_message"] = {"from": e.get("viewer"), "text": e.get("question")}
+        f["agent_answer"] = spoken(voices.speakable(e.get("text") or "", 220))
+        f["how_to_call_it"] = ("an agent just answered a viewer: Rook says who asked what, Vale says what the agent "
+                               "answered, in the hosts' words, and enjoys that the agents talk to the audience")
     if e["kind"] == "segment":
         f.update(card_facts(e.get("segment") or {}))
     if e["kind"] == "research" and baseline and e.get("text"):
@@ -1717,7 +1749,7 @@ class Caster:
         if e["kind"] in ("chat", "camera", "board") and self.rng.random() < self.a.naturalist:
             e["naturalist"] = True
         first = "pbp" if e["prio"] >= PRIORITY["research"] or e["kind"] in (
-            "camera", "board", "harness", "research_start", "viewer") else "color"
+            "camera", "board", "harness", "research_start", "viewer", "viewer_reply") else "color"
         if e["kind"] == "lull" or e.get("naturalist"):
             first = "color" if self.last_speaker == "pbp" or e.get("naturalist") else "pbp"
         lo, hi = self.a.lines
