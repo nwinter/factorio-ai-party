@@ -25,6 +25,12 @@ checkout without the shift folders) the page and its links are left out. Rebuild
 npx wrangler pages deploy site/dist --project-name player-of-games --branch preview
 ```
 
+`tools/site-refresh.sh [--last-run RUN] [--no-deploy]` does it all: status.json's last run, build (with the main
+checkout's `runs/`), `check.py`, `test_live.py`, `test_longrun.py`, then preview and production (production only if
+the preview went up). `tools/shift-change.sh` runs it in the background once the previous shift is stopped, with its log
+in `runs/PREV/site-refresh.log`; a failure never blocks the shift (`POG_SITE_REFRESH=0` skips it). It leaves
+`site/live/status.json` modified in the checkout: commit it when convenient.
+
 The Cloudflare Pages project `player-of-games` has `main` as its production branch. Any other `--branch` makes a
 preview deployment: each gets its own URL, and the branch also gets a stable alias
 (`https://preview.player-of-games.pages.dev` for `--branch preview`). Without `--branch`, wrangler uses the current
