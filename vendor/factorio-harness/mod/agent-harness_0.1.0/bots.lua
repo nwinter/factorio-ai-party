@@ -95,7 +95,7 @@ return function(api)
       __newindex=function(_, k, v) if alive(b) then b.character[k] = v end end})
   end
   -- A controllable bot: alive, like player() for a player.
-  function M.actor(index)
+  function M.actor(index, seated)
     local b = bots().by_index[index]
     assert(b, 'bot does not exist')
     -- Aboard a platform: a bodiless proxy on the platform's surface, for the
@@ -105,7 +105,7 @@ return function(api)
     if not alive(b) then
       error(string.format('bot %s is dead; it respawns at tick %s (status reports dead_until_tick; fh sleep SECONDS waits and wakes with respawned)', b.name, tostring(b.dead_until_tick)), 0)
     end
-    assert(not b.character.driving, 'the character is in a vehicle; vehicles are unsupported')
+    assert(not b.character.driving or (seated and b.character.vehicle), 'the character is in a vehicle: vehicle {exit: true} gets out (reads, chat, crafting, research and remote actions work seated)')
     return M.proxy(b)
   end
   -- The proxy for status and cleanup, dead or alive.

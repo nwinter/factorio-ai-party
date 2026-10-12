@@ -685,7 +685,8 @@ async function main() {
     }
     const waits = bridged ? ['walk','mine','build'].includes(action)
       : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
-        || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined);
+        || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
+        || (action === 'vehicle' && args.drive !== undefined);
     if (wait && reply.ok && waits) {
       onAccepted?.(reply);
       const completion = await waitForAction(action, reply.result?.until_tick, reply.tick, before);

@@ -296,9 +296,16 @@ Some actions work at a distance, the way a player can through remote view:
   are marked only when `entity_names` or `entity_types` name them. `cancel_deconstruction {area, tiles}` clears tile
   marks (`tiles_cancelled`).
 
-Not supported yet: riding or driving vehicles (cars, tanks, spidertrons, trains as a passenger: a character in a
-vehicle is refused by every action), elevated rails and rail ramps, the selector combinator, and fluid
-transfers by hand. See docs/HARNESS-COVERAGE.md in the pog
+- Vehicles: `vehicle {position, enter: true}` gets in (the driver's seat if free, else a car's or spidertron's
+  passenger seat; a locomotive or wagon, whose train runs its schedule as usual), within 10 tiles; `vehicle {exit:
+  true}` gets out; `vehicle {drive: {x,y}}` drives the car or tank you drive there (a timed action steering as a
+  player's keys do: outcomes `arrived`, `blocked` after 3 s without progress, `timed_out`; `--wait` waits for it);
+  `vehicle {position, go_to: {x,y}}` sends a spidertron walking by itself (from outside, or the one you ride);
+  `vehicle {}` says where you sit. Seated, reads, chat, crafting, research, ghosts and other remote-view actions
+  work; anything that moves or uses the body (walking, mining, building by hand, transfers) is refused with a pointer
+  to `vehicle {exit: true}`.
+
+Not supported yet: elevated rails and rail ramps, the selector combinator, and fluid transfers by hand. See docs/HARNESS-COVERAGE.md in the pog
 repo for the feature-by-feature list.
 
 ## Bots
