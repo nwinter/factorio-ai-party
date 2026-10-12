@@ -32,7 +32,7 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
   `shots/NAME.png` that you can open and look at. Use pictures to check layouts (inserter directions, belt flow).
 - Tools for features beyond hand building (what each action does; see describe.json for arguments):
   - Trains: rails with build {item: rail, entity: straight-rail|curved-rail-a|curved-rail-b|half-diagonal-rail};
-    stops, locomotives and wagons with build; train {position: stop, name, limit}; train {position: locomotive,
+    stops, locomotives and wagons with build; train {position: stop, station, limit}; train {position: locomotive,
     schedule, automatic}.
   - Logistics: roboports with build, robots into them with transfer; requester and buffer chests' requests with
     requests {position, set}; your own requests with requests (needs logistic robotics).

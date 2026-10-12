@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline check for tools/live_check_vehicles.py: every Lua snippet compiles, and with a fake harness and game the
 check runs to the end with every step ok. python3 tools/test_live_check_vehicles.py"""
-import json, os, subprocess, sys, tempfile
+import json, os, re, subprocess, sys, tempfile
 
 sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -9,7 +9,7 @@ sys.path.insert(0, HERE)
 import live_check_coverage as L  # noqa: E402
 import live_check_vehicles as V  # noqa: E402
 
-state = {"seat": None, "car": None}
+state = {"seat": None, "car": None, "units": {}}
 compiled, calls, units = [], [], [200]
 
 
@@ -18,8 +18,15 @@ def fake_lua(self, code):
     p = subprocess.run(["luac", "-p", "-"], input=code, capture_output=True, text=True)
     assert p.returncode == 0, (p.stderr, code[:300])
     compiled.append(code)
-    if "bot_create" in code or "bot_remove" in code:
+    if "bot_create" in code:
+        return {"ok": True, "bot": {"name": "lv1", "unit_number": 655}}
+    if "bot_remove" in code:
         return {"ok": True}
+    if "get_driver" in code:
+        unit = int(re.search(r"get_entity_by_unit_number\((\d+)\)", code).group(1))
+        name = state["units"].get(unit)
+        pos = state["car"] if name == "car" else {"x": 0, "y": 0}
+        return {"name": name, "x": pos["x"], "y": pos["y"], "driver": 655 if state["seat"] == name else None}
     if "teleport" in code:
         return {"site": {"x": 100, "y": 200}, "given": {"car": 1}}
     if "removed" in code:
@@ -46,6 +53,7 @@ def fake_fh(self, action, args=None, wait=False):
         name = {"rail": "straight-rail"}.get(args["item"], args["item"])
         if name == "car":
             state["car"] = dict(args["position"])
+        state["units"][units[-1]] = name
         return True, {"result": {"entity": {"name": name, "position": args["position"], "unit_number": units[-1]}}}
     if action == "vehicle":
         if args.get("enter"):
@@ -91,7 +99,8 @@ def main():
     fails = [l["step"] for l in lines if not l["ok"]]
     assert code == 0 and not fails, (code, fails)
     steps = [l["step"] for l in lines]
-    for want in ("game: the bot sits in the car", "seated move_to refused, pointing to exit", "seated say works",
+    assert any(act == "transfer" and a.get("item") == "rocket-fuel" for act, a, _ in calls), "the spidertron is fuelled"
+    for want in ("game: the bot sits in the car (its driver)", "seated move_to refused, pointing to exit", "seated say works",
                  "game: the car got there", "game: the bot is on foot", "game: the bot sits in the locomotive",
                  "spidertron destination accepted", "cleanup: bot removed"):
         assert want in steps, (want, steps)

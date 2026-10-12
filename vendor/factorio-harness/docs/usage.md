@@ -77,7 +77,7 @@ fh call status
   `read_stopped_train`, `read_trains_count`, `set_trains_limit`. The reply reads back what the game holds. It leaves a
   running queue alone. `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests"
   switch.
-- Trains: `train {position: stop, name, limit}` names a train stop and sets its train limit (`limit: false` clears it);
+- Trains: `train {position: stop, station, limit}` names a train stop and sets its train limit (`limit: false` clears it);
   `train {position: locomotive or wagon, schedule: [{station, wait: [{type, ticks?, compare?, condition?}]}], current,
   automatic}` sets the train's schedule (wait types as in the game: time, inactivity, full, empty, item_count,
   fluid_count, circuit, passenger_present, ...) and automatic or manual mode. Rails, stops, locomotives and wagons are

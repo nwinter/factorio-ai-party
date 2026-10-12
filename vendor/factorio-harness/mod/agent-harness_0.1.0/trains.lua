@@ -10,7 +10,7 @@ return function(api)
   local ROLLING = {locomotive=true, ['cargo-wagon']=true, ['fluid-wagon']=true, ['artillery-wagon']=true}
   M.schema = {
     train = {position='{x,y} of a train stop, or of a locomotive or wagon of the train (in reach)',
-      name='train stop: its station name', limit='train stop: train limit 0..1000, or false to clear it',
+      station='train stop: its station name (what schedules name)', limit='train stop: train limit 0..1000, or false to clear it',
       schedule='train: array of 0..32 {station, wait=[{type=time|inactivity|full|empty|item_count|fluid_count|circuit|passenger_present|..., ticks? (time, inactivity), compare? and|or, condition? {signal, comparator, value}}]}; [] clears',
       current='train: 1-based schedule entry to head for (default 1)',
       automatic='train: true runs the schedule, false is manual mode',
@@ -39,12 +39,15 @@ return function(api)
     return {first_signal={type=kind, name=c.signal}, comparator=c.comparator or '<', constant=math.floor(c.value or 0)}
   end
   function M.handlers.train(p, a)
-    local e = api.entity(p, a); api.friendly(p, e)
+    -- The target by position only: entity() reads `name` as an entity-name
+    -- filter, which is why a stop's name is `station` (live check: name
+    -- "LC-East" failed as "Unknown entity name").
+    local e = api.entity(p, {position=a.position}); api.friendly(p, e)
     if e.type == 'train-stop' then
       assert(a.schedule == nil and a.automatic == nil and a.current == nil, 'schedule, current and automatic are for a train: give a locomotive or wagon position')
-      if a.name ~= nil then
-        assert(type(a.name) == 'string' and #a.name >= 1 and #a.name <= 100, 'name is 1..100 characters')
-        e.backer_name = a.name
+      if a.station ~= nil then
+        assert(type(a.station) == 'string' and #a.station >= 1 and #a.station <= 100, 'station is 1..100 characters')
+        e.backer_name = a.station
       end
       if a.limit ~= nil then
         if a.limit == false then pcall(function() e.trains_limit = nil end)
@@ -53,7 +56,7 @@ return function(api)
       return stop_view(e)
     end
     assert(ROLLING[e.type], e.name .. ' is neither a train stop nor part of a train')
-    assert(a.name == nil and a.limit == nil, 'name and limit are for a train stop')
+    assert(a.station == nil and a.limit == nil, 'station and limit are for a train stop')
     local train = e.train
     assert(train and train.valid, 'no train here')
     if a.schedule ~= nil then
