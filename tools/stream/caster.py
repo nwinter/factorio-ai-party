@@ -312,6 +312,10 @@ class Differ:
             if key in self.chat_keys:
                 continue
             self.chat_keys.add(key)
+            if not first and is_operator_line(m) and now - float(m.get("t") or now) < 30:
+                # the operator writes in game chat as `server` (shift01 16:25): voiced always, in its own voice
+                ev.append({"kind": "operator", "text": m.get("text", ""), "seq": m.get("seq")})
+                continue
             if not first and m.get("agent") and not m.get("tell") and now - float(m.get("t") or now) < 30:
                 asked = self.answers_viewer(m.get("text", ""), now)
                 if asked:  # HOSTS4 item 3: viewer lines reach the agents (shake11 on); an answer is its own beat
@@ -379,6 +383,14 @@ class Differ:
             e["t"] = now
             e["prio"] = e.get("prio") or PRIORITY.get(e["kind"], 2)
         return ev
+
+
+def is_operator_line(m):
+    """The operator's own game-chat line: model.py lane "operator" (from `server`, not a "harness vN:" changelog)."""
+    if m.get("lane"):
+        return m["lane"] == "operator"
+    return (str(m.get("from") or "").lower() == "server" and not m.get("agent") and not m.get("notice")
+            and not re.match(r"^\s*(?:server:\s*)?harness v[\w.]+:", str(m.get("text") or ""), re.I))
 
 
 def viewer_short_names(name):
@@ -773,6 +785,10 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     if e["kind"] == "chat" and e.get("react"):  # task-talk-hosts: the hosts answer the agent who just spoke on air
         f["how_to_call_it"] = ("viewers just heard this agent say it in their own voice: react to it (what it means "
                                "for the team, or how it sounds), briefly, without repeating it word for word")
+    if e.get("operator"):  # the operator (the person running the stream) just spoke on air, in game chat as `server`
+        f["operator_said"] = spoken(voices.speakable(e.get("text") or "", 300))
+        f["how_to_call_it"] = ("viewers just heard the stream's operator, the person running it, say this: react "
+                               "briefly in your own words (\"the operator says ...\"), without repeating it word for word")
     if e["kind"] == "segment":
         f.update(card_facts(e.get("segment") or {}))
     if e["kind"] == "research" and baseline and e.get("text"):
@@ -1904,7 +1920,9 @@ class Caster:
             for e in self.differ.diff(s):
                 if e["kind"] in ("death", "loss", "attack"):  # counts for the hosts (they counted wrongly themselves)
                     self.__dict__.setdefault("tally", deque(maxlen=2000)).append((time.time(), e["kind"]))
-                if e["kind"] == "chat":
+                if e["kind"] == "operator":  # voiced by the chat thread at once, outside the agents' pacing
+                    self.__dict__.setdefault("op_q", deque(maxlen=10)).append(e)
+                elif e["kind"] == "chat":
                     # the hosts hear a chat line only once it aired in the agent's voice (yield_to), not as it is typed
                     self.chat_q.append(e)
                 else:
@@ -2564,10 +2582,46 @@ class Caster:
                 return
             time.sleep(0.5)
 
+    def operator_tick(self):
+        """The operator's lines (game chat from `server`, Differ kind "operator"): voiced as they come in
+        voices.OPERATOR_VOICE, outside the agents' gap and cooldowns (they are rare), ranked like an agent line (after
+        the clip playing now, before host banter); the hosts may react afterwards as to an agent line."""
+        with self.lock:
+            q = self.__dict__.get("op_q")
+            lines = list(q) if q else []
+            if q:
+                q.clear()
+            s = self.snap or {}
+        for e in lines:
+            text = voices.speakable(e.get("text") or "", 300)
+            if not text:
+                continue
+            self.stats["operator_lines"] = self.stats.get("operator_lines", 0) + 1
+            log(f"[voice:Operator/{voices.OPERATOR_VOICE}] {text}")
+            self.agent_free = time.time() + len(text) / 15.0 + 8.0  # the hosts hold off while it is synthesised
+            dur = self.voice(text, voices.OPERATOR_VOICE, None,
+                             {"channel": "operator", "speaker": "Operator", "rank": "agent", "text": text,
+                              "expires_in": 60},
+                             {"type": "operator", "line": text}, hold=lambda: self.caster_free)
+            self.agent_free = time.time() + dur + 0.4
+            if dur:
+                self.history.append(f"operator at {spoken_time(s.get('game_time'))}: Operator - {text}")
+                with self.lock:
+                    react = self.rng.random() < getattr(self.a, "react", 0.5)
+                    self.yielding = {"until": self.agent_free + getattr(self.a, "yield_s", 30),
+                                     "event": {"kind": "chat", "operator": True, "text": text, "label": "operator",
+                                               "react": True, "prio": PRIORITY["chat"], "t": time.time()}
+                                     if react else None}
+
     def chat_loop(self):
-        if self.a.no_chat:
-            return
-        while True:
+        while True:  # --no-chat silences the agents' lines, not the operator's
+            try:
+                self.operator_tick()
+            except Exception:
+                traceback.print_exc()
+            if self.a.no_chat:
+                time.sleep(1.0)
+                continue
             try:
                 self.chat_tick(time.time(), {} if self.a.dry_run else self.status())
             except Exception:

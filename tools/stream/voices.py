@@ -190,6 +190,9 @@ ROLE_DESIGN = {
              "a smile in the voice, measured pace, broadcast-quality studio recording.",
 }
 CASTERS = {"pbp": "atlas", "color": "thalia"}  # Aura-2 picks (docs/AUDIO-NOTES.md "Voices"); caster.py passes these
+# The operator's lines (game chat from `server`): an Aura-2 voice no host role and no premium voice stands in for, held
+# back from the agents' defaults. Aura-2 so it speaks on every backend (route() sends aura2 ids to Aura directly).
+OPERATOR_VOICE = "saturn"
 CASTER_SAY = {"pbp": ("Daniel", 205), "color": ("Karen", 190)}
 
 PRICE = {  # USD per character unless "minutes"; list prices read 2026-10-10 (docs/AUDIO-NOTES.md "Voices round 2")
@@ -223,7 +226,7 @@ def assign_voices(agents, taken=(), tts=None):
         reserved = {tts.caster_voice(r) for r in ROLE_VOICES}
     else:
         reserved = {v for vs in ROLE_VOICES.values() for v in vs}
-    out, used = {}, set(taken) | set(CASTERS.values()) | reserved
+    out, used = {}, set(taken) | set(CASTERS.values()) | reserved | {OPERATOR_VOICE}
     for a in agents:
         v = (a.get("voice") or "").strip().lower()
         if v in CATALOG or v in DESIGNED:

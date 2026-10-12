@@ -188,7 +188,16 @@ agent's answer to a viewer, with the viewer's question above it, for 25 s from t
 newest first, and newer tells can't push them out. A pinned line leaves the feed while it is pinned and returns to it
 afterwards. Shift01 16:09 is why: Astra's "Yes, Craig, ..." scrolled away under tells within seconds. An answer names
 the viewer by the same rule the hosts use (`caster.viewer_short_names`): "@craigNZ830", or "Craig", within 10 minutes
-of the viewer's line. The logic is `chatfeed.js` `viewerPins`, tested in `test_viewer_pins.py`.
+of the viewer's line. The question is the one the agent saw in game chat: that viewer's relayed lines before the
+answer, the one sharing the most words with it, else the most recent. Shift01 16:32 is why: both pins showed
+Joonazan's latest line under answers to two earlier questions. Two answers to one question share its pin. A line's age
+is the greater of wall time and game time, because serve.py stamps the chat it reads at a restart with the restart
+time. The logic is `chatfeed.js` `viewerPins`, tested in `test_viewer_pins.py`.
+
+The operator's own lines (game chat from `server`, model lane "operator", not "harness vN:" changelog lines) appear in
+the feed with a gold OP badge and the label "Operator". They are pinned for 25 s. caster.py voices each one at once in
+`voices.OPERATOR_VOICE` (Aura-2 "saturn", held back from the agents), with a caption labelled Operator and an OP badge
+(audio.js). The agents' pacing does not apply, and the hosts may react afterwards. Tested in `test_operator_lines.py`.
 
 Tells (the team's main channel since the board: shake7 had ~540 tells to ~100 chat lines) are in the same feed as
 direct lines: "Sol → Astra" over the words in full, indented, a size smaller, on a teal edge. A burst from one agent
