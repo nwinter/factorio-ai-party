@@ -13,7 +13,7 @@ An observation is a dict:
   board_events: [{seq, tick, by, id, change, title, kind?}] (optional; docs/BOARD-API.md)
   board: {items: [...], open_unowned} (optional, refreshed slowly; docs/BOARD-API.md)
 """
-import math, re, time
+import math, os, re, time
 from collections import deque
 
 HALF_LIFE = 75.0  # seconds; interest decays toward 0 with this half-life
@@ -161,38 +161,38 @@ def fmt_game_time(sec):
 
 # Technologies and the buildings they unlock, for the hosts' commentary on what the team has not built yet
 # (HOSTS4 item 2: "logistic robotics researched 3 h ago, no roboport built"). Buildings are counted by tools/pog.py's
-# score; a technology whose building is not counted there is left out.
-UNLOCKS = {
-    "logistic-robotics": (("roboport",), "roboports"),
-    "construction-robotics": (("roboport",), "roboports"),
-    "logistic-system": (("requester-chest", "buffer-chest"), "requester chests"),
-    "electric-energy-accumulators": (("accumulator",), "accumulators"),
-    "solar-energy": (("solar-panel",), "solar panels"),
-    "gun-turret": (("gun-turret",), "gun turrets"),
-    "laser-turret": (("laser-turret",), "laser turrets"),
-    "stone-wall": (("stone-wall",), "walls"),
-    "effect-transmission": (("beacon",), "beacons"),
-    "oil-processing": (("pumpjack", "oil-refinery"), "pumpjacks or refineries"),
-    "advanced-material-processing-2": (("electric-furnace",), "electric furnaces"),
-    "automation-3": (("assembling-machine-3",), "assembling machine 3s"),
-    "logistics-2": (("fast-transport-belt",), "fast belts"),
-    "logistics-3": (("express-transport-belt",), "express belts"),
-    "railway": (("locomotive",), "trains"),
-    "nuclear-power": (("nuclear-reactor",), "nuclear reactors"),
-    "uranium-processing": (("centrifuge",), "centrifuges"),
-    "rocket-silo": (("rocket-silo",), "a rocket silo"),
-    "space-platform": (("space-platform-hub",), "a space platform"),
-    "foundry": (("foundry",), "foundries"),
-    "electromagnetic-plant": (("electromagnetic-plant",), "electromagnetic plants"),
-    "big-mining-drill": (("big-mining-drill",), "big mining drills"),
-    "recycling": (("recycler",), "recyclers"),
-}
+# score; a technology whose building is not counted there is left out. One table with the harness: its unlocks.lua
+# (the agents' shift block, "researched, none built") is read here.
+UNLOCKS_LUA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "vendor", "factorio-harness", "mod",
+                           "agent-harness_0.1.0", "unlocks.lua")
+
+
+def load_unlocks(path=UNLOCKS_LUA):
+    """unlocks.lua rows `{'tech', {'building', ...}, 'label'},` -> {tech: ((buildings), label)}, in file order."""
+    out = {}
+    row = re.compile(r"^\s*\{\s*'([^']+)'\s*,\s*\{([^}]*)\}\s*,\s*'([^']+)'\s*\},?\s*$")
+    for line in open(path):
+        m = row.match(line)
+        if m:
+            out[m.group(1)] = (tuple(re.findall(r"'([^']+)'", m.group(2))), m.group(3))
+    return out
+
+
+UNLOCKS = load_unlocks()
 
 
 def tech_label(name):
     if not name:
         return None
-    return name.replace("-", " ").capitalize()
+    label = name.replace("-", " ").capitalize()
+    # shake11's template aired "Planet discovery fulgora": planets keep their capitals
+    return re.sub(r"\b(nauvis|vulcanus|fulgora|gleba|aquilo)\b", lambda m: m.group(1).capitalize(), label)
+
+
+def human_name(name):
+    """A prototype name for viewers: 'assembling-machine-2' -> 'Assembling machine 2', 'travel to vulcanus' ->
+    'Travel to vulcanus'."""
+    return tech_label(str(name)) or ""
 
 
 def describe_action(kind):
@@ -259,6 +259,8 @@ class Model:
         self.paused = False
         self.research = {"current": None, "progress": None, "done": set(), "recent": deque(maxlen=6)}
         self.done_at = {}    # technology -> when this stream saw it finish (unused_unlocks)
+        self.research_news = {}  # technology -> {name, label, t}: finished while this stream ran (the research card)
+        self.unlocks = {}        # technology -> {unlocks, more} from research.lua's board event
         self.entities = {}   # building counts from the score (unused_unlocks)
         self.entities_counted = set()  # the buildings the score counts (absent from entities means none)
         self.research_started = False
@@ -535,6 +537,7 @@ class Model:
                 self.done_at[name] = now
                 res["recent"].appendleft({"name": name, "label": tech_label(name), "t": now})
                 self.alert("research", f"Research complete: {tech_label(name)}", key=f"research:{name}", ttl=40)
+                self.research_news[name] = {"name": name, "label": tech_label(name), "t": now}
                 # credit whoever has been busiest lately (labs are fed by the team; this keeps cameras lively)
                 live = [a for a in self.agents.values() if a.alive and a.last_activity_t]
                 for a in sorted(live, key=lambda a: -a.last_activity_t)[:2]:
@@ -623,6 +626,7 @@ class Model:
         recent = e.get("t", now) > now - 30
         title = e.get("title") or it.get("title") or ""
         if kind == "research":  # a finished technology (research.lua): no item, by "research"
+            self._tech_unlocks(title, e.get("text"), now)
             title = tech_label(title)
         entry = {"seq": e.get("seq"), "tick": e.get("tick"), "by": e.get("by"), "agent": agent, "id": e.get("id"),
                  "verb": verb, "title": clean_text(title), "kind": kind,
@@ -633,6 +637,31 @@ class Model:
             self.agents[agent].last_activity_t = now
         if kind == "harness" and verb == "done":
             self._changelog(entry["title"], e.get("tick"), entry["t"])
+
+    UNLOCKS_RE = re.compile(r"^unlocks: (.*?)(?:, \+(\d+) more)?$")
+
+    def _tech_unlocks(self, name, text, now):
+        """research.lua's board event for a finished technology carries "unlocks: a, b, +N more" (recipe names,
+        "travel to vulcanus", "rare quality"). Kept per technology: the event can come before or after the score
+        shows the technology done, and a replayed old event must not make a card (research_news comes from the
+        score)."""
+        m = self.UNLOCKS_RE.match(str(text or ""))
+        if not name or not m:
+            return
+        names = [n.strip() for n in m.group(1).split(",") if n.strip()]
+        self.unlocks[name] = {"unlocks": [human_name(n) for n in names], "more": int(m.group(2) or 0)}
+
+    def research_news_snapshot(self, now):
+        """Technologies finished in the last 30 s (seen in the score), with what they unlock when the board said:
+        the stream's "Research complete" card (overlay.js renderResearchCard)."""
+        for k in [k for k, v in self.research_news.items() if now - v["t"] > 120]:
+            del self.research_news[k]
+        out = []
+        for name, n in sorted(self.research_news.items(), key=lambda kv: kv[1]["t"]):
+            if now - n["t"] <= 30:
+                u = self.unlocks.get(name) or {}
+                out.append(dict(n, unlocks=u.get("unlocks") or [], more=u.get("more") or 0, age_s=round(now - n["t"], 1)))
+        return out
 
     def _changelog(self, text, tick, t, version=None):
         """A harness request marked done (title, no version) and the operator's chat line "harness vN: what"
@@ -935,11 +964,14 @@ class Model:
         return {
             "now": now, "tick": self.tick, "paused": self.paused, "game_time": fmt_game_time(self.tick / 60),
             "title": self.run.get("title"), "subtitle": self.run.get("subtitle"),
+            # this shift's start and end and when the next is expected (start-team.sh), for the site's offline state
+            "shift": self.run.get("shift"),
             "agents": agents,
             "chat": self.chat_window(),
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
             "unused_unlocks": self.unused_unlocks(now),
+            "research_news": self.research_news_snapshot(now),
             "darkness": self.darkness,
             "basemap": self.basemap,
             "production": self.production(now),

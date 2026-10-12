@@ -191,6 +191,13 @@ logistics chat and server lines it also carried are no longer shown. Same on the
 their own lane ("tell", the last 24 kept beside 12 conversation lines); the page also reads tells from a service that
 still files them under "log", so a reload is enough.
 
+Research complete: when the score shows a technology finished, the main camera gets an 8 s lower third on its lower
+right (segment cards take the lower left), "Research complete · X · Unlocks A, B, C +N more", on both pages. The
+unlocks come from research.lua's board event (`text` "unlocks: ..."), kept per technology whichever arrives first; an
+old event replayed from the board's history at start makes no card. The research alert banner gives way to it on the
+page (the alert stays in the state for the casters). `model.research_news`, `static/segview.js researchCard`,
+`test_research_card.py`.
+
 ## Shake7 notes (2026-10-11): what changed for the 17:00 shift
 
 - One event stream per page. A browser keeps 6 connections per host and an open event stream holds one for good; in

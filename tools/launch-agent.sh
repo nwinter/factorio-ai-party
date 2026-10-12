@@ -28,7 +28,8 @@ started=0
 turn() {
   touch .agy-stamp
   t0=\$(date +%s)
-  agy "\$@" --model $model --dangerously-skip-permissions
+  # The wait cap goes on agy only: this loop's own sleep until a quota reset stays a plain sleep.
+  '$sleepcap_run' agy "\$@" --model $model --dangerously-skip-permissions
   q=\$(python3 '$root/tools/agy-quota.py' '$dir' .agy-stamp "\$deadline")
   case "\$q" in
     stop) exit 0 ;;
@@ -142,6 +143,8 @@ case $kind in
     python3 "$root/tools/context.py" setup claude "$model" "$dir" >/dev/null
     python3 "$root/tools/clean-profile.py" claude "$dir"
     [ "$full" = 1 ] && python3 "$root/tools/full_tools.py" claude "$dir"
+    # After context.py, which writes the hooks: the wait cap's SessionStart hook (tools/sleepcap/setup.py).
+    python3 "$root/tools/sleepcap/setup.py" claude "$dir"
     # Started directly instead of through ai-session, which cannot pass flags: with the same environment ai-session
     # sets for the route (CLAUDE_CONFIG_DIR = the route's root, except for the default profile, and no API keys), plus
     # no MCP servers but our own (the user-scope cube-local leaked in smoke-2145), no Claude in Chrome, no skills.
@@ -150,7 +153,8 @@ case $kind in
     cenv="-u CLAUDE_CONFIG_DIR"; [ "$route" = claude ] || cenv="CLAUDE_CONFIG_DIR='$croot'"
     pane=$(new_pane)
     # $claude_unset, $claude_vars and $claude_flags: tools/profile-flags.sh.
-    herdr pane run "$pane" "cd '$dir' && env $claude_unset $cenv $claude_vars /Users/owner/.local/bin/claude --model $model --effort $effort $claude_flags \"\$(cat '$prompt')\"" >/dev/null
+    # $sleepcap_run: shell and Python waits capped at 60 s (profile-flags.sh).
+    herdr pane run "$pane" "cd '$dir' && env $claude_unset $cenv $claude_vars '$sleepcap_run' /Users/owner/.local/bin/claude --model $model --effort $effort $claude_flags \"\$(cat '$prompt')\"" >/dev/null
     ;;
   codex)
     model=${6:-gpt-6-astra} effort=${7:-low}
@@ -158,6 +162,8 @@ case $kind in
     # ai-session passes no extra flags or env, so compaction settings go in the workspace's own config.
     python3 "$root/tools/context.py" setup "$kind" "$model" "$dir" >/dev/null
     python3 "$root/tools/clean-profile.py" "$kind" "$dir"
+    # ai-session passes no environment: the wait cap goes in the workspace config's shell environment.
+    python3 "$root/tools/sleepcap/setup.py" codex "$dir"
     out=$(/Users/owner/.local/bin/ai-session spawn "${args[@]}" -C "$dir" --name "$name" --herdr tab --prompt-file "$prompt" --start 2>&1)
     pane=$(printf '%s\n' "$out" | sed -n 's/.*Herdr pane \([^ .]*\).*/\1/p' | tail -1)
     test -n "$pane" || { printf '%s\n' "$out" >&2; exit 1; }
@@ -183,7 +189,7 @@ case $kind in
     # tools/profile-flags.sh. Started from a script: the full command is about 1,450 characters, and typed into a
     # pane whose shell is not ready yet, input past the terminal's 1,024-byte line limit can be cut (smoke-l4g's
     # Grok never started). grok-start.log shows that the script ran.
-    grok_run_script "$dir" "$home_env $ctx_env" "$model" "$effort" "$prompt" "$compact_rule"
+    grok_run_script "$dir" "$home_env $ctx_env '$sleepcap_run'" "$model" "$effort" "$prompt" "$compact_rule"
     herdr pane run "$pane" "'$dir/.grok-run.sh'" >/dev/null
     ;;
   agy)
@@ -204,7 +210,7 @@ case $kind in
     clean_args=$(python3 "$root/tools/clean-profile.py" muse "$dir")         # -c 'hooks={}'; $muse_env: profile-flags.sh
     pane=$(new_pane)
     printf '%s\n' '#!/usr/bin/env bash' "cd '$dir'" \
-      "exec env $muse_env muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
+      "exec env $muse_env '$sleepcap_run' muse $ctx_args $clean_args --model $model --effort $effort --approval-mode never --sandbox-network enabled --trust-workspace \"\$(cat '$prompt')\"" \
       > "$dir/.muse-run.sh"
     chmod +x "$dir/.muse-run.sh"
     herdr pane run "$pane" "'$dir/.muse-run.sh'" >/dev/null

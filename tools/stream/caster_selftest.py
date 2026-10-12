@@ -735,8 +735,19 @@ w2 = _Writer([[bad[1]], [bad[1]]])
 c2 = _caster(w2)
 c2.say_exchange({"kind": "attack", "text": "Base under attack near (1, 2)", "t": now, "prio": 5}, {"agents": []},
                 "pbp", 2)
-check("a second style fault falls back to a template", len(w2.notes) == 2 and c2.stats["fallbacks"] == 1
-      and c2.spoke and c2.spoke[0][1] != bad[1][1], str(c2.spoke))
+check("a second style fault on a non-urgent beat stays quiet (HOSTS5 item 3: no template)", len(w2.notes) == 2 and
+      c2.stats["fallbacks"] == 0 and c2.stats.get("skipped_quiet") == 1 and not c2.spoke, str(c2.spoke))
+w2u = _Writer([[bad[1]]])
+c2u = _caster(w2u)
+c2u.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
+check("an urgent beat with nothing usable still gets a template", c2u.stats["fallbacks"] == 1 and c2u.spoke,
+      str(c2u.spoke))
+tl5 = {"minutes_to_deadline": 199, "shift": {"this_shift": "shift 8", "next_shift": "shift 9"}}
+check("time left said as a shift end passes when right, fails when wrong (shake11)", caster.check_line(
+    "Still 199 minutes to handover.", tl5, [], []) is None and caster.check_line(
+    "Shift ends in three and a half hours.", tl5, [], []) is None and caster.check_line(
+    "Shift ends in four minutes.", tl5, [], []).startswith("time left disagrees"),
+      caster.check_line("Shift ends in four minutes.", tl5, [], []))
 w3 = _Writer([[bad[1]], good])
 c3 = _caster(w3)
 c3.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
@@ -828,6 +839,105 @@ check("unused unlocks reach the hosts on explain beats, as commentary", nb.get("
 check("an absence the facts back passes; another does not", caster.check_line(
     "Logistic robotics is done, but still no roboports.", nb, [], []) is None and caster.check_line(
     "Still no trains.", nb, [], []) == "claims something is missing")
+
+# HOSTS6 item 2: a memory of framings across the shift
+cf6 = caster.Caster.__new__(caster.Caster)
+t6 = 10000.0
+cf6.remember_framings(["Here's the replay. Biters went at the wall.", "Twenty-eight labs are waiting on packs."], now=t6)
+check("one earlier opening is fine", cf6.repeat_fault("Here's the replay. A pole went down.", now=t6 + 60) is None)
+cf6.remember_framings(["Here's the replay. Spitters took a pole.", "Most labs are waiting on packs again."], now=t6 + 300)
+check("a third 'Here's the replay' within 20 minutes is cut; after 20 minutes it is fine",
+      cf6.repeat_fault("Here's the replay. A turret this time.", now=t6 + 600) == "style: opening used again this shift"
+      and cf6.repeat_fault("Here's the replay. A turret this time.", now=t6 + 300 + 1300) is None)
+uf = cf6.used_framings(now=t6 + 600)
+check("framings used twice reach the writer; number phrases do not", "here's the replay" in uf and
+      "waiting on packs" in uf and not any("twenty" in g or "minute" in g for g in uf), str(uf))
+check("framings_used_lately does not make a name supported", caster.check_line(
+    "Astra holds the wall.", {"event": "lull", "framings_used_lately": ["astra's under attack"]}, ["Astra"], []) ==
+      "name not in facts: Astra")
+check("the rules tell the writer to avoid them", "framings_used_lately" in caster.EXCHANGE_RULES)
+
+# HOSTS6 item 4: planet talk that is research or a plan (shake11 cut 5 such lines)
+pr6 = {"event": "lull", "planets_reached": ["Nauvis"], "planets_not_reached_yet": ["Vulcanus", "Fulgora"],
+       "researching": {"tech": "Planet discovery Fulgora", "percent": 18}}
+check("planets: the research's own planet and a trip being packed pass; a claim to be there still fails",
+      caster.check_line("Fulgora discovery sits at eighteen percent.", pr6, [], []) is None and
+      caster.check_line("Sol's packing for Vulcanus already.", pr6, [], []) is None and
+      caster.check_line("Their Vulcanus foundry runs hot.", pr6, [], []) == "planet not reached: Vulcanus")
+
+# HOSTS6 item 4: counts the hosts can stand on, planet capitals, research cards past the lull budget
+fc = _FactsWriter([])
+cc = _caster(fc)
+cc.started_t = time.time() - 600
+cc.tally = caster.deque([(time.time() - 900, "attack"), (time.time() - 300, "attack"), (time.time() - 200, "death"),
+                         (time.time() - 100, "death"), (time.time() - 50, "loss")])
+cc.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
+ct = fc.facts.get("counts", {})
+check("urgent beats carry deaths, loss reports and recent attacks", ct.get("deaths") == 2 and ct.get("loss_reports") == 1
+      and ct.get("attacks_last_10_minutes") == 1 and ct.get("since", "").startswith("the hosts came on at"), str(ct))
+check("planet names keep their capitals in technology labels", model.tech_label("planet-discovery-fulgora") ==
+      "Planet discovery Fulgora")
+asked = []
+cr = caster.Caster.__new__(caster.Caster)
+cr.a = caster.argparse.Namespace(dry_run=False, segment_every=180)
+cr.seg_req_t = time.time() - 30  # a lull card was asked for 30 s ago
+cr.segment_types = lambda: asked.append("catalog") or {}
+cr.request_segment([("production", {})], "lull")
+cr.request_segment([("research", {})], "research", news=True)
+check("a research card is asked for even right after a lull card (shake11: 1 card for 4 completions)",
+      asked == ["catalog"], str(asked))
+
+# HOSTS5 item 1: "previously on" from the last shift's logs
+with tempfile.TemporaryDirectory() as root5:
+    runs5 = os.path.join(root5, "runs")
+    os.makedirs(os.path.join(runs5, "shake10"))
+    os.makedirs(os.path.join(runs5, "shake11"))
+    os.makedirs(os.path.join(root5, "logs"))
+    open(os.path.join(runs5, "shake11", "resumed-from"), "w").write("shake10\n")
+    with open(os.path.join(runs5, "shake10", "scores.jsonl"), "w") as fh:
+        for tick, done, ents, rockets in ((100, ["automation"], {"steel-furnace": 10, "transport-belt": 5}, 2),
+                                          (200, ["automation", "military-3"], {"steel-furnace": 15}, 3),
+                                          (14500, ["automation", "military-3", "circuit-network"],
+                                           {"steel-furnace": 21, "solar-panel": 7, "transport-belt": 600}, 10)):
+            fh.write(json.dumps({"score": {"tick": tick, "research_done": done, "entities": ents, "rockets": rockets}}) + "\n")
+    jl = os.path.join(root5, "logs", "c.jsonl")
+    with open(jl, "w") as fh:
+        for ev, text in (("death", "Grok died"), ("death", "Grok died"), ("death", "Opus died"),
+                         ("loss", "8 lost: 8 pipe (by small biters)"), ("loss", "73 lost: 17 transport belt (by medium biters)")):
+            fh.write(json.dumps({"type": "caster", "facts": {"event": ev, "text": text}}) + "\n")
+    open(os.path.join(runs5, "shake10", "caster.log"), "w").write(f"18:47:35 [caster] feed x  log {jl}\n")
+    pv = caster.previous_shift(os.path.join(runs5, "shake11"))
+    check("previously on: research in order, buildings (not belts), rockets, deaths, losses", pv and
+          pv["technologies_researched"] == 2 and pv["last_researched"] == ["Military 3", "Circuit network"] and
+          pv["built"] == ["11 more steel furnace", "7 more solar panel"] and pv["rockets_launched"] == 8 and
+          pv["deaths"] == 2 and pv["loss_reports"] == 2 and pv["biggest_loss"].startswith("73 lost"), str(pv))
+    check("previously on: none for a first shift", caster.previous_shift(os.path.join(runs5, "shake10")) is None)
+    fw5 = _FactsWriter([])
+    c6 = _caster(fw5)
+    c6.a = caster.argparse.Namespace(**{**vars(c6.a), "run_dir": os.path.join(runs5, "shake11")})
+    c6.say_exchange({"kind": "open", "t": now, "prio": 8}, {"agents": []}, "pbp", 3)
+    check("the opener of a resumed shift carries previously_on and the recap call",
+          fw5.facts.get("previously_on", {}).get("rockets_launched") == 8 and "previously on" in
+          fw5.facts.get("how_to_call_it", "") and fw5.facts["previously_on"]["biggest_loss"].startswith("73 lost to"),
+          str(fw5.facts)[:300])
+
+# HOSTS5 item 2: the team plan, and a change to it as news
+planA = {"goals": "Silo fed, then rails", "doing": [{"agent": "sol", "name": "Sol", "text": "silo ammo"},
+                                                    {"agent": "luna", "name": "Luna", "text": "steam row"}]}
+planB = {"goals": "Silo fed, then rails", "doing": [{"agent": "sol", "name": "Sol", "text": "rails to the north ore"},
+                                                    {"agent": "luna", "name": "Luna", "text": "steam row"}]}
+dp = caster.Differ()
+dp.diff({"agents": [], "board": {"plan": planA}})
+evp = [e for e in dp.diff({"agents": [], "board": {"plan": planB}}) if e["kind"] == "plan"]
+check("a change to the team plan is a plan beat", len(evp) == 1 and evp[0]["changes"] ==
+      ["Sol is now on: rails to the north ore"] and evp[0]["prio"] == 5, str(evp))
+fp = caster.facts_for(evp[0], {"agents": [{"name": "sol", "display_name": "Sol"}], "board": {"plan": planB}})
+check("plan beat facts: the change, the plan, how to call it", fp.get("plan_change") == evp[0]["changes"] and
+      fp["team_plan"]["goals"] == "Silo fed, then rails" and "plan just changed" in fp["how_to_call_it"], str(fp)[:300])
+sp5 = {"agents": [{"name": "luna", "display_name": "Luna", "activity": "acting", "action": "walking"}],
+       "board": {"plan": planB}}
+check("an agent's plan line is its job when no claim names one", caster.agent_facts(sp5, "luna").get("working_on")
+      == "steam row" and caster.agent_facts(sp5, "luna")["doing"] == "heading off for steam row")
 
 # HOSTS4 item 3: an agent answering a viewer (the relay reaches the agents from shake11) is its own beat
 dv = caster.Differ()

@@ -1,0 +1,40 @@
+#!/bin/bash
+# sleep for the agents' shells (first on their PATH; tools/launch-agent.sh, profile-flags.sh sleepcap_env): one wait
+# longer than POG_SLEEP_CAP_SECONDS (60) waits that long, with one line on stderr, because a shell sleep is a wait no
+# tell, mention or attack can end (docs/studies/shake11.md, P1 item 3). Everything else is /bin/sleep as it was:
+# POG_SLEEP_CAP not 1 (./fh and ./shot set 0), arguments it does not read, and a caller that is one of our own scripts
+# (tools/, bin/, vendor/: POG_SLEEP_CAP_EXEMPT).
+real=/bin/sleep
+[ "${POG_SLEEP_CAP:-0}" = 1 ] || exec "$real" "$@"
+cap=${POG_SLEEP_CAP_SECONDS:-60}
+# Seconds asked: the sum of the arguments, each a number with an optional s, m, h or d; "infinity" counts as over.
+total=$(/usr/bin/awk 'BEGIN {
+  t = 0
+  for (i = 1; i < ARGC; i++) {
+    a = ARGV[i]
+    if (a == "infinity" || a == "inf") { print "inf"; exit }
+    if (a !~ /^([0-9]+\.?[0-9]*|\.[0-9]+)[smhd]?$/) { print "bad"; exit }
+    n = a + 0; u = substr(a, length(a))
+    if (u == "m") n *= 60; else if (u == "h") n *= 3600; else if (u == "d") n *= 86400
+    t += n
+  }
+  print t; exit
+}' "$@")
+case $total in
+  bad|"") exec "$real" "$@" ;;
+  inf) ;;
+  *) /usr/bin/awk -v t="$total" -v c="$cap" 'BEGIN { exit !(t > c) }' || exec "$real" "$@" ;;
+esac
+# A caller that is one of our scripts keeps its wait: the script the exported bash function was called from
+# (POG_SLEEP_CALLER, resolved), else the parent's command line.
+caller=""
+[ -n "${POG_SLEEP_CALLER:-}" ] && caller=$(cd "$(dirname "$POG_SLEEP_CALLER")" 2>/dev/null && pwd -P)/$(basename "$POG_SLEEP_CALLER")
+[ -n "$caller" ] || caller=$(/bin/ps -o args= -p "$PPID" 2>/dev/null)
+IFS=: read -ra exempt <<<"${POG_SLEEP_CAP_EXEMPT:-}"
+for d in ${exempt[@]+"${exempt[@]}"}; do
+  [ -n "$d" ] || continue
+  real_d=$(cd "$d" 2>/dev/null && pwd -P) || real_d=$d
+  [[ $caller == *"$d/"* || $caller == *"$real_d/"* ]] && exec "$real" "$@"
+done
+echo "./fh sleep N waits longer and wakes on tells, mentions and attacks" >&2
+exec "$real" "$cap"

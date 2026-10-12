@@ -8,6 +8,7 @@ return function(api)
   local M = {}
   local MAX_DONE, FIRST_LOOK, MAX_LINES, MAX_UNLOCKS = 50, 36000, 4, 8
   local SAMPLE_TICKS, MAX_SAMPLES, MAX_BY = 600, 31, 200
+  local snapshot  -- the researched set per force (shift section below)
 
   local function store()
     local s = api.state()
@@ -55,7 +56,7 @@ return function(api)
     news.seq = news.seq + 1
     local unlocks = M.unlocks(t)
     local entry = {seq=news.seq, tick=event.tick or game.tick, force=t.force.name, name=t.name, unlocks=unlocks,
-      by_script=event.by_script or nil}
+      by_script=event.by_script or nil, polled=event.polled or nil}
     local by = M.queued_by(t.force.name, t.name)
     entry.queued_by = by and by.by
     news.list[#news.list+1] = entry
@@ -134,11 +135,43 @@ return function(api)
   -- Lab throughput samples per force: the current research and its progress,
   -- every 10 s. Throughput is research work (units x unit energy) per tick,
   -- summed over consecutive samples of the same technology.
+  -- Whether `name` finishing was already announced at or after tick `since`.
+  local function announced(force_name, name, since)
+    local news = api.state().research_news
+    for k = #(news and news.list or {}), 1, -1 do
+      local e = news.list[k]
+      if e.tick < since then return false end
+      if e.force == force_name and e.name == name then return true end
+    end
+    return false
+  end
+  -- The research at the head of the queue, as last sampled: when it leaves
+  -- researched (or one level up, for a levelled one) and no event announced it,
+  -- it is announced here. A runtime deployed without a server restart has no
+  -- on_research_finished (control.lua forwards it from the next restart on);
+  -- this covers it, up to 10 s late.
+  local function poll(s, force, t)
+    s.research_head = s.research_head or {}
+    local head = s.research_head[force.name]
+    local level = t and t.level or 0
+    if head and (not t or t.name ~= head.name or level ~= head.level) then
+      local was = force.technologies and force.technologies[head.name]
+      if was and (was.researched or (was.level or 0) > head.level) and not announced(force.name, head.name, head.since) then
+        M.on_finished{research=was, tick=game.tick, polled=true}
+      end
+    end
+    if not t then s.research_head[force.name] = nil
+    elseif not (head and head.name == t.name and head.level == level) then
+      s.research_head[force.name] = {name=t.name, level=level, since=game.tick}
+    end
+  end
   function M.sample()
     local s = api.state()
+    if not s.research_snaps then snapshot(s, game.tick) end  -- a base from the runtime's first sample
     s.research_rate = s.research_rate or {}
     for _, force in pairs(game.forces or {}) do
       local t = force.current_research
+      poll(s, force, t)
       local list = s.research_rate[force.name]
       if t or list then
         list = list or {}
@@ -149,8 +182,142 @@ return function(api)
       end
     end
   end
+  -- Faults are counted (research_errors), never quarantine the runtime.
   function M.tick(tick)
-    if tick % SAMPLE_TICKS == 0 then M.sample() end
+    if tick % SAMPLE_TICKS ~= 0 then return end
+    local ok, err = pcall(M.sample)
+    if not ok then
+      local s = api.state()
+      s.research_errors = {count=((s.research_errors or {}).count or 0) + 1, last=tostring(err), tick=game.tick}
+    end
+  end
+
+  -- Shifts (operator shift_start, at a resumed world's start). An agent's
+  -- first reply of a shift carries a shift block once: the team plan's goals
+  -- and its own line, what finished since its last request before the shift,
+  -- and researched technologies with none of their buildings (unlocks.lua).
+  -- What a force has researched, read from force.technologies (no event needed).
+  local function researched(force)
+    local set = {}
+    for name, t in pairs(force.technologies or {}) do if t.researched then set[name] = true end end
+    return set
+  end
+  -- Snapshots of the researched set at each shift start (and on first use),
+  -- per force, so "finished since your last shift" needs no research events.
+  local MAX_SNAPS = 6
+  snapshot = function(s, tick)
+    s.research_snaps = s.research_snaps or {}
+    for _, force in pairs(game.forces or {}) do
+      if force.technologies then
+        local list = s.research_snaps[force.name] or {}
+        s.research_snaps[force.name] = list
+        list[#list+1] = {tick=tick, set=researched(force)}
+        while #list > MAX_SNAPS do table.remove(list, 1) end
+      end
+    end
+  end
+  -- n: the shift's number in the world, as tools/start-team.sh counts it from the resumed-from chain (the stream hosts'
+  -- count); without it, one more than this save's last. seq numbers the starts for the once-per-shift check.
+  function M.shift_start(n)
+    local s = api.state()
+    local old = s.shift
+    n = tonumber(n)
+    if not (n and n >= 1 and n == math.floor(n)) then n = (old and (old.number or old.seq) or 0) + 1 end
+    s.shift = {seq=(old and old.seq or 0) + 1, number=n, tick=game.tick, prev_tick=old and old.tick}
+    snapshot(s, game.tick)
+    return s.shift
+  end
+  -- Technologies finished after tick `since`: the research news (exact, with
+  -- ticks) and the difference from the newest snapshot at or before `since`
+  -- (what the news missed: events before control.lua forwarded them, or a
+  -- runtime that was not running).
+  local function finished_since(s, force, since)
+    local names, listed = {}, {}
+    local told = {}
+    for _, e in ipairs(s.research_news and s.research_news.list or {}) do
+      if e.force == force.name then
+        if e.tick > since then
+          if not listed[e.name] then names[#names+1] = e.name; listed[e.name] = true end
+        else told[e.name] = true end
+      end
+    end
+    local base
+    for _, snap in ipairs(s.research_snaps and s.research_snaps[force.name] or {}) do
+      if snap.tick <= since then base = snap end
+    end
+    if base then
+      local extra = {}
+      for name in pairs(researched(force)) do
+        if not base.set[name] and not listed[name] and not told[name] then extra[#extra+1] = name end
+      end
+      table.sort(extra)
+      for _, name in ipairs(extra) do names[#names+1] = name end
+    end
+    return names
+  end
+  local UNLOCKS = require('unlocks')
+  -- Labels of buildings a researched technology unlocks and the force has
+  -- none of on any surface: {label, techs}, in the table's order.
+  function M.not_built(force)
+    local out, by_label, counts = {}, {}, {}
+    local function count(name)
+      if counts[name] == nil then
+        local ok, exists = pcall(function() return prototypes.entity[name] ~= nil end)
+        local n = 0
+        if ok and exists then
+          for _, surface in pairs(game.surfaces or {}) do
+            n = n + surface.count_entities_filtered{force=force, name=name, limit=1}
+            if n > 0 then break end
+          end
+        else n = false end
+        counts[name] = n
+      end
+      return counts[name]
+    end
+    for _, row in ipairs(UNLOCKS) do
+      local tech, buildings, label = row[1], row[2], row[3]
+      local t = force.technologies and force.technologies[tech]
+      if t and t.researched then
+        local none, known = true, true
+        for _, b in ipairs(buildings) do
+          local n = count(b)
+          if n == false then known = false elseif n > 0 then none = false end
+        end
+        if none and known then
+          if not by_label[label] then by_label[label] = {label=label, techs={}}; out[#out+1] = by_label[label] end
+          table.insert(by_label[label].techs, tech)
+        end
+      end
+    end
+    return out
+  end
+  -- The shift block for agent p, once per shift; last_call is the tick of its
+  -- previous request (before this one), nil for an agent new to the world.
+  function M.shift_block(p, last_call, plan)
+    local s = api.state()
+    local shift = s.shift
+    if not shift then return nil end
+    s.shift_seen = s.shift_seen or {}
+    if s.shift_seen[p.index] == shift.seq then return nil end
+    s.shift_seen[p.index] = shift.seq
+    local out = {}
+    if plan and plan.goals then out.plan_goals = plan.goals end
+    if plan and plan.mine then out.your_plan_line = plan.mine end
+    local since = last_call or shift.prev_tick or 0
+    local names = finished_since(s, p.force, since)
+    if #names > 0 then
+      local shown = {}
+      for i = math.max(1, #names - 11), #names do shown[#shown+1] = names[i] end
+      out.research_since_your_last_shift = table.concat(shown, ', ') .. (#names > #shown and string.format(' (+%d earlier: research_done)', #names - #shown) or '')
+    end
+    local idle = M.not_built(p.force)
+    if #idle > 0 then
+      local parts = {}
+      for _, x in ipairs(idle) do parts[#parts+1] = x.label .. ' (' .. table.concat(x.techs, ', ') .. ')' end
+      out.researched_none_built = table.concat(parts, '; ')
+    end
+    out.shift = string.format('shift %d, started %s ago', shift.number or shift.seq, ago(game.tick - shift.tick))
+    return out
   end
   -- Work per tick over the samples kept (about 5 minutes), or nil.
   function M.rate(force_name)

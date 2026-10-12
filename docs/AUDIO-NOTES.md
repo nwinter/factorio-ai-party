@@ -4,6 +4,82 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Hosts, round 6 (HOSTS6.md, 2026-10-12 early)
+
+Read from shake10 and shake11 (Opus main, Kimi urgent) before shake12 had data. The shake12 review (Sonnet urgent)
+comes after 04:00.
+
+- Shake11 to 00:41 (`copy_report --jsonl`):
+  - 423 host lines: 6% templates, silence 62% of the time.
+  - Opus writes in 6.6 s median (8.6 s p90), Kimi's urgent beats in 2.1 / 4.7 s. Two urgent Kimi timeouts.
+  - $1.91 an hour: writer $1.52, TTS $0.38.
+  - Cuts: "X, not Y" 11, a name not in the facts 8, a planet not reached 5 (wrongly, see below), metaphor 4.
+  - Tells: no dash pivots, no "!" endings, 6.5% open on a number, 12.5 words a line.
+- Repetition across a shift (item 2). "Here's the replay" opened 10 to 12 replays a shift, and "N labs are waiting on
+  packs" came back 10 times in shake10. The repeat check only compared with the last few lines.
+  - The caster now remembers each aired line's opening and its 3-4 word phrases for 30 minutes. Numbers and units
+    are left out: "plates a minute" is a fact, not a framing.
+  - Phrases aired twice reach the writer as `framings_used_lately`, with a rule to find a new way in.
+  - A third line opening the same way within 20 minutes is cut ("style: opening used again this shift"). Replayed in
+    order, that cut would take 3 of shake10's 727 lines and 14 of shake11's 392.
+  - The phrase list does not count as facts for names.
+- Research cards (item 3). Research beats work ("There it is. Electric accumulators, done. Defender's up next."), but
+  shake11 ran 1 research card for 4 completions. The lull cards had used the caster's 3-minute request budget. A
+  research completion now asks for its card past that budget; the director's own availability still applies.
+- Other fixes (item 4).
+  - Counts the hosts can stand on. Shake11 aired "That brings the shift total to one engineer lost" (00:38), then
+    "That's two dead this shift" (00:40). Urgent beats and replays now carry `counts`: deaths and loss reports since
+    the hosts came on, and attacks in the last 10 minutes.
+  - Planets. A planet named in the beat's own facts (the research "Planet discovery Fulgora") or in a travel plan
+    ("packing for Vulcanus") no longer counts as a claim to be there. Shake11 had cut 5 such lines.
+  - Technology labels keep planet capitals ("Planet discovery Fulgora", not "fulgora").
+- "Previously on" (item 3) is live from shake12, which resumes shake11. Its opener is the first thing to read in
+  shake12's caster.log.
+
+## Hosts, round 5 (HOSTS5.md, 2026-10-11 night)
+
+- "Previously on" (item 1).
+  - `previous_shift()` reads the run that `resumed-from` names.
+  - From its `scores.jsonl`, first row against last: the game minutes played, how many technologies were researched
+    and the last four in the order they finished, the three buildings that grew most (belts and inserters left out),
+    and the rockets launched.
+  - From the caster jsonl logs its `caster.log` names: the deaths (distinct death beats), the loss reports, and the
+    biggest loss, said as a person would.
+  - The opener of a resumed shift carries it as `previously_on`, with a call to recap in the hosts' words, one thing a
+    line, then the team's plan now. The opener gets three lines.
+  - On shake11's real logs it reads: 239 game minutes, 10 technologies (last Flamethrower, Research speed 4,
+    Military 3, Circuit network), 11 more steel furnaces, 7 more solar panels, 8 rockets, 6 deaths, 19 loss reports,
+    the biggest "73 lost to medium biters".
+- The team plan (item 2).
+  - The snapshot's `board.plan` (goals and one line per agent, from `fh board plan`) reaches the hosts as
+    `team_plan` on the opener, explain, pace and board beats.
+  - A change to the plan (new goals, or an agent's line changing) is its own `plan` beat, priority 5, with what
+    changed and a call to say what it means for the run.
+  - An agent's plan line is its `working_on` when no board claim names a job, so "walking" reads "heading off for
+    <plan line>".
+  - Research news: research beats are priority 7 and never wait for quiet; research starts wait for 20 s of quiet.
+- Fewer template fallbacks (item 3). In shake11 to 23:35, 15 of 181 host lines were templates. Two came after an
+  urgent Kimi timeout (8 s); the rest came when every draft of a beat was cut. A non-urgent beat with nothing usable
+  now stays quiet ("[writer] nothing usable for camera (...); staying quiet", counted as `skipped_quiet` in the
+  `[cost]` stats). Urgent beats still get a template. Two of shake11's cuts were right time-left lines ("Shift ends
+  in three and a half hours", "Still 199 minutes to handover"): "ends in N minutes" and "N minutes to handover" are
+  now checked as time left, not cut as a shift end. Opus's own timeout is 36 s (3 x `--writer-timeout`), and it did
+  not time out in shake11.
+- Urgent model (item 4). Nick's bench on shake10's 20 urgent beats (`copy_bench --kinds attack,death,loss`):
+
+  | writer | lines kept | latency median / p90 | words a line | opens on a number | per 1,000 exchanges |
+  |---|---|---|---|---|---|
+  | Kimi K2.6 | 36/44 | 3.1 / 5.9 s | 9.6 | 8/36 | $2.31 |
+  | Haiku 5.5 | 36/44 (one beat wrote nothing) | 4.8 / 6.3 s | 13.2 | 3/36 | $0.72 |
+  | Sonnet 5.5 | 40/44 | 2.3 / 6.6 s | 15.0 | 2/40 | $8.32 |
+
+  The bench's "per stream hour" assumes 300 exchanges an hour. Urgent beats are far fewer: shake10 had 93 urgent
+  exchanges in 203 minutes, about 27 an hour. At that rate urgent beats cost about $0.06 an hour on Kimi, $0.02 on
+  Haiku and $0.23 on Sonnet, beside about $1.55 an hour for Opus on the other beats. The 11 cuts across the three
+  writers were for 'we' (3), shift-end talk (2), absences (2), and one each for numbers, a metaphor, "X, not Y" and
+  a number not in the facts. Urgent beats stay on Kimi tonight; Nick decides in the morning.
+  `POG_CASTER_URGENT=or:anthropic/claude-sonnet-5.5` (or haiku) switches at a launch.
+
 ## Hosts, round 4 (HOSTS4.md, 2026-10-11 night)
 
 ### Opus 5.5 against Kimi (item 1)

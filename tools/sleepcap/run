@@ -1,0 +1,21 @@
+#!/bin/bash
+# Run a harness with shell and Python waits capped (tools/launch-agent.sh): tools/sleepcap/run CMD [ARGS...]
+# One wait longer than 60 s (POG_SLEEP_CAP_SECONDS) waits 60 s and prints one line, because a shell or Python sleep is
+# a wait no tell, mention or attack can end (docs/studies/shake11.md, P1 item 3). Every way the agents' commands reach
+# `sleep`:
+# - PATH: bin/sleep first (zsh -c, bash -c). A login shell's /etc/profile or /etc/zprofile (path_helper) puts /bin
+#   first again, so also:
+# - bash (login or not, and sh): an exported function `sleep`, which every bash imports and which comes before PATH.
+#   A zsh login shell (zsh -lc) is not covered: zsh imports no functions, and its startup files are the owner's.
+# - Python: PYTHONPATH=py, whose sitecustomize caps time.sleep and then runs the interpreter's own sitecustomize.
+# The owner's startup files and settings are not changed. ./fh and ./shot set POG_SLEEP_CAP=0 for what they run, and
+# scripts under our tools/, bin/ and vendor/ keep their waits (POG_SLEEP_CAP_EXEMPT).
+sc=$(cd "$(dirname "$0")" && pwd)
+root=$(cd "$sc/../.." && pwd)
+export POG_SLEEP_CAP=1 POG_SLEEPCAP_BIN="$sc/bin"
+export POG_SLEEP_CAP_EXEMPT="$root/tools:$root/bin:$root/vendor"
+export PATH="$sc/bin:$PATH" PYTHONPATH="$sc/py${PYTHONPATH:+:$PYTHONPATH}"
+# The function names the script that called it (POG_SLEEP_CALLER), for the shim's check on our own scripts.
+sleep() { POG_SLEEP_CALLER="${BASH_SOURCE[1]:-}" "$POG_SLEEPCAP_BIN/sleep" "$@"; }
+export -f sleep
+exec "$@"

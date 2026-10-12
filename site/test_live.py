@@ -39,6 +39,8 @@ def payload_tests():
     assert out["cameras"]["cam3"]["work"].startswith("Sol building")
     size = len(json.dumps(out["space"]) + json.dumps(out["fights"]) + json.dumps(out["cameras"]))
     assert size < 1500, size  # the map's additions stay a small part of a ~16 KB push
+    s["shift"] = {"start": 1, "end": 2, "next": 3, "next_exact": False}
+    assert push_live.public_state(s)["shift"] == s["shift"]  # the offline state's "next shift" line
     s2 = dict(s, space={"active": False})
     s2.pop("fights")
     out2 = push_live.public_state(s2)

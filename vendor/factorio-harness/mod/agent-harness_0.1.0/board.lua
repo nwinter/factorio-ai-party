@@ -320,6 +320,14 @@ return function(api)
     return {id=i.id, goals=i.goals, doing=#lines > 0 and lines or nil,
       edited=i.edited_by and string.format('by %s, %s ago', i.edited_by, ago(game.tick - i.updated_tick)) or nil}
   end
+  -- The plan's goals and agent `name`'s own line (the shift block), or nil.
+  function M.plan_for(name)
+    local i = plan_item()
+    if not i then return nil end
+    local mine
+    for _, l in ipairs(i.lines) do if l.agent == name then mine = l.text end end
+    return {goals=i.goals, mine=mine}
+  end
   local function plan_edit(by, a)
     assert(a.agent == nil or a.doing ~= nil, 'agent goes with doing: board_plan {agent, doing}')
     if a.goals == nil and a.doing == nil then

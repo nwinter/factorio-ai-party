@@ -233,7 +233,7 @@ return function(api)
       local seen={}
       for _,pos in ipairs(a.positions) do
         local e=p.surface.find_entities_filtered{position=api.position(pos),radius=0.5,force=p.force,type=types,limit=1}[1]
-        assert(e,'no machine of ours at '..pos.x..','..pos.y)
+        assert(e,'no machine of ours at '..api.position(pos).x..','..api.position(pos).y)  -- {x,y} arrays have no .x (shake12)
         if not seen[e] then seen[e]=true; found[#found+1]=e end
       end
     end

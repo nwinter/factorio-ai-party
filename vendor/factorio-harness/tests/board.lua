@@ -388,6 +388,35 @@ eq(r.item.notes[1].text,'at the mall chest'); eq(r.item.notes[1].by,'sol')
 fails(function() sol('board_post',{kind='task',title='x',needs={['iron-plate']='lots'}}) end,'maps item names to counts')
 fails(function() sol('board_post',{kind='task',title='x',note='  '}) end,'note is required')
 
+-- Board calls leave a running queue running (shake11 heads-up: "reading or posting on the board seems to stop the
+-- queued plan"): reads, posts, updates, the plan, harness requests, tells, research reports.
+do
+  local index=runtime.bots.index_of('grok')
+  local function running(label)
+    local q=storage.agent_harness.queues and storage.agent_harness.queues[index]
+    assert(q and not q.paused and (q.current or #q.pending>0),label..': the queue stopped')
+    eq(grok('status').active.kind,'walk',label)
+  end
+  grok('queue_submit',{steps={{action='walk',args={direction='south',ticks=600}},{action='walk',args={direction='north',ticks=600}}}})
+  advance(2)
+  running('submitted')
+  grok('board'); running('board')
+  grok('board',{mine=true}); running('board mine')
+  local id=grok('board_post',{kind='task',title='queue keeps running',owner='grok'}).item.id; running('board_post')
+  grok('board_update',{id=id,note='still walking'}); running('board_update')
+  grok('board_events',{}); running('board_events')
+  grok('board_plan',{doing='walking south'}); running('board_plan')
+  grok('board_plan'); running('board_plan read')
+  grok('harness_request',{title='x',problem='y'}); running('harness_request')
+  grok('tell',{to='sol',text='walking'}); running('tell')
+  grok('tells'); running('tells')
+  grok('plans'); running('plans')
+  grok('research_done'); running('research_done')
+  grok('mention_counts'); running('mention_counts')
+  advance(1); running('a tick later')
+  grok('stop')
+end
+
 -- shake11 (27640e9): once the loss incidents reached MAX_INCIDENTS (64), a new incident was appended without `last`,
 -- the eviction compare failed on it and left it so, and then every status failed in losses_since
 -- ('attempt to compare number with nil').

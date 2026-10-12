@@ -82,5 +82,10 @@ html body.portrait .cam-label { font-size: 24px; left: 12px; top: 12px; }
 html body.portrait #cam-main .cam-label { font-size: 30px; }
 html body.portrait .cam-label .avatar { width: 36px !important; height: 36px !important; }
 html body.portrait #alerts { gap: 12px; }
+/* the research card on the portrait main camera (24,112 1032x581): its lower right, bigger type */
+html body.portrait #research-card { right: 46px; bottom: calc(1249px + var(--voice-clear, 0px)); max-width: 760px; }
+html body.portrait #research-card .rc-tag { font-size: 17px; }
+html body.portrait #research-card .rc-name { font-size: 34px; }
+html body.portrait #research-card .rc-unlocks { font-size: 23px; }
 html body.portrait .alert { font-size: 30px; padding: 10px 26px 10px 10px; max-width: 1000px; }
 html body.portrait .alert .ico { width: 46px; height: 46px; font-size: 24px; }

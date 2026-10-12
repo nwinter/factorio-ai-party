@@ -93,6 +93,14 @@ quota | while read -r line; do log "$line"; done
 log "full tools: $([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo 'on (docs/TOOLS-NOTES.md)' || echo off)"
 log "RCON broker: $([ "${POG_BROKER:-0}" = 1 ] && echo 'on (agents get no password; docs/LAUNCH-NOTES.md)' || echo 'off (agents read runs/RUN/.keys)')"
 log "player votes: $([ "${POG_PLAYERS:-0}" = 1 ] && echo "on (docs/PLAYERS-NOTES.md; protected: ${POG_PLAYERS_PROTECT:-none})" || echo off)"
+# The hosts' writer: POG_CASTER_MODEL on OpenRouter (Nick picked Opus 5.5 from the 2026-10-11 writer comparison,
+# docs/AUDIO-NOTES.md); urgent beats stay on the fast Workers AI model. Empty, or no OpenRouter key: Workers AI.
+cmodel=${POG_CASTER_MODEL-anthropic/claude-opus-5.5}
+# The switches this run starts with, for the next shift (tools/shift-change.sh starts it with the same ones).
+printf '%s\n' "POG_BROKER=${POG_BROKER:-0}" "POG_FULL_TOOLS=${POG_FULL_TOOLS:-0}" "POG_SPACE_AGE=$POG_SPACE_AGE" \
+  "POG_YOUTUBE=$POG_YOUTUBE" "POG_CASTER_MODEL=$cmodel" "POG_CASTER_URGENT=${POG_CASTER_URGENT:-}" \
+  "POG_CASTER=${POG_CASTER:-1}" "POG_ANALYST=${POG_ANALYST:-1}" "POG_PLAYERS=${POG_PLAYERS:-0}" \
+  "POG_VIEWER_RELAY=${POG_VIEWER_RELAY:-1}" "POG_TEAM_FILE=$team" > "$rundir/switches.env"
 
 if [ -n "$resume" ]; then
   # 1. A later shift: the same instance and save (docs/HARNESS3-NOTES.md, round 7).
@@ -140,7 +148,10 @@ if [ -n "$resume" ]; then
   tick=$(python3 tools/pog.py --world "$world" score 2>/dev/null | python3 -c 'import json,sys; t=json.load(sys.stdin)["tick"]; print(f"{t} (game {t // 3600}m)")' 2>/dev/null || echo '?')
   log "world $world: resumed at tick $tick"
   # Losses in this shift start new incidents; the previous shift's stay in status alerts history.
-  closed=$(python3 tools/pog.py --world "$world" rcon '/silent-command rcon.print(remote.call("agent_harness","shift_start"))' 2>&1)
+  # The shift's number in the world, counted as the stream hosts count it (tools/shift_times.py, resumed-from chain):
+  # the agents' shift block says the same number.
+  shift_n=$(python3 tools/shift_times.py number "$rundir" 2>/dev/null || echo 0)
+  closed=$(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"shift_start\",$shift_n))" 2>&1)
   log "world $world: shift_start $closed"
 fi
 
@@ -156,9 +167,14 @@ done
 python3 tools/team_bots.py "$team" "$world" | while read -r line; do log "bot $line"; done
 
 # 4. Overlay service config, reverse tunnel for OBS, scene, recording, optional stream.
-python3 - "$team" "$rundir/stream.json" "$run" <<'EOF'
+python3 - "$team" "$rundir/stream.json" "$run" "$minutes" <<'EOF'
 import json, os, sys
-team, out, run = sys.argv[1:]
+sys.path.insert(0, "tools")
+from shift_times import shift as shift_times
+team, out, run, minutes = sys.argv[1:]
+# The shift's times for the site (a visitor between shifts sees when to come back): shifts run back to back, so the
+# next is expected when this one ends; POG_NEXT_SHIFT sets it ("02:47", an ISO time, or "none"). tools/shift_times.py
+shift = shift_times(minutes, os.environ.get("POG_NEXT_SHIFT", ""))
 agents = {}
 for line in open(team):
     if not line.strip() or line.startswith("#"): continue
@@ -166,7 +182,7 @@ for line in open(team):
     agents[name] = {"model": label, "harness": harness}
 words = {2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven", 8: "Eight", 9: "Nine", 10: "Ten"}
 json.dump({"title": f"{words.get(len(agents), len(agents))} AIs, one factory", "subtitle": ("Factorio: Space Age" if os.environ.get("POG_SPACE_AGE") == "1" else "Factorio") + " co-op · real time · no cheats",
-           "space_age": os.environ.get("POG_SPACE_AGE") == "1", "agents": agents, "cameras": [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
+           "space_age": os.environ.get("POG_SPACE_AGE") == "1", "shift": shift, "agents": agents, "cameras": [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
                                          {"slot": "cam3", "player": 3}]}, open(out, "w"), indent=1)
 EOF
 # Viewer chat: the companion site's chat always; YouTube when POG_YOUTUBE (an @handle, channel id or video id) is set.
@@ -209,9 +225,8 @@ helpers+=("shot-sync:$!:$rundir/shot-sync.log")
 if [ "${POG_CASTER:-1}" != 0 ]; then
   # --deadline: the agents' deadline.txt files (written as they launch, after this) give the hosts the time left;
   # --run-dir: its resumed-from (POG_RESUME) tells the hosts this is a later shift of a saved world
-  # The hosts' writer: POG_CASTER_MODEL on OpenRouter (Nick picked Opus 5.5 from the 2026-10-11 writer comparison,
-  # docs/AUDIO-NOTES.md); urgent beats stay on the fast Workers AI model. Empty, or no OpenRouter key: Workers AI.
-  cmodel=${POG_CASTER_MODEL-anthropic/claude-opus-5.5} writer=()
+  # The hosts' writer: cmodel above.
+  writer=()
   orkey=${OPENROUTER_API_KEY:-$(security find-generic-password -s openrouter -w 2>/dev/null || true)}
   [ -n "$cmodel" ] && [ -n "$orkey" ] && writer=(--writer or --model "$cmodel")
   # POG_CASTER_URGENT: the urgent beats' writer (default Kimi on Workers AI); e.g. or:anthropic/claude-haiku-5.5

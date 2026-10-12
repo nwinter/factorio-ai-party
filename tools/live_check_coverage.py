@@ -26,6 +26,8 @@ import pog  # noqa: E402
 ITEMS = {"iron-chest": 2, "inserter": 2, "constant-combinator": 1, "small-lamp": 1, "rail": 60, "train-stop": 2,
          "locomotive": 2, "coal": 100, "iron-plate": 20}
 SITE_W, SITE_H = 36, 14   # tiles the check builds in, cleared of trees and rocks first
+PAUSED_HINT = ("the game clock is not running (auto_pause with no client connected): connect the director client "
+               "(docs/SETUP.md, start-client.ps1 -director) and run the check again")
 
 
 def one_line(lua):
@@ -72,6 +74,28 @@ class Check:
             reply["error"] = {"message": (p.stderr or p.stdout)[-400:]}
         return p.returncode == 0, reply
 
+    def fh_command(self, words):
+        """A bin/fh command other than call (e.g. ["wait", "--wait-timeout", "90000"]) as the bot."""
+        cmd = [os.path.join(ROOT, "bin", "fh"), "--format", "json", "--bot", self.bot, *words]
+        p = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ, POG_WORLD=self.world))
+        try:
+            reply = json.loads(p.stdout.strip().splitlines()[-1]) if p.stdout.strip() else {}
+        except ValueError:
+            reply = {"raw": p.stdout[-400:]}
+        return p.returncode == 0, reply
+
+    def game_running(self, seconds=3):
+        """Whether the world's clock runs: with no client connected the server auto-pauses and only creeps forward
+        (the 02:07 vehicles run: 208 ticks in 84 s, so the car and the spidertron had barely started). Records a step."""
+        code = "rcon.print(helpers.table_to_json{tick = game.tick, paused = game.tick_paused, players = #game.connected_players})"
+        before = self.lua(code)
+        time.sleep(seconds)
+        after = self.lua(code)
+        ticks = (after.get("tick") or 0) - (before.get("tick") or 0)
+        return self.record("game clock runs (a client connected, not auto-paused)", ticks >= 30 * seconds,
+                           {"ticks": ticks, "seconds": seconds, "players": after.get("players"),
+                            "tick_paused": after.get("paused")})
+
     def step(self, name, action, args=None, wait=False):
         ok, reply = self.fh(action, args, wait)
         if not ok:
@@ -79,14 +103,24 @@ class Check:
             return None
         return reply.get("result", reply)
 
-    def near(self, x, y):
-        """Walk the bot within build reach of (x, y), as an agent would (move_to --wait)."""
+    def near(self, x, y, force=False):
+        """Walk the bot within reach of (x, y), as an agent would (move_to --wait). The position kept between moves is
+        an estimate, so force=True always walks (live check 01:31: a stop 11.6 tiles off was taken as near)."""
         here = getattr(self, "here", None)
-        if here and abs(here[0] - x) < 7 and abs(here[1] - y) < 7:
+        if not force and here and abs(here[0] - x) < 5 and abs(here[1] - y) < 5:
             return
-        ok, _ = self.fh("move_to", {"position": {"x": x, "y": y - 3}, "tolerance": 1.5}, wait=True)
-        if ok:
-            self.here = (x, y - 3)
+        # North of the target first; a walk that times out (the 03:5x run, LC-West: the track, a stop or the train in
+        # the way) tries the other sides before giving up.
+        errors = []
+        for dx, dy in ((0, -3), (0, 3), (-3, 0), (3, 0)):
+            goal = {"x": x + dx, "y": y + dy}
+            ok, reply = self.fh("move_to", {"position": goal, "tolerance": 1.5, "ticks": 1800}, wait=True)
+            if ok:
+                pos = (reply.get("result") or {}).get("position") or {}
+                self.here = (pos.get("x", goal["x"]), pos.get("y", goal["y"]))
+                return
+            errors.append(f"{goal}: " + str((reply.get("error") or {}).get("message") or reply)[:120])
+        self.record(f"move_to near ({x},{y})", False, "; ".join(errors))
 
     def build(self, name, item, x, y, direction=None, entity=None):
         self.near(x, y)
@@ -174,6 +208,8 @@ def main():
     if not c.record("runtime has circuit, train and wire color", ok and "circuit" in actions and "train" in actions
                     and "color" in (actions.get("wire") or {}), sorted(k for k in ("circuit", "train") if k in actions)):
         sys.exit("deploy the current runtime first: POG_WORLD=%s bin/fh deploy" % world)
+    if not c.game_running():
+        sys.exit(PAUSED_HINT)
 
     # Stage: the bot, a clear site next to it, its items.
     c.record("bot_create", True, c.lua(f'rcon.print(remote.call("agent_harness","bot_create","{a.bot}"))'))
@@ -269,7 +305,7 @@ def main():
             args = {"position": ent["position"], "station": name}
             if name == "LC-East":
                 args["limit"] = 1
-            c.near(ent["position"]["x"], ent["position"]["y"])
+            c.near(ent["position"]["x"], ent["position"]["y"], force=True)
             res = c.step(f"train name stop {name}", "train", args)
             c.record(f"stop {name} named", res is not None and res.get("stop") == name, res)
         mid = track[8]["position"]["x"]
@@ -281,7 +317,7 @@ def main():
                 c.step("fuel locomotive", "transfer", {"position": loco["position"], "item": "coal", "count": 20,
                                                        "direction": "to_entity"})
         if loco1 and len(stops) == 2:
-            c.near(loco1["position"]["x"], loco1["position"]["y"])
+            c.near(loco1["position"]["x"], loco1["position"]["y"], force=True)
             res = c.step("train schedule two stops, automatic", "train", {
                 "position": loco1["position"], "automatic": True,
                 "schedule": [{"station": "LC-East", "wait": [{"type": "time", "ticks": 300}]},

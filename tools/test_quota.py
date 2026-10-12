@@ -27,16 +27,16 @@ def main():
     with tempfile.TemporaryDirectory() as d:
         team = os.path.join(d, "team.tsv")
         open(team, "w").write(TEAM)
-        # shake5: Gemini at 72%, resetting in 1h54m; at 36%/h it runs dry 47 minutes into a one-hour shift.
-        now, b = brief(72, 6840)
+        # Gemini at 95%, resetting in 1h54m; at 8%/h (agent/quota-burn.tsv) it runs dry 37.5 minutes into a one-hour shift.
+        now, b = brief(95, 6840)
         lines = quota_check.check(b, team, 60, now)
         warn = [l for l in lines if l.startswith("WARNING")]
         assert len(warn) == 1 and "Gemini · 5-hour" in warn[0], lines
-        assert f"at about {time.strftime('%H:%M', time.localtime(now + 28 / 36 * 3600))}" in warn[0], warn
+        assert f"at about {time.strftime('%H:%M', time.localtime(now + 5 / 8 * 3600))}" in warn[0], warn
         assert not any("Claude/GPT" in l for l in lines), "agy's Claude/GPT window does not count for Gemini"
         assert any(l.startswith("quota codex_account_b (astra)") and l.endswith("ok (about 14% at "
                    + time.strftime("%H:%M", time.localtime(now + 3600)) + ")") for l in lines), lines
-        # Full now, resetting 20 minutes into a two-hour run: warns (dry now); 100 min at 36%/h after the reset is 60%.
+        # Full now, resetting 20 minutes into a two-hour run: warns (dry now).
         now, b = brief(100, 1200)
         warn = [l for l in quota_check.check(b, team, 120, now) if l.startswith("WARNING")]
         assert len(warn) == 1 and "run dry now" in warn[0] and "it resets at" in warn[0], warn
