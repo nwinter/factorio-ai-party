@@ -296,6 +296,82 @@ return function(api)
   end
   H.paste=H.blueprint_place
 
+  -- Tiles, as a planner in tile mode marks them (request #144: platform
+  -- foundation): every minable tile in the area (tiles=true) or the named
+  -- ones. The engine decides each (LuaTile.order_deconstruction); the result
+  -- counts what it accepted and refused, and why when it can be told.
+  local MAX_TILES=16384
+  local function tile_names(v)
+    local names,mine={},{}
+    if v==true then
+      for name,t in pairs(prototypes.tile) do
+        if t.mineable_properties and t.mineable_properties.minable then names[#names+1]=name; mine[name]=true end
+      end
+      table.sort(names)
+    else
+      assert(type(v)=='table' and #v>0 and #v<=32,'tiles requires true or 1..32 tile names')
+      for _,name in ipairs(v) do
+        assert(type(name)=='string' and prototypes.tile[name],'unknown tile '..tostring(name))
+        local t=prototypes.tile[name]
+        names[#names+1]=name; mine[name]=t.mineable_properties and t.mineable_properties.minable or nil
+      end
+    end
+    return names,mine
+  end
+  local function covers(e,t)
+    local b,x,y=e.bounding_box,t.position.x,t.position.y
+    return b and b.left_top.x<x+1 and b.right_bottom.x>x and b.left_top.y<y+1 and b.right_bottom.y>y
+  end
+  local function deconstruct_tiles(p,a,box,cancel,out)
+    local names,mine=tile_names(a.tiles)
+    if #names==0 then return end
+    local list=p.surface.find_tiles_filtered{area=box,name=names,limit=MAX_TILES+1}
+    assert(#list<=MAX_TILES,'area tile limit exceeded ('..MAX_TILES..' tiles); select a smaller area')
+    local standing={}
+    for _,e in ipairs(candidates(p,box)) do
+      if e.valid and e.type~='entity-ghost' and e.type~='character' then standing[#standing+1]=e end
+    end
+    local function under(t) for _,e in ipairs(standing) do if covers(e,t) then return e end end end
+    if cancel then
+      local n=0
+      for _,t in ipairs(list) do
+        if t.valid and t.to_be_deconstructed(p.force) then t.cancel_deconstruction(p.force,real(p)); n=n+1 end
+      end
+      out.tiles_cancelled=n
+      return
+    end
+    local marked,already,refused,blocked,blockers=0,0,{},0,{}
+    local function refuse(why) refused[why]=(refused[why] or 0)+1 end
+    for _,t in ipairs(list) do
+      if not mine[t.name] then refuse('not_minable')
+      elseif t.to_be_deconstructed(p.force) then already=already+1
+      else
+        local ok,res=pcall(t.order_deconstruction,p.force,real(p))
+        if not ok then refuse('error')
+        elseif res then marked=marked+1
+        else refuse(under(t) and 'under_entity' or 'engine') end
+      end
+    end
+    -- A marked tile waits for what stands on it: robots take it once that is gone.
+    for _,t in ipairs(list) do
+      if mine[t.name] and t.to_be_deconstructed(p.force) then
+        local e=under(t)
+        if e and not e.to_be_deconstructed(p.force) then blocked=blocked+1; blockers[e.name]=true end
+      end
+    end
+    local total=0
+    for _,n in pairs(refused) do total=total+n end
+    out.tiles_marked,out.tiles_already,out.tiles_refused=marked,already,total
+    out.refused=next(refused) and refused or nil
+    out.tiles_blocked=blocked
+    if blocked>0 then
+      local list2={}
+      for name in pairs(blockers) do list2[#list2+1]=name end
+      table.sort(list2)
+      out.note=string.format('%d marked tile(s) lie under entities not marked for deconstruction (%s): robots take a tile once what stands on it is gone; mark those too (entity_names)',
+        blocked,table.concat(list2,', '))
+    end
+  end
   local function deconstruct(p,a,cancel)
     permission(p,cancel and 'cancel_deconstruct' or 'deconstruct')
     local filters={}
@@ -306,7 +382,12 @@ return function(api)
         for _,value in ipairs(a[key]) do assert(type(value)=='string',key..' requires strings'); filters[key][value]=true end
       end
     end
-    local list=candidates(p,area(p,a))
+    local box=area(p,a)
+    local out={changed=0,mode=cancel and 'cancel' or 'mark',tiles=a.tiles~=nil and a.tiles~=false}
+    -- With tiles, entities are taken only when entity filters name them;
+    -- they go first, so a tile under one marked now is not counted blocked.
+    if out.tiles and not (filters.entity_types or filters.entity_names) then deconstruct_tiles(p,a,box,cancel,out); return out end
+    local list=candidates(p,box)
     local changed=0
     for _, e in ipairs(list) do
       if e.valid and (e.force==p.force or e.force.name=='neutral') and e.type~='character' and e.minable
@@ -317,7 +398,9 @@ return function(api)
         elseif e.order_deconstruction(p.force,real(p)) then changed=changed+1 end
       end
     end
-    return {changed=changed,mode=cancel and 'cancel' or 'mark',tiles=false}
+    out.changed=changed
+    if out.tiles then deconstruct_tiles(p,a,box,cancel,out) end
+    return out
   end
   function H.deconstruct(p,a) return deconstruct(p,a,false) end
   function H.cancel_deconstruction(p,a) return deconstruct(p,a,true) end

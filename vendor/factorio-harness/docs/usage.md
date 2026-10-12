@@ -194,7 +194,13 @@ Gameplay actions use the same mechanics as a human player: items come from the i
 Some actions work at a distance, the way a player can through remote view:
 
 - `configure`, `requests` and `launch` in visible chunks
-- ghosts and deconstruction marks in charted chunks
+- ghosts and deconstruction marks in charted chunks (on your own space platform with `platform`, anywhere on it)
+- `deconstruct {area, tiles}` marks tiles as a planner in tile mode does: `tiles: true` takes every minable tile in the
+  area, or name them (`["space-platform-foundation"]`). The game decides each tile; the reply counts `tiles_marked`,
+  `tiles_already`, `tiles_refused` (`refused: {under_entity, engine, not_minable, error}`) and `tiles_blocked` (marked
+  tiles under an entity that is not marked: robots take a tile once what stands on it is gone). With `tiles`, entities
+  are marked only when `entity_names` or `entity_types` name them. `cancel_deconstruction {area, tiles}` clears tile
+  marks (`tiles_cancelled`).
 
 Not supported yet: vehicles, rails, circuit editing, and fluid transfers.
 
