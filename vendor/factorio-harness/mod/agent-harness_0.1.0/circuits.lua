@@ -16,6 +16,7 @@ return function(api)
       on='constant combinator: boolean on/off switch',
       arithmetic='arithmetic combinator: {first (signal), operation (+ - * / % ^ << >> AND OR XOR), second (signal) | constant, output (signal)}',
       decider='decider combinator: {first (signal), comparator, constant | second (signal), output (signal), copy_input (boolean: output the input count, else 1)}',
+      read='switches by entity type, each a boolean: inserter {hand}, transport-belt {contents}, mining-drill {resources}, train-stop {send_to_train, read_from_train, read_stopped_train, read_trains_count, set_trains_limit}',
       returns='what the entity now holds: enable/logistic conditions, signals, parameters (read back from the game). Signals are item, fluid or virtual signal names ("iron-plate", "water", "signal-A") or {type, name}'},
   }
   -- A signal name as a SignalID: items, then fluids, then virtual signals.
@@ -42,6 +43,11 @@ return function(api)
     end
     return out
   end
+  -- read: the circuit GUI's read switches, by entity type (2.0 property names).
+  local READS = {inserter={hand='circuit_read_hand_contents'}, ['transport-belt']={contents='read_contents'},
+    ['mining-drill']={resources='circuit_read_resources'},
+    ['train-stop']={send_to_train='send_to_train', read_from_train='read_from_train', read_stopped_train='read_stopped_train',
+      read_trains_count='read_trains_count', set_trains_limit='set_trains_limit'}}
   local function behavior(e)
     local ok, cb = pcall(e.get_or_create_control_behavior)
     assert(ok and cb, e.name .. ' has no circuit connection')
@@ -72,6 +78,24 @@ return function(api)
       else
         local c = condition(a.logistic, 'logistic')
         guarded('logistic', function() cb.connect_to_logistic_network = true; cb.logistic_condition = c end)
+      end
+    end
+    if a.read ~= nil then
+      local known = READS[e.type]
+      assert(known, e.name .. ' has no read switches here (inserter, transport-belt, mining-drill, train-stop)')
+      assert(type(a.read) == 'table', 'read is {switch=boolean}')
+      out.read = {}
+      for k, v in pairs(a.read) do
+        local prop = known[k]
+        if not prop then
+          local names = {}
+          for n in pairs(known) do names[#names+1] = n end
+          table.sort(names)
+          error('read: ' .. tostring(k) .. ' is not a switch of ' .. e.type .. ' (' .. table.concat(names, ', ') .. ')', 0)
+        end
+        assert(type(v) == 'boolean', 'read.' .. k .. ' must be boolean')
+        guarded('read.' .. k, function() cb[prop] = v end)
+        out.read[k] = v
       end
     end
     if a.signals ~= nil or a.on ~= nil then

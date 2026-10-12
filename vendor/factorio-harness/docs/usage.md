@@ -72,8 +72,11 @@ fh call status
   turns it off), `logistic: {...}` (the same, read from the logistic network; connects it), a constant combinator's
   `signals: [{signal, count}]` and `on`, an arithmetic combinator's `arithmetic: {first, operation, constant | second,
   output}`, a decider's `decider: {first, comparator, constant | second, output, copy_input}`. Signals are item, fluid
-  or virtual signal names (`iron-plate`, `water`, `signal-A`). The reply reads back what the game holds. It leaves a
-  running queue alone.
+  or virtual signal names (`iron-plate`, `water`, `signal-A`). `read: {switch: true}` sets read switches: an inserter's
+  `hand`, a belt's `contents`, a drill's `resources`, a train stop's `send_to_train`, `read_from_train`,
+  `read_stopped_train`, `read_trains_count`, `set_trains_limit`. The reply reads back what the game holds. It leaves a
+  running queue alone. `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests"
+  switch.
 - Trains: `train {position: stop, name, limit}` names a train stop and sets its train limit (`limit: false` clears it);
   `train {position: locomotive or wagon, schedule: [{station, wait: [{type, ticks?, compare?, condition?}]}], current,
   automatic}` sets the train's schedule (wait types as in the game: time, inactivity, full, empty, item_count,
@@ -284,8 +287,8 @@ Some actions work at a distance, the way a player can through remote view:
   marks (`tiles_cancelled`).
 
 Not supported yet: riding or driving vehicles (cars, tanks, spidertrons, trains as a passenger: a character in a
-vehicle is refused by every action), elevated rails and rail ramps, circuit read modes (an inserter or belt reading
-contents, a train stop sending to its train), and fluid transfers by hand. See docs/HARNESS-COVERAGE.md in the pog
+vehicle is refused by every action), elevated rails and rail ramps, the selector combinator, and fluid
+transfers by hand. See docs/HARNESS-COVERAGE.md in the pog
 repo for the feature-by-feature list.
 
 ## Bots

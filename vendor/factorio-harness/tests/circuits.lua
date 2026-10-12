@@ -149,6 +149,11 @@ fails(function() astra('circuit',{position={x=6,y=0},arithmetic={first='iron-pla
 astra('circuit',{position={x=8,y=0},decider={first='signal-A',comparator='>',constant=5,output='iron-plate',copy_input=true}})
 eq(decider_cb.parameters.conditions[1].comparator,'>'); eq(decider_cb.parameters.conditions[1].constant,5)
 eq(decider_cb.parameters.outputs[1].signal.name,'iron-plate'); eq(decider_cb.parameters.outputs[1].copy_count_from_input,true)
+-- Read switches by entity type.
+r=astra('circuit',{position={x=2,y=0},read={hand=true}})
+eq(inserter_cb.circuit_read_hand_contents,true); eq(r.read.hand,true)
+fails(function() astra('circuit',{position={x=2,y=0},read={contents=true}}) end,'read: contents is not a switch of inserter (hand)')
+fails(function() astra('circuit',{position={x=4,y=0},read={hand=true}}) end,'has no read switches here')
 -- A refusal from the game comes back as a plain error.
 setmetatable(arith_cb,{__newindex=function() error('invalid parameters') end}); arith_cb.parameters=nil
 fails(function() astra('circuit',{position={x=6,y=0},arithmetic={first='iron-plate',constant=2,output='signal-A'}}) end,'arithmetic: ')

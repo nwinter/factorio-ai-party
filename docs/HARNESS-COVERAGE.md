@@ -18,8 +18,8 @@ this branch added.
   rails (the rail item could not be built at all), quality on assembler recipes (accepted but a quality-only change was
   reported unchanged). Built here: `wire color=red|green`, `circuit`, `train`, rails in `build`/`construct`,
   `configure quality`.
-- Still missing: riding or driving vehicles (every action refuses a character in a vehicle), elevated rails, circuit
-  read modes, combinator selector settings, a requester chest's "request from buffers" switch.
+- Still missing: riding or driving vehicles (every action refuses a character in a vehicle), elevated rails, the
+  selector combinator, storage chest filters.
 
 ## Table
 
@@ -29,10 +29,10 @@ this branch added.
 | Train stops | `build`; `train {position, name, limit}` | describe, usage (built here); PLAYBOOK no | yes (built here, `tests/circuits.lua`) | circuit modes of the stop |
 | Locomotives, wagons, schedules | `build`; fuel with `refuel`/`transfer`; `train {position, schedule [{station, wait [{type, ticks, compare, condition}]}], current, automatic}`; cargo with `transfer` (cargo_wagon) | describe, usage (built here); PLAYBOOK no | yes (built here; schedule table setter, LuaSchedule fallback) | interrupts; riding a train (vehicles) |
 | Roboports, robots | `build`; robots and repair packs with `transfer` (roboport_robot, roboport_material inventories) | describe (transfer inventories); usage no; PLAYBOOK no | transfer paths yes (inventory table), roboport itself not in a test | none for building; robots then work on their own (place_ghosts marks, deconstruct marks) |
-| Requester / buffer chests, requests | `requests {position, set [{item, min, max, quality}], clear, clear_all, section}`; storage chests as chests | describe yes; usage 1 line; PLAYBOOK no | yes for hub requests (`tests/space.lua`), the requester chest shares the code (only the lookup differs) | "request from buffer chests" switch; storage chest filter |
+| Requester / buffer chests, requests | `requests {position, set [{item, min, max, quality}], clear, clear_all, section}`; storage chests as chests | describe yes; usage 1 line; PLAYBOOK no | yes for hub requests (`tests/space.lua`), the requester chest shares the code (only the lookup differs) | storage chest filter (`from_buffers` built here) |
 | Character logistics, personal roboport | `requests {target: character}`; armour grid with `equipment {operation: insert\|remove, item, position}`; `equip slot=armor` | describe yes; usage no; PLAYBOOK no | requests yes (shared code); `equipment` has no test | none found |
 | Circuit wires | `wire {from, to, color: red\|green, from_side, to_side}` | describe, usage (built here) | yes (built here) | before: copper only |
-| Circuit conditions (inserters, belts, lamps, pumps, drills, power switches) | `circuit {position, enable: {signal, comparator, value\|signal2} \| false, logistic: {...}}` | describe, usage (built here) | yes (built here) | read modes (read hand/contents, belt read, stop send-to-train) |
+| Circuit conditions (inserters, belts, lamps, pumps, drills, power switches) | `circuit {position, enable: {signal, comparator, value\|signal2} \| false, logistic: {...}}` | describe, usage (built here) | yes (built here, read switches too: `read {hand, contents, resources, send_to_train, ...}`) | selector combinator |
 | Combinators | `circuit {signals, on}` (constant), `{arithmetic}`, `{decider}` (one condition, one output) | describe, usage (built here) | yes (built here) | selector combinator; deciders with several conditions/outputs; display panels |
 | Modules | `transfer {position, item: <module>}` (no inventory needed: the module kind picks assembling_machine_modules, furnace_modules, lab_modules, mining_drill_modules) | describe (inventory list); usage no; PLAYBOOK no | yes (built here: a probe test) | none |
 | Beacons | `build`; modules with `transfer` (beacon_modules) | as modules | yes (probe test) | none |
@@ -57,6 +57,8 @@ this branch added.
 - Rails: `build {item: rail, entity}` places a rail planner's rails directly; construct builds rail ghosts; the
   direction names include 2.0's in-between ones.
 - `configure {recipe, quality}`: documented, and a quality-only change is made instead of reported unchanged.
+- `circuit {read: {...}}`: the read switches (inserter hand, belt contents, drill resources, train stop send/read).
+- `requests {position, from_buffers}`: a requester chest's "request from buffer chests" switch.
 - Tests: `tests/circuits.lua` (new), rails in `tests/bots.lua`, module and beacon insertion in
   `mod/tests/runtime_test.lua`.
 
@@ -88,10 +90,8 @@ A live check on world `live`:
   need a separate small action set (enter/exit; spidertron `autopilot_destination`; a timed drive for cars), plus a
   decision on which actions a seated character may take. A change to that guard is wide: worth its own branch and a
   live test.
-- Circuit read modes and the selector combinator: the same `circuit` action can take them once the 2.0 property names
-  are confirmed live.
-- Requester chests' "request from buffer chests" switch and storage chest filters: a `requests` flag and a
-  `configure` path.
+- The selector combinator: the same `circuit` action can take it once its 2.0 parameters are confirmed live.
+- Storage chest filters: a `configure` path (`storage_filter`).
 - Prompts: the features above are absent from PLAYBOOK and team.md. A short tool index per feature in the PLAYBOOK
   (which action does what, no advice) is the cheapest way for agents to find them; I did not edit the prompts here
   (the study branch covers the agents' side). Text ready to paste is below.
