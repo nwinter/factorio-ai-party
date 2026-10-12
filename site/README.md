@@ -14,6 +14,11 @@ python3 -m http.server 8765 -d site/dist  # http://127.0.0.1:8765/
 
 The site uses root-relative links (`/runs/...`), so open it through a server, not `file://`.
 
+The long run (`/runs/long/`, `site/longrun.py`): the shifts chained by `runs/RUN/resumed-from`, read from the
+repo's `runs/` (or `--runs-dir DIR`): each shift's `scores.jsonl`, the timestamps of `start.log`, the director's
+death and loss cuts in `stream-service.log`, and the hosts' Space Age lines in `caster.log`. Without a chain (a
+checkout without the shift folders) the page and its links are left out. Rebuild after a shift to add it.
+
 ## Deploy
 
 ```sh
