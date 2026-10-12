@@ -25,6 +25,17 @@ preview deployment: each gets its own URL, and the branch also gets a stable ali
 (`https://preview.player-of-games.pages.dev` for `--branch preview`). Without `--branch`, wrangler uses the current
 git branch. The production domain stays empty until something is deployed with `--branch main`.
 
+### Custom domain: factorio.nickwinter.net
+
+`site/custom-domain.sh check|deploy|attach|verify` (from the repo root, in that order). `check` is read-only and
+shows wrangler's account, the zone's account and the project in it; `deploy` builds, checks, deploys the live API
+Worker (its `ALLOWED_ORIGINS` lists the domain) and Pages production (`--branch main`); `attach` adds the domain to the
+Pages project and a proxied CNAME to `player-of-games.pages.dev` in the zone (in that order: a CNAME before the domain
+is attached answers 522); `verify` checks the page, noindex and the live API's CORS for the new origin. `attach` and
+`check`'s zone part need `CF_TOKEN`, an API token with Account > Cloudflare Pages > Edit and Zone > DNS > Edit and
+Zone > Zone > Read for nickwinter.net. In the dashboard instead: Workers & Pages > player-of-games > Custom domains >
+Set up a custom domain > `factorio.nickwinter.net`; with the zone in the same account it adds the CNAME itself.
+
 The site is unlisted for now. Three things keep it out of search engines; remove all three when it goes public:
 
 - `<meta name="robots" content="noindex, nofollow">` in every page (`page()` in `build.py`),
@@ -96,7 +107,8 @@ No stream exists yet, so both YouTube keys are empty and the page shows a placeh
 live chat embed, `embed_domain` set to the page's host) and "Site chat" (our own, no accounts). Below: a dashboard
 drawn from the stream service's state: a status strip (game time, technologies, science per minute, research
 progress), alerts, one panel per agent (portrait, model and role, state, current action and place, last two chat
-lines, camera), a minimap of agent positions with camera rings and alert pins, the board (owners and recent events),
+lines, camera), a map of the base (buildings by category in 4-tile cells, enemy nests, from the stream service's
+once-a-minute `basemap` read) with the agents, camera rings and alert pins on top, the board (owners and recent events),
 research, production and science charts for the last 30 minutes, and the team's game chat. `/live/?demo=1` shows it
 with `live/state.example.json`, a snapshot of the stream service's mock session passed through the pusher's filter.
 

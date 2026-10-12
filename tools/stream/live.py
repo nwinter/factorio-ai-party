@@ -9,9 +9,13 @@ import math, re, time
 
 from harness import Harness
 from model import SPARK_ITEMS
+from work import WorkFeed
+
+AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
-LOSS_RE = re.compile(r"^(?:losses )?in \((-?\d+),(-?\d+)\)(?:-\(-?\d+,-?\d+\))? (\d+) destroyed: (.*?)(?: by (.*?))?, (\S+) ago$")
+LOSS_RE = re.compile(r"^(?:losses )?in \((-?\d+),(-?\d+)\)(?:-\((-?\d+),(-?\d+)\))? (\d+) destroyed: (.*?)(?: by (.*?))?, (\S+) ago$")
+CHUNK = 32.0  # status.alerts.attacked reports a chunk: its centre, the fight somewhere in its 32x32 tiles
 RECENT_AGO = re.compile(r"^(?:.*-)?(?:\d+s|1m\d\ds)$")  # last part of the span under 2 minutes
 
 
@@ -29,7 +33,7 @@ def attacker_label(by):
 
 
 class LiveSource:
-    def __init__(self, world, run, profiles="auto", flow_every=30.0, harness=None, status_share=3):
+    def __init__(self, world, run, profiles="auto", flow_every=30.0, harness=None, status_share=3, journals=None):
         self.name = f"live:{world}"
         self.world = world
         self.h = harness or Harness(world)
@@ -57,7 +61,14 @@ class LiveSource:
         self.tell_seq = 0
         self.platform_every = 15.0
         self.next_platforms = 0
+        self.basemap_every = 60.0  # the site's live map: the base changes slowly and the read walks every building
+        self.next_basemap = 0
+        self.ore_every = 300.0  # ore under and around the base: every resource tile there, so less often still
+        self.next_ore = 0
         self.platform_detail = {}
+        self.platform_views = {}
+        # work away from the body (remote platform builds, far ghosts): the agents' fh journals beside stream.json
+        self.work = WorkFeed(journals, list(self.agents_cfg)) if journals else None
         self.probe()
 
     def probe(self):
@@ -147,6 +158,15 @@ class LiveSource:
                 obs["flows"] = self.h.flows(SPARK_ITEMS)
             except Exception as e:
                 errors["flows"] = str(e)
+        if time.time() >= self.next_basemap:
+            self.next_basemap = time.time() + self.basemap_every
+            ore = time.time() >= self.next_ore
+            try:
+                obs["basemap"] = self.h.basemap(ore=ore)
+                if ore:
+                    self.next_ore = time.time() + self.ore_every
+            except Exception as e:
+                errors["basemap"] = str(e)
 
         profiles = {}
         if self.use_profiles:
@@ -199,12 +219,10 @@ class LiveSource:
                     a["surface"], a["platform"] = st["surface"], st.get("platform")
                 a["dead_until_tick"] = st.get("dead_until_tick")
             obs["agents"].append(a)
-        for name, p in profiles.items():
-            if name not in self.agents_cfg:
-                obs["agents"].append(dict({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto", "avatar",
-                                                                  "position", "alive", "active", "last_said", "pronouns",
-                                                                  "surface", "platform", "where", "travel")},
-                                          profile_set=any(p.get(k) for k in ("display_name", "color", "glyph"))))
+        # Only `names` become agents: the run's team, or every profile when the run lists none. Profiles outside the
+        # team (a human player such as Nick in shake8, fh players eng/players adds) are not agent cards.
+        if self.work:
+            obs["work"] = self.observe_work(obs["agents"], errors)
 
         try:
             res, _ = self.h.dispatch("chat", {"since": self.chat_since, "limit": 30, "peek": True}, **self.reader())
@@ -216,6 +234,29 @@ class LiveSource:
         self.observe_board(obs, errors)
         obs["errors"] = errors
         return obs
+
+    # ---- work away from the body ----------------------------------------------------------------------------
+    def observe_work(self, agents, errors):
+        """New journal requests that land away from the agent's body: on a platform (the body never is, when it
+        builds there remotely), or AWAY_TILES or more from the body on its own surface."""
+        try:
+            reqs = self.work.poll()
+        except Exception as e:
+            errors["work"] = str(e)
+            return []
+        by = {a["name"]: a for a in agents}
+        out = []
+        for r in reqs:
+            body = by.get(r["agent"]) or {}
+            here = body.get("position")
+            if r["platform"]:
+                if body.get("platform") == r["platform"]:
+                    continue  # aboard that platform: its camera already shows the work
+            elif not (r["position"] and here and math.hypot(r["position"]["x"] - here["x"],
+                                                            r["position"]["y"] - here["y"]) >= AWAY_TILES):
+                continue  # near the body (or no position to tell): the camera following it shows the work
+            out.append(dict(r, surface=None if r["platform"] else (body.get("surface") or "nauvis")))
+        return out
 
     # ---- Space Age platforms ------------------------------------------------------------------------------------
     def observe_platforms(self, space, errors):
@@ -234,7 +275,16 @@ class LiveSource:
                 except Exception as e:
                     errors["platforms"] = str(e)
             self.platform_detail = detail
-        space["platforms"] = [dict(row, **self.platform_detail.get(row["name"], {})) for row in space["platforms"]]
+            # where a camera shows each platform: surface, hub, bounds (one read-only Lua call for all of them)
+            if hasattr(self.h, "platform_views"):
+                try:
+                    self.platform_views = self.h.platform_views()
+                except Exception as e:
+                    errors["platform_views"] = str(e)
+        views = getattr(self, "platform_views", {})
+        space["platforms"] = [dict(row, **self.platform_detail.get(row["name"], {}),
+                                   **({"view": views[row["name"]]} if row["name"] in views else {}))
+                              for row in space["platforms"]]
 
     # ---- team board (docs/BOARD-API.md) ------------------------------------------------------------------------
     def board_probe(self):
@@ -309,13 +359,16 @@ class LiveSource:
             m = LOSS_RE.match(line or "")
             if not m:
                 continue
-            x, y, total, names, by, ago = m.group(1), m.group(2), int(m.group(3)), m.group(4), m.group(5), m.group(6)
+            x, y, total, names, by, ago = m.group(1), m.group(2), int(m.group(5)), m.group(6), m.group(7), m.group(8)
             if not RECENT_AGO.match(ago):
                 continue  # the alert window is 5 game minutes; only show losses from the last minute or so
             what = ", ".join(n.strip().replace("-", " ") for n in names.split(",")[:2])
             text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {attacker_label(by)})" if by else "")
-            out.append({"kind": "loss", "text": text, "key": f"loss:{x},{y}", "ttl": 90,
-                        "position": {"x": float(x), "y": float(y)}})
+            # where the camera frames the fight: the loss rectangle's centre and size (a single point: 16 tiles)
+            x2, y2 = float(m.group(3) or x), float(m.group(4) or y)
+            pos = {"x": (float(x) + x2) / 2, "y": (float(y) + y2) / 2,
+                   "extent": max(16.0, abs(x2 - float(x)), abs(y2 - float(y))), "surface": "nauvis"}
+            out.append({"kind": "loss", "text": text, "key": f"loss:{x},{y}", "ttl": 90, "position": pos})
         return out
 
     @staticmethod
@@ -333,7 +386,7 @@ class LiveSource:
             text = f"Engineer under attack {near}" if what == "an engineer" else \
                 f"Base under attack {near}" + (f": {what}" if what else "")
             out.append({"kind": "attack", "text": text, "key": f"area:{c.get('x')},{c.get('y')}", "ttl": 60,
-                        "position": c})
+                        "position": dict(c, extent=CHUNK, surface=area.get("surface") or "nauvis")})
         return out
 
     def send_camera(self, body):

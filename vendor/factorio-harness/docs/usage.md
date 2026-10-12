@@ -58,6 +58,19 @@ fh call status
 - With `--wait`, the command exits nonzero unless the action ended successfully, or when the wait times out. `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
+- `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
+  distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
+  your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
+  (`out of range ... reaches N tiles`, `cooling down: N ticks left`); one item is used. `use_item {item: "raw-fish"}`
+  uses a capsule on yourself (the heal). Capsules of other kinds (cliff explosives, remotes) are refused. Reply: `kind`
+  (throw|self), `projectile`, `distance`, `range`, `cooldown_ticks`, `left`, `healed`. It is an instant action that
+  stops what the character was doing, as `shoot` does.
+- `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
+  as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
+  ammunition in the ammo slots. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
+  to the retreat point, still firing at units in reach while ammunition lasts, and ends `retreated` there. Every kite
+  end says why in `last.why` (`health 36% fell below min_health 40%; retreating to (-20,0)`, `out of ammunition`, `no
+  enemies left within the scan radius`, `time up`), with `ammo_left`, `enemies_left` and `retreated_from`.
 - Output is compact tables meant for reading. Use `--format json` for programs.
 
 ### Output shape, chat and time left
@@ -246,7 +259,13 @@ Gameplay actions use the same mechanics as a human player: items come from the i
 Some actions work at a distance, the way a player can through remote view:
 
 - `configure`, `requests` and `launch` in visible chunks
-- ghosts and deconstruction marks in charted chunks
+- ghosts and deconstruction marks in charted chunks (on your own space platform with `platform`, anywhere on it)
+- `deconstruct {area, tiles}` marks tiles as a planner in tile mode does: `tiles: true` takes every minable tile in the
+  area, or name them (`["space-platform-foundation"]`). The game decides each tile; the reply counts `tiles_marked`,
+  `tiles_already`, `tiles_refused` (`refused: {under_entity, engine, not_minable, error}`) and `tiles_blocked` (marked
+  tiles under an entity that is not marked: robots take a tile once what stands on it is gone). With `tiles`, entities
+  are marked only when `entity_names` or `entity_types` name them. `cancel_deconstruction {area, tiles}` clears tile
+  marks (`tiles_cancelled`).
 
 Not supported yet: vehicles, rails, circuit editing, and fluid transfers.
 

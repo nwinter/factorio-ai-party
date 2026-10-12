@@ -76,10 +76,26 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
                 "packs": [{"item": "automation-science-pack", "rate": 0.0, "total": 277}]},
     "alerts": [{"kind": "attack|death|low_power|research", "text": "...", "agent": "grok", "position": {"x": 0, "y": 0}}],
     "board": {"available": true, "open_unowned": 1, "in_progress": 2, "claims": [...], "events": [...]},
+    "basemap": {"tick": 230400, "cell": 4, "x0": -112, "y0": -72, "w": 56, "h": 41, "buildings": 659,
+                "rows": ["..DDDDDD", "....S.BB"],   // one string per cell row from y0; one letter per cell from x0
+                "nests": [[150, 40, "s"], [140, 30, "w"]]},  // enemy spawners (s) and worms (w) near the base
     "cameras": {"main": {"agents": ["sol"], "pair": false, "since": 1791695548.8}}
   }
 }
 ```
+
+`basemap` is the base as a coarse grid, read once a minute by the stream service (`BASEMAP_LUA` in
+`tools/stream/harness.py`, an operator read like the score): every building of ours on nauvis except electric poles,
+binned into `cell`-tile cells (4, doubled until the grid fits 128 cells a side), each cell labelled by its most telling
+building: `D` defence (turrets, walls, gates), `R` labs, `O` oil and chemistry (refineries, chemical plants,
+pumpjacks), `A` assembly (assemblers, the silo), `S` smelting, `M` mining (drills, offshore pumps), `E` power,
+`K` storage, `B` belts and inserters, `P` pipes, `.` nothing. Cell (c, r) covers tiles `x0 + c*cell` to
+`x0 + (c+1)*cell` and the same for y. Trailing empty cells are left off each row. It is absent until the first read.
+`basemap.ore` (read every 5 minutes, the last one kept between reads) is a second grid with its own `cell`, `x0`,
+`y0`, `w` and `rows`, covering the base plus 64 tiles: one letter per cell for its commonest resource, `i` iron ore,
+`c` copper ore, `k` coal, `s` stone, `o` crude oil, `u` uranium ore, `x` anything else. The page draws it faintly
+under the buildings. With a base, the page frames the base and pins an agent more than a base-width away to the
+map's edge (dashed, its distance in the tooltip).
 
 Field meanings are `serve.py`'s (see `docs/STREAM-NOTES.md`); dropped on purpose: `source`, `poll_ok`, `poll_error`,
 `errors`, per-agent `seen`, `interest` and `voice`, and camera zoom/player indices. To show something new on the
@@ -102,7 +118,7 @@ page, add it to the keep-lists in `push_live.py` and document it here.
 Per client: one message every 4 s and 8 per minute; all clients together: 60 per minute. Over the limit:
 `429 {"error": "slow down", "retry_after_s": N}`. Other refusals are `400` (`empty message`, `links are not allowed`,
 `that name is reserved`, ...) or `403` (`chat is closed`, banned client, or a browser on another site's origin).
-Browsers may call the API only from `ALLOWED_ORIGINS` in `site/worker/wrangler.toml` (the Pages project and its
+Browsers may call the API only from `ALLOWED_ORIGINS` in `site/worker/wrangler.toml` (the custom domain, the Pages project and its
 preview subdomains, plus local preview on port 8765); scripts without an `Origin` header are allowed and limited the
 same way.
 

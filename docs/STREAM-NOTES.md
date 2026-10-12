@@ -177,9 +177,39 @@ stops a player.
 
 `--viewers-youtube TARGET`, `--viewers-site`, `--viewers-replay JSONL` start `tools/stream/viewers.py` inside the
 service; the snapshot then carries `viewers` (filtered messages, oldest first) and `viewers_status`. Without these
-options `viewers` is an empty list and `viewers_status` null. The page draws the last two messages under five minutes
-old in a blue lane in the chat panel: a YT or SITE tag, the name (yellow for YouTube staff), the text on one line,
-and "to the agents" on messages flagged as orders. Viewer names and text are set as text, never HTML.
+options `viewers` is an empty list and `viewers_status` null. The page puts messages under five minutes old (the last
+four) into the main chat feed in time order with the agents' lines, so they scroll away like the rest (shake7: in a
+lane of their own, Nick's line stayed up): a YT or SITE badge where agents have an avatar, the name in blue (yellow
+for YouTube staff), a "viewer" tag, and "to the agents" on messages flagged as orders. Viewer names and text are set
+as text, never HTML.
+
+Tells (the team's main channel since the board: shake7 had ~540 tells to ~100 chat lines) are in the same feed as
+direct lines: "Sol → Astra" over the words in full, indented, a size smaller, on a teal edge. A burst from one agent
+to the same recipients, each within 45 s of the last, folds into one line with the latest words and "+N"
+(`static/chatfeed.js`). The two-line ticker under the chat is gone (Nick: "I can barely see any of it"); the
+logistics chat and server lines it also carried are no longer shown. Same on the portrait page. The model gives tells
+their own lane ("tell", the last 24 kept beside 12 conversation lines); the page also reads tells from a service that
+still files them under "log", so a reload is enough.
+
+## Shake7 notes (2026-10-11): what changed for the 17:00 shift
+
+- One event stream per page. A browser keeps 6 connections per host and an open event stream holds one for good; in
+  shake7 the overlay, portrait and audio-test pages each held `/events` and `/audio-events`, all 6 were taken and the
+  voice clips never downloaded, so the hosts were silent. Now `/events?audio=1` carries the clips as `audio` events
+  and overlay.js and audio.js share one EventSource (`window.pogEvents`); the replay banner keeps its plain
+  `/events`. Overlay, audio-test, portrait and replay on one host hold 4, leaving 2 for clips
+  (`tools/stream/test_connections.py`, which also checks a clip downloads with all four open). `/audio-events` stays
+  for pages loaded before the change. Pages pick this up when OBS reloads them (`tools/obs.py reload-overlay`).
+- Analysis segments are a small card (540 px) in the main camera's lower left, never the whole camera; production,
+  research, recap and Space run 10 to 20 s. Production only runs when a line moved 25% in 10 minutes (or started),
+  and shows the top three movers; a recap only when its window has research, board items done, attacks or deaths (a
+  due recap with nothing in it is skipped and its 20-minute clock restarts, so it never holds the queue).
+- Science, team board and Space take turns in one 124 px slot, 18 s each (portrait: science and Space), so chat keeps
+  its room.
+- A Space platform counts once its hub exists: the score read carries `hub`, and a record waiting for its starter
+  pack (the New platform button) is not a platform. Shake7 announced "First space platform: Solstice" on that record.
+- Checked: selftest, test_connections.py and jsdom renders of both pages from the mock (one event stream, viewer
+  lines in order and escaped, the production card, the widget rotation). Not looked at in OBS.
 
 ## Segments (shots the casters or the director start)
 
@@ -252,6 +282,52 @@ Mock: `serve.py --mock --run tools/stream/runs/mock-sa3.json` (three agents) pla
 "Orbital One" at 40 s, its flight to Vulcanus from 70 to 130 s, a paused "Shuttle" at 100 s and Opus landing on
 Vulcanus at 150 s (`"mock_space_speed"` scales it). Checked in jsdom on both pages and in the selftest; not yet seen
 with a real platform, since the pilot had none by 02:00.
+
+## Following the work, and platform shots
+
+Cameras follow bodies, but in Space Age the agents stand on Nauvis while they build a platform remotely
+(place_ghosts / paste / blueprint_place / deconstruct / cancel_deconstruction with `platform=NAME`, built by the hub),
+so until now no camera ever showed a platform.
+
+Where the service learns an action's target: each agent's fh journal (tools/new-run.sh `--journal`,
+`runs/RUN/AGENT/journal.jsonl`, beside the run's `stream.json`) holds every request with its arguments. `work.py`
+tails those files from their end when the service starts (no replay of the past), reads only new bytes each poll (at
+most 1 MB per file), and keeps the five actions above. Profiles' `active` gives only the action kind, and the game
+records nothing about who placed a ghost, so the journal is the one cheap source. `./shot` is not in it: the shot
+script calls fh without the journal and always centres on the character.
+
+- Away: `live.py observe_work` keeps a request that lands on a platform the body is not aboard, or 48 tiles or more
+  (`AWAY_TILES`) from the body on its own surface (position, area centre, or the centre of the ghosts placed). Near the
+  body the camera following it already shows the work.
+- `model.py` labels it "Sol building on Solstice (from the ground)" or "Astra pasting a blueprint at (300, 40) (from
+  afar)", one item per agent and job for 20 s, kept 60 s in the snapshot (`work`), and bumps the agent's interest.
+- Director: the last secondary camera (cam3; cam2 with two) cuts to the newest item under 20 s old (`work_fresh`), holds
+  15 s (`work_hold`), at most once every 45 s (`work_spacing`), never over an attack or segment shot. A platform item
+  shows the whole platform: a fixed view on the platform's surface, centred on its entities' bounds, at the zoom that
+  fits them (`model.platform_shot`, ~60x34 tiles at zoom 1, 0.3..2, sent as is). A far item shows its position at zoom
+  0.9 (scaled like other secondary views). The agent counts as on air, so no other camera follows its body meanwhile.
+  The camera label reads "Sol · building on Solstice (from the ground)". `work_cut: false` in the run config's
+  `director` turns it off.
+- Platform views: one read-only Lua call (`harness.py PLATFORM_LUA`, every 15 s with the platform detail) gives each
+  platform's surface name (the `platforms` read has none, and the camera takes surfaces), its hub and the bounds of our
+  entities there. A platform waiting for its starter pack has no surface and is skipped.
+- Segments: "space" puts a platform on the main camera (one asked for with `params.platform`, else one between planets,
+  else the first with a view); "space_moment" shows the platform for first-platform and orbit moments (a landing still
+  follows the agent). Both pass the surface and the fitting zoom through `Segments.camera()` to the director.
+- Director clients on a platform surface: cameras.lua teleports the spectating director to the target's surface
+  (`p.teleport(target, surface)`, the same path a camera following a bot aboard a platform already takes), so a client
+  that is not on the platform renders it. Not yet seen on stream.
+
+Check live after the shift change (stream service restarted from this branch):
+
+```sh
+grep -E "work: |segment: Space" runs/RUN/stream-service.log | tail     # the director's work cuts and platform shots
+grep -h '"surface": "platform' tools/stream/logs/director-*.jsonl | tail -3   # camera calls naming a platform surface
+curl -s 127.0.0.1:8788/state.json | python3 -c 'import json,sys; s=json.load(sys.stdin); print(s["work"]); print([p.get("view") for p in s["space"]["platforms"]])'
+```
+
+A platform shot on cam3 should show the platform with space around it; an empty or black view means the client did not
+render that surface.
 
 ## Unused cameras
 
@@ -347,8 +423,15 @@ changes are at most one per 5 s per camera. Zoom changes are smooth `camera` cal
 30-minute 9-agent mock: about 1.2 cuts and 0.6-0.9 zoom changes per camera per minute.
 
 Combat: a fresh (under 8 s old) attack or loss alert cuts the main camera at once, ignoring the dwell: to the agent
-in the fight (its status `combat` went true), else to the nearest agent within 50 tiles of the attacked area (zoom
-1.05, following), else to the area itself (`camera` with `position`, zoom 0.8). It holds 20 s (`attack_hold`), at most
+in the fight (its status `combat` went true; zoom 1.05, following), else to the fight itself: a fixed view on the
+alert's position and surface, zoomed so its extent fits (the attacked 32-tile chunk, or the loss rectangle, plus 24
+tiles: `60 / (extent + 24)`, sent as is), jumping there without easing. It no longer follows an agent near the attack:
+in shake10 that framed the factory and the announced turret-fight replay showed the factory. Fight replays (replays.py,
+after shake10, when the replay aired what the main camera had just shown while the battle went on): never while the
+fight is going on (a clip waits until its fight, model `fights`, has been quiet 20 s; a death clip until no attack
+within 40 tiles goes on); nothing of what the main camera showed live; a loss gets a 10 s clip centred on the moment
+of loss (6 s before, 4 s after) if a camera showed the spot, aired after the fight; a fight only a side camera showed
+gets that camera's stretch (6 to 15 s), aired after it ends; no camera, no replay. It holds 20 s (`attack_hold`), at most
 one such cut per 45 s (`attack_spacing`). A death cuts to where the agent fell (zoom 1.1, 12 s), even inside the
 spacing. The camera label shows the alert text with ⚔ or 💀 on a red edge. Status has no health field, so "taking
 damage" is the `combat` flag plus base areas in `alerts.attacked`. `attack_cut: false` in the run config's `director`

@@ -15,6 +15,7 @@ refreshes the owner's login exactly as it does in the owner's sessions (GROK_AUT
 in ~/.grok is copied, edited or replaced by this script. Sessions: DIR/.grok-home/sessions links to ~/.grok/sessions,
 so session files stay where tools/context.py and the run analysis look for them.
 """
+import shutil
 import datetime
 import json
 import os

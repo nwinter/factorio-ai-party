@@ -148,6 +148,10 @@ Details and the evidence behind each setting: `docs/CONTEXT-NOTES.md`.
 - YouTube (unlisted test stream): OBS `pog` profile streams to `rtmps://a.rtmps.youtube.com:443/live2` (note `rtmps` in the
   host) with the key from `~/.config/pog/youtube.key` (never commit it); Quick Sync H.264 at 6 Mbps. 2-minute test:
   0 dropped frames, no congestion. `tools/obs.py stream-start|stream-status|stream-stop`.
+  Since 2026-10-11 the profile is in Advanced output (`tools/obs_profile.py advanced`: 2 s keyframes, which Simple mode
+  could not set; YouTube flagged 7.9 s) and outputs 1920x1080 at 12 Mbps on Quick Sync (`obs_profile.py 1080p --encoder
+  qsv --bitrate 12000`). NVENC is not available to OBS 32.2.2 on the box ("Encoder ID 'obs_nvenc_h264_tex' not found",
+  NVIDIA driver 535.98); a failed start leaves a "Failed to start streaming" dialog that blocks OBS from closing.
   Keep the service on "Custom" (`rtmp_custom`). OBS 32.2.2's built-in "YouTube - RTMPS" service crashed OBS at stream
   start (`YouTubeAppDock::IngestionStarted`, 2026-10-11, no account connected), and the crashed process kept the
   capture pipes and the browser profile locked until it was killed in Task Manager.

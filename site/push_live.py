@@ -21,7 +21,7 @@ AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profil
               "alive", "activity", "action", "active", "position", "location", "last_said", "camera", "avatar",
               "combat", "died_at")
 TOP_KEYS = ("now", "tick", "paused", "game_time", "title", "subtitle", "research", "production", "science", "alerts",
-            "board")
+            "board", "basemap")
 CHAT_KEYS = ("seq", "tick", "from", "agent", "text", "t")
 
 

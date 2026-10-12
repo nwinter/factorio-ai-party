@@ -40,6 +40,15 @@ if [ -n "$resume" ]; then
   fi
   [ -n "$prev_dir" ] && [ -d "$prev_dir" ] || { echo "POG_RESUME=$resume: no run directory runs/$resume here or in ~/code/player-of-games/runs; set POG_RESUME_DIR" >&2; exit 1; }
   [ "$resume" != "$run" ] || { echo "POG_RESUME names this run ($run); a shift needs a new run id" >&2; exit 1; }
+  # A run whose agents never launched has no notes (shake9: its start failed after the save copy, and shake10's agents
+  # began with empty notes). The save still comes from POG_RESUME; the notes come from the newest run up its
+  # resumed-from chain that has any.
+  hops=0
+  while ! ls "$prev_dir"/*/notes.md >/dev/null 2>&1 && [ -f "$prev_dir/resumed-from" ] && [ $hops -lt 5 ]; do
+    up=$(head -1 "$prev_dir/resumed-from"); [ -d "$(dirname "$prev_dir")/$up" ] || break
+    echo "POG_RESUME=$resume: $prev_dir has no agent notes; taking notes from $up" >&2
+    prev_dir=$(dirname "$prev_dir")/$up; hops=$((hops + 1))
+  done
   export POG_RESUME POG_RESUME_DIR=$prev_dir   # tools/new-run.sh and tools/launch-agent.sh read them
 fi
 members=$(awk -F'\t' '!/^#/ && NF {print $1}' "$team")
@@ -114,7 +123,9 @@ else
   scp -q ~/.config/pog/rcon-$world.pw "pogwin:D:/pog/inst/$world/rcon.pw" 2>/dev/null
 fi
 tools/winps.sh tools/win/start-server.ps1 -Name "$world" -Save "$run" -GamePort $game -RconPort $rcon >/dev/null
-POG_WORLD=$world bin/fh call describe >/dev/null 2>&1 || true          # first command on a fresh save is swallowed
+# Wait for RCON before deploying: after a reboot the server took 21 s to open it, and the deploy at 19 s failed
+# (shake9's first start). The first command on a fresh save is swallowed, so this also absorbs that one.
+for _ in $(seq 1 45); do POG_WORLD=$world bin/fh call describe >/dev/null 2>&1 && break; sleep 2; done
 deployed=$(POG_WORLD=$world bin/fh deploy --format json 2>/dev/null || true)
 deploy_status=$(printf '%s' "$deployed" | python3 tools/code_check.py --deploy-reply)
 log "runtime deployed from $(git rev-parse --short HEAD): $deploy_status"
@@ -198,8 +209,13 @@ helpers+=("shot-sync:$!:$rundir/shot-sync.log")
 if [ "${POG_CASTER:-1}" != 0 ]; then
   # --deadline: the agents' deadline.txt files (written as they launch, after this) give the hosts the time left;
   # --run-dir: its resumed-from (POG_RESUME) tells the hosts this is a later shift of a saved world
-  nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts auto --tts-fallback aura1 \
-    --deadline "$rundir/*/deadline.txt" --run-dir "$rundir" >"$rundir/caster.log" 2>&1 &
+  # The hosts' writer: POG_CASTER_MODEL on OpenRouter (Nick picked Opus 5.5 from the 2026-10-11 writer comparison,
+  # docs/AUDIO-NOTES.md); urgent beats stay on the fast Workers AI model. Empty, or no OpenRouter key: Workers AI.
+  cmodel=${POG_CASTER_MODEL-anthropic/claude-opus-5.5} writer=()
+  orkey=${OPENROUTER_API_KEY:-$(security find-generic-password -s openrouter -w 2>/dev/null || true)}
+  [ -n "$cmodel" ] && [ -n "$orkey" ] && writer=(--writer or --model "$cmodel")
+  OPENROUTER_API_KEY=$orkey nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts auto --tts-fallback aura1 \
+    --deadline "$rundir/*/deadline.txt" --run-dir "$rundir" ${writer[@]+"${writer[@]}"} >"$rundir/caster.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("caster:$!:$rundir/caster.log")
 fi

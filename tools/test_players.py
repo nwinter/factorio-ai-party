@@ -9,7 +9,7 @@ harness (votes.lua) and tested there: tests/players.lua, tests/viewers.lua, test
   refused, a failure to run leaves the vote carried for the next pass, --dry-run acts on nothing.
 - The operator request form, and the direct trust, guest and trust-names commands.
 - agent/team.md describes the tools only (no should, must, try, when you, if you).
-- Vote notices go to the overlay's ticker, like the other harness notices.
+- Vote notices take their own lane, shown in the overlay's chat feed.
 """
 import io
 import json
@@ -148,8 +148,11 @@ def request_form():
 def stream_lane():
     sys.path.insert(0, os.path.join(ROOT, "tools", "stream"))
     import model
-    assert model.chat_lane({"from": "vote", "notice": True, "text": "#1 kick nick carried (2 of 3 active agents: luna, sol)"}) == "log"
-    assert model.chat_lane({"from": "players", "notice": True, "text": "nick joined the game (guest group)"}) == "log"
+    assert model.chat_lane({"from": "vote", "notice": True, "text": "#1 kick nick carried (2 of 3 active agents: luna, sol)"}) == "notice"
+    assert model.chat_lane({"from": "players", "notice": True, "text": "nick joined the game (guest group)"}) == "notice"
+    # the overlay's chat feed shows the notice lane (main dropped the ticker that showed lane "log")
+    js = open(os.path.join(ROOT, "tools", "stream", "static", "overlay.js")).read()
+    assert 'm.lane === "notice"' in js
     print("stream lane: ok")
 
 

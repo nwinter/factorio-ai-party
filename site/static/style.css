@@ -83,7 +83,9 @@ h1 { font-size: clamp(1.9rem, 4.2vw, 2.7rem); margin: 1.2rem 0 .6rem; }
 h2 { font-size: 1.5rem; margin: 2.4rem 0 .8rem; }
 h3 { font-size: 1.1rem; margin: 1.4rem 0 .4rem; }
 .h-sub { display: block; font-size: 1.05rem; font-weight: 400; color: var(--ink-2); margin-top: .3rem; }
-.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 0 16px; }
+/* The live page uses the whole screen: the video column grows with it (text pages keep .prose's line length). */
+.wrap:has(.live-app) { max-width: 1920px; padding: 0 24px; }
 .muted { color: var(--muted); }
 .small { font-size: .88rem; }
 .lede { font-size: 1.15rem; color: var(--ink-2); max-width: 46em; }
@@ -318,7 +320,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .live-head-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
 .live-head-row h1 { margin-bottom: .4rem; }
 .live-head-meta { margin: 0; display: flex; gap: 10px; align-items: center; }
-.live-top { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(300px, 1fr); gap: 14px; align-items: stretch; }
+.live-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 420px); gap: 14px; align-items: stretch; }
 @media (max-width: 960px) { .live-top { grid-template-columns: 1fr; } }
 .player-wrap { aspect-ratio: 16 / 9; background: #0d0c0d; border: 2px solid #111; border-radius: var(--fx-r-1); overflow: hidden; position: relative;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, .10), var(--fx-inset-shadow), var(--fx-shadow-window); }
@@ -401,6 +403,27 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .minimap .dot.dead { opacity: .5; }
 .minimap .pin path { fill: var(--fx-red); stroke: #000; stroke-width: 1; }
 .minimap .pin text { fill: #fff; font-size: 10px; font-weight: 700; }
+/* base layer: one colour per building category (live.js BASE_CATS), close to the game's own map tones */
+.minimap .mm-base path { shape-rendering: crispEdges; }
+.b-D { fill: #c8553d; background: #c8553d; } .b-R { fill: #a983f0; background: #a983f0; }
+.b-O { fill: #3fa8a3; background: #3fa8a3; } .b-A { fill: #5c8fd6; background: #5c8fd6; }
+.b-S { fill: #e08a3c; background: #e08a3c; } .b-M { fill: #a6875a; background: #a6875a; }
+.b-E { fill: #f2d34b; background: #f2d34b; } .b-K { fill: #8f8f8f; background: #8f8f8f; }
+.b-B { fill: #7d7550; background: #7d7550; } .b-P { fill: #4a6a8a; background: #4a6a8a; }
+.minimap .nest { fill: #ff3b30; stroke: #000; stroke-width: 1; }
+.minimap .worm { fill: #ff8a7a; stroke: #000; stroke-width: .8; }
+.mm-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 0; padding: 0; font-size: .8rem; color: var(--muted); }
+.mm-legend li { display: flex; align-items: center; gap: 5px; }
+.mm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; box-shadow: 0 0 0 1px #000; }
+.mm-legend i.nest { background: #ff3b30; }
+/* ore under the base: faint, so buildings stay on top (live.js ORE_CATS) */
+.minimap .mm-ore path { shape-rendering: crispEdges; opacity: .38; }
+.o-i { fill: #7f9db4; background: #7f9db4; } .o-c { fill: #d0703a; background: #d0703a; }
+.o-k { fill: #5a5a5a; background: #5a5a5a; } .o-s { fill: #c2ab7a; background: #c2ab7a; }
+.o-o { fill: #b04fb5; background: #b04fb5; } .o-u { fill: #6fe05a; background: #6fe05a; }
+.o-x { fill: #9a9a9a; background: #9a9a9a; }
+.mm-legend-ore i { opacity: .55; }
+.minimap .dot.far > circle:not(.cam) { stroke: var(--fx-text); stroke-width: 1.5; stroke-dasharray: 2 2; }
 
 /* board, research, game chat */
 .board-counts { margin: 0; display: flex; gap: 6px; flex-wrap: wrap; }

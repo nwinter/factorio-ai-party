@@ -12,24 +12,27 @@ casters say matches the screen. The page renders a segment from its facts only.
 import itertools, math, threading, time
 from collections import deque
 
-from model import SCIENCE
+from model import SCIENCE, platform_shot
 
 STARTING_S = 2.5   # page fade-in; the caster writes its exchange now and speaks on "live"
 ENDED_S = 5.0      # "ended" stays in the snapshot this long, then the segment is gone
 URGENT = ("attack", "death", "loss")
 
 TYPES = {
-    "production": {"title": "Production analysis", "params": {}, "seconds": [20, 45]},
-    "research": {"title": "Research progress", "params": {}, "seconds": [15, 30]},
+    # Analysis segments are a small card on the main camera, up for about as long as it takes to read (Nick on shake7:
+    # the old full panel covered the camera far longer than that and said little); production and recap only run
+    # when they have news (why_unavailable).
+    "production": {"title": "Production analysis", "params": {}, "seconds": [10, 20]},
+    "research": {"title": "Research progress", "params": {}, "seconds": [10, 18]},
     "spotlight": {"title": "Agent spotlight", "params": {"agent": "agent name (default: the most interesting)"},
                   "seconds": [20, 45]},
     "overview": {"title": "Base overview", "params": {}, "seconds": [15, 30]},
-    "recap": {"title": "Recap", "params": {"minutes": "window, 5..30 (default 10)"}, "seconds": [20, 40]},
+    "recap": {"title": "Recap", "params": {"minutes": "window, 5..30 (default 10)"}, "seconds": [10, 20]},
     "attack_replay": {"title": "Attack replay", "params": {"area": "alert id"}, "seconds": [15, 40]},
     # Space Age: progress (planets, platforms, space science), and the moments model.py detects (first rocket,
     # first platform, a platform reaching a new planet, the first landing there); the director starts a moment's
     # segment itself within MOMENT_FRESH_S, skipping the spacing, and casters may ask for one too.
-    "space": {"title": "Space Age progress", "params": {}, "seconds": [15, 30]},
+    "space": {"title": "Space Age progress", "params": {}, "seconds": [10, 18]},
     "space_moment": {"title": "Space Age moment", "params": {"moment": "moment id (default: the newest not yet shown)"},
                      "seconds": [12, 25]},
 }
@@ -72,13 +75,17 @@ class Segments:
         self.shown_moments = set()
 
     # ---- availability ------------------------------------------------------------------------------------------
-    def why_unavailable(self, kind, snap):
+    def why_unavailable(self, kind, snap, now=None):
         if kind == "attack_replay":
-            return self.replays.why() if self.replays else "replays are off (serve.py --no-replays, or the mock)"
+            return self.replays.why(now) if self.replays else "replays are off (serve.py --no-replays, or the mock)"
         if snap is None:
             return "no game state yet"
         if kind == "production" and not (snap.get("production") or (snap.get("science") or {}).get("packs")):
             return "nothing produced yet"
+        if kind == "production" and not self.production_moves(snap):
+            return "no item's rate moved by 25% in 10 minutes"
+        if kind == "recap" and not self.recap_news(snap, now or time.time()):
+            return "nothing happened in the window"
         if kind == "research" and not (snap.get("research") or {}).get("current") and \
                 not (snap.get("research") or {}).get("done_count"):
             return "no research yet"
@@ -146,7 +153,7 @@ class Segments:
             return 400, {"error": "bad params"}
         with self.lock:
             snap = self.snap
-            why = self.why_unavailable(kind, snap)
+            why = self.why_unavailable(kind, snap, now)
             if why:
                 return 409, {"error": "unavailable", "why": why, "retry_after": 60}
             if self.busy():
@@ -204,6 +211,8 @@ class Segments:
                 seg.update(state="starting", started=now, ends=now + STARTING_S + seg["seconds"])
                 self.cur = seg
                 self.last_start = now
+        if now - self.last_recap >= self.recap_every and not self.recap_news(snap, now):
+            self.last_recap = now  # a recap with nothing to say is skipped: the next one is due in recap_every
         if not self.busy() and not self.recap_overdue(now) and self.moments(snap, fresh_only=True, now=now):
             # a Space Age moment is news: start it as soon as nothing else runs (spacing waived, attacks still win)
             self.request({"type": "space_moment", "by": "director", "reason": "moment"}, now, ignore_spacing=True)
@@ -255,21 +264,36 @@ class Segments:
     def build_attack_replay(self, params, snap, now):
         return "Replay", {}, None  # filled in request() from the saved clip (replays.py)
 
-    def build_production(self, params, snap, now):
-        sci = snap.get("science") or {}
-        items = []
-        for p in (snap.get("production") or [])[:6]:
+    MOVE_MIN = 0.25  # a production change worth a segment: 25% up or down over 10 minutes (or a new line)
+
+    @staticmethod
+    def production_moves(snap):
+        """Items whose rate moved by MOVE_MIN or more against 10 minutes ago (or started), biggest first."""
+        out = []
+        for p in snap.get("production") or []:
             series = p.get("series") or []
             ago = round(series[-6], 1) if len(series) >= 6 else None  # 2-minute buckets: 10 minutes back
-            items.append({"item": human(p["item"]), "id": p["item"], "rate_now": p.get("rate"), "rate_10min_ago": ago})
-        moved = [(i["rate_now"] - i["rate_10min_ago"], i["item"]) for i in items
-                 if i["rate_now"] is not None and i["rate_10min_ago"]]
-        facts = {"science_per_min": sci.get("spm"), "stage": sci.get("stage_label"),
-                 "packs": {human(p["item"]).replace(" pack", ""): p.get("rate") for p in sci.get("packs") or []},
-                 "items": items,
-                 "biggest_gain": max(moved)[1] if moved and max(moved)[0] > 0 else None,
-                 "biggest_drop": min(moved)[1] if moved and min(moved)[0] < 0 else None}
-        title = f"Production: {sci['spm']:g} science/min" if sci.get("spm") else "Production"
+            now = p.get("rate")
+            if now is None or ago is None:
+                continue
+            if ago <= 0:
+                change = 1.0 if now >= 1 else 0.0  # a new line (at least one a minute)
+            else:
+                change = (now - ago) / ago
+            if abs(change) >= Segments.MOVE_MIN and abs(now - ago) >= 1:
+                out.append({"item": human(p["item"]), "id": p["item"], "rate_now": now, "rate_10min_ago": ago,
+                            "change_pct": round(change * 100)})
+        return sorted(out, key=lambda i: -abs(i["change_pct"]))
+
+    def build_production(self, params, snap, now):
+        sci = snap.get("science") or {}
+        items = self.production_moves(snap)[:3]  # only what changed: the card is small and up for ~15 s
+        facts = {"science_per_min": sci.get("spm"), "stage": sci.get("stage_label"), "items": items,
+                 "biggest_gain": next((i["item"] for i in items if i["change_pct"] > 0), None),
+                 "biggest_drop": next((i["item"] for i in items if i["change_pct"] < 0), None)}
+        top = items[0] if items else None
+        title = (f"Production: {top['item']} {'+' if top['change_pct'] > 0 else ''}{top['change_pct']}% in 10 min"
+                 if top else "Production")
         return title, facts, None
 
     def build_research(self, params, snap, now):
@@ -286,7 +310,16 @@ class Segments:
                  "platforms": [{k: p.get(k) for k in ("name", "where", "speed_kms", "paused")} for p in (sp.get("platforms") or [])[:4]],
                  "science": {p["label"]: {"total": p.get("total"), "per_min": p.get("rate")} for p in sp.get("science") or []},
                  "away": sp.get("away") or []}
-        return "Space Age progress", facts, None
+        # the main camera shows a platform itself (its surface, hub in frame, zoomed to fit): one asked for, else one
+        # flying between planets, else the first whose surface is known
+        plats = [p for p in sp.get("platforms") or [] if p.get("view")]
+        pick = next((p for p in plats if p["name"] == params.get("platform")), None) or \
+            next((p for p in plats if p.get("route")), None) or (plats[0] if plats else None)
+        camera = None
+        if pick:
+            facts["shown"] = pick["name"]
+            camera = platform_shot(pick["view"])
+        return "Space Age progress", facts, camera
 
     def build_space_moment(self, params, snap, now):
         ms = self.moments(snap)
@@ -297,7 +330,12 @@ class Segments:
         facts = dict(m["facts"], moment=m["kind"])
         camera = None
         if m.get("agent") and any(a["name"] == m["agent"] for a in self.live_agents(snap)):
-            camera = {"follow": m["agent"], "zoom": self.spotlight_zoom}
+            camera = {"follow": m["agent"], "zoom": self.spotlight_zoom}  # a landing: the agent on the new planet
+        elif facts.get("platform"):  # first platform, a platform reaching a planet: the platform itself
+            view = next((p.get("view") for p in (snap.get("space") or {}).get("platforms") or []
+                         if p.get("name") == facts["platform"] and p.get("view")), None)
+            if view:
+                camera = platform_shot(view)
         return m["title"], facts, camera
 
     def build_spotlight(self, params, snap, now):
@@ -333,11 +371,10 @@ class Segments:
                                                                                         if a.get("location")})[:6]}
         return "Base overview", facts, {"position": {"x": cx, "y": cy}, "zoom": zoom}
 
-    def build_recap(self, params, snap, now):
-        try:
-            minutes = max(5, min(30, int(params.get("minutes") or 10)))
-        except (TypeError, ValueError):
-            raise ValueError("minutes")
+    def recap_news(self, snap, now, minutes=None):
+        """What happened in the last `minutes` (default: since the last recap, 5..30) -> facts, or None if nothing."""
+        if minutes is None:
+            minutes = max(5, min(30, round((now - self.last_recap) / 60)))
         since = now - minutes * 60
         hist = [(t, k, txt) for t, k, txt in self.history if t >= since]
         research = [x["label"] for x in (snap.get("research") or {}).get("recent") or [] if (x.get("t") or 0) >= since]
@@ -347,4 +384,16 @@ class Segments:
                  "deaths": [txt for t, k, txt in hist if k == "death"],
                  "attacks": sum(1 for t, k, txt in hist if k in ("attack", "loss")),
                  "board_done": done[-4:], "science_per_min": (snap.get("science") or {}).get("spm")}
+        if not (research or done or facts["deaths"] or facts["attacks"]):
+            return None
+        return facts
+
+    def build_recap(self, params, snap, now):
+        try:
+            minutes = max(5, min(30, int(params.get("minutes") or 10)))
+        except (TypeError, ValueError):
+            raise ValueError("minutes")
+        facts = self.recap_news(snap, now, minutes)
+        if not facts:
+            raise ValueError(f"nothing happened in the last {minutes} minutes")
         return f"Last {minutes} minutes", facts, None

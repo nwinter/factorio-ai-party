@@ -1,10 +1,16 @@
 """Instant replays from the OBS replay buffer (operator go-ahead in REPLAYS.md; docs/STREAM-NOTES.md "Replays").
 
 Factorio cannot rewind in multiplayer, so the replay is OBS's: the replay buffer keeps the last ~45 s of the program
-output. A clip is only worth showing when the main camera was already on the action, so:
+output (all three cameras). A replay shows what a camera recorded and what the main camera's viewers did not just
+watch (shake10: the main camera showed a fight live, then the replay aired that same stretch while the battle went on):
 
-  - fight / base attack: the director cut main to it; when the attack hold is nearly over (cut + 17 s) the buffer is
-    saved and the last ~15 s (the fight as the camera followed it) are replayed;
+  - never during the fight: a clip about a fight waits until that fight (model.py `fights`) has been quiet 20 s
+    (`quiet_s`); a death clip waits while any fight within 40 tiles goes on;
+  - a fight the main camera showed live gets no replay of it (main covered most of the window, `main_frac`);
+  - a loss (something destroyed): a short clip centred on the moment of loss (`loss_before`/`loss_after`), if a camera
+    showed that spot then, aired after the fight ends, even if the main camera watched it live;
+  - a fight only a side camera showed: that camera's stretch of it (at least `side_min_s`, at most `fight_show`) is
+    saved while it is in the buffer and aired after the fight ends. No camera on it: no replay;
   - death: if the main camera showed that agent in the 10 s before, save 5 s after and replay 11 s before to 4 s after.
 
 The clip plays as an `attack_replay` segment (segments.py), so the casters see it and talk over it: on "live" the
@@ -23,8 +29,17 @@ DEFAULTS = {
     "media": "replay clip",        # ffmpeg_source in the replay scene
     "banner": "replay banner",     # browser source with /replay (REPLAY banner)
     "overlay_input": "stream overlay",  # the live overlay's browser source (voices), added off-canvas
-    "fight_after": 17.0,           # save this long after an attack cut (attack_hold is 20 s)
-    "fight_show": 15.0,            # seconds of the fight shown
+    "fight_show": 15.0,            # at most this much of a fight a side camera recorded
+    "side_min_s": 6.0,             # a side camera must have shown the fight this long for a clip
+    "main_frac": 0.5,              # the main camera showed more than this share of a window live: no replay of it
+    "main_near": 20.0,             # tiles (plus half the fight's extent): an agent the main camera follows shows it
+    "side_near": 12.0,             # the same for a side camera (closer view)
+    "quiet_s": 20.0,               # a fight is over once it has not been reported for this long
+    "fight_near": 40.0,            # a death clip waits while a fight this close goes on
+    "loss_before": 6.0,            # a loss clip: from 6 s before the moment of loss to 4 s after
+    "loss_after": 4.0,
+    "loss_lag": 2.0,               # a loss alert arrives about this long after the loss (status poll)
+    "fight_max_age": 300.0,        # a clip waiting for its fight to end is dropped after this long
     "death_before": 11.0,          # replay window around a death
     "death_after": 4.0,
     "death_save_after": 5.0,
@@ -49,8 +64,10 @@ class Replays:
         self.clip = None         # saved, not yet played: {id, path, saved_t, show_from, show_to, label, kind, agent}
         # Deaths close together each get a clip, played in order. In shake4 Haiku's clip was queued, Opus died 43 s
         # later, that cut emptied the segment queue and Opus's clip replaced Haiku's: Haiku's death never aired.
-        self.more_pending = deque(maxlen=2)  # later deaths waiting behind self.pending
-        self.more_clips = deque(maxlen=2)    # saved clips waiting behind self.clip
+        self.more_pending = deque(maxlen=4)  # later deaths, losses and side clips waiting behind self.pending
+        self.more_clips = deque(maxlen=4)    # saved clips waiting behind self.clip
+        self.fights = {}  # key -> {last, position, ...} from the latest snapshot (model.py fights)
+        self.cover = {}   # key -> {"main": deque[t], "side": deque[t], "run": start of the side camera's run, ...}
         self.playing = None      # clip id on air
         self.last_replay = -1e9
         self.main_seen = deque(maxlen=60)  # (t, [agents on main])
@@ -72,9 +89,27 @@ class Replays:
             return "OBS not connected" + (f" ({self.status['error']})" if self.status["error"] else "")
         if not self.status["buffer_active"]:
             return "OBS replay buffer not running"
-        if not self.clip or now - self.clip["show_to"] > self.cfg["max_age"]:
-            return "no fresh clip (one is saved after a fight or death on the main camera)"
+        if not self.clip or now - self.clip["show_to"] > self.max_age(self.clip):
+            return "no fresh clip (one is saved after a death on the main camera, a loss, or a fight a side camera showed)"
+        if self.waiting(self.clip, now):
+            return "the fight is still going on (a replay airs once it has been quiet 20 s)"
         return None
+
+    def max_age(self, c):
+        return self.cfg["fight_max_age"] if c.get("fight") or c.get("position") else self.cfg["max_age"]
+
+    def waiting(self, c, now):
+        """True while the fight a clip is about (or, for a death, a fight within fight_near) is still going on."""
+        q = self.cfg["quiet_s"]
+        if c.get("fight"):
+            f = self.fights.get(c["fight"])
+            return bool(f and now - f["last"] < q)
+        p = c.get("position")
+        if p:  # a loss alert is re-reported ~2 minutes after the fact: only attacks count as a fight going on
+            return any(now - f["last"] < q and f.get("kind") != "loss" and f.get("position") and
+                       ((f["position"]["x"] - p["x"]) ** 2 + (f["position"]["y"] - p["y"]) ** 2) ** 0.5 <= self.cfg["fight_near"]
+                       for f in self.fights.values())
+        return False
 
     def facts(self, now):
         c = self.clip
@@ -85,33 +120,123 @@ class Replays:
     def tick(self, snap, cams, now):
         main = (cams or {}).get("main") or {}
         self.main_seen.append((now, list(main.get("agents") or [])))
+        self.fights = {f["key"]: f for f in snap.get("fights") or []}
+        self.watch_fights(snap, cams or {}, now)
 
-    def on_attack_cut(self, alert, snap, now):
-        """The director just cut main to a fight, base attack, loss or death."""
+    def shows(self, slot, cam, fight, by_name):
+        """Does this camera show the fight now: the director's cut to it (main), or an agent it follows near it."""
+        if cam.get("fight") == fight["key"]:
+            return True
+        p = fight.get("position") or {}
+        other = self.fights.get(cam.get("fight")) if cam.get("fight") else None
+        if other and p and other.get("position"):  # the camera's fight covers this spot (a loss inside an attack)
+            q = other["position"]
+            reach = ((q.get("extent") or 0) + (p.get("extent") or 0)) / 2 + 8
+            if (q.get("surface") or "nauvis") == (p.get("surface") or "nauvis") and \
+                    ((q["x"] - p["x"]) ** 2 + (q["y"] - p["y"]) ** 2) ** 0.5 <= reach:
+                return True
+        near = self.cfg["main_near" if slot == "main" else "side_near"] + (p.get("extent") or 0) / 2
+        for n in cam.get("agents") or []:
+            a = by_name.get(n) or {}
+            q = a.get("position")
+            if q and p and (a.get("surface") or "nauvis") == (p.get("surface") or "nauvis") and \
+                    ((q["x"] - p["x"]) ** 2 + (q["y"] - p["y"]) ** 2) ** 0.5 <= near:
+                return True
+        return False
+
+    def watch_fights(self, snap, cams, now):
+        """Per fight, which cameras showed it when; from that the loss clips and the side-camera clips (module doc)."""
+        by_name = {a["name"]: a for a in snap.get("agents") or []}
+        for key, f in self.fights.items():
+            c = self.cover.setdefault(key, {"main": deque(maxlen=120), "side": deque(maxlen=120), "run": None,
+                                            "side_done": False, "losses_done": set()})
+            main_on = self.shows("main", cams.get("main") or {}, f, by_name)
+            side_on = any(self.shows(s, cam, f, by_name) for s, cam in cams.items() if s != "main")
+            if main_on:
+                c["main"].append(now)
+            if side_on:
+                c["side"].append(now)
+            # a loss: the moment something was destroyed, if a camera showed the spot then
+            for lt in f.get("losses") or []:
+                if lt in c["losses_done"]:
+                    continue
+                c["losses_done"].add(lt)
+                t_loss = lt - self.cfg["loss_lag"]
+                # a loss entry appears ~2 s after the loss, with no history of its own yet: what the cameras show
+                # now (unchanged in 2 s unless a cut) stands in for the moment of loss
+                fresh = now - lt <= self.cfg["loss_lag"] + 2
+                if not (self.covered(c["main"], t_loss) or self.covered(c["side"], t_loss)
+                        or (fresh and (main_on or side_on))):
+                    self.log(f"[replays] skipped loss: no camera showed it ({f.get('text')})")
+                    continue
+                # waits on the attacks around it (position), not on the loss alert, which stays up ~2 minutes
+                self.queue_pending({"kind": "loss", "label": f.get("text") or "Loss",
+                                    "fight": key if f.get("kind") != "loss" else None,
+                                    "agent": None, "agent_name": None, "position": f.get("position"),
+                                    "save_at": t_loss + self.cfg["loss_after"] + 1,
+                                    "show_from": t_loss - self.cfg["loss_before"], "show_to": t_loss + self.cfg["loss_after"]})
+            # a side camera's run on the fight: a clip of it when the run ends (or reaches fight_show)
+            if c["side_done"] or f.get("kind") == "loss":
+                continue  # a loss is not a fight to replay at length: its moment has its own clip above
+            if side_on and c["run"] is None:
+                c["run"] = now
+            run_len = now - c["run"] if c["run"] is not None else 0
+            if c["run"] is not None and (not side_on or run_len >= self.cfg["fight_show"]):
+                start, end = max(c["run"], now - self.cfg["fight_show"]), now
+                c["run"] = None
+                if end - start < self.cfg["side_min_s"]:
+                    continue
+                main_share = sum(1 for t in c["main"] if start <= t <= end) / max(1, sum(1 for t in c["side"] if start <= t <= end))
+                c["side_done"] = True
+                if main_share > self.cfg["main_frac"]:
+                    self.log(f"[replays] skipped {key}: the main camera showed it live ({f.get('text')})")
+                    continue
+                self.queue_pending({"kind": "fight", "label": f.get("text") or "Fight", "fight": key, "agent": None,
+                                    "agent_name": None, "position": f.get("position"),
+                                    "save_at": now, "show_from": start, "show_to": end})
+        for key in [k for k in self.cover if k not in self.fights]:
+            del self.cover[key]
+
+    @staticmethod
+    def covered(samples, t, slack=1.5):
+        return any(abs(s - t) <= slack for s in samples)
+
+    def queue_pending(self, p):
+        with self.lock:
+            if self.pending is None:
+                self.pending = p
+            else:
+                self.more_pending.append(p)
+        self.log(f"[replays] pending {p['kind']}: {p['label']} (airs once the fight has been quiet "
+                 f"{self.cfg['quiet_s']:g} s)")
+
+    def on_attack_cut(self, alert, snap, now, framed=None):
+        """The director just cut main to a fight, base attack, loss or death. framed: director.last_attack_framed,
+        {t, how} when that cut put the fight in frame (an agent in it followed, or a fixed view on its position),
+        None when it did not: a replay is the main camera's recording, so without the fight in frame there is
+        nothing worth replaying (shake10: an announced turret fight replayed as the factory)."""
         if not alert or now - self.last_replay < self.cfg["spacing"]:
             return
+        if alert["kind"] != "death":
+            # the main camera is on this fight live from now: no replay of it (shake10: the same stretch aired again
+            # while the battle went on). Its losses get loss clips, and side cameras' stretches side clips
+            # (watch_fights), aired once it is over.
+            return
+        name = alert.get("agent")
+        seen = any(name in agents for t, agents in self.main_seen if now - t <= self.cfg["seen_window"])
+        if not name or not seen:
+            return  # it died off camera: there is nothing in the buffer worth showing
+        ag = next((a for a in snap.get("agents") or [] if a["name"] == name), {})
         with self.lock:
-            if alert["kind"] == "death":
-                name = alert.get("agent")
-                seen = any(name in agents for t, agents in self.main_seen if now - t <= self.cfg["seen_window"])
-                if not name or not seen:
-                    return  # it died off camera: there is nothing in the buffer worth showing
-                ag = next((a for a in snap.get("agents") or [] if a["name"] == name), {})
-                p = {"kind": "death", "label": alert["text"], "agent": name,
-                     "agent_name": ag.get("display_name") or name, "save_at": now + self.cfg["death_save_after"],
-                     "show_from": now - self.cfg["death_before"], "show_to": now + self.cfg["death_after"]}
-                if self.pending and self.pending["kind"] == "death":
-                    self.more_pending.append(p)  # saved after the earlier one
-                    self.log(f"[replays] pending death (after {self.pending['label']}): {p['label']}")
-                    return
-                self.pending = p  # a death wins over a pending fight
-            elif not self.pending:  # a death already pending wins over the fight around it
-                save = now + self.cfg["fight_after"]
-                ag = next((a for a in snap.get("agents") or [] if a["name"] == alert.get("agent")), {})
-                self.pending = {"kind": alert["kind"], "label": alert["text"], "agent": alert.get("agent"),
-                                "agent_name": ag.get("display_name"), "save_at": save,
-                                "show_from": save - self.cfg["fight_show"], "show_to": save}
-            self.log(f"[replays] pending {self.pending['kind']}: {self.pending['label']}")
+            p = {"kind": "death", "label": alert["text"], "agent": name, "position": ag.get("position"),
+                 "agent_name": ag.get("display_name") or name, "save_at": now + self.cfg["death_save_after"],
+                 "show_from": now - self.cfg["death_before"], "show_to": now + self.cfg["death_after"]}
+            if self.pending:
+                self.more_pending.append(p)  # saved after the one already pending (a death, a loss, a side clip)
+                self.log(f"[replays] pending death (after {self.pending['label']}): {p['label']}")
+                return
+            self.pending = p
+        self.log(f"[replays] pending death: {p['label']}")
 
     # ---- worker ------------------------------------------------------------------------------------------------
     def run(self):
@@ -189,10 +314,12 @@ class Replays:
         c = self.clip
         if not c or self.playing:
             return
-        if now - c["show_to"] > self.cfg["max_age"]:
-            self.log(f"[replays] dropped {c['id']} (never got a free moment)")
+        if now - c["show_to"] > self.max_age(c):
+            self.log(f"[replays] dropped {c['id']} (never got a free moment, or its fight never ended)")
             self.next_clip()
             return
+        if self.waiting(c, now):
+            return  # never during the fight: once it has been quiet quiet_s
         cur = self.segments.cur
         if cur and cur["type"] == "attack_replay" and cur.get("clip") == c["id"]:
             return  # already queued or on air

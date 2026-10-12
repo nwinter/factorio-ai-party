@@ -382,42 +382,96 @@
   }
   const gameTime = (tick) => { const m = Math.floor(tick / 3600); return Math.floor(m / 60) + "h" + String(m % 60).padStart(2, "0"); };
   const shown = new Map();
+  // viewer messages (viewers.py via serve.py) that passed the filters, while recent: in the main feed, marked as
+  // viewers, scrolling away with the rest (shake7: Nick's line stayed up in a lane of its own)
+  const VIEWER_RECENT_S = 300;
   function renderChat(s) {
     const list = $("chat-list");
     const all = s.chat || [];
-    // talk lane: conversation, confessionals and the viewer lines relayed into the game (model.chat_lane), so a
-    // viewer's question and the agents' answers read together; logistics go to the ticker
-    const msgs = all.filter((m) => (m.lane || "talk") === "talk" || m.lane === "viewer").slice(-10); // the well clips the oldest
-    renderTicker(s, all.filter((m) => m.lane === "log").slice(-2));
+    // one feed by time: conversation and confessionals (model.chat_lane "talk"), harness notices (lane "notice":
+    // votes and their results, humans joining; votes.lua, players.lua), tells (the team's main channel: direct lines
+    // "Sol → Astra", a burst between the same two folded into one, static/chatfeed.js) and viewers (a line relayed
+    // into the game shows once, from s.viewers; its game-chat copy, lane "viewer", is skipped).
+    // Logistics chat and server lines (lane "log") are not shown: the ticker that held them is gone (Nick: "I can
+    // barely see any of it"; the tells it mostly carried are here now).
+    const talk = all.filter((m) => !m.tell && ((m.lane || "talk") === "talk" || m.lane === "notice")).slice(-10)
+      .map((m) => ({ m, t: m.t || s.now, key: String(m.seq ?? m.tick + m.from + m.text) }));
+    const tells = (window.pogChat ? window.pogChat.foldTells(all.filter((m) => m.tell)) : []).slice(-6)
+      .map((g) => ({ g, t: g.t || s.now, key: g.key }));
+    const viewers = (s.viewers || []).filter((v) => s.now - (v.t || 0) < VIEWER_RECENT_S).slice(-4)
+      .map((v) => ({ v, t: v.t || s.now, key: "v:" + String(v.id || v.seq) }));
+    const msgs = talk.concat(tells, viewers).sort((a, b) => a.t - b.t).slice(-10); // the well clips the oldest
     const keys = new Set();
-    for (const m of msgs) {
-      const key = String(m.seq ?? m.tick + m.from + m.text);
+    let prev = null;
+    for (const it of msgs) {
+      const key = it.key, m = it.m, v = it.v, g = it.g;
       keys.add(key);
       let node = shown.get(key);
-      const ag = agentFor(s, m);
-      if (!node) {
-        const viewer = m.lane === "viewer";
-        node = el("div", "msg" + (viewer ? " viewer" : ag ? "" : " server") + (m.aloud ? " aloud" : "") + (m.confess ? " confess" : ""));
-        node._av = avatar(ag || (viewer ? { name: m.from, display_name: m.from, color: "#3d6aa8", glyph: "💬", tool: true }
-          : { name: m.from || "server", display_name: m.from || "server", color: "#5a4a2e", glyph: "⚙", tool: true }), "sm");
+      const ag = m && agentFor(s, m);
+      if (g) {
+        const from = agentFor(s, { agent: g.agent, from: g.from });
+        const to = s.agents.find((a) => a.display_name === g.to || a.name === g.to);
+        if (!node) {
+          node = el("div", "msg tell");
+          node._av = avatar(from || { name: g.from || "?", display_name: g.from || "?", color: "#5a4a2e", glyph: "?" }, "xs");
+          const content = el("div", "content");
+          const meta = el("div", "meta");
+          node._from = el("span", "from");
+          node._to = el("span", "to");
+          node._count = el("span", "tcount");
+          node._when = el("span", "when");
+          meta.append(node._from, el("span", "arrow", "→"), node._to, node._count, node._when);
+          node._text = el("div", "text");
+          content.append(meta, node._text);
+          node.append(node._av, content);
+          shown.set(key, node);
+        }
+        if (from) { applyPalette(node._from, from); fillAvatar(node._av, from, "xs"); }
+        if (to) applyPalette(node._to, to);
+        setText(node._from, from ? from.display_name : g.from);
+        setText(node._to, g.to);
+        setText(node._count, g.count > 1 ? "+" + (g.count - 1) : "");
+        setText(node._text, clean(g.body)); // the latest of a burst, in full
+      } else if (!node && v) {
+        // names and text are viewers' own words: textContent only (el() never parses HTML)
+        node = el("div", "msg viewer");
+        const content = el("div", "content");
+        const meta = el("div", "meta");
+        node._from = el("span", "from" + (v.staff ? " staff" : ""), v.name || "viewer");
+        node._when = el("span", "when");
+        meta.append(node._from, el("span", "tag vtag", "viewer"));
+        if (v.order) meta.append(el("span", "tag", "to the agents"));
+        meta.append(node._when);
+        content.append(meta, el("div", "text", v.text || ""));
+        node.append(el("div", "vbadge" + (v.source === "site" ? " site" : ""), v.source === "site" ? "SITE" : "YT"), content);
+        shown.set(key, node);
+      } else if (!node) {
+        node = el("div", "msg" + (ag ? "" : " server") + (m.aloud ? " aloud" : "") + (m.confess ? " confess" : ""));
+        node._av = avatar(ag || { name: m.from || "server", display_name: m.from || "server", color: "#5a4a2e", glyph: "⚙", tool: true }, "sm");
         const content = el("div", "content");
         const meta = el("div", "meta");
         node._from = el("span", "from");
         node._when = el("span", "when");
         meta.append(node._from);
         if (m.confess) meta.append(el("span", "tag", "to camera"));
-        if (viewer) meta.append(el("span", "tag viewer", "viewer"));
         meta.append(node._when);
         node._text = el("div", "text", clean(m.text));
         content.append(meta, node._text);
         node.append(node._av, content);
-        list.appendChild(node);
         shown.set(key, node);
       }
-      if (ag) { applyPalette(node, ag); fillAvatar(node._av, ag, "sm"); }
-      setText(node._from, ag ? ag.display_name : m.lane === "viewer" ? String(m.from || "").replace(/^viewer /, "") : m.from);
-      const age = s.now - (m.t || s.now);
-      setText(node._when, (m.tick != null ? gameTime(m.tick) + " · " : "") + ago(age));
+      if (m) {
+        if (ag) { applyPalette(node, ag); fillAvatar(node._av, ag, "sm"); }
+        setText(node._from, ag ? ag.display_name : m.from);
+      }
+      // time order: a viewer line can land between two agent lines
+      if (prev ? prev.nextElementSibling !== node : list.firstElementChild !== node) {
+        if (prev) prev.after(node); else list.prepend(node);
+      }
+      prev = node;
+      const age = s.now - it.t;
+      const tick = m ? m.tick : g ? g.tick : null;
+      setText(node._when, (tick != null ? gameTime(tick) + " · " : "") + ago(age));
       node.classList.toggle("old", age > 90 && age <= 240);
       node.classList.toggle("older", age > 240);
     }
@@ -451,31 +505,6 @@
       setText(n._when, ago(s.now - (m.t || s.now)));
     }
     for (const [key, n] of ticks) if (!keys.has(key)) { n.remove(); ticks.delete(key); }
-  }
-
-  // viewers lane (viewers.py via serve.py): the last two messages that passed the filters, while recent
-  const VIEWER_RECENT_S = 300;
-  const vnodes = new Map();
-  function renderViewers(s) {
-    const lane = $("viewer-lane");
-    const list = $("viewer-list");
-    // a line relayed into the game shows in the chat feed instead (marked viewer), next to the agents' answers
-    const msgs = (s.viewers || []).filter((v) => s.now - (v.t || 0) < VIEWER_RECENT_S && !v.relayed).slice(-2);
-    lane.hidden = !msgs.length;
-    const keys = new Set();
-    for (const v of msgs) {
-      const key = String(v.id || v.seq);
-      keys.add(key);
-      if (vnodes.has(key)) continue;
-      const n = el("div", "vmsg");
-      // names and text are viewers' own words: textContent only (el() never parses HTML)
-      n.append(el("span", "src" + (v.source === "site" ? " site" : ""), v.source === "site" ? "SITE" : "YT"),
-        el("span", "vname" + (v.staff ? " staff" : ""), v.name || "viewer"), el("span", "vtext", v.text || ""));
-      if (v.order) n.append(el("span", "order", "to the agents"));
-      list.appendChild(n);
-      vnodes.set(key, n);
-    }
-    for (const [key, n] of vnodes) if (!keys.has(key)) { n.remove(); vnodes.delete(key); }
   }
 
   // ---------- team board: recent events, open unowned requests, active claims, harness changelog ----------
@@ -641,7 +670,11 @@
         label.append(label._doing);
       }
       const lead = agents[0];
+      // a work shot (director work_target): the camera shows the agent's work, not its body: "Sol · building on
+      // Solstice (from the ground)"
+      const work = cam.work && (cam.work.startsWith(lead.display_name + " ") ? cam.work.slice(lead.display_name.length + 1) : cam.work);
       const doing = cam.attack ? (cam.attack.startsWith(lead.display_name) ? "under attack" : "attack nearby")
+        : work ? work
         : agents.length > 1 ? "working together" : lead.activity === "acting" && lead.action ? humanItem(lead.action)
         : lead.activity === "thinking" ? "thinking" : "";
       setText(label._doing, doing ? "· " + doing : "");
@@ -742,7 +775,9 @@
   }
 
   // ---------- segments (tools/stream/segments.py): drawn from segment.facts only, so the casters match the screen ----------
-  const FULL = { production: 1, research: 1, recap: 1, space: 1 }; // these cover the main camera; spotlight/overview are a card on it
+  // Every segment is a card in the main camera's lower left, clear of its centre (Nick on shake7: the full panel over
+  // the whole camera stayed far longer than it took to read). FULL stays for a type that ever needs the whole camera.
+  const FULL = {};
   function factRow(label, value, cls) {
     const r = el("div", "srow" + (cls ? " " + cls : ""));
     r.append(el("span", "k", label), el("span", "v", value == null || value === "" ? "–" : String(value)));
@@ -751,28 +786,21 @@
   function segmentBody(seg) {
     const f = seg.facts || {};
     const body = el("div", "sbody");
-    if (seg.type === "production") {
-      const head = el("div", "shead");
-      head.append(el("span", "big", f.science_per_min != null ? fmtRate(f.science_per_min) : "–"), el("span", "unit", " science / min"),
-        el("span", "stage", f.stage ? f.stage + " stage" : ""));
-      body.append(head);
-      const packs = el("div", "spacks");
-      for (const [name, rate] of Object.entries(f.packs || {})) packs.append(el("span", "chip", name + " " + fmtRate(rate)));
-      body.append(packs);
+    if (seg.type === "production") { // only the lines that moved (segments.py production_moves), at most three
       const t = el("div", "stable");
-      t.append(el("div", "th", "Item"), el("div", "th num", "now /min"), el("div", "th num", "10 min ago"));
+      t.append(el("div", "th", "Changed in 10 min"), el("div", "th num", "now /min"), el("div", "th num", ""));
       for (const it of f.items || []) {
-        const icon = itemIcon(it.id || it.item.replace(/ /g, "-"), 32);
+        const icon = itemIcon(it.id || it.item.replace(/ /g, "-"), 28);
         const name = el("div", "td item");
         if (icon) name.append(icon);
         name.append(el("span", "", it.item));
-        const delta = it.rate_now != null && it.rate_10min_ago ? it.rate_now - it.rate_10min_ago : 0;
-        t.append(name, el("div", "td num" + (delta > 0 ? " up" : delta < 0 ? " down" : ""), fmtRate(it.rate_now)),
-          el("div", "td num faint", fmtRate(it.rate_10min_ago)));
+        const pct = it.change_pct || 0;
+        t.append(name, el("div", "td num", fmtRate(it.rate_now)),
+          el("div", "td num" + (pct > 0 ? " up" : pct < 0 ? " down" : ""), (pct > 0 ? "+" : "") + pct + "%"));
       }
       body.append(t);
-      if (f.biggest_gain || f.biggest_drop)
-        body.append(el("div", "snote", [f.biggest_gain && "Up most: " + f.biggest_gain, f.biggest_drop && "Down most: " + f.biggest_drop].filter(Boolean).join("   ·   ")));
+      if (f.science_per_min != null)
+        body.append(el("div", "snote", fmtRate(f.science_per_min) + " science / min" + (f.stage ? " · " + f.stage + " stage" : "")));
     } else if (seg.type === "research") {
       body.append(el("div", "shead big", f.current || "No research queued"));
       const bar = el("div", "bar sbar");
@@ -782,10 +810,11 @@
       body.append(bar, factRow("Progress", f.progress_pct != null ? f.progress_pct + "%" : null),
         factRow("Technologies done", f.done_count), factRow("Latest", (f.recent || []).join(", ")));
     } else if (seg.type === "recap") {
-      body.append(factRow("Science per minute", f.science_per_min != null ? fmtRate(f.science_per_min) : null),
-        factRow("Research finished", (f.research_done || []).join(", ") || "none"),
-        factRow("Board items done", (f.board_done || []).join(", ") || "none"),
-        factRow("Attacks", f.attacks || 0), factRow("Deaths", (f.deaths || []).length ? f.deaths.join(", ") : "none"));
+      // only what happened (segments.py recap_news refuses an empty window)
+      if ((f.research_done || []).length) body.append(factRow("Researched", f.research_done.join(", ")));
+      if ((f.board_done || []).length) body.append(factRow("Done", f.board_done.join(", ")));
+      if (f.attacks) body.append(factRow("Attacks", f.attacks));
+      if ((f.deaths || []).length) body.append(factRow("Deaths", f.deaths.join(", ")));
     } else if (seg.type === "spotlight") {
       body.append(factRow(f.model || "model ?", f.motto ? "“" + clean(f.motto) + "”" : ""),
         factRow("Now", [humanItem(f.doing || ""), f.location].filter(Boolean).join(" · ")));
@@ -815,11 +844,11 @@
     }
     return body;
   }
-  const isFull = (seg) => !!FULL[seg.type] || (seg.type === "space_moment" && !(seg.facts || {}).agent); // a landing shows the agent
+  const isFull = (seg) => !!FULL[seg.type];
   function renderSegment(s) {
     const box = $("segment");
     const seg = s.segment;
-    const show = !!seg && seg.state !== "ended";
+    const show = window.pogSeg ? window.pogSeg.cardVisible(seg) : !!seg && seg.state !== "ended"; // static/segview.js
     // a full panel shares the camera with at most the newest alert banner (overlay.css body.seg-full)
     document.body.classList.toggle("seg-full", show && isFull(seg));
     if (!show) {
@@ -862,13 +891,37 @@
     renderProduction(s);
     renderSpace(s);
     renderChat(s);
-    renderViewers(s);
     renderBoard(s);
     renderAlerts(s);
     renderCams(s);
     renderSegment(s);
+    rotateWidgets();
     watchVoice();
     watchAlerts();
+  }
+
+  // Widgets under the cards (science, team board, Space) take turns in one slot instead of stacking, so chat keeps
+  // its room (Nick on shake7: once Space appeared there was barely room for chat). Only widgets with something to
+  // show (not `hidden` by their own render) take part; each stays ROT_S seconds.
+  const WIDGETS = ["prod", "board", "space"], ROT_S = 18;
+  let rotCur = null, rotSince = 0;
+  function rotateWidgets() {
+    const now = Date.now() / 1000;
+    const ids = document.body.classList.contains("portrait") ? ["prod", "space"] : WIDGETS; // portrait has no board
+    const live = ids.filter((id) => $(id) && !$(id).hidden);
+    if (!live.length) return;
+    if (!live.includes(rotCur) || now - rotSince >= ROT_S) {
+      const next = live.length === 1 ? live[0] : live[(live.indexOf(rotCur) + 1) % live.length];
+      if (next !== rotCur) {
+        rotCur = next;
+        const n = $(next);
+        n.classList.remove("rot-in");
+        void n.offsetWidth; // restart the fade-in
+        n.classList.add("rot-in");
+      }
+      rotSince = now;
+    }
+    for (const id of WIDGETS) if ($(id)) $(id).classList.toggle("rot-off", id !== rotCur);
   }
 
   // Voice captions (audio.js #voice) grow up from the main camera's bottom edge. Their height goes to --voice-clear
@@ -899,7 +952,9 @@
   // ---------- feed: SSE with a polling fallback ----------
   let lastMsg = 0;
   function connect() {
-    const es = new EventSource("/events");
+    // One event stream per page, shared with audio.js (voice clips arrive on it as `audio` events): a browser keeps
+    // 6 connections per host and each open stream holds one (shake7: all 6 held, the voice clips never loaded).
+    const es = window.pogEvents || (window.pogEvents = new EventSource("/events?audio=1"));
     es.onmessage = (e) => { lastMsg = Date.now(); try { render(JSON.parse(e.data)); } catch (err) { console.error(err); } };
     es.onerror = () => { /* EventSource retries by itself */ };
   }

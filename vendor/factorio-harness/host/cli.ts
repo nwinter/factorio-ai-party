@@ -82,7 +82,6 @@ function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be a JSON object`);
   return value as Record<string, unknown>;
 }
-function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
 /**
  * `fh sleep --until`: a wait_until condition as JSON, or as words:
  * `researched [TECH]`, `crafting_done`, `item_count ITEM>=N|ITEM<N [at X,Y X,Y ...]`,
@@ -121,6 +120,7 @@ function parseUntil(text: string): Record<string, unknown> {
   }
   return condition;
 }
+function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
 function integer(value: string | undefined, fallback: number): number {
   const result = value === undefined ? fallback : Number(value);
   if (!Number.isSafeInteger(result) || result < 1) throw new Error('Numeric options must be positive integers');
@@ -509,6 +509,10 @@ async function main() {
       inventory: before !== undefined && player ? inventoryChange(before, carried(player)) : undefined,
       ammo_used: shot ? last?.ammo_used : undefined,
       detail: last?.result, alive: status.result?.alive === false ? false : undefined,
+      // construct: what it did and what stopped it, blockers with coordinates (request #167); kite: why it stopped.
+      ...(last?.kind === 'construct' ? {built: last.built, mined: last.mined, remaining: last.remaining || undefined,
+        missing: last.missing, failed: last.failed, blockers: last.blockers} : {}),
+      why: last?.why,
       team: carrier.result?.team, clock: carrier.result?.clock, chat: carrier.result?.chat,
     };
     for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];

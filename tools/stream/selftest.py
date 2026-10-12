@@ -50,6 +50,13 @@ class FakeHarness:
     def flows(self, items):
         return {"iron-plate": [10] * 30}
 
+    def basemap(self, ore=False):
+        m = {"tick": self.tick, "cell": 4, "x0": -8, "y0": -4, "w": 3, "h": 2, "rows": ["SBA", ".D"], "nests": [],
+             "buildings": 5}
+        if ore:
+            m["ore"] = {"cell": 4, "x0": -72, "y0": -68, "w": 35, "rows": ["", "..ii"]}
+        return m
+
     def dispatch(self, action, args=None, player=None, bot=None):
         assert action in harness.READ_ACTIONS
         self.calls.append((action, bot, player))
@@ -61,6 +68,8 @@ class FakeHarness:
                  "position": {"x": 20, "y": 2}, "alive": False, "active": False, "last_said": None},
                 {"kind": "bot", "name": "stray", "display_name": "Stray", "color": "#ffffff", "glyph": "S",
                  "position": {"x": 300, "y": 2}, "alive": True, "active": False},
+                # shake8: a human player, disconnected, with no profile set
+                {"kind": "player", "name": "NickWinter", "position": {"x": 5, "y": 5}, "alive": False, "active": False},
             ]}, self.tick
         if action == "status":
             if (args or {}).get("peek") and self.reject_peek:
@@ -101,7 +110,7 @@ def lua_globals_check():
     import re, shutil, subprocess
     if not shutil.which("luac"):
         return
-    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA", "SPACE_LUA"):
+    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA", "SPACE_LUA", "PLATFORM_LUA"):
         lua = getattr(harness, name, None)
         if lua is None:
             continue
@@ -130,6 +139,10 @@ def space_checks():
     snap = m.snapshot(t)
     assert snap["space"]["active"] and snap["space"]["rockets"] == 1 and snap["space"]["summary"] == "1 rocket", snap["space"]
     plat = {"name": "Orbital One", "at": "nauvis"}
+    # the New platform button: a record waiting for its starter pack, no hub yet -> not a platform (shake7, Solstice)
+    m.ingest({"agents": base, "space": {"rockets": 1, "planets": ["nauvis"], "platforms": [
+        {"name": "Solstice", "at": "nauvis", "hub": False}, {"name": "Dawn", "at": "nauvis", "state": "waiting_for_starter_pack"}]}}, t + 0.5)
+    assert not m.moments and not m.snapshot(t + 0.5)["space"]["platforms"], list(m.moments)
     m.ingest({"agents": base, "space": {"rockets": 2, "planets": ["nauvis"], "platforms": [plat]}}, t + 1)
     assert [x["kind"] for x in m.moments] == ["first_platform"], list(m.moments)
     away = [base[0], dict(base[1], surface="vulcanus")]
@@ -201,8 +214,9 @@ def main():
         raise AssertionError("chat without peek was not refused")
 
     # Lua sent through one_line() must not carry `--` comments (they would swallow the rest of the joined line)
-    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA"):
+    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA", "PLATFORM_LUA"):
         assert "--" not in harness.one_line(getattr(harness, name)), f"{name} has a Lua comment"
+    assert "--" not in harness.one_line(harness.basemap_lua(ore=True)), "BASEMAP_LUA has a Lua comment"
     lua_globals_check()
 
     run = {"agents": {"astra": {"model": "GPT-6 Astra", "harness": "Codex"}, "luna": {"model": "GPT-6 Luna"}}}
@@ -212,7 +226,7 @@ def main():
     obs = src.observe()
     assert not obs["errors"], obs["errors"]
     names = [a["name"] for a in obs["agents"]]
-    assert names == ["astra", "luna", "stray"], names
+    assert names == ["astra", "luna"], names  # the run's team only: no stray bot, no human player (shake8: Nick)
     astra = obs["agents"][0]
     assert astra["active"] == "mine" and astra["combat"] is True and astra["display_name"] == "Astra"
     assert ("status", "astra", None) in fake.calls and ("profiles", "astra", None) in fake.calls
@@ -220,10 +234,20 @@ def main():
     m = Model(run)
     m.ingest(obs, time.time())
     snap = m.snapshot(time.time())
+    assert snap["basemap"]["rows"] == ["SBA", ".D"], "the base map reaches the snapshot"
+    assert snap["basemap"]["ore"]["rows"][1] == "..ii", "the first base read takes the ore too"
+    m.ingest({"basemap": fake.basemap()}, time.time())
+    assert m.snapshot(time.time())["basemap"]["ore"], "a base read without ore keeps the last ore"
     by = {a["name"]: a for a in snap["agents"]}
     assert by["astra"]["activity"] == "acting" and by["astra"]["action"] == "mining"
     assert by["luna"]["activity"] == "dead" and "respawning" in by["luna"]["action"], by["luna"]
-    assert by["stray"]["model"] is None  # not in the run config: shown, but no model label invented
+    assert set(by) == {"astra", "luna"}, set(by)  # ten cards in shake8; the team is two here
+    # the model keeps out names outside the team even if a source reports them
+    m.ingest({"agents": [{"name": "NickWinter", "kind": "player", "alive": False, "position": {"x": 0, "y": 0}}]}, time.time())
+    assert "NickWinter" not in {a["name"] for a in m.snapshot(time.time())["agents"]}
+    # a run without a team list still shows every profile
+    loose = LiveSource("test", {}, harness=FakeHarness()).observe()
+    assert {a["name"] for a in loose["agents"]} >= {"astra", "luna", "stray"}, [a["name"] for a in loose["agents"]]
     assert snap["research"]["progress"] == 0.4
     assert any(a["kind"] == "power" for a in snap["alerts"]), snap["alerts"]
     assert any(a["kind"] == "attack" for a in snap["alerts"]), snap["alerts"]
@@ -275,11 +299,13 @@ def main():
         "in (12,-40)-(20,-31) 7 destroyed: 4 stone-wall, 3 gun-turret by 5 small-biter, 1m10s-0s ago",
         "in (300,5) 1 destroyed: 1 inserter, 4m20s ago"]})
     assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by small biters)", losses
+    assert losses[0]["position"] == {"x": 16.0, "y": -35.5, "extent": 16.0, "surface": "nauvis"}, losses  # the rectangle
     # hit counts ("x3") and kill counts never reach the banner or the replay title (shake3: read on air as enemies)
     hits = LiveSource.attack_events({"attacked": [
         {"chunk_centre": {"x": -48, "y": 16}, "damage": 40, "last_tick": 100, "entities": "character x3"},
         {"chunk_centre": {"x": 64, "y": 0}, "damage": 9, "last_tick": 100, "entities": "gun-turret x12, stone-wall x2"}]}, 100)
     assert [h["text"] for h in hits] == ["Engineer under attack near (-48, 16)", "Base under attack near (64, 0): gun turret"], hits
+    assert hits[1]["position"] == {"x": 64, "y": 0, "extent": 32.0, "surface": "nauvis"}, hits  # the attacked chunk
 
     # an attack cuts the main camera straight away, even inside its dwell
     sent_s = []
@@ -287,21 +313,30 @@ def main():
     ds.apply(ds.slots[0], {"agents": ["a"], "follow": "a", "zoom": 1.0}, "test", {}, 0.0, quiet=True)
     ds.apply(ds.slots[1], {"agents": ["b"], "follow": "b", "zoom": 1.0}, "test", {}, 0.0, quiet=True)
     assert sent_s[0]["zoom"] == round(ds.cfg["main_scale"], 2) and sent_s[1]["zoom"] == round(min(ds.cfg["max_zoom"], ds.cfg["side_scale"]), 2), sent_s
-    d2 = Director([{"slot": "main", "player": 3}], lambda body: {"ok": True}, None)
+    sent2 = []
+    d2 = Director([{"slot": "main", "player": 3}], lambda body: sent2.append(body) or {"ok": True}, None)
     m2 = Model({"agents": {"astra": {}, "luna": {}}})
     m2.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "active": "build"},
                           {"name": "luna", "position": {"x": 300, "y": 0}}]})
     m2.agents["astra"].interest = 20
     now = time.time()
     assert d2.step(m2.snapshot(now), now)["main"]["agents"] == ["astra"]
-    m2.ingest({"events": [{"kind": "attack", "text": "Base under attack near (500, 0)", "key": "a1", "position": {"x": 500, "y": 0}}]})
+    m2.ingest({"events": [{"kind": "attack", "text": "Base under attack near (500, 0)", "key": "a1",
+                           "position": {"x": 500, "y": 0, "extent": 32.0, "surface": "nauvis"}}]})
     cams2 = d2.step(m2.snapshot(now + 2), now + 2)
-    assert cams2["main"]["agents"] == [] and "attack" in cams2["main"], cams2  # nobody near: show the place
-    assert d2.state["main"]["position"] == {"x": 500, "y": 0}
-    m2.ingest({"events": [{"kind": "attack", "text": "Base under attack near (290, 0)", "key": "a2", "position": {"x": 290, "y": 0}}]})
+    assert cams2["main"]["agents"] == [] and "attack" in cams2["main"], cams2  # the place of the fight
+    assert (d2.state["main"]["position"]["x"], d2.state["main"]["position"]["y"]) == (500, 0)
+    # the chunk in frame (32 tiles + 24 margin, ~60 across at zoom 1), sent as is, jumping there (no easing)
+    assert sent2[-1]["zoom"] == round(60 / 56, 2) and sent2[-1]["smooth"] is False and sent2[-1]["surface"] == "nauvis", sent2[-1]
+    assert d2.last_attack_framed == {"t": now + 2, "how": "position"}
+    # shake10: a turret fight 10 tiles from an agent is still shown where it is, not by following the agent
+    m2.ingest({"events": [{"kind": "attack", "text": "Base under attack near (290, 0)", "key": "a2",
+                           "position": {"x": 290, "y": 0, "extent": 32.0, "surface": "nauvis"}}]})
     d2.last_attack_cut -= 60  # past attack_spacing
     cams3 = d2.step(m2.snapshot(now + 3), now + 3)
-    assert cams3["main"]["agents"] == ["luna"], cams3  # luna is 10 tiles from this one: follow luna
+    assert cams3["main"]["agents"] == [] and d2.state["main"]["position"]["x"] == 290, cams3
+    assert d2.state["main"]["until"] == now + 3 + d2.cfg["attack_hold"]  # held ~20 s
+    assert d2.step(m2.snapshot(now + 15), now + 15)["main"]["agents"] == [], "still on the fight"
 
     # Space Age: agents pair only on the same surface; a pair's fixed view names that surface; a card says where
     sent_sa = []
@@ -377,8 +412,16 @@ def main():
     assert {r["type"]: r["available"] for r in seg.types(t5)["types"]}["attack_replay"] is False
     code, rep = seg.request({"type": "nope"}, t5)
     assert code == 400, rep
+    rep = seg.request({"type": "production"}, t5)[1]
+    assert rep.get("why") == "no item's rate moved by 25% in 10 minutes", rep  # no history: nothing worth a card
+    # iron plates tripled over 10 minutes (2-minute buckets), gears steady: the card shows the mover only
+    s5["production"] = [{"item": "iron-plate", "rate": 300.0, "series": [100.0] * 6 + [300.0]},
+                        {"item": "iron-gear-wheel", "rate": 50.0, "series": [48.0] * 6 + [50.0]}]
+    seg.snap = s5
     code, rep = seg.request({"type": "production", "seconds": 999, "by": "caster", "reason": "lull"}, t5)
-    assert code == 200 and rep["seconds"] == 45 and rep["facts"]["science_per_min"] == 30.0, rep
+    assert code == 200 and rep["seconds"] == 20 and rep["facts"]["science_per_min"] == 30.0, rep
+    assert [i["item"] for i in rep["facts"]["items"]] == ["iron plate"] and rep["facts"]["items"][0]["change_pct"] == 200
+    assert rep["title"] == "Production: iron plate +200% in 10 min", rep["title"]
     assert seg.request({"type": "research"}, t5)[0] == 409  # busy
     assert seg.step(s5, t5 + 1)["state"] == "starting" and seg.step(s5, t5 + 4)["state"] == "live"
     assert seg.camera() is None  # production leaves the cameras alone
@@ -410,8 +453,15 @@ def main():
     assert lull.queue and lull.queue["by"] == "director" and lull.queue["type"] == "production", lull.queue
 
     # recap: due every recap_every, ahead of the lull rotation, even when requests keep the lull clock from running
+    # a recap with nothing in its window is skipped and its clock restarts (it never blocks the queue)
+    re0 = Segments(lull_after=1e9)
+    t9 = re0.last_recap
+    re0.step(s5, t9 + 1201)
+    assert re0.queue is None and re0.last_recap == t9 + 1201, (re0.queue, re0.last_recap - t9)
+    assert re0.request({"type": "recap"}, t9 + 1300)[1].get("why") == "nothing happened in the window"
     rc = Segments(lull_after=1e9, spacing=180)
     t9 = rc.last_recap
+    rc.history.append((t9 + 1000, "death", "Astra died"))
     rc.last_start = t9 + 1100  # a host request 100 s before the recap is due
     rc.step(s5, t9 + 1201)
     assert rc.queue is None, "spacing still holds"
@@ -426,6 +476,7 @@ def main():
     # overdue (10 minutes late, shake4's replays kept the slot): next after the running segment, others refused
     ro = Segments(lull_after=1e9, spacing=180)
     t9 = ro.last_recap
+    ro.history.append((t9 + 1500, "attack", "Base under attack"))
     ro.step(s5, t9 + 1)
     rep = ro.request({"type": "overview"}, t9 + 1790, ignore_spacing=True)  # a replay-like request
     assert rep[0] == 200, rep
@@ -508,6 +559,13 @@ def main():
     rpl.follow_segment(t7 + 50)
     assert fobs.program == "stream"
 
+    # the main camera's cut to a fight makes no replay of it: viewers watched it live (test_fight_replays.py: the rest)
+    rf = rp.Replays(Segments(), obs=FakeOBS(), log=lambda *a: None, start=False)
+    tf = time.time()
+    fight = {"kind": "attack", "agent": None, "text": "Base under attack near (290, 0): gun turret"}
+    rf.on_attack_cut(fight, s7, tf, framed={"t": tf, "how": "position"})
+    assert rf.pending is None, rf.pending
+
     # two deaths 43 s apart (shake4: Haiku, then Opus): the second cut drops the queued replay, both clips still air
     t9 = t7 + 300
     for k in range(10):
@@ -545,17 +603,23 @@ def main():
          "agents: astra, sol)", "notice": True}],
         "confessions": [{"seq": 1, "tick": 6, "from": "luna", "text": "I don't trust that wall."}]})
     lanes = [(c["seq"], c["lane"]) for c in m9.snapshot(time.time())["chat"]]
-    assert lanes == [(1, "log"), (2, "talk"), (3, "talk"), (4, "viewer"), (5, "log"), (6, "log"), ("c1", "talk")], lanes
+    assert lanes == [(1, "log"), (2, "talk"), (3, "talk"), (4, "viewer"), (5, "log"), (6, "notice"), ("c1", "talk")], lanes
     m9.ingest({"confessions": [{"seq": 1, "tick": 6, "from": "luna", "text": "I don't trust that wall."}]})
     assert sum(1 for c in m9.chat if c.get("confess")) == 1  # confessions dedup by their own seq
-    # tells (agent -> teammates outside the chat) always go to the ticker, with the recipients, once each
+    # tells (agent -> teammates outside the chat): their own lane, shown in the chat feed as direct lines, once each
     tells = [{"seq": 1, "tick": 7, "from": "astra", "to": ["luna"], "text": "29 plates in the chest (3,4)"},
              {"seq": 2, "tick": 8, "from": "luna", "to": "team", "text": "north belt is down"}]
     m9.ingest({"tells": tells})
     m9.ingest({"tells": tells})
     told = [c for c in m9.chat if c.get("tell")]
     assert [(c["seq"], c["lane"], c["agent"], c["text"]) for c in told] == [
-        ("t1", "log", "astra", "→ Luna: 29 plates in the chest (3,4)"), ("t2", "log", "luna", "→ team: north belt is down")], told
+        ("t1", "tell", "astra", "→ Luna: 29 plates in the chest (3,4)"), ("t2", "tell", "luna", "→ team: north belt is down")], told
+    assert [(c["to_shown"], c["body"]) for c in told] == [("Luna", "29 plates in the chest (3,4)"), ("team", "north belt is down")]
+    # a burst of tells does not push the conversation out of the window, nor the conversation the tells
+    m9.ingest({"tells": [{"seq": 10 + k, "tick": 9 + k, "from": "astra", "to": ["luna"], "text": f"item {k}"} for k in range(40)]})
+    win = m9.chat_window()
+    assert sum(1 for c in win if c["lane"] == "tell") == 24 and sum(1 for c in win if c["lane"] == "talk") >= 3, \
+        [(c["seq"], c["lane"]) for c in win]
 
     # night lift: filter created on each capture, ramps toward the darkness, settles back by day
     import nightlift as nl

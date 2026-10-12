@@ -85,12 +85,13 @@ except Exception:  # caster.py missing or failing to import: everything from age
 
 
 def chat_lane(entry):
-    """'talk' (banter, strategy, emotion, `aloud`, confessionals: the big chat lane), 'log' (coordinates, counts,
-    acknowledgements, server lines, harness notices such as votes and player lines: the small ticker), or 'viewer' (a viewer line
-    relayed into the game chat: the overlay shows it in the chat feed, marked as a viewer)."""
+    """'talk' (banter, strategy, emotion, `aloud`, confessionals: the big chat lane), 'notice' (harness notices: votes
+    and their results, humans joining and leaving; shown in the chat feed), 'log' (coordinates, counts,
+    acknowledgements, server lines: not shown), or 'viewer' (a viewer line relayed into the game chat: the feed shows it
+    once, from the viewers list)."""
     frm = (entry.get("from") or "").lower()
-    if entry.get("notice"):  # a harness notice ("vote: ...", "players: ..."; votes.lua, players.lua): the ticker
-        return "log"
+    if entry.get("notice"):  # a harness notice ("vote: ...", "players: ..."; votes.lua, players.lua)
+        return "notice"
     if entry.get("viewer") or frm.startswith("viewer") or clean_text(entry.get("text")).lower().startswith("viewer "):
         return "viewer"
     if entry.get("confess") or entry.get("aloud"):
@@ -135,7 +136,22 @@ def platform_where(p):
     where = f"{route['from']} → {route['to']}" if route else planet_label(at) if at and at != "in transit" else "in transit"
     speed = p.get("speed")
     return {"name": p.get("name"), "where": where, "route": route, "state": p.get("state"), "paused": bool(p.get("paused")),
-            "speed_kms": round(speed * 60) if isinstance(speed, (int, float)) and speed else None}
+            "speed_kms": round(speed * 60) if isinstance(speed, (int, float)) and speed else None, "view": p.get("view")}
+
+
+def platform_shot(view, margin=10.0):
+    """A camera shot of a whole platform from its view (live.py PLATFORM_LUA): the centre of its entities' bounds on
+    its surface, at the zoom that fits them. A director client at zoom 1 shows ~60x34 tiles (1920x1080 at 32 px per
+    tile), so the zoom is what fits the bounds plus a margin, clamped to cameras.lua's 0.3..4. exact_zoom: the
+    director sends it as is (no main/side scaling, which would crop the platform)."""
+    b = view.get("bounds") or {}
+    hub = view.get("hub") or {"x": 0, "y": 0}
+    left, top = b.get("left", hub["x"] - 6), b.get("top", hub["y"] - 6)
+    right, bottom = b.get("right", hub["x"] + 6), b.get("bottom", hub["y"] + 6)
+    w, h = right - left + margin, bottom - top + margin
+    zoom = max(0.3, min(2.0, 60.0 / w, 34.0 / h))
+    return {"position": {"x": round((left + right) / 2, 1), "y": round((top + bottom) / 2, 1)}, "surface": view["surface"],
+            "zoom": round(zoom, 2), "exact_zoom": True}
 
 
 def fmt_game_time(sec):
@@ -217,12 +233,15 @@ class Model:
         self.flows = {}
         self.power = None
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
+        self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
         # Space Age: score's rockets/planets/platforms plus platform detail (live.py); moments fire once each
         self.space = {"rockets": 0, "planets": [], "platforms": []}
         self.space_seen = None  # moment keys already true; None until the first observation seeds it silently
         self.moments = deque(maxlen=8)
+        self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
+        self.fights = {}  # key -> fight still reported (attacked chunk, loss, agent in combat), for replays.py
         self.space_age = bool(run.get("space_age")) or "Space Age" in (run.get("subtitle") or "")
         self.last_obs_t = None
         self.errors = {}
@@ -239,7 +258,12 @@ class Model:
         self.tick = obs.get("tick", self.tick)
         self.paused = bool(obs.get("paused"))
         game_sec = obs.get("game_seconds", self.tick / 60)
+        team = self.run.get("agents") or {}
         for a in obs.get("agents", []):
+            # cards are the run's team only (stream.json agents, from team.txt); shake8 showed Nick, a human player,
+            # as a tenth card ("model ? · profile not set · dead"). Without a team in the run, everyone counts.
+            if team and a.get("name") not in team:
+                continue
             self._ingest_agent(a, now)
         for m in obs.get("chat", []):
             self._ingest_chat(m, now)
@@ -255,6 +279,9 @@ class Model:
             self.flows = obs["flows"]
         if obs.get("darkness") is not None:
             self.darkness = obs["darkness"]
+        if obs.get("basemap"):
+            ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
+            self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
         if obs.get("power"):
             self._ingest_power(obs["power"], now)
         for e in obs.get("board_events") or []:
@@ -264,10 +291,67 @@ class Model:
         for e in obs.get("events", []):
             self._ingest_event(e, now)
         if obs.get("space") is not None:
-            self.space = obs["space"]
+            # a platform counts once its hub exists: shake7's "First space platform: Solstice" fired on the record the
+            # New platform button makes (waiting_for_starter_pack), before any rocket. Rows without the field (older
+            # score reads) count as before.
+            sp = dict(obs["space"])
+            sp["platforms"] = [p for p in sp.get("platforms") or []
+                               if p.get("hub", True) and p.get("state") != "waiting_for_starter_pack"]
+            self.space = sp
         if obs.get("space") is not None or any(a.get("surface") for a in obs.get("agents", [])):
             self._space_moments(now)
+        for w in obs.get("work") or []:
+            self._ingest_work(w, now)
         self.errors = obs.get("errors", {})
+
+    def platform_view(self, name):
+        """A platform's camera view (live.py PLATFORM_LUA: surface, hub, bounds), or None before it is read."""
+        return next((p.get("view") for p in self.space.get("platforms") or [] if p.get("name") == name and p.get("view")), None)
+
+    def _ingest_work(self, w, now):
+        """Work away from an agent's body (live.py observe_work) -> a labelled item the director can cut to."""
+        if w.get("agent") not in self.agents:
+            return
+        ag = self.agents[w["agent"]]
+        who = ag.display_name or w["agent"]
+        item = {"id": f"work-{w['agent']}-{w.get('at') or now}", "agent": w["agent"], "action": w.get("action"),
+                "t": now, "platform": w.get("platform"), "position": w.get("position"), "surface": w.get("surface")}
+        if w.get("platform"):
+            view = self.platform_view(w["platform"])
+            if not view:
+                return  # its surface is not known yet (the platform read runs every 15 s): nothing to cut to
+            item.update(surface=view["surface"], view=view,
+                        label=f"{who} {w.get('verb') or 'building'} on {w['platform']} (from the ground)")
+        else:
+            if not w.get("position"):
+                return
+            p = w["position"]
+            item["label"] = f"{who} {w.get('verb') or 'building'} at ({round(p['x'])}, {round(p['y'])}) (from afar)"
+        if any(x["agent"] == item["agent"] and x.get("platform") == item["platform"] and now - x["t"] < 20
+               for x in self.work):
+            return  # one request after another on the same job: one item
+        self.work.append(item)
+        ag.bump(1.0, now)
+
+    def _fight(self, key, kind, position, now, text, agent=None, loss=False):
+        """A fight still being reported (live.py re-reports an attacked chunk every poll while its last hit is under 30
+        game seconds old, a loss for ~2 minutes, an agent's combat flag while it lasts): `last` is when it was last
+        seen, so replays.py can wait until it has been quiet before airing anything about it."""
+        f = self.fights.get(key)
+        if not f:
+            f = self.fights[key] = {"key": key, "kind": kind, "first": now, "losses": [], "text": text, "agent": agent}
+        f.update(last=now, position={k: position[k] for k in ("x", "y", "surface", "extent") if k in position})
+        if loss:
+            f["losses"].append(now)  # when a loss alert first came in: the moment something was destroyed (+ poll lag)
+            f["text"] = text
+        for k in [k for k, v in self.fights.items() if now - v["last"] > 300]:
+            del self.fights[k]
+
+    def fights_snapshot(self, now):
+        return [dict(f, losses=list(f["losses"])) for f in self.fights.values() if now - f["last"] < 240]
+
+    def work_snapshot(self, now):
+        return [dict(w, age_s=round(now - w["t"], 1)) for w in self.work if now - w["t"] < 60]
 
     def _ingest_agent(self, a, now):
         ag = self.agent(a["name"])
@@ -310,6 +394,8 @@ class Model:
         if a.get("last"):
             ag.last = a["last"]
         combat = bool(a.get("combat"))
+        if combat and ag.position:  # an agent's own fight, seen on every poll while it lasts (replays.py)
+            self._fight(f"attack:{ag.name}", "attack", ag.position, now, f"{ag.display_name} is under attack", agent=ag.name)
         if combat and not ag.combat:
             ag.bump(6, now)
             self.alert("attack", f"{ag.display_name} is under attack", key=f"attack:{ag.name}", agent=ag.name, ttl=60,
@@ -347,12 +433,13 @@ class Model:
             ag.bump(2, now)
             ag.last_activity_t = now
 
-    def chat_window(self, talk=12, other=8):
-        """The last `talk` conversation lines and the last `other` log / viewer lines, in arrival order: logistics
-        chatter must not push the conversation off the page."""
+    def chat_window(self, talk=12, other=8, tells=24):
+        """The last `talk` conversation lines, the last `tells` tells (enough for the page to fold a burst) and the
+        last `other` log / viewer lines, in arrival order: one kind must not push another off the page."""
         msgs = list(self.chat)
         keep = {id(m) for m in [m for m in msgs if m.get("lane") == "talk"][-talk:]}
-        keep |= {id(m) for m in [m for m in msgs if m.get("lane") != "talk"][-other:]}
+        keep |= {id(m) for m in [m for m in msgs if m.get("lane") == "tell"][-tells:]}
+        keep |= {id(m) for m in [m for m in msgs if m.get("lane") not in ("talk", "tell")][-other:]}
         return [m for m in msgs if id(m) in keep]
 
     def _ingest_confession(self, c, now):
@@ -369,8 +456,10 @@ class Model:
             self.agents[sender].bump(2.5, now)
 
     def _ingest_tell(self, t, now):
-        """tells.lua `tells` (operator read): {seq, tick, from, to (names or "team"), text}, logistics an agent sent to
-        teammates outside the game chat. Always the ticker, shown as "-> Sol: text"; never voiced."""
+        """tells.lua `tells` (operator read): {seq, tick, from, to (names or "team"), text}, what an agent sent to
+        teammates outside the game chat: the team's main channel (shake7: ~540 tells to ~100 chat lines). Lane "tell":
+        the page shows them in the chat feed as direct lines ("Sol → Astra", `to_shown` and `body`); `text` stays
+        "-> Astra: ..." for the site's live feed and the logs. Never voiced."""
         key = ("tell", t.get("seq"))
         if key in self.chat_seen:
             return
@@ -381,7 +470,8 @@ class Model:
         shown = ", ".join("team" if n == "team" else (self.agents[m].display_name or n) if (m := self._match_sender(n))
                           else n for n in names)
         entry = {"seq": f"t{t.get('seq')}", "tick": t.get("tick"), "from": t.get("from"), "agent": sender,
-                 "text": f"\u2192 {shown}: {t.get('text', '')}", "t": t.get("t", now), "tell": True, "lane": "log"}
+                 "text": f"\u2192 {shown}: {t.get('text', '')}", "t": t.get("t", now), "tell": True, "lane": "tell",
+                 "to_shown": shown, "to": names, "body": t.get("text", "")}
         self.chat.append(entry)
         if sender:
             self.agents[sender].bump(1, now)
@@ -529,6 +619,9 @@ class Model:
             ag.bump(6, now)
         p = e.get("position")
         fresh = e.get("key") not in self.alert_keys or now - self.alert_keys[e["key"]] >= e.get("ttl", 60)
+        if p and e["kind"] in ("attack", "loss"):
+            self._fight(e.get("key") or f"{e['kind']}:{p['x']},{p['y']}", e["kind"], p, now, e["text"],
+                        loss=e["kind"] == "loss" and fresh)
         if p and fresh:  # a fight somewhere: pull cameras toward agents near it
             for other in self.agents.values():
                 if other.position and math.hypot(other.position["x"] - p["x"], other.position["y"] - p["y"]) <= 60:
@@ -772,9 +865,12 @@ class Model:
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
             "darkness": self.darkness,
+            "basemap": self.basemap,
             "production": self.production(now),
             "science": science,
             "space": self.space_snapshot(science),
+            "work": self.work_snapshot(now),
+            "fights": self.fights_snapshot(now),
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
             "cameras": cameras or {},

@@ -93,7 +93,7 @@ class AudioHub:
             self.last_report = time.time()
             if cid in self.clips and st == "start":
                 self.playing[cid] = {"started": time.time(), **self.clips[cid][2]}
-            elif st in ("end", "skip", "error"):
+            elif st in ("end", "skip", "error", "cut"):  # cut: a line that mattered more faded this one out
                 self.playing.pop(cid, None)
             # a page that reloads mid-clip never reports the end; forget clips well past their length
             now = time.time()
@@ -233,19 +233,43 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                     audio.listeners -= 1
 
         def events(self):
+            """Snapshots as plain `data:` lines; with ?audio=1 also new voice clips as `event: audio` on the same
+            stream. A browser keeps at most 6 connections per host, and every open SSE holds one: in shake7 the
+            overlay, portrait and audio-test pages each held /events and /audio-events, all 6 were taken and the
+            voice clips never downloaded (the hosts were silent). One stream per page leaves room for the clips."""
+            want_audio = "audio=1" in (self.path.split("?", 1)[1] if "?" in self.path else "")
             self.sse_head()
-            version = -1
+            version, seq, quiet = -1, audio.seq, time.time()
+            if want_audio:
+                with audio.cond:
+                    audio.listeners += 1
             try:
                 while True:
-                    new, payload = hub.wait(version, 15)
-                    if new == version:
-                        self.wfile.write(b": keepalive\n\n")
-                    else:
+                    # with audio, wake often so a clip goes out within ~0.25 s (snapshots come once a second)
+                    new, payload = hub.wait(version, 0.25 if want_audio else 15)
+                    wrote = False
+                    if new != version:
                         version = new
                         self.wfile.write(b"data: " + payload + b"\n\n")
+                        wrote = True
+                    if want_audio:
+                        seq_new, clips = audio.wait(seq, 0)
+                        seq = seq_new
+                        for c in clips:
+                            self.wfile.write(b"event: audio\ndata: " + json.dumps(c, ensure_ascii=False).encode() + b"\n\n")
+                            wrote = True
+                    if wrote:
+                        quiet = time.time()
+                    elif time.time() - quiet >= 15:
+                        self.wfile.write(b": keepalive\n\n")
+                        quiet = time.time()
                     self.wfile.flush()
             except (BrokenPipeError, ConnectionResetError, OSError):
                 return
+            finally:
+                if want_audio:
+                    with audio.cond:
+                        audio.listeners -= 1
 
     return Handler
 
@@ -292,7 +316,9 @@ def main():
         camera = lambda body: {"ok": False, "stub": True, "mock": True}  # noqa: E731
     else:
         from live import LiveSource
-        source = LiveSource(a.world, run, profiles=a.profiles)
+        # the agents' fh journals (runs/RUN/AGENT/journal.jsonl) sit beside the run's stream.json: work.py tails them
+        source = LiveSource(a.world, run, profiles=a.profiles,
+                            journals=os.path.dirname(os.path.abspath(a.run)) if a.run else None)
         camera = source.send_camera
     if a.no_camera:
         camera = lambda body: {"ok": False, "stub": True, "disabled": True}  # noqa: E731
@@ -348,7 +374,7 @@ def main():
                     segments.attack_cut(now)
                     snap["segment"] = segments.public()
                     if replays:
-                        replays.on_attack_cut(director.last_attack_alert, snap, now)
+                        replays.on_attack_cut(director.last_attack_alert, snap, now, director.last_attack_framed)
                 if replays:
                     replays.tick(snap, cams, now)
                     snap["replay"] = replays.public()

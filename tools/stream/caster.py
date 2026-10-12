@@ -42,7 +42,7 @@ CASTERS = {
 # a large share of their clichés; the angle keeps the close watching and drops the narration.
 NATURALIST = ("This time Vale watches one agent's habits closely, the way a friend watches someone cook: what they "
               "keep doing in chat, how they plan, wander, over-explain or coordinate. Dry and fond, in plain talk; no "
-              "nature-documentary narration. An agent whose status is planning is writing its next commands. Only "
+              "nature-documentary narration. An agent working out the next step is writing its next commands. Only "
               "describe behaviour that the facts show (their chat lines, what they are doing).")
 # How the hosts sound. Shake4-6 (1,393 aired writer lines): 62% had a dash pivot, 39% ended on '!', 26% a body
 # metaphor on a machine ("furnaces starve"), 19% a three-part list, 14% a semicolon, 7% an "X, not Y" contrast.
@@ -56,7 +56,16 @@ SPOKEN = (
     "push back, laugh, finish their thought. Vale does not repeat Rook's facts. Vale says why it matters. Say a number "
     "once, plainly, and only when it matters. One number per line at most. Most lines end on a full stop. Save an "
     "exclamation for the thing that just happened, once per exchange at most. Ask a question only when the other host "
-    "answers it next. Calm moments are fine. Not every moment is big.\n"
+    "answers it next. Calm moments are fine. Not every moment is big. Mix the lengths, though. A quick reaction, "
+    "then a normal full sentence that says why. Two short sentences in a line is plenty. Vale talks in fuller "
+    "sentences than Rook.\n"
+    "The agents are the stars, and the hosts like them. Be curious about how they think and warm about what they "
+    "try. A gentle tease is fine. Never mock an agent for waiting, planning, sleeping, walking, chatting or their "
+    "motto. That is how they work, and viewers should end up liking them. Don't narrate someone walking. When "
+    "nothing much is happening, talk about the plan on the board, the factory, a number that changed, or a viewer's "
+    "question. Trust the facts. Never call a fact wrong. Say what an agent is trying to do (intent, working_on) and "
+    "what changed (since_last_beat). An agent with nothing new is not worth a line. Every line needs a reason: news, "
+    "a cause, a number that moved. No line just to fill air, and no riffs on mottos or small notes.\n"
     "Written English sounds wrong out loud, so never use these. Dashes, semicolons, colons and ellipses. The 'X, not "
     "Y' or 'not X, but Y' turn. Lists of three. Metaphors and similes: furnaces and labs do not starve, bleed, choke, "
     "gasp, feast, sing, hum, dream or pray. Nature-documentary narration. The words humming, cooking, symphony, ballet, "
@@ -66,9 +75,9 @@ EXAMPLES = [
     "Rook: Oil processing is in.\nVale: Finally. That's plastics next.\nRook: And the refinery's already down.\n"
     "Vale: Yeah. Now it just needs crude.",
     "Rook: Biters at the turrets.\nVale: Oh, that's the side they never walled.\nRook: Holding. Just about.",
-    "Vale: Wait, is that Grok walking back to spawn?\nRook: Looks like it. Coal run, I think.\n"
+    "Vale: Wait, is that Grok heading back to spawn?\nRook: Looks like it. Coal run, I think.\n"
     "Vale: Huh. Long way for coal.",
-    "Rook: Oh no. Sonnet's down.\nVale: Worms. Walked right into range.\nRook: They'll be back in a minute.",
+    "Rook: Oh no. Sonnet's down.\nVale: Worms. Got too close.\nRook: They'll be back in a minute.",
     "Vale: So they're level on pace.\nRook: Level. I'll take it.\nVale: Green science is what's holding them back.",
     "Rook: Power's dipping.\nVale: Yeah, they built the labs before the boilers.\nRook: Classic.",
     "Rook: Astra's posted a job on the board. More furnaces.\nVale: Good. Somebody had to say it.",
@@ -102,16 +111,43 @@ SHOW = ("The show: nine AI models from different labs (each named in the facts w
 SHOW_SPACE = (" This run plays the Space Age expansion, where a rocket launch is a milestone on the way: rockets "
               "carry a space platform starter pack to orbit, space science is made on the platform, the planets "
               "Vulcanus (metallurgic science), Fulgora (electromagnetic), Gleba (agricultural) and Aquilo (cryogenic) "
-              "follow, and the expansion's goal is reaching the edge of the solar system. A two-hour run is mostly the "
+              "follow, and the expansion's goal is reaching the edge of the solar system. Only the planets in planets_reached "
+              "have been visited; the others are future goals, with nothing of the team's there. A two-hour run is mostly the "
               "start on Nauvis, the home planet: oil, plastics and blue science are its big milestones. Many Space Age "
               "technologies unlock by a trigger, such as mining calcite or building an asteroid collector.")
 
 
-def show_for(s):
-    """The show notes for this snapshot: Space Age runs carry a `space` block (eng/stream2)."""
+def is_space_age(s):
+    """A Space Age run: the snapshot's `space` block says so (model.py sends the block on every run, with
+    `space_age` false in the base game), or the subtitle or POG_SPACE_AGE=1 does."""
     s = s or {}
-    space = s.get("space") or "space age" in str(s.get("subtitle") or "").lower() or os.environ.get("POG_SPACE_AGE") == "1"
-    return SHOW + (SHOW_SPACE if space else "")
+    sp = s.get("space")
+    space = sp.get("space_age") if isinstance(sp, dict) and "space_age" in sp else bool(sp)
+    return bool(space or "space age" in str(s.get("subtitle") or "").lower() or os.environ.get("POG_SPACE_AGE") == "1")
+
+
+def show_for(s):
+    """The show notes for this snapshot: Space Age runs get SHOW_SPACE too."""
+    return SHOW + (SHOW_SPACE if is_space_age(s) else "")
+
+
+PLANETS = ("Vulcanus", "Fulgora", "Gleba", "Aquilo")
+
+
+def planet_facts(s):
+    """Space Age: where the team has been. Shake6, Vale at 07:22:20: "thirty science packs a minute won't rebuild
+    Vulcanus" with nobody ever off Nauvis; the show notes named the planets and nothing said none was reached."""
+    if not is_space_age(s):
+        return {}
+    sp = s.get("space") if isinstance(s.get("space"), dict) else {}
+    reached = [p for p in sp.get("planets") or [] if p] or ["Nauvis"]
+    if "Nauvis" not in reached:
+        reached = ["Nauvis"] + reached
+    ahead = [p for p in PLANETS if p not in reached]
+    f = {"planets_reached": reached}
+    if ahead:
+        f["planets_not_reached_yet"] = ahead
+    return f
 
 
 PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "power": 6,
@@ -119,6 +155,27 @@ PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "sp
             "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
 URGENT = 8
+
+
+QUIET_KINDS = ("camera", "board", "harness", "research_start", "chat")
+
+
+def digest(s):
+    """What counts as news for a filler beat: technologies done, the research, the science rate (in steps of 5), the
+    stage, the board's claims and the latest losses."""
+    s = s or {}
+    res, sc, board = s.get("research") or {}, s.get("science") or {}, s.get("board") or {}
+    return (res.get("done_count"), res.get("label"), int((sc.get("spm") or 0) // 5), sc.get("stage_label"),
+            board.get("claims_total"), board.get("in_progress"), len(s.get("alerts") or []))
+
+
+def clip_rank(e):
+    """The page's playback rank for a host line (static/audio.js): urgent events and space moments interrupt an
+    agent speaking aloud, which interrupts answers to viewers, which interrupt host banter."""
+    if e.get("prio", 0) >= URGENT or e.get("kind") == "space" or (
+            e.get("kind") == "segment" and (e.get("segment") or {}).get("type") == "space_moment"):
+        return "urgent"
+    return "viewer" if e.get("kind") == "viewer" else "banter"
 TEXT_MODELS = {  # Workers AI, USD per million tokens in/out (pricing page, 2026-10-10)
     "@cf/meta/llama-3.3-70b-instruct-fp8-fast": (0.293, 2.253),
     "@cf/meta/llama-3.1-8b-instruct-fp8-fast": (0.045, 0.384),
@@ -149,7 +206,7 @@ MODEL_ARGS = {  # thinking models spend a small max_tokens on reasoning and retu
 DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6"  # exchange bench 2026-10-10: the liveliest Workers AI writer, ~3.5 s
 # A fast writer for attacks and deaths (e.g. @cf/nvidia/nemotron-3-120b-a12b, ~1.4 s). Off by default: on the live
 # world under a biter siege every beat was urgent, and Nemotron invented "still no steam" and "last run" lines.
-URGENT_MODEL = ""
+URGENT_MODEL = DEFAULT_MODEL  # urgent beats stay on fast Kimi when --model picks a bigger writer (HOSTS3 item 6)
 CLAUDE_BIN = os.path.expanduser("~/.local/bin/claude")  # personal profile: run it with CLAUDE_CONFIG_DIR unset
 CLEF_PRICE = 0.038  # @cf/cloudflare/clef-flash, USD per million input tokens
 
@@ -299,20 +356,48 @@ def spoken_time(gt):
     return " ".join(parts)
 
 
-def agent_facts(s, name, said=False):
+def agent_intent(s, a, fresh=600):
+    """What an agent last said it would do: its latest say or tell (the ticker's "-> Sol: ..."), if under 10 minutes
+    old, cleaned for speech. Nick (HOSTS3 item 6): 'walking' should read 'walking to restock the silo Sol asked for'."""
+    now = time.time()
+    names = {a.get("name"), a.get("display_name")}
+    cands = [m for m in s.get("chat") or [] if m.get("agent") in names and m.get("text")]
+    said = a.get("last_said") or {}
+    if said.get("text"):
+        cands.append({"text": said["text"], "t": said.get("t")})
+    cands = [m for m in cands if not m.get("t") or now - float(m["t"]) <= fresh]
+    if not cands:
+        return None
+    m = max(cands, key=lambda m: float(m.get("t") or 0))
+    text = re.sub(r"^\u2192\s*", "", m["text"]).replace("\u2192", "to")
+    return spoken(voices.speakable(text, 140)) or None
+
+
+TRAVEL = re.compile(r"^(?:walk|mov|travel|last: move|going|heading|run(?:ning)? to)", re.I)
+
+
+def agent_facts(s, name, said=False, motto=False):
+    """One agent for the hosts: who they are, the job they hold on the board, and what they are doing unless it is
+    just getting somewhere. Shake7: about 108 of 803 lines said an agent was walking ("Opus is still walking. Four
+    hours in, still walking."), and 57 quoted a motto, so the motto comes only where an agent is introduced."""
     a = next((x for x in s.get("agents") or [] if x["name"] == name), None)
     if not a:
         return None
     where = a.get("location")
     if where and re.fullmatch(r"\d+ m [NSEW]{1,2}", where):  # "30 m E" is noise on air; named places are not
         where = None
+    doing = a.get("action") if a.get("activity") == "acting" else None
+    names = {name, a.get("display_name")}
+    job = next((c.get("title") for c in (s.get("board") or {}).get("claims") or []
+                if c.get("title") and (c.get("agent") in names or c.get("owner") in names)), None)
+    if doing and TRAVEL.match(doing):  # "walking" only with where it leads (HOSTS3 item 6)
+        doing = f"heading off for {job}" if job else None
     # "thinking (standing still)" became 102 of 443 shake3 host lines mocking agents as frozen or statues
     f = {"name": a.get("display_name") or name, "pronouns": pronouns_of(a), "role": a.get("role"),
-         "model": a.get("model"), "harness": a.get("harness"),
-         "doing": a.get("action") if a.get("activity") == "acting" else None,
-         "status": {"dead": "down, waiting to respawn", "offline": "offline", "thinking": "planning the next step",
-                    "idle": "between tasks"}.get(a.get("activity")),
-         "where": where, "motto": a.get("motto") or None}
+         "model": a.get("model"), "harness": a.get("harness"), "working_on": job, "doing": doing,
+         "status": {"dead": "down, waiting to respawn", "offline": "offline",
+                    "thinking": "working out the next step"}.get(a.get("activity")),
+         "where": where, "motto": (a.get("motto") or None) if motto else None, "intent": agent_intent(s, a)}
     if said and (a.get("last_said") or {}).get("text"):
         f["last_said"] = spoken(voices.speakable(a["last_said"]["text"], 160))
     return {k: v for k, v in f.items() if v}
@@ -376,8 +461,11 @@ def read_shift(run_dir):
             run = open(os.path.join(root, run, "resumed-from")).read().strip()
         except OSError:
             run = None
-    f = {"number": len(chain) + 1, "continues": prev, "first_shift": chain[-1],
-         "at_the_deadline": "the world is saved and the next shift continues it from there"}
+    # Numbers only, said outright: shake6's fact had the run name ("continues": "shake5") next to the number, and the
+    # hosts mixed them into "shift five" and "Shake five" by the end.
+    n = len(chain) + 1
+    f = {"this_shift": f"shift {n}", "next_shift": f"shift {n + 1}", "earlier_shifts": n - 1,
+         "at_the_deadline": f"the world is saved and shift {n + 1} continues it from there"}
     try:
         m = re.search(r"resumed at tick (\d+)", open(os.path.join(run_dir, "start.log")).read())
         if m:
@@ -436,12 +524,16 @@ def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
     and on a resumed run which shift this is."""
     f = {}
     left = (deadline - time.time()) / 60 if deadline else None
-    # shake3: "forty more minutes of biter bait" with 4.5 left; there was no time-left fact. On every beat the hosts
-    # said "forty-six minutes left" four exchanges running (mock), so only where time matters or it is running out.
-    if deadline and (clock or left <= 15):
+    # Every beat: shake10's urgent beats (attack, loss) had the shift's at_the_deadline but no time left, and Kimi aired
+    # "Shift seven ends under fire" and "World saves for eight" (19:53-20:01) with the deadline at 22:47. `clock` is
+    # kept for callers; the hosts are told to say the time left only where it matters.
+    if deadline:
         f["minutes_to_deadline"] = round(left) if left >= 1 else "under a minute" if left > 0 else "the deadline has passed"
-    if shift and (clock or left is None or left <= 15):  # with the clock: the deadline is a handover
-        f["shift"] = shift
+    if shift:  # every beat: shake6's hosts numbered shifts on beats without the fact (and check_line checks it)
+        f["shift"] = dict(shift)
+        if left is None or left >= 10:  # the handover only once it is near
+            f["shift"].pop("at_the_deadline", None)
+    f.update(planet_facts(s))
     sc = s.get("science") or {}
     if sc.get("stage_label"):
         f["stage"] = sc["stage_label"]
@@ -458,6 +550,38 @@ def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
         pace = baseline.pace(s["tick"], res.get("done_count") or 0, produced, done, space_age=show_for(s) != SHOW)
         if pace:
             f["pace"] = pace
+    return f
+
+
+# What each card on the overlay asks of the hosts. HOSTS3: the hosts "don't seem to be doing anything" while the
+# stream shows "Last N minutes", production and spotlight cards; only replays and space moments had a call.
+CARD_CALLS = {
+    "attack_replay": "as an instant replay, in the past tense, like a replay breakdown",
+    "space_moment": "a milestone for the team: celebrate it and say what it opens up",
+    "recap": "the card sums up the last few minutes: pick its best story (a technology, a death, a raid, a job "
+             "done) and tell it, with one number at most",
+    "production": "the card shows what the factory makes a minute, now against ten minutes ago: say what went up or "
+                  "down (biggest_gain, biggest_drop) and why that matters",
+    "spotlight": "the card introduces one agent: who they are, the job they are on, and something they said, "
+                 "warmly, as if introducing a player viewers should root for",
+    "research": "the card shows the research queue: what is being researched now, and what it opens up",
+    "overview": "the camera shows the whole base: describe what viewers can see of the factory and how it has grown",
+    "space": "the card shows the team's progress toward space: say where they are on the way",
+}
+
+
+def card_facts(seg):
+    """The facts of a card (a segment) on screen, and how to call it."""
+    f = {"on_screen_now": {"segment": seg.get("type"), "title": seg.get("title"),
+                           "seconds": round(seg["ends"] - seg["started"]) if seg.get("ends") and seg.get("started")
+                           else None, **(seg.get("facts") or {})}}
+    # eng/stream2: platform speed_kms is LuaSpacePlatform.speed x 60, not yet checked against the game's km/s; a
+    # spotlight's "doing" is often "walking" and its motto was most of shake7's motto filler
+    f["on_screen_now"] = drop_keys(f["on_screen_now"], ("speed_kms",) + (
+        ("doing",) if TRAVEL.match(str(f["on_screen_now"].get("doing") or "")) else ()))
+    if seg.get("type") in CARD_CALLS:
+        # not "muted" or "banner" for a replay: the first version read those production notes out on air
+        f["how_to_call_it"] = CARD_CALLS[seg["type"]]
     return f
 
 
@@ -479,17 +603,7 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
             f.update(e.get("answer_facts") or {}, analyst_answer=e["answer"])
             f["how_to_call_it"] = "Rook says the viewer's name and question; Vale answers it from analyst_answer"
     if e["kind"] == "segment":
-        seg = e.get("segment") or {}
-        f["on_screen_now"] = {"segment": seg.get("type"), "title": seg.get("title"),
-                              "seconds": round(seg["ends"] - seg["started"]) if seg.get("ends") and seg.get("started")
-                              else None, **(seg.get("facts") or {})}
-        if seg.get("type") == "attack_replay":
-            # not "muted" or "banner": the first version read those production notes out on air
-            f["how_to_call_it"] = "as an instant replay, in the past tense, like a replay breakdown"
-        if seg.get("type") == "space_moment":
-            f["how_to_call_it"] = "a milestone for the team: celebrate it and say what it opens up"
-        # eng/stream2: platform speed_kms is LuaSpacePlatform.speed x 60, not yet checked against the game's km/s
-        f["on_screen_now"] = drop_keys(f["on_screen_now"], ("speed_kms",))
+        f.update(card_facts(e.get("segment") or {}))
     if e["kind"] == "research" and baseline and e.get("text"):
         tech = re.sub(r"^research complete:\s*", "", e["text"], flags=re.I).strip().lower().replace(" ", "-")
         mins = baseline.minutes(tech)
@@ -541,10 +655,10 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     if e["kind"] == "lull":
         angle = e.get("angle")
         busy = [agent_facts(s, a["name"]) for a in s.get("agents") or [] if a.get("activity") == "acting"]
-        f["busy_agents"] = [b for b in busy if b][:3]
+        f["busy_agents"] = [b for b in busy if b and (b.get("doing") or b.get("working_on"))][:3]
         f["angle"] = {"pace": "how this run compares with the previous one, and what that says about the bots",
                       "explain": "explain for viewers who just arrived what is going on and what comes next",
-                      "naturalist": "observe the AI models' behaviour, nature-documentary style",
+                      "naturalist": "what one agent keeps doing and how they think, with fond curiosity",
                       "spotlight": "one agent: who they are (model, harness), what they are doing, what they said",
                       "production": "the factory's output and what it is short of",
                       "board": "the team task board: who asked for what",
@@ -558,10 +672,23 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         cams = e.get("agents") or ([e["agent"]] if e.get("agent") else [])
         f["observed"] = [x for x in (agent_facts(s, n, said=True) for n in cams[:3]) if x]
     if e["kind"] == "open":
-        f["agents"] = [agent_facts(s, a["name"]) for a in (s.get("agents") or [])][:12]
+        f["agents"] = [agent_facts(s, a["name"], motto=True) for a in (s.get("agents") or [])][:12]
         f["title"] = s.get("title")
     analyst_facts(f, e, s)
-    return {k: v for k, v in f.items() if v not in (None, [], {})}
+    f = {k: v for k, v in f.items() if v not in (None, [], {})}
+    # Event beats carry the run's standing numbers as background: shake6's beats had a median of 13 numbers in the
+    # facts, and 13% of lines crammed three or more ("Rocket fuel at twenty two percent" on a raid, shake7 13:00).
+    if e["kind"] not in STORY_KINDS and e.get("angle") not in STORY_ANGLES:
+        bg = {k: f.pop(k) for k in BACKGROUND if k in f}
+        if bg:
+            f["background"] = dict(bg, note="standing numbers for context; mention one only if it matters here")
+    return f
+
+
+BACKGROUND = ("team_size", "game_minutes", "stage", "science_packs_made", "science_packs_per_minute", "researching",
+              "technologies_done", "latest_research", "production_per_minute")
+STORY_KINDS = ("open", "research", "research_start", "lull", "power")
+STORY_ANGLES = ("pace", "explain", "production", "research")
 
 
 # ---- writers -----------------------------------------------------------------------------------------------------
@@ -581,11 +708,13 @@ EXCHANGE_RULES = (
     "Numbers in an attack count hits: how many times biters struck the team's own buildings or engineers. Numbers "
     "in a loss count the team's buildings destroyed and engineers killed, as numbers_mean says. Researching a "
     "technology unlocks it; it does not mean anything has been built or made yet. 'Character' and 'engineer' mean one of the team's engineers. "
-    "An agent whose status is planning is writing its next commands, not idle: never call it frozen, still, "
+    "An agent working out the next step is writing its next commands, not idle: never call it frozen, still, "
     "motionless, idle or asleep. The agents play until the deadline, and the time left is minutes_to_deadline. When "
     "the facts carry a shift, the run is a series of shifts on one saved world: this shift picks up the world where "
     "the last one left it, and at the deadline the world is saved and the next shift continues it, so research in "
-    "progress and the base carry over and the deadline is a handover. The hosts are commentators, not on "
+    "progress and the base carry over and the deadline is a handover. Talk about the end of the shift, "
+    "the save or the next shift only once minutes_to_deadline is under 10. Call shifts only by the numbers in this_shift "
+    "and next_shift. The hosts are commentators, not on "
     "the team: the team is 'they', never 'we'. Never say something is missing, broken or absent ('no steam yet', "
     "'no belts') unless the facts say so, and mention an earlier run only when the facts include a pace "
     "comparison. Skip map distances and directions unless they "
@@ -601,7 +730,7 @@ def parse_exchange(text):
     for raw in (text or "").splitlines():
         m = re.match(r"^\W*(rook|vale)\W*\s*[:\-–]\s*(.+)$", raw.strip(), re.I)
         if m:
-            line = restyle(clean(m.group(2).strip().strip("*").strip('"“”').strip()))
+            line = restyle(clean(m.group(2).strip().strip("*").strip()))
             if line:
                 out.append((HOSTS[m.group(1).lower()], line))
     return out
@@ -625,6 +754,13 @@ NOT_CONTRAST = re.compile(r", not (?!yet\b|now\b|quite\b|bad\b|really\b)\w|\bnot
                           r"\b(?:isn't|aren't|wasn't) [^,.!?]{1,30}, (?:it's|they're|it was)\b")
 DOC_WORDS = re.compile(r"\b(?:habitat|specimens?|species|plumage|herons?|rookery|in their natural|in the wild|"
                        r"forag\w+|mating call)\b")
+MOCK = re.compile(r"\bclassic (?:astra|sol|luna|opus|sonnet|haiku|grok|gemini|muse)\b|\bbig \w+ energy\b|"
+                  r"\bsomeone else(?:'s)? (?:moves|does|brain|feet|hands|will)\b|"
+                  r"\bstill (?:just )?(?:planning|thinking|talking|chatting|waiting|sleeping)\b|"
+                  r"\b(?:planning|thinking|talking|chatting|sleeping) again\b|\bthey love (?:a|to) \w+|"
+                  r"\b(?:all|just) talk\b|\bkeeps? the brand\b|\baged (?:fine|well|badly)\b|"
+                  r"\b(?:planning|thinking|working), they call it\b|\bjust (?:waiting|sitting|standing)\b|"
+                  r"\bnow they wait\b")
 BUZZ_WORDS = re.compile(r"\b(?:humming|hums|symphony|ballet|orchestra\w*|heartbeat|masterclass)\b")
 BODY_WORDS = re.compile(r"\b(starv\w*|bleed\w*|bled|chok\w*|feast\w*|drown\w*|scream\w*|gasp\w*|thirst\w*|"
                         r"devour\w*|pray\w*|dreams?|dreaming)\b")
@@ -635,6 +771,16 @@ def style_fault(line, blob=""):
     buzzwords, a body metaphor on machines ("twelve packs starve six labs") unless the facts use that word ("84 of
     234 machines starved"), or a simile."""
     low = line.lower().replace("’", "'")
+    # shake7: "Opus is still walking. Four hours in, still walking."; "Classic Opus. Big chat energy."; "That motto
+    # aged fine."; "Science per minute says sixty. That number is a lie."
+    if re.search(r"\b(?:walk|walks|walking|walked|stroll\w*)\b", low) and "walk" not in blob and "heading off for" not in blob:
+        return "style: walking filler"
+    if MOCK.search(low):
+        return "style: mocks an agent"
+    if "motto" in low and "motto" not in blob:
+        return "style: motto filler"
+    if re.search(r"\b(?:is|that's|it's) a lie\b|\bwrong number\b|\bdon't believe (?:that|the) number\b", low):
+        return "style: calls a fact false"
     if NOT_CONTRAST.search(low):
         return "style: 'X, not Y' contrast"
     if DOC_WORDS.search(low):
@@ -645,15 +791,19 @@ def style_fault(line, blob=""):
     for m in BODY_WORDS.finditer(low):
         if m.group(1)[:5] not in blob:
             return f"style: metaphor '{m.group(1)}'"
-    for m in re.finditer(r"\b(\w+) like (?:a|an) \w+", low):
+    # a drawn-out image ("like a river finding its bed"); a short one is plain talk ("talking like a shift
+    # supervisor", cut wrongly in shake7's first minutes)
+    for m in re.finditer(r"\b(\w+) like (?:a|an) ((?:[\w'-]+ ?){1,8})", low):
         if m.group(1) not in ("looks", "look", "sounds", "sound", "feels", "feel", "seems", "something", "more",
-                              "just", "much", "anything", "nothing"):
+                              "just", "much", "anything", "nothing") and len(m.group(2).split()) >= 4:
             return "style: simile"
     # "Forty-seven on circuits, twenty techs deep": 13% of shake4-6's lines said three numbers or more
-    nums = [float(x.replace(",", "")) for x in re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", low)] + \
-        [n for _, n in spelled_numbers(re.sub(r"\d", " ", low))]
-    if sum(n != 1 for n in nums) >= 3:
-        return "style: too many numbers in one line"
+    # per sentence: shake7's "Eleven gone now. Six pipes, two inserters." is a damage report said the way people do
+    for sent in re.split(r"(?<=[.!?])\s+", low):
+        nums = [float(x.replace(",", "")) for x in re.findall(r"\d+(?:,\d{3})*(?:\.\d+)?", sent)] + \
+            [n for _, n in spelled_numbers(re.sub(r"\d", " ", sent))]
+        if sum(n != 1 for n in nums) >= 3:
+            return "style: too many numbers in one line"
     return None
 
 
@@ -710,7 +860,7 @@ def check_line(line, facts, names, recent):
     if re.search(r"[Ѐ-ӿ֐-ۿ฀-๿　-鿿가-힯＀-￯]", line):
         return "not English"
     why = off_roster(line, blob + " " + (SHOW + SHOW_SPACE).lower(), names) or wrong_pronoun(low, facts) or \
-        wrong_deadline(low, facts) or style_fault(line, blob)
+        wrong_deadline(low, facts) or wrong_place(low, facts) or style_fault(line, blob)
     if why:
         return why
     for num in re.findall(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", line):  # "3,600" is one number
@@ -796,10 +946,48 @@ TIME_LEFT = re.compile(r"\b([a-z\d-]+(?: [a-z-]+)?) (?:more |last |final )?minut
                        r"\b([a-z\d-]+(?: [a-z-]+)?) more minutes?\b")
 
 
+FUTURE = re.compile(r"\b(?:next|later|someday|one day|eventually|goal|road to|on the way|way to|until|before|"
+                    r"could|will|'ll|want|wants|aim\w*|dream of|hope|plan\w*|future|far off|far away|yet)\b")
+
+
+def wrong_place(low, facts):
+    """Shift numbers and planets must match the facts. Shake6 mixed "shift four", "shift five" and "Shake five" in one
+    shift (07:57-08:03), and Vale's "won't rebuild Vulcanus" (07:22:20) had nobody ever off Nauvis."""
+    sh = facts.get("shift") or {}
+    ok = {int(m) for v in (sh.get("this_shift"), sh.get("next_shift")) for m in re.findall(r"\d+", str(v or ""))}
+    for m in re.finditer(r"\bshift (\w+)\b", low):
+        n = int(m.group(1)) if m.group(1).isdigit() else UNITS.get(m.group(1))
+        if n is not None and n not in ok:
+            return f"shift number not in facts: {m.group(0)}"
+    for m in re.finditer(r"\bshake ?(\d+|" + "|".join(UNITS) + r")\b", low):
+        num = m.group(1) if m.group(1).isdigit() else str(UNITS[m.group(1)])
+        if f"shake{num}" not in json.dumps(facts).lower():
+            return f"run name not in facts: {m.group(0)}"
+    reached = facts.get("planets_reached")
+    if reached:
+        for p in PLANETS:
+            if p.lower() in low and p not in reached and not FUTURE.search(low.replace("’", "'")):
+                return f"planet not reached: {p}"
+    return None
+
+
+SHIFT_ENDS = re.compile(
+    r"\b(?:shift|run|session)(?: \w+)? (?:ends|ending|is ending|is over|wraps(?: up)?|is wrapping|closes|is closing|"
+    r"is done|signs off)\b|\bend of (?:the |this |their )?shift\b|\b(?:ends|ending|wraps|closes) (?:the |this |their )?shift\b|"
+    r"\b(?:world|game|save) (?:saves|is saved|gets saved|saved|is saving)\b|\bsaves? (?:it )?for (?:shift )?\w+\b|"
+    r"\b(?:next shift|shift \w+) (?:takes over|inherits|picks (?:it )?up|gets (?:it|this|the \w+))\b|"
+    r"\bhand(?:s|ing|ed)? (?:it |the world |this )?(?:off|over) to\b|\bhandover\b|"
+    r"\bhand-?offs?\b(?=.*\b(?:shift|world)\b)|\b(?:shift|world)\b.*\bhand-?offs?\b|"
+    r"\bsaved the world\b")
+
+
 def wrong_deadline(low, facts):
     """'Ends the run' and 'N minutes left' must agree with minutes_to_deadline (shake3: "One small biter ends the run
     at thirty flat!", "forty more minutes of biter bait" with 4.5 left)."""
     left = facts.get("minutes_to_deadline")
+    near = left in ("under a minute", "the deadline has passed") or (isinstance(left, (int, float)) and left <= 5)
+    if SHIFT_ENDS.search(low.replace("’", "'")) and not near:  # shake10 19:53: "Shift seven ends under fire", 2:54 left
+        return "says the shift is ending, but more than 5 minutes remain"
     if ENDS_RUN.search(low) and facts.get("shift"):  # shake5 06:20:37: "Horn swallows them whole" at the handover
         return "says the run ends, but the next shift continues it"
     if ENDS_RUN.search(low) and not (left in ("under a minute", "the deadline has passed") or (
@@ -872,8 +1060,18 @@ def clean(line):
     line = line.strip()
     line = re.sub(r"^(rook|vale|play-by-play|colour|color)\s*[:\-–]\s*", "", line, flags=re.I)
     line = re.sub(r"\*[^*]+\*", "", line)  # stage directions
-    line = re.sub(r"\s+", " ", line).strip().strip('"“”').strip()
-    return line
+    return unquote(re.sub(r"\s+", " ", line).strip())
+
+
+def unquote(line):
+    """Quote marks off a whole line only in pairs; an odd one left over goes. Shake7 aired 13 lines like `Steam
+    first, questions later." Ran out of both.` after the old strip took the opening mark only."""
+    q = '"“”'
+    while len(line) > 1 and line[0] in q and line[-1] in q:
+        line = line[1:-1].strip()
+    if sum(line.count(c) for c in q) % 2:
+        line = re.sub(r'["“”]', "", line)
+    return line.strip()
 
 
 def at_phrase(where):
@@ -885,6 +1083,30 @@ def at_phrase(where):
     return "at spawn" if where == "spawn" else f"at the {where}"
 
 
+def spoken_alert(text):
+    """An alert as a person says it. Shake7 aired the template "Damage report: 11 lost: 6 pipe, 2 inserter (by small
+    biters)." twice in a minute; banners also carry map coordinates. -> "11 lost to small biters. 6 pipes, 2
+    inserters." Ends with a full stop."""
+    s = re.sub(r"\s*\bnear \(-?\d+, ?-?\d+\)", "", text)
+    by = re.search(r"\s*\(by ([^)]+)\)", s)
+    s = re.sub(r"\s*\(by [^)]+\)", "", s)
+    head, _, rest = s.partition(": ")
+    lost = re.match(r"^\d+ lost$", head.strip())
+    if by and lost:
+        head = f"{head.strip()} to {by.group(1)}"
+    if head.strip() == "Base under attack" and rest:  # "Base under attack: steam engine"
+        return f"Biters at the {rest.strip().rstrip('.')}."
+    items = []
+    for part in rest.split(", ") if rest else []:
+        m = re.match(r"^(\d+) (.+?)$", part.strip())
+        if lost and m and int(m.group(1)) > 1 and not m.group(2)[-1].isdigit() and not m.group(2).endswith("s"):
+            part = f"{m.group(1)} {m.group(2)}s"
+        items.append(part.strip())
+    rest = ", ".join(items).rstrip(".")
+    out = head.strip().rstrip(".") + "." + (" " + rest[0].upper() + rest[1:] + "." if rest else "")
+    return restyle(out)  # "Sonnet died; lost ..." -> two sentences
+
+
 class TemplateWriter:
     """Fact-safe fallback: fills hand-written lines from the facts. Never says anything not in them."""
     name = "template"
@@ -893,21 +1115,21 @@ class TemplateWriter:
                          "We're live. {team_size} agents, one shared world."],
                  "color": ["{team_size} different minds, one shared base. The question is whether they cooperate.",
                            "I love this format. Nobody's in charge, everybody's building."]},
-        "attack": {"pbp": ["Biters. {text}!", "Here they come. {text}.", "Oh, trouble. {text}."],
+        "attack": {"pbp": ["Biters! {text}", "Here they come. {text}", "Oh, trouble. {text}"],
                    "color": ["This is where the defence plan gets tested for real.",
                              "You can build all day, but the biters set the schedule."]},
-        "death": {"pbp": ["Oh no. {text}.", "Ouch. {text}."],
-                  "color": ["Ouch. That's a long walk back from respawn.", "Painful, but the factory keeps running."]},
-        "loss": {"pbp": ["Damage report: {text}.", "That hurts. {text}."],
+        "death": {"pbp": ["Oh no. {text}", "Ouch. {text}"],
+                  "color": ["Ouch. They'll be back after the respawn.", "Painful, but the factory keeps running."]},
+        "loss": {"pbp": ["Damage report. {text}", "That hurts. {text}"],
                  "color": ["Losses mean repairs, and repairs mean someone's plan just got interrupted.",
                            "Walls and turrets are consumables out here. Time to rebuild."]},
-        "info": {"pbp": ["Heads up: {text}."], "color": ["Worth keeping an eye on that."]},
+        "info": {"pbp": ["Heads up. {text}"], "color": ["Worth keeping an eye on that."]},
         "research": {"pbp": ["{text}.", "There it is. {text}.", "{text}. One more for the team."],
                      "color": ["That's {technologies_done} technologies done. New toys for everyone.",
                                "Every tech unlock changes the plan. Watch who uses it first."]},
         "research_start": {"pbp": ["Labs switch over: {tech} is next on the list."],
                            "color": ["{tech} next. Smart pick, it unlocks a lot down the line."]},
-        "power": {"pbp": ["Power's low. {text}.", "The power's sagging. {text}."],
+        "power": {"pbp": ["Watch the power. {text}", "The power's sagging. {text}"],
                   "color": ["Power is everything. When it dips, every machine slows down."]},
         "board": {"pbp": ["On the board: {agent_name} {did} {title}.", "Board update. {agent_name} {did} {title}.",
                           "{agent_name} {did} {title}. The board keeps moving."],
@@ -927,7 +1149,7 @@ class TemplateWriter:
                            "{cam_name}, {cam_model} under the hood, {cam_doing}.",
                            "And here's {cam_name} {cam_at}, {cam_doing}."],
                    "color": ["{cam_name}'s role is {cam_role}. Let's see how it's going.",
-                             "Keep an eye on {cam_name} here.", "{cam_name}'s motto: {cam_motto} Let's see if it holds.",
+                             "Keep an eye on {cam_name} here.", "{cam_name} is on {cam_working_on}. Let's see how it goes.",
                              "{cam_name} runs on {cam_model}. Let's see what it does with the time.",
                              "Love watching {cam_name} work {cam_at}."]},
         "chat": {"pbp": ["{agent_name} on comms: they're talking it through.", "{agent_name} on the mic.",
@@ -949,7 +1171,7 @@ class TemplateWriter:
         self.recent = deque(maxlen=12)
 
     def write(self, who, e, facts, recent, names):
-        flat = dict(facts)
+        flat = dict(facts.get("background") or {}, **facts)
         for key in ("agent", "viewer_message"):
             for k, v in (facts.get(key) or {}).items():
                 flat[f"{key}_{k}"] = v
@@ -964,13 +1186,15 @@ class TemplateWriter:
                 flat[f"{pre}_at"] = at_phrase(src["where"])
         if flat.get("cam_motto") and flat["cam_motto"][-1] not in ".!?":
             flat["cam_motto"] += "."
-        for k, v in (facts.get("researching") or {}).items():
+        for k, v in (flat.get("researching") or {}).items():
             flat[f"researching_{k}"] = v
         if (facts.get("on_screen_now") or {}).get("title"):
             flat["seg_title"] = facts["on_screen_now"]["title"]
         if facts.get("change"):
             flat["did"] = {"posted": "posts", "taken": "picks up", "done": "finishes",
                            "blocked": "is stuck on"}.get(facts["change"], facts["change"])
+        if flat.get("text") and e["kind"] in ("attack", "loss", "death", "power", "info"):
+            flat["text"] = spoken_alert(flat["text"])
         pool = self.T.get(e["kind"], {}).get(who, [])
         opts = [t for t in pool if t not in self.recent]
         self.rng.shuffle(opts)
@@ -1013,6 +1237,20 @@ class LLMWriter:
             self.spent += (usage.get("prompt_tokens", len(system + user) / 4) * pin
                            + usage.get("completion_tokens", max_tokens / 2) * pout) / 1e6
             return text
+        if self.kind == "or":  # OpenRouter (copy_bench comparisons: GPT, Gemini); key in OPENROUTER_API_KEY
+            key = os.environ.get("OPENROUTER_API_KEY")
+            if not key:
+                raise RuntimeError("OPENROUTER_API_KEY is not set")
+            body = {"model": self.model, "messages": [{"role": "system", "content": system},
+                                                      {"role": "user", "content": user}],
+                    "max_tokens": max(max_tokens, 400), "temperature": 0.9, "usage": {"include": True}}
+            req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
+                                         data=json.dumps(body).encode(), method="POST",
+                                         headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=self.timeout * 3) as r:
+                out = json.load(r)
+            self.spent += float((out.get("usage") or {}).get("cost") or 0)
+            return ((out.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
         if not shutil.which(self.bin):
             raise RuntimeError(f"{self.bin} not found")
         # The personal subscription: CLAUDE_CONFIG_DIR unset and no API overrides (a parent session may set them).
@@ -1212,6 +1450,8 @@ class Caster:
             self.writer = None
         elif a.writer == "claude":
             self.writer = LLMWriter("claude", a.model or "haiku", bin=a.claude_bin, timeout=a.writer_timeout)
+        elif a.writer == "or":
+            self.writer = LLMWriter("or", a.model, timeout=a.writer_timeout)
         else:
             self.writer = LLMWriter("cf", a.model or DEFAULT_MODEL, ai=ai, timeout=a.writer_timeout)
         # urgent events (attack, death, loss) go to a fast writer so the call lands while it is still news
@@ -1237,7 +1477,7 @@ class Caster:
             for e in self.differ.diff(s):
                 if e["kind"] == "chat":
                     self.chat_q.append(e)
-                    if e["aloud"] or self.rng.random() < 0.25:  # some chat also feeds the casters
+                    if e["aloud"]:  # only what an agent says aloud feeds the hosts (HOSTS3 item 6: speak less)
                         self.events.append(dict(e, prio=2 if not e["aloud"] else 4))
                 else:
                     self.events.append(e)
@@ -1386,6 +1626,34 @@ class Caster:
             e["agents"] = list(main) if main and self.rng.random() < 0.6 else self.rng.sample(agents, min(2, len(agents)))
         return e
 
+    def mark_changes(self, facts):
+        """Each agent in the facts gets `since_last_beat`: what changed since the hosts last had it in their facts (a
+        new board job, something new said, back from respawn, a new task). HOSTS3 item 6: news, not 'still walking'."""
+        seen = self.__dict__.setdefault("agent_seen", {})
+        groups = [facts.get("agent")] + [x for k in ("on_camera", "busy_agents", "observed") for x in facts.get(k) or []]
+        for ag in groups:
+            if not isinstance(ag, dict) or not ag.get("name"):
+                continue
+            now = {k: ag.get(k) for k in ("working_on", "intent", "status", "doing")}
+            before = seen.get(ag["name"])
+            seen[ag["name"]] = now
+            if before is None:
+                continue
+            ch = []
+            if now["working_on"] and now["working_on"] != before["working_on"]:
+                ch.append(f"took a new job: {now['working_on']}")
+            if now["intent"] and now["intent"] != before["intent"]:
+                ch.append("said something new")
+            if before["status"] == "down, waiting to respawn" and now["status"] != before["status"]:
+                ch.append("back from respawn")
+            if now["doing"] and now["doing"] != before["doing"]:
+                ch.append(f"now {now['doing']}")
+            ag["since_last_beat"] = ch or ["nothing new since the hosts last saw them"]
+
+    def news(self, s):
+        """Something changed since the hosts last spoke: research, the science rate, the board, the stage, losses."""
+        return digest(s) != getattr(self, "last_digest", None)
+
     def caster_tick(self, now, st):
         with self.lock:
             s = self.snap
@@ -1401,10 +1669,18 @@ class Caster:
             return
         with self.lock:
             e = self.pick_event(now)
+        # Speak less (HOSTS3 item 6, Nick: "kinda dumb", riffing on mottos and inconsequential notes): a low-value beat
+        # waits for --quiet seconds of silence, and filler for --lull seconds and something new to say.
+        if e and e["kind"] in QUIET_KINDS and now < self.caster_free + getattr(self.a, "quiet", 0):
+            return
         if not e:
             if now < self.caster_free + max(gap, self.a.lull) - lead:
                 return
             e = self.filler(now, s)
+            if self.a.lull and e["kind"] == "lull" and not e.get("point") and not self.news(s):
+                self.caster_free = now  # nothing new: stay quiet another --lull
+                return
+        self.last_digest = digest(s)
         if e["kind"] in ("chat", "camera", "board") and self.rng.random() < self.a.naturalist:
             e["naturalist"] = True
         first = "pbp" if e["prio"] >= PRIORITY["research"] or e["kind"] in (
@@ -1423,6 +1699,15 @@ class Caster:
         facts = facts_for(e, s, self.base_for(s), self.deadline(), self.shift())
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
+        self.mark_changes(facts)
+        live = self.live_segment(s, margin=3) if hasattr(self, "live_segment") else None
+        if live and e["kind"] != "segment" and e["prio"] < URGENT and "on_screen_now" not in facts:
+            # a card stays up about 30 s, and the beats after its own went on as if it were not there
+            card = card_facts(live)
+            facts["on_screen_now"] = card["on_screen_now"]
+            facts["card_on_screen"] = ("a card is on screen now, so talk about what it shows first, then this beat "
+                                       "if there is room" + (f". The card: {card['how_to_call_it']}"
+                                                             if card.get("how_to_call_it") else ""))
         names = list(self.names(s).values())
         recent = list(self.recent)
         lines, backend, err, lat = [], "template", None, 0.0
@@ -1449,6 +1734,7 @@ class Caster:
                         break
                     note = (f"Your last draft had a line that sounds written, not spoken ({err}): "
                             f"\"{line}\". Write the exchange again as plain talk.")
+                    log(f"[writer] rewrite after {err}")  # copy_report.py counts these
                 lines = tidy_exchange(lines)
                 if lines:
                     backend = writer.name
@@ -1553,8 +1839,10 @@ class Caster:
             stop = time.time() + 15
             while time.time() < min(max(self.agent_free, self.caster_free + gap), stop):
                 time.sleep(0.1)
+            # rank and exchange: the page plays one voice at a time, by rank, and keeps an exchange together
             self.push({"channel": "caster", "speaker": CASTERS[who]["label"], "who": who, "text": line,
-                       "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice")}, audio, ctype)
+                       "expires_in": 25, "duration": round(dur, 2), "voice": spoke.get("voice"),
+                       "rank": clip_rank(e), "exchange": base.get("exchange")}, audio, ctype)
             self.caster_free = time.time() + dur
             self.record(**base, who=who, line=line, pushed=True, tts=tts.backend, **spoke,
                         tts_latency=round(tlat, 2), seconds=round(dur, 2), **({"facts": facts} if i == 0 else {}))
@@ -1792,9 +2080,10 @@ def bench(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--feed", default="http://127.0.0.1:8788", help="stream service base URL (serve.py)")
-    ap.add_argument("--writer", default="cf", choices=["cf", "claude", "template"])
+    ap.add_argument("--writer", default="cf", choices=["cf", "claude", "or", "template"])
     ap.add_argument("--model", help=f"writer model (cf: Workers AI model id, default {DEFAULT_MODEL}; "
-                                    "claude: haiku or sonnet)")
+                                    "claude: haiku, sonnet, opus or fable; or: an OpenRouter model id, with "
+                                    "OPENROUTER_API_KEY set)")
     ap.add_argument("--claude-bin", help=f"claude CLI for --writer claude (default {CLAUDE_BIN}, run with "
                                          "CLAUDE_CONFIG_DIR unset: the personal subscription)")
     ap.add_argument("--writer-timeout", type=float, default=12, help="seconds per Workers AI call (claude: 3x)")
@@ -1820,12 +2109,15 @@ def main():
     ap.add_argument("--backoff", type=float, default=120,
                     help="after 3 straight failures, skip a backend (writer, classifier, TTS) for this many seconds")
     ap.add_argument("--classifier", default="clef", choices=["clef", "heuristic"])
-    ap.add_argument("--gap", type=float, nargs=2, default=[1.0, 3.0], metavar=("MIN", "MAX"),
+    ap.add_argument("--gap", type=float, nargs=2, default=[3.0, 6.0], metavar=("MIN", "MAX"),
                     help="seconds of silence between exchanges (random in range); 20 40 for the old sparse cast")
     ap.add_argument("--urgent-gap", type=float, default=0.5, help="gap before an urgent exchange (attack, death)")
     ap.add_argument("--first-gap", type=float, default=3)
-    ap.add_argument("--lull", type=float, default=0,
-                    help="seconds of silence before the hosts fill with a topic of their own (0: never silent)")
+    ap.add_argument("--lull", type=float, default=40,
+                    help="seconds of silence before the hosts fill with a topic of their own, and only when something "
+                         "changed (0: never silent, the old continuous cast)")
+    ap.add_argument("--quiet", type=float, default=20,
+                    help="seconds of silence before a low-value beat (camera cut, board note, research start) is said")
     ap.add_argument("--stale", type=float, default=45, help="drop events older than this")
     ap.add_argument("--agent-gap", type=float, default=15,
                     help="min seconds between voiced agent lines (half for lines the agent marked aloud)")
@@ -1846,6 +2138,9 @@ def main():
     ap.add_argument("--push-channel", default="caster", help="--push: caster | agent | anything else (not played)")
     ap.add_argument("--push-text", default="", help="--push: caption text")
     ap.add_argument("--push-expires", type=float, default=30, help="--push: seconds the page may still start it")
+    ap.add_argument("--push-rank", choices=("urgent", "agent", "viewer", "banter"),
+                    help="--push: playback rank on the page (default: agent for the agent channel, else banter)")
+    ap.add_argument("--push-exchange", help="--push: exchange id, to keep a host exchange together")
     a = ap.parse_args()
     if a.bench:
         return bench(a)
@@ -1853,6 +2148,7 @@ def main():
         audio = open(a.push, "rb").read()
         meta = {"channel": a.push_channel, "speaker": os.path.basename(a.push), "text": a.push_text,
                 "duration": round(voices.duration(audio), 2), "expires_in": a.push_expires}
+        meta.update({k: v for k, v in (("rank", a.push_rank), ("exchange", a.push_exchange)) if v})
         body = dict(meta, audio_b64=base64.b64encode(audio).decode(), ctype="audio/mpeg")
         req = urllib.request.Request(a.feed.rstrip("/") + "/audio", data=json.dumps(body).encode(), method="POST",
                                      headers={"Content-Type": "application/json"})

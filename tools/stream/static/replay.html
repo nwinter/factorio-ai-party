@@ -24,7 +24,7 @@
   #ago { font-size: 20px; color: var(--fx-muted); }
   #time { position: absolute; left: 48px; right: 48px; bottom: 36px; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, 0.5); opacity: 0; transition: opacity 400ms ease; }
   .on #time { opacity: 1; }
-  #time i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--fx-red); transition: width 1s linear; }
+  #time i { display: block; height: 100%; width: 0; border-radius: 3px; background: var(--fx-red); transition: width 250ms linear; }
 </style>
 </head>
 <body>
@@ -35,17 +35,36 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
+  // The bar runs on this page's own clock, set from the first snapshot of each replay: it moves smoothly and keeps
+  // moving when snapshots arrive late or not at all (shake10: it stood still). It spans the replay itself, from the
+  // cut to the replay scene (the segment's start + 2.5 s "starting", segments.py STARTING_S) to the segment's end,
+  // and the banner goes away at that end by itself.
+  const STARTING_S = 2.5;
+  let clock = null; // {id, t0, t1 (local ms: replay start, end), ago (s at t0)}
   function render(s) {
     const seg = s && s.segment;
-    const on = !!seg && seg.type === "attack_replay" && seg.state === "live";
+    const live = !!seg && seg.type === "attack_replay" && seg.state === "live";
+    if (!live) { clock = null; return tick(); }
+    const offset = Date.now() - s.now * 1000; // local ms minus server ms
+    const f = seg.facts || {};
+    if (!clock || clock.id !== seg.id) {
+      const start = seg.started + STARTING_S;
+      clock = { id: seg.id, t0: start * 1000 + offset, ago: f.ago_s != null ? f.ago_s + STARTING_S : null };
+      $("what").textContent = f.event || seg.title || "";
+    }
+    clock.t1 = seg.ends * 1000 + offset; // a cut segment ends early
+    tick();
+  }
+  function tick() {
+    const now = Date.now();
+    const on = !!clock && now < clock.t1;
     document.body.classList.toggle("on", on);
     if (!on) return;
-    const f = seg.facts || {};
-    $("what").textContent = f.event || seg.title || "";
-    $("ago").textContent = f.ago_s != null ? Math.max(0, Math.round(f.ago_s + (s.now - seg.started))) + " s ago" : "";
-    const total = Math.max(1, seg.ends - seg.started);
-    $("time").firstChild.style.width = Math.max(0, Math.min(1, (s.now - seg.started) / total)) * 100 + "%";
+    const p = Math.max(0, Math.min(1, (now - clock.t0) / Math.max(1000, clock.t1 - clock.t0)));
+    $("time").firstChild.style.width = (p * 100).toFixed(1) + "%";
+    $("ago").textContent = clock.ago != null ? Math.max(0, Math.round(clock.ago + (now - clock.t0) / 1000)) + " s ago" : "";
   }
+  setInterval(tick, 200);
   let last = 0;
   const es = new EventSource("/events");
   es.onmessage = (e) => { last = Date.now(); try { render(JSON.parse(e.data)); } catch (err) { console.error(err); } };
