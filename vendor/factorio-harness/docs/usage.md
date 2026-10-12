@@ -460,6 +460,13 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   returns the tells you sent or received `{seq,tick,from,to,team?,text}`; the operator path returns every tell, which
   the stream shows on its logistics ticker (`-> Sol: text`, never voiced). CLI: `fh tell luna "text"`,
   `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells --since N`.
+- `operator {text}` (1..500 characters, one line; longer is cut and the reply carries `cut {length, kept}`) files a
+  request to the operator: harness bugs, tool requests, things viewers asked for that the agents cannot do. The reply:
+  `seq`. At most one a minute and 10 an hour per agent; a refusal names the wait. No teammate sees it. The operator
+  path `operator_requests {since?, limit?}` returns `{seq,tick,from,text}` oldest first and `cursor`; the stream
+  service appends new ones to `runs/RUN/operator-inbox.jsonl` and shows them on the ticker (`Astra → operator: ...`).
+  The operator answers in the game chat as `server:`; an `@name` there is a mention (it wakes a sleeper). Each agent's
+  first team block carries the reminder once. CLI: `fh operator "text"`, `fh operator - <<'EOF'`.
 - `sleep` also ends early with `woke: board` (and `board: <line>`) when a board line about the sleeper's own items
   arrives (any of the `board` lines above except new unowned requests and the 2-minute nudge).
 - `mention_counts` (read; any player, directors included, or the operator path): per agent `unread_mentions` (tells

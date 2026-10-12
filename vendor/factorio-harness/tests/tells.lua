@@ -188,4 +188,35 @@ r1=sol('tell',{to='astra',text=long..long})
 eq(r1.cut.length,#((long..long):gsub('%s+$',''))); eq(r1.cut.kept,500)
 eq(#astra('tells',{since=r1.seq-1}).tells[1].text,500)
 assert(runtime.dispatch{action='describe',args={},player=1}.actions.tell.text:find('1..500',1,true))
+
+-- operator: a request to the operator, read by the stream service over the
+-- operator path; one a minute and 10 an hour per agent, with the wait named.
+-- (shift01 16:13: Astra promised a viewer to pass a request on, with no way to.)
+local before=op('operator_requests',{}).cursor
+r1=astra('operator',{text='a viewer asks for longer viewer replies\nfrom the hosts'})
+eq(r1.seq,before+1); eq(r1.cut,nil); assert(r1.note:find('server:',1,true))
+local inbox=op('operator_requests',{since=before})
+eq(#inbox.requests,1); eq(inbox.requests[1].from,'astra'); eq(inbox.requests[1].text,'a viewer asks for longer viewer replies from the hosts')
+eq(inbox.cursor,before+1)
+eq((sol('status').team or {}).tells,nil) -- not a tell: no teammate sees it
+fails(function() astra('operator',{text='again'}) end,'one operator request a minute; next in 60 s')
+jump(1800); fails(function() astra('operator',{text='again'}) end,'next in 30 s')
+eq(sol('operator',{text='belt_route refuses diagonal starts'}).seq,before+2) -- per agent
+for _=1,9 do jump(3600); astra('operator',{text='more'}) end
+jump(3600)
+fails(function() astra('operator',{text='eleventh'}) end,'10 operator requests an hour; next in')
+jump(3600*50); eq(astra('operator',{text='after the hour'}).seq>0,true) -- the first one left the hour
+r1=grok('operator',{text=string.rep('x',600)}); eq(r1.cut.length,600); eq(r1.cut.kept,500)
+fails(function() grok('operator',{text='  '}) end,'text is required')
+eq(#op('operator_requests',{since=before,limit=2}).requests,2)
+assert(runtime.dispatch{action='describe',args={},player=1}.actions.operator.text:find('server:',1,true))
+-- The operator answers in the game chat as server: (no player): an @name there
+-- reaches that agent as a mention, which wakes a sleeper.
+runtime.on_event{name=defines.events.on_console_chat,tick=tick,message='@astra longer replies are on the list'}
+local m=astra('status').team.mentions
+assert(m and m[1]:find('server',1,true) and m[1]:find('longer replies',1,true),m and m[1])
+eq((grok('status').team or {}).mentions,nil)
+grok('sleep',{seconds=60}); eq(grok('sleep_check',{peek=true}).woke,nil)
+runtime.on_event{name=defines.events.on_console_chat,tick=tick,message='@grok thanks, filed'}
+eq(grok('sleep_check',{peek=true}).woke,'mentioned')
 print('tells: ok')

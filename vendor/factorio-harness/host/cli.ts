@@ -55,6 +55,7 @@ const help = `fh — Factorio agent CLI
   fh say "text" [--aloud]                   Post in chat; or --text-file F, or stdin (fh say - <<'EOF' ... EOF)
   fh chat [--since SEQ] [--limit N] [--peek] Your unread messages (newest N; remaining=K are still unread), or all after SEQ
   fh confess "text"                         A line for the stream audience only (teammates never see it); input as for say
+  fh operator "text"                        A request to the operator (harness bugs, tools, viewer asks); input as for say
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
   fh tells [--since SEQ]                    Tells you sent or received
   fh players [NAME] [--args '{"minutes":10}'] Human players on the map: where, group, what each built, removed, ordered, moved
@@ -311,11 +312,11 @@ async function main() {
     command = 'call';
   }
   // `fh call say words...` used to drop the words and send {} ("text is required").
-  if (command === 'call' && (positionals[1] === 'say' || positionals[1] === 'confess' || positionals[1] === 'tell') && (positionals.length > 2 || !values.args)) {
+  if (command === 'call' && ['say','confess','tell','operator'].includes(positionals[1] ?? '') && (positionals.length > 2 || !values.args)) {
     command = positionals[1]!;
     positionals.splice(0, 2, command);
   }
-  if (command === 'say' || command === 'confess' || command === 'tell') {
+  if (command === 'say' || command === 'confess' || command === 'tell' || command === 'operator') {
     // Text as arguments, a file or stdin: no JSON quoting, apostrophes are fine.
     const args = object(JSON.parse(values.args ?? '{}'),'args');
     // fh tell NAME[,NAME]|team text...: the first word names the recipients.
@@ -333,7 +334,7 @@ async function main() {
     const usage = command === 'tell' ? 'tell NAME' : command;
     if (typeof args.text !== 'string' || !args.text) throw new Error(`${command} needs text: fh ${usage} "text", fh ${usage} --text-file F, or fh ${usage} - with the text on stdin`);
     if (values.aloud) {
-      if (command !== 'say') throw new Error(`--aloud applies to say; ${command === 'tell' ? 'a tell stays off the chat and the voice' : 'a confession always goes to the stream'}`);
+      if (command !== 'say') throw new Error(`--aloud applies to say; ${command === 'tell' ? 'a tell stays off the chat and the voice' : command === 'operator' ? 'an operator request goes to the operator, not the voice' : 'a confession always goes to the stream'}`);
       args.aloud = true;
     }
     values.args = JSON.stringify(args);

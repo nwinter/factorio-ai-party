@@ -805,11 +805,19 @@ return function(api)
   local STREAM_NOTE, STREAM_NOTE_VERSION = 'stream: viewers hear your say --aloud lines and confessions, spoken in your voice, '
     .. 'and like hearing from you every few minutes; other chat and tells show on the stream only as text, which viewers '
     .. 'read on screen, so write them as plain sentences with spaces between words', 2
+  -- The operator channel (tells.lua `operator`): once per agent too.
+  local OPERATOR_NOTE = 'operator: ./fh operator "text" files a request with the operator, the people running the harness '
+    .. 'and the stream (harness bugs, tools you need, things viewers ask for that the team cannot do); answers come in the '
+    .. 'game chat as server:'
   local function reminders(p, h)
     local out = {}
     if h.stream_note ~= STREAM_NOTE_VERSION then
       h.stream_note = STREAM_NOTE_VERSION
       out[#out+1] = STREAM_NOTE
+    end
+    if not h.operator_note then
+      h.operator_note = 1
+      out[#out+1] = OPERATOR_NOTE
     end
     local pr = api.profile(p.index)
     if not (pr and pr.display_name and pr.glyph and pr.color) and not (h.reminded and game.tick - h.reminded < REMIND_EVERY) then
