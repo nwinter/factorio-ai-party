@@ -9,7 +9,7 @@ the main camera or a spotlight on one agent. API agreed with eng/audio (docs/STR
 `facts` holds every name and number the page shows for the segment, computed once when it is accepted, so what the
 casters say matches the screen. The page renders a segment from its facts only.
 """
-import itertools, math, threading, time
+import itertools, math, re, threading, time
 from collections import deque
 
 from model import SCIENCE, platform_shot
@@ -38,6 +38,24 @@ TYPES = {
 }
 LULL_ORDER = ["production", "spotlight", "research", "space", "overview", "recap"]
 MOMENT_FRESH_S = 150.0
+# A loss clip of one of these, alone, is routine: shake12 aired three replays in 41 s at 04:04, often one pipe or one
+# belt. It airs only when nothing else has for a while (Segments.replay_gate).
+CHEAP = ("pipe", "pipe to ground", "transport belt", "underground belt", "electric pole", "inserter")
+LOSS_RE = re.compile(r"^(\d+) lost near \([^)]*\): (.*?)(?: \(by .*\))?$")  # live.py loss_events
+
+
+def cheap_loss(label):
+    """"1 lost near (39, 84): 1 pipe to ground (by flamethrower turrets)" -> True: one building, and a cheap one."""
+    m = LOSS_RE.match(label or "")
+    if not m or int(m.group(1)) != 1:
+        return False
+    name = re.sub(r"^\d+ ", "", m.group(2).split(",")[0].strip())
+    return name.endswith(CHEAP)
+
+
+def big_replay(clip):
+    """A replay that is the story, not routine: an agent's death (a death clip, or a loss that took a character)."""
+    return clip.get("kind") == "death" or bool(re.search(r"\bcharacter\b", clip.get("label") or ""))
 
 
 def human(item):
@@ -46,8 +64,18 @@ def human(item):
 
 class Segments:
     def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9,
-                 recap_every=1200.0):
+                 recap_every=1200.0, replay_spacing=90.0, cheap_quiet=180.0):
         self.spacing = spacing            # seconds between segment starts, whoever asks
+        # Replays skip `spacing` (replays.py), so they have their own: one start per replay_spacing (shake12: three in
+        # 41 s). A single cheap building's loss airs only when no segment has started for cheap_quiet and no fight cut
+        # for 60 s; the same loss line airs once in replay_repeat (live.py re-reports a loss: shake12 aired several
+        # twice, ~90 s apart).
+        self.replay_spacing = replay_spacing
+        self.cheap_quiet = cheap_quiet
+        self.replay_repeat = 300.0
+        self.last_replay = -math.inf
+        self.replay_aired = {}  # label -> when it last went on air
+        self.research_seen = set()  # research_news names already seen (a new one cuts a routine replay)
         self.lull_after = lull_after      # the director fills a lull this long after the last segment ended
         # A recap is due this long after the last one (or the service start): the director starts it at the first
         # free slot, ahead of the lull rotation. In shake3 the hosts' research requests kept resetting the 6-minute
@@ -165,6 +193,10 @@ class Segments:
                 return 409, {"error": "busy", "retry_after": round(self.last_start + self.spacing - now, 1)}
             if self.urgent_since(snap, now) < self.urgent_quiet:
                 return 409, {"error": "declined", "why": "urgent event on screen", "retry_after": 30}
+            if kind == "attack_replay":
+                gate = self.replay_gate(snap, now)
+                if gate:
+                    return 409, gate
             lo, hi = TYPES[kind]["seconds"]
             try:
                 seconds = float(body.get("seconds") or (lo + hi) / 2)
@@ -196,10 +228,14 @@ class Segments:
                 if a["id"] not in self.seen:
                     self.seen.add(a["id"])
                     self.history.append((a["t"], a["kind"], a["text"]))
+            self.news_wins(snap, now)
             cur = self.cur
             if cur and cur["state"] in ("starting", "live"):
                 if cur["state"] == "starting" and now >= cur["started"] + STARTING_S:
                     cur["state"] = "live"
+                    if cur["type"] == "attack_replay":  # on air (a replay cut while starting may air later)
+                        self.last_replay = now
+                        self.replay_aired[cur["facts"]["event"]] = now
                 elif now >= cur["ends"]:
                     cur["state"] = "ended"
                 if cur["state"] == "ended":
@@ -228,6 +264,48 @@ class Segments:
         elif self.cur is None and self.queue is None and now - self.last_end >= self.lull_after:
             self.lull(snap, now)
         return self.public()
+
+    # ---- replays: which clip airs, and when (replays.py offers them; shake12's bursts) ---------------------------
+    def replay_gate(self, snap, now):
+        """None when the waiting clip may air now, else the 409 reply. "skip": True tells replays.py the clip is not
+        worth holding up a clip waiting behind it."""
+        c = (self.replays.clip if self.replays else None) or {}
+        label = c.get("label") or ""
+        if now - self.last_replay < self.replay_spacing:
+            return {"error": "busy", "why": "a replay aired less than 90 s ago",
+                    "retry_after": round(self.last_replay + self.replay_spacing - now, 1)}
+        if c.get("kind") == "loss" and now - self.replay_aired.get(label, -math.inf) < self.replay_repeat:
+            return {"error": "declined", "why": "this loss already aired", "skip": True, "retry_after": 60}
+        if not big_replay(c):
+            if (snap or {}).get("research_news"):
+                return {"error": "declined", "why": "the research card is up", "retry_after": 10}
+            if snap and self.moments(snap, fresh_only=True, now=now):
+                return {"error": "declined", "why": "a Space Age moment goes first", "retry_after": 10}
+        if cheap_loss(label) and (now - self.last_start < self.cheap_quiet or now - self.last_attack_cut < 60):
+            return {"error": "declined", "why": "one cheap building lost: only when nothing else has aired for a while",
+                    "skip": True, "retry_after": 30}
+        return None
+
+    def news_wins(self, snap, now):
+        """A research completion (the overlay's research card, hidden while the replay scene is on air) or a fresh Space
+        Age moment cuts a routine replay that is queued or on air (lock held)."""
+        news = {n["name"] for n in snap.get("research_news") or [] if n.get("name")}
+        new_research = bool(news - self.research_seen)
+        self.research_seen |= news
+        if not (new_research or self.moments(snap, fresh_only=True, now=now)):
+            return
+        why = "research" if new_research else "space_moment"
+        if self.queue and self.queue["type"] == "attack_replay" and not self.queue_big():
+            self.queue = None
+        cur = self.cur
+        if cur and cur["type"] == "attack_replay" and cur["state"] in ("starting", "live") and \
+                not big_replay({"kind": cur["facts"].get("kind"), "label": cur["facts"].get("event")}):
+            cur.update(state="ended", cut=why, ends=now)
+            self.last_end = now
+
+    def queue_big(self):
+        f = self.queue["facts"]
+        return big_replay({"kind": f.get("kind"), "label": f.get("event")})
 
     def lull(self, snap, now):
         """Nothing for a while and nothing urgent: the director starts the next type in rotation itself."""

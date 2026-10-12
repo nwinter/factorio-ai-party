@@ -327,6 +327,9 @@ class Replays:
                                            "seconds": c["show_to"] - c["show_from"]}, now, ignore_spacing=True)
         if code == 200:
             self.log(f"[replays] queued {c['id']} as {rep['id']}")
+        elif rep.get("skip") and self.more_clips:  # routine (segments.replay_gate): not worth holding up the next one
+            self.log(f"[replays] dropped {c['id']} ({rep.get('why')}): {c['label']}")
+            self.next_clip()
 
     def next_clip(self):
         with self.lock:
