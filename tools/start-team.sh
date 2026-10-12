@@ -5,7 +5,7 @@
 # normal), POG_WORLD_NAME (default n; game port 34205, RCON 27025), POG_CASTER (default 1: shoutcasters on),
 # POG_YOUTUBE (@handle or video id for the YouTube chat bridge; default @NickWinter), POG_SPACE_AGE=1 (Space Age world, expansion-build
 # directors, the agents' Space Age playbook section and the analyst's Space Age knowledge base).
-# POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-b).
+# POG_ANALYST (default 1: analyst on; POG_ANALYST_MODEL default sonnet; POG_ANALYST_ROUTE default claude-c).
 # POG_VIEWER_RELAY (default 1: viewer lines that pass the filters and Clef reach the agents in game chat; 0: off).
 # POG_RESUME=PREVIOUS_RUN: a later shift of the same world (docs/SPACEAGE.md, shifts): no new instance; the server
 # starts on the newest of saves\PREVIOUS_RUN.zip and the autosaves after it (copied to saves\RUN_ID.zip), existing bots
@@ -254,7 +254,7 @@ fi
 # Analyst: talking points for the casters every 90 s, read-only (docs/ANALYST-NOTES.md); POG_ANALYST=0 turns it off.
 if [ "${POG_ANALYST:-1}" != 0 ]; then
   # Its own Claude route, like the agents' (tools/launch-agent.sh), not whatever session started the run.
-  aroute=${POG_ANALYST_ROUTE:-claude-b}
+  aroute=${POG_ANALYST_ROUTE:-claude-c}
   aroot=$(/Users/owner/.local/bin/ai-session routes | awk -v r="$aroute" '$1 == r && $2 == "claude" {print $NF}')
   aenv=(-u CLAUDE_CONFIG_DIR); [ "$aroute" = claude ] || aenv=("CLAUDE_CONFIG_DIR=$aroot")
   # Viewer questions from the site/YouTube lane, one answer per 150 s at most, voiced by the hosts; POG_VIEWER_QUESTIONS=0 off.
