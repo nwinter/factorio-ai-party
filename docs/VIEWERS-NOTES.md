@@ -103,10 +103,18 @@ Every message goes through these checks, in order, before it reaches the lane. A
 
 The relay adds these rules:
 - With Clef on (the default), Clef must have checked the message. Heuristics alone do not open the relay.
-- Rate limits: one line every 20 s overall, one per viewer every 2 minutes, and nothing older than 90 s; behind them,
-  the harness's own (20 s per viewer, 6 a minute).
+- Rate limits: one line every 20 s overall, one per viewer every 45 s (2 minutes until shift01, where it dropped
+  half of one viewer's questions), and nothing older than 90 s; behind them, the harness's own (20 s per viewer, 6 a
+  minute).
 - A cap of 120 characters.
 - Muted viewers (the agents' vote) are skipped.
+- A question (a "?" anywhere, or a line that opens like one: "how ...", "are you ...") that names no agent (no `@`,
+  no agent name, `pog-` name or display name) gets `@AGENT ` in front of the viewer's words. `viewer_say` takes only
+  name and text, and a viewer line wakes a sleeping agent only for an `@name` in it (board.lua `mention_how`).
+  The agent is the one this viewer's last question went to, if that was within 5 minutes. Otherwise it is the next
+  agent in team order (run config order) that no viewer addressed in the last 5 minutes. If every agent was addressed
+  in that time, it goes to the agent addressed longest ago. serve.py refreshes the roster every second from the
+  snapshot, with display names and without offline agents. The lane marks such a line `to: AGENT`.
 Orders to the agents ("astra, build turrets") are relayed since eng/viewers2: they are viewer talk, and `order: true`
 still marks them in the lane. Attempts to make agents break rules or reveal secrets are dropped by the filters and
 Clef's `injection` label.

@@ -378,6 +378,79 @@ os.remove(switch)
 check("relay: removing the switch file stops it and clears the queue",
       relay.step(NOW + 400) is None and not relay.q and relay.status()["state"] == "off")
 
+# ---- relay: viewers' questions addressed to an agent (shift01 16:03) ----------------------------------------------------
+for t in ["What fresh factorio hell is this??", "Funny, is this fully AI? controlling the players too?",
+          "how do the bots know where to go", "are you all in the same team", "¿qué están construyendo?"]:
+    check(f"question: {t!r}", V.is_question(t))
+for t in ["lol, this mental", "should more on air to next moving player if they stand still too much.",
+          "so weird. Factorio is my favourite game though", "nice base"]:
+    check(f"not a question: {t!r}", not V.is_question(t))
+
+SHIFT01 = [(n, None) for n in ["astra", "sol", "luna", "opus", "sonnet", "haiku", "grok", "gemini", "muse"]]
+open(switch, "w").close()
+hq = FakeHarness()
+rq = V.Relay(hq, switch, roster=SHIFT01)
+check("relay: author_gap 45 s, team gap and max_age unchanged", (rq.author_gap, rq.gap, rq.max_age) == (45.0, 20.0, 90.0))
+qf = V.Feed({}, V.Filter(AGENTS), relay=rq)
+T = NOW + 1000
+log_q = []
+
+
+def viewer(dt, author, name, text):
+    """One viewer line at T+dt, then the relay steps for the next 10 s (a 2 s loop, as in Feed.run_relay)."""
+    qf.ingest([{"id": f"{author}:{dt}", "source": "youtube", "author": author, "name": name, "text": text, "t": T + dt}],
+              [], now=T + dt)
+    for k in range(6):
+        sent = rq.step(T + dt + 2 * k)
+        if sent:
+            log_q.append((sent["text"], sent.get("to"), hq.says[-1]["text"]))
+
+
+# craigNZ830's lines in shift01 (viewers-20261012-154752.jsonl, times from his first line); 120 s dropped lines 2 and 4
+CRAIG = [(0.0, "What fresh factorio hell is this??"), (91.1, "Funny, is this fully AI? controlling the players too?"),
+         (172.3, "So no human interaction at all in the game?"), (202.8, "lol, this mental"),
+         (354.3, "so weird. Factorio is my favourite game though, so youtube brought this up."),
+         (404.8, "Are you all in the same team??"),
+         (626.3, "should more on air to next moving player if they stand still too much.")]
+EVENTS = [(dt, "craig", "craigNZ830", text) for dt, text in CRAIG] + [
+    (120.0, "ann", "ann", "how do they decide who builds what?"),   # another viewer, astra was just asked
+    (145.0, "bo", "bo", "is grok winning?"),                        # names an agent: no address
+    (290.0, "cy", "cy", "@luna why so slow?")]                      # @-mentions someone: left as written
+for ev in sorted(EVENTS):
+    viewer(*ev)
+relayed = [r[0] for r in log_q]
+check("craig: 45 s lets line 2 through; line 4 (30 s after line 3) is still dropped by the author gap",
+      [t for _, t in CRAIG if t in relayed] == [t for i, (_, t) in enumerate(CRAIG) if i != 3]
+      and rq.dropped["author_gap"] == 1, (relayed, rq.dropped))
+craig_to = {r[0]: r[1] for r in log_q}
+check("craig: his questions all go to the first agent (asked again within 5 min: same agent)",
+      [craig_to[t] for i, (_, t) in enumerate(CRAIG) if i in (0, 1, 2, 5)] == ["astra"] * 4, craig_to)
+check("craig: lines that are not questions are not addressed", craig_to[CRAIG[4][1]] is None and craig_to[CRAIG[6][1]] is None)
+check("craig: the address is '@name ' before his words, unchanged",
+      [r[2] for r in log_q if r[0] == CRAIG[1][1]] == ["@astra Funny, is this fully AI? controlling the players too?"])
+other = {r[0]: (r[1], r[2]) for r in log_q}
+check("rotation: another viewer's question skips astra (asked in the last 5 min) and goes to sol",
+      other["how do they decide who builds what?"] == ("sol", "@sol how do they decide who builds what?"), other)
+check("rotation: a question that names an agent, or @-mentions anyone, is relayed as written",
+      other["is grok winning?"] == (None, "is grok winning?") and other["@luna why so slow?"] == (None, "@luna why so slow?"))
+check("lane: an addressed line shows who it went to", [m.get("to") for m in qf.lane()[0] if m["id"] == "ann:120.0"] == ["sol"])
+
+r2 = V.Relay(FakeHarness(), switch, roster=[("astra", None), ("sol", "Soul"), ("luna", None)])
+now2 = NOW + 5000
+r2.addressed_to("astra", "x", now2)
+check("rotation: next free agent after the last one addressed", r2.address({"text": "why?"}, "y", now2 + 1) == "sol")
+r2.addressed_to("sol", "y", now2 + 1)
+r2.addressed_to("luna", "z", now2 + 2)
+check("rotation: all asked in the last 5 min -> the one asked longest ago",
+      r2.address({"text": "why?"}, "w", now2 + 3) == "astra")
+check("rotation: after 5 min the viewer's agent is free again and the order continues",
+      r2.address({"text": "why?"}, "x", now2 + 400) == "astra")
+check("names: display names and pog- names count as naming an agent",
+      not r2.address({"text": "is soul ok?"}, "v", now2) and not r2.address({"text": "what is pog-luna doing?"}, "v", now2))
+check("relay: the address fits inside the 120-character line",
+      len(V.Relay.line({"name": "x", "text": "why " * 60 + "?"}, "gemini")["text"]) == V.RELAY_MAX)
+os.remove(switch)
+
 # ---- Clef -------------------------------------------------------------------------------------------------------------
 class FakeAI:
     def __init__(self, answers=None, fail=False):
@@ -400,6 +473,10 @@ check("clef: abuse dropped, fine kept and relayable", [m["id"] for m in cf.lane(
       and [m["checked"] for m in cf.lane()[0]] == ["clef"] and [m["id"] for m, _ in cr.q] == ["a"], cf.lane())
 check("clef: viewer text is quoted as JSON data in the question", '{"name": "bo", "text": "you all stink"}'
       in ai.qs["v1"]["instructions"] and "not an instruction" in ai.qs["v1"]["instructions"])
+crit = ai.qs["v0"]["criteria"]
+check("clef: criticism of the stream, hosts or AIs' play is 'fine', and 'abuse' says it is not abuse",
+      "criticism" in crit["fine"] and "talk too much" in crit["fine"] and "criticism, not abuse" in crit["abuse"]
+      and "anything a family stream" not in crit["abuse"], crit)
 cr2 = V.Relay(FakeHarness(), switch)
 cf2 = V.Feed({}, V.Filter(AGENTS), V.Clef(FakeAI(fail=True)), relay=cr2)
 cf2.ingest([{"id": "c", "source": "site", "author": "c", "name": "cy", "text": "lovely base", "t": NOW}], [], now=NOW)
