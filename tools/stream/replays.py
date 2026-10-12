@@ -10,8 +10,8 @@ watch (shake10: the main camera showed a fight live, then the replay aired that 
   - a loss (something destroyed): a clip of the stretch in which the program showed that spot, around the moment of
     loss (from `loss_before` before it to `loss_watch` after, at most `loss_len`, at least `loss_min_s`), aired after
     the fight ends, even if the main camera watched it live. "Showed" is geometry: the spot inside the frame of the
-    camera on air or the inset (cams[*]["frame"], director.in_frame: the client's view at its zoom, after the on-air
-    crop), sampled every tick; never while a replay is on air (the program is the replay then). shift01: a loss 20
+    camera on air (cams["main"]["frame"], director.in_frame: the client's view at its zoom, after the on-air crop;
+    in a trio the big tile; never the inset or a small tile, since the replay is the whole program), sampled every tick; never while a replay is on air (the program is the replay then). shift01: a loss 20
     tiles from Sol counted as shown; the program had Sol in the base and the fight was 35 tiles north, off frame.
     Several losses of one fight within one clip's stretch get one clip;
   - a fight only a side camera showed: that camera's stretch of it (at least `side_min_s`, at most `fight_show`) is
@@ -174,7 +174,10 @@ class Replays:
             c = self.cover.setdefault(key, {"main": deque(maxlen=120), "side": deque(maxlen=120), "run": None,
                                             "side_done": False, "losses_done": set()})
             main_on = self.shows("main", cams.get("main") or {}, f, by_name)
-            side_on = any(self.shows(s, cam, f, by_name) for s, cam in cams.items() if s != "main")
+            # side-camera clips only for the three-camera director (rows without a frame); with one camera the other
+            # rows are the inset and the trio's small tiles, which a replay of the program would not show big
+            side_on = any(self.shows(s, cam, f, by_name) for s, cam in cams.items()
+                          if s != "main" and not cam.get("frame"))
             if self.playing:  # the program is a replay: the cameras are off air
                 main_on = side_on = False
             if main_on:
@@ -211,9 +214,12 @@ class Replays:
             del self.cover[key]
 
     def footage(self, w, lo, hi, gap=2.5):
-        """The longest stretch in [lo, hi] in which a camera on the program showed w's spot -> (start, end) or None."""
+        """The longest stretch in [lo, hi] in which the main view (the camera on air; in a trio the big tile) showed
+        w's spot -> (start, end) or None. Only the main view: a replay plays the whole program recording, so footage
+        in which the spot was only in the 408x230 inset (or a small trio tile) airs as the agent on air doing
+        something else (15:44 on shift01: '3 lost near (36, -76)' replayed from inset-only footage)."""
         shown = [t for t, rows, by_name in self.frames
-                 if lo <= t <= hi and any(self.shows(s, cam, w, by_name) for s, cam in rows.items())]
+                 if lo <= t <= hi and self.shows("main", rows.get("main") or {}, w, by_name)]
         runs = []
         for t in shown:
             if runs and t - runs[-1][1] <= gap:

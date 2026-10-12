@@ -514,7 +514,9 @@ of the spot (6 s before the loss to 15 s after, the longest stretch it was in fr
 after the fight, one per fight stretch. "In frame" is geometry since shift01 (15:14: four clips of the east attack at
 (75, -55) aired Sol walking in the base, 35 tiles south; a camera "showed" a spot within 20 tiles of its agent, and
 onecam treated alerts within 60 tiles as on air, so it neither cut nor inset): the spot inside the on-air camera's
-or the inset's frame, from the zoom sent to the game (32 px a tile on a 1920x1080 client) and the on-air crop
+frame (in a trio the big tile; not the inset or a small tile: the replay is the whole program recording, so
+inset-only footage aired the agent on air doing something else, shift01 15:44; a minor loss shown only in the inset
+gets no replay, a real one gets a cut and so footage), from the zoom sent to the game (32 px a tile on a 1920x1080 client) and the on-air crop
 (`frame` in each camera row; director.in_frame); ticks while a replay is on air count for nothing. onecam's
 "already on air" uses the same frame, so an off-frame loss gets an inset or a cut and so has footage. The seek offset
 uses only the Mac clock (saved_t when SaveReplayBuffer is sent, minus show_from, back from the file's end); the box's
