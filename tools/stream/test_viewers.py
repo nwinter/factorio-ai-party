@@ -400,6 +400,10 @@ check("clef: abuse dropped, fine kept and relayable", [m["id"] for m in cf.lane(
       and [m["checked"] for m in cf.lane()[0]] == ["clef"] and [m["id"] for m, _ in cr.q] == ["a"], cf.lane())
 check("clef: viewer text is quoted as JSON data in the question", '{"name": "bo", "text": "you all stink"}'
       in ai.qs["v1"]["instructions"] and "not an instruction" in ai.qs["v1"]["instructions"])
+crit = ai.qs["v0"]["criteria"]
+check("clef: criticism of the stream, hosts or AIs' play is 'fine', and 'abuse' says it is not abuse",
+      "criticism" in crit["fine"] and "talk too much" in crit["fine"] and "criticism, not abuse" in crit["abuse"]
+      and "anything a family stream" not in crit["abuse"], crit)
 cr2 = V.Relay(FakeHarness(), switch)
 cf2 = V.Feed({}, V.Filter(AGENTS), V.Clef(FakeAI(fail=True)), relay=cr2)
 cf2.ingest([{"id": "c", "source": "site", "author": "c", "name": "cy", "text": "lovely base", "t": NOW}], [], now=NOW)
