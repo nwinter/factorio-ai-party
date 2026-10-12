@@ -159,13 +159,13 @@ def planet_facts(s):
 
 PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "viewer_reply": 7,
             "power": 6,
-            "harness": 5, "plan": 5,
+            "harness": 5, "plan": 5, "operator": 5,
             "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
 URGENT = 8
 
 
-QUIET_KINDS = ("camera", "board", "harness", "research_start", "chat")
+QUIET_KINDS = ("camera", "board", "harness", "operator", "research_start", "chat")
 
 
 def digest(s):
@@ -312,6 +312,9 @@ class Differ:
             if key in self.chat_keys:
                 continue
             self.chat_keys.add(key)
+            # an agent's request to the operator (fh operator; model.py's ticker entry): the hosts may mention it
+            if not first and m.get("operator") and now - float(m.get("t") or now) < 120:
+                ev.append({"kind": "operator", "agent": m.get("agent"), "text": m.get("body") or ""})
             if not first and m.get("agent") and not m.get("tell") and now - float(m.get("t") or now) < 30:
                 asked = self.answers_viewer(m.get("text", ""), now)
                 if asked:  # HOSTS4 item 3: viewer lines reach the agents (shake11 on); an answer is its own beat
@@ -770,6 +773,9 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["agent_answer"] = spoken(voices.speakable(e.get("text") or "", 220))
         f["how_to_call_it"] = ("an agent just answered a viewer: Rook says who asked what, Vale says what the agent "
                                "answered, in the hosts' words, and enjoys that the agents talk to the audience")
+    if e["kind"] == "operator":  # task-operator: an agent asked the people running the show for something
+        f["how_to_call_it"] = ("an agent just sent the operator (the people running the harness and the stream) a "
+                               "request: say who asked for what, briefly; nobody has answered it yet")
     if e["kind"] == "chat" and e.get("react"):  # task-talk-hosts: the hosts answer the agent who just spoke on air
         f["how_to_call_it"] = ("viewers just heard this agent say it in their own voice: react to it (what it means "
                                "for the team, or how it sounds), briefly, without repeating it word for word")
@@ -1408,6 +1414,8 @@ class TemplateWriter:
                    "color": ["Good question from {viewer_message_from}. {analyst_answer}"]},
         "harness": {"pbp": ["Tool request on the board: {title}. Status: {change}."],
                     "color": ["When the agents ask for better tools, that's the meta-game."]},
+        "operator": {"pbp": ["{agent_name} has a request for the operator: {text}."],
+                     "color": ["The agents can ask the people running the show for things. We'll see if it lands."]},
         "camera": {"pbp": ["Let's check in on {cam_name}, {cam_doing}.", "Over to {cam_name} now: {cam_doing}.",
                            "Here's {cam_name}, {cam_at}.", "Cameras find {cam_name}. Let's watch.",
                            "{cam_name}, {cam_model} under the hood, {cam_doing}.",
@@ -2219,7 +2227,7 @@ class Caster:
         if e["kind"] in ("chat", "camera", "board") and self.rng.random() < self.a.naturalist:
             e["naturalist"] = True
         first = "pbp" if e["prio"] >= PRIORITY["research"] or e["kind"] in (
-            "camera", "board", "harness", "research_start", "viewer", "viewer_reply") else "color"
+            "camera", "board", "harness", "operator", "research_start", "viewer", "viewer_reply") else "color"
         if e["kind"] == "lull" or e.get("naturalist"):
             first = "color" if self.last_speaker == "pbp" or e.get("naturalist") else "pbp"
         lo, hi = self.a.lines

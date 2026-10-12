@@ -17,7 +17,7 @@ import pog  # noqa: E402  (tools/pog.py: Rcon client, ports, SCORE_LUA)
 # `platforms` (Space Age) is a read in the runtime; the overlay sends it only once the score lists a platform.
 READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events", "platforms"}
 # Operator reads (eng/board audience.lua): every agent's `confess` lines, for viewers only. Gated on `describe`.
-OPERATOR_READS = {"confessions", "tells"}
+OPERATOR_READS = {"confessions", "tells", "operator_requests"}
 
 # Extra operator reads for the overlay (same privilege level as `pog.py score`): research progress, the costliest
 # finished technologies (to seed "recent milestones" on start), machines starved of power, and how dark it is

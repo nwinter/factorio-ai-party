@@ -254,6 +254,7 @@ class Model:
             self.agents[name] = Agent(name, cfg)
         self.chat = deque(maxlen=200)  # chat_window() picks each lane's latest from here
         self.chat_seen = set()
+        self.operator_requests = deque(maxlen=5)  # the last few agents' requests to the operator, for the snapshot
         self.alerts = deque(maxlen=30)
         self.alert_keys = {}
         self.tick = 0
@@ -307,6 +308,8 @@ class Model:
             self._ingest_confession(c, now)
         for t in obs.get("tells") or []:
             self._ingest_tell(t, now)
+        for r in obs.get("operator_requests") or []:
+            self._ingest_operator_request(r, now)
         if obs.get("research"):
             self._ingest_research(obs["research"], now)
         if obs.get("produced") is not None:
@@ -515,6 +518,24 @@ class Model:
                  "text": f"\u2192 {shown}: {t.get('text', '')}", "t": t.get("t", now), "tell": True, "lane": "tell",
                  "to_shown": shown, "to": names, "body": t.get("text", "")}
         self.chat.append(entry)
+        if sender:
+            self.agents[sender].bump(1, now)
+
+    def _ingest_operator_request(self, r, now):
+        """An agent's request to the operator (tells.lua `operator`; live.py's rows {t, seq, agent, text}): shown on
+        the ticker like a tell ("Astra → operator: ..."), kept among the snapshot's last few. Never voiced."""
+        key = ("operator", r.get("seq"))
+        if key in self.chat_seen:
+            return
+        self.chat_seen.add(key)
+        sender = self._match_sender(r.get("agent", ""))
+        text = r.get("text", "")
+        entry = {"seq": f"o{r.get('seq')}", "tick": r.get("tick"), "from": r.get("agent"), "agent": sender,
+                 "text": f"→ operator: {text}", "t": r.get("t", now), "tell": True, "operator": True, "lane": "tell",
+                 "to_shown": "operator", "to": ["operator"], "body": text}
+        self.chat.append(entry)
+        self.operator_requests.append({"seq": r.get("seq"), "t": entry["t"], "agent": sender or r.get("agent"),
+                                       "display_name": self.agents[sender].display_name if sender else None, "text": text})
         if sender:
             self.agents[sender].bump(1, now)
 
@@ -971,6 +992,7 @@ class Model:
             "shift": self.run.get("shift"),
             "agents": agents,
             "chat": self.chat_window(),
+            "operator_requests": list(self.operator_requests),
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
             "unused_unlocks": self.unused_unlocks(now),
