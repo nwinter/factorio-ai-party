@@ -239,7 +239,8 @@ if [ "${POG_CASTER:-1}" != 0 ]; then
   helpers+=("caster:$!:$rundir/caster.log")
 fi
 # The companion site's live page (site/push_live.py; token in site/worker/.secrets.json, gitignored).
-if [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; then
+# POG_PUSH_LIVE=0: not pushed (test runs, which must not show on the public site).
+if [ "${POG_PUSH_LIVE:-1}" != 0 ] && { [ -f site/worker/.secrets.json ] || [ -n "${POG_LIVE_TOKEN:-}" ]; }; then
   nohup python3 site/push_live.py --source http://127.0.0.1:8788/state.json >"$rundir/push-live.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("push-live:$!:$rundir/push-live.log")
