@@ -442,6 +442,8 @@ def main():
                 snap.update(source_info)
                 snap["static_version"] = page_version
                 snap["viewers"], snap["viewers_status"] = feed.lane() if feed else ([], None)
+                if feed:  # viewers may not pose as an agent under the name it chose either
+                    feed.filt.set_agents(names + [n for ag in snap["agents"] for n in (ag["name"], ag.get("display_name"))])
                 if feed and feed.relay:  # viewers' questions go to agents in team order, by their chosen names too
                     feed.relay.set_roster([(ag["name"], ag.get("display_name")) for ag in snap["agents"]
                                            if ag.get("activity") != "offline"] or roster)
