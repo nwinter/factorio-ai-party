@@ -76,6 +76,15 @@ The engine APIs used here could not be run on the Mac:
 - Trains: `backer_name`, `trains_limit`, `train.schedule` (or `get_schedule()`), `manual_mode`.
 - Rails: `LuaItemPrototype.rails` and `create_entity{name=curved-rail-a, direction=1}`.
 
+Checked against the 2.0 API docs (lua-api.factorio.com, 2026-10-11):
+- `LuaTrain.schedule` is read/write (a simplified schedule), `manual_mode` too.
+- `LuaItemPrototype.rails` exists for rail planners only, and the code reads it under pcall.
+- `circuit_enable_disable`, `circuit_condition`, `connect_to_logistic_network` and `logistic_condition` (the generic
+  on/off behaviour) and `circuit_read_hand_contents` (inserters) are read/write.
+- The constant combinator has `enabled`, `sections_count`, `get_section` and `add_section`; its section filters use
+  the same shape as the logistic requests, which already work live.
+- The decider's parameters are `conditions`/`outputs`; the field names inside them are not confirmed.
+
 A live check on world `live`:
 1. Wire an inserter to a chest with `wire color=red`.
 2. Set `circuit enable={signal: iron-plate, comparator: "<", value: 10}` and watch the inserter stop at 10.
