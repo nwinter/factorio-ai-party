@@ -9,6 +9,15 @@ chosen, and whether anyone changes the team's approach. A second engineer audits
 shake9 never launched its agents and has no data; shake11 had not started. Times are PDT; game minutes are
 tick/3600 from shake4's start. Data only, read-only on the game.
 
+**Correction (written during shake11, 23:45).** This study read shake10 while it was still running: its numbers stop
+at 22:07 (game minute 768), and shake10 ran to 22:49 (808). In those last 42 minutes the team researched flamethrower
+(22:25), research-speed-4, military-3 and circuit-network (22:47), and Astra built two flamethrower turrets on the
+south wall with an oil feed. The trigger was a research stall: utility packs ran out and damage-6 stalled every lab
+("No utility packs, so damage-6 stalled every lab. I put research-speed-4 and military-3 (no yellow needed) ahead",
+Opus, 22:18), and Astra proposed the cheap, unresearched flamethrower to save iron ammo (22:17). So "flamethrower
+never researched" and "circuit network never researched" below hold to shake10's 22:07, not to its end; shake11
+continues with accumulators, the logistic system and roboports (docs/studies/shake11.md).
+
 ## P1
 
 1. **Loss incidents quarantine the runtime in a long world (fixed on branch fix/loss-incidents, 8f7f1c2).** shake10
