@@ -451,4 +451,26 @@ eq(#storage.agent_harness.losses,64)
 for _,i in ipairs(storage.agent_harness.losses) do assert(i.key~='99,99','the incident without last went first') end
 assert(has(astra('status').team.alerts,'losses in (1,-3000) 1 destroyed: 1 stone-furnace'))
 eq(storage.agent_harness.runtime_fault,nil)
+
+-- Friendly fire (shake11-12: our flamethrower turrets burnt gun turrets, radars, belts and their own oil lines): a
+-- cause of our own force is named apart from the enemy causes; with no cause left, the killing force tells.
+local flamer={valid=true,name='flamethrower-turret',force=force}
+local enemy_biter={valid=true,name='medium-biter',force={name='enemy'}}
+local function died(name,x,y,cause,killer)
+  runtime.on_event{name=11,tick=tick,entity={valid=true,name=name,position={x=x,y=y},force=force},cause=cause,force=killer}
+end
+died('gun-turret',5000,5000,flamer,force); died('radar',5001,5001,flamer,force); died('pipe',5002,5000,nil,force)
+jump(60)
+local line=has(astra('status').team.alerts,'(5000,5000)')
+eq(line,'losses in (5000,5000)-(5002,5001) 3 destroyed: 1 gun-turret, 1 pipe, 1 radar by friendly fire: 2 flamethrower-turret, 1 unknown source, 1s ago')
+died('transport-belt',6000,6000,enemy_biter,{name='enemy'}); died('transport-belt',6001,6000,flamer,force)
+died('stone-wall',6002,6000,enemy_biter,{name='enemy'})
+jump(60)
+line=has(astra('status').team.alerts,'(6000,6000)')
+eq(line,'losses in (6000,6000)-(6002,6000) 3 destroyed: 2 transport-belt, 1 stone-wall by 2 medium-biter, friendly fire: 1 flamethrower-turret, 1s ago')
+-- status alerts carry the same lines; enemy-only lines read as before.
+assert(has(astra('status').alerts.latest,'by 2 medium-biter, friendly fire: 1 flamethrower-turret'))
+died('stone-wall',7000,7000,enemy_biter,{name='enemy'})
+jump(60)
+eq(has(astra('status').team.alerts,'(7000,7000)'),'losses in (7000,7000) 1 destroyed: 1 stone-wall by 1 medium-biter, 1s ago')
 print('board: ok')

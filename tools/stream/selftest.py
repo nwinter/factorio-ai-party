@@ -300,6 +300,14 @@ def main():
         "in (300,5) 1 destroyed: 1 inserter, 4m20s ago"]})
     assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by small biters)", losses
     assert losses[0]["position"] == {"x": 16.0, "y": -35.5, "extent": 16.0, "surface": "nauvis"}, losses  # the rectangle
+    # our own entities among the causes (describe_incident's "friendly fire: ..."): named as such, after any enemy
+    losses = LiveSource.loss_events({"latest": [
+        "in (5000,5000)-(5002,5001) 3 destroyed: 1 gun-turret, 1 pipe, 1 radar by friendly fire: 2 flamethrower-turret, 1 unknown source, 1s ago",
+        "in (6000,6000) 3 destroyed: 2 transport-belt, 1 stone-wall by 2 medium-biter, friendly fire: 1 flamethrower-turret, 1s ago",
+        "in (7000,7000) 1 destroyed: 1 pipe by friendly fire: 1 unknown source, 1s ago"]})
+    assert [l["text"] for l in losses] == ["3 lost near (5000, 5000): 1 gun turret, 1 pipe (by friendly fire from flamethrower turrets)",
+                                           "3 lost near (6000, 6000): 2 transport belt, 1 stone wall (by medium biters)",
+                                           "1 lost near (7000, 7000): 1 pipe (by friendly fire)"], losses
     # hit counts ("x3") and kill counts never reach the banner or the replay title (shake3: read on air as enemies)
     hits = LiveSource.attack_events({"attacked": [
         {"chunk_centre": {"x": -48, "y": 16}, "damage": 40, "last_tick": 100, "entities": "character x3"},
