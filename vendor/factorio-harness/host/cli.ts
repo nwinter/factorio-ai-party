@@ -47,6 +47,9 @@ const help = `fh — Factorio agent CLI
   fh queue status|edit|cancel|resume          Inspect/revise pending work; cancel controls immediately
   fh board [--args '{"mine":true}']          Team board (tasks, requests, claims, notes), newest first
   fh board post|update|events|request --args JSON   board_post, board_update, board_events, harness_request
+  fh board plan [goals "text"|doing "text"|for NAME "text"]
+                                            The team plan: goals and one line per agent ("" or - for stdin as for say)
+  fh research [done]                        Research queue in full (progress, who queued, time to finish); done: what finished lately
   fh plan save NAME --file plan.json         Save a queue plan by name (yours, up to 50); plan run NAME submits it
   fh plan run|show|delete NAME, fh plan list Run (--args '{"mode":"replace"}'), inspect or delete saved plans
   fh say "text" [--aloud]                   Post in chat; or --text-file F, or stdin (fh say - <<'EOF' ... EOF)
@@ -256,10 +259,35 @@ async function main() {
     positionals[1] = `queue_${operation}`;
     command = 'call';
   }
+  // fh board plan [goals TEXT|doing TEXT|for NAME TEXT]: the team plan (board_plan); TEXT - reads stdin, "" clears.
+  if (command === 'board' && positionals[1] === 'plan') {
+    const args = object(JSON.parse(values.args ?? '{}'),'args');
+    const part = positionals[2];
+    if (part !== undefined) {
+      if (!['goals','doing','for'].includes(part)) throw new Error('board plan takes goals "text", doing "text" or for NAME "text"');
+      if (part === 'for') {
+        if (!positionals[3]) throw new Error('board plan for needs a NAME: fh board plan for luna "text"');
+        args.agent = positionals[3];
+      }
+      const words = positionals.slice(part === 'for' ? 4 : 3);
+      const text = words.length === 1 && words[0] === '-' ? (await readStdin()).trim() : words.join(' ');
+      args[part === 'goals' ? 'goals' : 'doing'] = text;
+    }
+    values.args = JSON.stringify(args);
+    positionals.splice(0, positionals.length, 'call', 'board_plan');
+    command = 'call';
+  }
+  // fh research [done]: the queue in full, or what finished lately.
+  if (command === 'research') {
+    const operation = positionals[1];
+    if (operation !== undefined && operation !== 'done') throw new Error('research takes nothing or done; queue technologies with fh call research --args JSON');
+    positionals.splice(0, positionals.length, 'call', operation === 'done' ? 'research_done' : 'research');
+    command = 'call';
+  }
   if (command === 'board') {
     const operation = positionals[1] ?? 'list';
     const actions: Record<string, string> = {list:'board', post:'board_post', update:'board_update', events:'board_events', request:'harness_request'};
-    if (!actions[operation]) throw new Error('board expects list, post, update, events, or request');
+    if (!actions[operation]) throw new Error('board expects list, post, update, events, request, or plan');
     positionals[1] = actions[operation]!;
     command = 'call';
   }
