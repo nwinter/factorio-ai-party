@@ -813,7 +813,7 @@
   function renderSegment(s) {
     const box = $("segment");
     const seg = s.segment;
-    const show = !!seg && seg.state !== "ended";
+    const show = window.pogSeg ? window.pogSeg.cardVisible(seg) : !!seg && seg.state !== "ended"; // static/segview.js
     // a full panel shares the camera with at most the newest alert banner (overlay.css body.seg-full)
     document.body.classList.toggle("seg-full", show && isFull(seg));
     if (!show) {
