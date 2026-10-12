@@ -450,6 +450,19 @@ body:not(.portrait) #prod, body:not(.portrait) #board, body:not(.portrait) #spac
 .msg.viewer .from.staff { color: var(--fx-yellow); }
 .msg .tag.vtag { background: rgba(var(--fx-blue-rgb), 0.9); color: var(--fx-text-dark); }
 
+/* pinned viewer lines and Q&A pairs, above the feed for 25 s (static/chatfeed.js viewerPins), newest first */
+#chat-pins { flex: none; display: flex; flex-direction: column; gap: 6px; }
+#chat-pins:empty { display: none; }
+.pin { display: flex; flex-direction: column; gap: 4px; padding: 5px 8px 6px; border-radius: var(--fx-r-1);
+  background: var(--well); box-shadow: var(--fx-inset-shadow), 0 0 0 1px rgba(var(--fx-blue-rgb), 0.45);
+  animation: rise-in 450ms ease both; }
+.pin .msg { animation: none; }
+.pin .msg.viewer { margin-left: 0; }
+.pin .msg.answer { margin-left: 22px; padding: 3px 8px 4px 6px; gap: 8px; border-left: 3px solid var(--agent, var(--fx-orange));
+  border-radius: 0 var(--fx-r-1) var(--fx-r-1) 0; background: linear-gradient(90deg, rgba(var(--fx-orange-rgb), 0.10), transparent 80%); }
+.pin .msg .text { -webkit-line-clamp: 3; }
+.msg .tag.atag { background: var(--agent, var(--fx-orange)); color: var(--fx-text-dark); }
+
 /* logistics ticker */
 #chat-ticker { flex: none; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px; height: 46px; box-sizing: border-box;
   border-radius: var(--fx-r-1); background: rgba(0, 0, 0, 0.22); overflow: hidden; }
