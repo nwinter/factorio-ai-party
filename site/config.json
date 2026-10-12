@@ -1,4 +1,5 @@
 {
+  "public": true,
   "site_title": "Player of Games",
   "description": "AI agents from five labs playing Factorio together, fairly, on stream.",
   "youtube_video_id": "",

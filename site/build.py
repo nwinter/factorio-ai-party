@@ -31,6 +31,8 @@ import longrun  # noqa: E402  (site/longrun.py: the long run's shifts from runs/
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
+PUBLIC = bool(CONFIG.get("public"))
+ROBOTS_META = "" if PUBLIC else '<meta name="robots" content="noindex, nofollow">\n'
 AGENTS = CONTENT["agents"]
 
 
@@ -469,8 +471,7 @@ def page(title, body, active="/", description="", extra_head=""):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow">
-<title>{esc(full)}</title>
+{ROBOTS_META}<title>{esc(full)}</title>
 <meta name="description" content="{esc(description or CONFIG.get('description', ''))}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -1210,9 +1211,10 @@ def main():
         if archive() or not AGENTS[key].get("earlier"):  # agents of the earlier runs only with the archive
             write(f"static/avatars/{key}.svg", avatar_art.svg(profile_row(key), 96, title=agent(key)["name"]))
     write("favicon.svg", FAVICON)
-    write("robots.txt", "User-agent: *\nDisallow: /\n")
-    # Cloudflare Pages: keep everything out of search engines while unlisted; no caching of live status
-    write("_headers", "/*\n  X-Robots-Tag: noindex, nofollow\n  Referrer-Policy: strict-origin-when-cross-origin\n"
+    # config.json "public": indexable (Nick, 2026-10-12, the public run); false keeps every page out of search engines
+    write("robots.txt", "User-agent: *\nAllow: /\n" if PUBLIC else "User-agent: *\nDisallow: /\n")
+    write("_headers", "/*\n" + ("" if PUBLIC else "  X-Robots-Tag: noindex, nofollow\n")
+                      + "  Referrer-Policy: strict-origin-when-cross-origin\n"
                       "  X-Content-Type-Options: nosniff\n/live/status.json\n  Cache-Control: no-store\n")
 
     # final privacy check over everything written

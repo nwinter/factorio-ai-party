@@ -9,6 +9,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 DIST = Path(sys.argv[1] if len(sys.argv) > 1 else Path(__file__).resolve().parent / "dist")
+# config.json "public": the site is indexable, so no page may say noindex (and robots.txt allows crawling)
+PUBLIC = bool(__import__("json").loads((Path(__file__).resolve().parent / "config.json").read_text()).get("public"))
 VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr", "path",
         "line", "circle", "rect"}
 
@@ -62,8 +64,8 @@ for f in sorted(DIST.rglob("*.html")):
     pg.feed(f.read_text())
     pages[f] = pg
     rel = f.relative_to(DIST)
-    if not pg.noindex:
-        problems.append(f"{rel}: missing robots noindex")
+    if pg.noindex == PUBLIC:
+        problems.append(f"{rel}: " + ("robots noindex on a public site" if PUBLIC else "missing robots noindex"))
     for e in pg.errors[:5]:
         problems.append(f"{rel}: {e}")
     if pg.stack:
@@ -85,8 +87,11 @@ for f, pg in pages.items():
             if frag and frag not in pages[target].ids:
                 problems.append(f"{f.relative_to(DIST)}: broken anchor {href}")
 robots = (DIST / "robots.txt").read_text() if (DIST / "robots.txt").exists() else ""
-if "Disallow: /" not in robots:
-    problems.append("robots.txt does not disallow everything")
+if ("Disallow: /" in robots) == PUBLIC:
+    problems.append("robots.txt disallows everything on a public site" if PUBLIC else "robots.txt does not disallow everything")
+headers = (DIST / "_headers").read_text() if (DIST / "_headers").exists() else ""
+if ("noindex" in headers) == PUBLIC:
+    problems.append("_headers: X-Robots-Tag noindex on a public site" if PUBLIC else "_headers: no X-Robots-Tag noindex")
 print(f"{len(pages)} pages checked")
 for p in problems:
     print("  " + p)
