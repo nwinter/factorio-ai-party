@@ -82,10 +82,13 @@ def scene_input(c, scene, name, kind, settings):
 
 
 def stream_scene(c, url, scene="stream"):
-    """Director layout: 1 large + 2 small captures of factorio-cam1..3.exe under the browser-source overlay."""
+    """Director layout under the browser-source overlay. One camera on air (layout.json mode "onecam"): the three
+    captures of factorio-cam1..3.exe all sit in the left column, centre-cropped to its shape; the stream service
+    (tools/stream/cuts.py) brings the one on air to the front. Else (layout-3cam.json): 1 large + 2 small."""
     if scene not in [s["sceneName"] for s in c.get_scene_list().scenes]:
         c.create_scene(scene)
-    cams = json.load(open(LAYOUT))["cams"]
+    lay = json.load(open(LAYOUT))
+    cams, onecam = lay["cams"], lay.get("mode") == "onecam"
     order = []
     bg = scene_input(c, scene, "stream background", "color_source_v3", {"color": 0xFF181210, "width": 1920, "height": 1080})
     place(c, scene, bg, 0, 0, 1920, 1080)
@@ -95,8 +98,13 @@ def stream_scene(c, url, scene="stream"):
         item = scene_input(c, scene, f"stream cam{i}", "game_capture", {
             "capture_mode": "window", "window": f"Factorio 2.0.77:Factorio:{exe}", "priority": 2,
             "capture_cursor": False, "allow_transparency": False})
-        x, y, w, h = cams[slot]
+        x, y, w, h = cams["main" if onecam else slot]
         place(c, scene, item, x, y, w, h)
+        if onecam:
+            sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
+            from cuts import crop_for
+            src = c.get_scene_item_transform(scene, item).scene_item_transform
+            c.set_scene_item_transform(scene, item, crop_for(src.get("sourceWidth"), src.get("sourceHeight"), w, h))
         order.append(item)
     ov = scene_input(c, scene, "stream overlay", "browser_source", {
         "url": url, "width": 1920, "height": 1080, "fps": 30, "fps_custom": True, "css": "",

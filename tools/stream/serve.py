@@ -22,6 +22,7 @@ sys.dont_write_bytecode = True
 
 from analyst_board import AnalystBoard  # noqa: E402
 from director import Director  # noqa: E402
+from onecam import OneCam, onair_info  # noqa: E402
 from segments import Segments  # noqa: E402
 from replays import Replays  # noqa: E402
 from model import Model  # noqa: E402
@@ -297,6 +298,10 @@ def main():
                          "--world, off with --mock)")
     ap.add_argument("--no-night", dest="night", action="store_false")
     ap.add_argument("--obs", default="127.0.0.1:4455", help="obs-websocket host:port (the SSH tunnel to the box)")
+    ap.add_argument("--cams", choices=["onecam", "3cam"],
+                    help="onecam: one camera on air, the other clients on standby, cut in OBS (onecam.py, cuts.py); "
+                         "3cam: main + two side cameras (default: the run config's camera_mode, else onecam)")
+    ap.add_argument("--no-cuts", action="store_true", help="onecam: decide on-air cuts but never touch OBS")
     ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
     import viewers
     viewers.add_args(ap.add_argument_group("viewer chat (tools/stream/viewers.py; snapshot lane `viewers`)"),
@@ -325,7 +330,18 @@ def main():
 
     os.makedirs(a.log_dir, exist_ok=True)
     log_path = os.path.join(a.log_dir, time.strftime("director-%Y%m%d-%H%M%S.jsonl"))
-    director = Director(slots, camera, log_path, **(run.get("director") or {}))
+    mode = a.cams or run.get("camera_mode") or "onecam"
+    cuts = None
+    if mode == "onecam":
+        import cuts as cuts_mod
+        lay = json.load(open(cuts_mod.LAYOUT))
+        director = OneCam(slots, camera, log_path, **dict({"view_frac": cuts_mod.view_frac(lay)}, **(run.get("director") or {})))
+        if not a.mock and not a.no_cuts and run.get("cuts", True) is not False:
+            from obsws import OBS
+            host, _, port = a.obs.partition(":")
+            cuts = cuts_mod.Cuts(OBS(host, int(port or 4455)), lay)
+    else:
+        director = Director(slots, camera, log_path, **(run.get("director") or {}))
     segments = Segments(**(run.get("segments") or {}))
     replays = None
     if (a.replays if a.replays is not None else not a.mock) and run.get("replays", True) is not False:
@@ -382,6 +398,12 @@ def main():
                     night.set_darkness(snap.get("darkness"))
                     snap["night"] = night.public()
                 snap["cameras"] = cams
+                if mode == "onecam":
+                    snap["onair"] = onair_info(snap, cams)  # who viewers watch: the label, the hosts' beats
+                    snap["program"] = director.program()
+                    if cuts:
+                        cuts.set(snap["program"])
+                        snap["cuts"] = cuts.public()
                 for ag in snap["agents"]:
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
                 snap.update(source_info)

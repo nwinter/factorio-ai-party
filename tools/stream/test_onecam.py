@@ -162,7 +162,20 @@ def onair_label():
     assert onair_info(s, {"main": {"agents": [], "attack": "Base under attack"}})["agent"] is None
 
 
+def hosts():
+    """The hosts' regular beats get the agent on air first (caster.facts_for: on_air, busy_agents order)."""
+    import caster
+    team = [dict(agent("luna", 0, 0), action="build_blueprint at (3, 4)"), dict(agent("sol", 9, 9), action="mine coal")]
+    s = {"agents": team, "onair": {"agent": "sol", "display_name": "Sol", "doing": "fixing the north wall"}}
+    f = caster.facts_for({"kind": "lull", "angle": "explain", "t": 0}, s)
+    assert f["on_air"]["name"] == "Sol" and f["on_air"]["shown_as"] == "fixing the north wall", f.get("on_air")
+    assert [b["name"] for b in f["busy_agents"]][:1] == ["Sol"], f["busy_agents"]
+    assert "on_air" not in caster.facts_for({"kind": "lull", "angle": "explain", "t": 0}, dict(s, onair=None))
+    assert "on_air" not in caster.facts_for({"kind": "attack", "text": "Base under attack", "t": 0}, s)
+
+
 def main():
+    hosts()
     dwell_and_standby()
     quiet_hour()
     urgent()

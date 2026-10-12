@@ -18,7 +18,8 @@
 
   const style = document.createElement("style");
   style.textContent = `
-    #voice { position: absolute; left: 24px; width: 1208px; top: 704px; transform: translateY(calc(-100% - 18px));
+    #voice { position: absolute; left: 24px; width: 1208px;
+             top: calc(var(--main-bottom, 704px) - var(--bar-h, 0px) - var(--toasts-clear, 0px)); transform: translateY(calc(-100% - 18px));
              display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
     #voice .cap { max-width: 1000px; padding: 7px 18px 8px 7px; border-radius: 0 3px 3px 0; display: flex; gap: 12px;
                   align-items: center; background: rgba(49, 48, 49, 0.93); border-left: 4px solid var(--edge, #ff9f1c);

@@ -823,9 +823,19 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["not_built_yet"] = s["unused_unlocks"][:2]
         f["not_built_yet_note"] = ("researched but none built yet: worth a remark for viewers on what the team could "
                                    "use, at most once, as commentary (the agents do not hear the hosts)")
+    onair = (s.get("onair") or {}).get("agent")
+    if onair and e["kind"] in ("lull", "camera", "chat", "board", "plan", "research_start"):
+        # one camera on air (onecam.py): the regular beats lean on the agent viewers are watching
+        f["on_air"] = dict(agent_facts(s, onair) or {"name": onair},
+                           note="the one camera on air follows this agent: viewers are watching it now; prefer it "
+                                "when the beat has room for an agent")
+        if (s.get("onair") or {}).get("doing"):
+            f["on_air"]["shown_as"] = s["onair"]["doing"]
     if e["kind"] == "lull":
         angle = e.get("angle")
         busy = [agent_facts(s, a["name"]) for a in s.get("agents") or [] if a.get("activity") == "acting"]
+        shown = (s.get("onair") or {}).get("display_name") or onair
+        busy.sort(key=lambda b: (b or {}).get("name") != shown)  # the agent on air first (facts use display names)
         f["busy_agents"] = [b for b in busy if b and (b.get("doing") or b.get("working_on"))][:3]
         f["angle"] = {"pace": "how this run compares with the previous one, and what that says about the bots",
                       "explain": "explain for viewers who just arrived what is going on and what comes next",
@@ -1965,7 +1975,11 @@ class Caster:
         if angle in ("naturalist", "spotlight"):
             agents = [a["name"] for a in s.get("agents") or []]
             main = ((s.get("cameras") or {}).get("main") or {}).get("agents") or []
-            e["agents"] = list(main) if main and self.rng.random() < 0.6 else self.rng.sample(agents, min(2, len(agents)))
+            onair = (s.get("onair") or {}).get("agent")
+            if onair:  # one camera on air (onecam.py): voice and picture agree, mostly
+                e["agents"] = [onair] if self.rng.random() < 0.85 else self.rng.sample(agents, min(2, len(agents)))
+            else:
+                e["agents"] = list(main) if main and self.rng.random() < 0.6 else self.rng.sample(agents, min(2, len(agents)))
         return e
 
     def mark_changes(self, facts):

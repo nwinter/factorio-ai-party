@@ -6,7 +6,11 @@
 
   const PANEL = [49, 48, 49]; // --fx-frame (factorio-ui.css)
   const DEEP = [36, 35, 36];
-  const SLOT_LABEL = { main: "Main", cam2: "Cam 2", cam3: "Cam 3" };
+  const SLOT_LABEL = { main: "Main", cam2: "Cam 2", cam3: "Cam 3", inset: "Inset" };
+  // One camera on air (layout.json mode "onecam", tools/stream/onecam.py): a bar along the on-air view's bottom edge
+  // holds who it follows; toasts (at most TOAST_MAX, identical lines merged, TOAST_S seconds) sit just above it.
+  const BAR_H = 44, TOAST_MAX = 2, TOAST_S = 12;
+  let onecam = false;
   const ITEM = {
     "iron-plate": ["Iron plate", "#9fb3c8"], "copper-plate": ["Copper plate", "#e0895a"],
     "steel-plate": ["Steel", "#c7ccd6"], "electronic-circuit": ["Green circuit", "#5fd068"],
@@ -148,16 +152,32 @@
   // ---------- layout ----------
   let layout = null;
   // portrait.html sets data-layout="layout-portrait" for the 9:16 canvas
-  fetch("/static/" + (document.body.dataset.layout || "layout") + ".json").then((r) => r.json()).then((l) => {
+  // ?layout=layout-3cam brings back the three-camera layout (main and two side cameras)
+  fetch("/static/" + (params.get("layout") || document.body.dataset.layout || "layout") + ".json").then((r) => r.json()).then((l) => {
     layout = l;
+    onecam = l.mode === "onecam";
+    document.body.classList.toggle("onecam", onecam);
+    if (onecam) SLOT_LABEL.main = "On air";
+    for (const c of document.querySelectorAll(".cam")) if (!l.cams[c.dataset.slot]) c.remove();
     for (const [slot, [x, y, w, h]] of Object.entries(l.cams)) {
       const c = $("cam-" + slot);
       if (!c) continue;
       Object.assign(c.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px" });
     }
     const m = l.cams.main;
-    if (m) Object.assign($("alerts").style, { left: m[0] + "px", width: m[2] + "px", top: m[1] + 64 + "px" });
-    if (m) Object.assign($("segment").style, { left: m[0] + "px", top: m[1] + "px", width: m[2] + "px", height: m[3] + "px" });
+    const [cw, ch] = l.canvas || [1920, 1080];
+    if (m) {
+      const st = document.body.style;
+      st.setProperty("--main-bottom", m[1] + m[3] + "px");
+      st.setProperty("--bar-h", (onecam ? BAR_H : 0) + "px");
+      st.setProperty("--canvas-h", ch + "px");
+    }
+    if (m && onecam) {
+      $("cam-main").append(el("div", "cam-bar"));
+      Object.assign($("alerts").style, { right: cw - m[0] - m[2] + 14 + "px", bottom: ch - m[1] - m[3] + BAR_H + 10 + "px" });
+    } else if (m) Object.assign($("alerts").style, { left: m[0] + "px", width: m[2] + "px", top: m[1] + 64 + "px" });
+    if (m) Object.assign($("segment").style, { left: m[0] + "px", top: m[1] + "px", width: m[2] + "px",
+      height: m[3] - (onecam ? BAR_H : 0) + "px" });
   });
 
   // ---------- render ----------
@@ -654,10 +674,25 @@
     setText(box._unlocks, c.unlocks ? "Unlocks " + c.unlocks : ""); // may arrive a poll after the card
   }
 
+  // One camera: what the on-air label or the inset already says is not repeated; identical lines (a loss re-reported,
+  // two chunks of one attack) are one toast; the newest TOAST_MAX, each for TOAST_S seconds.
+  function toasts(s) {
+    const cams = s.cameras || {};
+    const shown = new Set([cams.main && cams.main.attack, cams.inset && cams.inset.attack].filter(Boolean));
+    const seen = new Map();
+    for (const a of [...(s.alerts || [])].sort((x, y) => y.t - x.t)) {
+      if (s.now && a.t && s.now - a.t > TOAST_S) continue;
+      if (shown.has(a.text) || (a.kind === "research" && s.research_news)) continue;
+      const key = a.kind + "|" + a.text;
+      if (!seen.has(key)) seen.set(key, a);
+    }
+    return [...seen.values()].slice(0, TOAST_MAX).reverse();
+  }
+
   function renderAlerts(s) {
     const box = $("alerts");
     const live = new Set();
-    for (const a of s.alerts || []) {
+    for (const a of onecam ? toasts(s) : s.alerts || []) {
       if (a.kind === "research" && s.research_news) continue; // the research card says it (renderResearchCard)
       live.add(a.id);
       if (alertNodes.has(a.id)) continue;
@@ -674,13 +709,14 @@
   }
 
   function renderCams(s) {
-    for (const slot of ["main", "cam2", "cam3"]) {
+    for (const slot of ["main", "inset", "cam2", "cam3"]) {
       const frame = $("cam-" + slot);
       if (!frame) continue;
       const label = frame.querySelector(".cam-label");
       const cam = (s.cameras || {})[slot];
+      if (slot === "inset") frame.classList.toggle("on", !!cam); // up only while the director has an inset
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
-      if (slot !== "main") renderFill(frame, s, !agents.length && !(cam && cam.attack));
+      if (slot !== "main" && slot !== "inset") renderFill(frame, s, !agents.length && !(cam && cam.attack));
       const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "");
       const death = !!(cam && cam.attack && cam.alert === "death");
       label.classList.toggle("attack", !!(cam && cam.attack) && !death);
@@ -700,6 +736,7 @@
       if (label.dataset.sig !== sig) {
         label.dataset.sig = sig;
         label.textContent = "";
+        if (onecam && slot === "main") label.append(el("span", "following", "Following"));
         label.append(...agents.flatMap((a, i) => {
           const who = el("span", "who");
           applyPalette(who, a);
@@ -713,8 +750,10 @@
       // a work shot (director work_target): the camera shows the agent's work, not its body: "Sol · building on
       // Solstice (from the ground)"
       const work = cam.work && (cam.work.startsWith(lead.display_name + " ") ? cam.work.slice(lead.display_name.length + 1) : cam.work);
+      const onair = s.onair && s.onair.agent === lead.name && s.onair.doing; // plan line, claim or action (onecam.py)
       const doing = cam.attack ? (cam.attack.startsWith(lead.display_name) ? "under attack" : "attack nearby")
         : work ? work
+        : slot === "main" && onair ? clean(onair)
         : agents.length > 1 ? "working together" : lead.activity === "acting" && lead.action ? humanItem(lead.action)
         : lead.activity === "thinking" ? "thinking" : "";
       setText(label._doing, doing ? "· " + doing : "");
@@ -991,6 +1030,10 @@
     alertsWatched = true;
     new ResizeObserver(() => {
       const r = a.getBoundingClientRect(), top = parseFloat(getComputedStyle(seg).top) || 0; // valid while hidden too
+      if (onecam) { // toasts sit above the bar: captions and lower cards rise above them
+        document.body.style.setProperty("--toasts-clear", a.children.length && r.height > 1 ? Math.ceil(r.height + 10) + "px" : "0px");
+        return;
+      }
       const clear = a.children.length && r.height > 1 ? Math.ceil(r.bottom - top + 14) : 0;
       document.body.style.setProperty("--alerts-clear", clear + "px");
     }).observe(a);
