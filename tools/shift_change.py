@@ -31,8 +31,9 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEYS = ["POG_BROKER", "POG_FULL_TOOLS", "POG_SPACE_AGE", "POG_YOUTUBE", "POG_CASTER_MODEL", "POG_CASTER_URGENT",
         "POG_CASTER", "POG_ANALYST", "POG_PLAYERS", "POG_VIEWER_RELAY", "POG_TEAM_FILE"]
-# A harness Lua error in a reply: "runtime.lua:123: attempt to ...", "runtime:8746 attempt to compare ...".
-LUA_ERROR = re.compile(r"\.lua:\d+:|runtime:\d+|attempt to (index|call|compare|perform|concatenate)")
+# A harness fault in a reply ("runtime:8746 attempt to compare number with nil"), not an agent's argument error: those
+# carry the same "runtime.lua:NNN:" position (radius out of range, unknown field, out of reach; shake12 had 20 in 7 min).
+LUA_ERROR = re.compile(r"attempt to (compare|index|call|perform arithmetic|concatenate)|bad argument|stack overflow")
 
 
 def read(path):

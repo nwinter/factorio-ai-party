@@ -32,5 +32,31 @@ def shift(minutes, next_spec="", now=None):
     return {"start": round(start), "end": round(end), "next": round(nxt), "next_exact": exact}
 
 
+def earlier_runs(run_dir):
+    """The earlier shifts of a resumed run's world, newest first, along runs/RUN/resumed-from (written by
+    tools/start-team.sh with POG_RESUME); [] for a first shift."""
+    root, chain = os.path.dirname(os.path.normpath(run_dir)), []
+    path = os.path.join(run_dir, "resumed-from")
+    while len(chain) < 50:
+        try:
+            run = open(path).read().strip()
+        except OSError:
+            break
+        if not run or run in chain:
+            break
+        chain.append(run)
+        path = os.path.join(root, run, "resumed-from")
+    return chain
+
+
+def shift_number(run_dir):
+    """This run's shift number in its world: 1 + the earlier shifts (the stream hosts' count, tools/stream/caster.py,
+    and the harness's shift block, tools/start-team.sh)."""
+    return len(earlier_runs(run_dir)) + 1
+
+
 if __name__ == "__main__":
-    print(json.dumps(shift(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else os.environ.get("POG_NEXT_SHIFT", ""))))
+    if sys.argv[1:2] == ["number"]:   # python3 tools/shift_times.py number RUN_DIR
+        print(shift_number(sys.argv[2]))
+    else:
+        print(json.dumps(shift(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else os.environ.get("POG_NEXT_SHIFT", ""))))
