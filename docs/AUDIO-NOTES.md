@@ -33,7 +33,20 @@ talks. Everything is mixed by OBS through the overlay's browser source.
   in three and a half hours", "Still 199 minutes to handover"): "ends in N minutes" and "N minutes to handover" are
   now checked as time left, not cut as a shift end. Opus's own timeout is 36 s (3 x `--writer-timeout`), and it did
   not time out in shake11.
-- Item 4 (urgent model) waits on Nick's bench run.
+- Urgent model (item 4). Nick's bench on shake10's 20 urgent beats (`copy_bench --kinds attack,death,loss`):
+
+  | writer | lines kept | latency median / p90 | words a line | opens on a number | per 1,000 exchanges |
+  |---|---|---|---|---|---|
+  | Kimi K2.6 | 36/44 | 3.1 / 5.9 s | 9.6 | 8/36 | $2.31 |
+  | Haiku 5.5 | 36/44 (one beat wrote nothing) | 4.8 / 6.3 s | 13.2 | 3/36 | $0.72 |
+  | Sonnet 5.5 | 40/44 | 2.3 / 6.6 s | 15.0 | 2/40 | $8.32 |
+
+  The bench's "per stream hour" assumes 300 exchanges an hour. Urgent beats are far fewer: shake10 had 93 urgent
+  exchanges in 203 minutes, about 27 an hour. At that rate urgent beats cost about $0.06 an hour on Kimi, $0.02 on
+  Haiku and $0.23 on Sonnet, beside about $1.55 an hour for Opus on the other beats. The 11 cuts across the three
+  writers were for 'we' (3), shift-end talk (2), absences (2), and one each for numbers, a metaphor, "X, not Y" and
+  a number not in the facts. Urgent beats stay on Kimi tonight; Nick decides in the morning.
+  `POG_CASTER_URGENT=or:anthropic/claude-sonnet-5.5` (or haiku) switches at a launch.
 
 ## Hosts, round 4 (HOSTS4.md, 2026-10-11 night)
 
