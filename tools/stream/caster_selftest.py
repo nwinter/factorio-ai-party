@@ -857,6 +857,28 @@ check("framings_used_lately does not make a name supported", caster.check_line(
       "name not in facts: Astra")
 check("the rules tell the writer to avoid them", "framings_used_lately" in caster.EXCHANGE_RULES)
 
+# HOSTS6 item 4: counts the hosts can stand on, planet capitals, research cards past the lull budget
+fc = _FactsWriter([])
+cc = _caster(fc)
+cc.started_t = time.time() - 600
+cc.tally = caster.deque([(time.time() - 900, "attack"), (time.time() - 300, "attack"), (time.time() - 200, "death"),
+                         (time.time() - 100, "death"), (time.time() - 50, "loss")])
+cc.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
+ct = fc.facts.get("counts", {})
+check("urgent beats carry deaths, loss reports and recent attacks", ct.get("deaths") == 2 and ct.get("loss_reports") == 1
+      and ct.get("attacks_last_10_minutes") == 1 and ct.get("since", "").startswith("the hosts came on at"), str(ct))
+check("planet names keep their capitals in technology labels", model.tech_label("planet-discovery-fulgora") ==
+      "Planet discovery Fulgora")
+asked = []
+cr = caster.Caster.__new__(caster.Caster)
+cr.a = caster.argparse.Namespace(dry_run=False, segment_every=180)
+cr.seg_req_t = time.time() - 30  # a lull card was asked for 30 s ago
+cr.segment_types = lambda: asked.append("catalog") or {}
+cr.request_segment([("production", {})], "lull")
+cr.request_segment([("research", {})], "research", news=True)
+check("a research card is asked for even right after a lull card (shake11: 1 card for 4 completions)",
+      asked == ["catalog"], str(asked))
+
 # HOSTS5 item 1: "previously on" from the last shift's logs
 with tempfile.TemporaryDirectory() as root5:
     runs5 = os.path.join(root5, "runs")

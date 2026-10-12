@@ -1622,6 +1622,7 @@ class Caster:
         self.seg_cat, self.seg_cat_t, self.seg_req_t, self.seg_next_ok = {}, 0.0, 0.0, 0.0
         self.prep = []  # recent write+TTS times, to start the next exchange before the current one ends
         self.deadline_t = (0.0, None)  # (read at, epoch): deadline.txt files appear as agents launch
+        self.started_t = time.time()  # "since the hosts came on" for the counts facts
         self.baseline = self.space_baseline = None
         from baseline import Baseline
         if a.baseline and os.path.exists(a.baseline):
@@ -1666,6 +1667,8 @@ class Caster:
         with self.lock:
             self.snap = s
             for e in self.differ.diff(s):
+                if e["kind"] in ("death", "loss", "attack"):  # counts for the hosts (they counted wrongly themselves)
+                    self.__dict__.setdefault("tally", deque(maxlen=2000)).append((time.time(), e["kind"]))
                 if e["kind"] == "chat":
                     self.chat_q.append(e)
                     if e["aloud"]:  # only what an agent says aloud feeds the hosts (HOSTS3 item 6: speak less)
@@ -1696,6 +1699,17 @@ class Caster:
         if time.time() - self.deadline_t[0] > 30:
             self.deadline_t = (time.time(), read_deadline(getattr(self.a, "deadline", None)))
         return self.deadline_t[1]
+
+    def counts(self, now=None):
+        """Deaths and loss reports since the hosts came on, attacks in the last 10 minutes. Shake11: "That brings the
+        shift total to one engineer lost" (00:38) and "That's two dead this shift" (00:40), counted by the writer."""
+        now = now or time.time()
+        tally = self.__dict__.get("tally") or ()
+        start = getattr(self, "started_t", None) or (tally[0][0] if tally else now)
+        return {"since": f"the hosts came on at {time.strftime('%H:%M', time.localtime(start))}",
+                "deaths": sum(1 for _, k in tally if k == "death"),
+                "loss_reports": sum(1 for _, k in tally if k == "loss"),
+                "attacks_last_10_minutes": sum(1 for t, k in tally if k == "attack" and now - t <= 600)}
 
     def remember_framings(self, lines, now=None):
         """Keep each aired line's framings for 30 minutes (HOSTS6 item 2: "Here's the replay" opened 10 to 12 replays a
@@ -1780,10 +1794,11 @@ class Caster:
                 self.seg_cat, self.seg_next_ok = {}, 0.0
         return self.seg_cat if time.time() >= self.seg_next_ok else {}
 
-    def request_segment(self, options, reason):
+    def request_segment(self, options, reason, news=False):
         """Ask the director for the first available segment of `options` [(type, params)]; at most one per
-        --segment-every (the director also allows one per 3 minutes whoever asks)."""
-        if self.a.dry_run or time.time() - self.seg_req_t < self.a.segment_every:
+        --segment-every (the director also allows one per 3 minutes whoever asks). `news` (a research completion)
+        skips the caster's own limit: shake11 showed 1 research card for 4 completions, the lull cards having used it."""
+        if self.a.dry_run or (not news and time.time() - self.seg_req_t < self.a.segment_every):
             return None
         cat = self.segment_types()
         kind, params = next(((k, p) for k, p in options if k in cat), (None, None))
@@ -1915,7 +1930,7 @@ class Caster:
         self.say_exchange(e, s, first, n)
         # attack replays: the director queues each saved clip itself (eng/stream2), so the hosts only talk over them
         if e["kind"] == "research":
-            self.request_segment([("research", {})], "research")
+            self.request_segment([("research", {})], "research", news=True)
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
@@ -1937,6 +1952,9 @@ class Caster:
             facts["card_on_screen"] = ("a card is on screen now, so talk about what it shows first, then this beat "
                                        "if there is room" + (f". The card: {card['how_to_call_it']}"
                                                              if card.get("how_to_call_it") else ""))
+        seg_kind = ((e.get("segment") or {}).get("type") if e["kind"] == "segment" else None)
+        if e["kind"] in ("death", "loss", "attack") or seg_kind == "attack_replay":
+            facts["counts"] = self.counts()
         used = self.used_framings()
         if used:  # HOSTS6 item 2: a memory of framings across the shift, not only the last few lines
             facts["framings_used_lately"] = used
