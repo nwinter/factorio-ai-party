@@ -1156,8 +1156,32 @@ local kited=call('status').last
 eq(kited.kind,'kite'); eq(kited.outcome,'clear'); eq(kited.kills,1); eq(kited.ammo_used,2); eq(p.shooting_state.state,0)
 foes={{valid=true,type='unit',name='small-biter',position={x=3,y=0},force=enemy_force}}
 call('kite',{}); p.character.health=90; advance(1)
-eq(call('status').last.outcome,'low_health')
+do
+local low=call('status').last
+eq(low.outcome,'low_health'); eq(low.why,'health 36% fell below min_health 40%'); eq(low.ammo_left,8); eq(low.enemies_left,1)
+-- Request #57: with a retreat point, low health walks there while still
+-- firing at the nearest unit, and ends retreated, saying why.
+p.character.health=250
+call('kite',{retreat={x=-20,y=0}}); p.character.health=90; advance(1)
+eq(call('status').active.kind,'kite')
+eq(p.walking_state.walking,true); eq(p.walking_state.direction,12) -- west, toward the retreat point
+eq(p.shooting_state.state,1); eq(p.shooting_state.position.x,3) -- still firing at the biter
+p.position={x=-18,y=0}; advance(1)
+local back=call('status').last
+eq(back.outcome,'retreated'); eq(back.retreated_from,'low_health'); eq(back.ammo_left,8)
+eq(back.why,'health 36% fell below min_health 40%; retreating to (-20,0)')
+p.position={x=0,y=0}; p.character.health=250
+-- move_to combat: the combat channel fires while walking and ends with the walk.
+local walk=call('move_to',{position={x=6,y=0},pathfind=false,combat=true})
+eq(walk.combat.auto,true); eq(walk.combat.radius,20); eq(walk.combat.ammo,8)
+eq(storage.agent_harness.combat[1].auto,true)
+p.position={x=6,y=0}; advance(2)
+eq(call('status').last.outcome,'arrived')
+eq(storage.agent_harness.combat[1],nil); eq(storage.agent_harness.last_combat[1].outcome,'move_ended')
+fails(function() call('move_to',{position={x=6,y=0},combat=40}) end,'combat radius')
+end
 magazines=0; fails(function() call('kite',{}) end,'no ammunition')
+fails(function() call('move_to',{position={x=1,y=0},combat=true}) end,'combat needs ammunition')
 -- Poles: a placed pole wires into every other network in reach; wire joins
 -- or splits two reachable poles; power summarises networks in an area.
 defines.wire_connector_id={pole_copper=5}; defines.entity_status={working=1,no_power=2,low_power=3}

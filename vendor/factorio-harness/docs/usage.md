@@ -65,6 +65,12 @@ fh call status
   uses a capsule on yourself (the heal). Capsules of other kinds (cliff explosives, remotes) are refused. Reply: `kind`
   (throw|self), `projectile`, `distance`, `range`, `cooldown_ticks`, `left`, `healed`. It is an instant action that
   stops what the character was doing, as `shoot` does.
+- `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
+  as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
+  ammunition in the ammo slots. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
+  to the retreat point, still firing at units in reach while ammunition lasts, and ends `retreated` there. Every kite
+  end says why in `last.why` (`health 36% fell below min_health 40%; retreating to (-20,0)`, `out of ammunition`, `no
+  enemies left within the scan radius`, `time up`), with `ammo_left`, `enemies_left` and `retreated_from`.
 - Output is compact tables meant for reading. Use `--format json` for programs.
 
 ### Output shape, chat and time left

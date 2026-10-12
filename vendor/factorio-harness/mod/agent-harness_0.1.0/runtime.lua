@@ -168,12 +168,18 @@ local function finish(index, outcome)
     -- Movement diagnostics, only when something went wrong on the way.
     last.replans=(action.replans or 0)>0 and action.replans or nil
     last.stalls=action.stalls; last.no_progress=action.no_progress; last.paths_failed=(action.paths_failed or 0)>0 and action.paths_failed or nil
+    -- move_to combat fires for the walk only: the combat channel ends next tick.
+    local combat=s.combat and s.combat[index]
+    if combat and combat.with_move then combat.until_tick=game.tick-1; combat.end_outcome='move_ended' end
   end
   if action and action.kind=='kite' then
     local last,p=s.last[index],body(M.lookup(index))
     last.kills=action.kills
+    -- Why combat stopped, stated plainly (request #57), with what was left.
+    last.why=action.why or (outcome=='timed_out' and 'time up' or outcome=='replaced' and 'replaced by another action' or nil)
+    last.enemies_left=action.seen; last.retreated_from=action.retreating
     if p and p.valid and p.character and p.character.valid then
-      last.ammo_used=kite.ammo_used(p,action)
+      last.ammo_used=kite.ammo_used(p,action); last.ammo_left=kite.ammo_count(p)
       p.shooting_state={state=defines.shooting.not_shooting,position=p.position}
     end
   end
@@ -487,7 +493,7 @@ function handlers.describe()
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
         reports='crafting (hand queue: items, seconds left, head entry); spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches, next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name and incidents per 64-tile area with causes, attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts'},
-      kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | timed_out; status reports kills, ammo_used'},
+      kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
       belt_route={from='{x,y} first belt tile, or an existing belt end to extend; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
         belt='transport belt entity (default transport-belt); undergrounds of the same tier hop obstacles',undergrounds='default true',lane='left|right: side-load onto this lane of the belt at to (it needs an input from behind)',
         to_direction='free to: last belt direction (default straight on)',dry_run='plan only, place nothing',details='list every entity',
@@ -504,7 +510,7 @@ function handlers.describe()
         tiles='optional {name, area={left_top,right_bottom}}: fill up to 4096 tile ghosts (landfill over water, foundation beside a platform); returns tiles_placed, tiles_existing (same ghost already there), tiles_refused (not placeable there)',
         platform='optional platform name: place on that space platform (its hub builds ghosts from hub items); positions are platform coordinates, hub at 0,0',['repeat']='optional {count 1..64, dx, dy}: stamp the list count times, each shifted by dx,dy; per-copy rows',returns='placed, failed [{index,error}], bounds (construct defaults to them), obstacles_marked (trees/rocks under the ghosts, marked for deconstruction like a player placement; construct mines them)'},
       construct={area='optional {left_top,right_bottom} <=256x256; default: ghosts from the last paste',ticks='1..216000 (default 36000)',note='builds every ghost in reach from inventory and hand-mines every entity marked for deconstruction (timed like mine; contents to inventory, stops with inventory_full), then walks to the free stand point (never on a footprint) covering the most remaining ghosts near the nearest one; blocked ghosts retry once after moving; trees/rocks under ghosts are marked and mined first; ghosts whose item is in the hand-crafting queue are awaited (status awaiting_craft), not missing; status reports built/mined/remaining/missing/failed; outcomes: constructed (everything done) | incomplete (ghosts left for missing items or failures; a plan step fails) | nothing_to_do (a success, completes at once) | inventory_full | timed_out'},
-      move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: engine pathfinder (a failed request retries from the nearest free tile centre with a slimmer box, then a wider goal); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',status='last reports replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity) | blocked | timed_out'},
+      move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: engine pathfinder (a failed request retries from the nearest free tile centre with a slimmer box, then a wider goal); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',combat='optional true or a radius 1..32 (default 20): fire at enemies in range while walking, as shoot auto does (needs ammunition), until the walk ends; status/last_combat report it (outcome move_ended, ammo_used)',status='last reports replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity) | blocked | timed_out'},
       pickup={ticks='1..600',note='takes items on the ground within your pickup distance (stand on or next to them; refused when none is in reach); outcomes picked_up | duration_elapsed | inventory_full | nothing_in_reach, last.picked {item: count}'},repair={position='{x,y}',ticks='1..600',item='repair-pack by default'},
       mine={position='{x,y}', ticks='1..600', name='optional', outcomes='target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       stock={item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
@@ -1422,9 +1428,21 @@ function handlers.move_to(p,a)
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local action={kind='move_to',position=target,tolerance=tolerance,
     until_tick=game.tick+ticks,last_position=p.position,stalled=0,replans=0,direct=a.pathfind==false}
+  -- combat: the combat channel fires at enemies in range for the walk (as
+  -- shoot auto), so a walk into an attacked area shoots back (request #57).
+  local combat
+  if a.combat~=nil and a.combat~=false then
+    local radius=a.combat==true and 20 or integer(a.combat,20,1,32,'combat radius')
+    local ammo=kite.ammo_count(p)
+    assert(ammo>0,'combat needs ammunition in the ammo slots: equip some (equip slot=ammo item=firearm-magazine)')
+    state().combat=state().combat or {}
+    combat_targets()[p.index]=nil
+    state().combat[p.index]={until_tick=game.tick+ticks,auto=true,radius=radius,ammo_start=ammo,with_move=true}
+    combat={auto=true,radius=radius,ammo=ammo}
+  end
   state().active[p.index]=action
   if not action.direct then request_path(p,action) end
-  return {until_tick=game.tick+ticks,position=target,pathfinding=not action.direct}
+  return {until_tick=game.tick+ticks,position=target,pathfinding=not action.direct,combat=combat}
 end
 -- Hand-mining time for the character, including force and character bonuses.
 local function hand_mining_ticks(p,e)
@@ -4058,7 +4076,7 @@ function M.tick_body(event)
   end
   for index,action in pairs(state().combat or {}) do
     local ok,p=pcall(player,index)
-    if not ok or event.tick>action.until_tick then stop_combat(index,ok and 'duration_elapsed' or 'player_unavailable')
+    if not ok or event.tick>action.until_tick then stop_combat(index,ok and (action.end_outcome or 'duration_elapsed') or 'player_unavailable')
     elseif action.ammo_start and kite.ammo_count(p)==0 then stop_combat(index,'out_of_ammo')
     else
       local target=action.position
