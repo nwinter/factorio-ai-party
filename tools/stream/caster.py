@@ -65,7 +65,8 @@ SPOKEN = (
     "nothing much is happening, talk about the plan on the board, the factory, a number that changed, or a viewer's "
     "question. Trust the facts. Never call a fact wrong. Say what an agent is trying to do (intent, working_on) and "
     "what changed (since_last_beat). An agent with nothing new is not worth a line. Every line needs a reason: news, "
-    "a cause, a number that moved. No line just to fill air, and no riffs on mottos or small notes.\n"
+    "a cause, a number that moved. No line just to fill air, and no riffs on mottos or small notes. Don't open by "
+    "grading the last line ('Good call.', 'Smart read.', 'Good timing.'). Just say the next thing.\n"
     "Written English sounds wrong out loud, so never use these. Dashes, semicolons, colons and ellipses. The 'X, not "
     "Y' or 'not X, but Y' turn. Lists of three. Metaphors and similes: furnaces and labs do not starve, bleed, choke, "
     "gasp, feast, sing, hum, dream or pray. Nature-documentary narration. The words humming, cooking, symphony, ballet, "
@@ -150,7 +151,8 @@ def planet_facts(s):
     return f
 
 
-PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "power": 6,
+PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "viewer_reply": 7,
+            "power": 6,
             "harness": 5,
             "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
@@ -175,7 +177,7 @@ def clip_rank(e):
     if e.get("prio", 0) >= URGENT or e.get("kind") == "space" or (
             e.get("kind") == "segment" and (e.get("segment") or {}).get("type") == "space_moment"):
         return "urgent"
-    return "viewer" if e.get("kind") == "viewer" else "banter"
+    return "viewer" if e.get("kind") in ("viewer", "viewer_reply") else "banter"
 TEXT_MODELS = {  # Workers AI, USD per million tokens in/out (pricing page, 2026-10-10)
     "@cf/meta/llama-3.3-70b-instruct-fp8-fast": (0.293, 2.253),
     "@cf/meta/llama-3.1-8b-instruct-fp8-fast": (0.045, 0.384),
@@ -244,12 +246,29 @@ class Differ:
     def __init__(self):
         self.prev = None
         self.alert_ids, self.chat_keys, self.board_seqs, self.segments_seen = set(), set(), set(), set()
+        self.recent_viewers = {}  # lower-case name -> {name, text, t}: viewers who wrote in the last 10 minutes
+
+    def answers_viewer(self, text, now, window=600):
+        """The viewer an agent's line answers: one who wrote in the last 10 minutes and whom the line names ("@Nick",
+        "NickWinter, ..."). Viewer names of 3 letters or fewer must be @-mentioned."""
+        low = (text or "").lower()
+        for key, v in list(self.recent_viewers.items()):
+            if now - v["t"] > window:
+                self.recent_viewers.pop(key, None)
+                continue
+            if re.search(r"@" + re.escape(key) + r"\b", low) or (
+                    len(key) > 3 and re.search(r"\b" + re.escape(key) + r"\b", low)):
+                return v
+        return None
 
     def diff(self, s):
         ev = []
         now = time.time()
         first = self.prev is None
         p = self.prev or {}
+        for v in viewer_messages(s):  # before the chat: an answer can arrive in the same snapshot as the question
+            if now - float(v["t"]) < 600 and v["name"].lower() not in ("a viewer",):
+                self.recent_viewers[v["name"].lower()] = {"name": v["name"], "text": v["text"], "t": float(v["t"])}
         for a in s.get("alerts") or []:
             if a["id"] in self.alert_ids:
                 continue
@@ -263,6 +282,10 @@ class Differ:
                 continue
             self.chat_keys.add(key)
             if not first and m.get("agent") and not m.get("tell") and now - float(m.get("t") or now) < 30:
+                asked = self.answers_viewer(m.get("text", ""), now)
+                if asked:  # HOSTS4 item 3: viewer lines reach the agents (shake11 on); an answer is its own beat
+                    ev.append({"kind": "viewer_reply", "agent": m["agent"], "viewer": asked["name"],
+                               "question": asked["text"], "text": m.get("text", "")})
                 ev.append({"kind": "chat", "agent": m["agent"], "text": m.get("text", ""), "aloud": bool(m.get("aloud")),
                            "seq": m.get("seq")})
         board = s.get("board") or {}
@@ -326,7 +349,12 @@ def viewer_messages(s):
         if not isinstance(r, dict):
             continue
         text = str(r.get("text") or r.get("message") or "").strip()
-        name = str(r.get("user") or r.get("name") or r.get("author") or "a viewer").strip()[:40]
+        relayed = re.match(r"^viewer ([^:]{1,40}):\s*(.+)$", text)  # the game chat's "viewer NAME: ..." (audience.lua)
+        if relayed:
+            text = relayed.group(2)
+        name = str(r.get("user") or r.get("name") or r.get("author") or
+                   (r.get("viewer") if isinstance(r.get("viewer"), str) else None) or
+                   (relayed.group(1) if relayed else None) or "a viewer").strip()[:40]
         if not text or re.search(r"https?://|www\.", text):
             continue
         out.append({"id": r.get("id") or r.get("seq") or (name, text), "name": name, "text": text[:200],
@@ -602,6 +630,11 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         if e.get("answer"):  # the analyst's answer, checked with its tools; the hosts put it in their own words
             f.update(e.get("answer_facts") or {}, analyst_answer=e["answer"])
             f["how_to_call_it"] = "Rook says the viewer's name and question; Vale answers it from analyst_answer"
+    if e["kind"] == "viewer_reply":  # HOSTS4 item 3: an agent answered a viewer in the game chat
+        f["viewer_message"] = {"from": e.get("viewer"), "text": e.get("question")}
+        f["agent_answer"] = spoken(voices.speakable(e.get("text") or "", 220))
+        f["how_to_call_it"] = ("an agent just answered a viewer: Rook says who asked what, Vale says what the agent "
+                               "answered, in the hosts' words, and enjoys that the agents talk to the audience")
     if e["kind"] == "segment":
         f.update(card_facts(e.get("segment") or {}))
     if e["kind"] == "research" and baseline and e.get("text"):
@@ -652,6 +685,12 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     prod = [p for p in s.get("production") or [] if p.get("rate")]
     if prod and e["kind"] in ("lull", "research", "power", "open"):
         f["production_per_minute"] = {p["item"].replace("-", " "): round(p["rate"]) for p in prod[:4]}
+    # HOSTS4 item 2: what the team researched but has not built, as commentary for viewers (never advice to agents)
+    if s.get("unused_unlocks") and (e["kind"] == "research" or (e["kind"] == "lull" and e.get("angle") in (
+            "explain", "production", "pace", "research", None))):
+        f["not_built_yet"] = s["unused_unlocks"][:2]
+        f["not_built_yet_note"] = ("researched but none built yet: worth a remark for viewers on what the team could "
+                                   "use, at most once, as commentary (the agents do not hear the hosts)")
     if e["kind"] == "lull":
         angle = e.get("angle")
         busy = [agent_facts(s, a["name"]) for a in s.get("agents") or [] if a.get("activity") == "acting"]
@@ -842,6 +881,19 @@ def supported_names(facts, names):
     return out
 
 
+def proper_names(line, names):
+    """Agents' names capitalised: shake10's hosts copied "astra" from the agents' tells ("Haiku just told astra"). The
+    word haiku after "as", "a" or "in" is the poem."""
+    for n in sorted(names, key=len, reverse=True):
+        rx = r"(?<!\bas )(?<!\ba )(?<!\bin )\b" + re.escape(n.lower()) + r"\b" if n.lower() == "haiku" else \
+            r"\b" + re.escape(n.lower()) + r"\b"
+        line = re.sub(rx, n, line)
+    return line
+
+
+VERDICT = re.compile(r"^(?:Good|Smart|Nice|Great|Right|Fair|Solid|Clever|Wise|Sharp|Sensible|Huge|Big)\b[^.!?]{0,25}[.!]")
+
+
 def check_line(line, facts, names, recent):
     """Return a reason the line is unusable, or None. Names and numbers must come from the facts."""
     blob = known_text(facts)
@@ -873,7 +925,9 @@ def check_line(line, facts, names, recent):
     if re.search(r"\bzero\b", low) and 0 not in known:  # "zero belts laid" was invented on the live world
         return "number not in facts: zero"
     # "still no steam", "no walls yet", "no belts in sight": absences are never in the facts (live world, Nemotron, Kimi)
-    if re.search(r"\b(?:still|yet) no\b|\bno \w+(?: \w+)? (?:yet|in sight)\b|\bnot a single\b", low):
+    unbuilt = [u.get("unlocks", "").lower() for u in facts.get("not_built_yet") or []]
+    about_unbuilt = any(w.rstrip("s") in low for u in unbuilt for w in re.findall(r"[a-z]{4,}", u))
+    if re.search(r"\b(?:still|yet) no\b|\bno \w+(?: \w+)? (?:yet|in sight)\b|\bnot a single\b", low) and not about_unbuilt:
         return "claims something is missing"
     # shake3: "Astra scouts for oil that isn't there" (the field was found seven minutes later)
     if re.search(r"\b(?:isn't|is not|aren't|are not|wasn't|was not|ain't) (?:even )?(?:there|here|anywhere)\b|"
@@ -885,7 +939,13 @@ def check_line(line, facts, names, recent):
         return "compares with the previous run without pace facts"
     if len(line.split()) > 34:
         return "too long"
-    host_we = re.sub(r"\b(?:here )?we (?:see|find|watch|observe|might see|can see|get to see)\b|\bwe(?:'ll| will) see\b|"
+    # shake10 (Opus): 33 of 453 lines aired cut off mid-word ("They scanned before leaving. Two ass")
+    if not re.search(r"[.!?…\"”')]\s*$", line):
+        return "cut off mid-sentence"
+    # shake10: 35 lines opened on a verdict about the last one ("Good call.", "Smart read.", "Good timing.")
+    if VERDICT.match(line) and any(VERDICT.match(clean(r).split(": ", 1)[-1]) for r in recent[-8:]):
+        return "style: another verdict opener"
+    host_we =re.sub(r"\b(?:here )?we (?:see|find|watch|observe|might see|can see|get to see)\b|\bwe(?:'ll| will) see\b|"
                      r"\b(?:we're|we are) live\b|\bhere we go\b|\blet's\b|\blet us\b|\b(?:join|stay with|tell) us\b",
                      "", low.replace("’", "'"))  # the hosts may speak as hosts: "here we see", "stay with us"
     if re.search(r"\b(we|we're|we've|we'll|our|ours|us)\b", host_we):
@@ -1243,14 +1303,19 @@ class LLMWriter:
                 raise RuntimeError("OPENROUTER_API_KEY is not set")
             body = {"model": self.model, "messages": [{"role": "system", "content": system},
                                                       {"role": "user", "content": user}],
-                    "max_tokens": max(max_tokens, 400), "temperature": 0.9, "usage": {"include": True}}
+                    # shake10: 33 of 453 Opus lines aired cut off mid-word ("Two ass") at 400 tokens
+                    "max_tokens": max(max_tokens * 4, 1200), "temperature": 0.9, "usage": {"include": True}}
             req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
                                          data=json.dumps(body).encode(), method="POST",
                                          headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=self.timeout * 3) as r:
                 out = json.load(r)
             self.spent += float((out.get("usage") or {}).get("cost") or 0)
-            return ((out.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+            choice = (out.get("choices") or [{}])[0]
+            text = (choice.get("message") or {}).get("content") or ""
+            if choice.get("finish_reason") == "length":  # the last line stopped mid-word: drop it
+                text = "\n".join(text.rstrip().splitlines()[:-1])
+            return text
         if not shutil.which(self.bin):
             raise RuntimeError(f"{self.bin} not found")
         # The personal subscription: CLAUDE_CONFIG_DIR unset and no API overrides (a parent session may set them).
@@ -1457,10 +1522,14 @@ class Caster:
         # urgent events (attack, death, loss) go to a fast writer so the call lands while it is still news
         self.fast = None
         if self.writer and a.urgent_model and a.urgent_model != (self.writer.model or ""):
-            if ai is None:
-                from cfai import WorkersAI
-                ai = WorkersAI()
-            self.fast = LLMWriter("cf", a.urgent_model, ai=ai, timeout=min(a.writer_timeout, 8))
+            if a.urgent_model.startswith("or:"):  # HOSTS4 item 4: a fast Claude on OpenRouter (or:anthropic/...)
+                self.fast = LLMWriter("or", a.urgent_model[3:], timeout=min(a.writer_timeout, 8))
+            else:
+                if ai is None:
+                    from cfai import WorkersAI
+                    ai = WorkersAI()
+                self.fast = LLMWriter("cf", a.urgent_model.removeprefix("cf:"), ai=ai,
+                                      timeout=min(a.writer_timeout, 8))
         self.tts = None if a.dry_run else voices.TTS(a.tts, ai=ai)
         self.tts_fallback = voices.TTS(a.tts_fallback, ai=ai) if a.tts_fallback and not a.dry_run else None
         self.breakers = {k: Breaker(k, cool=a.backoff) for k in ("writer", "classifier", "tts")}
@@ -1684,7 +1753,7 @@ class Caster:
         if e["kind"] in ("chat", "camera", "board") and self.rng.random() < self.a.naturalist:
             e["naturalist"] = True
         first = "pbp" if e["prio"] >= PRIORITY["research"] or e["kind"] in (
-            "camera", "board", "harness", "research_start", "viewer") else "color"
+            "camera", "board", "harness", "research_start", "viewer", "viewer_reply") else "color"
         if e["kind"] == "lull" or e.get("naturalist"):
             first = "color" if self.last_speaker == "pbp" or e.get("naturalist") else "pbp"
         lo, hi = self.a.lines
@@ -1725,7 +1794,7 @@ class Caster:
                         if err:
                             log(f"[{who}] rejected ({err}): {line}")
                             break
-                        kept.append((who, line))
+                        kept.append((who, proper_names(line, names)))
                     if len(kept) > len(lines):
                         lines = kept
                     # one rewrite when the writer slipped into written English early in the exchange; urgent beats
@@ -2088,7 +2157,8 @@ def main():
                                          "CLAUDE_CONFIG_DIR unset: the personal subscription)")
     ap.add_argument("--writer-timeout", type=float, default=12, help="seconds per Workers AI call (claude: 3x)")
     ap.add_argument("--urgent-model", default=URGENT_MODEL,
-                    help="fast Workers AI writer for urgent events ('' to use the main writer for everything)")
+                    help="fast writer for urgent events: a Workers AI model id, or or:<OpenRouter model> (e.g. "
+                         "or:anthropic/claude-haiku-5.5); '' to use the main writer for everything")
     ap.add_argument("--run-dir", help="the run's directory (runs/RUN): a resumed-from file there makes this a later "
                                       "shift, and the hosts get a shift fact")
     ap.add_argument("--deadline", help="when the run ends, for minutes_to_deadline: 'YYYY-MM-DD HH:MM', 'HH:MM', or "

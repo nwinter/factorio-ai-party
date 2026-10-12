@@ -37,7 +37,7 @@ check("parses spelled numbers", [n for _, n in caster.spelled_numbers("one hundr
 check("rejects the hosts joining the team", caster.check_line("We're one tech behind!", facts, names, []) is not None
       and caster.check_line("Luna needs our help", facts, names, []) is not None)
 check("allows host phrasing", caster.check_line("And here we see Luna, stay with us!", facts, names, []) is None)
-check("reads 3,600 as one number", caster.check_line("Luna made 3,600 plates", dict(facts, made=3607), names, []) is None)
+check("reads 3,600 as one number", caster.check_line("Luna made 3,600 plates.", dict(facts, made=3607), names, []) is None)
 check("rejects a previous-run comparison without pace facts",
       caster.check_line("Last run they were still punching trees!", facts, names, []) is not None
       and caster.check_line("Last run they were slower.", dict(facts, pace={"verdict": "x"}), names, []) is None)
@@ -801,6 +801,64 @@ check("since_last_beat: a new job and new words; then nothing new", "since_last_
       "took a new job: Concrete cell" in f2["agent"]["since_last_beat"] and "said something new" in
       f2["agent"]["since_last_beat"] and f3["agent"]["since_last_beat"] == ["nothing new since the hosts last saw them"],
       str(f2["agent"].get("since_last_beat")))
+
+# HOSTS4 item 2: researched but not built, as commentary for viewers
+import model  # noqa: E402
+um = model.Model({"title": "t", "agents": {}})
+um.ingest({"tick": 60, "research": {"done": ["logistic-robotics", "gun-turret", "solar-energy"], "current": None},
+           "entities": {"gun-turret": 12}, "entities_counted": ["gun-turret", "roboport", "solar-panel", "accumulator"]},
+          now=1000.0)  # already done when the stream started
+um.ingest({"tick": 120, "research": {"done": ["logistic-robotics", "gun-turret", "solar-energy",
+                                              "electric-energy-accumulators"], "current": None},
+           "entities": {"gun-turret": 12, "solar-panel": 19},
+           "entities_counted": ["gun-turret", "roboport", "solar-panel", "accumulator"]}, now=1000.0 + 3600)
+uu = um.snapshot(1000.0 + 3600 + 180)["unused_unlocks"]
+check("unused unlocks: researched, none built; oldest first; when", [u["unlocks"] for u in uu] ==
+      ["roboports", "accumulators"] and uu[0]["researched"] == "before this stream" and
+      uu[1]["researched"] == "3 minutes ago", str(uu))
+um2 = model.Model({"title": "t", "agents": {}})
+um2.ingest({"tick": 60, "research": {"done": ["logistic-robotics"], "current": None}, "entities": {"inserter": 3}},
+           now=1000.0)
+check("unused unlocks: nothing when the score does not say what it counts (an old score)",
+      um2.snapshot(1100.0)["unused_unlocks"] == [])
+nb = caster.facts_for({"kind": "lull", "angle": "explain", "t": now, "prio": 1}, {"agents": [], "unused_unlocks": uu})
+check("unused unlocks reach the hosts on explain beats, as commentary", nb.get("not_built_yet") == uu and
+      "commentary" in nb.get("not_built_yet_note", "") and "not_built_yet" not in caster.facts_for(
+          {"kind": "attack", "text": "x", "t": now, "prio": 9}, {"agents": [], "unused_unlocks": uu}), str(nb)[:200])
+check("an absence the facts back passes; another does not", caster.check_line(
+    "Logistic robotics is done, but still no roboports.", nb, [], []) is None and caster.check_line(
+    "Still no trains.", nb, [], []) == "claims something is missing")
+
+# HOSTS4 item 3: an agent answering a viewer (the relay reaches the agents from shake11) is its own beat
+dv = caster.Differ()
+dv.diff({"agents": [], "chat": []})
+tnow = time.time()
+evv = dv.diff({"agents": [], "chat": [
+    {"seq": 50, "from": "viewer", "viewer": "NickWinter", "lane": "viewer", "text": "viewer NickWinter: why no roboports yet?",
+     "t": tnow - 20},
+    {"seq": 51, "agent": "sol", "from": "Sol", "text": "@NickWinter good question: roboports right after the silo.",
+     "t": tnow - 2}]})
+vr = [e for e in evv if e["kind"] == "viewer_reply"]
+check("an agent's line naming a recent viewer becomes a viewer_reply beat", len(vr) == 1 and vr[0]["viewer"] ==
+      "NickWinter" and vr[0]["question"] == "why no roboports yet?" and vr[0]["prio"] == 7, str(evv))
+fvr = caster.facts_for(vr[0], {"agents": [{"name": "sol", "display_name": "Sol"}]})
+check("viewer_reply facts: the question, the agent's answer, how to call it", fvr["viewer_message"]["from"] ==
+      "NickWinter" and "roboports right after the silo" in fvr["agent_answer"] and "answered a viewer" in
+      fvr["how_to_call_it"] and caster.clip_rank(vr[0]) == "viewer", str(fvr)[:300])
+evn = dv.diff({"agents": [], "chat": [{"seq": 52, "agent": "sol", "from": "Sol", "text": "Silo next, then rails.",
+                                       "t": time.time()}]})
+check("a line that names no viewer is plain chat", not [e for e in evn if e["kind"] == "viewer_reply"])
+
+# HOSTS4: Opus on shake10 aired cut-off lines, verdict openers and lowercase names
+check("a line cut off mid-word is cut", caster.check_line("They scanned before leaving. Two ass", {"event": "lull"}, [],
+                                                           []) == "cut off mid-sentence")
+check("a second verdict opener within eight lines is cut", caster.check_line(
+    "Good timing. Projectile damage helps.", {"event": "lull"}, [], ["Vale: Smart read. Coal keeps boilers burning."])
+      == "style: another verdict opener" and caster.check_line("Good timing. Projectile damage helps.",
+                                                                  {"event": "lull"}, [], []) is None)
+check("names capitalised, the poem left alone", caster.proper_names("Haiku told astra. Astra writes as haiku.",
+                                                                     ["Astra", "Haiku"]) == "Haiku told Astra. Astra writes as haiku.")
+check("the notes say not to grade the last line", "Don't open by grading the last line" in caster.SPOKEN)
 
 # HOSTS3 item 6 (b): speak less. A low-value beat waits for --quiet; filler waits for --lull and something new.
 import threading  # noqa: E402

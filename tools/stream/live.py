@@ -136,6 +136,8 @@ class LiveSource:
             score = self.h.score()
             obs["tick"], obs["paused"] = score["tick"], score.get("paused")
             obs["produced"] = score.get("produced") or {}
+            obs["entities"] = score.get("entities") or {}  # building counts, for the hosts' unused_unlocks
+            obs["entities_counted"] = score.get("entities_counted") or []  # which buildings the score counts at all
             done = score.get("research_done") or []
             obs["research"] = {"current": score.get("current_research"), "done": done if isinstance(done, list) else []}
             obs["space"] = {"rockets": score.get("rockets") or 0, "planets": score.get("planets") or [],

@@ -33,7 +33,7 @@ def secs(hms):
 def reason_key(why):
     """Group reasons: 'style: metaphor 'bleed'' -> 'style: metaphor', 'number not in facts: 40' -> 'number not in facts'."""
     if why.startswith("style:"):
-        return re.sub(r" '.*$", "", why)
+        return re.sub(r" '[^']*'$", "", why)  # "style: metaphor 'bleed'" -> "style: metaphor"
     return re.sub(r":.*$", "", why).strip()
 
 
@@ -88,11 +88,69 @@ def report(rows, cuts, costs, title, rewrites=()):
               f"{100 * sum(len(ss) >= 3 for ss in sents) / n:.0f}%")
 
 
+def by_writer(paths, text_log=None):
+    """Per writer backend: aired lines, words a line and write latency (per exchange); the share of the run with
+    nobody speaking; cost per hour from the [cost] rows; write failures and timeouts from the text log."""
+    import statistics
+    rows, costs = [], []
+    for p in paths:
+        for raw in open(p):
+            r = json.loads(raw)
+            if r.get("type") in ("caster", "agent"):
+                rows.append(r)
+            elif r.get("type") == "cost":
+                costs.append(r)
+    aired = [r for r in rows if r.get("pushed")]
+    if not aired:
+        return
+    span = max(r["t"] for r in rows) - min(r["t"] for r in rows)
+    spans = sorted((r["t"], r["t"] + float(r.get("seconds") or 0)) for r in aired)
+    talk, (cs, ce) = 0.0, spans[0]
+    for s0, e0 in spans[1:]:
+        if s0 > ce:
+            talk, cs, ce = talk + ce - cs, s0, e0
+        else:
+            ce = max(ce, e0)
+    talk += ce - cs
+    hours = span / 3600
+    print(f"== by writer ({len(paths)} jsonl, {span / 60:.0f} min): a voice on air {100 * talk / span:.0f}% of the "
+          f"time, silence {100 - 100 * talk / span:.0f}%")
+    for b in sorted({r.get("backend") for r in aired if r.get("type") == "caster"}, key=str):
+        lines = [r for r in aired if r.get("type") == "caster" and r.get("backend") == b]
+        ex = {r["exchange"]: r.get("write_latency") for r in lines if r.get("write_latency") is not None}
+        lat = sorted(ex.values()) or [0]
+        words = [len(r["line"].split()) for r in lines]
+        print(f"   {str(b):36.36} {len(lines):4d} lines ({len(lines) / hours:.0f}/h), {sum(words) / len(words):.1f} "
+              f"words a line, write latency median {statistics.median(lat):.1f}s p90 "
+              f"{lat[int(0.9 * (len(lat) - 1))]:.1f}s over {len(ex)} exchanges")
+    if costs:
+        # one [cost] series per caster process (its minutes start again at a restart): sum each series' last row
+        series, cur = [], [costs[0]]
+        for c in costs[1:]:
+            if c["minutes"] >= cur[-1]["minutes"]:
+                cur.append(c)
+            else:
+                series.append(cur)
+                cur = [c]
+        series.append(cur)
+        mins = sum(sr[-1]["minutes"] for sr in series)
+        usd = {k: sum(sr[-1].get(k) or 0 for sr in series) for k in ("writer_usd", "tts_usd", "classifier_usd")}
+        print(f"   cost over {mins:.0f} min: writer ${usd['writer_usd']:.2f} (${60 * usd['writer_usd'] / mins:.2f}/h), "
+              f"TTS ${usd['tts_usd']:.2f} (${60 * usd['tts_usd'] / mins:.2f}/h), all ${60 * sum(usd.values()) / mins:.2f}/h")
+    if text_log:
+        fails = [l for l in open(text_log, errors="replace") if "[writer] failed" in l]
+        tos = [l for l in fails if re.search(r"time(d)? ?out", l, re.I)]
+        print(f"   writer failures {len(fails)}, of them timeouts {len(tos)}"
+              + (f"; e.g. {fails[0].strip()[:120]}" if fails else ""))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("log", help="runs/<run>/caster.log")
     ap.add_argument("--since", help="HH:MM: only from this time on")
     ap.add_argument("--last", type=int, help="also report the last N minutes alone")
+    ap.add_argument("--jsonl", nargs="+", help="the run's tools/stream/logs/caster-*.jsonl: per writer, latency, "
+                                               "timeouts, silence share and cost per hour")
     a = ap.parse_args()
     rows, cuts, costs, rewrites = [], [], [], []
     start = secs(a.since + ":00") if a.since else 0
@@ -119,6 +177,8 @@ def main():
     if not rows:
         sys.exit(f"{a.log}: no aired host lines" + (f" since {a.since}" if a.since else ""))
     report(rows, cuts, costs, "whole run", rewrites)
+    if a.jsonl:
+        by_writer(a.jsonl, a.log)
     if a.last:
         end = secs(rows[-1][0])
         keep = lambda x: secs(x[0]) >= end - a.last * 60
