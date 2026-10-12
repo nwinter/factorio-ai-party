@@ -145,6 +145,19 @@ assert(loss_line(call('queue_status')):find('81 destroyed',1,true))
   eq(#history.latest,4); eq(history.losses.inserter,3); eq(history.losses['transport-belt'],64)
   eq(#call('status').alerts.latest,2) -- the last 5 minutes: the two new incidents
 end)()
+-- Past 64 incidents the oldest is dropped. The new incident must have its tick before that comparison (shake10:
+-- a long world reached 64, every loss in a new area failed in the tick and quarantined the runtime for 80 minutes).
+;(function()
+  for i=1,70 do runtime.on_event{name=11,tick=tick,entity={valid=true,name='wall',position={x=5000+i*64,y=5000},force={name='player'}}} end
+  local alerts=call('status',{since=0}).alerts
+  assert(alerts and alerts.losses,'status alerts after 70 new areas')
+  eq(#storage.agent_harness.losses,64)
+  for _,i in ipairs(storage.agent_harness.losses) do assert(i.last,'every incident has its last tick') end
+  -- A save from before the fix may hold an incident without `last`: it must not break the tick or status.
+  storage.agent_harness.losses[1].last=nil
+  runtime.on_event{name=11,tick=tick,entity={valid=true,name='wall',position={x=9000,y=9000},force={name='player'}}}
+  assert(call('status',{since=0}).alerts.losses,'status alerts with a pre-fix incident')
+end)()
 -- Hits in the last 10 s lead status warnings, with where and by what.
 defines.events.on_entity_damaged=12
 runtime.on_event{name=12,tick=tick,entity={valid=true,name='gun-turret',position={x=40,y=40},force={name='player'}},force={name='enemy'},cause={valid=true,name='small-biter'},final_damage_amount=5}

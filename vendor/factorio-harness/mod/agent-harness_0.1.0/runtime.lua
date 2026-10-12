@@ -593,19 +593,21 @@ end
 -- incident (shake5: one raid's total grew across two shifts and read as one
 -- raid); the old ones stay in status alerts with since.
 local LOSS_CELL,MAX_INCIDENTS=64,64
+-- An incident's latest tick is `(i.last or i.first or 0)`: saves from before shake11 can hold one created without
+-- `last` (it was set only after the 64-incident cap check, which then failed on it in the tick: shake10's quarantines).
 local function record_loss(tick,e,cause)
   local s=state()
   s.losses=s.losses or {}
   local cx,cy=math.floor(e.position.x/LOSS_CELL),math.floor(e.position.y/LOSS_CELL)
   local key=cx..','..cy
   local incident
-  for _,i in ipairs(s.losses) do if i.key==key and not i.closed and tick-i.last<=5*3600 then incident=i; break end end
+  for _,i in ipairs(s.losses) do if i.key==key and not i.closed and tick-(i.last or i.first or 0)<=5*3600 then incident=i; break end end
   if not incident then
-    incident={key=key,box={e.position.x,e.position.y,e.position.x,e.position.y},first=tick,names={},causes={},total=0}
+    incident={key=key,box={e.position.x,e.position.y,e.position.x,e.position.y},first=tick,last=tick,names={},causes={},total=0}
     s.losses[#s.losses+1]=incident
     if #s.losses>MAX_INCIDENTS then
       local oldest=1
-      for i,v in ipairs(s.losses) do if v.last<s.losses[oldest].last then oldest=i end end
+      for i,v in ipairs(s.losses) do if (v.last or v.first or 0)<(s.losses[oldest].last or s.losses[oldest].first or 0) then oldest=i end end
       table.remove(s.losses,oldest)
     end
   end
@@ -618,8 +620,8 @@ local function record_loss(tick,e,cause)
 end
 local function losses_since(since)
   local out={}
-  for _,i in ipairs(state().losses or {}) do if i.last>since then out[#out+1]=i end end
-  table.sort(out,function(a,b) return a.last>b.last end)
+  for _,i in ipairs(state().losses or {}) do if (i.last or i.first or 0)>since then out[#out+1]=i end end
+  table.sort(out,function(a,b) return (a.last or a.first or 0)>(b.last or b.first or 0) end)
   return out
 end
 local function ago(ticks)
@@ -640,7 +642,8 @@ local function describe_incident(i)
   while #names>6 do table.remove(names) end
   local causes=counted(i.causes)
   while #causes>2 do table.remove(causes) end
-  local span=i.first==i.last and ago(game.tick-i.last)..' ago' or ago(game.tick-i.first)..'-'..ago(game.tick-i.last)..' ago'
+  local last=(i.last or i.first or 0)
+  local span=i.first==last and ago(game.tick-last)..' ago' or ago(game.tick-i.first)..'-'..ago(game.tick-last)..' ago'
   local b=i.box
   local where=string.format('(%d,%d)',math.floor(b[1]),math.floor(b[2]))
   if b[3]-b[1]>=1 or b[4]-b[2]>=1 then where=where..'-'..string.format('(%d,%d)',math.floor(b[3]),math.floor(b[4])) end
