@@ -15,6 +15,7 @@ refreshes the owner's login exactly as it does in the owner's sessions (GROK_AUT
 in ~/.grok is copied, edited or replaced by this script. Sessions: DIR/.grok-home/sessions links to ~/.grok/sessions,
 so session files stay where tools/context.py and the run analysis look for them.
 """
+import shutil
 import datetime
 import json
 import os
@@ -131,8 +132,9 @@ def setup(d, ensure):
     # agent state) stays; the owner's local-session-profile hook does not. Neither reaches the model.
     herdr = os.path.join(OWNER, "hooks", "herdr.json")
     os.makedirs(os.path.join(home, "hooks"), exist_ok=True)
+    # A copy, never a link: Grok's sandbox refuses a hook path with a symlink in it (shake8: Grok would not start).
     if os.path.exists(herdr) and not os.path.lexists(os.path.join(home, "hooks", "herdr.json")):
-        os.symlink(herdr, os.path.join(home, "hooks", "herdr.json"))
+        shutil.copyfile(herdr, os.path.join(home, "hooks", "herdr.json"))
     if owner_token()[1] < ensure and not refresh(ensure):
         print(f"grok-home: the owner's Grok login has {owner_token()[1]} s left and did not refresh", file=sys.stderr)
     # Grok runs the provider only on a sign-in or a refresh; with no credential a headless start just fails ("Not
