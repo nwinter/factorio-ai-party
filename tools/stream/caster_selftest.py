@@ -296,8 +296,8 @@ dl = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"},
 check("facts carry minutes_to_deadline", dl.get("minutes_to_deadline") == 4 or dl.get("minutes_to_deadline") == 5, str(dl))
 cam_far = caster.facts_for({"kind": "camera", "agents": [], "t": now, "prio": 2}, {"agents": []}, None, time.time() + 2400)
 cam_near = caster.facts_for({"kind": "camera", "agents": [], "t": now, "prio": 2}, {"agents": []}, None, time.time() + 600)
-check("the clock only where it matters, or in the last 15 minutes", "minutes_to_deadline" not in cam_far
-      and cam_near.get("minutes_to_deadline") == 10, f"{cam_far} {cam_near}")
+check("every beat carries the time left (shake10: urgent beats without it aired 'Shift seven ends')",
+      cam_far.get("minutes_to_deadline") == 40 and cam_near.get("minutes_to_deadline") == 10, f"{cam_far} {cam_near}")
 dfacts = {"minutes_to_deadline": 4, "game_time": "57 minutes"}
 check("rejects 'ends the run' with minutes left",
       caster.check_line("One small biter ends the run!", dfacts, names, []) is not None)
@@ -543,15 +543,29 @@ with tempfile.TemporaryDirectory() as runs:
     check("shift: a first shift has none", caster.read_shift(os.path.join(runs, "shake4")) is None
           and caster.read_shift(None) is None)
     so = caster.facts_for({"kind": "open", "t": 0, "prio": 8}, {"agents": []}, None, time.time() + 3600, sh)
-    check("shift: the opener carries it and welcomes viewers back", so.get("shift") == sh
+    check("shift: the opener carries it (no handover with an hour left) and welcomes viewers back",
+          so.get("shift") == {k: v for k, v in sh.items() if k != "at_the_deadline"}
           and "later shift" in so.get("how_to_call_it", ""), str(so))
     far = caster.facts_for({"kind": "camera", "agents": [], "t": 0, "prio": 2}, {"agents": []}, None, time.time() + 2400, sh)
     near = caster.facts_for({"kind": "camera", "agents": [], "t": 0, "prio": 2}, {"agents": []}, None, time.time() + 300, sh)
-    check("shift: on every beat (time left only with the clock)", far.get("shift") == sh and near.get("shift") == sh
-          and "minutes_to_deadline" not in far and near.get("minutes_to_deadline"))
+    check("shift: on every beat with the time left; at_the_deadline only under 10 minutes",
+          far.get("shift", {}).get("this_shift") == "shift 3" and "at_the_deadline" not in far["shift"] and
+          near["shift"].get("at_the_deadline") and far.get("minutes_to_deadline") == 40 and
+          near.get("minutes_to_deadline") == 5, f"{far} {near}")
+    for line in ("Shift seven ends under fire.", "World saves for eight.", "Shift three is over soon.",
+                 "They hand it off to shift four.", "The next shift takes over from here."):
+        check(f"shift end with 40 minutes left is cut: {line}", caster.check_line(line, far, [], []) ==
+              "says the shift is ending, but more than 5 minutes remain")
+    atk = caster.facts_for({"kind": "attack", "text": "Base under attack: gun turret", "t": 0, "prio": 9},
+                           {"agents": []}, None, time.time() + 174 * 60, sh)
+    check("an urgent beat carries the time left and no handover (shake10 19:53)", atk.get("minutes_to_deadline") == 174
+          and "at_the_deadline" not in atk.get("shift", {}) and "only once minutes_to_deadline is under 10" in
+          caster.EXCHANGE_RULES, str(atk))
+    check("shift end with 5 minutes left passes", caster.check_line("World saves soon. Shift four takes over.", near,
+                                                                    [], []) is None)
     check("shift numbers: this shift and the next pass, others and run names fail", caster.check_line(
-        "Shift three keeps rolling. Shift four gets this world next.", far, [], []) is None and caster.check_line(
-        "Shift five inherits it.", far, [], []) == "shift number not in facts: shift five" and caster.check_line(
+        "Shift three keeps rolling. Shift four is next.", far, [], []) is None and caster.check_line(
+        "Shift five did this.", far, [], []) == "shift number not in facts: shift five" and caster.check_line(
         "Shake five gets low density at ninety.", far, [], []) == "run name not in facts: shake five")
     check("shift: 'ends the run' is wrong at a handover", caster.check_line(
         "That horn ends the run for them!", dict(near, minutes_to_deadline="under a minute"), [], []) ==

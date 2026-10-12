@@ -524,12 +524,15 @@ def context_facts(s, baseline=None, deadline=None, clock=True, shift=None):
     and on a resumed run which shift this is."""
     f = {}
     left = (deadline - time.time()) / 60 if deadline else None
-    # shake3: "forty more minutes of biter bait" with 4.5 left; there was no time-left fact. On every beat the hosts
-    # said "forty-six minutes left" four exchanges running (mock), so only where time matters or it is running out.
-    if deadline and (clock or left <= 15):
+    # Every beat: shake10's urgent beats (attack, loss) had the shift's at_the_deadline but no time left, and Kimi aired
+    # "Shift seven ends under fire" and "World saves for eight" (19:53-20:01) with the deadline at 22:47. `clock` is
+    # kept for callers; the hosts are told to say the time left only where it matters.
+    if deadline:
         f["minutes_to_deadline"] = round(left) if left >= 1 else "under a minute" if left > 0 else "the deadline has passed"
     if shift:  # every beat: shake6's hosts numbered shifts on beats without the fact (and check_line checks it)
-        f["shift"] = shift
+        f["shift"] = dict(shift)
+        if left is None or left >= 10:  # the handover only once it is near
+            f["shift"].pop("at_the_deadline", None)
     f.update(planet_facts(s))
     sc = s.get("science") or {}
     if sc.get("stage_label"):
@@ -709,7 +712,8 @@ EXCHANGE_RULES = (
     "motionless, idle or asleep. The agents play until the deadline, and the time left is minutes_to_deadline. When "
     "the facts carry a shift, the run is a series of shifts on one saved world: this shift picks up the world where "
     "the last one left it, and at the deadline the world is saved and the next shift continues it, so research in "
-    "progress and the base carry over and the deadline is a handover. Call shifts only by the numbers in this_shift "
+    "progress and the base carry over and the deadline is a handover. Talk about the end of the shift, "
+    "the save or the next shift only once minutes_to_deadline is under 10. Call shifts only by the numbers in this_shift "
     "and next_shift. The hosts are commentators, not on "
     "the team: the team is 'they', never 'we'. Never say something is missing, broken or absent ('no steam yet', "
     "'no belts') unless the facts say so, and mention an earlier run only when the facts include a pace "
@@ -967,10 +971,23 @@ def wrong_place(low, facts):
     return None
 
 
+SHIFT_ENDS = re.compile(
+    r"\b(?:shift|run|session)(?: \w+)? (?:ends|ending|is ending|is over|wraps(?: up)?|is wrapping|closes|is closing|"
+    r"is done|signs off)\b|\bend of (?:the |this |their )?shift\b|\b(?:ends|ending|wraps|closes) (?:the |this |their )?shift\b|"
+    r"\b(?:world|game|save) (?:saves|is saved|gets saved|saved|is saving)\b|\bsaves? (?:it )?for (?:shift )?\w+\b|"
+    r"\b(?:next shift|shift \w+) (?:takes over|inherits|picks (?:it )?up|gets (?:it|this|the \w+))\b|"
+    r"\bhand(?:s|ing|ed)? (?:it |the world |this )?(?:off|over) to\b|\bhandover\b|"
+    r"\bhand-?offs?\b(?=.*\b(?:shift|world)\b)|\b(?:shift|world)\b.*\bhand-?offs?\b|"
+    r"\bsaved the world\b")
+
+
 def wrong_deadline(low, facts):
     """'Ends the run' and 'N minutes left' must agree with minutes_to_deadline (shake3: "One small biter ends the run
     at thirty flat!", "forty more minutes of biter bait" with 4.5 left)."""
     left = facts.get("minutes_to_deadline")
+    near = left in ("under a minute", "the deadline has passed") or (isinstance(left, (int, float)) and left <= 5)
+    if SHIFT_ENDS.search(low.replace("’", "'")) and not near:  # shake10 19:53: "Shift seven ends under fire", 2:54 left
+        return "says the shift is ending, but more than 5 minutes remain"
     if ENDS_RUN.search(low) and facts.get("shift"):  # shake5 06:20:37: "Horn swallows them whole" at the handover
         return "says the run ends, but the next shift continues it"
     if ENDS_RUN.search(low) and not (left in ("under a minute", "the deadline has passed") or (
