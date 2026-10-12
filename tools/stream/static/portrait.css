@@ -1,6 +1,6 @@
 /* 1080x1920 portrait layout (portrait.html) for a 9:16 canvas such as YouTube's vertical / mobile view. Loaded after
    overlay.css; same elements, restyled for phone reading (a phone shows this about 2.5-3x smaller, so text is
-   roughly 1.6x the landscape sizes). Top to bottom: header, main camera (16:9, full width), the two side cameras,
+   roughly 1.6x the landscape sizes). Top to bottom: header, the camera on air (full width, y 112..995),
    a 3x3 agent grid, the science-per-minute strip, chat. The board panel, research card and item cells are left to
    the landscape page. `html body.portrait` outranks overlay.css's body[data-density] rules. */
 html, body { width: 1080px; height: 1920px; }
@@ -72,7 +72,7 @@ html body.portrait .msg .text { font-size: 27px; line-height: 1.28; -webkit-line
 html body.portrait .empty { font-size: 22px; }
 
 /* voice captions (audio.js) sit on the bottom edge of the main camera, as on landscape */
-html body.portrait #voice { left: 24px; width: 1032px; top: 693px; }
+html body.portrait #voice { left: 24px; width: 1032px; }
 html body.portrait #voice .cap { font-size: 30px; max-width: 1000px; }
 html body.portrait #voice .face { width: 64px; height: 64px; }
 html body.portrait #voice .who { font-size: 19px; }
@@ -82,10 +82,14 @@ html body.portrait .cam-label { font-size: 24px; left: 12px; top: 12px; }
 html body.portrait #cam-main .cam-label { font-size: 30px; }
 html body.portrait .cam-label .avatar { width: 36px !important; height: 36px !important; }
 html body.portrait #alerts { gap: 12px; }
-/* the research card on the portrait main camera (24,112 1032x581): its lower right, bigger type */
-html body.portrait #research-card { right: 46px; bottom: calc(1249px + var(--voice-clear, 0px)); max-width: 760px; }
+/* the research card on the portrait main camera (layout-portrait.json): its lower right, bigger type */
+html body.portrait #research-card { right: 46px; max-width: 760px; }
 html body.portrait #research-card .rc-tag { font-size: 17px; }
 html body.portrait #research-card .rc-name { font-size: 34px; }
 html body.portrait #research-card .rc-unlocks { font-size: 23px; }
 html body.portrait .alert { font-size: 30px; padding: 10px 26px 10px 10px; max-width: 1000px; }
 html body.portrait .alert .ico { width: 46px; height: 46px; font-size: 24px; }
+html body.portrait.onecam #cam-main .cam-label { font-size: 30px; }
+html body.portrait.onecam .alert { font-size: 24px; max-width: 900px; }
+html body.portrait.onecam .alert .ico { width: 36px; height: 36px; font-size: 19px; }
+html body.portrait #cam-inset .cam-label { font-size: 18px; }

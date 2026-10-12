@@ -422,6 +422,45 @@ config.json over scp) sets the plugin's encoder, output and key from `~/.config/
 and stop with main", so `obs.py stream-start` starts both feeds. Installed and the scene built on the box
 (2026-10-11); the output settings and a look at the scene are next.
 
+## One camera on air (default since 2026-10-12)
+
+A viewer said three cameras at once made it hard to concentrate on any one thing; the operator asked for one story
+at a time. `serve.py` runs `onecam.py` (`--cams onecam`, the default; `--cams 3cam` or `"camera_mode": "3cam"` in the
+run config brings back the director below).
+
+- Picture: one client on air fills the left column (layout.json `main`, 1208x1032). All three captures sit there in
+  OBS, centre-cropped from 1920x1080 to that shape (`cuts.crop_for`: 328 px off each side, no upscaling); `cuts.py`
+  brings the one on air to the front and changes nothing else, so a cut is instant. The other two clients stand by:
+  the next subject is framed on one of them first (a jump, off air), and the cut comes once it is there (`ready_s`,
+  1.5 s). The crop shows about two thirds of the client's width, so fight zooms are scaled by `view_frac`.
+- Dwell: the subject on air holds at least `onair_dwell` (90 s). After that a challenger needs 1.6x + 2 its score, or
+  after `onair_max` (240 s) the camera rotates to the best other agent. It follows one agent, never a pair. A 60-minute
+  mock (`simulate.py --cams onecam`, combat-heavy): 0.8 cuts a minute counting the urgent shots and the cuts back.
+- Urgent cuts, inside the dwell: an agent's death; a real base loss (more than three pipes, belts, poles, inserters,
+  walls or chests, or any turret, machine or engineer: `minor_loss`), at most one per `loss_recut` (180 s); a segment
+  shot (Space Age launches and landings, spotlight, overview). After the urgent shot the story it interrupted comes
+  back for at least `resume_min` (30 s). Replays are their own program scene (replays.py).
+- Inset: a minor loss, or a real one inside `loss_recut`, far (over 60 tiles) from the subject on air shows in a
+  408x230 inset in the on-air view's top right for 20 s (`inset_hold`): the third client, moved there and on top by
+  cuts.py. An attack with nothing lost yet is only a toast; near the subject on air, the label says it.
+- Overlay: a bar along the on-air view's bottom edge says "Following Luna · fixing the north wall" (snapshot
+  `onair.doing`: the agent's team-plan line, else its claim, else its action). The bar also covers the client's
+  bottom-centre hints ("Press Tab to skip cutscene"): the mod already sets `show_hotkey_suggestions` false
+  (cameras.lua) and the hint still showed on 2026-10-12, so it is masked here. The agent's card is ringed and badged
+  "On air". Toasts: at most two, identical lines merged, 12 s, nothing the label or inset already says, in a compact
+  stack at the right just above the bar (captions and lower cards rise above them). `?layout=layout-3cam` gives the
+  old page.
+- Snapshot: `cameras.main` is the camera on air and `cameras.inset` the inset (what viewers see), so replays.py,
+  model.py, push_live and the casters read them as before; `onair` {agent, display_name, doing, since, client} and
+  `program` {onair, inset} (the clients) are new, `cuts` is cuts.py's status.
+- Hosts: lull, camera, chat and board beats get `on_air` in their facts (the agent viewers are watching, and its label
+  line); naturalist and spotlight beats pick it 85% of the time; it leads `busy_agents`.
+- Vertical: layout-portrait.json has one camera too (1032x883, the same crop); cuts.py restacks "stream vertical" in
+  Aitum Vertical's canvas the same way when that scene exists.
+- Setup: `tools/obs.py stream-scene` (all three captures in the hole, cropped; `--layout
+  tools/stream/static/layout-3cam.json` for the old one) and `tools/vertical.py scene`, then restart serve.py and the
+  overlay page. Screenshots of a mock page: `tools/stream/overlay_shot.sh URL OUT.png`.
+
 ## Director
 
 `director.py`, run once per second over the latest snapshot. Main camera on the highest score (interest plus a small

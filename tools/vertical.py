@@ -14,7 +14,9 @@ Through the same SSH tunnel as tools/obs.py (127.0.0.1:4455):
 
 `scene` builds "stream vertical" in the plugin's canvas: a background, the three director captures the landscape
 "stream" scene already has ("stream cam1..3", the same inputs, so nothing is captured twice) in the holes of
-tools/stream/static/layout-portrait.json, and a 1080x1920 browser source on /portrait on top. That browser source is
+tools/stream/static/layout-portrait.json, and a 1080x1920 browser source on /portrait on top. With one camera on air
+(layout mode "onecam") all three sit in the camera hole, cropped to its shape, and the stream service's cuts.py brings
+the one on air to the front here as in "stream". That browser source is
 muted: the landscape overlay already carries the casters' and agents' voices, and OBS mixes audio once for every
 output, so an unmuted portrait page would play every voice twice on both streams. It never touches the main canvas,
 the program scene or the pog profile's outputs.
@@ -67,10 +69,16 @@ def scene_items(c, scene_uuid):
     return {i["sourceName"]: i["sceneItemId"] for i in send(c, "GetSceneItemList", {"sceneUuid": scene_uuid})["sceneItems"]}
 
 
-def place(c, scene_uuid, item, x, y, w, h):
-    send(c, "SetSceneItemTransform", {"sceneUuid": scene_uuid, "sceneItemId": item, "sceneItemTransform": {
-        "positionX": x, "positionY": y, "boundsType": "OBS_BOUNDS_SCALE_INNER", "boundsWidth": w, "boundsHeight": h,
-        "boundsAlignment": 0, "alignment": 5}})
+def place(c, scene_uuid, item, x, y, w, h, crop=False):
+    """crop: centre-crop the capture to the hole's shape (cuts.crop_for; a 16:9 client in a squarer hole)."""
+    tf = {"positionX": x, "positionY": y, "boundsType": "OBS_BOUNDS_SCALE_INNER", "boundsWidth": w, "boundsHeight": h,
+          "boundsAlignment": 0, "alignment": 5}
+    if crop:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "stream"))
+        from cuts import crop_for
+        src = send(c, "GetSceneItemTransform", {"sceneUuid": scene_uuid, "sceneItemId": item}).get("sceneItemTransform") or {}
+        tf.update(crop_for(src.get("sourceWidth"), src.get("sourceHeight"), w, h))
+    send(c, "SetSceneItemTransform", {"sceneUuid": scene_uuid, "sceneItemId": item, "sceneItemTransform": tf})
 
 
 def ensure(c, scene_uuid, name, kind, settings):
@@ -94,14 +102,15 @@ def build_scene(c, url):
     scenes = {s["sceneName"]: s["sceneUuid"] for s in
               send(c, "GetSceneList", {"canvasUuid": cv["canvasUuid"]}).get("scenes", [])}
     uuid = scenes.get(SCENE) or send(c, "CreateScene", {"canvasUuid": cv["canvasUuid"], "sceneName": SCENE})["sceneUuid"]
-    cams = json.load(open(LAYOUT))["cams"]
+    lay = json.load(open(LAYOUT))
+    cams, onecam = lay["cams"], lay.get("mode") == "onecam"
     order = []
     bg = ensure(c, uuid, "vertical background", "color_source_v3", {"color": 0xFF181210, "width": W, "height": H})
     place(c, uuid, bg, 0, 0, W, H)
     order.append(bg)
     for i, slot in enumerate(("main", "cam2", "cam3"), 1):
         item = ensure(c, uuid, f"stream cam{i}", None, None)  # the landscape scene's captures, shared
-        place(c, uuid, item, *cams[slot])
+        place(c, uuid, item, *cams["main" if onecam else slot], crop=True)  # a 16:9 hole: no crop (clears an old one)
         order.append(item)
     ov = ensure(c, uuid, "vertical overlay", "browser_source", {
         "url": url, "width": W, "height": H, "fps": 30, "fps_custom": True, "css": "",

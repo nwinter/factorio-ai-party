@@ -42,6 +42,8 @@ class Fake:
             return {"sceneItemId": len(self.items[data["sceneUuid"]])}
         if req == "GetSceneItemList":
             return {"sceneItems": [{"sourceName": n, "sceneItemId": k + 1} for k, n in enumerate(self.items[data["sceneUuid"]])]}
+        if req == "GetSceneItemTransform":
+            return {"sceneItemTransform": {"sourceWidth": 1920, "sourceHeight": 1080}}
         if req == "SetInputMute":
             self.muted.add(data["inputName"])
         if req == "CallVendorRequest":
@@ -60,8 +62,10 @@ def main():
     assert created == ["vertical background", "vertical overlay"], created  # the captures are shared, not new
     cams = json.load(open(v.LAYOUT))["cams"]
     tf = {d["sceneItemId"]: d["sceneItemTransform"] for r, d in f.calls if r == "SetSceneItemTransform"}
-    assert (tf[2]["positionX"], tf[2]["positionY"], tf[2]["boundsWidth"], tf[2]["boundsHeight"]) == tuple(cams["main"])
-    assert (tf[4]["positionX"], tf[4]["boundsWidth"]) == (cams["cam3"][0], cams["cam3"][2])
+    # one camera on air: all three captures in the camera hole, the sides of a 1920x1080 client cropped to its shape
+    for k in (2, 3, 4):
+        assert (tf[k]["positionX"], tf[k]["positionY"], tf[k]["boundsWidth"], tf[k]["boundsHeight"]) == tuple(cams["main"])
+        assert tf[k]["cropLeft"] == tf[k]["cropRight"] > 300 and tf[k]["cropTop"] == 0, tf[k]
     ov = [d for r, d in f.calls if r == "CreateInput" and d["inputName"] == "vertical overlay"][0]["inputSettings"]
     assert ov["url"].endswith("/portrait") and (ov["width"], ov["height"]) == (1080, 1920)
     assert f.muted == {"vertical overlay"}
