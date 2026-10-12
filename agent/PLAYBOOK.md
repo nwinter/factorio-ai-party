@@ -60,9 +60,9 @@ Your character stands still while you think, and the clock does not.
   separate commands joined with `&&` (no loop, no shell variables) or as a short `python3` script, and carry on.
 - Once assemblers make a science pack, stop hand-crafting it. Build more labs and science assemblers before oil.
 
-## Harness notes from earlier runs
+## Harness notes
 
-- `--wait` now lasts until the action's own end tick. A nonzero exit means it failed or is still running: read
+- `--wait` lasts until the action's own end tick. A nonzero exit means it failed or is still running: read
   `error.code`. On `wait_timeout`, run `./fh wait` (never a new move/mine/build, which would interrupt it) until it
   reports `idle`. In-game queue plans (`./fh queue submit --file plan.json`, a JSON array of steps) avoid round trips.
 - `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait` (also `item_count`,
