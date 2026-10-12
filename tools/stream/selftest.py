@@ -68,6 +68,8 @@ class FakeHarness:
                  "position": {"x": 20, "y": 2}, "alive": False, "active": False, "last_said": None},
                 {"kind": "bot", "name": "stray", "display_name": "Stray", "color": "#ffffff", "glyph": "S",
                  "position": {"x": 300, "y": 2}, "alive": True, "active": False},
+                # shake8: a human player, disconnected, with no profile set
+                {"kind": "player", "name": "NickWinter", "position": {"x": 5, "y": 5}, "alive": False, "active": False},
             ]}, self.tick
         if action == "status":
             if (args or {}).get("peek") and self.reject_peek:
@@ -224,7 +226,7 @@ def main():
     obs = src.observe()
     assert not obs["errors"], obs["errors"]
     names = [a["name"] for a in obs["agents"]]
-    assert names == ["astra", "luna", "stray"], names
+    assert names == ["astra", "luna"], names  # the run's team only: no stray bot, no human player (shake8: Nick)
     astra = obs["agents"][0]
     assert astra["active"] == "mine" and astra["combat"] is True and astra["display_name"] == "Astra"
     assert ("status", "astra", None) in fake.calls and ("profiles", "astra", None) in fake.calls
@@ -239,7 +241,13 @@ def main():
     by = {a["name"]: a for a in snap["agents"]}
     assert by["astra"]["activity"] == "acting" and by["astra"]["action"] == "mining"
     assert by["luna"]["activity"] == "dead" and "respawning" in by["luna"]["action"], by["luna"]
-    assert by["stray"]["model"] is None  # not in the run config: shown, but no model label invented
+    assert set(by) == {"astra", "luna"}, set(by)  # ten cards in shake8; the team is two here
+    # the model keeps out names outside the team even if a source reports them
+    m.ingest({"agents": [{"name": "NickWinter", "kind": "player", "alive": False, "position": {"x": 0, "y": 0}}]}, time.time())
+    assert "NickWinter" not in {a["name"] for a in m.snapshot(time.time())["agents"]}
+    # a run without a team list still shows every profile
+    loose = LiveSource("test", {}, harness=FakeHarness()).observe()
+    assert {a["name"] for a in loose["agents"]} >= {"astra", "luna", "stray"}, [a["name"] for a in loose["agents"]]
     assert snap["research"]["progress"] == 0.4
     assert any(a["kind"] == "power" for a in snap["alerts"]), snap["alerts"]
     assert any(a["kind"] == "attack" for a in snap["alerts"]), snap["alerts"]
