@@ -93,6 +93,14 @@ quota | while read -r line; do log "$line"; done
 log "full tools: $([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo 'on (docs/TOOLS-NOTES.md)' || echo off)"
 log "RCON broker: $([ "${POG_BROKER:-0}" = 1 ] && echo 'on (agents get no password; docs/LAUNCH-NOTES.md)' || echo 'off (agents read runs/RUN/.keys)')"
 log "player votes: $([ "${POG_PLAYERS:-0}" = 1 ] && echo "on (docs/PLAYERS-NOTES.md; protected: ${POG_PLAYERS_PROTECT:-none})" || echo off)"
+# The hosts' writer: POG_CASTER_MODEL on OpenRouter (Nick picked Opus 5.5 from the 2026-10-11 writer comparison,
+# docs/AUDIO-NOTES.md); urgent beats stay on the fast Workers AI model. Empty, or no OpenRouter key: Workers AI.
+cmodel=${POG_CASTER_MODEL-anthropic/claude-opus-5.5}
+# The switches this run starts with, for the next shift (tools/shift-change.sh starts it with the same ones).
+printf '%s\n' "POG_BROKER=${POG_BROKER:-0}" "POG_FULL_TOOLS=${POG_FULL_TOOLS:-0}" "POG_SPACE_AGE=$POG_SPACE_AGE" \
+  "POG_YOUTUBE=$POG_YOUTUBE" "POG_CASTER_MODEL=$cmodel" "POG_CASTER_URGENT=${POG_CASTER_URGENT:-}" \
+  "POG_CASTER=${POG_CASTER:-1}" "POG_ANALYST=${POG_ANALYST:-1}" "POG_PLAYERS=${POG_PLAYERS:-0}" \
+  "POG_VIEWER_RELAY=${POG_VIEWER_RELAY:-1}" "POG_TEAM_FILE=$team" > "$rundir/switches.env"
 
 if [ -n "$resume" ]; then
   # 1. A later shift: the same instance and save (docs/HARNESS3-NOTES.md, round 7).
@@ -214,9 +222,8 @@ helpers+=("shot-sync:$!:$rundir/shot-sync.log")
 if [ "${POG_CASTER:-1}" != 0 ]; then
   # --deadline: the agents' deadline.txt files (written as they launch, after this) give the hosts the time left;
   # --run-dir: its resumed-from (POG_RESUME) tells the hosts this is a later shift of a saved world
-  # The hosts' writer: POG_CASTER_MODEL on OpenRouter (Nick picked Opus 5.5 from the 2026-10-11 writer comparison,
-  # docs/AUDIO-NOTES.md); urgent beats stay on the fast Workers AI model. Empty, or no OpenRouter key: Workers AI.
-  cmodel=${POG_CASTER_MODEL-anthropic/claude-opus-5.5} writer=()
+  # The hosts' writer: cmodel above.
+  writer=()
   orkey=${OPENROUTER_API_KEY:-$(security find-generic-password -s openrouter -w 2>/dev/null || true)}
   [ -n "$cmodel" ] && [ -n "$orkey" ] && writer=(--writer or --model "$cmodel")
   # POG_CASTER_URGENT: the urgent beats' writer (default Kimi on Workers AI); e.g. or:anthropic/claude-haiku-5.5
