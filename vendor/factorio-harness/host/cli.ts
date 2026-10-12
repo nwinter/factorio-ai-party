@@ -466,6 +466,10 @@ async function main() {
       inventory: before !== undefined && player ? inventoryChange(before, carried(player)) : undefined,
       ammo_used: shot ? last?.ammo_used : undefined,
       detail: last?.result, alive: status.result?.alive === false ? false : undefined,
+      // construct: what it did and what stopped it, blockers with coordinates (request #167); kite: why it stopped.
+      ...(last?.kind === 'construct' ? {built: last.built, mined: last.mined, remaining: last.remaining || undefined,
+        missing: last.missing, failed: last.failed, blockers: last.blockers} : {}),
+      why: last?.why,
       team: carrier.result?.team, clock: carrier.result?.clock, chat: carrier.result?.chat,
     };
     for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];
