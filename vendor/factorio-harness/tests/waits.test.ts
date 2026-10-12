@@ -74,6 +74,22 @@ test('wait_until --wait takes its timeout from --wait-timeout and reports timed_
   const waits=seen.filter(r=>r.action==='wait_until');
   assert.equal(waits[1].args.timeout,54000); assert.equal(waits[2].args.timeout,120);
 });
+test('construct --wait (compact) reports what it built and the blockers with coordinates (request #167)',async()=>{
+  let polls=0;
+  const last={kind:'construct',outcome:'incomplete',built:3,mined:1,remaining:0,
+    failed:[{name:'transport-belt',position:{x:-77.5,y:15.5},error:'placement blocked by tree-08 (-77.0625,16.25)'}],
+    blockers:[{name:'tree-08',position:{x:-80.9375,y:3.25},ghost:'transport-belt',at:{x:-81.5,y:2.5},cleared:true}]};
+  await engine(request=>{
+    if(request.action==='construct')return {ok:true,result:{until_tick:600,total:4}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:0,y:0},health:250,max_health:250}}};
+    polls++;
+    return {ok:true,result:polls===1?{active:{kind:'construct',until_tick:600}}:{active:false,last}};
+  },async port=>{
+    const out=await exec(process.execPath,['dist/host/cli.js','--port',String(port),'call','construct','--wait'],{env:{...process.env,FACTORIO_RCON_PASSWORD:'test-only'}}).catch((e:any)=>e);
+    const text=String(out.stdout);
+    assert.match(text,/built.*3/); assert.match(text,/tree-08/); assert.match(text,/blockers.*\n.*tree-08 position=-80\.94,3\.25 ghost=transport-belt at=-81\.5,2\.5 cleared=true/); assert.match(text,/-77\.0625,16\.25/);
+  });
+});
 test('wait_ticks and a build awaiting a hand craft are waited for',async()=>{
   for (const [action,kind,args,accepted] of [['wait_ticks','wait_ticks','{"ticks":30}',{until_tick:31}],
     ['build','feed','{"item":"lab","position":{"x":1,"y":1}}',{awaiting_craft:{item:'lab',held:0,need:1,crafting:1},until_tick:900}]] as const) {

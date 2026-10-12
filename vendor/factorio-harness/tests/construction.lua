@@ -233,4 +233,76 @@ eq(run_timed(awaiting),'constructed');eq(awaiting.built,1)
 -- With nothing crafting, the same ghost is missing.
 ghosts={ghost(230.5,'boiler')};p.position={x=230.5,y=6.5}
 local short=C.plan_ghosts(p,{},{});eq(run_timed(short),'incomplete');eq(short.missing.boiler,1)
+-- Request #167: tree-08s whose collision box only met a belt ghost's edge
+-- (the engine counts that as blocking) were outside the old search inside
+-- the footprint, so construct ended with the ghost still blocked. Area
+-- searches here return what overlaps the area, as the engine does.
+local blocking_margin=0
+local function edge_tree(x,y,box)
+  local t={valid=true,name='tree-08',type='tree',minable=true,force=neutral,position={x=x,y=y},bounding_box=box,prototype={},marked=false}
+  t.to_be_deconstructed=function() return t.marked end
+  t.order_deconstruction=function() t.marked=true; return true end
+  return t
+end
+local function overlaps(b,area) return b.left_top.x<area.right_bottom.x and b.right_bottom.x>area.left_top.x and b.left_top.y<area.right_bottom.y and b.right_bottom.y>area.left_top.y end
+local find=p.surface.find_entities_filtered
+p.surface.find_entities_filtered=function(a)
+  if type(a.type)=='table' and a.type[1]=='tree' then
+    local out={}
+    for _,o in ipairs(obstacles) do if o.valid and overlaps(o.bounding_box,a.area) then out[#out+1]=o end end
+    return out
+  end
+  return find(a)
+end
+C=dofile('mod/agent-harness_0.1.0/construction.lua'){
+  position=function(v)return {x=v.x,y=v.y}end,distance=distance,integer=integer,visible=function()return true end,
+  directions={north=0,east=4,south=8,west=12},known=function()return true end,reason=function(e)return tostring(e) end,
+  hand_mining_ticks=function() return 30 end,crafting_count=function() return 0 end,real=function() return nil end,
+  request_path=function(_,nav) nav.requested=true end,
+  navigate=function(_,nav)
+    local d=distance(p.position,nav.position)
+    if d<=nav.tolerance then return 'arrived' end
+    local step=math.min(.25,d)
+    p.position={x=p.position.x+(nav.position.x-p.position.x)/d*step,y=p.position.y+(nav.position.y-p.position.y)/d*step}
+  end,
+  -- The engine: a tree whose box touches the belt's box (edges count) blocks it.
+  build=function(_,a)
+    local m=blocking_margin
+    for _,o in ipairs(obstacles) do
+      local b=o.bounding_box
+      if o.valid and b.left_top.x<=a.position.x+.5+m and b.right_bottom.x>=a.position.x-.5-m and b.left_top.y<=a.position.y+.5+m and b.right_bottom.y>=a.position.y-.5-m then
+        error(string.format('placement blocked by %s (%g,%g)',o.name,o.position.x,o.position.y))
+      end
+    end
+    for _,g in ipairs(ghosts) do if key(g.position)==key(a.position) then g.valid=false end end
+    return {consumed=1}
+  end,
+}
+inventory['transport-belt']=4
+-- The tree's box meets the ghost's bottom edge (y=1): marked with the plan, mined first.
+local edge=edge_tree(300.9375,1.25,{left_top={x=300.6,y=1.0},right_bottom={x=301.3,y=1.5}})
+obstacles={edge};ghosts={ghost(300.5,'transport-belt')};p.position={x=300.5,y=5.5}
+local plan167=C.plan_ghosts(p,{},{})
+eq(edge.marked,true);eq(#plan167.pending,2)
+eq(run_timed(plan167),'constructed');eq(plan167.built,1);eq(plan167.mined,1);eq(#plan167.failed,0)
+eq(plan167.blockers[1].name,'tree-08');eq(plan167.blockers[1].position.x,300.9375);eq(plan167.blockers[1].at.x,300.5)
+-- One the plan does not see (0.2 off the edge) but the build bumps into: the
+-- build failure marks and mines that tree, and the build goes again without
+-- spending a try.
+blocking_margin=0.25
+local near=edge_tree(310.9,1.4,{left_top={x=310.6,y=1.2},right_bottom={x=311.2,y=1.6}})
+obstacles={near};ghosts={ghost(310.5,'transport-belt')};p.position={x=310.5,y=5.5}
+local late=C.plan_ghosts(p,{},{})
+eq(near.marked,false);eq(#late.pending,1)
+eq(run_timed(late),'constructed');eq(late.built,1);eq(late.mined,1);eq(#late.failed,0);eq(near.marked,true)
+eq(late.blockers[1].position.y,1.4)
+-- A blocker that cannot be mined fails the ghost, naming it and where it stands.
+local stuck=edge_tree(320.9,1.25,{left_top={x=320.6,y=1.0},right_bottom={x=321.3,y=1.5}})
+stuck.order_deconstruction=function() return false end
+blocking_margin=0
+obstacles={stuck};ghosts={ghost(320.5,'transport-belt')};p.position={x=320.5,y=5.5}
+local fail167=C.plan_ghosts(p,{},{})
+eq(run_timed(fail167),'incomplete');eq(fail167.built,0)
+assert(fail167.failed[1].error:find('placement blocked by tree-08 (320.9,1.25)',1,true),fail167.failed[1].error)
+p.surface.find_entities_filtered=find;obstacles={}
 print('continuous construction tests passed')
