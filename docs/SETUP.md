@@ -165,6 +165,8 @@ One command does the change:
 ```sh
 tools/shift-change.sh shake11 shake12 240 --stream --dry-run   # checks, PREV's switches, the plan; touches nothing
 tools/shift-change.sh shake11 shake12 240 --stream             # stop shake11, close its panes, start shake12 resumed
+POG_SEED=N tools/public-start.sh RUN VIDEO_ID --dry-run           # the public run's first shift, from scratch: plan only
+POG_SEED=N tools/public-start.sh RUN VIDEO_ID                     # old runs to the archive, site run_start, chat cleared, start
 ```
 
 It refuses, with the reason, when shake11 ran no agents (no notes.md), the quota check has a WARNING, the box or OBS
