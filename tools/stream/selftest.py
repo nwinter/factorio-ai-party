@@ -582,14 +582,16 @@ def main():
     assert seg7.queue is None and rpl.clip["label"] == "Luna died" and rpl.pending["label"] == "Astra died"
     rpl.work(t9 + 58)
     assert rpl.clip["label"] == "Luna died" and [c["label"] for c in rpl.more_clips] == ["Astra died"]
-    aired = []
-    for k in range(58, 160):  # one tick a second: segments, then the replay worker
+    aired, when = [], []
+    for k in range(58, 260):  # one tick a second: segments, then the replay worker
         seg7.step(s7, t9 + k)
         rpl.offer(t9 + k)
         rpl.follow_segment(t9 + k)
         if rpl.playing and rpl.status["last"]["label"] not in aired:
             aired.append(rpl.status["last"]["label"])
+            when.append(k)
     assert aired == ["Luna died", "Astra died"] and not rpl.clip and fobs.program == "stream", aired
+    assert when[1] - when[0] >= 90, when  # at least 90 s between replays (shake12: three in 41 s)
 
     # chat lanes: conversation and confessionals talk, coordination goes to the ticker, relayed viewer lines skip both
     m9 = Model({"agents": {"astra": {}, "luna": {}}})

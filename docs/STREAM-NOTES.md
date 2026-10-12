@@ -359,6 +359,17 @@ and segments as long as it always returns to "stream"; the replay buffer (45 s, 
   segment queue and Opus's clip replaced Haiku's, so Haiku's death never aired. Now the cut still empties the queue
   (the live death comes first), the first clip is offered again 20 s later, and the second follows it.
   `/replays.json` lists the waiting ones under `waiting`.
+- Which clip airs (`Segments.replay_gate`, after shake12 aired three replays within 41 s at 04:04, often of one
+  pipe or one belt, and two research completions got no card because the replay scene was on air):
+  - at least 90 s between replays going on air (`replay_spacing`), whatever they show;
+  - the same loss line airs once in 5 minutes (live.py re-reports a loss; shake12 aired several twice ~90 s apart);
+  - one cheap building lost (pipe, pipe to ground, belt, underground belt, pole, inserter; `CHEAP`) airs only when
+    no segment has started for 180 s (`cheap_quiet`) and no fight cut for 60 s. With another clip waiting behind
+    it, replays.py drops it and offers the next;
+  - a routine replay (anything but a death, or a loss that took a character) is refused while the research card is
+    up (the 30 s `research_news`) or a fresh Space Age moment waits, and one queued or on air when a technology
+    finishes or a moment appears is cut (`cut: "research"` / `"space_moment"`), so the card shows and the moment
+    starts. A death replay airs over both.
 - How: the clip becomes an `attack_replay` segment (it skips the 180 s segment spacing, still waits for a free slot
   and for 20 s after the last attack cut), so the casters see it and talk over it. On "starting" the banner page is
   reloaded; on "live" the clip is loaded into the "replay clip" media source, seeked to the start of the window, and
