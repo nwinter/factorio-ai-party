@@ -87,7 +87,7 @@ for name, t in pairs(f.technologies) do
   if t.prototype.max_level == 4294967295 and t.level > t.prototype.level then infinite[name] = t.level - t.prototype.level end
 end
 table.sort(done)
-local counts = {}
+local counts, counted = {}, {}
 for _, n in ipairs({"burner-mining-drill","electric-mining-drill","stone-furnace","steel-furnace","electric-furnace",
   "assembling-machine-1","assembling-machine-2","assembling-machine-3","lab","steam-engine","solar-panel",
   "transport-belt","inserter","oil-refinery","chemical-plant","rocket-silo","biolab","big-mining-drill","foundry",
@@ -97,6 +97,7 @@ for _, n in ipairs({"burner-mining-drill","electric-mining-drill","stone-furnace
   "stone-wall","beacon","pumpjack","locomotive","nuclear-reactor","centrifuge","fast-transport-belt",
   "express-transport-belt"}) do
   if prototypes.entity[n] then
+    counted[#counted+1] = n
     local c = 0
     for _, s in ipairs(all) do c = c + s.count_entities_filtered{force = f, name = n} end
     if c > 0 then counts[n] = c end
@@ -113,7 +114,7 @@ end
 local cur = f.current_research
 rcon.print(helpers.table_to_json{tick = game.tick, ticks_played = game.ticks_played, paused = game.tick_paused,
   rockets = f.rockets_launched, research_done = done, current_research = cur and cur.name or nil,
-  produced = items, consumed = next(consumed) and consumed or nil, infinite = next(infinite) and infinite or nil, entities = counts,
+  produced = items, consumed = next(consumed) and consumed or nil, infinite = next(infinite) and infinite or nil, entities = counts, entities_counted = counted,
   planets = #planets > 0 and planets or nil, platforms = #platforms > 0 and platforms or nil})
 """
 

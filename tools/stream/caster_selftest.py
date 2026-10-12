@@ -806,14 +806,21 @@ check("since_last_beat: a new job and new words; then nothing new", "since_last_
 import model  # noqa: E402
 um = model.Model({"title": "t", "agents": {}})
 um.ingest({"tick": 60, "research": {"done": ["logistic-robotics", "gun-turret", "solar-energy"], "current": None},
-           "entities": {"gun-turret": 12}}, now=1000.0)  # already done when the stream started
+           "entities": {"gun-turret": 12}, "entities_counted": ["gun-turret", "roboport", "solar-panel", "accumulator"]},
+          now=1000.0)  # already done when the stream started
 um.ingest({"tick": 120, "research": {"done": ["logistic-robotics", "gun-turret", "solar-energy",
                                               "electric-energy-accumulators"], "current": None},
-           "entities": {"gun-turret": 12, "solar-panel": 19}}, now=1000.0 + 3600)
+           "entities": {"gun-turret": 12, "solar-panel": 19},
+           "entities_counted": ["gun-turret", "roboport", "solar-panel", "accumulator"]}, now=1000.0 + 3600)
 uu = um.snapshot(1000.0 + 3600 + 180)["unused_unlocks"]
 check("unused unlocks: researched, none built; oldest first; when", [u["unlocks"] for u in uu] ==
       ["roboports", "accumulators"] and uu[0]["researched"] == "before this stream" and
       uu[1]["researched"] == "3 minutes ago", str(uu))
+um2 = model.Model({"title": "t", "agents": {}})
+um2.ingest({"tick": 60, "research": {"done": ["logistic-robotics"], "current": None}, "entities": {"inserter": 3}},
+           now=1000.0)
+check("unused unlocks: nothing when the score does not say what it counts (an old score)",
+      um2.snapshot(1100.0)["unused_unlocks"] == [])
 nb = caster.facts_for({"kind": "lull", "angle": "explain", "t": now, "prio": 1}, {"agents": [], "unused_unlocks": uu})
 check("unused unlocks reach the hosts on explain beats, as commentary", nb.get("not_built_yet") == uu and
       "commentary" in nb.get("not_built_yet_note", "") and "not_built_yet" not in caster.facts_for(

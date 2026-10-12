@@ -260,6 +260,7 @@ class Model:
         self.research = {"current": None, "progress": None, "done": set(), "recent": deque(maxlen=6)}
         self.done_at = {}    # technology -> when this stream saw it finish (unused_unlocks)
         self.entities = {}   # building counts from the score (unused_unlocks)
+        self.entities_counted = set()  # the buildings the score counts (absent from entities means none)
         self.research_started = False
         self.prod_samples = deque(maxlen=400)  # (wall time, game seconds, {item: total})
         self.flows = {}
@@ -309,6 +310,8 @@ class Model:
             self.prod_samples.append((now, game_sec, dict(obs["produced"])))
         if obs.get("entities") is not None:  # the score's building counts (tools/pog.py), for unused_unlocks
             self.entities = dict(obs["entities"])
+            # zeros are left out of the counts, so only a building the score says it counts can be "none built"
+            self.entities_counted = set(obs.get("entities_counted") or [])
         if obs.get("flows"):
             self.flows = obs["flows"]
         if obs.get("darkness") is not None:
@@ -544,12 +547,13 @@ class Model:
         """Researched technologies whose building the team has none of, oldest first: [{tech, unlocks, built,
         researched}], researched being "N minutes ago" or "before this stream" (already done when the stream
         started). For the hosts' commentary to viewers only; nothing here goes to the agents."""
-        if not self.entities:
+        if not self.entities_counted:
             return []
         now = now or time.time()
         out = []
         for tech, (names, label) in UNLOCKS.items():
-            if tech not in self.research["done"] or any(self.entities.get(n) for n in names):
+            if tech not in self.research["done"] or any(self.entities.get(n) for n in names) or \
+                    not all(n in self.entities_counted for n in names):
                 continue
             t = self.done_at.get(tech)
             out.append((t or 0, {"tech": tech_label(tech), "unlocks": label, "built": 0,
