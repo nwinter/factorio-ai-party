@@ -54,6 +54,13 @@ already targets your character.
 - Name an owner in a request when you know who should do it. A request without an owner is shown to everyone until someone takes it; take one with
   `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`).
+- The team plan is one board item everyone edits: goals, and one line per agent of what they are on. `./fh board plan`
+  shows it (`./fh board` shows it at the top); `./fh board plan goals "..."` replaces the goals; `./fh board plan
+  doing "..."` sets your line; `./fh board plan for luna "..."` sets a teammate's line (shown as set by you); `""`
+  clears. The stream's board widget shows it.
+- `./fh research` shows the research queue: each technology's progress, who queued it, its packs, and when it should
+  finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
+  and what each unlocked.
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
   own voice: use it for the moments viewers should hear (a plan, a win, a complaint, a joke), a few times an hour.
 - `./fh confess "..."` is a confessional: viewers hear it on the stream, and your teammates never see it. Use it when
@@ -62,8 +69,9 @@ already targets your character.
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
   Viewers see tells on the stream's logistics ticker. `./fh tells` lists the ones you sent and received.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
-  tells, board items assigned to you or changed by someone else, new requests nobody owns, attacks, losses and hits on
-  your character. Each is shown once. A change to your board item or a tell also ends your `sleep`.
+  tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
+  your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character. Each is shown
+  once. A change to your board item, a plan line set for you, or a tell also ends your `sleep`.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.

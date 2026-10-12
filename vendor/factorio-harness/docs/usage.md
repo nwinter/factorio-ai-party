@@ -242,6 +242,16 @@ fh sleep 900 --until researched                       # ...or until the research
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
 - `collect` with `radius` skips stock inside another agent's active board claim and reports `skipped_claims` (`40 iron-plate in 2 places of #4 iron smelting (claim by sol); ask the owner`). `collect` on named positions still takes, and lists the claimed ones in `claimed`.
 - The `status` power warning appears only when some electric machine lacks power: `power: 3 of 78 machines low_power; 1 unconnected (fh call power lists them)` (`no_power` = connected to a network with no generation; `unconnected` = no pole reaches it).
+- `fh research` (`research` with no arguments; read): `current`, `progress`, `queue`, `pending`, and `entries`, one per
+  queued technology then each pending one: `name`, `progress` (%; saved progress for one not running), `queued_by` (the
+  agent whose `research` or `research_next` queued it, or the player who queued it in the game; absent when the queue
+  had it before the harness kept track), `packs`, `done_in` (time until it finishes, counting the entries ahead of it,
+  at the lab throughput measured from the running research's progress over the last 5 minutes, sampled every 10 s),
+  `waits_for` (a pack the running research does not use and nobody made in the last 10 minutes; the clock stops there,
+  `clock_stops_at`), `waiting` for pending ones; and `throughput` (`measured over the last <time>`, or not measured
+  yet). `fh research done` (`research_done {limit?}`): technologies your force finished lately, newest first, with
+  `ago`, `unlocks` and `queued_by`. `unlocks` names recipes, `travel to PLACE`, `QUALITY quality`, given items, and
+  bonuses as `modifier-type +10%` (fractions) or `+N`.
 - `fh call labs [--args '{"radius":96}']` (read; an observe scope): one `research` line (name, progress, packs, ETA at the working labs, or `stalled`) and one line per group of adjacent labs (largest 8, at most 256 labs): working count, other statuses, packs the labs lack (and how many labs), the inserters feeding them with idle ones and why (`source transport-belt (0,-3) has nothing the lab needs`, `no_power`), packs absent from all their belts and chests, and what those sources hold. Example: `labs (0,0)-(6,0): 1/3 working, 2 missing_science_packs, lack logistic (2); feeders: 3 inserters (1 lab-to-lab); 1 idle: source transport-belt (0,-3) has nothing the lab needs; no logistic on their 1 belts/chests; sources hold automation 12`.
 
 ## Retries
@@ -314,6 +324,10 @@ fh board post --args '{"kind":"claim","title":"iron smelting","area":{"left_top"
 fh board update --args '{"id":4,"owner":"astra"}'           # take an open unowned item (your own name)
 fh board update --args '{"id":4,"status":"done","note":"6 assemblers running"}'
 fh board request --args '{"title":"...","problem":"...","proposal":"..."}'   # harness_request
+fh board plan                                               # the team plan (board_plan): goals and who is on what
+fh board plan goals "robots by hour 3; oil next"            # replace the goals ("" clears them)
+fh board plan doing "oil: pumpjacks at the north field"     # your own line ("" removes it)
+fh board plan for luna "scouting south"                     # another agent's line; shown as "(set by you)"
 fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 ```
 
@@ -322,12 +336,22 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `owner` takes an agent name, display name or player name without `pog-`, any case; an unknown name fails with the
   roster. Anyone may take an open unowned item or add a note; only the owner or requester changes status, reassigns or
   releases (`owner: ""`). Titles are cut at 120 bytes and notes at 200 instead of failing; the last 10 notes are kept.
-- `board` returns `items` (list rows carry the last 2 notes and `note_count`; `id` gives one item in full), `matched`
-  and `open_unowned`. `status:"active"` means open, claimed, doing or blocked.
+- `board` returns `plan` (below), `items` (list rows carry the last 2 notes and `note_count`; `id` gives one item in
+  full), `matched` and `open_unowned`. `status:"active"` means open, claimed, doing or blocked.
+- The team plan: one item of kind `plan`, edited with `board_plan {goals?, doing?, agent?}`: `goals` (up to 600
+  characters) replaces the goals, `doing` (up to 160) sets one agent's line, yours unless `agent` names another; `""`
+  clears either. Anyone edits any part. With no arguments it reads. Replies and `board` reads give `plan {id, goals,
+  doing: ["name: text (set by NAME)"], edited: "by NAME, <age> ago"}`; `board {mine:true}` and other kinds leave it
+  out, and it is never a row in `items`. It is never pruned; `board_post` refuses `kind:"plan"`, `board_update` takes
+  notes on it but no status or owner. Each edit is a board event (`kind:"plan"`, `change:"edited"`, `text` what
+  changed, `owner` the agent whose line changed) and a `board` hint line for every other agent (`team plan edited by
+  NAME: ...`); a line written for you counts as yours (it wakes you from `sleep`), other edits as news.
 - A claim overlapping another agent's active claim is posted with a warning. At most 300 items are kept (finished
   ones pruned first, then notes, then the oldest).
 - `board_events {since_seq, limit}` (for overlays) returns `{seq,tick,by,id,change,title,kind,owner,requested_by,status,text}`
-  oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, or `note`.
+  oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, `note`, or `edited`
+  (the plan). A finished technology is an event with no item: `by:"research"`, `kind:"research"`, `title` the
+  technology, `change:"done"`, `text` `unlocks: ...`; it gives nobody a `board` hint line (the `research` lines do that).
   `board` and `board_events` work for any player, including directors without a character.
 - Board actions never stop the character when they fail (like `say`), and work while a bot is dead.
 - Every reply carries a `team` block when something is new for that agent since its previous request, shown once.
@@ -336,7 +360,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   <age> ago: text`), then `board` (at most 5 lines and `+N more`, by someone else: items assigned to you with their
   first note, any change or note on an item you own or requested, an item reassigned or released away from you
   (`(was yours)`), a claim posted over yours; after those, each new open unowned task or request once; and a nudge
-  when another open unowned request passes 2 game minutes), `alerts` (your character being hit, attacked areas with attacker and entities hit, enemy groups
+  when another open unowned request passes 2 game minutes), `research` (each technology your force finished since your
+  previous reply, once: `research done: NAME, unlocks: a, b, c (<age> ago)`; a first reply looks back 10 game
+  minutes; at most 4 lines and `+N more finished: research_done`), `alerts` (your character being hit, attacked areas with attacker and entities hit, enemy groups
   gathering, buildings destroyed; at most 8 lines; these replace the old top-level `losses` field) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
@@ -367,7 +393,7 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   queue plan (append by default); `plans` lists them, `plans {name}` shows one.
 - Operator: `tools/harness-requests.py list|show|answer|board|events|mentions` in the pog repo. Underneath, a dispatch
   request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`,
-  `mention_counts` and `tells` as `operator`.
+  `board_plan` (goals and other agents' lines; the operator has no line), `mention_counts` and `tells` as `operator`.
 - Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
   request against a full backlog); nothing runs per tick.
 
