@@ -1965,6 +1965,12 @@ class Caster:
         if e and e["kind"] == "attack" and not e.get("also") and \
                 now - getattr(self, "last_attack_t", 0) < getattr(self.a, "attack_gap", 0):
             return
+        # shake12 04:04-04:11: replays back to back ("Let's run that back" three times in 2.5 minutes, one pipe or one
+        # belt each); the card still plays, the hosts let a second replay within 60 s go by
+        if e and e["kind"] == "segment" and (e.get("segment") or {}).get("type") == "attack_replay":
+            if now - getattr(self, "last_replay_t", 0) < 60:
+                return
+            self.last_replay_t = now
         if e and e["kind"] in QUIET_KINDS and now < self.caster_free + getattr(self.a, "quiet", 0):
             return
         if not e:

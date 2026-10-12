@@ -901,6 +901,16 @@ check("a plain attack 60 s after the last attack beat is dropped", not hasattr(f
 ctk.events.append({"kind": "loss", "text": "3 lost: 3 pipe (by small biters)", "t": time.time(), "prio": 8})
 ctk.caster_tick(time.time(), {})
 check("a loss still speaks inside the attack gap", getattr(ft, "facts", {}).get("event") == "loss")
+ftr = _FactsWriter([])
+ctr = _caster(ftr)
+ctr.a, ctr.lock, ctr.prep, ctr.next_gap, ctr.filler_i = ctk.a, caster.threading.Lock(), [], 1.0, 0
+ctr.events, ctr.caster_free, ctr.last_replay_t = caster.deque(maxlen=60), 0.0, time.time() - 30
+rep = {"id": "seg-7", "type": "attack_replay", "state": "live", "started": time.time(), "ends": time.time() + 40,
+       "title": "Replay"}
+ctr.snap = {"agents": [], "segment": rep}
+ctr.events.append({"kind": "segment", "segment": rep, "t": time.time(), "prio": 7})
+ctr.caster_tick(time.time(), {})
+check("the hosts let a second replay within 60 s go by (shake12 04:04-04:11)", not hasattr(ftr, "facts"))
 sent_or = []
 _o2 = caster.urllib.request.urlopen
 caster.urllib.request.urlopen = lambda req, timeout=0: sent_or.append(json.loads(req.data)) or type(
