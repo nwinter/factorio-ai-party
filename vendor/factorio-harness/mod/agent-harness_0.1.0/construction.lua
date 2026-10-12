@@ -104,7 +104,7 @@ return function(api)
   -- Ghost construction works like a player: build everything already in
   -- reach, then walk to the stand point (off every footprint) that brings the
   -- most remaining ghosts into reach, near the nearest unbuilt ghost.
-  local MAX_GHOSTS,PER_TICK,STAND_TRIES=1024,4,3
+  local MAX_GHOSTS,PER_TICK,STAND_TRIES,LOOK_EVERY=1024,4,3,10
   local BELTS={'transport-belt','underground-belt','splitter','loader','loader-1x1','linked-belt'}
   local compass={}
   for name,value in pairs(api.directions) do compass[value]=name end
@@ -113,6 +113,14 @@ return function(api)
   local function reach(p,rec)
     if rec and rec.mine then return (p.resource_reach_distance or 2.7)-0.2 end
     return p.build_distance-0.5
+  end
+  -- A pending entry's position, read from the engine once: ghosts, trees and
+  -- marked entities do not move, and a tick reads every entry's position
+  -- (shift01: a 255-ghost construct cost ~100 ms a tick in engine reads).
+  local function pos_of(rec)
+    local q=rec.pos
+    if not q then local gp=rec.ghost.position; q={x=gp.x,y=gp.y}; rec.pos=q end
+    return q
   end
   -- A tree or rock to hand-mine, once per entity; trees and rocks that block
   -- ghosts are also listed (action.blockers, reported with the outcome).
@@ -164,6 +172,29 @@ return function(api)
       if inv.get_item_count{name=stack.name,quality=quality}>=(stack.count or 1) then return stack.name end
     end
     return nil,wanted or g.ghost_name
+  end
+  -- Item and crafting checks for one tick, once per ghost name and quality
+  -- (and per item being crafted), however many ghosts share them.
+  local function tick_cache(p)
+    local items,crafts={},{}
+    local c={}
+    function c.item(g,quality)
+      local k=g.ghost_name..'/'..quality
+      local hit=items[k]
+      if not hit then
+        local item,wanted=item_for(p,g,quality)
+        hit={item=item,wanted=wanted}; items[k]=hit
+      end
+      return hit.item,hit.wanted
+    end
+    function c.crafting(item)
+      local n=crafts[item]
+      if not n then n=api.crafting_count(p,item); crafts[item]=n end
+      return n
+    end
+    -- A build changes the inventory: forget the item answers.
+    function c.spent() items={} end
+    return c
   end
   function M.remaining(action)
     local n=0
@@ -288,10 +319,11 @@ return function(api)
     for _,o in ipairs(rec.obstacles or {}) do if o.valid then return o end end
   end
   -- The character (radius ~0.2) standing on a ghost blocks its placement.
-  local function can_stand(p,action,pos)
-    for _,rec in ipairs(action.pending) do
-      local g=rec.ghost
-      if g.valid and g.type~='tile-ghost' and math.abs(g.position.x-pos.x)<6 and math.abs(g.position.y-pos.y)<6 and on_footprint(g,pos,0.3) then return false end
+  -- live: the pending entries still valid.
+  local function can_stand(p,live,pos)
+    for _,rec in ipairs(live) do
+      local q=pos_of(rec)
+      if math.abs(q.x-pos.x)<6 and math.abs(q.y-pos.y)<6 and rec.ghost.type~='tile-ghost' and on_footprint(rec.ghost,pos,0.3) then return false end
     end
     -- Belts carry a standing character off its stand point.
     if p.surface.count_entities_filtered{area={{pos.x-0.4,pos.y-0.4},{pos.x+0.4,pos.y+0.4}},type=BELTS,limit=1}>0 then return false end
@@ -299,12 +331,16 @@ return function(api)
   end
   -- A ghost that failed once is retried only after the character moved, since
   -- the usual cause is the character itself or an entity it was about to clear.
-  local function buildable(p,rec)
-    local g=rec.ghost
-    if rec.mine then return p.can_reach_entity(g) and api.visible(p,g.position) end
-    return api.distance(p.position,g.position)<=reach(p) and api.visible(p,g.position) and not obstructed(rec)
-      and not (rec.blocked_at and api.distance(p.position,rec.blocked_at)<1)
-      and (g.type=='tile-ghost' or not on_footprint(g,p.position,0.2))
+  -- here: the character's position this tick.
+  local function buildable(p,rec,here)
+    local g,pos=rec.ghost,pos_of(rec)
+    if rec.mine then
+      -- Hand reach is to the entity's edge; nothing farther than this can be in it.
+      return api.distance(here,pos)<=reach(p,rec)+4 and p.can_reach_entity(g) and api.visible(p,pos)
+    end
+    return api.distance(here,pos)<=reach(p) and api.visible(p,pos) and not obstructed(rec)
+      and not (rec.blocked_at and api.distance(here,rec.blocked_at)<1)
+      and (g.type=='tile-ghost' or not on_footprint(g,here,0.2))
   end
   -- Honest completion: ghosts skipped for lack of items or failures mean the
   -- area is not done, whatever else was built.
@@ -319,33 +355,45 @@ return function(api)
   -- Candidates ring the target at two radii plus the in-reach point on the
   -- straight line toward the character. Coverage wins; walking distance only
   -- breaks ties (16 tiles, the ring's diameter, is worth one ghost).
-  local function stand_point(p,action,target)
-    local g,r=target.ghost,reach(p,target)
+  -- The valid entries and their reaches are read once per search, not once
+  -- per candidate.
+  local function stand_point(p,action,target,here)
+    local gp,r=pos_of(target),reach(p,target)
     local far=target.mine and r or r-1.5
     local candidates={}
-    local dx,dy=p.position.x-g.position.x,p.position.y-g.position.y
+    local dx,dy=here.x-gp.x,here.y-gp.y
     local d=math.sqrt(dx*dx+dy*dy)
-    if d>0 then candidates[1]={x=g.position.x+dx/d*math.min(far,d),y=g.position.y+dy/d*math.min(far,d)} end
+    if d>0 then candidates[1]={x=gp.x+dx/d*math.min(far,d),y=gp.y+dy/d*math.min(far,d)} end
     for k=0,15 do
       local angle=k*math.pi/8
       for _,radius in ipairs{far,far/2} do
-        candidates[#candidates+1]={x=g.position.x+math.cos(angle)*radius,y=g.position.y+math.sin(angle)*radius}
+        candidates[#candidates+1]={x=gp.x+math.cos(angle)*radius,y=gp.y+math.sin(angle)*radius}
       end
     end
+    local live={}
+    for _,rec in ipairs(action.pending) do if rec.ghost.valid then live[#live+1]=rec end end
+    local build_reach,mine_reach=reach(p)-1,reach(p,{mine=true})
     local best,best_score
     for _,c in ipairs(candidates) do
       local ok=not (target.blocked_at and api.distance(c,target.blocked_at)<1.5)
       for _,bad in ipairs(target.bad_stands or {}) do if api.distance(c,bad)<1.5 then ok=false end end
-      if ok and can_stand(p,action,c) then
+      if ok and can_stand(p,live,c) then
         local cover=0
-        for _,rec in ipairs(action.pending) do
-          if rec.ghost.valid and api.distance(c,rec.ghost.position)<=reach(p,rec)-(rec.mine and 0 or 1) then cover=cover+1 end
+        for _,rec in ipairs(live) do
+          if api.distance(c,pos_of(rec))<=(rec.mine and mine_reach or build_reach) then cover=cover+1 end
         end
-        local score=cover-api.distance(p.position,c)/16
+        local score=cover-api.distance(here,c)/16
         if not best_score or score>best_score then best,best_score=c,score end
       end
     end
     return best
+  end
+  -- Drop the entries in a set, in one pass.
+  local function drop_set(action,set)
+    if next(set)==nil then return end
+    local keep={}
+    for _,rec in ipairs(action.pending) do if not set[rec] then keep[#keep+1]=rec end end
+    action.pending=keep
   end
   local function stop(p) p.walking_state={walking=false,direction=0} end
   local function index_of(action,rec)
@@ -370,37 +418,45 @@ return function(api)
       if busy=='inventory_full' then stop(p); return 'inventory_full' end
       if busy then stop(p); return end
     end
+    -- Waiting in reach for a hand craft: look again every LOOK_EVERY ticks
+    -- (a pipe takes 30 to craft), not on every tick.
+    if action.awaiting_craft and game.tick<(action.next_look or 0) then return end
     -- Deconstruction cancelled meanwhile: leave those entities alone.
-    if game.tick%30==0 then
-      for i=#action.pending,1,-1 do
-        local rec=action.pending[i]
-        if rec.mine and rec.ghost.valid and not rec.ghost.to_be_deconstructed() then drop(action,i) end
+    if game.tick>=(action.next_marks or 0) then
+      action.next_marks=game.tick+30
+      local cancelled={}
+      for _,rec in ipairs(action.pending) do
+        if rec.mine and rec.ghost.valid and not rec.ghost.to_be_deconstructed() then cancelled[rec]=true end
       end
+      drop_set(action,cancelled)
     end
+    local here=p.position
+    local cache=tick_cache(p)
     local placed,waiting=0,false
     for i=#action.pending,1,-1 do
       local rec=action.pending[i]
       local g=rec.ghost
       if not g.valid then action.gone=action.gone+1; drop(action,i)
       elseif rec.mine then
-        if not action.mining and buildable(p,rec) then action.mining={rec=rec,done_tick=game.tick+api.hand_mining_ticks(p,g)} end
-      elseif buildable(p,rec) then
+        if not action.mining and buildable(p,rec,here) then action.mining={rec=rec,done_tick=game.tick+api.hand_mining_ticks(p,g)} end
+      elseif buildable(p,rec,here) then
         if placed>=PER_TICK then waiting=true; break end
         local quality=g.quality and g.quality.name or 'normal'
-        local item,wanted=item_for(p,g,quality)
+        local item,wanted=cache.item(g,quality)
         if not item then
           -- Items still in the hand-crafting queue are awaited, not missing.
-          if api.crafting_count(p,wanted)==0 then action.missing[wanted]=(action.missing[wanted] or 0)+1; drop(action,i) end
+          if cache.crafting(wanted)==0 then action.missing[wanted]=(action.missing[wanted] or 0)+1; drop(action,i) end
         else
-          rec.position=g.position
+          rec.position=pos_of(rec)
           local tile=g.type=='tile-ghost'
           -- A rail planner places several rails: name the ghost's.
           local ip=prototypes and prototypes.item and prototypes.item[item]
           local rails_ok,rails=pcall(function() return ip and ip.rails end)
           local planner=rails_ok and type(rails)=='table' and #rails>0
-          local ok,err=pcall(api.build,p,{item=item,quality=quality,position=g.position,direction=not tile and compass[g.direction] or nil,
+          local ok,err=pcall(api.build,p,{item=item,quality=quality,position=rec.position,direction=not tile and compass[g.direction] or nil,
             entity=planner and g.ghost_name or nil})
           placed=placed+1
+          cache.spent()
           if ok and not g.valid then action.built=action.built+1; drop(action,i)
           else
             -- A tree or rock the build could not get past: mark and mine that
@@ -416,7 +472,7 @@ return function(api)
             if fresh>0 then rec.blocked_at=nil; goto next_ghost end
             rec.tries=rec.tries+1
             if rec.tries>=2 then fail(action,rec,ok and 'ghost remained' or api.reason(err)); drop(action,i)
-            else rec.blocked_at={x=p.position.x,y=p.position.y} end
+            else rec.blocked_at={x=here.x,y=here.y} end
           end
         end
       end
@@ -431,7 +487,7 @@ return function(api)
       -- still covers other ghosts, rather than re-planning mid-walk.
       local covered
       for _,rec in ipairs(action.pending) do
-        if rec.ghost.valid and api.distance(nav.position,rec.ghost.position)<=reach(p,rec)-(rec.mine and 0 or 1) then covered=rec; break end
+        if rec.ghost.valid and api.distance(nav.position,pos_of(rec))<=reach(p,rec)-(rec.mine and 0 or 1) then covered=rec; break end
       end
       -- No stand point left: drop the walk too, or the next tick indexes a nil target.
       nav.target=covered
@@ -442,7 +498,7 @@ return function(api)
       if not outcome then return end
       local target=nav.target
       action.nav=nil
-      if outcome~='arrived' or not buildable(p,target) then
+      if outcome~='arrived' or not buildable(p,target,p.position) then
         target.bad_stands=target.bad_stands or {}
         target.bad_stands[#target.bad_stands+1]=nav.position
         target.stand_fails=target.stand_fails+1
@@ -455,47 +511,67 @@ return function(api)
     -- Walk toward the nearest ghost that still has an item in inventory.
     -- Deferred: ghosts under uncleared trees/rocks (their mining comes
     -- first) and ghosts whose item is being hand-crafted (awaited last, in
-    -- reach where the character stands).
-    local deferred={}
+    -- reach where the character stands). One pass sorts every entry, with
+    -- the item checks cached per item: shift01's 255 pipe ghosts awaiting
+    -- their craft redid a full search per ghost on every tick, and the
+    -- world ran at 9 ticks/s.
     action.awaiting_craft=nil
-    while #action.pending>0 do
-      local best,bd,later,ld
-      for i,rec in ipairs(action.pending) do
-        local d=rec.ghost.valid and api.distance(p.position,rec.ghost.position)
-        if d then
-          if deferred[rec]=='craft' then if not ld or d<ld then later,ld=i,d end
-          elseif not deferred[rec] and (not bd or d<bd) then best,bd=i,d end
-        end
-      end
-      local rec=action.pending[best or later]
-      if not rec then
-        -- Only ghosts whose obstacles could not be mined remain.
-        for i=#action.pending,1,-1 do
-          local o=obstructed(action.pending[i])
-          if o then fail(action,action.pending[i],string.format('blocked by %s at (%g,%g), which could not be mined',o.name,o.position.x,o.position.y)); drop(action,i) end
-        end
-        break
-      end
-      local g=rec.ghost
-      local item,wanted=true,nil
-      if not best then
-        if buildable(p,rec) then action.awaiting_craft=true; stop(p); return end
-      elseif not rec.mine then item,wanted=item_for(p,g,g.quality and g.quality.name or 'normal') end
-      if not rec.mine and obstructed(rec) then deferred[rec]='blocked'
-      elseif not item and api.crafting_count(p,wanted)>0 then deferred[rec]='craft'
-      elseif not item then action.missing[wanted]=(action.missing[wanted] or 0)+1; drop(action,best)
-      else
-        local stand=stand_point(p,action,rec)
-        if not stand then fail(action,rec,'no free stand point in reach'); drop(action,best or later)
-        else
-          -- Stalls re-path at once and give up after a few, since another
-          -- stand point is usually a better answer than pushing on.
-          action.nav={position=stand,tolerance=rec.mine and 0.4 or 1,target=rec,max_stalls=6,replan_every=1,replans=0,stalled=0,last_position=p.position}
-          if api.distance(p.position,stand)>reach(p) then api.request_path(p,action.nav) end
-          return
+    local ready,crafting,missing={},{},{}
+    for _,rec in ipairs(action.pending) do
+      if rec.ghost.valid then
+        local d=api.distance(here,pos_of(rec))
+        if rec.mine then ready[#ready+1]={rec=rec,d=d}
+        elseif not obstructed(rec) then
+          local g=rec.ghost
+          local item,wanted=cache.item(g,g.quality and g.quality.name or 'normal')
+          if item then ready[#ready+1]={rec=rec,d=d}
+          elseif cache.crafting(wanted)>0 then crafting[#crafting+1]={rec=rec,d=d}
+          else missing[#missing+1]={rec=rec,d=d,wanted=wanted} end
         end
       end
     end
+    local gone={}
+    local function nearest(list)
+      local best
+      for _,c in ipairs(list) do if not gone[c.rec] and (not best or c.d<best.d) then best=c end end
+      return best
+    end
+    while true do
+      local best=nearest(ready)
+      -- A ghost with no item and none crafting, nearer than the next walk
+      -- (every one, when nothing is left to walk to), is reported missing.
+      for _,m in ipairs(missing) do
+        if not gone[m.rec] and (not best or m.d<best.d) then
+          gone[m.rec]=true; action.missing[m.wanted]=(action.missing[m.wanted] or 0)+1
+        end
+      end
+      local pick=best or nearest(crafting)
+      if not pick then break end
+      local rec=pick.rec
+      if not best and buildable(p,rec,here) then
+        drop_set(action,gone)
+        action.awaiting_craft=true; action.next_look=game.tick+LOOK_EVERY
+        stop(p); return
+      end
+      local stand=stand_point(p,action,rec,here)
+      if stand then
+        drop_set(action,gone)
+        -- Stalls re-path at once and give up after a few, since another
+        -- stand point is usually a better answer than pushing on.
+        action.nav={position=stand,tolerance=rec.mine and 0.4 or 1,target=rec,max_stalls=6,replan_every=1,replans=0,stalled=0,last_position=here}
+        if api.distance(here,stand)>reach(p) then api.request_path(p,action.nav) end
+        return
+      end
+      fail(action,rec,'no free stand point in reach'); gone[rec]=true
+    end
+    -- Only ghosts whose obstacles could not be mined remain.
+    for _,rec in ipairs(action.pending) do
+      local o=not gone[rec] and obstructed(rec)
+      if o then
+        fail(action,rec,string.format('blocked by %s at (%g,%g), which could not be mined',o.name,o.position.x,o.position.y)); gone[rec]=true
+      end
+    end
+    drop_set(action,gone)
     if #action.pending==0 then stop(p); return finished(action) end
   end
   return M

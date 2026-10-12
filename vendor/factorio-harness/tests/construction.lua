@@ -305,4 +305,46 @@ local fail167=C.plan_ghosts(p,{},{})
 eq(run_timed(fail167),'incomplete');eq(fail167.built,0)
 assert(fail167.failed[1].error:find('placement blocked by tree-08 (320.9,1.25)',1,true),fail167.failed[1].error)
 p.surface.find_entities_filtered=find;obstacles={}
+-- shift01 (22:32-22:37 UTC): Opus's construct over 255 pipe ghosts waited
+-- for 560 hand-crafted pipes, and every tick redid the nearest-ghost search
+-- once per waiting ghost (engine reads ~N^2 a tick): the world ran at 9
+-- ticks/s. Engine reads are counted here; a tick's cost stays linear and a
+-- wait looks again only every 10 ticks.
+local reads,craft_calls,pipes_crafting=0,0,255
+local function counted(t)
+  return setmetatable({},{__index=function(_,k) reads=reads+1; return t[k] end,__newindex=t})
+end
+C=dofile('mod/agent-harness_0.1.0/construction.lua'){
+  position=function(v)return {x=v.x,y=v.y}end,distance=distance,integer=integer,visible=function()return true end,
+  directions={north=0,east=4,south=8,west=12},known=function()return true end,reason=function(e)return tostring(e) end,
+  hand_mining_ticks=function() return 30 end,real=function() return nil end,
+  crafting_count=function(_,item) craft_calls=craft_calls+1; return item=='pipe' and pipes_crafting or 0 end,
+  request_path=function(_,nav) nav.requested=true end,
+  navigate=function(_,nav)
+    local d=distance(p.position,nav.position)
+    if d<=nav.tolerance then return 'arrived' end
+    local step=math.min(.25,d)
+    p.position={x=p.position.x+(nav.position.x-p.position.x)/d*step,y=p.position.y+(nav.position.y-p.position.y)/d*step}
+  end,
+  build=function(_,a)
+    assert(distance(p.position,a.position)<=p.build_distance,'out of reach')
+    assert((inventory[a.item] or 0)>0,'item is not in main inventory'); inventory[a.item]=inventory[a.item]-1
+    for _,g in ipairs(ghosts) do if key(g.position)==key(a.position) then g.valid=false end end
+    return {consumed=1}
+  end,
+}
+ghosts={}
+for i=0,254 do ghosts[#ghosts+1]=counted(ghost(400.5+i,'pipe')) end
+inventory.pipe=0;p.position={x=400.5,y=6.5};game.tick=1000
+local pipeline=C.plan_ghosts(p,{},{})
+eq(#pipeline.pending,255)
+for _=1,200 do eq(C.tick_ghosts(p,pipeline),nil);game.tick=game.tick+1 end
+eq(pipeline.awaiting_craft,true);eq(next(pipeline.missing),nil)
+reads,craft_calls=0,0
+for _=1,60 do eq(C.tick_ghosts(p,pipeline),nil);game.tick=game.tick+1 end
+assert(reads<=60*255,'engine reads over 60 waiting ticks: '..reads)
+assert(craft_calls<=12,'crafting_count calls over 60 waiting ticks: '..craft_calls)
+-- The pipes arrive: all 255 are built, nearest first.
+inventory.pipe=255;pipes_crafting=0
+eq(run_timed(pipeline),'constructed');eq(pipeline.built,255);eq(inventory.pipe,0)
 print('continuous construction tests passed')
