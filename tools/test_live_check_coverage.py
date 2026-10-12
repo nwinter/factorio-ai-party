@@ -11,6 +11,7 @@ import live_check_coverage as L  # noqa: E402
 
 compiled, calls, units = [], [], [100]
 where = {"pos": None}
+clock = {"tick": 1000, "step": 180}  # ticks between two clock reads 3 s apart: 180 runs, 3 is auto-paused
 
 
 def fake_lua(self, code):
@@ -18,6 +19,9 @@ def fake_lua(self, code):
     p = subprocess.run(["luac", "-p", "-"], input=code, capture_output=True, text=True)
     assert p.returncode == 0, (p.stderr, code[:300])
     compiled.append(code)
+    if "connected_players" in code:
+        clock["tick"] += clock["step"]
+        return {"tick": clock["tick"], "paused": False, "players": 1}
     if "bot_create" in code or "bot_remove" in code:
         return {"ok": True}
     if "teleport" in code:
@@ -70,6 +74,7 @@ class FakeRcon:
 def main():
     L.Check.lua, L.Check.fh = fake_lua, fake_fh
     L.pog.Rcon = FakeRcon
+    L.time.sleep = lambda s: None
     out = tempfile.mkdtemp()
     os.environ["POG_WORLD"] = "live"
     real_open = open
@@ -98,6 +103,16 @@ def main():
     wires = [a for act, a in calls if act == "wire"]
     assert all(w["color"] == "red" for w in wires) and len(wires) == 2
     assert any("get_entity_by_unit_number" in c for c in compiled)
+    # A paused game (auto_pause, no client) stops the check before it builds anything.
+    clock["step"], n_builds = 3, len(builds)
+    sys.argv = ["live_check_coverage.py", "--out", tempfile.mkdtemp()]
+    try:
+        L.main()
+        raise AssertionError("a paused game was not caught")
+    except SystemExit as e:
+        assert "not running" in str(e.code), e.code
+    assert sum(1 for act, _ in calls if act == "build") == n_builds
+    clock["step"] = 180
     # Run worlds are refused.
     os.environ["POG_WORLD"] = "n"
     try:

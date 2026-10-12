@@ -18,8 +18,8 @@ this branch added.
   rails (the rail item could not be built at all), quality on assembler recipes (accepted but a quality-only change was
   reported unchanged). Built here: `wire color=red|green`, `circuit`, `train`, rails in `build`/`construct`,
   `configure quality`.
-- Still missing: riding or driving vehicles (every action refuses a character in a vehicle), elevated rails, the
-  selector combinator, storage chest filters.
+- Still missing: elevated rails, the selector combinator, storage chest filters. Vehicles are on eng/coverage2,
+  waiting for a live check.
 
 ## Table
 
@@ -42,7 +42,7 @@ this branch added.
 | Quality | `build/transfer/rearm/refuel/collect/requests ... quality`; `configure {recipe, quality}`; quality modules by `transfer` | describe yes; spaceage.md 5 mentions; usage yes | yes (several tests); recipe quality built here | none found |
 | Flamethrower / laser turrets | `build`; flamethrower fuel by `pipe_route`; laser by power; gun/artillery ammo by `rearm` | describe (generic); usage no; PLAYBOOK no | rearm tested | none |
 | Grenades, capsules | `use_item {item, position}` | describe, usage | yes (`tests/capsules.lua`) | engine projectile names to confirm live |
-| Vehicles (car, tank, spidertron) | `build`; fuel and ammo with `transfer`/`refuel` | describe (car_trunk, car_ammo inventories); usage "unsupported" | building/fuel only | entering, driving, spidertron remote: missing; every action refuses a character in a vehicle (runtime.lua `player`, bots.lua `actor`) |
+| Vehicles (car, tank, spidertron, riding a train) | `build`; fuel and ammo with `transfer`/`refuel`; `vehicle {position, enter}`, `{exit}`, `{drive: {x,y}}` (timed), `{position, go_to}` (spidertron) | describe, usage (eng/coverage2) | yes (eng/coverage2, `tests/vehicles.lua`: seats, the guard, drive arrived/blocked, spidertron) | on eng/coverage2 only until its live check; before: every action refused a seated character |
 | Space platforms | `platform_create`, `platform_schedule {stops, wait, paused}`, `platforms`, `requests {platform}`, `drop`, `place_ghosts/paste {platform}`, `deconstruct {platform, tiles}` | describe yes; spaceage.md yes; usage partly | yes (`tests/space.lua`, `tests/travel.lua`, `tests/blueprints.lua`) | none found |
 | Asteroid collectors, thrusters | `place_ghosts {platform}`; output with `transfer` (asteroid_collector_output); thruster fuel/oxidizer by pipes from chemical plants | describe (inventory); spaceage.md mentions | `tests/space.lua` reads them (platforms detail) | collector filters not tested (configure filters may cover them) |
 | Rockets, landing elsewhere | `launch {position, platform, orbit, ride, auto_requests}`, `land`, `drop`, cargo by `transfer` (rocket_silo_rocket) | describe yes; spaceage.md yes; PLAYBOOK 2 lines | `tests/travel.lua` (ride, land), `tests/space.lua` | none found |

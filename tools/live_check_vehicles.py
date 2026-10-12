@@ -34,6 +34,8 @@ def main():
     ok, desc = c.fh("describe")
     if not c.record("runtime has vehicle", ok and "vehicle" in ((desc.get("result") or {}).get("actions") or {}), None):
         sys.exit(f"deploy the eng/coverage2 runtime first: POG_WORLD={world} bin/fh deploy (from that branch)")
+    if not c.game_running():
+        sys.exit(L.PAUSED_HINT)
     created = c.lua(f'rcon.print(remote.call("agent_harness","bot_create","{a.bot}"))')
     bot_unit = ((created or {}).get("bot") or {}).get("unit_number")
     if not c.record("bot_create", bot_unit is not None, created):
@@ -80,10 +82,15 @@ def main():
         ok, _ = c.fh("say", {"text": "live check: talking from the car"})
         c.record("seated say works", ok, None)
         target = {"x": car["position"]["x"] + 20, "y": car["position"]["y"]}
-        drive = c.step("vehicle drive 20 tiles east (--wait)", "vehicle", {"drive": target}, wait=True)
+        drive = c.step("vehicle drive 20 tiles east", "vehicle", {"drive": target})
+        # Wait with fh wait (every CLI has it; a CLI older than eng/coverage2 returns from vehicle at once, and the
+        # 03:5x run read the car while it was starting, then got out: live-check-vehicles-2.jsonl).
+        ok, waited = c.fh_command(["wait", "--wait-timeout", "90000"])
+        last = (waited.get("result") or {}).get("last") or {}
         got = vehicle_lua(car.get("unit_number"))
         there = got.get("x") is not None and abs(got["x"] - target["x"]) < 5 and abs(got["y"] - target["y"]) < 5
-        c.record("game: the car got there", there, {"car": got, "target": target, "reply": drive})
+        c.record("game: the car got there", there, {"car": got, "target": target, "outcome": last.get("outcome"),
+                                                     "reply": drive})
         out = c.step("vehicle exit", "vehicle", {"exit": True})
         got = body_lua('{vehicle = body and body.vehicle ~= nil, x = body and body.position.x}')
         c.record("game: the bot is on foot", out is not None and got.get("vehicle") is False, got)
@@ -106,10 +113,20 @@ def main():
         dest = {"x": spider["position"]["x"] + 10, "y": spider["position"]["y"]}
         sent = c.step("vehicle go_to spidertron", "vehicle", {"position": spider["position"], "go_to": dest})
         c.record("spidertron destination accepted", sent is not None, sent)
-        time.sleep(8)
+        time.sleep(15)
+        # What the game holds for it, so a spidertron that stays put says why (destinations, fuel, speed).
         got = c.lua(f"""
           local e = game.get_entity_by_unit_number({spider.get('unit_number') or 0})
-          rcon.print(helpers.table_to_json{{x = e and e.position.x, y = e and e.position.y}})
+          local out = {{x = e and e.position.x, y = e and e.position.y}}
+          if e then
+            pcall(function() out.destinations = #(e.autopilot_destinations or {{}}) end)
+            pcall(function() out.destination = e.autopilot_destination end)
+            pcall(function() out.speed = e.speed end)
+            pcall(function() out.burning = e.burner and e.burner.currently_burning and e.burner.currently_burning.name.name end)
+            pcall(function() local f = e.get_fuel_inventory(); out.fuel = f and f.get_item_count() end)
+            pcall(function() out.driver = e.get_driver() ~= nil end)
+          end
+          rcon.print(helpers.table_to_json(out))
         """)
         moved = got.get("x") is not None and abs(got["x"] - spider["position"]["x"]) > 3
         c.record("spidertron moved (informational)", True, {"moved": moved, "now": got})

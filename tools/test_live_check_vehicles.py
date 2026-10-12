@@ -18,6 +18,9 @@ def fake_lua(self, code):
     p = subprocess.run(["luac", "-p", "-"], input=code, capture_output=True, text=True)
     assert p.returncode == 0, (p.stderr, code[:300])
     compiled.append(code)
+    if "connected_players" in code:
+        state["tick"] = state.get("tick", 0) + 180
+        return {"tick": state["tick"], "paused": False, "players": 1}
     if "bot_create" in code:
         return {"ok": True, "bot": {"name": "lv1", "unit_number": 655}}
     if "bot_remove" in code:
@@ -65,14 +68,22 @@ def fake_fh(self, action, args=None, wait=False):
             state["seat"] = None
             return True, {"result": {"vehicle": False}}
         if args.get("drive"):
-            assert wait, "drive is waited for"
-            state["car"] = dict(args["drive"])
-            return True, {"result": {"outcome": "arrived"}}
+            # As main's CLI: vehicle returns at once; the car gets there while the bot waits (fh wait).
+            state["pending"] = dict(args["drive"])
+            return True, {"result": {"until_tick": 999, "target": args["drive"]}}
         if args.get("go_to"):
             return True, {"result": {"go_to": args["go_to"]}}
     if action == "move_to" and state["seat"]:
         return False, {"error": {"message": "the character is in a vehicle: vehicle {exit: true} gets out"}}
     return True, {"result": {}}
+
+
+def fake_fh_command(self, words):
+    calls.append((words[0], {}, False))
+    if words[0] == "wait" and state.get("pending"):
+        state["car"], state["pending"] = state["pending"], None
+        return True, {"result": {"idle": True, "last": {"kind": "drive", "outcome": "arrived"}}}
+    return True, {"result": {"idle": True}}
 
 
 class FakeRcon:
@@ -81,7 +92,7 @@ class FakeRcon:
 
 
 def main():
-    L.Check.lua, L.Check.fh = fake_lua, fake_fh
+    L.Check.lua, L.Check.fh, L.Check.fh_command = fake_lua, fake_fh, fake_fh_command
     L.pog.Rcon = FakeRcon
     V.time.sleep = lambda s: None
     out = tempfile.mkdtemp()
@@ -100,7 +111,9 @@ def main():
     assert code == 0 and not fails, (code, fails)
     steps = [l["step"] for l in lines]
     assert any(act == "transfer" and a.get("item") == "rocket-fuel" for act, a, _ in calls), "the spidertron is fuelled"
-    for want in ("game: the bot sits in the car (its driver)", "seated move_to refused, pointing to exit", "seated say works",
+    drive_at = next(i for i, (act, a, _) in enumerate(calls) if act == "vehicle" and a.get("drive"))
+    assert calls[drive_at + 1][0] == "wait", "the drive is waited for with fh wait before the car is read"
+    for want in ("game clock runs (a client connected, not auto-paused)", "game: the bot sits in the car (its driver)", "seated move_to refused, pointing to exit", "seated say works",
                  "game: the car got there", "game: the bot is on foot", "game: the bot sits in the locomotive",
                  "spidertron destination accepted", "cleanup: bot removed"):
         assert want in steps, (want, steps)

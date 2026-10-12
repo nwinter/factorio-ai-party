@@ -130,15 +130,18 @@ local function spoil_text(inv,limit)
   return table.concat(parts,' ')..(#rows>(limit or 8) and string.format(' +%d more',#rows-(limit or 8)) or '')
 end
 local function main_inventory(p) local ok,inv=pcall(function() return p.get_main_inventory() end); return ok and inv or nil end
-local function player(index)
-  if M.bots.is_index(index) then return M.bots.actor(index) end
+-- seated: a character in a vehicle is allowed (reads, chat, crafting, research,
+-- remote-view actions and vehicle itself, set per request in M.seated_ok; a drive in progress).
+local function player(index,seated)
+  seated=seated or M.seated_ok
+  if M.bots.is_index(index) then return M.bots.actor(index,seated) end
   local p = game.get_player(index or 1)
   assert(p and p.valid, 'player does not exist')
   local controlled=state().controlled and state().controlled[p.index]
   assert(p.connected, 'join a graphical Factorio client: disconnected players have no controllable character')
   assert(p.physical_controller_type == defines.controllers.character and p.character and p.character.valid, 'a living survival character is required')
   assert(not p.cheat_mode or (controlled and controlled.allow_cheat_mode), 'cheat mode requires explicit testing opt-in')
-  assert(not p.driving, 'the character is in a vehicle or riding a rocket/cargo pod; vehicles are unsupported, and a ride ends by itself (poll status)')
+  assert(not p.driving or (seated and p.vehicle), 'the character is in a vehicle or riding a rocket/cargo pod: vehicle {exit: true} gets out of a vehicle (reads, chat, crafting, research and remote actions work seated); a ride ends by itself (poll status)')
   return body(p)
 end
 local function stop(p)
@@ -184,6 +187,11 @@ local function finish(index, outcome)
       last.ammo_used=kite.ammo_used(p,action); last.ammo_left=kite.ammo_count(p)
       p.shooting_state={state=defines.shooting.not_shooting,position=p.position}
     end
+  end
+  if action and action.kind=='drive' then
+    local p=body(M.lookup(index))
+    if p and p.valid then M.vehicles.stop(p); local v=p.character and p.character.valid and p.character.vehicle; s.last[index].position=v and v.position or nil end
+    s.last[index].target=action.target
   end
   if action and action.kind=='feed' then
     local last=s.last[index]
@@ -450,7 +458,7 @@ end
 local function contents(inv) return inv and inv.get_contents() or {} end
 local inventories = {
   chest = {'container','logistic-container','linked-container','temporary-container'},
-  fuel = {'furnace','assembling-machine','boiler','burner-generator','inserter','mining-drill','lab','car','locomotive','reactor'},
+  fuel = {'furnace','assembling-machine','boiler','burner-generator','inserter','mining-drill','lab','car','locomotive','reactor','spider-vehicle'},
   burnt_result = {'furnace','assembling-machine','boiler','burner-generator','mining-drill','car','locomotive','reactor'},
   furnace_source = {'furnace'}, furnace_result = {'furnace'},
   assembling_machine_input = {'assembling-machine','rocket-silo'}, assembling_machine_output = {'assembling-machine','rocket-silo'},
@@ -574,6 +582,7 @@ function handlers.describe()
   for name,schema in pairs(M.capsules and M.capsules.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circuits and M.circuits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.trains and M.trains.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
@@ -3205,6 +3214,10 @@ M.circuits=require('circuits'){entity=entity,friendly=friendly}
 handlers.circuit=M.circuits.handlers.circuit
 M.trains=require('trains'){entity=entity,friendly=friendly,integer=integer}
 handlers.train=M.trains.handlers.train
+-- Vehicles (vehicles.lua): get in and out, drive a car, send a spidertron.
+M.vehicles=require('vehicles'){entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
+  start=function(p,action) if state().active[p.index] then finish(p.index,'replaced') end; state().active[p.index]=action end}
+handlers.vehicle=M.vehicles.handlers.vehicle
 -- Ghosts at absolute positions, as a player places them from the cursor or
 -- the map: anywhere charted, no items needed. `construct` then builds them.
 -- One ghost as a player's ghost placement (shift-build): manual ghost checks
@@ -3832,6 +3845,7 @@ function M.dispatch(request)
     request.player=M.bots.index_of(request.bot)
   end
   local result=dispatch_request(request)
+  M.seated_ok=nil
   if clock then clock.after_dispatch() end
   if request.action=='status' then M.bots.status(request.player,result) end
   if type(result)=='table' and request.action~='describe' and request.action~='profiles' and request.action~='cameras' then
@@ -3865,6 +3879,7 @@ function M.dispatch(request)
 end
 dispatch_request=function(request)
   local handler=handlers[request.action]; assert(handler,'unsupported action; call describe')
+  M.seated_ok=(reads[request.action] or passive[request.action] or request.action=='vehicle') and true or nil
   check_args(request.action,request.args)
   if request.action=='describe' or request.action=='profiles' or request.action=='cameras' then return handler() end
   if M.bots.is_index(request.player) and (request.action=='attach' or request.action=='detach') then
@@ -4087,12 +4102,13 @@ function M.tick_body(event)
   M.research.tick(event.tick)
   M.bots.tick(event.tick)
   M.nametags.tick(event.tick)
+  M.seated_ok=nil
   for index,action in pairs(state().active) do
-    local ok,p=pcall(player,index)
+    local ok,p=pcall(player,index,action.kind=='drive')
     if not ok then
       finish(index,'player_unavailable')
     elseif event.tick>action.until_tick then
-      finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until') and 'timed_out' or 'duration_elapsed')
+      finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive') and 'timed_out' or 'duration_elapsed')
     elseif action.kind=='wait_until' then
       if event.tick>=action.next_check then
         action.next_check=event.tick+FEED_CHECK
@@ -4111,6 +4127,9 @@ function M.tick_body(event)
       if outcome then finish(index,outcome) end
     elseif action.kind=='kite' then
       local outcome=kite.tick(p,action,event.tick)
+      if outcome then finish(index,outcome) end
+    elseif action.kind=='drive' then
+      local outcome=M.vehicles.tick(p,action)
       if outcome then finish(index,outcome) end
     elseif action.kind=='construct' then
       local outcome=construction.tick_ghosts(p,action)
