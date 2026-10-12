@@ -309,7 +309,8 @@ local function active(index)
 end
 M.active=active
 -- {left,top,right,bottom} around a list of cells or ghosts, once when an action is planned (at most 512 cells).
-local function cell_bounds(list,pos)
+-- A field of M, not a top-level local (tests/locals.lua: runtime.lua keeps 3 of Lua's 200 free).
+function M.cell_bounds(list,pos)
   local b
   for _,c in ipairs(list or {}) do
     local q=pos(c)
@@ -2201,7 +2202,7 @@ end
 function handlers.build_path(p,a)
   assert(not p.permission_group or p.permission_group.allows_action(defines.input_action.start_walking),'permission denied: start_walking')
   local action=construction.plan(p,a)
-  action.bounds=cell_bounds(action.cells,function(c) return c.position end)
+  action.bounds=M.cell_bounds(action.cells,function(c) return c.position end)
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   state().active[p.index]=action
   return {until_tick=action.until_tick,total=#action.cells,next_index=action.next_index}
