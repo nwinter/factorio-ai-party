@@ -36,6 +36,10 @@ for n in $STUB_NAMES; do
   mkdir -p "$STUB_RUNS/$1/$n"
   at=$(python3 -c 'import datetime; print(datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00","Z"))')
   echo "{\\"at\\":\\"$at\\",\\"event\\":\\"request\\",\\"request\\":{\\"action\\":\\"status\\",\\"bot\\":\\"$n\\"}}" >> "$STUB_RUNS/$1/$n/journal.jsonl"
+  # agents' own argument errors (shake12: 20 in 7 min) carry a runtime position too; they are not harness faults
+  for msg in "runtime.lua:2210: radius must be 1..64" "runtime:3712: unknown argument colour" "runtime.lua:880: target out of reach (12.3 tiles)"; do
+    echo "{\\"at\\":\\"$at\\",\\"event\\":\\"response\\",\\"response\\":{\\"ok\\":false,\\"error\\":{\\"code\\":\\"runtime_error\\",\\"message\\":\\"$msg\\"}}}" >> "$STUB_RUNS/$1/$n/journal.jsonl"
+  done
   if [ "$n" = "${LUA_ERROR_FOR:-}" ]; then
     echo "{\\"at\\":\\"$at\\",\\"event\\":\\"response\\",\\"response\\":{\\"ok\\":false,\\"error\\":{\\"code\\":\\"runtime_error\\",\\"message\\":\\"runtime:8746: attempt to compare number with nil\\"}}}" >> "$STUB_RUNS/$1/$n/journal.jsonl"
   fi
@@ -230,6 +234,12 @@ def unhealthy():
     try:
         r, _ = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", LUA_ERROR_FOR="sol")
         assert r.returncode == 1 and "harness Lua errors in the first " in r.stdout and ": 1" in r.stdout and "sol: runtime:8746" in r.stdout, r.stdout
+        assert "radius must be" not in r.stdout and "out of reach" not in r.stdout, r.stdout
+        for text, fault in (("runtime:8746: attempt to compare number with nil", True), ("attempt to index a nil value (field 'x')", True),
+                            ("runtime.lua:12: attempt to perform arithmetic on a nil value", True), ("bad argument #1 to 'insert'", True),
+                            ("stack overflow", True), ("runtime.lua:2210: radius must be 1..64", False),
+                            ("runtime:3712: unknown argument colour", False), ("target out of reach", False)):
+            assert bool(sc.LUA_ERROR.search(text)) == fault, text
         # shake11 ran the broker: no sockets for shake12 is a broker down.
         assert "broker DOWN for astra" in r.stdout and "(0/9 sockets)" in r.stdout, r.stdout
         shutil.rmtree(os.path.join(runs, "shake12"))
