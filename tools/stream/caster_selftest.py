@@ -829,6 +829,58 @@ check("an absence the facts back passes; another does not", caster.check_line(
     "Logistic robotics is done, but still no roboports.", nb, [], []) is None and caster.check_line(
     "Still no trains.", nb, [], []) == "claims something is missing")
 
+# HOSTS5 item 1: "previously on" from the last shift's logs
+with tempfile.TemporaryDirectory() as root5:
+    runs5 = os.path.join(root5, "runs")
+    os.makedirs(os.path.join(runs5, "shake10"))
+    os.makedirs(os.path.join(runs5, "shake11"))
+    os.makedirs(os.path.join(root5, "logs"))
+    open(os.path.join(runs5, "shake11", "resumed-from"), "w").write("shake10\n")
+    with open(os.path.join(runs5, "shake10", "scores.jsonl"), "w") as fh:
+        for tick, done, ents, rockets in ((100, ["automation"], {"steel-furnace": 10, "transport-belt": 5}, 2),
+                                          (200, ["automation", "military-3"], {"steel-furnace": 15}, 3),
+                                          (14500, ["automation", "military-3", "circuit-network"],
+                                           {"steel-furnace": 21, "solar-panel": 7, "transport-belt": 600}, 10)):
+            fh.write(json.dumps({"score": {"tick": tick, "research_done": done, "entities": ents, "rockets": rockets}}) + "\n")
+    jl = os.path.join(root5, "logs", "c.jsonl")
+    with open(jl, "w") as fh:
+        for ev, text in (("death", "Grok died"), ("death", "Grok died"), ("death", "Opus died"),
+                         ("loss", "8 lost: 8 pipe (by small biters)"), ("loss", "73 lost: 17 transport belt (by medium biters)")):
+            fh.write(json.dumps({"type": "caster", "facts": {"event": ev, "text": text}}) + "\n")
+    open(os.path.join(runs5, "shake10", "caster.log"), "w").write(f"18:47:35 [caster] feed x  log {jl}\n")
+    pv = caster.previous_shift(os.path.join(runs5, "shake11"))
+    check("previously on: research in order, buildings (not belts), rockets, deaths, losses", pv and
+          pv["technologies_researched"] == 2 and pv["last_researched"] == ["Military 3", "Circuit network"] and
+          pv["built"] == ["11 more steel furnace", "7 more solar panel"] and pv["rockets_launched"] == 8 and
+          pv["deaths"] == 2 and pv["loss_reports"] == 2 and pv["biggest_loss"].startswith("73 lost"), str(pv))
+    check("previously on: none for a first shift", caster.previous_shift(os.path.join(runs5, "shake10")) is None)
+    fw5 = _FactsWriter([])
+    c6 = _caster(fw5)
+    c6.a = caster.argparse.Namespace(**{**vars(c6.a), "run_dir": os.path.join(runs5, "shake11")})
+    c6.say_exchange({"kind": "open", "t": now, "prio": 8}, {"agents": []}, "pbp", 3)
+    check("the opener of a resumed shift carries previously_on and the recap call",
+          fw5.facts.get("previously_on", {}).get("rockets_launched") == 8 and "previously on" in
+          fw5.facts.get("how_to_call_it", "") and fw5.facts["previously_on"]["biggest_loss"].startswith("73 lost to"),
+          str(fw5.facts)[:300])
+
+# HOSTS5 item 2: the team plan, and a change to it as news
+planA = {"goals": "Silo fed, then rails", "doing": [{"agent": "sol", "name": "Sol", "text": "silo ammo"},
+                                                    {"agent": "luna", "name": "Luna", "text": "steam row"}]}
+planB = {"goals": "Silo fed, then rails", "doing": [{"agent": "sol", "name": "Sol", "text": "rails to the north ore"},
+                                                    {"agent": "luna", "name": "Luna", "text": "steam row"}]}
+dp = caster.Differ()
+dp.diff({"agents": [], "board": {"plan": planA}})
+evp = [e for e in dp.diff({"agents": [], "board": {"plan": planB}}) if e["kind"] == "plan"]
+check("a change to the team plan is a plan beat", len(evp) == 1 and evp[0]["changes"] ==
+      ["Sol is now on: rails to the north ore"] and evp[0]["prio"] == 5, str(evp))
+fp = caster.facts_for(evp[0], {"agents": [{"name": "sol", "display_name": "Sol"}], "board": {"plan": planB}})
+check("plan beat facts: the change, the plan, how to call it", fp.get("plan_change") == evp[0]["changes"] and
+      fp["team_plan"]["goals"] == "Silo fed, then rails" and "plan just changed" in fp["how_to_call_it"], str(fp)[:300])
+sp5 = {"agents": [{"name": "luna", "display_name": "Luna", "activity": "acting", "action": "walking"}],
+       "board": {"plan": planB}}
+check("an agent's plan line is its job when no claim names one", caster.agent_facts(sp5, "luna").get("working_on")
+      == "steam row" and caster.agent_facts(sp5, "luna")["doing"] == "heading off for steam row")
+
 # HOSTS4 item 3: an agent answering a viewer (the relay reaches the agents from shake11) is its own beat
 dv = caster.Differ()
 dv.diff({"agents": [], "chat": []})

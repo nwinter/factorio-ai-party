@@ -153,7 +153,7 @@ def planet_facts(s):
 
 PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "viewer_reply": 7,
             "power": 6,
-            "harness": 5,
+            "harness": 5, "plan": 5,
             "board": 4,
             "chat": 4, "info": 3, "research_start": 3, "camera": 2, "open": 8, "lull": 1}
 URGENT = 8
@@ -322,6 +322,17 @@ class Differ:
         if seg.get("id") and seg.get("state") in ("starting", "live") and seg["id"] not in self.segments_seen:
             self.segments_seen.add(seg["id"])  # eng/stream2 shows a segment: talk over it (docs/AUDIO-NOTES "Segments")
             ev.append({"kind": "segment", "segment": seg})
+        plan, pplan = (s.get("board") or {}).get("plan") or {}, (p.get("board") or {}).get("plan") or {}
+        if not first and plan and pplan and plan != pplan:  # HOSTS5 item 2: a change to the team plan is news
+            changes = []
+            if (plan.get("goals") or "") != (pplan.get("goals") or "") and plan.get("goals"):
+                changes.append(f"new goals: {plan['goals']}")
+            before = {d.get("name"): d.get("text") for d in pplan.get("doing") or []}
+            for d in plan.get("doing") or []:
+                if d.get("text") and before.get(d.get("name")) != d.get("text"):
+                    changes.append(f"{d.get('name')} is now on: {d.get('text')}")
+            if changes:
+                ev.append({"kind": "plan", "changes": changes[:4], "agent": None})
         res, pres = s.get("research") or {}, p.get("research") or {}
         if not first and res.get("current") and res.get("current") != pres.get("current"):
             ev.append({"kind": "research_start", "tech": res.get("label")})
@@ -418,6 +429,9 @@ def agent_facts(s, name, said=False, motto=False):
     names = {name, a.get("display_name")}
     job = next((c.get("title") for c in (s.get("board") or {}).get("claims") or []
                 if c.get("title") and (c.get("agent") in names or c.get("owner") in names)), None)
+    # the agent's line on the team plan (HOSTS5 item 2): the job when no claim names one
+    job = job or next((d.get("text") for d in ((s.get("board") or {}).get("plan") or {}).get("doing") or []
+                       if d.get("text") and (d.get("agent") in names or d.get("name") in names)), None)
     if doing and TRAVEL.match(doing):  # "walking" only with where it leads (HOSTS3 item 6)
         doing = f"heading off for {job}" if job else None
     # "thinking (standing still)" became 102 of 443 shake3 host lines mocking agents as frozen or statues
@@ -500,6 +514,76 @@ def read_shift(run_dir):
             f["resumed_at_game_minute"] = round(int(m.group(1)) / 3600)
     except OSError:
         pass
+    return f
+
+
+def previous_shift(run_dir):
+    """"Previously on" for a resumed shift (HOSTS5 item 1): what the last shift researched, built and launched (its
+    scores.jsonl, first row against last), and its deaths and losses (the loss and death beats in the caster logs its
+    caster.log names). None for a first shift or when the previous run left no scores."""
+    if not run_dir:
+        return None
+    try:
+        prev = open(os.path.join(run_dir, "resumed-from")).read().strip()
+    except OSError:
+        return None
+    root = os.path.dirname(os.path.normpath(run_dir))
+    pdir = os.path.join(root, prev)
+    rows = []
+    try:
+        for raw in open(os.path.join(pdir, "scores.jsonl")):
+            try:
+                sc = json.loads(raw).get("score") or {}
+            except ValueError:
+                continue
+            if sc.get("tick") is not None:
+                rows.append(sc)
+    except OSError:
+        return None
+    if len(rows) < 2:
+        return None
+    a, b = rows[0], rows[-1]
+    label = lambda n: n.replace("-", " ").capitalize()
+    seen, order = set(a.get("research_done") or []), []
+    for sc in rows[1:]:  # in the order they finished (the score lists them alphabetically)
+        for t in sc.get("research_done") or []:
+            if t not in seen:
+                seen.add(t)
+                order.append(t)
+    ea, eb = a.get("entities") or {}, b.get("entities") or {}
+    grew = sorted(((eb.get(k, 0) - ea.get(k, 0), k) for k in eb if k not in ("transport-belt", "inserter")),
+                  reverse=True)
+    f = {"game_minutes": round((b["tick"] - a["tick"]) / 3600), "technologies_researched": len(order),
+         "last_researched": [label(t) for t in order][-4:],
+         "built": [f"{d} more {k.replace('-', ' ')}" for d, k in grew if d > 0][:3]}
+    if (b.get("rockets") or 0) > (a.get("rockets") or 0):
+        f["rockets_launched"] = b["rockets"] - (a.get("rockets") or 0)
+    deaths, losses = set(), []
+    try:
+        logs = re.findall(r"\blog (\S+\.jsonl)", open(os.path.join(pdir, "caster.log"), errors="replace").read())
+    except OSError:
+        logs = []
+    for path in logs:
+        path = path if os.path.isabs(path) else os.path.join(os.path.dirname(root), path)
+        try:
+            for raw in open(path):
+                r = json.loads(raw)
+                fa = r.get("facts") or {}
+                if r.get("type") != "caster" or not fa.get("text"):
+                    continue
+                if fa.get("event") == "death":
+                    deaths.add(fa["text"])
+                elif fa.get("event") == "loss":
+                    m = re.match(r"(\d+) lost", fa["text"])
+                    if m:
+                        losses.append((int(m.group(1)), fa["text"]))
+        except (OSError, ValueError):
+            continue
+    if deaths:
+        f["deaths"] = len(deaths)
+    if losses:
+        f["loss_reports"] = len(set(t for _, t in losses))
+        f["biggest_loss"] = max(losses)[1]
     return f
 
 
@@ -672,6 +756,16 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["board"] = {k: board.get(k) for k in ("open_unowned", "in_progress", "claims_total") if board.get(k)}
         if e["kind"] == "lull" and board.get("changelog"):
             f["board"]["harness_changelog"] = [c.get("text") for c in board["changelog"]]
+    # HOSTS5 item 2: the team plan (fh board plan) where it is the story
+    plan = board.get("plan") or {}
+    if (plan.get("goals") or plan.get("doing")) and (e["kind"] in ("open", "board", "plan") or (
+            e["kind"] == "lull" and e.get("angle") in ("explain", "pace", "board", None))):
+        f["team_plan"] = {"goals": plan.get("goals") or None,
+                          "who_does_what": [f"{d.get('name')}: {d.get('text')}" for d in plan.get("doing") or []][:6]}
+        f["team_plan"] = {k: v for k, v in f["team_plan"].items() if v}
+    if e["kind"] == "plan":
+        f["plan_change"] = e.get("changes")
+        f["how_to_call_it"] = "the team plan just changed: say what changed and what it means for the run"
     if e.get("agent"):
         f["agent"] = agent_facts(s, e["agent"]) or {"name": e["agent"]}
     if e.get("agents"):
@@ -1575,6 +1669,12 @@ class Caster:
             self.deadline_t = (time.time(), read_deadline(getattr(self.a, "deadline", None)))
         return self.deadline_t[1]
 
+    def previous(self):
+        """previous_shift for this run, read once (the last shift's logs do not change)."""
+        if not hasattr(self, "previous_t"):
+            self.previous_t = previous_shift(getattr(self.a, "run_dir", None))
+        return self.previous_t
+
     def shift(self):
         """The shift fact (read_shift), re-read every 30 s: start.log gets the resume tick as the world comes up."""
         t, f = getattr(self, "shift_t", (0.0, None))
@@ -1758,6 +1858,8 @@ class Caster:
             first = "color" if self.last_speaker == "pbp" or e.get("naturalist") else "pbp"
         lo, hi = self.a.lines
         n = lo if e["prio"] >= URGENT else self.rng.randint(lo, hi)
+        if e["kind"] == "open" and self.previous():
+            n = max(n, 3)  # "previously on" takes two or three lines
         self.say_exchange(e, s, first, n)
         # attack replays: the director queues each saved clip itself (eng/stream2), so the hosts only talk over them
         if e["kind"] == "research":
@@ -1769,6 +1871,12 @@ class Caster:
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
         self.mark_changes(facts)
+        prev = self.previous() if e["kind"] == "open" else None
+        if prev:  # HOSTS5 item 1: a resumed shift opens with "previously on"
+            facts["previously_on"] = dict(prev, biggest_loss=spoken_alert(prev["biggest_loss"])) \
+                if prev.get("biggest_loss") else prev
+            facts["how_to_call_it"] = ("welcome viewers back with a 'previously on': what the last shift researched, "
+                                       "built and lost, then the team's plan now, in the hosts' words, one thing a line")
         live = self.live_segment(s, margin=3) if hasattr(self, "live_segment") else None
         if live and e["kind"] != "segment" and e["prio"] < URGENT and "on_screen_now" not in facts:
             # a card stays up about 30 s, and the beats after its own went on as if it were not there
