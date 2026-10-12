@@ -96,9 +96,9 @@ import caster  # noqa: E402
 d = caster.Differ()
 d.diff({"agents": [], "chat": []})
 ev = d.diff({"agents": [], "chat": ticker})
-op = [e for e in ev if e["kind"] == "operator"]
+op = [e for e in ev if e["kind"] == "operator_request"]
 check("a fresh request is an operator beat", len(op) == 1 and op[0]["agent"] == "astra" and op[0]["text"] ==
-      "fh view crops the legend" and op[0]["prio"] == caster.PRIORITY["operator"], ev)
+      "fh view crops the legend" and op[0]["prio"] == caster.PRIORITY["operator_request"], ev)
 check("not also a chat beat", not [e for e in ev if e["kind"] == "chat"], ev)
 f = caster.facts_for(op[0], {"agents": []})
 check("facts say how to call it", "operator" in f.get("how_to_call_it", ""), f)

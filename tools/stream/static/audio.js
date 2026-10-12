@@ -32,6 +32,10 @@
     #voice .body { display: flex; flex-direction: column; min-width: 0; }
     #voice .line { display: flex; align-items: center; gap: 8px; }
     #voice .cap.on { opacity: 1; transform: none; }
+    #voice .cap.operator { --edge: #e8c547; background: rgba(52, 46, 30, 0.95); }
+    #voice .obadge { flex: none; width: 48px; height: 48px; border-radius: 2px; display: flex; align-items: center;
+                     justify-content: center; background: #e8c547; color: #2a2208; font-weight: 700; font-size: 18px;
+                     letter-spacing: 0.04em; }
     #voice .who { flex: none; font-weight: 700; font-size: 14px; letter-spacing: 0.06em; text-transform: uppercase;
                   color: var(--edge, #ffe6c0); }
     #voice .role { font-size: 12.5px; color: #b0b0b0; letter-spacing: 0.04em; }
@@ -155,10 +159,16 @@
     const text = document.createElement("span");
     text.textContent = clip.text || "";
     body.append(line, text);
-    if (row && window.PogAvatar) cap.append(face);
+    if (clip.channel === "operator") {  // the operator: a plain OP badge, no avatar
+      const badge = document.createElement("span");
+      badge.className = "obadge";
+      badge.textContent = "OP";
+      who.textContent = "Operator";
+      cap.append(badge);
+    } else if (row && window.PogAvatar) cap.append(face);
     cap.append(body);
-    // agents above casters, so the newest voice sits closest to the action
-    if (clip.channel === "agent") box.prepend(cap); else box.appendChild(cap);
+    // agents (and the operator) above casters, so the newest voice sits closest to the action
+    if (clip.channel === "agent" || clip.channel === "operator") box.prepend(cap); else box.appendChild(cap);
     requestAnimationFrame(() => cap.classList.add("on"));
     return cap;
   }
@@ -177,7 +187,7 @@
       if (cur.cut) { state = "cut"; return; }          // something that matters more arrived while it loaded
       if (expired(clip)) { state = "skip"; return; }   // never late
       const g = c.createGain();
-      g.gain.value = VOL[clip.channel === "agent" ? "agent" : "caster"];
+      g.gain.value = VOL[clip.channel === "agent" || clip.channel === "operator" ? "agent" : "caster"];
       g.connect(c.destination);
       const src = c.createBufferSource();
       src.buffer = buf;
@@ -187,7 +197,7 @@
       cap = caption(clip);
       report(clip.id, "start");
       // an urgent line does not reset it, so an exchange it interrupted can still finish together
-      if (clip.channel !== "agent" && cur.rank < RANK.urgent) lastExchange = clip.exchange != null ? clip.exchange : null;
+      if (clip.channel === "caster" && cur.rank < RANK.urgent) lastExchange = clip.exchange != null ? clip.exchange : null;
       await new Promise((done) => { src.onended = done; src.start(); });
       if (cur.cut) state = "cut";
     } catch (err) {
