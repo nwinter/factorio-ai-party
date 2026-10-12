@@ -10,6 +10,7 @@ sys.path.insert(0, HERE)
 import live_check_coverage as L  # noqa: E402
 
 compiled, calls, units = [], [], [100]
+where = {"pos": None}
 
 
 def fake_lua(self, code):
@@ -47,7 +48,14 @@ def fake_fh(self, action, args=None, wait=False):
         name = args.get("entity") or {"rail": "straight-rail"}.get(args["item"], args["item"])
         return True, {"result": {"consumed": 1, "entity": {"name": name, "position": args["position"],
                                                           "unit_number": units[-1]}}}
+    if action == "move_to":
+        where["pos"] = args["position"]
+        return True, {"result": {"position": args["position"]}}
     if action == "train":
+        # As the game: the stop or locomotive must be within reach of where the bot stands (live check 01:31).
+        here, at = where["pos"], args["position"]
+        if here is None or abs(here["x"] - at["x"]) > 6 or abs(here["y"] - at["y"]) > 6:
+            return False, {"error": {"message": f"entity is out of reach (bot at {here}, target {at})"}}
         if "name" in args:  # as the runtime: name is the entity-name filter, not a stop name (live check 00:30)
             return False, {"error": {"message": "unknown argument name for train"}}
         return True, {"result": {"stop": args.get("station"), "automatic": args.get("automatic")}}

@@ -79,14 +79,18 @@ class Check:
             return None
         return reply.get("result", reply)
 
-    def near(self, x, y):
-        """Walk the bot within build reach of (x, y), as an agent would (move_to --wait)."""
+    def near(self, x, y, force=False):
+        """Walk the bot within reach of (x, y), as an agent would (move_to --wait). The position kept between moves is
+        an estimate, so force=True always walks (live check 01:31: a stop 11.6 tiles off was taken as near)."""
         here = getattr(self, "here", None)
-        if here and abs(here[0] - x) < 7 and abs(here[1] - y) < 7:
+        if not force and here and abs(here[0] - x) < 5 and abs(here[1] - y) < 5:
             return
-        ok, _ = self.fh("move_to", {"position": {"x": x, "y": y - 3}, "tolerance": 1.5}, wait=True)
+        ok, reply = self.fh("move_to", {"position": {"x": x, "y": y - 3}, "tolerance": 1}, wait=True)
         if ok:
-            self.here = (x, y - 3)
+            pos = (reply.get("result") or {}).get("position") or {}
+            self.here = (pos.get("x", x), pos.get("y", y - 3))
+        else:
+            self.record(f"move_to near ({x},{y})", False, (reply.get("error") or {}).get("message") or reply)
 
     def build(self, name, item, x, y, direction=None, entity=None):
         self.near(x, y)
@@ -269,7 +273,7 @@ def main():
             args = {"position": ent["position"], "station": name}
             if name == "LC-East":
                 args["limit"] = 1
-            c.near(ent["position"]["x"], ent["position"]["y"])
+            c.near(ent["position"]["x"], ent["position"]["y"], force=True)
             res = c.step(f"train name stop {name}", "train", args)
             c.record(f"stop {name} named", res is not None and res.get("stop") == name, res)
         mid = track[8]["position"]["x"]
@@ -281,7 +285,7 @@ def main():
                 c.step("fuel locomotive", "transfer", {"position": loco["position"], "item": "coal", "count": 20,
                                                        "direction": "to_entity"})
         if loco1 and len(stops) == 2:
-            c.near(loco1["position"]["x"], loco1["position"]["y"])
+            c.near(loco1["position"]["x"], loco1["position"]["y"], force=True)
             res = c.step("train schedule two stops, automatic", "train", {
                 "position": loco1["position"], "automatic": True,
                 "schedule": [{"station": "LC-East", "wait": [{"type": "time", "ticks": 300}]},
