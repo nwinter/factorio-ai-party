@@ -306,7 +306,8 @@ return function(api)
     if here then
       if action.nav then api.stop_walking(p); action.nav = nil end
       action.target = nil
-      p.picking_state = true
+      -- No picking_state: the engine would pick stacks up too, uncounted in
+      -- last.picked (live: picked 550 of 1600 plates).
       if tick < (action.next_pick or 0) then return nil end
       action.next_pick = tick + PICK_EVERY
       local s = here.stack

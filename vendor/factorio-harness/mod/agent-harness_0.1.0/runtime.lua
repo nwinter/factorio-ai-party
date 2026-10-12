@@ -4191,8 +4191,8 @@ function M.tick_body(event)
       local outcome=M.ground.tick(p,action,event.tick)
       if outcome then finish(index,outcome) end
     elseif action.kind=='pickup' then
-      p.picking_state=true
-      -- One item stack every 6 ticks; done when none is left in reach.
+      -- One item stack every 6 ticks; done when none is left in reach. No
+      -- picking_state: the engine's own pickup would go uncounted in picked.
       if event.tick>=(action.next_pick or 0) then
         action.next_pick=event.tick+6
         local item=p.surface.find_entities_filtered{position=p.position,radius=action.reach or 1,type='item-entity',limit=1}[1]

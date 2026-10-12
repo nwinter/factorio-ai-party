@@ -771,7 +771,8 @@ advance(1); eq(call('queue_status').active.action,'walk')
 call('pickup',{ticks=1})
 eq(call('queue_status').paused,true); eq(call('queue_status').active,false)
 eq(storage.agent_harness.active[1].kind,'pickup'); eq(#call('queue_status').pending,1)
-advance(2)
+advance(1); eq(p.picking_state==true,false) -- the engine's pickup would go uncounted
+advance(1)
 eq(got.coal,2); eq(ground.valid,false); eq(call('status').last.picked.coal,2)
 fails(function() call('pickup',{}) end,'nothing to pick up within 1 tiles of')
 -- A step toward an absolute goal is requeued at the head when interrupted.

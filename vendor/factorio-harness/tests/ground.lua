@@ -231,7 +231,10 @@ local coal=stack_at('coal',50,-4,0)
 r=astra('pickup',{position={x=0,y=0},radius=8,items={'copper-plate'}})
 eq(r.item_stacks,3); eq(r.items[1].name,'copper-plate'); eq(r.items[1].count,240)
 eq(astra('status').active.kind,'pickup')
-advance(400)
+-- The engine's own pickup stays off: what it took would be missing from last.picked.
+local engine_picked=false
+for _=1,400 do advance(1); engine_picked=engine_picked or body.picking_state==true end
+eq(engine_picked,false)
 local last=astra('status').last
 eq(last.kind,'pickup'); eq(last.outcome,'picked_up'); eq(last.picked['copper-plate'],240); eq(last.left,0)
 eq(c1.valid,false); eq(c2.valid,false); eq(c3.valid,false); eq(coal.valid,true)
