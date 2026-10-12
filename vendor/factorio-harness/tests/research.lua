@@ -320,7 +320,9 @@ local shift=astra('board',{kind='claim'}).team.shift
 eq(shift.shift,'shift 1, started 2s ago')
 eq(shift.plan_goals,string.rep('g',600))
 eq(shift.your_plan_line,'roboports along the bus')
-eq(shift.research_since_your_last_shift,'steel-axe')
+-- steel-axe from the research news; the three set researched above with no event come from the snapshot taken at
+-- the runtime's first sample (the news first, then the snapshot's extras by name).
+eq(shift.research_since_your_last_shift,'steel-axe, construction-robotics, oil-processing, solar-energy')
 -- logistic-robotics and construction-robotics share roboports; solar panels and pumpjacks are built; logistic-system
 -- is not researched; accumulators were researched above and none is built.
 eq(shift.researched_none_built,'roboports (logistic-robotics, construction-robotics); accumulators (electric-energy-accumulators)')
@@ -330,7 +332,7 @@ eq((request{action='status',args={},player=2}.team or {}).shift,nil)
 eq((request{action='chat',args={peek=true},bot='sol'}.team or {}).shift,nil)
 local sol_shift=sol('status').team.shift
 -- sol's last request came before defender and mining-productivity-3 finished too.
-assert(sol_shift and sol_shift.your_plan_line==nil and sol_shift.research_since_your_last_shift=='defender, mining-productivity-3, steel-axe',
+assert(sol_shift and sol_shift.your_plan_line==nil and sol_shift.research_since_your_last_shift=='defender, mining-productivity-3, steel-axe, construction-robotics, oil-processing, solar-energy',
   sol_shift and sol_shift.research_since_your_last_shift)
 -- Built since: gone from the list. The next shift counts research from each agent's last request.
 built.roboport=1
@@ -338,6 +340,20 @@ runtime.operator.shift_start()
 shift=astra('status').team.shift
 eq(shift.shift,'shift 2, started 0s ago'); eq(shift.research_since_your_last_shift,nil)
 eq(shift.researched_none_built,'accumulators (electric-energy-accumulators)')
+-- No events needed: shift_start snapshots force.technologies, so a technology researched with no event and never at
+-- the head of the queue (a server whose control.lua predates the research events) still shows; one the agent was
+-- told about in a reply before the shift does not repeat.
+finish('logistic-system')
+assert(has(team(astra('status')),'research done: logistic-system'))
+techs['railway']=tech('railway',75,1800,{red,green}); techs['railway'].researched=true
+jump(60)
+runtime.operator.shift_start()
+shift=astra('status').team.shift
+eq(shift.shift,'shift 3, started 0s ago')
+eq(shift.research_since_your_last_shift,'railway')
+-- The first sample of a freshly deployed runtime takes a base snapshot too.
+local snaps=storage.agent_harness.research_snaps.player
+eq(#snaps,4) -- the first sample's, then shifts 1, 2 and 3
 -- A fault in the shift block never fails the reply: it is counted.
 local errors=(storage.agent_harness.research_errors or {}).count or 0
 runtime.operator.shift_start()

@@ -391,8 +391,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each
   agent's first reply of it (any action, not a peek) carries `team.shift` once: `shift` (`shift N, started <age>
   ago`), `plan_goals` and `your_plan_line` (the team plan), `research_since_your_last_shift` (technologies finished
-  after the agent's last request before this shift, the last 12 and a count of earlier ones; known from the runtime's
-  research news, so not before research.lua ran) and `researched_none_built` (`roboports (logistic-robotics,
+  after the agent's last request before this shift, the last 12 and a count of earlier ones: the research news, plus
+  what `force.technologies` shows researched since the snapshot taken at the start of the agent's previous shift (and
+  at the runtime's first sample), so no research event is needed; nothing before the first snapshot is known) and
+  `researched_none_built` (`roboports (logistic-robotics,
   construction-robotics); ...`: researched technologies with none of their buildings on any surface, from the
   harness's `unlocks.lua`, the table the stream hosts use).
 - Research news needs no restart: a technology that leaves the head of the queue researched (or a level up) and was

@@ -8,6 +8,7 @@ return function(api)
   local M = {}
   local MAX_DONE, FIRST_LOOK, MAX_LINES, MAX_UNLOCKS = 50, 36000, 4, 8
   local SAMPLE_TICKS, MAX_SAMPLES, MAX_BY = 600, 31, 200
+  local snapshot  -- the researched set per force (shift section below)
 
   local function store()
     local s = api.state()
@@ -166,6 +167,7 @@ return function(api)
   end
   function M.sample()
     local s = api.state()
+    if not s.research_snaps then snapshot(s, game.tick) end  -- a base from the runtime's first sample
     s.research_rate = s.research_rate or {}
     for _, force in pairs(game.forces or {}) do
       local t = force.current_research
@@ -194,11 +196,60 @@ return function(api)
   -- first reply of a shift carries a shift block once: the team plan's goals
   -- and its own line, what finished since its last request before the shift,
   -- and researched technologies with none of their buildings (unlocks.lua).
+  -- What a force has researched, read from force.technologies (no event needed).
+  local function researched(force)
+    local set = {}
+    for name, t in pairs(force.technologies or {}) do if t.researched then set[name] = true end end
+    return set
+  end
+  -- Snapshots of the researched set at each shift start (and on first use),
+  -- per force, so "finished since your last shift" needs no research events.
+  local MAX_SNAPS = 6
+  snapshot = function(s, tick)
+    s.research_snaps = s.research_snaps or {}
+    for _, force in pairs(game.forces or {}) do
+      if force.technologies then
+        local list = s.research_snaps[force.name] or {}
+        s.research_snaps[force.name] = list
+        list[#list+1] = {tick=tick, set=researched(force)}
+        while #list > MAX_SNAPS do table.remove(list, 1) end
+      end
+    end
+  end
   function M.shift_start()
     local s = api.state()
     local old = s.shift
     s.shift = {seq=(old and old.seq or 0) + 1, tick=game.tick, prev_tick=old and old.tick}
+    snapshot(s, game.tick)
     return s.shift
+  end
+  -- Technologies finished after tick `since`: the research news (exact, with
+  -- ticks) and the difference from the newest snapshot at or before `since`
+  -- (what the news missed: events before control.lua forwarded them, or a
+  -- runtime that was not running).
+  local function finished_since(s, force, since)
+    local names, listed = {}, {}
+    local told = {}
+    for _, e in ipairs(s.research_news and s.research_news.list or {}) do
+      if e.force == force.name then
+        if e.tick > since then
+          if not listed[e.name] then names[#names+1] = e.name; listed[e.name] = true end
+        else told[e.name] = true end
+      end
+    end
+    local base
+    for _, snap in ipairs(s.research_snaps and s.research_snaps[force.name] or {}) do
+      if snap.tick <= since then base = snap end
+    end
+    if base then
+      local extra = {}
+      for name in pairs(researched(force)) do
+        if not base.set[name] and not listed[name] and not told[name] then extra[#extra+1] = name end
+      end
+      table.sort(extra)
+      for _, name in ipairs(extra) do names[#names+1] = name end
+    end
+    return names
   end
   local UNLOCKS = require('unlocks')
   -- Labels of buildings a researched technology unlocks and the force has
@@ -249,10 +300,7 @@ return function(api)
     if plan and plan.goals then out.plan_goals = plan.goals end
     if plan and plan.mine then out.your_plan_line = plan.mine end
     local since = last_call or shift.prev_tick or 0
-    local names = {}
-    for _, e in ipairs(s.research_news and s.research_news.list or {}) do
-      if e.force == p.force.name and e.tick > since then names[#names+1] = e.name end
-    end
+    local names = finished_since(s, p.force, since)
     if #names > 0 then
       local shown = {}
       for i = math.max(1, #names - 11), #names do shown[#shown+1] = names[i] end
