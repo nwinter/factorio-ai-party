@@ -802,8 +802,9 @@ return function(api)
   end
   -- Who hears what on the stream: once per agent (h.stream_note holds the
   -- version shown; a new version is shown once again).
-  local STREAM_NOTE, STREAM_NOTE_VERSION = 'stream: viewers hear your say --aloud lines and confessions, spoken in your voice; '
-    .. 'other chat and tells show on the stream only as text', 1
+  local STREAM_NOTE, STREAM_NOTE_VERSION = 'stream: viewers hear your say --aloud lines and confessions, spoken in your voice, '
+    .. 'and like hearing from you every few minutes; other chat and tells show on the stream only as text, which viewers '
+    .. 'read on screen, so write them as plain sentences with spaces between words', 2
   local function reminders(p, h)
     local out = {}
     if h.stream_note ~= STREAM_NOTE_VERSION then

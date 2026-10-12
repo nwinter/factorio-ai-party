@@ -296,7 +296,7 @@ assert(has(t.alerts,'inserter x1 hit 1 times, 5 damage'),table.concat(t.alerts,'
 -- builds a team block (here: as after a hot deploy, nobody has seen it yet).
 for _,h in pairs(storage.agent_harness.team_hints) do h.stream_note=nil end
 t=sol('status').team
-eq(has(t.reminders,'stream: '),'stream: viewers hear your say --aloud lines and confessions, spoken in your voice; other chat and tells show on the stream only as text')
+eq(has(t.reminders,'stream: '),'stream: viewers hear your say --aloud lines and confessions, spoken in your voice, and like hearing from you every few minutes; other chat and tells show on the stream only as text, which viewers read on screen, so write them as plain sentences with spaces between words')
 eq((sol('status').team or {}).reminders,nil)
 jump(3600); eq((sol('status').team or {}).reminders,nil)
 -- Reminders: profile until display_name, glyph and color are set; once a minute.

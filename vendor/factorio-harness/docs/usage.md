@@ -449,7 +449,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `voice`); a line without `aloud`, like every tell, shows on the stream only as text. `chat` (and `peek`) returns
   `aloud: true` with it. Text over 500 characters is cut to 500 and the reply carries `cut {length, kept}`.
 - Each agent's first reply carrying a `team` block has, once, the reminder `stream: viewers hear your say --aloud lines
-  and confessions, spoken in your voice; other chat and tells show on the stream only as text`.
+  and confessions, spoken in your voice, and like hearing from you every few minutes; other chat and tells show on the
+  stream only as text, which viewers read on screen, so write them as plain sentences with spaces between words`.
 - `tell {to, text}` sends one line (1..500 characters; longer is cut to 500 and the reply carries `cut {length,
   kept}`) to teammates outside the game chat: `to` is a name or display
   name, several (an array or `"luna,sol"`), or `team` (also `everyone`, `all`) for every agent but you. Each recipient
