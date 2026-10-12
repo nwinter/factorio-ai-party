@@ -369,6 +369,51 @@ p.surface.find_entities_filtered=function() return {chest} end
 local result=call('transfer',{position=chest.position,inventory='chest',item='iron-plate',count=7,direction='to_entity'})
 eq(result.transferred,7); eq(input.count,13); eq(output.count,7)
 eq(flying[#flying],'-7 [item=iron-plate]')
+-- Request #69: a slot that takes more than asked (the engine merging a
+-- stack) must not drive the next call's amount below 1, which the engine
+-- refuses ("Given amount value(-1) too small"); up_to already met moves 0.
+do
+  local src=stack('firearm-magazine',60); main={src}
+  main.get_item_count=function(f) return src.valid_for_read and src.name==f.name and src.count or 0 end
+  local greedy=stack('firearm-magazine',5)
+  local plain=stack('firearm-magazine',5)
+  greedy.transfer_stack=function(other,amount)
+    assert(amount>=1,'Given amount value('..amount..') too small')
+    local moved=math.min(other.count,amount+3) -- takes more than asked
+    greedy.count=greedy.count+moved; other.count=other.count-moved; other.valid_for_read=other.count>0
+    return true
+  end
+  local inner=plain.transfer_stack
+  plain.transfer_stack=function(other,amount) assert(amount>=1,'Given amount value('..amount..') too small'); return inner(other,amount) end
+  local box={valid=true,name='wooden-chest',type='container',position={x=1,y=0},force=p.force}
+  local slots={greedy,plain,valid=true}
+  slots.get_item_count=function(f) local n=0; for _,s in ipairs(slots) do if s.valid_for_read and s.name==f.name then n=n+s.count end end; return n end
+  box.get_inventory=function() return slots end
+  p.surface.find_entities_filtered=function() return {box} end
+  local r=call('transfer',{position=box.position,inventory='chest',item='firearm-magazine',count=2,direction='to_entity'})
+  eq(r.transferred,5) -- what the engine moved, reported as moved
+  r=call('transfer',{position=box.position,inventory='chest',item='firearm-magazine',count=50,keep=20,up_to=10,direction='to_entity'})
+  eq(r.transferred,0); eq(r.at_up_to,true)
+  r=call('transfer',{position=box.position,inventory='chest',item='firearm-magazine',count=50,keep=60,direction='to_entity'})
+  eq(r.transferred,0)
+  -- Request #124: a silo with automatic requests on takes no cargo by hand;
+  -- the refusal names the setting and how to turn it off.
+  defines.inventory.rocket_silo_rocket=defines.inventory.rocket_silo_rocket or 21
+  local cargo=stack(nil,0)
+  cargo.transfer_stack=function() return false end -- the engine refuses
+  local held={cargo,valid=true}
+  held.get_item_count=function() return 0 end
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=1,y=0},force=p.force,use_transitional_requests=true}
+  silo.get_inventory=function() return held end
+  p.surface.find_entities_filtered=function() return {silo} end
+  r=call('transfer',{position=silo.position,inventory='rocket_silo_rocket',item='firearm-magazine',count=10,direction='to_entity'})
+  eq(r.transferred,0); eq(r.entity_full.auto_requests,true)
+  assert(r.entity_full.note:find('auto_requests=false',1,true),r.entity_full.note)
+  silo.use_transitional_requests=false
+  r=call('transfer',{position=silo.position,inventory='rocket_silo_rocket',item='firearm-magazine',count=10,direction='to_entity'})
+  eq(r.entity_full.auto_requests,nil)
+  main={input}
+end
 -- Omitted items take everything from the inferred output inventory; batches
 -- report each entity and keep going past one that fails.
 local function inv(...)
@@ -1111,8 +1156,32 @@ local kited=call('status').last
 eq(kited.kind,'kite'); eq(kited.outcome,'clear'); eq(kited.kills,1); eq(kited.ammo_used,2); eq(p.shooting_state.state,0)
 foes={{valid=true,type='unit',name='small-biter',position={x=3,y=0},force=enemy_force}}
 call('kite',{}); p.character.health=90; advance(1)
-eq(call('status').last.outcome,'low_health')
+do
+local low=call('status').last
+eq(low.outcome,'low_health'); eq(low.why,'health 36% fell below min_health 40%'); eq(low.ammo_left,8); eq(low.enemies_left,1)
+-- Request #57: with a retreat point, low health walks there while still
+-- firing at the nearest unit, and ends retreated, saying why.
+p.character.health=250
+call('kite',{retreat={x=-20,y=0}}); p.character.health=90; advance(1)
+eq(call('status').active.kind,'kite')
+eq(p.walking_state.walking,true); eq(p.walking_state.direction,12) -- west, toward the retreat point
+eq(p.shooting_state.state,1); eq(p.shooting_state.position.x,3) -- still firing at the biter
+p.position={x=-18,y=0}; advance(1)
+local back=call('status').last
+eq(back.outcome,'retreated'); eq(back.retreated_from,'low_health'); eq(back.ammo_left,8)
+eq(back.why,'health 36% fell below min_health 40%; retreating to (-20,0)')
+p.position={x=0,y=0}; p.character.health=250
+-- move_to combat: the combat channel fires while walking and ends with the walk.
+local walk=call('move_to',{position={x=6,y=0},pathfind=false,combat=true})
+eq(walk.combat.auto,true); eq(walk.combat.radius,20); eq(walk.combat.ammo,8)
+eq(storage.agent_harness.combat[1].auto,true)
+p.position={x=6,y=0}; advance(2)
+eq(call('status').last.outcome,'arrived')
+eq(storage.agent_harness.combat[1],nil); eq(storage.agent_harness.last_combat[1].outcome,'move_ended')
+fails(function() call('move_to',{position={x=6,y=0},combat=40}) end,'combat radius')
+end
 magazines=0; fails(function() call('kite',{}) end,'no ammunition')
+fails(function() call('move_to',{position={x=1,y=0},combat=true}) end,'combat needs ammunition')
 -- Poles: a placed pole wires into every other network in reach; wire joins
 -- or splits two reachable poles; power summarises networks in an area.
 defines.wire_connector_id={pole_copper=5}; defines.entity_status={working=1,no_power=2,low_power=3}

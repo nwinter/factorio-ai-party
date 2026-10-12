@@ -1,6 +1,10 @@
 -- Run-and-gun: walk and shoot in the same tick. Keep the nearest enemy unit
 -- inside a distance band, focus structures while units are not close, and
--- stop when the area is clear, health is low, or ammunition runs out.
+-- stop when the area is clear, health is low, or ammunition runs out. With a
+-- retreat point, low health or no ammunition walks there instead (firing at
+-- units on the way while ammunition lasts) and ends retreated on arrival
+-- (request #57: a bot stopped among biters with ammunition unused). Every end
+-- says why (action.why).
 return function(api)
   local M={}
   local SCAN_EVERY=6
@@ -24,7 +28,7 @@ return function(api)
     assert(ammo>0,'no ammunition equipped')
     return {kind='kite',band_min=band_min,band_max=band_max,min_health=health,
       radius=api.integer(a.radius,32,8,32,'radius'),range=a.range or 14,
-      anchor=a.position and api.position(a.position),
+      anchor=a.position and api.position(a.position),retreat=a.retreat and api.position(a.retreat),
       until_tick=game.tick+api.integer(a.ticks,3600,1,36000,'ticks'),
       kills=0,ammo_start=ammo,next_scan=0}
   end
@@ -40,20 +44,48 @@ return function(api)
     action.unit,action.structure=nil,nil
     local forces=hostile_forces(p)
     if #forces==0 then return end
-    local du,ds=math.huge,math.huge
+    local du,ds,seen=math.huge,math.huge,0
     for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=action.radius,force=forces,
         type={'unit','unit-spawner','turret'},limit=256}) do
       if e.valid and api.visible(p,e.position) then
+        seen=seen+1
         local d=api.distance(p.position,e.position)
         if structures[e.type] then if d<ds then ds,action.structure=d,e end
         elseif d<du then du,action.unit=d,e end
       end
     end
+    action.seen=seen
+  end
+  -- Retreating: walk straight to the retreat point, firing at the nearest
+  -- unit in reach while any ammunition is left.
+  local function retreat_step(p,action,tick)
+    local pos=p.position
+    if api.distance(pos,action.retreat)<=3 then return 'retreated' end
+    if tick>=action.next_scan or (action.unit and not action.unit.valid) then scan(p,action); action.next_scan=tick+SCAN_EVERY end
+    local unit=action.unit and action.unit.valid and action.unit or nil
+    local shoot=unit and ammo_count(p)>0 and api.distance(pos,unit.position)<action.band_max+3
+    action.target=shoot and {name=unit.name,position=unit.position} or nil
+    p.shooting_state=shoot and {state=defines.shooting.shooting_enemies,position=unit.position}
+      or {state=defines.shooting.not_shooting,position=pos}
+    p.walking_state={walking=true,direction=heading(action.retreat.x-pos.x,action.retreat.y-pos.y)}
   end
   function M.tick(p,action,tick)
     local c=p.character
-    if c.health<action.min_health*c.max_health then return 'low_health' end
-    if ammo_count(p)==0 then return 'out_of_ammo' end
+    if action.retreating then return retreat_step(p,action,tick) end
+    local stop
+    if c.health<action.min_health*c.max_health then
+      stop='low_health'
+      action.why=string.format('health %d%% fell below min_health %d%%',math.floor(c.health/c.max_health*100),math.floor(action.min_health*100))
+    elseif ammo_count(p)==0 then
+      stop='out_of_ammo'; action.why='out of ammunition'
+    end
+    if stop then
+      scan(p,action); action.next_scan=tick+SCAN_EVERY -- what is left, for the reply
+      if not action.retreat then return stop end
+      action.retreating=stop
+      action.why=action.why..string.format('; retreating to (%g,%g)',action.retreat.x,action.retreat.y)
+      return retreat_step(p,action,tick)
+    end
     if tick>=action.next_scan or (action.unit and not action.unit.valid) or (action.structure and not action.structure.valid) then
       scan(p,action); action.next_scan=tick+SCAN_EVERY
     end
@@ -79,6 +111,7 @@ return function(api)
     elseif action.anchor and api.distance(pos,action.anchor)>4 then
       walk=heading(action.anchor.x-pos.x,action.anchor.y-pos.y)
     else
+      action.why='no enemies left within the scan radius'
       return 'clear'
     end
     action.target=target and {name=target.name,position=target.position} or nil

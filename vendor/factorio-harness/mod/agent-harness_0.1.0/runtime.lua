@@ -168,12 +168,18 @@ local function finish(index, outcome)
     -- Movement diagnostics, only when something went wrong on the way.
     last.replans=(action.replans or 0)>0 and action.replans or nil
     last.stalls=action.stalls; last.no_progress=action.no_progress; last.paths_failed=(action.paths_failed or 0)>0 and action.paths_failed or nil
+    -- move_to combat fires for the walk only: the combat channel ends next tick.
+    local combat=s.combat and s.combat[index]
+    if combat and combat.with_move then combat.until_tick=game.tick-1; combat.end_outcome='move_ended' end
   end
   if action and action.kind=='kite' then
     local last,p=s.last[index],body(M.lookup(index))
     last.kills=action.kills
+    -- Why combat stopped, stated plainly (request #57), with what was left.
+    last.why=action.why or (outcome=='timed_out' and 'time up' or outcome=='replaced' and 'replaced by another action' or nil)
+    last.enemies_left=action.seen; last.retreated_from=action.retreating
     if p and p.valid and p.character and p.character.valid then
-      last.ammo_used=kite.ammo_used(p,action)
+      last.ammo_used=kite.ammo_used(p,action); last.ammo_left=kite.ammo_count(p)
       p.shooting_state={state=defines.shooting.not_shooting,position=p.position}
     end
   end
@@ -487,7 +493,7 @@ function handlers.describe()
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
         reports='crafting (hand queue: items, seconds left, head entry); spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches, next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name and incidents per 64-tile area with causes, attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts'},
-      kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | timed_out; status reports kills, ammo_used'},
+      kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
       belt_route={from='{x,y} first belt tile, or an existing belt end to extend; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
         belt='transport belt entity (default transport-belt); undergrounds of the same tier hop obstacles',undergrounds='default true',lane='left|right: side-load onto this lane of the belt at to (it needs an input from behind)',
         to_direction='free to: last belt direction (default straight on)',dry_run='plan only, place nothing',details='list every entity',
@@ -504,7 +510,7 @@ function handlers.describe()
         tiles='optional {name, area={left_top,right_bottom}}: fill up to 4096 tile ghosts (landfill over water, foundation beside a platform); returns tiles_placed, tiles_existing (same ghost already there), tiles_refused (not placeable there)',
         platform='optional platform name: place on that space platform (its hub builds ghosts from hub items); positions are platform coordinates, hub at 0,0',['repeat']='optional {count 1..64, dx, dy}: stamp the list count times, each shifted by dx,dy; per-copy rows',returns='placed, failed [{index,error}], bounds (construct defaults to them), obstacles_marked (trees/rocks under the ghosts, marked for deconstruction like a player placement; construct mines them)'},
       construct={area='optional {left_top,right_bottom} <=256x256; default: ghosts from the last paste',ticks='1..216000 (default 36000)',note='builds every ghost in reach from inventory and hand-mines every entity marked for deconstruction (timed like mine; contents to inventory, stops with inventory_full), then walks to the free stand point (never on a footprint) covering the most remaining ghosts near the nearest one; blocked ghosts retry once after moving; trees/rocks under ghosts are marked and mined first; ghosts whose item is in the hand-crafting queue are awaited (status awaiting_craft), not missing; status reports built/mined/remaining/missing/failed; outcomes: constructed (everything done) | incomplete (ghosts left for missing items or failures; a plan step fails) | nothing_to_do (a success, completes at once) | inventory_full | timed_out'},
-      move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: engine pathfinder (a failed request retries from the nearest free tile centre with a slimmer box, then a wider goal); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',status='last reports replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity) | blocked | timed_out'},
+      move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: engine pathfinder (a failed request retries from the nearest free tile centre with a slimmer box, then a wider goal); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',combat='optional true or a radius 1..32 (default 20): fire at enemies in range while walking, as shoot auto does (needs ammunition), until the walk ends; status/last_combat report it (outcome move_ended, ammo_used)',status='last reports replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity) | blocked | timed_out'},
       pickup={ticks='1..600',note='takes items on the ground within your pickup distance (stand on or next to them; refused when none is in reach); outcomes picked_up | duration_elapsed | inventory_full | nothing_in_reach, last.picked {item: count}'},repair={position='{x,y}',ticks='1..600',item='repair-pack by default'},
       mine={position='{x,y}', ticks='1..600', name='optional', outcomes='target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       stock={item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
@@ -537,7 +543,9 @@ function handlers.describe()
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited'},
       research={technology='name (omit everything to report: current, progress, queue, pending)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
       blueprint_import={blueprint='export string',slot='default clipboard'},blueprint_export={slot='default clipboard',layout='true returns normalized relative layout and material costs instead of export string'},blueprint_list={},blueprint_delete={slot='name'},
-      blueprint_capture={area='{left_top:{x,y},right_bottom:{x,y}}',slot='default clipboard',tiles='boolean',station_names='boolean'},copy={area='{left_top:{x,y},right_bottom:{x,y}}'},cut={area='{left_top:{x,y},right_bottom:{x,y}}'},paste={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost'},blueprint_place={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost'},deconstruct={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}} up to 256x256 of charted map',entity_names='optional array',entity_types='optional array'},cancel_deconstruction={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}}'},
+      blueprint_capture={area='{left_top:{x,y},right_bottom:{x,y}}',slot='default clipboard',tiles='boolean',station_names='boolean'},copy={area='{left_top:{x,y},right_bottom:{x,y}}'},cut={area='{left_top:{x,y},right_bottom:{x,y}}'},paste={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost'},blueprint_place={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost'},deconstruct={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}} up to 256x256 of charted map',entity_names='optional array',entity_types='optional array',
+        tiles='optional: true (every minable tile in the area) or 1..32 tile names, e.g. ["space-platform-foundation"]: marks tiles as a planner in tile mode does (robots take them back to the hub or a roboport); entities then only with entity_names/entity_types. Returns tiles_marked, tiles_already, tiles_refused with refused {under_entity, engine, not_minable, error}, tiles_blocked (marked tiles under entities not marked; a note names them)'},cancel_deconstruction={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}}',entity_names='optional array',entity_types='optional array',
+        tiles='optional: true or 1..32 tile names: clears tile marks (tiles_cancelled); entities then only with entity_names/entity_types'},
       screenshot={path='relative .png path under script-output',width='320..1920',height='240..1080'}},
     limitations={'No teleport, resource creation, free crafting, direct mining, remote building, or map reveal',
       'Runtime source installation is trusted operator code, not a security sandbox',
@@ -553,6 +561,7 @@ function handlers.describe()
   for name,schema in pairs(M.waits and M.waits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.labs and M.labs.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.audience and M.audience.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.capsules and M.capsules.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
@@ -1419,9 +1428,21 @@ function handlers.move_to(p,a)
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local action={kind='move_to',position=target,tolerance=tolerance,
     until_tick=game.tick+ticks,last_position=p.position,stalled=0,replans=0,direct=a.pathfind==false}
+  -- combat: the combat channel fires at enemies in range for the walk (as
+  -- shoot auto), so a walk into an attacked area shoots back (request #57).
+  local combat
+  if a.combat~=nil and a.combat~=false then
+    local radius=a.combat==true and 20 or integer(a.combat,20,1,32,'combat radius')
+    local ammo=kite.ammo_count(p)
+    assert(ammo>0,'combat needs ammunition in the ammo slots: equip some (equip slot=ammo item=firearm-magazine)')
+    state().combat=state().combat or {}
+    combat_targets()[p.index]=nil
+    state().combat[p.index]={until_tick=game.tick+ticks,auto=true,radius=radius,ammo_start=ammo,with_move=true}
+    combat={auto=true,radius=radius,ammo=ammo}
+  end
   state().active[p.index]=action
   if not action.direct then request_path(p,action) end
-  return {until_tick=game.tick+ticks,position=target,pathfinding=not action.direct}
+  return {until_tick=game.tick+ticks,position=target,pathfinding=not action.direct,combat=combat}
 end
 -- Hand-mining time for the character, including force and character bonuses.
 local function hand_mining_ticks(p,e)
@@ -1823,7 +1844,7 @@ local function build_direct(p,stack,pos,direction,quality,kind)
     end
   end
   local ghost=surface.find_entities_filtered{position=pos,radius=0.1,ghost_name=proto.name,force=p.force,limit=1}[1]
-  local e
+  local e,replaced
   if ghost then
     local _,revived=ghost.revive{raise_revive=true}
     e=revived
@@ -1832,7 +1853,10 @@ local function build_direct(p,stack,pos,direction,quality,kind)
     assert(surface.can_place_entity(args),placement_error(p,proto,pos,direction))
     -- The manual check allows a fast-replace, which create_entity without
     -- fast_replace does not do: both machines stayed on the tiles (shake5:
-    -- assembling-machine-2 over -1, the old one kept running). Refuse instead.
+    -- assembling-machine-2 over -1, the old one kept running; request #68).
+    -- A machine of the same group on the same centre is replaced as a
+    -- player's build does: the old one (and its contents) into the
+    -- inventory, its recipe set on the new one. Any other overlap is refused.
     local group=proto.fast_replaceable_group
     if group then
       local cb=proto.collision_box or {left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
@@ -1840,8 +1864,22 @@ local function build_direct(p,stack,pos,direction,quality,kind)
       if direction==4 or direction==12 then l,t,r,btm=-btm,l,-t,r end
       for _,o in pairs(surface.find_entities_filtered{area={left_top={x=pos.x+l,y=pos.y+t},right_bottom={x=pos.x+r,y=pos.y+btm}},force=p.force}) do
         if o.valid and o.type~='entity-ghost' and o.prototype and o.prototype.fast_replaceable_group==group then
-          error(string.format('placement blocked by %s (%g,%g) already on these tiles: building over it would leave both; mine it first (mine at its position), then build (its recipe and contents do not carry over)',
-            o.name,o.position.x,o.position.y),0)
+          local ob=o.prototype.collision_box
+          local same=math.abs(o.position.x-pos.x)<0.01 and math.abs(o.position.y-pos.y)<0.01 and ob
+            and math.abs((ob.right_bottom.x-ob.left_top.x)-(cb.right_bottom.x-cb.left_top.x))<0.01
+            and math.abs((ob.right_bottom.y-ob.left_top.y)-(cb.right_bottom.y-cb.left_top.y))<0.01
+          if not same then
+            error(string.format('placement blocked by %s (%g,%g) already on these tiles, not on the same centre: mine it first (mine at its position), then build',
+              o.name,o.position.x,o.position.y),0)
+          end
+          assert(o.name~=proto.name,'target already contains this entity')
+          local ok,recipe,rq=pcall(function() if o.get_recipe then return o.get_recipe() end end)
+          local old={name=o.name,recipe=ok and recipe and recipe.name or nil,recipe_quality=ok and rq and rq.name or nil}
+          local mined=o.mine{inventory=p.get_main_inventory(),raise_destroyed=true}
+          assert(mined and not o.valid,string.format('cannot replace %s (%g,%g): your inventory has no room for it and its contents; free some slots, then build again',
+            old.name,pos.x,pos.y))
+          replaced=old
+          break
         end
       end
     end
@@ -1851,7 +1889,12 @@ local function build_direct(p,stack,pos,direction,quality,kind)
   end
   assert(e,placement_error(p,proto,pos,direction))
   if stack.count>1 then stack.count=stack.count-1 else stack.clear() end
-  return e,picked
+  -- The replaced machine's recipe goes on the new one when it can make it.
+  if replaced and replaced.recipe and e.set_recipe then
+    local ok=pcall(e.set_recipe,replaced.recipe,replaced.recipe_quality)
+    replaced.recipe_kept=ok or nil
+  end
+  return e,picked,replaced
 end
 local function build_reach(p,pos,what)
   assert_visible(p,pos,what)
@@ -1932,9 +1975,9 @@ local function build_one(p,a)
   -- Undergrounds are always placed directly with an explicit end: cursor
   -- building does not reliably make the exit of a pair from script.
   if direct then
-    local e,picked=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type)
+    local e,picked,replaced=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type)
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
-    return {consumed=1,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked}
+    return {consumed=1,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced}
   end
   local function held()
     local n=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'}
@@ -2255,9 +2298,12 @@ local function infer_inventory(e,a)
 end
 -- Moves matching stacks with transfer_stack so item metadata travels intact.
 local function move_stacks(source,target,match,limit)
-  local remaining,moved,order=limit,{},{}
+  -- remaining never goes below 0: the engine refuses an amount under 1
+  -- ("Given amount value(-1) too small", request #69, a queue transfer with
+  -- keep and up_to near the cap), so every call is skipped at 0.
+  local remaining,moved,order=math.max(0,limit),{},{}
   for i=1,#source do
-    if remaining==0 then break end
+    if remaining<=0 then break end
     local stack=source[i]
     if stack.valid_for_read and match(stack) then
       local key,name,quality,start=stack.name..'@'..stack.quality.name,stack.name,stack.quality.name,stack.count
@@ -2265,12 +2311,12 @@ local function move_stacks(source,target,match,limit)
       -- shift-click does, then fill empty slots.
       for pass=1,2 do
         for j=1,#target do
-          if remaining==0 or not stack.valid_for_read then break end
+          if remaining<=0 or not stack.valid_for_read then break end
           local slot=target[j]
           if (pass==1)==(slot.valid_for_read and slot.name==name and slot.quality.name==quality) then
             local before=stack.count
             slot.transfer_stack(stack,math.min(before,remaining))
-            remaining=remaining-(before-(stack.valid_for_read and stack.count or 0))
+            remaining=math.max(0,remaining-(before-(stack.valid_for_read and stack.count or 0)))
           end
         end
       end
@@ -2281,9 +2327,9 @@ local function move_stacks(source,target,match,limit)
       end
     end
   end
-  local stacks={}
-  for i,key in ipairs(order) do stacks[i]=moved[key] end
-  return limit-remaining,stacks
+  local stacks,total={},0
+  for i,key in ipairs(order) do stacks[i]=moved[key]; total=total+moved[key].count end
+  return total,stacks
 end
 -- Where the character gives items from: the main inventory, then for ammo
 -- the gun ammo slots, where crafted and picked-up ammo lands first.
@@ -2365,6 +2411,15 @@ local function transfer_one(p,a,pos,e)
       end
     end
   end
+  -- A silo with automatic requests on loads its rocket for the platforms'
+  -- requests and refuses cargo by hand, empty rocket or not (request #124).
+  if full and a.direction=='to_entity' and (a.inventory or inferred)=='rocket_silo_rocket' and e.type=='rocket-silo' then
+    local ok,auto=pcall(function() return e.use_transitional_requests end)
+    if ok and auto then
+      full.auto_requests=true
+      full.note='this silo has automatic requests on: the game fills its rocket for the platforms\' requests and takes no cargo by hand; turn them off with launch {position, auto_requests=false}, then transfer (and launch with platform=...)'
+    end
+  end
   -- Asked for an item the character does not hold at all: say so.
   local short=a.item and a.direction=='to_entity' and moved<wanted and not full and moved==0 and available()==0 and wanted or nil
   -- Hand share: feeding anything, and collecting from machines (not storage).
@@ -2376,7 +2431,8 @@ local function transfer_one(p,a,pos,e)
     for _,s in ipairs(stacks) do parts[#parts+1]=sign..s.count..' [item='..s.name..']' end
     p.create_local_flying_text{text=table.concat(parts,' '),position=e.position}
   end
-  local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred,none_held=short and a.item or nil,target_has=short and count(target) or nil}
+  local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred,none_held=short and a.item or nil,target_has=short and count(target) or nil,
+    at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
   if a.direction=='to_player' then out.inventory_full=full else out.entity_full=full end
   -- An emptied corpse goes, as when a player takes everything from it.
   if a.direction=='to_player' and e.type=='character-corpse' and sources[1].is_empty() then e.destroy(); out.corpse_removed=true end
@@ -3077,6 +3133,9 @@ function handlers.equip(p,a)
 end
 local blueprint_handlers=blueprint_module{position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform}
 for name,handler in pairs(blueprint_handlers) do handlers[name]=handler end
+-- Grenades and other capsules (capsules.lua, request #89).
+M.capsules=require('capsules'){state=state,position=position,assert_visible=assert_visible,held=held}
+handlers.use_item=M.capsules.handlers.use_item
 -- Ghosts at absolute positions, as a player places them from the cursor or
 -- the map: anywhere charted, no items needed. `construct` then builds them.
 -- One ghost as a player's ghost placement (shift-build): manual ghost checks
@@ -4017,7 +4076,7 @@ function M.tick_body(event)
   end
   for index,action in pairs(state().combat or {}) do
     local ok,p=pcall(player,index)
-    if not ok or event.tick>action.until_tick then stop_combat(index,ok and 'duration_elapsed' or 'player_unavailable')
+    if not ok or event.tick>action.until_tick then stop_combat(index,ok and (action.end_outcome or 'duration_elapsed') or 'player_unavailable')
     elseif action.ammo_start and kite.ammo_count(p)==0 then stop_combat(index,'out_of_ammo')
     else
       local target=action.position
