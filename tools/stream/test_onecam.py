@@ -113,7 +113,7 @@ def urgent():
     d.step(snap(team), t + 132)
     pub = d.public(t + 132)
     assert d.onair != on and pub["main"]["attack"] == loss["text"] and pub["main"]["agents"] == [], pub
-    for k in range(133, 160):
+    for k in range(133, 175):  # attack_hold 30 s (no fight reported around it: no longer)
         d.step(snap(team), t + k)
     assert onair_agent(d) == ["luna"] and d.cuts[-1][2] == "back to luna", d.cuts  # the story it interrupted
     # another real loss inside 3 minutes: an inset this time

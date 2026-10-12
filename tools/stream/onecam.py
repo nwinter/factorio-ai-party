@@ -88,8 +88,9 @@ ONECAM = {
     "trio_zoom": 1.3,       # the small tiles are framed this much closer
     "trio_frac": 1.0,       # the big tile's share of a client's width (layout-3cam.json main is 16:9: no crop)
     "trio_force": False,    # mock screenshots: a trio whenever three agents can fill it, held
-    "still_cut": 25.0,      # the character on air has not moved or visibly acted this long ...
-    "still_min": 30.0,      # ... and has been on air this long: cut to an agent moving or acting now
+    # shift01 16:19-16:56 with 25 / 30 / 8: a cut about every 30 s, against one story at a time (operator 16:56)
+    "still_cut": 30.0,      # the character on air has not moved or visibly acted this long ...
+    "still_min": 60.0,      # ... and has been on air this long: cut to an agent moving or acting now
     "still_moved": 0.5,     # tiles: less than this between polls is standing still
     "moving_s": 6.0,        # "moving now": moved or visibly acted within this long
     "still_worth": 0.5,     # the moving agent must score at least this share of the one on air
@@ -99,11 +100,20 @@ ONECAM = {
     "plan_boost": 1.6,      # a big visible action dispatched or running (module doc)
     "dull": 0.75,           # crafting, waits, reads
     "plan_hold": 300.0,     # the camera on air holds a big action this long at most
-    "plan_after": 8.0,      # once it ends, standing still this long is enough to cut away
+    "plan_after": 20.0,     # once it ends, standing still this long is enough to cut away
     "map_every": 600.0,     # a "Base map" shot about this often (0: never)
     "map_first": 300.0,     # the first one this long after the start
     "map_hold": 15.0,       # seconds on the map
     "map_trio": True,       # a check-in trio shows the map in one small tile
+    "map_gap": 30.0,        # no base map within this long after another cut (16:44:05 came 2 s after one)
+    # Fights (a viewer at 16:45: "dont move 'on air' away from agents under attack"): while the agent on air is
+    # shooting or under attack, or the fight on air is still reported, no cut away but an urgent one; an attack shot
+    # holds until its fight has been quiet fight_quiet; an agent under attack is a strong pick.
+    "attack_hold": 30.0,
+    "fight_quiet": 15.0,
+    "fight_near": 40.0,     # tiles (plus half the fight's extent): a fight this close to a spot is the one there
+    "fight_hold_max": 180.0,
+    "fight_boost": 2.5,
 }
 VISIBLE = FIGHT | BUILD | WALK | {"mine", "gather", "craft", "construct", "kite", "repair", "pickup", "drive", "shoot"}
 DULL = {"craft", "wait_until", "sleep", "inspect", "feed", "insert", "take", "transfer", "research", "fuel", "observe"}
@@ -192,6 +202,7 @@ class OneCam(Director):
         self.last_map = None   # when the last base map went on air (None: map_first after the start)
         self.basemap = None    # the snapshot's basemap (mapcam.map_shot frames the map camera from it)
         self.maps = []         # (t, where): base map shots, on air or in a trio tile
+        self.fight_list = []   # the snapshot's fights still reported (fight_t: when each last went on)
 
     # -- clients ----------------------------------------------------------------------------------------------
     def slot(self, name):
@@ -366,7 +377,9 @@ class OneCam(Director):
             if n not in out:
                 continue
             k = plan_kind(a)
-            if big_plan(a):
+            if a.get("combat") or k in FIGHT:
+                f = cfg["fight_boost"]  # under attack or shooting: a strong pick
+            elif big_plan(a):
                 f = cfg["plan_boost"]
             elif k in DULL:
                 f = cfg["dull"]
@@ -379,6 +392,33 @@ class OneCam(Director):
             out[n] = round(out[n] * f, 3)
         return out
 
+    @staticmethod
+    def fight_t(f):
+        """When a fight last went on: an attack's last report; a loss entry's newest loss (live.py re-reports a loss
+        alert for ~2 minutes, so its `last` says nothing). shift01 16:44: losses near (-85, -110) went from 4 to 31
+        pieces while the camera had already gone back."""
+        if f.get("kind") == "loss":
+            return max(f.get("losses") or [-1e9])
+        return f.get("last", -1e9)
+
+    def fight_fresh(self, position, now, agent=None):
+        """A fight still going on at this spot (or this agent's own): reported within fight_quiet."""
+        for f in self.fight_list:
+            if now - self.fight_t(f) >= self.cfg["fight_quiet"]:
+                continue
+            if agent and f.get("agent") == agent:
+                return True
+            q = f.get("position")
+            if position and q and (q.get("surface") or "nauvis") == (position.get("surface") or "nauvis") and \
+                    dist(q, position) <= self.cfg["fight_near"] + (q.get("extent") or 0) / 2:
+                return True
+        return False
+
+    def fighting(self, name, by_name, now):
+        """The agent is shooting, under attack, or in a fight still reported."""
+        a = by_name.get(name) or {}
+        return bool(a.get("combat") or plan_kind(a) in FIGHT or self.fight_fresh(None, now, agent=name))
+
     def plan_zoom(self, a):
         """The zoom that fits the agent and its action's bounds, or None."""
         ext = plan_extent(a) if big_plan(a) else None
@@ -390,6 +430,7 @@ class OneCam(Director):
         by_name = {a["name"]: a for a in agents}
         self.track(agents, now)
         self.basemap = snapshot.get("basemap") or self.basemap
+        self.fight_list = list(snapshot.get("fights") or [])
         scores = self.scores(agents, now)
         ranked = sorted(scores, key=lambda n: -scores[n])
         if not self.slots:
@@ -450,8 +491,10 @@ class OneCam(Director):
             return
         cur = self.state.get(self.onair)
         if (self.hold_layout or self.pending or self.inset or self.trio_pending or segment or
-                (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0))):
-            return
+                (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0)) or
+                now - self.last_program_cut < cfg["map_gap"] or
+                any(now - self.fight_t(f) < cfg["fight_quiet"] for f in self.fight_list)):
+            return  # (a fight going on anywhere: an urgent cut may come, the map would be cut short)
         t = self.map_target((1208, 1032), now + cfg["ready_s"] + cfg["map_hold"], cfg["view_frac"])
         if not t:
             return
@@ -500,6 +543,7 @@ class OneCam(Director):
         cur = self.state.get(self.onair)
         subj = cur.get("subject") if cur else None
         blocked = (self.hold_layout or self.pending or self.inset or subj not in scores or
+                   self.fighting(subj, by_name, now) or
                    (not cfg["trio_force"] and now - self.since_mode() < cfg["trio_gap"]))
         p = self.trio_pending
         if blocked:
@@ -584,10 +628,15 @@ class OneCam(Director):
             if cur and cur.get("subject") in scores:
                 self.keep(cur, by_name, now)
             return
+        if cur and cur.get("subject") == "@attack" and now >= cur.get("until", 0) and \
+                now - cur.get("attack_t", now) < self.cfg["fight_hold_max"] and \
+                self.fight_fresh(cur.get("position"), now):
+            cur["until"] = now + 1  # the fight on air is still reported: stay until it has been quiet fight_quiet
         if cur and cur.get("subject") in HOLDS and now < cur.get("until", 0):
             return
-        if cur and now < cur.get("hold_until", 0) and cur.get("subject") in scores:
-            self.keep(cur, by_name, now)
+        if cur and cur.get("subject") in scores and now - cur.get("attack_t", -1e9) < self.cfg["fight_hold_max"] and \
+                (now < cur.get("hold_until", 0) or (cur.get("hold_until") and self.fighting(cur["subject"], by_name, now))):
+            self.keep(cur, by_name, now)  # the agent on air in its fight: no "back to" while it goes on
             return
         subj = cur.get("subject") if cur else None
         need = subj not in scores  # nothing on air, a hold that ended, or the subject died or left
@@ -609,7 +658,8 @@ class OneCam(Director):
         else:
             held = now - self.onair_since
             cfg = self.cfg
-            holding = big_plan(by_name[subj]) and held < cfg["plan_hold"]  # its big action runs: stay
+            holding = (big_plan(by_name[subj]) and held < cfg["plan_hold"]) or \
+                self.fighting(subj, by_name, now)  # its big action runs, or it fights: stay
             if cand and not holding and held >= cfg["onair_dwell"] and now - self.last_program_cut >= cfg["cut_spacing"]:
                 if scores[cand] > scores[subj] * cfg["switch_margin"] + cfg["switch_bias"]:
                     want = cand

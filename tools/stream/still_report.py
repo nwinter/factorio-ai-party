@@ -143,12 +143,19 @@ def measure(timeline, moves, still=20.0):
             "p90_s": round(st[int(0.9 * (len(st) - 1))]) if st else 0, "max_s": round(st[-1]) if st else 0}
 
 
+OFF = {"still_cut": 1e9, "plan_after": 1e9, "plan_boost": 1.0, "move_boost": 1.0, "dull": 1.0, "still_factor": 1.0,
+       "plan_hold": 0.0, "fight_boost": 1.0, "fight_quiet": 0.0}  # the stand-still, look-ahead and fight rules off
+# what ran live from 16:19 to the stopgap (eng/still): 25 s still, 30 s on air, 8 s after a big action, no fight hold
+LIVE_1619 = {"still_cut": 25.0, "still_min": 30.0, "plan_after": 8.0, "attack_hold": 20.0, "map_gap": 0.0,
+             "fight_quiet": 0.0, "fight_boost": 1.6}
+
+
 def replay(run_cfg, js, t0, t1, rules, poll=3.0):
-    """The director on the journals' inputs: -> (timeline, cut reasons)."""
+    """The director on the journals' inputs, with these tuning overrides (rules: a dict; True: the defaults; False:
+    OFF): -> (timeline, cut reasons)."""
     from model import Model
     from onecam import OneCam
-    off = {} if rules else {"still_cut": 1e9, "plan_after": 1e9, "plan_boost": 1.0, "move_boost": 1.0, "dull": 1.0,
-                            "still_factor": 1.0, "plan_hold": 0.0}
+    off = {} if rules is True else OFF if rules is False else dict(rules)
     d = OneCam([{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}, {"slot": "cam3", "player": 5}],
                lambda body: {"ok": True}, None, view_frac=0.658, **off)
     d.started = t0
@@ -199,10 +206,11 @@ def main():
         t1 = min(t1, t0 + a.minutes * 60)
     out = {"from": datetime.fromtimestamp(t0).strftime("%H:%M:%S"), "to": datetime.fromtimestamp(t1).strftime("%H:%M:%S"),
            "real": measure(onair_real(logs, t0, t1), moves, a.still)}
-    for label, rules in (("replay_before", False), ("replay_after", True)):
+    for label, rules in (("replay_rules_off", False), ("replay_live_1619", LIVE_1619), ("replay_defaults", True)):
         tl, reasons = replay(run_cfg, js, t0, t1, rules)
         r = measure(tl, moves, a.still)
         r["cuts"] = len(reasons)
+        r["cuts_per_hour"] = round(len(reasons) / ((t1 - t0) / 3600.0))
         r["still_cuts"] = sum(" still " in x for x in reasons)
         r["lookahead_cuts"] = sum(" ahead" in x for x in reasons) if rules else 0  # picked with a big action ahead
         out[label] = r

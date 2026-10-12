@@ -473,6 +473,17 @@ run config brings back the director below).
   with the zoom fitted, and once it ends 8 s still (`plan_after`) is enough to cut away. The same shift replayed
   through model.py and onecam.py: still share 31% before, 12% after (longest 123 s to 76 s); cuts 45 to 85 in 106
   minutes, 55 of them for standing still and 18 picked with a big action ahead.
+- Calmer (operator 16:56: live from 16:19 a cut about every 30 s; a viewer at 16:45: "dont move 'on air' away
+  from agents under attack"): a stand-still or look-ahead cut needs 60 s on air (`still_min`) and 30 s still
+  (`still_cut`), 20 s after a big action (`plan_after`); `attack_hold` 30 s. A fight shot holds while its fight goes
+  on (an attack still reported, or a loss entry with new losses: its `last` is a re-report) until 15 s quiet
+  (`fight_quiet`, at most `fight_hold_max` 180 s); the agent on air shooting or under attack gets no cut away but an
+  urgent one, no trio, and scores x2.5 as a pick (`fight_boost`). The base map waits 30 s after any cut (`map_gap`)
+  and while any fight is reported. shift01 14:30-16:57 replayed (still_report.py; no alerts or basemap in the
+  journals, so no attack or map cuts): rules off 26 cuts an hour, still share 33%; the settings live from 16:19 50 an
+  hour, 16%; the new defaults 37 an hour (one every ~97 s), 21%. At 16:44 the loss shot near (-85, -110) went back
+  to Grok after 20 s while the losses grew from 4 to 31 pipes; it now stays until 15 s after the last loss, and the
+  base map 2 s after a cut would have waited for the fight to end.
 - Base map (a viewer on shift01: "kind wish there was a map in one of them at times to see the overall base
   layout"): about every 10 minutes (`map_every`, first after 5) the program shows Factorio's own map of the whole base
   for 15 s (`map_hold`), labelled "Base map", then the story it interrupted. A standby client is framed first: the

@@ -47,7 +47,7 @@ def still_cut():
     assert t is not None, d.cuts
     def move(now):
         sol["position"] = {"x": 300 + (now - 1000) * 1.0, "y": 0}
-    cut = until_onair(d, team, "sol", t + 1, t + 60, move)
+    cut = until_onair(d, team, "sol", t + 1, t + 80, move)
     assert cut is not None and "still" in d.cuts[-1][2] and "sol moving" in d.cuts[-1][2], d.cuts
     assert cut - t >= d.cfg["still_min"] and cut - t <= d.cfg["still_min"] + d.cfg["ready_s"] + 2, (cut - t, d.cuts)
     # no ping-pong: Luna (far more interesting on paper) is not back within still_block, even when Sol stands still
