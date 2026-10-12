@@ -73,7 +73,7 @@ From the journals, 02:58 to 05:26 (successful calls):
 | Bulk inserter | 1 | Astra 05:07 | |
 | Trains, modules, beacons, accumulators, fast belts, nuclear, quality | 0 | | |
 
-In the agents' words: Sol to Astra and Luna at 03:23, "I have 250 piercing and 30 grenades; checking south defense
+In the agents' words: Sol to Astra and Luna at 03:23, "I have250piercing and30grenades; checking southdefense
 now"; the grenade followed at 04:53. No agent text mentions trains, rails, modules, accumulators, fast belts or the
 shift-start block's list.
 
@@ -92,7 +92,7 @@ Research-setting calls (`research` with a technology or queue):
 
 So the choices broadened in shake10's last hour and in shake11 (logistics, robots, inserters, a planet discovery),
 then stopped: in shake12 no agent touched the queue, and the binding limit was utility science, not the choice
-("Yellow still PU limited", Astra, 03:04; "weapon shooting speed6 next20%, needs ~1600 yellow/red/green/blue/military",
+("Yellow stillPUlimited", Astra, 03:04; "weapon shooting speed6 next20%, needs ~1600 yellow/red/green/blue/military",
 Sol, 03:05).
 
 ## 4. Sleep
