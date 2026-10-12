@@ -387,4 +387,39 @@ eq(r.item.needs[1].name,'copper-plate'); eq(r.item.needs[1].count,100); eq(r.ite
 eq(r.item.notes[1].text,'at the mall chest'); eq(r.item.notes[1].by,'sol')
 fails(function() sol('board_post',{kind='task',title='x',needs={['iron-plate']='lots'}}) end,'maps item names to counts')
 fails(function() sol('board_post',{kind='task',title='x',note='  '}) end,'note is required')
+
+-- shake11 (27640e9): once the loss incidents reached MAX_INCIDENTS (64), a new incident was appended without `last`,
+-- the eviction compare failed on it and left it so, and then every status failed in losses_since
+-- ('attempt to compare number with nil').
+local wall_biter={valid=true,name='small-biter'}
+local function lose(name,x,y) runtime.on_event{name=11,tick=tick,entity={valid=true,name=name,position={x=x,y=y},force=force},cause=wall_biter} end
+storage.agent_harness.losses=nil
+jump(20000)
+for k=1,64 do lose('stone-wall',k*64+1,-1000); jump(1) end -- one incident per 64-tile cell
+local losses=storage.agent_harness.losses
+eq(#losses,64)
+local first_key=losses[1].key
+lose('gun-turret',1,-2000) -- the 65th: it is kept, the oldest goes
+losses=storage.agent_harness.losses
+eq(#losses,64)
+for _,i in ipairs(losses) do assert(type(i.last)=='number','incident '..i.key..' has no last tick') end
+eq(losses[#losses].names['gun-turret'],1)
+for _,i in ipairs(losses) do assert(i.key~=first_key,'the oldest incident was evicted') end
+jump(60)
+local st=astra('status')
+assert(has(st.alerts.latest,'1 gun-turret'),table.concat(st.alerts.latest,' | '))
+assert(has(st.team.alerts,'losses in (1,-2000) 1 destroyed: 1 gun-turret'),table.concat(st.team.alerts,' | '))
+eq(storage.agent_harness.runtime_fault,nil)
+-- A save from before the fix keeps an incident with last=nil: status still works, it counts as old, and it is the
+-- first evicted.
+table.insert(storage.agent_harness.losses,1,{key='99,99',box={6336,6336,6336,6336},first=tick,names={['stone-wall']=1},causes={},total=1})
+table.remove(storage.agent_harness.losses,2)
+st=astra('status')
+assert(not has(st.alerts.latest,'(6336,6336)'))
+sol('status'); astra('status',{since=0})
+lose('stone-furnace',1,-3000)
+eq(#storage.agent_harness.losses,64)
+for _,i in ipairs(storage.agent_harness.losses) do assert(i.key~='99,99','the incident without last went first') end
+assert(has(astra('status').team.alerts,'losses in (1,-3000) 1 destroyed: 1 stone-furnace'))
+eq(storage.agent_harness.runtime_fault,nil)
 print('board: ok')
