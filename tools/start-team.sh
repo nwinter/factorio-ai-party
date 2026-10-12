@@ -188,8 +188,13 @@ helpers+=("shot-sync:$!:$rundir/shot-sync.log")
 if [ "${POG_CASTER:-1}" != 0 ]; then
   # --deadline: the agents' deadline.txt files (written as they launch, after this) give the hosts the time left;
   # --run-dir: its resumed-from (POG_RESUME) tells the hosts this is a later shift of a saved world
-  nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts auto --tts-fallback aura1 \
-    --deadline "$rundir/*/deadline.txt" --run-dir "$rundir" >"$rundir/caster.log" 2>&1 &
+  # The hosts' writer: POG_CASTER_MODEL on OpenRouter (Nick picked Opus 5.5 from the 2026-10-11 writer comparison,
+  # docs/AUDIO-NOTES.md); urgent beats stay on the fast Workers AI model. Empty, or no OpenRouter key: Workers AI.
+  cmodel=${POG_CASTER_MODEL-anthropic/claude-opus-5.5} writer=()
+  orkey=${OPENROUTER_API_KEY:-$(security find-generic-password -s openrouter -w 2>/dev/null || true)}
+  [ -n "$cmodel" ] && [ -n "$orkey" ] && writer=(--writer or --model "$cmodel")
+  OPENROUTER_API_KEY=$orkey nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts auto --tts-fallback aura1 \
+    --deadline "$rundir/*/deadline.txt" --run-dir "$rundir" ${writer[@]+"${writer[@]}"} >"$rundir/caster.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("caster:$!:$rundir/caster.log")
 fi
