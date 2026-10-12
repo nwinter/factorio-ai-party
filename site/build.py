@@ -440,7 +440,8 @@ def agent_chip(key):
     return f'<span class="chip">{avatar(key, "sm")}{esc(a["name"])}</span>'
 
 
-NAV = [("/", "Home"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"), ("/live/", "Live")]
+# The homepage is the live show; /live/ stays as an alias for links shared before.
+NAV = [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"), ("/about/", "About")]
 
 
 def page(title, body, active="/", description="", extra_head=""):
@@ -733,6 +734,28 @@ def build_experiments(runs, all_worlds):
 
 
 def build_home(runs, all_worlds):
+    """The homepage is the live show (Nick: "just drop people right into it"), then a compact way into the rest."""
+    sf = run_final(all_worlds["shake1"]["n"])
+    cards = [("/about/", "About the project", "Nine models from five labs share one Factorio factory, by the same rules as a "
+              "player. How it works, the fair-play rules, the team."),
+             ("/experiments/", "Experiments", "What each run tested and what it found."),
+             ("/runs/", "Runs", f"Every run with its charts and chat; the latest, {runs['shake1']['title']}, reached "
+              f"{sf['techs']} technologies by {sf['game']}."),
+             ("/studies/", "Studies", "Write-ups of the runs: what went wrong, what changed.")]
+    links = "".join(f'<a class="home-card" href="{href}"><h3>{esc(t)}</h3><p class="muted">{esc(d)}</p></a>'
+                    for href, t, d in cards)
+    body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1") + f"""
+<section class="home-more" aria-labelledby="more-h">
+  <h2 id="more-h">The project</h2>
+  <p class="lede">AI agents playing Factorio together, by the same rules as you: no spawned items, no teleporting,
+  walking and building at a player's speed, talking in game chat. Shifts run through the night on one world.</p>
+  <div class="home-cards">{links}</div>
+</section>
+"""
+    return page(CONFIG.get("site_title", "Player of Games"), body, "/", CONFIG.get("description", ""), extra_head=LIVE_HEAD)
+
+
+def build_about(runs, all_worlds):
     team = []
     for k in CONTENT["team_order"]:
         a = agent(k)
@@ -748,7 +771,7 @@ def build_home(runs, all_worlds):
   <p class="lede">Nine models from five labs share one factory. They can't spawn items, teleport or see the
   unexplored map. They walk, mine, craft and build at the speed a person would, talk to each other in game chat,
   and try to get from a crashed ship to a rocket launch. The runs will be streamed.</p>
-  <p class="actions"><a class="fx-btn" href="/experiments/">See the experiments →</a> <a class="fx-btn ghost" href="/live/">Live stream</a></p>
+  <p class="actions"><a class="fx-btn" href="/experiments/">See the experiments →</a> <a class="fx-btn ghost" href="/">Live stream</a></p>
   <div class="stats hero-stats">
     {stat("runs so far", len(runs))}
     {stat("technologies in co-op", cf["techs"], "Astra + Opus, 2 hours")}
@@ -808,7 +831,7 @@ def build_home(runs, all_worlds):
 </section>
 
 <section>
-  <h2>The team</h2>
+  <h2 id="team">The team</h2>
   <p class="muted">Names and colours are the ones each agent chose for itself in the shakedown. The pixel portraits
   come from the stream's avatar renderer, which draws a default from each name and colour; agents can now design
   their own in game, and these will change when they do.</p>
@@ -830,7 +853,7 @@ def build_home(runs, all_worlds):
   <p class="muted">{esc(runs["shake1"]["summary"])}</p></div><p class="run-final">{sf["techs"]} techs by {sf["game"]}</p></a>
 </section>
 """
-    return page(CONFIG.get("site_title", "Player of Games"), body, "/", CONFIG.get("description", ""))
+    return page("About", body, "/about/", CONFIG.get("description", ""))
 
 
 def build_agent_page(key, runs, all_worlds, chats):
@@ -865,7 +888,7 @@ def build_agent_page(key, runs, all_worlds, chats):
                     f'{f"<dl class=kv>{dl}</dl>" if dl else ""}'
                     f'{f"<p class={chr(34)}muted small{chr(34)}>{len(mine)} chat messages</p>" if mine else ""}'
                     f'{f"<ul class=quotes>{q}</ul>" if q else ""}</article>')
-    head = (f'<p class="crumbs"><a href="/">Home</a> / The team</p>'
+    head = (f'<p class="crumbs"><a href="/about/">About</a> / <a href="/about/#team">The team</a></p>'
             f'<div class="agent-head" style="--ac:{a["color"]}">{avatar(key, "xl")}<div><h1>{esc(a["name"])}</h1>'
             f'<p class="model">{esc(a["model"])} · {esc(a["harness"])}</p>'
             f'{f"<p class=motto>“{esc(motto)}”</p>" if motto else ""}</div></div>')
@@ -904,24 +927,29 @@ def build_study(sid, st):
     return page(st["title"], body, "/studies/")
 
 
-def build_live():
+LIVE_HEAD = '<script src="/static/avatar.js" defer></script>\n<script src="/static/live.js" defer></script>'
+
+
+def live_app(heading, sample_href):
+    """The live show: player, chat, status strip and dashboard (static/live.js fills it from the live API). The
+    homepage and /live/ both use it."""
     vid = CONFIG.get("youtube_video_id") or ""
     chan = CONFIG.get("youtube_channel_id") or ""
     api = CONFIG.get("live_api_url") or ""
     status = CONFIG.get("live_status_url", "/live/status.json")
     poll = int(CONFIG.get("live_poll_seconds", 10))
-    body = f"""
+    return f"""
 <div id="live-app" class="live-app" data-api="{esc(api)}" data-status="{esc(status)}" data-poll="{poll}" data-video="{esc(vid)}" data-channel="{esc(chan)}">
 <div class="live-head-row">
-  <h1>Live</h1>
+  <h1>{esc(heading)}</h1>
   <p class="live-head-meta"><span id="live-badge" class="fx-chip fx-chip--grey">Offline</span> <span id="updated" class="muted small"></span></p>
 </div>
 <div class="live-top">
   <div class="player-wrap" id="player">
     <div class="player-placeholder">
       <span class="ph-dot" aria-hidden="true"></span>
-      <p><strong>No stream yet.</strong></p>
-      <p class="muted">The first public run hasn't been scheduled. The YouTube player appears here when it starts.</p>
+      <p><strong>Not live right now.</strong></p>
+      <p class="muted">The player appears here when the next shift starts. Below: the last state of the factory.</p>
     </div>
   </div>
   <aside class="chat-panel live-panel fx-root fx-panel" aria-label="Chat">
@@ -952,11 +980,14 @@ def build_live():
 <ul id="alerts" class="live-alerts"></ul>
 <div id="dash" class="live-dash"></div>
 <p class="muted small">The dashboard refreshes every {poll} seconds from the stream service on the game host.
-<a href="/live/?demo=1">Sample view</a>.</p>
+<a href="{sample_href}">Sample view</a>.</p>
 </div>
 """
-    return page("Live", body, "/live/", "Watch the run: stream, chat and the team's live status.",
-                extra_head='<script src="/static/avatar.js" defer></script>\n<script src="/static/live.js" defer></script>')
+
+
+def build_live():
+    return page("Live", live_app("Live", "/live/?demo=1"), "/", "Watch the run: stream, chat and the team's live status.",
+                extra_head=LIVE_HEAD)
 
 
 FAVICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#e39827"/>
@@ -982,6 +1013,7 @@ def main():
         p.write_text(text)
 
     write("index.html", build_home(runs, all_worlds))
+    write("about/index.html", build_about(runs, all_worlds))
     write("experiments/index.html", build_experiments(runs, all_worlds))
     write("runs/index.html", build_runs_index(runs, all_worlds))
     chats = {rid: load_chat(run) for rid, run in runs.items()}
@@ -997,6 +1029,8 @@ def main():
     shutil.copy(SITE / "live" / "status.json", out / "live" / "status.json")
     write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>', None))
     for f in (SITE / "static").iterdir():
+        if not f.is_file() or f.name.startswith("."):
+            continue  # only the site's own files (not editor or tool folders)
         (out / "static").mkdir(exist_ok=True)
         shutil.copy(f, out / "static" / f.name)
     # Art kit from the stream overlay: the CSS (font comes from the <link> in page(), not a blocking @import)

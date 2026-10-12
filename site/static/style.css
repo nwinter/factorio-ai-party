@@ -424,6 +424,51 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .o-x { fill: #9a9a9a; background: #9a9a9a; }
 .mm-legend-ore i { opacity: .55; }
 .minimap .dot.far > circle:not(.cam) { stroke: var(--fx-text); stroke-width: 1.5; stroke-dasharray: 2 2; }
+/* which camera follows whom; fights; the map card's research line, camera list and Space inset */
+.minimap .camtag { fill: var(--fx-orange); font-size: 8.5px; font-weight: 700; letter-spacing: .04em; paint-order: stroke; stroke: #000; stroke-width: 2.5px; }
+.minimap .fight circle { fill: rgba(224, 78, 58, .10); stroke: rgba(224, 78, 58, .55); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.minimap .fight.now circle { fill: rgba(224, 78, 58, .22); stroke: #ff5a44; stroke-width: 2; stroke-dasharray: none; }
+.minimap .fight path { stroke: #ffd1c9; stroke-width: 1.6; }
+@media (prefers-reduced-motion: no-preference) {
+  .minimap .fight.now circle { animation: fight-pulse 1.6s ease-in-out infinite; }
+  @keyframes fight-pulse { 50% { stroke-opacity: .35; } }
+}
+.map-research { margin: 0 0 6px; color: var(--fx-text); }
+.map-research strong { color: var(--fx-heading); }
+.cam-lines, .platforms { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: .88rem; }
+.cam-lines li { overflow-wrap: anywhere; }
+.space-inset .small { margin: 0 0 4px; }
+.platforms li { overflow-wrap: anywhere; }
+.platforms b { color: var(--fx-heading); }
+.platforms .fx-progress { margin-top: 3px; }
+
+/* homepage: the live show, then a compact way into the rest of the site */
+.home-more { margin-top: 2.4rem; }
+.home-more h2 { margin-bottom: .3rem; }
+.home-more .lede { font-size: 1.02rem; margin-top: 0; }
+.home-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr)); gap: 10px; }
+.home-card { display: block; padding: 10px 14px; text-decoration: none; color: inherit; background: var(--surface);
+  border: 1px solid var(--panel-border); border-radius: var(--radius); box-shadow: var(--panel-shadow); }
+.home-card h3 { margin: .2rem 0 .3rem; font-size: 1rem; color: var(--accent); }
+.home-card p { margin: 0; font-size: .9rem; }
+.home-card:hover h3 { text-decoration: underline; }
+
+/* phones (~400 px): tighter gutters, a shorter chat, compact strip and cards */
+@media (max-width: 520px) {
+  .wrap:has(.live-app) { padding: 0 10px; }
+  .live-head-row h1 { font-size: 1.35rem; }
+  .live-top { gap: 10px; }
+  .chat-panel { min-height: 0; }
+  .vchat { min-height: 140px; max-height: 240px; }
+  .yt-chat { min-height: 320px; }
+  .vchat-form { grid-template-columns: 5.5em 1fr auto; }
+  .live-strip { gap: 8px 16px; }
+  .strip-item b { font-size: 1.05rem; }
+  .live-panel.fx-panel, .live-card.fx-panel { padding: 4px 8px 10px; font-size: 14px; }
+  .live-dash { gap: 10px; }
+  .agents-live { grid-template-columns: 1fr; }
+  .chart-grid { grid-template-columns: 1fr; }
+}
 
 /* board, research, game chat */
 .board-counts { margin: 0; display: flex; gap: 6px; flex-wrap: wrap; }
