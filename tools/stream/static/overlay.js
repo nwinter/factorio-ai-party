@@ -639,7 +639,11 @@
         label.append(label._doing);
       }
       const lead = agents[0];
+      // a work shot (director work_target): the camera shows the agent's work, not its body: "Sol · building on
+      // Solstice (from the ground)"
+      const work = cam.work && (cam.work.startsWith(lead.display_name + " ") ? cam.work.slice(lead.display_name.length + 1) : cam.work);
       const doing = cam.attack ? (cam.attack.startsWith(lead.display_name) ? "under attack" : "attack nearby")
+        : work ? work
         : agents.length > 1 ? "working together" : lead.activity === "acting" && lead.action ? humanItem(lead.action)
         : lead.activity === "thinking" ? "thinking" : "";
       setText(label._doing, doing ? "· " + doing : "");

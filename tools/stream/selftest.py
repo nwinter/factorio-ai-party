@@ -110,7 +110,7 @@ def lua_globals_check():
     import re, shutil, subprocess
     if not shutil.which("luac"):
         return
-    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA", "SPACE_LUA"):
+    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA", "SPACE_LUA", "PLATFORM_LUA"):
         lua = getattr(harness, name, None)
         if lua is None:
             continue
@@ -214,7 +214,7 @@ def main():
         raise AssertionError("chat without peek was not refused")
 
     # Lua sent through one_line() must not carry `--` comments (they would swallow the rest of the joined line)
-    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA"):
+    for name in ("FLOW_LUA", "STREAM_LUA", "PROBE_LUA", "CAMERA_LUA", "PLATFORM_LUA"):
         assert "--" not in harness.one_line(getattr(harness, name)), f"{name} has a Lua comment"
     assert "--" not in harness.one_line(harness.basemap_lua(ore=True)), "BASEMAP_LUA has a Lua comment"
     lua_globals_check()

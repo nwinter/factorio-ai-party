@@ -12,7 +12,7 @@ casters say matches the screen. The page renders a segment from its facts only.
 import itertools, math, threading, time
 from collections import deque
 
-from model import SCIENCE
+from model import SCIENCE, platform_shot
 
 STARTING_S = 2.5   # page fade-in; the caster writes its exchange now and speaks on "live"
 ENDED_S = 5.0      # "ended" stays in the snapshot this long, then the segment is gone
@@ -310,7 +310,16 @@ class Segments:
                  "platforms": [{k: p.get(k) for k in ("name", "where", "speed_kms", "paused")} for p in (sp.get("platforms") or [])[:4]],
                  "science": {p["label"]: {"total": p.get("total"), "per_min": p.get("rate")} for p in sp.get("science") or []},
                  "away": sp.get("away") or []}
-        return "Space Age progress", facts, None
+        # the main camera shows a platform itself (its surface, hub in frame, zoomed to fit): one asked for, else one
+        # flying between planets, else the first whose surface is known
+        plats = [p for p in sp.get("platforms") or [] if p.get("view")]
+        pick = next((p for p in plats if p["name"] == params.get("platform")), None) or \
+            next((p for p in plats if p.get("route")), None) or (plats[0] if plats else None)
+        camera = None
+        if pick:
+            facts["shown"] = pick["name"]
+            camera = platform_shot(pick["view"])
+        return "Space Age progress", facts, camera
 
     def build_space_moment(self, params, snap, now):
         ms = self.moments(snap)
@@ -321,7 +330,12 @@ class Segments:
         facts = dict(m["facts"], moment=m["kind"])
         camera = None
         if m.get("agent") and any(a["name"] == m["agent"] for a in self.live_agents(snap)):
-            camera = {"follow": m["agent"], "zoom": self.spotlight_zoom}
+            camera = {"follow": m["agent"], "zoom": self.spotlight_zoom}  # a landing: the agent on the new planet
+        elif facts.get("platform"):  # first platform, a platform reaching a planet: the platform itself
+            view = next((p.get("view") for p in (snap.get("space") or {}).get("platforms") or []
+                         if p.get("name") == facts["platform"] and p.get("view")), None)
+            if view:
+                camera = platform_shot(view)
         return m["title"], facts, camera
 
     def build_spotlight(self, params, snap, now):

@@ -316,7 +316,9 @@ def main():
         camera = lambda body: {"ok": False, "stub": True, "mock": True}  # noqa: E731
     else:
         from live import LiveSource
-        source = LiveSource(a.world, run, profiles=a.profiles)
+        # the agents' fh journals (runs/RUN/AGENT/journal.jsonl) sit beside the run's stream.json: work.py tails them
+        source = LiveSource(a.world, run, profiles=a.profiles,
+                            journals=os.path.dirname(os.path.abspath(a.run)) if a.run else None)
         camera = source.send_camera
     if a.no_camera:
         camera = lambda body: {"ok": False, "stub": True, "disabled": True}  # noqa: E731

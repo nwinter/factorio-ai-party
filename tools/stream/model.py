@@ -133,7 +133,22 @@ def platform_where(p):
     where = f"{route['from']} → {route['to']}" if route else planet_label(at) if at and at != "in transit" else "in transit"
     speed = p.get("speed")
     return {"name": p.get("name"), "where": where, "route": route, "state": p.get("state"), "paused": bool(p.get("paused")),
-            "speed_kms": round(speed * 60) if isinstance(speed, (int, float)) and speed else None}
+            "speed_kms": round(speed * 60) if isinstance(speed, (int, float)) and speed else None, "view": p.get("view")}
+
+
+def platform_shot(view, margin=10.0):
+    """A camera shot of a whole platform from its view (live.py PLATFORM_LUA): the centre of its entities' bounds on
+    its surface, at the zoom that fits them. A director client at zoom 1 shows ~60x34 tiles (1920x1080 at 32 px per
+    tile), so the zoom is what fits the bounds plus a margin, clamped to cameras.lua's 0.3..4. exact_zoom: the
+    director sends it as is (no main/side scaling, which would crop the platform)."""
+    b = view.get("bounds") or {}
+    hub = view.get("hub") or {"x": 0, "y": 0}
+    left, top = b.get("left", hub["x"] - 6), b.get("top", hub["y"] - 6)
+    right, bottom = b.get("right", hub["x"] + 6), b.get("bottom", hub["y"] + 6)
+    w, h = right - left + margin, bottom - top + margin
+    zoom = max(0.3, min(2.0, 60.0 / w, 34.0 / h))
+    return {"position": {"x": round((left + right) / 2, 1), "y": round((top + bottom) / 2, 1)}, "surface": view["surface"],
+            "zoom": round(zoom, 2), "exact_zoom": True}
 
 
 def fmt_game_time(sec):
@@ -222,6 +237,7 @@ class Model:
         self.space = {"rockets": 0, "planets": [], "platforms": []}
         self.space_seen = None  # moment keys already true; None until the first observation seeds it silently
         self.moments = deque(maxlen=8)
+        self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
         self.space_age = bool(run.get("space_age")) or "Space Age" in (run.get("subtitle") or "")
         self.last_obs_t = None
         self.errors = {}
@@ -280,7 +296,41 @@ class Model:
             self.space = sp
         if obs.get("space") is not None or any(a.get("surface") for a in obs.get("agents", [])):
             self._space_moments(now)
+        for w in obs.get("work") or []:
+            self._ingest_work(w, now)
         self.errors = obs.get("errors", {})
+
+    def platform_view(self, name):
+        """A platform's camera view (live.py PLATFORM_LUA: surface, hub, bounds), or None before it is read."""
+        return next((p.get("view") for p in self.space.get("platforms") or [] if p.get("name") == name and p.get("view")), None)
+
+    def _ingest_work(self, w, now):
+        """Work away from an agent's body (live.py observe_work) -> a labelled item the director can cut to."""
+        if w.get("agent") not in self.agents:
+            return
+        ag = self.agents[w["agent"]]
+        who = ag.display_name or w["agent"]
+        item = {"id": f"work-{w['agent']}-{w.get('at') or now}", "agent": w["agent"], "action": w.get("action"),
+                "t": now, "platform": w.get("platform"), "position": w.get("position"), "surface": w.get("surface")}
+        if w.get("platform"):
+            view = self.platform_view(w["platform"])
+            if not view:
+                return  # its surface is not known yet (the platform read runs every 15 s): nothing to cut to
+            item.update(surface=view["surface"], view=view,
+                        label=f"{who} {w.get('verb') or 'building'} on {w['platform']} (from the ground)")
+        else:
+            if not w.get("position"):
+                return
+            p = w["position"]
+            item["label"] = f"{who} {w.get('verb') or 'building'} at ({round(p['x'])}, {round(p['y'])}) (from afar)"
+        if any(x["agent"] == item["agent"] and x.get("platform") == item["platform"] and now - x["t"] < 20
+               for x in self.work):
+            return  # one request after another on the same job: one item
+        self.work.append(item)
+        ag.bump(1.0, now)
+
+    def work_snapshot(self, now):
+        return [dict(w, age_s=round(now - w["t"], 1)) for w in self.work if now - w["t"] < 60]
 
     def _ingest_agent(self, a, now):
         ag = self.agent(a["name"])
@@ -787,6 +837,7 @@ class Model:
             "production": self.production(now),
             "science": science,
             "space": self.space_snapshot(science),
+            "work": self.work_snapshot(now),
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
             "cameras": cameras or {},

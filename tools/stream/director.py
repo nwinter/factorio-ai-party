@@ -46,7 +46,15 @@ DEFAULTS = {
     "fight_margin": 24.0,    # tiles around the fight's extent; ~60 tiles across at zoom 1
     "death_hold": 12.0,      # a death cuts to where the agent fell (ignores attack_spacing)
     "death_zoom": 1.1,
+    # Work away from the body (model.work: remote platform builds, far ghosts/paste/deconstruction): the last
+    # secondary camera cuts to where the work lands, labelled "Sol building on Solstice (from the ground)".
+    "work_cut": True,
+    "work_hold": 15.0,       # seconds on the work
+    "work_spacing": 45.0,    # at most one work cut this often
+    "work_fresh": 20.0,      # a work item older than this is no longer news
+    "work_zoom": 0.9,        # a far ghost/paste/deconstruct position on the body's surface (scaled like other views)
 }
+HOLDS = ("@attack", "@segment", "@work")  # fixed shots a camera keeps until their `until`
 FIGHT = {"shoot", "attack", "kite"}
 BUILD = {"build", "place", "construct", "blueprint", "build_blueprint", "build_path", "rotate", "repair", "deconstruct"}
 WORK = {"mine", "craft", "insert", "take", "feed", "gather", "research", "fuel"}
@@ -81,6 +89,8 @@ class Director:
         self.last_attack_framed = None
         self.attacks_seen = set()
         self.want = {}  # slot -> (zoom the subject's activity asks for, since)
+        self.work_seen = set()
+        self.last_work_cut = -1e9
 
     # -- scoring ----------------------------------------------------------------------------------------------
     def scores(self, agents, now):
@@ -170,6 +180,28 @@ class Director:
             return round(self.cfg["area_zoom"] * self.cfg["main_scale"], 2)
         return round(max(0.4, min(2.0, 60.0 / (extent + self.cfg["fight_margin"]))), 2)
 
+    # -- work away from the body -------------------------------------------------------------------------------
+    def work_target(self, snapshot, now):
+        """The newest fresh work item (snapshot `work`, model.py) not shown yet -> a fixed shot for the last secondary
+        camera, or None. A platform: the whole platform (model.platform_shot); else the far position, closer in."""
+        if not self.cfg["work_cut"] or now - self.last_work_cut < self.cfg["work_spacing"]:
+            return None
+        cur = self.state.get(self.slots[-1]["slot"])
+        if cur and cur["subject"] in HOLDS and now < cur["until"]:
+            return None  # that camera holds an attack or a segment shot
+        from model import platform_shot
+        for w in sorted(snapshot.get("work") or [], key=lambda w: -w["t"]):
+            if w["id"] in self.work_seen:
+                continue
+            self.work_seen.add(w["id"])
+            if now - w["t"] > self.cfg["work_fresh"]:
+                continue
+            shot = platform_shot(w["view"]) if w.get("view") else \
+                {"position": w["position"], "surface": w.get("surface") or "nauvis", "zoom": self.cfg["work_zoom"]}
+            # `work`, not `label`: public() reads a label as an attack banner
+            return dict(shot, agents=[w["agent"]], subject="@work", until=now + self.cfg["work_hold"], work=w["label"])
+        return None
+
     # -- main loop --------------------------------------------------------------------------------------------
     def step(self, snapshot, now=None, segment=None):
         """segment: Segments.camera() ({follow | position, zoom, until, label, id}) while a segment holds the main
@@ -229,17 +261,30 @@ class Director:
                 if follow:
                     target["follow"] = follow
                 elif segment.get("position"):
-                    target["position"] = segment["position"]
+                    # a platform shot names its surface and a zoom that fits the platform (model.platform_shot)
+                    target.update(position=segment["position"], surface=segment.get("surface"),
+                                  exact_zoom=bool(segment.get("exact_zoom")))
                 if follow or "position" in target:
                     if cur and cur["subject"] in by_name:
                         released.append(cur["subject"])
                     self.apply(self.slots[0], target, f"segment: {segment['label']}", scores, now)
         elif cur and cur["subject"] == "@segment" and (not segment or cur.get("seg") != segment["id"]):
             cur["until"] = 0  # the segment ended or was cut: back to normal directing below
+        work = self.work_target(snapshot, now) if len(self.slots) > 1 else None
+        if work:
+            slot = self.slots[-1]
+            cur = self.state.get(slot["slot"])
+            if cur and cur["subject"] in by_name:
+                released.append(cur["subject"])
+            self.apply(slot, dict(work, since=now), f"work: {work['work']}", scores, now)
+            self.last_work_cut = now
+        for t in self.state.values():  # an agent whose work is on air is not also followed (its body) elsewhere
+            if t and t["subject"] == "@work" and now < t["until"]:
+                taken.update(t["agents"])
         for i, slot in enumerate(self.slots):
             name = slot["slot"]
             cur = self.state.get(name)
-            if cur and cur["subject"] in ("@attack", "@segment"):
+            if cur and cur["subject"] in HOLDS:
                 if now < cur["until"]:
                     taken.update(cur["agents"])
                     for n in cur["agents"]:
@@ -353,7 +398,8 @@ class Director:
         if target is not None and target.get("jump"):
             body["smooth"] = False  # cameras.lua teleports at once (and sets the zoom) instead of easing over
         if target is not None and target.get("exact_zoom"):
-            body["zoom"] = round(min(self.cfg["max_zoom"], target["zoom"]), 2)  # a zoom that fits: sent as computed
+            # a zoom that fits (a fight, a platform): sent as computed
+            body["zoom"] = round(min(self.cfg["max_zoom"], target["zoom"]), 2)
         elif target is not None:
             scale = self.cfg["main_scale"] if slot is self.slots[0] else self.cfg["side_scale"]
             z = target["zoom"] * scale
@@ -395,4 +441,8 @@ class Director:
                     out[slot["slot"]]["alert"] = t.get("kind") or "attack"
                 if t.get("segment") and now < t.get("until", 0):
                     out[slot["slot"]]["segment"] = t["segment"]
+                if t.get("work") and now < t.get("until", 0):
+                    out[slot["slot"]]["work"] = t["work"]  # the page labels the camera with it
+                if t.get("surface") and t["surface"] != "nauvis":
+                    out[slot["slot"]]["surface"] = t["surface"]
         return out

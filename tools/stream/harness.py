@@ -171,6 +171,29 @@ local r = remote.call("agent_harness", "camera", BODY)
 rcon.print(type(r) == "string" and r or helpers.table_to_json({ok = true, result = r}))
 """
 
+# Space Age: where a camera can show each platform (read-only, operator level like SCORE_LUA): its surface name (the
+# camera call takes surfaces, the `platforms` read gives none), the hub (the runtime builds remote work around it) and
+# the bounds of our entities there, so a fixed view fits the whole platform. A platform still waiting for its starter
+# pack has no surface and is skipped.
+PLATFORM_LUA = r"""
+local f = game.forces.player
+local out = {}
+for _, pl in pairs(f.platforms) do
+  local ok, s = pcall(function() return pl.valid and pl.surface end)
+  if ok and s and s.valid then
+    local hub = (pl.hub and pl.hub.valid) and pl.hub.position or {x = 0, y = 0}
+    local x0, y0, x1, y1 = hub.x - 6, hub.y - 6, hub.x + 6, hub.y + 6
+    for _, e in pairs(s.find_entities_filtered{force = f, limit = 4000}) do
+      local p = e.position
+      x0, y0, x1, y1 = math.min(x0, p.x), math.min(y0, p.y), math.max(x1, p.x), math.max(y1, p.y)
+    end
+    out[#out + 1] = {name = pl.name, surface = s.name, hub = {x = hub.x, y = hub.y},
+      bounds = {left = x0, top = y0, right = x1, bottom = y1}}
+  end
+end
+rcon.print(helpers.table_to_json{platforms = out})
+"""
+
 PROBE_LUA = r"""
 local i = remote.interfaces.agent_harness
 rcon.print(helpers.table_to_json{harness = i ~= nil, camera = (i and i.camera) ~= nil, cameras = (i and i.cameras) ~= nil})
@@ -269,6 +292,11 @@ class Harness:
 
     def probe(self):
         return self.lua(PROBE_LUA)
+
+    def platform_views(self):
+        """{platform name: {surface, hub, bounds}} for the platforms that have a surface (PLATFORM_LUA)."""
+        rows = self.lua(PLATFORM_LUA).get("platforms")
+        return {r["name"]: r for r in (rows if isinstance(rows, list) else [])}
 
     def camera(self, body):
         return json.loads(self.command("/silent-command " + one_line(CAMERA_LUA.replace("BODY", lua_string(json.dumps(body))))))

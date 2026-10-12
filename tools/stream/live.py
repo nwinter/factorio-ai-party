@@ -9,6 +9,9 @@ import math, re, time
 
 from harness import Harness
 from model import SPARK_ITEMS
+from work import WorkFeed
+
+AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
 LOSS_RE = re.compile(r"^(?:losses )?in \((-?\d+),(-?\d+)\)(?:-\((-?\d+),(-?\d+)\))? (\d+) destroyed: (.*?)(?: by (.*?))?, (\S+) ago$")
@@ -30,7 +33,7 @@ def attacker_label(by):
 
 
 class LiveSource:
-    def __init__(self, world, run, profiles="auto", flow_every=30.0, harness=None, status_share=3):
+    def __init__(self, world, run, profiles="auto", flow_every=30.0, harness=None, status_share=3, journals=None):
         self.name = f"live:{world}"
         self.world = world
         self.h = harness or Harness(world)
@@ -63,6 +66,9 @@ class LiveSource:
         self.ore_every = 300.0  # ore under and around the base: every resource tile there, so less often still
         self.next_ore = 0
         self.platform_detail = {}
+        self.platform_views = {}
+        # work away from the body (remote platform builds, far ghosts): the agents' fh journals beside stream.json
+        self.work = WorkFeed(journals, list(self.agents_cfg)) if journals else None
         self.probe()
 
     def probe(self):
@@ -215,6 +221,8 @@ class LiveSource:
             obs["agents"].append(a)
         # Only `names` become agents: the run's team, or every profile when the run lists none. Profiles outside the
         # team (a human player such as Nick in shake8, fh players eng/players adds) are not agent cards.
+        if self.work:
+            obs["work"] = self.observe_work(obs["agents"], errors)
 
         try:
             res, _ = self.h.dispatch("chat", {"since": self.chat_since, "limit": 30, "peek": True}, **self.reader())
@@ -226,6 +234,29 @@ class LiveSource:
         self.observe_board(obs, errors)
         obs["errors"] = errors
         return obs
+
+    # ---- work away from the body ----------------------------------------------------------------------------
+    def observe_work(self, agents, errors):
+        """New journal requests that land away from the agent's body: on a platform (the body never is, when it
+        builds there remotely), or AWAY_TILES or more from the body on its own surface."""
+        try:
+            reqs = self.work.poll()
+        except Exception as e:
+            errors["work"] = str(e)
+            return []
+        by = {a["name"]: a for a in agents}
+        out = []
+        for r in reqs:
+            body = by.get(r["agent"]) or {}
+            here = body.get("position")
+            if r["platform"]:
+                if body.get("platform") == r["platform"]:
+                    continue  # aboard that platform: its camera already shows the work
+            elif not (r["position"] and here and math.hypot(r["position"]["x"] - here["x"],
+                                                            r["position"]["y"] - here["y"]) >= AWAY_TILES):
+                continue  # near the body (or no position to tell): the camera following it shows the work
+            out.append(dict(r, surface=None if r["platform"] else (body.get("surface") or "nauvis")))
+        return out
 
     # ---- Space Age platforms ------------------------------------------------------------------------------------
     def observe_platforms(self, space, errors):
@@ -244,7 +275,16 @@ class LiveSource:
                 except Exception as e:
                     errors["platforms"] = str(e)
             self.platform_detail = detail
-        space["platforms"] = [dict(row, **self.platform_detail.get(row["name"], {})) for row in space["platforms"]]
+            # where a camera shows each platform: surface, hub, bounds (one read-only Lua call for all of them)
+            if hasattr(self.h, "platform_views"):
+                try:
+                    self.platform_views = self.h.platform_views()
+                except Exception as e:
+                    errors["platform_views"] = str(e)
+        views = getattr(self, "platform_views", {})
+        space["platforms"] = [dict(row, **self.platform_detail.get(row["name"], {}),
+                                   **({"view": views[row["name"]]} if row["name"] in views else {}))
+                              for row in space["platforms"]]
 
     # ---- team board (docs/BOARD-API.md) ------------------------------------------------------------------------
     def board_probe(self):
