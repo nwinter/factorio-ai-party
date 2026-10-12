@@ -11,8 +11,9 @@
 Reads the service's /events SSE (one snapshot per second), turns snapshot changes into events (alerts, research,
 board, camera cuts, chat), and lets two casters talk about them: "Rook" (play-by-play) and "Vale" (colour). At most
 one caster line per --gap seconds (random within the range; urgent events wait only --urgent-gap), never while a
-clip is still playing. Agent chat lines are voiced when the agent marked them `aloud` or the classifier calls them
-banter/strategy/emotion. Clips go to the service (POST /audio); the overlay page plays them (casters duck under
+clip is still playing. Agent chat lines are voiced when the agent marked them `aloud`, or when they read well without
+their coordinates and are a plan, a request or a reaction (talk_pick; the classifier's banter/strategy/emotion also
+counts); the hosts then react to the line or stay quiet for --yield seconds. Clips go to the service (POST /audio); the overlay page plays them (casters duck under
 agents; OBS ducks game audio under the page). Every line is logged to tools/stream/logs/caster-<start>.jsonl.
 """
 import argparse, base64, json, os, random, re, shutil, subprocess, sys, threading, time, traceback, urllib.request
@@ -756,6 +757,9 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["agent_answer"] = spoken(voices.speakable(e.get("text") or "", 220))
         f["how_to_call_it"] = ("an agent just answered a viewer: Rook says who asked what, Vale says what the agent "
                                "answered, in the hosts' words, and enjoys that the agents talk to the audience")
+    if e["kind"] == "chat" and e.get("react"):  # task-talk-hosts: the hosts answer the agent who just spoke on air
+        f["how_to_call_it"] = ("viewers just heard this agent say it in their own voice: react to it (what it means "
+                               "for the team, or how it sounds), briefly, without repeating it word for word")
     if e["kind"] == "segment":
         f.update(card_facts(e.get("segment") or {}))
     if e["kind"] == "research" and baseline and e.get("text"):
@@ -1622,6 +1626,143 @@ def pick_choice(a):
     return None
 
 
+# ---- which agent lines to voice ----------------------------------------------------------------------------------
+# task-talk-hosts (Nick: "the agents aren't talking to the stream as much, so it's almost all announcers"): shift01's
+# first 55 minutes aired 218 host lines and 31 agent lines. Clef called 111 of 152 chat lines logistics, and a map
+# coordinate anywhere vetoed the rest, so "Fuel is the bottleneck: boiler empty, half the furnaces unfueled" and "CRUDE
+# OIL found" went unheard. Now a line is voiced when it reads well once its coordinates and handles are gone and it
+# is a plan, a request or a reaction; Clef's banter/strategy/emotion still counts.
+FUSED = re.compile(r"\b(?:[a-z]{2,}\d+[a-z]*|\d+[a-z]{3,}|[a-z]+\d+[a-z]+)\b")  # "for160plates", "mall70", "a4b"
+SUFFIX = re.compile(r"(?:tions?|ments?|ings?|ity|ness|ally|ic|ical|ble|ers?|ists?|ated)$")
+ACK = re.compile(r"^(?:ok|okay|ack|copy|roger|on it|done|noted|confirmed|got it|thanks|thank you|yes|no)\b", re.I)
+PLAN = re.compile(r"\b(?:i will|i'll|i am going|i'm going|going to|we should|we need|we must|let's|let us|plan|"
+                  r"priority|i'm taking|i am taking|claiming|i'm on|i am on|switching|heading|scouting)\b", re.I)
+ASK = re.compile(r"\b(?:please|can someone|could someone|can you|could you|who can|anyone|whoever|need|help)\b", re.I)
+REACT = re.compile(r"!|\b(?:oops|sorry|thanks|finally|found|wow|nice|ugh|careful|avoid|killed|died|dead|attack\w*|"
+                   r"biters?|under fire|complete|is up|online|up and running|fixed|works|bottleneck|starv\w*|broke|"
+                   r"lost|destroyed|urgent)\b", re.I)
+DANGLING = re.compile(r"\b(?:at|near|to|from|in|on|around|into|of|between|i'm|i am|is|are|was|were|sits?)\s*"
+                      r"(?:[,.;:!?)]|$)", re.I)  # "I'm at (-5,-23), please" -> "I'm, please"
+LEFT_AREA = re.compile(r"\d\s*\)?\s*(?:area|region|zone|side)\b", re.I)  # "your burners at (-6,-21) area"
+TALK_KINDS = ("reaction", "plan", "request")
+
+
+def talk_text(text, limit=200, agent=None):
+    """The line as it would be voiced: no leading @handles, "opus here:" or "haiku:", no coordinates
+    (voices.speakable), shouted words in lower case ("public COAL chest")."""
+    t = re.sub(r"^(?:\s*@\w+[\s,:]*)+", "", str(text or ""))
+    t = re.sub(r"^\s*\w+ here\s*[:,-]\s*", "", t, flags=re.I)
+    if agent:
+        t = re.sub(rf"^\s*{re.escape(agent)}\s*:\s*", "", t, flags=re.I)
+    t = re.sub(r"\b[A-Z]{2,}(?:\s+[A-Z]{2,})+\b|\b[A-Z]{4,}\b", lambda m: m.group().lower(), t)  # "MW" stays
+    return voices.speakable(t, limit)
+
+
+def talk_fault(text, spoken_text):
+    """Why a chat line is no good to hear (None when it reads well): coordinate soup, run-together words, lists of
+    numbers, a fragment left where a coordinate was, a bare acknowledgement."""
+    coords = sum(1 for _ in voices.COORDS.finditer(str(text)))
+    if coords >= 3:
+        return "positions"
+    words = spoken_text.split()
+    if len(words) < 5:
+        return "short"
+    if ACK.match(spoken_text) and len(words) < 10:
+        return "ack"
+    if FUSED.search(spoken_text) or any(len(w) >= 14 and not SUFFIX.search(w) for w in re.findall(r"[a-z]+",
+                                                                                                    spoken_text)):
+        return "run-together"
+    if len(re.findall(r"\w[/+]\w", spoken_text)) >= 2:
+        return "run-together"
+    nums = re.findall(r"\d+(?:\.\d+)?", spoken_text)
+    if len(nums) >= 4 or len(nums) > len(words) / 6:
+        return "numbers"
+    if DANGLING.search(spoken_text) or LEFT_AREA.search(str(text)):
+        return "fragment"
+    return None
+
+
+def talk_kind(spoken_text):
+    """reaction | plan | request | None: what makes a line worth hearing."""
+    for kind, pat in (("reaction", REACT), ("plan", PLAN), ("request", ASK)):
+        if pat.search(spoken_text):
+            return kind
+    return None
+
+
+def talk_pick(m, label=None, limit=200):
+    """(voice?, label, text) for one chat line: `aloud` lines always (their text tidied); else a line that reads well
+    and is a plan, request or reaction, or one Clef called banter/strategy/emotion."""
+    text = talk_text(m["text"], limit, m.get("agent"))
+    if m.get("aloud"):
+        return bool(text), "aloud", text
+    fault = talk_fault(m["text"], text)
+    if fault:
+        return False, fault, text
+    kind = label if label in ("banter", "strategy", "emotion") else talk_kind(text)
+    if kind == "plan" and re.match(r"\s*@(?!everyone\b)\w+", str(m["text"])):
+        # a line to one teammate ("@sol delivered 8 plates ... next run") is a handover the overlay shows as text; it
+        # is heard when it asks or reacts
+        kind = None
+    return bool(kind), kind or "logistics", text
+
+
+def near_same(a, b, least=0.6):
+    """Two lines saying much the same: word overlap (Jaccard) of at least `least`."""
+    wa, wb = set(re.findall(r"[a-z']+", a.lower())), set(re.findall(r"[a-z']+", b.lower()))
+    return bool(wa and wb) and len(wa & wb) / len(wa | wb) >= least
+
+
+class TalkPicker:
+    """The agent lines to voice and when: chat_tick feeds it each tick, and tools/stream/talk_replay.py replays a run's
+    chat through it. A good line waits up to `stale` seconds for the team-wide `gap` and its agent's `cooldown`; the
+    best waiting line goes first (aloud, then reaction, plan, request), and a line much like one aired in the last
+    `dup_window` seconds, or like another waiting line, is dropped."""
+    RANK = {"aloud": 5, "emotion": 4, "reaction": 4, "banter": 3, "strategy": 3, "plan": 3, "request": 2}
+
+    def __init__(self, gap=12, cooldown=50, stale=30, dup_window=600, limit=200):
+        self.gap, self.cooldown, self.stale, self.dup_window, self.limit = gap, cooldown, stale, dup_window, limit
+        self.last, self.agent_last = 0.0, {}
+        self.aired = deque(maxlen=60)  # (t, agent, text)
+        self.waiting = []  # [(m, label, text)]
+
+    def add(self, now, msgs, verdict=None):
+        """Judge new lines; the good ones wait. Returns the decision records [{agent, text, voiced, label}]."""
+        out = []
+        for m in msgs:
+            v = (verdict or {}).get(m.get("seq"))
+            ok, label, text = talk_pick(m, v[1] if v else None, self.limit)
+            if ok and any(near_same(text, x) for t, _, x in self.aired if now - t < self.dup_window) or \
+                    ok and any(near_same(text, w[2]) for w in self.waiting):
+                ok, label = False, "repeat"
+            out.append({"agent": m["agent"], "text": m["text"], "voiced": ok, "label": label})
+            if ok:
+                self.waiting.append((m, label, text))
+        return out
+
+    def next(self, now):
+        """The line to voice now, as (m, label, text), or None (nothing waiting, or the gap or cooldowns hold)."""
+        self.waiting = [w for w in self.waiting if now - w[0]["t"] < self.stale]
+        if not self.waiting or now - self.last < self.gap:
+            return None
+        free = [w for w in self.waiting if now - self.agent_last.get(w[0]["agent"], 0) >= self.cooldown]
+        if not free:
+            return None
+        best = max(free, key=lambda w: (self.RANK.get(w[1], 1), w[0]["t"]))
+        self.waiting.remove(best)
+        return best
+
+    def aired_now(self, now, m, text):
+        self.last = self.agent_last[m["agent"]] = now
+        self.aired.append((now, m["agent"], text))
+        # the agent's other waiting lines would only queue behind its cooldown and arrive stale
+        self.waiting = [w for w in self.waiting if w[0]["agent"] != m["agent"]]
+
+    def talkative(self, now, window=300):
+        """Agent lines aired in the last `window` seconds."""
+        return sum(1 for t, _, _ in self.aired if now - t < window)
+
+
 # ---- TTS: who spoke, and one retry ---------------------------------------------------------------------------------
 WORKERS_8008 = re.compile(r'"code"\s*:\s*8008\b|\bAiError\b.*\b8008\b')
 
@@ -1726,6 +1867,8 @@ class Caster:
         self.tts_fallback = voices.TTS(a.tts_fallback, ai=ai) if a.tts_fallback and not a.dry_run else None
         self.breakers = {k: Breaker(k, cool=a.backoff) for k in ("writer", "classifier", "tts")}
         self.classifier = Classifier(a.classifier, ai=ai)
+        self.talk = TalkPicker(a.agent_gap, a.agent_cooldown, a.chat_stale, limit=a.max_chars)
+        self.yielding = None  # {until, event}: the hosts yield to the agent line that just aired (yield_to)
         os.makedirs(a.log_dir, exist_ok=True)
         self.log_path = os.path.join(a.log_dir, time.strftime("caster-%Y%m%d-%H%M%S.jsonl"))
         self.t0 = time.time()
@@ -1743,9 +1886,8 @@ class Caster:
                 if e["kind"] in ("death", "loss", "attack"):  # counts for the hosts (they counted wrongly themselves)
                     self.__dict__.setdefault("tally", deque(maxlen=2000)).append((time.time(), e["kind"]))
                 if e["kind"] == "chat":
+                    # the hosts hear a chat line only once it aired in the agent's voice (yield_to), not as it is typed
                     self.chat_q.append(e)
-                    if e["aloud"]:  # only what an agent says aloud feeds the hosts (HOSTS3 item 6: speak less)
-                        self.events.append(dict(e, prio=2 if not e["aloud"] else 4))
                 else:
                     self.events.append(e)
 
@@ -2022,11 +2164,16 @@ class Caster:
             return  # nobody hears it: write nothing (a continuous cast would otherwise spend ~250 calls an hour)
         # Start writing early enough that the next line is ready when this one ends (plus a breath of --gap).
         lead = sorted(self.prep[-9:])[len(self.prep[-9:]) // 2] if self.prep else 4.0
-        gap = self.a.urgent_gap if top >= URGENT else self.next_gap
+        # talkative agents slow the regular beats: --talk-gap more seconds per agent line in the last 5 minutes (at most 4)
+        talk = min(4, self.talk.talkative(now)) if getattr(self, "talk", None) else 0
+        gap = self.a.urgent_gap if top >= URGENT else self.next_gap + talk * getattr(self.a, "talk_gap", 0)
         if now < self.caster_free + gap - lead:
             return
+        y = self.yield_beat(now, top)
+        if y == "quiet":
+            return
         with self.lock:
-            e = self.pick_event(now)
+            e = y or self.pick_event(now)
         # Speak less (HOSTS3 item 6, Nick: "kinda dumb", riffing on mottos and inconsequential notes): a low-value beat
         # waits for --quiet seconds of silence, and filler for --lull seconds and something new to say.
         # shake12: raids all hour, an attack beat every 40-90 s ("Seven attacks in ten minutes", "Eight...", "Nine...").
@@ -2040,10 +2187,10 @@ class Caster:
             if now - getattr(self, "last_replay_t", 0) < 60:
                 return
             self.last_replay_t = now
-        if e and e["kind"] in QUIET_KINDS and now < self.caster_free + getattr(self.a, "quiet", 0):
+        if e and e["kind"] in QUIET_KINDS and not e.get("react") and now < self.caster_free + getattr(self.a, "quiet", 0):
             return
         if not e:
-            if now < self.caster_free + max(gap, self.a.lull) - lead:
+            if now < self.caster_free + max(gap, self.a.lull + talk * getattr(self.a, "talk_gap", 0)) - lead:
                 return
             e = self.filler(now, s)
             if self.a.lull and e["kind"] == "lull" and not e.get("point") and not self.news(s):
@@ -2057,7 +2204,7 @@ class Caster:
         if e["kind"] == "lull" or e.get("naturalist"):
             first = "color" if self.last_speaker == "pbp" or e.get("naturalist") else "pbp"
         lo, hi = self.a.lines
-        n = lo if e["prio"] >= URGENT else self.rng.randint(lo, hi)
+        n = lo if e["prio"] >= URGENT or e.get("react") else self.rng.randint(lo, hi)
         if e["kind"] == "open" and self.previous():
             n = max(n, 3)  # "previously on" takes two or three lines
         if e["kind"] in ("attack", "loss", "death"):
@@ -2066,6 +2213,20 @@ class Caster:
         # attack replays: the director queues each saved clip itself (eng/stream2), so the hosts only talk over them
         if e["kind"] == "research":
             self.request_segment([("research", {})], "research", news=True)
+
+    def yield_beat(self, now, top):
+        """While the hosts yield to an agent line (yield_to): its reaction event, once, then "quiet" until the window
+        ends; None when not yielding or a beat at --yield-prio or above is waiting (an attack, a card on screen)."""
+        y = getattr(self, "yielding", None)
+        if not y or now >= y["until"] or top >= getattr(self.a, "yield_prio", 7):
+            return None
+        if now < self.agent_free:
+            return "quiet"  # the agent clip is still playing
+        e = y.get("event")
+        if e:
+            y["event"] = None
+            return dict(e, t=now)
+        return "quiet"
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
@@ -2244,10 +2405,12 @@ class Caster:
             pending = [m for m in self.chat_q if now - m["t"] < self.a.chat_stale]
             self.chat_q.clear()
             s = self.snap
-        if not pending or not s:
+        if not s or not (pending or self.talk.waiting):
             return
         names = self.names(s)
-        need = [m for m in pending if not m["aloud"]]
+        # Clef only for lines the local judge would drop as plain logistics (talk_pick): its banter/strategy/emotion
+        # can still lift those
+        need = [m for m in pending if not m["aloud"] and talk_pick(m, None, self.a.max_chars)[1] == "logistics"]
         verdict = {}
         if need:
             try:
@@ -2260,31 +2423,20 @@ class Caster:
                     log(f"[chat] classifier failed ({type(x).__name__}: {x}); using heuristic")
                     self.breakers["classifier"].fail()
                 verdict = Classifier("heuristic").classify(need, names)
-        for m in pending:
-            ok, label = (True, "aloud") if m["aloud"] else verdict.get(m["seq"], (False, "?"))
-            if ok and not m["aloud"] and voices.has_coords(m["text"]):
-                ok, label = False, "logistics"  # coordinates mean routine coordination, however it was classified
-            self.record(type="chat_decision", agent=m["agent"], text=m["text"], voiced=ok, label=label)
-            if not ok:
-                continue
-            # `aloud` skips the classifier, not the pacing: same team-wide gap and per-agent cooldown (the live mock run
-            # with half the gap for `aloud` voiced 13 agent lines in 5 minutes, too many next to the casters)
-            if time.time() - self.last_agent_voice < self.a.agent_gap:
-                self.record(type="chat_skip", agent=m["agent"], reason="agent_gap")
-                continue
-            if time.time() - self.agent_last.get(m["agent"], 0) < self.a.agent_cooldown:
-                self.record(type="chat_skip", agent=m["agent"], reason="agent_cooldown")
-                continue
-            if any(p.get("channel") == "agent" for p in (st.get("playing") or [])) or time.time() < self.agent_free:
-                if not m["aloud"]:
-                    continue
-                time.sleep(max(0.0, min(8.0, self.agent_free - time.time())))
+        # `aloud` skips the judging, not the pacing: same team-wide gap and per-agent cooldown (the live mock run
+        # with half the gap for `aloud` voiced 13 agent lines in 5 minutes, too many next to the casters). A good line
+        # waits (up to --chat-stale) for the gap, its agent's cooldown and the agent clip playing now.
+        for d in self.talk.add(now, pending, verdict):
+            self.record(type="chat_decision", **d)
+        if any(p.get("channel") == "agent" for p in (st.get("playing") or [])) or time.time() < self.agent_free:
+            return
+        pick = self.talk.next(time.time())
+        if pick:
+            m, label, text = pick
             agents = s.get("agents") or []
             vmap = voices.assign_voices(agents)
             ag = next((a for a in agents if a["name"] == m["agent"]), {})
-            text = voices.speakable(m["text"], self.a.max_chars)
-            if not text:
-                continue
+            self.talk.aired_now(time.time(), m, text)
             self.last_agent_voice = self.agent_last[m["agent"]] = time.time()
             # hold the casters off while this clip is still being synthesised (the caster thread checks agent_free)
             self.agent_free = time.time() + len(text) / 15.0 + 8.0
@@ -2299,6 +2451,17 @@ class Caster:
             if dur:  # the hosts may call back to it: shake4 rejected Grok 19 s after Grok spoke aloud (04:42:22)
                 self.history.append(f"aloud at {spoken_time(s.get('game_time'))}: "
                                     f"{names.get(m['agent'], m['agent'])} - {text}")
+                self.yield_to(m, text, label)
+
+    def yield_to(self, m, text, label):
+        """The hosts yield to an agent line that just aired (task-talk-hosts: "the stream sounds like the agents first,
+        hosts second"): for --yield seconds after it ends, a beat below --yield-prio is a reaction to it (for --react
+        of the agent lines) or nothing. caster_tick reads it (yield_beat)."""
+        with self.lock:
+            react = self.rng.random() < getattr(self.a, "react", 0.5)
+            self.yielding = {"until": self.agent_free + getattr(self.a, "yield_s", 30),
+                             "event": {"kind": "chat", "agent": m["agent"], "text": text, "label": label, "react": True,
+                                       "prio": PRIORITY["chat"], "t": time.time()} if react else None}
 
     def voice(self, text, voice_id, caster, meta, rec, hold=None):
         """TTS + push. Returns the clip length in seconds (an estimate when nothing is pushed). `hold()` gives a time
@@ -2518,10 +2681,18 @@ def parser():
     ap.add_argument("--quiet", type=float, default=20,
                     help="seconds of silence before a low-value beat (camera cut, board note, research start) is said")
     ap.add_argument("--stale", type=float, default=45, help="drop events older than this")
-    ap.add_argument("--agent-gap", type=float, default=15,
-                    help="min seconds between voiced agent lines (half for lines the agent marked aloud)")
-    ap.add_argument("--agent-cooldown", type=float, default=60, help="min seconds between voiced lines of one agent")
-    ap.add_argument("--chat-stale", type=float, default=20, help="never voice chat older than this")
+    # task-talk-hosts: shift01 replayed with these voices about a third of the spoken lines from the agents
+    ap.add_argument("--agent-gap", type=float, default=12, help="min seconds between voiced agent lines")
+    ap.add_argument("--agent-cooldown", type=float, default=50, help="min seconds between voiced lines of one agent")
+    ap.add_argument("--chat-stale", type=float, default=30,
+                    help="never voice chat older than this (a good line waits this long for the gaps)")
+    ap.add_argument("--yield", dest="yield_s", type=float, default=30,
+                    help="seconds after an agent line ends when the hosts only react to it or stay quiet")
+    ap.add_argument("--yield-prio", type=int, default=7,
+                    help="beats at this priority or above still speak while yielding (research, cards, attacks)")
+    ap.add_argument("--react", type=float, default=0.5, help="share of agent lines the hosts react to")
+    ap.add_argument("--talk-gap", type=float, default=6,
+                    help="extra seconds between host beats per agent line in the last 5 minutes (at most 4 counted)")
     ap.add_argument("--max-chars", type=int, default=200, help="voiced agent lines are cut at a sentence near this")
     ap.add_argument("--no-chat", action="store_true", help="casters only, never voice agent chat")
     ap.add_argument("--always", action="store_true", help="synthesise even when no overlay page is listening")
