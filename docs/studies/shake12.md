@@ -29,15 +29,15 @@ PDT; game minutes are tick/3600 from shake4's start. Data only, read-only on the
 - **Research notices work.** Both technologies that finished (worker-robots-speed-3 at 03:15, weapon-shooting-speed-6
   at 04:47) reached all nine agents in their next reply. Both unlock bonuses, not buildings, so there was nothing new
   to place. The first grenade thrown with `use_item` (Sol, 04:53) is the one new combat tool used.
-- **The team plan is used from the first minute.** Every agent but Sol wrote its line by 03:04 (Sol at 03:05), and all
-  nine read it; 43 `board_plan` calls in all.
+- **The team plan is used from the first minute.** Seven agents wrote a line by 03:05 (Astra first,
+  02:58:57; Haiku and Sonnet only read it), and all nine read it; 43 `board_plan` calls in all.
 - **The tools index shows up in a few first uses:** 4 `circuit` and 2 `wire` calls (Astra's coal condition, Sol's
   heavy-oil switch), the first `use_item` grenade, a bulk inserter, 179 `requests` calls for the logistic network.
   No trains, modules, accumulators, fast belts, beacons, nuclear or quality.
 - **No one set research in shake12.** The queue left by shake11 ran on (worker-robots-speed-3, weapon-shooting-speed-6,
   then planet-discovery-fulgora, defender, automobilism), slowly: every lab sat idle on utility packs at the start
   ("All 28 labs are idle for lack of utility packs", Opus, 02:59).
-- **Sleep:** Opus 93% of the window in Python sleeps, Muse 81% and Grok 82% in `fh sleep`, Sonnet 46%, Haiku 31%.
+- **Sleep:** Opus about 95% of the window asleep, nearly all in Python sleeps (P1 item 1), Muse 81% and Grok 82% in `fh sleep`, Sonnet 46%, Haiku 31%.
 - **The night:** three shifts since 18:48 (game minutes 570 to 1,188), 66 to 85 technologies, rockets 10 to 25,
   roboports 0 to 11, requester chests 0 to 99, flamethrower turrets 0 to 12; still one planet and both platforms at
   Nauvis; deaths 5, 6 and 13 so far.
@@ -63,7 +63,7 @@ From the journals, 02:58 to 05:26 (successful calls):
 
 | Tool or feature | Calls | Who, first | What |
 | --- | --- | --- | --- |
-| `board_plan` | 43 | all nine, from 02:58 | plan lines ("Expand logistic fleet and fix yellow-science supply", Astra) and reads |
+| `board_plan` | 43 | seven write, all nine read, from 02:58 | plan lines ("Expand logistic fleet and fix yellow-science supply", Astra) and reads |
 | `requests` (logistic requests) | 179 | Astra, Gemini, Grok and others | requester chests for the science and silo supply |
 | `circuit` | 4 | Astra 03:33; Sol 05:02 to 05:19 | Astra: a logistic condition, coal < 2000; Sol: enable on signal-A > 0, then on heavy-oil > 1000 |
 | `wire` | 2 | Sol 05:08, 05:19 | red wires to the switched machine |
