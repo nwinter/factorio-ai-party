@@ -160,6 +160,24 @@ Details and the evidence behind each setting: `docs/CONTEXT-NOTES.md`.
 
 ## Shifts (resuming a team world)
 
+One command does the change:
+
+```sh
+tools/shift-change.sh shake11 shake12 240 --stream --dry-run   # checks, PREV's switches, the plan; touches nothing
+tools/shift-change.sh shake11 shake12 240 --stream             # stop shake11, close its panes, start shake12 resumed
+```
+
+It refuses, with the reason, when shake11 ran no agents (no notes.md), the quota check has a WARNING, the box or OBS
+does not answer, another start-team or shift change is running, shake12 already started, or shake11 is streaming and
+neither `--stream` nor `--no-stream` was given; `--ignore quota` (or `notes`, `box`, `obs`, `running`, `stream`)
+skips a check. shake12 gets shake11's switches (`POG_BROKER`, `POG_FULL_TOOLS`, `POG_SPACE_AGE`, `POG_YOUTUBE`,
+`POG_CASTER_MODEL`, `POG_CASTER_URGENT`, `POG_CASTER`, `POG_ANALYST`, `POG_PLAYERS`, the viewer relay's current state
+and the team file), read from `runs/shake11/switches.env` (start-team writes it), else from its running helpers and
+logs (`tools/shift_change.py switches runs/shake11 --explain` shows them and where each came from), plus
+`POG_RESUME=shake11` and `POG_NEXT_SHIFT` at shake12's end. Three minutes after the start it prints a health line
+(agents with a request, broker sockets, OBS and the stream service, relay on or off, harness Lua errors so far; exit 1
+when something is down) and shake11's console audit. The steps by hand:
+
 ```sh
 POG_STOP_WORLD=1 tools/stop-team.sh shake4 n                  # save, then stop server and directors (game time stops)
 POG_RESUME=shake4 POG_SPACE_AGE=1 POG_DRY_RUN=1 tools/start-team.sh shake5 60   # the plan, touches nothing
