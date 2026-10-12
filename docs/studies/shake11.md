@@ -20,6 +20,15 @@ Times are PDT; game minutes are tick/3600 from shake4's start. Data only, read-o
 2. **Agents do not know about the team plan.** `fh board plan` works in the runtime from 23:45, but shake11's
    `AGENTS.md` was built from 5ce8c32, which predates the plan's docs (1bca16b): no agent has called `board_plan`.
    The docs reach agents from shake12.
+3. **Two agents wait in sleeps the harness cannot see or wake.** Muse waits with a shell `sleep 280` and then reads
+   its queue: 46 such sleeps asking 64.6 minutes of its first 72 in shake11, against 5 `fh sleep` calls. Sonnet does
+   the same through Python to get past Claude Code's block on chained shell sleeps (`python3 -c "import
+   time;time.sleep(1200)"`, up to 20 minutes; 15 calls asking 218 minutes of shake10's 240), each after "Clear the
+   mention by reading chat." Neither wakes on a tell, a mention, a board change or an attack, and neither shows in the
+   journals, so every journal-based sleep figure so far (the sleep study's, shake10's below) undercounts these two:
+   Sonnet's shake10 share reads 1% from the journal. Tool-level options: count shell and Python sleeps in the study
+   scripts from the transcripts (as section 3 does), and decide whether the agents' shells should allow a bare
+   `sleep` at all (`tools/launch-agent.sh` allows `Bash(sleep:*)` for Claude; `tools/permit.py` lists `sleep`).
 
 ## Short answer
 
