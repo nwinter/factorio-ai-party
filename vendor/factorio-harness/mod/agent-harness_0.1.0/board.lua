@@ -9,7 +9,9 @@ return function(api)
   local TITLE, NOTE, LONG = 120, 200, 1000
   local UNOWNED_AGE, REMIND_EVERY, FIRST_ALERTS = 7200, 3600, 3600
   local MAX_BOARD_LINES, MAX_ALERT_LINES = 5, 8
-  local KINDS = {task=true, request=true, claim=true, note=true, harness=true}
+  local KINDS = {task=true, request=true, claim=true, note=true, harness=true, plan=true}
+  -- The team plan: one living item (kind plan) with goals and a line per agent.
+  local PLAN_GOALS, PLAN_LINE, PLAN_LINES, PLAN_HISTORY = 600, 160, 24, 10
   local STATUSES = {open=true, claimed=true, doing=true, done=true, blocked=true, dropped=true}
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
   local OPERATOR = 'operator'
@@ -104,7 +106,7 @@ return function(api)
     while b.count > MAX_ITEMS do
       local victim
       for _, pass in ipairs{function(i) return i.status == 'done' or i.status == 'dropped' end,
-          function(i) return i.kind == 'note' end, function() return true end} do
+          function(i) return i.kind == 'note' end, function(i) return i.kind ~= 'plan' end} do
         for _, i in pairs(b.items) do
           if pass(i) and (not victim or i.updated_tick < victim.updated_tick or (i.updated_tick == victim.updated_tick and i.id < victim.id)) then victim = i end
         end
@@ -181,6 +183,7 @@ return function(api)
     local kind = a.kind
     assert(type(kind) == 'string' and KINDS[kind], 'kind must be task, request, claim or note')
     assert(kind ~= 'harness', 'ask for a harness tool with harness_request')
+    assert(kind ~= 'plan', 'the team plan is one item: edit it with board_plan {goals} or {doing}')
     local item = {kind=kind, title=required_text(a.title, 'title', TITLE), requested_by=by, area=area_arg(a.area),
       needs=needs_arg(a.needs), tags=tags_arg(a.tags), notes={}, created_tick=game.tick, updated_tick=game.tick}
     -- A first note (shake4: agents carried update's note over to posts).
@@ -226,6 +229,7 @@ return function(api)
     local text = a.note ~= nil and required_text(a.note, 'note', NOTE) or nil
     local boss = by == OPERATOR or by == item.owner or by == item.requested_by
     local changes, was = {}, item.owner
+    assert(item.kind ~= 'plan' or (a.status == nil and a.owner == nil), 'the team plan changes with board_plan {goals} or {doing}; notes are fine')
     if a.owner ~= nil then
       assert(item.kind ~= 'claim' and item.kind ~= 'note' and item.kind ~= 'harness', 'a ' .. item.kind .. ' stays with its poster')
       if a.owner == '' or a.owner == false then
@@ -286,7 +290,8 @@ return function(api)
     assert(a.since_tick == nil or type(a.since_tick) == 'number', 'since_tick must be a tick')
     local list = {}
     for _, i in pairs(b.items) do
-      if (not want or want[i.status]) and (not a.kind or i.kind == a.kind) and (not a.since_tick or i.updated_tick > a.since_tick)
+      -- The plan is shown on its own (plan below), not as a row.
+      if i.kind ~= 'plan' and (not want or want[i.status]) and (not a.kind or i.kind == a.kind) and (not a.since_tick or i.updated_tick > a.since_tick)
           and (a.mine ~= true or i.owner == by or i.requested_by == by) then
         list[#list+1] = i
       end
@@ -295,7 +300,77 @@ return function(api)
     local out = {}
     for n = 1, math.min(limit, #list) do out[n] = view(list[n]) end
     local unowned = open_unowned()
-    return {items=out, matched=#list, open_unowned=unowned, tick=game.tick}
+    local plan = (a.kind == nil or a.kind == 'plan') and a.mine ~= true and M.plan_view() or nil
+    return {plan=plan, items=out, matched=#list, open_unowned=unowned, tick=game.tick}
+  end
+
+  -- The team plan: goals (anyone edits) and one line per agent ("who is on
+  -- what"; anyone may write any agent's line, it shows who wrote it).
+  local function plan_item()
+    local b = store()
+    return b.plan_id and b.items[b.plan_id]
+  end
+  function M.plan_view()
+    local i = plan_item()
+    if not i then return nil end
+    local lines = {}
+    for _, l in ipairs(i.lines) do
+      lines[#lines+1] = l.agent .. ': ' .. l.text .. (l.by ~= l.agent and ' (set by ' .. l.by .. ')' or '')
+    end
+    return {id=i.id, goals=i.goals, doing=#lines > 0 and lines or nil,
+      edited=i.edited_by and string.format('by %s, %s ago', i.edited_by, ago(game.tick - i.updated_tick)) or nil}
+  end
+  local function plan_edit(by, a)
+    assert(a.agent == nil or a.doing ~= nil, 'agent goes with doing: board_plan {agent, doing}')
+    if a.goals == nil and a.doing == nil then
+      return {plan=M.plan_view() or false, note=not plan_item() and 'no team plan yet: board_plan {goals} starts it' or nil}
+    end
+    local goals = a.goals ~= nil and optional_text(a.goals, 'goals', PLAN_GOALS) or nil
+    local clear_goals = goals ~= nil and not goals:find('%S')
+    if clear_goals then goals = nil end
+    local doing = a.doing ~= nil and optional_text(a.doing, 'doing', PLAN_LINE) or nil
+    local agent = a.agent ~= nil and resolve(a.agent) or by
+    assert(doing == nil or agent ~= OPERATOR, 'the operator has no line on the plan: board_plan {agent, doing}')
+    local b = store()
+    local item = plan_item()
+    if not item then
+      item = {id=b.next_id, kind='plan', title='Team plan', status='doing', lines={}, notes={}, created_tick=game.tick, updated_tick=game.tick}
+      b.next_id = b.next_id + 1
+      b.items[item.id] = item; b.count = b.count + 1
+      b.plan_id = item.id
+    end
+    local changed = {}
+    if (goals ~= nil or clear_goals) and goals ~= item.goals then
+      item.history = item.history or {}
+      if item.goals then
+        item.history[#item.history+1] = {tick=item.updated_tick, by=item.edited_by, goals=item.goals}
+        while #item.history > PLAN_HISTORY do table.remove(item.history, 1) end
+      end
+      item.goals = goals
+      changed[#changed+1] = item.goals and 'goals: ' .. item.goals or 'goals cleared'
+    end
+    if doing ~= nil then
+      local at
+      for k, l in ipairs(item.lines) do if l.agent == agent then at = k end end
+      if not doing:find('%S') then
+        if at then table.remove(item.lines, at); changed[#changed+1] = agent .. ': (line removed)' end
+      else
+        assert(at or #item.lines < PLAN_LINES, 'the plan holds ' .. PLAN_LINES .. ' lines; clear one with board_plan {agent, doing: ""}')
+        local line = {agent=agent, text=doing, by=by, tick=game.tick}
+        if at then item.lines[at] = line else item.lines[#item.lines+1] = line end
+        changed[#changed+1] = agent .. ': ' .. doing
+      end
+    end
+    if #changed == 0 then return {plan=M.plan_view(), changed=false} end
+    item.updated_tick, item.edited_by = game.tick, by
+    -- The event names the agent whose line changed, so that agent hears of it.
+    local text = clip(table.concat(changed, '; '), NOTE)
+    event(by, {id=item.id, kind='plan', title=item.title, status=item.status, owner=doing ~= nil and agent or nil}, 'edited', text)
+    return {plan=M.plan_view(), changed=true}
+  end
+  -- A board event with no item behind it (research.lua: a technology finished).
+  function M.system_event(by, item, change, text)
+    event(by, item, change, text)
   end
 
   local function events(a)
@@ -390,8 +465,11 @@ return function(api)
 
   M.schema = {
     board = {mine='boolean: items I own or requested', status='active|open|claimed|doing|done|blocked|dropped or an array of them',
-      kind='task|request|claim|note|harness', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
-      id='one item in full (all notes)', returns='items, matched, open_unowned (open task/request items nobody owns)'},
+      kind='task|request|claim|note|harness|plan', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
+      id='one item in full (all notes)', returns='plan (the team plan: goals, doing lines, last edit), items, matched, open_unowned (open task/request items nobody owns)'},
+    board_plan = {goals='the team goals, 1..600 characters, replace the current ones ("" clears them)',
+      doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
+      returns='the team plan: goals, doing (one line per agent, "(set by NAME)" when someone else wrote it), edited; with no arguments it only reads'},
     board_post = {kind='task|request|claim|note', title='1..120 characters (longer is cut)',
       owner='agent name or display name (task/request; a request without owner is shown to everyone until taken)',
       area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text, array of item names/{name,count}, or {item: count}',
@@ -415,6 +493,7 @@ return function(api)
   M.handlers.board_update = function(p, a) return update(who(p), a) end
   M.handlers.board_events = function(_, a) return events(a) end
   M.handlers.harness_request = function(p, a) return harness_request(who(p), a) end
+  M.handlers.board_plan = function(p, a) return plan_edit(who(p), a) end
   M.handlers.plan_save = plan_save
   M.handlers.plan_run = plan_run
   M.handlers.plans = plans
@@ -430,7 +509,8 @@ return function(api)
     if action == 'mention_counts' then return M.handlers.mention_counts() end
     if action == 'board_update' then return update(OPERATOR, a) end
     if action == 'board_post' then return post(OPERATOR, a) end
-    error('operator requests support board, board_events, board_update, board_post and mention_counts', 0)
+    if action == 'board_plan' then return plan_edit(OPERATOR, a) end
+    error('operator requests support board, board_events, board_update, board_post, board_plan and mention_counts', 0)
   end
 
   -- The `team` hint block: what is new for this agent since its previous
@@ -576,6 +656,11 @@ return function(api)
   local function event_line(e, me)
     if e.by == me then return nil end
     local tail = e.text and ' - ' .. e.text or ''
+    if e.kind == 'research' then return nil end  -- research.lua gives each agent its own research lines
+    if e.kind == 'plan' then
+      -- Everyone hears of a plan edit once; a line written for me is mine.
+      return string.format('team plan edited by %s: %s (board_plan shows it)', e.by, e.text or ''), e.owner ~= me
+    end
     if e.overlaps and e.overlaps[me] then
       return string.format('#%d claim by %s overlaps your claim #%d: %s', e.id, e.by, e.overlaps[me], e.title)
     elseif (e.change == 'posted' or e.change == 'assigned') and e.owner == me and e.kind ~= 'claim' and e.kind ~= 'note' then
@@ -720,6 +805,7 @@ return function(api)
     local out = {}
     out.mentions, out.tells = mentions(p)
     out.board = board_lines(p, h)
+    out.research = api.research_lines and api.research_lines(p, h) or nil
     out.alerts = alert_lines(p, h, losses)
     out.reminders = reminders(p, h)
     return next(out) and out or nil
