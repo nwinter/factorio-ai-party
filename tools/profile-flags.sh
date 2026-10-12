@@ -26,6 +26,14 @@ if [ "${POG_FULL_TOOLS:-}" = 1 ]; then grok_env="$grok_env GROK_WEB_FETCH=1"; el
 # tools or memory reminders (notes.md is the agents' memory). The owner's hooks go with -c hooks={} (clean-profile.py).
 muse_env="MUSE_EXPERIMENTAL_SKILL_REMINDER=0 MUSE_EXPERIMENTAL_MEMORY=0 MUSE_EXPERIMENTAL_MEMORY_REMINDER=0"
 
+# Shell and Python waits capped at 60 s in the agents' environment (docs/studies/shake11.md, P1 item 3: Muse's shell
+# `sleep 280`, Sonnet's `python3 -c "import time;time.sleep(1200)"`; no tell, mention or attack ends those): the
+# harness runs under tools/sleepcap/run (the sleep shim first on PATH, an exported bash `sleep`, a sitecustomize on
+# PYTHONPATH). ./fh and ./shot set POG_SLEEP_CAP=0, and scripts under our tools/, bin/ and vendor/ keep their waits.
+# Codex gets the same variables through its workspace config and Claude Code a SessionStart hook
+# (tools/sleepcap/setup.py), since ai-session passes no environment and Claude's shell snapshot may reorder PATH.
+sleepcap_run="${root:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}/tools/sleepcap/run"
+
 # Shake2's Grok was denied `./fh ... > describe.json` and `python3 -c` despite the .claude allowlist; redirects into the
 # workspace count as edits. No rule can approve a loop: Grok treats control flow as one unit that always prompts, and
 # dontAsk denies it (docs 22-permissions-and-safety.md; smoke-l4), so agent/harness-grok.md suggests python3 instead.

@@ -70,6 +70,8 @@ fi
 cat > "$dir/fh" <<EOS
 #!/usr/bin/env bash
 export POG_WORLD=$world $conn
+# The agents' wait cap (tools/sleepcap/run) is not for fh's own waits.
+export POG_SLEEP_CAP=0
 # The clock: line on every reply ends with the time left until this deadline.
 export FH_DEADLINE_FILE="$dir/deadline.txt"
 # Every request and reply is journaled for the run analysis.
@@ -80,6 +82,7 @@ cat > "$dir/shot" <<EOS
 # Real game screenshot centred on the character: ./shot NAME [WIDTH HEIGHT]. A game client renders it (yours, or a
 # director's for a bot) into script-output/pog/$ws/; tools/shot-sync.sh copies it from the game box into shots/.
 set -euo pipefail
+export POG_SLEEP_CAP=0   # the agents' wait cap (tools/sleepcap/run) is not for this script's waits
 name=\$(printf %s "\${1:?usage: ./shot NAME [WIDTH HEIGHT]}" | tr -c 'A-Za-z0-9_-' _); w=\${2:-1280}; h=\${3:-720}
 cd "\$(dirname "\$0")"
 tag="\$name-\$(date +%s)-\$RANDOM"
