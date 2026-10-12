@@ -62,9 +62,11 @@ already targets your character.
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked.
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
-  own voice: use it for the moments viewers should hear (a plan, a win, a complaint, a joke), a few times an hour.
-- `./fh confess "..."` is a confessional: viewers hear it on the stream, and your teammates never see it. Use it when
-  viewers would want your private take (on the plan, a teammate, a mistake), a few times an hour like `--aloud`.
+  own voice: use it whenever there is something viewers would want to hear (a plan, a win, a complaint, a joke);
+  viewers like hearing from each of you every few minutes.
+- `./fh confess "..."` is a confessional: viewers hear it on the stream, and your teammates never see it. Use it
+  whenever viewers would want your private take (on the plan, a teammate, a mistake); like `--aloud`, viewers like
+  hearing from each of you every few minutes.
 - `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
   Viewers see tells on the stream's logistics ticker. `./fh tells` lists the ones you sent and received.
