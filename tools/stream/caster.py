@@ -214,6 +214,31 @@ DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6"  # exchange bench 2026-10-10: the liv
 URGENT_MODEL = DEFAULT_MODEL  # urgent beats stay on fast Kimi when --model picks a bigger writer (HOSTS3 item 6)
 CLAUDE_BIN = os.path.expanduser("~/.local/bin/claude")  # personal profile: run it with CLAUDE_CONFIG_DIR unset
 CLEF_PRICE = 0.038  # @cf/cloudflare/clef-flash, USD per million input tokens
+WATCH_STALE = 180  # a "watching now" reading older than this is unknown (the bridge reads it once a minute)
+WATCH_NEW = 600    # one viewer who arrived (the count rose from 0 to 1) this recently still gets the main writer
+
+
+def host_model(reads, now, high, low, stale=WATCH_STALE, new=WATCH_NEW):
+    """The main writer's model for the next line, from YouTube's "watching now" readings [(t, count or None)], oldest
+    first (Nick, 2026-10-12): `high` with two or more watching, or with one who arrived in the last `new` seconds (a
+    new viewer gets the best hosts while deciding whether to stay); `low` otherwise; `high` whenever the count is
+    unknown or older than `stale`, and whenever there is no `low`."""
+    if not low or low == high or not reads:
+        return high
+    t, n = reads[-1]
+    if n is None or now - t > stale:
+        return high
+    if n >= 2:
+        return high
+    if n == 1:
+        arrived = reads[0][0]  # one viewer from the first reading on: the first reading is the arrival
+        for i in range(len(reads) - 2, -1, -1):
+            if reads[i][1] != 1:  # a 0 (or a gap) before it: arrived then; 2+ before it: someone left, not new
+                arrived = reads[i + 1][0] if not reads[i][1] else None
+                break
+        if arrived is not None and now - arrived <= new:
+            return high
+    return low
 
 
 def log(*a):
@@ -1678,6 +1703,12 @@ class Caster:
                     ai = WorkersAI()
                 self.fast = LLMWriter("cf", a.urgent_model.removeprefix("cf:"), ai=ai,
                                       timeout=min(a.writer_timeout, 8))
+        # the cheaper writer while YouTube says nobody (or one long-time viewer) is watching (host_model)
+        low = getattr(a, "low_model", "") or ""
+        self.low = (LLMWriter("or", low, timeout=a.writer_timeout)
+                    if a.writer == "or" and low and low != a.model else None)
+        self.watch_reads = deque(maxlen=60)  # (read at, count or None), one per bridge reading
+        self.host = self.writer  # the main writer the last line went to; a change is logged
         self.tts = None if a.dry_run else voices.TTS(a.tts, ai=ai)
         self.tts_fallback = voices.TTS(a.tts_fallback, ai=ai) if a.tts_fallback and not a.dry_run else None
         self.breakers = {k: Breaker(k, cool=a.backoff) for k in ("writer", "classifier", "tts")}
@@ -1691,6 +1722,10 @@ class Caster:
     def on_snapshot(self, s):
         with self.lock:
             self.snap = s
+            yt = (s.get("viewers_status") or {}).get("youtube") or {}
+            reads = self.__dict__.setdefault("watch_reads", deque(maxlen=60))
+            if yt.get("watching_t") and (not reads or reads[-1][0] != yt["watching_t"]):
+                reads.append((yt["watching_t"], yt.get("watching")))
             for e in self.differ.diff(s):
                 if e["kind"] in ("death", "loss", "attack"):  # counts for the hosts (they counted wrongly themselves)
                     self.__dict__.setdefault("tally", deque(maxlen=2000)).append((time.time(), e["kind"]))
@@ -1724,6 +1759,23 @@ class Caster:
         if time.time() - self.deadline_t[0] > 30:
             self.deadline_t = (time.time(), read_deadline(getattr(self.a, "deadline", None)))
         return self.deadline_t[1]
+
+    def main_writer(self, now=None):
+        """--model or --low-model by YouTube's audience (host_model); each switch is logged with the count, so the
+        cost report can split the hours by model."""
+        if not (self.writer and getattr(self, "low", None)):
+            return self.writer
+        now = now or time.time()
+        reads = list(self.watch_reads)
+        model = host_model(reads, now, self.writer.model, self.low.model)
+        w = self.low if model == self.low.model else self.writer
+        if w is not self.host:
+            n = reads[-1][1] if reads else None
+            age = f", read {now - reads[-1][0]:.0f}s ago" if reads else ""
+            log(f"[hosts] model {w.name} (watching {'unknown' if n is None else n}{age})")
+            self.record(kind="host_model", model=w.name, watching=n, read_t=reads[-1][0] if reads else None)
+            self.host = w
+        return w
 
     def counts(self, now=None):
         """Deaths and loss reports since the hosts came on, attacks in the last 10 minutes. Shake11: "That brings the
@@ -2027,7 +2079,7 @@ class Caster:
         names = list(self.names(s).values())
         recent = list(self.recent)
         lines, backend, err, lat = [], "template", None, 0.0
-        writer = self.fast if self.fast and e["prio"] >= URGENT else self.writer
+        writer = self.fast if self.fast and e["prio"] >= URGENT else self.main_writer()
         if writer and self.breakers["writer"].ok():
             try:
                 note = ""
@@ -2283,7 +2335,7 @@ class Caster:
 
     def cost(self):
         hrs =max(1e-6, (time.time() - self.t0) / 3600)
-        w = sum(x.spent for x in (self.writer, self.fast) if x)
+        w = sum(x.spent for x in (self.writer, self.fast, getattr(self, "low", None)) if x)
         t = sum(x.spent for x in (self.tts, self.tts_fallback) if x)
         c = self.classifier.spent
         return {"minutes": round(hrs * 60, 1), "writer_usd": round(w, 4), "tts_usd": round(t, 4),
@@ -2412,6 +2464,10 @@ def main():
     ap.add_argument("--urgent-model", default=URGENT_MODEL,
                     help="fast writer for urgent events: a Workers AI model id, or or:<OpenRouter model> (e.g. "
                          "or:anthropic/claude-haiku-5.5); '' to use the main writer for everything")
+    ap.add_argument("--low-model", default="",
+                    help="--writer or: a cheaper OpenRouter model for non-urgent lines while YouTube's \"watching now\" "
+                         "is 0, or 1 for over 10 minutes (e.g. anthropic/claude-haiku-5.5); --model with 2+ watching, a "
+                         "viewer who just arrived, or no fresh count. Empty (default): --model always")
     ap.add_argument("--run-dir", help="the run's directory (runs/RUN): a resumed-from file there makes this a later "
                                       "shift, and the hosts get a shift fact")
     ap.add_argument("--deadline", help="when the run ends, for minutes_to_deadline: 'YYYY-MM-DD HH:MM', 'HH:MM', or "

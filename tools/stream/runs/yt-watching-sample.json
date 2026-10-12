@@ -1,0 +1,52 @@
+{
+  "_note": "YouTube 'watching now' replies for test_viewers.py, trimmed to the parts parse_watching reads, in the innertube shapes the watch page's own counter uses. Written from the documented shape, not captured: replace with a capture from `viewers.py --youtube VIDEO --watching 1` when youtube.com is reachable.",
+  "updated_metadata": {
+    "responseContext": {"visitorData": "x"},
+    "continuation": {"timedContinuationData": {"timeoutMs": 10000, "continuation": "0ofMyANh"}},
+    "actions": [
+      {"updateViewershipAction": {"viewCount": {"videoViewCountRenderer": {
+        "viewCount": {"runs": [{"text": "1,204"}, {"text": " watching now"}]},
+        "isLive": true,
+        "extraShortViewCount": {"simpleText": "1.2K"},
+        "unlabeledViewCountValue": {"simpleText": "1,204"},
+        "originalViewCount": "1204"}}}},
+      {"updateToggleButtonTextAction": {"defaultText": {"simpleText": "12"}, "buttonId": "TOGGLE_BUTTON_ID_TYPE_LIKE"}},
+      {"updateDateTextAction": {"dateText": {"simpleText": "Started streaming 3 hours ago"}}},
+      {"updateTitleAction": {"title": {"runs": [{"text": "Player of Games"}]}}}
+    ]
+  },
+  "updated_metadata_one": {
+    "actions": [
+      {"updateViewershipAction": {"viewCount": {"videoViewCountRenderer": {
+        "viewCount": {"runs": [{"text": "1"}, {"text": " watching now"}]},
+        "isLive": true, "originalViewCount": "1"}}}}
+    ]
+  },
+  "updated_metadata_zero": {
+    "actions": [
+      {"updateViewershipAction": {"viewCount": {"videoViewCountRenderer": {
+        "viewCount": {"simpleText": "0 watching now"}, "isLive": true, "originalViewCount": "0"}}}}
+    ]
+  },
+  "updated_metadata_no_count": {
+    "actions": [
+      {"updateDateTextAction": {"dateText": {"simpleText": "Scheduled for Oct 12, 2026"}}}
+    ]
+  },
+  "watch_page_initial_data": {
+    "contents": {"twoColumnWatchNextResults": {"results": {"results": {"contents": [
+      {"videoPrimaryInfoRenderer": {
+        "title": {"runs": [{"text": "Player of Games"}]},
+        "viewCount": {"videoViewCountRenderer": {
+          "viewCount": {"runs": [{"text": "3"}, {"text": " watching now"}]},
+          "isLive": true, "originalViewCount": "3"}}}}
+    ]}}}}
+  },
+  "watch_page_replay": {
+    "contents": {"twoColumnWatchNextResults": {"results": {"results": {"contents": [
+      {"videoPrimaryInfoRenderer": {
+        "viewCount": {"videoViewCountRenderer": {
+          "viewCount": {"simpleText": "48 views"}, "originalViewCount": "48"}}}}
+    ]}}}}
+  }
+}
