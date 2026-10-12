@@ -109,7 +109,10 @@ local function thing(name,type_,x,cb)
 end
 surface.find_entities_filtered=function(f)
   local out={}
-  if f.position then for _,e in ipairs(world) do if e.valid and math.abs(e.position.x-f.position.x)<0.3 and math.abs(e.position.y-f.position.y)<0.3 then out[#out+1]=e end end end
+  -- As the engine: a name filter must be an entity prototype (live check: a stop's name passed as `name` failed).
+  if f.name then assert(({['iron-chest']=1,inserter=1,['constant-combinator']=1,['arithmetic-combinator']=1,['decider-combinator']=1,
+    ['train-stop']=1,locomotive=1,['small-lamp']=1})[f.name],'Unknown entity name: '..f.name) end
+  if f.position then for _,e in ipairs(world) do if e.valid and (not f.name or e.name==f.name) and math.abs(e.position.x-f.position.x)<0.3 and math.abs(e.position.y-f.position.y)<0.3 then out[#out+1]=e end end end
   return out
 end
 local inserter_cb={}
@@ -176,8 +179,11 @@ fails(function() astra('wire',{from={x=2,y=0},to={x=30,y=0},color='green'}) end,
 
 -- Trains: a stop's name and limit; a train's schedule and automatic mode.
 local stop=thing('train-stop','train-stop',12,nil); stop.backer_name='Unnamed'; stop.trains_count=0
-r=astra('train',{position={x=12,y=0},name='Iron pickup',limit=2})
+r=astra('train',{position={x=12,y=0},station='Iron pickup',limit=2})
 eq(stop.backer_name,'Iron pickup'); eq(stop.trains_limit,2); eq(r.stop,'Iron pickup'); eq(r.limit,2)
+-- `name` is no stop name (every target reads it as an entity name): refused.
+fails(function() astra('train',{position={x=12,y=0},name='LC-East'}) end,'unknown argument name')
+eq(stop.backer_name,'Iron pickup')
 local train={valid=true,manual_mode=true,state=0}
 local loco=thing('locomotive','locomotive',14,nil); loco.train=train
 r=astra('train',{position={x=14,y=0},schedule={{station='Iron pickup',wait={{type='full'}}},{station='Smelting drop',wait={{type='empty'},{type='time',ticks=600,compare='or'}}}},automatic=true})
@@ -186,7 +192,7 @@ eq(train.schedule.records[2].wait_conditions[2].compare_type,'or'); eq(train.sch
 eq(r.automatic,true); eq(r.schedule[1],'Iron pickup: full'); eq(r.schedule[2],'Smelting drop: empty, time 10s')
 r=astra('train',{position={x=14,y=0},schedule={}}); eq(train.schedule,nil); eq(#r.schedule,0)
 fails(function() astra('train',{position={x=14,y=0},schedule={{station='X',wait={{type='forever'}}}}}) end,'type is time')
-fails(function() astra('train',{position={x=14,y=0},name='x'}) end,'name and limit are for a train stop')
+fails(function() astra('train',{position={x=14,y=0},station='x'}) end,'station and limit are for a train stop')
 fails(function() astra('train',{position={x=12,y=0},automatic=true}) end,'are for a train')
 fails(function() astra('train',{position={x=2,y=0},automatic=true}) end,'neither a train stop nor part of a train')
 -- A game whose train takes only LuaSchedule edits: the fallback path.

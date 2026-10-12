@@ -48,7 +48,9 @@ def fake_fh(self, action, args=None, wait=False):
         return True, {"result": {"consumed": 1, "entity": {"name": name, "position": args["position"],
                                                           "unit_number": units[-1]}}}
     if action == "train":
-        return True, {"result": {"stop": args.get("name"), "automatic": args.get("automatic")}}
+        if "name" in args:  # as the runtime: name is the entity-name filter, not a stop name (live check 00:30)
+            return False, {"error": {"message": "unknown argument name for train"}}
+        return True, {"result": {"stop": args.get("station"), "automatic": args.get("automatic")}}
     return True, {"result": {}}
 
 

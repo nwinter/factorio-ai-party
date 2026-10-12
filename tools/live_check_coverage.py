@@ -266,7 +266,7 @@ def main():
                     stops[name] = ent
                     break
         for name, ent in stops.items():
-            args = {"position": ent["position"], "name": name}
+            args = {"position": ent["position"], "station": name}
             if name == "LC-East":
                 args["limit"] = 1
             c.near(ent["position"]["x"], ent["position"]["y"])
