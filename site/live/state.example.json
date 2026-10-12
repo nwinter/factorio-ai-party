@@ -1012,7 +1012,8 @@
     "sol"
    ],
    "pair": true,
-   "since": 1791695912.546856
+   "since": 1791695912.546856,
+   "attack": "Base under attack near (-48, 16): gun turret"
   },
   "cam2": {
    "agents": [
@@ -1023,12 +1024,62 @@
   },
   "cam3": {
    "agents": [
-    "astra",
-    "gemini"
+    "sol"
    ],
-   "pair": true,
-   "since": 1791695895.485842
+   "pair": false,
+   "since": 1791695895.485842,
+   "work": "Sol building on Solstice (from the ground)"
   }
  },
- "schema": 1
+ "schema": 1,
+ "space": {
+  "rockets": 3,
+  "planets": [
+   "Nauvis"
+  ],
+  "summary": "1 platform \u00b7 3 rockets",
+  "platforms": [
+   {
+    "name": "Solstice",
+    "where": "Nauvis \u2192 Vulcanus",
+    "route": {
+     "from": "Nauvis",
+     "to": "Vulcanus",
+     "pct": 42
+    },
+    "state": "on_the_path",
+    "speed_kms": 72
+   },
+   {
+    "name": "Shuttle",
+    "where": "Nauvis",
+    "state": "waiting_at_station",
+    "paused": true
+   }
+  ]
+ },
+ "fights": [
+  {
+   "kind": "attack",
+   "text": "Base under attack near (-48, 16): gun turret",
+   "position": {
+    "x": -48.0,
+    "y": 16.0
+   },
+   "extent": 32.0,
+   "age_s": 6,
+   "losses": 1
+  },
+  {
+   "kind": "loss",
+   "text": "3 lost near (-100, -60): stone wall",
+   "position": {
+    "x": -100.0,
+    "y": -60.0
+   },
+   "extent": 16.0,
+   "age_s": 75,
+   "losses": 1
+  }
+ ]
 }
