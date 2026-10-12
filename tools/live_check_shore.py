@@ -97,11 +97,24 @@ def main():
         """)
         return got.get("ok") or [], got
 
-    def entity_at(unit):
-        return c.lua(f"""
-          local e = game.get_entity_by_unit_number({unit or 0})
-          rcon.print(helpers.table_to_json(e and {{name = e.name, x = e.position.x, y = e.position.y, direction = e.direction}} or {{}}))
+    def build_at(name, item, x, y, d):
+        """Build and wait: a build whose footprint holds the bot steps aside first (a timed action; the entity is in
+        last.result). The game is asked what stands at the spot by name and position, whatever the reply held."""
+        c.near(x, y)
+        ok, reply = c.fh("build", {"item": item, "position": {"x": x, "y": y}, "direction": d}, wait=True)
+        res = reply.get("result") or {}
+        last = res.get("last") or (res.get("completion") or {}).get("last") or {}
+        entity = res.get("entity") or (last.get("result") or {}).get("entity") or {}
+        c.record(f"build {name}", ok, {"entity": entity, "aside": res.get("aside"), "outcome": last.get("outcome"),
+                                        "error": reply.get("error")})
+        got = c.lua(f"""
+          local e = game.surfaces.nauvis.find_entity("{item}", {{{x}, {y}}})
+          rcon.print(helpers.table_to_json(e and {{name = e.name, unit = e.unit_number, x = e.position.x, y = e.position.y,
+            direction = e.direction}} or {{}}))
         """)
+        if got.get("unit"):
+            c.built.append(got["unit"])
+        return got
 
     dirs = {"north": 0, "east": 4, "south": 8, "west": 12}
 
@@ -122,8 +135,7 @@ def main():
              {"read": listed, "checked": read.get("checked")})
     if found:
         x, y, d = found[0]
-        pump = c.build("offshore pump at the first placement", "offshore-pump", x, y, direction=d)
-        got = entity_at((pump or {}).get("unit_number"))
+        got = build_at("offshore pump at the first placement", "offshore-pump", x, y, d)
         c.record("game: the pump stands there, facing that way", got.get("name") == "offshore-pump"
                  and abs(got.get("x", 1e9) - x) < 0.01 and abs(got.get("y", 1e9) - y) < 0.01 and got.get("direction") == dirs[d], got)
 
@@ -140,8 +152,7 @@ def main():
     c.record("game: can_place_entity (manual) accepts each boiler position", bool(found) and accepted == [True] * len(found), raw)
     if found:
         x, y, d = found[0]
-        boiler = c.build("boiler at the first position", "boiler", x, y, direction=d)
-        got = entity_at((boiler or {}).get("unit_number"))
+        got = build_at("boiler at the first position", "boiler", x, y, d)
         c.record("game: the boiler stands there", got.get("name") == "boiler" and abs(got.get("x", 1e9) - x) < 0.01
                  and abs(got.get("y", 1e9) - y) < 0.01, got)
 

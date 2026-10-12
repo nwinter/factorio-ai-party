@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline check for tools/live_check_shore.py: every Lua snippet compiles (luac -p), and with a fake harness and game
 answering as a working world, the check runs to the end with every step ok. python3 tools/test_live_check_shore.py"""
-import json, os, subprocess, sys, tempfile
+import json, os, re, subprocess, sys, tempfile
 
 sys.dont_write_bytecode = True
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -38,10 +38,14 @@ def fake_lua(self, code):
         return {"water": 0}
     if "can_place_entity" in code:
         return {"ok": [True] * 3}
-    if "get_entity_by_unit_number" in code and "direction" in code:
-        unit = int(code.split("get_entity_by_unit_number(")[1].split(")")[0])
-        return state["units"].get(unit, {})
+    m = re.search(r'find_entity\("([^"]+)", \{(-?[\d.]+), (-?[\d.]+)\}\)', code)
+    if m:
+        for unit, e in state["units"].items():
+            if (e["name"], e["x"], e["y"]) == (m.group(1), float(m.group(2)), float(m.group(3))):
+                return dict(e, unit=unit)
+        return {}
     if "removed" in code:
+        state["built"] = [int(u) for u in code.split("ipairs{")[1].split("}")[0].split(",") if u]
         return {"removed": 2}
     return {}
 
@@ -71,7 +75,11 @@ def fake_fh(self, action, args=None, wait=False):
                                                 f"(game build check, within 6 tiles): {text}"}}
         unit = 800 + len(state["units"])
         state["units"][unit] = {"name": item, "x": x, "y": y, "direction": DIRS[args.get("direction", "north")]}
-        return True, {"result": {"entity": {"name": item, "position": args["position"], "unit_number": unit}}}
+        entity = {"name": item, "position": args["position"], "unit_number": unit}
+        # The bot on the footprint (live 11:56): it steps aside first; the entity is in last.result only.
+        assert wait
+        return True, {"result": {"aside": {"from": {}, "to": {}},
+                                 "completion": {"last": {"outcome": "fed", "result": {"entity": entity}}}}}
     return True, {"result": {}}
 
 
@@ -102,9 +110,11 @@ def main():
     for want in ("game clock runs (a client connected, not auto-paused)", "stage: 10x10 water at (122,202)",
                  "offshore pump on dry land: refused with up to 3 placements", "placements nearest first, within 12 tiles",
                  "game: can_place_entity (manual) accepts each", "placements read: the same list",
-                 "game: the pump stands there, facing that way", "boiler on water: refused by water, with positions facing north",
+                 "build offshore pump at the first placement", "game: the pump stands there, facing that way", "boiler on water: refused by water, with positions facing north",
                  "game: the boiler stands there", "cleanup: the old tiles are back", "cleanup: bot removed"):
         assert want in steps, (want, steps)
+    # Cleanup gets the units the game reported, whatever the build replied.
+    assert sorted(state["built"]) == [800, 801], state["built"]
     built = [a for act, a, _ in calls if act == "build"]
     assert built[1] == {"item": "offshore-pump", "position": {"x": 122, "y": 206.5}, "direction": "east"}, built
     # The suggestions parse from the refusal text, after the hint only.
