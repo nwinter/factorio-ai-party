@@ -23,6 +23,17 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   a trio; never while a replay is on air (hold_layout, set by serve.py) or an urgent or segment shot holds the
   camera; the small tiles are framed off air first (like a cut) and the layout switches once both are there. An
   urgent alert or a segment that takes the camera ends a trio at once (one story for it).
+- Standing still (a viewer, shift01: "should move on air to next moving player if they stand still too much"): an
+  agent's model thinks between actions and its character stands there. A subject on air at least `still_min` whose
+  character has not moved or visibly acted for `still_cut` gives way to an agent moving or acting now, if one scores
+  at least `still_worth` of it; an agent cut away from for that is not the pick again for `still_block` (urgent
+  shots aside). "Thinking" with a still character scores like idle; walking, building, mining, fighting score up.
+- Look-ahead (Nick: "we know when an agent is gonna do something interesting based on their dispatched actions"):
+  each agent's `plan` (live.py: the action running now as the harness status reports it, with its size and bounds).
+  A big visible action (a construct or a path of many pieces, a fight, a rocket or platform action) scores
+  `plan_boost`; crafting, waits and reads score `dull`. The standby is framed to fit the action's bounds ahead of the
+  cut, the camera on air holds while it runs (no rotation, up to `plan_hold`), zooms to fit its bounds, and once it
+  ends the stand-still rule may cut away after `plan_after` instead of `still_cut`.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -30,7 +41,7 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
 """
 import json, time
 
-from director import Director, HOLDS, dist, frame_of, in_frame
+from director import Director, BUILD, FIGHT, HOLDS, WALK, dist, frame_of, in_frame
 from segments import CHEAP, LOSS_RE
 
 MINOR = CHEAP + ("wall", "chest", "gate")  # a loss of at most MINOR_MAX of these is an inset, not a cut
@@ -70,7 +81,47 @@ ONECAM = {
     "trio_zoom": 1.3,       # the small tiles are framed this much closer
     "trio_frac": 1.0,       # the big tile's share of a client's width (layout-3cam.json main is 16:9: no crop)
     "trio_force": False,    # mock screenshots: a trio whenever three agents can fill it, held
+    "still_cut": 25.0,      # the character on air has not moved or visibly acted this long ...
+    "still_min": 30.0,      # ... and has been on air this long: cut to an agent moving or acting now
+    "still_moved": 0.5,     # tiles: less than this between polls is standing still
+    "moving_s": 6.0,        # "moving now": moved or visibly acted within this long
+    "still_worth": 0.5,     # the moving agent must score at least this share of the one on air
+    "still_block": 60.0,    # an agent cut away from for standing still is not the pick again for this long
+    "still_factor": 0.5,    # "thinking" with a character still for still_cut scores like idle
+    "move_boost": 1.25,     # walking, building, mining, fighting now
+    "plan_boost": 1.6,      # a big visible action dispatched or running (module doc)
+    "dull": 0.75,           # crafting, waits, reads
+    "plan_hold": 300.0,     # the camera on air holds a big action this long at most
+    "plan_after": 8.0,      # once it ends, standing still this long is enough to cut away
 }
+VISIBLE = FIGHT | BUILD | WALK | {"mine", "gather", "craft", "construct", "kite", "repair", "pickup", "drive", "shoot"}
+DULL = {"craft", "wait_until", "sleep", "inspect", "feed", "insert", "take", "transfer", "research", "fuel", "observe"}
+BIG = {"construct": 4, "build_path": 8, "build_blueprint": 4, "blueprint": 4}  # kind -> pieces that make it big
+
+
+def plan_kind(a):
+    return str((a.get("plan") or {}).get("kind") or a.get("active") or "").split(":")[0]
+
+
+def big_plan(a):
+    """A visible action worth a camera: a construct or a path of BIG pieces, a fight, a rocket or platform action."""
+    k = plan_kind(a)
+    if a.get("combat") or k in FIGHT or k == "kite":
+        return True
+    if any(w in k for w in ("rocket", "platform", "launch", "cargo")):
+        return True
+    p = a.get("plan") or {}
+    size = p.get("remaining") if p.get("remaining") is not None else p.get("total")
+    return k in BIG and (size or 0) >= BIG[k]
+
+
+def plan_extent(a):
+    """Tiles a view must span to show the agent and its action's bounds, or None without bounds."""
+    b = (a.get("plan") or {}).get("bounds")
+    if not b or not a.get("position"):
+        return None
+    cx, cy = (b["left"] + b["right"]) / 2, (b["top"] + b["bottom"]) / 2
+    return max(b["right"] - b["left"], b["bottom"] - b["top"]) + 2 * dist(a["position"], {"x": cx, "y": cy})
 
 
 def onair_doing(snap, name):
@@ -121,6 +172,10 @@ class OneCam(Director):
         self.last_trio = -1e9  # when the last trio ended
         self.hold_layout = False  # serve.py: a replay is on air; no layout change now
         self.layouts = []      # (t, mode, why)
+        self.motion = {}       # name -> {"pos", "still_since", "moved"}: when each character last moved or acted
+        self.still_block = {}  # name -> until when it is not the pick (cut away from for standing still)
+        self.plan_end = {}     # name -> when its last big action ended
+        self.was_big = set()
 
     # -- clients ----------------------------------------------------------------------------------------------
     def slot(self, name):
@@ -264,10 +319,60 @@ class OneCam(Director):
         self.inset = {"slot": slot["slot"], "until": now + self.cfg["inset_hold"]}
 
     # -- main loop --------------------------------------------------------------------------------------------
+    # -- standing still and the look-ahead -----------------------------------------------------------------------
+    def track(self, agents, now):
+        for a in agents:
+            m = self.motion.get(a["name"])
+            p = a.get("position")
+            acting = a.get("combat") or plan_kind(a) in VISIBLE
+            if m is None:
+                self.motion[a["name"]] = m = {"pos": p, "still_since": now, "moved": now}
+            if p and m["pos"] and dist(p, m["pos"]) >= self.cfg["still_moved"]:
+                m["pos"], m["moved"] = p, now
+            elif p and not m["pos"]:
+                m["pos"] = p
+            if acting:
+                m["moved"] = now
+            big = big_plan(a)
+            if a["name"] in self.was_big and not big:
+                self.plan_end[a["name"]] = now
+            (self.was_big.add if big else self.was_big.discard)(a["name"])
+
+    def still_s(self, name, now):
+        m = self.motion.get(name)
+        return now - m["moved"] if m else 0.0
+
+    def scores(self, agents, now):
+        out = super().scores(agents, now)
+        cfg = self.cfg
+        for a in agents:
+            n = a["name"]
+            if n not in out:
+                continue
+            k = plan_kind(a)
+            if big_plan(a):
+                f = cfg["plan_boost"]
+            elif k in DULL:
+                f = cfg["dull"]
+            elif a.get("combat") or k in VISIBLE:
+                f = cfg["move_boost"]
+            elif a.get("activity") == "thinking" and self.still_s(n, now) >= cfg["still_cut"]:
+                f = cfg["still_factor"]  # thinking, character standing there: like idle
+            else:
+                f = 1.0
+            out[n] = round(out[n] * f, 3)
+        return out
+
+    def plan_zoom(self, a):
+        """The zoom that fits the agent and its action's bounds, or None."""
+        ext = plan_extent(a) if big_plan(a) else None
+        return self.fight_zoom(ext) if ext else None
+
     def step(self, snapshot, now=None, segment=None):
         now = now or time.time()
         agents = snapshot["agents"]
         by_name = {a["name"]: a for a in agents}
+        self.track(agents, now)
         scores = self.scores(agents, now)
         ranked = sorted(scores, key=lambda n: -scores[n])
         if not self.slots:
@@ -422,7 +527,8 @@ class OneCam(Director):
         subj = cur.get("subject") if cur else None
         need = subj not in scores  # nothing on air, a hold that ended, or the subject died or left
         inset_agents = set((self.state.get(self.inset["slot"]) or {}).get("agents") or []) if self.inset else set()
-        others = [n for n in ranked if n != subj and n not in inset_agents]
+        blocked = {n for n, t in self.still_block.items() if now < t}
+        others = [n for n in ranked if n != subj and n not in inset_agents and n not in blocked]
         cand = others[0] if others else None
         want = None
         resumed = None
@@ -437,24 +543,42 @@ class OneCam(Director):
                 return
         else:
             held = now - self.onair_since
-            if cand and held >= self.cfg["onair_dwell"] and now - self.last_program_cut >= self.cfg["cut_spacing"]:
-                if scores[cand] > scores[subj] * self.cfg["switch_margin"] + self.cfg["switch_bias"]:
+            cfg = self.cfg
+            holding = big_plan(by_name[subj]) and held < cfg["plan_hold"]  # its big action runs: stay
+            if cand and not holding and held >= cfg["onair_dwell"] and now - self.last_program_cut >= cfg["cut_spacing"]:
+                if scores[cand] > scores[subj] * cfg["switch_margin"] + cfg["switch_bias"]:
                     want = cand
-                    reason = f"{cand} {scores[cand]} beats {subj} {scores[subj]}"
-                elif held >= self.cfg["onair_max"] and scores[cand] >= scores[subj] * self.cfg["rotate_ratio"]:
+                    reason = f"{cand} {scores[cand]} beats {subj} {scores[subj]}" + \
+                        (f" ({plan_kind(by_name[cand])} ahead)" if big_plan(by_name[cand]) else "")
+                elif held >= cfg["onair_max"] and scores[cand] >= scores[subj] * cfg["rotate_ratio"]:
                     want = cand
                     reason = f"rotate after {int(held)} s"
+            still = self.still_s(subj, now)
+            ended = now - self.plan_end.get(subj, -1e9) < cfg["onair_dwell"]
+            if not want and not holding and held >= cfg["still_min"] and \
+                    still >= (cfg["plan_after"] if ended else cfg["still_cut"]):
+                moving = [n for n in others if self.still_s(n, now) < cfg["moving_s"]
+                          and scores[n] >= scores[subj] * cfg["still_worth"]]
+                if moving:
+                    want = cand = moving[0]
+                    why = f"{plan_kind(by_name[want])} ahead" if big_plan(by_name[want]) else "moving"
+                    reason = f"{subj} still {int(still)} s; {want} {why}"
+                    self.still_block[subj] = now + cfg["still_block"]
             self.keep(cur, by_name, now)
         nxt = self.next_slot()
         lead = want or cand
         if nxt and lead:
             t = self.state.get(nxt["slot"])
-            z = self.zoom_for(by_name[lead], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
+            fit = self.plan_zoom(by_name[lead])  # framed on its action's bounds ahead of the cut
+            z = fit or self.zoom_for(by_name[lead], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
             if not t or t.get("subject") != lead or abs(t["zoom"] - z) >= self.cfg["zoom_delta"]:
                 keep_framed = t and t.get("subject") == lead
-                self.apply(nxt, {"agents": [lead], "follow": lead, "zoom": z, "solo_zoom": z, "subject": lead,
-                                 "jump": True, "since": now, "framed": t["framed"] if keep_framed else now},
-                           f"standby: {lead}", scores, now, quiet=True)
+                shot = {"agents": [lead], "follow": lead, "zoom": z, "solo_zoom": z, "subject": lead,
+                        "jump": True, "since": now, "framed": t["framed"] if keep_framed else now}
+                if fit:
+                    shot.update(exact_zoom=True, plan_fit=fit)
+                self.apply(nxt, shot, f"standby: {lead}" + (f" ({plan_kind(by_name[lead])} bounds)" if fit else ""),
+                           scores, now, quiet=True)
         if want and nxt and self.state[nxt["slot"]].get("subject") == want and self.ready(nxt["slot"], now):
             self.cut(nxt["slot"], reason if not need else f"back to {want}" if resumed else
                      (f"{subj} unavailable" if subj else "initial"), now)
@@ -469,8 +593,22 @@ class OneCam(Director):
             self.onair_since = now
 
     def keep(self, cur, by_name, now):
-        """Zoom follows the on-air subject's activity once it has lasted zoom_settle (no pairs on air)."""
+        """Zoom follows the on-air subject's activity once it has lasted zoom_settle (no pairs on air); while a big
+        action with bounds runs, the zoom fits them."""
         subj = cur["subject"]
+        fit = self.plan_zoom(by_name[subj])
+        if fit or cur.get("plan_fit"):
+            if fit and cur.get("plan_fit") and abs(fit - cur["plan_fit"]) < self.cfg["zoom_delta"]:
+                return  # fitted already
+            target = {k: v for k, v in cur.items() if k not in ("jump", "exact_zoom", "plan_fit")}
+            if fit:
+                target.update(zoom=fit, exact_zoom=True, plan_fit=fit)
+                reason = f"zoom {fit} (fits {plan_kind(by_name[subj])})"
+            else:  # the action ended: back to the activity's zoom
+                target.update(zoom=self.cfg["solo_zoom"], solo_zoom=self.cfg["solo_zoom"])
+                reason = "zoom (action over)"
+            self.apply(self.slot(self.onair), target, reason, {}, now)
+            return
         want = self.zoom_for(by_name[subj], self.cfg["solo_zoom"])
         if want is None:
             want = cur.get("solo_zoom", cur["zoom"])
