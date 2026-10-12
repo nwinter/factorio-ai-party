@@ -63,7 +63,9 @@ SPOKEN = (
     "try. A gentle tease is fine. Never mock an agent for waiting, planning, sleeping, walking, chatting or their "
     "motto. That is how they work, and viewers should end up liking them. Don't narrate someone walking. When "
     "nothing much is happening, talk about the plan on the board, the factory, a number that changed, or a viewer's "
-    "question. Trust the facts. Never call a fact wrong.\n"
+    "question. Trust the facts. Never call a fact wrong. Say what an agent is trying to do (intent, working_on) and "
+    "what changed (since_last_beat). An agent with nothing new is not worth a line. Every line needs a reason: news, "
+    "a cause, a number that moved. No line just to fill air, and no riffs on mottos or small notes.\n"
     "Written English sounds wrong out loud, so never use these. Dashes, semicolons, colons and ellipses. The 'X, not "
     "Y' or 'not X, but Y' turn. Lists of three. Metaphors and similes: furnaces and labs do not starve, bleed, choke, "
     "gasp, feast, sing, hum, dream or pray. Nature-documentary narration. The words humming, cooking, symphony, ballet, "
@@ -155,6 +157,18 @@ PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "sp
 URGENT = 8
 
 
+QUIET_KINDS = ("camera", "board", "harness", "research_start", "chat")
+
+
+def digest(s):
+    """What counts as news for a filler beat: technologies done, the research, the science rate (in steps of 5), the
+    stage, the board's claims and the latest losses."""
+    s = s or {}
+    res, sc, board = s.get("research") or {}, s.get("science") or {}, s.get("board") or {}
+    return (res.get("done_count"), res.get("label"), int((sc.get("spm") or 0) // 5), sc.get("stage_label"),
+            board.get("claims_total"), board.get("in_progress"), len(s.get("alerts") or []))
+
+
 def clip_rank(e):
     """The page's playback rank for a host line (static/audio.js): urgent events and space moments interrupt an
     agent speaking aloud, which interrupts answers to viewers, which interrupt host banter."""
@@ -192,7 +206,7 @@ MODEL_ARGS = {  # thinking models spend a small max_tokens on reasoning and retu
 DEFAULT_MODEL = "@cf/moonshotai/kimi-k2.6"  # exchange bench 2026-10-10: the liveliest Workers AI writer, ~3.5 s
 # A fast writer for attacks and deaths (e.g. @cf/nvidia/nemotron-3-120b-a12b, ~1.4 s). Off by default: on the live
 # world under a biter siege every beat was urgent, and Nemotron invented "still no steam" and "last run" lines.
-URGENT_MODEL = ""
+URGENT_MODEL = DEFAULT_MODEL  # urgent beats stay on fast Kimi when --model picks a bigger writer (HOSTS3 item 6)
 CLAUDE_BIN = os.path.expanduser("~/.local/bin/claude")  # personal profile: run it with CLAUDE_CONFIG_DIR unset
 CLEF_PRICE = 0.038  # @cf/cloudflare/clef-flash, USD per million input tokens
 
@@ -342,6 +356,23 @@ def spoken_time(gt):
     return " ".join(parts)
 
 
+def agent_intent(s, a, fresh=600):
+    """What an agent last said it would do: its latest say or tell (the ticker's "-> Sol: ..."), if under 10 minutes
+    old, cleaned for speech. Nick (HOSTS3 item 6): 'walking' should read 'walking to restock the silo Sol asked for'."""
+    now = time.time()
+    names = {a.get("name"), a.get("display_name")}
+    cands = [m for m in s.get("chat") or [] if m.get("agent") in names and m.get("text")]
+    said = a.get("last_said") or {}
+    if said.get("text"):
+        cands.append({"text": said["text"], "t": said.get("t")})
+    cands = [m for m in cands if not m.get("t") or now - float(m["t"]) <= fresh]
+    if not cands:
+        return None
+    m = max(cands, key=lambda m: float(m.get("t") or 0))
+    text = re.sub(r"^\u2192\s*", "", m["text"]).replace("\u2192", "to")
+    return spoken(voices.speakable(text, 140)) or None
+
+
 TRAVEL = re.compile(r"^(?:walk|mov|travel|last: move|going|heading|run(?:ning)? to)", re.I)
 
 
@@ -356,17 +387,17 @@ def agent_facts(s, name, said=False, motto=False):
     if where and re.fullmatch(r"\d+ m [NSEW]{1,2}", where):  # "30 m E" is noise on air; named places are not
         where = None
     doing = a.get("action") if a.get("activity") == "acting" else None
-    if doing and TRAVEL.match(doing):
-        doing = None
     names = {name, a.get("display_name")}
     job = next((c.get("title") for c in (s.get("board") or {}).get("claims") or []
                 if c.get("title") and (c.get("agent") in names or c.get("owner") in names)), None)
+    if doing and TRAVEL.match(doing):  # "walking" only with where it leads (HOSTS3 item 6)
+        doing = f"heading off for {job}" if job else None
     # "thinking (standing still)" became 102 of 443 shake3 host lines mocking agents as frozen or statues
     f = {"name": a.get("display_name") or name, "pronouns": pronouns_of(a), "role": a.get("role"),
          "model": a.get("model"), "harness": a.get("harness"), "working_on": job, "doing": doing,
          "status": {"dead": "down, waiting to respawn", "offline": "offline",
                     "thinking": "working out the next step"}.get(a.get("activity")),
-         "where": where, "motto": (a.get("motto") or None) if motto else None}
+         "where": where, "motto": (a.get("motto") or None) if motto else None, "intent": agent_intent(s, a)}
     if said and (a.get("last_said") or {}).get("text"):
         f["last_said"] = spoken(voices.speakable(a["last_said"]["text"], 160))
     return {k: v for k, v in f.items() if v}
@@ -738,7 +769,7 @@ def style_fault(line, blob=""):
     low = line.lower().replace("’", "'")
     # shake7: "Opus is still walking. Four hours in, still walking."; "Classic Opus. Big chat energy."; "That motto
     # aged fine."; "Science per minute says sixty. That number is a lie."
-    if re.search(r"\b(?:walk|walks|walking|walked|stroll\w*)\b", low) and "walk" not in blob:
+    if re.search(r"\b(?:walk|walks|walking|walked|stroll\w*)\b", low) and "walk" not in blob and "heading off for" not in blob:
         return "style: walking filler"
     if MOCK.search(low):
         return "style: mocks an agent"
@@ -1189,6 +1220,20 @@ class LLMWriter:
             self.spent += (usage.get("prompt_tokens", len(system + user) / 4) * pin
                            + usage.get("completion_tokens", max_tokens / 2) * pout) / 1e6
             return text
+        if self.kind == "or":  # OpenRouter (copy_bench comparisons: GPT, Gemini); key in OPENROUTER_API_KEY
+            key = os.environ.get("OPENROUTER_API_KEY")
+            if not key:
+                raise RuntimeError("OPENROUTER_API_KEY is not set")
+            body = {"model": self.model, "messages": [{"role": "system", "content": system},
+                                                      {"role": "user", "content": user}],
+                    "max_tokens": max(max_tokens, 400), "temperature": 0.9, "usage": {"include": True}}
+            req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
+                                         data=json.dumps(body).encode(), method="POST",
+                                         headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=self.timeout * 3) as r:
+                out = json.load(r)
+            self.spent += float((out.get("usage") or {}).get("cost") or 0)
+            return ((out.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
         if not shutil.which(self.bin):
             raise RuntimeError(f"{self.bin} not found")
         # The personal subscription: CLAUDE_CONFIG_DIR unset and no API overrides (a parent session may set them).
@@ -1388,6 +1433,8 @@ class Caster:
             self.writer = None
         elif a.writer == "claude":
             self.writer = LLMWriter("claude", a.model or "haiku", bin=a.claude_bin, timeout=a.writer_timeout)
+        elif a.writer == "or":
+            self.writer = LLMWriter("or", a.model, timeout=a.writer_timeout)
         else:
             self.writer = LLMWriter("cf", a.model or DEFAULT_MODEL, ai=ai, timeout=a.writer_timeout)
         # urgent events (attack, death, loss) go to a fast writer so the call lands while it is still news
@@ -1413,7 +1460,7 @@ class Caster:
             for e in self.differ.diff(s):
                 if e["kind"] == "chat":
                     self.chat_q.append(e)
-                    if e["aloud"] or self.rng.random() < 0.25:  # some chat also feeds the casters
+                    if e["aloud"]:  # only what an agent says aloud feeds the hosts (HOSTS3 item 6: speak less)
                         self.events.append(dict(e, prio=2 if not e["aloud"] else 4))
                 else:
                     self.events.append(e)
@@ -1562,6 +1609,34 @@ class Caster:
             e["agents"] = list(main) if main and self.rng.random() < 0.6 else self.rng.sample(agents, min(2, len(agents)))
         return e
 
+    def mark_changes(self, facts):
+        """Each agent in the facts gets `since_last_beat`: what changed since the hosts last had it in their facts (a
+        new board job, something new said, back from respawn, a new task). HOSTS3 item 6: news, not 'still walking'."""
+        seen = self.__dict__.setdefault("agent_seen", {})
+        groups = [facts.get("agent")] + [x for k in ("on_camera", "busy_agents", "observed") for x in facts.get(k) or []]
+        for ag in groups:
+            if not isinstance(ag, dict) or not ag.get("name"):
+                continue
+            now = {k: ag.get(k) for k in ("working_on", "intent", "status", "doing")}
+            before = seen.get(ag["name"])
+            seen[ag["name"]] = now
+            if before is None:
+                continue
+            ch = []
+            if now["working_on"] and now["working_on"] != before["working_on"]:
+                ch.append(f"took a new job: {now['working_on']}")
+            if now["intent"] and now["intent"] != before["intent"]:
+                ch.append("said something new")
+            if before["status"] == "down, waiting to respawn" and now["status"] != before["status"]:
+                ch.append("back from respawn")
+            if now["doing"] and now["doing"] != before["doing"]:
+                ch.append(f"now {now['doing']}")
+            ag["since_last_beat"] = ch or ["nothing new since the hosts last saw them"]
+
+    def news(self, s):
+        """Something changed since the hosts last spoke: research, the science rate, the board, the stage, losses."""
+        return digest(s) != getattr(self, "last_digest", None)
+
     def caster_tick(self, now, st):
         with self.lock:
             s = self.snap
@@ -1577,10 +1652,18 @@ class Caster:
             return
         with self.lock:
             e = self.pick_event(now)
+        # Speak less (HOSTS3 item 6, Nick: "kinda dumb", riffing on mottos and inconsequential notes): a low-value beat
+        # waits for --quiet seconds of silence, and filler for --lull seconds and something new to say.
+        if e and e["kind"] in QUIET_KINDS and now < self.caster_free + getattr(self.a, "quiet", 0):
+            return
         if not e:
             if now < self.caster_free + max(gap, self.a.lull) - lead:
                 return
             e = self.filler(now, s)
+            if self.a.lull and e["kind"] == "lull" and not e.get("point") and not self.news(s):
+                self.caster_free = now  # nothing new: stay quiet another --lull
+                return
+        self.last_digest = digest(s)
         if e["kind"] in ("chat", "camera", "board") and self.rng.random() < self.a.naturalist:
             e["naturalist"] = True
         first = "pbp" if e["prio"] >= PRIORITY["research"] or e["kind"] in (
@@ -1599,6 +1682,7 @@ class Caster:
         facts = facts_for(e, s, self.base_for(s), self.deadline(), self.shift())
         if self.history:  # callbacks to earlier beats are good casting; give them facts to stand on
             facts["earlier_on_air"] = list(self.history)
+        self.mark_changes(facts)
         live = self.live_segment(s, margin=3) if hasattr(self, "live_segment") else None
         if live and e["kind"] != "segment" and e["prio"] < URGENT and "on_screen_now" not in facts:
             # a card stays up about 30 s, and the beats after its own went on as if it were not there
@@ -1979,9 +2063,10 @@ def bench(a):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--feed", default="http://127.0.0.1:8788", help="stream service base URL (serve.py)")
-    ap.add_argument("--writer", default="cf", choices=["cf", "claude", "template"])
+    ap.add_argument("--writer", default="cf", choices=["cf", "claude", "or", "template"])
     ap.add_argument("--model", help=f"writer model (cf: Workers AI model id, default {DEFAULT_MODEL}; "
-                                    "claude: haiku or sonnet)")
+                                    "claude: haiku, sonnet, opus or fable; or: an OpenRouter model id, with "
+                                    "OPENROUTER_API_KEY set)")
     ap.add_argument("--claude-bin", help=f"claude CLI for --writer claude (default {CLAUDE_BIN}, run with "
                                          "CLAUDE_CONFIG_DIR unset: the personal subscription)")
     ap.add_argument("--writer-timeout", type=float, default=12, help="seconds per Workers AI call (claude: 3x)")
@@ -2007,12 +2092,15 @@ def main():
     ap.add_argument("--backoff", type=float, default=120,
                     help="after 3 straight failures, skip a backend (writer, classifier, TTS) for this many seconds")
     ap.add_argument("--classifier", default="clef", choices=["clef", "heuristic"])
-    ap.add_argument("--gap", type=float, nargs=2, default=[1.0, 3.0], metavar=("MIN", "MAX"),
+    ap.add_argument("--gap", type=float, nargs=2, default=[3.0, 6.0], metavar=("MIN", "MAX"),
                     help="seconds of silence between exchanges (random in range); 20 40 for the old sparse cast")
     ap.add_argument("--urgent-gap", type=float, default=0.5, help="gap before an urgent exchange (attack, death)")
     ap.add_argument("--first-gap", type=float, default=3)
-    ap.add_argument("--lull", type=float, default=0,
-                    help="seconds of silence before the hosts fill with a topic of their own (0: never silent)")
+    ap.add_argument("--lull", type=float, default=40,
+                    help="seconds of silence before the hosts fill with a topic of their own, and only when something "
+                         "changed (0: never silent, the old continuous cast)")
+    ap.add_argument("--quiet", type=float, default=20,
+                    help="seconds of silence before a low-value beat (camera cut, board note, research start) is said")
     ap.add_argument("--stale", type=float, default=45, help="drop events older than this")
     ap.add_argument("--agent-gap", type=float, default=15,
                     help="min seconds between voiced agent lines (half for lines the agent marked aloud)")

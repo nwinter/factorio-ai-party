@@ -584,7 +584,8 @@ snapW = {"agents": [{"name": "opus", "display_name": "Opus", "activity": "acting
                     {"name": "sol", "display_name": "Sol", "activity": "acting", "action": "building assembling machine 2"}],
          "board": {"claims": [{"title": "Courier run for blue science", "agent": "opus", "owner": "opus"}]}}
 ow = caster.agent_facts(snapW, "opus")
-check("agent facts: no walking, the board job instead, no motto unless asked", "doing" not in ow and
+check("agent facts: walking becomes where it leads, the board job, no motto unless asked",
+      ow.get("doing") == "heading off for Courier run for blue science" and
       ow.get("working_on") == "Courier run for blue science" and "motto" not in ow and
       caster.agent_facts(snapW, "opus", motto=True)["motto"].startswith("Steam"), str(ow))
 fl = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"}, snapW)
@@ -763,6 +764,54 @@ check("clip ranks: urgent events and space moments, viewer answers, banter",
       [caster.clip_rank(e) for e in ({"kind": "death", "prio": 9}, {"kind": "space", "prio": 7},
                                      {"kind": "viewer", "prio": 6}, {"kind": "chat", "prio": 4})] ==
       ["urgent", "urgent", "viewer", "banter"])
+
+# HOSTS3 item 6 (c): intent from the latest say or tell, and what changed since the hosts last saw an agent
+snapI = {"agents": [{"name": "astra", "display_name": "Astra", "activity": "acting", "action": "walking",
+                     "last_said": {"text": "Restocking the silo for Sol now.", "t": time.time() - 30}}],
+         "chat": [{"agent": "astra", "text": "\u2192 Sol: bringing 50 low density structures to the silo",
+                   "t": time.time() - 10, "tell": True}],
+         "board": {"claims": [{"title": "Silo restock", "agent": "astra"}]}}
+ia = caster.agent_facts(snapI, "astra")
+check("intent: the newest say or tell; walking leads somewhere", ia.get("intent", "").startswith("Sol: bringing 50")
+      and ia["doing"] == "heading off for Silo restock", str(ia))
+cm = _caster(_FactsWriter([]))
+f1 = {"agent": dict(ia)}
+cm.mark_changes(f1)
+f2 = {"agent": dict(ia, working_on="Concrete cell", intent="Concrete next.")}
+cm.mark_changes(f2)
+f3 = {"agent": dict(f2["agent"])}
+cm.mark_changes(f3)
+check("walking to a job is fine once the facts say where it leads", caster.style_fault(
+    "Astra's walking to restock the silo.", caster.known_text({"agent": ia})) is None)
+check("since_last_beat: a new job and new words; then nothing new", "since_last_beat" not in f1["agent"] and
+      "took a new job: Concrete cell" in f2["agent"]["since_last_beat"] and "said something new" in
+      f2["agent"]["since_last_beat"] and f3["agent"]["since_last_beat"] == ["nothing new since the hosts last saw them"],
+      str(f2["agent"].get("since_last_beat")))
+
+# HOSTS3 item 6 (b): speak less. A low-value beat waits for --quiet; filler waits for --lull and something new.
+import threading  # noqa: E402
+fq = _FactsWriter([])
+cq = _caster(fq)
+cq.a = caster.argparse.Namespace(**{**vars(cq.a), "quiet": 20, "lull": 40, "stale": 45, "dry_run": True,
+                                    "always": True, "urgent_gap": 0.5, "naturalist": 0, "lines": (2, 2),
+                                    "segment_every": 1e9})
+cq.lock, cq.events, cq.prep, cq.next_gap, cq.filler_i = threading.Lock(), caster.deque(maxlen=60), [], 1.0, 0
+cq.seg_cat, cq.seg_cat_t, cq.seg_req_t, cq.seg_next_ok = {}, 0.0, 0.0, 0.0
+cq.snap = {"agents": [], "research": {"done_count": 40, "label": "Rocket silo"}, "science": {"spm": 30}}
+t = time.time()
+cq.caster_free = t - 5
+cq.events.append({"kind": "camera", "agents": [], "t": t, "prio": 2})
+cq.caster_tick(t, {})
+check("speak less: a camera cut 5 s after the hosts spoke is not said", not hasattr(fq, "facts"))
+cq.last_digest = caster.digest(cq.snap)
+cq.caster_free = t - 60
+cq.caster_tick(t, {})
+check("speak less: filler with nothing new stays silent", not hasattr(fq, "facts"))
+cq.snap = dict(cq.snap, research={"done_count": 41, "label": "Rocket part productivity"})
+cq.caster_free = t - 60
+cq.caster_tick(t, {})
+check("speak less: filler after news speaks", getattr(fq, "facts", {}).get("event") == "lull", str(getattr(fq, "facts", None))[:200])
+check("urgent beats stay on Kimi when the main writer changes", caster.URGENT_MODEL == caster.DEFAULT_MODEL)
 
 # Round 6 (shake5 P1 item 4): stage 3 is "Oil & blue science", and the stage fact says which packs are made
 import model  # noqa: E402
