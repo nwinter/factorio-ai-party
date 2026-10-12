@@ -384,6 +384,16 @@ return function(api)
     end
     local box=area(p,a)
     local out={changed=0,mode=cancel and 'cancel' or 'mark',tiles=a.tiles~=nil and a.tiles~=false}
+    -- Items on the ground, as a planner marks them (robots take them to
+    -- storage); other entities then only with entity filters.
+    if a.items_on_ground~=nil then
+      assert(a.items_on_ground==true or a.items_on_ground==false,'items_on_ground must be boolean')
+      assert(not out.tiles,'items_on_ground and tiles are separate calls')
+    end
+    if a.items_on_ground then
+      api.ground_mark(p,box,cancel,out)
+      if not (filters.entity_types or filters.entity_names) then return out end
+    end
     -- With tiles, entities are taken only when entity filters name them;
     -- they go first, so a tile under one marked now is not counted blocked.
     if out.tiles and not (filters.entity_types or filters.entity_names) then deconstruct_tiles(p,a,box,cancel,out); return out end
