@@ -418,6 +418,17 @@ body:not(.portrait) #prod, body:not(.portrait) #board, body:not(.portrait) #spac
 .msg .tag { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 0 6px; line-height: 16px;
   border-radius: var(--fx-r-1); background: linear-gradient(180deg, #ffc56b, var(--fx-orange)); color: var(--fx-text-dark); }
 
+/* tells, in the main feed: a direct line "Sol → Astra", indented and a size smaller, on a teal edge; a burst between
+   the same two shows the latest in full and "+N" (static/chatfeed.js) */
+.msg.tell { margin-left: 18px; padding: 3px 8px 4px 6px; gap: 8px; border-left: 3px solid #4fb8a8; border-radius: 0 var(--fx-r-1) var(--fx-r-1) 0;
+  background: linear-gradient(90deg, rgba(79, 184, 168, 0.10), transparent 80%); }
+.msg.tell .meta { font-size: 13.5px; gap: 6px; }
+.msg.tell .from, .msg.tell .to { font-weight: 700; color: var(--agent-ink, #9fe0d6); white-space: nowrap; }
+.msg.tell .arrow { color: #4fb8a8; font-weight: 700; }
+.msg.tell .tcount { color: #4fb8a8; font-size: 12px; font-weight: 700; }
+.msg.tell .tcount:empty { display: none; }
+.msg.tell .text { font-size: 15.5px; line-height: 1.28; color: #d6e6e3; -webkit-line-clamp: 3; }
+
 /* viewers, in the main feed: a YT/SITE badge where agents have an avatar, a blue name and a "viewer" tag */
 .msg.viewer { padding: 4px 8px 5px 6px; margin-left: -6px; border-left: 3px solid var(--fx-blue); border-radius: 0 var(--fx-r-1) var(--fx-r-1) 0;
   background: linear-gradient(90deg, rgba(var(--fx-blue-rgb), 0.10), transparent 80%); }

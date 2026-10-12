@@ -428,12 +428,13 @@ class Model:
             ag.bump(2, now)
             ag.last_activity_t = now
 
-    def chat_window(self, talk=12, other=8):
-        """The last `talk` conversation lines and the last `other` log / viewer lines, in arrival order: logistics
-        chatter must not push the conversation off the page."""
+    def chat_window(self, talk=12, other=8, tells=24):
+        """The last `talk` conversation lines, the last `tells` tells (enough for the page to fold a burst) and the
+        last `other` log / viewer lines, in arrival order: one kind must not push another off the page."""
         msgs = list(self.chat)
         keep = {id(m) for m in [m for m in msgs if m.get("lane") == "talk"][-talk:]}
-        keep |= {id(m) for m in [m for m in msgs if m.get("lane") != "talk"][-other:]}
+        keep |= {id(m) for m in [m for m in msgs if m.get("lane") == "tell"][-tells:]}
+        keep |= {id(m) for m in [m for m in msgs if m.get("lane") not in ("talk", "tell")][-other:]}
         return [m for m in msgs if id(m) in keep]
 
     def _ingest_confession(self, c, now):
@@ -450,8 +451,10 @@ class Model:
             self.agents[sender].bump(2.5, now)
 
     def _ingest_tell(self, t, now):
-        """tells.lua `tells` (operator read): {seq, tick, from, to (names or "team"), text}, logistics an agent sent to
-        teammates outside the game chat. Always the ticker, shown as "-> Sol: text"; never voiced."""
+        """tells.lua `tells` (operator read): {seq, tick, from, to (names or "team"), text}, what an agent sent to
+        teammates outside the game chat: the team's main channel (shake7: ~540 tells to ~100 chat lines). Lane "tell":
+        the page shows them in the chat feed as direct lines ("Sol → Astra", `to_shown` and `body`); `text` stays
+        "-> Astra: ..." for the site's live feed and the logs. Never voiced."""
         key = ("tell", t.get("seq"))
         if key in self.chat_seen:
             return
@@ -462,7 +465,8 @@ class Model:
         shown = ", ".join("team" if n == "team" else (self.agents[m].display_name or n) if (m := self._match_sender(n))
                           else n for n in names)
         entry = {"seq": f"t{t.get('seq')}", "tick": t.get("tick"), "from": t.get("from"), "agent": sender,
-                 "text": f"\u2192 {shown}: {t.get('text', '')}", "t": t.get("t", now), "tell": True, "lane": "log"}
+                 "text": f"\u2192 {shown}: {t.get('text', '')}", "t": t.get("t", now), "tell": True, "lane": "tell",
+                 "to_shown": shown, "to": names, "body": t.get("text", "")}
         self.chat.append(entry)
         if sender:
             self.agents[sender].bump(1, now)

@@ -388,21 +388,49 @@
   function renderChat(s) {
     const list = $("chat-list");
     const all = s.chat || [];
-    // talk lane: conversation, confessionals (model.chat_lane) and viewers, by time; logistics go to the ticker
-    const talk = all.filter((m) => (m.lane || "talk") === "talk").slice(-10)
+    // one feed by time: conversation and confessionals (model.chat_lane "talk"), tells (the team's main channel:
+    // direct lines "Sol → Astra", a burst between the same two folded into one, static/chatfeed.js) and viewers.
+    // Logistics chat and server lines (lane "log") are not shown: the ticker that held them is gone (Nick: "I can
+    // barely see any of it"; the tells it mostly carried are here now).
+    const talk = all.filter((m) => !m.tell && (m.lane || "talk") === "talk").slice(-10)
       .map((m) => ({ m, t: m.t || s.now, key: String(m.seq ?? m.tick + m.from + m.text) }));
+    const tells = (window.pogChat ? window.pogChat.foldTells(all.filter((m) => m.tell)) : []).slice(-6)
+      .map((g) => ({ g, t: g.t || s.now, key: g.key }));
     const viewers = (s.viewers || []).filter((v) => s.now - (v.t || 0) < VIEWER_RECENT_S).slice(-4)
       .map((v) => ({ v, t: v.t || s.now, key: "v:" + String(v.id || v.seq) }));
-    const msgs = talk.concat(viewers).sort((a, b) => a.t - b.t).slice(-10); // the well clips the oldest
-    renderTicker(s, all.filter((m) => m.lane === "log").slice(-2));
+    const msgs = talk.concat(tells, viewers).sort((a, b) => a.t - b.t).slice(-10); // the well clips the oldest
     const keys = new Set();
     let prev = null;
     for (const it of msgs) {
-      const key = it.key, m = it.m, v = it.v;
+      const key = it.key, m = it.m, v = it.v, g = it.g;
       keys.add(key);
       let node = shown.get(key);
       const ag = m && agentFor(s, m);
-      if (!node && v) {
+      if (g) {
+        const from = agentFor(s, { agent: g.agent, from: g.from });
+        const to = s.agents.find((a) => a.display_name === g.to || a.name === g.to);
+        if (!node) {
+          node = el("div", "msg tell");
+          node._av = avatar(from || { name: g.from || "?", display_name: g.from || "?", color: "#5a4a2e", glyph: "?" }, "xs");
+          const content = el("div", "content");
+          const meta = el("div", "meta");
+          node._from = el("span", "from");
+          node._to = el("span", "to");
+          node._count = el("span", "tcount");
+          node._when = el("span", "when");
+          meta.append(node._from, el("span", "arrow", "→"), node._to, node._count, node._when);
+          node._text = el("div", "text");
+          content.append(meta, node._text);
+          node.append(node._av, content);
+          shown.set(key, node);
+        }
+        if (from) { applyPalette(node._from, from); fillAvatar(node._av, from, "xs"); }
+        if (to) applyPalette(node._to, to);
+        setText(node._from, from ? from.display_name : g.from);
+        setText(node._to, g.to);
+        setText(node._count, g.count > 1 ? "+" + (g.count - 1) : "");
+        setText(node._text, clean(g.body)); // the latest of a burst, in full
+      } else if (!node && v) {
         // names and text are viewers' own words: textContent only (el() never parses HTML)
         node = el("div", "msg viewer");
         const content = el("div", "content");
@@ -440,7 +468,8 @@
       }
       prev = node;
       const age = s.now - it.t;
-      setText(node._when, (m && m.tick != null ? gameTime(m.tick) + " · " : "") + ago(age));
+      const tick = m ? m.tick : g ? g.tick : null;
+      setText(node._when, (tick != null ? gameTime(tick) + " · " : "") + ago(age));
       node.classList.toggle("old", age > 90 && age <= 240);
       node.classList.toggle("older", age > 240);
     }

@@ -183,6 +183,14 @@ lane of their own, Nick's line stayed up): a YT or SITE badge where agents have 
 for YouTube staff), a "viewer" tag, and "to the agents" on messages flagged as orders. Viewer names and text are set
 as text, never HTML.
 
+Tells (the team's main channel since the board: shake7 had ~540 tells to ~100 chat lines) are in the same feed as
+direct lines: "Sol → Astra" over the words in full, indented, a size smaller, on a teal edge. A burst from one agent
+to the same recipients, each within 45 s of the last, folds into one line with the latest words and "+N"
+(`static/chatfeed.js`). The two-line ticker under the chat is gone (Nick: "I can barely see any of it"); the
+logistics chat and server lines it also carried are no longer shown. Same on the portrait page. The model gives tells
+their own lane ("tell", the last 24 kept beside 12 conversation lines); the page also reads tells from a service that
+still files them under "log", so a reload is enough.
+
 ## Shake7 notes (2026-10-11): what changed for the 17:00 shift
 
 - One event stream per page. A browser keeps 6 connections per host and an open event stream holds one for good; in
