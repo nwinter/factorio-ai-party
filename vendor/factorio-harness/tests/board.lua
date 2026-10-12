@@ -410,9 +410,9 @@ local st=astra('status')
 assert(has(st.alerts.latest,'1 gun-turret'),table.concat(st.alerts.latest,' | '))
 assert(has(st.team.alerts,'losses in (1,-2000) 1 destroyed: 1 gun-turret'),table.concat(st.team.alerts,' | '))
 eq(storage.agent_harness.runtime_fault,nil)
--- A save from before the fix keeps an incident with last=nil: status still works, it counts as old, and it is the
--- first evicted.
-table.insert(storage.agent_harness.losses,1,{key='99,99',box={6336,6336,6336,6336},first=tick,names={['stone-wall']=1},causes={},total=1})
+-- A save from before the fix keeps an incident with last=nil: status still works, it counts by its first tick (old
+-- here), and it is the first evicted.
+table.insert(storage.agent_harness.losses,1,{key='99,99',box={6336,6336,6336,6336},first=tick-100000,names={['stone-wall']=1},causes={},total=1})
 table.remove(storage.agent_harness.losses,2)
 st=astra('status')
 assert(not has(st.alerts.latest,'(6336,6336)'))
