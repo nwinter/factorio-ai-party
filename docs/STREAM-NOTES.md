@@ -464,8 +464,10 @@ run config brings back the director below).
   `onair.doing`: the agent's team-plan line, else its claim, else its action). The bar also covers the client's
   bottom-centre hints ("Press Tab to skip cutscene"): the mod already sets `show_hotkey_suggestions` false
   (cameras.lua) and the hint still showed on 2026-10-12, so it is masked here. It is the intro cutscene's own hint
-  (the cam clients joined a new Space Age world): cameras.lua now ends a director's cutscene (`exit_cutscene`)
-  before making it a spectator, on its first camera call and the 5 s recheck; the trio's small tiles have no bar. The agent's card is ringed and badged
+  (the cam clients joined a new Space Age world). cameras.lua ends a director's cutscene (`exit_cutscene`) before
+  making it a spectator, but at 15:48 the clients were spectators (controller_type 5) and the hint still showed: a
+  stale client-side hint. So every view on the program has a bottom bar holding its label: the trio's small tiles
+  (32 px) and the inset (26 px), at least the main bar's share of their height. The agent's card is ringed and badged
   "On air". Toasts: at most two, identical lines merged, 12 s, nothing the label or inset already says, in a compact
   stack at the right just above the bar (captions and lower cards rise above them). `?layout=layout-3cam` gives the
   old page.
