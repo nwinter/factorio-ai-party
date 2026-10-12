@@ -4,6 +4,78 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Hosts, round 4 (HOSTS4.md, 2026-10-11 night)
+
+### Opus 5.5 against Kimi (item 1)
+
+`copy_report.py runs/<run>/caster.log --jsonl tools/stream/logs/caster-*.jsonl`. Shake10 ran Opus 5.5 on OpenRouter
+from 18:47 to 22:09, with urgent beats on Kimi. Shake7 ran Kimi for everything, with the copy filters, from 13:00 to
+17:00.
+
+| | shake10 (Opus, urgent Kimi) | shake7 (Kimi) |
+|---|---|---|
+| host lines per hour | Opus 126, Kimi (urgent) 52, templates 13 | Kimi 476, templates 15 |
+| template share | 7% | 3% |
+| words a line | 12.2 (Opus 12.9) | 9.7 |
+| words a sentence; sentences of 3 words or fewer | 6.2; 21% | 4.5; 35% |
+| a voice on air / silence | 34% / 66% | 77% / 23% |
+| write latency median / p90 | Opus 6.0 / 7.3 s; Kimi 2.0 / 4.3 s | 2.1 / 4.7 s |
+| writer failures (timeouts) | 2 (2) | 7 (6) |
+| cost per hour: writer, TTS, all | $1.55, $0.34, $1.89 | $0.53, $0.73, $1.26 |
+| tells left | 0 dash pivots, 0 "!" endings, 1.7% three-part lists, 5.9% open on a number | 0, 0, about 4%, 14.8% |
+| cuts | 48 (25 for style) | 255 (146 for style) |
+
+Opus writes causes and plain talk ("Low power here means the boilers are short of fuel"), and the hosts are silent
+two thirds of the time. LLM-isms left in its 453 lines:
+- Cut off mid-word: 33 lines ("They scanned before leaving. Two ass"). The OpenRouter call allowed 400 tokens.
+  - The budget is now `max(4 x, 1200)`.
+  - When OpenRouter reports the length limit, the unfinished last line is dropped.
+  - `check_line` cuts any line that does not end a sentence.
+  - Replayed over shake10, that would have cut 32 lines.
+- Verdict openers: 35 lines graded the last one ("Good call.", "Smart read.", "Good timing." 7 times). The notes now
+  say to just say the next thing, and a second verdict opener within eight lines is cut.
+- Lowercase names copied from the agents' tells ("Haiku just told astra"): 9 lines. Agents' names are capitalised
+  before air; "haiku" after "as", "a" or "in" stays the poem.
+
+### What the team has not built (item 2)
+
+- The score (`tools/pog.py`) counts more buildings: roboports, requester and buffer chests, accumulators, gun, laser
+  and flamethrower turrets, walls, beacons, pumpjacks, locomotives, nuclear reactors, centrifuges, fast and express
+  belts. It also lists which buildings it counted (`entities_counted`), since zeros are left out of its counts.
+- `live.py` passes the counts on.
+- The model records when the stream saw each technology finish, and its snapshot carries `unused_unlocks`: up to four
+  researched technologies with none of their building, oldest first. Each says when it was researched: "N minutes ago",
+  or "before this stream" when it was done before the service started.
+- Research beats and explain, production and pace beats give the hosts `not_built_yet`, with a note that it is
+  commentary for viewers, at most once. Nothing goes to the agents.
+- `check_line` lets "still no roboports" through only when `not_built_yet` backs it.
+- A score without `entities_counted` (the old pog.py) gives no unused unlocks, so the hosts never call a building
+  missing that was simply not counted.
+
+### Agents answering viewers (item 3)
+
+From shake11 the viewer relay reaches the agents. An agent's chat line that names a viewer who wrote in the last 10
+minutes becomes a `viewer_reply` beat. It has priority 7, above a viewer question and below urgent beats, and plays
+at the "viewer" rank. "@Name" counts always, and the bare name when it is longer than three letters. The facts carry
+the viewer's question, the agent's answer and how to call it: Rook says who asked what, and Vale says what the agent
+answered. Relayed "viewer NAME: ..." chat rows now give the viewer's name. Before this, only aloud chat reached the
+hosts, so an answer said plainly would have been missed.
+
+### Urgent beats on a fast Claude (item 4)
+
+`--urgent-model or:<OpenRouter model>`, or `POG_CASTER_URGENT` in start-team, puts urgent beats on OpenRouter; the
+default stays Kimi on Workers AI. `copy_bench --kinds attack,death,loss` replays only urgent beats (20 in shake10).
+The bench, from a shell that may reach OpenRouter and Workers AI:
+
+    L=~/code/player-of-games/tools/stream/logs
+    python3 tools/stream/copy_bench.py $L/caster-20261011-184735.jsonl $L/caster-20261011-202016.jsonl \
+        --kinds attack,death,loss --n 20 --timeout 8 \
+        --writers cf=@cf/moonshotai/kimi-k2.6,or=anthropic/claude-haiku-5.5,or=anthropic/claude-sonnet-5.5 \
+        --md /tmp/urgent-bench.md
+
+Switch if Haiku or Sonnet keeps more lines than Kimi with a p90 under about 4 s (Kimi's is 4.3 s). It was not run
+from this session.
+
 ## Hosts, round 3 (HOSTS3.md, 2026-10-11, for the 17:00 shift change)
 
 The shake7 study (study/shake7, `docs/studies/shake7-early.md`) found the copy filter worked, but the plain style
