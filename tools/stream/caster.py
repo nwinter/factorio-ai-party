@@ -65,7 +65,8 @@ SPOKEN = (
     "nothing much is happening, talk about the plan on the board, the factory, a number that changed, or a viewer's "
     "question. Trust the facts. Never call a fact wrong. Say what an agent is trying to do (intent, working_on) and "
     "what changed (since_last_beat). An agent with nothing new is not worth a line. Every line needs a reason: news, "
-    "a cause, a number that moved. No line just to fill air, and no riffs on mottos or small notes.\n"
+    "a cause, a number that moved. No line just to fill air, and no riffs on mottos or small notes. Don't open by "
+    "grading the last line ('Good call.', 'Smart read.', 'Good timing.'). Just say the next thing.\n"
     "Written English sounds wrong out loud, so never use these. Dashes, semicolons, colons and ellipses. The 'X, not "
     "Y' or 'not X, but Y' turn. Lists of three. Metaphors and similes: furnaces and labs do not starve, bleed, choke, "
     "gasp, feast, sing, hum, dream or pray. Nature-documentary narration. The words humming, cooking, symphony, ballet, "
@@ -842,6 +843,19 @@ def supported_names(facts, names):
     return out
 
 
+def proper_names(line, names):
+    """Agents' names capitalised: shake10's hosts copied "astra" from the agents' tells ("Haiku just told astra"). The
+    word haiku after "as", "a" or "in" is the poem."""
+    for n in sorted(names, key=len, reverse=True):
+        rx = r"(?<!\bas )(?<!\ba )(?<!\bin )\b" + re.escape(n.lower()) + r"\b" if n.lower() == "haiku" else \
+            r"\b" + re.escape(n.lower()) + r"\b"
+        line = re.sub(rx, n, line)
+    return line
+
+
+VERDICT = re.compile(r"^(?:Good|Smart|Nice|Great|Right|Fair|Solid|Clever|Wise|Sharp|Sensible|Huge|Big)\b[^.!?]{0,25}[.!]")
+
+
 def check_line(line, facts, names, recent):
     """Return a reason the line is unusable, or None. Names and numbers must come from the facts."""
     blob = known_text(facts)
@@ -885,7 +899,13 @@ def check_line(line, facts, names, recent):
         return "compares with the previous run without pace facts"
     if len(line.split()) > 34:
         return "too long"
-    host_we = re.sub(r"\b(?:here )?we (?:see|find|watch|observe|might see|can see|get to see)\b|\bwe(?:'ll| will) see\b|"
+    # shake10 (Opus): 33 of 453 lines aired cut off mid-word ("They scanned before leaving. Two ass")
+    if not re.search(r"[.!?…\"”')]\s*$", line):
+        return "cut off mid-sentence"
+    # shake10: 35 lines opened on a verdict about the last one ("Good call.", "Smart read.", "Good timing.")
+    if VERDICT.match(line) and any(VERDICT.match(clean(r).split(": ", 1)[-1]) for r in recent[-8:]):
+        return "style: another verdict opener"
+    host_we =re.sub(r"\b(?:here )?we (?:see|find|watch|observe|might see|can see|get to see)\b|\bwe(?:'ll| will) see\b|"
                      r"\b(?:we're|we are) live\b|\bhere we go\b|\blet's\b|\blet us\b|\b(?:join|stay with|tell) us\b",
                      "", low.replace("’", "'"))  # the hosts may speak as hosts: "here we see", "stay with us"
     if re.search(r"\b(we|we're|we've|we'll|our|ours|us)\b", host_we):
@@ -1243,14 +1263,19 @@ class LLMWriter:
                 raise RuntimeError("OPENROUTER_API_KEY is not set")
             body = {"model": self.model, "messages": [{"role": "system", "content": system},
                                                       {"role": "user", "content": user}],
-                    "max_tokens": max(max_tokens, 400), "temperature": 0.9, "usage": {"include": True}}
+                    # shake10: 33 of 453 Opus lines aired cut off mid-word ("Two ass") at 400 tokens
+                    "max_tokens": max(max_tokens * 4, 1200), "temperature": 0.9, "usage": {"include": True}}
             req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
                                          data=json.dumps(body).encode(), method="POST",
                                          headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=self.timeout * 3) as r:
                 out = json.load(r)
             self.spent += float((out.get("usage") or {}).get("cost") or 0)
-            return ((out.get("choices") or [{}])[0].get("message") or {}).get("content") or ""
+            choice = (out.get("choices") or [{}])[0]
+            text = (choice.get("message") or {}).get("content") or ""
+            if choice.get("finish_reason") == "length":  # the last line stopped mid-word: drop it
+                text = "\n".join(text.rstrip().splitlines()[:-1])
+            return text
         if not shutil.which(self.bin):
             raise RuntimeError(f"{self.bin} not found")
         # The personal subscription: CLAUDE_CONFIG_DIR unset and no API overrides (a parent session may set them).
@@ -1725,7 +1750,7 @@ class Caster:
                         if err:
                             log(f"[{who}] rejected ({err}): {line}")
                             break
-                        kept.append((who, line))
+                        kept.append((who, proper_names(line, names)))
                     if len(kept) > len(lines):
                         lines = kept
                     # one rewrite when the writer slipped into written English early in the exchange; urgent beats

@@ -37,7 +37,7 @@ check("parses spelled numbers", [n for _, n in caster.spelled_numbers("one hundr
 check("rejects the hosts joining the team", caster.check_line("We're one tech behind!", facts, names, []) is not None
       and caster.check_line("Luna needs our help", facts, names, []) is not None)
 check("allows host phrasing", caster.check_line("And here we see Luna, stay with us!", facts, names, []) is None)
-check("reads 3,600 as one number", caster.check_line("Luna made 3,600 plates", dict(facts, made=3607), names, []) is None)
+check("reads 3,600 as one number", caster.check_line("Luna made 3,600 plates.", dict(facts, made=3607), names, []) is None)
 check("rejects a previous-run comparison without pace facts",
       caster.check_line("Last run they were still punching trees!", facts, names, []) is not None
       and caster.check_line("Last run they were slower.", dict(facts, pace={"verdict": "x"}), names, []) is None)
@@ -801,6 +801,17 @@ check("since_last_beat: a new job and new words; then nothing new", "since_last_
       "took a new job: Concrete cell" in f2["agent"]["since_last_beat"] and "said something new" in
       f2["agent"]["since_last_beat"] and f3["agent"]["since_last_beat"] == ["nothing new since the hosts last saw them"],
       str(f2["agent"].get("since_last_beat")))
+
+# HOSTS4: Opus on shake10 aired cut-off lines, verdict openers and lowercase names
+check("a line cut off mid-word is cut", caster.check_line("They scanned before leaving. Two ass", {"event": "lull"}, [],
+                                                           []) == "cut off mid-sentence")
+check("a second verdict opener within eight lines is cut", caster.check_line(
+    "Good timing. Projectile damage helps.", {"event": "lull"}, [], ["Vale: Smart read. Coal keeps boilers burning."])
+      == "style: another verdict opener" and caster.check_line("Good timing. Projectile damage helps.",
+                                                                  {"event": "lull"}, [], []) is None)
+check("names capitalised, the poem left alone", caster.proper_names("Haiku told astra. Astra writes as haiku.",
+                                                                     ["Astra", "Haiku"]) == "Haiku told Astra. Astra writes as haiku.")
+check("the notes say not to grade the last line", "Don't open by grading the last line" in caster.SPOKEN)
 
 # HOSTS3 item 6 (b): speak less. A low-value beat waits for --quiet; filler waits for --lull and something new.
 import threading  # noqa: E402
