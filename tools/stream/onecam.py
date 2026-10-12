@@ -7,8 +7,9 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   there, so viewers never watch a long pan.
 - Earlier cuts only for urgent events: an agent's death, a base loss that is more than one cheap building
   (segments.cheap_loss), and a segment that takes the camera (Space Age launches and landings, spotlight, overview).
-  The replay scene (replays.py) is its own program scene. An attack, or one cheap building lost, far from the subject
-  on air shows as a small inset for its length (`inset_hold`) instead of a cut.
+  The replay scene (replays.py) is its own program scene. One cheap building lost far from the subject on air shows
+  as a small inset for its length (`inset_hold`) instead of a cut; an attack with nothing lost yet is only a toast
+  (near the subject on air, the label says it).
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main. program() is what cuts.py applies:
   which client is on air and which, if any, is the inset.
@@ -154,6 +155,8 @@ class OneCam(Director):
 
     def on_alert(self, attack, by_name, scores, now):
         subject, position, al = attack
+        if al["kind"] == "attack" and not self.near_onair(subject, position, by_name):
+            return  # an attack with nothing lost yet, away from the story: its toast says it (losses inset or cut)
         self.last_alert = now
         self.last_attack_alert = al
         if subject:

@@ -87,21 +87,21 @@ def urgent():
     for k in range(3):
         d.step(snap(team), t + k)
     assert onair_agent(d) == ["luna"]
-    # an attack far away: an inset for 20 s, the story on air stays
+    # an attack far away with nothing lost yet: its toast only, no inset and no cut
     att = {"id": "a1", "kind": "attack", "t": t + 10, "text": "Base under attack near (200, 200): gun turret",
            "position": {"x": 200, "y": 200, "extent": 32}, "key": "area:200,200"}
     d.step(snap(team, [att]), t + 10)
-    pub = d.public(t + 10)
-    assert onair_agent(d) == ["luna"] and pub["inset"]["attack"] == att["text"] and d.program()["inset"], pub
-    assert d.last_attack_cut < t + 10  # no cut: a running segment stays
-    for k in range(11, 31):
-        d.step(snap(team), t + k)
-    assert "inset" not in d.public(t + 31) and d.program()["inset"] is None
-    # one cheap building lost far away: an inset too
+    assert onair_agent(d) == ["luna"] and "inset" not in d.public(t + 10) and d.last_attack_cut < t + 10
+    # one cheap building lost far away: an inset for 20 s, the story on air stays (a running segment too)
     pipe = {"id": "l1", "kind": "loss", "t": t + 80, "text": "1 lost near (200, 200): 1 pipe (by small biters)",
             "position": {"x": 200, "y": 200, "extent": 16}, "key": "loss:200,200"}
     d.step(snap(team, [pipe]), t + 80)
-    assert d.public(t + 80)["inset"]["attack"] == pipe["text"] and onair_agent(d) == ["luna"]
+    pub = d.public(t + 80)
+    assert pub["inset"]["attack"] == pipe["text"] and onair_agent(d) == ["luna"] and d.program()["inset"], pub
+    assert d.last_attack_cut < t + 80
+    for k in range(81, 101):
+        d.step(snap(team), t + k)
+    assert "inset" not in d.public(t + 101) and d.program()["inset"] is None
     # a real loss (after the 45 s alert spacing): framed on the free standby, cut within ready_s
     loss = {"id": "l2", "kind": "loss", "t": t + 130, "text": "26 lost near (-128, 38): 14 transport belt, 7 inserter",
             "position": {"x": -128, "y": 38, "extent": 20}, "key": "loss:-128,38"}
