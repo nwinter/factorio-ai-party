@@ -359,7 +359,7 @@ check("relay: off without the switch file", relay.step(NOW) is None and not h.cm
 open(switch, "w").close()
 rf.ingest([{"id": "s:2", "source": "site", "author": "b", "name": "bo", "text": "astra, build turrets", "t": NOW},
            {"id": "s:3", "source": "site", "author": "c", "name": "cy", "text": "you're doing great ]] end", "t": NOW},
-           {"id": "s:4", "source": "site", "author": "d", "name": "di", "text": "loving the factory", "t": NOW}], [], now=NOW)
+           {"id": "s:4", "source": "site", "author": "d", "name": "di", "text": "loving the factory, but copper is short", "t": NOW}], [], now=NOW)
 sent = relay.step(NOW)
 check("relay: an order to an agent is viewer talk and is relayed (marked order in the lane)",
       sent and sent["id"] == "s:2" and sent["order"] and h.says == [{"name": "bo", "text": "astra, build turrets"}],
@@ -372,7 +372,7 @@ check("relay: next one after the gap, ]] inside the text intact",
       (relay.step(NOW + 31) or {}).get("id") == "s:3" and h.says[-1]["text"] == "you're doing great ]] end", h.says)
 check("relay: lane marks relayed messages", [m.get("relayed") for m in rf.lane()[0]] == [None, True, True, None],
       rf.lane()[0])
-rf.ingest([{"id": "s:5", "source": "site", "author": "c", "name": "cy", "text": "me again, great job", "t": NOW + 40}],
+rf.ingest([{"id": "s:5", "source": "site", "author": "c", "name": "cy", "text": "me again: the copper line looks starved", "t": NOW + 40}],
           [], now=NOW + 40)
 relay.q.popleft()  # s:4 aside: cy's second line is next
 check("relay: one line per viewer per 5 min", relay.step(NOW + 70) is None and len(h.says) == 2
@@ -388,7 +388,7 @@ hv = FakeHarness(muted=["Troll42"])
 rv = V.Relay(hv, switch, gap=0, author_gap=0)
 fv = V.Feed({}, V.Filter(AGENTS), relay=rv)
 rv.step(NOW)  # reads the muted list
-fv.ingest([{"id": "m:1", "source": "site", "author": "t", "name": "troll42", "text": "hi again", "t": NOW}], [], now=NOW)
+fv.ingest([{"id": "m:1", "source": "site", "author": "t", "name": "troll42", "text": "the troll is back with advice on belts", "t": NOW}], [], now=NOW)
 check("relay: a muted viewer is skipped before the game (case-blind), marked muted in the lane",
       not rv.q and fv.lane()[0][0].get("muted") and fv.lane()[1]["dropped"].get("relay:muted") == 1, fv.lane())
 hm = FakeHarness(say={"posted": False, "dropped": "muted", "reason": "spam"})
@@ -448,39 +448,90 @@ CRAIG = [(0.0, "What fresh factorio hell is this??"), (91.1, "Funny, is this ful
          (626.3, "should more on air to next moving player if they stand still too much.")]
 EVENTS = [(dt, "craig", "craigNZ830", text) for dt, text in CRAIG] + [
     (120.0, "ann", "ann", "how do they decide who builds what?"),   # another viewer, astra was just asked
-    (145.0, "bo", "bo", "is grok winning?"),                        # names an agent: no address
-    (290.0, "cy", "cy", "@luna why so slow?")]                      # @-mentions someone: left as written
+    (145.0, "bo", "bo", "is grok winning?"),                        # names an agent without @: "@grok " added
+    (290.0, "cy", "cy", "@luna why so slow?")]                      # @-mentions an agent: as written, to luna
 for ev in sorted(EVENTS):
     viewer(*ev)
 relayed = [r[0] for r in log_q]
-check("craig: 45 s lets line 2 through; line 4 (30 s after line 3) is still dropped by the author gap",
+check("craig: every line but the chatter ('lol, this mental') relayed; chatter takes no author slot",
       [t for _, t in CRAIG if t in relayed] == [t for i, (_, t) in enumerate(CRAIG) if i != 3]
-      and rq.dropped["author_gap"] == 1, (relayed, rq.dropped))
+      and rq.dropped["author_gap"] == 0, (relayed, rq.dropped))
+lol = [m for m in qf.lane()[0] if m["text"] == CRAIG[3][1]][0]
+check("craig: chatter is in the lane, marked, with no delivery", lol["chatter"] and not lol.get("delivery"), lol)
 craig_to = {r[0]: r[1] for r in log_q}
-check("craig: his questions all go to the first agent (asked again within 5 min: same agent)",
-      [craig_to[t] for i, (_, t) in enumerate(CRAIG) if i in (0, 1, 2, 5)] == ["astra"] * 4, craig_to)
-check("craig: lines that are not questions are not addressed", craig_to[CRAIG[4][1]] is None and craig_to[CRAIG[6][1]] is None)
+check("craig: all his lines go to the first agent (again within 5 min: same agent), questions or not",
+      [craig_to[t] for i, (_, t) in enumerate(CRAIG) if i != 3] == ["astra"] * 6, craig_to)
 check("craig: the address is '@name ' before his words, unchanged",
       [r[2] for r in log_q if r[0] == CRAIG[1][1]] == ["@astra Funny, is this fully AI? controlling the players too?"])
 other = {r[0]: (r[1], r[2]) for r in log_q}
 check("rotation: another viewer's question skips astra (asked in the last 5 min) and goes to sol",
       other["how do they decide who builds what?"] == ("sol", "@sol how do they decide who builds what?"), other)
-check("rotation: a question that names an agent, or @-mentions anyone, is relayed as written",
-      other["is grok winning?"] == (None, "is grok winning?") and other["@luna why so slow?"] == (None, "@luna why so slow?"))
-check("lane: an addressed line shows who it went to", [m.get("to") for m in qf.lane()[0] if m["id"] == "ann:120.0"] == ["sol"])
+check("names: an agent named without @ gets one; with @ the line is as written",
+      other["is grok winning?"] == ("grok", "@grok is grok winning?")
+      and other["@luna why so slow?"] == ("luna", "@luna why so slow?"), other)
+check("lane: an addressed line shows who it went to", [(m.get("to"), m.get("delivery")) for m in qf.lane()[0]
+                                                       if m["id"] == "ann:120.0"] == [("sol", "sent")])
 
 r2 = V.Relay(FakeHarness(), switch, roster=[("astra", None), ("sol", "Soul"), ("luna", None)])
 now2 = NOW + 5000
 r2.addressed_to("astra", "x", now2)
-check("rotation: next free agent after the last one addressed", r2.address({"text": "why?"}, "y", now2 + 1) == "sol")
+check("rotation: next free agent after the last one addressed", r2.address({"text": "why?"}, "y", now2 + 1)[0] == ["sol"])
 r2.addressed_to("sol", "y", now2 + 1)
 r2.addressed_to("luna", "z", now2 + 2)
 check("rotation: all asked in the last 5 min -> the one asked longest ago",
-      r2.address({"text": "why?"}, "w", now2 + 3) == "astra")
+      r2.address({"text": "why?"}, "w", now2 + 3)[0] == ["astra"])
 check("rotation: after 5 min the viewer's agent is free again and the order continues",
-      r2.address({"text": "why?"}, "x", now2 + 400) == "astra")
+      r2.address({"text": "why?"}, "x", now2 + 400)[0] == ["astra"])
 check("names: display names and pog- names count as naming an agent",
-      not r2.address({"text": "is soul ok?"}, "v", now2) and not r2.address({"text": "what is pog-luna doing?"}, "v", now2))
+      r2.address({"text": "is soul ok?"}, "v", now2) == (["sol"], ["sol"])
+      and r2.address({"text": "what is pog-luna doing?"}, "v", now2) == (["luna"], ["luna"]))
+
+# shift01 16:31-16:39 (relay2): agents named without "@", advice to nobody, "All agents", chatter
+r3 = V.Relay(FakeHarness(), switch, roster=SHIFT01[:7] + [("gemini", "Gemini"), ("muse", None)])
+cases = {
+    "Gemini, you need to just focus on defence! Biters are attacking": (["gemini"], ["gemini"]),
+    "Sol, you are standing next to a long row of pipes": (["sol"], ["sol"]),
+    "Astra you you need to clear that line of ore": (["astra"], ["astra"]),
+    "@sol and Luna: power is low": (["sol", "luna"], ["luna"]),
+    "astra sol luna all of you": (["astra", "sol"], ["astra", "sol"]),     # at most two
+    "write a haiku about belts": (["astra"], ["astra"]),                     # "a haiku" is a word: rotation
+}
+for text, want in cases.items():
+    r3.asked.clear(); r3.addressed.clear(); r3.rr = 0
+    check(f"address: {text!r}", r3.address({"text": text}, "v", NOW) == want, r3.address({"text": text}, "v", NOW))
+for text in ["Your problem is that you place two gun turrets instead of eight", "Instead of focusing on a neat wall, "
+             "build more turrets", "All agents, always put walls around each gun turret", "everyone build trains"]:
+    r3.asked.clear(); r3.addressed.clear(); r3.rr = 0
+    check(f"address (nobody named: one agent in rotation): {text!r}", r3.address({"text": text}, "v", NOW) == (
+        ["astra"], ["astra"]))
+r3.asked.clear(); r3.addressed.clear(); r3.rr = 0
+check("address: the channel's staff, a line to a viewer (@someone) or to Nick wake nobody",
+      r3.address({"text": "Good idea. Let me hook the operator agent up", "staff": "owner"}, "n", NOW) == ([], [])
+      and r3.address({"text": "@craig the map is at the site"}, "v", NOW) == ([], [])
+      and r3.address({"text": "this is great stuff nick"}, "v", NOW) == ([], []))
+check("address: staff naming an agent still wakes it",
+      r3.address({"text": "Sol, nice pipes", "staff": "owner"}, "n", NOW) == (["sol"], ["sol"]))
+for t in ["lol", "lmao", "its crazy but fun", "love this stream", "wow nice", "so cool guys", "this is mental",
+          "gg", "haha :yt:"]:
+    check(f"chatter: {t!r}", V.is_chatter(t))
+for t in ["All agents, always put walls around each gun turret", "is grok winning?", "nice turret wall astra",
+          "build more solar", "why so slow?", "Instead of focusing on a neat wall, build more turrets"]:
+    check(f"not chatter: {t!r}", not V.is_chatter(t))
+hz = FakeHarness()
+rz = V.Relay(hz, switch, gap=0, author_gap=45, roster=SHIFT01)
+fz = V.Feed({}, V.Filter(AGENTS), relay=rz)
+fz.ingest([{"id": "z1", "source": "youtube", "author": "c", "name": "craig", "text": "lol", "t": NOW}], [], now=NOW)
+rz.step(NOW)
+fz.ingest([{"id": "z2", "source": "youtube", "author": "c", "name": "craig",
+            "text": "All agents, always put walls around each gun turret", "t": NOW + 60}], [], now=NOW + 60)
+rz.step(NOW + 60)
+fz.ingest([{"id": "z3", "source": "youtube", "author": "c", "name": "craig", "text": "and use more walls on the east",
+            "t": NOW + 80}], [], now=NOW + 80)
+rz.step(NOW + 80)
+dl = {m["id"]: (m.get("delivery"), m.get("to")) for m in fz.lane()[0]}
+check("delivery: chatter none, then sent to one agent, then 'too soon' inside the author gap",
+      dl == {"z1": (None, None), "z2": ("sent", "astra"), "z3": ("too_soon", None)}
+      and hz.says == [{"name": "craig", "text": "@astra All agents, always put walls around each gun turret"}], (dl, hz.says))
 check("relay: the address fits inside the 120-character line",
       len(V.Relay.line({"name": "x", "text": "why " * 60 + "?"}, "gemini")["text"]) == V.RELAY_MAX)
 os.remove(switch)
@@ -501,7 +552,7 @@ ai = FakeAI({"v0": {"choice": "fine"}, "v1": {"probabilities": {"fine": 0.1, "ab
 open(switch, "w").close()
 cr = V.Relay(FakeHarness(), switch)
 cf = V.Feed({}, V.Filter(AGENTS), V.Clef(ai), relay=cr)
-cf.ingest([{"id": "a", "source": "site", "author": "a", "name": "ann", "text": "lovely base", "t": NOW},
+cf.ingest([{"id": "a", "source": "site", "author": "a", "name": "ann", "text": "the base needs more copper", "t": NOW},
            {"id": "b", "source": "site", "author": "b", "name": "bo", "text": "you all stink", "t": NOW}], [], now=NOW)
 check("clef: abuse dropped, fine kept and relayable", [m["id"] for m in cf.lane()[0]] == ["a"]
       and [m["checked"] for m in cf.lane()[0]] == ["clef"] and [m["id"] for m, _ in cr.q] == ["a"], cf.lane())

@@ -449,6 +449,10 @@ body:not(.portrait) #prod, body:not(.portrait) #board, body:not(.portrait) #spac
 .msg.viewer .from { color: #9cc8ff; }
 .msg.viewer .from.staff { color: var(--fx-yellow); }
 .msg .tag.vtag { background: rgba(var(--fx-blue-rgb), 0.9); color: var(--fx-text-dark); }
+/* what became of a viewer's line in the game (chatfeed.js deliveryLabel): "→ Astra" in green, "not sent: ..." dimmed */
+.msg .dlv { flex: none; font-size: 13px; font-weight: 700; color: #8fdc8f; white-space: nowrap; }
+.msg .dlv.no { color: #b0a08a; font-weight: 600; font-style: italic; }
+.msg .dlv:empty { display: none; }
 
 /* pinned viewer lines and Q&A pairs, above the feed for 25 s (static/chatfeed.js viewerPins), newest first */
 #chat-pins { flex: none; display: flex; flex-direction: column; gap: 6px; }

@@ -139,6 +139,18 @@ def main():
     copy = dict(answer, agent=None, viewer=True, lane="viewer", text="Craig: hi")
     assert pins(T0 + 90, [as_tell, copy], viewers) == []
 
+    # delivery on each viewer line (viewers.py Relay: delivery, to, to_all), display names from the snapshot
+    agents = [{"name": "astra", "display_name": "Astra"}, {"name": "sol", "display_name": "Soul"}]
+    lab = lambda v: js("c.deliveryLabel(d[0], d[1])", [v, agents])  # noqa: E731
+    assert lab({"delivery": "sent", "relayed": True, "to": "astra", "to_all": ["astra"]}) == "→ Astra"
+    assert lab({"delivery": "sent", "relayed": True, "to": "astra", "to_all": ["astra", "sol"]}) == "→ Astra, Soul"
+    assert lab({"delivery": "sent", "relayed": True}) == "→ team"
+    assert lab({"delivery": "too_soon"}) == "not sent: too soon"
+    assert lab({"delivery": "busy"}) == "not sent: chat busy"
+    assert lab({"chatter": True}) == "" and lab({}) == ""
+    ov = open(os.path.join(STATIC, "overlay.js")).read()
+    assert ov.count("showDelivery(") >= 3, "feed and pins show delivery"  # definition + feed + pins
+
     # both pages: the pin box above the feed, chatfeed.js before overlay.js; overlay.js takes pinned lines out of the feed
     for page in ("index.html", "portrait.html"):
         html = open(os.path.join(STATIC, page)).read()

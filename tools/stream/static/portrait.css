@@ -59,6 +59,7 @@ html body.portrait #chat-pins { gap: 10px; }
 html body.portrait .pin { padding: 8px 12px 10px; gap: 6px; }
 html body.portrait .pin .msg.answer { margin-left: 30px; }
 html body.portrait .msg .obadge { width: 46px; font-size: 15px; line-height: 24px; }
+html body.portrait .msg .dlv { font-size: 17px; }
 html body.portrait .msg .vbadge { width: 46px; font-size: 15px; line-height: 24px; }
 /* tells: the same direct line, a size under the conversation */
 html body.portrait .msg.tell { margin-left: 26px; }

@@ -154,6 +154,26 @@ QUESTION = re.compile(
     r"anybody|someone|somebody|everyone|all|agents?|ais?|bots?|hosts?|these|those|y'?all|ya|my|your|their)\b")
 
 
+# Chatter: reactions and praise without content ("lol", "its crazy but fun", "love this stream"). Shown and answerable by
+# the hosts, never relayed, so it does not use the viewer's relay slot (shift01 16:39: "All agents, always put walls
+# around each gun turret" dropped a minute after the same viewer's "lol").
+CHATTER_WORDS = set("""lol lmao lmfao rofl haha hahaha hehe xd xdd omg wow woah whoa nice cool gg ggs pog poggers based
+lit fire love loving loved like great amazing awesome good fun funny crazy wild insane epic sick neat beautiful gorgeous
+cute hype yay yes yeah yep nah nope no ok okay wtf damn dang bro bruh dude guys team agents ais ai bots bot this that
+these is its it's it was so very really but and the a an such stream streams game factory work job keep up go going
+what fresh hell ty thx thanks thank you hi hello hey welcome mental weird wholesome lovely brilliant incredible
+legendary goated chef's kiss best ever all of them doing well done here we oh ah wait for me i'm im just watching
+""".split())
+
+
+def is_chatter(text):
+    """A reaction or praise without content: no question, and nothing but reaction words (or at most two words)."""
+    if is_question(text):
+        return False
+    words = re.findall(r"[a-z']+", fold(re.sub(r":[\w-]+:", " ", text), leet=False))
+    return len(words) <= 2 or all(w in CHATTER_WORDS for w in words)
+
+
 def is_question(text):
     """A question mark anywhere, or a line that opens like a question ("how do they", "are you", not "should more")."""
     t = fold(text, leet=False)
@@ -737,9 +757,34 @@ class Relay:
     @staticmethod
     def line(msg, to=None):
         """viewer_say takes only name and text, and the harness wakes a sleeping agent for a viewer line only when it
-        says @name (board.lua mention_how): an addressed question gets "@name " in front, the viewer's words unchanged."""
-        prefix = f"@{to} " if to else ""
+        says @name (board.lua mention_how): each agent to wake that the line does not already @-mention gets "@name "
+        in front, the viewer's words unchanged. `to`: a name or a list of names."""
+        names = [to] if isinstance(to, str) else list(to or [])
+        prefix = "".join(f"@{n} " for n in names)
         return {"name": msg["name"], "text": prefix + cap(msg["text"], RELAY_MAX - len(prefix))}
+
+    def named_agents(self, text):
+        """[(agent name, already @-mentioned?)] for the agents a line names, by name, pog- name or display name, word
+        bounded, any case, in order of appearance, at most two ("Gemini, you need to...", "sol"; shift01 16:31-16:34:
+        named without "@", they were never woken). "a haiku", "the muse" are words, not names."""
+        t = text.casefold()
+        hits = []
+        for n, d in self.roster:
+            best = None
+            for alias in {n.casefold(), re.sub(r"^pog-", "", n.casefold()), (d or "").casefold()}:
+                if len(alias) < 2:
+                    continue
+                for m in re.finditer(r"(?<![\w-])(@?)(pog-)?" + re.escape(alias) + r"(?![\w-])", t):
+                    if not m.group(1) and re.search(r"\b(a|an|the|my|your|this|that)\s+$", t[:m.start()]):
+                        continue
+                    if best is None or m.start() < best[0]:
+                        best = (m.start(), bool(m.group(1)))
+            if best:
+                hits.append((best[0], n, best[1]))
+        return [(n, at) for _, n, at in sorted(hits)[:2]]
+
+    def names_agent(self, text):
+        return bool(self.named_agents(text))
 
     def set_roster(self, roster):
         """[(name, display_name)] in team order; serve.py refreshes it from the snapshot (display names, offline)."""
@@ -756,11 +801,25 @@ class Relay:
         return False
 
     def address(self, msg, author, now):
-        """The agent a question that names no agent goes to (None otherwise): the same agent as this viewer's last
-        question within 5 minutes, else the next agent in team order not addressed by a viewer in the last 5 minutes
-        (all of them were: the one addressed longest ago)."""
+        """(agents the line goes to, agents to put "@" before). A line that names agents goes to them (at most two;
+        "@" added where the viewer left it out). Any other line, advice, feedback or a question, and "all agents",
+        "everyone", "team" too, goes to one agent: the same agent as this viewer's last line within 5 minutes, else
+        the next agent in team order not addressed by a viewer in the last 5 minutes (all of them were: the one
+        addressed longest ago). The harness has no team-wide viewer mention (a viewer's "@everyone" wakes nobody),
+        and waking all nine for one line would stop the team."""
+        named = self.named_agents(msg["text"])
+        if named:
+            return [n for n, _ in named], [n for n, at in named if not at]
+        # the channel's staff answering viewers ("Sure, will add"), and lines to a viewer (@someone) or to Nick ("this is
+        # great stuff nick"), are not for an agent: delivered as written, waking nobody
+        if msg.get("staff") or re.search(r"@\w", msg["text"]) or re.search(r"\bnick\b", msg["text"], re.I):
+            return [], []
+        one = self.rotate(author, now)
+        return ([one], [one]) if one else ([], [])
+
+    def rotate(self, author, now):
         names = [n for n, _ in self.roster]
-        if not names or not is_question(msg["text"]) or self.names_agent(msg["text"]):
+        if not names:
             return None
         prev = self.asked.get(author)
         if prev and now - prev[1] < self.ASK_WINDOW and prev[0] in names:
@@ -808,15 +867,19 @@ class Relay:
             if m["name"].casefold() in self.muted:
                 m["muted"] = True
                 self.dropped["muted"] += 1
+            else:
+                m["delivery"] = "busy"  # waited past max_age behind other viewers' lines
+                self.dropped["stale"] += 1
         if not self.q or now - self.last < self.gap or now < self.hold:
             return None
         msg, author = self.q.popleft()
         if now - self.by_author.get(author, -1e9) < self.author_gap:
             self.dropped["author_gap"] += 1
+            msg["delivery"] = "too_soon"
             return None
-        to = self.address(msg, author, now)
+        to, wake = self.address(msg, author, now)
         try:
-            res = self.dispatch(self.fn, self.line(msg, to))
+            res = self.dispatch(self.fn, self.line(msg, wake))
         except Exception as e:
             self.state, self.error = "error", f"{type(e).__name__}: {e}"[:200]
             return None
@@ -846,9 +909,12 @@ class Relay:
         self.last, self.by_author[author] = now, now
         self.sent += 1
         msg["relayed"] = True
+        msg["delivery"] = "sent"
         if to:
-            self.addressed_to(to, author, now)
-            msg["to"] = to
+            for n in to:
+                self.addressed_to(n, author, now)
+            self.asked[author] = (to[0], now)
+            msg["to"], msg["to_all"] = to[0], to
         return msg
 
 
@@ -919,7 +985,11 @@ class Feed:
                 # Orders to the agents ("astra, build turrets") are viewer talk too; what breaks the rules is dropped
                 # above. Only a Clef verdict opens the relay when Clef is configured.
                 relay_ok = self.clf is None or checked == "clef"
-                if self.relay and relay_ok:
+                v["chatter"] = is_chatter(v["text"])
+                if self.relay and relay_ok and v["chatter"]:
+                    if self.relay.on():
+                        self.dropped["relay:chatter"] += 1  # shown, never relayed, and the viewer keeps their slot
+                elif self.relay and relay_ok:
                     self.relay.offer(v, author)
                 elif self.relay and self.relay.on():
                     self.dropped["relay:unchecked"] += 1

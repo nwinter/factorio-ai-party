@@ -439,6 +439,13 @@
     row.append(el("div", "obadge", "OP"), content);
     return row;
   }
+  // what became of a viewer's line in the game (static/chatfeed.js deliveryLabel): "→ Astra", "not sent: too soon"
+  function showDelivery(span, v, s) {
+    if (!span || !window.pogChat || !window.pogChat.deliveryLabel) return;
+    const d = window.pogChat.deliveryLabel(v, s.agents);
+    setText(span, d);
+    span.className = "dlv" + (d.startsWith("not sent") ? " no" : "");
+  }
   function renderPins(s, pins) {
     const box = $("chat-pins");
     if (!box) return;
@@ -458,8 +465,9 @@
           const q = el("div", "msg viewer q");
           const qc = el("div", "content");
           const qm = el("div", "meta");
+          node._dlv = el("span", "dlv");
           qm.append(el("span", "from" + (p.v.staff ? " staff" : ""), p.v.name || "viewer"),
-            el("span", "tag vtag", p.kind === "qa" ? "viewer asked" : "viewer"));
+            el("span", "tag vtag", p.kind === "qa" ? "viewer asked" : "viewer"), node._dlv);
           qc.append(qm, el("div", "text", p.v.text || ""));
           q.append(el("div", "vbadge" + (p.v.source === "site" ? " site" : ""), p.v.source === "site" ? "SITE" : "YT"), qc);
           node.append(q);
@@ -478,6 +486,7 @@
         }
         pinned.set(p.key, node);
       }
+      if (p.v) showDelivery(node._dlv, p.v, s);
       if (prev ? prev.nextElementSibling !== node : box.firstElementChild !== node) {
         if (prev) prev.after(node); else box.prepend(node);
       }
@@ -546,9 +555,8 @@
         const meta = el("div", "meta");
         node._from = el("span", "from" + (v.staff ? " staff" : ""), v.name || "viewer");
         node._when = el("span", "when");
-        meta.append(node._from, el("span", "tag vtag", "viewer"));
-        if (v.order) meta.append(el("span", "tag", "to the agents"));
-        meta.append(node._when);
+        node._dlv = el("span", "dlv");  // delivery: "→ Astra", "→ team", "not sent: too soon" (updated every render)
+        meta.append(node._from, el("span", "tag vtag", "viewer"), node._dlv, node._when);
         content.append(meta, el("div", "text", v.text || ""));
         node.append(el("div", "vbadge" + (v.source === "site" ? " site" : ""), v.source === "site" ? "SITE" : "YT"), content);
         shown.set(key, node);
@@ -574,6 +582,7 @@
         if (ag) { applyPalette(node, ag); fillAvatar(node._av, ag, "sm"); }
         setText(node._from, ag ? ag.display_name : m.from);
       }
+      if (v) showDelivery(node._dlv, v, s);
       // time order: a viewer line can land between two agent lines
       if (prev ? prev.nextElementSibling !== node : list.firstElementChild !== node) {
         if (prev) prev.after(node); else list.prepend(node);
