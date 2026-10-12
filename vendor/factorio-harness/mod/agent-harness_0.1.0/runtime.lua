@@ -1823,7 +1823,7 @@ local function build_direct(p,stack,pos,direction,quality,kind)
     end
   end
   local ghost=surface.find_entities_filtered{position=pos,radius=0.1,ghost_name=proto.name,force=p.force,limit=1}[1]
-  local e
+  local e,replaced
   if ghost then
     local _,revived=ghost.revive{raise_revive=true}
     e=revived
@@ -1832,7 +1832,10 @@ local function build_direct(p,stack,pos,direction,quality,kind)
     assert(surface.can_place_entity(args),placement_error(p,proto,pos,direction))
     -- The manual check allows a fast-replace, which create_entity without
     -- fast_replace does not do: both machines stayed on the tiles (shake5:
-    -- assembling-machine-2 over -1, the old one kept running). Refuse instead.
+    -- assembling-machine-2 over -1, the old one kept running; request #68).
+    -- A machine of the same group on the same centre is replaced as a
+    -- player's build does: the old one (and its contents) into the
+    -- inventory, its recipe set on the new one. Any other overlap is refused.
     local group=proto.fast_replaceable_group
     if group then
       local cb=proto.collision_box or {left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
@@ -1840,8 +1843,22 @@ local function build_direct(p,stack,pos,direction,quality,kind)
       if direction==4 or direction==12 then l,t,r,btm=-btm,l,-t,r end
       for _,o in pairs(surface.find_entities_filtered{area={left_top={x=pos.x+l,y=pos.y+t},right_bottom={x=pos.x+r,y=pos.y+btm}},force=p.force}) do
         if o.valid and o.type~='entity-ghost' and o.prototype and o.prototype.fast_replaceable_group==group then
-          error(string.format('placement blocked by %s (%g,%g) already on these tiles: building over it would leave both; mine it first (mine at its position), then build (its recipe and contents do not carry over)',
-            o.name,o.position.x,o.position.y),0)
+          local ob=o.prototype.collision_box
+          local same=math.abs(o.position.x-pos.x)<0.01 and math.abs(o.position.y-pos.y)<0.01 and ob
+            and math.abs((ob.right_bottom.x-ob.left_top.x)-(cb.right_bottom.x-cb.left_top.x))<0.01
+            and math.abs((ob.right_bottom.y-ob.left_top.y)-(cb.right_bottom.y-cb.left_top.y))<0.01
+          if not same then
+            error(string.format('placement blocked by %s (%g,%g) already on these tiles, not on the same centre: mine it first (mine at its position), then build',
+              o.name,o.position.x,o.position.y),0)
+          end
+          assert(o.name~=proto.name,'target already contains this entity')
+          local ok,recipe,rq=pcall(function() if o.get_recipe then return o.get_recipe() end end)
+          local old={name=o.name,recipe=ok and recipe and recipe.name or nil,recipe_quality=ok and rq and rq.name or nil}
+          local mined=o.mine{inventory=p.get_main_inventory(),raise_destroyed=true}
+          assert(mined and not o.valid,string.format('cannot replace %s (%g,%g): your inventory has no room for it and its contents; free some slots, then build again',
+            old.name,pos.x,pos.y))
+          replaced=old
+          break
         end
       end
     end
@@ -1851,7 +1868,12 @@ local function build_direct(p,stack,pos,direction,quality,kind)
   end
   assert(e,placement_error(p,proto,pos,direction))
   if stack.count>1 then stack.count=stack.count-1 else stack.clear() end
-  return e,picked
+  -- The replaced machine's recipe goes on the new one when it can make it.
+  if replaced and replaced.recipe and e.set_recipe then
+    local ok=pcall(e.set_recipe,replaced.recipe,replaced.recipe_quality)
+    replaced.recipe_kept=ok or nil
+  end
+  return e,picked,replaced
 end
 local function build_reach(p,pos,what)
   assert_visible(p,pos,what)
@@ -1932,9 +1954,9 @@ local function build_one(p,a)
   -- Undergrounds are always placed directly with an explicit end: cursor
   -- building does not reliably make the exit of a pair from script.
   if direct then
-    local e,picked=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type)
+    local e,picked,replaced=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type)
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
-    return {consumed=1,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked}
+    return {consumed=1,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced}
   end
   local function held()
     local n=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'}

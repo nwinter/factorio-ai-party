@@ -161,20 +161,56 @@ local placed=bot('build',{item='stone-furnace',position={x=3,y=0}})
 eq(placed.consumed,1); eq(placed.picked_up['iron-plate'],3); eq(c.items['iron-plate'],plates+3); eq(dropped.valid,false)
 surface.find_entities_filtered=function() return {} end
 surface.can_place_entity=function() return true end
--- A machine over one of its fast-replace group passes the manual check, but the
--- build would leave both (shake5: assembling-machine-2 over -1): refused, naming it.
+-- A machine over one of its fast-replace group passes the manual check, and
+-- create_entity alone would leave both (shake5, request #68: assembling-
+-- machine-2 over -1). On the same centre it is replaced as a player's build
+-- does: the old machine and its contents into the inventory, its recipe set
+-- on the new one. Not on the same centre, or no room for it: refused.
 ;(function()
-  local old={valid=true,type='assembling-machine',name='assembling-machine-1',position={x=3.5,y=0.5},force=force,prototype={fast_replaceable_group='assembling-machine'}}
-  surface.find_entities_filtered=function(a) if a.area and a.force then return {old} end return {} end
+  local box={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
+  local function machine()
+    local m={valid=true,type='assembling-machine',name='assembling-machine-1',position={x=3.5,y=0.5},force=force,
+      prototype={fast_replaceable_group='assembling-machine',collision_box=box}}
+    m.get_recipe=function() return {name='iron-gear-wheel'},{name='normal'} end
+    m.mine=function(args)
+      if args.inventory.full then return false end
+      m.valid=false; c.items['assembling-machine-1']=(c.items['assembling-machine-1'] or 0)+1; return true
+    end
+    return m
+  end
+  local old=machine()
+  surface.find_entities_filtered=function(a) if a.area and a.force and old.valid then return {old} end return {} end
+  local make=surface.create_entity
+  local recipes={}
+  surface.create_entity=function(args)
+    local e=make(args)
+    e.set_recipe=function(r,q) recipes[#recipes+1]={r,q} end
+    return e
+  end
   c.items['assembling-machine-2']=1
+  local r=bot('build',{item='assembling-machine-2',position={x=3.5,y=0.5}})
+  eq(r.consumed,1); eq(r.entity.name,'assembling-machine-2'); eq(old.valid,false)
+  eq(r.replaced.name,'assembling-machine-1'); eq(r.replaced.recipe,'iron-gear-wheel'); eq(r.replaced.recipe_kept,true)
+  eq(recipes[1][1],'iron-gear-wheel'); eq(recipes[1][2],'normal')
+  eq(c.items['assembling-machine-1'],1); eq(c.items['assembling-machine-2'],0)
+  -- No room in the inventory for the old machine: refused, nothing changes.
+  old=machine(); c.items['assembling-machine-2']=1
+  local main=c.get_main_inventory(); main.full=true
   local made=#created
   local ok2,err2=pcall(bot,'build',{item='assembling-machine-2',position={x=3.5,y=0.5}})
-  assert(not ok2 and err2:find('placement blocked by assembling-machine-1 (3.5,0.5) already on these tiles: building over it would leave both; mine it first',1,true),err2)
-  eq(c.items['assembling-machine-2'],1); eq(#created,made)
+  assert(not ok2 and err2:find('cannot replace assembling-machine-1 (3.5,0.5): your inventory has no room',1,true),err2)
+  eq(old.valid,true); eq(#created,made); eq(c.items['assembling-machine-2'],1)
+  main.full=nil
+  -- Overlapping but not on the same centre: refused, naming it.
+  old=machine(); old.position={x=4.5,y=0.5}
+  ok2,err2=pcall(bot,'build',{item='assembling-machine-2',position={x=3.5,y=0.5}})
+  assert(not ok2 and err2:find('placement blocked by assembling-machine-1 (4.5,0.5) already on these tiles, not on the same centre',1,true),err2)
+  eq(old.valid,true)
   -- A stone furnace (another group) is not refused by it.
   c.items['stone-furnace']=1
   eq(bot('build',{item='stone-furnace',position={x=3,y=0}}).consumed,1)
   c.items['assembling-machine-2']=0
+  surface.create_entity=make
   surface.find_entities_filtered=function() return {} end
 end)()
 -- The bot's own character the only thing on the footprint (shake3: Grok's most
