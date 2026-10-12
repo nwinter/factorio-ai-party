@@ -22,7 +22,7 @@ sys.dont_write_bytecode = True
 
 from analyst_board import AnalystBoard  # noqa: E402
 from director import Director  # noqa: E402
-from onecam import OneCam, onair_info  # noqa: E402
+from onecam import OneCam, onair_doing, onair_info  # noqa: E402
 from segments import Segments  # noqa: E402
 from replays import Replays  # noqa: E402
 from model import Model  # noqa: E402
@@ -318,6 +318,8 @@ def main():
                     help="onecam: one camera on air, the other clients on standby, cut in OBS (onecam.py, cuts.py); "
                          "3cam: main + two side cameras (default: the run config's camera_mode, else onecam)")
     ap.add_argument("--no-cuts", action="store_true", help="onecam: decide on-air cuts but never touch OBS")
+    ap.add_argument("--trio", action="store_true", help="onecam: the three-tile layout whenever three agents can fill "
+                                                         "it, held (mock screenshots of it)")
     ap.add_argument("--log-dir", default=os.path.join(HERE, "logs"))
     import viewers
     viewers.add_args(ap.add_argument_group("viewer chat (tools/stream/viewers.py; snapshot lane `viewers`)"),
@@ -351,7 +353,10 @@ def main():
     if mode == "onecam":
         import cuts as cuts_mod
         lay = json.load(open(cuts_mod.LAYOUT))
-        director = OneCam(slots, camera, log_path, **dict({"view_frac": cuts_mod.view_frac(lay)}, **(run.get("director") or {})))
+        frac = {"view_frac": cuts_mod.view_frac(lay), "trio_frac": cuts_mod.view_frac(json.load(open(cuts_mod.TRIO)))}
+        if a.trio:
+            frac.update(trio_force=True)
+        director = OneCam(slots, camera, log_path, **dict(frac, **(run.get("director") or {})))
         if not a.mock and not a.no_cuts and run.get("cuts", True) is not False:
             from obsws import OBS
             host, _, port = a.obs.partition(":")
@@ -403,6 +408,10 @@ def main():
                 with lock:
                     snap = model.snapshot(now, cams)
                 snap["segment"] = segments.step(snap, now)
+                if mode == "onecam":  # no layout change while a replay is (about to be) on air
+                    cur = segments.cur
+                    director.hold_layout = bool(replays and replays.playing) or bool(
+                        cur and cur["type"] == "attack_replay" and cur["state"] in ("starting", "live"))
                 cams = director.step(snap, now, segments.camera())
                 if director.last_attack_cut == now:  # main just cut to a fight or death: the segment gives way
                     segments.attack_cut(now)
@@ -418,6 +427,10 @@ def main():
                 snap["cameras"] = cams
                 if mode == "onecam":
                     snap["onair"] = onair_info(snap, cams)  # who viewers watch: the label, the hosts' beats
+                    snap["onair"]["layout"] = director.layout_info()  # one camera or three tiles (the hosts, the page)
+                    for row in cams.values():  # each tile's label: "Luna · fixing the north wall"
+                        if len(row.get("agents") or []) == 1:
+                            row["doing"] = onair_doing(snap, row["agents"][0])
                     snap["program"] = director.program()
                     if cuts:
                         cuts.set(snap["program"])

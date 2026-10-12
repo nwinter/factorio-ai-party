@@ -14,13 +14,23 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   the label says it). "Inside the frame" is the client's view at its zoom after the on-air crop (director.in_frame);
   shift01 counted 60 tiles from the subject as on air, so a fight 35 tiles north of Sol got neither a cut nor an
   inset and its replay showed Sol in the base.
+- Trio (operator task 2026-10-12, after Nick liked the old one-big-two-small layout because each tile said who was
+  doing what): sometimes the program shows all three clients, the one on air in a big tile and the two standbys in
+  small tiles (layout-3cam.json's holes), each labelled with its agent and what it does. The director picks it when
+  two other agents do notable things far apart from the story on air at once (`trio_ratio`, `trio_apart`), or as a
+  periodic "around the base" check-in (`trio_every`); it lasts `trio_hold` (within trio_min..trio_max) and then
+  it is one camera again, with the same client on air (no cut). No flicker: at least `trio_gap` of one camera before
+  a trio; never while a replay is on air (hold_layout, set by serve.py) or an urgent or segment shot holds the
+  camera; the small tiles are framed off air first (like a cut) and the layout switches once both are there. An
+  urgent alert or a segment that takes the camera ends a trio at once (one story for it).
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
-  model.py, replays.py, the casters and push_live keep reading cameras.main. program() is what cuts.py applies:
-  which client is on air and which, if any, is the inset.
+  model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
+  small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
+  ("onecam" or "trio") and, in a trio, which client is in which hole.
 """
 import json, time
 
-from director import Director, HOLDS, frame_of, in_frame
+from director import Director, HOLDS, dist, frame_of, in_frame
 from segments import CHEAP, LOSS_RE
 
 MINOR = CHEAP + ("wall", "chest", "gate")  # a loss of at most MINOR_MAX of these is an inset, not a cut
@@ -46,6 +56,20 @@ ONECAM = {
     "resume_min": 30.0,     # back from an urgent shot, the story it interrupted holds at least this much longer
     "view_frac": 1.0,       # share of the client's width the on-air hole shows (serve.py: from layout.json's crop)
     "work_cut": False,      # work away from the body was a side camera's shot; no side cameras now
+    "trio": True,           # sometimes one big tile and two small ones (module doc)
+    "trio_hold": 90.0,      # a trio lasts this long ...
+    "trio_min": 60.0,       # ... kept within these bounds (run config may set trio_hold)
+    "trio_max": 120.0,
+    # simulate.py --cams onecam (mock9, 2 h): ratio 0.6 and gap 300 s made a trio every ~6.5 min (a quarter of the
+    # airtime); 0.9 and 480 s, one about every 10 min (~13%), with one camera the default
+    "trio_gap": 480.0,      # at least this long on one camera before a trio (and after the start)
+    "trio_every": 900.0,    # a check-in trio after this long without one, if two other agents are worth a tile
+    "trio_ratio": 0.9,      # busy: two other agents each score at least this share of the subject on air ...
+    "trio_apart": 40.0,     # ... and are this many tiles from it and from each other (distinct things)
+    "trio_near": 20.0,      # a check-in needs its agents at least this far apart (else the tiles show one spot)
+    "trio_zoom": 1.3,       # the small tiles are framed this much closer
+    "trio_frac": 1.0,       # the big tile's share of a client's width (layout-3cam.json main is 16:9: no crop)
+    "trio_force": False,    # mock screenshots: a trio whenever three agents can fill it, held
 }
 
 
@@ -90,6 +114,13 @@ class OneCam(Director):
         self.resume = None     # {"subject", "since"}: the story an urgent shot interrupted, taken up again after it
         self.last_loss = None  # {"t", "position"} of the last loss that cut
         self.cuts = []       # (t, slot, reason)
+        self.mode = "onecam"   # or "trio"
+        self.mode_since = None  # None: since the start (self.started)
+        self.trio = None       # {"tiles": {"cam2": client slot, "cam3": ...}, "agents", "why", "until"} while on
+        self.trio_pending = None  # the same while its small tiles are being framed
+        self.last_trio = -1e9  # when the last trio ended
+        self.hold_layout = False  # serve.py: a replay is on air; no layout change now
+        self.layouts = []      # (t, mode, why)
 
     # -- clients ----------------------------------------------------------------------------------------------
     def slot(self, name):
@@ -107,7 +138,13 @@ class OneCam(Director):
         return sb[0] if sb else None
 
     def program(self):
-        return {"onair": self.onair, "inset": self.inset and self.inset["slot"]}
+        out = {"onair": self.onair, "inset": self.inset and self.inset["slot"], "layout": self.mode}
+        if self.trio:
+            out["tiles"] = dict(self.trio["tiles"], main=self.onair)
+        return out
+
+    def onair_frac(self):
+        return self.cfg["trio_frac"] if self.mode == "trio" else self.cfg["view_frac"]
 
     def cut(self, slot, reason, now):
         if slot == self.onair:
@@ -135,6 +172,8 @@ class OneCam(Director):
     def urgent(self, target, reason, scores, now):
         """Frame on a standby, cut once it is there (step); with one client, take the on-air one. The story on air is
         remembered and taken up again when the urgent shot is over (direct)."""
+        self.leave_trio(reason, now)
+        self.trio_pending = None
         cur = self.state.get(self.onair)
         if cur and cur.get("subject") in scores and not self.pending:
             self.resume = {"subject": cur["subject"], "since": self.onair_since}
@@ -169,7 +208,7 @@ class OneCam(Director):
             return False
         if subject and subject in (cur.get("agents") or []):
             return True
-        return bool(position) and in_frame(frame_of(cur, self.cfg["view_frac"]), position, by_name,
+        return bool(position) and in_frame(frame_of(cur, self.onair_frac()), position, by_name,
                                            self.cfg["onair_edge"])
 
     def on_alert(self, attack, by_name, scores, now):
@@ -193,6 +232,8 @@ class OneCam(Director):
         big = al["kind"] == "death" or (al["kind"] == "loss" and not minor_loss(al["text"]))
         if big and al["kind"] == "loss" and self.last_loss and now - self.last_loss["t"] < self.cfg["loss_recut"]:
             big = False  # viewers saw a loss a moment ago: an inset keeps the story on air
+        if self.mode == "trio" and not big and not self.near_onair(subject, position, by_name):
+            return  # no inset over the tiles: its toast says it (a big one ends the trio in urgent())
         cur = self.state.get(self.onair)
         if self.near_onair(subject, position, by_name) and not (al["kind"] == "death" and not subject):
             # the camera on air already shows it: label it and stay through the fight
@@ -257,17 +298,122 @@ class OneCam(Director):
                     self.urgent(target, f"segment: {segment['label']}", scores, now)
         elif cur and cur.get("subject") == "@segment" and (not segment or cur.get("seg") != segment["id"]):
             cur["until"] = 0  # the segment ended or was cut: back to normal directing
-        self.direct(by_name, scores, ranked, now)
-        for t in (self.state.get(self.onair), self.state.get(self.inset and self.inset["slot"])):
+        if self.mode == "trio":
+            self.tiles(by_name, scores, now)
+        else:
+            self.direct(by_name, scores, ranked, now)
+            self.maybe_trio(by_name, scores, ranked, now)
+        shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
+        for t in (self.state.get(s) for s in shown if s):
             for n in (t or {}).get("agents") or []:
                 self.last_on_air[n] = now
         return self.public(now)
+
+    # -- trio: one big tile and two small ones ------------------------------------------------------------------
+    def trio_pick(self, subj, by_name, scores, ranked, now):
+        """-> (two agents for the small tiles, why) or None: busy (two others score near the story on air and are far
+        from it and each other) or a check-in (trio_every since the last trio)."""
+        def apart(a, b, d):
+            pa, pb = by_name[a].get("position"), by_name[b].get("position")
+            return (by_name[a].get("surface") or "nauvis") != (by_name[b].get("surface") or "nauvis") or \
+                not (pa and pb) or dist(pa, pb) >= d
+        cfg = self.cfg
+        for d, need, why in ((cfg["trio_apart"], max(1e-6, scores.get(subj, 0) * cfg["trio_ratio"]), "busy"),
+                             (cfg["trio_near"], 0, "check-in")):
+            if why == "check-in" and not cfg["trio_force"] and now - max(self.last_trio, self.started) < cfg["trio_every"]:
+                continue
+            pick = []
+            for n in ranked:
+                if n == subj or scores[n] < need or not apart(n, subj, d) or any(not apart(n, p, d) for p in pick):
+                    continue
+                pick.append(n)
+                if len(pick) == 2:
+                    return pick, why
+        return None
+
+    def maybe_trio(self, by_name, scores, ranked, now):
+        """One camera long enough, nothing urgent: frame two standbys for a trio, switch once both are there."""
+        cfg = self.cfg
+        if not cfg["trio"] or len(self.slots) < 3:
+            return
+        cur = self.state.get(self.onair)
+        subj = cur.get("subject") if cur else None
+        blocked = (self.hold_layout or self.pending or self.inset or subj not in scores or
+                   (not cfg["trio_force"] and now - self.since_mode() < cfg["trio_gap"]))
+        p = self.trio_pending
+        if blocked:
+            self.trio_pending = None
+            return
+        if p:
+            if any(a not in scores for a in p["agents"]):
+                self.trio_pending = None
+            elif all(self.ready(s, now) for s in p["tiles"].values()):
+                hold = min(cfg["trio_max"], max(cfg["trio_min"], cfg["trio_hold"]))
+                self.trio = dict(p, until=1e18 if cfg["trio_force"] else now + hold)
+                self.trio_pending = None
+                self.set_mode("trio", f"{p['why']}: {', '.join(p['agents'])}", now)
+            return
+        found = self.trio_pick(subj, by_name, scores, ranked, now)
+        sb = self.standbys()
+        if not found or len(sb) < 2:
+            return
+        pick, why = found
+        tiles = {}
+        for hole, slot, name in zip(("cam2", "cam3"), sb, pick):
+            z = round((self.zoom_for(by_name[name], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]) * cfg["trio_zoom"], 2)
+            t = self.state.get(slot["slot"])
+            if not (t and t.get("subject") == name):
+                self.frame_on(slot, {"agents": [name], "follow": name, "zoom": z, "solo_zoom": z, "subject": name},
+                              f"trio tile: {name}", scores, now)
+            tiles[hole] = slot["slot"]
+        self.trio_pending = {"tiles": tiles, "agents": pick, "why": why}
+
+    def tiles(self, by_name, scores, now):
+        """In a trio: the big tile keeps its story (zoom follows), the small tiles their agents; over at `until`, or at
+        once when an agent in it is gone."""
+        cur = self.state.get(self.onair)
+        gone = (not cur or cur.get("subject") not in scores) or any(a not in scores for a in self.trio["agents"])
+        if gone or now >= self.trio["until"]:
+            self.leave_trio("an agent left" if gone else f"after {int(now - self.since_mode())} s", now)
+            return
+        self.keep(cur, by_name, now)
+
+    def since_mode(self):
+        return self.started if self.mode_since is None else self.mode_since
+
+    def leave_trio(self, why, now):
+        if self.mode != "trio":
+            return
+        self.trio = None
+        self.last_trio = now
+        self.set_mode("onecam", why, now)
+
+    def set_mode(self, mode, why, now):
+        self.mode, self.mode_since = mode, now
+        self.layouts.append((now, mode, why))
+        if self.log_path:
+            with open(self.log_path, "a") as f:
+                f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
+                                    "slot": "program", "reason": f"layout {mode}: {why}", "target": None,
+                                    "tiles": (self.trio or {}).get("tiles")}) + "\n")
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} LAYOUT {mode}  <- {why}", flush=True)
+
+    def layout_info(self):
+        """snapshot["onair"]["layout"]: what the program shows, for the hosts and the page."""
+        out = {"mode": self.mode, "since": round(self.since_mode(), 1)}
+        if self.trio:
+            out.update(why=self.trio["why"], agents=list(self.trio["agents"]), until=round(self.trio["until"], 1))
+        return out
 
     def direct(self, by_name, scores, ranked, now):
         """The story on air: keep it (zoom follows the activity), or pick the next subject on a standby and cut."""
         cur = self.state.get(self.onair)
         if self.pending:
             return  # an urgent shot is being framed; the cut comes within ready_s
+        if self.trio_pending:  # the standbys are being framed for a trio: hold the story
+            if cur and cur.get("subject") in scores:
+                self.keep(cur, by_name, now)
+            return
         if cur and cur.get("subject") in HOLDS and now < cur.get("until", 0):
             return
         if cur and now < cur.get("hold_until", 0) and cur.get("subject") in scores:
@@ -342,14 +488,17 @@ class OneCam(Director):
     def public(self, now=None):
         now = now or time.time()
         out = {}
-        for key, slot in (("main", self.onair), ("inset", self.inset and self.inset["slot"])):
+        rows = [("main", self.onair), ("inset", self.inset and self.inset["slot"])]
+        if self.trio:
+            rows += sorted(self.trio["tiles"].items())
+        for key, slot in rows:
             t = self.state.get(slot) if slot else None
             if not t:
                 continue
             s = self.slot(slot)
             row = {"agents": t["agents"], "zoom": t["zoom"], "since": self.onair_since if key == "main" else t["since"],
                    "player": s["player"], "pair": False, "client": slot}
-            fr = frame_of(t, self.cfg["view_frac"] if key == "main" else 1.0)  # the inset hole is 16:9: no crop
+            fr = frame_of(t, self.onair_frac() if key == "main" else 1.0)  # inset and small tiles are 16:9: no crop
             if fr:
                 row["frame"] = fr  # replays.py: what the program shows
             if t.get("label") and now - t.get("attack_t", now) < self.cfg["attack_hold"]:

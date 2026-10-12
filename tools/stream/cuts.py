@@ -6,6 +6,10 @@ the front of the other two; the inset, while there is one, is moved to layout.js
 Only z-order and the inset's transform change: every capture keeps running, so a cut is instant. Nothing else in the
 scene moves (background below, the overlay above). The vertical scene ("stream vertical" in Aitum Vertical's canvas,
 tools/vertical.py) shares the captures and is restacked the same way in layout-portrait.json's holes.
+
+Trio (onecam.py, program "layout": "trio"): the three captures move to layout-3cam.json's holes, the client on air in
+the big one ("tiles": hole -> client); back to the on-air hole when it ends. Transforms only, over the websocket, so
+the switch is live (no scene rebuild). The vertical scene stays one camera: the client on air (the big tile) in front.
 """
 import json, os, threading, time, traceback
 
@@ -13,6 +17,7 @@ from obsws import OBSError
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAYOUT = os.path.join(HERE, "static", "layout.json")
+TRIO = os.path.join(HERE, "static", "layout-3cam.json")
 SOURCES = ("stream cam1", "stream cam2", "stream cam3")
 SLOTS = ("main", "cam2", "cam3")
 
@@ -57,11 +62,12 @@ VERTICAL = {"canvas": "Aitum Vertical", "scene": "stream vertical",  # tools/ver
 
 class Cuts:
     def __init__(self, obs, layout=None, scene="stream", sources=SOURCES, slots=SLOTS, log=print, start=True,
-                 vertical=VERTICAL):
-        """vertical: the 9:16 scene in Aitum Vertical's canvas, restacked the same way when it exists (None: off)."""
+                 vertical=VERTICAL, trio=None):
+        """vertical: the 9:16 scene in Aitum Vertical's canvas, restacked the same way when it exists (None: off).
+        trio: the holes of the three-tile layout (default layout-3cam.json's cams)."""
         self.obs = obs
         self.targets = [{"name": scene, "ref": {"sceneName": scene}, "layout": layout or json.load(open(LAYOUT)),
-                         "placed": {}}]
+                         "trio": trio or json.load(open(TRIO))["cams"], "placed": {}}]
         self.vertical = vertical
         self.vertical_checked = False
         self.by_slot = dict(zip(slots, sources))
@@ -122,9 +128,11 @@ class Cuts:
         for t in self.targets:
             self.apply(t, want)
         self.applied = want
-        self.status.update(connected=True, error=None, onair=want.get("onair"), inset=want.get("inset"), t=time.time())
+        self.status.update(connected=True, error=None, onair=want.get("onair"), inset=want.get("inset"), t=time.time(),
+                           layout=want.get("layout") or "onecam")
         onair, inset = self.by_slot.get(want.get("onair")), self.by_slot.get(want.get("inset") or "")
-        self.log(f"[cuts] on air {onair}" + (f", inset {inset}" if inset else ""))
+        self.log(f"[cuts] on air {onair}" + (f", inset {inset}" if inset else "") +
+                 (" (trio)" if want.get("layout") == "trio" else ""))
 
     def apply(self, target, want):
         o, ref = self.obs, target["ref"]
@@ -135,8 +143,11 @@ class Cuts:
             raise OBSError(f"no camera captures in scene {target['name']!r}")
         onair = self.by_slot.get(want.get("onair"))
         inset = self.by_slot.get(want.get("inset")) if want.get("inset") else None
+        hole = {}  # capture -> its trio hole, when this scene shows the trio
+        if want.get("layout") == "trio" and target.get("trio") and want.get("tiles"):
+            hole = {self.by_slot.get(s): h for h, s in want["tiles"].items()}
         for src, iid in cams.items():  # the hole each capture belongs in: on air and standby share the main one
-            role = "inset" if src == inset else "main"
+            role = "trio:" + hole[src] if src in hole else "inset" if src == inset else "main"
             if target["placed"].get(src) != role:
                 self.place(target, iid, role)
                 target["placed"][src] = role
@@ -152,7 +163,7 @@ class Cuts:
 
     def place(self, target, iid, role):
         o, ref = self.obs, target["ref"]
-        x, y, w, h = target["layout"]["cams"][role]
+        x, y, w, h = target["trio"][role[5:]] if role.startswith("trio:") else target["layout"]["cams"][role]
         t = o.call("GetSceneItemTransform", dict(ref, sceneItemId=iid))["sceneItemTransform"]
         crop = crop_for(t.get("sourceWidth"), t.get("sourceHeight"), w, h)
         o.call("SetSceneItemTransform", dict(ref, sceneItemId=iid, sceneItemTransform=dict(

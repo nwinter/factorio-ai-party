@@ -440,9 +440,26 @@ run config brings back the director below).
   walls or chests, or any turret, machine or engineer: `minor_loss`), at most one per `loss_recut` (180 s); a segment
   shot (Space Age launches and landings, spotlight, overview). After the urgent shot the story it interrupted comes
   back for at least `resume_min` (30 s). Replays are their own program scene (replays.py).
-- Inset: a minor loss, or a real one inside `loss_recut`, far (over 60 tiles) from the subject on air shows in a
-  408x230 inset in the on-air view's top right for 20 s (`inset_hold`): the third client, moved there and on top by
-  cuts.py. An attack with nothing lost yet is only a toast; near the subject on air, the label says it.
+- Inset: a minor loss, or a real one inside `loss_recut`, outside the on-air frame (the client's view at its zoom,
+  after the crop; until shift01 "over 60 tiles from the subject") shows in a 408x230 inset in the on-air view's top
+  right for 20 s (`inset_hold`): the third client, moved there and on top by cuts.py. An attack with nothing lost yet
+  is only a toast; inside the on-air frame, the label says it.
+- Trio (Nick, 2026-10-12: he liked the old one-big-two-small layout because each tile said who was doing what):
+  sometimes the program shows all three clients in layout-3cam.json's holes, the one on air in the big tile (no cut:
+  the same client stays on air) and the two standbys in small tiles, each labelled "Luna · fixing the north wall"
+  (the agent's plan line, claim or action, `cameras.*.doing`); the on-air card stays highlighted. The director picks
+  it when two other agents score at least 0.9x the subject on air and are 40+ tiles from it and each other
+  (`trio_ratio`, `trio_apart`), or as a check-in after 15 min without one (`trio_every`); it lasts 90 s (`trio_hold`,
+  kept within 60-120 s), then one camera again. No flicker: at least 480 s of one camera before a trio
+  (`trio_gap`); never while a replay is on air or about to be, or an urgent or segment shot holds the camera; the
+  small tiles are framed off air (jumps) and the layout switches once both are there. An urgent alert or a camera
+  segment ends a trio at once. The 2-hour mock: a trio about every 10 minutes (~13% of airtime). The switch is live:
+  `program.layout` "trio" and `program.tiles` (hole -> client) make cuts.py move the captures (transforms over the
+  websocket, no scene rebuild) and the page take the three holes (from the snapshot, no reload). The vertical
+  canvas stays one camera (the big tile's client). Hosts: `onair.layout` {mode, why, agents, since, until}; the
+  caster's facts get `on_screen` (three tiles, the small tiles' agents). `"trio": false` in the run config's
+  `director` turns it off; `serve.py --mock --trio` holds one for screenshots:
+  `tools/stream/overlay_shot.sh 'http://127.0.0.1:8799/?preview' docs/stream-trio.png`.
 - Overlay: a bar along the on-air view's bottom edge says "Following Luna · fixing the north wall" (snapshot
   `onair.doing`: the agent's team-plan line, else its claim, else its action). The bar also covers the client's
   bottom-centre hints ("Press Tab to skip cutscene"): the mod already sets `show_hotkey_suggestions` false

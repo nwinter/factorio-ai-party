@@ -835,6 +835,12 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
                                 "when the beat has room for an agent")
         if (s.get("onair") or {}).get("doing"):
             f["on_air"]["shown_as"] = s["onair"]["doing"]
+        lay = (s.get("onair") or {}).get("layout") or {}
+        if lay.get("mode") == "trio":  # onecam.py: one big tile and two small ones for a minute or two
+            shown_as = {a["name"]: a.get("display_name") or a["name"] for a in s.get("agents") or []}
+            f["on_screen"] = {"layout": "three tiles", "small_tiles": [shown_as.get(n, n) for n in lay.get("agents") or []],
+                              "note": "viewers see three agents at once now: the big tile follows on_air, the two "
+                                      "small tiles these agents; a beat may take in all three"}
     if e["kind"] == "lull":
         angle = e.get("angle")
         busy = [agent_facts(s, a["name"]) for a in s.get("agents") or [] if a.get("activity") == "acting"]

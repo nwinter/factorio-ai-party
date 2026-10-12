@@ -25,7 +25,8 @@ def agent(name, x, y, interest=1.0, activity="acting", active="walk"):
 
 def world(**cfg):
     sent = []
-    d = OneCam(SLOTS, lambda body: sent.append(body) or {"ok": True}, None, **cfg)
+    # the trio (test_trio.py) off unless asked: these rules are one camera's
+    d = OneCam(SLOTS, lambda body: sent.append(body) or {"ok": True}, None, **dict({"trio": False}, **cfg))
     d.started = 0  # the airtime bonus counts from here (the tests' clock)
     return d, sent
 

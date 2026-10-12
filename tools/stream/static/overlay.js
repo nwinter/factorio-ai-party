@@ -151,6 +151,9 @@
 
   // ---------- layout ----------
   let layout = null;
+  // The director's trio (onecam.py: one big tile and two small ones for a minute or two, snapshot program.layout):
+  // the landscape page takes layout-3cam.json's holes while it lasts. The portrait page stays one camera.
+  let trioCams = null, curMode = null;
   // portrait.html sets data-layout="layout-portrait" for the 9:16 canvas
   // ?layout=layout-3cam brings back the three-camera layout (main and two side cameras)
   fetch("/static/" + (params.get("layout") || document.body.dataset.layout || "layout") + ".json").then((r) => r.json()).then((l) => {
@@ -158,13 +161,28 @@
     onecam = l.mode === "onecam";
     document.body.classList.toggle("onecam", onecam);
     if (onecam) SLOT_LABEL.main = "On air";
-    for (const c of document.querySelectorAll(".cam")) if (!l.cams[c.dataset.slot]) c.remove();
-    for (const [slot, [x, y, w, h]] of Object.entries(l.cams)) {
+    const trio = onecam && !document.body.classList.contains("portrait") && !params.get("layout");
+    const go = (t) => {
+      trioCams = t;
+      for (const c of document.querySelectorAll(".cam")) if (!l.cams[c.dataset.slot] && !(t && t[c.dataset.slot])) c.remove();
+      if (onecam && l.cams.main) $("cam-main").append(el("div", "cam-bar"));
+      applyLayout(curMode === "trio" && t ? "trio" : "onecam");
+    };
+    if (trio) fetch("/static/layout-3cam.json").then((r) => r.json()).then((t) => go(t.cams)).catch(() => go(null));
+    else go(null);
+  });
+
+  function applyLayout(mode) {
+    if (!layout) return;
+    curMode = mode;
+    const l = layout, cams = mode === "trio" ? trioCams : l.cams;
+    document.body.classList.toggle("trio", mode === "trio");
+    for (const [slot, [x, y, w, h]] of Object.entries(cams)) {
       const c = $("cam-" + slot);
       if (!c) continue;
       Object.assign(c.style, { left: x + "px", top: y + "px", width: w + "px", height: h + "px" });
     }
-    const m = l.cams.main;
+    const m = cams.main;
     const [cw, ch] = l.canvas || [1920, 1080];
     if (m) {
       const st = document.body.style;
@@ -173,12 +191,11 @@
       st.setProperty("--canvas-h", ch + "px");
     }
     if (m && onecam) {
-      $("cam-main").append(el("div", "cam-bar"));
       Object.assign($("alerts").style, { right: cw - m[0] - m[2] + 14 + "px", bottom: ch - m[1] - m[3] + BAR_H + 10 + "px" });
     } else if (m) Object.assign($("alerts").style, { left: m[0] + "px", width: m[2] + "px", top: m[1] + 64 + "px" });
     if (m) Object.assign($("segment").style, { left: m[0] + "px", top: m[1] + "px", width: m[2] + "px",
       height: m[3] - (onecam ? BAR_H : 0) + "px" });
-  });
+  }
 
   // ---------- render ----------
   const cards = new Map();
@@ -716,7 +733,7 @@
       const cam = (s.cameras || {})[slot];
       if (slot === "inset") frame.classList.toggle("on", !!cam); // up only while the director has an inset
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
-      if (slot !== "main" && slot !== "inset") renderFill(frame, s, !agents.length && !(cam && cam.attack));
+      if (slot !== "main" && slot !== "inset" && !(onecam && curMode !== "trio")) renderFill(frame, s, !agents.length && !(cam && cam.attack));
       const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "");
       const death = !!(cam && cam.attack && cam.alert === "death");
       label.classList.toggle("attack", !!(cam && cam.attack) && !death);
@@ -754,6 +771,7 @@
       const doing = cam.attack ? (cam.attack.startsWith(lead.display_name) ? "under attack" : "attack nearby")
         : work ? work
         : slot === "main" && onair ? clean(onair)
+        : cam.doing ? clean(cam.doing) // a trio's small tile: its plan line, claim or action (serve.py)
         : agents.length > 1 ? "working together" : lead.activity === "acting" && lead.action ? humanItem(lead.action)
         : lead.activity === "thinking" ? "thinking" : "";
       setText(label._doing, doing ? "· " + doing : "");
@@ -992,6 +1010,8 @@
   function render(s) {
     if (staleCheck(s)) return;
     state = s;
+    const mode = onecam && trioCams && s.program && s.program.layout === "trio" ? "trio" : "onecam";
+    if (layout && mode !== curMode) applyLayout(mode);
     window.pogState = s; // audio.js finds speaking agents' avatars here
     renderHead(s);
     renderCards(s);

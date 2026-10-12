@@ -32,7 +32,9 @@ def cards():
     assert "body.portrait.onecam #segment.lower .spanel { margin-right: 0; max-height: 220px; overflow: hidden; }" in css
     js = open(os.path.join(STATIC, "overlay.js")).read()
     assert "const FULL = {};" in js  # no segment covers the camera
-    assert 'if (!l.cams[c.dataset.slot]) c.remove();' in js  # no side-camera holes (and no desk fills in them)
+    # no side-camera holes (and no desk fills in them): the portrait page never loads the trio's holes
+    assert 'if (!l.cams[c.dataset.slot] && !(t && t[c.dataset.slot])) c.remove();' in js
+    assert 'onecam && !document.body.classList.contains("portrait")' in js
 
 
 def reload():

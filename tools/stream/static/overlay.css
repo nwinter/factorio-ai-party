@@ -569,6 +569,11 @@ body[data-density="3"] .research .pct { font-size: 13px; }
 body[data-density="3"] .research .recent { font-size: 12px; }
 body[data-density="3"] .bar { height: 8px; }
 
+/* ---- the trio (onecam.py): one big tile and two small ones; one camera otherwise (no small tiles) ---- */
+body.onecam:not(.trio) #cam-cam2, body.onecam:not(.trio) #cam-cam3 { display: none; }
+body.trio #cam-cam2 .cam-label, body.trio #cam-cam3 .cam-label { font-size: 17px; max-width: calc(100% - 16px); }
+body.trio #cam-cam2 .cam-label .doing, body.trio #cam-cam3 .cam-label .doing { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
 /* ---- one camera on air (layout.json mode "onecam", tools/stream/onecam.py) ----
    The on-air view fills the left column. Along its bottom edge a bar says whom it follows ("Following Luna · fixing
    the north wall"); it also covers the client's own bottom-centre hints ("Press Tab to skip cutscene"). Toasts are a
