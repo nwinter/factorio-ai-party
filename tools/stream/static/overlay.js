@@ -538,7 +538,9 @@
 
     const log = $("board-log");
     const cl = (b.changelog || []).filter((c) => s.now - (c.t || 0) < 600).slice(-1);
-    const rows = 3 - cl.length; // 160 px panel: three lines between the header and the claims row
+    // the team plan's goals (board_plan) take the top line while there are any
+    const plan = b.plan && b.plan.goals ? b.plan : null;
+    const rows = 3 - cl.length - (plan ? 1 : 0); // 160 px panel: three lines between the header and the claims row
     const events = (b.events || []).slice(-rows);
     const keys = new Set();
     for (const e of events) {
@@ -547,10 +549,11 @@
       let n = boardNodes.get(key);
       if (!n) {
         n = el("div", "bev");
-        const [ag, av] = boardAvatar(s, e.agent);
+        // a finished technology (research.lua) is an event with no agent behind it
+        const [ag, av] = e.kind === "research" ? [null, el("span", "tool", "🔬")] : boardAvatar(s, e.agent);
         n._av = av;
         if (ag) applyPalette(n, ag);
-        n._who = el("span", "who", ag ? ag.display_name : e.by === "operator" ? "Operator" : e.by || "?");
+        n._who = el("span", "who", ag ? ag.display_name : e.kind === "research" ? "Research" : e.by === "operator" ? "Operator" : e.by || "?");
         const verb = el("span", "verb " + e.verb, VERB[e.verb] || e.verb);
         n.append(av, n._who, verb);
         if (e.verb === "posted" && KIND[e.kind]) n.append(el("span", "kind", KIND[e.kind]));
@@ -588,10 +591,22 @@
       setText(n._when, ago(s.now - (c.t || s.now)));
       n.style.order = 2; // the changelog line sits under the events, nearest the claims
     }
+    if (plan) {
+      const key = "p" + plan.goals;
+      keys.add(key);
+      let n = boardNodes.get(key);
+      if (!n) {
+        n = el("div", "bev plan");
+        n.append(el("span", "tool", "📋"), el("span", "ver", "Plan"), el("span", "title", clean(plan.goals)));
+        log.appendChild(n);
+        boardNodes.set(key, n);
+      }
+      n.style.order = 0; // the plan sits above the events
+    }
     for (const [key, n] of boardNodes) if (!keys.has(key)) { n.remove(); boardNodes.delete(key); }
     let empty = log.querySelector(".empty");
-    if (!events.length && !cl.length && !empty) log.appendChild(el("div", "empty", "Nothing on the board yet"));
-    else if ((events.length || cl.length) && empty) empty.remove();
+    if (!events.length && !cl.length && !plan && !empty) log.appendChild(el("div", "empty", "Nothing on the board yet"));
+    else if ((events.length || cl.length || plan) && empty) empty.remove();
 
     const box = $("board-claims");
     const claims = b.claims || [];

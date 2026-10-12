@@ -346,7 +346,8 @@ class LiveSource:
                 res, _ = self.read("board", {"limit": 60}, **self.reader())
                 claims, _ = self.read("board", {"kind": "claim", "limit": 30}, **self.reader())
                 items = {it.get("id"): it for it in (res.get("items") or []) + (claims.get("items") or [])}
-                obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned")}
+                obs["board"] = {"items": list(items.values()), "open_unowned": res.get("open_unowned"),
+                                "plan": res.get("plan")}  # the team plan (board_plan; absent on older runtimes)
             except Exception as e:
                 errors["board"] = str(e)
 
