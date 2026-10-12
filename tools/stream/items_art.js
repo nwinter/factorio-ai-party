@@ -567,6 +567,11 @@ const GROUPS = [
     "production-science-pack": { label: "Purple sci.", t: "vial", c: "#9e55e0", color: "#b06cf0" },
     "utility-science-pack": { label: "Yellow sci.", t: "vial", c: "#ecc731", color: "#f5d142" },
     "space-science-pack": { label: "Space sci.", t: "flask", c: "#e8eef4", color: "#f0f0f0" },
+    "metallurgic-science-pack": { label: "Metallurgic sci.", t: "cone", c: "#e0802c", color: "#f0943c" },
+    "electromagnetic-science-pack": { label: "Electromag. sci.", t: "vial", c: "#d0409a", color: "#e45cb0" },
+    "agricultural-science-pack": { label: "Agricultural sci.", t: "flask", c: "#9cc23a", color: "#b0d44c" },
+    "cryogenic-science-pack": { label: "Cryogenic sci.", t: "cone", c: "#3a5ee0", color: "#5a7cf0" },
+    "promethium-science-pack": { label: "Promethium sci.", t: "vial", c: "#5a2e78", color: "#8a5aa8" },
   }],
   ["Oil and fluids", {
     "petroleum-gas": { label: "Petroleum gas", t: "gas", c: "#9a6cc0" },
