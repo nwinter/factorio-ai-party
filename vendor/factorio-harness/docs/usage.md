@@ -283,7 +283,10 @@ Some actions work at a distance, the way a player can through remote view:
   are marked only when `entity_names` or `entity_types` name them. `cancel_deconstruction {area, tiles}` clears tile
   marks (`tiles_cancelled`).
 
-Not supported yet: vehicles, rails, circuit editing, and fluid transfers.
+Not supported yet: riding or driving vehicles (cars, tanks, spidertrons, trains as a passenger: a character in a
+vehicle is refused by every action), elevated rails and rail ramps, circuit read modes (an inserter or belt reading
+contents, a train stop sending to its train), and fluid transfers by hand. See docs/HARNESS-COVERAGE.md in the pog
+repo for the feature-by-feature list.
 
 ## Bots
 
