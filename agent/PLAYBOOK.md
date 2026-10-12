@@ -40,6 +40,8 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
   - Items on the ground: scan and observe sum them up by item (ground_items); status alerts.ground_items names full
     landing pads that spill and piles near buildings; deconstruct {area, items_on_ground: true} marks them for
     construction robots; pickup {area | position, radius, items} picks them up by hand (timed).
+  - Placement: a refused build of an offshore pump, or of anything onto water, lists the nearest valid placements;
+    placements {name, position} returns them without building.
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
 
 ## Pace

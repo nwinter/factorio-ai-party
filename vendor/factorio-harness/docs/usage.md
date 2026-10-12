@@ -259,6 +259,11 @@ fh sleep 900 --until researched                       # ...or until the research
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
 - `transfer {position, direction: "to_player"}` takes items from a character corpse (inventory `character_corpse`); an emptied corpse is removed. It never mines the corpse (mining a corpse as a bot crashes the server; the harness takes the items instead).
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
+- A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
+  their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
+  within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists
+  up to 3 positions within 6 tiles where it fits facing the asked direction. `placements {name, position, radius,
+  direction}` (read) returns the same list without building: `placements [{position, direction}]`, `checked`.
 - `collect` with `radius` skips stock inside another agent's active board claim and reports `skipped_claims` (`40 iron-plate in 2 places of #4 iron smelting (claim by sol); ask the owner`). `collect` on named positions still takes, and lists the claimed ones in `claimed`.
 - The `status` power warning appears only when some electric machine lacks power: `power: 3 of 78 machines low_power; 1 unconnected (fh call power lists them)` (`no_power` = connected to a network with no generation; `unconnected` = no pole reaches it).
 - `fh research` (`research` with no arguments; read): `current`, `progress`, `queue`, `pending`, and `entries`, one per
