@@ -72,6 +72,16 @@ class Check:
             reply["error"] = {"message": (p.stderr or p.stdout)[-400:]}
         return p.returncode == 0, reply
 
+    def fh_command(self, words):
+        """A bin/fh command other than call (e.g. ["wait", "--wait-timeout", "90000"]) as the bot."""
+        cmd = [os.path.join(ROOT, "bin", "fh"), "--format", "json", "--bot", self.bot, *words]
+        p = subprocess.run(cmd, capture_output=True, text=True, env=dict(os.environ, POG_WORLD=self.world))
+        try:
+            reply = json.loads(p.stdout.strip().splitlines()[-1]) if p.stdout.strip() else {}
+        except ValueError:
+            reply = {"raw": p.stdout[-400:]}
+        return p.returncode == 0, reply
+
     def step(self, name, action, args=None, wait=False):
         ok, reply = self.fh(action, args, wait)
         if not ok:
@@ -85,12 +95,18 @@ class Check:
         here = getattr(self, "here", None)
         if not force and here and abs(here[0] - x) < 5 and abs(here[1] - y) < 5:
             return
-        ok, reply = self.fh("move_to", {"position": {"x": x, "y": y - 3}, "tolerance": 1}, wait=True)
-        if ok:
-            pos = (reply.get("result") or {}).get("position") or {}
-            self.here = (pos.get("x", x), pos.get("y", y - 3))
-        else:
-            self.record(f"move_to near ({x},{y})", False, (reply.get("error") or {}).get("message") or reply)
+        # North of the target first; a walk that times out (the 03:5x run, LC-West: the track, a stop or the train in
+        # the way) tries the other sides before giving up.
+        errors = []
+        for dx, dy in ((0, -3), (0, 3), (-3, 0), (3, 0)):
+            goal = {"x": x + dx, "y": y + dy}
+            ok, reply = self.fh("move_to", {"position": goal, "tolerance": 1.5, "ticks": 1800}, wait=True)
+            if ok:
+                pos = (reply.get("result") or {}).get("position") or {}
+                self.here = (pos.get("x", goal["x"]), pos.get("y", goal["y"]))
+                return
+            errors.append(f"{goal}: " + str((reply.get("error") or {}).get("message") or reply)[:120])
+        self.record(f"move_to near ({x},{y})", False, "; ".join(errors))
 
     def build(self, name, item, x, y, direction=None, entity=None):
         self.near(x, y)
