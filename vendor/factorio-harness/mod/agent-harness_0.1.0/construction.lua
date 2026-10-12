@@ -114,31 +114,47 @@ return function(api)
     if rec and rec.mine then return (p.resource_reach_distance or 2.7)-0.2 end
     return p.build_distance-0.5
   end
-  function M.plan_ghosts(p,a,box)
-    local pending,seen={},{}
-    local function add_mine(e)
-      local key=e.name..':'..e.position.x..','..e.position.y
-      if not seen[key] then seen[key]=true; pending[#pending+1]={ghost=e,mine=true,tries=0,stand_fails=0} end
+  -- A tree or rock to hand-mine, once per entity; trees and rocks that block
+  -- ghosts are also listed (action.blockers, reported with the outcome).
+  local MAX_BLOCKERS=32
+  local function add_mine(action,e,ghost)
+    action.seen=action.seen or {}
+    local key=e.name..':'..e.position.x..','..e.position.y
+    if action.seen[key] then return false end
+    action.seen[key]=true
+    action.pending[#action.pending+1]={ghost=e,mine=true,tries=0,stand_fails=0}
+    if ghost then
+      action.blockers=action.blockers or {}
+      if #action.blockers<MAX_BLOCKERS then
+        action.blockers[#action.blockers+1]={name=e.name,position={x=e.position.x,y=e.position.y},entity=e,
+          ghost=ghost.ghost_name,at={x=ghost.position.x,y=ghost.position.y}}
+      end
     end
+    return true
+  end
+  function M.plan_ghosts(p,a,box)
+    local pending={}
+    local action={kind='construct',pending=pending,built=0,mined=0,gone=0,missing={},failed={},seen={}}
+    local function add(e,ghost) add_mine(action,e,ghost) end
     -- Tile ghosts (landfill, paths) are placed like tiles from the cursor;
     -- trees and rocks do not block them.
     for _,e in pairs(p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force}) do
       if e.valid and api.known(p,e) then
         local obstacles=e.type=='tile-ghost' and {} or M.mark_obstacles(p,e)
         pending[#pending+1]={ghost=e,tries=0,stand_fails=0,obstacles=#obstacles>0 and obstacles or nil}
-        for _,o in ipairs(obstacles) do add_mine(o) end
+        for _,o in ipairs(obstacles) do add(o,e) end
       end
     end
     -- Entities marked for deconstruction are mined by hand, as a player
     -- clears marks without robots; contents go to the inventory.
     for _,e in pairs(p.surface.find_entities_filtered{area=box,to_be_deconstructed=true}) do
       if e.valid and e.type~='entity-ghost' and (e.force==p.force or e.force.name=='neutral') and e.minable and api.known(p,e) then
-        add_mine(e)
+        add(e)
       end
     end
     assert(#pending<=MAX_GHOSTS,'more than '..MAX_GHOSTS..' ghosts; construct a smaller area')
-    return {kind='construct',pending=pending,built=0,mined=0,gone=0,missing={},failed={},
-      until_tick=game.tick+api.integer(a.ticks,36000,1,216000,'ticks')}
+    action.until_tick=game.tick+api.integer(a.ticks,36000,1,216000,'ticks')
+    return action
   end
   -- Returns the owned item that places this ghost, or nil and the item wanted.
   local function item_for(p,g,quality)
@@ -163,14 +179,35 @@ return function(api)
     local lt,rb=footprint(g)
     return pos.x>lt.x-margin and pos.x<rb.x+margin and pos.y>lt.y-margin and pos.y<rb.y+margin
   end
-  -- Trees and rocks under a ghost get deconstruction marks, as the game marks
-  -- them when a player places ghosts over them; returns the newly marked.
-  -- Returns every marked obstacle and how many were newly marked.
-  function M.mark_obstacles(p,g)
-    local found,marked={},0
+  -- The box the built entity will take: its collision box at the ghost
+  -- (what the engine checks), else the ghost's own box.
+  local function placement_box(g)
+    local proto=g.ghost_prototype
+    if proto and proto.collision_box then return M.box(proto,g.position,g.direction) end
     local lt,rb=footprint(g)
-    for _,e in pairs(p.surface.find_entities_filtered{area={left_top={x=lt.x+0.05,y=lt.y+0.05},right_bottom={x=rb.x-0.05,y=rb.y-0.05}},type=((script and script.active_mods['space-age']) and {'tree','plant','simple-entity'} or {'tree','simple-entity'}),force='neutral'}) do
-      if e.valid and e.minable then
+    return {left_top=lt,right_bottom=rb}
+  end
+  -- Whether an entity's box reaches the given box (edges touching count).
+  local function touches(e,box,margin)
+    local b=e.bounding_box
+    if not b then return true end -- no box to compare: the area search found it
+    local l,t,r,btm=b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y
+    return l<=box.right_bottom.x+margin and r>=box.left_top.x-margin and t<=box.right_bottom.y+margin and btm>=box.left_top.y-margin
+  end
+  -- Trees and rocks under a ghost get deconstruction marks, as the game marks
+  -- them when a player places ghosts over them. Any whose box reaches the
+  -- placement box counts, edges touching included (request #167: tree-08s
+  -- whose collision box only met a belt ghost's edge were missed by a search
+  -- inside the footprint, and construct ended with the ghost still blocked).
+  -- margin widens that (a build that failed looks a little further).
+  -- Returns every marked obstacle and how many were newly marked.
+  function M.mark_obstacles(p,g,margin)
+    margin=margin or 0.01
+    local found,marked={},0
+    local box=placement_box(g)
+    local area={left_top={x=box.left_top.x-1.5,y=box.left_top.y-1.5},right_bottom={x=box.right_bottom.x+1.5,y=box.right_bottom.y+1.5}}
+    for _,e in pairs(p.surface.find_entities_filtered{area=area,type=((script and script.active_mods['space-age']) and {'tree','plant','simple-entity'} or {'tree','simple-entity'}),force='neutral'}) do
+      if e.valid and e.minable and touches(e,box,margin) then
         -- The engine takes a LuaPlayer or nothing: a bot or map-view proxy
         -- here fails with "Invalid PlayerIdentification".
         if not e.to_be_deconstructed() and e.order_deconstruction(p.force,api.real(p)) then marked=marked+1 end
@@ -361,12 +398,24 @@ return function(api)
           placed=placed+1
           if ok and not g.valid then action.built=action.built+1; drop(action,i)
           else
+            -- A tree or rock the build could not get past: mark and mine that
+            -- one, then build again (no try spent on it).
+            local fresh=0
+            for _,o in ipairs(not tile and M.mark_obstacles(p,g,0.3) or {}) do
+              if add_mine(action,o,g) then
+                fresh=fresh+1
+                rec.obstacles=rec.obstacles or {}
+                rec.obstacles[#rec.obstacles+1]=o
+              end
+            end
+            if fresh>0 then rec.blocked_at=nil; goto next_ghost end
             rec.tries=rec.tries+1
             if rec.tries>=2 then fail(action,rec,ok and 'ghost remained' or api.reason(err)); drop(action,i)
             else rec.blocked_at={x=p.position.x,y=p.position.y} end
           end
         end
       end
+      ::next_ghost::
     end
     if #action.pending==0 then stop(p); return finished(action) end
     -- Everything in reach gets built (or mined) before taking another step.
@@ -418,7 +467,7 @@ return function(api)
         -- Only ghosts whose obstacles could not be mined remain.
         for i=#action.pending,1,-1 do
           local o=obstructed(action.pending[i])
-          if o then fail(action,action.pending[i],'blocked by '..o.name); drop(action,i) end
+          if o then fail(action,action.pending[i],string.format('blocked by %s at (%g,%g), which could not be mined',o.name,o.position.x,o.position.y)); drop(action,i) end
         end
         break
       end
