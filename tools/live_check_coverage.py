@@ -101,32 +101,11 @@ class Check:
         return ent if res else None
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--bot", default="lc1")
-    ap.add_argument("--keep", action="store_true", help="leave what the check built and the bot")
-    ap.add_argument("--out", default=os.path.join(ROOT, "runs", "live-check-coverage"))
-    a = ap.parse_args()
-    world = os.environ.get("POG_WORLD", "live")
-    if world in ("a", "b", "c", "n"):
-        sys.exit(f"refusing: {world} is a run world; this check builds and deletes things")
-    c = Check(world, a.bot, a.out)
-
-    # The runtime must have the new actions.
-    ok, desc = c.fh("describe")
-    actions = (desc.get("result") or {}).get("actions") or {}
-    if not c.record("runtime has circuit, train and wire color", ok and "circuit" in actions and "train" in actions
-                    and "color" in (actions.get("wire") or {}), sorted(k for k in ("circuit", "train") if k in actions)):
-        sys.exit("deploy the current runtime first: POG_WORLD=%s bin/fh deploy" % world)
-
-    # Stage: the bot, a clear site next to it, its items.
-    c.record("bot_create", True, c.lua(f'rcon.print(remote.call("agent_harness","bot_create","{a.bot}"))'))
-    ok, st = c.fh("status")
-    pos = (st.get("result") or {}).get("position")
-    if not c.record("bot status", ok and pos is not None, pos):
-        sys.exit(1)
-    items = ",".join(f'["{k}"]={v}' for k, v in ITEMS.items())
-    stage = c.lua(f"""
+def stage_lua(pos, items):
+    """Operator Lua that stages a check: the bot's character, a clear site near it (trees and rocks removed, no water,
+    nothing else built there), the bot moved beside the site and given the items. Prints {site, given} or {error}."""
+    items = ",".join(f'["{k}"]={v}' for k, v in items.items())
+    return f"""
       local s = game.surfaces.nauvis
       local bx, by = {pos['x']}, {pos['y']}
       local body
@@ -157,7 +136,51 @@ def main():
       local given = {{}}
       for name, n in pairs({{{items}}}) do given[name] = body.insert{{name=name, count=n}} end
       rcon.print(helpers.table_to_json{{site={{x=site.x, y=site.y}}, given=given}})
-    """)
+    """
+
+
+def cleanup_lua(units, ox, oy, names):
+    """Operator Lua that removes what a check built: by unit number, then anything of these names left on the site."""
+    units = ",".join(str(u) for u in units)
+    names = ",".join(f'"{n}"' for n in names)
+    return f"""
+      local n = 0
+      for _, u in ipairs{{{units}}} do
+        local e = game.get_entity_by_unit_number(u)
+        if e and e.valid then e.destroy(); n = n + 1 end
+      end
+      local s = game.surfaces.nauvis
+      local area = {{{{{ox}, {oy}}}, {{{ox + SITE_W}, {oy + SITE_H}}}}}
+      for _, e in pairs(s.find_entities_filtered{{area=area, name={{{names}}}}}) do e.destroy(); n = n + 1 end
+      rcon.print(helpers.table_to_json{{removed = n}})
+    """
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--bot", default="lc1")
+    ap.add_argument("--keep", action="store_true", help="leave what the check built and the bot")
+    ap.add_argument("--out", default=os.path.join(ROOT, "runs", "live-check-coverage"))
+    a = ap.parse_args()
+    world = os.environ.get("POG_WORLD", "live")
+    if world in ("a", "b", "c", "n"):
+        sys.exit(f"refusing: {world} is a run world; this check builds and deletes things")
+    c = Check(world, a.bot, a.out)
+
+    # The runtime must have the new actions.
+    ok, desc = c.fh("describe")
+    actions = (desc.get("result") or {}).get("actions") or {}
+    if not c.record("runtime has circuit, train and wire color", ok and "circuit" in actions and "train" in actions
+                    and "color" in (actions.get("wire") or {}), sorted(k for k in ("circuit", "train") if k in actions)):
+        sys.exit("deploy the current runtime first: POG_WORLD=%s bin/fh deploy" % world)
+
+    # Stage: the bot, a clear site next to it, its items.
+    c.record("bot_create", True, c.lua(f'rcon.print(remote.call("agent_harness","bot_create","{a.bot}"))'))
+    ok, st = c.fh("status")
+    pos = (st.get("result") or {}).get("position")
+    if not c.record("bot status", ok and pos is not None, pos):
+        sys.exit(1)
+    stage = c.lua(stage_lua(pos, ITEMS))
     if not c.record("stage: site and items", "site" in stage, stage):
         sys.exit(1)
     ox, oy = stage["site"]["x"], stage["site"]["y"]
@@ -295,21 +318,9 @@ def main():
     if a.keep:
         print(f"--keep: left the site at ({ox},{oy}) and bot {a.bot}")
     else:
-        units = ",".join(str(u) for u in c.built)
-        gone = c.lua(f"""
-          local n = 0
-          for _, u in ipairs{{{units}}} do
-            local e = game.get_entity_by_unit_number(u)
-            if e and e.valid then e.destroy(); n = n + 1 end
-          end
-          local s = game.surfaces.nauvis
-          local area = {{{{{ox}, {oy}}}, {{{ox + SITE_W}, {oy + SITE_H}}}}}
-          for _, e in pairs(s.find_entities_filtered{{area=area, name={{"iron-chest","inserter","constant-combinator","small-lamp",
-              "straight-rail","curved-rail-a","curved-rail-b","half-diagonal-rail","train-stop","locomotive"}}}}) do
-            e.destroy(); n = n + 1
-          end
-          rcon.print(helpers.table_to_json{{removed = n}})
-        """)
+        gone = c.lua(cleanup_lua(c.built, ox, oy, ["iron-chest", "inserter", "constant-combinator", "small-lamp",
+                                                  "straight-rail", "curved-rail-a", "curved-rail-b", "half-diagonal-rail",
+                                                  "train-stop", "locomotive"]))
         c.record("cleanup: built entities removed", "removed" in gone, gone)
         c.record("cleanup: bot removed", True, c.lua(f'rcon.print(remote.call("agent_harness","bot_remove","{a.bot}"))'))
     fails = [s for s, ok in c.results if not ok]
