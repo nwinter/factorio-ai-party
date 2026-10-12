@@ -109,6 +109,20 @@ claude_settings() {
     keys_read="$keys_read, \"$k\""
     keys_rules="$keys_rules, \"Read(/$k/**)\", \"Read($k/**)\""
   done
+  # Other runs' folders (their notes, chat and logs) are denied too, so a run reads as a first attempt (task-hosts5);
+  # this run and the shifts it resumes (resumed-from, followed back) stay readable.
+  local chain=" $run " r=$run d
+  while [ -f "$root/runs/$r/resumed-from" ]; do
+    r=$(cat "$root/runs/$r/resumed-from")
+    case "$chain" in *" $r "*) break ;; esac
+    chain="$chain$r "
+  done
+  for d in "$root"/runs/*/; do
+    d=${d%/}
+    case "$chain" in *" ${d##*/} "*) continue ;; esac
+    keys_read="$keys_read, \"$d\""
+    keys_rules="$keys_rules, \"Read(/$d/**)\", \"Read($d/**)\""
+  done
   local sandbox="\"sandbox\": {\"enabled\": true, \"autoAllowBashIfSandboxed\": true, \"allowUnsandboxedCommands\": false,
     \"network\": {\"allowLocalBinding\": true$sockets}, \"filesystem\": {\"denyRead\": [\"$HOME/.config/pog\"$keys_read]}},"
   [ "${1:-}" = nosandbox ] && sandbox=''   # Grok Build: allowlist only (its own sandbox flags differ)

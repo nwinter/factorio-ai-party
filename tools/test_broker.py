@@ -305,8 +305,9 @@ def claude_settings():
     body = text[start:end]
     tmp = tempfile.mkdtemp()
     try:
-        for r in ("shake6", "now"):
+        for r in ("shake6", "now", "prev"):
             os.makedirs(os.path.join(tmp, "runs", r, ".keys"))
+        open(os.path.join(tmp, "runs", "now", "resumed-from"), "w").write("prev\n")
         ws = os.path.join(tmp, "runs", "now", "haiku")
         os.makedirs(ws)
         for broker in ("0", "1"):
@@ -317,6 +318,11 @@ def claude_settings():
             old, own = os.path.join(tmp, "runs", "shake6", ".keys"), os.path.join(tmp, "runs", "now", ".keys")
             assert old in deny_read and f"Read(/{old}/**)" in deny and f"Read({old}/**)" in deny, cfg
             assert (own in deny_read) == (broker == "1"), (broker, deny_read)
+            # task-hosts5: another run's folder is denied; this run's and the shift it resumes are not
+            other, prev = os.path.join(tmp, "runs", "shake6"), os.path.join(tmp, "runs", "prev")
+            assert other in deny_read and f"Read(/{other}/**)" in deny and f"Read({other}/**)" in deny, cfg
+            assert prev not in deny_read and os.path.join(tmp, "runs", "now") not in deny_read, deny_read
+            assert not any(prev + "/**" in x for x in deny), deny
             sockets = cfg["sandbox"]["network"].get("allowUnixSockets")
             assert sockets == ([os.path.join(tmp, "runs", "now", ".sock", "haiku.sock")] if broker == "1" else None), sockets
     finally:
