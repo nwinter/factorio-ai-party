@@ -555,6 +555,7 @@ function handlers.describe()
   for name,schema in pairs(M.waits and M.waits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.labs and M.labs.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.audience and M.audience.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.capsules and M.capsules.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
@@ -3114,6 +3115,9 @@ function handlers.equip(p,a)
 end
 local blueprint_handlers=blueprint_module{position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform}
 for name,handler in pairs(blueprint_handlers) do handlers[name]=handler end
+-- Grenades and other capsules (capsules.lua, request #89).
+M.capsules=require('capsules'){state=state,position=position,assert_visible=assert_visible,held=held}
+handlers.use_item=M.capsules.handlers.use_item
 -- Ghosts at absolute positions, as a player places them from the cursor or
 -- the map: anywhere charted, no items needed. `construct` then builds them.
 -- One ghost as a player's ghost placement (shift-build): manual ghost checks
