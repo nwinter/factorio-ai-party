@@ -287,8 +287,8 @@ class Differ:
             if now - v["t"] > window:
                 self.recent_viewers.pop(key, None)
                 continue
-            if re.search(r"@" + re.escape(key) + r"\b", low) or (
-                    len(key) > 3 and re.search(r"\b" + re.escape(key) + r"\b", low)):
+            if re.search(r"@" + re.escape(key) + r"\b", low) or any(
+                    len(k) > 3 and re.search(r"\b" + re.escape(k) + r"\b", low) for k in viewer_short_names(v["name"])):
                 return v
         return None
 
@@ -317,8 +317,10 @@ class Differ:
                 if asked:  # HOSTS4 item 3: viewer lines reach the agents (shake11 on); an answer is its own beat
                     ev.append({"kind": "viewer_reply", "agent": m["agent"], "viewer": asked["name"],
                                "question": asked["text"], "text": m.get("text", "")})
-                ev.append({"kind": "chat", "agent": m["agent"], "text": m.get("text", ""), "aloud": bool(m.get("aloud")),
-                           "seq": m.get("seq")})
+                # an answer to a viewer is heard like an --aloud line (shift01 16:09: Astra's "Yes, Craig, the base is
+                # growing north..." was judged logistics and stayed text)
+                ev.append({"kind": "chat", "agent": m["agent"], "text": m.get("text", ""),
+                           "aloud": bool(m.get("aloud") or asked), "seq": m.get("seq")})
         board = s.get("board") or {}
         for b in board.get("events") or []:  # eng/stream2's board snapshot: {seq, by, agent, verb, title, kind}
             seq = b.get("seq") if b.get("seq") is not None else (b.get("tick"), b.get("id"), b.get("verb"))
@@ -377,6 +379,17 @@ class Differ:
             e["t"] = now
             e["prio"] = e.get("prio") or PRIORITY.get(e["kind"], 2)
         return ev
+
+
+def viewer_short_names(name):
+    """The forms of a viewer handle an agent may address them by: the whole handle, the handle without trailing digits,
+    and its first word (craigNZ830 -> craignz830, craignz, craig; noscopersscope3718 -> ..., noscopersscope)."""
+    name = str(name or "")
+    out = [name.lower(), re.sub(r"[\d_]+$", "", name).lower()]
+    m = re.match(r"[A-Za-z][a-z]+", name)  # the leading word, up to a capital, digit or separator
+    if m:
+        out.append(m.group(0).lower())
+    return [k for i, k in enumerate(out) if k and k not in out[:i]]
 
 
 def viewer_messages(s):
