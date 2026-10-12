@@ -590,6 +590,7 @@ function handlers.describe()
   for name,schema in pairs(M.circuits and M.circuits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.trains and M.trains.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.shore and M.shore.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
@@ -1844,7 +1845,7 @@ end
 -- the character itself, else the tiles it may not go on (water, space).
 -- Trees and rocks are called out: place_ghosts marks them and construct
 -- clears them, where a direct build cannot. Items on the ground: pick them up.
-local function placement_error(p,proto,pos,direction)
+local function placement_error(p,proto,pos,direction,near)
  local function blockers()
   local b=proto.collision_box or {left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
   local l,t,r,btm=b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y
@@ -1880,7 +1881,15 @@ local function placement_error(p,proto,pos,direction)
   return ' (nothing found in the footprint: check the position is a valid centre for a '..(proto.name or 'entity')..' and the direction)'
  end
  local ok,extra=pcall(blockers)
- return 'placement blocked'..(ok and extra or '')
+ local text='placement blocked'..(ok and extra or '')
+ -- A refused build (near): an offshore pump, or water under the footprint,
+ -- lists the nearest valid placements (shore.lua).
+ if near and M.shore then
+  local water=ok and extra and extra:find(' by tiles: ',1,true)~=nil
+  local fine,hint=pcall(M.shore.hint,p,proto,pos,direction,water)
+  if fine and hint then text=text..hint end
+ end
+ return text
 end
 local function build_direct(p,stack,pos,direction,quality,kind,place)
   local proto,surface=place or stack.prototype.place_result,p.surface
@@ -1906,7 +1915,7 @@ local function build_direct(p,stack,pos,direction,quality,kind,place)
     e=revived
   else
     local args={name=proto.name,position=pos,direction=direction,force=p.force,build_check_type=defines.build_check_type.manual}
-    assert(surface.can_place_entity(args),placement_error(p,proto,pos,direction))
+    if not surface.can_place_entity(args) then error(placement_error(p,proto,pos,direction,true),0) end
     -- The manual check allows a fast-replace, which create_entity without
     -- fast_replace does not do: both machines stayed on the tiles (shake5:
     -- assembling-machine-2 over -1, the old one kept running; request #68).
@@ -1943,7 +1952,7 @@ local function build_direct(p,stack,pos,direction,quality,kind,place)
     if proto.type=='underground-belt' then args.type=kind or underground_type(surface,proto,pos,direction) end
     e=surface.create_entity(args)
   end
-  assert(e,placement_error(p,proto,pos,direction))
+  if not e then error(placement_error(p,proto,pos,direction,true),0) end
   if stack.count>1 then stack.count=stack.count-1 else stack.clear() end
   -- The replaced machine's recipe goes on the new one when it can make it.
   if replaced and replaced.recipe and e.set_recipe then
@@ -2058,7 +2067,9 @@ local function build_one(p,a)
   local before=held()
   assert(p.cursor_stack.swap_stack(stack),'could not borrow inventory stack')
   local ok,err=pcall(function()
-    assert(p.can_build_from_cursor{position=pos,direction=direction,build_mode=defines.build_mode.normal},placement_error(p,proto,pos,direction))
+    if not p.can_build_from_cursor{position=pos,direction=direction,build_mode=defines.build_mode.normal} then
+      error(placement_error(p,proto,pos,direction,true),0)
+    end
     p.build_from_cursor{position=pos,direction=direction,build_mode=defines.build_mode.normal}
   end)
   local restored=not p.cursor_stack.valid_for_read or
@@ -3252,6 +3263,10 @@ M.ground=require('ground'){state=state,real=real,distance=distance,position=posi
   start=function(p,action) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end; state().active[p.index]=action end,
   request_path=function(p,nav) return request_path(p,nav) end,navigate=function(p,nav) return navigate(p,nav) end,
   stop_walking=function(p) p.walking_state={walking=false,direction=defines.direction.north} end}
+-- Valid placements near a position (shore.lua): refused builds of offshore
+-- pumps or onto water list them; the placements read returns them.
+M.shore=require('shore'){position=position,integer=integer,assert_visible=assert_visible,directions=directions}
+handlers.placements=M.shore.handlers.placements
 -- Ghosts at absolute positions, as a player places them from the cursor or
 -- the map: anywhere charted, no items needed. `construct` then builds them.
 -- One ghost as a player's ghost placement (shift-build): manual ghost checks
@@ -3777,7 +3792,7 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
-local reads={labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
+local reads={placements=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
