@@ -184,6 +184,13 @@ ul.crosses li::before { content: "✕"; position: absolute; left: 0; color: var(
 .run-row p + p { margin-top: .3rem; color: var(--ink-2); }
 .run-final { font-weight: 600; text-align: right; font-size: .92rem; white-space: nowrap; }
 @media (max-width: 640px) { .run-row { flex-direction: column; align-items: flex-start; } .run-final { text-align: left; white-space: normal; } }
+/* the long run: its row leads the Runs list; its page's shift table */
+.run-row.featured { border-left: 4px solid var(--accent); }
+table.long-run th[scope=row] { white-space: nowrap; }
+table.long-run th[scope=row] .small { display: block; font-weight: 400; }
+table.long-run td { vertical-align: top; }
+table.long-run tr.empty td, table.long-run tr.empty th { opacity: .7; }
+table.long-run .moments { margin: 0; padding-left: 1.1em; min-width: 16em; font-size: .9rem; }
 
 /* tables: deep wells with the kit's header bar */
 .table-wrap { overflow-x: auto; border-radius: var(--fx-r-1); background: var(--well); box-shadow: var(--well-shadow); margin: 1rem 0; }

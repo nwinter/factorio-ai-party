@@ -10,6 +10,7 @@ plain HTML/CSS/JS site to site/dist/. Python 3 stdlib only.
 """
 
 import argparse
+import datetime
 import html
 import json
 import re
@@ -24,6 +25,8 @@ REPO = SITE.parent
 ART = REPO / "tools" / "stream" / "static"
 sys.path.insert(0, str(ART.parent))
 import avatar as avatar_art  # noqa: E402  (tools/stream/avatar.py, reads the part lists from avatar.js)
+sys.path.insert(0, str(SITE))
+import longrun  # noqa: E402  (site/longrun.py: the long run's shifts from runs/)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -665,8 +668,81 @@ def _chat_line(c, hl):
             f'{name}<span class="c-text">{esc(c["text"])}</span></li>')
 
 
+LONG = None  # the long run (longrun.load), set in main() when the runs folder has a chain of shifts
+
+
+def _when(a, b):
+    """'Oct 11, 02:52 to 04:53' from two local ISO times (scores.jsonl's `t`)."""
+    try:
+        x, y = datetime.datetime.fromisoformat(a), datetime.datetime.fromisoformat(b)
+    except (TypeError, ValueError):
+        return "–"
+    end = y.strftime("%H:%M") if y.date() == x.date() else y.strftime("%b %-d, %H:%M")
+    return f"{x.strftime('%b %-d, %H:%M')} to {end}"
+
+
+def long_run_row(lr):
+    """The long run's entry in the Runs list."""
+    done = [s for s in lr["shifts"] if not s.get("empty")]
+    last = done[-1]
+    return (f'<a class="run-row featured" href="/runs/long/"><div><h2>The long run</h2><p class="muted">One world in '
+            f'{len(done)} shifts so far, {esc(_when(done[0]["started"], last["ended"]))}</p></div>'
+            f'<p class="run-final">{last["research"]} techs, {last["rockets"]} rockets by {esc(last["game1"])}</p></a>')
+
+
+def build_long_run(lr):
+    shifts = lr["shifts"]
+    done = [s for s in shifts if not s.get("empty")]
+    first, last = done[0], done[-1]
+    stats = "".join([stat("shifts", len(done), f"{len(shifts) - len(done)} more did not start" if len(shifts) > len(done) else ""),
+                     stat("game time", last["game1"], "on one save"),
+                     stat("technologies", last["research"]),
+                     stat("rockets launched", last["rockets"]),
+                     stat("space platforms", len(last["platforms"]), ", ".join(last["platforms"]))])
+    rows = []
+    for s in shifts:
+        if s.get("empty"):
+            rows.append(f'<tr class="empty"><th scope="row">–<span class="muted small">{esc(s["id"])}</span></th>'
+                        f'<td>{esc(_when(s["started"], s["ended"]))}</td><td colspan="8" class="muted">{esc(s["note"])}</td></tr>')
+            continue
+        moments = "".join(f"<li>{esc(m)}</li>" for m in s["moments"][:6])
+        new_rockets = f' <span class="muted">(+{s["rockets_new"]})</span>' if s["rockets_new"] else ""
+        rows.append(
+            f'<tr><th scope="row">{s["n"]}<span class="muted small">{esc(s["id"])}</span></th>'
+            f'<td>{esc(_when(s["started"], s["ended"]))}{" <span class=\"fx-chip fx-chip--red\">on now</span>" if s.get("running") else ""}</td>'
+            f'<td>{esc(s["game0"])} to {esc(s["game1"])}</td>'
+            f'<td>{s["research"]} <span class="muted">(+{s["research_new"]})</span></td>'
+            f'<td>{"–" if s["spm"] is None else fmt_num(s["spm"])}</td>'
+            f'<td>{s["rockets"]}{new_rockets}</td>'
+            f'<td>{esc(", ".join(s["platforms"]) or "–")}</td><td>{esc(", ".join(p.capitalize() for p in s["planets"]) or "–")}</td>'
+            f'<td>{s["deaths"]} / {s["losses"]}</td><td>{f"<ul class=moments>{moments}</ul>" if moments else ""}</td></tr>')
+    research = line_chart("Technologies researched over game time", [{"name": "Technologies", "points": lr["research"]}],
+                          "technologies", step=True, desc="Across every shift, on the save's own game clock.")
+    spm = line_chart("Science packs per minute", [{"name": "Packs per minute", "points": lr["spm"]}], "packs per minute",
+                     desc="All science packs made, averaged over 10 game minutes.")
+    body = f"""
+<p class="crumbs"><a href="/runs/">Runs</a> / The long run</p>
+<h1>The long run</h1>
+<p class="lede">One world, one factory, played in shifts around the clock: each shift resumes the last one's save with
+the same nine agents, and the game clock runs only while a shift is on. It started {esc(_when(first["started"], first["ended"]).split(" to ")[0])}.</p>
+<div class="stats">{stats}</div>
+<div class="chart-grid">{research}{spm}</div>
+<h2>Shift by shift</h2>
+<p class="muted">Times are Pacific. Science per minute is the shift's average over its game time. Deaths and loss alerts
+are the ones the stream's director cut to. Moments: milestone technologies, rockets, platforms and planets from the
+score log, and the hosts' Space Age calls.</p>
+<div class="table-wrap"><table class="long-run wide"><thead><tr><th scope="col">Shift</th><th scope="col">When</th>
+<th scope="col">Game time</th><th scope="col">Technologies</th><th scope="col">Science / min</th><th scope="col">Rockets</th>
+<th scope="col">Platforms</th><th scope="col">Planets</th><th scope="col">Deaths / loss alerts</th><th scope="col">Moments</th>
+</tr></thead><tbody>{"".join(rows)}</tbody></table></div>
+"""
+    return page("The long run", body, "/runs/", "One world over many shifts: research, science, rockets and platforms shift by shift.")
+
+
 def build_runs_index(runs, all_worlds):
     body = ['<h1>Runs</h1><p class="lede">Every recorded session, newest first. Each run page has the milestone timeline, charts from the score log, and a card per agent.</p><div class="run-list">']
+    if LONG:
+        body.append(long_run_row(LONG))
     for rid in reversed(list(runs)):
         run = runs[rid]
         pw = run_players_worlds(run, all_worlds[rid])
@@ -742,6 +818,10 @@ def build_home(runs, all_worlds):
              ("/runs/", "Runs", f"Every run with its charts and chat; the latest, {runs['shake1']['title']}, reached "
               f"{sf['techs']} technologies by {sf['game']}."),
              ("/studies/", "Studies", "Write-ups of the runs: what went wrong, what changed.")]
+    if LONG:
+        last = [s for s in LONG["shifts"] if not s.get("empty")][-1]
+        cards.insert(1, ("/runs/long/", "The long run", f"One world in shifts around the clock: {last['research']} "
+                         f"technologies and {last['rockets']} rockets by {last['game1']} of game time, shift by shift."))
     links = "".join(f'<a class="home-card" href="{href}"><h3>{esc(t)}</h3><p class="muted">{esc(d)}</p></a>'
                     for href, t, d in cards)
     body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1") + f"""
@@ -999,6 +1079,8 @@ FAVICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect w
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(SITE / "dist"))
+    ap.add_argument("--runs-dir", default=str(REPO / "runs"),
+                    help="where the long run's shift folders are (default: the repo's runs/; read-only)")
     args = ap.parse_args()
     out = Path(args.out)
     if out.exists():
@@ -1007,6 +1089,8 @@ def main():
 
     runs = CONTENT["runs"]
     all_worlds = {rid: load_scores(r) for rid, r in runs.items()}
+    global LONG
+    LONG = longrun.load(args.runs_dir, clean)  # None without a chain of shifts: no page, no links to it
 
     def write(rel, text):
         p = out / rel
@@ -1014,6 +1098,8 @@ def main():
         p.write_text(text)
 
     write("index.html", build_home(runs, all_worlds))
+    if LONG:
+        write("runs/long/index.html", build_long_run(LONG))
     write("about/index.html", build_about(runs, all_worlds))
     write("experiments/index.html", build_experiments(runs, all_worlds))
     write("runs/index.html", build_runs_index(runs, all_worlds))
