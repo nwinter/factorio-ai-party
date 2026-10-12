@@ -396,6 +396,22 @@ do
   eq(r.transferred,0); eq(r.at_up_to,true)
   r=call('transfer',{position=box.position,inventory='chest',item='firearm-magazine',count=50,keep=60,direction='to_entity'})
   eq(r.transferred,0)
+  -- Request #124: a silo with automatic requests on takes no cargo by hand;
+  -- the refusal names the setting and how to turn it off.
+  defines.inventory.rocket_silo_rocket=defines.inventory.rocket_silo_rocket or 21
+  local cargo=stack(nil,0)
+  cargo.transfer_stack=function() return false end -- the engine refuses
+  local held={cargo,valid=true}
+  held.get_item_count=function() return 0 end
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=1,y=0},force=p.force,use_transitional_requests=true}
+  silo.get_inventory=function() return held end
+  p.surface.find_entities_filtered=function() return {silo} end
+  r=call('transfer',{position=silo.position,inventory='rocket_silo_rocket',item='firearm-magazine',count=10,direction='to_entity'})
+  eq(r.transferred,0); eq(r.entity_full.auto_requests,true)
+  assert(r.entity_full.note:find('auto_requests=false',1,true),r.entity_full.note)
+  silo.use_transitional_requests=false
+  r=call('transfer',{position=silo.position,inventory='rocket_silo_rocket',item='firearm-magazine',count=10,direction='to_entity'})
+  eq(r.entity_full.auto_requests,nil)
   main={input}
 end
 -- Omitted items take everything from the inferred output inventory; batches

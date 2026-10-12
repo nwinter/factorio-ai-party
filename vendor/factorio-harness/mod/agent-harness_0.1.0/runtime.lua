@@ -2368,6 +2368,15 @@ local function transfer_one(p,a,pos,e)
       end
     end
   end
+  -- A silo with automatic requests on loads its rocket for the platforms'
+  -- requests and refuses cargo by hand, empty rocket or not (request #124).
+  if full and a.direction=='to_entity' and (a.inventory or inferred)=='rocket_silo_rocket' and e.type=='rocket-silo' then
+    local ok,auto=pcall(function() return e.use_transitional_requests end)
+    if ok and auto then
+      full.auto_requests=true
+      full.note='this silo has automatic requests on: the game fills its rocket for the platforms\' requests and takes no cargo by hand; turn them off with launch {position, auto_requests=false}, then transfer (and launch with platform=...)'
+    end
+  end
   -- Asked for an item the character does not hold at all: say so.
   local short=a.item and a.direction=='to_entity' and moved<wanted and not full and moved==0 and available()==0 and wanted or nil
   -- Hand share: feeding anything, and collecting from machines (not storage).
