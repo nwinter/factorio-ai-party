@@ -54,7 +54,7 @@ DEFAULTS = {
     "work_fresh": 20.0,      # a work item older than this is no longer news
     "work_zoom": 0.9,        # a far ghost/paste/deconstruct position on the body's surface (scaled like other views)
 }
-HOLDS = ("@attack", "@segment", "@work")  # fixed shots a camera keeps until their `until`
+HOLDS = ("@attack", "@segment", "@work", "@map")  # fixed shots a camera keeps until their `until`
 FIGHT = {"shoot", "attack", "kite"}
 BUILD = {"build", "place", "construct", "blueprint", "build_blueprint", "build_path", "rotate", "repair", "deconstruct"}
 WORK = {"mine", "craft", "insert", "take", "feed", "gather", "research", "fuel"}
@@ -79,8 +79,8 @@ CLIENT = (1920, 1080)  # a camera client's screen; Factorio draws 32 px a tile a
 def frame_of(target, frac=1.0):
     """What a client shows, from its shot: {"position" | "follow", "zoom" (as sent to the game), "frac", "surface"},
     or None before a shot was sent. frac: share of the client's width the program shows (the on-air crop)."""
-    if not target or not target.get("game_zoom"):
-        return None
+    if not target or not target.get("game_zoom") or target.get("map"):
+        return None  # (a map camera shows the chart, not the world: no footage of anything for replays.py)
     fr = {"zoom": target["game_zoom"], "frac": frac}
     if "position" in target:
         p = target["position"]
@@ -434,6 +434,8 @@ class Director:
                     "surface": target.get("surface") or pos.get("surface") or "nauvis"}
         else:
             body = {"player": slot["player"], "follow": target["follow"], "zoom": target["zoom"], "smooth": True}
+        if target is not None and target.get("map"):
+            body["map"] = True  # cameras.lua: Factorio's map (the remote controller's chart), not the world
         if target is not None and target.get("jump"):
             body["smooth"] = False  # cameras.lua teleports at once (and sets the zoom) instead of easing over
         if target is not None and target.get("exact_zoom"):
