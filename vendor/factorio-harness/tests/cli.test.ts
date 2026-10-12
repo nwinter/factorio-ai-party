@@ -94,6 +94,17 @@ test('--wait waits for shoot channel and reports interrupted completion',async()
     }
   });
 });
+test('--wait on a pickup that took everything succeeds (picked_up)',async()=>{
+  let polls=0;
+  await engine(request=>{
+    if(request.action==='pickup')return {ok:true,result:{until_tick:60,item_stacks:2}};
+    assert.equal(request.action,'status');polls++;
+    return {ok:true,result:polls===1?{active:{kind:'pickup'}}:{active:false,last:{kind:'pickup',outcome:'picked_up',picked:{coal:100}}}};
+  },async port=>{
+    const {stdout}=await cli(port,['call','pickup','--args','{"radius":8}','--wait']);
+    assert.equal(JSON.parse(stdout).ok,true);
+  });
+});
 test('--wait on a transfer that is awaiting a hand craft waits for the feed to land',async()=>{
   let polls=0;
   await engine(request=>{
