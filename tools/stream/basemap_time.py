@@ -17,8 +17,10 @@ def main():
     a = ap.parse_args()
     h = harness.Harness(a.world)
     for ore in (False, True):
-        lua = harness.basemap_lua(ore=ore).replace("rcon.print(helpers.table_to_json{", "local __j = helpers.table_to_json{")
-        lua = "local __p = helpers.create_profiler()\n" + lua.rstrip() + \
+        lua = harness.basemap_lua(ore=ore).rstrip()
+        assert lua.endswith("})") and "rcon.print(helpers.table_to_json{" in lua, "BASEMAP_LUA no longer ends in rcon.print(...{...})"
+        lua = lua.replace("rcon.print(helpers.table_to_json{", "local __j = helpers.table_to_json{")[:-1]  # drop print's ")"
+        lua = "local __p = helpers.create_profiler()\n" + lua + \
             '\n__p.stop()\nrcon.print({"", "game time ", __p})\nrcon.print(__j)'
         t = time.time()
         raw = h.command("/silent-command " + harness.one_line(lua))
