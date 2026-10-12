@@ -92,7 +92,10 @@ for _, n in ipairs({"burner-mining-drill","electric-mining-drill","stone-furnace
   "assembling-machine-1","assembling-machine-2","assembling-machine-3","lab","steam-engine","solar-panel",
   "transport-belt","inserter","oil-refinery","chemical-plant","rocket-silo","biolab","big-mining-drill","foundry",
   "electromagnetic-plant","biochamber","cryogenic-plant","recycler","cargo-landing-pad","space-platform-hub",
-  "asteroid-collector","crusher","thruster","railgun-turret"}) do
+  "asteroid-collector","crusher","thruster","railgun-turret",
+  "roboport","requester-chest","buffer-chest","accumulator","gun-turret","laser-turret","flamethrower-turret",
+  "stone-wall","beacon","pumpjack","locomotive","nuclear-reactor","centrifuge","fast-transport-belt",
+  "express-transport-belt"}) do
   if prototypes.entity[n] then
     local c = 0
     for _, s in ipairs(all) do c = c + s.count_entities_filtered{force = f, name = n} end

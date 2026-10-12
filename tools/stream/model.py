@@ -159,6 +159,36 @@ def fmt_game_time(sec):
     return f"{sec // 3600}h{sec // 60 % 60:02d}m"
 
 
+# Technologies and the buildings they unlock, for the hosts' commentary on what the team has not built yet
+# (HOSTS4 item 2: "logistic robotics researched 3 h ago, no roboport built"). Buildings are counted by tools/pog.py's
+# score; a technology whose building is not counted there is left out.
+UNLOCKS = {
+    "logistic-robotics": (("roboport",), "roboports"),
+    "construction-robotics": (("roboport",), "roboports"),
+    "logistic-system": (("requester-chest", "buffer-chest"), "requester chests"),
+    "electric-energy-accumulators": (("accumulator",), "accumulators"),
+    "solar-energy": (("solar-panel",), "solar panels"),
+    "gun-turret": (("gun-turret",), "gun turrets"),
+    "laser-turret": (("laser-turret",), "laser turrets"),
+    "stone-wall": (("stone-wall",), "walls"),
+    "effect-transmission": (("beacon",), "beacons"),
+    "oil-processing": (("pumpjack", "oil-refinery"), "pumpjacks or refineries"),
+    "advanced-material-processing-2": (("electric-furnace",), "electric furnaces"),
+    "automation-3": (("assembling-machine-3",), "assembling machine 3s"),
+    "logistics-2": (("fast-transport-belt",), "fast belts"),
+    "logistics-3": (("express-transport-belt",), "express belts"),
+    "railway": (("locomotive",), "trains"),
+    "nuclear-power": (("nuclear-reactor",), "nuclear reactors"),
+    "uranium-processing": (("centrifuge",), "centrifuges"),
+    "rocket-silo": (("rocket-silo",), "a rocket silo"),
+    "space-platform": (("space-platform-hub",), "a space platform"),
+    "foundry": (("foundry",), "foundries"),
+    "electromagnetic-plant": (("electromagnetic-plant",), "electromagnetic plants"),
+    "big-mining-drill": (("big-mining-drill",), "big mining drills"),
+    "recycling": (("recycler",), "recyclers"),
+}
+
+
 def tech_label(name):
     if not name:
         return None
@@ -228,6 +258,8 @@ class Model:
         self.tick = 0
         self.paused = False
         self.research = {"current": None, "progress": None, "done": set(), "recent": deque(maxlen=6)}
+        self.done_at = {}    # technology -> when this stream saw it finish (unused_unlocks)
+        self.entities = {}   # building counts from the score (unused_unlocks)
         self.research_started = False
         self.prod_samples = deque(maxlen=400)  # (wall time, game seconds, {item: total})
         self.flows = {}
@@ -275,6 +307,8 @@ class Model:
             self._ingest_research(obs["research"], now)
         if obs.get("produced") is not None:
             self.prod_samples.append((now, game_sec, dict(obs["produced"])))
+        if obs.get("entities") is not None:  # the score's building counts (tools/pog.py), for unused_unlocks
+            self.entities = dict(obs["entities"])
         if obs.get("flows"):
             self.flows = obs["flows"]
         if obs.get("darkness") is not None:
@@ -495,6 +529,7 @@ class Model:
             self.research_started = True
         else:
             for name in sorted(done - res["done"]):
+                self.done_at[name] = now
                 res["recent"].appendleft({"name": name, "label": tech_label(name), "t": now})
                 self.alert("research", f"Research complete: {tech_label(name)}", key=f"research:{name}", ttl=40)
                 # credit whoever has been busiest lately (labs are fed by the team; this keeps cameras lively)
@@ -504,6 +539,23 @@ class Model:
         res["done"] = done
         res["current"] = r.get("current")
         res["progress"] = r.get("progress")
+
+    def unused_unlocks(self, now=None):
+        """Researched technologies whose building the team has none of, oldest first: [{tech, unlocks, built,
+        researched}], researched being "N minutes ago" or "before this stream" (already done when the stream
+        started). For the hosts' commentary to viewers only; nothing here goes to the agents."""
+        if not self.entities:
+            return []
+        now = now or time.time()
+        out = []
+        for tech, (names, label) in UNLOCKS.items():
+            if tech not in self.research["done"] or any(self.entities.get(n) for n in names):
+                continue
+            t = self.done_at.get(tech)
+            out.append((t or 0, {"tech": tech_label(tech), "unlocks": label, "built": 0,
+                                 "researched": f"{round((now - t) / 60)} minutes ago" if t else "before this stream"}))
+        out.sort(key=lambda x: x[0])
+        return [x for _, x in out][:4]
 
     def _ingest_board(self, b):
         """`board` read: current items (newest first) and the open unowned request count."""
@@ -864,6 +916,7 @@ class Model:
             "chat": self.chat_window(),
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],
                          "done_count": len(res["done"]), "recent": list(res["recent"])[:4]},
+            "unused_unlocks": self.unused_unlocks(now),
             "darkness": self.darkness,
             "basemap": self.basemap,
             "production": self.production(now),

@@ -802,6 +802,26 @@ check("since_last_beat: a new job and new words; then nothing new", "since_last_
       f2["agent"]["since_last_beat"] and f3["agent"]["since_last_beat"] == ["nothing new since the hosts last saw them"],
       str(f2["agent"].get("since_last_beat")))
 
+# HOSTS4 item 2: researched but not built, as commentary for viewers
+import model  # noqa: E402
+um = model.Model({"title": "t", "agents": {}})
+um.ingest({"tick": 60, "research": {"done": ["logistic-robotics", "gun-turret", "solar-energy"], "current": None},
+           "entities": {"gun-turret": 12}}, now=1000.0)  # already done when the stream started
+um.ingest({"tick": 120, "research": {"done": ["logistic-robotics", "gun-turret", "solar-energy",
+                                              "electric-energy-accumulators"], "current": None},
+           "entities": {"gun-turret": 12, "solar-panel": 19}}, now=1000.0 + 3600)
+uu = um.snapshot(1000.0 + 3600 + 180)["unused_unlocks"]
+check("unused unlocks: researched, none built; oldest first; when", [u["unlocks"] for u in uu] ==
+      ["roboports", "accumulators"] and uu[0]["researched"] == "before this stream" and
+      uu[1]["researched"] == "3 minutes ago", str(uu))
+nb = caster.facts_for({"kind": "lull", "angle": "explain", "t": now, "prio": 1}, {"agents": [], "unused_unlocks": uu})
+check("unused unlocks reach the hosts on explain beats, as commentary", nb.get("not_built_yet") == uu and
+      "commentary" in nb.get("not_built_yet_note", "") and "not_built_yet" not in caster.facts_for(
+          {"kind": "attack", "text": "x", "t": now, "prio": 9}, {"agents": [], "unused_unlocks": uu}), str(nb)[:200])
+check("an absence the facts back passes; another does not", caster.check_line(
+    "Logistic robotics is done, but still no roboports.", nb, [], []) is None and caster.check_line(
+    "Still no trains.", nb, [], []) == "claims something is missing")
+
 # HOSTS4: Opus on shake10 aired cut-off lines, verdict openers and lowercase names
 check("a line cut off mid-word is cut", caster.check_line("They scanned before leaving. Two ass", {"event": "lull"}, [],
                                                            []) == "cut off mid-sentence")

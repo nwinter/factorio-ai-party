@@ -653,6 +653,12 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     prod = [p for p in s.get("production") or [] if p.get("rate")]
     if prod and e["kind"] in ("lull", "research", "power", "open"):
         f["production_per_minute"] = {p["item"].replace("-", " "): round(p["rate"]) for p in prod[:4]}
+    # HOSTS4 item 2: what the team researched but has not built, as commentary for viewers (never advice to agents)
+    if s.get("unused_unlocks") and (e["kind"] == "research" or (e["kind"] == "lull" and e.get("angle") in (
+            "explain", "production", "pace", "research", None))):
+        f["not_built_yet"] = s["unused_unlocks"][:2]
+        f["not_built_yet_note"] = ("researched but none built yet: worth a remark for viewers on what the team could "
+                                   "use, at most once, as commentary (the agents do not hear the hosts)")
     if e["kind"] == "lull":
         angle = e.get("angle")
         busy = [agent_facts(s, a["name"]) for a in s.get("agents") or [] if a.get("activity") == "acting"]
@@ -887,7 +893,9 @@ def check_line(line, facts, names, recent):
     if re.search(r"\bzero\b", low) and 0 not in known:  # "zero belts laid" was invented on the live world
         return "number not in facts: zero"
     # "still no steam", "no walls yet", "no belts in sight": absences are never in the facts (live world, Nemotron, Kimi)
-    if re.search(r"\b(?:still|yet) no\b|\bno \w+(?: \w+)? (?:yet|in sight)\b|\bnot a single\b", low):
+    unbuilt = [u.get("unlocks", "").lower() for u in facts.get("not_built_yet") or []]
+    about_unbuilt = any(w.rstrip("s") in low for u in unbuilt for w in re.findall(r"[a-z]{4,}", u))
+    if re.search(r"\b(?:still|yet) no\b|\bno \w+(?: \w+)? (?:yet|in sight)\b|\bnot a single\b", low) and not about_unbuilt:
         return "claims something is missing"
     # shake3: "Astra scouts for oil that isn't there" (the field was found seven minutes later)
     if re.search(r"\b(?:isn't|is not|aren't|are not|wasn't|was not|ain't) (?:even )?(?:there|here|anywhere)\b|"
