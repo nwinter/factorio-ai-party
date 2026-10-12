@@ -4,6 +4,30 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## The agents first, the hosts second (branch eng/talk-hosts, 2026-10-12 afternoon)
+
+Nick, during shift01: "the agents aren't talking to the stream as much, so it's almost all announcers." In the first
+55 minutes the caster aired 218 host lines and 31 agent lines. Clef called 111 of the 152 chat lines logistics, and a
+map coordinate anywhere vetoed a line, so "Fuel is the bottleneck: boiler empty, half the furnaces unfueled" went
+unheard.
+
+- Which lines (`talk_pick`): `aloud` lines as before. Any other line is voiced when it reads well once the leading
+  @handles, "opus here:" and coordinates are gone, and it is a reaction, a plan or a request. It stays text when it
+  lists 3 or more positions, has run-together words ("for160plates", a 14-letter non-word), 4 or more numbers, a
+  fragment left where a coordinate was ("I'm, please"), or is a bare acknowledgement. A plan addressed to one
+  teammate is a handover and stays text unless it asks or reacts. Clef runs only on the lines this would drop, and
+  its banter/strategy/emotion still lifts them.
+- Pacing (`TalkPicker`): `--agent-gap 12` team-wide (was 15), `--agent-cooldown 50` per agent (was 60). A good line
+  waits up to `--chat-stale 30` (was 20; busy lines used to be dropped). The best waiting line goes first (aloud, then
+  reactions, plans, requests). A line much like one aired in the last 10 minutes is dropped.
+- The hosts yield: typed chat no longer reaches the hosts. After an agent line plays, a beat below `--yield-prio 7`
+  (research, cards and attacks still speak) is a short reaction to it for `--react 0.5` of the lines, or silence, for
+  `--yield 30` seconds after the clip ends. Each agent line in the last 5 minutes adds `--talk-gap 6` seconds (at
+  most 4 lines counted) to the gap between host beats and to the lull.
+- Replay: `python3 tools/stream/talk_replay.py runs/shift01 --minutes 55`. It voices 70 agent lines (31 before). Host
+  lines drop to at most 177 (218 before), 24 of them reactions, so agents are 28% of spoken lines (12% before). The
+  longer gaps are not modelled, so the share is a lower bound.
+
 ## Hosts by audience, and a public run as a first attempt (branch eng/audio2, 2026-10-12 morning)
 
 **Model by audience.** The viewers bridge (`viewers.py`, inside serve.py) reads YouTube's "N watching now" for the
