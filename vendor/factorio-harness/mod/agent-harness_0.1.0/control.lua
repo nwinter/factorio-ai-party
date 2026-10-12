@@ -220,7 +220,8 @@ remote.add_interface('agent_harness', {
   camera = function(json) return operator('camera', json) end,
   cameras = function() return operator('cameras') end,
   profile_ticks = function(n) return operator('profile_ticks', n) end,
-  shift_start = function() return operator('shift_start') end,
+  -- n: the shift's number in the world (tools/start-team.sh, from the resumed-from chain, as the stream hosts count).
+  shift_start = function(n) return operator('shift_start', n) end,
   console_log = console_log,
   install =function(source) return installing(function() return install_source(source) end) end,
   -- What this control.lua accepts; a world without it takes one install of <=524288 bytes.

@@ -354,6 +354,14 @@ eq(shift.research_since_your_last_shift,'railway')
 -- The first sample of a freshly deployed runtime takes a base snapshot too.
 local snaps=storage.agent_harness.research_snaps.player
 eq(#snaps,4) -- the first sample's, then shifts 1, 2 and 3
+-- The number is the one start-team passes (the resumed-from chain, as the stream hosts count); without one, one more.
+eq(runtime.operator.shift_start(9).shift,9)
+eq(astra('status').team.shift.shift,'shift 9, started 0s ago')
+eq(runtime.operator.shift_start().shift,10)
+eq(runtime.operator.shift_start('x').shift,11)
+-- A start that repeats a number still gives each agent the block once.
+runtime.operator.shift_start(11)
+eq(astra('status').team.shift.shift,'shift 11, started 0s ago')
 -- A fault in the shift block never fails the reply: it is counted.
 local errors=(storage.agent_harness.research_errors or {}).count or 0
 runtime.operator.shift_start()

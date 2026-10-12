@@ -24,6 +24,8 @@ sys.dont_write_bytecode = True
 
 import voices  # noqa: E402
 from analyst_board import is_question, questions_on  # noqa: E402
+sys.path.insert(0, os.path.dirname(HERE))
+from shift_times import shift_number  # noqa: E402
 
 CASTERS = {
     "pbp": {"name": "Rook", "label": "Rook",
@@ -496,16 +498,10 @@ def read_shift(run_dir):
         return None
     if not prev:
         return None
-    root, chain, run = os.path.dirname(os.path.normpath(run_dir)), [], prev
-    while run and run not in chain and len(chain) < 50:  # the earlier shifts of this world, newest first
-        chain.append(run)
-        try:
-            run = open(os.path.join(root, run, "resumed-from")).read().strip()
-        except OSError:
-            run = None
     # Numbers only, said outright: shake6's fact had the run name ("continues": "shake5") next to the number, and the
-    # hosts mixed them into "shift five" and "Shake five" by the end.
-    n = len(chain) + 1
+    # hosts mixed them into "shift five" and "Shake five" by the end. The count is the agents' too (tools/shift_times.py:
+    # start-team passes it to the harness's shift_start for their shift block).
+    n = shift_number(run_dir)
     f = {"this_shift": f"shift {n}", "next_shift": f"shift {n + 1}", "earlier_shifts": n - 1,
          "at_the_deadline": f"the world is saved and shift {n + 1} continues it from there"}
     try:

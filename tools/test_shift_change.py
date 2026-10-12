@@ -258,7 +258,38 @@ def start_team_writes_switches():
     print("start-team switches.env: ok")
 
 
+def shift_numbers():
+    """The agents' shift block and the hosts count the same: 1 + the resumed-from chain (tools/shift_times.py)."""
+    import shift_times
+    sys.path.insert(0, os.path.join(ROOT, "tools", "stream"))
+    import caster
+    tmp = tempfile.mkdtemp(prefix="shiftnum")
+    try:
+        prev = None
+        for i in range(4, 13):   # shake4 .. shake12, each resumed from the one before
+            d = os.path.join(tmp, f"shake{i}")
+            os.makedirs(d)
+            if prev:
+                open(os.path.join(d, "resumed-from"), "w").write(prev + "\n")
+            prev = f"shake{i}"
+        last = os.path.join(tmp, "shake12")
+        assert shift_times.shift_number(last) == 9 and shift_times.shift_number(os.path.join(tmp, "shake4")) == 1
+        assert caster.read_shift(last)["this_shift"] == "shift 9", caster.read_shift(last)
+        out = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "shift_times.py"), "number", last],
+                             capture_output=True, text=True, check=True).stdout.strip()
+        assert out == "9", out
+        # a loop in the chain stops
+        open(os.path.join(tmp, "shake4", "resumed-from"), "w").write("shake12\n")
+        assert shift_times.shift_number(last) == 10
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    src = open(os.path.join(ROOT, "tools", "start-team.sh")).read()
+    assert 'tools/shift_times.py number "$rundir"' in src and '\\"shift_start\\",$shift_n' in src
+    print("shift numbers: ok (shake12 of shake4..shake12 is shift 9 for the hosts and the agents)")
+
+
 if __name__ == "__main__":
+    shift_numbers()
     switches()
     refusals()
     dry_run()

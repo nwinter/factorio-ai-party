@@ -148,7 +148,10 @@ if [ -n "$resume" ]; then
   tick=$(python3 tools/pog.py --world "$world" score 2>/dev/null | python3 -c 'import json,sys; t=json.load(sys.stdin)["tick"]; print(f"{t} (game {t // 3600}m)")' 2>/dev/null || echo '?')
   log "world $world: resumed at tick $tick"
   # Losses in this shift start new incidents; the previous shift's stay in status alerts history.
-  closed=$(python3 tools/pog.py --world "$world" rcon '/silent-command rcon.print(remote.call("agent_harness","shift_start"))' 2>&1)
+  # The shift's number in the world, counted as the stream hosts count it (tools/shift_times.py, resumed-from chain):
+  # the agents' shift block says the same number.
+  shift_n=$(python3 tools/shift_times.py number "$rundir" 2>/dev/null || echo 0)
+  closed=$(python3 tools/pog.py --world "$world" rcon "/silent-command rcon.print(remote.call(\"agent_harness\",\"shift_start\",$shift_n))" 2>&1)
   log "world $world: shift_start $closed"
 fi
 

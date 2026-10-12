@@ -216,10 +216,14 @@ return function(api)
       end
     end
   end
-  function M.shift_start()
+  -- n: the shift's number in the world, as tools/start-team.sh counts it from the resumed-from chain (the stream hosts'
+  -- count); without it, one more than this save's last. seq numbers the starts for the once-per-shift check.
+  function M.shift_start(n)
     local s = api.state()
     local old = s.shift
-    s.shift = {seq=(old and old.seq or 0) + 1, tick=game.tick, prev_tick=old and old.tick}
+    n = tonumber(n)
+    if not (n and n >= 1 and n == math.floor(n)) then n = (old and (old.number or old.seq) or 0) + 1 end
+    s.shift = {seq=(old and old.seq or 0) + 1, number=n, tick=game.tick, prev_tick=old and old.tick}
     snapshot(s, game.tick)
     return s.shift
   end
@@ -312,7 +316,7 @@ return function(api)
       for _, x in ipairs(idle) do parts[#parts+1] = x.label .. ' (' .. table.concat(x.techs, ', ') .. ')' end
       out.researched_none_built = table.concat(parts, '; ')
     end
-    out.shift = string.format('shift %d, started %s ago', shift.seq, ago(game.tick - shift.tick))
+    out.shift = string.format('shift %d, started %s ago', shift.number or shift.seq, ago(game.tick - shift.tick))
     return out
   end
   -- Work per tick over the samples kept (about 5 minutes), or nil.
