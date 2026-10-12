@@ -5,6 +5,7 @@
   deploys, code after the request, another bot, a player and extra fields are refused;
 - end to end with a fake RCON server: bin/fh through the broker's socket works for its bot; another bot, a deploy
   and a raw console command are refused, logged, and never reach the server; the password never reaches fh;
+- smoke-launch's probe (tools/broker-probe.sh) reports a refusal as refused, with a stub fh and, end to end, the real one;
 - new-run.sh with POG_BROKER=1 writes no key and points fh and shot at the bot's socket; without it, as before.
 Needs the harness built (cd vendor/factorio-harness && npm run build) for the end-to-end part.
 """
@@ -215,6 +216,55 @@ def end_to_end():
         stopped = json.loads(open(log).read().splitlines()[-1])
         assert stopped["counts"]["haiku"]["forwarded"] == 1 and stopped["counts"]["haiku"]["refused"] == 2, stopped
         print("end to end: ok")
+        # smoke-launch's probe with the real fh against a broker
+        broker = fb.Broker(fake.port, "s3cret", log)
+        broker.serve(sock_dir, ["haiku", "sol"])
+        try:
+            out = subprocess.run([os.path.join(ROOT, "tools", "broker-probe.sh"), sock_dir, "haiku", "sol"], cwd=ROOT,
+                                 env=dict(os.environ, POG_RCON_PASSWORD_FILE="/nonexistent"), capture_output=True, text=True,
+                                 timeout=60).stdout
+        finally:
+            broker.stop()
+        assert out.splitlines() == ["broker probe: own bot ok", "broker probe: other bot refused"], out
+        print("broker probe, real fh: ok")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+STUB_FH = """#!/usr/bin/env bash
+# fh stand-in: OWN's own requests pass; any other bot gets the broker's refusal on stdout and exit 1, as bin/fh does
+bot=; while [ $# -gt 0 ]; do [ "$1" = --bot ] && bot=$2; shift; done
+[ "$bot" = haiku ] && { echo "ok status"; exit 0; }
+[ -n "${STUB_ACCEPTS:-}" ] && { echo "ok status"; exit 0; }
+echo "error: RCON broker: refused: this socket acts for bot haiku, not $bot"; exit 1
+"""
+
+
+def probe():
+    """tools/broker-probe.sh (smoke-launch.sh's probe) reads fh's output whatever its exit status. smoke-br: the old
+    `fh ... 2>&1 | grep -q refused` under pipefail took fh's exit 1 for the pipeline's and printed NOT refused."""
+    tmp = tempfile.mkdtemp(dir=os.environ.get("TMPDIR", "/tmp"))
+    try:
+        stub = os.path.join(tmp, "fh")
+        open(stub, "w").write(STUB_FH)
+        os.chmod(stub, 0o755)
+        script = os.path.join(ROOT, "tools", "broker-probe.sh")
+
+        def run(**env):
+            return subprocess.run([script, tmp, "haiku", "sol"], env=dict(os.environ, POG_FH=stub, **env),
+                                  capture_output=True, text=True, timeout=30).stdout.splitlines()
+
+        assert run() == ["broker probe: own bot ok", "broker probe: other bot refused"], run()
+        got = run(STUB_ACCEPTS="1")
+        assert got[0] == "broker probe: own bot ok" and got[1].startswith("broker probe: other bot NOT refused (exit 0)"), got
+        # the old line, for the record: it misreports this same refusal
+        old = subprocess.run(["bash", "-c", f'set -euo pipefail; "{stub}" --bot sol call status 2>&1 | grep -q refused '
+                              '&& echo refused || echo "NOT refused"'], capture_output=True, text=True).stdout.strip()
+        assert old == "NOT refused", old
+        # smoke-launch calls the script, not the old pipeline
+        smoke = open(os.path.join(ROOT, "tools", "smoke-launch.sh")).read()
+        assert "tools/broker-probe.sh" in smoke and "| grep -q refused" not in smoke
+        print("broker probe: ok")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -279,4 +329,5 @@ if __name__ == "__main__":
     new_run()
     claude_settings()
     handler()
+    probe()
     end_to_end()
