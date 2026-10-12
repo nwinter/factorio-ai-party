@@ -378,7 +378,9 @@ def main():
     model = Model(run)
     hub = Hub()
     names = [n for k, cfg in (run.get("agents") or {}).items() for n in (k, (cfg or {}).get("display_name")) if n]
-    feed = viewers.build(a, "viewers_", names, harness=getattr(source, "h", None), log_dir=a.log_dir, loop=a.mock)
+    roster = [(k, (cfg or {}).get("display_name")) for k, cfg in (run.get("agents") or {}).items()]
+    feed = viewers.build(a, "viewers_", names, harness=getattr(source, "h", None), log_dir=a.log_dir, loop=a.mock,
+                         roster=roster)
     if feed:
         feed.start()
     analyst = AnalystBoard()
@@ -440,6 +442,9 @@ def main():
                 snap.update(source_info)
                 snap["static_version"] = page_version
                 snap["viewers"], snap["viewers_status"] = feed.lane() if feed else ([], None)
+                if feed and feed.relay:  # viewers' questions go to agents in team order, by their chosen names too
+                    feed.relay.set_roster([(ag["name"], ag.get("display_name")) for ag in snap["agents"]
+                                           if ag.get("activity") != "offline"] or roster)
                 snap["analyst"] = analyst.public(now)
                 hub.publish(snap)
             except Exception:

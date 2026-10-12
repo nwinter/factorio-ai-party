@@ -147,6 +147,19 @@ def injection(text):
     return sorted(set(hits))
 
 
+QUESTION = re.compile(
+    r"^(who|whom|whose|what|whats|what's|when|where|why|how|which)\b|"
+    r"^(is|are|am|do|does|did|can|could|will|would|should|shall|has|have|had|was|were|isn'?t|aren'?t|don'?t|doesn'?t|"
+    r"didn'?t|can'?t|won'?t|wouldn'?t|couldn'?t)\s+(i|you|u|we|they|he|she|it|this|that|there|the|a|an|any|anyone|"
+    r"anybody|someone|somebody|everyone|all|agents?|ais?|bots?|hosts?|these|those|y'?all|ya|my|your|their)\b")
+
+
+def is_question(text):
+    """A question mark anywhere, or a line that opens like a question ("how do they", "are you", not "should more")."""
+    t = fold(text, leet=False)
+    return "?" in t or "¿" in t or bool(QUESTION.match(t))
+
+
 def directive(text, agent_names=()):
     """True for an order to the agents ("astra, build turrets", "you must stop"): fine for the hosts, not for the game."""
     f = fold(text, leet=False).strip(" !.?")
@@ -640,9 +653,14 @@ class Relay:
     (audience.lua: a dispatch with operator=true and no player; it rate-limits too and refuses muted viewers). Runs only
     while the switch file exists. Viewers the agents voted muted (operator `votes`, read every minute) are skipped."""
 
-    def __init__(self, harness, switch, fn="viewer_say", gap=20.0, author_gap=120.0, max_age=90.0):
+    ASK_WINDOW = 300.0  # a viewer's follow-up question goes to the same agent; an agent asked recently is skipped
+
+    def __init__(self, harness, switch, fn="viewer_say", gap=20.0, author_gap=45.0, max_age=90.0, roster=()):
         self.h, self.switch, self.fn = harness, switch, fn
         self.gap, self.author_gap, self.max_age = gap, author_gap, max_age
+        # Questions that name no agent are addressed to one (see address()); roster: [(name, display_name)] in team order
+        self.roster = [(n, d) for n, d in roster]
+        self.rr, self.asked, self.addressed = 0, {}, {}
         self.q = collections.deque(maxlen=20)
         self.last, self.by_author, self.hold = 0.0, {}, 0.0
         self.state, self.error, self.sent, self.next_probe = "off", None, 0, 0.0
@@ -666,8 +684,45 @@ class Relay:
         self.q.append((msg, author))
 
     @staticmethod
-    def line(msg):
-        return {"name": msg["name"], "text": cap(msg["text"], RELAY_MAX)}
+    def line(msg, to=None):
+        """viewer_say takes only name and text, and the harness wakes a sleeping agent for a viewer line only when it
+        says @name (board.lua mention_how): an addressed question gets "@name " in front, the viewer's words unchanged."""
+        prefix = f"@{to} " if to else ""
+        return {"name": msg["name"], "text": prefix + cap(msg["text"], RELAY_MAX - len(prefix))}
+
+    def set_roster(self, roster):
+        """[(name, display_name)] in team order; serve.py refreshes it from the snapshot (display names, offline)."""
+        self.roster = [(n, d) for n, d in roster if n]
+
+    def names_agent(self, text):
+        t = text.casefold()
+        if re.search(r"@\w", t):
+            return True
+        for n, d in self.roster:
+            for alias in {n.casefold(), re.sub(r"^pog-", "", n.casefold()), (d or "").casefold()}:
+                if len(alias) >= 2 and re.search(r"(?<![\w-])(pog-)?" + re.escape(alias) + r"(?![\w-])", t):
+                    return True
+        return False
+
+    def address(self, msg, author, now):
+        """The agent a question that names no agent goes to (None otherwise): the same agent as this viewer's last
+        question within 5 minutes, else the next agent in team order not addressed by a viewer in the last 5 minutes
+        (all of them were: the one addressed longest ago)."""
+        names = [n for n, _ in self.roster]
+        if not names or not is_question(msg["text"]) or self.names_agent(msg["text"]):
+            return None
+        prev = self.asked.get(author)
+        if prev and now - prev[1] < self.ASK_WINDOW and prev[0] in names:
+            return prev[0]
+        order = [names[(self.rr + i) % len(names)] for i in range(len(names))]
+        free = [n for n in order if now - self.addressed.get(n, -1e9) >= self.ASK_WINDOW]
+        return free[0] if free else min(order, key=lambda n: self.addressed.get(n, -1e9))
+
+    def addressed_to(self, to, author, now):
+        names = [n for n, _ in self.roster]
+        if to in names and self.asked.get(author, (None,))[0] != to:
+            self.rr = (names.index(to) + 1) % len(names)
+        self.asked[author], self.addressed[to] = (to, now), now
 
     def dispatch(self, action, args):
         from harness import lua_string
@@ -708,8 +763,9 @@ class Relay:
         if now - self.by_author.get(author, -1e9) < self.author_gap:
             self.dropped["author_gap"] += 1
             return None
+        to = self.address(msg, author, now)
         try:
-            res = self.dispatch(self.fn, self.line(msg))
+            res = self.dispatch(self.fn, self.line(msg, to))
         except Exception as e:
             self.state, self.error = "error", f"{type(e).__name__}: {e}"[:200]
             return None
@@ -739,6 +795,9 @@ class Relay:
         self.last, self.by_author[author] = now, now
         self.sent += 1
         msg["relayed"] = True
+        if to:
+            self.addressed_to(to, author, now)
+            msg["to"] = to
         return msg
 
 
@@ -913,8 +972,9 @@ def add_args(ap, prefix=""):
     ap.add_argument(p + "relay-fn", default="viewer_say", help="the harness's operator action that posts a viewer line")
 
 
-def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, loop=False):
-    """A Feed from parsed args, or None when no source is configured."""
+def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, loop=False, roster=()):
+    """A Feed from parsed args, or None when no source is configured. roster: [(name, display_name)] in team order,
+    for addressing viewers' questions (serve.py refreshes it with Relay.set_roster)."""
     g = lambda k: getattr(a, (prefix + k).replace("-", "_"))  # noqa: E731
     sources = {}
     if g("replay"):
@@ -927,7 +987,8 @@ def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, l
         return None
     blocklist = [l.strip() for l in open(g("blocklist"))] if g("blocklist") else []
     clf = Clef() if g("classifier") == "clef" else None
-    relay = Relay(harness, os.path.abspath(g("relay")), fn=g("relay-fn")) if g("relay") and harness else None
+    relay = Relay(harness, os.path.abspath(g("relay")), fn=g("relay-fn"), roster=roster) \
+        if g("relay") and harness else None
     if g("relay") and not harness:
         log("--relay needs a world (serve.py --world); relay disabled")
     log_path = None
