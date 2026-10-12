@@ -183,6 +183,14 @@ lane of their own, Nick's line stayed up): a YT or SITE badge where agents have 
 for YouTube staff), a "viewer" tag, and "to the agents" on messages flagged as orders. Viewer names and text are set
 as text, never HTML.
 
+Tells (the team's main channel since the board: shake7 had ~540 tells to ~100 chat lines) are in the same feed as
+direct lines: "Sol → Astra" over the words in full, indented, a size smaller, on a teal edge. A burst from one agent
+to the same recipients, each within 45 s of the last, folds into one line with the latest words and "+N"
+(`static/chatfeed.js`). The two-line ticker under the chat is gone (Nick: "I can barely see any of it"); the
+logistics chat and server lines it also carried are no longer shown. Same on the portrait page. The model gives tells
+their own lane ("tell", the last 24 kept beside 12 conversation lines); the page also reads tells from a service that
+still files them under "log", so a reload is enough.
+
 ## Shake7 notes (2026-10-11): what changed for the 17:00 shift
 
 - One event stream per page. A browser keeps 6 connections per host and an open event stream holds one for good; in
@@ -418,9 +426,12 @@ Combat: a fresh (under 8 s old) attack or loss alert cuts the main camera at onc
 in the fight (its status `combat` went true; zoom 1.05, following), else to the fight itself: a fixed view on the
 alert's position and surface, zoomed so its extent fits (the attacked 32-tile chunk, or the loss rectangle, plus 24
 tiles: `60 / (extent + 24)`, sent as is), jumping there without easing. It no longer follows an agent near the attack:
-in shake10 that framed the factory and the announced turret-fight replay showed the factory. The replay clip of a
-fight starts when that camera arrived (the cut + 1 s, `arrive_s`) and ends when the buffer is saved (cut + 17 s); a fight
-alert whose cut did not frame it (director `last_attack_framed` unset) gets no replay. It holds 20 s (`attack_hold`), at most
+in shake10 that framed the factory and the announced turret-fight replay showed the factory. Fight replays (replays.py,
+after shake10, when the replay aired what the main camera had just shown while the battle went on): never while the
+fight is going on (a clip waits until its fight, model `fights`, has been quiet 20 s; a death clip until no attack
+within 40 tiles goes on); nothing of what the main camera showed live; a loss gets a 10 s clip centred on the moment
+of loss (6 s before, 4 s after) if a camera showed the spot, aired after the fight; a fight only a side camera showed
+gets that camera's stretch (6 to 15 s), aired after it ends; no camera, no replay. It holds 20 s (`attack_hold`), at most
 one such cut per 45 s (`attack_spacing`). A death cuts to where the agent fell (zoom 1.1, 12 s), even inside the
 spacing. The camera label shows the alert text with ⚔ or 💀 on a red edge. Status has no health field, so "taking
 damage" is the `combat` flag plus base areas in `alerts.attacked`. `attack_cut: false` in the run config's `director`

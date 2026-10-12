@@ -559,15 +559,12 @@ def main():
     rpl.follow_segment(t7 + 50)
     assert fobs.program == "stream"
 
-    # a fight replays only if the cut framed it, and from when the camera arrived (shake10: the factory instead)
+    # the main camera's cut to a fight makes no replay of it: viewers watched it live (test_fight_replays.py: the rest)
     rf = rp.Replays(Segments(), obs=FakeOBS(), log=lambda *a: None, start=False)
     tf = time.time()
     fight = {"kind": "attack", "agent": None, "text": "Base under attack near (290, 0): gun turret"}
-    rf.on_attack_cut(fight, s7, tf, framed=None)
-    assert rf.pending is None, "no camera framed it: no replay"
     rf.on_attack_cut(fight, s7, tf, framed={"t": tf, "how": "position"})
-    assert rf.pending["show_from"] == tf + rf.cfg["arrive_s"] and rf.pending["show_to"] == tf + rf.cfg["fight_after"], rf.pending
-    assert rf.pending["save_at"] == tf + rf.cfg["fight_after"]
+    assert rf.pending is None, rf.pending
 
     # two deaths 43 s apart (shake4: Haiku, then Opus): the second cut drops the queued replay, both clips still air
     t9 = t7 + 300
@@ -607,14 +604,20 @@ def main():
     assert lanes == [(1, "log"), (2, "talk"), (3, "talk"), (4, "viewer"), (5, "log"), ("c1", "talk")], lanes
     m9.ingest({"confessions": [{"seq": 1, "tick": 6, "from": "luna", "text": "I don't trust that wall."}]})
     assert sum(1 for c in m9.chat if c.get("confess")) == 1  # confessions dedup by their own seq
-    # tells (agent -> teammates outside the chat) always go to the ticker, with the recipients, once each
+    # tells (agent -> teammates outside the chat): their own lane, shown in the chat feed as direct lines, once each
     tells = [{"seq": 1, "tick": 7, "from": "astra", "to": ["luna"], "text": "29 plates in the chest (3,4)"},
              {"seq": 2, "tick": 8, "from": "luna", "to": "team", "text": "north belt is down"}]
     m9.ingest({"tells": tells})
     m9.ingest({"tells": tells})
     told = [c for c in m9.chat if c.get("tell")]
     assert [(c["seq"], c["lane"], c["agent"], c["text"]) for c in told] == [
-        ("t1", "log", "astra", "→ Luna: 29 plates in the chest (3,4)"), ("t2", "log", "luna", "→ team: north belt is down")], told
+        ("t1", "tell", "astra", "→ Luna: 29 plates in the chest (3,4)"), ("t2", "tell", "luna", "→ team: north belt is down")], told
+    assert [(c["to_shown"], c["body"]) for c in told] == [("Luna", "29 plates in the chest (3,4)"), ("team", "north belt is down")]
+    # a burst of tells does not push the conversation out of the window, nor the conversation the tells
+    m9.ingest({"tells": [{"seq": 10 + k, "tick": 9 + k, "from": "astra", "to": ["luna"], "text": f"item {k}"} for k in range(40)]})
+    win = m9.chat_window()
+    assert sum(1 for c in win if c["lane"] == "tell") == 24 and sum(1 for c in win if c["lane"] == "talk") >= 3, \
+        [(c["seq"], c["lane"]) for c in win]
 
     # night lift: filter created on each capture, ramps toward the darkness, settles back by day
     import nightlift as nl

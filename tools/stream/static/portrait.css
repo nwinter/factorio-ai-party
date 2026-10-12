@@ -56,7 +56,11 @@ html body.portrait #chat .panel-title { font-size: 24px; }
 html body.portrait #chat { gap: 10px; }
 html body.portrait #chat-list { padding: 12px 16px 14px; gap: 16px; }
 html body.portrait .msg .vbadge { width: 46px; font-size: 15px; line-height: 24px; }
-html body.portrait #chat-ticker { height: 64px; }
+/* tells: the same direct line, a size under the conversation */
+html body.portrait .msg.tell { margin-left: 26px; }
+html body.portrait .msg.tell .avatar { width: 36px; height: 36px; }
+html body.portrait .msg.tell .meta { font-size: 18px; }
+html body.portrait .msg.tell .text { font-size: 23px; }
 html body.portrait .tick { height: 27px; font-size: 19px; }
 html body.portrait .msg .tag { font-size: 14px; line-height: 20px; }
 html body.portrait .msg { gap: 14px; }

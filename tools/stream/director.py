@@ -225,7 +225,7 @@ class Director:
             cur = self.state.get(main)
             if subject and cur and cur["subject"] == subject:
                 cur["since"] = now - self.cfg["main_dwell"] + self.cfg["attack_hold"]  # already there: just stay
-                cur.update(label=al["text"], kind=al["kind"], attack_t=now)
+                cur.update(label=al["text"], kind=al["kind"], attack_t=now, fight=al.get("key"))
                 self.last_attack_cut = now
             elif subject:
                 target = self.frame(subject, by_name, {subject}, self.cfg["attack_zoom"])
@@ -233,6 +233,7 @@ class Director:
                     released.append(cur["subject"])
                 self.want[main] = (self.cfg["attack_zoom"], now)
                 self.apply(self.slots[0], dict(target, subject=subject, label=al["text"], kind=al["kind"], attack_t=now,
+                                               fight=al.get("key"),
                                                solo_zoom=self.cfg["attack_zoom"],
                                                since=now - self.cfg["main_dwell"] + self.cfg["attack_hold"]),
                            f"attack: {al['text']}", scores, now)
@@ -242,7 +243,7 @@ class Director:
                     released.append(cur["subject"])
                 death = al["kind"] == "death"
                 shot = {"agents": [], "subject": "@attack", "position": position, "surface": position.get("surface"),
-                        "label": al["text"], "kind": al["kind"], "since": now, "attack_t": now,
+                        "label": al["text"], "kind": al["kind"], "since": now, "attack_t": now, "fight": al.get("key"),
                         "until": now + self.cfg["death_hold" if death else "attack_hold"]}
                 if death:
                     shot["zoom"] = self.cfg["death_zoom"]
@@ -439,6 +440,8 @@ class Director:
                 if t.get("label") and now - t.get("attack_t", now) < self.cfg["attack_hold"]:
                     out[slot["slot"]]["attack"] = t["label"]
                     out[slot["slot"]]["alert"] = t.get("kind") or "attack"
+                    if t.get("fight"):
+                        out[slot["slot"]]["fight"] = t["fight"]  # replays.py: this camera shows that fight live
                 if t.get("segment") and now < t.get("until", 0):
                     out[slot["slot"]]["segment"] = t["segment"]
                 if t.get("work") and now < t.get("until", 0):
