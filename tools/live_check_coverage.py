@@ -57,7 +57,8 @@ class Check:
             return {"error": out}
 
     def fh(self, action, args=None, wait=False):
-        cmd = [os.path.join(ROOT, "bin", "fh"), "--format", "json", "--bot", self.bot, "call", action]
+        bot = [] if action == "describe" else ["--bot", self.bot]  # describe needs no bot (the test bot isn't made yet)
+        cmd = [os.path.join(ROOT, "bin", "fh"), "--format", "json", *bot, "call", action]
         if args is not None:
             cmd += ["--args", json.dumps(args)]
         if wait:
@@ -265,7 +266,7 @@ def main():
                     stops[name] = ent
                     break
         for name, ent in stops.items():
-            args = {"position": ent["position"], "name": name}
+            args = {"position": ent["position"], "station": name}
             if name == "LC-East":
                 args["limit"] = 1
             c.near(ent["position"]["x"], ent["position"]["y"])

@@ -18,7 +18,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import live_check_coverage as L  # noqa: E402
 
-ITEMS = {"car": 1, "coal": 50, "rail": 6, "locomotive": 1, "spidertron": 1}
+ITEMS = {"car": 1, "coal": 50, "rail": 6, "locomotive": 1, "spidertron": 1, "rocket-fuel": 4}
 
 
 def main():
@@ -34,7 +34,10 @@ def main():
     ok, desc = c.fh("describe")
     if not c.record("runtime has vehicle", ok and "vehicle" in ((desc.get("result") or {}).get("actions") or {}), None):
         sys.exit(f"deploy the eng/coverage2 runtime first: POG_WORLD={world} bin/fh deploy (from that branch)")
-    c.record("bot_create", True, c.lua(f'rcon.print(remote.call("agent_harness","bot_create","{a.bot}"))'))
+    created = c.lua(f'rcon.print(remote.call("agent_harness","bot_create","{a.bot}"))')
+    bot_unit = ((created or {}).get("bot") or {}).get("unit_number")
+    if not c.record("bot_create", bot_unit is not None, created):
+        sys.exit(1)
     ok, st = c.fh("status")
     pos = (st.get("result") or {}).get("position")
     if not c.record("bot status", ok and pos is not None, pos):
@@ -45,14 +48,22 @@ def main():
     ox, oy = stage["site"]["x"], stage["site"]["y"]
     c.here = (ox + 4, oy - 2)
 
+    # Read back by unit number: a character seated in a vehicle is not found by an area search (live check 00:40).
     def body_lua(expr):
         return c.lua(f"""
-          local s = game.surfaces.nauvis
-          local body
-          for _, e in pairs(s.find_entities_filtered{{type="character", area={{{{{ox - 10}, {oy - 10}}}, {{{ox + 60}, {oy + 30}}}}}}}) do
-            if not e.player then body = e end
-          end
+          local body = game.get_entity_by_unit_number({bot_unit})
           rcon.print(helpers.table_to_json({expr}))
+        """)
+
+    def vehicle_lua(unit):
+        """The vehicle as the game holds it: position, speed, and who sits in it (unit numbers)."""
+        return c.lua(f"""
+          local v = game.get_entity_by_unit_number({unit or 0})
+          local function who(x) if not x then return nil end if x.object_name == "LuaPlayer" then return x.character and x.character.unit_number end return x.unit_number end
+          local d = v and who(v.get_driver())
+          local ok, pa = pcall(function() return v and who(v.get_passenger()) end)
+          rcon.print(helpers.table_to_json{{name = v and v.name, x = v and v.position.x, y = v and v.position.y,
+            speed = v and v.speed, driver = d, passenger = ok and pa or nil}})
         """)
 
     # Car: in, seated guard, drive, out.
@@ -60,8 +71,9 @@ def main():
     if car:
         c.step("fuel the car", "transfer", {"position": car["position"], "item": "coal", "count": 20, "direction": "to_entity"})
         seat = c.step("vehicle enter car", "vehicle", {"position": car["position"], "enter": True})
-        got = body_lua('{vehicle = body and body.vehicle and body.vehicle.name, driving = body and body.driving}')
-        c.record("game: the bot sits in the car", seat is not None and got.get("vehicle") == "car", got)
+        got = vehicle_lua(car.get("unit_number"))
+        c.record("game: the bot sits in the car (its driver)", seat is not None and got.get("driver") == bot_unit,
+                 {"car": got, "bot": bot_unit, "reply": seat})
         ok, reply = c.fh("move_to", {"position": {"x": ox, "y": oy}})
         msg = ((reply.get("error") or {}).get("message") or "")
         c.record("seated move_to refused, pointing to exit", not ok and "vehicle {exit: true}" in msg, msg[:200])
@@ -69,7 +81,7 @@ def main():
         c.record("seated say works", ok, None)
         target = {"x": car["position"]["x"] + 20, "y": car["position"]["y"]}
         drive = c.step("vehicle drive 20 tiles east (--wait)", "vehicle", {"drive": target}, wait=True)
-        got = body_lua('{x = body and body.vehicle and body.vehicle.position.x, y = body and body.vehicle and body.vehicle.position.y}')
+        got = vehicle_lua(car.get("unit_number"))
         there = got.get("x") is not None and abs(got["x"] - target["x"]) < 5 and abs(got["y"] - target["y"]) < 5
         c.record("game: the car got there", there, {"car": got, "target": target, "reply": drive})
         out = c.step("vehicle exit", "vehicle", {"exit": True})
@@ -83,12 +95,14 @@ def main():
         loco = c.build("locomotive", "locomotive", rails[1]["position"]["x"], rails[1]["position"]["y"], "east")
         if loco:
             seat = c.step("vehicle enter locomotive", "vehicle", {"position": loco["position"], "enter": True})
-            got = body_lua('{vehicle = body and body.vehicle and body.vehicle.name}')
-            c.record("game: the bot sits in the locomotive", seat is not None and got.get("vehicle") == "locomotive", got)
+            got = vehicle_lua(loco.get("unit_number"))
+            c.record("game: the bot sits in the locomotive", seat is not None and got.get("driver") == bot_unit, got)
             c.step("vehicle exit locomotive", "vehicle", {"exit": True})
-    # Spidertron sent 10 tiles by go_to (informational: it walks only with room and, in some versions, fuel).
+    # Spidertron fuelled, then sent 10 tiles by go_to (whether it walks: informational, it needs room for its legs).
     spider = c.build("spidertron", "spidertron", ox + 20.5, oy + 4.5)
     if spider:
+        c.step("fuel the spidertron", "transfer", {"position": spider["position"], "item": "rocket-fuel", "count": 2,
+                                                    "direction": "to_entity"})
         dest = {"x": spider["position"]["x"] + 10, "y": spider["position"]["y"]}
         sent = c.step("vehicle go_to spidertron", "vehicle", {"position": spider["position"], "go_to": dest})
         c.record("spidertron destination accepted", sent is not None, sent)

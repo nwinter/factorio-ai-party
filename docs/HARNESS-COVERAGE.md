@@ -26,7 +26,7 @@ this branch added.
 | Feature | Actions (args) | Documented? (describe / usage.md / PLAYBOOK) | Works in tests? | Gap |
 |---|---|---|---|---|
 | Rails | `build {item: rail, entity: straight-rail\|half-diagonal-rail\|curved-rail-a\|curved-rail-b, direction}` (16 directions); `place_ghosts` with rail entity names, then `construct` | describe yes; usage yes (this branch); PLAYBOOK no | yes (built here: `tests/bots.lua`); before: refused ("only ordinary entity placement", the 2.0 rail item has no place_result) | elevated rails, rail ramps; no rail planner path (each piece placed) |
-| Train stops | `build`; `train {position, name, limit}` | describe, usage (built here); PLAYBOOK no | yes (built here, `tests/circuits.lua`) | circuit modes of the stop |
+| Train stops | `build`; `train {position, station, limit}` | describe, usage (built here); PLAYBOOK no | yes (built here, `tests/circuits.lua`) | circuit modes of the stop |
 | Locomotives, wagons, schedules | `build`; fuel with `refuel`/`transfer`; `train {position, schedule [{station, wait [{type, ticks, compare, condition}]}], current, automatic}`; cargo with `transfer` (cargo_wagon) | describe, usage (built here); PLAYBOOK no | yes (built here; schedule table setter, LuaSchedule fallback) | interrupts; riding a train (vehicles) |
 | Roboports, robots | `build`; robots and repair packs with `transfer` (roboport_robot, roboport_material inventories) | describe (transfer inventories); usage no; PLAYBOOK no | transfer paths yes (inventory table), roboport itself not in a test | none for building; robots then work on their own (place_ghosts marks, deconstruct marks) |
 | Requester / buffer chests, requests | `requests {position, set [{item, min, max, quality}], clear, clear_all, section}`; storage chests as chests | describe yes; usage 1 line; PLAYBOOK no | yes for hub requests (`tests/space.lua`), the requester chest shares the code (only the lookup differs) | storage chest filter (`from_buffers` built here) |
@@ -53,7 +53,7 @@ this branch added.
   reach; combinators' input and output sides.
 - `circuit {position, enable, logistic, signals, on, arithmetic, decider}` (circuits.lua): what the circuit and
   logistic connection GUI holds, read back from the game; leaves a running queue alone.
-- `train {position, name, limit}` for stops; `train {position, schedule, current, automatic}` for trains (trains.lua).
+- `train {position, station, limit}` for stops (the live check found `name` taken by the entity-name filter); `train {position, schedule, current, automatic}` for trains (trains.lua).
 - Rails: `build {item: rail, entity}` places a rail planner's rails directly; construct builds rail ghosts; the
   direction names include 2.0's in-between ones.
 - `configure {recipe, quality}`: documented, and a quality-only change is made instead of reported unchanged.
@@ -109,7 +109,7 @@ A live check on world `live`:
 
 ```
 - Trains: rails with build {item: rail, entity: straight-rail|curved-rail-a|curved-rail-b|half-diagonal-rail};
-  stops, locomotives, wagons with build; train {position: stop, name, limit}; train {position: locomotive, schedule,
+  stops, locomotives, wagons with build; train {position: stop, station, limit}; train {position: locomotive, schedule,
   automatic}.
 - Logistics: roboports with build, robots into them with transfer; requester and buffer chests' requests with
   requests {position, set}; your own requests with requests (needs logistic robotics).
