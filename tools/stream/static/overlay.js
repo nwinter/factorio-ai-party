@@ -424,6 +424,47 @@
   // viewer messages (viewers.py via serve.py) that passed the filters, while recent: in the main feed, marked as
   // viewers, scrolling away with the rest (shake7: Nick's line stayed up in a lane of its own)
   const VIEWER_RECENT_S = 300;
+  // Pinned viewer lines and Q&A pairs (#chat-pins, above the feed), newest first. Viewers' words: textContent only.
+  const pinned = new Map();
+  function renderPins(s, pins) {
+    const box = $("chat-pins");
+    if (!box) return;
+    const keys = new Set();
+    let prev = null;
+    for (const p of pins) {
+      keys.add(p.key);
+      let node = pinned.get(p.key);
+      if (!node) {
+        node = el("div", "pin " + p.kind);
+        const q = el("div", "msg viewer q");
+        const qc = el("div", "content");
+        const qm = el("div", "meta");
+        qm.append(el("span", "from" + (p.v.staff ? " staff" : ""), p.v.name || "viewer"),
+          el("span", "tag vtag", p.kind === "qa" ? "viewer asked" : "viewer"));
+        qc.append(qm, el("div", "text", p.v.text || ""));
+        q.append(el("div", "vbadge" + (p.v.source === "site" ? " site" : ""), p.v.source === "site" ? "SITE" : "YT"), qc);
+        node.append(q);
+        if (p.m) {
+          const ag = agentFor(s, p.m);
+          const a = el("div", "msg answer");
+          const av = avatar(ag || { name: p.m.from || "?", display_name: p.m.from || "?", color: "#5a4a2e", glyph: "?" }, "sm");
+          const ac = el("div", "content");
+          const am = el("div", "meta");
+          am.append(el("span", "from", ag ? ag.display_name : p.m.from), el("span", "tag atag", "answers"));
+          ac.append(am, el("div", "text", clean(p.m.text)));
+          a.append(av, ac);
+          if (ag) applyPalette(a, ag);
+          node.append(a);
+        }
+        pinned.set(p.key, node);
+      }
+      if (prev ? prev.nextElementSibling !== node : box.firstElementChild !== node) {
+        if (prev) prev.after(node); else box.prepend(node);
+      }
+      prev = node;
+    }
+    for (const [k, n] of pinned) if (!keys.has(k)) { n.remove(); pinned.delete(k); }
+  }
   function renderChat(s) {
     const list = $("chat-list");
     const all = s.chat || [];
@@ -433,12 +474,19 @@
     // into the game shows once, from s.viewers; its game-chat copy, lane "viewer", is skipped).
     // Logistics chat and server lines (lane "log") are not shown: the ticker that held them is gone (Nick: "I can
     // barely see any of it"; the tells it mostly carried are here now).
+    // a viewer's line and an agent's answer to it are pinned above the feed for 25 s (static/chatfeed.js viewerPins)
+    // and leave the feed meanwhile; tells and talk scroll below them
+    const pins = window.pogChat && window.pogChat.viewerPins ? window.pogChat.viewerPins(s) : [];
+    const pinnedKeys = new Set(pins.flatMap((p) => [p.vkey, p.mkey]).filter(Boolean));
+    renderPins(s, pins);
     const talk = all.filter((m) => !m.tell && ((m.lane || "talk") === "talk" || m.lane === "notice")).slice(-10)
-      .map((m) => ({ m, t: m.t || s.now, key: String(m.seq ?? m.tick + m.from + m.text) }));
+      .map((m) => ({ m, t: m.t || s.now, key: String(m.seq ?? m.tick + m.from + m.text) }))
+      .filter((it) => !pinnedKeys.has(it.key));
     const tells = (window.pogChat ? window.pogChat.foldTells(all.filter((m) => m.tell)) : []).slice(-6)
       .map((g) => ({ g, t: g.t || s.now, key: g.key }));
     const viewers = (s.viewers || []).filter((v) => s.now - (v.t || 0) < VIEWER_RECENT_S).slice(-4)
-      .map((v) => ({ v, t: v.t || s.now, key: "v:" + String(v.id || v.seq) }));
+      .map((v) => ({ v, t: v.t || s.now, key: "v:" + String(v.id || v.seq) }))
+      .filter((it) => !pinnedKeys.has(it.key));
     const msgs = talk.concat(tells, viewers).sort((a, b) => a.t - b.t).slice(-10); // the well clips the oldest
     const keys = new Set();
     let prev = null;

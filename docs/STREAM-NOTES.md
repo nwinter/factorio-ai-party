@@ -183,6 +183,13 @@ lane of their own, Nick's line stayed up): a YT or SITE badge where agents have 
 for YouTube staff), a "viewer" tag, and "to the agents" on messages flagged as orders. Viewer names and text are set
 as text, never HTML.
 
+The pin box (`#chat-pins`, on both pages) sits above the feed. It holds a new viewer line for 25 s. It also holds an
+agent's answer to a viewer, with the viewer's question above it, for 25 s from the answer. There are at most two pins,
+newest first, and newer tells can't push them out. A pinned line leaves the feed while it is pinned and returns to it
+afterwards. Shift01 16:09 is why: Astra's "Yes, Craig, ..." scrolled away under tells within seconds. An answer names
+the viewer by the same rule the hosts use (`caster.viewer_short_names`): "@craigNZ830", or "Craig", within 10 minutes
+of the viewer's line. The logic is `chatfeed.js` `viewerPins`, tested in `test_viewer_pins.py`.
+
 Tells (the team's main channel since the board: shake7 had ~540 tells to ~100 chat lines) are in the same feed as
 direct lines: "Sol → Astra" over the words in full, indented, a size smaller, on a teal edge. A burst from one agent
 to the same recipients, each within 45 s of the last, folds into one line with the latest words and "+N"
