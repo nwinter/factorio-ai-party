@@ -840,6 +840,23 @@ check("an absence the facts back passes; another does not", caster.check_line(
     "Logistic robotics is done, but still no roboports.", nb, [], []) is None and caster.check_line(
     "Still no trains.", nb, [], []) == "claims something is missing")
 
+# HOSTS6 item 2: a memory of framings across the shift
+cf6 = caster.Caster.__new__(caster.Caster)
+t6 = 10000.0
+cf6.remember_framings(["Here's the replay. Biters went at the wall.", "Twenty-eight labs are waiting on packs."], now=t6)
+check("one earlier opening is fine", cf6.repeat_fault("Here's the replay. A pole went down.", now=t6 + 60) is None)
+cf6.remember_framings(["Here's the replay. Spitters took a pole.", "Most labs are waiting on packs again."], now=t6 + 300)
+check("a third 'Here's the replay' within 20 minutes is cut; after 20 minutes it is fine",
+      cf6.repeat_fault("Here's the replay. A turret this time.", now=t6 + 600) == "style: opening used again this shift"
+      and cf6.repeat_fault("Here's the replay. A turret this time.", now=t6 + 300 + 1300) is None)
+uf = cf6.used_framings(now=t6 + 600)
+check("framings used twice reach the writer; number phrases do not", "here's the replay" in uf and
+      "waiting on packs" in uf and not any("twenty" in g or "minute" in g for g in uf), str(uf))
+check("framings_used_lately does not make a name supported", caster.check_line(
+    "Astra holds the wall.", {"event": "lull", "framings_used_lately": ["astra's under attack"]}, ["Astra"], []) ==
+      "name not in facts: Astra")
+check("the rules tell the writer to avoid them", "framings_used_lately" in caster.EXCHANGE_RULES)
+
 # HOSTS5 item 1: "previously on" from the last shift's logs
 with tempfile.TemporaryDirectory() as root5:
     runs5 = os.path.join(root5, "runs")
