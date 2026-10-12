@@ -7,6 +7,7 @@ worlds (e.g. the paused co-op save in world c).
 """
 import math, re, time
 
+import operator_inbox
 from harness import Harness
 from model import SPARK_ITEMS
 from work import WorkFeed
@@ -65,6 +66,10 @@ class LiveSource:
         self.confess_seq = 0
         self.has_tells = False
         self.tell_seq = 0
+        # agents' requests to the operator (tells.lua `operator`): appended to runs/RUN/operator-inbox.jsonl
+        self.has_operator = False
+        self.inbox_path = operator_inbox.path_for(journals)
+        self.operator_seq = operator_inbox.last_seq(self.inbox_path) if self.inbox_path else 0
         self.platform_every = 15.0
         self.next_platforms = 0
         self.basemap_every = 60.0  # the site's live map: the base changes slowly and the read walks every building
@@ -310,6 +315,7 @@ class LiveSource:
             self.has_board = "board_events" in actions and "board" in actions
             self.has_confess = "confessions" in actions
             self.has_tells = "tells" in actions
+            self.has_operator = "operator" in actions
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -339,6 +345,17 @@ class LiveSource:
                     self.tell_seq = res["cursor"]
             except Exception as e:
                 errors["tells"] = str(e)
+        if self.has_operator:  # agents' requests to the operator, read as the operator: the inbox file and the ticker
+            try:
+                res, _ = self.h.operator_read("operator_requests", {"since": self.operator_seq, "limit": 30})
+                rows = operator_inbox.append(self.inbox_path, res.get("requests"), self.operator_seq)
+                obs["operator_requests"] = rows
+                if rows:
+                    self.operator_seq = max(r["seq"] for r in rows)
+                elif res.get("cursor") is not None and res["cursor"] < self.operator_seq:
+                    self.operator_seq = res["cursor"]  # a fresh world counts its requests from 1 again
+            except Exception as e:
+                errors["operator_requests"] = str(e)
         if not self.has_board:
             return
         try:

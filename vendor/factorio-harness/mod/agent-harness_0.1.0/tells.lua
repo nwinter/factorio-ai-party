@@ -96,5 +96,55 @@ return function(api)
   function M.handlers.tells(p, a) return read(a, api.who(p)) end
   -- Operator (RCON, `operator: true` dispatch): every tell, for the stream.
   function M.operator.tells(a) return read(a, nil) end
+
+  -- Requests to the operator (the people running the harness and stream):
+  -- filed here, read by the stream service (operator_requests), which keeps
+  -- the inbox file and shows them on the ticker. The operator answers in the
+  -- game chat as server:, where an @name reaches that agent as a mention.
+  -- Rate limits count game ticks.
+  local OP_GAP, OP_WINDOW, OP_MAX, OP_LOG = 60 * 60, 3600 * 60, 10, 200
+  local function requests()
+    local s = api.state()
+    s.operator_requests = s.operator_requests or {seq=0, log={}, sent={}}
+    return s.operator_requests
+  end
+  M.schema.operator = {text='1..500 characters, one line (longer is cut to 500; the reply says so): a request to the operator, the people running the harness and the stream: a harness bug, a tool you need, something viewers asked for that the team cannot do. The operator may answer in the game chat as server: (an @name there reaches you like a mention). Not for help with the game',
+    returns='seq (cut {length, kept} when the text was cut); at most one a minute and 10 an hour'}
+  function M.handlers.operator(p, a)
+    local me = api.who(p)
+    local text, cut = one_line(a.text)
+    local r = requests()
+    local mine = r.sent[me] or {}
+    local keep = {}
+    for _, t in ipairs(mine) do if game.tick - t < OP_WINDOW then keep[#keep+1] = t end end
+    local last = keep[#keep]
+    if last and game.tick - last < OP_GAP then
+      error(string.format('one operator request a minute; next in %d s', math.ceil((OP_GAP - (game.tick - last)) / 60)), 0)
+    end
+    if #keep >= OP_MAX then
+      error(string.format('%d operator requests an hour; next in %d min', OP_MAX, math.ceil((OP_WINDOW - (game.tick - keep[1])) / 3600)), 0)
+    end
+    keep[#keep+1] = game.tick
+    r.sent[me] = keep
+    r.seq = r.seq + 1
+    r.log[#r.log+1] = {seq=r.seq, tick=game.tick, from=me, text=text}
+    while #r.log > OP_LOG do table.remove(r.log, 1) end
+    return {seq=r.seq, cut=cut, note='filed for the operator; an answer comes in the game chat as server:'}
+  end
+  -- Operator read: {seq, tick, from, text} after `since`, oldest first, and cursor.
+  function M.operator.operator_requests(a)
+    assert(a.since == nil or type(a.since) == 'number', 'since must be a number')
+    local limit = a.limit or 30
+    assert(type(limit) == 'number' and limit >= 1 and limit <= 100, 'limit must be 1..100')
+    local r = requests()
+    local picked = {}
+    for _, t in ipairs(r.log) do if t.seq > (a.since or 0) then picked[#picked+1] = t end end
+    local out = {}
+    for i = math.max(1, #picked - limit + 1), #picked do
+      local t = picked[i]
+      out[#out+1] = {seq=t.seq, tick=t.tick, from=t.from, text=t.text}
+    end
+    return {requests=out, cursor=r.seq, tick=game.tick}
+  end
   return M
 end

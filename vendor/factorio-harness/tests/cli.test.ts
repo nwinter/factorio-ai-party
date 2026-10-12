@@ -259,6 +259,20 @@ test('confess takes text like say and maps to the confess action',async()=>{
   });
   assert.deepEqual(seen.map(r=>[r.action,r.args]),[['confess',{text:"I don't trust grok's belts"}],['confess',{text:"it's going fine"}],['confessions',{since:4}]]);
 });
+test('operator takes text like say and maps to the operator action',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{seq:seen.length,note:'filed for the operator'}};},async port=>{
+    await cli(port,['operator','a','viewer',"wants","Grok's",'voice','louder','--bot','astra']);
+    assert.equal((await compact(port,['operator','-','--bot','astra'],{},"belt_route can't start diagonally\n")).code,0);
+    await cli(port,['call','operator','tools','request','--bot','astra']);
+    const loud=await compact(port,['operator','x','--aloud','--bot','astra']);
+    assert.equal(loud.code,1); assert.match(loud.stdout,/an operator request goes to the operator/);
+    const empty=await compact(port,['operator','--bot','astra'],{},'');
+    assert.match(empty.stdout,/error: client_error: operator needs text/);
+  });
+  assert.deepEqual(seen.map(r=>[r.action,r.args]),[['operator',{text:"a viewer wants Grok's voice louder"}],
+    ['operator',{text:"belt_route can't start diagonally"}],['operator',{text:'tools request'}]]);
+});
 test('tell takes recipients then text like say; tells reads with --since',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request);return {ok:true,result:{seq:seen.length,to:['sol']}};},async port=>{

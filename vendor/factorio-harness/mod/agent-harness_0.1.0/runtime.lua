@@ -3808,7 +3808,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
+local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
 local reads={placements=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key

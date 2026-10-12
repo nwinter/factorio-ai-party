@@ -294,8 +294,10 @@ assert(has(t.alerts,'inserter x1 hit 1 times, 5 damage'),table.concat(t.alerts,'
 
 -- Who hears what on the stream: once per agent, in the first reply that
 -- builds a team block (here: as after a hot deploy, nobody has seen it yet).
-for _,h in pairs(storage.agent_harness.team_hints) do h.stream_note=nil end
+for _,h in pairs(storage.agent_harness.team_hints) do h.stream_note=nil; h.operator_note=nil end
 t=sol('status').team
+-- The operator channel too, once.
+eq(has(t.reminders,'operator: '),'operator: ./fh operator "text" files a request with the operator, the people running the harness and the stream (harness bugs, tools you need, things viewers ask for that the team cannot do); answers come in the game chat as server:')
 eq(has(t.reminders,'stream: '),'stream: viewers hear your say --aloud lines and confessions, spoken in your voice, and like hearing from you every few minutes; other chat and tells show on the stream only as text, which viewers read on screen, so write them as plain sentences with spaces between words')
 eq((sol('status').team or {}).reminders,nil)
 jump(3600); eq((sol('status').team or {}).reminders,nil)

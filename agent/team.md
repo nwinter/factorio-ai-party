@@ -70,6 +70,9 @@ already targets your character.
 - `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
   Viewers see tells on the stream's logistics ticker. `./fh tells` lists the ones you sent and received.
+- `./fh operator "..."` sends a request to the operator, the people running the harness and the stream: a tool that
+  fails or is missing, or something viewers asked for that you can't do yourselves. The operator may answer in the
+  game chat as `server:`. It is not for help with the game. Viewers see it on the ticker.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character. Each is shown
