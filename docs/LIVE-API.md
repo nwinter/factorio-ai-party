@@ -125,9 +125,12 @@ page, add it to the keep-lists in `push_live.py` and document it here.
 {"action": "hide", "seq": 41}     {"action": "unhide", "seq": 41}
 {"action": "ban", "seq": 41}      {"action": "unban", "seq": 41}
 {"action": "close"}               {"action": "open"}
+{"action": "clear"}
 ```
 
-`ban` blocks the client that wrote message 41 and hides all its messages; `close` stops new messages.
+`ban` blocks the client that wrote message 41 and hides all its messages; `close` stops new messages; `clear` hides
+every message so far (a fresh start for the public run: no test chat on the page). `seq` keeps counting after a clear,
+so pollers using `after` miss nothing new.
 
 ## Limits
 

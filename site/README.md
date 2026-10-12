@@ -19,6 +19,28 @@ repo's `runs/` (or `--runs-dir DIR`): each shift's `scores.jsonl`, the timestamp
 death and loss cuts in `stream-service.log`, and the hosts' Space Age lines in `caster.log`. Without a chain (a
 checkout without the shift folders) the page and its links are left out. Rebuild after a shift to add it.
 
+### Archive switch and run start (`site/content/site.json`)
+
+`"archive": false` leaves the test history out of the build: the experiments, the runs list and every run page in
+`runs`, the studies and the agent pages (which are made of those runs), and every link to them; the About page is
+then present tense only (no results, no earlier runs, no agent of the earlier runs), the long run page shows shift
+numbers without run ids, and `live/status.json`'s last run is kept only when it is a shift of the run. The nav is
+Live, The run, About. `"archive": true` (or no key) brings it all back.
+
+`"run_start": "RUN"` is the run the long run page starts from: the chain of shifts that resumed from it, numbered
+from 1. When RUN resumed from another run's save, game time, technologies, rockets, platforms and planets count from
+that save's last score, so nothing before it shows. Without the key the page uses the longest chain. Until RUN's
+folder has a score the page and its nav link are left out (the build prints a note). `status_update.py` numbers
+shifts from it too. `POG_SITE_CONTENT=FILE` (or `build.py --content FILE`) builds from another site.json; the tests
+use it.
+
+`python3 site/test_archive.py` builds both ways from made-up shifts and fails if, with the switch off, any page,
+link or run id from before `run_start` (the runs and studies in `site.json`, `shakeN`, `smoke-...`) reaches the
+output.
+
+At the start of the public run: set `run_start` to its first shift, rebuild and deploy, and clear the site chat
+(`POST /v1/mod {"action":"clear"}`, see `docs/LIVE-API.md`; needs the Worker redeployed from this branch).
+
 ## Deploy
 
 ```sh
@@ -26,7 +48,7 @@ npx wrangler pages deploy site/dist --project-name player-of-games --branch prev
 ```
 
 `tools/site-refresh.sh [--last-run RUN] [--no-deploy]` does it all: status.json's last run, build (with the main
-checkout's `runs/`), `check.py`, `test_live.py`, `test_longrun.py`, then preview and production (production only if
+checkout's `runs/`), `check.py`, `test_live.py`, `test_longrun.py`, `test_archive.py`, then preview and production (production only if
 the preview went up). `tools/shift-change.sh` runs it in the background once the previous shift is stopped, with its log
 in `runs/PREV/site-refresh.log`; a failure never blocks the shift (`POG_SITE_REFRESH=0` skips it). It leaves
 `site/live/status.json` modified in the checkout: commit it when convenient.
@@ -160,7 +182,7 @@ It forwards only the fields listed in `docs/LIVE-API.md` and passes every string
 ## Files
 
 - `build.py`: generator (data loading, Markdown renderer, SVG charts, page templates)
-- `check.py`: post-build checks
+- `check.py`: post-build checks; `test_live.py`, `test_longrun.py`, `test_archive.py`: build tests
 - `content/site.json`: hand-written content
 - `config.json`: settings
 - `static/`: `style.css` (light/dark tokens on top of the art kit, layout), `site.js` (theme toggle, chart hover),

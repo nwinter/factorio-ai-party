@@ -13,6 +13,7 @@ import argparse
 import datetime
 import html
 import json
+import os
 import re
 import shutil
 import sys
@@ -31,6 +32,12 @@ import longrun  # noqa: E402  (site/longrun.py: the long run's shifts from runs/
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
 AGENTS = CONTENT["agents"]
+
+
+def archive():
+    """site.json "archive": true builds the experiments, the earlier runs, the studies and the agent pages; false
+    leaves them out (pages and links), so the site starts from the run at "run_start"."""
+    return CONTENT.get("archive", True)
 
 esc = html.escape
 
@@ -443,15 +450,20 @@ def agent_chip(key):
     return f'<span class="chip">{avatar(key, "sm")}{esc(a["name"])}</span>'
 
 
-# The homepage is the live show; /live/ stays as an alias for links shared before.
-NAV = [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"), ("/about/", "About")]
+def nav_items():
+    """The homepage is the live show; /live/ stays as an alias for links shared before. Without the archive: Live,
+    the run's page (when there is one) and About."""
+    if archive():
+        return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"),
+                ("/about/", "About")]
+    return [("/", "Live")] + ([("/runs/long/", "The run")] if LONG else []) + [("/about/", "About")]
 
 
 def page(title, body, active="/", description="", extra_head=""):
     site_title = CONFIG.get("site_title", "Player of Games")
     full = site_title if title == site_title else f"{title} · {site_title}"
     nav = "".join(
-        f'<a href="{href}"{" aria-current=page" if href == active else ""}>{label}</a>' for href, label in NAV)
+        f'<a href="{href}"{" aria-current=page" if href == active else ""}>{label}</a>' for href, label in nav_items())
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -700,15 +712,21 @@ def build_long_run(lr):
                      stat("rockets launched", last["rockets"]),
                      stat("space platforms", len(last["platforms"]), ", ".join(last["platforms"]))])
     rows = []
+    # Run ids (shakeN) name the test history; without the archive the shift number is enough.
+    ids = archive()
     for s in shifts:
+        rid = f'<span class="muted small">{esc(s["id"])}</span>' if ids else ""
         if s.get("empty"):
-            rows.append(f'<tr class="empty"><th scope="row">–<span class="muted small">{esc(s["id"])}</span></th>'
-                        f'<td>{esc(_when(s["started"], s["ended"]))}</td><td colspan="8" class="muted">{esc(s["note"])}</td></tr>')
+            note = s["note"]
+            if ids and s.get("resumed_as"):
+                note = note.rstrip(")") + f'; resumed as {s["resumed_as"]})'
+            rows.append(f'<tr class="empty"><th scope="row">–{rid}</th>'
+                        f'<td>{esc(_when(s["started"], s["ended"]))}</td><td colspan="8" class="muted">{esc(note)}</td></tr>')
             continue
         moments = "".join(f"<li>{esc(m)}</li>" for m in s["moments"][:6])
         new_rockets = f' <span class="muted">(+{s["rockets_new"]})</span>' if s["rockets_new"] else ""
         rows.append(
-            f'<tr><th scope="row">{s["n"]}<span class="muted small">{esc(s["id"])}</span></th>'
+            f'<tr><th scope="row">{s["n"]}{rid}</th>'
             f'<td>{esc(_when(s["started"], s["ended"]))}{" <span class=\"fx-chip fx-chip--red\">on now</span>" if s.get("running") else ""}</td>'
             f'<td>{esc(s["game0"])} to {esc(s["game1"])}</td>'
             f'<td>{s["research"]} <span class="muted">(+{s["research_new"]})</span></td>'
@@ -720,8 +738,9 @@ def build_long_run(lr):
                           "technologies", step=True, desc="Across every shift, on the save's own game clock.")
     spm = line_chart("Science packs per minute", [{"name": "Packs per minute", "points": lr["spm"]}], "packs per minute",
                      desc="All science packs made, averaged over 10 game minutes.")
+    crumbs = '<p class="crumbs"><a href="/runs/">Runs</a> / The long run</p>' if archive() else ""
     body = f"""
-<p class="crumbs"><a href="/runs/">Runs</a> / The long run</p>
+{crumbs}
 <h1>The long run</h1>
 <p class="lede">One world, one factory, played in shifts around the clock: each shift resumes the last one's save with
 the same nine agents, and the game clock runs only while a shift is on. It started {esc(_when(first["started"], first["ended"]).split(" to ")[0])}.</p>
@@ -736,7 +755,8 @@ score log, and the hosts' Space Age calls.</p>
 <th scope="col">Platforms</th><th scope="col">Planets</th><th scope="col">Deaths / loss alerts</th><th scope="col">Moments</th>
 </tr></thead><tbody>{"".join(rows)}</tbody></table></div>
 """
-    return page("The long run", body, "/runs/", "One world over many shifts: research, science, rockets and platforms shift by shift.")
+    return page("The long run", body, "/runs/" if archive() else "/runs/long/",
+                "One world over many shifts: research, science, rockets and platforms shift by shift.")
 
 
 def build_runs_index(runs, all_worlds):
@@ -811,13 +831,14 @@ def build_experiments(runs, all_worlds):
 
 def build_home(runs, all_worlds):
     """The homepage is the live show (Nick: "just drop people right into it"), then a compact way into the rest."""
-    sf = run_final(all_worlds["shake1"]["n"])
     cards = [("/about/", "About the project", "Nine models from five labs share one Factorio factory, by the same rules as a "
-              "player. How it works, the fair-play rules, the team."),
-             ("/experiments/", "Experiments", "What each run tested and what it found."),
-             ("/runs/", "Runs", f"Every run with its charts and chat; the latest, {runs['shake1']['title']}, reached "
-              f"{sf['techs']} technologies by {sf['game']}."),
-             ("/studies/", "Studies", "Write-ups of the runs: what went wrong, what changed.")]
+              "player. How it works, the fair-play rules, the team.")]
+    if archive():
+        sf = run_final(all_worlds["shake1"]["n"])
+        cards += [("/experiments/", "Experiments", "What each run tested and what it found."),
+                  ("/runs/", "Runs", f"Every run with its charts and chat; the latest, {runs['shake1']['title']}, reached "
+                   f"{sf['techs']} technologies by {sf['game']}."),
+                  ("/studies/", "Studies", "Write-ups of the runs: what went wrong, what changed.")]
     if LONG:
         last = [s for s in LONG["shifts"] if not s.get("empty")][-1]
         cards.insert(1, ("/runs/long/", "The long run", f"One world in shifts around the clock: {last['research']} "
@@ -836,47 +857,94 @@ def build_home(runs, all_worlds):
 
 
 def build_about(runs, all_worlds):
+    """What the show is, how it works, the rules, the team, how to talk to the agents. With the archive it also has
+    the test history (results, the latest run, links to the experiments); without it, present tense only."""
+    arch = archive()
     team = []
     for k in CONTENT["team_order"]:
         a = agent(k)
-        team.append(f'<li class="team-member" style="--ac:{a["color"]}">{avatar(k, "lg")}<div><a href="/agents/{k}/"><strong>{esc(a["name"])}</strong></a>'
+        name = f'<a href="/agents/{k}/"><strong>{esc(a["name"])}</strong></a>' if arch else f'<strong>{esc(a["name"])}</strong>'
+        team.append(f'<li class="team-member" style="--ac:{a["color"]}">{avatar(k, "lg")}<div>{name}'
                     f'<span>{esc(a["model"])}</span><span class="muted">{esc(a["harness"])}</span></div></li>')
-    fable = agent("fable")
-    sf = run_final(all_worlds["shake1"]["n"])
-    cf = run_final(all_worlds["coop1"]["c"])
-    body = f"""
-<section class="hero">
+    if arch:
+        fable = agent("fable")
+        sf = run_final(all_worlds["shake1"]["n"])
+        cf = run_final(all_worlds["coop1"]["c"])
+        hero = f"""
   <p class="eyebrow">An open experiment</p>
   <h1>AI agents playing Factorio together, by the same rules as you.</h1>
   <p class="lede">Nine models from five labs share one factory. They can't spawn items, teleport or see the
   unexplored map. They walk, mine, craft and build at the speed a person would, talk to each other in game chat,
-  and try to get from a crashed ship to a rocket launch. The runs will be streamed.</p>
+  and work up the Space Age tree toward the Shattered Planet. The runs are streamed.</p>
   <p class="actions"><a class="fx-btn" href="/experiments/">See the experiments →</a> <a class="fx-btn ghost" href="/">Live stream</a></p>
   <div class="stats hero-stats">
     {stat("runs so far", len(runs))}
     {stat("technologies in co-op", cf["techs"], "Astra + Opus, 2 hours")}
     {stat("agents in one world", 9, "shakedown, enemies on")}
     {stat("chat messages", "365", "in the nine-agent hour")}
-  </div>
+  </div>"""
+        step1 = """with the same instructions: play until the deadline,
+      keep notes, write a final summary."""
+        clocks = """<p class="muted">Two clocks are in play. In <strong>real time</strong> the game runs while the agent thinks, so slow thinking costs
+  game time. In <strong>turn mode</strong> the game pauses whenever the character has nothing in progress, so game time measures
+  decisions, not latency.</p>"""
+        team_note = """Names and colours are the ones each agent chose for itself in the shakedown. The pixel portraits
+  come from the stream's avatar renderer, which draws a default from each name and colour; agents can now design
+  their own in game, and these will change when they do."""
+        team_extra = (f'<p class="muted small">Earlier solo and versus runs also used <a href="/agents/fable/">{esc(fable["model"])}</a> '
+                      f'({esc(fable["harness"])}).</p>')
+        history = f"""
+<section>
+  <h2>Results so far</h2>
+  <p class="muted">Five runs on the same map, 10 October 2026. Turn mode reached every early milestone sooner in game
+  time; the two-agent co-op researched the most, {cf["techs"]} technologies in two hours.
+  <a href="/experiments/">The experiments log</a> has the details.</p>
+  {comparison_chart(runs, all_worlds)}
+</section>
+
+<section>
+  <h2>Latest</h2>
+  <a class="run-row" href="/runs/shake1/"><div><h3>{esc(runs["shake1"]["title"])}: {esc(runs["shake1"]["subtitle"])}</h3>
+  <p class="muted">{esc(runs["shake1"]["summary"])}</p></div><p class="run-final">{sf["techs"]} techs by {sf["game"]}</p></a>
+</section>
+"""
+    else:
+        run_btn = ' <a class="fx-btn ghost" href="/runs/long/">The run so far</a>' if LONG else ""
+        hero = f"""
+  <p class="eyebrow">Live on stream</p>
+  <h1>AI agents playing Factorio together, by the same rules as you.</h1>
+  <p class="lede">Nine models from five labs share one factory in Factorio: Space Age. They can't spawn items,
+  teleport or see the unexplored map. They walk, mine, craft and build at the speed a person would, and talk to each
+  other in game chat. The goal is the far end of the Space Age tree, the Shattered Planet; the agents set their own
+  milestones on the way.</p>
+  <p class="actions"><a class="fx-btn" href="/">Watch live →</a>{run_btn}</p>"""
+        step1 = """with the same instructions apart from name and
+      model. Each shift they pick up where the last one stopped, from their own notes and the team's board."""
+        clocks = """<p class="muted">The game runs in <strong>real time</strong> while the agents think, so slow thinking costs game time.
+  It plays in shifts of about four hours, and the game is paused between shifts.</p>"""
+        team_note = """Each agent chose its own name and colour. The pixel portraits come from the stream's avatar
+  renderer, and change when an agent designs its own in game."""
+        team_extra = ""
+        history = ""
+    body = f"""
+<section class="hero">{hero}
 </section>
 
 <section>
   <h2>How it works</h2>
   <div class="flow" role="list">
     <div class="flow-step" role="listitem"><span class="flow-n">1</span><h3>The agents</h3><p>Each model runs in its own coding harness
-      (Codex, Claude Code, Grok Build, Antigravity, Muse Code) with the same instructions: play until the deadline,
-      keep notes, write a final summary.</p></div>
+      (Codex, Claude Code, Grok Build, Antigravity, Muse Code) {step1}</p></div>
     <div class="flow-step" role="listitem"><span class="flow-n">2</span><h3>The harness</h3><p>Agents act through one command-line tool,
       <code>fh</code>, with more than 70 actions: look, walk, mine, craft, build, queue a plan, chat. Long plans run inside
       the game, so the model stays out of the low-level loop.</p></div>
-    <div class="flow-step" role="listitem"><span class="flow-n">3</span><h3>The game</h3><p>A Factorio 2.0.77 server with a small mod that
-      carries out each action tick by tick, under survival rules, and refuses anything a player couldn't do.</p></div>
+    <div class="flow-step" role="listitem"><span class="flow-n">3</span><h3>The game</h3><p>A Factorio 2.0.77 server with Space Age,
+      Quality and Elevated Rails, and a small mod that carries out each action tick by tick, under survival rules, and
+      refuses anything a player couldn't do.</p></div>
     <div class="flow-step" role="listitem"><span class="flow-n">4</span><h3>The stream</h3><p>Director cameras follow whoever is most
       interesting. An overlay shows each agent's name, colour, current action and the team chat.</p></div>
   </div>
-  <p class="muted">Two clocks are in play. In <strong>real time</strong> the game runs while the agent thinks, so slow thinking costs
-  game time. In <strong>turn mode</strong> the game pauses whenever the character has nothing in progress, so game time measures
-  decisions, not latency.</p>
+  {clocks}
 </section>
 
 <section class="fair">
@@ -912,27 +980,20 @@ def build_about(runs, all_worlds):
 
 <section>
   <h2 id="team">The team</h2>
-  <p class="muted">Names and colours are the ones each agent chose for itself in the shakedown. The pixel portraits
-  come from the stream's avatar renderer, which draws a default from each name and colour; agents can now design
-  their own in game, and these will change when they do.</p>
+  <p class="muted">{team_note}</p>
   <ul class="team">{"".join(team)}</ul>
-  <p class="muted small">Earlier solo and versus runs also used <a href="/agents/fable/">{esc(fable["model"])}</a> ({esc(fable["harness"])}).</p>
+  {team_extra}
 </section>
 
 <section>
-  <h2>Results so far</h2>
-  <p class="muted">Five runs on the same map, 10 October 2026. Turn mode reached every early milestone sooner in game
-  time; the two-agent co-op researched the most, {cf["techs"]} technologies in two hours.
-  <a href="/experiments/">The experiments log</a> has the details.</p>
-  {comparison_chart(runs, all_worlds)}
+  <h2 id="talk">Talk to the agents</h2>
+  <p>Write in the YouTube chat or the site chat on the <a href="/">live page</a>. Messages pass a moderation filter,
+  then show on the stream and reach the agents in the game chat, marked as from a viewer. Put <code>@</code> before an
+  agent's name to get its attention; other messages wait until the agents next read their chat. They may answer
+  briefly and keep playing, and they can vote to mute a viewer. The site chat needs no account: pick any name, no
+  links.</p>
 </section>
-
-<section>
-  <h2>Latest</h2>
-  <a class="run-row" href="/runs/shake1/"><div><h3>{esc(runs["shake1"]["title"])}: {esc(runs["shake1"]["subtitle"])}</h3>
-  <p class="muted">{esc(runs["shake1"]["summary"])}</p></div><p class="run-final">{sf["techs"]} techs by {sf["game"]}</p></a>
-</section>
-"""
+{history}"""
     return page("About", body, "/about/", CONFIG.get("description", ""))
 
 
@@ -1005,6 +1066,16 @@ def build_study(sid, st):
             f'<div class="study-layout"><nav class="toc" aria-label="Contents"><p>Contents</p><ol>{toc}</ol></nav>'
             f'<article class="prose">{html_body}</article></div>')
     return page(st["title"], body, "/studies/")
+
+
+def public_status(st):
+    """status.json for dist/. Without the archive the last run is shown only when it is a shift of the run (from
+    run_start on), and without its id."""
+    if not archive() and st.get("last_run"):
+        shifts = {s["id"] for s in (LONG or {}).get("shifts", [])}
+        lr = st["last_run"]
+        st = dict(st, last_run={k: v for k, v in lr.items() if k != "id"} if lr.get("id") in shifts else None)
+    return json.dumps(st, indent=2, ensure_ascii=False) + "\n"
 
 
 LIVE_HEAD = '<script src="/static/avatar.js" defer></script>\n<script src="/static/live.js" defer></script>'
@@ -1081,7 +1152,13 @@ def main():
     ap.add_argument("--out", default=str(SITE / "dist"))
     ap.add_argument("--runs-dir", default=str(REPO / "runs"),
                     help="where the long run's shift folders are (default: the repo's runs/; read-only)")
+    ap.add_argument("--content", default=os.environ.get("POG_SITE_CONTENT"),
+                    help="another site.json (tests: the archive switch and run_start; default $POG_SITE_CONTENT)")
     args = ap.parse_args()
+    if args.content:
+        global CONTENT, AGENTS
+        CONTENT = json.loads(Path(args.content).read_text())
+        AGENTS = CONTENT["agents"]
     out = Path(args.out)
     if out.exists():
         shutil.rmtree(out)
@@ -1090,7 +1167,10 @@ def main():
     runs = CONTENT["runs"]
     all_worlds = {rid: load_scores(r) for rid, r in runs.items()}
     global LONG
-    LONG = longrun.load(args.runs_dir, clean)  # None without a chain of shifts: no page, no links to it
+    # None without a chain of shifts (or without run_start's folder): no page, no links to it
+    LONG = longrun.load(args.runs_dir, clean, start=CONTENT.get("run_start"))
+    if CONTENT.get("run_start") and not LONG:
+        print(f"note: run_start {CONTENT['run_start']} not found in {args.runs_dir}: no run page", file=sys.stderr)
 
     def write(rel, text):
         p = out / rel
@@ -1101,19 +1181,20 @@ def main():
     if LONG:
         write("runs/long/index.html", build_long_run(LONG))
     write("about/index.html", build_about(runs, all_worlds))
-    write("experiments/index.html", build_experiments(runs, all_worlds))
-    write("runs/index.html", build_runs_index(runs, all_worlds))
-    chats = {rid: load_chat(run) for rid, run in runs.items()}
-    for rid, run in runs.items():
-        write(f"runs/{rid}/index.html", build_run_page(rid, run, all_worlds[rid], chats[rid]))
-    for key in AGENTS:
-        write(f"agents/{key}/index.html", build_agent_page(key, runs, all_worlds, chats))
-    write("studies/index.html", build_studies_index())
-    for sid, st in CONTENT["studies"].items():
-        write(f"studies/{sid}/index.html", build_study(sid, st))
+    if archive():  # the test history: experiments, earlier runs, agent pages (made of those runs), studies
+        write("experiments/index.html", build_experiments(runs, all_worlds))
+        write("runs/index.html", build_runs_index(runs, all_worlds))
+        chats = {rid: load_chat(run) for rid, run in runs.items()}
+        for rid, run in runs.items():
+            write(f"runs/{rid}/index.html", build_run_page(rid, run, all_worlds[rid], chats[rid]))
+        for key in AGENTS:
+            write(f"agents/{key}/index.html", build_agent_page(key, runs, all_worlds, chats))
+        write("studies/index.html", build_studies_index())
+        for sid, st in CONTENT["studies"].items():
+            write(f"studies/{sid}/index.html", build_study(sid, st))
     write("live/index.html", build_live())
     shutil.copy(SITE / "live" / "state.example.json", out / "live" / "state.example.json")
-    shutil.copy(SITE / "live" / "status.json", out / "live" / "status.json")
+    write("live/status.json", public_status(json.loads((SITE / "live" / "status.json").read_text())))
     write("404.html", page("Not found", '<h1>Not found</h1><p>That page doesn\'t exist. <a href="/">Back to the start</a>.</p>', None))
     for f in (SITE / "static").iterdir():
         if not f.is_file() or f.name.startswith("."):
@@ -1126,7 +1207,8 @@ def main():
     write("static/factorio-ui.css", re.sub(r"^@import url\([^)]*\);\n", "", kit, flags=re.M))
     shutil.copy(ART / "avatar.js", out / "static" / "avatar.js")
     for key in AGENTS:
-        write(f"static/avatars/{key}.svg", avatar_art.svg(profile_row(key), 96, title=agent(key)["name"]))
+        if archive() or not AGENTS[key].get("earlier"):  # agents of the earlier runs only with the archive
+            write(f"static/avatars/{key}.svg", avatar_art.svg(profile_row(key), 96, title=agent(key)["name"]))
     write("favicon.svg", FAVICON)
     write("robots.txt", "User-agent: *\nDisallow: /\n")
     # Cloudflare Pages: keep everything out of search engines while unlisted; no caching of live status

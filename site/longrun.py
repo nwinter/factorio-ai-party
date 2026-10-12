@@ -36,13 +36,35 @@ def game_time(tick):
     return f"{m // 60}h{m % 60:02d}m"
 
 
-def chain(runs_dir):
-    """The longest chain of shifts linked by resumed-from, oldest first ([] when there is none)."""
+def parents(runs_dir):
     parent = {}
     for d in runs_dir.iterdir() if runs_dir.is_dir() else []:
         f = d / "resumed-from"
         if d.is_dir() and f.exists():
             parent[d.name] = f.read_text().strip()
+    return parent
+
+
+def chain(runs_dir, start=None):
+    """The longest chain of shifts linked by resumed-from, oldest first ([] when there is none). With start: the
+    longest chain that begins at that run (just [start] until a shift resumes from it; [] without its folder)."""
+    parent = parents(runs_dir)
+    if start:
+        if not (runs_dir / start).is_dir():
+            return []
+        kids = {}
+        for k, p in parent.items():
+            kids.setdefault(p, []).append(k)
+
+        def longest(node, seen):
+            best = [node]
+            for k in sorted(kids.get(node, [])):
+                if k not in seen and (runs_dir / k).is_dir():
+                    c = [node] + longest(k, seen | {k})
+                    if len(c) > len(best):
+                        best = c
+            return best
+        return longest(start, {start})
     best = []
     for leaf in set(parent) - set(parent.values()):
         c, seen = [leaf], {leaf}
@@ -121,27 +143,45 @@ def label(name):
     return name.replace("-", " ")
 
 
-def load(runs_dir, clean=lambda s: s):
+def rebase(r, origin):
+    """A score row counted from origin (the save the first shift resumed from): game time, technologies, rockets,
+    platforms and planets other than Nauvis that the save already had are left out."""
+    if not origin:
+        return r
+    return dict(r, tick=r["tick"] - origin["tick"], done=r["done"] - origin["done"],
+                research=len(r["done"] - origin["done"]), rockets=max(0, r["rockets"] - origin["rockets"]),
+                platforms=[p for p in r["platforms"] if p not in origin["platforms"]],
+                planets=[p for p in r["planets"] if p == "nauvis" or p not in origin["planets"]])
+
+
+def load(runs_dir, clean=lambda s: s, start=None):
     """{"shifts": [row per shift], "research": [(game minute, technologies)], "spm": [(game minute, packs/min)]}
-    or None without a chain. clean: the site's redaction (build.clean) for any text taken from logs."""
+    or None without a chain. clean: the site's redaction (build.clean) for any text taken from logs.
+    start (site.json's run_start): the chain begins at that run, and when it resumed from another run's save,
+    game time, technologies, rockets, platforms and planets count from that save's last score."""
     runs_dir = Path(runs_dir)
-    names = chain(runs_dir)
+    names = chain(runs_dir, start)
     if not names:
         return None
+    origin = None  # the last score of the save run_start resumed from
+    if start:
+        p = parents(runs_dir).get(start)
+        before = scores(runs_dir / p / "scores.jsonl") if p and (runs_dir / p).is_dir() else []
+        origin = before[-1] if before else None
     shifts, research, spm = [], [], []
-    prev = None
+    prev = rebase(origin, origin) if origin else None
     n = 0
     for i, name in enumerate(names):
         d = runs_dir / name
-        sc = scores(d / "scores.jsonl")
+        sc = [rebase(r, origin) for r in scores(d / "scores.jsonl")]
         start_log = log_times(d / "start.log")
         deaths, losses = stream_events(d / "stream-service.log")
         n += 1 if sc else 0  # only shifts that played are numbered
         row = {"id": name, "n": n if sc else None, "deaths": deaths, "losses": losses, "moments": []}
         if not sc:
             nxt = names[i + 1] if i + 1 < len(names) else None
-            row.update(started=start_log[0], ended=start_log[1], empty=True,
-                       note=f"did not start (stopped while setting up; resumed as {nxt})" if nxt else "no score log yet")
+            row.update(started=start_log[0], ended=start_log[1], empty=True, resumed_as=nxt,
+                       note="did not start (stopped while setting up)" if nxt else "no score log yet")
             shifts.append(row)
             continue
         a, b = sc[0], sc[-1]
@@ -185,4 +225,6 @@ def load(runs_dir, clean=lambda s: s):
                 spm.append((round(r["tick"] / 3600, 1), round((r["science"] - w0["science"]) / dm, 1)))
                 w0 = r
         prev = b
+    if all(s.get("empty") for s in shifts):
+        return None  # nothing played yet (run_start's first minutes): no page until the first score
     return {"shifts": shifts, "research": research, "spm": spm}

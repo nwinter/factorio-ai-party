@@ -1,4 +1,6 @@
 {
+  "archive": false,
+  "run_start": "shake4",
   "agents": {
     "astra":  {"name": "Astra",  "model": "GPT-6 Astra",       "maker": "OpenAI",    "harness": "Codex",       "color": "#9977ff", "glyph": "AS"},
     "sol":    {"name": "Sol",    "model": "GPT-6.1 Sol",       "maker": "OpenAI",    "harness": "Codex",       "color": "#ffcb45", "glyph": "S"},

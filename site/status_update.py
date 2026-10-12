@@ -4,10 +4,10 @@
     python3 site/status_update.py RUN [--runs-dir DIR] [--status FILE]
 
 last_run becomes {"id": RUN, "title": "Shift N of the long run", "url": "/runs/long/"} when RUN is a shift of the long
-run (site/longrun.py), else {"id": RUN, "title": RUN, "url": "/runs/long/" or null}; `updated` is now. The message
+run (site/longrun.py, from site.json's run_start), else {"id": RUN, "title": RUN, "url": "/runs/long/" or null}; `updated` is now. The message
 and the next shift stay as they are (the live state's `shift` says when the next one starts).
 """
-import argparse, datetime, json, sys
+import argparse, datetime, json, os, sys
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
@@ -32,7 +32,9 @@ def main():
     a = ap.parse_args()
     path = Path(a.status)
     status = json.loads(path.read_text()) if path.exists() else {"schema": 1, "live": False}
-    new = update(status, a.run, longrun.load(a.runs_dir))
+    content = Path(os.environ.get("POG_SITE_CONTENT") or SITE / "content" / "site.json")  # as build.py --content
+    start = json.loads(content.read_text()).get("run_start")  # shift numbers count from it
+    new = update(status, a.run, longrun.load(a.runs_dir, start=start))
     path.write_text(json.dumps(new, indent=2, ensure_ascii=False) + "\n")
     print(f"status.json: last run {new['last_run']['title']} ({a.run})")
 

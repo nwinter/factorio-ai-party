@@ -5,7 +5,7 @@
 - per shift: game time, research (+new), science per minute, rockets, platforms, deaths and loss alerts the director
   cut to (a loss alert repeated is counted per alert, not per building), milestone moments;
 - start.log gives only times: its account and quota lines never reach the page;
-- build.py --runs-dir writes /runs/long/ and links it from the homepage and the Runs list; check.py passes.
+- with the archive on, build.py --runs-dir writes /runs/long/ and links it from the homepage and the Runs list; check.py passes.
 """
 import json, os, subprocess, sys, tempfile
 from pathlib import Path
@@ -56,7 +56,7 @@ def main():
         ids = [s["id"] for s in lr["shifts"]]
         assert ids == ["s1", "s2", "s3"], ids
         s1, s2, s3 = lr["shifts"]
-        assert (s1["n"], s2["n"], s3["n"]) == (1, None, 2) and s2.get("empty") and "resumed as s3" in s2["note"]
+        assert (s1["n"], s2["n"], s3["n"]) == (1, None, 2) and s2.get("empty") and s2["resumed_as"] == "s3"
         assert (s1["deaths"], s1["losses"]) == (1, 2), s1  # two loss alerts, not six buildings
         assert s1["spm"] == 10.0 and s1["research_new"] == 1 and s1["moments"] == ["researched oil processing"], s1
         assert s3["research_new"] == 1 and s3["rockets_new"] == 2 and s3["spm"] == 20.0, s3
@@ -64,12 +64,17 @@ def main():
                                  "Platform's named. Solstice."], s3["moments"]
         assert lr["research"][0] == (1.0, 1) and lr["research"][-1] == (122.0, 3), lr["research"]
         out = Path(d) / "dist"
-        subprocess.run([sys.executable, str(SITE / "build.py"), "--out", str(out), "--runs-dir", str(root)],
-                       check=True, capture_output=True)
+        # with the archive (run ids shown, the Runs list) and no run_start: the longest chain
+        content = json.loads((SITE / "content" / "site.json").read_text())
+        content.update(archive=True)
+        content.pop("run_start", None)
+        (Path(d) / "site.json").write_text(json.dumps(content))
+        subprocess.run([sys.executable, str(SITE / "build.py"), "--out", str(out), "--runs-dir", str(root),
+                        "--content", str(Path(d) / "site.json")], check=True, capture_output=True)
         r = subprocess.run([sys.executable, str(SITE / "check.py"), str(out)], capture_output=True, text=True)
         assert r.returncode == 0, r.stdout
         page = (out / "runs" / "long" / "index.html").read_text()
-        assert "The long run" in page and "did not start" in page and "Solstice" in page
+        assert "The long run" in page and "did not start" in page and "resumed as s3" in page and "Solstice" in page
         assert "quota" not in page and "Weekly" not in page and "codex" not in page  # start.log's text never shows
         assert 'href="/runs/long/"' in (out / "index.html").read_text()
         assert 'href="/runs/long/"' in (out / "runs" / "index.html").read_text()

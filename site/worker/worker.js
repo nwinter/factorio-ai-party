@@ -301,7 +301,9 @@ export class Live {
       }
       case "close": this.put("chat_open", "0"); break;
       case "open": this.put("chat_open", "1"); break;
-      default: return json({ error: "action must be hide, unhide, ban, unban, open or close" }, 400);
+      // a fresh start (the public run): hide every message so far; seq keeps counting, so pollers lose nothing new
+      case "clear": this.sql.exec("UPDATE chat SET hidden = 1"); break;
+      default: return json({ error: "action must be hide, unhide, ban, unban, open, close or clear" }, 400);
     }
     return json({ ok: true });
   }

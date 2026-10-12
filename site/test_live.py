@@ -55,8 +55,11 @@ def build_tests():
         home = open(os.path.join(d, "index.html")).read()
         assert 'id="live-app"' in home and "/static/live.js" in home and "/static/avatar.js" in home
         assert home.index('id="live-app"') < home.index('class="home-more"'), "the live show comes first"
-        for href in ("/about/", "/experiments/", "/runs/", "/studies/"):
-            assert f'href="{href}"' in home, href
+        assert 'href="/about/"' in home
+        content = os.environ.get("POG_SITE_CONTENT") or os.path.join(SITE, "content", "site.json")  # what build.py read
+        archive = json.load(open(content)).get("archive", True)
+        for href in ("/experiments/", "/runs/", "/studies/"):  # the test history, only with the archive switch on
+            assert (f'href="{href}"' in home) == archive, href
         about = open(os.path.join(d, "about", "index.html")).read()
         assert "Fair-play rules" in about and 'id="team"' in about
         assert 'id="live-app"' in open(os.path.join(d, "live", "index.html")).read()
