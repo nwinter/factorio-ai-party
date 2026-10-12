@@ -444,6 +444,19 @@ run config brings back the director below).
   after the crop; until shift01 "over 60 tiles from the subject") shows in a 408x230 inset in the on-air view's top
   right for 20 s (`inset_hold`): the third client, moved there and on top by cuts.py. An attack with nothing lost yet
   is only a toast; inside the on-air frame, the label says it.
+- Standing still and the look-ahead (a viewer on shift01: "should move on air to next moving player if they stand
+  still too much"; Nick: use the actions the agents dispatch). shift01 14:30-16:16 (`still_report.py`, director logs
+  plus the agents' journals): 37% of on-air time showed a character that had not moved or visibly acted for 20+ s,
+  81 stretches, median 40 s, p90 77 s, longest 259 s. Now: a subject on air 30+ s (`still_min`) whose character has
+  been still 25 s (`still_cut`) gives way to an agent moving or acting now (at least half its score); the one cut
+  away from is not the pick again for 60 s (`still_block`). Thinking with a still character scores like idle;
+  walking, building, mining, fighting x1.25; crafting, waits and reads x0.75. Each agent's `plan` (live.py: the
+  status `active` record it already polls; the runtime now adds the action's bounds, set once when it starts, and a
+  move_to's destination): a big visible action (a construct of 4+ ghosts, a path of 8+ pieces, a fight, a rocket or
+  platform action) x1.6, the standby framed to fit its bounds, on air held while it runs (up to 300 s, `plan_hold`)
+  with the zoom fitted, and once it ends 8 s still (`plan_after`) is enough to cut away. The same shift replayed
+  through model.py and onecam.py: still share 31% before, 12% after (longest 123 s to 76 s); cuts 45 to 85 in 106
+  minutes, 55 of them for standing still and 18 picked with a big action ahead.
 - Trio (Nick, 2026-10-12: he liked the old one-big-two-small layout because each tile said who was doing what):
   sometimes the program shows all three clients in layout-3cam.json's holes, the one on air in the big tile (no cut:
   the same client stays on air) and the two standbys in small tiles, each labelled "Luna · fixing the north wall"
