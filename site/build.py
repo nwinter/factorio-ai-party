@@ -24,6 +24,22 @@ SITE = Path(__file__).resolve().parent
 REPO = SITE.parent
 # The art kit lives with the stream overlay; the site copies it so there is one source for both.
 ART = REPO / "tools" / "stream" / "static"
+# The test runs left the repo before the public run (tools/public-start.sh moved them to ~/code/pog-archive/runs-DATE).
+# The archive pages read them there: POG_SITE_ARCHIVE, else the newest runs-* folder under ~/code/pog-archive.
+_ARCHIVES = ([Path(os.environ["POG_SITE_ARCHIVE"])] if os.environ.get("POG_SITE_ARCHIVE")
+             else sorted((Path.home() / "code" / "pog-archive").glob("runs-*"), reverse=True))
+
+
+def run_dir(run):
+    """A run's folder: in the repo (runs/ID), else in the archive the test runs moved to."""
+    here = REPO / run["dir"]
+    if here.exists():
+        return here
+    rel = Path(run["dir"])
+    rel = Path(*rel.parts[1:]) if rel.parts and rel.parts[0] == "runs" else rel
+    return next((a / rel for a in _ARCHIVES if (a / rel).exists()), here)
+
+
 sys.path.insert(0, str(ART.parent))
 import avatar as avatar_art  # noqa: E402  (tools/stream/avatar.py, reads the part lists from avatar.js)
 sys.path.insert(0, str(SITE))
@@ -197,7 +213,7 @@ def game_time(tick):
 
 def load_scores(run):
     """Snapshots per world, deduplicated by tick, in game-time order."""
-    path = REPO / run["dir"] / "scores.jsonl"
+    path = run_dir(run) / "scores.jsonl"
     worlds = {}
     if not path.exists():
         return worlds
@@ -229,7 +245,7 @@ def load_scores(run):
         elif not lst or tick > lst[-1]["tick"]:
             lst.append(snap)
     # a final-score.json (taken at the deadline) supersedes the last snapshot
-    final = REPO / run["dir"] / "final-score.json"
+    final = run_dir(run) / "final-score.json"
     if final.exists() and run.get("world") in worlds:
         sc = json.loads(final.read_text())
         lst = worlds[run["world"]]
@@ -255,7 +271,7 @@ def research_timeline(snaps):
 def load_chat(run):
     if not run.get("chat"):
         return []
-    path = REPO / run["dir"] / run["chat"]
+    path = run_dir(run) / run["chat"]
     if not path.exists():
         return []
     rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
@@ -499,7 +515,7 @@ def page(title, body, active="/", description="", extra_head=""):
 <footer class="site-footer">
   <div class="wrap">
     <p>Player of Games: AI agents playing Factorio together, under the same rules as a human player.
-    Built from the project's run logs. Preview build, not for sharing yet.</p>
+    Built from the project's run logs.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
   </div>
 </footer>
 <script src="/static/site.js" defer></script>
@@ -646,7 +662,7 @@ def build_run_page(rid, run, worlds, chat):
         if quotes:
             q = "".join(f'<li><span class="q-time">{esc(game_time(c["tick"]))}</span> {esc(c["text"])}</li>' for c in quotes[:4])
             lines.append(f'<ul class="quotes">{q}</ul>')
-        summ = notes_summary(REPO / run["dir"] / p["dir"] / "notes.md")
+        summ = notes_summary(run_dir(run) / p["dir"] / "notes.md")
         if summ:
             lines.append(f'<details class="notes"><summary>{esc(a["name"])}\'s own final summary</summary>'
                          f'<div class="prose small">{markdown(summ, heading_shift=2, ids=False)}</div></details>')
@@ -707,7 +723,7 @@ def build_long_run(lr):
     shifts = lr["shifts"]
     done = [s for s in shifts if not s.get("empty")]
     first, last = done[0], done[-1]
-    stats = "".join([stat("shifts", len(done), f"{len(shifts) - len(done)} more did not start" if len(shifts) > len(done) else ""),
+    stats = "".join([stat("shift" if len(done) == 1 else "shifts", len(done), f"{len(shifts) - len(done)} more did not start" if len(shifts) > len(done) else ""),
                      stat("game time", last["game1"], "on one save"),
                      stat("technologies", last["research"]),
                      stat("rockets launched", last["rockets"]),
