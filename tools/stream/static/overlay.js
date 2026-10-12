@@ -165,7 +165,9 @@
     const go = (t) => {
       trioCams = t;
       for (const c of document.querySelectorAll(".cam")) if (!l.cams[c.dataset.slot] && !(t && t[c.dataset.slot])) c.remove();
-      if (onecam && l.cams.main) $("cam-main").append(el("div", "cam-bar"));
+      // a bar along each view's bottom edge: it holds the label and covers the client's bottom-centre hint ("Press Tab
+      // to skip cutscene" stays on the cam clients after the Space Age intro, though they are spectators)
+      if (onecam) for (const id of ["cam-main", "cam-cam2", "cam-cam3", "cam-inset"]) if ($(id)) $(id).append(el("div", "cam-bar"));
       applyLayout(curMode === "trio" && t ? "trio" : "onecam");
     };
     if (trio) fetch("/static/layout-3cam.json").then((r) => r.json()).then((t) => go(t.cams)).catch(() => go(null));
