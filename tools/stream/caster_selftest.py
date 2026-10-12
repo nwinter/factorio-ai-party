@@ -873,8 +873,36 @@ cc.tally = caster.deque([(time.time() - 900, "attack"), (time.time() - 300, "att
                          (time.time() - 100, "death"), (time.time() - 50, "loss")])
 cc.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
 ct = fc.facts.get("counts", {})
-check("urgent beats carry deaths, loss reports and recent attacks", ct.get("deaths") == 2 and ct.get("loss_reports") == 1
-      and ct.get("attacks_last_10_minutes") == 1 and ct.get("since", "").startswith("the hosts came on at"), str(ct))
+check("death and loss beats carry counts, with a clock time and no 'hosts came on' (shake12 aired 'since we came on')",
+      ct.get("deaths_so_far") == 2 and ct.get("loss_reports_so_far") == 1 and ct.get("attacks_last_10_minutes") == 1
+      and re.fullmatch(r"\d\d:\d\d", ct.get("counted_since", "")) and "hosts" not in json.dumps(ct), str(ct))
+fa7 = _FactsWriter([])
+ca7 = _caster(fa7)
+ca7.say_exchange({"kind": "attack", "text": "Base under attack: gun turret", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
+check("attack beats carry no counts (shake12 quoted 'N attacks in ten minutes' on nearly every one)",
+      "counts" not in fa7.facts)
+cq7 = caster.Caster.__new__(caster.Caster)
+cq7.remember_framings(["Another hit on the turret. That's seven attacks in ten minutes now.",
+                       "Busy stretch. Eight attacks in ten minutes, and still zero deaths."], now=t6)
+uq7 = cq7.used_framings(now=t6 + 60)
+check("framings count numbers as N when they count events, not when they are units", "attacks in N minutes" in uq7
+      and not any("N" in g for g in caster.framings("Four hundred plates a minute, up from three hundred.")[1]),
+      str(uq7))
+ft = _FactsWriter([])
+ctk = _caster(ft)
+ctk.a = caster.argparse.Namespace(**{**vars(ctk.a), "quiet": 20, "lull": 40, "stale": 45, "dry_run": True,
+                                     "always": True, "urgent_gap": 0.5, "naturalist": 0, "lines": (2, 2),
+                                     "segment_every": 1e9, "attack_gap": 120})
+ctk.lock, ctk.events, ctk.prep, ctk.next_gap, ctk.filler_i = caster.threading.Lock(), caster.deque(maxlen=60), [], 1.0, 0
+ctk.snap, ctk.caster_free, ctk.last_attack_t = {"agents": []}, 0.0, time.time() - 60
+ctk.events.append({"kind": "attack", "text": "Base under attack: gun turret", "t": time.time(), "prio": 9})
+ctk.caster_tick(time.time(), {})
+check("a plain attack 60 s after the last attack beat is dropped", not hasattr(ft, "facts"))
+ctk.events.append({"kind": "loss", "text": "3 lost: 3 pipe (by small biters)", "t": time.time(), "prio": 8})
+ctk.caster_tick(time.time(), {})
+check("a loss still speaks inside the attack gap", getattr(ft, "facts", {}).get("event") == "loss")
+check("previously on: growth only for buildings the first score counted (shake12: '135 more gun turret')",
+      caster.previous_shift.__doc__ and "gun-turret" not in caster.SCORE_COUNTED_BEFORE)
 check("planet names keep their capitals in technology labels", model.tech_label("planet-discovery-fulgora") ==
       "Planet discovery Fulgora")
 asked = []

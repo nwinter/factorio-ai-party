@@ -514,6 +514,15 @@ def read_shift(run_dir):
     return f
 
 
+# The buildings tools/pog.py's score counted before it listed them (entities_counted, 2026-10-11 night): an older
+# score omits zeros, so a building missing from its counts is none built only if it is on this list.
+SCORE_COUNTED_BEFORE = (
+    "burner-mining-drill electric-mining-drill stone-furnace steel-furnace electric-furnace assembling-machine-1 "
+    "assembling-machine-2 assembling-machine-3 lab steam-engine solar-panel transport-belt inserter oil-refinery "
+    "chemical-plant rocket-silo biolab big-mining-drill foundry electromagnetic-plant biochamber cryogenic-plant "
+    "recycler cargo-landing-pad space-platform-hub asteroid-collector crusher thruster railgun-turret").split()
+
+
 def previous_shift(run_dir):
     """"Previously on" for a resumed shift (HOSTS5 item 1): what the last shift researched, built and launched (its
     scores.jsonl, first row against last), and its deaths and losses (the loss and death beats in the caster logs its
@@ -548,8 +557,11 @@ def previous_shift(run_dir):
                 seen.add(t)
                 order.append(t)
     ea, eb = a.get("entities") or {}, b.get("entities") or {}
-    grew = sorted(((eb.get(k, 0) - ea.get(k, 0), k) for k in eb if k not in ("transport-belt", "inserter")),
-                  reverse=True)
+    # only buildings the first score already counted: shake12's opener aired "built more turrets and walls" from
+    # "135 more gun turret", which was pog.py starting to count turrets partway through shake11
+    counted = set(a.get("entities_counted") or SCORE_COUNTED_BEFORE)
+    grew = sorted(((eb.get(k, 0) - ea.get(k, 0), k) for k in eb if k in counted
+                   and k not in ("transport-belt", "inserter")), reverse=True)
     f = {"game_minutes": round((b["tick"] - a["tick"]) / 3600), "technologies_researched": len(order),
          "last_researched": [label(t) for t in order][-4:],
          "built": [f"{d} more {k.replace('-', ' ')}" for d, k in grew if d > 0][:3]}
@@ -991,16 +1003,24 @@ FRAME_STOP = set("the a an and of to in on at is it's its that's they they're th
 def framings(line):
     """A line's opening (first three words) and its 3-4 word phrases, for the shift-long memory of framings. Phrases
     of stop words, numbers or units ("plates a minute") are left out: they are facts, not framings."""
-    w = re.findall(r"[a-z']+", line.lower().replace("’", "'"))
-    numbers = set(UNITS) | set(TENS) | {"hundred", "thousand", "percent"}
+    numbers = set(UNITS) | set(TENS) | {"hundred", "thousand"}
+    w = ["N" if x in numbers or x.isdigit() else x for x in re.findall(r"[a-z']+|\d+", line.lower().replace("’", "'"))]
     grams = set()
     for n in (3, 4):
         for i in range(len(w) - n + 1):
             g = w[i:i + n]
-            if sum(x in FRAME_STOP for x in g) >= n - 1 or any(x in numbers for x in g):
+            if sum(x in FRAME_STOP for x in g) >= n - 1 or g.count("N") > 1:
+                continue
+            # a number counting events is a framing ("N attacks in N minutes" aired on nearly every shake12 raid
+            # beat); a number with a unit ("N plates a minute") is a fact
+            if "N" in g and not any(x in COUNT_WORDS for x in g):
                 continue
             grams.add(" ".join(g))
     return " ".join(w[:3]), grams
+
+
+COUNT_WORDS = {"attack", "attacks", "hit", "hits", "death", "deaths", "dead", "died", "lost", "losses", "loss",
+               "raid", "raids", "waves", "engineers"}
 
 
 VERDICT = re.compile(r"^(?:Good|Smart|Nice|Great|Right|Fair|Solid|Clever|Wise|Sharp|Sensible|Huge|Big)\b[^.!?]{0,25}[.!]")
@@ -1707,9 +1727,10 @@ class Caster:
         now = now or time.time()
         tally = self.__dict__.get("tally") or ()
         start = getattr(self, "started_t", None) or (tally[0][0] if tally else now)
-        return {"since": f"the hosts came on at {time.strftime('%H:%M', time.localtime(start))}",
-                "deaths": sum(1 for _, k in tally if k == "death"),
-                "loss_reports": sum(1 for _, k in tally if k == "loss"),
+        # "the hosts came on at" aired as "since we came on air" (shake12, 5 cuts for 'we'): a plain clock time
+        return {"counted_since": time.strftime('%H:%M', time.localtime(start)),
+                "deaths_so_far": sum(1 for _, k in tally if k == "death"),
+                "loss_reports_so_far": sum(1 for _, k in tally if k == "loss"),
                 "attacks_last_10_minutes": sum(1 for t, k in tally if k == "attack" and now - t <= 600)}
 
     def remember_framings(self, lines, now=None):
@@ -1908,6 +1929,11 @@ class Caster:
             e = self.pick_event(now)
         # Speak less (HOSTS3 item 6, Nick: "kinda dumb", riffing on mottos and inconsequential notes): a low-value beat
         # waits for --quiet seconds of silence, and filler for --lull seconds and something new to say.
+        # shake12: raids all hour, an attack beat every 40-90 s ("Seven attacks in ten minutes", "Eight...", "Nine...").
+        # A plain attack within --attack-gap of the last attack beat is dropped; deaths and losses still speak.
+        if e and e["kind"] == "attack" and not e.get("also") and \
+                now - getattr(self, "last_attack_t", 0) < getattr(self.a, "attack_gap", 0):
+            return
         if e and e["kind"] in QUIET_KINDS and now < self.caster_free + getattr(self.a, "quiet", 0):
             return
         if not e:
@@ -1928,6 +1954,8 @@ class Caster:
         n = lo if e["prio"] >= URGENT else self.rng.randint(lo, hi)
         if e["kind"] == "open" and self.previous():
             n = max(n, 3)  # "previously on" takes two or three lines
+        if e["kind"] in ("attack", "loss", "death"):
+            self.last_attack_t = now
         self.say_exchange(e, s, first, n)
         # attack replays: the director queues each saved clip itself (eng/stream2), so the hosts only talk over them
         if e["kind"] == "research":
@@ -1954,7 +1982,7 @@ class Caster:
                                        "if there is room" + (f". The card: {card['how_to_call_it']}"
                                                              if card.get("how_to_call_it") else ""))
         seg_kind = ((e.get("segment") or {}).get("type") if e["kind"] == "segment" else None)
-        if e["kind"] in ("death", "loss", "attack") or seg_kind == "attack_replay":
+        if e["kind"] in ("death", "loss"):  # not on every attack: shake12 quoted them on nearly every beat
             facts["counts"] = self.counts()
         used = self.used_framings()
         if used:  # HOSTS6 item 2: a memory of framings across the shift, not only the last few lines
@@ -2374,6 +2402,8 @@ def main():
     ap.add_argument("--lull", type=float, default=40,
                     help="seconds of silence before the hosts fill with a topic of their own, and only when something "
                          "changed (0: never silent, the old continuous cast)")
+    ap.add_argument("--attack-gap", type=float, default=120,
+                    help="seconds after an attack, loss or death beat before a plain attack is said again (0: every one)")
     ap.add_argument("--quiet", type=float, default=20,
                     help="seconds of silence before a low-value beat (camera cut, board note, research start) is said")
     ap.add_argument("--stale", type=float, default=45, help="drop events older than this")
