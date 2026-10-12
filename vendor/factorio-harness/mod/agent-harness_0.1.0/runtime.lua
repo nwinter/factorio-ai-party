@@ -599,13 +599,14 @@ local function record_loss(tick,e,cause)
   local cx,cy=math.floor(e.position.x/LOSS_CELL),math.floor(e.position.y/LOSS_CELL)
   local key=cx..','..cy
   local incident
-  for _,i in ipairs(s.losses) do if i.key==key and not i.closed and tick-i.last<=5*3600 then incident=i; break end end
+  for _,i in ipairs(s.losses) do if i.key==key and not i.closed and tick-(i.last or 0)<=5*3600 then incident=i; break end end
   if not incident then
-    incident={key=key,box={e.position.x,e.position.y,e.position.x,e.position.y},first=tick,names={},causes={},total=0}
+    incident={key=key,box={e.position.x,e.position.y,e.position.x,e.position.y},first=tick,last=tick,names={},causes={},total=0}
     s.losses[#s.losses+1]=incident
     if #s.losses>MAX_INCIDENTS then
       local oldest=1
-      for i,v in ipairs(s.losses) do if v.last<s.losses[oldest].last then oldest=i end end
+      -- last is set at creation: the newest incident once had none, and this compare failed and left it so (shake11)
+      for i,v in ipairs(s.losses) do if (v.last or 0)<(s.losses[oldest].last or 0) then oldest=i end end
       table.remove(s.losses,oldest)
     end
   end
@@ -618,8 +619,9 @@ local function record_loss(tick,e,cause)
 end
 local function losses_since(since)
   local out={}
-  for _,i in ipairs(state().losses or {}) do if i.last>since then out[#out+1]=i end end
-  table.sort(out,function(a,b) return a.last>b.last end)
+  -- An incident without a last tick (shake11: status failed for 4 agents on 'compare number with nil') counts as old.
+  for _,i in ipairs(state().losses or {}) do if (i.last or 0)>since then out[#out+1]=i end end
+  table.sort(out,function(a,b) return (a.last or 0)>(b.last or 0) end)
   return out
 end
 local function ago(ticks)
