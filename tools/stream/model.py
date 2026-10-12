@@ -238,6 +238,7 @@ class Model:
         self.space_seen = None  # moment keys already true; None until the first observation seeds it silently
         self.moments = deque(maxlen=8)
         self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
+        self.fights = {}  # key -> fight still reported (attacked chunk, loss, agent in combat), for replays.py
         self.space_age = bool(run.get("space_age")) or "Space Age" in (run.get("subtitle") or "")
         self.last_obs_t = None
         self.errors = {}
@@ -329,6 +330,23 @@ class Model:
         self.work.append(item)
         ag.bump(1.0, now)
 
+    def _fight(self, key, kind, position, now, text, agent=None, loss=False):
+        """A fight still being reported (live.py re-reports an attacked chunk every poll while its last hit is under 30
+        game seconds old, a loss for ~2 minutes, an agent's combat flag while it lasts): `last` is when it was last
+        seen, so replays.py can wait until it has been quiet before airing anything about it."""
+        f = self.fights.get(key)
+        if not f:
+            f = self.fights[key] = {"key": key, "kind": kind, "first": now, "losses": [], "text": text, "agent": agent}
+        f.update(last=now, position={k: position[k] for k in ("x", "y", "surface", "extent") if k in position})
+        if loss:
+            f["losses"].append(now)  # when a loss alert first came in: the moment something was destroyed (+ poll lag)
+            f["text"] = text
+        for k in [k for k, v in self.fights.items() if now - v["last"] > 300]:
+            del self.fights[k]
+
+    def fights_snapshot(self, now):
+        return [dict(f, losses=list(f["losses"])) for f in self.fights.values() if now - f["last"] < 240]
+
     def work_snapshot(self, now):
         return [dict(w, age_s=round(now - w["t"], 1)) for w in self.work if now - w["t"] < 60]
 
@@ -373,6 +391,8 @@ class Model:
         if a.get("last"):
             ag.last = a["last"]
         combat = bool(a.get("combat"))
+        if combat and ag.position:  # an agent's own fight, seen on every poll while it lasts (replays.py)
+            self._fight(f"attack:{ag.name}", "attack", ag.position, now, f"{ag.display_name} is under attack", agent=ag.name)
         if combat and not ag.combat:
             ag.bump(6, now)
             self.alert("attack", f"{ag.display_name} is under attack", key=f"attack:{ag.name}", agent=ag.name, ttl=60,
@@ -590,6 +610,9 @@ class Model:
             ag.bump(6, now)
         p = e.get("position")
         fresh = e.get("key") not in self.alert_keys or now - self.alert_keys[e["key"]] >= e.get("ttl", 60)
+        if p and e["kind"] in ("attack", "loss"):
+            self._fight(e.get("key") or f"{e['kind']}:{p['x']},{p['y']}", e["kind"], p, now, e["text"],
+                        loss=e["kind"] == "loss" and fresh)
         if p and fresh:  # a fight somewhere: pull cameras toward agents near it
             for other in self.agents.values():
                 if other.position and math.hypot(other.position["x"] - p["x"], other.position["y"] - p["y"]) <= 60:
@@ -838,6 +861,7 @@ class Model:
             "science": science,
             "space": self.space_snapshot(science),
             "work": self.work_snapshot(now),
+            "fights": self.fights_snapshot(now),
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
             "cameras": cameras or {},

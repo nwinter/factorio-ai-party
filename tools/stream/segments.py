@@ -77,7 +77,7 @@ class Segments:
     # ---- availability ------------------------------------------------------------------------------------------
     def why_unavailable(self, kind, snap, now=None):
         if kind == "attack_replay":
-            return self.replays.why() if self.replays else "replays are off (serve.py --no-replays, or the mock)"
+            return self.replays.why(now) if self.replays else "replays are off (serve.py --no-replays, or the mock)"
         if snap is None:
             return "no game state yet"
         if kind == "production" and not (snap.get("production") or (snap.get("science") or {}).get("packs")):

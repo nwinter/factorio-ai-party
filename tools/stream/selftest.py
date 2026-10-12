@@ -559,15 +559,12 @@ def main():
     rpl.follow_segment(t7 + 50)
     assert fobs.program == "stream"
 
-    # a fight replays only if the cut framed it, and from when the camera arrived (shake10: the factory instead)
+    # the main camera's cut to a fight makes no replay of it: viewers watched it live (test_fight_replays.py: the rest)
     rf = rp.Replays(Segments(), obs=FakeOBS(), log=lambda *a: None, start=False)
     tf = time.time()
     fight = {"kind": "attack", "agent": None, "text": "Base under attack near (290, 0): gun turret"}
-    rf.on_attack_cut(fight, s7, tf, framed=None)
-    assert rf.pending is None, "no camera framed it: no replay"
     rf.on_attack_cut(fight, s7, tf, framed={"t": tf, "how": "position"})
-    assert rf.pending["show_from"] == tf + rf.cfg["arrive_s"] and rf.pending["show_to"] == tf + rf.cfg["fight_after"], rf.pending
-    assert rf.pending["save_at"] == tf + rf.cfg["fight_after"]
+    assert rf.pending is None, rf.pending
 
     # two deaths 43 s apart (shake4: Haiku, then Opus): the second cut drops the queued replay, both clips still air
     t9 = t7 + 300

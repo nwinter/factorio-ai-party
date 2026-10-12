@@ -418,9 +418,12 @@ Combat: a fresh (under 8 s old) attack or loss alert cuts the main camera at onc
 in the fight (its status `combat` went true; zoom 1.05, following), else to the fight itself: a fixed view on the
 alert's position and surface, zoomed so its extent fits (the attacked 32-tile chunk, or the loss rectangle, plus 24
 tiles: `60 / (extent + 24)`, sent as is), jumping there without easing. It no longer follows an agent near the attack:
-in shake10 that framed the factory and the announced turret-fight replay showed the factory. The replay clip of a
-fight starts when that camera arrived (the cut + 1 s, `arrive_s`) and ends when the buffer is saved (cut + 17 s); a fight
-alert whose cut did not frame it (director `last_attack_framed` unset) gets no replay. It holds 20 s (`attack_hold`), at most
+in shake10 that framed the factory and the announced turret-fight replay showed the factory. Fight replays (replays.py,
+after shake10, when the replay aired what the main camera had just shown while the battle went on): never while the
+fight is going on (a clip waits until its fight, model `fights`, has been quiet 20 s; a death clip until no attack
+within 40 tiles goes on); nothing of what the main camera showed live; a loss gets a 10 s clip centred on the moment
+of loss (6 s before, 4 s after) if a camera showed the spot, aired after the fight; a fight only a side camera showed
+gets that camera's stretch (6 to 15 s), aired after it ends; no camera, no replay. It holds 20 s (`attack_hold`), at most
 one such cut per 45 s (`attack_spacing`). A death cuts to where the agent fell (zoom 1.1, 12 s), even inside the
 spacing. The camera label shows the alert text with ⚔ or 💀 on a red edge. Status has no health field, so "taking
 damage" is the `combat` flag plus base areas in `alerts.attacked`. `attack_cut: false` in the run config's `director`
