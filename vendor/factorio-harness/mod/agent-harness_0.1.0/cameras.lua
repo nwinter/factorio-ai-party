@@ -5,6 +5,10 @@
 return function(api)
   local M = {}
   local EASE, JUMP, MIN_ZOOM, MAX_ZOOM = 0.08, 200, 0.3, 4
+  -- A map camera (args.map): Factorio's own chart, as a player sees it after pressing M (map colours, markers, nests,
+  -- ore): the remote controller, where any zoom under chart_mode_cutoff renders the chart instead of the world. Cheap
+  -- next to a zoomed-out world render. Any later camera call (or release) makes the client a spectator again.
+  local MAP_MIN_ZOOM, MAP_MAX_ZOOM, CHART_CUTOFF = 0.01, 1, 2
   local function store()
     local s = api.state()
     s.cameras = s.cameras or {}
@@ -54,6 +58,9 @@ return function(api)
   local function make_director(p)
     directors()[p.index] = true
     hide_name(p)
+    if p.controller_type == defines.controllers.remote then
+      pcall(function() p.exit_remote_view() end)  -- back from a map camera (else set_controller below)
+    end
     if defines.controllers.cutscene and p.controller_type == defines.controllers.cutscene then
       pcall(function() p.exit_cutscene() end)
     end
@@ -97,6 +104,20 @@ return function(api)
       return {ok=true, player=p.index, released=had ~= nil}
     end
     assert(not (api.controlled(p.index)), 'player ' .. p.index .. ' is an attached agent, not a director')
+    if args.map == true then
+      local pos = args.position
+      assert(type(pos) == 'table' and type(pos.x) == 'number' and type(pos.y) == 'number', 'a map camera needs position {x,y}')
+      local z = args.zoom or 0.1
+      assert(type(z) == 'number' and z >= MAP_MIN_ZOOM and z <= MAP_MAX_ZOOM, string.format('map zoom must be %g..%g', MAP_MIN_ZOOM, MAP_MAX_ZOOM))
+      local surface = args.surface and game.get_surface(args.surface) or p.surface
+      assert(surface, 'no surface named ' .. tostring(args.surface))
+      make_director(p)  -- a spectator first (a character never stays behind)
+      p.set_controller{type=defines.controllers.remote, position={x=pos.x, y=pos.y}, surface=surface, chart_mode_cutoff=CHART_CUTOFF}
+      pcall(function() p.zoom = z end)
+      clean_view(p)
+      cams[p.index] = {map=true, position={x=pos.x, y=pos.y}, surface=surface.name, zoom=z, smooth=false}
+      return {ok=true, player=p.index, camera=M.describe(p.index)}
+    end
     local cam = {zoom=1, smooth=args.smooth ~= false}
     if args.follow ~= nil then
       assert(type(args.follow) == 'string', 'follow must be a bot or player name')
@@ -133,7 +154,8 @@ return function(api)
     -- Space Age: the planet or platform surface the target is on.
     local p = game.get_player(index)
     surface = surface or (p and p.valid and p.surface)
-    return {player=index, follow=c.follow, position=pos, surface=surface and surface.name or nil, zoom=c.zoom, smooth=c.smooth}
+    return {player=index, follow=c.follow, position=pos, surface=surface and surface.name or nil, zoom=c.zoom, smooth=c.smooth,
+      map=c.map or nil}
   end
   function M.list()
     local out = {}
@@ -165,6 +187,14 @@ return function(api)
     for index, cam in pairs(store()) do
       local p = game.get_player(index)
       if not (p and p.valid) then store()[index] = nil
+      elseif p.connected and cam.map then
+        -- a map camera stays in the remote controller; a reconnect drops it out: back into the chart
+        if p.controller_type ~= defines.controllers.remote then
+          make_director(p)
+          local s = game.get_surface(cam.surface) or p.surface
+          pcall(function() p.set_controller{type=defines.controllers.remote, position=cam.position, surface=s, chart_mode_cutoff=CHART_CUTOFF} end)
+          pcall(function() p.zoom = cam.zoom end)
+        end
       elseif p.connected then
         -- A reconnect can bring back a character or reset the view settings.
         if recheck or p.controller_type ~= defines.controllers.spectator then make_director(p) end
@@ -176,7 +206,8 @@ return function(api)
     -- label: a character would stand on stream with its name over its head.
     if recheck then
       for _, p in pairs(game.connected_players or {}) do
-        if M.director(p.index) then make_director(p) end
+        local cam = store()[p.index]
+        if M.director(p.index) and not (cam and cam.map) then make_director(p) end
       end
     end
   end
