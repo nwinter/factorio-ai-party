@@ -490,8 +490,16 @@ tiles: `60 / (extent + 24)`, sent as is), jumping there without easing. It no lo
 in shake10 that framed the factory and the announced turret-fight replay showed the factory. Fight replays (replays.py,
 after shake10, when the replay aired what the main camera had just shown while the battle went on): never while the
 fight is going on (a clip waits until its fight, model `fights`, has been quiet 20 s; a death clip until no attack
-within 40 tiles goes on); nothing of what the main camera showed live; a loss gets a 10 s clip centred on the moment
-of loss (6 s before, 4 s after) if a camera showed the spot, aired after the fight; a fight only a side camera showed
+within 40 tiles goes on); nothing of what the main camera showed live; a loss gets a clip of the program's own footage
+of the spot (6 s before the loss to 15 s after, the longest stretch it was in frame, at most 10 s, at least 4 s), aired
+after the fight, one per fight stretch. "In frame" is geometry since shift01 (15:14: four clips of the east attack at
+(75, -55) aired Sol walking in the base, 35 tiles south; a camera "showed" a spot within 20 tiles of its agent, and
+onecam treated alerts within 60 tiles as on air, so it neither cut nor inset): the spot inside the on-air camera's
+or the inset's frame, from the zoom sent to the game (32 px a tile on a 1920x1080 client) and the on-air crop
+(`frame` in each camera row; director.in_frame); ticks while a replay is on air count for nothing. onecam's
+"already on air" uses the same frame, so an off-frame loss gets an inset or a cut and so has footage. The seek offset
+uses only the Mac clock (saved_t when SaveReplayBuffer is sent, minus show_from, back from the file's end); the box's
+local-time file names are never read. A fight only a side camera showed
 gets that camera's stretch (6 to 15 s), aired after it ends; no camera, no replay. It holds 20 s (`attack_hold`), at most
 one such cut per 45 s (`attack_spacing`). A death cuts to where the agent fell (zoom 1.1, 12 s), even inside the
 spacing. The camera label shows the alert text with ⚔ or 💀 on a red edge. Status has no health field, so "taking

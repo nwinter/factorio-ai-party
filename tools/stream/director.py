@@ -73,6 +73,44 @@ def surface_of(agent):
     return agent.get("surface") or "nauvis"
 
 
+CLIENT = (1920, 1080)  # a camera client's screen; Factorio draws 32 px a tile at zoom 1 (60 x 33.75 tiles)
+
+
+def frame_of(target, frac=1.0):
+    """What a client shows, from its shot: {"position" | "follow", "zoom" (as sent to the game), "frac", "surface"},
+    or None before a shot was sent. frac: share of the client's width the program shows (the on-air crop)."""
+    if not target or not target.get("game_zoom"):
+        return None
+    fr = {"zoom": target["game_zoom"], "frac": frac}
+    if "position" in target:
+        p = target["position"]
+        fr.update(position={"x": p["x"], "y": p["y"]}, surface=target.get("surface") or p.get("surface") or "nauvis")
+    elif target.get("follow"):
+        fr["follow"] = target["follow"]
+    else:
+        return None
+    return fr
+
+
+def in_frame(fr, point, by_name, edge=2.0):
+    """Is this map point (x, y, surface) inside the frame, at least `edge` tiles from its border? A followed agent's
+    position comes from by_name (name -> agent). shift01: the replay judged 'shown' a loss 20 tiles from the agent on
+    air, and the on-air view was 28 x 24 tiles; the clip was Sol in the base."""
+    if not fr or not point:
+        return False
+    if "position" in fr:
+        c, surf = fr["position"], fr.get("surface") or "nauvis"
+    else:
+        a = by_name.get(fr.get("follow")) or {}
+        c, surf = a.get("position"), surface_of(a)
+    if not c or surf != (point.get("surface") or "nauvis"):
+        return False
+    tile = 32.0 * fr["zoom"]
+    hw = CLIENT[0] / tile / 2 * (fr.get("frac") or 1.0) - edge
+    hh = CLIENT[1] / tile / 2 - edge
+    return abs(point["x"] - c["x"]) <= hw and abs(point["y"] - c["y"]) <= hh
+
+
 class Director:
     def __init__(self, slots, sender, log_path, **tuning):
         """slots: [{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}, ...] (first one is main)."""
@@ -413,6 +451,7 @@ class Director:
             result = {"ok": False, "error": str(e)}
         if target is not None:
             target["sent"] = now
+            target["game_zoom"] = body.get("zoom")  # frame_of: what the client shows
         if reason not in ("reframe", "pair", "unpair") and not reason.startswith("zoom "):
             self.last_cut = now
         self.state[name] = target
@@ -437,6 +476,8 @@ class Director:
             if t:
                 out[slot["slot"]] = {"agents": t["agents"], "zoom": t["zoom"], "since": t["since"],
                                      "player": slot["player"], "pair": len(t["agents"]) > 1}
+                if frame_of(t):
+                    out[slot["slot"]]["frame"] = frame_of(t)  # replays.py: what this camera shows
                 if t.get("label") and now - t.get("attack_t", now) < self.cfg["attack_hold"]:
                     out[slot["slot"]]["attack"] = t["label"]
                     out[slot["slot"]]["alert"] = t.get("kind") or "attack"

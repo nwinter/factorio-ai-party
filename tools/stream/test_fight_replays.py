@@ -101,11 +101,11 @@ def main_watched():
     clip_log = [x for x in logs if "pending loss" in x]
     assert clip_log, logs[-8:]
     seg, rpl = world()
-    run(seg, rpl, t, t + 16, t + 40, on_fight, losses=[t + 10])
-    c = rpl.clip  # saved, waiting for the fight to end
     t_loss = t + 10 - rpl.cfg["loss_lag"]
+    run(seg, rpl, t, t_loss + 16, t + 40, on_fight, losses=[t + 10])  # judged once loss_watch (15 s) is over
+    c = rpl.clip  # saved, waiting for the fight to end
     assert (c["show_from"], c["show_to"]) == (t_loss - 6, t_loss + 4) and c["fight"] == FIGHT["key"], c
-    assert seg.queue is None and rpl.why(t + 16).startswith("the fight is still going on")
+    assert seg.queue is None and rpl.why(t_loss + 16).startswith("the fight is still going on")
 
 
 def loss_alert_lingers():

@@ -7,8 +7,13 @@ watch (shake10: the main camera showed a fight live, then the replay aired that 
   - never during the fight: a clip about a fight waits until that fight (model.py `fights`) has been quiet 20 s
     (`quiet_s`); a death clip waits while any fight within 40 tiles goes on;
   - a fight the main camera showed live gets no replay of it (main covered most of the window, `main_frac`);
-  - a loss (something destroyed): a short clip centred on the moment of loss (`loss_before`/`loss_after`), if a camera
-    showed that spot then, aired after the fight ends, even if the main camera watched it live;
+  - a loss (something destroyed): a clip of the stretch in which the program showed that spot, around the moment of
+    loss (from `loss_before` before it to `loss_watch` after, at most `loss_len`, at least `loss_min_s`), aired after
+    the fight ends, even if the main camera watched it live. "Showed" is geometry: the spot inside the frame of the
+    camera on air or the inset (cams[*]["frame"], director.in_frame: the client's view at its zoom, after the on-air
+    crop), sampled every tick; never while a replay is on air (the program is the replay then). shift01: a loss 20
+    tiles from Sol counted as shown; the program had Sol in the base and the fight was 35 tiles north, off frame.
+    Several losses of one fight within one clip's stretch get one clip;
   - a fight only a side camera showed: that camera's stretch of it (at least `side_min_s`, at most `fight_show`) is
     saved while it is in the buffer and aired after the fight ends. No camera on it: no replay;
   - death: if the main camera showed that agent in the 10 s before, save 5 s after and replay 11 s before to 4 s after.
@@ -21,6 +26,7 @@ along off-canvas so the casters' voices keep playing), and when the segment ends
 import itertools, json, threading, time, traceback
 from collections import deque
 
+from director import in_frame
 from obsws import OBS, OBSError
 from segments import STARTING_S
 
@@ -37,8 +43,13 @@ DEFAULTS = {
     "side_near": 12.0,             # the same for a side camera (closer view)
     "quiet_s": 20.0,               # a fight is over once it has not been reported for this long
     "fight_near": 40.0,            # a death clip waits while a fight this close goes on
-    "loss_before": 6.0,            # a loss clip: from 6 s before the moment of loss to 4 s after
-    "loss_after": 4.0,
+    "loss_before": 6.0,            # a loss clip: the program's footage of the spot from 6 s before the loss
+    "loss_after": 4.0,             # (to 4 s after when it was on air all along: loss_len in all)
+    "loss_watch": 15.0,            # ... or later, up to this long after it (a cut to the fight: its footage starts then)
+    "loss_len": 10.0,              # at most this long
+    "loss_min_s": 4.0,             # less footage of the spot than this: no clip
+    "loss_merge": 30.0,            # tiles: a loss this close to one already clipped, inside its stretch, adds no clip
+    "frame_edge": 2.0,             # tiles: a spot this close to a frame's border does not count as shown
     "loss_lag": 2.0,               # a loss alert arrives about this long after the loss (status poll)
     "fight_max_age": 300.0,        # a clip waiting for its fight to end is dropped after this long
     "death_before": 11.0,          # replay window around a death
@@ -73,6 +84,9 @@ class Replays:
         self.playing = None      # clip id on air
         self.last_replay = -1e9
         self.main_seen = deque(maxlen=60)  # (t, [agents on main])
+        self.frames = deque(maxlen=90)     # (t, {slot: camera row}, {name: agent}): what the program showed, per tick
+        self.loss_wait = []                # losses judged once their window is over (judge_losses)
+        self.loss_clips = deque(maxlen=8)  # (show_from, show_to, position) of the loss clips queued
         self.status = {"enabled": True, "connected": False, "buffer_active": None, "error": None, "stats": None,
                        "replays": 0, "last": None, "program": None}
         self.prev_stats = None
@@ -123,10 +137,17 @@ class Replays:
         main = (cams or {}).get("main") or {}
         self.main_seen.append((now, list(main.get("agents") or [])))
         self.fights = {f["key"]: f for f in snap.get("fights") or []}
+        if not self.playing:  # while a replay is on air the program is the replay, not the cameras
+            by_name = {a["name"]: {k: a.get(k) for k in ("position", "surface")} for a in snap.get("agents") or []}
+            self.frames.append((now, {s: dict(c) for s, c in (cams or {}).items()}, by_name))
         self.watch_fights(snap, cams or {}, now)
+        self.judge_losses(now)
 
     def shows(self, slot, cam, fight, by_name):
-        """Does this camera show the fight now: the director's cut to it (main), or an agent it follows near it."""
+        """Does this camera show the fight now: its position inside the camera's frame; without a frame (older
+        directors), the director's cut to it (main), or an agent it follows near it."""
+        if cam.get("frame"):
+            return in_frame(cam["frame"], fight.get("position"), by_name, self.cfg["frame_edge"])
         if cam.get("fight") == fight["key"]:
             return True
         p = fight.get("position") or {}
@@ -154,29 +175,19 @@ class Replays:
                                             "side_done": False, "losses_done": set()})
             main_on = self.shows("main", cams.get("main") or {}, f, by_name)
             side_on = any(self.shows(s, cam, f, by_name) for s, cam in cams.items() if s != "main")
+            if self.playing:  # the program is a replay: the cameras are off air
+                main_on = side_on = False
             if main_on:
                 c["main"].append(now)
             if side_on:
                 c["side"].append(now)
-            # a loss: the moment something was destroyed, if a camera showed the spot then
+            # a loss: judged once its window is over, on what the program showed of the spot (judge_losses)
             for lt in f.get("losses") or []:
                 if lt in c["losses_done"]:
                     continue
                 c["losses_done"].add(lt)
-                t_loss = lt - self.cfg["loss_lag"]
-                # a loss entry appears ~2 s after the loss, with no history of its own yet: what the cameras show
-                # now (unchanged in 2 s unless a cut) stands in for the moment of loss
-                fresh = now - lt <= self.cfg["loss_lag"] + 2
-                if not (self.covered(c["main"], t_loss) or self.covered(c["side"], t_loss)
-                        or (fresh and (main_on or side_on))):
-                    self.log(f"[replays] skipped loss: no camera showed it ({f.get('text')})")
-                    continue
-                # waits on the attacks around it (position), not on the loss alert, which stays up ~2 minutes
-                self.queue_pending({"kind": "loss", "label": f.get("text") or "Loss",
-                                    "fight": key if f.get("kind") != "loss" else None,
-                                    "agent": None, "agent_name": None, "position": f.get("position"),
-                                    "save_at": t_loss + self.cfg["loss_after"] + 1,
-                                    "show_from": t_loss - self.cfg["loss_before"], "show_to": t_loss + self.cfg["loss_after"]})
+                self.loss_wait.append({"key": key, "t_loss": lt - self.cfg["loss_lag"], "text": f.get("text"),
+                                       "position": f.get("position"), "fight": key if f.get("kind") != "loss" else None})
             # a side camera's run on the fight: a clip of it when the run ends (or reaches fight_show)
             if c["side_done"] or f.get("kind") == "loss":
                 continue  # a loss is not a fight to replay at length: its moment has its own clip above
@@ -199,9 +210,41 @@ class Replays:
         for key in [k for k in self.cover if k not in self.fights]:
             del self.cover[key]
 
-    @staticmethod
-    def covered(samples, t, slack=1.5):
-        return any(abs(s - t) <= slack for s in samples)
+    def footage(self, w, lo, hi, gap=2.5):
+        """The longest stretch in [lo, hi] in which a camera on the program showed w's spot -> (start, end) or None."""
+        shown = [t for t, rows, by_name in self.frames
+                 if lo <= t <= hi and any(self.shows(s, cam, w, by_name) for s, cam in rows.items())]
+        runs = []
+        for t in shown:
+            if runs and t - runs[-1][1] <= gap:
+                runs[-1][1] = t
+            else:
+                runs.append([t, t])
+        return tuple(max(runs, key=lambda r: r[1] - r[0])) if runs else None
+
+    def judge_losses(self, now):
+        """A loss gets a clip of the program's own footage of its spot, starting where that footage starts."""
+        cfg = self.cfg
+        for w in [w for w in self.loss_wait if now >= w["t_loss"] + cfg["loss_watch"]]:
+            self.loss_wait.remove(w)
+            label, p = w["text"] or "Loss", w["position"] or {}
+            run = self.footage(w, w["t_loss"] - cfg["loss_before"], w["t_loss"] + cfg["loss_watch"])
+            if not run or run[1] - run[0] < cfg["loss_min_s"]:
+                self.log(f"[replays] skipped loss: the program showed its spot "
+                         f"{'%.0f s' % (run[1] - run[0]) if run else 'never'} ({label})")
+                continue
+            start = run[0]
+            end = min(run[1], start + cfg["loss_len"])
+            dup = next((c for c in self.loss_clips if start < c[1] and c[2] and p and
+                        ((c[2]["x"] - p["x"]) ** 2 + (c[2]["y"] - p["y"]) ** 2) ** 0.5 <= cfg["loss_merge"]), None)
+            if dup:
+                self.log(f"[replays] skipped loss: inside the clip of the same fight already queued ({label})")
+                continue
+            self.loss_clips.append((start, end, p))
+            # waits on the attacks around it (position), not on the loss alert, which stays up ~2 minutes
+            self.queue_pending({"kind": "loss", "label": label, "fight": w["fight"], "agent": None, "agent_name": None,
+                                "position": w["position"], "save_at": now,
+                                "show_from": start, "show_to": end})
 
     def queue_pending(self, p):
         with self.lock:
@@ -384,7 +427,8 @@ class Replays:
             if st.get("mediaDuration"):
                 dur = st["mediaDuration"]
                 break
-        if dur:  # the clip ends at saved_t; start it show_from seconds back from there
+        if dur:  # the clip ends at saved_t; start it show_from seconds back from there (both the Mac's time.time();
+            # the file name's box-local time is never read)
             start = max(0, int(dur - (c["saved_t"] - c["show_from"]) * 1000))
             o.call("SetMediaInputCursor", {"inputName": m, "mediaCursor": start})
         o.call("TriggerMediaInputAction", {"inputName": m, "mediaAction": "OBS_WEBSOCKET_MEDIA_INPUT_ACTION_PLAY"})

@@ -9,16 +9,18 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   pieces, or a turret, a machine, an engineer; one such cut per `loss_recut`), and a segment that takes the camera
   (Space Age launches and landings, spotlight, overview). The replay scene (replays.py) is its own program scene.
   After an urgent shot the story it interrupted comes back (`resume_min`).
-- Inset: a minor loss (or a real one inside loss_recut) far from the subject on air shows as a small inset for its
-  length (`inset_hold`) instead of a cut. An attack with nothing lost yet is only a toast (near the subject on air,
-  the label says it).
+- Inset: a minor loss (or a real one inside loss_recut) outside the on-air frame shows as a small inset for its
+  length (`inset_hold`) instead of a cut. An attack with nothing lost yet is only a toast (inside the on-air frame,
+  the label says it). "Inside the frame" is the client's view at its zoom after the on-air crop (director.in_frame);
+  shift01 counted 60 tiles from the subject as on air, so a fight 35 tiles north of Sol got neither a cut nor an
+  inset and its replay showed Sol in the base.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main. program() is what cuts.py applies:
   which client is on air and which, if any, is the inset.
 """
 import json, time
 
-from director import Director, HOLDS, surface_of, dist
+from director import Director, HOLDS, frame_of, in_frame
 from segments import CHEAP, LOSS_RE
 
 MINOR = CHEAP + ("wall", "chest", "gate")  # a loss of at most MINOR_MAX of these is an inset, not a cut
@@ -39,7 +41,7 @@ ONECAM = {
     "onair_max": 240.0,     # after this, cut to the best other agent if it is at least rotate_ratio as interesting
     "ready_s": 1.5,         # a standby client this long on its new subject is framed (it jumps there) and may cut
     "inset_hold": 20.0,     # an inset stays up this long after its alert
-    "inset_far": 60.0,      # tiles: an alert this close to the subject on air shows in the on-air view, no inset
+    "onair_edge": 3.0,      # tiles: an alert inside the on-air frame (this far from its border) needs no cut or inset
     "loss_recut": 180.0,    # a loss within this long of the last loss cut is an inset, not a cut
     "resume_min": 30.0,     # back from an urgent shot, the story it interrupted holds at least this much longer
     "view_frac": 1.0,       # share of the client's width the on-air hole shows (serve.py: from layout.json's crop)
@@ -161,20 +163,14 @@ class OneCam(Director):
         return round(max(0.4, super().fight_zoom(extent) * self.cfg["view_frac"]), 2)
 
     def near_onair(self, subject, position, by_name):
+        """Do viewers see this now: the agent on air is in it, or its position is inside the on-air frame."""
         cur = self.state.get(self.onair)
         if not cur:
             return False
         if subject and subject in (cur.get("agents") or []):
             return True
-        if not position:
-            return False
-        here = cur.get("position")
-        surf = cur.get("surface")
-        if cur.get("follow") in by_name:
-            a = by_name[cur["follow"]]
-            here, surf = a.get("position"), surface_of(a)
-        return bool(here) and (surf or "nauvis") == (position.get("surface") or "nauvis") and \
-            dist(here, position) <= self.cfg["inset_far"] + (position.get("extent") or 0) / 2
+        return bool(position) and in_frame(frame_of(cur, self.cfg["view_frac"]), position, by_name,
+                                           self.cfg["onair_edge"])
 
     def on_alert(self, attack, by_name, scores, now):
         subject, position, al = attack
@@ -353,6 +349,9 @@ class OneCam(Director):
             s = self.slot(slot)
             row = {"agents": t["agents"], "zoom": t["zoom"], "since": self.onair_since if key == "main" else t["since"],
                    "player": s["player"], "pair": False, "client": slot}
+            fr = frame_of(t, self.cfg["view_frac"] if key == "main" else 1.0)  # the inset hole is 16:9: no crop
+            if fr:
+                row["frame"] = fr  # replays.py: what the program shows
             if t.get("label") and now - t.get("attack_t", now) < self.cfg["attack_hold"]:
                 row.update(attack=t["label"], alert=t.get("kind") or "attack")
                 if t.get("fight"):
