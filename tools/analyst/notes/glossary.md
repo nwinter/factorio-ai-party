@@ -92,4 +92,4 @@ One line each. "We/our" = the AI team's force.
 - Factorio Wiki, "Enemies": https://wiki.factorio.com/Enemies
 - Factorio Wiki, "Rocket silo": https://wiki.factorio.com/Rocket_silo
 - Factorio Wiki, "Achievements": https://wiki.factorio.com/Achievements
-- tools/stream/live.py (alert texts), docs/PLAN.md (fair-play rules, game time), docs/studies/shake1.md
+- tools/stream/live.py (alert texts), docs/PLAN.md (fair-play rules, game time)

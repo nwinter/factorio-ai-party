@@ -134,5 +134,26 @@ prev = caster.previous_shift(os.path.join(root, "pub2"))
 check("a later shift's 'previously on' is its own chain's last shift", prev and prev["last_researched"] == ["Automation"]
       and not prior_ids(json.dumps(prev)), prev)
 
+# the analyst (its talking points reach the hosts and the overlay's analyst card)
+os.environ.pop("POG_ANALYST_PAST_RUNS", None)
+sys.path.insert(0, os.path.join(ROOT, "tools", "analyst"))
+import analyst  # noqa: E402
+ANALYST_HISTORY = re.compile(HISTORY.pattern + r"|\bpast (?:team )?runs?\b|history_(?:at|when|runs|milestones|study)",
+                             re.I)
+for v in ("base-2.0.77", "space-age-2.0.77"):
+    sp = analyst.system_prompt(v)
+    check(f"analyst prompt ({v}): no run id, no past runs or their tools", not prior_ids(sp)
+          and not ANALYST_HISTORY.findall(sp), (prior_ids(sp), ANALYST_HISTORY.findall(sp)))
+    check(f"analyst prompt ({v}) with --past-runs has them (so the check sees them)",
+          ANALYST_HISTORY.findall(analyst.system_prompt(v, past=True)))
+vs = analyst.viewer_system() + analyst.viewer_system(on_air=False)
+check("analyst viewer answers: no run id, no past runs", not prior_ids(vs) and not ANALYST_HISTORY.findall(vs),
+      (prior_ids(vs), ANALYST_HISTORY.findall(vs)))
+notes = os.path.join(ROOT, "tools", "analyst", "notes")
+for n in sorted(os.listdir(notes)):
+    if n.endswith(".md") and n not in ("README.md", "past-runs.md"):
+        t = open(os.path.join(notes, n)).read()
+        check(f"analyst note {n}: no run id", not prior_ids(t), prior_ids(t))
+
 print(f"\n{len(FAILS)} failed" if FAILS else "\nall passed")
 sys.exit(1 if FAILS else 0)

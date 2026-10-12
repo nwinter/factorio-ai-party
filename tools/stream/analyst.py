@@ -29,8 +29,8 @@ SYSTEM = """You are the analyst for a livestream of AI agents playing Factorio t
 model in about a second; they know little about Factorio. You are the slow, expert voice behind them: every cycle you \
 study the game and write talking points they can say, with the facts behind them.
 
-What makes a great talking point: a number, a comparison and a cause ("15 science per minute at 40 minutes; shake1 \
-had 11 at this point; green science is short of copper"), what comes next and when, what good or poor play looks like \
+What makes a great talking point: a number, a comparison and a cause ("15 science per minute at 40 minutes, up \
+from 9 ten minutes ago; green science is short of copper"), what comes next and when, what good or poor play looks like \
 right now, a storyline across cycles (a struggling power grid, a race to oil, an agent carrying the team), or a \
 short explainer of a game mechanic that is on screen. Judge the team honestly but kindly.
 
@@ -46,11 +46,8 @@ buildings counts the team's own buildings, never enemies.
 %(extra)s- Say what is true, not the mistake: write "research progress is always kept", never "progress was not \
 lost"; "the wreck is scenery", never "it is not an attack". The hosts' fast writer drops the "not" and repeats the \
 mistake. The same goes for corrections.
-- Viewers have not seen the earlier runs: name a past run with what it was, as its "say:" label puts it ("shake1, \
-the first nine-agent team run"), never by a bare code name. Compare only with the team runs in the digest; the early \
-solo and co-op tests (one or two agents, peaceful maps) are not pace benchmarks, so leave them out of comparisons.
-- Never guess a number: use the digest or a tool (kb_* for exact recipes, technologies, ratios and machine stats \
-of this version; game_* for the current game; history_* for past runs; notes for pacing and good play).
+%(past)s- Never guess a number: use the digest or a tool (kb_* for exact recipes, technologies, ratios and machine stats \
+of this version; game_* for the current game; %(history)s; notes for pacing and good play).
 - Do no arithmetic in your head. Any computed figure (what N machines make, machines needed for a rate, research \
 time with N labs, packs still needed) must come from a tool call this cycle: kb_output, kb_ratio, kb_research_time, \
 kb_path. Numbers copied from the digest are fine as they are.
@@ -81,21 +78,38 @@ and hits or fire on the wreck are scenery, never biters.
 - Space Age rockets need 50 rocket parts (1 processing unit, 1 low density structure, 1 rocket fuel each). The first \
 rockets carry a space platform starter pack or cargo to orbit; a launch is a milestone on the way. Victory is \
 reaching the solar system edge. Space science is made on a space platform. Check kb_tech and notes space-age.
-- Past runs in history_* are base-game runs unless labelled Space Age. The early Nauvis tree is the same in both, so \
-early comparisons hold; past the blue science stage, compare with Space Age runs.
 """
+# Only with --past-runs (POG_ANALYST_PAST_RUNS=1): the team's earlier runs as pace benchmarks. Off by default since
+# task-hosts5: the public run reads as a first attempt, so the analyst is not told other runs exist.
+PAST_RUNS_RULES = """- Viewers have not seen the earlier runs: name a past run with what it was, as its "say:" label puts it \
+("shake1, the first nine-agent team run"), never by a bare code name. Compare only with the team runs in the digest; \
+the early solo and co-op tests (one or two agents, peaceful maps) are not pace benchmarks, so leave them out of \
+comparisons.
+"""
+PAST_RUNS_SPACE = """- Past runs in history_* are base-game runs unless labelled Space Age. The early Nauvis tree is the \
+same in both, so early comparisons hold; past the blue science stage, compare with Space Age runs.
+"""
+
+
+def past_runs_on():
+    """The team's earlier runs as benchmarks (digest, history_* tools, notes past-runs): POG_ANALYST_PAST_RUNS=1."""
+    return os.environ.get("POG_ANALYST_PAST_RUNS") == "1"
 
 
 def kb_version():
     return os.environ.get("POG_KB", "base-2.0.77")
 
 
-def system_prompt(version=None):
+def system_prompt(version=None, past=None):
     sa = (version or kb_version()).startswith("space-age")
+    past = past_runs_on() if past is None else past
     game = ("version 2.0.77 with the Space Age expansion; the knowledge tools hold the Space Age recipes and "
             "technologies" if sa else "version 2.0.77, base game")
     return SYSTEM % {"kinds": "|".join(KINDS), "segs": "|".join(SEGMENT_TYPES), "game": game,
-                     "extra": SPACE_AGE_FACTS if sa else ""}
+                     "extra": (SPACE_AGE_FACTS + (PAST_RUNS_SPACE if past else "")) if sa else "",
+                     "past": PAST_RUNS_RULES if past else "",
+                     "history": "history_* for past runs and this world's earlier shifts" if past else
+                                "history_world for this world's earlier shifts"}
 
 
 def log(*a):
@@ -220,8 +234,9 @@ class Digest:
         from kb import KB
         self.G, self.H = G, H
         self.kb = KB()
-        # The current run (and its world's earlier shifts) is never its own benchmark; the benchmarks are the team runs.
-        self.series = H.load_runs(exclude=[a.replay, a.run_dir], teams_only=True)
+        # The current run (and its world's earlier shifts) is never its own benchmark; the benchmarks are the team runs,
+        # and only with --past-runs (a public run is a first attempt: no other run in the digest)
+        self.series = H.load_runs(exclude=[a.replay, a.run_dir], teams_only=True) if past_runs_on() else {}
         self.a = a
         self.game = G.ReplayGame(a.replay, a.at) if a.replay else G.LiveGame(a.world, a.bot, a.player, a.surface)
 
@@ -293,17 +308,20 @@ class Digest:
                 parts.append("## This world's earlier shifts\n" + world)
         except Exception as e:
             parts.append(f"(shift history unavailable: {e})")
-        parts.append("## Past team runs at this game minute (name a run on air as its 'say:' text)\n"
-                     + H.at_text(self.series, round(minute)))
+        if self.series:
+            parts.append("## Past team runs at this game minute (name a run on air as its 'say:' text)\n"
+                         + H.at_text(self.series, round(minute)))
         cur = snap.get("research")
         if cur:
-            parts.append(H.when_text(self.series, cur))
+            if self.series:
+                parts.append(H.when_text(self.series, cur))
             parts.append(kb.tech_text(cur))
         done = snap.get("done") or []
         goals = [g for g in ("oil-processing", "chemical-science-pack", "construction-robotics", "rocket-silo") if g not in done]
         for g in goals[:2]:
             parts.append(kb.path_text(g, done))
-            parts.append(H.when_text(self.series, g))
+            if self.series:
+                parts.append(H.when_text(self.series, g))
         try:
             chat = self.game.chat(20)
             parts.append("## Recent team chat\n" + G.chat_text(chat))
@@ -345,6 +363,8 @@ def run_claude(a, digest_text, system=None):
             srv_env["ANALYST_PLAYER"] = str(a.player)
     if a.run_dir:
         srv_env["ANALYST_RUN_DIR"] = os.path.abspath(a.run_dir)
+    if past_runs_on():
+        srv_env["POG_ANALYST_PAST_RUNS"] = "1"
     cfg = {"mcpServers": {"analyst": {"command": sys.executable, "args": [os.path.join(AN, "mcp_server.py")], "env": srv_env}}}
     fd, cfg_path = tempfile.mkstemp(prefix="analyst-mcp-", suffix=".json")
     with os.fdopen(fd, "w") as f:
@@ -537,7 +557,11 @@ def viewer_system(on_air=True):
                      ("Reply with the answer only.", "" if on_air else "Reply with the answer only."),
                      ("(base game; Space Age questions are about the expansion)",
                       "(with the Space Age expansion; the team starts on Nauvis)" if sa else
-                      "(base game; Space Age questions are about the expansion)")):
+                      "(base game; Space Age questions are about the expansion)"),
+                     # no other run exists for viewers unless --past-runs (task-hosts5)
+                     ("history_* for past runs,", "history_* for past runs," if past_runs_on() else
+                      "history_world for this world's earlier shifts,"),
+                     ("; past runs are in history_at", "; past runs are in history_at" if past_runs_on() else "")):
         assert old in base, old
         base = base.replace(old, new)
     facts = ("\n\nFacts to get right (say what is true, never the mistake):\n- Research progress is always kept when "
@@ -662,6 +686,9 @@ def main():
     ap.add_argument("--replay", help="a past run directory (scores.jsonl) instead of a live world")
     ap.add_argument("--at", type=float, help="game minute for --replay")
     ap.add_argument("--run-dir", help="the run's directory (agents' notes.md)")
+    ap.add_argument("--past-runs", action="store_true",
+                    help="the team's earlier runs as pace benchmarks (digest, history_* tools, notes past-runs; also "
+                         "POG_ANALYST_PAST_RUNS=1); off by default, so a public run reads as a first attempt")
     ap.add_argument("--feed", default=None, help="stream service base URL, e.g. http://127.0.0.1:8788")
     ap.add_argument("--kb", help="knowledge base version (default $POG_KB or base-2.0.77), e.g. space-age-2.0.77")
     ap.add_argument("--model", default="sonnet")
@@ -693,6 +720,8 @@ def main():
     ap.add_argument("--eval-relay", action="store_true", help="hosts' writer answering with the analyst's answer as a fact")
     ap.add_argument("--host-model", default="@cf/google/gemma-4-26b-a4b-it")
     a = ap.parse_args()
+    if a.past_runs:
+        os.environ["POG_ANALYST_PAST_RUNS"] = "1"
     if a.kb:  # before anything imports kb.py (its default version) or starts the MCP server (inherits POG_KB)
         os.environ["POG_KB"] = a.kb
     if a.eval or a.eval_grade:

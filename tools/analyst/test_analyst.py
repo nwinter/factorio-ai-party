@@ -117,13 +117,28 @@ class McpTest(unittest.TestCase):
                 {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "kb_ratio", "arguments": {"item": "red science", "per_minute": 30}}},
                 {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "game_snapshot", "arguments": {}}},
                 {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "kb_path", "arguments": {"goal": "chemical science pack"}}}]
-        env = dict(os.environ, ANALYST_REPLAY=os.path.join(REPO, "runs", "shake1"), ANALYST_AT="40")
+        env = dict(os.environ, ANALYST_REPLAY=os.path.join(REPO, "runs", "shake1"), ANALYST_AT="40",
+                   POG_ANALYST_PAST_RUNS="1")
         p = subprocess.run([sys.executable, os.path.join(HERE, "mcp_server.py")], input="\n".join(json.dumps(m) for m in msgs) + "\n",
                            capture_output=True, text=True, env=env, timeout=60)
         out = [json.loads(l) for l in p.stdout.splitlines()]
         self.assertEqual([o["id"] for o in out], [1, 2, 3, 4, 5])
         names = {t["name"] for t in out[1]["result"]["tools"]}
         self.assertTrue({"kb_ratio", "game_snapshot", "history_at"} <= names)
+        # without --past-runs (the default; task-hosts5): no tool about another run, and no past-runs note
+        msgs2 = msgs[:3] + [{"jsonrpc": "2.0", "id": 9, "method": "tools/call",
+                             "params": {"name": "notes", "arguments": {"topic": "past-runs"}}},
+                            {"jsonrpc": "2.0", "id": 10, "method": "tools/call",
+                             "params": {"name": "notes", "arguments": {"topic": "milestones"}}}]
+        env2 = {k: v for k, v in env.items() if k != "POG_ANALYST_PAST_RUNS"}
+        p2 = subprocess.run([sys.executable, os.path.join(HERE, "mcp_server.py")], input="\n".join(json.dumps(m) for m in msgs2) + "\n",
+                            capture_output=True, text=True, env=env2, timeout=60)
+        out2 = {o["id"]: o for o in (json.loads(l) for l in p2.stdout.splitlines())}
+        names2 = {t["name"] for t in out2[2]["result"]["tools"]}
+        self.assertTrue("history_world" in names2 and not names2 & {"history_at", "history_when", "history_milestones",
+                                                                     "history_runs", "history_study"}, names2)
+        self.assertTrue(out2[9]["result"].get("isError"))
+        self.assertNotRegex(out2[10]["result"]["content"][0]["text"], r"(?i)shake\d|coop\d|our (ai )?runs")
         self.assertIn("automation science pack", out[2]["result"]["content"][0]["text"])
         self.assertIn("0h38m", out[3]["result"]["content"][0]["text"])
         txt = out[4]["result"]["content"][0]["text"]

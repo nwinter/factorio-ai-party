@@ -23,11 +23,11 @@ The crash site (scenery, not an event):
 - Every freeplay game starts beside the wreck of the player's crashed ship (intro backstory). Entities
   (dump, both versions): `crash-site-spaceship` (600 HP, 5 slots), `crash-site-spaceship-wreck-big-1/2`
   (150 HP, 2 slots), `...-wreck-medium-1/2/3` (100 HP, 1 slot), `crash-site-chest-1/2` (350 HP, 48 slots).
-  Small wrecks `crash-site-spaceship-wreck-small-1..6` exist too (seen in our runs' build errors; not in the
+  Small wrecks `crash-site-spaceship-wreck-small-1..6` exist too (seen in build errors; not in the
   dump because their type is not dumped).
-- The pieces hold a few starter items (our agents reported "wreck loot" plates in shake1). They have no
+- The pieces hold a few starter items (agents report "wreck loot" plates). They have no
   mining products of their own: mining one gives whatever is inside and removes it (factorio-data).
-  Agents mine wrecks to clear building space; deconstruction marking does not work on them (our run notes).
+  Agents mine wrecks to clear building space; deconstruction marking does not work on them (agents' notes).
 - The wreck burns: `crash-site-fire-flame` and smoke entities (factorio-data). Our harness logs the flames
   as zero-damage "hits" on `crash-site-spaceship` (hundreds of them) and now ignores them: **not an
   attack, nothing crashed during the run, nothing hit the base.**
@@ -139,10 +139,8 @@ kept"), never the mistake with a "not": their fast writer tends to drop the "not
 
 ## 5. Pacing
 
-- Our teams (milestones.md, docs/studies): shake1 and shake2 (nine agents, ~1 h): about 14 techs, no oil
-  processing; round three (turn mode) reached blue science at 1h20. The silo path is 2,585 lab-minutes,
-  over 2 h of lab time even with 20 labs fully fed. **A rocket in a 2 h run would be far beyond any run so
-  far; oil, plastics and blue science are the realistic headline milestones.**
+- The silo path is 2,585 lab-minutes, over 2 h of lab time even with 20 labs fully fed. **In a 2 h run,
+  oil, plastics and blue science are the realistic headline milestones.**
 - Community (forums, experienced players on a 40 h run): silo researched by about 5 h ("5 to 10 hours"),
   first platform making space science 1 to 2 h later, first mobile platform about 12 h. Nauvis is often the
   slowest planet. Treat as fast-player numbers.
@@ -180,5 +178,5 @@ kept"), never the mistake with a "not": their fast writer tends to drop the "not
   Research https://wiki.factorio.com/Research; Achievements https://wiki.factorio.com/Achievements;
   Planets https://wiki.factorio.com/Planets; Shattered planet https://wiki.factorio.com/Shattered_planet
 - Factorio forums, "Advice For 40 Hour Space Age Run": https://forums.factorio.com/viewtopic.php?p=680279
-- docs/SPACEAGE.md (rocket lift 1 t, crash-site status), docs/studies/shake1.md and shake2.md, milestones.md,
-  run notes in runs/ (wreck mining, "wreck loot"), tools/stream/live.py (zero-damage hits ignored)
+- docs/SPACEAGE.md (rocket lift 1 t, crash-site status), milestones.md,
+  agents' notes (wreck mining, "wreck loot"), tools/stream/live.py (zero-damage hits ignored)
