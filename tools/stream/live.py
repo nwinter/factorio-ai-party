@@ -27,8 +27,13 @@ def hit_label(entities):
 
 
 def attacker_label(by):
-    """describe_incident's "by 5 small-biter, 2 medium-biter" counts kills by each kind: "small biters"."""
-    name = re.sub(r"^\d+\s+", "", (by or "").split(",")[0].strip()).replace("-", " ")
+    """describe_incident's "by 5 small-biter, 2 medium-biter" counts kills by each kind: "small biters". Our own
+    entities come last as "friendly fire: 2 flamethrower-turret": alone, "friendly fire from flamethrower turrets"."""
+    first = (by or "").split(",")[0].strip()
+    if first.startswith("friendly fire:"):
+        name = attacker_label(first.split(":", 1)[1])
+        return f"friendly fire from {name}" if name and name != "unknown sources" else "friendly fire"
+    name = re.sub(r"^\d+\s+", "", first).replace("-", " ")
     return name + "s" if name and not name.endswith("s") else name
 
 

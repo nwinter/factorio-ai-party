@@ -393,7 +393,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   when another open unowned request passes 2 game minutes), `research` (each technology your force finished since your
   previous reply, once: `research done: NAME, unlocks: a, b, c (<age> ago)`; a first reply looks back 10 game
   minutes; at most 4 lines and `+N more finished: research_done`), `alerts` (your character being hit, attacked areas with attacker and entities hit, enemy groups
-  gathering, buildings destroyed; at most 8 lines; these replace the old top-level `losses` field) and `reminders`
+  gathering, buildings destroyed, with what destroyed them: enemy kinds first, then our own force's entities as
+  `friendly fire: 2 flamethrower-turret` (`unknown source` when the cause is gone and the killing force is ours); at most
+  8 lines; these replace the old top-level `losses` field) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each

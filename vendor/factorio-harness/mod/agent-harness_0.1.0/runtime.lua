@@ -610,7 +610,9 @@ end
 local LOSS_CELL,MAX_INCIDENTS=64,64
 -- An incident's latest tick is `(i.last or i.first or 0)`: saves from before shake11 can hold one created without
 -- `last` (it was set only after the 64-incident cap check, which then failed on it in the tick: shake10's quarantines).
-local function record_loss(tick,e,cause)
+-- friendly: the cause is one of the entity's own force (shake11-12: our flamethrower turrets burnt gun turrets, radars,
+-- belts and their own oil lines in 8 and 11 areas), kept apart from enemy causes.
+local function record_loss(tick,e,cause,friendly)
   local s=state()
   s.losses=s.losses or {}
   local cx,cy=math.floor(e.position.x/LOSS_CELL),math.floor(e.position.y/LOSS_CELL)
@@ -632,7 +634,8 @@ local function record_loss(tick,e,cause)
   b[1],b[2],b[3],b[4]=math.min(b[1],e.position.x),math.min(b[2],e.position.y),math.max(b[3],e.position.x),math.max(b[4],e.position.y)
   incident.last=tick; incident.seq=s.loss_seq; incident.total=incident.total+1
   incident.names[e.name]=(incident.names[e.name] or 0)+1
-  if cause then incident.causes[cause]=(incident.causes[cause] or 0)+1 end
+  if cause and friendly then incident.friendly=incident.friendly or {}; incident.friendly[cause]=(incident.friendly[cause] or 0)+1
+  elseif cause then incident.causes[cause]=(incident.causes[cause] or 0)+1 end
 end
 local function losses_since(since)
   local out={}
@@ -659,6 +662,10 @@ local function describe_incident(i)
   while #names>6 do table.remove(names) end
   local causes=counted(i.causes)
   while #causes>2 do table.remove(causes) end
+  -- Our own entities among the causes: "friendly fire: 2 flamethrower-turret", after the enemy ones.
+  local friendly=counted(i.friendly or {})
+  while #friendly>2 do table.remove(friendly) end
+  if #friendly>0 then causes[#causes+1]='friendly fire: '..table.concat(friendly,', ') end
   local last=(i.last or i.first or 0)
   local span=i.first==last and ago(game.tick-last)..' ago' or ago(game.tick-i.first)..'-'..ago(game.tick-last)..' ago'
   local b=i.box
@@ -4340,7 +4347,12 @@ function M.on_event(event)
     end
     if not (e and e.valid and e.force and e.force.name~='enemy' and e.force.name~='neutral') then return end
     s.alerts=nil -- superseded by incidents
-    record_loss(event.tick,e,event.cause and event.cause.valid and event.cause.name or nil)
+    -- Friendly fire: a cause of the entity's own force, or, with the cause gone (a flame outliving its turret), the
+    -- killing force (event.force) its own.
+    local cause=event.cause and event.cause.valid and event.cause or nil
+    local own=e.force.name
+    local friendly=(cause and cause.force and cause.force.name==own) or (not cause and event.force and event.force.name==own) or false
+    record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or nil,friendly)
   end
 end
 return M
