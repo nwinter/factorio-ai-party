@@ -11,6 +11,7 @@ plain HTML/CSS/JS site to site/dist/. Python 3 stdlib only.
 
 import argparse
 import datetime
+import hashlib
 import html
 import json
 import os
@@ -477,9 +478,31 @@ def nav_items():
     return [("/", "Live")] + ([("/runs/long/", "The run")] if LONG else []) + [("/about/", "About")]
 
 
-def page(title, body, active="/", description="", extra_head=""):
-    site_title = CONFIG.get("site_title", "Player of Games")
+def social_meta(full, site_title, description, path):
+    """Open Graph and Twitter card tags, so a shared link shows the title, a line and the card image (site/og_card.py)."""
+    base = CONFIG.get("site_url", "").rstrip("/")
+    img = SITE / "static" / "og.png"
+    if not base or not img.exists():
+        return ""
+    ver = hashlib.sha256(img.read_bytes()).hexdigest()[:10]
+    image = f"{base}/static/og.png?v={ver}"
+    tags = [("property", "og:type", "website"), ("property", "og:site_name", site_title), ("property", "og:title", full),
+            ("property", "og:description", description)]
+    if path:
+        tags.append(("property", "og:url", base + path))
+    tags += [("property", "og:image", image), ("property", "og:image:width", "1200"),
+             ("property", "og:image:height", "630"),
+             ("property", "og:image:alt", f"{site_title}: nine AI agents' pixel portraits under the title"),
+             ("name", "twitter:card", "summary_large_image"), ("name", "twitter:title", full),
+             ("name", "twitter:description", description), ("name", "twitter:image", image)]
+    out = "".join(f'<meta {k}="{v}" content="{esc(c)}">\n' for k, v, c in tags)
+    return out + (f'<link rel="canonical" href="{esc(base + path)}">\n' if path else "")
+
+
+def page(title, body, active="/", description="", extra_head="", path=None):
+    site_title = CONFIG.get("site_title", "AI Factory Party")
     full = site_title if title == site_title else f"{title} · {site_title}"
+    description = description or CONFIG.get("description", "")
     nav = "".join(
         f'<a href="{href}"{" aria-current=page" if href == active else ""}>{label}</a>' for href, label in nav_items())
     return f"""<!doctype html>
@@ -488,8 +511,8 @@ def page(title, body, active="/", description="", extra_head=""):
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {ROBOTS_META}<title>{esc(full)}</title>
-<meta name="description" content="{esc(description or CONFIG.get('description', ''))}">
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta name="description" content="{esc(description)}">
+{social_meta(full, site_title, description, path)}<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&amp;display=swap">
@@ -514,7 +537,7 @@ def page(title, body, active="/", description="", extra_head=""):
 </main>
 <footer class="site-footer">
   <div class="wrap">
-    <p>Player of Games: AI agents playing Factorio together, under the same rules as a human player.
+    <p>{esc(site_title)}: AI agents playing Factorio together, under the same rules as a human player.
     Built from the project's run logs.{'' if PUBLIC else ' Preview build, not for sharing yet.'}</p>
   </div>
 </footer>
@@ -773,7 +796,7 @@ score log, and the hosts' Space Age calls.</p>
 </tr></thead><tbody>{"".join(rows)}</tbody></table></div>
 """
     return page("The long run", body, "/runs/" if archive() else "/runs/long/",
-                "One world over many shifts: research, science, rockets and platforms shift by shift.")
+                "One world over many shifts: research, science, rockets and platforms shift by shift.", path="/runs/long/")
 
 
 def build_runs_index(runs, all_worlds):
@@ -870,7 +893,7 @@ def build_home(runs, all_worlds):
   <div class="home-cards">{links}</div>
 </section>
 """
-    return page(CONFIG.get("site_title", "Player of Games"), body, "/", CONFIG.get("description", ""), extra_head=LIVE_HEAD)
+    return page(CONFIG.get("site_title", "AI Factory Party"), body, "/", CONFIG.get("description", ""), extra_head=LIVE_HEAD, path="/")
 
 
 def build_about(runs, all_worlds):
@@ -1011,7 +1034,7 @@ def build_about(runs, all_worlds):
   links.</p>
 </section>
 {history}"""
-    return page("About", body, "/about/", CONFIG.get("description", ""))
+    return page("About", body, "/about/", CONFIG.get("description", ""), path="/about/")
 
 
 def build_agent_page(key, runs, all_worlds, chats):
@@ -1156,7 +1179,7 @@ def live_app(heading, sample_href):
 
 def build_live():
     return page("Live", live_app("Live", "/live/?demo=1"), "/", "Watch the run: stream, chat and the team's live status.",
-                extra_head=LIVE_HEAD)
+                extra_head=LIVE_HEAD, path="/live/")
 
 
 FAVICON = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#e39827"/>

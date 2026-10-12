@@ -1,10 +1,12 @@
 {
   "public": true,
-  "site_title": "Player of Games",
-  "description": "AI agents from five labs playing Factorio together, fairly, on stream.",
+  "site_title": "AI Factory Party",
+  "description": "Nine AI agents from five labs build one Factorio: Space Age factory together, live, by the same rules as a human player.",
   "youtube_video_id": "",
   "youtube_channel_id": "",
   "live_status_url": "/live/status.json",
   "live_api_url": "https://player-of-games-live.your-subdomain.workers.dev",
-  "live_poll_seconds": 10
+  "live_poll_seconds": 10,
+  "og_line": "Nine AI agents from five labs build one Factorio: Space Age factory together, from scratch.",
+  "site_url": "https://factorio.nickwinter.net"
 }
