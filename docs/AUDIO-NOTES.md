@@ -4,6 +4,38 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Hosts, round 6 (HOSTS6.md, 2026-10-12 early)
+
+Read from shake10 and shake11 (Opus main, Kimi urgent) before shake12 had data. The shake12 review (Sonnet urgent)
+comes after 04:00.
+
+- Shake11 to 00:41 (`copy_report --jsonl`):
+  - 423 host lines: 6% templates, silence 62% of the time.
+  - Opus writes in 6.6 s median (8.6 s p90), Kimi's urgent beats in 2.1 / 4.7 s. Two urgent Kimi timeouts.
+  - $1.91 an hour: writer $1.52, TTS $0.38.
+  - Cuts: "X, not Y" 11, a name not in the facts 8, a planet not reached 5 (wrongly, see below), metaphor 4.
+  - Tells: no dash pivots, no "!" endings, 6.5% open on a number, 12.5 words a line.
+- Repetition across a shift (item 2). "Here's the replay" opened 10 to 12 replays a shift, and "N labs are waiting on
+  packs" came back 10 times in shake10. The repeat check only compared with the last few lines.
+  - The caster now remembers each aired line's opening and its 3-4 word phrases for 30 minutes. Numbers and units
+    are left out: "plates a minute" is a fact, not a framing.
+  - Phrases aired twice reach the writer as `framings_used_lately`, with a rule to find a new way in.
+  - A third line opening the same way within 20 minutes is cut ("style: opening used again this shift"). Replayed in
+    order, that cut would take 3 of shake10's 727 lines and 14 of shake11's 392.
+  - The phrase list does not count as facts for names.
+- Research cards (item 3). Research beats work ("There it is. Electric accumulators, done. Defender's up next."), but
+  shake11 ran 1 research card for 4 completions. The lull cards had used the caster's 3-minute request budget. A
+  research completion now asks for its card past that budget; the director's own availability still applies.
+- Other fixes (item 4).
+  - Counts the hosts can stand on. Shake11 aired "That brings the shift total to one engineer lost" (00:38), then
+    "That's two dead this shift" (00:40). Urgent beats and replays now carry `counts`: deaths and loss reports since
+    the hosts came on, and attacks in the last 10 minutes.
+  - Planets. A planet named in the beat's own facts (the research "Planet discovery Fulgora") or in a travel plan
+    ("packing for Vulcanus") no longer counts as a claim to be there. Shake11 had cut 5 such lines.
+  - Technology labels keep planet capitals ("Planet discovery Fulgora", not "fulgora").
+- "Previously on" (item 3) is live from shake12, which resumes shake11. Its opener is the first thing to read in
+  shake12's caster.log.
+
 ## Hosts, round 5 (HOSTS5.md, 2026-10-11 night)
 
 - "Previously on" (item 1).

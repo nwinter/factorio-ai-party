@@ -184,7 +184,9 @@ UNLOCKS = load_unlocks()
 def tech_label(name):
     if not name:
         return None
-    return name.replace("-", " ").capitalize()
+    label = name.replace("-", " ").capitalize()
+    # shake11's template aired "Planet discovery fulgora": planets keep their capitals
+    return re.sub(r"\b(nauvis|vulcanus|fulgora|gleba|aquilo)\b", lambda m: m.group(1).capitalize(), label)
 
 
 def human_name(name):
