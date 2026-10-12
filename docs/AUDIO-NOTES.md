@@ -4,6 +4,37 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Hosts, round 5 (HOSTS5.md, 2026-10-11 night)
+
+- "Previously on" (item 1).
+  - `previous_shift()` reads the run that `resumed-from` names.
+  - From its `scores.jsonl`, first row against last: the game minutes played, how many technologies were researched
+    and the last four in the order they finished, the three buildings that grew most (belts and inserters left out),
+    and the rockets launched.
+  - From the caster jsonl logs its `caster.log` names: the deaths (distinct death beats), the loss reports, and the
+    biggest loss, said as a person would.
+  - The opener of a resumed shift carries it as `previously_on`, with a call to recap in the hosts' words, one thing a
+    line, then the team's plan now. The opener gets three lines.
+  - On shake11's real logs it reads: 239 game minutes, 10 technologies (last Flamethrower, Research speed 4,
+    Military 3, Circuit network), 11 more steel furnaces, 7 more solar panels, 8 rockets, 6 deaths, 19 loss reports,
+    the biggest "73 lost to medium biters".
+- The team plan (item 2).
+  - The snapshot's `board.plan` (goals and one line per agent, from `fh board plan`) reaches the hosts as
+    `team_plan` on the opener, explain, pace and board beats.
+  - A change to the plan (new goals, or an agent's line changing) is its own `plan` beat, priority 5, with what
+    changed and a call to say what it means for the run.
+  - An agent's plan line is its `working_on` when no board claim names a job, so "walking" reads "heading off for
+    <plan line>".
+  - Research news: research beats are priority 7 and never wait for quiet; research starts wait for 20 s of quiet.
+- Fewer template fallbacks (item 3). In shake11 to 23:35, 15 of 181 host lines were templates. Two came after an
+  urgent Kimi timeout (8 s); the rest came when every draft of a beat was cut. A non-urgent beat with nothing usable
+  now stays quiet ("[writer] nothing usable for camera (...); staying quiet", counted as `skipped_quiet` in the
+  `[cost]` stats). Urgent beats still get a template. Two of shake11's cuts were right time-left lines ("Shift ends
+  in three and a half hours", "Still 199 minutes to handover"): "ends in N minutes" and "N minutes to handover" are
+  now checked as time left, not cut as a shift end. Opus's own timeout is 36 s (3 x `--writer-timeout`), and it did
+  not time out in shake11.
+- Item 4 (urgent model) waits on Nick's bench run.
+
 ## Hosts, round 4 (HOSTS4.md, 2026-10-11 night)
 
 ### Opus 5.5 against Kimi (item 1)
