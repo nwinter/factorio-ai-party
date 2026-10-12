@@ -1129,7 +1129,8 @@ SHIFT_ENDS_IN = re.compile(r"\b(?:ends|ending|wraps|closes|is over|handover|hand
 
 
 FUTURE = re.compile(r"\b(?:next|later|someday|one day|eventually|goal|road to|on the way|way to|until|before|"
-                    r"could|will|'ll|want|wants|aim\w*|dream of|hope|plan\w*|future|far off|far away|yet)\b")
+                    r"could|will|'ll|want|wants|aim\w*|dream of|hope|plan\w*|future|far off|far away|yet|"
+                    r"packing for|heading (?:to|for)|bound for|trip to|getting ready|prep\w*|discovery)\b")
 
 
 def wrong_place(low, facts):
@@ -1147,8 +1148,12 @@ def wrong_place(low, facts):
             return f"run name not in facts: {m.group(0)}"
     reached = facts.get("planets_reached")
     if reached:
+        # shake11: "Fulgora discovery sits at eighteen percent" is the research Planet discovery Fulgora, which the
+        # facts name; the reached/not-reached lists themselves do not count
+        named = known_text({k: v for k, v in facts.items() if k not in ("planets_reached", "planets_not_reached_yet")})
         for p in PLANETS:
-            if p.lower() in low and p not in reached and not FUTURE.search(low.replace("’", "'")):
+            if p.lower() in low and p not in reached and p.lower() not in named \
+                    and not FUTURE.search(low.replace("’", "'")):
                 return f"planet not reached: {p}"
     return None
 

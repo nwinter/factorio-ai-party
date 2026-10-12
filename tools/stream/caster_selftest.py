@@ -857,6 +857,14 @@ check("framings_used_lately does not make a name supported", caster.check_line(
       "name not in facts: Astra")
 check("the rules tell the writer to avoid them", "framings_used_lately" in caster.EXCHANGE_RULES)
 
+# HOSTS6 item 4: planet talk that is research or a plan (shake11 cut 5 such lines)
+pr6 = {"event": "lull", "planets_reached": ["Nauvis"], "planets_not_reached_yet": ["Vulcanus", "Fulgora"],
+       "researching": {"tech": "Planet discovery Fulgora", "percent": 18}}
+check("planets: the research's own planet and a trip being packed pass; a claim to be there still fails",
+      caster.check_line("Fulgora discovery sits at eighteen percent.", pr6, [], []) is None and
+      caster.check_line("Sol's packing for Vulcanus already.", pr6, [], []) is None and
+      caster.check_line("Their Vulcanus foundry runs hot.", pr6, [], []) == "planet not reached: Vulcanus")
+
 # HOSTS6 item 4: counts the hosts can stand on, planet capitals, research cards past the lull budget
 fc = _FactsWriter([])
 cc = _caster(fc)
