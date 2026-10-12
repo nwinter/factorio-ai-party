@@ -275,6 +275,52 @@ Mock: `serve.py --mock --run tools/stream/runs/mock-sa3.json` (three agents) pla
 Vulcanus at 150 s (`"mock_space_speed"` scales it). Checked in jsdom on both pages and in the selftest; not yet seen
 with a real platform, since the pilot had none by 02:00.
 
+## Following the work, and platform shots
+
+Cameras follow bodies, but in Space Age the agents stand on Nauvis while they build a platform remotely
+(place_ghosts / paste / blueprint_place / deconstruct / cancel_deconstruction with `platform=NAME`, built by the hub),
+so until now no camera ever showed a platform.
+
+Where the service learns an action's target: each agent's fh journal (tools/new-run.sh `--journal`,
+`runs/RUN/AGENT/journal.jsonl`, beside the run's `stream.json`) holds every request with its arguments. `work.py`
+tails those files from their end when the service starts (no replay of the past), reads only new bytes each poll (at
+most 1 MB per file), and keeps the five actions above. Profiles' `active` gives only the action kind, and the game
+records nothing about who placed a ghost, so the journal is the one cheap source. `./shot` is not in it: the shot
+script calls fh without the journal and always centres on the character.
+
+- Away: `live.py observe_work` keeps a request that lands on a platform the body is not aboard, or 48 tiles or more
+  (`AWAY_TILES`) from the body on its own surface (position, area centre, or the centre of the ghosts placed). Near the
+  body the camera following it already shows the work.
+- `model.py` labels it "Sol building on Solstice (from the ground)" or "Astra pasting a blueprint at (300, 40) (from
+  afar)", one item per agent and job for 20 s, kept 60 s in the snapshot (`work`), and bumps the agent's interest.
+- Director: the last secondary camera (cam3; cam2 with two) cuts to the newest item under 20 s old (`work_fresh`), holds
+  15 s (`work_hold`), at most once every 45 s (`work_spacing`), never over an attack or segment shot. A platform item
+  shows the whole platform: a fixed view on the platform's surface, centred on its entities' bounds, at the zoom that
+  fits them (`model.platform_shot`, ~60x34 tiles at zoom 1, 0.3..2, sent as is). A far item shows its position at zoom
+  0.9 (scaled like other secondary views). The agent counts as on air, so no other camera follows its body meanwhile.
+  The camera label reads "Sol · building on Solstice (from the ground)". `work_cut: false` in the run config's
+  `director` turns it off.
+- Platform views: one read-only Lua call (`harness.py PLATFORM_LUA`, every 15 s with the platform detail) gives each
+  platform's surface name (the `platforms` read has none, and the camera takes surfaces), its hub and the bounds of our
+  entities there. A platform waiting for its starter pack has no surface and is skipped.
+- Segments: "space" puts a platform on the main camera (one asked for with `params.platform`, else one between planets,
+  else the first with a view); "space_moment" shows the platform for first-platform and orbit moments (a landing still
+  follows the agent). Both pass the surface and the fitting zoom through `Segments.camera()` to the director.
+- Director clients on a platform surface: cameras.lua teleports the spectating director to the target's surface
+  (`p.teleport(target, surface)`, the same path a camera following a bot aboard a platform already takes), so a client
+  that is not on the platform renders it. Not yet seen on stream.
+
+Check live after the shift change (stream service restarted from this branch):
+
+```sh
+grep -E "work: |segment: Space" runs/RUN/stream-service.log | tail     # the director's work cuts and platform shots
+grep -h '"surface": "platform' tools/stream/logs/director-*.jsonl | tail -3   # camera calls naming a platform surface
+curl -s 127.0.0.1:8788/state.json | python3 -c 'import json,sys; s=json.load(sys.stdin); print(s["work"]); print([p.get("view") for p in s["space"]["platforms"]])'
+```
+
+A platform shot on cam3 should show the platform with space around it; an empty or black view means the client did not
+render that surface.
+
 ## Unused cameras
 
 With fewer agents than cameras (or when the director pairs two agents on one), cam2 or cam3 would show an empty or
