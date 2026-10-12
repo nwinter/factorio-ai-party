@@ -358,8 +358,8 @@
       (Object.keys(far).length || (core && core.out.length) ? ' Dashed dots and hollow squares: agents and outposts far from the base, shown at the edge (hover for the distance).' : '') + '</p>';
   }
 
-  // The base's core: where the factory is dense. Pipes and belts (P, B) are left out (shake11: an 84-cell pipeline
-  // to an oil outpost 400 tiles north framed the base as a thin strip), the other building cells are counted in
+  // The base's core: where the factory is dense. Pipes and belts (P, B) are left out (an 84-cell pipeline to an
+  // oil outpost 400 tiles north framed the base as a thin strip), the other building cells are counted in
   // 32-tile blocks, and the core is the box around the blocks with at least a fifth of the busiest block's count
   // (plus 8 tiles). Building cells well outside it, grouped in 48-tile blocks, are outposts drawn at the frame's edge.
   function baseCore(g) {
@@ -378,7 +378,7 @@
       blocks[key] = (blocks[key] || 0) + 1;
       top = Math.max(top, blocks[key]);
     });
-    // dense blocks, then the biggest connected group of them (8 neighbours): a dense outpost (shake11's oil field) is
+    // dense blocks, then the biggest connected group of them (8 neighbours): a dense outpost (a far oil field) is
     // its own group and stays an outpost
     var dense = {};
     Object.keys(blocks).forEach(function (key) { if (blocks[key] >= Math.max(2, top / 5)) dense[key] = blocks[key]; });

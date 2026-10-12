@@ -4,7 +4,8 @@
 # 1. --last-run RUN: site/live/status.json's last run becomes RUN (site/status_update.py: "Shift N of the long run").
 # 2. Build: python3 site/build.py --runs-dir RUNS (the main checkout's runs/, where the shift folders are; POG_SITE_RUNS
 #    overrides).
-# 3. Check: site/check.py, site/test_live.py, site/test_longrun.py. Any failure stops here: nothing is deployed.
+# 3. Check: site/check.py, site/test_live.py, site/test_longrun.py, site/test_archive.py. Any failure stops here:
+#    nothing is deployed.
 # 4. Deploy: wrangler pages deploy to the preview branch, then to production (main) only if the preview went up.
 # Exit 0 when deployed (or built and checked with --no-deploy), 1 when a step failed (the log says which).
 # tools/shift-change.sh runs it in the background after the previous shift stops; it never blocks a shift.
@@ -43,6 +44,7 @@ python3 site/build.py --out "$out" --runs-dir "$runs" || fail "build"
 python3 site/check.py "$out" || fail "check.py"
 python3 site/test_live.py || fail "test_live.py"
 python3 site/test_longrun.py || fail "test_longrun.py"
+python3 site/test_archive.py || fail "test_archive.py"
 step "built and checked"
 [ $deploy = 1 ] || { step "done (--no-deploy)"; exit 0; }
 for branch in preview main; do

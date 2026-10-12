@@ -21,7 +21,8 @@ case " $* " in *" --branch ${WRANGLER_FAIL:-none} "*) echo "deploy failed" >&2; 
 
 def run(tmp, *args, **env):
     e = dict(os.environ, POG_WRANGLER=str(tmp / "wrangler"), POG_SITE_RUNS=str(tmp / "runs"), POG_SITE_OUT=str(tmp / "dist"),
-             POG_SITE_STATUS=str(tmp / "status.json"), WRANGLER_LOG=str(tmp / "wrangler.log"), **env)
+             POG_SITE_STATUS=str(tmp / "status.json"), POG_SITE_CONTENT=str(tmp / "site.json"),
+             WRANGLER_LOG=str(tmp / "wrangler.log"), **env)
     (tmp / "wrangler.log").write_text("")
     r = subprocess.run([str(ROOT / "tools" / "site-refresh.sh"), *args], cwd=ROOT, env=e, capture_output=True, text=True,
                        timeout=300)
@@ -33,6 +34,9 @@ def main():
         tmp = Path(d)
         (tmp / "runs").mkdir()
         test_longrun.make(tmp / "runs")
+        content = json.loads((ROOT / "site" / "content" / "site.json").read_text())
+        content.pop("run_start", None)  # the made-up shifts' longest chain (site.json's run_start is a real run id)
+        (tmp / "site.json").write_text(json.dumps(content))
         (tmp / "wrangler").write_text(WRANGLER)
         (tmp / "wrangler").chmod(0o755)
         (tmp / "status.json").write_text(json.dumps({"schema": 1, "live": False, "message": "Between shifts.", "next": None,
