@@ -19,7 +19,10 @@ tick/3600 from shake4's start. Data only, read-only on the game.
    its `last` tick only after the 64-incident cap compared every incident's `last`. A long world reaches 64 incidents;
    main had the same code. The branch sets the tick first and reads `last` with a fallback, so a save holding the
    broken incident loads; a new case in `mod/tests/runtime_test.lua` reproduces the crash, and all 29 Lua suites pass.
-   Merge it before the next shift.
+   shake11 launched at 22:51 from 5ce8c32 without it and hit the same fault two minutes in: 18 requests from all nine
+   agents refused by 23:00 with "agent-harness/runtime:8746: attempt to compare number with nil", which is
+   `losses_since`'s `i.last>since` in that bundle; the incident shake10 left without `last` is in the save. The next
+   loss in a new 64-tile area fails in the tick and quarantines the runtime. Deploy the fix as soon as possible.
 2. **Nothing tells the agents that research finished or what it unlocked.** The mod has no research-finished event
    and no reply lists new recipes; agents learn by polling `research` or from a teammate (section 3). Things on the
    prompt's milestone path are used within minutes; everything else waits hours or forever. A team-block line when a
