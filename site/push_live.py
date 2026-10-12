@@ -35,12 +35,44 @@ def scrub(v):
     return v
 
 
+CAMERA_LABELS = ("attack", "work", "segment")  # what a camera shows when it is not just following an agent
+PLATFORM_KEYS = ("name", "where", "route", "state", "paused", "speed_kms")
+FIGHT_RECENT_S = 120  # fights the map marks: reported in the last two minutes
+
+
+def public_space(sp):
+    """Space Age for the map's inset: planets reached, rockets, and each platform's place or route (no camera views,
+    no moments: a few hundred bytes)."""
+    if not sp or not sp.get("active"):
+        return None
+    return {"rockets": sp.get("rockets") or 0, "planets": sp.get("planets") or [], "summary": sp.get("summary"),
+            "platforms": [{k: p[k] for k in PLATFORM_KEYS if p.get(k) is not None} for p in (sp.get("platforms") or [])[:6]]}
+
+
+def public_fights(fights, now):
+    """Fights still or lately reported (model.py `fights`): where, what, how long ago, and how many losses."""
+    out = []
+    for f in fights or []:
+        p, age = f.get("position") or {}, now - (f.get("last") or 0)
+        if age > FIGHT_RECENT_S or not isinstance(p.get("x"), (int, float)) or (p.get("surface") or "nauvis") != "nauvis":
+            continue
+        out.append({"kind": f.get("kind"), "text": f.get("text"), "position": {"x": round(p["x"], 1), "y": round(p["y"], 1)},
+                    "extent": p.get("extent"), "age_s": round(age), "losses": len(f.get("losses") or [])})
+    return out[-12:]
+
+
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
     out["agents"] = [{k: a[k] for k in AGENT_KEYS if k in a} for a in s.get("agents", [])]
     out["chat"] = [{k: c[k] for k in CHAT_KEYS if k in c} for c in s.get("chat", [])[-40:]]
-    out["cameras"] = {slot: {"agents": c.get("agents", []), "pair": c.get("pair", False), "since": c.get("since")}
+    out["cameras"] = {slot: dict({"agents": c.get("agents", []), "pair": c.get("pair", False), "since": c.get("since")},
+                                 **{k: c[k] for k in CAMERA_LABELS if c.get(k)})
                       for slot, c in (s.get("cameras") or {}).items()}
+    space = public_space(s.get("space"))
+    if space:
+        out["space"] = space
+    if s.get("fights"):
+        out["fights"] = public_fights(s["fights"], s.get("now") or time.time())
     # The broadcast the stream service's YouTube chat bridge follows, so the live page embeds the current one.
     yt = ((s.get("viewers_status") or {}).get("youtube") or {})
     if re.fullmatch(r"[\w-]{11}", str(yt.get("video") or "")):

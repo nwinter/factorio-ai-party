@@ -250,9 +250,11 @@
     pathCache[slot] = { key: key, cats: used, paths: used.map(function (c) { return '<path class="' + prefix + c[0] + '" d="' + d[c[0]].join('') + '"/>'; }).join('') };
     return pathCache[slot];
   }
-  function minimap(agents, alerts, cams, bm) {
+  var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
+  function minimap(agents, alerts, cams, bm, fights) {
     var pts = agents.filter(function (a) { return a.position && isFinite(a.position.x) && isFinite(a.position.y); });
-    var pins = (alerts || []).filter(function (a) { return a.position && isFinite(a.position.x); });
+    // alert pins for what the fight rings do not show (deaths, power); fights have their own markers
+    var pins = (alerts || []).filter(function (a) { return a.position && isFinite(a.position.x) && (!(fights || []).length || (a.kind !== 'attack' && a.kind !== 'loss')); });
     var base = validGrid(bm) && bm.w > 0 ? bm : null, ore = base && validGrid(bm.ore) ? bm.ore : null;
     if (!pts.length && !base) return '<p class="fx-muted">No positions yet.</p>';
     // With a base, frame the base; an agent far outside it (scouting, travelling) is pinned to the edge instead of
@@ -267,8 +269,9 @@
       });
     }
     var near = pts.filter(function (a) { return !(a.name in far); });
-    var xs = near.map(function (a) { return a.position.x; }).concat(pins.map(function (p) { return p.position.x; }));
-    var ys = near.map(function (a) { return a.position.y; }).concat(pins.map(function (p) { return p.position.y; }));
+    var fpos = (fights || []).filter(function (f) { return f.position && isFinite(f.position.x) && isFinite(f.position.y); });
+    var xs = near.map(function (a) { return a.position.x; }).concat(pins.map(function (p) { return p.position.x; }), fpos.map(function (f) { return f.position.x; }));
+    var ys = near.map(function (a) { return a.position.y; }).concat(pins.map(function (p) { return p.position.y; }), fpos.map(function (f) { return f.position.y; }));
     if (base) {
       xs.push(base.x0, base.x0 + base.w * base.cell);
       ys.push(base.y0, base.y0 + base.rows.length * base.cell);
@@ -301,7 +304,15 @@
       var dx = a.position.x - cx, dy = a.position.y - cy, lim = span / 2 - 14 / k, t = lim / Math.max(Math.abs(dx), Math.abs(dy));
       return { x: cx + dx * t, y: cy + dy * t };
     };
-    var marks = pins.map(function (p) {
+    // fights (state.fights, push_live.py): a ring the size of the fought-over area; solid red while it goes on
+    // (reported in the last 25 s), faded after; a cross where something was destroyed
+    var fightMarks = (fights || []).filter(function (f) { return f.position && isFinite(f.position.x) && isFinite(f.position.y); }).map(function (f) {
+      var r = Math.max(6, (f.extent || 16) / 2 * k), now = f.age_s != null && f.age_s < 25;
+      return '<g class="fight' + (now ? ' now' : '') + (f.kind === 'loss' ? ' loss' : '') + '" transform="translate(' + px(f.position.x) + ' ' + py(f.position.y) + ')">' +
+        '<title>' + esc(f.text + (f.age_s != null ? ' · ' + ago(f.age_s) : '') + (f.losses ? ' · ' + f.losses + ' loss' + (f.losses > 1 ? 'es' : '') : '')) + '</title>' +
+        '<circle r="' + r.toFixed(1) + '"/>' + (f.kind === 'loss' || f.losses ? '<path d="M-3 -3L3 3M3 -3L-3 3"/>' : '') + '</g>';
+    }).join('');
+    var marks = fightMarks + pins.map(function (p) {
       return '<g class="pin" transform="translate(' + px(p.position.x) + ' ' + py(p.position.y) + ')"><title>' + esc(label(p.kind) + ': ' + p.text) + '</title>' +
         '<path d="M0 -9 L8 6 L-8 6 Z"/><text y="4" text-anchor="middle">!</text></g>';
     }).join('');
@@ -310,15 +321,41 @@
       var right = isFar && px(at.x) > S * 0.6;  // labels of agents pinned on the right edge go to the left of the dot
       return '<g class="dot' + (a.alive === false ? ' dead' : '') + (isFar ? ' far' : '') + '" transform="translate(' + px(at.x) + ' ' + py(at.y) + ')">' +
         '<title>' + esc((a.display_name || a.name) + (a.location ? ' · ' + a.location : '') + (isFar ? ' · about ' + far[a.name] + ' tiles from the base' : '')) + '</title>' +
-        (onCam[a.name] ? '<circle r="10" class="cam"/>' : '') + '<circle r="5.5" style="fill:' + c + '"/>' +
+        (onCam[a.name] ? '<circle r="10" class="cam"/><text class="camtag" y="-13" text-anchor="middle">' + esc(CAM_SHORT[onCam[a.name]] || onCam[a.name]) + '</text>' : '') +
+        '<circle r="5.5" style="fill:' + c + '"/>' +
         '<text x="' + (right ? -9 : 9) + '" y="4"' + (right ? ' text-anchor="end"' : '') + '>' + esc(a.display_name || a.name) + (isFar ? ' ↗' : '') + '</text></g>';
     }).join('');
     return '<svg class="minimap" viewBox="0 0 ' + S + ' ' + S + '" role="img" aria-label="' + (base ? 'The base and agent positions' : 'Agent positions') + '"><rect width="' + S + '" height="' + S + '" class="mm-bg"/>' +
       '<g class="mm-grid">' + grid + '</g>' + layer + marks + '</svg>' + legend +
-      '<p class="fx-muted small">About ' + Math.round(span) + ' tiles across; grid every ' + stepT + ' tiles. Rings: on camera. Triangles: alerts.' +
+      '<p class="fx-muted small">About ' + Math.round(span) + ' tiles across; grid every ' + stepT + ' tiles. Orange rings: on camera. Red rings: fights (solid while going on; × where something was destroyed). Triangles: other alerts.' +
       (base ? ' Buildings in ' + base.cell + '-tile cells' + (base.buildings != null ? ' (' + esc(base.buildings) + ' in all)' : '') +
         ', refreshed every minute' + (ore ? '; ore every five minutes' : '') + '.' : '') +
       (Object.keys(far).length ? ' Dashed: agents far from the base, shown at the edge (hover for the distance).' : '') + '</p>';
+  }
+
+  // What each camera shows (state.cameras: who it follows, or the fight / work / segment shot it holds), so a viewer
+  // can match the stream's three pictures to the map.
+  function cameraLines(cams, byName) {
+    return ['main', 'cam2', 'cam3'].filter(function (slot) { return cams && cams[slot]; }).map(function (slot) {
+      var c = cams[slot], who = (c.agents || []).map(function (n) { return (byName[n] || {}).display_name || n; }).join(' & ');
+      var what = c.work || c.segment || c.attack || who || 'a fixed view';
+      if (c.attack && who) what = who + ' · ' + c.attack;
+      return '<li><span class="fx-chip fx-chip--orange cam-chip">' + esc(CAM_SHORT[slot]) + '</span> ' + esc(what) + '</li>';
+    }).join('');
+  }
+  // Space Age inset (state.space, push_live.py): planets reached, rockets, each platform where it is or its route.
+  function spaceInset(sp) {
+    if (!sp || !(sp.platforms || []).length && !(sp.planets || []).length) return '';
+    var rows = (sp.platforms || []).map(function (p) {
+      var bar = p.route && isFinite(p.route.pct) ? '<div class="fx-progress fx-progress--thin" style="--fx-value:' + Math.max(0, Math.min(100, p.route.pct)) + '%" role="progressbar" aria-valuenow="' +
+        Math.round(p.route.pct) + '" aria-valuemin="0" aria-valuemax="100" aria-label="' + esc(p.name) + ' on its way"></div>' : '';
+      // where it is, plus its state when that says more than "flying" or "waiting at a stop" (no schedule, paused...)
+      var st = p.state && !/^(on_the_path|waiting_at_station|paused)$/.test(p.state) ? label(p.state).toLowerCase() : '';
+      return '<li><b>' + esc(p.name) + '</b> <span>' + esc([p.where || label(p.state), st].filter(Boolean).join(' · ')) + '</span>' +
+        (p.speed_kms ? ' <span class="fx-muted">' + esc(p.speed_kms) + ' km/s</span>' : '') + (p.paused ? ' <span class="fx-chip fx-chip--grey">paused</span>' : '') + bar + '</li>';
+    }).join('');
+    return '<div class="space-inset"><h4>Space</h4><p class="small fx-muted">' + esc([(sp.planets || []).join(', '), sp.rockets ? sp.rockets + ' rocket' + (sp.rockets > 1 ? 's' : '') + ' launched' : ''].filter(Boolean).join(' · ')) + '</p>' +
+      (rows ? '<ul class="platforms">' + rows + '</ul>' : '') + '</div>';
   }
 
   // ------------------------------------------------------------------ dashboard
@@ -406,7 +443,11 @@
 
     $('#dash').innerHTML =
       card('card-agents', 'Agents', '<div class="agents-live">' + (cards || '<p class="fx-muted">No agents.</p>') + '</div>') +
-      card('card-map', 'Map', minimap(agents, s.alerts, s.cameras, s.basemap)) +
+      card('card-map', 'Map',
+        (r.current ? '<p class="map-research small">Researching <strong>' + esc(r.label || label(r.current)) + '</strong> · ' + pct + '%</p>' : '') +
+        minimap(agents, s.alerts, s.cameras, s.basemap, s.fights) +
+        (s.cameras ? '<h4>On camera</h4><ul class="cam-lines">' + cameraLines(s.cameras, byName) + '</ul>' : '') +
+        spaceInset(s.space)) +
       card('card-board', 'Board', boardHtml) +
       card('card-research', 'Research', research) +
       card('card-charts', 'Factory', '<div class="chart-grid">' + chartHtml + '</div>') +

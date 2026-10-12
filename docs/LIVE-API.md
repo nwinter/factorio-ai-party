@@ -79,10 +79,23 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
     "basemap": {"tick": 230400, "cell": 4, "x0": -112, "y0": -72, "w": 56, "h": 41, "buildings": 659,
                 "rows": ["..DDDDDD", "....S.BB"],   // one string per cell row from y0; one letter per cell from x0
                 "nests": [[150, 40, "s"], [140, 30, "w"]]},  // enemy spawners (s) and worms (w) near the base
-    "cameras": {"main": {"agents": ["sol"], "pair": false, "since": 1791695548.8}}
+    "cameras": {"main": {"agents": ["sol"], "pair": false, "since": 1791695548.8,
+                         "attack": "Base under attack near (-48, 16): gun turret"},   // optional: a fight shot
+                "cam3": {"agents": ["sol"], "pair": false, "since": 1791695548.8,
+                         "work": "Sol building on Solstice (from the ground)"}},     // optional: work / segment shot
+    "space": {"rockets": 3, "planets": ["Nauvis"], "summary": "1 platform · 3 rockets",   // only once Space Age shows
+              "platforms": [{"name": "Solstice", "where": "Nauvis → Vulcanus", "state": "on_the_path", "speed_kms": 72,
+                             "route": {"from": "Nauvis", "to": "Vulcanus", "pct": 42}, "paused": false}]},  // at most 6
+    "fights": [{"kind": "attack|loss", "text": "...", "position": {"x": -48.0, "y": 16.0}, "extent": 32.0,
+                "age_s": 6, "losses": 1}]   // reported in the last 2 minutes, on Nauvis; at most 12
   }
 }
 ```
+
+The map (`static/live.js`) draws `fights` as rings the size of their `extent` (solid while `age_s` is under 25,
+faded after, a cross where `losses` happened), tags each agent a camera follows with its slot, lists what each camera
+shows (`cameras`: its agents, or the `attack`, `work` or `segment` shot), shows the research in progress over the
+map, and `space` as an inset under it. `space`, `fights` and the camera labels add a few hundred bytes to a push.
 
 `basemap` is the base as a coarse grid, read once a minute by the stream service (`BASEMAP_LUA` in
 `tools/stream/harness.py`, an operator read like the score): every building of ours on nauvis except electric poles,

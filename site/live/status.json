@@ -1,8 +1,8 @@
 {
   "schema": 1,
-  "updated": "2026-10-10T18:02:00-07:00",
+  "updated": "2026-10-11T22:25:00-07:00",
   "live": false,
-  "message": "No run is live right now.",
+  "message": "Between shifts. The long run continues in four-hour shifts around the clock; the next one starts within minutes.",
   "next": null,
-  "last_run": {"id": "shake1", "title": "Shakedown 1", "url": "/runs/shake1/"}
+  "last_run": null
 }
