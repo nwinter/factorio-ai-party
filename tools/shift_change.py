@@ -216,12 +216,12 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
     else:
         parts.append(service)
     parts.append("relay " + ("on" if os.path.exists(os.path.join(rundir, "viewers-relay.on")) else "off"))
-    minutes = round(window / 60)
+    span = f"{round(window / 60)} min" if window >= 60 else f"{round(window)} s"
     if errors or faults:
-        parts.append(f"harness Lua errors in the first {minutes} min: {len(errors)}" + (f", runtime_fault {sorted(faults)[0]}" if faults else ""))
+        parts.append(f"harness Lua errors in the first {span}: {len(errors)}" + (f", runtime_fault {sorted(faults)[0]}" if faults else ""))
         bad.append("Lua errors")
     else:
-        parts.append(f"no harness Lua errors in the first {minutes} min")
+        parts.append(f"no harness Lua errors in the first {span}")
     line = "health: " + "; ".join(parts)
     for e in errors[:5]:
         line += "\n  " + e

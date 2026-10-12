@@ -131,7 +131,8 @@ fi
 
 # 3. Health and the console audit.
 sleep "${POG_SC_HEALTH_WAIT:-180}"
-hargs=(--team "$team" --since "$started" --state-url "$state_url")
+# Lua errors from start-team's start until now: the agents launch at its end, so this covers their first minutes.
+hargs=(--team "$team" --since "$started" --window "$(( $(date +%s) - started + 1 ))" --state-url "$state_url")
 [ "$(swval POG_BROKER 0)" = 1 ] && hargs+=(--broker)
 [ -n "$stream" ] && hargs+=(--stream)
 [ "${POG_OBS:-1}" != 0 ] && hargs+=(--obs "${obs[*]}")
