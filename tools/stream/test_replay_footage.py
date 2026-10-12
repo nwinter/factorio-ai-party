@@ -3,10 +3,11 @@
 chests and poles near (75, -55) aired Sol walking in the base; the loss was 35 tiles north of him, off frame):
 python3 tools/stream/test_replay_footage.py
 
-1. "Shown" is geometry: the spot inside the frame of the camera on air or the inset (the client's view at the zoom
+1. "Shown" is geometry: the spot inside the frame of the camera on air (the client's view at the zoom
    sent to the game, after the on-air crop). Sol followed at zoom 1.42 with the landscape crop shows ~28 x 24 tiles.
 2. Off frame all along: no clip. A cut to the fight after the loss: a clip from the cut on (where the footage starts).
-   An inset on it counts. Ticks while a replay is on air count for nothing (the program is the replay).
+   Only the main view counts (in a trio the big tile): an inset or a small tile on it does not, since the replay is
+   the whole program. Ticks while a replay is on air count for nothing (the program is the replay).
 3. Losses of one fight inside one clip's stretch: one clip.
 4. The seek offset: the clip ends at saved_t (the Mac's clock when SaveReplayBuffer was sent); playback starts
    saved_t - show_from before the file's end. The file name (box local time, an hour behind) is never read.
@@ -103,13 +104,22 @@ def cut_to_it():
 
 
 def inset():
+    """Only the main view counts: the replay is the whole program, so inset-only footage would air the agent on air
+    doing something else with the fight in a corner (shift01 15:44). The same for a trio's small tile."""
     seg, rpl = world()
     t = 30_000
     box = {"position": {"x": 75, "y": -55}, "surface": "nauvis", "zoom": 0.99, "frac": 1.0}
-    cams = lambda now: dict(on_sol(now), inset={"agents": [], "frame": box}) if now >= t + 9 else on_sol(now)  # noqa: E731
-    run(rpl, seg, t, t + 24, cams, losses=[t + 10])  # judged at t + 23, not aired yet
-    c = rpl.clip
-    assert c and c["show_from"] == t + 9 and c["show_to"] - c["show_from"] == rpl.cfg["loss_len"], c
+    for extra in ({"inset": {"agents": [], "frame": box}}, {"cam2": {"agents": [], "frame": box}}):
+        seg, rpl = world()
+        cams = lambda now: dict(on_sol(now), **extra) if now >= t + 9 else on_sol(now)  # noqa: E731
+        run(rpl, seg, t, t + 40, cams, losses=[t + 10])
+        assert rpl.clip is None and rpl.pending is None and rpl.status["replays"] == 0, (extra, rpl.public())
+        assert any("showed its spot never" in x for x in logs[-3:]), logs[-3:]
+    # in a trio, the big tile is the main row: it counts
+    seg, rpl = world()
+    big = {"main": {"agents": [], "frame": dict(box, frac=1.0)}, "cam2": {"agents": ["sol"]}}
+    run(rpl, seg, t, t + 24, lambda now: big, losses=[t + 10])
+    assert rpl.clip and rpl.clip["show_from"] == t + 2, rpl.clip
 
 
 def during_replay():
