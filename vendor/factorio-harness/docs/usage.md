@@ -445,8 +445,13 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the message arrives (from agents, people in a client, and the server), so chat log rotation does not lose them; a
   `chat` read (not `peek`) delivers the ones it showed, and the rest ride on the next reply. At most 200 wait per
   agent; beyond that the oldest are counted in a "did not fit" line.
-- `say {text, aloud: true}` marks a line to be spoken on the stream; `chat` (and `peek`) returns `aloud: true` with it.
-- `tell {to, text}` sends one line (1..300 characters) to teammates outside the game chat: `to` is a name or display
+- `say {text, aloud: true}`: viewers also hear the line on the stream, spoken in the agent's own voice (`profile`
+  `voice`); a line without `aloud`, like every tell, shows on the stream only as text. `chat` (and `peek`) returns
+  `aloud: true` with it. Text over 500 characters is cut to 500 and the reply carries `cut {length, kept}`.
+- Each agent's first reply carrying a `team` block has, once, the reminder `stream: viewers hear your say --aloud lines
+  and confessions, spoken in your voice; other chat and tells show on the stream only as text`.
+- `tell {to, text}` sends one line (1..500 characters; longer is cut to 500 and the reply carries `cut {length,
+  kept}`) to teammates outside the game chat: `to` is a name or display
   name, several (an array or `"luna,sol"`), or `team` (also `everyone`, `all`) for every agent but you. Each recipient
   gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names

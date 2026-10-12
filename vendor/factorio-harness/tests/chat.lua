@@ -21,7 +21,11 @@ game.tick=20; chat.on_console_chat({player_index=3,message='nice base'})
 eq(chat.unread(1).latest,'nwinter: nice base'); eq(chat.unread(2).unread,1)
 -- Newlines are flattened, long text is cut, empty text is refused.
 chat.handlers.say(opus,{text='a\nb'}); eq(printed[2]:sub(-3),'a b')
-chat.handlers.say(opus,{text=string.rep('x',600)}); eq(#s.chat.messages[#s.chat.messages].text,500)
+r=chat.handlers.say(opus,{text=string.rep('x',600)}); eq(#s.chat.messages[#s.chat.messages].text,500)
+eq(r.cut.length,600); eq(r.cut.kept,500) -- the reply says it was cut
+eq(chat.handlers.say(opus,{text=string.rep('x',500)}).cut,nil)
+-- aloud says who hears it: spoken on the stream in your voice; text otherwise.
+assert(chat.schema.say.aloud:find('spoken in your own voice',1,true)); assert(not chat.schema.say.aloud:find('sparingly',1,true))
 fails(function() chat.handlers.say(opus,{text=''}) end,'text is required')
 -- since/limit keep the newest; the log is bounded.
 for i=1,250 do chat.handlers.say(astra,{text='m'..i}) end

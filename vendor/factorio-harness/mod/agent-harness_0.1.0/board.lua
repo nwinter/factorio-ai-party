@@ -800,12 +800,22 @@ return function(api)
     while #lines > MAX_ALERT_LINES do table.remove(lines) end
     return #lines > 0 and lines or nil
   end
+  -- Who hears what on the stream: once per agent (h.stream_note holds the
+  -- version shown; a new version is shown once again).
+  local STREAM_NOTE, STREAM_NOTE_VERSION = 'stream: viewers hear your say --aloud lines and confessions, spoken in your voice; '
+    .. 'other chat and tells show on the stream only as text', 1
   local function reminders(p, h)
+    local out = {}
+    if h.stream_note ~= STREAM_NOTE_VERSION then
+      h.stream_note = STREAM_NOTE_VERSION
+      out[#out+1] = STREAM_NOTE
+    end
     local pr = api.profile(p.index)
-    if pr and pr.display_name and pr.glyph and pr.color then return nil end
-    if h.reminded and game.tick - h.reminded < REMIND_EVERY then return nil end
-    h.reminded = game.tick
-    return {'profile: viewers see you by display_name, glyph and color; set them once with profile {display_name, glyph, color, motto}'}
+    if not (pr and pr.display_name and pr.glyph and pr.color) and not (h.reminded and game.tick - h.reminded < REMIND_EVERY) then
+      h.reminded = game.tick
+      out[#out+1] = 'profile: viewers see you by display_name, glyph and color; set them once with profile {display_name, glyph, color, motto}'
+    end
+    return #out > 0 and out or nil
   end
   function M.team(p, losses)
     local h = hints(p.index)
