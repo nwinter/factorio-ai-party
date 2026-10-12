@@ -412,6 +412,32 @@ do
   silo.use_transitional_requests=false
   r=call('transfer',{position=silo.position,inventory='rocket_silo_rocket',item='firearm-magazine',count=10,direction='to_entity'})
   eq(r.entity_full.auto_requests,nil)
+  -- Coverage: a module goes into a machine's module slots with no inventory
+  -- named (the item's kind picks them), as a player's click does; a beacon too.
+  local saved_prototypes=prototypes
+  prototypes=prototypes or {}; prototypes.item=prototypes.item or {}
+  prototypes.item['speed-module']={name='speed-module',type='module'}
+  defines.inventory.assembling_machine_modules=defines.inventory.assembling_machine_modules or 31
+  defines.inventory.beacon_modules=defines.inventory.beacon_modules or 32
+  local mod_src=stack('speed-module',4); main={mod_src}
+  main.get_item_count=function(f) return mod_src.valid_for_read and mod_src.name==f.name and mod_src.count or 0 end
+  local function machine(type_,inv_id)
+    local slots={stack(nil,0),stack(nil,0),valid=true}
+    slots.get_item_count=function(f) local n=0; for _,s2 in ipairs(slots) do if s2.valid_for_read and s2.name==f.name then n=n+s2.count end end; return n end
+    slots.can_insert=function() return true end
+    local m={valid=true,name=type_,type=type_,position={x=1,y=0},force=p.force,slots=slots}
+    m.get_inventory=function(id) if id==inv_id then return slots end end
+    return m
+  end
+  local asm=machine('assembling-machine',defines.inventory.assembling_machine_modules)
+  p.surface.find_entities_filtered=function() return {asm} end
+  r=call('transfer',{position=asm.position,item='speed-module',count=2,direction='to_entity'})
+  eq(r.transferred,2); eq(r.inventory,'assembling_machine_modules'); eq(asm.slots[1].name,'speed-module')
+  local beacon=machine('beacon',defines.inventory.beacon_modules)
+  p.surface.find_entities_filtered=function() return {beacon} end
+  r=call('transfer',{position=beacon.position,item='speed-module',count=2,direction='to_entity'})
+  eq(r.transferred,2); eq(r.inventory,'beacon_modules')
+  prototypes=saved_prototypes
   main={input}
 end
 -- Omitted items take everything from the inferred output inventory; batches
