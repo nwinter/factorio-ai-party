@@ -18,6 +18,7 @@ so session files stay where tools/context.py and the run analysis look for them.
 import datetime
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -103,6 +104,25 @@ def refresh(window):
     return False
 
 
+HOOKS = ["herdr.json"]
+
+
+def copy_hooks(home, owner=None):
+    """Copy the owner's kept hook files into the run home, fresh each launch. A copy, never a link: Grok's kernel
+    sandbox (POG_FULL_TOOLS) refuses to start when a hook path has a symlink component (shake8, 17:06). A link an
+    older launch left in a resumed workspace is replaced."""
+    src_dir = os.path.join(owner or OWNER, "hooks")
+    dst_dir = os.path.join(home, "hooks")
+    os.makedirs(dst_dir, exist_ok=True)
+    for name in HOOKS:
+        src, dst = os.path.join(src_dir, name), os.path.join(dst_dir, name)
+        if not os.path.isfile(src):
+            continue
+        tmp = dst + ".tmp"
+        shutil.copyfile(src, tmp)   # follows the owner's own links; the copy is a plain file
+        os.replace(tmp, dst)        # also replaces a symlink at dst, not its target
+
+
 def setup(d, ensure):
     home = os.path.join(d, ".grok-home")
     os.makedirs(home, mode=0o700, exist_ok=True)
@@ -129,10 +149,7 @@ def setup(d, ensure):
         os.symlink(os.path.join(OWNER, "sessions"), link)
     # Herdr's own Grok integration (installed by Herdr, reports the session to it; tools/supervise.sh reads the pane's
     # agent state) stays; the owner's local-session-profile hook does not. Neither reaches the model.
-    herdr = os.path.join(OWNER, "hooks", "herdr.json")
-    os.makedirs(os.path.join(home, "hooks"), exist_ok=True)
-    if os.path.exists(herdr) and not os.path.lexists(os.path.join(home, "hooks", "herdr.json")):
-        os.symlink(herdr, os.path.join(home, "hooks", "herdr.json"))
+    copy_hooks(home)
     if owner_token()[1] < ensure and not refresh(ensure):
         print(f"grok-home: the owner's Grok login has {owner_token()[1]} s left and did not refresh", file=sys.stderr)
     # Grok runs the provider only on a sign-in or a refresh; with no credential a headless start just fails ("Not

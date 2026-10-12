@@ -179,6 +179,41 @@ def codex_and_grok():
     print("codex and grok: ok")
 
 
+def grok_hooks():
+    """The run home's hook files are copies, never links: Grok's kernel sandbox refuses to start on a hook path with a
+    symlink component (shake8). A link from an older launch is replaced without touching its target."""
+    import importlib
+    gh = importlib.import_module("grok-home")
+    tmp = tempfile.mkdtemp()
+    try:
+        owner = os.path.join(tmp, "owner")
+        os.makedirs(os.path.join(owner, "hooks"))
+        real = os.path.join(tmp, "herdr-installed.json")
+        open(real, "w").write('{"hooks": "v1"}')
+        os.symlink(real, os.path.join(owner, "hooks", "herdr.json"))      # the owner's may itself be a link
+        home = os.path.join(tmp, "run", "grok", ".grok-home")
+        os.makedirs(os.path.join(home, "hooks"))
+        stale = os.path.join(tmp, "stale.json")
+        open(stale, "w").write("old")
+        os.symlink(stale, os.path.join(home, "hooks", "herdr.json"))      # what earlier launches left
+        gh.copy_hooks(home, owner)
+        dst = os.path.join(home, "hooks", "herdr.json")
+        assert not os.path.islink(dst) and os.path.isfile(dst), dst
+        assert os.path.realpath(dst) == os.path.join(os.path.realpath(home), "hooks", "herdr.json"), os.path.realpath(dst)
+        assert open(dst).read() == '{"hooks": "v1"}' and open(stale).read() == "old"
+        assert not os.path.exists(dst + ".tmp")
+        open(real, "w").write('{"hooks": "v2"}')                          # a relaunch takes the owner's current one
+        gh.copy_hooks(home, owner)
+        assert open(dst).read() == '{"hooks": "v2"}' and not os.path.islink(dst)
+        empty = os.path.join(tmp, "nohooks")
+        gh.copy_hooks(empty, os.path.join(tmp, "missing-owner"))          # no owner hook: nothing to copy
+        assert os.listdir(os.path.join(empty, "hooks")) == []
+        assert "os.symlink(herdr" not in open(os.path.join(ROOT, "tools", "grok-home.py")).read()
+    finally:
+        shutil.rmtree(tmp)
+    print("grok hooks: ok")
+
+
 def flags():
     def tools(full):
         env = dict(os.environ, POG_FULL_TOOLS=full)
@@ -194,4 +229,5 @@ if __name__ == "__main__":
     paragraphs()
     claude()
     codex_and_grok()
+    grok_hooks()
     flags()
