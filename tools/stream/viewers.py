@@ -389,8 +389,40 @@ def parse_actions(actions):
     return msgs, dels
 
 
+def _find(obj, key):
+    """The first value under `key` anywhere in a parsed JSON tree, or None."""
+    stack = [obj]
+    while stack:
+        o = stack.pop()
+        if isinstance(o, dict):
+            if key in o:
+                return o[key]
+            stack.extend(reversed(list(o.values())))
+        elif isinstance(o, list):
+            stack.extend(reversed(o))
+    return None
+
+
+def parse_watching(obj):
+    """YouTube's live "N watching now" from an `updated_metadata` reply or a watch page's ytInitialData: an int (0 when
+    nobody is), or None without a live count (not live yet, ended, a replay's "N views", or a changed layout)."""
+    r = _find(obj, "videoViewCountRenderer")
+    if not isinstance(r, dict):
+        return None
+    text = _runs_text(r.get("viewCount"))
+    if not (r.get("isLive") or "watching" in text.lower()):
+        return None
+    if str(r.get("originalViewCount") or "").isdigit():
+        return int(r["originalViewCount"])
+    m = re.search(r"\d[\d,.\s]*", text)
+    if m:
+        return int(re.sub(r"\D", "", m.group(0)))
+    return 0 if "watching" in text.lower() else None
+
+
 class YouTubeChat:
-    """Keyless reader of one broadcast's live chat; a channel target follows the channel's current broadcast."""
+    """Keyless reader of one broadcast's live chat; a channel target follows the channel's current broadcast. Also
+    reads the broadcast's "watching now" count (poll_watching, once a minute) for the hosts' writer choice."""
 
     def __init__(self, target, fetch=http):
         self.fetch = fetch
@@ -399,6 +431,8 @@ class YouTubeChat:
         self.timeout_ms = 5000
         self.state, self.error = "starting", None
         self.next_try = 0.0
+        self.watching = self.watching_t = self.watching_error = None
+        self.watching_via = "metadata"  # the innertube reply; the watch page after it fails
 
     @staticmethod
     def parse_target(t):
@@ -416,7 +450,38 @@ class YouTubeChat:
         return None, "@" + t.lstrip("@")
 
     def status(self):
-        return {"state": self.state, "video": self.video, "channel": self.channel, "error": self.error}
+        return {"state": self.state, "video": self.video, "channel": self.channel, "error": self.error,
+                "watching": self.watching, "watching_t": self.watching_t, "watching_error": self.watching_error}
+
+    def poll_watching(self, now=None):
+        """One reading of the broadcast's "watching now" count: `youtubei/v1/updated_metadata` (what the watch page
+        polls for its counter), or the watch page itself once that fails. watching_t is when it was read; a failed
+        or countless read leaves watching None, so the hosts fall back to their main writer."""
+        now = now or time.time()
+        if not self.video:
+            self.watching, self.watching_t, self.watching_error = None, now, "no broadcast"
+            return None
+        try:
+            if self.watching_via == "metadata":
+                body = {"context": {"client": {"clientName": "WEB", "clientVersion": self.version or "2.20250101.00.00",
+                                               "hl": "en"}}, "videoId": self.video}
+                key = f"key={self.key}&" if self.key else ""
+                obj = json.loads(self.fetch(f"https://www.youtube.com/youtubei/v1/updated_metadata?{key}"
+                                            f"prettyPrint=false", data=body))
+            else:
+                obj = _initial_data(self.fetch(f"https://www.youtube.com/watch?v={self.video}").decode("utf-8", "replace"))
+            n = parse_watching(obj or {})
+            self.watching, self.watching_t = n, now
+            if n is None:  # not live, or this reply changed shape: the next reading tries the other way
+                self.watching_error = f"no live count ({self.watching_via})"
+                self.watching_via = "page" if self.watching_via == "metadata" else "metadata"
+            else:
+                self.watching_error = None
+        except Exception as e:
+            self.watching, self.watching_t = None, now
+            self.watching_error = f"{self.watching_via}: {type(e).__name__}: {e}"[:200]
+            self.watching_via = "page" if self.watching_via == "metadata" else "metadata"
+        return self.watching
 
     def resolve(self):
         """The channel's current broadcast id, from the canonical link of its /live page."""
@@ -807,9 +872,20 @@ class Feed:
                 log(f"relay: {type(e).__name__}: {e}")
             time.sleep(2.0)
 
+    def run_watching(self, name, every=60.0):
+        src = self.sources[name]
+        while True:
+            try:
+                src.poll_watching()
+            except Exception as e:
+                log(f"{name} watching: {type(e).__name__}: {e}")
+            time.sleep(every)
+
     def start(self):
         for name in self.sources:
             threading.Thread(target=self.run_source, args=(name,), daemon=True, name=f"viewers-{name}").start()
+            if hasattr(self.sources[name], "poll_watching"):  # YouTube's "watching now", once a minute
+                threading.Thread(target=self.run_watching, args=(name,), daemon=True, name=f"watching-{name}").start()
         if self.relay:
             threading.Thread(target=self.run_relay, daemon=True, name="viewers-relay").start()
         return self
@@ -861,7 +937,26 @@ def main():
     ap.add_argument("--fast", action="store_true", help="replay: ignore the recorded timing")
     ap.add_argument("--agents", default="", help="comma-separated agent names (their names are reserved for agents)")
     ap.add_argument("--json", action="store_true", help="print one JSON line per message")
+    ap.add_argument("--watching", type=int, metavar="N", help="with --youtube: read the \"watching now\" count N "
+                    "times a minute apart (both ways: innertube updated_metadata and the watch page), print, exit")
     a = ap.parse_args()
+    if a.watching:
+        if not a.youtube:
+            ap.error("--watching needs --youtube")
+        yt = YouTubeChat(a.youtube)
+        if yt.channel:
+            yt.video = yt.resolve()
+        for i in range(a.watching):
+            row = {"time": time.strftime("%H:%M:%S"), "video": yt.video}
+            for via in ("metadata", "page"):
+                yt.watching_via = via
+                row[via] = yt.poll_watching()
+                if yt.watching_error:
+                    row[via + "_error"] = yt.watching_error
+            print(json.dumps(row), flush=True)
+            if i + 1 < a.watching:
+                time.sleep(60)
+        return
     feed = build(a, agent_names=[n for n in a.agents.split(",") if n])
     if not feed:
         ap.error("give --youtube, --site or --replay")

@@ -1085,5 +1085,41 @@ stf = caster.context_facts({"science": {"stage": 3, "stage_label": model.STAGE_L
 check("the stage fact comes with the packs being made", stf["stage"] == "Oil & blue science" and
       stf["science_packs_made"] == ["red (automation)", "green (logistic)", "blue (chemical)"], str(stf))
 
+# ---- hosts by audience (task-hosts5 item 1): YouTube's "watching now" picks the main writer's model ----
+H, L = "anthropic/claude-opus-5.5", "anthropic/claude-haiku-5.5"
+hm = lambda reads, now: caster.host_model(reads, now, H, L)  # noqa: E731
+check("audience: no reading yet -> main model", hm([], 1000) == H)
+check("audience: unknown count -> main model", hm([(990, None)], 1000) == H)
+check("audience: a reading older than 3 minutes -> main model", hm([(700, 0)], 1000) == H and hm([(830, 0)], 1000) == L)
+check("audience: nobody watching -> low model", hm([(940, 0), (1000, 0)], 1000) == L)
+check("audience: two or more -> main model", hm([(1000, 2)], 1000) == H and hm([(1000, 40)], 1000) == H)
+check("audience: 0 -> 1 in the last 10 minutes -> main model", hm([(400, 0), (460, 1), (1000, 1)], 1000) == H)
+check("audience: the same viewer after 10 minutes -> low model", hm([(400, 0), (460, 1), (1080, 1)], 1080) == L)
+check("audience: down from 2 to 1 -> low model (nobody new)", hm([(900, 2), (960, 1), (1000, 1)], 1000) == L)
+check("audience: one viewer from the first reading counts as arriving then",
+      hm([(500, 1), (1000, 1)], 1000) == H and hm([(300, 1), (1000, 1)], 1000) == L)
+check("audience: a gap (unknown) before the 1 counts as an arrival", hm([(300, 0), (800, None), (900, 1)], 1000) == H)
+check("audience: no low model, or the same one -> main model always",
+      caster.host_model([(1000, 0)], 1000, H, "") == H and caster.host_model([(1000, 0)], 1000, H, H) == H)
+
+_hc = caster.Caster.__new__(caster.Caster)
+_hc.writer, _hc.low = caster.LLMWriter("or", H), caster.LLMWriter("or", L)
+_hc.host, _hc.lock = _hc.writer, __import__("threading").Lock()
+_hc.differ = type("D", (), {"diff": lambda self, s: []})()
+_hrec = []
+_hc.record = lambda **kw: _hrec.append(kw)
+_hc.on_snapshot({"viewers_status": {"youtube": {"watching": 0, "watching_t": 1000}}})
+_hc.on_snapshot({"viewers_status": {"youtube": {"watching": 0, "watching_t": 1000}}})  # the same reading again
+check("audience: the snapshot's readings are kept once each", list(_hc.watch_reads) == [(1000, 0)], list(_hc.watch_reads))
+check("audience: an empty room switches to the low writer, logged", _hc.main_writer(now=1010) is _hc.low
+      and _hrec[-1]["model"] == "or:" + L and _hrec[-1]["watching"] == 0, _hrec)
+_hc.on_snapshot({"viewers_status": {"youtube": {"watching": 1, "watching_t": 1060}}})
+check("audience: a viewer arrives -> back to the main writer", _hc.main_writer(now=1065) is _hc.writer
+      and len(_hrec) == 2 and _hrec[-1]["watching"] == 1, _hrec)
+_hc.main_writer(now=1066)
+check("audience: no switch, no log line", len(_hrec) == 2)
+check("audience: urgent beats keep their own writer (the low one is only the main writer's stand-in)",
+      "self.fast if self.fast and e[\"prio\"] >= URGENT else self.main_writer()" in open(caster.__file__).read())
+
 print("all passed" if not fails else f"{fails} failed")
 sys.exit(1 if fails else 0)

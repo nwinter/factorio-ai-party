@@ -3,6 +3,8 @@
 
 - YouTube: target parsing, channel -> broadcast resolution, the live_chat page (key, version, continuation, backlog),
   get_live_chat replies (text with emoji, Super Chat, owner badge, deletions by item and by author), chat end.
+- YouTube's "watching now": the parser on saved replies (runs/yt-watching-sample.json), the reader's fallback to
+  the watch page after a failure, unknown without a broadcast.
 - Site: first page, `after` paging past 100, hidden seqs.
 - Filters: what passes, what is dropped and why (injection incl. fullwidth, zero-width and spaced-out text; spam,
   links, promo, duplicates, copypasta), false-positive guards from ordinary Factorio chat, name hygiene, rate limits.
@@ -98,6 +100,41 @@ check("youtube: channel ids never leave the reader in plain form", all(m["author
       "UC" not in m["author"] for m in msgs2))
 msgs3, _, _ = yt.poll()
 check("youtube: chat end -> re-resolve later", yt.state == "ended" and yt.cont is None and not msgs3, yt.status())
+
+# ---- YouTube "watching now" (the hosts' writer choice) -----------------------------------------------------------------
+W = json.load(open(os.path.join(HERE, "runs", "yt-watching-sample.json")))
+check("watching: updated_metadata count", V.parse_watching(W["updated_metadata"]) == 1204)
+check("watching: one and zero", (V.parse_watching(W["updated_metadata_one"]), V.parse_watching(W["updated_metadata_zero"]))
+      == (1, 0))
+check("watching: no count -> None", V.parse_watching(W["updated_metadata_no_count"]) is None)
+check("watching: the watch page's ytInitialData", V.parse_watching(W["watch_page_initial_data"]) == 3)
+check("watching: a replay's views are not a live count", V.parse_watching(W["watch_page_replay"]) is None)
+check("watching: text only ('12 watching now', no originalViewCount)", V.parse_watching(
+    {"videoViewCountRenderer": {"viewCount": {"simpleText": "1,012 watching now"}}}) == 1012)
+wcalls = []
+
+
+def w_fetch(url, data=None, headers=None, timeout=15):
+    wcalls.append((url, data))
+    if "updated_metadata" in url:
+        if len(wcalls) > 1:
+            raise V.urllib.error.HTTPError(url, 403, "Forbidden", {}, None)
+        return json.dumps(W["updated_metadata_one"]).encode()
+    if "/watch?v=" in url:
+        return ('<script>var ytInitialData = ' + json.dumps(W["watch_page_initial_data"]) + ';</script>').encode()
+    raise AssertionError(url)
+
+
+wy = V.YouTubeChat("abcDEF12345", fetch=w_fetch)
+wy.key, wy.version = "AIzaFAKE", "2.20261001.00.00"
+check("watching: innertube read", wy.poll_watching(now=100) == 1 and wy.status()["watching"] == 1
+      and wy.status()["watching_t"] == 100 and wcalls[0][1]["videoId"] == "abcDEF12345" and "key=AIzaFAKE" in wcalls[0][0],
+      (wcalls, wy.status()))
+check("watching: a failed read is unknown, with the error", wy.poll_watching(now=160) is None
+      and wy.status()["watching_t"] == 160 and "403" in wy.status()["watching_error"], wy.status())
+check("watching: after a failure the watch page is read", wy.poll_watching(now=220) == 3 and "/watch?v=abcDEF12345"
+      in wcalls[-1][0] and wy.status()["watching_error"] is None, wcalls[-1])
+check("watching: no broadcast -> unknown", V.YouTubeChat("@pog", fetch=w_fetch).poll_watching(now=1) is None)
 
 feed = V.Feed({"youtube": yt})
 feed.ingest(msgs + msgs2, dels2)

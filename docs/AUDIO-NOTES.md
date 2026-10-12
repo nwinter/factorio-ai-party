@@ -4,6 +4,39 @@ Branch `eng/audio`. Two AI casters (Rook, play-by-play; Vale, colour) talk over 
 are spoken in per-agent voices, and the main director client's game sound sits underneath, ducked whenever anyone
 talks. Everything is mixed by OBS through the overlay's browser source.
 
+## Hosts by audience, and a public run as a first attempt (branch eng/audio2, 2026-10-12 morning)
+
+**Model by audience.** The viewers bridge (`viewers.py`, inside serve.py) reads YouTube's "N watching now" for the
+broadcast once a minute: `youtubei/v1/updated_metadata` with the video id (what the watch page polls for its
+counter), or the watch page's ytInitialData once that fails. The snapshot has it as
+`viewers_status.youtube.watching` (None when unknown) and `watching_t` (when it was read). caster.py's
+`host_model` picks the main writer per line:
+
+- `--model` (Opus) with 2+ watching, or with one viewer who arrived in the last 10 minutes (the count went from 0
+  or unknown to 1);
+- `--low-model` (start-team: `POG_CASTER_LOW_MODEL`, default `anthropic/claude-haiku-5.5`; empty: `--model` always)
+  with 0 watching, or 1 for more than 10 minutes, or 1 after a 2;
+- `--model` whenever the count is unknown or older than 3 minutes.
+
+Urgent beats keep `--urgent-model`. Each switch is a caster.log line `[hosts] model or:... (watching N, read Ns
+ago)` and a `host_model` row in the jsonl; every host line also names its model in the log. Check a broadcast by
+hand: `python3 tools/stream/viewers.py --youtube VIDEO_ID --watching 3` (three readings a minute apart, both ways).
+The parser's tests use `tools/stream/runs/yt-watching-sample.json`, written from the innertube reply shape, not
+captured (youtube.com is closed to the engineer sandbox): replace it with a capture.
+
+**A fresh run names no earlier run.** On a first shift the hosts, the analyst and the agents get nothing from the
+team's earlier runs:
+
+- caster.py: no pace baseline by default (`--baseline`/`--space-baseline` were shake1/shake4); the show notes and
+  rules no longer mention earlier runs (the pace note comes with pace facts, only with a baseline). "Previously on"
+  and the shift facts read only the run's own resumed-from chain.
+- analyst.py: the earlier runs (digest section, `history_at/when/milestones/runs/study`, the past-run rules,
+  `notes/past-runs.md`) only with `--past-runs` / `POG_ANALYST_PAST_RUNS=1`; the notes name no run.
+- Agents: the PLAYBOOK's "Harness notes" and the Space Age flight note no longer mention earlier runs or a test
+  world; Claude-style agents' settings deny other runs' folders.
+- `tools/stream/test_fresh_run.py` sends every kind of beat and card of a fresh run through the writer and checks
+  what the hosts, the analyst and its notes get for run ids from before it.
+
 ## Hosts, round 6 (HOSTS6.md, 2026-10-12 early)
 
 Read from shake10 and shake11 (Opus main, Kimi urgent) before shake12 had data. The shake12 review (Sonnet urgent)

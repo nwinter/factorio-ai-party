@@ -4,7 +4,8 @@
 Started by tools/stream/analyst.py for `claude -p --strict-mcp-config --mcp-config ...`. Configuration comes from
 the environment: ANALYST_WORLD (default live) and ANALYST_BOT / ANALYST_PLAYER (the identity harness reads use,
 always with peek), or ANALYST_REPLAY + ANALYST_AT (a past run's score log); ANALYST_RUN_DIR (agents' notes.md);
-POG_KB (knowledge base version). Every tool only reads.
+POG_KB (knowledge base version); POG_ANALYST_PAST_RUNS=1 adds the earlier runs' history_* tools and notes. Every
+tool only reads.
 """
 import json, os, sys, traceback
 
@@ -154,11 +155,24 @@ TOOLS = {
     "history_study": (S("A study document about a past run (shake1, shake2, shake1-transcripts).", name=STR("study")),
                       lambda a: H.study_text(a["name"])[:20000]),
     "notes": (S("Curated notes: milestones, good-vs-poor-play, biters-pollution, space-age, glossary.", topic=STR("file name without .md")),
-              lambda a: open(os.path.join(NOTES, os.path.basename(a["topic"]).replace(".md", "") + ".md")).read()),
+              lambda a: note(a["topic"])),
     "agent_notes": (S("An agent's own notes.md from the current run (their plan and what they think); no agent lists them.",
                       agent=STR("agent folder name", optional=True)),
                     lambda a: agent_notes(a.get("agent"))),
 }
+# The team's earlier runs only with POG_ANALYST_PAST_RUNS=1 (analyst.py --past-runs): a public run is a first attempt,
+# so by default no tool lists, compares with or studies another run. history_world (this run's own shifts) stays.
+PAST_RUN_TOOLS = ("history_at", "history_when", "history_milestones", "history_runs", "history_study")
+if os.environ.get("POG_ANALYST_PAST_RUNS") != "1":
+    for _n in PAST_RUN_TOOLS:
+        TOOLS.pop(_n, None)
+
+
+def note(topic):
+    name = os.path.basename(topic).replace(".md", "")
+    if name == "past-runs" and os.environ.get("POG_ANALYST_PAST_RUNS") != "1":
+        raise FileNotFoundError("no such note")
+    return open(os.path.join(NOTES, name + ".md")).read()
 
 
 def tech(name):

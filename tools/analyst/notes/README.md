@@ -5,7 +5,7 @@ stats come from the dump and the lookup tools; these notes cover pacing, judgeme
 with its sources. Items marked "unverified" or "check the dump" should not be quoted as fact on air.
 
 - `milestones.md`: standard progression from burner phase to rocket and space science, human pacing
-  (speedrun and typical), our AI run benchmarks with game times, and "after X comes Y because Z".
+  (speedrun and typical), and "after X comes Y because Z".
 - `good-vs-poor-play.md`: how research works, machine-state words, signs of good and poor play, standard
   ratios and rates, rough SPM benchmarks by game hour, a checklist for judging the team.
 - `biters-pollution.md`: pollution spread and absorption, what triggers attacks, evolution, unit tiers,
@@ -13,3 +13,5 @@ with its sources. Items marked "unverified" or "check the dump" should not be qu
 - `space-age.md`: platforms, the four planets, spoilage, quality, solar system edge, Shattered Planet,
   promethium science, typical order and pacing.
 - `glossary.md`: terms viewers hear, one line each, plus misconceptions commentators must avoid.
+- `past-runs.md`: the team's earlier runs on this seed (pace benchmarks). The notes tool serves it only with
+  `analyst.py --past-runs`; the other files name no earlier run, so a public run reads as a first attempt.

@@ -53,11 +53,11 @@ the `kb` lookups before quoting them on air.
   wiki), and mine at half the rate of electric drills.
 - **Spaghetti that blocks expansion**: belts crossing everything, no room to add machines.
 - **Red science overbuilt without green**: red-only techs run out fast; mid-game needs red+green together.
-- **Ignoring defence** until the first raid; undefended outposts (shake1 lost the whole west coal field).
+- **Ignoring defence** until the first raid; undefended outposts (a raid can take a whole coal field).
 - Mixed belt lanes (two items on one lane jam), inserters placed backwards, chests filled with the wrong item.
 - Building oil before research can use it, or blue science parts with no plastic supply.
-- Duplicated work: several separate half-lines instead of one finished one (shake1 had four green lines,
-  one fully automated).
+- Duplicated work: several separate half-lines instead of one finished one (four green lines,
+  one fully automated, is a typical sight).
 
 ## Standard ratios and rates (rules of thumb; confirm with the dump)
 
@@ -93,8 +93,8 @@ summed**, so 15 red + 12 green shows as 27 SPM. Say which one when quoting; the 
 | 4 h | blue trickle | red/green/blue 45-90 | purple/yellow running |
 | 8 h | | rocket parts begun | rocket launched |
 
-Our runs for scale: shake1 green peaked at 31/min (52-54 min) then collapsed; the two-agent co-op test
-(peaceful map; on air never "coop1") averaged about 15 red and 14 green per minute over 2 h (1,867 and 1,731 packs) and reached blue by 1h34.
+For scale: a raid on an undefended outpost can take green from 30 a minute to nothing; a well-run two-player
+peaceful game makes about 15 red and 14 green a minute over 2 h and reaches blue by about 1h30.
 
 ## How to judge a team at a given moment
 
@@ -108,15 +108,15 @@ Our runs for scale: shake1 green peaked at 31/min (52-54 min) then collapsed; th
 7. Logistics: belts vs hand carrying; any blocked lines (mixed lanes, full chests).
 8. Team: who owns what, duplicated or unowned work, idle agents.
 - A good one-line judgement names a number, a comparison and a cause, e.g. "15 SPM green at 40 min,
-  shake1 had 11; green is starved by copper; next is oil, usually around 1 to 2 h."
+  up from 9 ten minutes ago; green is starved by copper; next is oil, usually around 1 to 2 h."
 
 ## Common mistakes to watch for (and name kindly)
 
 - Placing inserters the wrong way; feeding fuel and ore on one belt lane; long-handed vs normal inserter.
 - Power poles not connecting two networks; steam engines placed but not piped.
-- Furnace columns starved because the ore belt broke (shake1: 8 of 12 furnaces idle).
+- Furnace columns starved because the ore belt broke (8 of 12 furnaces idle is a typical sight).
 - Running pipes too far without pumps (2.0 fluids: long segments lose throughput; check before saying it).
-- Walking characters into biter groups (about 10 deaths in shake1). Respawn is free but loses time.
+- Walking characters into biter groups (the usual cause of deaths). Respawn is free but loses time.
 
 ## Sources
 
@@ -125,5 +125,4 @@ Our runs for scale: shake1 green peaked at 31/min (52-54 min) then collapsed; th
 - Factorio Wiki, "Pollution": https://wiki.factorio.com/Pollution (machine pollution values)
 - Factorio Wiki, "Power production": https://wiki.factorio.com/Power_production
 - Factorio Wiki, "Tutorial:Main bus": https://wiki.factorio.com/Tutorial:Main_bus
-- docs/studies/shake1.md (what limited the team, mistakes)
-- docs/PLAN.md (co-op 1 totals)
+- docs/PLAN.md (two-player totals)

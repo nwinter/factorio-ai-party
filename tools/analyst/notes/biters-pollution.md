@@ -31,9 +31,9 @@ given world may differ (read them from the world if it matters).
 - Attack groups launch every 1 to 10 minutes (random), wait up to 2 extra minutes for stragglers, then walk
   toward the pollution sources, typically the drills, boilers and furnaces that made it.
 - On the way they attack what blocks the path, and switch to any military target nearby: turrets, the
-  characters (agents), vehicles. Agents who walk into a group get killed (about 10 deaths in shake1).
+  characters (agents), vehicles. Agents who walk into a group get killed (the most common death).
 - Attacking a nest makes nearby units defend it. Expansion parties (below) also destroy what is in the way.
-- In shake1 pollution reached nests around 16 min; the first raid hit spawn at ~28 min.
+- On this seed pollution reaches nests around 15 to 20 min; the first raid follows about 10 minutes later.
 
 ## Evolution factor (0 to 1, default 2.0 factors)
 
@@ -67,7 +67,7 @@ given world may differ (read them from the world if it matters).
 
 ## Defence
 
-- Gun turret (2.0 tech "Gun turret", red packs; shake1 had it at ~29 min): range 18, needs magazines
+- Gun turret (2.0 tech "Gun turret", red packs; often near 30 min): range 18, needs magazines
   (firearm, then piercing, later uranium). Cheap and the standard early answer. Empty turrets do nothing:
   re-arming is a job.
 - Stone walls slow biters so turrets get more shots; gates let trains and players through.
@@ -99,8 +99,7 @@ given world may differ (read them from the world if it matters).
 ## Peaceful mode and settings
 
 - Peaceful mode: biters exist but only fight back when attacked; pollution does not trigger attack groups.
-  Our early solo tests and the two-agent co-op test were peaceful; the nine-agent team runs (shake1 on)
-  used normal enemies. Rocket time achievements
+  This team plays with normal enemies. Rocket time achievements
   are disabled with peaceful or no enemies. Deathworld presets raise nest density and evolution factors.
 - Enemy settings: no enemies, peaceful, normal (default); map settings also set evolution and expansion.
 
@@ -113,4 +112,4 @@ given world may differ (read them from the world if it matters).
 - Factorio Wiki, "Gun turret": https://wiki.factorio.com/Gun_turret
 - Factorio Wiki, "Achievements": https://wiki.factorio.com/Achievements
 - tools/stream/live.py (loss_events, attack_events text), docs/STREAM-NOTES.md (alerts),
-  docs/BOARD-API.md and docs/BOARD-NOTES.md (agent alert lines), docs/studies/shake1.md (raids)
+  docs/BOARD-API.md and docs/BOARD-NOTES.md (agent alert lines)

@@ -171,7 +171,7 @@ It refuses, with the reason, when shake11 ran no agents (no notes.md), the quota
 does not answer, another start-team or shift change is running, shake12 already started, or shake11 is streaming and
 neither `--stream` nor `--no-stream` was given; `--ignore quota` (or `notes`, `box`, `obs`, `running`, `stream`)
 skips a check. shake12 gets shake11's switches (`POG_BROKER`, `POG_FULL_TOOLS`, `POG_SPACE_AGE`, `POG_YOUTUBE`,
-`POG_CASTER_MODEL`, `POG_CASTER_URGENT`, `POG_CASTER`, `POG_ANALYST`, `POG_PLAYERS`, the viewer relay's current state
+`POG_CASTER_MODEL`, `POG_CASTER_URGENT`, `POG_CASTER_LOW_MODEL`, `POG_CASTER`, `POG_ANALYST`, `POG_PLAYERS`, the viewer relay's current state
 and the team file), read from `runs/shake11/switches.env` (start-team writes it), else from its running helpers and
 logs (`tools/shift_change.py switches runs/shake11 --explain` shows them and where each came from), plus
 `POG_RESUME=shake11` and `POG_NEXT_SHIFT` at shake12's end. Three minutes after the start it prints a health line

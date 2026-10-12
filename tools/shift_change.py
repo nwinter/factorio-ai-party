@@ -30,7 +30,7 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KEYS = ["POG_BROKER", "POG_FULL_TOOLS", "POG_SPACE_AGE", "POG_YOUTUBE", "POG_CASTER_MODEL", "POG_CASTER_URGENT",
-        "POG_CASTER", "POG_ANALYST", "POG_PLAYERS", "POG_VIEWER_RELAY", "POG_TEAM_FILE"]
+        "POG_CASTER_LOW_MODEL", "POG_CASTER", "POG_ANALYST", "POG_PLAYERS", "POG_VIEWER_RELAY", "POG_TEAM_FILE"]
 # A harness fault in a reply ("runtime:8746 attempt to compare number with nil"), not an agent's argument error: those
 # carry the same "runtime.lua:NNN:" position (radius out of range, unknown field, out of reach; shake12 had 20 in 7 min).
 LUA_ERROR = re.compile(r"attempt to (compare|index|call|perform arithmetic|concatenate)|bad argument|stack overflow")
@@ -109,6 +109,8 @@ def switches(rundir, ps=ps_args):
             put("POG_CASTER_MODEL", after(words, "--model") if "--writer" in words else "", "caster.py's arguments")
             if "--urgent-model" in words:
                 put("POG_CASTER_URGENT", after(words, "--urgent-model"), "caster.py's arguments")
+            if "--low-model" in words:  # a caster from before --low-model: unset, so start-team's default applies
+                put("POG_CASTER_LOW_MODEL", after(words, "--low-model"), "caster.py's arguments")
         if "analyst.py" in joined:
             put("POG_ANALYST", "1", "analyst.py running")
     # 3. The start log and the run's files.
