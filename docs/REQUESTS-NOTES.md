@@ -88,6 +88,25 @@ Answer: "move_to now takes combat=true (fires at enemies in range while you walk
 retreat={x,y} (low health or no ammo walks you there still firing) and every kite end says why, with ammo and enemies
 left."
 
+## #167 astra: construct leaves tree blockers behind after ghost placement
+
+Cause: `mark_obstacles` (place_ghosts and construct) searched an area 0.05 tiles inside the ghost's footprint. A tree
+whose collision box only reaches the ghost's edge (tree-08 at (-80.9375,3.25) by the belt at (-81.5,2.5)) lies outside
+that area, yet the engine counts the touching edge as blocking; it was never marked, construct tried the belt twice and
+reported it failed. Fix: every tree or rock whose box reaches the entity's placement box (its collision box at the ghost,
+edges touching included) is marked and mined first. When a build still fails, construct looks 0.3 tiles further, marks
+and mines what it finds and builds again without spending a try. The result lists `blockers` (name, position, the
+ghost and where, cleared), a ghost left blocked names the blocker and its position, and the compact `--wait` reply now
+shows construct's built, mined, missing, failed and blockers (it showed only the outcome). Tests:
+`tests/construction.lua` (a tree touching the edge; one the plan misses that the build bumps into; one that cannot be
+mined), now part of `npm test`; `tests/waits.test.ts` (the compact reply). Live check: place a belt ghost beside a
+tree whose trunk edge meets the tile and run `construct --wait`: the tree is mined and the belt built, and
+`blockers` names the tree.
+
+Answer: "Fixed: construct marks and mines trees and rocks whose box only touches a ghost's edge, and when a build still
+bumps into one it mines that blocker and builds again; the --wait result lists blockers with their coordinates (and
+built, failed, missing)."
+
 ## Deploying
 
 Runtime only, no control.lua change; the locals guard passes. `fh deploy` during a shift is safe for running agents:
