@@ -237,7 +237,12 @@ class Model:
         self.tick = obs.get("tick", self.tick)
         self.paused = bool(obs.get("paused"))
         game_sec = obs.get("game_seconds", self.tick / 60)
+        team = self.run.get("agents") or {}
         for a in obs.get("agents", []):
+            # cards are the run's team only (stream.json agents, from team.txt); shake8 showed Nick, a human player,
+            # as a tenth card ("model ? · profile not set · dead"). Without a team in the run, everyone counts.
+            if team and a.get("name") not in team:
+                continue
             self._ingest_agent(a, now)
         for m in obs.get("chat", []):
             self._ingest_chat(m, now)

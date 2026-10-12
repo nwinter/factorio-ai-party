@@ -199,12 +199,8 @@ class LiveSource:
                     a["surface"], a["platform"] = st["surface"], st.get("platform")
                 a["dead_until_tick"] = st.get("dead_until_tick")
             obs["agents"].append(a)
-        for name, p in profiles.items():
-            if name not in self.agents_cfg:
-                obs["agents"].append(dict({k: p.get(k) for k in ("name", "kind", "display_name", "color", "glyph", "motto", "avatar",
-                                                                  "position", "alive", "active", "last_said", "pronouns",
-                                                                  "surface", "platform", "where", "travel")},
-                                          profile_set=any(p.get(k) for k in ("display_name", "color", "glyph"))))
+        # Only `names` become agents: the run's team, or every profile when the run lists none. Profiles outside the
+        # team (a human player such as Nick in shake8, fh players eng/players adds) are not agent cards.
 
         try:
             res, _ = self.h.dispatch("chat", {"since": self.chat_since, "limit": 30, "peek": True}, **self.reader())
