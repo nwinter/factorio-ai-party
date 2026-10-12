@@ -426,6 +426,19 @@
   const VIEWER_RECENT_S = 300;
   // Pinned viewer lines and Q&A pairs (#chat-pins, above the feed), newest first. Viewers' words: textContent only.
   const pinned = new Map();
+  // the operator's own line (game chat from `server`, model lane "operator"): an OP badge where agents have an avatar
+  function operatorRow(m) {
+    const row = el("div", "msg operator");
+    const content = el("div", "content");
+    const meta = el("div", "meta");
+    row._from = el("span", "from", "Operator");
+    row._when = el("span", "when");
+    meta.append(row._from, el("span", "tag otag", "operator"), row._when);
+    row._text = el("div", "text", clean(m.text));
+    content.append(meta, row._text);
+    row.append(el("div", "obadge", "OP"), content);
+    return row;
+  }
   function renderPins(s, pins) {
     const box = $("chat-pins");
     if (!box) return;
@@ -433,25 +446,32 @@
     let prev = null;
     for (const p of pins) {
       keys.add(p.key);
+      const sig = p.keys.join("|"); // a second answer to the same question rebuilds its pin
       let node = pinned.get(p.key);
+      if (node && node._sig !== sig) { node.remove(); node = null; }
       if (!node) {
         node = el("div", "pin " + p.kind);
-        const q = el("div", "msg viewer q");
-        const qc = el("div", "content");
-        const qm = el("div", "meta");
-        qm.append(el("span", "from" + (p.v.staff ? " staff" : ""), p.v.name || "viewer"),
-          el("span", "tag vtag", p.kind === "qa" ? "viewer asked" : "viewer"));
-        qc.append(qm, el("div", "text", p.v.text || ""));
-        q.append(el("div", "vbadge" + (p.v.source === "site" ? " site" : ""), p.v.source === "site" ? "SITE" : "YT"), qc);
-        node.append(q);
-        if (p.m) {
-          const ag = agentFor(s, p.m);
+        node._sig = sig;
+        if (p.kind === "operator") {
+          node.append(operatorRow(p.m));
+        } else {
+          const q = el("div", "msg viewer q");
+          const qc = el("div", "content");
+          const qm = el("div", "meta");
+          qm.append(el("span", "from" + (p.v.staff ? " staff" : ""), p.v.name || "viewer"),
+            el("span", "tag vtag", p.kind === "qa" ? "viewer asked" : "viewer"));
+          qc.append(qm, el("div", "text", p.v.text || ""));
+          q.append(el("div", "vbadge" + (p.v.source === "site" ? " site" : ""), p.v.source === "site" ? "SITE" : "YT"), qc);
+          node.append(q);
+        }
+        for (const m of p.answers || []) {
+          const ag = agentFor(s, m);
           const a = el("div", "msg answer");
-          const av = avatar(ag || { name: p.m.from || "?", display_name: p.m.from || "?", color: "#5a4a2e", glyph: "?" }, "sm");
+          const av = avatar(ag || { name: m.from || "?", display_name: m.from || "?", color: "#5a4a2e", glyph: "?" }, "sm");
           const ac = el("div", "content");
           const am = el("div", "meta");
-          am.append(el("span", "from", ag ? ag.display_name : p.m.from), el("span", "tag atag", "answers"));
-          ac.append(am, el("div", "text", clean(p.m.text)));
+          am.append(el("span", "from", ag ? ag.display_name : m.from), el("span", "tag atag", "answers"));
+          ac.append(am, el("div", "text", clean(m.text)));
           a.append(av, ac);
           if (ag) applyPalette(a, ag);
           node.append(a);
@@ -477,9 +497,9 @@
     // a viewer's line and an agent's answer to it are pinned above the feed for 25 s (static/chatfeed.js viewerPins)
     // and leave the feed meanwhile; tells and talk scroll below them
     const pins = window.pogChat && window.pogChat.viewerPins ? window.pogChat.viewerPins(s) : [];
-    const pinnedKeys = new Set(pins.flatMap((p) => [p.vkey, p.mkey]).filter(Boolean));
+    const pinnedKeys = new Set(pins.flatMap((p) => p.keys || []));
     renderPins(s, pins);
-    const talk = all.filter((m) => !m.tell && ((m.lane || "talk") === "talk" || m.lane === "notice")).slice(-10)
+    const talk = all.filter((m) => !m.tell && ((m.lane || "talk") === "talk" || m.lane === "notice" || m.lane === "operator")).slice(-10)
       .map((m) => ({ m, t: m.t || s.now, key: String(m.seq ?? m.tick + m.from + m.text) }))
       .filter((it) => !pinnedKeys.has(it.key));
     const tells = (window.pogChat ? window.pogChat.foldTells(all.filter((m) => m.tell)) : []).slice(-6)
@@ -532,6 +552,9 @@
         content.append(meta, el("div", "text", v.text || ""));
         node.append(el("div", "vbadge" + (v.source === "site" ? " site" : ""), v.source === "site" ? "SITE" : "YT"), content);
         shown.set(key, node);
+      } else if (!node && m.lane === "operator") {
+        node = operatorRow(m);
+        shown.set(key, node);
       } else if (!node) {
         node = el("div", "msg" + (ag ? "" : " server") + (m.aloud ? " aloud" : "") + (m.confess ? " confess" : ""));
         node._av = avatar(ag || { name: m.from || "server", display_name: m.from || "server", color: "#5a4a2e", glyph: "⚙", tool: true }, "sm");
@@ -547,7 +570,7 @@
         node.append(node._av, content);
         shown.set(key, node);
       }
-      if (m) {
+      if (m && m.lane !== "operator") {
         if (ag) { applyPalette(node, ag); fillAvatar(node._av, ag, "sm"); }
         setText(node._from, ag ? ag.display_name : m.from);
       }

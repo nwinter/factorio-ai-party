@@ -85,7 +85,8 @@ except Exception:  # caster.py missing or failing to import: everything from age
 
 
 def chat_lane(entry):
-    """'talk' (banter, strategy, emotion, `aloud`, confessionals: the big chat lane), 'notice' (harness notices: votes
+    """'talk' (banter, strategy, emotion, `aloud`, confessionals: the big chat lane), 'operator' (the operator's own
+    lines, from `server`), 'notice' (harness notices: votes
     and their results, humans joining and leaving; shown in the chat feed), 'log' (coordinates, counts,
     acknowledgements, server lines: not shown), or 'viewer' (a viewer line relayed into the game chat: the feed shows it
     once, from the viewers list)."""
@@ -94,6 +95,10 @@ def chat_lane(entry):
         return "notice"
     if entry.get("viewer") or frm.startswith("viewer") or clean_text(entry.get("text")).lower().startswith("viewer "):
         return "viewer"
+    # the operator writes in game chat as `server` (shift01 16:25, thanking a viewer): shown, pinned and voiced as the
+    # Operator; "harness vN: ..." changelog lines stay with the board panel
+    if frm == "server" and not entry.get("agent") and not CHANGELOG_RE.match(clean_text(entry.get("text"))):
+        return "operator"
     if entry.get("confess") or entry.get("aloud"):
         return "talk"
     if not entry.get("agent"):
@@ -475,13 +480,16 @@ class Model:
             ag.bump(2, now)
             ag.last_activity_t = now
 
-    def chat_window(self, talk=12, other=8, tells=24):
-        """The last `talk` conversation lines, the last `tells` tells (enough for the page to fold a burst) and the
-        last `other` log / viewer lines, in arrival order: one kind must not push another off the page."""
+    def chat_window(self, talk=12, other=8, tells=24, heard=12):
+        """The last `talk` conversation lines, the last `tells` tells (enough for the page to fold a burst), the last
+        `heard` viewer and operator lines (the page pairs agents' answers with the viewer lines they saw in game,
+        chatfeed.js viewerPins) and the last `other` log / notice lines, in arrival order: one kind must not push
+        another off the page."""
         msgs = list(self.chat)
         keep = {id(m) for m in [m for m in msgs if m.get("lane") == "talk"][-talk:]}
         keep |= {id(m) for m in [m for m in msgs if m.get("lane") == "tell"][-tells:]}
-        keep |= {id(m) for m in [m for m in msgs if m.get("lane") not in ("talk", "tell")][-other:]}
+        keep |= {id(m) for m in [m for m in msgs if m.get("lane") in ("viewer", "operator")][-heard:]}
+        keep |= {id(m) for m in [m for m in msgs if m.get("lane") not in ("talk", "tell", "viewer", "operator")][-other:]}
         return [m for m in msgs if id(m) in keep]
 
     def _ingest_confession(self, c, now):

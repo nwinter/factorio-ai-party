@@ -61,26 +61,96 @@
   const viewerKey = (v) => "v:" + String(v.id || v.seq);
   const talkKey = (m) => String(m.seq ?? m.tick + m.from + m.text);
 
-  // s: the snapshot (now, chat, viewers). -> [{key, kind: "qa"|"viewer", v, m (the answer, qa only), t (pinned
-  // since), vkey, mkey}], newest first.
+  // A line's age: wall time, or game time when that says older. serve.py stamps the chat it reads at a restart with
+  // the restart time (shift01 16:31: twelve-minute-old answers pinned again).
+  function ageOf(s, m) {
+    const wall = (s.now || 0) - (m.t || 0);
+    const game = s.tick != null && m.tick != null ? (s.tick - m.tick) / 60 : -Infinity;
+    return Math.max(wall, game);
+  }
+
+  // Words for matching an answer with the question it answers: 4+ letters, not the common ones, compared on their
+  // first 5 letters ("brightness" ~ "bright").
+  const STOP = new Set(("that this with your have what will from they them their there when where which would could " +
+    "should about just also than then into only some more most very well were been being does doing over here").split(" "));
+  function words(text, skip) {
+    const out = new Set();
+    for (const w of String(text || "").toLowerCase().match(/[a-z0-9']{4,}/g) || []) {
+      if (!STOP.has(w) && !skip.has(w)) out.add(w.slice(0, 5));
+    }
+    return out;
+  }
+  const overlap = (a, b) => { let n = 0; for (const w of a) if (b.has(w)) n++; return n; };
+  // the relay's "@astra " address before a viewer's words (viewers.py Relay.line), and its cut-off "…"
+  const bare = (text) => String(text || "").replace(/^@\S+\s+/, "").replace(/…$/, "").trim();
+  const seqOf = (m) => (typeof m.seq === "number" ? m.seq : null);
+
+  // The viewer line an answer answers. The agents saw the viewer lines relayed into the game chat (lane "viewer",
+  // from "viewer NAME"), so those count first: among that viewer's lines before the answer in the last 10 minutes,
+  // the one sharing the most words with it, else the most recent (shift01 16:32: both pins showed Joonazan's latest
+  // line under answers to two earlier questions). Without game copies, the viewer's lane lines the same way.
+  function questionFor(s, m, copies, viewers) {
+    const before = (c) => (seqOf(c) != null && seqOf(m) != null ? c.seq < m.seq
+      : c.tick != null && m.tick != null ? c.tick <= m.tick : (c.t || 0) <= (m.t || 0) + 2);
+    const recent = (c) => (c.tick != null && m.tick != null ? (m.tick - c.tick) / 60 : (m.t || 0) - (c.t || 0)) <= ANSWER_WINDOW_S;
+    const names = [...new Set(copies.map((c) => c.vname).concat(viewers.map((v) => v.name)))];
+    const name = names.find((n) => answersViewer(m.text, n));
+    if (!name) return null;
+    const skip = new Set(viewerShortNames(name));
+    const aw = words(m.text, skip);
+    const best = (rows, text) => {
+      let pick = null, score = -1;
+      for (const r of rows) { const sc = overlap(aw, words(text(r), skip)); if (sc >= score) { pick = r; score = sc; } }
+      return pick; // rows oldest first: on a tie the most recent wins
+    };
+    const cs = copies.filter((c) => c.vname === name && before(c) && recent(c));
+    const lane = viewers.filter((v) => v.name === name);
+    if (cs.length) {
+      const c = best(cs, (r) => bare(r.text));
+      const body = bare(c.text).toLowerCase();
+      // the same line in the viewers lane (its YT/SITE badge and key), else the game copy itself
+      const v = [...lane].reverse().find((v) => {
+        const t = String(v.text || "").toLowerCase();
+        return body && (t.startsWith(body) || body.startsWith(t));
+      });
+      return v || { id: "c" + String(c.seq ?? c.tick), name, text: bare(c.text), t: c.t, source: "youtube" };
+    }
+    return best(lane.filter((v) => (v.t || 0) <= (m.t || 0) + 2 && (m.t || 0) - (v.t || 0) <= ANSWER_WINDOW_S), (r) => r.text);
+  }
+
+  // s: the snapshot (now, tick, chat, viewers). -> [{key, kind: "qa"|"viewer"|"operator", v (the viewer line), answers
+  // (agent lines, qa only), m (operator only), t (pinned since), keys (the feed keys of the pinned lines)}], newest
+  // first. Two answers to one question share its pin.
   function viewerPins(s) {
     const now = s.now || 0;
+    const chat = (s.chat || []).filter(Boolean);
     const viewers = (s.viewers || []).filter((v) => v && v.name && v.text).sort((a, b) => (a.t || 0) - (b.t || 0));
-    const answers = (s.chat || []).filter((m) => m && !m.tell && !m.viewer && m.lane !== "viewer" && m.lane !== "log"
-      && m.lane !== "notice" && m.agent && now - (m.t || 0) < PIN_S && (m.t || 0) <= now + 5);
-    const pins = [], paired = new Set();
+    const copies = chat.filter((m) => m.viewer || m.lane === "viewer")
+      .map((m) => ({ ...m, vname: String(m.from || "").replace(/^viewer\s+/i, "") }));
+    const fresh = (m) => ageOf(s, m) < PIN_S && (m.t || 0) <= now + 5;
+    const answers = chat.filter((m) => !m.tell && !m.viewer && m.agent && fresh(m)
+      && !["viewer", "log", "notice", "operator"].includes(m.lane));
+    const byQ = new Map();
     for (const m of answers) {
-      let q = null; // the latest line before the answer from a viewer it names
-      for (const v of viewers) {
-        if ((v.t || 0) <= (m.t || 0) + 2 && (m.t || 0) - (v.t || 0) <= ANSWER_WINDOW_S && answersViewer(m.text, v.name)) q = v;
-      }
+      const q = questionFor(s, m, copies, viewers);
       if (!q) continue;
-      paired.add(viewerKey(q));
-      pins.push({ key: "qa:" + talkKey(m), kind: "qa", v: q, m, t: m.t || now, vkey: viewerKey(q), mkey: talkKey(m) });
+      const k = viewerKey(q);
+      const p = byQ.get(k) || { key: "qa:" + k, kind: "qa", v: q, answers: [], t: 0, keys: [k] };
+      p.answers.push(m);
+      p.keys.push(talkKey(m));
+      p.t = Math.max(p.t, now - ageOf(s, m));
+      byQ.set(k, p);
     }
+    for (const p of byQ.values()) p.answers.sort((a, b) => (a.t || 0) - (b.t || 0));
+    const pins = [...byQ.values()];
     for (const v of viewers) {
-      if (now - (v.t || 0) < PIN_S && (v.t || 0) <= now + 5 && !paired.has(viewerKey(v))) {
-        pins.push({ key: "pv:" + viewerKey(v), kind: "viewer", v, t: v.t || now, vkey: viewerKey(v), mkey: null });
+      if (now - (v.t || 0) < PIN_S && (v.t || 0) <= now + 5 && !byQ.has(viewerKey(v))) {
+        pins.push({ key: "pv:" + viewerKey(v), kind: "viewer", v, t: v.t || now, keys: [viewerKey(v)] });
+      }
+    }
+    for (const m of chat) {
+      if (m.lane === "operator" && fresh(m)) {
+        pins.push({ key: "op:" + talkKey(m), kind: "operator", m, t: now - ageOf(s, m), keys: [talkKey(m)] });
       }
     }
     return pins.sort((a, b) => b.t - a.t).slice(0, PIN_MAX);
