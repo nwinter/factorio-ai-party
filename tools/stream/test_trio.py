@@ -148,8 +148,24 @@ def see_through():
                 assert "background" not in body, (s, body)
 
 
+def hint_bars():
+    """The cam clients keep a stale "Press Tab to skip cutscene" at the bottom centre (2026-10-12, spectators already):
+    every view on the program has a full-width bottom bar at least the main bar's share of its height (44/1032)."""
+    import json
+    css = open(os.path.join(HERE, "static", "overlay.css")).read()
+    js = open(os.path.join(HERE, "static", "overlay.js")).read()
+    assert 'for (const id of ["cam-main", "cam-cam2", "cam-cam3", "cam-inset"])' in js and '"cam-bar"' in js
+    trio = json.load(open(os.path.join(HERE, "static", "layout-3cam.json")))["cams"]
+    inset = json.load(open(os.path.join(HERE, "static", "layout.json")))["cams"]["inset"]
+    share = 44 / 1032
+    assert "body.onecam #cam-cam2 .cam-bar, body.onecam #cam-cam3 .cam-bar, body.onecam #cam-inset .cam-bar" in css
+    assert "left: 0; right: 0; bottom: 0; height: 32px;" in css and "body.onecam #cam-inset .cam-bar { height: 26px; }" in css
+    assert 32 / trio["cam2"][3] >= share and 32 / trio["cam3"][3] >= share and 26 / inset[3] >= share
+
+
 def main():
     see_through()
+    hint_bars()
     busy()
     close_together()
     holds_and_urgent()

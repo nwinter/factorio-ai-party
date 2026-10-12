@@ -571,7 +571,17 @@ body[data-density="3"] .bar { height: 8px; }
 
 /* ---- the trio (onecam.py): one big tile and two small ones; one camera otherwise (no small tiles) ---- */
 body.onecam:not(.trio) #cam-cam2, body.onecam:not(.trio) #cam-cam3 { display: none; }
-body.trio #cam-cam2 .cam-label, body.trio #cam-cam3 .cam-label { font-size: 17px; max-width: calc(100% - 16px); }
+/* Small tiles and the inset get a bottom bar like the on-air view's, holding the label: the client's stale "Press
+   Tab to skip cutscene" hint (bottom centre, inside the band the 44 px main bar covers: 4.3% of the view's height)
+   would show there otherwise (cam1, 2026-10-12, controller already spectator). 32 px of 336 and 26 of 230: ~10%. */
+body.onecam #cam-cam2 .cam-bar, body.onecam #cam-cam3 .cam-bar, body.onecam #cam-inset .cam-bar { position: absolute;
+  left: 0; right: 0; bottom: 0; height: 32px; background: linear-gradient(180deg, rgba(var(--fx-frame-rgb), 0.97),
+  rgba(36, 35, 36, 0.99)); box-shadow: var(--fx-bevel), 0 -3px 10px rgba(0, 0, 0, 0.45); }
+body.onecam #cam-inset .cam-bar { height: 26px; }
+body.trio #cam-cam2 .cam-label, body.trio #cam-cam3 .cam-label { top: auto; bottom: 0; left: 0; height: 32px;
+  box-sizing: border-box; max-width: 100%; padding: 0 14px 0 5px; border-radius: 0; background: transparent;
+  box-shadow: none; z-index: 1; font-size: 16px; transform: none; }
+body.trio #cam-cam2 .cam-label .avatar, body.trio #cam-cam3 .cam-label .avatar { width: 24px !important; height: 24px !important; }
 body.trio #cam-cam2 .cam-label .doing, body.trio #cam-cam3 .cam-label .doing { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* ---- one camera on air (layout.json mode "onecam", tools/stream/onecam.py) ----
@@ -597,4 +607,6 @@ body.onecam .alert .ico { width: 26px; height: 26px; font-size: 14px; }
 #cam-inset { opacity: 0; transition: opacity 400ms ease; border-color: rgba(224, 78, 58, 0.75); --bracket: rgba(224, 78, 58, 0.9); }
 #cam-inset.on { opacity: 1; }
 #cam-inset .cam-label { left: 6px; top: auto; bottom: 6px; font-size: 14px; padding: 3px 10px 3px 4px; max-width: calc(100% - 12px); }
+body.onecam #cam-inset .cam-label { left: 0; bottom: 0; height: 26px; box-sizing: border-box; max-width: 100%;
+  padding: 0 10px 0 3px; border-radius: 0; background: transparent; box-shadow: none; z-index: 1; transform: none; }
 #cam-inset .cam-label .avatar { width: 22px !important; height: 22px !important; }
