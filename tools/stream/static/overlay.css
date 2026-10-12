@@ -588,8 +588,8 @@ body.onecam #alerts { left: auto; top: auto; width: auto; max-width: 640px; alig
 body.onecam .alert { font-size: 17px; padding: 4px 16px 4px 5px; gap: 9px; max-width: 640px; white-space: nowrap; }
 body.onecam .alert > span:last-child { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 body.onecam .alert .ico { width: 26px; height: 26px; font-size: 14px; }
-#cam-inset { opacity: 0; transition: opacity 400ms ease; border-color: rgba(224, 78, 58, 0.75); --bracket: rgba(224, 78, 58, 0.9);
-  background: #000; }
+/* No background: the overlay sits above the captures in OBS, so a fill here would hide the inset camera under it. */
+#cam-inset { opacity: 0; transition: opacity 400ms ease; border-color: rgba(224, 78, 58, 0.75); --bracket: rgba(224, 78, 58, 0.9); }
 #cam-inset.on { opacity: 1; }
 #cam-inset .cam-label { left: 6px; top: auto; bottom: 6px; font-size: 14px; padding: 3px 10px 3px 4px; max-width: calc(100% - 12px); }
 #cam-inset .cam-label .avatar { width: 22px !important; height: 22px !important; }
