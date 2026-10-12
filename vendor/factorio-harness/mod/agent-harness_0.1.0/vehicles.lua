@@ -17,11 +17,39 @@ return function(api)
       go_to='{x,y}: a spidertron walks there by itself (the one at position, or the one you are in)',
       ticks='with drive', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
   }
+  local TYPES = {}
+  for t in pairs(SEATED) do TYPES[#TYPES+1] = t end
+  table.sort(TYPES)
+  -- The vehicle at a position: only vehicles count, so the rail under a
+  -- locomotive does not make the target ambiguous (live check 00:40).
+  local function find_vehicle(p, a)
+    local pos = api.position(a.position)
+    api.assert_visible(p, pos, 'vehicle')
+    local best, bd
+    for _, e in pairs(p.surface.find_entities_filtered{position=pos, radius=2.5, type=TYPES}) do
+      if e.valid then
+        local d = api.distance(e.position, pos)
+        if not bd or d < bd then best, bd = e, d end
+      end
+    end
+    assert(best, string.format('no vehicle at (%g,%g) (car, tank, spidertron, locomotive or wagon)', pos.x, pos.y))
+    api.friendly(p, best)
+    return best
+  end
+  -- Who sits in a seat, as a unit number (a player's character, or a character).
+  local function unit_of(x)
+    if not x then return nil end
+    local ok, u = pcall(function()
+      if x.object_name == 'LuaPlayer' then return x.character and x.character.unit_number end
+      return x.unit_number
+    end)
+    return ok and u or nil
+  end
   local function seat_of(c)
     local v = c.vehicle
     if not (v and v.valid) then return nil end
     local ok, d = pcall(v.get_driver)
-    local driver = ok and d and (d == c or (d.character and d.character == c))
+    local driver = ok and unit_of(d) ~= nil and unit_of(d) == c.unit_number
     return v, driver and 'driver' or 'passenger'
   end
   local function view(c)
@@ -38,22 +66,27 @@ return function(api)
     if a.enter then
       assert(a.enter == true, 'enter must be true')
       assert(not c.vehicle, 'already in a vehicle: vehicle {exit: true} first')
-      local e = api.entity(p, a); api.friendly(p, e)
-      assert(SEATED[e.type], e.name .. ' is not a vehicle you can get into')
+      local e = find_vehicle(p, a)
       local d = api.distance(c.position, e.position)
       assert(d <= ENTER_REACH, string.format('%s is %.1f tiles away; get within %d tiles to get in', e.name, d, ENTER_REACH))
       local ok, driver = pcall(e.get_driver)
+      local seat
       if not (ok and driver) then
-        e.set_driver(c)
+        e.set_driver(c); seat = 'driver'
       elseif e.type == 'car' or e.type == 'spider-vehicle' then
         local ok2, passenger = pcall(e.get_passenger)
         assert(not (ok2 and passenger), e.name .. ' is full')
-        e.set_passenger(c)
+        e.set_passenger(c); seat = 'passenger'
       else
         error(e.name .. ' is taken: its one seat has someone in it', 0)
       end
-      assert(c.vehicle == e, 'the game did not seat the character in ' .. e.name)
-      return view(c)
+      -- Read the seat back from the vehicle: the game decides, not the call.
+      local okr, who = pcall(seat == 'driver' and e.get_driver or e.get_passenger)
+      assert(okr and unit_of(who) == c.unit_number, string.format('the game did not seat the character in %s (its %s seat holds %s)',
+        e.name, seat, who and tostring(unit_of(who) or who.name) or 'nobody'))
+      local out = view(c)
+      if out.vehicle then out.vehicle.seat = seat end
+      return out
     end
     if a.exit then
       assert(a.exit == true, 'exit must be true')
@@ -66,14 +99,21 @@ return function(api)
     if a.go_to then
       local pos = api.position(a.go_to)
       local spider
-      if a.position then spider = api.entity(p, a); api.friendly(p, spider) else spider = c.vehicle end
+      if a.position then spider = find_vehicle(p, a) else spider = c.vehicle end
       assert(spider and spider.valid and spider.type == 'spider-vehicle', 'go_to is for a spidertron (give its position, or ride it)')
-      local ok, err = pcall(function() spider.autopilot_destination = pos end)
-      if not ok then
-        ok, err = pcall(function() spider.add_autopilot_destination(pos) end)
-      end
+      local ok, err = pcall(function() spider.add_autopilot_destination(pos) end)
+      if not ok then ok, err = pcall(function() spider.autopilot_destination = pos end) end
       assert(ok, 'the game refused the destination: ' .. tostring(err))
-      return {spidertron=spider.name, position=spider.position, go_to=pos}
+      local out = {spidertron=spider.name, position=spider.position, go_to=pos}
+      -- A spidertron with a fuel slot and nothing to burn stands still.
+      pcall(function()
+        local fuel = spider.get_fuel_inventory and spider.get_fuel_inventory()
+        local burning = spider.burner and spider.burner.currently_burning
+        if fuel and fuel.is_empty() and not burning then
+          out.note = 'it has no fuel and will not walk: transfer fuel into it (rocket-fuel, nuclear-fuel, ...)'
+        end
+      end)
+      return out
     end
     if a.drive then
       local v, seat = seat_of(c)
@@ -99,11 +139,14 @@ return function(api)
     local v = c and c.valid and c.vehicle
     if not (v and v.valid) then return 'interrupted' end
     local R = defines.riding
+    -- The car's own riding state: what the driver's keys set, and the one a
+    -- script character (a bot, no player) can drive by (live check 00:40).
+    local function ride(acc, dir) v.riding_state = {acceleration=acc, direction=dir} end
     local d = api.distance(v.position, action.target)
     if d <= 3 then
-      p.riding_state = {acceleration=R.acceleration.braking, direction=R.direction.straight}
+      ride(R.acceleration.braking, R.direction.straight)
       if math.abs(v.speed or 0) < 0.01 then
-        p.riding_state = {acceleration=R.acceleration.nothing, direction=R.direction.straight}
+        ride(R.acceleration.nothing, R.direction.straight)
         return 'arrived'
       end
       return nil
@@ -114,12 +157,12 @@ return function(api)
     -- Slow down for sharp turns and the last stretch.
     local fast = math.abs(diff) < 0.15 and d > 12
     local accel = (fast or math.abs(v.speed or 0) < 0.08) and R.acceleration.accelerating or R.acceleration.nothing
-    p.riding_state = {acceleration=accel, direction=turn}
+    ride(accel, turn)
     -- No progress for 3 s: blocked (a tree, a building, water).
     if api.distance(v.position, action.last) < 0.05 then
       action.still = action.still + 1
       if action.still >= 180 then
-        p.riding_state = {acceleration=R.acceleration.nothing, direction=R.direction.straight}
+        ride(R.acceleration.nothing, R.direction.straight)
         return 'blocked'
       end
     else action.still, action.last = 0, v.position end
@@ -127,7 +170,10 @@ return function(api)
   end
   function M.stop(p)
     local R = defines.riding
-    pcall(function() p.riding_state = {acceleration=R.acceleration.nothing, direction=R.direction.straight} end)
+    pcall(function()
+      local v = p.character and p.character.vehicle
+      if v and v.valid then v.riding_state = {acceleration=R.acceleration.nothing, direction=R.direction.straight} end
+    end)
   end
   return M
 end

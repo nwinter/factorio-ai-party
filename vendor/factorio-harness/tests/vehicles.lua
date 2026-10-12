@@ -81,7 +81,9 @@ defines.riding={acceleration={nothing=0,accelerating=1,braking=2,reversing=3},di
 local world={}
 surface.find_entities_filtered=function(f)
   local out={}
-  if f.position then for _,e in ipairs(world) do if e.valid and math.abs(e.position.x-f.position.x)<1 and math.abs(e.position.y-f.position.y)<1 then out[#out+1]=e end end end
+  local types
+  if f.type then types={}; for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end end
+  if f.position then for _,e in ipairs(world) do if e.valid and (not types or types[e.type]) and math.abs(e.position.x-f.position.x)<1 and math.abs(e.position.y-f.position.y)<1 then out[#out+1]=e end end end
   return out
 end
 local function vehicle(name,type_,x,y)
@@ -124,25 +126,36 @@ eq(sol('vehicle',{exit=true}).left,'car'); eq(car.passenger,nil)
 fails(function() astra('vehicle',{exit=true}) end,'not in a vehicle')
 fails(function() astra('vehicle',{enter=true,exit=true,position={x=3,y=0}}) end,'give one of')
 
--- A train's locomotive has one seat.
+-- A train's locomotive has one seat; the rail under it does not make the
+-- target ambiguous (live check: "ambiguous target: locomotive and straight-rail").
 local loco=vehicle('locomotive','locomotive',-3,0)
+world[#world+1]={valid=true,name='straight-rail',type='straight-rail',position={x=-3,y=0},force=force}
 eq(astra('vehicle',{position={x=-3,y=0},enter=true}).vehicle.name,'locomotive')
 fails(function() sol('vehicle',{position={x=-3,y=0},enter=true}) end,'its one seat has someone in it')
 astra('vehicle',{exit=true})
 -- Not a vehicle; too far.
 local chest={valid=true,name='iron-chest',type='container',position={x=2,y=2},force=force}; world[#world+1]=chest
-fails(function() astra('vehicle',{position={x=2,y=2},enter=true}) end,'iron-chest is not a vehicle you can get into')
+fails(function() astra('vehicle',{position={x=2,y=2},enter=true}) end,'no vehicle at (2,2)')
+-- The seat is read back from the vehicle: a seat the game refused is an error, not a pretend ride.
+local stubborn=vehicle('car','car',-1,2); stubborn.set_driver=function() end
+fails(function() astra('vehicle',{position={x=-1,y=2},enter=true}) end,'the game did not seat the character in car (its driver seat holds nobody)')
+eq(astra('vehicle',{}).vehicle,false); stubborn.valid=false
 local far=vehicle('tank','car',20,0)
 fails(function() astra('vehicle',{position={x=20,y=0},enter=true}) end,'tank is 20.0 tiles away; get within 10 tiles')
 
 -- A spidertron walks by itself, sent from outside.
 local spider=vehicle('spidertron','spider-vehicle',4,4)
+spider.add_autopilot_destination=function(pos) spider.autopilot_destination=pos end
+local tank_empty=true
+spider.get_fuel_inventory=function() return {is_empty=function() return tank_empty end} end
 r=astra('vehicle',{position={x=4,y=4},go_to={x=40,y=40}}); eq(spider.autopilot_destination.x,40); eq(r.go_to.y,40)
+assert(r.note:find('no fuel',1,true),r.note) -- said, since it will not walk
+tank_empty=false; eq(astra('vehicle',{position={x=4,y=4},go_to={x=41,y=40}}).note,nil)
 fails(function() astra('vehicle',{position={x=3,y=0},go_to={x=1,y=1}}) end,'go_to is for a spidertron')
 
 -- Drive a car to a position: steer, ease off, stop; the step simulates the car.
 local function physics()
-  local d=car.driver; local rs=d and d.riding_state
+  local rs=car.riding_state -- the car's own riding state (what a bot driver can set)
   if not rs then return end
   if rs.direction==defines.riding.direction.right then car.orientation=(car.orientation+0.01)%1
   elseif rs.direction==defines.riding.direction.left then car.orientation=(car.orientation-0.01)%1 end
@@ -162,7 +175,7 @@ drive_ticks(1500)
 local last=astra('status').last
 eq(last.kind,'drive'); eq(last.outcome,'arrived')
 assert(math.abs(car.position.x-60)<4 and math.abs(car.position.y-20)<4,car.position.x..','..car.position.y)
-eq(a_body.riding_state.acceleration,defines.riding.acceleration.nothing)
+eq(car.riding_state.acceleration,defines.riding.acceleration.nothing)
 -- A car that does not move (a wall): blocked after 3 seconds.
 blocked=true
 astra('vehicle',{drive={x=0,y=0}})

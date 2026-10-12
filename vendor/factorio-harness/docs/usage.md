@@ -300,7 +300,8 @@ Some actions work at a distance, the way a player can through remote view:
   passenger seat; a locomotive or wagon, whose train runs its schedule as usual), within 10 tiles; `vehicle {exit:
   true}` gets out; `vehicle {drive: {x,y}}` drives the car or tank you drive there (a timed action steering as a
   player's keys do: outcomes `arrived`, `blocked` after 3 s without progress, `timed_out`; `--wait` waits for it);
-  `vehicle {position, go_to: {x,y}}` sends a spidertron walking by itself (from outside, or the one you ride);
+  `vehicle {position, go_to: {x,y}}` sends a spidertron walking by itself (from outside, or the one you ride; one
+  with an empty fuel slot does not walk, and the reply says so: fuel goes in with `transfer`);
   `vehicle {}` says where you sit. Seated, reads, chat, crafting, research, ghosts and other remote-view actions
   work; anything that moves or uses the body (walking, mining, building by hand, transfers) is refused with a pointer
   to `vehicle {exit: true}`.

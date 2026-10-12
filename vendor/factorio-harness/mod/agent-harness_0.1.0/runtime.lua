@@ -458,7 +458,7 @@ end
 local function contents(inv) return inv and inv.get_contents() or {} end
 local inventories = {
   chest = {'container','logistic-container','linked-container','temporary-container'},
-  fuel = {'furnace','assembling-machine','boiler','burner-generator','inserter','mining-drill','lab','car','locomotive','reactor'},
+  fuel = {'furnace','assembling-machine','boiler','burner-generator','inserter','mining-drill','lab','car','locomotive','reactor','spider-vehicle'},
   burnt_result = {'furnace','assembling-machine','boiler','burner-generator','mining-drill','car','locomotive','reactor'},
   furnace_source = {'furnace'}, furnace_result = {'furnace'},
   assembling_machine_input = {'assembling-machine','rocket-silo'}, assembling_machine_output = {'assembling-machine','rocket-silo'},
@@ -3215,7 +3215,7 @@ handlers.circuit=M.circuits.handlers.circuit
 M.trains=require('trains'){entity=entity,friendly=friendly,integer=integer}
 handlers.train=M.trains.handlers.train
 -- Vehicles (vehicles.lua): get in and out, drive a car, send a spidertron.
-M.vehicles=require('vehicles'){entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,
+M.vehicles=require('vehicles'){entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
   start=function(p,action) if state().active[p.index] then finish(p.index,'replaced') end; state().active[p.index]=action end}
 handlers.vehicle=M.vehicles.handlers.vehicle
 -- Ghosts at absolute positions, as a player places them from the cursor or
