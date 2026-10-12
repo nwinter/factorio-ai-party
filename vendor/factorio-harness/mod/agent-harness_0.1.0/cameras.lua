@@ -48,9 +48,15 @@ return function(api)
   end
   -- Spectator without a character; done again if the player came back with one
   -- (a reconnect or respawn), since a director is never an agent.
+  -- A camera client that joined a new Space Age world sits in the intro
+  -- cutscene ("Press Tab to skip cutscene" at the bottom of its picture, cam1
+  -- on 2026-10-12): end it the documented way first, then make it a spectator.
   local function make_director(p)
     directors()[p.index] = true
     hide_name(p)
+    if defines.controllers.cutscene and p.controller_type == defines.controllers.cutscene then
+      pcall(function() p.exit_cutscene() end)
+    end
     if p.controller_type ~= defines.controllers.spectator then
       local c = p.character
       p.set_controller{type=defines.controllers.spectator}

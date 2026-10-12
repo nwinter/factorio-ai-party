@@ -463,7 +463,9 @@ run config brings back the director below).
 - Overlay: a bar along the on-air view's bottom edge says "Following Luna · fixing the north wall" (snapshot
   `onair.doing`: the agent's team-plan line, else its claim, else its action). The bar also covers the client's
   bottom-centre hints ("Press Tab to skip cutscene"): the mod already sets `show_hotkey_suggestions` false
-  (cameras.lua) and the hint still showed on 2026-10-12, so it is masked here. The agent's card is ringed and badged
+  (cameras.lua) and the hint still showed on 2026-10-12, so it is masked here. It is the intro cutscene's own hint
+  (the cam clients joined a new Space Age world): cameras.lua now ends a director's cutscene (`exit_cutscene`)
+  before making it a spectator, on its first camera call and the 5 s recheck; the trio's small tiles have no bar. The agent's card is ringed and badged
   "On air". Toasts: at most two, identical lines merged, 12 s, nothing the label or inset already says, in a compact
   stack at the right just above the bar (captions and lower cards rise above them). `?layout=layout-3cam` gives the
   old page.
