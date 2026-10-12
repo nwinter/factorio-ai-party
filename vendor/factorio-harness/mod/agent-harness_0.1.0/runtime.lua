@@ -2255,9 +2255,12 @@ local function infer_inventory(e,a)
 end
 -- Moves matching stacks with transfer_stack so item metadata travels intact.
 local function move_stacks(source,target,match,limit)
-  local remaining,moved,order=limit,{},{}
+  -- remaining never goes below 0: the engine refuses an amount under 1
+  -- ("Given amount value(-1) too small", request #69, a queue transfer with
+  -- keep and up_to near the cap), so every call is skipped at 0.
+  local remaining,moved,order=math.max(0,limit),{},{}
   for i=1,#source do
-    if remaining==0 then break end
+    if remaining<=0 then break end
     local stack=source[i]
     if stack.valid_for_read and match(stack) then
       local key,name,quality,start=stack.name..'@'..stack.quality.name,stack.name,stack.quality.name,stack.count
@@ -2265,12 +2268,12 @@ local function move_stacks(source,target,match,limit)
       -- shift-click does, then fill empty slots.
       for pass=1,2 do
         for j=1,#target do
-          if remaining==0 or not stack.valid_for_read then break end
+          if remaining<=0 or not stack.valid_for_read then break end
           local slot=target[j]
           if (pass==1)==(slot.valid_for_read and slot.name==name and slot.quality.name==quality) then
             local before=stack.count
             slot.transfer_stack(stack,math.min(before,remaining))
-            remaining=remaining-(before-(stack.valid_for_read and stack.count or 0))
+            remaining=math.max(0,remaining-(before-(stack.valid_for_read and stack.count or 0)))
           end
         end
       end
@@ -2281,9 +2284,9 @@ local function move_stacks(source,target,match,limit)
       end
     end
   end
-  local stacks={}
-  for i,key in ipairs(order) do stacks[i]=moved[key] end
-  return limit-remaining,stacks
+  local stacks,total={},0
+  for i,key in ipairs(order) do stacks[i]=moved[key]; total=total+moved[key].count end
+  return total,stacks
 end
 -- Where the character gives items from: the main inventory, then for ammo
 -- the gun ammo slots, where crafted and picked-up ammo lands first.
@@ -2376,7 +2379,8 @@ local function transfer_one(p,a,pos,e)
     for _,s in ipairs(stacks) do parts[#parts+1]=sign..s.count..' [item='..s.name..']' end
     p.create_local_flying_text{text=table.concat(parts,' '),position=e.position}
   end
-  local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred,none_held=short and a.item or nil,target_has=short and count(target) or nil}
+  local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred,none_held=short and a.item or nil,target_has=short and count(target) or nil,
+    at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
   if a.direction=='to_player' then out.inventory_full=full else out.entity_full=full end
   -- An emptied corpse goes, as when a player takes everything from it.
   if a.direction=='to_player' and e.type=='character-corpse' and sources[1].is_empty() then e.destroy(); out.corpse_removed=true end

@@ -369,6 +369,35 @@ p.surface.find_entities_filtered=function() return {chest} end
 local result=call('transfer',{position=chest.position,inventory='chest',item='iron-plate',count=7,direction='to_entity'})
 eq(result.transferred,7); eq(input.count,13); eq(output.count,7)
 eq(flying[#flying],'-7 [item=iron-plate]')
+-- Request #69: a slot that takes more than asked (the engine merging a
+-- stack) must not drive the next call's amount below 1, which the engine
+-- refuses ("Given amount value(-1) too small"); up_to already met moves 0.
+do
+  local src=stack('firearm-magazine',60); main={src}
+  main.get_item_count=function(f) return src.valid_for_read and src.name==f.name and src.count or 0 end
+  local greedy=stack('firearm-magazine',5)
+  local plain=stack('firearm-magazine',5)
+  greedy.transfer_stack=function(other,amount)
+    assert(amount>=1,'Given amount value('..amount..') too small')
+    local moved=math.min(other.count,amount+3) -- takes more than asked
+    greedy.count=greedy.count+moved; other.count=other.count-moved; other.valid_for_read=other.count>0
+    return true
+  end
+  local inner=plain.transfer_stack
+  plain.transfer_stack=function(other,amount) assert(amount>=1,'Given amount value('..amount..') too small'); return inner(other,amount) end
+  local box={valid=true,name='wooden-chest',type='container',position={x=1,y=0},force=p.force}
+  local slots={greedy,plain,valid=true}
+  slots.get_item_count=function(f) local n=0; for _,s in ipairs(slots) do if s.valid_for_read and s.name==f.name then n=n+s.count end end; return n end
+  box.get_inventory=function() return slots end
+  p.surface.find_entities_filtered=function() return {box} end
+  local r=call('transfer',{position=box.position,inventory='chest',item='firearm-magazine',count=2,direction='to_entity'})
+  eq(r.transferred,5) -- what the engine moved, reported as moved
+  r=call('transfer',{position=box.position,inventory='chest',item='firearm-magazine',count=50,keep=20,up_to=10,direction='to_entity'})
+  eq(r.transferred,0); eq(r.at_up_to,true)
+  r=call('transfer',{position=box.position,inventory='chest',item='firearm-magazine',count=50,keep=60,direction='to_entity'})
+  eq(r.transferred,0)
+  main={input}
+end
 -- Omitted items take everything from the inferred output inventory; batches
 -- report each entity and keep going past one that fails.
 local function inv(...)
