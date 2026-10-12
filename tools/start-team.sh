@@ -112,7 +112,9 @@ else
   scp -q ~/.config/pog/rcon-$world.pw "pogwin:D:/pog/inst/$world/rcon.pw" 2>/dev/null
 fi
 tools/winps.sh tools/win/start-server.ps1 -Name "$world" -Save "$run" -GamePort $game -RconPort $rcon >/dev/null
-POG_WORLD=$world bin/fh call describe >/dev/null 2>&1 || true          # first command on a fresh save is swallowed
+# Wait for RCON before deploying: after a reboot the server took 21 s to open it, and the deploy at 19 s failed
+# (shake9's first start). The first command on a fresh save is swallowed, so this also absorbs that one.
+for _ in $(seq 1 45); do POG_WORLD=$world bin/fh call describe >/dev/null 2>&1 && break; sleep 2; done
 deployed=$(POG_WORLD=$world bin/fh deploy --format json 2>/dev/null || true)
 deploy_status=$(printf '%s' "$deployed" | python3 tools/code_check.py --deploy-reply)
 log "runtime deployed from $(git rev-parse --short HEAD): $deploy_status"
