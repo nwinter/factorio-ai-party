@@ -24,6 +24,8 @@ local function character(pos)
     find_item_stack=function(q)
       if (items[q.name] or 0)==0 then return nil end
       local stack={prototype={place_result={name=q.name,type='container',fast_replaceable_group=q.name:match('^assembling%-machine') and 'assembling-machine' or nil}}}
+      -- 2.0's rail item is a rail planner: rails, no place_result.
+      if q.name=='rail' then stack.prototype={rails={{name='straight-rail'},{name='half-diagonal-rail'},{name='curved-rail-a'},{name='curved-rail-b'}}} end
       stack.clear=function() items[q.name]=0 end
       return setmetatable(stack,{__index=function(_,k) if k=='count' then return items[q.name] end end,
         __newindex=function(_,k,v) if k=='count' then items[q.name]=v end end})
@@ -212,6 +214,23 @@ surface.can_place_entity=function() return true end
   c.items['assembling-machine-2']=0
   surface.create_entity=make
   surface.find_entities_filtered=function() return {} end
+end)()
+-- Rails: the rail item is a rail planner; build places the named rail
+-- (default straight) directly, in the 16 directions rails use.
+;(function()
+  prototypes=prototypes or {}; prototypes.entity=prototypes.entity or {}
+  for _,n in ipairs({'straight-rail','half-diagonal-rail','curved-rail-a','curved-rail-b'}) do prototypes.entity[n]={name=n,type=n} end
+  c.items['rail']=4
+  local made=#created
+  eq(bot('build',{item='rail',position={x=6,y=6}}).consumed,1)
+  eq(created[made+1].args.name,'straight-rail'); eq(created[made+1].args.direction,0)
+  bot('build',{item='rail',entity='curved-rail-a',position={x=8,y=6},direction='northnortheast'})
+  eq(created[made+2].args.name,'curved-rail-a'); eq(created[made+2].args.direction,1)
+  eq(c.items['rail'],2)
+  fails(function() bot('build',{item='rail',entity='rail-ramp',position={x=10,y=6}}) end,'rail places straight-rail, half-diagonal-rail, curved-rail-a, curved-rail-b; entity names which')
+  c.items['stone-furnace']=1
+  fails(function() bot('build',{item='stone-furnace',entity='iron-chest',position={x=12,y=6}}) end,'entity: stone-furnace places stone-furnace')
+  c.items['rail']=0; c.items['stone-furnace']=0
 end)()
 -- The bot's own character the only thing on the footprint (shake3: Grok's most
 -- common error): it walks off with real walking ticks, then builds.

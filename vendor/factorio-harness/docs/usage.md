@@ -65,6 +65,25 @@ fh call status
   uses a capsule on yourself (the heal). Capsules of other kinds (cliff explosives, remotes) are refused. Reply: `kind`
   (throw|self), `projectile`, `distance`, `range`, `cooldown_ticks`, `left`, `healed`. It is an instant action that
   stops what the character was doing, as `shoot` does.
+- Circuit network: `wire {from, to, color: "red"|"green"}` lays a circuit wire between two entities in reach (on a
+  combinator, `from_side`/`to_side` pick input or output; default output to input); `disconnect: true` removes it.
+  Without `color`, `wire` is the copper wire between poles. `circuit {position, ...}` sets what the entity's circuit
+  GUI holds: `enable: {signal, comparator, value | signal2}` (the entity works only while the condition holds; `false`
+  turns it off), `logistic: {...}` (the same, read from the logistic network; connects it), a constant combinator's
+  `signals: [{signal, count}]` and `on`, an arithmetic combinator's `arithmetic: {first, operation, constant | second,
+  output}`, a decider's `decider: {first, comparator, constant | second, output, copy_input}`. Signals are item, fluid
+  or virtual signal names (`iron-plate`, `water`, `signal-A`). `read: {switch: true}` sets read switches: an inserter's
+  `hand`, a belt's `contents`, a drill's `resources`, a train stop's `send_to_train`, `read_from_train`,
+  `read_stopped_train`, `read_trains_count`, `set_trains_limit`. The reply reads back what the game holds. It leaves a
+  running queue alone. `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests"
+  switch.
+- Trains: `train {position: stop, name, limit}` names a train stop and sets its train limit (`limit: false` clears it);
+  `train {position: locomotive or wagon, schedule: [{station, wait: [{type, ticks?, compare?, condition?}]}], current,
+  automatic}` sets the train's schedule (wait types as in the game: time, inactivity, full, empty, item_count,
+  fluid_count, circuit, passenger_present, ...) and automatic or manual mode. Rails, stops, locomotives and wagons are
+  built with `build` and `place_ghosts`; fuel goes in with `refuel` or `transfer`.
+- `configure {position, recipe, quality}` sets a recipe at a quality (the machine and quality must be unlocked); a
+  change of quality alone is a change.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
@@ -277,7 +296,10 @@ Some actions work at a distance, the way a player can through remote view:
   are marked only when `entity_names` or `entity_types` name them. `cancel_deconstruction {area, tiles}` clears tile
   marks (`tiles_cancelled`).
 
-Not supported yet: vehicles, rails, circuit editing, and fluid transfers.
+Not supported yet: riding or driving vehicles (cars, tanks, spidertrons, trains as a passenger: a character in a
+vehicle is refused by every action), elevated rails and rail ramps, the selector combinator, and fluid
+transfers by hand. See docs/HARNESS-COVERAGE.md in the pog
+repo for the feature-by-feature list.
 
 ## Bots
 

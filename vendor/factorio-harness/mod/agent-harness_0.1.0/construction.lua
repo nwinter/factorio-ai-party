@@ -394,7 +394,12 @@ return function(api)
         else
           rec.position=g.position
           local tile=g.type=='tile-ghost'
-          local ok,err=pcall(api.build,p,{item=item,quality=quality,position=g.position,direction=not tile and compass[g.direction] or nil})
+          -- A rail planner places several rails: name the ghost's.
+          local ip=prototypes and prototypes.item and prototypes.item[item]
+          local rails_ok,rails=pcall(function() return ip and ip.rails end)
+          local planner=rails_ok and type(rails)=='table' and #rails>0
+          local ok,err=pcall(api.build,p,{item=item,quality=quality,position=g.position,direction=not tile and compass[g.direction] or nil,
+            entity=planner and g.ghost_name or nil})
           placed=placed+1
           if ok and not g.valid then action.built=action.built+1; drop(action,i)
           else

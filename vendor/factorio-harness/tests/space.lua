@@ -58,6 +58,22 @@ r=space.requests(p,{platform='alpha',set={{item='iron-plate',min=100,from='nauvi
 eq(r.target,'platform alpha'); eq(r.sections[2].requests[1],'iron-plate 100..inf from nauvis'); eq(r.sections[1].controlled,true)
 fails(function() space.requests(p,{platform='beta'}) end,'no platform named beta; platforms: alpha')
 fails(function() space.requests(p,{section=1,platform='alpha',set={{item='coal',min=1}}}) end,'controlled by the game')
+-- A requester chest: its requests and its "request from buffer chests" switch.
+do
+  local chest_sections=sections({})
+  local requester={valid=true,name='requester-chest',type='logistic-container',position={x=3.5,y=3.5},request_from_buffers=false,
+    get_logistic_sections=function() return chest_sections end}
+  local space2=dofile('mod/agent-harness_0.1.0/space.lua'){
+    position=function(v) return v end,
+    integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
+    remote_entity=function() return requester end,real=function(q) return q end,stop=function() end}
+  local rq=space2.requests(p,{position={x=3.5,y=3.5},set={{item='iron-plate',min=200}},from_buffers=true})
+  eq(rq.target,'requester-chest at (3.5,3.5)'); eq(rq.sections[1].requests[1],'iron-plate 200..inf')
+  eq(requester.request_from_buffers,true); eq(rq.from_buffers,true)
+  eq(space2.requests(p,{position={x=3.5,y=3.5}}).from_buffers,true) -- a read reports it
+  fails(function() space2.requests(p,{position={x=3.5,y=3.5},from_buffers='yes'}) end,'from_buffers must be boolean')
+  fails(function() space.requests(p,{platform='alpha',from_buffers=true}) end,'from_buffers is a requester chest setting')
+end
 -- Platform view and schedule.
 local view=space.platforms(p,{})
 eq(view.platforms[1].state,'paused'); eq(view.platforms[1].at,'nauvis'); eq(view.platforms[1].hub_items,'iron-plate*5')
