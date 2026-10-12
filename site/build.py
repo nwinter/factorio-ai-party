@@ -500,7 +500,7 @@ def social_meta(full, site_title, description, path):
 
 
 def page(title, body, active="/", description="", extra_head="", path=None):
-    site_title = CONFIG.get("site_title", "AI Factory Party")
+    site_title = CONFIG.get("site_title", "Factorio AI Party")
     full = site_title if title == site_title else f"{title} · {site_title}"
     description = description or CONFIG.get("description", "")
     nav = "".join(
@@ -893,7 +893,7 @@ def build_home(runs, all_worlds):
   <div class="home-cards">{links}</div>
 </section>
 """
-    return page(CONFIG.get("site_title", "AI Factory Party"), body, "/", CONFIG.get("description", ""), extra_head=LIVE_HEAD, path="/")
+    return page(CONFIG.get("site_title", "Factorio AI Party"), body, "/", CONFIG.get("description", ""), extra_head=LIVE_HEAD, path="/")
 
 
 def build_about(runs, all_worlds):

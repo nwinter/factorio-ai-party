@@ -72,7 +72,7 @@ def main():
     args = ap.parse_args()
     config = json.loads((SITE / "config.json").read_text())
     agents = json.loads((SITE / "content" / "site.json").read_text())["agents"]
-    page = card(config.get("site_title", "AI Factory Party"), config["og_line"],
+    page = card(config.get("site_title", "Factorio AI Party"), config["og_line"],
                 [(k, agents[k]) for k in TEAM], args.bg if Path(args.bg).exists() else None)
     if args.html:
         Path(args.html).write_text(page)
