@@ -901,6 +901,26 @@ check("a plain attack 60 s after the last attack beat is dropped", not hasattr(f
 ctk.events.append({"kind": "loss", "text": "3 lost: 3 pipe (by small biters)", "t": time.time(), "prio": 8})
 ctk.caster_tick(time.time(), {})
 check("a loss still speaks inside the attack gap", getattr(ft, "facts", {}).get("event") == "loss")
+sent_or = []
+_o2 = caster.urllib.request.urlopen
+caster.urllib.request.urlopen = lambda req, timeout=0: sent_or.append(json.loads(req.data)) or type(
+    "R", (), {"__enter__": lambda self: self, "__exit__": lambda self, *a: None,
+              "read": lambda self: b'{"choices": [{"message": {"content": "Rook: Biters at the wall."}}]}'})()
+_k = os.environ.get("OPENROUTER_API_KEY")
+os.environ["OPENROUTER_API_KEY"] = "test"
+try:
+    wf = caster.LLMWriter("or", "anthropic/claude-sonnet-5.5")
+    wf.route_by_latency = True
+    wf.complete("s", "u")
+    caster.LLMWriter("or", "anthropic/claude-opus-5.5").complete("s", "u")
+finally:
+    caster.urllib.request.urlopen = _o2
+    if _k is None:
+        os.environ.pop("OPENROUTER_API_KEY", None)
+    else:
+        os.environ["OPENROUTER_API_KEY"] = _k
+check("the urgent OpenRouter writer asks for the fastest provider; the main writer does not",
+      sent_or[0].get("provider") == {"sort": "latency"} and "provider" not in sent_or[1], str(sent_or)[:200])
 cph = caster.Caster.__new__(caster.Caster)
 cph.remember_framings(["Turrets are doing their job out west.", "Walls up, turrets are doing their job.",
                        "Good news, the turrets are doing their job again."], now=t6)

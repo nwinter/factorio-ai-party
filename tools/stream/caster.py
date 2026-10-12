@@ -1448,6 +1448,8 @@ class LLMWriter:
                                                       {"role": "user", "content": user}],
                     # shake10: 33 of 453 Opus lines aired cut off mid-word ("Two ass") at 400 tokens
                     "max_tokens": max(max_tokens * 4, 1200), "temperature": 0.9, "usage": {"include": True}}
+            if getattr(self, "route_by_latency", False):  # urgent beats: the fastest provider, not the cheapest
+                body["provider"] = {"sort": "latency"}
             req = urllib.request.Request("https://openrouter.ai/api/v1/chat/completions",
                                          data=json.dumps(body).encode(), method="POST",
                                          headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
@@ -1668,6 +1670,8 @@ class Caster:
         if self.writer and a.urgent_model and a.urgent_model != (self.writer.model or ""):
             if a.urgent_model.startswith("or:"):  # HOSTS4 item 4: a fast Claude on OpenRouter (or:anthropic/...)
                 self.fast = LLMWriter("or", a.urgent_model[3:], timeout=min(a.writer_timeout, 8))
+                # shake12: Sonnet's urgent beats took 6.6 s median live against 2.3 s in the bench
+                self.fast.route_by_latency = True
             else:
                 if ai is None:
                     from cfai import WorkersAI
