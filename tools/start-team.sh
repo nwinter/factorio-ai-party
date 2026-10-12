@@ -156,9 +156,14 @@ done
 python3 tools/team_bots.py "$team" "$world" | while read -r line; do log "bot $line"; done
 
 # 4. Overlay service config, reverse tunnel for OBS, scene, recording, optional stream.
-python3 - "$team" "$rundir/stream.json" "$run" <<'EOF'
+python3 - "$team" "$rundir/stream.json" "$run" "$minutes" <<'EOF'
 import json, os, sys
-team, out, run = sys.argv[1:]
+sys.path.insert(0, "tools")
+from shift_times import shift as shift_times
+team, out, run, minutes = sys.argv[1:]
+# The shift's times for the site (a visitor between shifts sees when to come back): shifts run back to back, so the
+# next is expected when this one ends; POG_NEXT_SHIFT sets it ("02:47", an ISO time, or "none"). tools/shift_times.py
+shift = shift_times(minutes, os.environ.get("POG_NEXT_SHIFT", ""))
 agents = {}
 for line in open(team):
     if not line.strip() or line.startswith("#"): continue
@@ -166,7 +171,7 @@ for line in open(team):
     agents[name] = {"model": label, "harness": harness}
 words = {2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six", 7: "Seven", 8: "Eight", 9: "Nine", 10: "Ten"}
 json.dump({"title": f"{words.get(len(agents), len(agents))} AIs, one factory", "subtitle": ("Factorio: Space Age" if os.environ.get("POG_SPACE_AGE") == "1" else "Factorio") + " co-op · real time · no cheats",
-           "space_age": os.environ.get("POG_SPACE_AGE") == "1", "agents": agents, "cameras": [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
+           "space_age": os.environ.get("POG_SPACE_AGE") == "1", "shift": shift, "agents": agents, "cameras": [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
                                          {"slot": "cam3", "player": 3}]}, open(out, "w"), indent=1)
 EOF
 # Viewer chat: the companion site's chat always; YouTube when POG_YOUTUBE (an @handle, channel id or video id) is set.

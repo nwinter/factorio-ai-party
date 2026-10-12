@@ -353,6 +353,8 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 /* run heading, offline notice, status strip, alerts */
 .live-run-head h2 { margin: 1.6rem 0 0; }
 .live-run-head p { margin: .2rem 0 .8rem; }
+.live-next { margin: 0 0 .8rem; font-weight: 600; color: var(--ink-2); }
+.live-app:not(.is-live) .live-next { font-size: 1.05rem; color: var(--ink); }
 .live-offline:empty { display: none; }
 .live-offline { margin: 0 0 1rem; }
 .live-app.is-live .live-offline { display: none; }

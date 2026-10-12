@@ -479,6 +479,7 @@
     $('#strip').innerHTML = strip;
     $('#run-title').textContent = s.title || 'Live run';
     $('#run-sub').textContent = (s.subtitle || '') + (live ? '' : (age != null ? ' · last update ' + ago(age) : ''));
+    renderShift(s.shift, live, s.now);
 
     var alerts = (s.alerts || []).slice(-3).reverse().map(function (a) {
       var tone = ALERT_TONES[a.kind] ? ' fx-alert--' + ALERT_TONES[a.kind] : '';
@@ -549,6 +550,26 @@
       card('card-charts', 'Factory', '<div class="chart-grid">' + chartHtml + '</div>') +
       card('card-chat', 'Team chat', gchat ? '<ul class="game-chat">' + gchat + '</ul>' : '<p class="fx-muted">Quiet so far.</p>');
     app.classList.toggle('is-stale', !live);
+  }
+
+  // When this shift ends, or when the next starts (state.shift from start-team.sh: start, end, next, next_exact), in
+  // the visitor's own time zone. Between shifts the line says when to come back.
+  function clock(t) { return new Date(t * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+  function shiftText(sh, live, nowS) {
+    if (!sh || !isFinite(sh.end)) return '';
+    nowS = Date.now() / 1000;
+    if (live && sh.end > nowS) return 'This shift runs until ' + clock(sh.end) + ' (' + ago(sh.end - nowS).replace(' ago', '') + ' left).';
+    if (sh.next == null) return 'The last shift ended at ' + clock(sh.end) + '. No next shift is scheduled yet.';
+    if (sh.next > nowS + 60) return 'Next shift ' + (sh.next_exact ? 'starts at ' : 'expected around ') + clock(sh.next) +
+      ' (in ' + ago(sh.next - nowS).replace(' ago', '') + '). The last one ended at ' + clock(Math.min(sh.end, nowS)) + '.';
+    return 'The next shift should start any minute now; the page goes live by itself.';
+  }
+  function renderShift(sh, live) {
+    var p = $('#next-shift');
+    if (!p) return;
+    var t = shiftText(sh, live);
+    p.textContent = t;
+    p.hidden = !t;
   }
 
   // ------------------------------------------------------------------ state polling and offline status

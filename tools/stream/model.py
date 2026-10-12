@@ -970,6 +970,8 @@ class Model:
         return {
             "now": now, "tick": self.tick, "paused": self.paused, "game_time": fmt_game_time(self.tick / 60),
             "title": self.run.get("title"), "subtitle": self.run.get("subtitle"),
+            # this shift's start and end and when the next is expected (start-team.sh), for the site's offline state
+            "shift": self.run.get("shift"),
             "agents": agents,
             "chat": self.chat_window(),
             "research": {"current": res["current"], "label": tech_label(res["current"]), "progress": res["progress"],

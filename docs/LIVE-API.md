@@ -87,7 +87,10 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
               "platforms": [{"name": "Solstice", "where": "Nauvis → Vulcanus", "state": "on_the_path", "speed_kms": 72,
                              "route": {"from": "Nauvis", "to": "Vulcanus", "pct": 42}, "paused": false}]},  // at most 6
     "fights": [{"kind": "attack|loss", "text": "...", "position": {"x": -48.0, "y": 16.0}, "extent": 32.0,
-                "age_s": 6, "losses": 1}]   // reported in the last 2 minutes, on Nauvis; at most 12
+                "age_s": 6, "losses": 1}],  // reported in the last 2 minutes, on Nauvis; at most 12
+    "shift": {"start": 1791733620, "end": 1791748020, "next": 1791748020, "next_exact": false}  // Unix seconds;
+        // start-team.sh (tools/shift_times.py): the next is expected at this one's end unless POG_NEXT_SHIFT sets it
+        // ("02:47", an ISO time, or "none" -> null); the page says when this shift ends, or when to come back
   }
 }
 ```
