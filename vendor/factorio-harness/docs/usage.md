@@ -295,6 +295,13 @@ Some actions work at a distance, the way a player can through remote view:
   tiles under an entity that is not marked: robots take a tile once what stands on it is gone). With `tiles`, entities
   are marked only when `entity_names` or `entity_types` name them. `cancel_deconstruction {area, tiles}` clears tile
   marks (`tiles_cancelled`).
+- `deconstruct {area, items_on_ground: true}` marks every item stack on the ground in the area, as a planner over
+  items on the ground does; construction robots carry marked stacks to storage chests. Other entities are marked
+  only when `entity_names` or `entity_types` name them. The reply counts `item_stacks` (marked now) and
+  `item_stacks_already`, lists `items` (`{name, count, stacks}`), and says which robots can reach them:
+  `robot_networks` and `storage_chests` (logistic networks whose construction area covers a marked stack) and
+  `outside_construction_area` (stacks no roboport covers). `cancel_deconstruction {area, items_on_ground: true}`
+  unmarks them.
 
 - Vehicles: `vehicle {position, enter: true}` gets in (the driver's seat if free, else a car's or spidertron's
   passenger seat; a locomotive or wagon, whose train runs its schedule as usual), within 10 tiles; `vehicle {exit:
@@ -305,6 +312,23 @@ Some actions work at a distance, the way a player can through remote view:
   `vehicle {}` says where you sit. Seated, reads, chat, crafting, research, ghosts and other remote-view actions
   work; anything that moves or uses the body (walking, mining, building by hand, transfers) is refused with a pointer
   to `vehicle {exit: true}`.
+
+Items on the ground:
+
+- `scan` and `observe` list items on the ground as `ground_items` (`{stacks, items: [{name, count, stacks, box}],
+  more_items}`), by item, instead of one row per stack; rows for them come only when the call filters for them
+  (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
+- `status` `alerts.ground_items`: a cargo landing pad that is full while item stacks lie within 40 tiles of it
+  (position, slots, stacks, the items), and piles of 100 or more stacks in a 64-tile cell that holds our buildings
+  (box, stacks, items; the largest 3). Item counts come from up to 10000 stacks per place (the line says so when
+  there are more). One pass per force every 30 s, run on demand; a place new to you, or grown by half since you
+  were told, is also in the reply's `team.alerts` once.
+- `pickup {area}` (up to 64x64) or `pickup {position, radius}` (radius 1..32, default 8 around you), optionally
+  `items` (1..16 names): a timed action (`ticks` 1..36000, default 3600) that picks up every matching stack in the
+  area, one stack every 6 ticks, walking to the nearest one left when none is in pickup reach. Refused when the
+  area holds none. Outcomes `picked_up` (none left), `inventory_full`, `blocked` (stacks it could not walk to,
+  `last.skipped`; it stops after 8), `timed_out`; `last.picked {item: count}` and `last.left` (stacks still in the
+  area). `pickup {}` still takes only what is in reach where you stand.
 
 Not supported yet: elevated rails and rail ramps, the selector combinator, and fluid transfers by hand. See docs/HARNESS-COVERAGE.md in the pog
 repo for the feature-by-feature list.
@@ -395,7 +419,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   minutes; at most 4 lines and `+N more finished: research_done`), `alerts` (your character being hit, attacked areas with attacker and entities hit, enemy groups
   gathering, buildings destroyed, with what destroyed them: enemy kinds first, then our own force's entities as
   `friendly fire: 2 flamethrower-turret` (`unknown source` when the cause is gone and the killing force is ours); at most
-  8 lines; these replace the old top-level `losses` field) and `reminders`
+  8 lines; these replace the old top-level `losses` field; full landing pads spilling and piles of items on the ground
+  near our buildings, once each and again when grown by half) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each

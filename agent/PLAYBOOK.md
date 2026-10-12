@@ -37,6 +37,9 @@ Record each milestone you reach in `notes.md` with the game time printed in fh's
   - Grenades and capsules: use_item {item, position}.
   - Vehicles: vehicle {position, enter: true} gets into a car, tank, spidertron, locomotive or wagon; vehicle {exit:
     true}; vehicle {drive: {x,y}} drives a car or tank (timed); vehicle {position, go_to: {x,y}} walks a spidertron.
+  - Items on the ground: scan and observe sum them up by item (ground_items); status alerts.ground_items names full
+    landing pads that spill and piles near buildings; deconstruct {area, items_on_ground: true} marks them for
+    construction robots; pickup {area | position, radius, items} picks them up by hand (timed).
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
 
 ## Pace
