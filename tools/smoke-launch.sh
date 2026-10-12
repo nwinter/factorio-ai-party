@@ -73,8 +73,7 @@ if [ "${POG_BROKER:-0}" = 1 ]; then
   first=$(echo $names | awk '{print $1}') second=$(echo $names | awk '{print $NF}')
   for i in $(seq 1 20); do [ -S "$rundir/.sock/$second.sock" ] && break; sleep 0.5; done
   echo "broker: pid $broker_pid, $(ls "$rundir/.sock" | tr '\n' ' ')"
-  POG_FH_SOCKET="$rundir/.sock/$first.sock" bin/fh --bot "$first" call status >/dev/null 2>&1 && echo "broker probe: own bot ok" || echo "broker probe: own bot FAILED"
-  POG_FH_SOCKET="$rundir/.sock/$first.sock" bin/fh --bot "$second" call status 2>&1 | grep -q refused && echo "broker probe: other bot refused" || echo "broker probe: other bot NOT refused"
+  tools/broker-probe.sh "$rundir/.sock" "$first" "$second" || true
 fi
 
 sync_pid=""

@@ -548,7 +548,7 @@ function handlers.describe()
       collect={types='entity types (default furnace, assembling-machine: machine outputs only)',chests='boolean: also empty plain chests (container, logistic-container) in reach or radius; off by default because chests are usually feed stock you placed (result notes chests_skipped / left_in_chests)',item='optional: only this item',positions='optional 1..64 positions instead of everything in reach (named chests are always taken from)',
         radius='with item: 1..256, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; a timed action',count='with radius: stop after this many (default all)',want='optional, with item: hold this many; takes only the difference (nothing when you already have it); not with count',ticks='with radius: 1..36000 (default 3600)',
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited'},
-      research={technology='name (omit everything to report: current, progress, queue, pending)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
+      research={technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput measured over the last 5 minutes, waits_for a pack nobody made in 10 minutes; throughput; clock_stops_at)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
       blueprint_import={blueprint='export string',slot='default clipboard'},blueprint_export={slot='default clipboard',layout='true returns normalized relative layout and material costs instead of export string'},blueprint_list={},blueprint_delete={slot='name'},
       blueprint_capture={area='{left_top:{x,y},right_bottom:{x,y}}',slot='default clipboard',tiles='boolean',station_names='boolean'},copy={area='{left_top:{x,y},right_bottom:{x,y}}'},cut={area='{left_top:{x,y},right_bottom:{x,y}}'},paste={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost'},blueprint_place={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost'},deconstruct={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}} up to 256x256 of charted map',entity_names='optional array',entity_types='optional array',
         tiles='optional: true (every minable tile in the area) or 1..32 tile names, e.g. ["space-platform-foundation"]: marks tiles as a planner in tile mode does (robots take them back to the hub or a roboport); entities then only with entity_names/entity_types. Returns tiles_marked, tiles_already, tiles_refused with refused {under_entity, engine, not_minable, error}, tiles_blocked (marked tiles under entities not marked; a note names them)'},cancel_deconstruction={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}}',entity_names='optional array',entity_types='optional array',
@@ -572,6 +572,7 @@ function handlers.describe()
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.research and M.research.schema or {}) do description.actions[name]=schema end
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
   return description
@@ -2956,6 +2957,9 @@ function handlers.research(p,a)
     local out={queue=current,pending=#waiting>0 and waiting or nil}
     if active then out.current=active.name; out.progress=force.research_progress
     else out.current=false; out.note='no research in progress: pass technology=name or research_queue=[...] (technologies available=true lists what can be researched)' end
+    -- Each entry in full: progress, who queued it, packs, time to finish (research.lua).
+    local view=M.research.queue(force,waiting)
+    out.entries=view.entries; out.throughput=view.throughput; out.clock_stops_at=view.clock_stops_at
     return out
   end
   local technology=force.technologies[a.technology]
@@ -2992,6 +2996,27 @@ function handlers.research(p,a)
   if not needs and out.queue[1]~=technology.name then out.queued=force.add_research(technology); out.queue=queue_names(force) end
   return out
 end
+-- Who queued what (research.lua): names that were neither queued nor waiting
+-- before this agent's research call are this agent's.
+do
+  local queue_research=handlers.research
+  local function known(force)
+    local seen={}
+    for _,name in ipairs(queue_names(force)) do seen[name]=true end
+    local plan=state().research_plan and state().research_plan[force.name]
+    for _,name in ipairs(plan and plan.names or {}) do seen[name]=true end
+    return seen
+  end
+  handlers.research=function(p,a)
+    local before=known(p.force)
+    local out=queue_research(p,a)
+    local fresh={}
+    for name in pairs(known(p.force)) do if not before[name] then fresh[#fresh+1]=name end end
+    table.sort(fresh)
+    if #fresh>0 then M.research.record(p.force.name,fresh,M.board.who(p)) end
+    return out
+  end
+end
 -- Feeds a force's pending plan into the engine queue once it has shrunk.
 local function feed_research_plans()
   for name,plan in pairs(state().research_plan or {}) do
@@ -3015,7 +3040,11 @@ function handlers.research_next(p,a)
     local t=p.force.technologies[name]
     local ready=t.enabled and not t.researched and not t.prototype.research_trigger
     for _,pre in pairs(t.prerequisites) do if not pre.researched then ready=false end end
-    if ready then return {started=p.force.add_research(t),current=name} end
+    if ready then
+      local started=p.force.add_research(t)
+      if started then M.research.record(p.force.name,{name},M.board.who(p)) end
+      return {started=started,current=name}
+    end
   end
   return {started=false,current=false}
 end
@@ -3619,8 +3648,12 @@ for name,handler in pairs(M.profiles.handlers) do handlers[name]=handler end
 function M.is_director(index) return not M.bots.is_index(index) and M.cameras.director(index) end
 M.board=require('board'){state=state,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
-  submit=function(p,a) return handlers.queue_submit(p,a) end}
+  submit=function(p,a) return handlers.queue_submit(p,a) end,
+  research_lines=function(p,h) return M.research.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
+-- Research news, who queued what, and the queue's times (research.lua).
+M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end}
+function handlers.research_done(p,a) return M.research.done(p,a) end
 -- Tells: lines to named teammates outside the chat (tells.lua).
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver}
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
@@ -3670,7 +3703,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
+local passive={sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
 local reads={labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -4018,6 +4051,7 @@ function M.tick(event)
 end
 function M.tick_body(event)
   idle_tick()
+  M.research.tick(event.tick)
   M.bots.tick(event.tick)
   M.nametags.tick(event.tick)
   for index,action in pairs(state().active) do
@@ -4205,6 +4239,12 @@ function M.on_event(event)
     local ok,err=pcall(M.players.on_event,event)
     if not ok then local s=state(); s.player_log_errors={count=((s.player_log_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     if event.name~=defines.events.on_entity_died then return end
+  end
+  -- Research news (research.lua): like the player log, its faults are counted.
+  if event.name==defines.events.on_research_finished or event.name==defines.events.on_research_queued then
+    local ok,err=pcall(event.name==defines.events.on_research_finished and M.research.on_finished or M.research.on_queued,event)
+    if not ok then local s=state(); s.research_errors={count=((s.research_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
+    return
   end
   if event.name==defines.events.on_script_path_request_finished then
     local paths=state().paths or {}

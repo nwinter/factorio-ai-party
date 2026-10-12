@@ -20,6 +20,11 @@ supply) stays theirs.
 - Bounds: at most 300 items kept (oldest `done`/`dropped` pruned first); titles/notes truncated, never fail.
 - Every board change is also appended to an event log the overlay can read: read action `board_events`
   `{since_seq}` -> `{events:[{seq, tick, by, id, change, title}], cursor}`.
+- The team plan (eng/research): one item `kind=plan` (`goals`, `lines` of `{agent, text, by, tick}`), edited with
+  `board_plan {goals?, doing?, agent?}`; `board` reads return it as `plan {id, goals, doing[], edited}`, never as a row.
+  Each edit is an event `{kind:"plan", change:"edited", text, owner: the agent whose line changed}`.
+- A finished technology (research.lua) is an event with no item: `{by:"research", kind:"research", change:"done",
+  title: technology, text:"unlocks: ..."}`.
 
 ## Reply hints (pushed to the agent on every reply, only when non-empty)
 
@@ -30,6 +35,8 @@ request (per-agent cursor; never repeats an item once shown):
   2 game minutes (count + oldest title).
 - `alerts`: attacks and losses since my last request: enemy damage to our entities (area, attacker, entities hit),
   entities destroyed, my character taking damage. Summarized (one line per incident), bounded.
+- `research`: technologies the agent's force finished since its previous request, with what each unlocks (a first
+  request looks back 10 game minutes).
 - `reminders`: `profile` until the agent has set display_name/glyph/color once.
 
 ## Harness requests (agents asking for tools)
@@ -43,5 +50,6 @@ request (per-agent cursor; never repeats an item once shown):
 ## Overlay (stream)
 
 - Board panel: recent board events (posted / taken / done / blocked, with agent avatars), open unowned request count,
-  and active claims; a "harness changelog" line when a `harness` item is done.
+  and active claims; a "harness changelog" line when a `harness` item is done; the team plan's goals on one line, and
+  research finished as a "Research finished: NAME" event.
 - Alert banners driven by the same attack/loss incidents the agents receive.

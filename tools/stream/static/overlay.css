@@ -375,6 +375,8 @@ body:not(.portrait) #prod, body:not(.portrait) #board, body:not(.portrait) #spac
 .bev .when { flex: none; color: var(--faint); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .bev.changelog .ver { flex: none; font-weight: 700; color: var(--fx-orange); }
 .bev.changelog .title { color: var(--head); }
+.bev.plan .ver { flex: none; font-weight: 700; color: var(--acting); }
+.bev.plan .title { color: var(--head); }
 .bev .tool { flex: none; width: 24px; height: 24px; border-radius: var(--fx-r-1); display: grid; place-items: center; font-family: var(--emoji); font-size: 12px;
   background: linear-gradient(180deg, #2b2a2b, #1f1e1f); box-shadow: 0 0 0 1px rgba(var(--fx-orange-rgb), 0.6), var(--fx-slot-shadow); }
 #board-claims { flex: none; display: flex; align-items: center; gap: 8px; height: 26px; border-top: 1px solid rgba(0, 0, 0, 0.55); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07); padding-top: 5px; font-size: 14px; white-space: nowrap; overflow: hidden; }

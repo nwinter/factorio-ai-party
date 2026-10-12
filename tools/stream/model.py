@@ -512,6 +512,8 @@ class Model:
         items = (b.get("items") or []) if isinstance(b, dict) else (b or [])
         if isinstance(b, dict) and b.get("open_unowned") is not None:
             board["open_unowned"] = b["open_unowned"]
+        if isinstance(b, dict) and "plan" in b:  # the team plan (board_plan): goals and who is on what
+            board["plan"] = b["plan"] or None
         for it in items:
             if it.get("id") is not None:
                 board["items"][it["id"]] = it
@@ -559,10 +561,15 @@ class Model:
                 board["open_unowned"] = None  # recount from items until the next `board` read
         if verb in ("note", "updated") or (kind == "harness" and verb not in ("posted", "done")):
             return  # notes and operator bookkeeping are noise on stream
+        if kind == "plan":
+            return  # plan edits show as the plan line itself (board_snapshot)
         agent = self._who(e.get("by"))
         recent = e.get("t", now) > now - 30
+        title = e.get("title") or it.get("title") or ""
+        if kind == "research":  # a finished technology (research.lua): no item, by "research"
+            title = tech_label(title)
         entry = {"seq": e.get("seq"), "tick": e.get("tick"), "by": e.get("by"), "agent": agent, "id": e.get("id"),
-                 "verb": verb, "title": clean_text(e.get("title") or it.get("title") or ""), "kind": kind,
+                 "verb": verb, "title": clean_text(title), "kind": kind,
                  "owner": it.get("owner"), "owner_agent": self._who(it.get("owner")), "t": e.get("t", now)}
         board["events"].append(entry)
         if agent and recent:
@@ -605,7 +612,19 @@ class Model:
                         "agent": self._who(it.get("owner"))} for it in claims[:6]],
             "claims_total": len(claims),
             "changelog": list(b["changelog"])[-2:],
+            "plan": self.plan_snapshot(),
         }
+
+    def plan_snapshot(self):
+        """The team plan for the board widget: goals, each agent's line (agent name matched to its card), last edit."""
+        p = self.board.get("plan")
+        if not isinstance(p, dict) or not (p.get("goals") or p.get("doing")):
+            return None
+        doing = []
+        for line in p.get("doing") or []:
+            name, _, text = str(line).partition(": ")
+            doing.append({"agent": self._who(name), "name": name, "text": clean_text(re.sub(r" \(set by [^)]*\)$", "", text))})
+        return {"goals": clean_text(p.get("goals") or ""), "doing": doing, "edited": p.get("edited")}
 
     def _ingest_power(self, p, now):
         self.power = p

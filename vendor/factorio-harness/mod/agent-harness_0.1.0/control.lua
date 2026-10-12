@@ -104,7 +104,8 @@ local forwarded={}
 for _,name in ipairs{'on_script_path_request_finished','on_entity_died','on_unit_group_finished_gathering','on_entity_damaged',
     'on_console_chat','on_built_entity','on_player_mined_entity','on_robot_mined_entity','on_marked_for_deconstruction',
     'on_marked_for_upgrade','on_cancelled_deconstruction','on_cancelled_upgrade','on_gui_opened','on_gui_closed',
-    'on_player_fast_transferred','on_player_main_inventory_changed','on_player_joined_game','on_player_left_game'} do
+    'on_player_fast_transferred','on_player_main_inventory_changed','on_player_joined_game','on_player_left_game',
+    'on_research_finished','on_research_queued'} do
   if defines.events[name] then forwarded[#forwarded+1]=defines.events[name] end
 end
 script.on_event(forwarded, function(event)
@@ -185,7 +186,7 @@ local function console_log(since)
   table.sort(list,function(x,y) return x.seq<y.seq end)
   return helpers.table_to_json{ok=true,tick=game.tick,seq=a.seq,harness=a.harness,other=a.other,dropped=a.dropped,entries=list}
 end
-local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true, profiles = true, cameras = true, players = true, votes = true, votes_pending = true}
+local read_only = {chat = true, describe = true, observe = true, inspect = true, status = true, recipes = true, technologies = true, queue_status = true, blueprint_export = true, blueprint_list = true, map = true, nearest = true, craftable = true, scan = true, power = true, grid = true, rates = true, bottleneck = true, profiles = true, cameras = true, players = true, votes = true, votes_pending = true, research_done = true}
 -- Operator-only calls (bots, cameras): RCON/console only, never via dispatch.
 local function operator(name, arg)
   local ok, result = pcall(function()
