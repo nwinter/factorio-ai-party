@@ -55,6 +55,8 @@ class Rcon:
 # Totals cover every surface (Space Age: planets and platforms; the base game has only nauvis). Names missing from
 # the loaded mods are skipped. Space Age fields: consumed (science packs used by labs, all surfaces), infinite
 # (infinite levels completed per technology), planets (surfaces with our entities), platforms.
+# SCORE_LUA is sent as one line, so it must hold no "--" comments (one cut the score in shake8).
+# A platform row's hub is false while its record waits for a starter pack (the New platform button).
 SCORE_LUA = r"""
 local f = game.forces.player
 local all = {}
@@ -102,7 +104,6 @@ for _, s in ipairs(all) do
   if s.planet and s.count_entities_filtered{force = f, limit = 1} > 0 then planets[#planets+1] = s.name end
 end
 for _, p in pairs(f.platforms or {}) do
-  -- hub: false for a platform record still waiting for its starter pack (the New platform button), before any rocket
   if p.valid then platforms[#platforms+1] = {name = p.name, at = p.space_location and p.space_location.name or "in transit",
     hub = (p.hub ~= nil and p.hub.valid) or false} end
 end
