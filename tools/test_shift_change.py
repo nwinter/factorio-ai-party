@@ -57,6 +57,11 @@ case $1 in
 esac
 """
 PGREP = STUB + '[ -n "${OTHER_START:-}" ] && echo 4242; exit 0\n'
+# tools/site-refresh.sh: its last line says how it went, as the real one's does
+SITE = STUB + """
+if [ -n "${SITE_FAILS:-}" ]; then echo "03:00:01 site-refresh: FAILED: deploy to preview (production left as it was)"; exit 1; fi
+echo "03:00:01 site-refresh: done"
+"""
 HERDR = STUB + "exit 0\n"
 
 
@@ -70,7 +75,7 @@ def setup():
     runs, bin_ = os.path.join(tmp, "runs"), os.path.join(tmp, "bin")
     os.makedirs(bin_)
     for name, body in (("stop-team", STUB), ("start-team", START), ("quota", QUOTA), ("ssh", SSH), ("obs", OBS),
-                       ("pgrep", PGREP), ("herdr", HERDR)):
+                       ("pgrep", PGREP), ("herdr", HERDR), ("site-refresh", SITE)):
         p = os.path.join(bin_, name)
         open(p, "w").write(body)
         os.chmod(p, 0o755)
@@ -99,6 +104,7 @@ def run(tmp, runs, bin_, state, *args, **env):
     e = dict(os.environ, POG_SC_STOP_TEAM=f"{bin_}/stop-team", POG_SC_START_TEAM=f"{bin_}/start-team",
              POG_SC_QUOTA=f"{bin_}/quota", POG_SC_SSH=f"{bin_}/ssh", POG_SC_OBS=f"{bin_}/obs", POG_SC_PGREP=f"{bin_}/pgrep",
              POG_SC_HERDR=f"{bin_}/herdr", POG_SC_RUNS=runs, POG_SC_STATE_URL="file://" + state, POG_SC_HEALTH_WAIT="0",
+             POG_SC_SITE_REFRESH=f"{bin_}/site-refresh",  # never the real one: it deploys the site
              STUB_LOG=os.path.join(tmp, "calls.log"), STUB_RUNS=runs, STUB_NAMES=" ".join(NAMES))
     for k in [k for k in e if k.startswith("POG_") and not k.startswith("POG_SC_")]:
         del e[k]
@@ -220,6 +226,20 @@ def change():
         assert "broker off" in out and "OBS streaming, service ok" in out and "relay on" in out and "no harness Lua errors in the first" in out, out
         assert "console audit of shake11:" in out and "moderation: 1 shapes, 1 commands" in out, out
         assert not os.path.exists(os.path.join(runs, ".shift-change.lock"))
+        # the site: refreshed for shake11 once it was stopped (in the background), its outcome reported at the end
+        assert "site-refresh --last-run shake11\n" in calls, calls
+        assert calls.index("site-refresh --last-run shake11") > calls.index("stop-team shake11"), calls
+        assert "site refresh started" in out and "site refresh: done" in out, out
+        assert os.path.exists(os.path.join(runs, "shake11", "site-refresh.log"))
+        # a failed site refresh never fails the shift
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", SITE_FAILS="1")
+        assert r.returncode == 0 and started(calls, "start-team"), r.stdout + r.stderr
+        assert "site refresh FAILED (the shift is unaffected): FAILED: deploy to preview" in r.stdout, r.stdout
+        # POG_SITE_REFRESH=0 skips it
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", POG_SITE_REFRESH="0")
+        assert r.returncode == 0 and "site-refresh" not in calls and "site refresh" not in r.stdout, r.stdout
         print("shift change: ok")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

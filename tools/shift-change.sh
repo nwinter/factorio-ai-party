@@ -9,11 +9,15 @@
 #    arguments, start.log, stream.json, viewers-relay.on, team.txt), then POG_STOP_WORLD=1 tools/stop-team.sh PREV,
 #    closes PREV's agent panes (runs/PREV/panes.txt), and runs tools/start-team.sh NEXT MINUTES [--stream] with those
 #    switches, POG_RESUME=PREV and POG_NEXT_SHIFT at NEXT's end.
+#    Once PREV is stopped (its row on the site is complete), tools/site-refresh.sh --last-run PREV runs in the
+#    background (log: runs/PREV/site-refresh.log): build, check and deploy the site. It never blocks or fails a shift;
+#    POG_SITE_REFRESH=0 skips it.
 # 3. Afterwards (POG_SC_HEALTH_WAIT seconds, default 180): one health line (agents up, broker, OBS and the stream
-#    service, the viewer relay, harness Lua errors so far) and PREV's console audit (stop-team saved it).
+#    service, the viewer relay, harness Lua errors so far), PREV's console audit (stop-team saved it) and the site
+#    refresh's outcome (waited for up to POG_SC_SITE_WAIT seconds, default 300, then left running).
 # --dry-run: the checks, the switches and the plan (with start-team's own dry run); stops and starts nothing.
 # Stubs for tests: POG_SC_STOP_TEAM, POG_SC_START_TEAM, POG_SC_QUOTA, POG_SC_SSH, POG_SC_OBS, POG_SC_HERDR,
-# POG_SC_PGREP (commands, split on spaces), POG_SC_RUNS (where runs live), POG_SC_STATE_URL.
+# POG_SC_PGREP, POG_SC_SITE_REFRESH (commands, split on spaces), POG_SC_RUNS (where runs live), POG_SC_STATE_URL.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
@@ -40,6 +44,7 @@ read -ra quota_cmd <<<"${POG_SC_QUOTA:-python3 tools/quota_check.py}"
 read -ra ssh_cmd <<<"${POG_SC_SSH:-ssh}"
 read -ra herdr <<<"${POG_SC_HERDR:-herdr}"
 read -ra pgrep_cmd <<<"${POG_SC_PGREP:-pgrep}"
+read -ra site_refresh <<<"${POG_SC_SITE_REFRESH:-tools/site-refresh.sh}"
 py=tools/.venv/bin/python; [ -x "$py" ] || py=$HOME/code/player-of-games/tools/.venv/bin/python
 read -ra obs <<<"${POG_SC_OBS:-$py tools/obs.py}"
 runs=${POG_SC_RUNS:-}
@@ -100,6 +105,7 @@ next_shift=$(python3 tools/shift_change.py next-shift "$minutes")
 echo "switches from $prev:"; printf '  %s\n' "$explain"
 echo "plan: POG_STOP_WORLD=1 ${stop_team[*]} $prev; close $(wc -l < "$prev_dir/panes.txt" 2>/dev/null | tr -d ' ' || echo 0) agent panes of $prev;"
 echo "      ${start_team[*]} $next $minutes${stream:+ $stream} with the switches above, POG_RESUME=$prev, POG_NEXT_SHIFT=$next_shift;"
+[ "${POG_SITE_REFRESH:-1}" != 0 ] && echo "      once $prev is stopped: ${site_refresh[*]} --last-run $prev in the background (non-fatal)"
 echo "      then a health line after ${POG_SC_HEALTH_WAIT:-180} s and $prev's console audit"
 if [ ${#refused[@]} -gt 0 ]; then
   printf 'refused: %s\n' "${refused[@]}" >&2
@@ -122,10 +128,31 @@ if [ -f "$prev_dir/panes.txt" ]; then
   done < "$prev_dir/panes.txt"
   echo "closed $closed agent panes of $prev"
 fi
+# The site: PREV is stopped, so its row on the long run's page is complete. In the background: building and
+# deploying takes a minute or two and must never hold up or fail the next shift.
+site_pid=""
+if [ "${POG_SITE_REFRESH:-1}" != 0 ]; then
+  "${site_refresh[@]}" --last-run "$prev" >"$prev_dir/site-refresh.log" 2>&1 </dev/null &
+  site_pid=$!
+  echo "site refresh started (pid $site_pid, log $prev_dir/site-refresh.log)"
+fi
 started=$(date +%s)
 echo "starting $next"
+site_result() {  # the site refresh's outcome, waiting up to POG_SC_SITE_WAIT seconds; never changes the exit code
+  [ -n "$site_pid" ] || return 0
+  local waited=0
+  while kill -0 "$site_pid" 2>/dev/null && [ $waited -lt "${POG_SC_SITE_WAIT:-300}" ]; do sleep 1; waited=$((waited + 1)); done
+  if kill -0 "$site_pid" 2>/dev/null; then
+    echo "site refresh: still running after ${POG_SC_SITE_WAIT:-300} s (log $prev_dir/site-refresh.log)"
+  elif wait "$site_pid"; then
+    echo "site refresh: $(tail -1 "$prev_dir/site-refresh.log" 2>/dev/null | sed 's/^[0-9:]* site-refresh: //')"
+  else
+    echo "site refresh FAILED (the shift is unaffected): $(grep 'FAILED' "$prev_dir/site-refresh.log" | tail -1 | sed 's/^[0-9:]* site-refresh: //'); log $prev_dir/site-refresh.log"
+  fi
+}
 if ! env ${sw[@]+"${sw[@]}"} POG_RESUME="$prev" POG_NEXT_SHIFT="$next_shift" "${start_team[@]}" "$next" "$minutes" ${stream:+"$stream"}; then
   echo "start-team $next FAILED; see $next_dir/start.log" >&2
+  site_result
   exit 1
 fi
 
@@ -143,4 +170,5 @@ if [ -f "$prev_dir/console-audit.json" ]; then
 else
   echo "console audit of $prev: none saved (stop-team writes $prev_dir/console-audit.json)"
 fi
+site_result
 exit $healthy
