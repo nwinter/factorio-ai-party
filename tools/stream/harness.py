@@ -76,27 +76,48 @@ end
 rcon.print(helpers.table_to_json(out))
 """
 
-# The base as a coarse grid for the site's live map: every building of ours on nauvis (poles left out) binned into
-# CELL-tile cells, each cell labelled by its most telling building (defence > labs > oil > assembly > smelting >
-# mining > power > storage > belts and inserters > pipes); the cell doubles until the grid fits MAXC cells a side.
-# Plus enemy spawners and worms near the base. One find_entities_filtered over our types: a few ms on a large
-# base, read once a minute (live.py). No comments inside: one_line() joins the lines.
+# The base for the site's live map: every building of ours on nauvis (poles left out), from one
+# find_entities_filtered, in two grids of category letters. Each cell takes its most telling building (defence > labs >
+# oil > assembly > smelting > mining > power > logistics > inserters > belts > rails > pipes).
+# - rows: the whole base in CELL-tile cells (doubled until it fits MAXC cells a side), for the overview and outposts.
+# - core: the dense core at 1 or 2 tiles a cell (doubled until it fits CMAX), each building's whole footprint filled.
+#   The core is the biggest 8-connected group of 32-tile blocks holding at least a fifth of the busiest block's
+#   buildings (pipes, belts, inserters and rails not counted, so a long pipeline or rail line does not stretch it),
+#   plus 8 tiles. Fewer than 12 such buildings: the whole base.
+# Plus enemy spawners and worms near the base, and with ore the resource under and around it. Read once a minute
+# (live.py), no per-tick work (time it on a world with tools/stream/basemap_time.py). Types the game does not know
+# (no Space Age or Elevated Rails) make the read fall back to the base list. No comments inside: one_line() joins
+# the lines.
 BASEMAP_LUA = r"""
 local s = game.surfaces.nauvis
 local f = game.forces.player
 local CAT = {["ammo-turret"]="D",["electric-turret"]="D",["fluid-turret"]="D",["artillery-turret"]="D",["wall"]="D",["gate"]="D",
   ["lab"]="R",["assembling-machine"]="A",["rocket-silo"]="A",["furnace"]="S",["mining-drill"]="M",["offshore-pump"]="M",
   ["boiler"]="E",["generator"]="E",["solar-panel"]="E",["accumulator"]="E",["reactor"]="E",["burner-generator"]="E",
-  ["container"]="K",["logistic-container"]="K",["transport-belt"]="B",["underground-belt"]="B",["splitter"]="B",
-  ["inserter"]="B",["loader"]="B",["loader-1x1"]="B",["pipe"]="P",["pipe-to-ground"]="P",["pump"]="P",["storage-tank"]="P"}
+  ["container"]="L",["logistic-container"]="L",["roboport"]="L",["train-stop"]="L",["transport-belt"]="B",
+  ["underground-belt"]="B",["splitter"]="B",["loader"]="B",["loader-1x1"]="B",["inserter"]="I",["pipe"]="P",
+  ["pipe-to-ground"]="P",["pump"]="P",["storage-tank"]="P",["straight-rail"]="T",["curved-rail-a"]="T",
+  ["curved-rail-b"]="T",["half-diagonal-rail"]="T",["rail-signal"]="T",["rail-chain-signal"]="T"}
+local EXTRA = {["lane-splitter"]="B",["cargo-landing-pad"]="L",["agricultural-tower"]="M",["fusion-reactor"]="E",
+  ["fusion-generator"]="E",["lightning-attractor"]="E",["rail-ramp"]="T",["rail-support"]="T",
+  ["elevated-straight-rail"]="T",["elevated-curved-rail-a"]="T",["elevated-curved-rail-b"]="T",["elevated-half-diagonal-rail"]="T"}
 local OIL = {["oil-refinery"]=true,["chemical-plant"]=true,["pumpjack"]=true}
-local RANK = {D=10,R=9,O=8,A=7,S=6,M=5,E=4,K=3,B=2,P=1}
-local types = {}
-for t in pairs(CAT) do types[#types+1] = t end
+local RANK = {D=12,R=11,O=10,A=9,S=8,M=7,E=6,L=5,I=4,B=3,T=2,P=1}
+local LINE = {P=true,B=true,I=true,T=true}
+local types, all = {}, {}
+for t, c in pairs(CAT) do types[#types+1] = t all[t] = c end
+local base = #types
+for t, c in pairs(EXTRA) do types[#types+1] = t all[t] = c end
+local ok, found = pcall(s.find_entities_filtered, {force = f, type = types})
+if not ok then
+  local bt = {}
+  for i = 1, base do bt[i] = types[i] end
+  found = s.find_entities_filtered{force = f, type = bt}
+end
 local pts = {}
-for _, e in pairs(s.find_entities_filtered{force = f, type = types}) do
+for _, e in pairs(found) do
   local p = e.position
-  pts[#pts+1] = {p.x, p.y, OIL[e.name] and "O" or CAT[e.type]}
+  pts[#pts+1] = {p.x, p.y, OIL[e.name] and "O" or all[e.type], e}
 end
 local C, MAXC = CELL, MAXCELLS
 local cells, x0, y0, x1, y1
@@ -123,6 +144,80 @@ if x0 then
     for cx = x0, x1 do buf[#buf+1] = row[cx] or "." end
     rows[#rows+1] = (table.concat(buf):gsub("%.+$", ""))
   end
+end
+local core = nil
+if x0 then
+  local blocks, top, n = {}, 0, 0
+  for _, q in ipairs(pts) do
+    if not LINE[q[3]] then
+      local k = math.floor(q[1] / 32) .. "," .. math.floor(q[2] / 32)
+      blocks[k] = (blocks[k] or 0) + 1
+      if blocks[k] > top then top = blocks[k] end
+      n = n + 1
+    end
+  end
+  local bx0, by0, bx1, by1 = x0 * C, y0 * C, (x1 + 1) * C, (y1 + 1) * C
+  if n >= 12 then
+    local lim, dense, seen, best, bestn = math.max(2, top / 5), {}, {}, nil, -1
+    for k, v in pairs(blocks) do if v >= lim then dense[k] = v end end
+    for k in pairs(dense) do
+      if not seen[k] then
+        seen[k] = true
+        local stack, group, total = {k}, {}, 0
+        while #stack > 0 do
+          local cur = table.remove(stack)
+          local bx, by = cur:match("^(-?%d+),(-?%d+)$")
+          bx, by = tonumber(bx), tonumber(by)
+          group[#group+1] = {bx, by}
+          total = total + dense[cur]
+          for dx = -1, 1 do for dy = -1, 1 do
+            local nk = (bx + dx) .. "," .. (by + dy)
+            if dense[nk] and not seen[nk] then seen[nk] = true stack[#stack+1] = nk end
+          end end
+        end
+        if total > bestn then best, bestn = group, total end
+      end
+    end
+    bx0, by0, bx1, by1 = math.huge, math.huge, -math.huge, -math.huge
+    for _, b in ipairs(best) do
+      bx0, by0 = math.min(bx0, b[1] * 32 - 8), math.min(by0, b[2] * 32 - 8)
+      bx1, by1 = math.max(bx1, b[1] * 32 + 40), math.max(by1, b[2] * 32 + 40)
+    end
+  end
+  local CC = 1
+  while (bx1 - bx0) / CC > CMAX or (by1 - by0) / CC > CMAX do CC = CC * 2 end
+  local cx0, cy0, cx1, cy1 = math.floor(bx0 / CC), math.floor(by0 / CC), math.floor((bx1 - 1) / CC), math.floor((by1 - 1) / CC)
+  local PE = prototypes and prototypes.entity
+  local size, fine = {}, {}
+  for _, q in ipairs(pts) do
+    if q[1] >= bx0 - 8 and q[1] <= bx1 + 8 and q[2] >= by0 - 8 and q[2] <= by1 + 8 then
+      local e = q[4]
+      local sz = size[e.name]
+      if not sz then
+        local pr = PE and PE[e.name]
+        sz = {pr and pr.tile_width or 1, pr and pr.tile_height or 1}
+        size[e.name] = sz
+      end
+      local w, h = sz[1], sz[2]
+      if w ~= h and (e.direction == 4 or e.direction == 12) then w, h = h, w end
+      local tx, ty = math.floor(q[1] - w / 2 + 0.01), math.floor(q[2] - h / 2 + 0.01)
+      for cy = math.max(cy0, math.floor(ty / CC)), math.min(cy1, math.floor((ty + h - 1) / CC)) do
+        local row = fine[cy]
+        if not row then row = {} fine[cy] = row end
+        for cx = math.max(cx0, math.floor(tx / CC)), math.min(cx1, math.floor((tx + w - 1) / CC)) do
+          local old = row[cx]
+          if not old or RANK[q[3]] > RANK[old] then row[cx] = q[3] end
+        end
+      end
+    end
+  end
+  local crows = {}
+  for cy = cy0, cy1 do
+    local row, buf = fine[cy] or {}, {}
+    for cx = cx0, cx1 do buf[#buf+1] = row[cx] or "." end
+    crows[#crows+1] = (table.concat(buf):gsub("%.+$", ""))
+  end
+  core = {cell = CC, x0 = cx0 * CC, y0 = cy0 * CC, w = cx1 - cx0 + 1, h = cy1 - cy0 + 1, rows = crows}
 end
 local nests = {}
 if x0 then
@@ -161,7 +256,8 @@ if WITHORE and x0 then
   ore = {cell = C, x0 = ox0 * C, y0 = oy0 * C, w = ox1 - ox0 + 1, rows = orows}
 end
 rcon.print(helpers.table_to_json{tick = game.tick, cell = C, x0 = x0 and x0 * C or 0, y0 = y0 and y0 * C or 0,
-  w = x0 and (x1 - x0 + 1) or 0, h = y0 and (y1 - y0 + 1) or 0, rows = rows, nests = nests, buildings = #pts, ore = ore})
+  w = x0 and (x1 - x0 + 1) or 0, h = y0 and (y1 - y0 + 1) or 0, rows = rows, nests = nests, buildings = #pts, ore = ore,
+  core = core})
 """
 
 CAMERA_LUA = r"""
@@ -200,8 +296,9 @@ rcon.print(helpers.table_to_json{harness = i ~= nil, camera = (i and i.camera) ~
 """
 
 
-def basemap_lua(cell=4, max_cells=128, ore=False):
-    return (BASEMAP_LUA.replace("MAXCELLS", str(int(max_cells))).replace("CELL", str(int(cell)))
+def basemap_lua(cell=4, max_cells=128, ore=False, core_max=160):
+    return (BASEMAP_LUA.replace("MAXCELLS", str(int(max_cells))).replace("CMAX", str(int(core_max)))
+            .replace("CELL", str(int(cell)))
             .replace("WITHORE", "true" if ore else "false"))
 
 
@@ -280,14 +377,16 @@ class Harness:
         return self.lua(lua)
 
     def basemap(self, cell=4, max_cells=128, ore=False):
-        """The base as a grid of category letters (BASEMAP_LUA); read-only, for the site's live map. With ore, also
-        the resource under and around it (64 tiles out), one letter per cell for the commonest resource there."""
+        """The base as grids of category letters (BASEMAP_LUA: the whole base, and its dense core at 1-2 tiles a cell);
+        read-only, for the site's live map. With ore, also the resource under and around it (64 tiles out), one letter
+        per cell for the commonest resource there."""
         m = self.lua(basemap_lua(cell, max_cells, ore))
         for key in ("rows", "nests"):  # table_to_json writes an empty table as {}
             if not isinstance(m.get(key), list):
                 m[key] = []
-        if isinstance(m.get("ore"), dict) and not isinstance(m["ore"].get("rows"), list):
-            m["ore"]["rows"] = []
+        for key in ("ore", "core"):
+            if isinstance(m.get(key), dict) and not isinstance(m[key].get("rows"), list):
+                m[key]["rows"] = []
         return m
 
     def probe(self):

@@ -41,7 +41,10 @@ local all = {}
 for _, e in ipairs(OURS) do e.force = "player"; all[#all+1] = e end
 for _, e in ipairs(ENEMY) do e.force = "enemy"; all[#all+1] = e end
 for _, e in ipairs(ORE) do e.force = "neutral"; all[#all+1] = e end
+prototypes = {entity = {["assembling-machine-2"] = {tile_width = 3, tile_height = 3},
+  ["boiler"] = {tile_width = 3, tile_height = 2}}}
 game = {tick = 600, forces = {player = {}}, surfaces = {nauvis = {find_entities_filtered = function(f)
+  if STRICT and f.type then for _, t in ipairs(f.type) do if t == "lane-splitter" then error("Unknown entity type") end end end
   local out = {}
   for _, e in ipairs(all) do if want(e, f) then out[#out+1] = e end end
   return out
@@ -50,12 +53,12 @@ end}}}
 
 
 def lua_list(items):
-    return "{" + ",".join("{name=%s,type=%s,position={x=%s,y=%s}}" % (json.dumps(n), json.dumps(t), x, y)
-                          for n, t, x, y in items) + "}"
+    return "{" + ",".join("{name=%s,type=%s,position={x=%s,y=%s},direction=%s}" % (json.dumps(i[0]), json.dumps(i[1]), i[2], i[3],
+                          i[4] if len(i) > 4 else 0) for i in items) + "}"
 
 
-def run(entities, nests=(), cell=4, max_cells=128, ore=()):
-    src = STUB.replace("ENTITIES", lua_list(entities)).replace("NESTS", lua_list(nests)).replace("local OURS, ENEMY", "local ORE = " + lua_list(ore) + " local OURS, ENEMY") + \
+def run(entities, nests=(), cell=4, max_cells=128, ore=(), strict=False):
+    src = ("STRICT = true " if strict else "") + STUB.replace("ENTITIES", lua_list(entities)).replace("NESTS", lua_list(nests)).replace("local OURS, ENEMY", "local ORE = " + lua_list(ore) + " local OURS, ENEMY") + \
         one_line(basemap_lua(cell, max_cells, ore=bool(ore)))
     out = subprocess.run(["lua", "-e", src], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0, out.stderr
@@ -99,4 +102,25 @@ row0 = o["rows"][16]  # tile y 0..3
 check("the commonest resource in a cell wins (iron 9 over copper 2)", row0[16] == "i")
 check("coal and crude oil get their own letters", o["rows"][21][21] == "k" and o["rows"][18][8] == "o")
 check("ore beyond the margin is left out", all("s" not in r for r in o["rows"]))
+# the core: a dense block of assemblers and furnaces, a 400-tile pipeline north to pumpjacks
+base = [("assembling-machine-2", "assembling-machine", 4.5 + 4 * i, 4.5 + 4 * j) for i in range(6) for j in range(4)] + \
+       [("stone-furnace", "furnace", 40 + 2 * i, 2) for i in range(5)] + \
+       [("boiler", "boiler", 50.5, 20, 4), ("transport-belt", "transport-belt", 2.5, 2.5)]
+line = [("pipe", "pipe", 0.5, -0.5 - k) for k in range(400)] + [("pumpjack", "mining-drill", 0.5 + 3 * i, -405.5) for i in range(3)]
+c = run(base + line)
+core = c["core"]
+check("the coarse grid still spans the pipeline", c["h"] * c["cell"] >= 400)
+check("the core is the dense block at 1 tile a cell, the pipeline left out",
+      core["cell"] == 1 and core["y0"] >= -40 and core["x0"] == -8 and core["w"] <= 120)
+row = lambda y: core["rows"][y - core["y0"]].ljust(core["w"], ".")
+x = lambda x: x - core["x0"]
+check("an assembler fills its 3x3 footprint", all(row(y)[x(3):x(6)] == "AAA" for y in (3, 4, 5)) and row(6)[x(3)] == ".")
+check("a belt cell under nothing else is B", row(2)[x(2)] == "B")
+check("a boiler facing east is 2 wide and 3 tall", row(19)[x(49):x(52)] == "EE." and row(18)[x(50)] == "E" and row(20)[x(50)] == "E" and row(21)[x(50)] == ".")
+small = run([("lab", "lab", 0, 0), ("pipe", "pipe", 300, 0)])
+check("under 12 buildings: the core is the whole base", small["core"]["x0"] <= 0 and small["core"]["x0"] + small["core"]["w"] * small["core"]["cell"] >= 300)
+check("a core wider than 160 cells doubles its cell", small["core"]["cell"] == 2)
+fb = run(base, strict=True)
+check("a game without the Space Age types falls back to the base list", fb["buildings"] == len(base) and fb["core"]["cell"] == 1)
+check("no core without buildings", "core" not in empty)
 print("all passed")

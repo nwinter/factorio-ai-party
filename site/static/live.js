@@ -221,10 +221,13 @@
 
   // ------------------------------------------------------------------ minimap of agent positions
   // The base layer (state.basemap, tools/stream/harness.py BASEMAP_LUA, read once a minute): rows of category
-  // letters, one per cell of `cell` tiles from (x0, y0). Drawn as one path per category in cell units, built once
-  // per snapshot tick and placed with a transform, so a 10 s refresh only moves it.
+  // letters, one per cell of `cell` tiles from (x0, y0), for the whole base, and basemap.core: the dense core at 1-2
+  // tiles a cell with each building's footprint filled. Drawn as one path per category in cell units, built once per
+  // snapshot tick and placed with a transform, so a refresh or a zoom only moves it.
   var BASE_CATS = [['D', 'Defence'], ['R', 'Labs'], ['O', 'Oil and chemistry'], ['A', 'Assembly'], ['S', 'Smelting'],
-    ['M', 'Mining'], ['E', 'Power'], ['K', 'Storage'], ['B', 'Belts and inserters'], ['P', 'Pipes']];
+    ['M', 'Mining'], ['E', 'Power'], ['L', 'Logistics'], ['K', 'Storage'], ['I', 'Inserters'], ['B', 'Belts'],
+    ['T', 'Rails'], ['P', 'Pipes']];
+  var LINE_CATS = { P: 1, B: 1, I: 1, T: 1 };
   // Ore under and around the base (basemap.ore, read every 5 minutes): its own grid, drawn faintly under the buildings.
   var ORE_CATS = [['i', 'Iron ore'], ['c', 'Copper ore'], ['k', 'Coal'], ['s', 'Stone'], ['o', 'Crude oil'], ['u', 'Uranium ore'], ['x', 'Other resource']];
   var pathCache = {};
@@ -251,57 +254,88 @@
     return pathCache[slot];
   }
   var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
+  // The view: null frames the core (and the agents near it); a wheel, drag, pinch or the +/− buttons set
+  // {cx, cy, span} in tiles, kept across refreshes until "Fit".
+  var mmView = null, mmArgs = null, mmAuto = null;
   function minimap(agents, alerts, cams, bm, fights) {
+    mmArgs = [agents, alerts, cams, bm, fights];
+    return '<div id="mm" class="mm">' + drawMap() + '</div>';
+  }
+  function drawMap() {
+    var agents = mmArgs[0], alerts = mmArgs[1], cams = mmArgs[2], bm = mmArgs[3], fights = mmArgs[4];
     var pts = agents.filter(function (a) { return a.position && isFinite(a.position.x) && isFinite(a.position.y); });
     // alert pins for what the fight rings do not show (deaths, power); fights have their own markers
     var pins = (alerts || []).filter(function (a) { return a.position && isFinite(a.position.x) && (!(fights || []).length || (a.kind !== 'attack' && a.kind !== 'loss')); });
     var base = validGrid(bm) && bm.w > 0 ? bm : null, ore = base && validGrid(bm.ore) ? bm.ore : null;
+    var fine = base && validGrid(bm.core) && bm.core.w > 0 ? bm.core : null;
     if (!pts.length && !base) return '<p class="fx-muted">No positions yet.</p>';
-    // With a base, frame the base's core (baseCore: the outer 5% of building cells on each side trimmed, so one far
-    // outpost does not shrink the base to a dot); agents, alerts, fights and outposts far outside it are pinned to the
-    // frame's edge instead (dashed, the distance in the tooltip).
-    var far = {}, core = base ? baseCore(base) : null, bcx = 0, bcy = 0, reach = Infinity;
+    // Frame the base's core (basemap.core from the game, or baseCore() on the coarse grid from an older stream
+    // service), so a long pipeline or a far outpost does not shrink the base; agents, alerts, fights and outposts far
+    // outside it are pinned to the frame's edge (dashed, the distance in the tooltip), and the inset shows the whole.
+    var far = {}, core = null, bcx = 0, bcy = 0, reach = Infinity;
+    if (fine) {
+      core = { x0: fine.x0, y0: fine.y0, x1: fine.x0 + fine.w * fine.cell, y1: fine.y0 + fine.h * fine.cell };
+      core.out = outposts(base, core);
+    } else if (base) core = baseCore(base);
     if (core) {
       bcx = (core.x0 + core.x1) / 2; bcy = (core.y0 + core.y1) / 2;
       reach = Math.max(96, core.x1 - core.x0, core.y1 - core.y0);
     }
     var dist = function (p) { return Math.round(Math.max(Math.abs(p.x - bcx), Math.abs(p.y - bcy))); };
     var isNear = function (p) { return !core || (Math.abs(p.x - bcx) <= reach && Math.abs(p.y - bcy) <= reach); };
-    pts.forEach(function (a) { if (!isNear(a.position)) far[a.name] = dist(a.position); });
-    var near = pts.filter(function (a) { return !(a.name in far); });
     var fpos = (fights || []).filter(function (f) { return f.position && isFinite(f.position.x) && isFinite(f.position.y); });
     var xs = [], ys = [];
-    near.map(function (a) { return a.position; }).concat(pins.map(function (p) { return p.position; }), fpos.map(function (f) { return f.position; }))
+    pts.filter(function (a) { return isNear(a.position); }).map(function (a) { return a.position; })
+      .concat(pins.map(function (p) { return p.position; }), fpos.map(function (f) { return f.position; }))
       .filter(isNear).forEach(function (p) { xs.push(p.x); ys.push(p.y); });
-    if (core) {
-      xs.push(core.x0, core.x1);
-      ys.push(core.y0, core.y1);
-    }
+    if (core) { xs.push(core.x0, core.x1); ys.push(core.y0, core.y1); }
     var minX = Math.min.apply(0, xs), maxX = Math.max.apply(0, xs), minY = Math.min.apply(0, ys), maxY = Math.max.apply(0, ys);
-    var span = Math.max(64, maxX - minX, maxY - minY) * 1.25, cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-    var S = 320, k = S / span;
+    mmAuto = { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, span: Math.max(48, maxX - minX, maxY - minY) * 1.1 };
+    var v = mmView || mmAuto, span = v.span, cx = v.cx, cy = v.cy;
+    var S = 400, k = S / span;
+    var visible = function (p) { return Math.abs(p.x - cx) <= span / 2 - 4 / k && Math.abs(p.y - cy) <= span / 2 - 4 / k; };
+    pts.forEach(function (a) { if (!visible(a.position)) far[a.name] = dist(a.position); });
     var px = function (x) { return (S / 2 + (x - cx) * k).toFixed(1); }, py = function (y) { return (S / 2 + (y - cy) * k).toFixed(1); };
-    var grid = '', stepT = span > 400 ? 128 : span > 160 ? 64 : 32;
+    var grid = '', stepT = span > 400 ? 128 : span > 160 ? 64 : span > 80 ? 32 : 16;
     for (var gx = Math.ceil((cx - span / 2) / stepT) * stepT; gx < cx + span / 2; gx += stepT) grid += '<line x1="' + px(gx) + '" x2="' + px(gx) + '" y1="0" y2="' + S + '"/>';
     for (var gy = Math.ceil((cy - span / 2) / stepT) * stepT; gy < cy + span / 2; gy += stepT) grid += '<line y1="' + py(gy) + '" y2="' + py(gy) + '" x1="0" x2="' + S + '"/>';
     var onCam = {}; Object.keys(cams || {}).forEach(function (slot) { (cams[slot].agents || []).forEach(function (n) { onCam[n] = slot; }); });
-    var layer = '', legend = '';
+    var layer = '', legend = '', inset = '', taken = [];
     var place = function (g) { return 'translate(' + px(g.x0) + ' ' + py(g.y0) + ') scale(' + (g.cell * k).toFixed(4) + ')'; };
     if (base) {
       var bp = gridPaths('base', base, BASE_CATS, 'b-', base.tick);
+      var fp = fine ? gridPaths('core', fine, BASE_CATS, 'b-', base.tick) : null;
       var op = ore ? gridPaths('ore', ore, ORE_CATS, 'o-', base.tick) : null;
-      layer = (op ? '<g class="mm-ore" transform="' + place(ore) + '">' + op.paths + '</g>' : '') +
-        '<g class="mm-base" transform="' + place(base) + '">' + bp.paths + '</g>';
+      layer = op ? '<g class="mm-ore" transform="' + place(ore) + '">' + op.paths + '</g>' : '';
+      if (fp) {
+        // the coarse grid only outside the fine core, so the two never draw over each other
+        layer += '<clipPath id="mm-out"><path clip-rule="evenodd" d="M-9999 -9999H9999V9999H-9999Z M' + px(core.x0) + ' ' + py(core.y0) +
+          'H' + px(core.x1) + 'V' + py(core.y1) + 'H' + px(core.x0) + 'Z"/></clipPath>' +
+          '<g clip-path="url(#mm-out)"><g class="mm-base" transform="' + place(base) + '">' + bp.paths + '</g></g>' +
+          '<g class="mm-base" transform="' + place(fine) + '">' + fp.paths + '</g>';
+      } else layer += '<g class="mm-base" transform="' + place(base) + '">' + bp.paths + '</g>';
       layer += (Array.isArray(base.nests) ? base.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); }).map(function (n) {
         return n[2] === 's' ? '<rect class="nest" x="' + (px(n[0]) - 3) + '" y="' + (py(n[1]) - 3) + '" width="6" height="6"><title>Enemy spawner</title></rect>'
           : '<circle class="worm" cx="' + px(n[0]) + '" cy="' + py(n[1]) + '" r="2.5"><title>Worm</title></circle>';
       }).join('');
-      legend = '<ul class="mm-legend">' + bp.cats.map(function (c) { return '<li><i class="b-' + c[0] + '"></i>' + esc(c[1]) + '</li>'; }).join('') +
+      var cats = {}; bp.cats.concat(fp ? fp.cats : []).forEach(function (c) { cats[c[0]] = 1; });
+      legend = '<ul class="mm-legend">' + BASE_CATS.filter(function (c) { return cats[c[0]]; }).map(function (c) { return '<li><i class="b-' + c[0] + '"></i>' + esc(c[1]) + '</li>'; }).join('') +
         ((base.nests || []).length ? '<li><i class="nest"></i>Enemy nests</li>' : '') + '</ul>' +
         (op && op.cats.length ? '<ul class="mm-legend mm-legend-ore">' + op.cats.map(function (c) { return '<li><i class="o-' + c[0] + '"></i>' + esc(c[1]) + '</li>'; }).join('') + '</ul>' : '');
+      // the whole base in a corner when the view shows only part of it: the overview grid and the view's frame
+      var ew = base.w * base.cell, eh = base.rows.length * base.cell;
+      if (Math.max(ew, eh) > span * 1.4) {
+        var I = 104, ki = I / Math.max(ew, eh), ix = S - I - 6, iy = S - I - 6;
+        var ip = function (x, y) { return [(ix + (x - base.x0) * ki), (iy + (y - base.y0) * ki)]; };
+        var a0 = ip(cx - span / 2, cy - span / 2), a1 = ip(cx + span / 2, cy + span / 2);
+        var vx0 = Math.max(ix, a0[0]), vy0 = Math.max(iy, a0[1]), vx1 = Math.min(ix + I, a1[0]), vy1 = Math.min(iy + I, a1[1]);
+        inset = '<g class="mm-inset"><title>The whole base; the box is this view</title><rect class="mm-inset-bg" x="' + (ix - 3) + '" y="' + (iy - 3) + '" width="' + (I + 6) + '" height="' + (I + 6) + '"/>' +
+          '<g class="mm-base" transform="translate(' + ix.toFixed(1) + ' ' + iy.toFixed(1) + ') scale(' + (base.cell * ki).toFixed(4) + ')">' + bp.paths + '</g>' +
+          (vx1 > vx0 && vy1 > vy0 ? '<rect class="mm-inset-view" x="' + vx0.toFixed(1) + '" y="' + vy0.toFixed(1) + '" width="' + Math.max(2, vx1 - vx0).toFixed(1) + '" height="' + Math.max(2, vy1 - vy0).toFixed(1) + '"/>' : '') + '</g>';
+        taken.push({ x0: ix - 3, y0: iy - 3, x1: S, y1: S });
+      }
     }
-    // Anything far from the core sits just inside the frame edge, on the line from the frame's centre towards it.
-    var visible = function (p) { return Math.abs(p.x - cx) <= span / 2 - 4 / k && Math.abs(p.y - cy) <= span / 2 - 4 / k; };
+    // Anything outside the view sits just inside the frame edge, on the line from the view's centre towards it.
     var edge = function (p) {
       var dx = p.x - cx, dy = p.y - cy, lim = span / 2 - 14 / k, t = lim / Math.max(Math.abs(dx), Math.abs(dy), 1e-6);
       return { x: cx + dx * t, y: cy + dy * t };
@@ -322,7 +356,7 @@
       return '<g class="pin" transform="translate(' + px(at.x) + ' ' + py(at.y) + ')"><title>' + esc(label(p.kind) + ': ' + p.text) + '</title>' +
         '<path d="M0 -9 L8 6 L-8 6 Z"/><text y="4" text-anchor="middle">!</text></g>';
     }).join('');
-    // outposts: building clusters outside the frame, a small hollow square at the edge
+    // outposts: building clusters outside the view, a small hollow square at the edge
     marks += (core ? core.out : []).filter(function (o) { return !visible(o); }).map(function (o) {
       var at = edge(o);
       return '<rect class="outpost" x="' + (px(at.x) - 4) + '" y="' + (py(at.y) - 4) + '" width="8" height="8"><title>Outpost: ' + o.n +
@@ -333,7 +367,6 @@
       var at = a.name in far ? edge(a.position) : a.position;
       return { a: a, x: +px(at.x), y: +py(at.y), far: a.name in far };
     });
-    var taken = [];
     dots.forEach(function (d) {
       taken.push({ x0: d.x - 7, y0: d.y - 7, x1: d.x + 7, y1: d.y + 7 });
       if (onCam[d.a.name]) {
@@ -350,25 +383,108 @@
         '<circle r="5.5" style="fill:' + c + '"/>' +
         (lab ? '<text x="' + lab.x + '" y="' + lab.y + '"' + (lab.anchor !== 'start' ? ' text-anchor="' + lab.anchor + '"' : '') + '>' + esc(name) + '</text>' : '') + '</g>';
     }).join('');
-    return '<svg class="minimap" viewBox="0 0 ' + S + ' ' + S + '" role="img" aria-label="' + (base ? 'The base and agent positions' : 'Agent positions') + '"><rect width="' + S + '" height="' + S + '" class="mm-bg"/>' +
-      '<g class="mm-grid">' + grid + '</g>' + layer + marks + '</svg>' + legend +
-      '<p class="fx-muted small">About ' + Math.round(span) + ' tiles across; grid every ' + stepT + ' tiles. Orange rings: on camera. Red rings: fights (solid while going on; × where something was destroyed). Triangles: other alerts.' +
-      (base ? ' Buildings in ' + base.cell + '-tile cells' + (base.buildings != null ? ' (' + esc(base.buildings) + ' in all)' : '') +
-        ', refreshed every minute' + (ore ? '; ore every five minutes' : '') + '.' : '') +
-      (Object.keys(far).length || (core && core.out.length) ? ' Dashed dots and hollow squares: agents and outposts far from the base, shown at the edge (hover for the distance).' : '') + '</p>';
+    var cellsNote = base ? (fine ? ' Buildings near the core in ' + fine.cell + '-tile cells (each building\'s full footprint), the rest in ' + base.cell + '-tile cells'
+      : ' Buildings in ' + base.cell + '-tile cells') + (base.buildings != null ? ' (' + esc(base.buildings) + ' in all)' : '') +
+      ', refreshed every minute' + (ore ? '; ore every five minutes' : '') + '.' : '';
+    return '<div class="mm-frame"><svg class="minimap" viewBox="0 0 ' + S + ' ' + S + '" role="img" aria-label="' + (base ? 'The base and agent positions' : 'Agent positions') + '"><rect width="' + S + '" height="' + S + '" class="mm-bg"/>' +
+      '<g class="mm-grid">' + grid + '</g>' + layer + marks + inset + '</svg>' +
+      '<div class="mm-zoom"><button type="button" class="fx-btn fx-btn--icon" data-mm="in" aria-label="Zoom in">+</button>' +
+      '<button type="button" class="fx-btn fx-btn--icon" data-mm="out" aria-label="Zoom out">−</button>' +
+      (mmView ? '<button type="button" class="fx-btn" data-mm="fit">Fit</button>' : '') + '</div></div>' + legend +
+      '<p class="fx-muted small">About ' + Math.round(span) + ' tiles across; grid every ' + stepT + ' tiles. Scroll or pinch to zoom, drag to pan. ' +
+      'Orange rings: on camera. Red rings: fights (solid while going on; × where something was destroyed). Triangles: other alerts.' + cellsNote +
+      (Object.keys(far).length || (core && core.out.length) ? ' Dashed dots and hollow squares: agents and outposts outside the view, shown at the edge (hover for the distance).' : '') + '</p>';
+  }
+  // Zoom and pan: a wheel or a pinch zooms about the pointer, a drag pans (on a phone a vertical swipe still scrolls
+  // the page: the map takes only what touch-action leaves it); redrawn at most once a frame.
+  var mmFrame = 0;
+  function redrawMap() {
+    if (mmFrame) return;
+    mmFrame = requestAnimationFrame(function () {
+      mmFrame = 0;
+      var el = document.getElementById('mm');
+      if (el && mmArgs) el.innerHTML = drawMap();
+    });
+  }
+  function mapPoint(ev, svg) {
+    var r = svg.getBoundingClientRect(), v = mmView || mmAuto;
+    var fx = (ev.clientX - r.left) / r.width - 0.5, fy = (ev.clientY - r.top) / r.height - 0.5;
+    return { fx: fx, fy: fy, x: v.cx + fx * v.span, y: v.cy + fy * v.span, w: r.width };
+  }
+  function zoomAt(p, factor) {
+    var v = mmView || mmAuto, span = Math.min(4000, Math.max(24, v.span * factor));
+    mmView = { span: span, cx: p.x - p.fx * span, cy: p.y - p.fy * span };
+    redrawMap();
+  }
+  app.addEventListener('wheel', function (ev) {
+    var svg = ev.target.closest && ev.target.closest('.minimap');
+    if (!svg || !mmAuto) return;
+    ev.preventDefault();
+    zoomAt(mapPoint(ev, svg), Math.pow(1.0015, ev.deltaY * (ev.deltaMode === 1 ? 33 : 1)));
+  }, { passive: false });
+  app.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-mm]');
+    if (!b || !mmAuto) return;
+    var v = mmView || mmAuto;
+    if (b.dataset.mm === 'fit') { mmView = null; redrawMap(); return; }
+    zoomAt({ fx: 0, fy: 0, x: v.cx, y: v.cy }, b.dataset.mm === 'in' ? 1 / 1.5 : 1.5);
+  });
+  var mmPtrs = {};
+  app.addEventListener('pointerdown', function (ev) {
+    var svg = ev.target.closest && ev.target.closest('.minimap');
+    if (!svg || !mmAuto || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+    mmPtrs[ev.pointerId] = { x: ev.clientX, y: ev.clientY, svg: svg };
+  });
+  window.addEventListener('pointermove', function (ev) {
+    var p = mmPtrs[ev.pointerId];
+    if (!p) return;
+    var ids = Object.keys(mmPtrs), v = mmView || mmAuto, svg = document.querySelector('#mm .minimap') || p.svg;
+    var w = svg.getBoundingClientRect().width || 1;
+    if (ids.length === 1) {
+      mmView = { span: v.span, cx: v.cx - (ev.clientX - p.x) / w * v.span, cy: v.cy - (ev.clientY - p.y) / w * v.span };
+    } else if (ids.length === 2) {
+      var o = mmPtrs[ids[0] == ev.pointerId ? ids[1] : ids[0]];
+      var d0 = Math.hypot(p.x - o.x, p.y - o.y) || 1, d1 = Math.hypot(ev.clientX - o.x, ev.clientY - o.y) || 1;
+      var mid = mapPoint({ clientX: (ev.clientX + o.x) / 2, clientY: (ev.clientY + o.y) / 2 }, svg);
+      var span = Math.min(4000, Math.max(24, v.span * d0 / d1));
+      mmView = { span: span, cx: mid.x - mid.fx * span - (ev.clientX - p.x) / 2 / w * span, cy: mid.y - mid.fy * span - (ev.clientY - p.y) / 2 / w * span };
+      ev.preventDefault();
+    } else return;
+    p.x = ev.clientX; p.y = ev.clientY;
+    redrawMap();
+  }, { passive: false });
+  ['pointerup', 'pointercancel'].forEach(function (t) { window.addEventListener(t, function (ev) { delete mmPtrs[ev.pointerId]; }); });
+
+  // Outposts: building cells of the coarse grid outside the core box (pipes, belts, inserters and rails left out),
+  // grouped in 48-tile blocks, each drawn at the frame's edge when out of view.
+  function outposts(g, box) {
+    var groups = {}, out = [];
+    g.rows.forEach(function (row, r) {
+      row = String(row);
+      for (var c = 0; c < row.length; c++) {
+        var ch = row.charAt(c);
+        if (ch === '.' || ch === ' ' || LINE_CATS[ch]) continue;
+        var p = { x: g.x0 + (c + 0.5) * g.cell, y: g.y0 + (r + 0.5) * g.cell };
+        if (p.x >= box.x0 - 16 && p.x <= box.x1 + 16 && p.y >= box.y0 - 16 && p.y <= box.y1 + 16) continue;
+        var key = Math.floor(p.x / 48) + ',' + Math.floor(p.y / 48), o = groups[key] || (groups[key] = { x: 0, y: 0, n: 0 });
+        o.x += p.x; o.y += p.y; o.n += 1;
+      }
+    });
+    Object.keys(groups).forEach(function (key) { var o = groups[key]; out.push({ x: o.x / o.n, y: o.y / o.n, n: o.n }); });
+    return out;
   }
 
-  // The base's core: where the factory is dense. Pipes and belts (P, B) are left out (an 84-cell pipeline to an
-  // oil outpost 400 tiles north framed the base as a thin strip), the other building cells are counted in
-  // 32-tile blocks, and the core is the box around the blocks with at least a fifth of the busiest block's count
-  // (plus 8 tiles). Building cells well outside it, grouped in 48-tile blocks, are outposts drawn at the frame's edge.
+  // The base's core from the coarse grid alone (a stream service without basemap.core): where the factory is dense.
+  // Pipes, belts, inserters and rails are left out (an 84-cell pipeline to an oil outpost 400 tiles north framed the
+  // base as a thin strip), the other building cells are counted in 32-tile blocks, and the core is the box around the
+  // biggest connected group of blocks with at least a fifth of the busiest block's count (plus 8 tiles).
   function baseCore(g) {
     var cells = [], cell = g.cell;
     g.rows.forEach(function (row, r) {
       row = String(row);
       for (var c = 0; c < row.length; c++) {
         var ch = row.charAt(c);
-        if (ch !== '.' && ch !== ' ' && ch !== 'P' && ch !== 'B') cells.push({ x: g.x0 + (c + 0.5) * cell, y: g.y0 + (r + 0.5) * cell });
+        if (ch !== '.' && ch !== ' ' && !LINE_CATS[ch]) cells.push({ x: g.x0 + (c + 0.5) * cell, y: g.y0 + (r + 0.5) * cell });
       }
     });
     if (cells.length < 12) return { x0: g.x0, y0: g.y0, x1: g.x0 + g.w * cell, y1: g.y0 + g.rows.length * cell, out: [] };
@@ -397,18 +513,12 @@
       }
       if (!best || total > best.total) best = { total: total, group: group };
     });
-    var box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, out: [] };
+    var box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
     best.group.forEach(function (b) {
       box.x0 = Math.min(box.x0, b[0] * 32 - 8); box.y0 = Math.min(box.y0, b[1] * 32 - 8);
       box.x1 = Math.max(box.x1, b[0] * 32 + 40); box.y1 = Math.max(box.y1, b[1] * 32 + 40);
     });
-    var groups = {};
-    cells.forEach(function (p) {
-      if (p.x >= box.x0 - 16 && p.x <= box.x1 + 16 && p.y >= box.y0 - 16 && p.y <= box.y1 + 16) return;
-      var key = Math.floor(p.x / 48) + ',' + Math.floor(p.y / 48), o = groups[key] || (groups[key] = { x: 0, y: 0, n: 0 });
-      o.x += p.x; o.y += p.y; o.n += 1;
-    });
-    Object.keys(groups).forEach(function (key) { var o = groups[key]; box.out.push({ x: o.x / o.n, y: o.y / o.n, n: o.n }); });
+    box.out = outposts(g, box);
     return box;
   }
   // A label's width in map pixels (bold 11 px Titillium: about 6.3 px a character).
