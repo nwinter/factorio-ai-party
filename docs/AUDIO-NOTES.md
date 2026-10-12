@@ -33,8 +33,50 @@ comes after 04:00.
   - Planets. A planet named in the beat's own facts (the research "Planet discovery Fulgora") or in a travel plan
     ("packing for Vulcanus") no longer counts as a claim to be there. Shake11 had cut 5 such lines.
   - Technology labels keep planet capitals ("Planet discovery Fulgora", not "fulgora").
-- "Previously on" (item 3) is live from shake12, which resumes shake11. Its opener is the first thing to read in
-  shake12's caster.log.
+### Shake12 review (02:58 to 04:05, Opus main, Sonnet urgent, rounds 4-6 live)
+
+| | shake11 (to 00:41) | shake12 (to 04:05) |
+|---|---|---|
+| templates | 6% | 2% |
+| silence | 62% | 54% |
+| urgent writer: exchanges, latency median / p90 | Kimi: 78 in 110 min, 2.1 / 4.7 s | Sonnet: 83 in 69 min, 6.6 / 9.5 s |
+| main writer latency | Opus 6.6 / 8.6 s | Opus 6.5 / 8.2 s |
+| cost per hour, all (writer) | $1.91 ($1.52) | $2.78 ($2.29) |
+| words a sentence; sentences of 3 words or fewer | 6.1; 21% | 7.4; 13% |
+
+- "Previously on" works. Sonnet aired at 02:58:32:
+  - Rook: "Welcome back. Last shift, the team finished seven techs and built more turrets and walls."
+  - Vale: "Which they needed. Three engineers died, and small spitters wrecked a pile of belts and poles."
+  - Rook: "Now Sol builds shared defense for the north oil corridor."
+
+  "Built more turrets and walls" was not true. pog.py started counting turrets, walls and requester chests during
+  shake11, so "135 more gun turret" was a first count. Growth now counts only buildings the first score counted, or
+  pog.py's original list for older scores. Shake12's would read "12 more electric mining drills, 12 more assembling
+  machine 2s, 10 more steam engines".
+- Raids all hour.
+  - An attack beat every 40 to 90 s, 69 of 83 urgent exchanges. Nearly each quoted the counts ("Seven attacks in ten
+    minutes", "Eight...", "still zero deaths"), and "in ten minutes" was in 41 of 327 lines.
+  - The counts' "since the hosts came on" aired as "since we came on air", cut 5 times for 'we'.
+  - Fixes:
+    - A plain attack within 2 minutes of the last attack, loss or death beat is dropped (`--attack-gap 120`);
+      deaths and losses still speak.
+    - Counts go only on death and loss beats, as `deaths_so_far`, `loss_reports_so_far` and `counted_since` (a
+      clock time).
+    - The framing memory reads numbers as N when they count events, so "attacks in N minutes" is a framing.
+  - My estimate in the round-5 notes, about 27 urgent exchanges an hour, was too low for a raid-heavy shift:
+    shake12 ran about 70. At that rate Sonnet costs about $0.58 an hour on urgent beats, about $0.16 on Kimi.
+- Sonnet's urgent latency live (6.6 s median, 9.5 s p90) is three times the bench's (2.3 s), on the same prompt
+  shape (facts median about 1,800 characters, no retries on urgent beats). The urgent writer now asks OpenRouter for
+  the fastest provider (`provider: {sort: latency}`); this is untested live. If it stays slow, Kimi (2.1 / 4.7 s
+  live) answers urgent beats faster.
+- Repetition across the shift. Besides the counts, "turrets are doing their job" and "nobody has died" aired five
+  times each, with the phrase list in the facts. A 4-word phrase aired three times in 30 minutes is now cut wherever
+  it sits. Replayed in order, the opening and phrase cuts would take 26 of shake12's 329 lines (mostly the counts
+  framing, which the source change removes), 45 of shake11's 983 and 3 of shake10's 727.
+- Research cards. There were 2 research completions and no research card: the director was busy with replays. A
+  research card it cannot take now is asked for again for 90 s, and the log says when it gives up.
+- Replays come in bursts: three in 41 s at 04:04, often one pipe or one belt. The hosts now let a second replay
+  within 60 s go by; the card still plays. Which losses get a replay is the director's call (`segments.py`).
 
 ## Hosts, round 5 (HOSTS5.md, 2026-10-11 night)
 
