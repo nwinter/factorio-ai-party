@@ -30,6 +30,17 @@ Record each milestone in `notes.md` with the game time printed in fh's `clock` l
 - Plans: `./fh queue submit --file plan.json` runs a multi-step plan inside the game with no round trips.
 - Pictures: `./fh view --out view.png` draws a schematic map; `./shot NAME` saves a real game screenshot to
   `shots/NAME.png` that you can open and look at. Use pictures to check layouts (inserter directions, belt flow).
+- Tools for features beyond hand building (what each action does; see describe.json for arguments):
+  - Trains: rails with build {item: rail, entity: straight-rail|curved-rail-a|curved-rail-b|half-diagonal-rail};
+    stops, locomotives and wagons with build; train {position: stop, name, limit}; train {position: locomotive,
+    schedule, automatic}.
+  - Logistics: roboports with build, robots into them with transfer; requester and buffer chests' requests with
+    requests {position, set}; your own requests with requests (needs logistic robotics).
+  - Circuits: wire {from, to, color: red|green}; circuit {position, enable | logistic | signals | arithmetic | decider}.
+  - Modules and beacons: transfer {position, item: <module>} puts it in the machine's or beacon's module slots.
+  - Nuclear: build the reactor and heat pipes; transfer or refuel with uranium-fuel-cell.
+  - Quality: configure {recipe, quality}; quality on build, transfer and requests.
+  - Grenades and capsules: use_item {item, position}.
 - More detail: `../../../vendor/factorio-harness/docs/usage.md`.
 
 ## Pace
