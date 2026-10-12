@@ -109,13 +109,28 @@ The relay adds these rules:
   minute).
 - A cap of 120 characters.
 - Muted viewers (the agents' vote) are skipped.
-- A question (a "?" anywhere, or a line that opens like one: "how ...", "are you ...") that names no agent (no `@`,
-  no agent name, `pog-` name or display name) gets `@AGENT ` in front of the viewer's words. `viewer_say` takes only
-  name and text, and a viewer line wakes a sleeping agent only for an `@name` in it (board.lua `mention_how`).
-  The agent is the one this viewer's last question went to, if that was within 5 minutes. Otherwise it is the next
-  agent in team order (run config order) that no viewer addressed in the last 5 minutes. If every agent was addressed
-  in that time, it goes to the agent addressed longest ago. serve.py refreshes the roster every second from the
-  snapshot, with display names and without offline agents. The lane marks such a line `to: AGENT`.
+- Every relayed line wakes an agent with `@AGENT ` in front of the viewer's words, unchanged (eng/relay2, shift01
+  16:31-16:39). `viewer_say` takes only name and text, and a viewer line wakes a sleeping agent only for an `@name` in
+  it (board.lua `mention_how`). Which agent:
+  - A line that names agents (name, `pog-` name or display name, word-bounded, any case: "Gemini, you need to ...",
+    "sol") goes to them, at most two, with "@" added where the viewer left it out. "a haiku", "the muse" are words.
+  - Any other line goes to one agent in rotation: advice, feedback, a question, and "All agents", "everyone" or
+    "team" too. The harness has no team-wide viewer mention (a viewer's `@everyone` wakes nobody), and waking all nine
+    for one line would stop the team. It is the agent this viewer's last line went to, if within 5 minutes. Otherwise
+    it is the next agent in team order (run config order) that no viewer addressed in the last 5 minutes, or the one
+    addressed longest ago.
+  - Lines from YouTube staff (Nick answering viewers), lines to a viewer (`@someone`) and lines to Nick are delivered as
+    written and wake nobody.
+  serve.py refreshes the roster every second from the snapshot, with display names and without offline agents.
+- Chatter ("lol", "its crazy but fun", "love this stream": nothing but reaction words, or at most two words, and no
+  question) is shown and the hosts may react, but it is never relayed and does not use the viewer's 45 s slot
+  (`is_chatter`).
+- Each lane line says what became of it: `delivery` "sent" (with `to`, `to_all`), "too_soon" (the author gap) or
+  "busy" (waited past 90 s). The page shows "→ Astra", "→ team", "not sent: too soon" or "not sent: chat busy" next to
+  the viewer's name (`chatfeed.js` `deliveryLabel`), in the feed and in pins, on both pages.
+- `tools/stream/relay_replay.py LOGS...` replays a shift's verdict logs through the relay before and after a change.
+  Shift01 (46 lines that passed): before, 41 delivered and 12 addressed; after, 36 delivered and 31 addressed, plus 6
+  chatter lines shown but not relayed and 4 not sent for the author gap.
 Orders to the agents ("astra, build turrets") are relayed since eng/viewers2: they are viewer talk, and `order: true`
 still marks them in the lane. Attempts to make agents break rules or reveal secrets are dropped by the filters and
 Clef's `injection` label.

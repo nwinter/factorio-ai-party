@@ -156,7 +156,24 @@
     return pins.sort((a, b) => b.t - a.t).slice(0, PIN_MAX);
   }
 
-  const api = { foldTells, tellParts, BURST_GAP_S, viewerPins, viewerShortNames, answersViewer, PIN_S, PIN_MAX };
+  // What became of a viewer's line in the game (viewers.py Relay: delivery, to, to_all), for the viewer to see
+  // (shift01 16:34, craigNZ830: "they are not being taged for agent"): "→ Astra" or "→ Astra, Sol" (delivered and
+  // addressed), "→ team" (delivered to no one agent), "not sent: too soon" (the viewer's own line came too soon after
+  // their last), "not sent: chat busy" (waited too long behind others); nothing for chatter or before the relay acts.
+  function deliveryLabel(v, agents) {
+    if (!v || v.chatter) return "";
+    const shown = (n) => { const a = (agents || []).find((x) => x.name === n); return (a && a.display_name) || n; };
+    if (v.delivery === "sent" || v.relayed) {
+      const to = v.to_all || (v.to ? [v.to] : []);
+      return "→ " + (to.length ? to.map(shown).join(", ") : "team");
+    }
+    if (v.delivery === "too_soon") return "not sent: too soon";
+    if (v.delivery === "busy") return "not sent: chat busy";
+    return "";
+  }
+
+  const api = { foldTells, tellParts, BURST_GAP_S, viewerPins, viewerShortNames, answersViewer, PIN_S, PIN_MAX,
+    deliveryLabel };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.pogChat = api;
 })(typeof window !== "undefined" ? window : this);
