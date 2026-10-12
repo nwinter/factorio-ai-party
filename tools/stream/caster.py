@@ -1097,7 +1097,13 @@ ENDS_RUN = re.compile(r"\b(?:ends?|ending|ended|finish(?:es|ed)?|over for) (?:th
                       r"\bgame over\b|\b(?:run|game)(?:'s| is) over\b")
 TIME_LEFT = re.compile(r"\b([a-z\d-]+(?: [a-z-]+)?) (?:more |last |final )?minutes? (?:left|to go|remaining|on the clock|"
                        r"of (?:[a-z]+ )?(?:bait|play|this|it)|before the (?:deadline|end|buzzer|bell))\b|"
-                       r"\b([a-z\d-]+(?: [a-z-]+)?) more minutes?\b")
+                       r"\b([a-z\d-]+(?: [a-z-]+)?) more minutes?\b|"
+                       # shake11: "Shift ends in three and a half hours", "Still 199 minutes to handover" are time left
+                       r"\b(?:ends|wraps|closes|is over|handover|hand-?off) in ([a-z\d-]+(?: [a-z-]+)?) minutes?\b|"
+                       r"\b([a-z\d-]+(?: [a-z-]+)?) minutes? (?:to|until|before) (?:the )?(?:handover|hand-?off|end)\b")
+# a shift end said as time left ("ends in N minutes", "N minutes to handover"): checked as time left, not as an ending
+SHIFT_ENDS_IN = re.compile(r"\b(?:ends|ending|wraps|closes|is over|handover|hand-?off) in \w|"
+                           r"\b(?:minutes?|hours?) (?:to|until|before) (?:the )?(?:handover|hand-?off|end)\b")
 
 
 FUTURE = re.compile(r"\b(?:next|later|someday|one day|eventually|goal|road to|on the way|way to|until|before|"
@@ -1140,7 +1146,7 @@ def wrong_deadline(low, facts):
     at thirty flat!", "forty more minutes of biter bait" with 4.5 left)."""
     left = facts.get("minutes_to_deadline")
     near = left in ("under a minute", "the deadline has passed") or (isinstance(left, (int, float)) and left <= 5)
-    if SHIFT_ENDS.search(low.replace("’", "'")) and not near:  # shake10 19:53: "Shift seven ends under fire", 2:54 left
+    if SHIFT_ENDS.search(low.replace("’", "'")) and not near and not SHIFT_ENDS_IN.search(low):  # shake10 19:53: "Shift seven ends under fire", 2:54 left
         return "says the shift is ending, but more than 5 minutes remain"
     if ENDS_RUN.search(low) and facts.get("shift"):  # shake5 06:20:37: "Horn swallows them whole" at the handover
         return "says the run ends, but the next shift continues it"
@@ -1148,7 +1154,7 @@ def wrong_deadline(low, facts):
             isinstance(left, (int, float)) and left <= 1)):
         return "says the run ends before the deadline"
     for m in TIME_LEFT.finditer(low):
-        words = m.group(1) or m.group(2)
+        words = next((g for g in m.groups() if g), "")
         nums = [float(x) for x in re.findall(r"\d+", words)] + [float(v) for _, v in spelled_numbers(words)]
         if not nums:
             continue
@@ -1920,7 +1926,12 @@ class Caster:
                 log(f"[writer] failed: {err}")
                 self.breakers["writer"].fail()
             lat = time.time() - t_start
-        if not lines:
+        if not lines and self.writer and e["prio"] < URGENT:
+            # HOSTS5 item 3: a non-urgent beat with nothing usable stays quiet (shake11 aired "haiku runs on Claude
+            # Haiku 5.5. Let's see what it does with the time." for a cut Opus draft); urgent beats still get a template
+            self.stats["skipped_quiet"] = self.stats.get("skipped_quiet", 0) + 1
+            log(f"[writer] nothing usable for {e['kind']} ({err}); staying quiet")
+        elif not lines:
             if self.writer:
                 self.stats["fallbacks"] += 1
             line = self.template.write(first, e, facts, recent, names)

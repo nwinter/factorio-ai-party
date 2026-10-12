@@ -735,8 +735,19 @@ w2 = _Writer([[bad[1]], [bad[1]]])
 c2 = _caster(w2)
 c2.say_exchange({"kind": "attack", "text": "Base under attack near (1, 2)", "t": now, "prio": 5}, {"agents": []},
                 "pbp", 2)
-check("a second style fault falls back to a template", len(w2.notes) == 2 and c2.stats["fallbacks"] == 1
-      and c2.spoke and c2.spoke[0][1] != bad[1][1], str(c2.spoke))
+check("a second style fault on a non-urgent beat stays quiet (HOSTS5 item 3: no template)", len(w2.notes) == 2 and
+      c2.stats["fallbacks"] == 0 and c2.stats.get("skipped_quiet") == 1 and not c2.spoke, str(c2.spoke))
+w2u = _Writer([[bad[1]]])
+c2u = _caster(w2u)
+c2u.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
+check("an urgent beat with nothing usable still gets a template", c2u.stats["fallbacks"] == 1 and c2u.spoke,
+      str(c2u.spoke))
+tl5 = {"minutes_to_deadline": 199, "shift": {"this_shift": "shift 8", "next_shift": "shift 9"}}
+check("time left said as a shift end passes when right, fails when wrong (shake11)", caster.check_line(
+    "Still 199 minutes to handover.", tl5, [], []) is None and caster.check_line(
+    "Shift ends in three and a half hours.", tl5, [], []) is None and caster.check_line(
+    "Shift ends in four minutes.", tl5, [], []).startswith("time left disagrees"),
+      caster.check_line("Shift ends in four minutes.", tl5, [], []))
 w3 = _Writer([[bad[1]], good])
 c3 = _caster(w3)
 c3.say_exchange({"kind": "death", "text": "Sonnet died", "t": now, "prio": 9}, {"agents": []}, "pbp", 2)
