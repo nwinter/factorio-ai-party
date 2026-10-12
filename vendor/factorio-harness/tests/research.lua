@@ -257,4 +257,93 @@ assert(d.actions.research.technology:find('queued_by',1,true))
 for i=1,310 do sol('board_post',{kind='task',title='t'..i,owner='sol'}) end
 eq(storage.agent_harness.board.count,300)
 eq(astra('board').plan.goals,string.rep('g',600))
+
+-- Without on_research_finished (a runtime deployed before the server restarts with the new control.lua), the 10 s
+-- sample announces a technology that left the head of the queue researched, once; a levelled one by its level.
+local function polled(name) local n=0; for _,e in ipairs(storage.agent_harness.research_news.list) do if e.name==name then n=n+1 end end return n end
+techs['electric-energy-accumulators']=tech('electric-energy-accumulators',150,1800,{red,green},{{type='unlock-recipe',recipe='accumulator'}})
+force.research_queue={'electric-energy-accumulators'}
+advance(600)
+techs['electric-energy-accumulators'].researched=true
+force.research_queue={}
+eq(polled('electric-energy-accumulators'),0)
+advance(600)
+eq(polled('electric-energy-accumulators'),1)
+local news=storage.agent_harness.research_news.list
+eq(news[#news].polled,true)
+assert(has(team(sol('status')),'research done: electric-energy-accumulators, unlocks: accumulator'))
+advance(1200); eq(polled('electric-energy-accumulators'),1)
+-- With the event, the sample adds nothing.
+techs['defender']=tech('defender',100,1800,{red,green},{{type='unlock-recipe',recipe='defender-capsule'}})
+force.research_queue={'defender'}
+advance(600)
+finish('defender')
+advance(1200)
+eq(polled('defender'),1); eq(news[#news].polled,nil)
+-- A levelled technology: the same name at the head, one level up.
+techs['mining-productivity-3']=tech('mining-productivity-3',500,3600,{red,green},{{type='mining-drill-productivity-bonus',modifier=0.1}})
+techs['mining-productivity-3'].level=3
+force.research_queue={'mining-productivity-3'}
+advance(600)
+techs['mining-productivity-3'].level=4
+advance(600)
+eq(polled('mining-productivity-3'),1)
+-- A technology dropped from the queue unresearched is not announced.
+techs['automobilism']=tech('automobilism',100,1800,{red,green})
+force.research_queue={'automobilism'}
+advance(600)
+force.research_queue={}
+advance(600)
+eq(polled('automobilism'),0)
+
+-- Shifts: shift_start (start-team, a resumed world); each agent's first reply of the shift carries a shift block once.
+prototypes={entity={roboport={},['solar-panel']={},accumulator={},['requester-chest']={},['buffer-chest']={},pumpjack={},['oil-refinery']={}}}
+local built={['solar-panel']=12,pumpjack=3}
+surface.count_entities_filtered=function(a) assert(a.force==force and a.limit==1); return math.min(built[a.name] or 0,1) end
+techs['construction-robotics']=tech('construction-robotics',100,1800,{red,green})
+techs['construction-robotics'].researched=true
+techs['solar-energy']=tech('solar-energy',100,1800,{red,green}); techs['solar-energy'].researched=true
+techs['logistic-system']=tech('logistic-system',100,1800,{red,green})
+techs['oil-processing'].researched=true
+-- No shift yet (a fresh world): no block.
+eq((astra('status').team or {}).shift,nil)
+local astra_last=game.tick
+jump(3600)
+-- Research done while astra was away (the board plan has goals and astra's line, set earlier).
+techs['steel-axe'].researched=false
+finish('steel-axe')
+jump(60)
+local started=runtime.operator.shift_start()
+eq(started.shift,1)
+jump(120)
+local shift=astra('board',{kind='claim'}).team.shift
+eq(shift.shift,'shift 1, started 2s ago')
+eq(shift.plan_goals,string.rep('g',600))
+eq(shift.your_plan_line,'roboports along the bus')
+eq(shift.research_since_your_last_shift,'steel-axe')
+-- logistic-robotics and construction-robotics share roboports; solar panels and pumpjacks are built; logistic-system
+-- is not researched; accumulators were researched above and none is built.
+eq(shift.researched_none_built,'roboports (logistic-robotics, construction-robotics); accumulators (electric-energy-accumulators)')
+-- Once per shift; peeks and directors get none and leave it for later.
+eq((astra('status').team or {}).shift,nil)
+eq((request{action='status',args={},player=2}.team or {}).shift,nil)
+eq((request{action='chat',args={peek=true},bot='sol'}.team or {}).shift,nil)
+local sol_shift=sol('status').team.shift
+-- sol's last request came before defender and mining-productivity-3 finished too.
+assert(sol_shift and sol_shift.your_plan_line==nil and sol_shift.research_since_your_last_shift=='defender, mining-productivity-3, steel-axe',
+  sol_shift and sol_shift.research_since_your_last_shift)
+-- Built since: gone from the list. The next shift counts research from each agent's last request.
+built.roboport=1
+runtime.operator.shift_start()
+shift=astra('status').team.shift
+eq(shift.shift,'shift 2, started 0s ago'); eq(shift.research_since_your_last_shift,nil)
+eq(shift.researched_none_built,'accumulators (electric-energy-accumulators)')
+-- A fault in the shift block never fails the reply: it is counted.
+local errors=(storage.agent_harness.research_errors or {}).count or 0
+runtime.operator.shift_start()
+local saved=surface.count_entities_filtered
+surface.count_entities_filtered=function() error('engine hiccup') end
+local reply=astra('status')
+eq((reply.team or {}).shift,nil); eq(storage.agent_harness.research_errors.count,errors+1)
+surface.count_entities_filtered=saved
 print('research: ok')
