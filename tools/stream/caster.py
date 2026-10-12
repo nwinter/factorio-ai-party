@@ -840,6 +840,11 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["not_built_yet"] = s["unused_unlocks"][:2]
         f["not_built_yet_note"] = ("researched but none built yet: worth a remark for viewers on what the team could "
                                    "use, at most once, as commentary (the agents do not hear the hosts)")
+    shows_map = (s.get("onair") or {}).get("map")  # onecam.py: Factorio's map of the whole base, on air or in a tile
+    if shows_map:
+        f["on_screen_map"] = {"where": "the whole picture" if shows_map == "on air" else "one small tile",
+                              "note": "viewers see the whole base on Factorio's map now (the core and its outposts): "
+                                      "a moment to say what is where, e.g. 'here's the whole base'"}
     onair = (s.get("onair") or {}).get("agent")
     if onair and e["kind"] in ("lull", "camera", "chat", "board", "plan", "research_start"):
         # one camera on air (onecam.py): the regular beats lean on the agent viewers are watching

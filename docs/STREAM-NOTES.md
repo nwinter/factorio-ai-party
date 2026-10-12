@@ -464,6 +464,19 @@ run config brings back the director below).
   with the zoom fitted, and once it ends 8 s still (`plan_after`) is enough to cut away. The same shift replayed
   through model.py and onecam.py: still share 31% before, 12% after (longest 123 s to 76 s); cuts 45 to 85 in 106
   minutes, 55 of them for standing still and 18 picked with a big action ahead.
+- Base map (a viewer on shift01: "kind wish there was a map in one of them at times to see the overall base
+  layout"): about every 10 minutes (`map_every`, first after 5) the program shows Factorio's own map of the whole base
+  for 15 s (`map_hold`), labelled "Base map", then the story it interrupted. A standby client is framed first: the
+  camera call with `map: true` puts it in the remote controller (`set_controller{type=remote, position, surface,
+  chart_mode_cutoff=2}`), where any zoom under the cutoff renders the chart (as after pressing M: map colours,
+  nests, ore, markers) rather than the world, which is far cheaper than a zoomed-out world render. Framing (mapcam.py)
+  from the snapshot's basemap: every group of building cells, the core and its outposts; belts and pipes alone are
+  no group, so shift01's 500-tile pipeline does not stretch the frame, the pumpjacks at its end do. Zoom fits the hole
+  after the crop (1920 px at zoom z show 1920 / (32 z) tiles), 0.02 to 0.5. Never during an urgent or segment shot,
+  a replay, an inset or a trio; a check-in trio shows the map in one small tile instead. Off air the client is
+  released or given its next subject, and cameras.lua makes it a spectator again (`exit_remote_view`); the 5 s
+  recheck leaves a map camera in the remote controller. The hosts: `onair.map` ("on air" or "tile") and the caster's
+  `on_screen_map`. replays.py gets no frame from a map shot. Off: `"map_every": 0` in the run config's `director`.
 - Trio (Nick, 2026-10-12: he liked the old one-big-two-small layout because each tile said who was doing what):
   sometimes the program shows all three clients in layout-3cam.json's holes, the one on air in the big tile (no cut:
   the same client stays on air) and the two standbys in small tiles, each labelled "Luna · fixing the north wall"

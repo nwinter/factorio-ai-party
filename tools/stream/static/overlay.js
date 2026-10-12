@@ -788,6 +788,18 @@
       const death = !!(cam && cam.attack && cam.alert === "death");
       label.classList.toggle("attack", !!(cam && cam.attack) && !death);
       label.classList.toggle("death", death);
+      if (cam && cam.map) { // Factorio's own map of the whole base (onecam.py base map; cameras.lua map camera)
+        if (label.dataset.sig !== "map") {
+          label.dataset.sig = "map";
+          label.textContent = "";
+          label.append(el("span", "ico", "🗺️"), el("span", "", cam.map));
+        }
+        label.classList.remove("attack", "death");
+        frame.style.borderColor = "";
+        frame.style.removeProperty("--bracket");
+        label.classList.add("on");
+        continue;
+      }
       if (cam && cam.attack && !agents.length) { // a base attack nobody is near, or where an agent fell
         if (label.dataset.sig !== sig) {
           label.dataset.sig = sig;

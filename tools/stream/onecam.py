@@ -34,6 +34,12 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   `plan_boost`; crafting, waits and reads score `dull`. The standby is framed to fit the action's bounds ahead of the
   cut, the camera on air holds while it runs (no rotation, up to `plan_hold`), zooms to fit its bounds, and once it
   ends the stand-still rule may cut away after `plan_after` instead of `still_cut`.
+- Base map (a viewer, shift01: "kind wish there was a map in one of them at times to see the overall base layout"):
+  about every `map_every` (10 min) a standby shows Factorio's own map of the whole base (cameras.lua `map`: the
+  remote controller's chart; framing from the snapshot's basemap, mapcam.py: the core and its outposts) and the
+  program cuts to it for `map_hold` (15 s), labelled "Base map", then back to the story it interrupted. Never during
+  an urgent or segment shot, a replay, a trio or an inset. A check-in trio shows the map in one small tile. A client
+  that showed the map is released when it is off air (cameras.lua makes it a spectator again).
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -42,6 +48,7 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
 import json, time
 
 from director import Director, BUILD, FIGHT, HOLDS, WALK, dist, frame_of, in_frame
+from mapcam import map_shot
 from segments import CHEAP, LOSS_RE
 
 MINOR = CHEAP + ("wall", "chest", "gate")  # a loss of at most MINOR_MAX of these is an inset, not a cut
@@ -93,6 +100,10 @@ ONECAM = {
     "dull": 0.75,           # crafting, waits, reads
     "plan_hold": 300.0,     # the camera on air holds a big action this long at most
     "plan_after": 8.0,      # once it ends, standing still this long is enough to cut away
+    "map_every": 600.0,     # a "Base map" shot about this often (0: never)
+    "map_first": 300.0,     # the first one this long after the start
+    "map_hold": 15.0,       # seconds on the map
+    "map_trio": True,       # a check-in trio shows the map in one small tile
 }
 VISIBLE = FIGHT | BUILD | WALK | {"mine", "gather", "craft", "construct", "kite", "repair", "pickup", "drive", "shoot"}
 DULL = {"craft", "wait_until", "sleep", "inspect", "feed", "insert", "take", "transfer", "research", "fuel", "observe"}
@@ -148,7 +159,9 @@ def onair_info(snap, cams):
     a = next((a for a in snap.get("agents") or [] if a["name"] == name), {}) if name else {}
     return {"agent": name, "display_name": a.get("display_name") or name, "doing": onair_doing(snap, name) if name else "",
             "since": main.get("since"), "client": main.get("client"), "attack": main.get("attack"),
-            "inset": ((cams or {}).get("inset") or {}).get("attack")}
+            "inset": ((cams or {}).get("inset") or {}).get("attack"),
+            # the base map: on air, or in a trio's small tile (the hosts: "here's the whole base")
+            "map": "on air" if main.get("map") else "tile" if any(r.get("map") for r in (cams or {}).values()) else None}
 
 
 class OneCam(Director):
@@ -176,6 +189,9 @@ class OneCam(Director):
         self.still_block = {}  # name -> until when it is not the pick (cut away from for standing still)
         self.plan_end = {}     # name -> when its last big action ended
         self.was_big = set()
+        self.last_map = None   # when the last base map went on air (None: map_first after the start)
+        self.basemap = None    # the snapshot's basemap (mapcam.map_shot frames the map camera from it)
+        self.maps = []         # (t, where): base map shots, on air or in a trio tile
 
     # -- clients ----------------------------------------------------------------------------------------------
     def slot(self, name):
@@ -373,6 +389,7 @@ class OneCam(Director):
         agents = snapshot["agents"]
         by_name = {a["name"]: a for a in agents}
         self.track(agents, now)
+        self.basemap = snapshot.get("basemap") or self.basemap
         scores = self.scores(agents, now)
         ranked = sorted(scores, key=lambda n: -scores[n])
         if not self.slots:
@@ -407,12 +424,51 @@ class OneCam(Director):
             self.tiles(by_name, scores, now)
         else:
             self.direct(by_name, scores, ranked, now)
+            self.maybe_map(scores, now, segment)
             self.maybe_trio(by_name, scores, ranked, now)
+        self.release_maps(now)
         shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
         for t in (self.state.get(s) for s in shown if s):
             for n in (t or {}).get("agents") or []:
                 self.last_on_air[n] = now
         return self.public(now)
+
+    # -- base map ----------------------------------------------------------------------------------------------
+    def map_target(self, hole, until, frac):
+        shot = map_shot(self.basemap, hole=hole, frac=frac)
+        if not shot:
+            return None
+        return {"agents": [], "subject": "@map", "map": True, "position": shot["position"], "surface": "nauvis",
+                "zoom": shot["zoom"], "exact_zoom": True, "until": until, "map_size": shot["size"]}
+
+    def maybe_map(self, scores, now, segment=None):
+        cfg = self.cfg
+        if not cfg["map_every"] or len(self.slots) < 2 or self.mode != "onecam":
+            return
+        last = self.last_map if self.last_map is not None else self.started - cfg["map_every"] + cfg["map_first"]
+        if now - last < cfg["map_every"]:
+            return
+        cur = self.state.get(self.onair)
+        if (self.hold_layout or self.pending or self.inset or self.trio_pending or segment or
+                (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0))):
+            return
+        t = self.map_target((1208, 1032), now + cfg["ready_s"] + cfg["map_hold"], cfg["view_frac"])
+        if not t:
+            return
+        self.last_map = now
+        self.maps.append((now, "on air"))
+        self.urgent(t, "base map", scores, now)
+
+    def release_maps(self, now):
+        """A client that showed the map and is off air now (not about to be shown either) is released: cameras.lua
+        makes it a spectator again on its 5 s recheck, until the director gives it its next subject."""
+        keep = {self.onair, self.inset and self.inset["slot"], self.pending and self.pending["slot"]}
+        for p in (self.trio, self.trio_pending):
+            keep |= set((p or {}).get("tiles", {}).values())
+        for s in self.slots:
+            t = self.state.get(s["slot"])
+            if t and t.get("map") and s["slot"] not in keep:
+                self.apply(s, None, "map over", {}, now, quiet=True)
 
     # -- trio: one big tile and two small ones ------------------------------------------------------------------
     def trio_pick(self, subj, by_name, scores, ranked, now):
@@ -464,6 +520,15 @@ class OneCam(Director):
             return
         pick, why = found
         tiles = {}
+        if why == "check-in" and cfg["map_trio"]:  # one small tile shows the whole base on the map
+            t = self.map_target((596, 336), 1e18, 1.0)
+            if t:
+                self.frame_on(sb[1], t, "trio tile: base map", scores, now)
+                self.trio_pending = {"tiles": {"cam2": sb[0]["slot"], "cam3": sb[1]["slot"]}, "agents": pick[:1],
+                                     "why": why, "map": True}
+                pick = pick[:1]
+                tiles["cam3"] = sb[1]["slot"]
+                self.maps.append((now, "trio tile"))
         for hole, slot, name in zip(("cam2", "cam3"), sb, pick):
             z = round((self.zoom_for(by_name[name], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]) * cfg["trio_zoom"], 2)
             t = self.state.get(slot["slot"])
@@ -471,7 +536,7 @@ class OneCam(Director):
                 self.frame_on(slot, {"agents": [name], "follow": name, "zoom": z, "solo_zoom": z, "subject": name},
                               f"trio tile: {name}", scores, now)
             tiles[hole] = slot["slot"]
-        self.trio_pending = {"tiles": tiles, "agents": pick, "why": why}
+        self.trio_pending = {"tiles": tiles, "agents": pick, "why": why, "map": "cam3" in tiles and len(pick) == 1}
 
     def tiles(self, by_name, scores, now):
         """In a trio: the big tile keeps its story (zoom follows), the small tiles their agents; over at `until`, or at
@@ -647,5 +712,7 @@ class OneCam(Director):
                 row["segment"] = t["segment"]
             if t.get("surface") and t["surface"] != "nauvis":
                 row["surface"] = t["surface"]
+            if t.get("map"):
+                row["map"] = "Base map"  # the page's label; the hosts' onair.map
             out[key] = row
         return out
