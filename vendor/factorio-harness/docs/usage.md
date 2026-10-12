@@ -65,6 +65,22 @@ fh call status
   uses a capsule on yourself (the heal). Capsules of other kinds (cliff explosives, remotes) are refused. Reply: `kind`
   (throw|self), `projectile`, `distance`, `range`, `cooldown_ticks`, `left`, `healed`. It is an instant action that
   stops what the character was doing, as `shoot` does.
+- Circuit network: `wire {from, to, color: "red"|"green"}` lays a circuit wire between two entities in reach (on a
+  combinator, `from_side`/`to_side` pick input or output; default output to input); `disconnect: true` removes it.
+  Without `color`, `wire` is the copper wire between poles. `circuit {position, ...}` sets what the entity's circuit
+  GUI holds: `enable: {signal, comparator, value | signal2}` (the entity works only while the condition holds; `false`
+  turns it off), `logistic: {...}` (the same, read from the logistic network; connects it), a constant combinator's
+  `signals: [{signal, count}]` and `on`, an arithmetic combinator's `arithmetic: {first, operation, constant | second,
+  output}`, a decider's `decider: {first, comparator, constant | second, output, copy_input}`. Signals are item, fluid
+  or virtual signal names (`iron-plate`, `water`, `signal-A`). The reply reads back what the game holds. It leaves a
+  running queue alone.
+- Trains: `train {position: stop, name, limit}` names a train stop and sets its train limit (`limit: false` clears it);
+  `train {position: locomotive or wagon, schedule: [{station, wait: [{type, ticks?, compare?, condition?}]}], current,
+  automatic}` sets the train's schedule (wait types as in the game: time, inactivity, full, empty, item_count,
+  fluid_count, circuit, passenger_present, ...) and automatic or manual mode. Rails, stops, locomotives and wagons are
+  built with `build` and `place_ghosts`; fuel goes in with `refuel` or `transfer`.
+- `configure {position, recipe, quality}` sets a recipe at a quality (the machine and quality must be unlocked); a
+  change of quality alone is a change.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks

@@ -533,9 +533,10 @@ function handlers.describe()
       power={area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',limit='unpowered rows 1..256 (default 32)',note='networks with a pole in the area: poles, production/consumption kW (5 s average) by prototype, unpowered machines (no_power|low_power|unconnected)'},
       scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)'},
       nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..128 (default 32); map-known (charted) entities only: after landing on a new planet about 48 tiles around you, so explore or build a radar',limit='1..64 (default 5)',returns='entities [{name?, position, distance}], total; note when nothing was found'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',skip_failed='boolean, with builds: a failing entry is listed in failed {index,position,error} and the rest still build',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
-      wire={from='pole {x,y} (optional name/unit_number) in reach',to='pole {x,y} in reach',disconnect='boolean: remove the copper wire instead'},
+      wire={from='pole {x,y} (optional name/unit_number) in reach; with color: any entity with a circuit connection',to='pole {x,y} in reach (with color: an entity)',disconnect='boolean: remove the wire instead',
+        color='optional red|green: a circuit wire between two entities in reach (without it: the copper wire between poles)',from_side='with color, on a combinator: input|output (default output)',to_side='with color, on a combinator: input|output (default input)'},
       inspect={position='{x,y}',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too'}, rotate={position='{x,y}',reverse='boolean'},
-      configure={position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',recipe='enabled recipe',filters='or: item names for a filtering inserter/loader ([] clears; slot count from the entity)',filter_mode='whitelist|blacklist (inserters)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
+      configure={position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item names for a filtering inserter/loader ([] clears; slot count from the entity)',filter_mode='whitelist|blacklist (inserters)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
       transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|cargo_landing_pad_main|hub_main|asteroid_collector_output|...; inferred when omitted (fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out)',direction='to_entity|to_player; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',up_to='optional target total cap'},
       feed={note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel; each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items)',
         radius='1..256: walk a nearest-first route through every machine in radius that wants something you hold',ticks='with radius: 1..36000 (default 3600)',
@@ -569,6 +570,8 @@ function handlers.describe()
   for name,schema in pairs(M.labs and M.labs.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.audience and M.audience.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.capsules and M.capsules.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.circuits and M.circuits.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.trains and M.trains.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
@@ -2094,6 +2097,7 @@ end
 -- Copper wire between two poles, both in the character's reach like a player
 -- dragging a wire; the wire itself must span the distance.
 function handlers.wire(p,a)
+  if a.color~=nil then return M.circuits.wire(p,a) end
   local function pole(t,key)
     assert(type(t)=='table',key..' requires a pole position {x,y}')
     local e=entity(p,{position=t.position or t,name=t.name,unit_number=t.unit_number})
@@ -2241,8 +2245,9 @@ function handlers.configure(p,a)
   local recipe=type(a.recipe)=='string' and p.force.recipes[a.recipe]
   assert(recipe and recipe.enabled,'recipe is unavailable')
   assert(e.prototype.crafting_categories[recipe.category],'recipe incompatible with machine')
-  local current=e.get_recipe()
-  if current and current.name==recipe.name then return {recipe=recipe.name,unchanged=true} end
+  local current,current_quality=e.get_recipe()
+  local same_quality=(a.quality or 'normal')==((current_quality and current_quality.name) or 'normal')
+  if current and current.name==recipe.name and same_quality then return {recipe=recipe.name,quality=a.quality,unchanged=true} end
   if not a.force then
     for i=1,#e.fluidbox do assert(not e.fluidbox[i],'machine holds fluid that a recipe change destroys; pass force=true') end
   end
@@ -2275,7 +2280,7 @@ function handlers.configure(p,a)
   for _,item in ipairs(e.set_recipe(recipe.name,a.quality) or {}) do give(item) end
   current=e.get_recipe()
   assert(current and current.name==recipe.name,'recipe incompatible with machine')
-  return {recipe=current.name,remote=not near or nil,returned=next(returned) and returned or nil,spilled=next(spilled) and spilled or nil}
+  return {recipe=current.name,quality=a.quality,remote=not near or nil,returned=next(returned) and returned or nil,spilled=next(spilled) and spilled or nil}
 end
 -- Omitted inventories are inferred the way a player's click is: fuel into the
 -- burner, smeltables into the furnace, and results back out of it.
@@ -3145,6 +3150,11 @@ for name,handler in pairs(blueprint_handlers) do handlers[name]=handler end
 -- Grenades and other capsules (capsules.lua, request #89).
 M.capsules=require('capsules'){state=state,position=position,assert_visible=assert_visible,held=held}
 handlers.use_item=M.capsules.handlers.use_item
+-- Circuit wires and settings (circuits.lua), train stops and schedules (trains.lua).
+M.circuits=require('circuits'){entity=entity,friendly=friendly}
+handlers.circuit=M.circuits.handlers.circuit
+M.trains=require('trains'){entity=entity,friendly=friendly,integer=integer}
+handlers.train=M.trains.handlers.train
 -- Ghosts at absolute positions, as a player places them from the cursor or
 -- the map: anywhere charted, no items needed. `construct` then builds them.
 -- One ghost as a player's ghost placement (shift-build): manual ghost checks
@@ -3665,7 +3675,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
+local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
 local reads={labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
