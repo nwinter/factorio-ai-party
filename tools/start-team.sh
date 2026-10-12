@@ -39,6 +39,15 @@ if [ -n "$resume" ]; then
   fi
   [ -n "$prev_dir" ] && [ -d "$prev_dir" ] || { echo "POG_RESUME=$resume: no run directory runs/$resume here or in ~/code/player-of-games/runs; set POG_RESUME_DIR" >&2; exit 1; }
   [ "$resume" != "$run" ] || { echo "POG_RESUME names this run ($run); a shift needs a new run id" >&2; exit 1; }
+  # A run whose agents never launched has no notes (shake9: its start failed after the save copy, and shake10's agents
+  # began with empty notes). The save still comes from POG_RESUME; the notes come from the newest run up its
+  # resumed-from chain that has any.
+  hops=0
+  while ! ls "$prev_dir"/*/notes.md >/dev/null 2>&1 && [ -f "$prev_dir/resumed-from" ] && [ $hops -lt 5 ]; do
+    up=$(head -1 "$prev_dir/resumed-from"); [ -d "$(dirname "$prev_dir")/$up" ] || break
+    echo "POG_RESUME=$resume: $prev_dir has no agent notes; taking notes from $up" >&2
+    prev_dir=$(dirname "$prev_dir")/$up; hops=$((hops + 1))
+  done
   export POG_RESUME POG_RESUME_DIR=$prev_dir   # tools/new-run.sh and tools/launch-agent.sh read them
 fi
 members=$(awk -F'\t' '!/^#/ && NF {print $1}' "$team")
