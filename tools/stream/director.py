@@ -38,8 +38,12 @@ DEFAULTS = {
     "attack_spacing": 45.0,  # at most one attack cut this often
     "attack_fresh": 8.0,     # an alert older than this is no longer news
     "attack_zoom": 1.05,     # following an agent in a fight
-    "area_zoom": 0.8,        # a base area under attack with nobody near
-    "attack_near": 50.0,     # follow an agent within this many tiles of a base attack instead of a fixed position
+    "area_zoom": 0.8,        # a base area under attack whose size is unknown
+    # A base attack or a loss is shown where it happens: a fixed view on its position and surface, zoomed so its
+    # extent (a 32-tile chunk for an attack, the loss rectangle) fits, sent as is and without easing (the camera is
+    # there at once, so the replay clip can start then). shake10: the camera followed an agent within 50 tiles
+    # (attack_near) and the announced turret fight replayed as the factory.
+    "fight_margin": 24.0,    # tiles around the fight's extent; ~60 tiles across at zoom 1
     "death_hold": 12.0,      # a death cuts to where the agent fell (ignores attack_spacing)
     "death_zoom": 1.1,
 }
@@ -74,6 +78,7 @@ class Director:
         self.last_cut = 0.0
         self.last_attack_cut = -1e9
         self.last_attack_alert = None
+        self.last_attack_framed = None
         self.attacks_seen = set()
         self.want = {}  # slot -> (zoom the subject's activity asks for, since)
 
@@ -151,16 +156,19 @@ class Director:
                     return None, {"x": round(p["x"], 1), "y": round(p["y"], 1), "surface": surface_of(fell)}, al
                 continue
             if al.get("agent") in scores:
-                return al["agent"], None, al
+                return al["agent"], None, al  # the agent itself is in the fight: following it frames the fight
             p = al.get("position")
             if not p:
                 continue
-            near = [(dist(a["position"], p), n) for n, a in by_name.items()
-                    if n in scores and a.get("position") and dist(a["position"], p) <= self.cfg["attack_near"]]
-            if near:
-                return min(near)[1], None, al
-            return None, {"x": round(p["x"], 1), "y": round(p["y"], 1)}, al
+            return None, {"x": round(p["x"], 1), "y": round(p["y"], 1), "surface": p.get("surface") or "nauvis",
+                          "extent": p.get("extent")}, al
         return None
+
+    def fight_zoom(self, extent):
+        """The zoom that fits a fight of this extent (tiles) on a director client (~60 tiles across at zoom 1)."""
+        if not extent:
+            return round(self.cfg["area_zoom"] * self.cfg["main_scale"], 2)
+        return round(max(0.4, min(2.0, 60.0 / (extent + self.cfg["fight_margin"]))), 2)
 
     # -- main loop --------------------------------------------------------------------------------------------
     def step(self, snapshot, now=None, segment=None):
@@ -178,6 +186,10 @@ class Director:
         if attack:
             subject, position, al = attack
             self.last_attack_alert = al  # replays.py reads it when last_attack_cut == now
+            # replays.py: did this cut put the fight in frame, and from when (an agent in the fight, followed; or a
+            # fixed view on the fight's position). A death is checked against the main camera's recent subjects there.
+            self.last_attack_framed = {"t": now, "how": "follow" if subject else "position"} \
+                if (subject or al["kind"] != "death") else None
             cur = self.state.get(main)
             if subject and cur and cur["subject"] == subject:
                 cur["since"] = now - self.cfg["main_dwell"] + self.cfg["attack_hold"]  # already there: just stay
@@ -197,11 +209,14 @@ class Director:
                 if cur and cur["subject"] in by_name:
                     released.append(cur["subject"])
                 death = al["kind"] == "death"
-                self.apply(self.slots[0], {"agents": [], "subject": "@attack", "position": position,
-                                           "zoom": self.cfg["death_zoom" if death else "area_zoom"],
-                                           "label": al["text"], "kind": al["kind"], "since": now, "attack_t": now,
-                                           "until": now + self.cfg["death_hold" if death else "attack_hold"]},
-                           f"attack: {al['text']}", scores, now)
+                shot = {"agents": [], "subject": "@attack", "position": position, "surface": position.get("surface"),
+                        "label": al["text"], "kind": al["kind"], "since": now, "attack_t": now,
+                        "until": now + self.cfg["death_hold" if death else "attack_hold"]}
+                if death:
+                    shot["zoom"] = self.cfg["death_zoom"]
+                else:  # the whole fight in frame, there at once
+                    shot.update(zoom=self.fight_zoom(position.get("extent")), exact_zoom=True, jump=True)
+                self.apply(self.slots[0], shot, f"attack: {al['text']}", scores, now)
                 self.last_attack_cut = now
         cur = self.state.get(main) if main else None
         if segment and not attack and not (cur and cur["subject"] == "@attack" and now < cur["until"]):
@@ -335,7 +350,11 @@ class Director:
                     "surface": target.get("surface") or pos.get("surface") or "nauvis"}
         else:
             body = {"player": slot["player"], "follow": target["follow"], "zoom": target["zoom"], "smooth": True}
-        if target is not None:
+        if target is not None and target.get("jump"):
+            body["smooth"] = False  # cameras.lua teleports at once (and sets the zoom) instead of easing over
+        if target is not None and target.get("exact_zoom"):
+            body["zoom"] = round(min(self.cfg["max_zoom"], target["zoom"]), 2)  # a zoom that fits: sent as computed
+        elif target is not None:
             scale = self.cfg["main_scale"] if slot is self.slots[0] else self.cfg["side_scale"]
             z = target["zoom"] * scale
             if "distance" in target:  # a pair: ~60 tiles across at zoom 1, keep both in frame

@@ -11,7 +11,8 @@ from harness import Harness
 from model import SPARK_ITEMS
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
-LOSS_RE = re.compile(r"^(?:losses )?in \((-?\d+),(-?\d+)\)(?:-\(-?\d+,-?\d+\))? (\d+) destroyed: (.*?)(?: by (.*?))?, (\S+) ago$")
+LOSS_RE = re.compile(r"^(?:losses )?in \((-?\d+),(-?\d+)\)(?:-\((-?\d+),(-?\d+)\))? (\d+) destroyed: (.*?)(?: by (.*?))?, (\S+) ago$")
+CHUNK = 32.0  # status.alerts.attacked reports a chunk: its centre, the fight somewhere in its 32x32 tiles
 RECENT_AGO = re.compile(r"^(?:.*-)?(?:\d+s|1m\d\ds)$")  # last part of the span under 2 minutes
 
 
@@ -318,13 +319,16 @@ class LiveSource:
             m = LOSS_RE.match(line or "")
             if not m:
                 continue
-            x, y, total, names, by, ago = m.group(1), m.group(2), int(m.group(3)), m.group(4), m.group(5), m.group(6)
+            x, y, total, names, by, ago = m.group(1), m.group(2), int(m.group(5)), m.group(6), m.group(7), m.group(8)
             if not RECENT_AGO.match(ago):
                 continue  # the alert window is 5 game minutes; only show losses from the last minute or so
             what = ", ".join(n.strip().replace("-", " ") for n in names.split(",")[:2])
             text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {attacker_label(by)})" if by else "")
-            out.append({"kind": "loss", "text": text, "key": f"loss:{x},{y}", "ttl": 90,
-                        "position": {"x": float(x), "y": float(y)}})
+            # where the camera frames the fight: the loss rectangle's centre and size (a single point: 16 tiles)
+            x2, y2 = float(m.group(3) or x), float(m.group(4) or y)
+            pos = {"x": (float(x) + x2) / 2, "y": (float(y) + y2) / 2,
+                   "extent": max(16.0, abs(x2 - float(x)), abs(y2 - float(y))), "surface": "nauvis"}
+            out.append({"kind": "loss", "text": text, "key": f"loss:{x},{y}", "ttl": 90, "position": pos})
         return out
 
     @staticmethod
@@ -342,7 +346,7 @@ class LiveSource:
             text = f"Engineer under attack {near}" if what == "an engineer" else \
                 f"Base under attack {near}" + (f": {what}" if what else "")
             out.append({"kind": "attack", "text": text, "key": f"area:{c.get('x')},{c.get('y')}", "ttl": 60,
-                        "position": c})
+                        "position": dict(c, extent=CHUNK, surface=area.get("surface") or "nauvis")})
         return out
 
     def send_camera(self, body):

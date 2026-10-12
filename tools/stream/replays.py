@@ -24,7 +24,8 @@ DEFAULTS = {
     "banner": "replay banner",     # browser source with /replay (REPLAY banner)
     "overlay_input": "stream overlay",  # the live overlay's browser source (voices), added off-canvas
     "fight_after": 17.0,           # save this long after an attack cut (attack_hold is 20 s)
-    "fight_show": 15.0,            # seconds of the fight shown
+    "fight_show": 15.0,            # seconds of the fight shown (at most this + 3: from the camera's arrival)
+    "arrive_s": 1.0,               # after the cut, the director client shows the fight (fixed views jump, no easing)
     "death_before": 11.0,          # replay window around a death
     "death_after": 4.0,
     "death_save_after": 5.0,
@@ -86,9 +87,15 @@ class Replays:
         main = (cams or {}).get("main") or {}
         self.main_seen.append((now, list(main.get("agents") or [])))
 
-    def on_attack_cut(self, alert, snap, now):
-        """The director just cut main to a fight, base attack, loss or death."""
+    def on_attack_cut(self, alert, snap, now, framed=None):
+        """The director just cut main to a fight, base attack, loss or death. framed: director.last_attack_framed,
+        {t, how} when that cut put the fight in frame (an agent in it followed, or a fixed view on its position),
+        None when it did not: a replay is the main camera's recording, so without the fight in frame there is
+        nothing worth replaying (shake10: an announced turret fight replayed as the factory)."""
         if not alert or now - self.last_replay < self.cfg["spacing"]:
+            return
+        if alert["kind"] != "death" and not framed:
+            self.log(f"[replays] skipped {alert['kind']}: no camera framed it ({alert['text']})")
             return
         with self.lock:
             if alert["kind"] == "death":
@@ -108,9 +115,12 @@ class Replays:
             elif not self.pending:  # a death already pending wins over the fight around it
                 save = now + self.cfg["fight_after"]
                 ag = next((a for a in snap.get("agents") or [] if a["name"] == alert.get("agent")), {})
+                # the clip starts when the main camera arrived on the fight (the cut; a fixed view jumps there at
+                # once, plus a second for the client to draw it), never before
+                arrived = framed["t"] + self.cfg["arrive_s"]
                 self.pending = {"kind": alert["kind"], "label": alert["text"], "agent": alert.get("agent"),
                                 "agent_name": ag.get("display_name"), "save_at": save,
-                                "show_from": save - self.cfg["fight_show"], "show_to": save}
+                                "show_from": max(arrived, save - self.cfg["fight_show"] - 3), "show_to": save}
             self.log(f"[replays] pending {self.pending['kind']}: {self.pending['label']}")
 
     # ---- worker ------------------------------------------------------------------------------------------------

@@ -369,8 +369,12 @@ changes are at most one per 5 s per camera. Zoom changes are smooth `camera` cal
 30-minute 9-agent mock: about 1.2 cuts and 0.6-0.9 zoom changes per camera per minute.
 
 Combat: a fresh (under 8 s old) attack or loss alert cuts the main camera at once, ignoring the dwell: to the agent
-in the fight (its status `combat` went true), else to the nearest agent within 50 tiles of the attacked area (zoom
-1.05, following), else to the area itself (`camera` with `position`, zoom 0.8). It holds 20 s (`attack_hold`), at most
+in the fight (its status `combat` went true; zoom 1.05, following), else to the fight itself: a fixed view on the
+alert's position and surface, zoomed so its extent fits (the attacked 32-tile chunk, or the loss rectangle, plus 24
+tiles: `60 / (extent + 24)`, sent as is), jumping there without easing. It no longer follows an agent near the attack:
+in shake10 that framed the factory and the announced turret-fight replay showed the factory. The replay clip of a
+fight starts when that camera arrived (the cut + 1 s, `arrive_s`) and ends when the buffer is saved (cut + 17 s); a fight
+alert whose cut did not frame it (director `last_attack_framed` unset) gets no replay. It holds 20 s (`attack_hold`), at most
 one such cut per 45 s (`attack_spacing`). A death cuts to where the agent fell (zoom 1.1, 12 s), even inside the
 spacing. The camera label shows the alert text with ⚔ or 💀 on a red edge. Status has no health field, so "taking
 damage" is the `combat` flag plus base areas in `alerts.attacked`. `attack_cut: false` in the run config's `director`

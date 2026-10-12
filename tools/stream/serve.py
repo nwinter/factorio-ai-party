@@ -372,7 +372,7 @@ def main():
                     segments.attack_cut(now)
                     snap["segment"] = segments.public()
                     if replays:
-                        replays.on_attack_cut(director.last_attack_alert, snap, now)
+                        replays.on_attack_cut(director.last_attack_alert, snap, now, director.last_attack_framed)
                 if replays:
                     replays.tick(snap, cams, now)
                     snap["replay"] = replays.public()

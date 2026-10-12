@@ -299,11 +299,13 @@ def main():
         "in (12,-40)-(20,-31) 7 destroyed: 4 stone-wall, 3 gun-turret by 5 small-biter, 1m10s-0s ago",
         "in (300,5) 1 destroyed: 1 inserter, 4m20s ago"]})
     assert len(losses) == 1 and losses[0]["text"] == "7 lost near (12, -40): 4 stone wall, 3 gun turret (by small biters)", losses
+    assert losses[0]["position"] == {"x": 16.0, "y": -35.5, "extent": 16.0, "surface": "nauvis"}, losses  # the rectangle
     # hit counts ("x3") and kill counts never reach the banner or the replay title (shake3: read on air as enemies)
     hits = LiveSource.attack_events({"attacked": [
         {"chunk_centre": {"x": -48, "y": 16}, "damage": 40, "last_tick": 100, "entities": "character x3"},
         {"chunk_centre": {"x": 64, "y": 0}, "damage": 9, "last_tick": 100, "entities": "gun-turret x12, stone-wall x2"}]}, 100)
     assert [h["text"] for h in hits] == ["Engineer under attack near (-48, 16)", "Base under attack near (64, 0): gun turret"], hits
+    assert hits[1]["position"] == {"x": 64, "y": 0, "extent": 32.0, "surface": "nauvis"}, hits  # the attacked chunk
 
     # an attack cuts the main camera straight away, even inside its dwell
     sent_s = []
@@ -311,21 +313,30 @@ def main():
     ds.apply(ds.slots[0], {"agents": ["a"], "follow": "a", "zoom": 1.0}, "test", {}, 0.0, quiet=True)
     ds.apply(ds.slots[1], {"agents": ["b"], "follow": "b", "zoom": 1.0}, "test", {}, 0.0, quiet=True)
     assert sent_s[0]["zoom"] == round(ds.cfg["main_scale"], 2) and sent_s[1]["zoom"] == round(min(ds.cfg["max_zoom"], ds.cfg["side_scale"]), 2), sent_s
-    d2 = Director([{"slot": "main", "player": 3}], lambda body: {"ok": True}, None)
+    sent2 = []
+    d2 = Director([{"slot": "main", "player": 3}], lambda body: sent2.append(body) or {"ok": True}, None)
     m2 = Model({"agents": {"astra": {}, "luna": {}}})
     m2.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "active": "build"},
                           {"name": "luna", "position": {"x": 300, "y": 0}}]})
     m2.agents["astra"].interest = 20
     now = time.time()
     assert d2.step(m2.snapshot(now), now)["main"]["agents"] == ["astra"]
-    m2.ingest({"events": [{"kind": "attack", "text": "Base under attack near (500, 0)", "key": "a1", "position": {"x": 500, "y": 0}}]})
+    m2.ingest({"events": [{"kind": "attack", "text": "Base under attack near (500, 0)", "key": "a1",
+                           "position": {"x": 500, "y": 0, "extent": 32.0, "surface": "nauvis"}}]})
     cams2 = d2.step(m2.snapshot(now + 2), now + 2)
-    assert cams2["main"]["agents"] == [] and "attack" in cams2["main"], cams2  # nobody near: show the place
-    assert d2.state["main"]["position"] == {"x": 500, "y": 0}
-    m2.ingest({"events": [{"kind": "attack", "text": "Base under attack near (290, 0)", "key": "a2", "position": {"x": 290, "y": 0}}]})
+    assert cams2["main"]["agents"] == [] and "attack" in cams2["main"], cams2  # the place of the fight
+    assert (d2.state["main"]["position"]["x"], d2.state["main"]["position"]["y"]) == (500, 0)
+    # the chunk in frame (32 tiles + 24 margin, ~60 across at zoom 1), sent as is, jumping there (no easing)
+    assert sent2[-1]["zoom"] == round(60 / 56, 2) and sent2[-1]["smooth"] is False and sent2[-1]["surface"] == "nauvis", sent2[-1]
+    assert d2.last_attack_framed == {"t": now + 2, "how": "position"}
+    # shake10: a turret fight 10 tiles from an agent is still shown where it is, not by following the agent
+    m2.ingest({"events": [{"kind": "attack", "text": "Base under attack near (290, 0)", "key": "a2",
+                           "position": {"x": 290, "y": 0, "extent": 32.0, "surface": "nauvis"}}]})
     d2.last_attack_cut -= 60  # past attack_spacing
     cams3 = d2.step(m2.snapshot(now + 3), now + 3)
-    assert cams3["main"]["agents"] == ["luna"], cams3  # luna is 10 tiles from this one: follow luna
+    assert cams3["main"]["agents"] == [] and d2.state["main"]["position"]["x"] == 290, cams3
+    assert d2.state["main"]["until"] == now + 3 + d2.cfg["attack_hold"]  # held ~20 s
+    assert d2.step(m2.snapshot(now + 15), now + 15)["main"]["agents"] == [], "still on the fight"
 
     # Space Age: agents pair only on the same surface; a pair's fixed view names that surface; a card says where
     sent_sa = []
@@ -547,6 +558,16 @@ def main():
     fobs.program = "replay"  # left on air by hand: the watchdog brings the stream back
     rpl.follow_segment(t7 + 50)
     assert fobs.program == "stream"
+
+    # a fight replays only if the cut framed it, and from when the camera arrived (shake10: the factory instead)
+    rf = rp.Replays(Segments(), obs=FakeOBS(), log=lambda *a: None, start=False)
+    tf = time.time()
+    fight = {"kind": "attack", "agent": None, "text": "Base under attack near (290, 0): gun turret"}
+    rf.on_attack_cut(fight, s7, tf, framed=None)
+    assert rf.pending is None, "no camera framed it: no replay"
+    rf.on_attack_cut(fight, s7, tf, framed={"t": tf, "how": "position"})
+    assert rf.pending["show_from"] == tf + rf.cfg["arrive_s"] and rf.pending["show_to"] == tf + rf.cfg["fight_after"], rf.pending
+    assert rf.pending["save_at"] == tf + rf.cfg["fight_after"]
 
     # two deaths 43 s apart (shake4: Haiku, then Opus): the second cut drops the queued replay, both clips still air
     t9 = t7 + 300
