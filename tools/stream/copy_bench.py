@@ -139,11 +139,14 @@ def main():
     ap.add_argument("--per-hour", type=float, default=300,
                     help="exchanges per stream hour, for cost per hour (shake7 aired about 310 an hour)")
     ap.add_argument("--md", help="also write the before/after as markdown here")
+    ap.add_argument("--kinds", help="only these event kinds, e.g. attack,death,loss (the urgent beats)")
     ap.add_argument("--match", help="only exchanges whose aired lines match this regex (e.g. 'walk|motto|classic')")
     a = ap.parse_args()
     ex = load(a.logs)
     if a.match:
         ex = {k: v for k, v in ex.items() if any(re.search(a.match, l, re.I) for _, l in v["lines"])}
+    if a.kinds:
+        ex = {k: v for k, v in ex.items() if v["kind"] in a.kinds.split(",")}
     keys = pick(ex, a.n, a.seed)
     roster = {"Astra", "Sol", "Luna", "Opus", "Sonnet", "Haiku", "Grok", "Gemini", "Muse"}
     for x in ex.values():

@@ -214,6 +214,8 @@ if [ "${POG_CASTER:-1}" != 0 ]; then
   cmodel=${POG_CASTER_MODEL-anthropic/claude-opus-5.5} writer=()
   orkey=${OPENROUTER_API_KEY:-$(security find-generic-password -s openrouter -w 2>/dev/null || true)}
   [ -n "$cmodel" ] && [ -n "$orkey" ] && writer=(--writer or --model "$cmodel")
+  # POG_CASTER_URGENT: the urgent beats' writer (default Kimi on Workers AI); e.g. or:anthropic/claude-haiku-5.5
+  [ -n "${POG_CASTER_URGENT:-}" ] && writer+=(--urgent-model "$POG_CASTER_URGENT")
   OPENROUTER_API_KEY=$orkey nohup python3 tools/stream/caster.py --feed http://127.0.0.1:8788 --tts auto --tts-fallback aura1 \
     --deadline "$rundir/*/deadline.txt" --run-dir "$rundir" ${writer[@]+"${writer[@]}"} >"$rundir/caster.log" 2>&1 &
   echo $! >> "$rundir/stream-service.pid"

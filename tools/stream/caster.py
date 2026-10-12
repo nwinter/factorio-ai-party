@@ -1522,10 +1522,14 @@ class Caster:
         # urgent events (attack, death, loss) go to a fast writer so the call lands while it is still news
         self.fast = None
         if self.writer and a.urgent_model and a.urgent_model != (self.writer.model or ""):
-            if ai is None:
-                from cfai import WorkersAI
-                ai = WorkersAI()
-            self.fast = LLMWriter("cf", a.urgent_model, ai=ai, timeout=min(a.writer_timeout, 8))
+            if a.urgent_model.startswith("or:"):  # HOSTS4 item 4: a fast Claude on OpenRouter (or:anthropic/...)
+                self.fast = LLMWriter("or", a.urgent_model[3:], timeout=min(a.writer_timeout, 8))
+            else:
+                if ai is None:
+                    from cfai import WorkersAI
+                    ai = WorkersAI()
+                self.fast = LLMWriter("cf", a.urgent_model.removeprefix("cf:"), ai=ai,
+                                      timeout=min(a.writer_timeout, 8))
         self.tts = None if a.dry_run else voices.TTS(a.tts, ai=ai)
         self.tts_fallback = voices.TTS(a.tts_fallback, ai=ai) if a.tts_fallback and not a.dry_run else None
         self.breakers = {k: Breaker(k, cool=a.backoff) for k in ("writer", "classifier", "tts")}
@@ -2153,7 +2157,8 @@ def main():
                                          "CLAUDE_CONFIG_DIR unset: the personal subscription)")
     ap.add_argument("--writer-timeout", type=float, default=12, help="seconds per Workers AI call (claude: 3x)")
     ap.add_argument("--urgent-model", default=URGENT_MODEL,
-                    help="fast Workers AI writer for urgent events ('' to use the main writer for everything)")
+                    help="fast writer for urgent events: a Workers AI model id, or or:<OpenRouter model> (e.g. "
+                         "or:anthropic/claude-haiku-5.5); '' to use the main writer for everything")
     ap.add_argument("--run-dir", help="the run's directory (runs/RUN): a resumed-from file there makes this a later "
                                       "shift, and the hosts get a shift fact")
     ap.add_argument("--deadline", help="when the run ends, for minutes_to_deadline: 'YYYY-MM-DD HH:MM', 'HH:MM', or "
