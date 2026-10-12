@@ -978,7 +978,19 @@
   }
   setInterval(segTick, 250);
 
+  // The service's page files changed since this page loaded (serve.py static_version): load the new page. An OBS
+  // browser source keeps its page until refreshed; after eng/onecam the vertical canvas kept the three-camera page.
+  let pageVersion = null;
+  function staleCheck(s) {
+    if (!s.static_version) return false;
+    if (!pageVersion) pageVersion = s.static_version;
+    if (pageVersion === s.static_version) return false;
+    location.reload();
+    return true;
+  }
+
   function render(s) {
+    if (staleCheck(s)) return;
     state = s;
     window.pogState = s; // audio.js finds speaking agents' avatars here
     renderHead(s);

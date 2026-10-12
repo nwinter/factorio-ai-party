@@ -30,6 +30,22 @@ from model import Model  # noqa: E402
 STATIC = os.path.join(HERE, "static")
 
 
+def static_version(root=STATIC):
+    """A short hash of the pages' files (contents, not mtimes): in every snapshot, so an overlay page loaded before a
+    change reloads itself (the vertical canvas's browser source kept the three-camera page after eng/onecam)."""
+    import hashlib
+    h = hashlib.sha1()
+    for dirpath, dirs, files in os.walk(root):
+        dirs.sort()
+        for name in sorted(files):
+            if name.endswith((".js", ".css", ".html", ".json")):
+                path = os.path.join(dirpath, name)
+                h.update(os.path.relpath(path, root).encode())
+                with open(path, "rb") as f:
+                    h.update(f.read())
+    return h.hexdigest()[:12]
+
+
 class Hub:
     """Latest snapshot plus a condition that SSE clients wait on."""
 
@@ -377,6 +393,8 @@ def main():
                 traceback.print_exc()
             time.sleep(max(0.2, a.poll - (time.time() - t)))
 
+    page_version = static_version()
+
     def ticker():
         cams = {}
         while True:
@@ -407,6 +425,7 @@ def main():
                 for ag in snap["agents"]:
                     ag["camera"] = next((s for s, c in cams.items() if ag["name"] in c["agents"]), None)
                 snap.update(source_info)
+                snap["static_version"] = page_version
                 snap["viewers"], snap["viewers_status"] = feed.lane() if feed else ([], None)
                 snap["analyst"] = analyst.public(now)
                 hub.publish(snap)

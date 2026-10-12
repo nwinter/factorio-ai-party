@@ -455,8 +455,12 @@ run config brings back the director below).
   `program` {onair, inset} (the clients) are new, `cuts` is cuts.py's status.
 - Hosts: lull, camera, chat and board beats get `on_air` in their facts (the agent viewers are watching, and its label
   line); naturalist and spotlight beats pick it 85% of the time; it leads `busy_agents`.
-- Vertical: layout-portrait.json has one camera too (1032x883, the same crop); cuts.py restacks "stream vertical" in
-  Aitum Vertical's canvas the same way when that scene exists.
+- Vertical: layout-portrait.json has one camera too (1032x883, the band the three had, the same crop); cuts.py
+  restacks "stream vertical" in Aitum Vertical's canvas the same way when that scene exists. Segment cards there are a
+  strip along the camera's bottom (at most 220 px). On the first test run the vertical canvas still showed the
+  three-camera page: its browser source had loaded before the change. Pages now reload themselves when the
+  service's page files change (`static_version` in the snapshot), and `vertical.py scene` / `obs.py stream-scene`
+  refresh their overlay source.
 - Setup: `tools/obs.py stream-scene` (all three captures in the hole, cropped; `--layout
   tools/stream/static/layout-3cam.json` for the old one) and `tools/vertical.py scene`, then restart serve.py and the
   overlay page. Screenshots of a mock page: `tools/stream/overlay_shot.sh URL OUT.png`.

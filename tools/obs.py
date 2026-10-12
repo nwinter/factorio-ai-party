@@ -115,6 +115,7 @@ def stream_scene(c, url, scene="stream", layout=LAYOUT):
     order.append(ov)
     for idx, item in enumerate(order):
         c.set_scene_item_index(scene, item, idx)
+    c.press_input_properties_button("stream overlay", "refreshnocache")  # the page reads its layout once, at load
     return scene
 
 

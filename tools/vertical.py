@@ -118,6 +118,9 @@ def build_scene(c, url):
     send(c, "SetSceneItemTransform", {"sceneUuid": uuid, "sceneItemId": ov, "sceneItemTransform": {
         "positionX": 0, "positionY": 0, "alignment": 5, "boundsType": "OBS_BOUNDS_NONE", "scaleX": 1.0, "scaleY": 1.0}})
     send(c, "SetInputMute", {"inputName": "vertical overlay", "inputMuted": True})
+    # a page loaded before a layout change keeps its old holes: reload it (pages since eng/onecam2 also reload
+    # themselves when the service's files change)
+    send(c, "PressInputPropertiesButton", {"inputName": "vertical overlay", "propertyName": "refreshnocache"})
     order.append(ov)
     for idx, item in enumerate(order):
         send(c, "SetSceneItemIndex", {"sceneUuid": uuid, "sceneItemId": item, "sceneItemIndex": idx})

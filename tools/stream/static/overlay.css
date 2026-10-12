@@ -533,6 +533,10 @@ body.seg-full #alerts .alert:not(:last-child) { display: none; }
 .stime > i { display: block; height: 100%; width: 100%; background: var(--fx-orange); transition: width 250ms linear; }  /* overlay.js segTick, 4 a second */
 body.portrait #segment.full { padding: max(24px, var(--alerts-clear, 0px)) 24px max(130px, var(--voice-clear, 0px)); }
 body.portrait #segment.lower .spanel { width: 100%; margin-right: 22px; }
+/* one camera on air: a segment card is a strip along the camera's bottom (above the bar and toasts), never over the
+   middle where the subject is (the vertical crop centres it) */
+body.portrait.onecam #segment.lower { padding: 0 22px calc(16px + var(--toasts-clear, 0px) + var(--voice-clear, 0px)) 22px; }
+body.portrait.onecam #segment.lower .spanel { margin-right: 0; max-height: 220px; overflow: hidden; }
 
 /* ---- density: the card grid shrinks with the lineup (<=7 roomy, 8-9 standard, 10-12 compact) ---- */
 body[data-density="2"] #cards { grid-auto-rows: 70px; gap: 8px 10px; }
