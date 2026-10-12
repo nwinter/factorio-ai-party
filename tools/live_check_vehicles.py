@@ -34,6 +34,8 @@ def main():
     ok, desc = c.fh("describe")
     if not c.record("runtime has vehicle", ok and "vehicle" in ((desc.get("result") or {}).get("actions") or {}), None):
         sys.exit(f"deploy the eng/coverage2 runtime first: POG_WORLD={world} bin/fh deploy (from that branch)")
+    if not c.game_running():
+        sys.exit(L.PAUSED_HINT)
     created = c.lua(f'rcon.print(remote.call("agent_harness","bot_create","{a.bot}"))')
     bot_unit = ((created or {}).get("bot") or {}).get("unit_number")
     if not c.record("bot_create", bot_unit is not None, created):

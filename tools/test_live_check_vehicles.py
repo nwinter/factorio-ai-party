@@ -18,6 +18,9 @@ def fake_lua(self, code):
     p = subprocess.run(["luac", "-p", "-"], input=code, capture_output=True, text=True)
     assert p.returncode == 0, (p.stderr, code[:300])
     compiled.append(code)
+    if "connected_players" in code:
+        state["tick"] = state.get("tick", 0) + 180
+        return {"tick": state["tick"], "paused": False, "players": 1}
     if "bot_create" in code:
         return {"ok": True, "bot": {"name": "lv1", "unit_number": 655}}
     if "bot_remove" in code:
@@ -110,7 +113,7 @@ def main():
     assert any(act == "transfer" and a.get("item") == "rocket-fuel" for act, a, _ in calls), "the spidertron is fuelled"
     drive_at = next(i for i, (act, a, _) in enumerate(calls) if act == "vehicle" and a.get("drive"))
     assert calls[drive_at + 1][0] == "wait", "the drive is waited for with fh wait before the car is read"
-    for want in ("game: the bot sits in the car (its driver)", "seated move_to refused, pointing to exit", "seated say works",
+    for want in ("game clock runs (a client connected, not auto-paused)", "game: the bot sits in the car (its driver)", "seated move_to refused, pointing to exit", "seated say works",
                  "game: the car got there", "game: the bot is on foot", "game: the bot sits in the locomotive",
                  "spidertron destination accepted", "cleanup: bot removed"):
         assert want in steps, (want, steps)
