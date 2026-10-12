@@ -6,6 +6,7 @@
   tools/.venv/bin/python tools/obs.py stream-start|stream-stop|stream-status   (YouTube; key in ~/.config/pog/youtube.key)
   tools/.venv/bin/python tools/obs.py shot OUT.png        # what OBS is composing right now
   tools/.venv/bin/python tools/obs.py stream-scene [--url http://127.0.0.1:8787/]   # overlay + 3 director cams
+      (one on air in the left column; --layout tools/stream/static/layout-3cam.json: main + two side cameras)
   tools/.venv/bin/python tools/obs.py shot OUT.png --scene stream                  # any scene, no switching
   tools/.venv/bin/python tools/obs.py scene NAME                                   # switch the program scene
   tools/.venv/bin/python tools/obs.py stream-audio        # game audio (cam1 only) ducked under the overlay's voices
@@ -81,13 +82,13 @@ def scene_input(c, scene, name, kind, settings):
     return c.get_scene_item_id(scene, name).scene_item_id
 
 
-def stream_scene(c, url, scene="stream"):
+def stream_scene(c, url, scene="stream", layout=LAYOUT):
     """Director layout under the browser-source overlay. One camera on air (layout.json mode "onecam"): the three
     captures of factorio-cam1..3.exe all sit in the left column, centre-cropped to its shape; the stream service
     (tools/stream/cuts.py) brings the one on air to the front. Else (layout-3cam.json): 1 large + 2 small."""
     if scene not in [s["sceneName"] for s in c.get_scene_list().scenes]:
         c.create_scene(scene)
-    lay = json.load(open(LAYOUT))
+    lay = json.load(open(layout))
     cams, onecam = lay["cams"], lay.get("mode") == "onecam"
     order = []
     bg = scene_input(c, scene, "stream background", "color_source_v3", {"color": 0xFF181210, "width": 1920, "height": 1080})
@@ -100,11 +101,11 @@ def stream_scene(c, url, scene="stream"):
             "capture_cursor": False, "allow_transparency": False})
         x, y, w, h = cams["main" if onecam else slot]
         place(c, scene, item, x, y, w, h)
-        if onecam:
-            sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
-            from cuts import crop_for
-            src = c.get_scene_item_transform(scene, item).scene_item_transform
-            c.set_scene_item_transform(scene, item, crop_for(src.get("sourceWidth"), src.get("sourceHeight"), w, h))
+        # cropped to the hole's shape (none for a 16:9 hole, which also clears a crop left by the other layout)
+        sys.path.insert(0, os.path.dirname(LAYOUT) + "/..")
+        from cuts import crop_for
+        src = c.get_scene_item_transform(scene, item).scene_item_transform
+        c.set_scene_item_transform(scene, item, crop_for(src.get("sourceWidth"), src.get("sourceHeight"), w, h))
         order.append(item)
     ov = scene_input(c, scene, "stream overlay", "browser_source", {
         "url": url, "width": 1920, "height": 1080, "fps": 30, "fps_custom": True, "css": "",
@@ -219,13 +220,14 @@ def main():
     ap.add_argument("--right", default="opus")
     ap.add_argument("--url", default="http://127.0.0.1:8787/", help="stream-scene: overlay page as seen from the box")
     ap.add_argument("--scene", help="shot: screenshot this scene instead of the program scene")
+    ap.add_argument("--layout", default=LAYOUT, help="stream-scene: camera holes (layout-3cam.json: the old three)")
     ap.add_argument("--title", default="Astra + Opus 5.5 play Factorio together (real time)")
     a = ap.parse_args()
     c = client()
     if a.cmd == "coop-scene":
         print("scene", coop_scene(c, a.left, a.right, a.title))
     elif a.cmd == "stream-scene":
-        print("scene", stream_scene(c, a.url))
+        print("scene", stream_scene(c, a.url, layout=a.layout))
     elif a.cmd == "stream-audio":
         print("audio inputs", stream_audio(c))
     elif a.cmd == "audio-test":

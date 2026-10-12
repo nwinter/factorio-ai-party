@@ -110,7 +110,7 @@ def build_scene(c, url):
     order.append(bg)
     for i, slot in enumerate(("main", "cam2", "cam3"), 1):
         item = ensure(c, uuid, f"stream cam{i}", None, None)  # the landscape scene's captures, shared
-        place(c, uuid, item, *cams["main" if onecam else slot], crop=onecam)
+        place(c, uuid, item, *cams["main" if onecam else slot], crop=True)  # a 16:9 hole: no crop (clears an old one)
         order.append(item)
     ov = ensure(c, uuid, "vertical overlay", "browser_source", {
         "url": url, "width": W, "height": H, "fps": 30, "fps_custom": True, "css": "",

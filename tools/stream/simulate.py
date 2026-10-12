@@ -2,6 +2,7 @@
 """Run the mock session through the model and director on a fake clock and report camera statistics.
 
   python3 tools/stream/simulate.py [--minutes 30] [--run tools/stream/runs/mock9.json] [--set main_dwell=25 ...]
+  python3 tools/stream/simulate.py --cams onecam      # one camera on air (onecam.py): the "program" row is the cuts
   python3 tools/stream/simulate.py --log tools/stream/logs/director-....jsonl     # stats for a real log
 
 Use it to tune the director weights (director.DEFAULTS, or "director" in a run config) before a stream.
@@ -69,6 +70,7 @@ def main():
     ap.add_argument("--poll", type=float, default=3.0)
     ap.add_argument("--set", action="append", default=[], help="director tuning override, e.g. main_dwell=25")
     ap.add_argument("--log", help="report on an existing director log instead of simulating")
+    ap.add_argument("--cams", choices=["onecam", "3cam"], default="3cam", help="onecam: onecam.OneCam (serve.py's default)")
     a = ap.parse_args()
     if a.log:
         rows = [json.loads(l) for l in open(a.log)]
@@ -76,9 +78,9 @@ def main():
         print(json.dumps(stats(rows, minutes), indent=1))
         return
 
-    import director, mock, model
+    import director, mock, model, onecam
     clock = Clock(1_800_000_000.0)
-    for mod in (director, mock, model):
+    for mod in (director, mock, model, onecam):
         mod.time = clock
     run = json.load(open(a.run))
     tuning = dict(run.get("director") or {})
@@ -88,7 +90,7 @@ def main():
     log = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False).name
     src = mock.MockSource(run)
     m = model.Model(run)
-    d = director.Director(run.get("cameras") or [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
+    d = (onecam.OneCam if a.cams == "onecam" else director.Director)(run.get("cameras") or [{"slot": "main", "player": 1}, {"slot": "cam2", "player": 2},
                                                  {"slot": "cam3", "player": 3}],
                           lambda body: {"ok": False, "stub": True}, log, **tuning)
     import contextlib, io

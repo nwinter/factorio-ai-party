@@ -4,7 +4,8 @@ All three captures ("stream cam1..3", factorio-cam1..3.exe, OBS order = the dire
 the on-air hole (layout.json `main`, the whole left column), cropped to its shape. A cut brings the client on air to
 the front of the other two; the inset, while there is one, is moved to layout.json `inset` (uncropped) and put on top.
 Only z-order and the inset's transform change: every capture keeps running, so a cut is instant. Nothing else in the
-scene moves (background below, the overlay above).
+scene moves (background below, the overlay above). The vertical scene ("stream vertical" in Aitum Vertical's canvas,
+tools/vertical.py) shares the captures and is restacked the same way in layout-portrait.json's holes.
 """
 import json, os, threading, time, traceback
 

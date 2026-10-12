@@ -114,13 +114,27 @@ def urgent():
     assert d.onair != on and pub["main"]["attack"] == loss["text"] and pub["main"]["agents"] == [], pub
     for k in range(133, 160):
         d.step(snap(team), t + k)
-    assert onair_agent(d) and len(onair_agent(d)) == 1  # back to an agent after the 20 s hold
+    assert onair_agent(d) == ["luna"] and d.cuts[-1][2] == "back to luna", d.cuts  # the story it interrupted
+    # another real loss inside 3 minutes: an inset this time
+    loss2 = {"id": "l3", "kind": "loss", "t": t + 200, "text": "6 lost near (300, 300): 2 gun turret, 4 stone wall",
+             "position": {"x": 300, "y": 300, "extent": 20}, "key": "loss:300,300"}
+    d.step(snap(team, [loss2]), t + 200)
+    assert d.pending is None and d.public(t + 200)["inset"]["attack"] == loss2["text"]
     # a death: cut at once (no spacing)
     team[1]["alive"] = True
-    death = {"id": "d1", "kind": "death", "t": t + 165, "text": "Sol died", "agent": "sol"}
-    d.step(snap(team, [death]), t + 165)
-    d.step(snap(team), t + 167)
-    assert d.public(t + 167)["main"]["alert"] == "death", d.public(t + 167)
+    death = {"id": "d1", "kind": "death", "t": t + 205, "text": "Sol died", "agent": "sol"}
+    d.step(snap(team, [death]), t + 205)
+    d.step(snap(team), t + 207)
+    assert d.public(t + 207)["main"]["alert"] == "death", d.public(t + 207)
+    # what counts as a minor loss (an inset) and a real one (a cut)
+    from onecam import minor_loss
+    assert minor_loss("2 lost near (10, -66): 2 transport belt (by medium spitters)")
+    assert minor_loss("3 lost near (38, 84): 2 pipe to ground, 1 pipe (by flamethrower turrets)")
+    assert minor_loss("2 lost near (-95, -30): 2 wooden chest (by flamethrower turrets)")
+    assert not minor_loss("1 lost near (-101, -7): 1 gun turret (by big spitters)")
+    assert not minor_loss("1 lost near (-325, 64): 1 character (by medium worm turrets)")
+    assert not minor_loss("5 lost near (10, -64): 3 transport belt, 2 lab (by medium spitters)")
+    assert not minor_loss("4 lost near (10, -68): 4 transport belt (by medium spitters)")
     # an attack on the agent on air: labelled, no inset
     d2, _ = world()
     for k in range(3):

@@ -5,11 +5,13 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   one agent, never a pair, for at least `onair_dwell` (90 s) and usually a few minutes (`onair_max`).
 - Standby: the next subject is framed on a standby client first (a jump, off air), and the cut happens once it is
   there, so viewers never watch a long pan.
-- Earlier cuts only for urgent events: an agent's death, a base loss that is more than one cheap building
-  (segments.cheap_loss), and a segment that takes the camera (Space Age launches and landings, spotlight, overview).
-  The replay scene (replays.py) is its own program scene. One cheap building lost far from the subject on air shows
-  as a small inset for its length (`inset_hold`) instead of a cut; an attack with nothing lost yet is only a toast
-  (near the subject on air, the label says it).
+- Earlier cuts only for urgent events: an agent's death, a real base loss (not minor_loss: more than three cheap
+  pieces, or a turret, a machine, an engineer; one such cut per `loss_recut`), and a segment that takes the camera
+  (Space Age launches and landings, spotlight, overview). The replay scene (replays.py) is its own program scene.
+  After an urgent shot the story it interrupted comes back (`resume_min`).
+- Inset: a minor loss (or a real one inside loss_recut) far from the subject on air shows as a small inset for its
+  length (`inset_hold`) instead of a cut. An attack with nothing lost yet is only a toast (near the subject on air,
+  the label says it).
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main. program() is what cuts.py applies:
   which client is on air and which, if any, is the inset.
@@ -17,7 +19,20 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
 import json, time
 
 from director import Director, HOLDS, surface_of, dist
-from segments import cheap_loss
+from segments import CHEAP, LOSS_RE
+
+MINOR = CHEAP + ("wall", "chest", "gate")  # a loss of at most MINOR_MAX of these is an inset, not a cut
+MINOR_MAX = 3
+
+
+def minor_loss(text):
+    """"2 lost near (10, -66): 2 transport belt (by medium spitters)" -> True: a few cheap pieces (shake12 had dozens
+    an hour). A turret, a machine, an engineer, or more than MINOR_MAX pieces is a real loss."""
+    m = LOSS_RE.match(text or "")
+    if not m:
+        return False
+    names = [n.strip().split(" ", 1)[-1] for n in m.group(2).split(",")]
+    return int(m.group(1)) <= MINOR_MAX and all(n.endswith(MINOR) for n in names)
 
 ONECAM = {
     "onair_dwell": 90.0,    # the subject on air holds at least this long (urgent events excepted)
@@ -25,6 +40,8 @@ ONECAM = {
     "ready_s": 1.5,         # a standby client this long on its new subject is framed (it jumps there) and may cut
     "inset_hold": 20.0,     # an inset stays up this long after its alert
     "inset_far": 60.0,      # tiles: an alert this close to the subject on air shows in the on-air view, no inset
+    "loss_recut": 180.0,    # a loss within this long of the last loss cut is an inset, not a cut
+    "resume_min": 30.0,     # back from an urgent shot, the story it interrupted holds at least this much longer
     "view_frac": 1.0,       # share of the client's width the on-air hole shows (serve.py: from layout.json's crop)
     "work_cut": False,      # work away from the body was a side camera's shot; no side cameras now
 }
@@ -68,6 +85,8 @@ class OneCam(Director):
         self.pending = None  # {"slot", "reason"}: a standby framing an urgent shot, cut to once ready
         self.last_alert = -1e9
         self.last_program_cut = -1e9  # (Director.last_cut counts every camera command; here only cuts on air)
+        self.resume = None     # {"subject", "since"}: the story an urgent shot interrupted, taken up again after it
+        self.last_loss = None  # {"t", "position"} of the last loss that cut
         self.cuts = []       # (t, slot, reason)
 
     # -- clients ----------------------------------------------------------------------------------------------
@@ -112,7 +131,11 @@ class OneCam(Director):
         self.apply(slot, dict(target, jump=True, since=now, framed=now), reason, scores, now)
 
     def urgent(self, target, reason, scores, now):
-        """Frame on a standby, cut once it is there (step); with one client, take the on-air one."""
+        """Frame on a standby, cut once it is there (step); with one client, take the on-air one. The story on air is
+        remembered and taken up again when the urgent shot is over (direct)."""
+        cur = self.state.get(self.onair)
+        if cur and cur.get("subject") in scores and not self.pending:
+            self.resume = {"subject": cur["subject"], "since": self.onair_since}
         nxt = self.next_slot()
         if not nxt:
             self.apply(self.slot(self.onair), dict(target, jump=True, since=now, framed=now), reason, scores, now)
@@ -171,7 +194,9 @@ class OneCam(Director):
             else:
                 target.update(zoom=self.fight_zoom(position.get("extent")), exact_zoom=True)
         target.update(label=al["text"], kind=al["kind"], attack_t=now, fight=al.get("key"))
-        big = al["kind"] == "death" or (al["kind"] == "loss" and not cheap_loss(al["text"]))
+        big = al["kind"] == "death" or (al["kind"] == "loss" and not minor_loss(al["text"]))
+        if big and al["kind"] == "loss" and self.last_loss and now - self.last_loss["t"] < self.cfg["loss_recut"]:
+            big = False  # viewers saw a loss a moment ago: an inset keeps the story on air
         cur = self.state.get(self.onair)
         if self.near_onair(subject, position, by_name) and not (al["kind"] == "death" and not subject):
             # the camera on air already shows it: label it and stay through the fight
@@ -184,6 +209,8 @@ class OneCam(Director):
             if subject:  # the agent in the fight holds the camera for the fight, then normal directing resumes
                 target["hold_until"] = now + self.cfg["attack_hold"]
             self.urgent(target, f"{al['kind']}: {al['text']}", scores, now)
+            if al["kind"] == "loss" and position:
+                self.last_loss = {"t": now, "position": position}
             self.last_attack_cut = now  # serve.py: a segment gives way, replays.py looks at the alert
             self.last_attack_framed = {"t": now, "how": "follow" if subject else "position"} \
                 if (subject or al["kind"] != "death") else None
@@ -256,8 +283,14 @@ class OneCam(Director):
         others = [n for n in ranked if n != subj and n not in inset_agents]
         cand = others[0] if others else None
         want = None
+        resumed = None
         if need:
-            want = ranked[0] if ranked else None
+            r, self.resume = self.resume, None
+            if r and r["subject"] in scores and r["subject"] not in inset_agents and subj in (None, "@attack", "@segment"):
+                want, resumed = r["subject"], r  # back to the story the urgent shot interrupted
+                self.resume = r  # kept until the cut back happens
+            else:
+                want = ranked[0] if ranked else None
             if want is None:
                 return
         else:
@@ -281,8 +314,12 @@ class OneCam(Director):
                                  "jump": True, "since": now, "framed": t["framed"] if keep_framed else now},
                            f"standby: {lead}", scores, now, quiet=True)
         if want and nxt and self.state[nxt["slot"]].get("subject") == want and self.ready(nxt["slot"], now):
-            self.cut(nxt["slot"], reason if not need else (f"{subj} unavailable" if subj else "initial"), now)
+            self.cut(nxt["slot"], reason if not need else f"back to {want}" if resumed else
+                     (f"{subj} unavailable" if subj else "initial"), now)
             self.want[nxt["slot"]] = (self.state[nxt["slot"]]["zoom"], now)
+            if resumed:
+                self.resume = None
+                self.onair_since = max(resumed["since"], now - self.cfg["onair_dwell"] + self.cfg["resume_min"])
         elif want and not nxt and need:  # one client only: retarget it on air
             z = self.zoom_for(by_name[want], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
             self.apply(self.slot(self.onair), {"agents": [want], "follow": want, "zoom": z, "solo_zoom": z,
