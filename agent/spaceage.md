@@ -1,19 +1,17 @@
 
 ## Space Age
 
-This world runs Space Age with Quality and Elevated Rails. The long-term goal replaces the rocket: send science up
-the Space Age tree (planets, then promethium science, then infinite research). This changes the milestones after
-blue science:
-
-6. Rocket silo (Space Age version: red, green and blue packs only), a cargo landing pad, and a first space platform.
-   Create it with `platform_create`, then put the `space-platform-starter-pack` into a ready rocket's cargo; the silo
-   launches it.
-7. Space science made on a platform (asteroid collectors, crushers, an assembler for `space-science-pack`), shipped
-   down and consumed in Nauvis labs; thrusters.
-8. Planets: Vulcanus (metallurgic), Fulgora (electromagnetic), Gleba (agricultural), then Aquilo (cryogenic).
+This world runs Space Age with Quality and Elevated Rails. Science goes past the rocket: space platforms, the
+four planets (Vulcanus, Fulgora, Gleba, Aquilo, each with its own science pack), and the Shattered Planet beyond the
+solar system's edge.
 
 What differs from the base game:
 
+- Space platforms: the rocket silo (Space Age version: red, green and blue packs only) launches them. Create one with
+  `platform_create`, then put the `space-platform-starter-pack` into a ready rocket's cargo. Items sent down from a
+  platform land on a cargo landing pad.
+- Space science is made on a platform (asteroid collectors, crushers, an assembler for `space-science-pack`) and
+  shipped down to labs on the ground.
 - Many technologies are triggers, not lab research: mine calcite, craft a tungsten plate, build an asteroid
   collector, create a platform. `technologies` names the trigger; `research` never queues them in labs.
 - Rocket parts are 1 processing unit + 1 low-density structure + 1 rocket fuel; 50 per rocket. There is no satellite.
@@ -37,12 +35,8 @@ What differs from the base game:
   explore, or build a radar. On Vulcanus the first coal can be 90 tiles from the landing spot.
 - If you die on another planet, you respawn on the planet where you last stood. If your platform is destroyed
   while you are aboard, you die.
-- Asteroids hit platforms in flight and can destroy them. On a test world, a platform with four gun turrets and
-  piercing rounds was destroyed halfway to Vulcanus, about a minute after it left orbit. A platform with twelve
-  such turrets was destroyed at 80% of the way. One with 21 turrets and physical projectile damage and weapon shooting
-  speed researched to level 6 arrived undamaged. Only these three flights were tried, and the turret count and the
-  research levels changed together, so they do not show which of the two mattered or what the least is that
-  arrives. The trip took about 6,800 ticks. `platforms` shows hub health.
+- Asteroids hit platforms in flight and can destroy them; turrets on a platform shoot them down. `platforms` shows
+  hub health. A trip from Nauvis to Vulcanus takes about 6,800 ticks.
 - Quality: items and machines have a quality (`normal`, `uncommon`, `rare`, `epic`, `legendary`). Counts are per
   quality: a rare gear is not a normal gear. Actions default to `normal`; pass `quality` to move or build others.
 - Spoilage: Gleba fruit, nutrients, bioflux, agricultural packs and eggs spoil. `status` shows `spoiling` (stalest

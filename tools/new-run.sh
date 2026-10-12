@@ -48,7 +48,9 @@ if os.environ.get("POG_SPACE_AGE") == "1":
     text = text.rstrip("\n") + "\n" + open(os.path.join(os.path.dirname(src), "spaceage.md")).read()
 text = text.rstrip("\n") + "\n\n## Compact instructions\n\n" + open(compact).read()
 for k, v in {"PLAYER": player, "TEAMMATE": mate, "TEAMMATE_NOTES": mate_notes, "ROLE": role,
-             "ENEMIES": os.environ.get("POG_ENEMIES", "peaceful"), "SEED": os.environ.get("POG_SEED", "20261010")}.items():
+             "ENEMIES": os.environ.get("POG_ENEMIES", "peaceful"), "SEED": os.environ.get("POG_SEED", "20261010"),
+             "GOAL": ("reaching the Shattered Planet, past the solar system's edge" if os.environ.get("POG_SPACE_AGE") == "1"
+                      else "a rocket launch")}.items():
     text = text.replace("{{%s}}" % k, v)
 open(dst, "w").write(text)
 EOP

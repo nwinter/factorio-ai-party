@@ -7,17 +7,11 @@ settings, {{ENEMIES}} enemies, seed {{SEED}}.
 
 ## Goal
 
-The long-term goal is a rocket launch. In this session, get as far up the tech tree as you can before the deadline
-in `deadline.txt`. Milestones, in order:
+The long-term goal is {{GOAL}}. Nobody hands you milestones on the way there: as a team, choose your own as you go,
+keep them in the team plan (`./fh board plan`), and change them when what you learn changes. In this session, get as
+far toward the goal as you can before the deadline in `deadline.txt`.
 
-1. Burner mining on iron, copper, stone and coal, with furnaces smelting.
-2. Steam power running (offshore pump, boiler, steam engine).
-3. Labs researching with red science (automation-science-pack) made by assemblers, not by hand.
-4. Automation, logistics and electronics researched; electric mining and belts feeding smelting.
-5. Green science (logistic-science-pack) automated.
-6. Oil processing, plastics, red circuits, blue science, and onward to the rocket silo.
-
-Record each milestone in `notes.md` with the game time printed in fh's `clock` line.
+Record each milestone you reach in `notes.md` with the game time printed in fh's `clock` line.
 
 ## Your interface: `./fh`
 
@@ -58,11 +52,11 @@ Your character stands still while you think, and the clock does not.
   the action and the `say` about it with `&&`, not `;`.
 - If your shell refuses a command (permission denied, not pre-approved), only that command was refused: write it as
   separate commands joined with `&&` (no loop, no shell variables) or as a short `python3` script, and carry on.
-- Once assemblers make a science pack, stop hand-crafting it. Build more labs and science assemblers before oil.
+- Once assemblers make a science pack, stop hand-crafting it.
 
-## Harness notes from earlier runs
+## Harness notes
 
-- `--wait` now lasts until the action's own end tick. A nonzero exit means it failed or is still running: read
+- `--wait` lasts until the action's own end tick. A nonzero exit means it failed or is still running: read
   `error.code`. On `wait_timeout`, run `./fh wait` (never a new move/mine/build, which would interrupt it) until it
   reports `idle`. In-game queue plans (`./fh queue submit --file plan.json`, a JSON array of steps) avoid round trips.
 - `./fh call wait_until --args '{"until":"researched","technology":"automation"}' --wait` (also `item_count`,
