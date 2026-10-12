@@ -134,7 +134,22 @@ def hosts():
     assert "on_screen" not in caster.facts_for({"kind": "lull", "angle": "explain"}, s)
 
 
+def see_through():
+    """The overlay sits above the captures in OBS: a camera frame with a fill hides its camera (main 78c94e3: the
+    inset's black background made a blank PIP). The inset and the trio's tiles stay transparent (?preview aside)."""
+    import re
+    css = open(os.path.join(HERE, "static", "overlay.css")).read()
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+        for s in sel.split(","):
+            s = s.strip()
+            frame = re.search(r"#cam-(inset|cam2|cam3|main)$|^\.cam$|body\.trio #cam-cam[23]$", s)
+            if frame and "preview" not in s:
+                assert "background" not in body, (s, body)
+
+
 def main():
+    see_through()
     busy()
     close_together()
     holds_and_urgent()
