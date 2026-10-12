@@ -11,7 +11,17 @@
     if (seg.type === "attack_replay") return seg.state === "starting";
     return true;
   }
-  const api = { cardVisible };
+  // The "Research complete" lower third (model.py research_news): the newest technology finished under RESEARCH_S
+  // ago -> {key, label, unlocks: "A, B, C +2 more" or ""}, or null.
+  const RESEARCH_S = 8;
+  function researchCard(news) {
+    const n = (news || []).filter((x) => x && x.age_s != null && x.age_s < RESEARCH_S).slice(-1)[0];
+    if (!n) return null;
+    const shown = (n.unlocks || []).slice(0, 3);
+    const more = (n.unlocks || []).length - shown.length + (n.more || 0);
+    return { key: n.name, label: n.label || n.name, unlocks: shown.join(", ") + (more > 0 ? (shown.length ? " " : "") + "+" + more + " more" : "") };
+  }
+  const api = { cardVisible, researchCard, RESEARCH_S };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.pogSeg = api;
 })(typeof window !== "undefined" ? window : this);

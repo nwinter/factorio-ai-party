@@ -458,6 +458,18 @@ body:not(.portrait) #prod, body:not(.portrait) #board, body:not(.portrait) #spac
 
 /* ---- segments (segments.py): analysis panels cover the main camera; spotlight/overview are a card on it ---- */
 #segment { position: absolute; left: 24px; top: 24px; width: 1208px; height: 680px; pointer-events: none; box-sizing: border-box; animation: drop-in 600ms ease both; }
+/* "Research complete" lower third: the main camera's lower right (segment cards take the lower left), above the
+   captions (--voice-clear), 8 s (segview.js RESEARCH_S) */
+#research-card { position: absolute; right: 710px; bottom: calc(398px + var(--voice-clear, 0px)); max-width: 560px; box-sizing: border-box;
+  padding: 10px 18px 12px; pointer-events: none; background: rgba(var(--fx-frame-rgb), 0.95); border-left: 5px solid #a983f0;
+  border-radius: var(--fx-r-2); box-shadow: var(--fx-bevel), var(--fx-shadow-window); animation: drop-in 500ms ease both;
+  transition: bottom 250ms ease; }
+#research-card[hidden] { display: none; }
+#research-card.out { animation: fade-out 600ms ease both; }
+#research-card .rc-tag { font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #c9b3ff; }
+#research-card .rc-name { font-size: 26px; font-weight: 700; color: var(--head); line-height: 1.2; }
+#research-card .rc-unlocks { font-size: 17px; color: var(--ink); margin-top: 2px; }
+#research-card .rc-unlocks:empty { display: none; }
 #segment[hidden] { display: none; }
 #segment.out { animation: fade-out 700ms ease both; }
 /* Captions (#voice, audio.js) sit on the main camera's bottom edge: a full panel keeps a caption band under it
