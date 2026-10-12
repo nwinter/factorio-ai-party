@@ -3837,6 +3837,9 @@ function M.dispatch(request)
   if type(result)=='table' and request.action~='describe' and request.action~='profiles' and request.action~='cameras' then
     local p=M.lookup(request.player or 1)
     local peek=type(request.args)=='table' and request.args.peek==true
+    -- The agent's previous request before this one (the shift block counts research since then).
+    local before=p and p.valid and (state().clocks or {})[p.index]
+    local last_call=before and not before.peeked and before.call_tick or nil
     if p and p.valid then result.clock=clock_line(p,peek) end
     -- An fh sleep poll keeps a sleeping agent active for votes (votes.lua).
     if p and p.valid and peek and (request.action=='sleep_check' or (request.action=='observe' and request.args.scope=='sleep_check')) then
@@ -3849,6 +3852,10 @@ function M.dispatch(request)
       -- A chat read that left messages unread is repeated until they are read.
       local left=request.action~='chat' and M.chat and M.chat.left(p.index)
       if left then result.team=result.team or {}; result.team.chat_remaining=left end
+      -- The first reply of a shift: plan goals, research since the agent's last shift, researched and none built.
+      local ok,shift=pcall(M.research.shift_block,p,last_call,M.board.plan_for(M.board.who(p)))
+      if not ok then local s=state(); s.research_errors={count=((s.research_errors or {}).count or 0)+1,last=tostring(shift),tick=game.tick}
+      elseif shift then result.team=result.team or {}; result.team.shift=shift end
     end
     if clock and request.action=='status' then result.time_mode=clock.report() end
     -- The unread trailer repeats only when a newer message arrived (status always shows it).
@@ -4256,7 +4263,9 @@ M.operator={
   shift_start=function()
     local closed=0
     for _,i in ipairs(state().losses or {}) do if not i.closed then i.closed='shift'; closed=closed+1 end end
-    return {ok=true,tick=game.tick,incidents_closed=closed}
+    -- Each agent's first reply of the shift carries a shift block (research.lua).
+    local shift=M.research.shift_start()
+    return {ok=true,tick=game.tick,incidents_closed=closed,shift=shift.seq}
   end}
 local MAX_ALERTS=64
 function M.on_event(event)

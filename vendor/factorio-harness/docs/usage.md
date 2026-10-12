@@ -388,6 +388,18 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   gathering, buildings destroyed; at most 8 lines; these replace the old top-level `losses` field) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
+- `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each
+  agent's first reply of it (any action, not a peek) carries `team.shift` once: `shift` (`shift N, started <age>
+  ago`), `plan_goals` and `your_plan_line` (the team plan), `research_since_your_last_shift` (technologies finished
+  after the agent's last request before this shift, the last 12 and a count of earlier ones: the research news, plus
+  what `force.technologies` shows researched since the snapshot taken at the start of the agent's previous shift (and
+  at the runtime's first sample), so no research event is needed; nothing before the first snapshot is known) and
+  `researched_none_built` (`roboports (logistic-robotics,
+  construction-robotics); ...`: researched technologies with none of their buildings on any surface, from the
+  harness's `unlocks.lua`, the table the stream hosts use).
+- Research news needs no restart: a technology that leaves the head of the queue researched (or a level up) and was
+  not announced by `on_research_finished` (which control.lua forwards from the next server start) is announced by the
+  runtime's 10 s research sample.
 - Mentions: `@name` (bot or player name, the name without `pog-`, or the display name, any case) or `@everyone`
   (also `@all`, `@team`); otherwise the plain name as a whole word. Never the sender. They are filed per agent when
   the message arrives (from agents, people in a client, and the server), so chat log rotation does not lose them; a

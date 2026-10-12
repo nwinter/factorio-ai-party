@@ -13,7 +13,7 @@ An observation is a dict:
   board_events: [{seq, tick, by, id, change, title, kind?}] (optional; docs/BOARD-API.md)
   board: {items: [...], open_unowned} (optional, refreshed slowly; docs/BOARD-API.md)
 """
-import math, re, time
+import math, os, re, time
 from collections import deque
 
 HALF_LIFE = 75.0  # seconds; interest decays toward 0 with this half-life
@@ -161,32 +161,24 @@ def fmt_game_time(sec):
 
 # Technologies and the buildings they unlock, for the hosts' commentary on what the team has not built yet
 # (HOSTS4 item 2: "logistic robotics researched 3 h ago, no roboport built"). Buildings are counted by tools/pog.py's
-# score; a technology whose building is not counted there is left out.
-UNLOCKS = {
-    "logistic-robotics": (("roboport",), "roboports"),
-    "construction-robotics": (("roboport",), "roboports"),
-    "logistic-system": (("requester-chest", "buffer-chest"), "requester chests"),
-    "electric-energy-accumulators": (("accumulator",), "accumulators"),
-    "solar-energy": (("solar-panel",), "solar panels"),
-    "gun-turret": (("gun-turret",), "gun turrets"),
-    "laser-turret": (("laser-turret",), "laser turrets"),
-    "stone-wall": (("stone-wall",), "walls"),
-    "effect-transmission": (("beacon",), "beacons"),
-    "oil-processing": (("pumpjack", "oil-refinery"), "pumpjacks or refineries"),
-    "advanced-material-processing-2": (("electric-furnace",), "electric furnaces"),
-    "automation-3": (("assembling-machine-3",), "assembling machine 3s"),
-    "logistics-2": (("fast-transport-belt",), "fast belts"),
-    "logistics-3": (("express-transport-belt",), "express belts"),
-    "railway": (("locomotive",), "trains"),
-    "nuclear-power": (("nuclear-reactor",), "nuclear reactors"),
-    "uranium-processing": (("centrifuge",), "centrifuges"),
-    "rocket-silo": (("rocket-silo",), "a rocket silo"),
-    "space-platform": (("space-platform-hub",), "a space platform"),
-    "foundry": (("foundry",), "foundries"),
-    "electromagnetic-plant": (("electromagnetic-plant",), "electromagnetic plants"),
-    "big-mining-drill": (("big-mining-drill",), "big mining drills"),
-    "recycling": (("recycler",), "recyclers"),
-}
+# score; a technology whose building is not counted there is left out. One table with the harness: its unlocks.lua
+# (the agents' shift block, "researched, none built") is read here.
+UNLOCKS_LUA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "vendor", "factorio-harness", "mod",
+                           "agent-harness_0.1.0", "unlocks.lua")
+
+
+def load_unlocks(path=UNLOCKS_LUA):
+    """unlocks.lua rows `{'tech', {'building', ...}, 'label'},` -> {tech: ((buildings), label)}, in file order."""
+    out = {}
+    row = re.compile(r"^\s*\{\s*'([^']+)'\s*,\s*\{([^}]*)\}\s*,\s*'([^']+)'\s*\},?\s*$")
+    for line in open(path):
+        m = row.match(line)
+        if m:
+            out[m.group(1)] = (tuple(re.findall(r"'([^']+)'", m.group(2))), m.group(3))
+    return out
+
+
+UNLOCKS = load_unlocks()
 
 
 def tech_label(name):
