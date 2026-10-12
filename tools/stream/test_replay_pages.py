@@ -2,7 +2,9 @@
 """The replay on the overlay pages, under node: python3 tools/stream/test_replay_pages.py
 
 1. The stream page's replay card (static/segview.js, used by overlay.js renderSegment) shows only while the replay
-   segment is "starting" (the 2.5 s before the program cuts to the replay scene), not while it is live or after.
+   segment is "starting" (the 2.5 s before the program cuts to the replay scene), not while it is live or after; no
+   card shows past its last moment (cardUntil) plus a grace, whatever the state says; `hidden` hides the card (shake13:
+   #segment.lower's display: flex beat #segment[hidden], so every card came back after its fade-out, bar frozen).
 """
 import json, os, re, subprocess
 
@@ -27,11 +29,21 @@ def card_tests():
     got = node(f"const s = require({json.dumps(os.path.join(STATIC, 'segview.js'))});"
                f"console.log(JSON.stringify({json.dumps([c for c, _ in cases])}.map(s.cardVisible)))")
     assert got == [want for _, want in cases], list(zip(cases, got))
+    rep = {"type": "attack_replay", "state": "starting", "started": 1000, "ends": 1017.5}
+    prod = {"type": "production", "state": "live", "started": 1000, "ends": 1015}
+    got = node(f"const s = require({json.dumps(os.path.join(STATIC, 'segview.js'))});"
+               f"const r = {json.dumps(rep)}, p = {json.dumps(prod)};"
+               "console.log(JSON.stringify([s.cardUntil(r), s.cardUntil(p), s.cardVisible(r, 1003.9), s.cardVisible(r, 1004.1),"
+               " s.cardVisible(p, 1016.4), s.cardVisible(p, 1016.6), s.cardVisible(r)]))")
+    assert got == [1002.5, 1015, True, False, True, False, True], got
+    css = open(os.path.join(STATIC, "overlay.css")).read()
+    assert "[hidden] { display: none !important; }" in css
     for page in ("index.html", "portrait.html"):
         html = open(os.path.join(STATIC, page)).read()
         srcs = re.findall(r'<script src="/static/([^"]+)"', html)
         assert "segview.js" in srcs and srcs.index("segview.js") < srcs.index("overlay.js"), (page, srcs)
-    assert "pogSeg.cardVisible(seg)" in open(os.path.join(STATIC, "overlay.js")).read()
+    js = open(os.path.join(STATIC, "overlay.js")).read()
+    assert "sv.cardVisible(seg, s.now)" in js and "sv.cardUntil(seg)" in js and "setInterval(segTick" in js
 
 
 BANNER_HARNESS = r"""

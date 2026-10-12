@@ -22,6 +22,7 @@ import itertools, json, threading, time, traceback
 from collections import deque
 
 from obsws import OBS, OBSError
+from segments import STARTING_S
 
 DEFAULTS = {
     "scene": "replay",             # created on first connect if missing
@@ -47,6 +48,7 @@ DEFAULTS = {
     "spacing": 120.0,              # at most one replay this often
     "max_age": 120.0,              # a clip not played within this long is dropped
     "stats_every": 30.0,
+    "play_timeout": 8.0,           # a replay segment live this long with the clip not on air is ended
 }
 
 
@@ -348,7 +350,14 @@ class Replays:
                 self.log(f"[replays] banner refresh failed: {e}")
         elif live and not self.playing and live["state"] == "live":
             c = self.clip
-            if not c or c["id"] != live.get("clip"):
+            # Nothing would air: its clip was dropped while the segment started (too old, or skipped for the one
+            # behind it), or OBS keeps failing to play it. End the segment instead of holding the hosts on a replay
+            # nobody sees for its whole length.
+            why = ("its clip is gone" if not c or c["id"] != live.get("clip")
+                   else "the replay did not start" if now - live["started"] > STARTING_S + self.cfg["play_timeout"] else None)
+            if why:
+                if self.segments.end(live["id"], why, now):
+                    self.log(f"[replays] ended {live['id']}: {why}")
                 return
             self.play(c)
             self.playing = c["id"]

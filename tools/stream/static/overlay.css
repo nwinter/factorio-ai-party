@@ -17,6 +17,11 @@
   --emoji: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
 }
 
+/* `hidden` always hides. #segment[hidden] and #segment.lower (display: flex) have the same specificity and the
+   later rule won: a segment card faded out, then came back at full opacity with its bar frozen and stayed until the
+   next segment replaced it (shake13, Nick: a replay card at 90%, "Length 15 s", not doing anything). */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   width: 1920px;
@@ -524,7 +529,7 @@ body.seg-full #alerts .alert:not(:last-child) { display: none; }
 .srow.said .v { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-style: italic; }
 .sbar { height: 18px; }
 .stime { flex: none; height: 4px; border-radius: 2px; background: var(--fx-deep); overflow: hidden; }
-.stime > i { display: block; height: 100%; width: 100%; background: var(--fx-orange); transition: width 1s linear; }
+.stime > i { display: block; height: 100%; width: 100%; background: var(--fx-orange); transition: width 250ms linear; }  /* overlay.js segTick, 4 a second */
 body.portrait #segment.full { padding: max(24px, var(--alerts-clear, 0px)) 24px max(130px, var(--voice-clear, 0px)); }
 body.portrait #segment.lower .spanel { width: 100%; margin-right: 22px; }
 

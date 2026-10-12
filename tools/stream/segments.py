@@ -169,6 +169,18 @@ class Segments:
                 self.last_end = now
             self.queue = None
 
+    def end(self, seg_id, why, now=None):
+        """End the running segment seg_id early (replays.py: its clip is gone, or the replay never started): the
+        snapshot says "ended" with `cut`, the overlay drops its card and the hosts move on. False if it is not running."""
+        now = now or time.time()
+        with self.lock:
+            cur = self.cur
+            if not cur or cur["id"] != seg_id or cur["state"] not in ("starting", "live"):
+                return False
+            cur.update(state="ended", cut=why, ends=now)
+            self.last_end = now
+            return True
+
     # ---- requests ----------------------------------------------------------------------------------------------
     def request(self, body, now=None, ignore_spacing=False):
         """-> (http status, reply dict). ignore_spacing: replays.py's own clips skip the 180 s segment spacing."""

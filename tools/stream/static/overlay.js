@@ -885,19 +885,20 @@
     return body;
   }
   const isFull = (seg) => !!FULL[seg.type];
+  function hideSegment(box) {
+    document.body.classList.remove("seg-full");
+    if (box.hidden || box.classList.contains("out")) return;
+    box.classList.add("out");
+    setTimeout(() => { box.hidden = true; box.classList.remove("out"); box.dataset.sig = ""; box._t1 = 0; }, 700);
+  }
   function renderSegment(s) {
     const box = $("segment");
     const seg = s.segment;
-    const show = window.pogSeg ? window.pogSeg.cardVisible(seg) : !!seg && seg.state !== "ended"; // static/segview.js
+    const sv = window.pogSeg; // static/segview.js
+    const show = sv ? sv.cardVisible(seg, s.now) && box._expired !== seg.id : !!seg && seg.state !== "ended";
     // a full panel shares the camera with at most the newest alert banner (overlay.css body.seg-full)
     document.body.classList.toggle("seg-full", show && isFull(seg));
-    if (!show) {
-      if (!box.hidden && !box.classList.contains("out")) {
-        box.classList.add("out");
-        setTimeout(() => { box.hidden = true; box.classList.remove("out"); box.dataset.sig = ""; }, 700);
-      }
-      return;
-    }
+    if (!show) return hideSegment(box);
     const sig = seg.id;
     if (box.dataset.sig !== sig) {
       box.dataset.sig = sig;
@@ -918,10 +919,25 @@
       panel.append(title, segmentBody(seg), box._time);
       box.append(panel);
       box.hidden = false;
+      box._t0 = seg.started * 1000 + Date.now() - s.now * 1000; // local ms
     }
-    const total = Math.max(1, seg.ends - seg.started);
-    box._time.firstChild.style.width = Math.max(0, Math.min(1, (seg.ends - s.now) / total)) * 100 + "%";
+    // The time bar and the card's end run on this page's clock (segTick), so the bar moves between snapshots and the
+    // card goes on time even if snapshots stop. A replay's card counts down to the cut to the replay scene.
+    box._id = seg.id;
+    box._t1 = (sv ? sv.cardUntil(seg) : seg.ends) * 1000 + Date.now() - s.now * 1000;
+    segTick();
   }
+  function segTick() {
+    const box = $("segment");
+    if (!box || box.hidden || box.classList.contains("out") || !box._t1) return;
+    const now = Date.now();
+    if (now > box._t1 + (window.pogSeg ? window.pogSeg.GRACE_S : 1.5) * 1000) {
+      box._expired = box._id; // a late snapshot of this segment does not bring the card back
+      return hideSegment(box);
+    }
+    box._time.firstChild.style.width = Math.max(0, Math.min(1, (box._t1 - now) / Math.max(1000, box._t1 - box._t0))) * 100 + "%";
+  }
+  setInterval(segTick, 250);
 
   function render(s) {
     state = s;

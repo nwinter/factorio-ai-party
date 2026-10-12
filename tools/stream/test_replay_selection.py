@@ -7,6 +7,7 @@ research completions with no card, the replay scene on air): python3 tools/strea
    way to a clip waiting behind it.
 3. The research card and a fresh Space Age moment win over a routine replay: it is refused while they are up, and one
    queued or on air is cut. A death replay is not routine.
+4. A replay segment that would air nothing ends at once: its clip was dropped while it started, or OBS never plays it.
 """
 import os, sys
 
@@ -189,14 +190,51 @@ def moment_wins():
     assert aired and aired[0][1] >= ends, (aired, ends)
 
 
+class BrokenOBS(FakeOBS):
+    def call(self, req, data=None):
+        if req == "SetInputSettings":
+            raise rp.OBSError("media input failed")
+        return super().call(req, data)
+
+
+def nothing_airs():
+    """Rule 4: the snapshot says "ended" (cut says why), so the overlay drops the card and the hosts move on."""
+    def started(obs):
+        seg = Segments(lull_after=1e9)
+        seg.last_recap = 1e12
+        rpl = rp.Replays(seg, obs=obs, log=lambda *a: None, start=False)
+        rpl.work(0)
+        rpl.clip = dict(Clips.make(TURRET), path="r1.mkv", saved_t=995, show_from=985, show_to=995)
+        rpl.offer(1000)
+        seg.step({}, 1000)
+        assert seg.cur["state"] == "starting", seg.cur
+        return seg, rpl
+    seg, rpl = started(FakeOBS())
+    rpl.clip = None  # dropped while the segment started (too old)
+    seg.step({}, 1003)
+    rpl.follow_segment(1003)
+    assert seg.public()["state"] == "ended" and seg.public()["cut"] == "its clip is gone", seg.public()
+    assert rpl.obs.program == "stream"
+    seg, rpl = started(BrokenOBS())
+    for t in (1003, 1008, 1011):  # play() fails each time; run() catches it and tries again
+        seg.step({}, t)
+        try:
+            rpl.follow_segment(t)
+        except rp.OBSError:
+            assert t < 1011 and seg.cur["state"] == "live", (t, seg.cur)  # within play_timeout it keeps trying
+    assert seg.public()["state"] == "ended" and seg.public()["cut"] == "the replay did not start", seg.public()
+    assert not seg.end(seg.cur["id"], "again", 1012)  # already over
+
+
 def main():
     cheap()
     spacing()
     cheap_waits()
     research_wins()
     moment_wins()
+    nothing_airs()
     print("replay selection: ok (90 s apart, no repeats, one cheap building only when quiet, research card and Space "
-          "Age moments first)")
+          "Age moments first, a replay that would air nothing ends)")
 
 
 if __name__ == "__main__":
