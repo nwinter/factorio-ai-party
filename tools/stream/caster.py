@@ -370,7 +370,7 @@ class Differ:
         cam, pcam = (s.get("cameras") or {}).get("main") or {}, (p.get("cameras") or {}).get("main") or {}
         if not first and cam.get("agents") and cam.get("agents") != pcam.get("agents"):
             ev.append({"kind": "camera", "agents": cam["agents"]})
-        if first:
+        if first and not os.environ.get("POG_CASTER_NO_OPEN"):  # a mid-shift restart doesn't open the show again
             ev.append({"kind": "open"})
         self.prev = s
         for e in ev:
@@ -2663,11 +2663,12 @@ def parser():
                     "shake1.json (tools/stream/baseline.py makes one); none by default")
     ap.add_argument("--space-baseline", default="", help="past run to compare with on a Space Age run, e.g. "
                     "tools/stream/baselines/shake4.json; none by default")
-    ap.add_argument("--lines", type=int, nargs=2, default=[2, 3], metavar=("MIN", "MAX"),
+    # shift01, 15:58: a viewer said "ais are yapping too much" (31 host lines in 10 minutes); Nick: take the hosts down.
+    ap.add_argument("--lines", type=int, nargs=2, default=[1, 2], metavar=("MIN", "MAX"),
                     help="lines per exchange between the hosts (urgent events use MIN)")
     ap.add_argument("--segment-every", type=float, default=180,
                     help="min seconds between segment requests to the director (replays, analyses; eng/stream2)")
-    ap.add_argument("--naturalist", type=float, default=0.2,
+    ap.add_argument("--naturalist", type=float, default=0.0,
                     help="share of chat/camera/board/filler exchanges where Vale narrates like a nature documentary")
     ap.add_argument("--tts", default="aura2", choices=list(voices.PRICE))
     ap.add_argument("--tts-fallback", choices=list(voices.PRICE),
@@ -2675,16 +2676,16 @@ def parser():
     ap.add_argument("--backoff", type=float, default=120,
                     help="after 3 straight failures, skip a backend (writer, classifier, TTS) for this many seconds")
     ap.add_argument("--classifier", default="clef", choices=["clef", "heuristic"])
-    ap.add_argument("--gap", type=float, nargs=2, default=[3.0, 6.0], metavar=("MIN", "MAX"),
+    ap.add_argument("--gap", type=float, nargs=2, default=[45.0, 90.0], metavar=("MIN", "MAX"),
                     help="seconds of silence between exchanges (random in range); 20 40 for the old sparse cast")
     ap.add_argument("--urgent-gap", type=float, default=0.5, help="gap before an urgent exchange (attack, death)")
     ap.add_argument("--first-gap", type=float, default=3)
-    ap.add_argument("--lull", type=float, default=40,
+    ap.add_argument("--lull", type=float, default=150,
                     help="seconds of silence before the hosts fill with a topic of their own, and only when something "
                          "changed (0: never silent, the old continuous cast)")
     ap.add_argument("--attack-gap", type=float, default=120,
                     help="seconds after an attack, loss or death beat before a plain attack is said again (0: every one)")
-    ap.add_argument("--quiet", type=float, default=20,
+    ap.add_argument("--quiet", type=float, default=90,
                     help="seconds of silence before a low-value beat (camera cut, board note, research start) is said")
     ap.add_argument("--stale", type=float, default=45, help="drop events older than this")
     # task-talk-hosts: shift01 replayed with these voices about a third of the spoken lines from the agents
@@ -2696,7 +2697,7 @@ def parser():
                     help="seconds after an agent line ends when the hosts only react to it or stay quiet")
     ap.add_argument("--yield-prio", type=int, default=7,
                     help="beats at this priority or above still speak while yielding (research, cards, attacks)")
-    ap.add_argument("--react", type=float, default=0.5, help="share of agent lines the hosts react to")
+    ap.add_argument("--react", type=float, default=0.3, help="share of agent lines the hosts react to")
     ap.add_argument("--talk-gap", type=float, default=6,
                     help="extra seconds between host beats per agent line in the last 5 minutes (at most 4 counted)")
     ap.add_argument("--max-chars", type=int, default=200, help="voiced agent lines are cut at a sentence near this")
