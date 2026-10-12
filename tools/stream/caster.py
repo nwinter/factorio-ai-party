@@ -1751,11 +1751,19 @@ class Caster:
     def repeat_fault(self, line, now=None, window=1200):
         """A line opening the way two aired lines already opened in the last 20 minutes."""
         now = now or time.time()
-        opening = framings(line)[0]
-        if len(opening.split()) < 3:
-            return None
-        k = sum(1 for t, o, _ in self.__dict__.get("frame_mem", ()) if now - t <= window and o == opening)
-        return "style: opening used again this shift" if k >= 2 else None
+        opening, grams = framings(line)
+        mem = self.__dict__.get("frame_mem", ())
+        if len(opening.split()) >= 3:
+            k = sum(1 for t, o, _ in mem if now - t <= window and o == opening)
+            if k >= 2:
+                return "style: opening used again this shift"
+        # shake12: "turrets are doing their job" and "nobody has died" five times each in an hour, phrase list or not
+        long_ = [g for g in grams if len(g.split()) == 4]
+        if long_:
+            c = collections.Counter(g for t, _, gs in mem if now - t <= 1800 for g in gs if g in long_)
+            if c and max(c.values()) >= 3:
+                return "style: phrase used again this shift"
+        return None
 
     def previous(self):
         """previous_shift for this run, read once (the last shift's logs do not change)."""
@@ -1825,7 +1833,12 @@ class Caster:
         cat = self.segment_types()
         kind, params = next(((k, p) for k, p in options if k in cat), (None, None))
         if not kind:
+            if news:  # the director is busy (a replay): keep asking for 90 s (shake12: no card for 2 completions)
+                if not getattr(self, "pending_news", None):
+                    self.pending_news = (time.time(), options, reason)
             return None
+        if news:
+            self.pending_news = None
         self.seg_req_t = time.time()
         body = {"type": kind, "params": params or {}, "seconds": 30, "by": "caster", "reason": reason}
         req = urllib.request.Request(self.base + "/segment", data=json.dumps(body).encode(), method="POST",
@@ -1840,6 +1853,18 @@ class Caster:
         log(f"[segment] asked for {kind} ({reason}): {json.dumps(out)[:200]}")
         self.record(type="segment_request", segment=kind, reason=reason, result=out)
         return out
+
+    def retry_news_card(self, now=None):
+        """A research card the director could not take yet: ask again until 90 s have passed, then say so in the log."""
+        p = getattr(self, "pending_news", None)
+        if not p:
+            return None
+        now = now or time.time()
+        if now - p[0] > 90:
+            self.pending_news = None
+            log(f"[segment] gave up on a {p[1][0][0]} card ({p[2]}): the director stayed busy for 90 s")
+            return None
+        return self.request_segment(p[1], p[2], news=True)
 
     def live_segment(self, s, margin=6):
         seg = s.get("segment") or {}
@@ -1918,6 +1943,8 @@ class Caster:
             top = max((e["prio"] for e in self.events if now - e["t"] < self.a.stale), default=0)
         if not s:
             return
+        if getattr(self, "pending_news", None):
+            self.retry_news_card(now)
         if not self.a.dry_run and not self.a.always and not st.get("listeners"):
             return  # nobody hears it: write nothing (a continuous cast would otherwise spend ~250 calls an hour)
         # Start writing early enough that the next line is ready when this one ends (plus a breath of --gap).

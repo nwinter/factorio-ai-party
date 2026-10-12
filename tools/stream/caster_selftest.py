@@ -901,6 +901,29 @@ check("a plain attack 60 s after the last attack beat is dropped", not hasattr(f
 ctk.events.append({"kind": "loss", "text": "3 lost: 3 pipe (by small biters)", "t": time.time(), "prio": 8})
 ctk.caster_tick(time.time(), {})
 check("a loss still speaks inside the attack gap", getattr(ft, "facts", {}).get("event") == "loss")
+cph = caster.Caster.__new__(caster.Caster)
+cph.remember_framings(["Turrets are doing their job out west.", "Walls up, turrets are doing their job.",
+                       "Good news, the turrets are doing their job again."], now=t6)
+check("a 4-word phrase aired three times in 30 minutes is cut wherever it sits (shake12: 'turrets are doing their job')",
+      cph.repeat_fault("Busy wave, and the turrets are doing their job.", now=t6 + 120) ==
+      "style: phrase used again this shift" and cph.repeat_fault("The wall held this time.", now=t6 + 120) is None)
+cp = caster.Caster.__new__(caster.Caster)
+cp.a = caster.argparse.Namespace(dry_run=False, segment_every=180)
+cp.seg_req_t, cats, posted = 0.0, [{}, {"research": {}}], []
+cp.segment_types = lambda: cats.pop(0) if cats else {"research": {}}
+cp.base = "http://x"
+_o = caster.urllib.request.urlopen
+caster.urllib.request.urlopen = lambda req, timeout=0: posted.append(json.loads(req.data)) or type(
+    "R", (), {"__enter__": lambda self: self, "__exit__": lambda self, *a: None, "read": lambda self: b'{"state": "queued"}'})()
+cp.record = lambda **k: None
+try:
+    cp.request_segment([("research", {})], "research", news=True)
+    first_pending = bool(cp.pending_news)
+    cp.retry_news_card(time.time() + 10)
+finally:
+    caster.urllib.request.urlopen = _o
+check("a research card the director cannot take yet is asked for again", first_pending and
+      [p["type"] for p in posted] == ["research"] and not cp.pending_news, str(posted))
 check("previously on: growth only for buildings the first score counted (shake12: '135 more gun turret')",
       caster.previous_shift.__doc__ and "gun-turret" not in caster.SCORE_COUNTED_BEFORE)
 check("planet names keep their capitals in technology labels", model.tech_label("planet-discovery-fulgora") ==
