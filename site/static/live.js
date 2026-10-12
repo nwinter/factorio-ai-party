@@ -257,24 +257,25 @@
     var pins = (alerts || []).filter(function (a) { return a.position && isFinite(a.position.x) && (!(fights || []).length || (a.kind !== 'attack' && a.kind !== 'loss')); });
     var base = validGrid(bm) && bm.w > 0 ? bm : null, ore = base && validGrid(bm.ore) ? bm.ore : null;
     if (!pts.length && !base) return '<p class="fx-muted">No positions yet.</p>';
-    // With a base, frame the base; an agent far outside it (scouting, travelling) is pinned to the edge instead of
-    // shrinking the base to a dot.
-    var far = {};
-    if (base) {
-      var bw = base.w * base.cell, bh = base.rows.length * base.cell, bcx = base.x0 + bw / 2, bcy = base.y0 + bh / 2;
-      var reach = Math.max(96, bw, bh);
-      pts.forEach(function (a) {
-        if (Math.abs(a.position.x - bcx) > reach || Math.abs(a.position.y - bcy) > reach)
-          far[a.name] = Math.round(Math.max(Math.abs(a.position.x - bcx), Math.abs(a.position.y - bcy)));
-      });
+    // With a base, frame the base's core (baseCore: the outer 5% of building cells on each side trimmed, so one far
+    // outpost does not shrink the base to a dot); agents, alerts, fights and outposts far outside it are pinned to the
+    // frame's edge instead (dashed, the distance in the tooltip).
+    var far = {}, core = base ? baseCore(base) : null, bcx = 0, bcy = 0, reach = Infinity;
+    if (core) {
+      bcx = (core.x0 + core.x1) / 2; bcy = (core.y0 + core.y1) / 2;
+      reach = Math.max(96, core.x1 - core.x0, core.y1 - core.y0);
     }
+    var dist = function (p) { return Math.round(Math.max(Math.abs(p.x - bcx), Math.abs(p.y - bcy))); };
+    var isNear = function (p) { return !core || (Math.abs(p.x - bcx) <= reach && Math.abs(p.y - bcy) <= reach); };
+    pts.forEach(function (a) { if (!isNear(a.position)) far[a.name] = dist(a.position); });
     var near = pts.filter(function (a) { return !(a.name in far); });
     var fpos = (fights || []).filter(function (f) { return f.position && isFinite(f.position.x) && isFinite(f.position.y); });
-    var xs = near.map(function (a) { return a.position.x; }).concat(pins.map(function (p) { return p.position.x; }), fpos.map(function (f) { return f.position.x; }));
-    var ys = near.map(function (a) { return a.position.y; }).concat(pins.map(function (p) { return p.position.y; }), fpos.map(function (f) { return f.position.y; }));
-    if (base) {
-      xs.push(base.x0, base.x0 + base.w * base.cell);
-      ys.push(base.y0, base.y0 + base.rows.length * base.cell);
+    var xs = [], ys = [];
+    near.map(function (a) { return a.position; }).concat(pins.map(function (p) { return p.position; }), fpos.map(function (f) { return f.position; }))
+      .filter(isNear).forEach(function (p) { xs.push(p.x); ys.push(p.y); });
+    if (core) {
+      xs.push(core.x0, core.x1);
+      ys.push(core.y0, core.y1);
     }
     var minX = Math.min.apply(0, xs), maxX = Math.max.apply(0, xs), minY = Math.min.apply(0, ys), maxY = Math.max.apply(0, ys);
     var span = Math.max(64, maxX - minX, maxY - minY) * 1.25, cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
@@ -299,38 +300,133 @@
         ((base.nests || []).length ? '<li><i class="nest"></i>Enemy nests</li>' : '') + '</ul>' +
         (op && op.cats.length ? '<ul class="mm-legend mm-legend-ore">' + op.cats.map(function (c) { return '<li><i class="o-' + c[0] + '"></i>' + esc(c[1]) + '</li>'; }).join('') + '</ul>' : '');
     }
-    // Pinned agents sit just inside the frame edge, on the line from the frame's centre towards them.
-    var edge = function (a) {
-      var dx = a.position.x - cx, dy = a.position.y - cy, lim = span / 2 - 14 / k, t = lim / Math.max(Math.abs(dx), Math.abs(dy));
+    // Anything far from the core sits just inside the frame edge, on the line from the frame's centre towards it.
+    var visible = function (p) { return Math.abs(p.x - cx) <= span / 2 - 4 / k && Math.abs(p.y - cy) <= span / 2 - 4 / k; };
+    var edge = function (p) {
+      var dx = p.x - cx, dy = p.y - cy, lim = span / 2 - 14 / k, t = lim / Math.max(Math.abs(dx), Math.abs(dy), 1e-6);
       return { x: cx + dx * t, y: cy + dy * t };
     };
+    var spot = function (p) { return visible(p) ? p : edge(p); };
     // fights (state.fights, push_live.py): a ring the size of the fought-over area; solid red while it goes on
     // (reported in the last 25 s), faded after; a cross where something was destroyed
-    var fightMarks = (fights || []).filter(function (f) { return f.position && isFinite(f.position.x) && isFinite(f.position.y); }).map(function (f) {
-      var r = Math.max(6, (f.extent || 16) / 2 * k), now = f.age_s != null && f.age_s < 25;
-      return '<g class="fight' + (now ? ' now' : '') + (f.kind === 'loss' ? ' loss' : '') + '" transform="translate(' + px(f.position.x) + ' ' + py(f.position.y) + ')">' +
-        '<title>' + esc(f.text + (f.age_s != null ? ' · ' + ago(f.age_s) : '') + (f.losses ? ' · ' + f.losses + ' loss' + (f.losses > 1 ? 'es' : '') : '')) + '</title>' +
+    var fightMarks = fpos.map(function (f) {
+      var at = spot(f.position), pinned = at !== f.position;
+      var r = pinned ? 6 : Math.max(6, (f.extent || 16) / 2 * k), now = f.age_s != null && f.age_s < 25;
+      return '<g class="fight' + (now ? ' now' : '') + (f.kind === 'loss' ? ' loss' : '') + '" transform="translate(' + px(at.x) + ' ' + py(at.y) + ')">' +
+        '<title>' + esc(f.text + (f.age_s != null ? ' · ' + ago(f.age_s) : '') + (f.losses ? ' · ' + f.losses + ' loss' + (f.losses > 1 ? 'es' : '') : '') +
+          (pinned ? ' · about ' + dist(f.position) + ' tiles from the base' : '')) + '</title>' +
         '<circle r="' + r.toFixed(1) + '"/>' + (f.kind === 'loss' || f.losses ? '<path d="M-3 -3L3 3M3 -3L-3 3"/>' : '') + '</g>';
     }).join('');
     var marks = fightMarks + pins.map(function (p) {
-      return '<g class="pin" transform="translate(' + px(p.position.x) + ' ' + py(p.position.y) + ')"><title>' + esc(label(p.kind) + ': ' + p.text) + '</title>' +
+      var at = spot(p.position);
+      return '<g class="pin" transform="translate(' + px(at.x) + ' ' + py(at.y) + ')"><title>' + esc(label(p.kind) + ': ' + p.text) + '</title>' +
         '<path d="M0 -9 L8 6 L-8 6 Z"/><text y="4" text-anchor="middle">!</text></g>';
     }).join('');
-    marks += pts.map(function (a) {
-      var c = safeColor(a.color) || '#999999', isFar = a.name in far, at = isFar ? edge(a) : a.position;
-      var right = isFar && px(at.x) > S * 0.6;  // labels of agents pinned on the right edge go to the left of the dot
-      return '<g class="dot' + (a.alive === false ? ' dead' : '') + (isFar ? ' far' : '') + '" transform="translate(' + px(at.x) + ' ' + py(at.y) + ')">' +
-        '<title>' + esc((a.display_name || a.name) + (a.location ? ' · ' + a.location : '') + (isFar ? ' · about ' + far[a.name] + ' tiles from the base' : '')) + '</title>' +
+    // outposts: building clusters outside the frame, a small hollow square at the edge
+    marks += (core ? core.out : []).filter(function (o) { return !visible(o); }).map(function (o) {
+      var at = edge(o);
+      return '<rect class="outpost" x="' + (px(at.x) - 4) + '" y="' + (py(at.y) - 4) + '" width="8" height="8"><title>Outpost: ' + o.n +
+        ' building cell' + (o.n > 1 ? 's' : '') + ', about ' + dist(o) + ' tiles from the base</title></rect>';
+    }).join('');
+    // agents: the dot (ring and camera tag when on camera), then labels placed where they collide with nothing
+    var dots = pts.map(function (a) {
+      var at = a.name in far ? edge(a.position) : a.position;
+      return { a: a, x: +px(at.x), y: +py(at.y), far: a.name in far };
+    });
+    var taken = [];
+    dots.forEach(function (d) {
+      taken.push({ x0: d.x - 7, y0: d.y - 7, x1: d.x + 7, y1: d.y + 7 });
+      if (onCam[d.a.name]) {
+        var tw = textWidth(CAM_SHORT[onCam[d.a.name]] || onCam[d.a.name], 5.4);
+        taken.push({ x0: d.x - tw / 2, y0: d.y - 21, x1: d.x + tw / 2, y1: d.y - 11 });
+      }
+    });
+    marks += dots.map(function (d) {
+      var a = d.a, c = safeColor(a.color) || '#999999', name = (a.display_name || a.name) + (d.far ? ' ↗' : '');
+      var lab = placeLabel(d.x, d.y, textWidth(name, 6.3), taken, S, !!onCam[a.name]);
+      return '<g class="dot' + (a.alive === false ? ' dead' : '') + (d.far ? ' far' : '') + '" transform="translate(' + d.x.toFixed(1) + ' ' + d.y.toFixed(1) + ')">' +
+        '<title>' + esc((a.display_name || a.name) + (a.location ? ' · ' + a.location : '') + (d.far ? ' · about ' + far[a.name] + ' tiles from the base' : '')) + '</title>' +
         (onCam[a.name] ? '<circle r="10" class="cam"/><text class="camtag" y="-13" text-anchor="middle">' + esc(CAM_SHORT[onCam[a.name]] || onCam[a.name]) + '</text>' : '') +
         '<circle r="5.5" style="fill:' + c + '"/>' +
-        '<text x="' + (right ? -9 : 9) + '" y="4"' + (right ? ' text-anchor="end"' : '') + '>' + esc(a.display_name || a.name) + (isFar ? ' ↗' : '') + '</text></g>';
+        (lab ? '<text x="' + lab.x + '" y="' + lab.y + '"' + (lab.anchor !== 'start' ? ' text-anchor="' + lab.anchor + '"' : '') + '>' + esc(name) + '</text>' : '') + '</g>';
     }).join('');
     return '<svg class="minimap" viewBox="0 0 ' + S + ' ' + S + '" role="img" aria-label="' + (base ? 'The base and agent positions' : 'Agent positions') + '"><rect width="' + S + '" height="' + S + '" class="mm-bg"/>' +
       '<g class="mm-grid">' + grid + '</g>' + layer + marks + '</svg>' + legend +
       '<p class="fx-muted small">About ' + Math.round(span) + ' tiles across; grid every ' + stepT + ' tiles. Orange rings: on camera. Red rings: fights (solid while going on; × where something was destroyed). Triangles: other alerts.' +
       (base ? ' Buildings in ' + base.cell + '-tile cells' + (base.buildings != null ? ' (' + esc(base.buildings) + ' in all)' : '') +
         ', refreshed every minute' + (ore ? '; ore every five minutes' : '') + '.' : '') +
-      (Object.keys(far).length ? ' Dashed: agents far from the base, shown at the edge (hover for the distance).' : '') + '</p>';
+      (Object.keys(far).length || (core && core.out.length) ? ' Dashed dots and hollow squares: agents and outposts far from the base, shown at the edge (hover for the distance).' : '') + '</p>';
+  }
+
+  // The base's core: where the factory is dense. Pipes and belts (P, B) are left out (shake11: an 84-cell pipeline
+  // to an oil outpost 400 tiles north framed the base as a thin strip), the other building cells are counted in
+  // 32-tile blocks, and the core is the box around the blocks with at least a fifth of the busiest block's count
+  // (plus 8 tiles). Building cells well outside it, grouped in 48-tile blocks, are outposts drawn at the frame's edge.
+  function baseCore(g) {
+    var cells = [], cell = g.cell;
+    g.rows.forEach(function (row, r) {
+      row = String(row);
+      for (var c = 0; c < row.length; c++) {
+        var ch = row.charAt(c);
+        if (ch !== '.' && ch !== ' ' && ch !== 'P' && ch !== 'B') cells.push({ x: g.x0 + (c + 0.5) * cell, y: g.y0 + (r + 0.5) * cell });
+      }
+    });
+    if (cells.length < 12) return { x0: g.x0, y0: g.y0, x1: g.x0 + g.w * cell, y1: g.y0 + g.rows.length * cell, out: [] };
+    var blocks = {}, top = 0;
+    cells.forEach(function (p) {
+      var key = Math.floor(p.x / 32) + ',' + Math.floor(p.y / 32);
+      blocks[key] = (blocks[key] || 0) + 1;
+      top = Math.max(top, blocks[key]);
+    });
+    // dense blocks, then the biggest connected group of them (8 neighbours): a dense outpost (shake11's oil field) is
+    // its own group and stays an outpost
+    var dense = {};
+    Object.keys(blocks).forEach(function (key) { if (blocks[key] >= Math.max(2, top / 5)) dense[key] = blocks[key]; });
+    var seen = {}, best = null;
+    Object.keys(dense).forEach(function (start) {
+      if (seen[start]) return;
+      var group = [], stack = [start], total = 0;
+      seen[start] = true;
+      while (stack.length) {
+        var key = stack.pop(), bx = +key.split(',')[0], by = +key.split(',')[1];
+        group.push([bx, by]); total += dense[key];
+        for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
+          var nk = (bx + dx) + ',' + (by + dy);
+          if (dense[nk] && !seen[nk]) { seen[nk] = true; stack.push(nk); }
+        }
+      }
+      if (!best || total > best.total) best = { total: total, group: group };
+    });
+    var box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity, out: [] };
+    best.group.forEach(function (b) {
+      box.x0 = Math.min(box.x0, b[0] * 32 - 8); box.y0 = Math.min(box.y0, b[1] * 32 - 8);
+      box.x1 = Math.max(box.x1, b[0] * 32 + 40); box.y1 = Math.max(box.y1, b[1] * 32 + 40);
+    });
+    var groups = {};
+    cells.forEach(function (p) {
+      if (p.x >= box.x0 - 16 && p.x <= box.x1 + 16 && p.y >= box.y0 - 16 && p.y <= box.y1 + 16) return;
+      var key = Math.floor(p.x / 48) + ',' + Math.floor(p.y / 48), o = groups[key] || (groups[key] = { x: 0, y: 0, n: 0 });
+      o.x += p.x; o.y += p.y; o.n += 1;
+    });
+    Object.keys(groups).forEach(function (key) { var o = groups[key]; box.out.push({ x: o.x / o.n, y: o.y / o.n, n: o.n }); });
+    return box;
+  }
+  // A label's width in map pixels (bold 11 px Titillium: about 6.3 px a character).
+  function textWidth(s, perChar) { return String(s).length * perChar + 2; }
+  // Put a dot's label where it overlaps no other label, dot or camera tag: right, left, below, above; none free: no
+  // label (the tooltip still names the agent). Labels stay inside the map.
+  function placeLabel(x, y, w, taken, S, hasTag) {
+    var tries = [{ x: 9, y: 4, anchor: 'start', b: [x + 8, y - 6, x + 8 + w, y + 6] },
+      { x: -9, y: 4, anchor: 'end', b: [x - 8 - w, y - 6, x - 8, y + 6] },
+      { x: 0, y: 19, anchor: 'middle', b: [x - w / 2, y + 9, x + w / 2, y + 21] }];
+    if (!hasTag) tries.push({ x: 0, y: -10, anchor: 'middle', b: [x - w / 2, y - 21, x + w / 2, y - 9] });
+    for (var i = 0; i < tries.length; i++) {
+      var b = tries[i].b;
+      if (b[0] < 0 || b[2] > S || b[1] < 0 || b[3] > S) continue;
+      var hit = taken.some(function (t) { return b[0] < t.x1 && b[2] > t.x0 && b[1] < t.y1 && b[3] > t.y0; });
+      if (!hit) { taken.push({ x0: b[0], y0: b[1], x1: b[2], y1: b[3] }); return tries[i]; }
+    }
+    return null;
   }
 
   // What each camera shows (state.cameras: who it follows, or the fight / work / segment shot it holds), so a viewer

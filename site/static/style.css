@@ -425,6 +425,7 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .mm-legend-ore i { opacity: .55; }
 .minimap .dot.far > circle:not(.cam) { stroke: var(--fx-text); stroke-width: 1.5; stroke-dasharray: 2 2; }
 /* which camera follows whom; fights; the map card's research line, camera list and Space inset */
+.minimap .outpost { fill: none; stroke: var(--fx-text); stroke-width: 1.5; stroke-dasharray: 2 1.5; }
 .minimap .camtag { fill: var(--fx-orange); font-size: 8.5px; font-weight: 700; letter-spacing: .04em; paint-order: stroke; stroke: #000; stroke-width: 2.5px; }
 .minimap .fight circle { fill: rgba(224, 78, 58, .10); stroke: rgba(224, 78, 58, .55); stroke-width: 1.5; stroke-dasharray: 3 2; }
 .minimap .fight.now circle { fill: rgba(224, 78, 58, .22); stroke: #ff5a44; stroke-width: 2; stroke-dasharray: none; }
