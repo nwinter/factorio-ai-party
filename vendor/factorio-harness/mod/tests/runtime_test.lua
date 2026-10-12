@@ -882,6 +882,8 @@ eq(failed_queue.paused,true); eq(failed_queue.history[#failed_queue.history].res
 assert(failure.error:find('existing belt'))
 -- Cancellation before the first placement leaves no controller running.
 call('build_path',{points={{x=.5,y=.5},{x=5.5,y=.5}}})
+-- the stream director's look-ahead: the path's bounds, once
+do local ab=call('status').active.bounds; eq(ab.left,0.5); eq(ab.right,5.5); eq(ab.top,0.5); eq(ab.bottom,0.5) end
 call('stop',{}); advance(1)
 eq(call('status').active,false); eq(call('status').last.kind,'build_path'); eq(call('status').last.next_index,1)
 -- Map queries never read uncharted chunks or entities spilling across edges.
@@ -1164,6 +1166,7 @@ local g={valid=true,type='entity-ghost',ghost_name='lab',position={x=40.5,y=0.5}
 p.surface.find_entities_filtered=function(f) if f.type=='tree' or (type(f.type)=='table' and f.type[1]~='entity-ghost') or f.radius then return {} end eq(f.area.left_top.x,39.5); return {g} end
 main=inv(); p.position={x=40,y=3}
 eq(call('construct',{}).total,1)
+do local cb=call('status').active.bounds; eq(cb.left,39.5); eq(cb.top<=0.5,true); eq(cb.right>=41,true) end
 advance(1)
 local done=call('status').last
 eq(done.kind,'construct'); eq(done.outcome,'incomplete'); eq(done.missing.lab,1); eq(done.built,0)

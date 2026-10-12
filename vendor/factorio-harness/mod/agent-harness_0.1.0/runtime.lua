@@ -303,9 +303,23 @@ local function active(index)
     missing=action.missing and next(action.missing) and action.missing or nil,
     awaiting_craft=action.awaiting_craft,got=action.got,
     condition=action.kind=='wait_until' and action.condition['until'] or nil,saw=action.kind=='wait_until' and action.saw or nil,
-    stuck_s=action.watch and game.tick-action.watch.since>=STUCK_TICKS and math.floor((game.tick-action.watch.since)/60) or nil}
+    stuck_s=action.watch and game.tick-action.watch.since>=STUCK_TICKS and math.floor((game.tick-action.watch.since)/60) or nil,
+    -- the stream director's look-ahead: where the work is (set once when the action starts, never per tick)
+    bounds=action.bounds,to=action.kind=='move_to' and action.position or nil}
 end
 M.active=active
+-- {left,top,right,bottom} around a list of cells or ghosts, once when an action is planned (at most 512 cells).
+local function cell_bounds(list,pos)
+  local b
+  for _,c in ipairs(list or {}) do
+    local q=pos(c)
+    if q then
+      if not b then b={left=q.x,top=q.y,right=q.x,bottom=q.y}
+      else b.left=math.min(b.left,q.x); b.top=math.min(b.top,q.y); b.right=math.max(b.right,q.x); b.bottom=math.max(b.bottom,q.y) end
+    end
+  end
+  return b
+end
 -- Our own space platforms are shown whole in remote view: every chunk of
 -- their surface counts as charted and visible.
 local function own_platform(p)
@@ -2187,6 +2201,7 @@ end
 function handlers.build_path(p,a)
   assert(not p.permission_group or p.permission_group.allows_action(defines.input_action.start_walking),'permission denied: start_walking')
   local action=construction.plan(p,a)
+  action.bounds=cell_bounds(action.cells,function(c) return c.position end)
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   state().active[p.index]=action
   return {until_tick=action.until_tick,total=#action.cells,next_index=action.next_index}
@@ -2213,6 +2228,7 @@ function handlers.construct(p,a)
     box={left_top={x=b.left-0.5,y=b.top-0.5},right_bottom={x=b.right+0.5,y=b.bottom+0.5}}
   end
   local action=construction.plan_ghosts(p,a,box)
+  action.bounds={left=box.left_top.x,top=box.left_top.y,right=box.right_bottom.x,bottom=box.right_bottom.y}
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   state().active[p.index]=action
   -- Nothing to do is done: plans continue rather than pausing on an error.
