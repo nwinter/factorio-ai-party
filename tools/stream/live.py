@@ -11,6 +11,7 @@ from harness import Harness
 from model import SPARK_ITEMS
 from work import WorkFeed
 
+PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
 AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
@@ -222,6 +223,10 @@ class LiveSource:
                 a["connected"] = st.get("connected", True) if a["kind"] == "player" else True
                 a["last"] = st.get("last")
                 a["combat"] = bool(st.get("combat"))
+                # the director's look-ahead (onecam.py): the action running now as status reports it (kind, until_tick,
+                # total/placed/remaining, bounds, destination), from the status poll this service makes anyway
+                act = st.get("active")
+                a["plan"] = {k: act[k] for k in PLAN_KEYS if act.get(k) is not None} if isinstance(act, dict) else None
                 if st.get("surface"):  # Space Age: the planet or platform surface the body is on
                     a["surface"], a["platform"] = st["surface"], st.get("platform")
                 a["dead_until_tick"] = st.get("dead_until_tick")

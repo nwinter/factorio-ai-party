@@ -222,6 +222,7 @@ class Agent:
         self.last = None
         self.last_activity_t = None  # wall time of the last observed action or speech
         self.combat = False
+        self.plan = None  # the action running now with its bounds (live.py `plan`; onecam.py looks ahead with it)
         self.last_said = None
         self.interest = 0.0
         self.interest_t = time.time()
@@ -440,6 +441,8 @@ class Model:
             self.alert("attack", f"{ag.display_name} is under attack", key=f"attack:{ag.name}", agent=ag.name, ttl=60,
                        position=ag.position)
         ag.combat = combat
+        if "plan" in a:
+            ag.plan = a["plan"] if active else None
         said = a.get("last_said")
         if said and said.get("text") and (not ag.last_said or said.get("tick") != ag.last_said.get("tick")):
             if ag.seen:
@@ -955,7 +958,7 @@ class Model:
                 "location": self.location(ag), "travel": ag.travel,
                 "interest": round(ag.interest, 2),
                 "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen, "voice": ag.voice,
-                "voice_description": ag.voice_description, "pronouns": ag.pronouns, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at,
+                "voice_description": ag.voice_description, "pronouns": ag.pronouns, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at, "plan": ag.plan,
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
                 "on_platform": bool(ag.platform),
             })
