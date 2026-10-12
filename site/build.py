@@ -974,7 +974,8 @@ def live_app(heading, sample_href):
     </div>
   </aside>
 </div>
-<section class="live-run-head"><h2 id="run-title">Waiting for the next run</h2><p id="run-sub" class="muted"></p></section>
+<section class="live-run-head"><h2 id="run-title">Waiting for the next run</h2><p id="run-sub" class="muted"></p>
+<p id="next-shift" class="live-next" hidden></p></section>
 <div id="offline" class="live-offline"></div>
 <div id="strip" class="live-strip fx-root fx-panel live-panel"></div>
 <ul id="alerts" class="live-alerts"></ul>

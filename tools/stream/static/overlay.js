@@ -630,10 +630,35 @@
   }
 
   const alertNodes = new Map();
+  // "Research complete: X · unlocks A, B, C": a lower third on the main camera for a few seconds when a technology
+  // finishes (model.py research_news; unlocks from research.lua's board event when the runtime has it)
+  function renderResearchCard(s) {
+    const box = $("research-card");
+    if (!box || !window.pogSeg) return;
+    const c = window.pogSeg.researchCard(s.research_news);
+    if (!c) {
+      if (!box.hidden && !box.classList.contains("out")) {
+        box.classList.add("out");
+        setTimeout(() => { box.hidden = true; box.classList.remove("out"); box.dataset.key = ""; }, 600);
+      }
+      return;
+    }
+    if (box.dataset.key !== c.key) {
+      box.dataset.key = c.key;
+      box.classList.remove("out");
+      box.textContent = "";
+      box._unlocks = el("div", "rc-unlocks");
+      box.append(el("span", "rc-tag", "Research complete"), el("div", "rc-name", c.label), box._unlocks);
+      box.hidden = false;
+    }
+    setText(box._unlocks, c.unlocks ? "Unlocks " + c.unlocks : ""); // may arrive a poll after the card
+  }
+
   function renderAlerts(s) {
     const box = $("alerts");
     const live = new Set();
     for (const a of s.alerts || []) {
+      if (a.kind === "research" && s.research_news) continue; // the research card says it (renderResearchCard)
       live.add(a.id);
       if (alertNodes.has(a.id)) continue;
       const n = el("div", "alert " + a.kind);
@@ -908,6 +933,7 @@
     renderChat(s);
     renderBoard(s);
     renderAlerts(s);
+    renderResearchCard(s);
     renderCams(s);
     renderSegment(s);
     rotateWidgets();
