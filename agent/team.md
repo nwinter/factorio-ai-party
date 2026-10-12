@@ -72,6 +72,9 @@ already targets your character.
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character. Each is shown
   once. A change to your board item, a plan line set for you, or a tell also ends your `sleep`.
+- Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished
+  since your last request before the shift, and `researched_none_built`: researched technologies whose buildings the
+  team has none of.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
