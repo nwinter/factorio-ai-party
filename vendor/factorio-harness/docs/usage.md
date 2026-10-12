@@ -320,7 +320,7 @@ Items on the ground:
   (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
 - `status` `alerts.ground_items`: a cargo landing pad that is full while item stacks lie within 40 tiles of it
   (position, slots, stacks, the items), and piles of 100 or more stacks in a 64-tile cell that holds our buildings
-  (box, stacks, items; the largest 3). Item counts come from up to 10000 stacks per place (the line says so when
+  (box, stacks, items; the largest 3). Item counts come from up to 5000 stacks per place (the line says so when
   there are more). One pass per force every 30 s, run on demand; a place new to you, or grown by half since you
   were told, is also in the reply's `team.alerts` once.
 - `pickup {area}` (up to 64x64) or `pickup {position, radius}` (radius 1..32, default 8 around you), optionally

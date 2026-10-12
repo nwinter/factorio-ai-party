@@ -9,8 +9,8 @@ return function(api)
   local PILE_MIN = 100          -- stacks in a 64-tile cell that make a pile
   local PILE_CELL = 64
   local PAD_RADIUS = 40         -- spill counted around a full landing pad
-  local SAMPLE = 10000          -- stacks read for item counts (the stack total is exact)
-  local SCAN_LIMIT = 50000      -- stacks binned per surface for piles
+  local SAMPLE = 5000           -- stacks read for item counts (the stack total is exact)
+  local SCAN_LIMIT = 30000      -- stacks binned per surface for piles
   local MAX_MARK = 32768
   local PICK_EVERY = 6          -- one stack every 6 ticks, as pickup does
   local MAX_SKIPS = 8
