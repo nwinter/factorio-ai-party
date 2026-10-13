@@ -160,9 +160,16 @@ def main():
                      "playlistItems", '"privacyStatus": "public"', "1 upload of the 100 a day"):
             assert want in r.stdout, (want, r.stdout[-2000:])
         assert not conf.exists() and not (Path(d) / "videos.json").exists() and not (out / "upload.json").exists()
-        r = subprocess.run([sys.executable, str(HERE / "yt_upload.py"), "sb", "--video-dir", str(out), "--file", __file__],
-                           capture_output=True, text=True, env=env)
-        assert r.returncode != 0 and "while the shift was on" in r.stderr, r.stderr  # the planned end is ahead
+        # the refusals come before sign-in; "running" is set here, since build() reads the clock
+        vj = json.loads((out / "video.json").read_text())
+        for flags, want in (({"running": True}, "while the shift was on"),
+                            ({"running": False, "estimated": True}, "without the box's recording list"),
+                            ({"running": False, "estimated": False}, "not signed in")):
+            (out / "video.json").write_text(json.dumps(dict(vj, **flags)))
+            r = subprocess.run([sys.executable, str(HERE / "yt_upload.py"), "sb", "--video-dir", str(out), "--file",
+                                __file__], capture_output=True, text=True, env=env)
+            assert r.returncode != 0 and want in r.stderr, (flags, r.stderr)
+        assert not conf.exists() and not (out / "upload.json").exists()
     print("shift videos: ok (box clock, split files, edges, midnight, chapter rules and picks, description, box plan, "
           "upload dry run)")
 
