@@ -145,8 +145,40 @@ return function(api)
   -- asteroid chunks in reach, thruster tanks and unbuilt ghosts. Each read is
   -- guarded so a missing field never hides the rest.
   local function try(fn) local ok,v=pcall(fn); if ok then return v end end
+  -- The game repairs a platform's entities itself, one at a time, with repair
+  -- packs from the hub (no robots in space; remote view cannot repair).
+  M.REPAIR_NOTE='the game repairs platform entities itself with repair packs from the hub, one entity at a time (no robots in space, and remote view cannot repair); put repair packs in the hub (hub requests or a rocket) and read platforms {platform} for damaged and repair_packs'
+  -- What is damaged (most damaged first) and the repair packs in the hub.
+  function M.repair_view(pl)
+    local out={}
+    local hub=pl.hub
+    local inv=hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+    local packs={}
+    for _,st in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+      if try(function() return prototypes.item[st.name].type end)=='repair-tool' then packs[#packs+1]=st.name..'*'..st.count end
+    end
+    out.repair_packs=#packs>0 and table.concat(packs,' ') or 'none'
+    local list={}
+    try(function()
+      for _,e in ipairs(pl.surface.find_entities_filtered{force=pl.force,limit=5000}) do
+        local h,m=e.health,e.max_health
+        if h and m and m>0 and h<m then list[#list+1]={e=e,h=h,m=m} end
+      end
+    end)
+    table.sort(list,function(x,y) return x.h/x.m<y.h/y.m end)
+    local rows={}
+    for i=1,math.min(#list,10) do
+      local d=list[i]
+      rows[i]=string.format('%s (%g,%g) %d/%d',d.e.name,d.e.position.x,d.e.position.y,math.floor(d.h),math.floor(d.m))
+    end
+    out.damaged=#rows>0 and rows or nil
+    out.damaged_count=#list>10 and #list or nil
+    return out
+  end
   local function detail(pl,row)
     row.speed=try(function() return pl.speed and math.floor(pl.speed*1000+0.5)/1000 end)
+    local repair=M.repair_view(pl)
+    row.repair_packs,row.damaged,row.damaged_count=repair.repair_packs,repair.damaged,repair.damaged_count
     local damaged=try(function() return #pl.damaged_tiles end)
     row.damaged_tiles=damaged and damaged>0 and damaged or nil
     local chunks=try(function() return pl.find_asteroid_chunks_filtered{} end)
@@ -515,7 +547,7 @@ return function(api)
     requests={target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       returns='target, sections [{index, group, controlled (set by the game, not editable), requests ["item min..max from planet"]}]; call with no set/clear to just read'},
-    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, hub_slots (free of all), hub_trash, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
+    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), repair_packs (in the hub; the game repairs platform entities itself with them, one at a time), damaged (most damaged first, up to 10; damaged_count past that), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, hub_slots (free of all), hub_trash, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule'},
     drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',

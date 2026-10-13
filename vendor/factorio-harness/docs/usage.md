@@ -283,6 +283,10 @@ fh sleep 900 --until researched                       # ...or until the research
   that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
   enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
   200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same.
+- The game repairs a platform's entities itself, one entity at a time, with repair packs from the hub; `repair` refuses
+  platform targets (`platform`, or standing on a platform) with that reason. `platforms {platform}` and `inspect` of the
+  hub show `repair_packs` (in the hub, or `none`) and `damaged` (`gun-turret (-6,0) 53/400`, most damaged first, up to
+  10; `damaged_count` past that); `inspect` of a damaged entity there adds the `repair` note.
 - Where a platform's items go: `platforms` shows `hub_trash` per platform, and with `platform` set
   `hub_inserters_without_target` (inserters taking from the hub with nothing to drop into: `(-2.5,3.5) drops onto
   empty-space`), `thrown_overboard` (items in flight off the platform, while the game tracks them), and
