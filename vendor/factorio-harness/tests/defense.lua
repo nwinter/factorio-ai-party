@@ -129,4 +129,19 @@ eq(row.at_risk,4); eq(row.facing,'S'); eq(row.kinds,'3 pipe, 1 gun-turret'); eq(
 eq(row.line,'flamethrower-turret (0,0) facing S, oil 75% (150/200): 4 of our burnable buildings in its arc within 33 tiles: 3 pipe, 1 gun-turret '
   ..'(nearest pipe (0,10), 10 tiles)')
 eq(fl.flamers[2].line,'flamethrower-turret (100,100) facing N, oil 0% (0/200): none of our burnable buildings in its arc')
+
+-- A full flamer on a long oil line (shift07 15:31, Astra): get_capacity is the whole segment's in 2.0 (66700), the
+-- turret's own tank is its prototype's volume (100); 99 of 100 is neither dry nor low, in the read and the area.
+for k in pairs(ours) do ours[k]=nil end
+storage.defense_cache=nil
+add('flamethrower-turret','fluid-turret',0,0,{direction=8,prototype={turret_range=30,attack_parameters={range=30,min_range=6,turn_range=1/3},
+  fluidbox_prototypes={{volume=100}}},fluidbox={[1]={amount=99},get_capacity=function() return 66700 end}})
+add('pipe','pipe',0,10)
+game.tick=game.tick+1000
+fl=D.handlers.flamers(p,{})
+eq(fl.count,1); eq(fl.dry,nil); eq(fl.low,nil); eq(fl.flamers[1].oil,99); eq(fl.flamers[1].capacity,100)
+assert(fl.flamers[1].line:find('oil 99% (99/100)',1,true),fl.flamers[1].line)
+local area=D.handlers.defense(p,{}).areas[1]
+eq(area.flamers.count,1); eq(area.flamers.oil,99); eq(area.flamers.capacity,100); eq(area.flamers.dry,nil); eq(area.flamers.low,nil)
+assert(area.line:find('1 flamethrower (oil 99%)',1,true),area.line)
 print('defense: ok')
