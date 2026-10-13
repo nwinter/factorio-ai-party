@@ -89,4 +89,35 @@ game.tick=38000; T.summary(p,true)
 local news=T.alerts(37500).enemy_news
 eq(#news,2); eq(news[1].kind,'pollution_reached_nest'); eq(news[1].position.x,200); eq(news[2].kind,'nest_charted'); eq(news[2].position.y,-200)
 game.tick=39000; T.summary(p,true); eq(T.alerts(38500),nil)
+-- Reply lines for the news: pollution reaching a nest, with bearing and distance from the base centre and our nearest building.
+local lines=T.news_lines(nil,37500)
+eq(#lines,1); eq(lines[1],'pollution reached nest (200,10), 1 spawner: 200 tiles E of base centre (0,0), 160 tiles E of our nearest building')
+eq(#T.news_lines(news[2].seq,0),0)
+-- Once per nest: a cloud that recedes and returns is not news again.
+local cloud=polluted
+polluted=function() return 0 end; game.tick=40000; T.summary(p,true)
+polluted=cloud; game.tick=41000; T.summary(p,true)
+eq(#T.news_lines(nil,39500),0)
+-- Replies rescan an agent's survey only when it is over a minute old.
+p.character={valid=true}
+local before=scans
+game.tick=41000+3000; T.watch(p); eq(scans,before)
+game.tick=41000+3600; T.watch(p); eq(scans,before+1)
+-- Incidents: a gathered group heading for the attacked point gives its size and kinds; the nearest charted spawner
+-- is the likely source, with distance and bearing from the attacked point.
+T.on_group{tick=45000,group={valid=true,force=enemy,surface=surface,position={x=60,y=20},members={{name='small-biter'},{name='small-biter'},{name='medium-biter'}},
+  command={destination={x=20,y=20}}}}
+game.tick=45100
+T.on_damaged{tick=45100,entity={valid=true,name='stone-furnace',force=mine,surface=surface,position={x=20,y=21}},force=enemy,
+  cause={valid=true,name='small-biter',unit_number=1},final_damage_amount=10}
+local a=T.alerts(45050).attacked[1]
+eq(a.group.size,3); eq(a.group.kinds,'2 small-biter, 1 medium-biter'); eq(a.source.position.x,80); eq(a.source.bearing,'E'); eq(a.source.distance,61)
+eq(a.line:gsub('^attack #%d+',''),' at (20,21): a group of 3 (2 small-biter, 1 medium-biter) that gathered at (60,20); likely from nest (80,10) 61 tiles E; '
+  ..'stone-furnace x1 hit 1 times, 10 damage, 0s ago')
+-- A unit's own spawner, when the engine gives it and it is charted, is named as the source.
+T.on_damaged{tick=45100,entity={valid=true,name='pipe',force=mine,surface=surface,position={x=100,y=100}},force=enemy,
+  cause={valid=true,name='small-biter',unit_number=2,spawner={valid=true,position={x=200,y=10}}},final_damage_amount=3}
+a=T.alerts(45050).attacked
+local pipe_hit=a[1].at.x==100 and a[1] or a[2]
+eq(pipe_hit.line:match('; (from nest [^;]+);'),'from nest (200,10) 135 tiles NE'); eq(pipe_hit.attackers,1); eq(pipe_hit.kinds,'1 small-biter')
 print('threat tests passed')

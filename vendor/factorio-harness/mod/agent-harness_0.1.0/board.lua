@@ -8,7 +8,7 @@ return function(api)
   local MAX_ITEMS, MAX_EVENTS, MAX_NOTES, MAX_PLANS, MAX_HARNESS_OPEN, MAX_PLAN_BYTES = 300, 1000, 10, 50, 10, 65536
   local TITLE, NOTE, LONG = 120, 200, 1000
   local UNOWNED_AGE, REMIND_EVERY, FIRST_ALERTS = 7200, 3600, 3600
-  local MAX_BOARD_LINES, MAX_ALERT_LINES = 5, 8
+  local MAX_BOARD_LINES, MAX_ALERT_LINES, REPEAT_ATTACK = 5, 8, 7200
   local KINDS = {task=true, request=true, claim=true, note=true, harness=true, plan=true}
   -- The team plan: one living item (kind plan) with goals and a line per agent.
   local PLAN_GOALS, PLAN_LINE, PLAN_LINES, PLAN_HISTORY = 600, 160, 24, 10
@@ -773,20 +773,28 @@ return function(api)
       lines[#lines+1] = string.format('you were hit %d times (%d damage) by %s, %s ago; %s', hit.hits, round(hit.damage), hit.by or 'enemies',
         ago(game.tick - hit.last), alive and 'health ' .. round(c.health or 0) or 'your character died')
     end
-    local areas = {}
+    -- One line per incident (threat.attack_line). An incident this agent was
+    -- told about comes again, as "continues" with its totals, only after
+    -- REPEAT_ATTACK; h.attacks holds what each agent was shown (id -> tick).
+    local areas, told, shown = {}, h.attacks or {}, {}
     for key, v in pairs(s.damage or {}) do
-      if fresh(v, v.last) and v.damage > 0 then areas[#areas+1] = {key=key, v=v} end
+      if v.id then shown[v.id] = told[v.id] end
+      local new
+      if v.id and told[v.id] then new = v.last > told[v.id] and game.tick - told[v.id] >= REPEAT_ATTACK
+      else new = fresh(v, v.last) end
+      if new and v.damage > 0 then areas[#areas+1] = {key=key, v=v} end
     end
     table.sort(areas, function(x, y) return x.v.last > y.v.last end)
     for n, area in ipairs(areas) do
       if n > 3 then lines[#lines+1] = string.format('+%d more attacked areas: status alerts', #areas - 3); break end
-      local cx, cy = area.key:match('^(-?%d+),(-?%d+)$')
-      local names = {}
-      for name, count in pairs(area.v.entities) do names[#names+1] = name .. ' x' .. count end
-      table.sort(names)
-      while #names > 5 do table.remove(names) end
-      lines[#lines+1] = string.format('attack near (%d,%d)%s: %s hit %d times, %d damage, %s ago', tonumber(cx) * 32 + 16, tonumber(cy) * 32 + 16,
-        area.v.by and ' by ' .. area.v.by or '', table.concat(names, ', '), area.v.hits, round(area.v.damage), ago(game.tick - area.v.last))
+      lines[#lines+1] = api.attack_line(area.v, area.v.id and told[area.v.id] ~= nil)
+      if area.v.id then shown[area.v.id] = game.tick end
+    end
+    -- Only incidents still kept are remembered.
+    h.attacks = next(shown) and shown or nil
+    if api.news_lines then
+      for _, line in ipairs(api.news_lines(h.news_seq, game.tick - FIRST_ALERTS)) do lines[#lines+1] = line end
+      h.news_seq = s.alert_seq or 0
     end
     local groups = 0
     for k = #(s.attack_groups or {}), 1, -1 do
@@ -833,6 +841,7 @@ return function(api)
     out.mentions, out.tells = mentions(p)
     out.board = board_lines(p, h)
     out.research = api.research_lines and api.research_lines(p, h) or nil
+    if api.watch then pcall(api.watch, p) end
     out.alerts = alert_lines(p, h, losses)
     out.reminders = reminders(p, h)
     return next(out) and out or nil

@@ -271,13 +271,13 @@ runtime.on_event{name=11,tick=tick,entity={valid=true,name='stone-furnace',posit
 jump(60)
 t=astra('status').team
 assert(has(t.alerts,'you were hit 1 times (12 damage) by small-biter, 1s ago; health 250'),table.concat(t.alerts,' | '))
-assert(has(t.alerts,'attack near (48,48) by small-biter: stone-furnace x1 hit 1 times, 30 damage, 1s ago'),table.concat(t.alerts,' | '))
-assert(has(t.alerts,'attack near (16,16) by small-biter: character x1 hit 1 times'))
+assert(has(t.alerts,'attack #1 at (40,40): by small-biter; stone-furnace x1 hit 1 times, 30 damage, 1s ago'),table.concat(t.alerts,' | '))
+assert(has(t.alerts,': by small-biter; no charted nest within 384 tiles; character x1 hit 1 times'))
 assert(has(t.alerts,'losses in (41,40) 1 destroyed: 1 stone-furnace by 1 small-biter'))
 eq(astra('status').team,nil)
 -- Every agent hears about the attack; only astra about her character.
 t=sol('status').team
-assert(has(t.alerts,'attack near (48,48)')); eq(has(t.alerts,'you were hit'),nil)
+assert(has(t.alerts,'attack #1 at (40,40)')); eq(has(t.alerts,'you were hit'),nil)
 -- A dead agent still hears that its (last) character was hit.
 runtime.on_event{name=12,tick=tick,entity=ac,force=enemy,cause=biter,final_damage_amount=300}
 ac.valid=false
@@ -291,6 +291,33 @@ jump(4000)
 runtime.on_event{name=12,tick=tick,entity={valid=true,name='inserter',type='inserter',position={x=40,y=41},force=force},force=enemy,cause=biter,final_damage_amount=5}
 t=sol('status').team
 assert(has(t.alerts,'inserter x1 hit 1 times, 5 damage'),table.concat(t.alerts,' | '))
+local id=has(t.alerts,'inserter x1'):match('^attack #(%d+) at %(40,41%)')
+assert(id,table.concat(t.alerts,' | '))
+-- More hits on the same incident: not repeated within 2 minutes, then once as "continues" with the totals.
+-- Distinct attackers are counted by kind; the nearest charted spawner is looked up once.
+local spawner={valid=true,name='biter-spawner',type='unit-spawner',position={x=200,y=41}}
+local find=surface.find_entities_filtered
+jump(600)
+surface.find_entities_filtered=function(f) if f.type=='unit-spawner' then return {spawner} end return find(f) end
+runtime.on_event{name=12,tick=tick,entity={valid=true,name='inserter',type='inserter',position={x=40,y=41},force=force,surface=surface},force=enemy,
+  cause={valid=true,name='medium-biter',unit_number=9001},final_damage_amount=5}
+runtime.on_event{name=12,tick=tick,entity={valid=true,name='inserter',type='inserter',position={x=40,y=41},force=force,surface=surface},force=enemy,
+  cause={valid=true,name='small-biter',unit_number=9002},final_damage_amount=5}
+runtime.on_event{name=12,tick=tick,entity={valid=true,name='inserter',type='inserter',position={x=40,y=41},force=force,surface=surface},force=enemy,
+  cause={valid=true,name='small-biter',unit_number=9003},final_damage_amount=5}
+surface.find_entities_filtered=find
+jump(60)
+t=sol('status').team
+eq(t and has(t.alerts,'attack #'..id),nil)
+jump(7200)
+t=sol('status').team
+local want='attack #'..id..' at (40,41) continues: 3 attackers seen (2 small-biter, 1 medium-biter); likely from nest (200,41) 160 tiles E; '
+  ..'inserter x4 hit 4 times, 20 damage, first 2m11s ago, last 2m01s ago'
+eq(has(t.alerts,want),want,table.concat(t.alerts,' | '))
+eq(sol('status').team,nil)
+-- Status alerts carry the same incident as fields.
+local row=sol('status',{since=0}).alerts.attacked[1]
+eq(row.attackers,3); eq(row.source.bearing,'E'); eq(row.at.y,41)
 
 -- Who hears what on the stream: once per agent, in the first reply that
 -- builds a team block (here: as after a hot deploy, nobody has seen it yet).

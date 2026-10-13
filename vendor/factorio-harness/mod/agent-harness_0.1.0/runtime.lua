@@ -3754,7 +3754,9 @@ function M.is_director(index) return not M.bots.is_index(index) and M.cameras.di
 M.board=require('board'){state=state,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
   submit=function(p,a) return handlers.queue_submit(p,a) end,
-  research_lines=function(p,h) return M.research.lines(p,h) end}
+  research_lines=function(p,h) return M.research.lines(p,h) end,
+  attack_line=function(v,again) return threat.attack_line(v,again) end,news_lines=function(from,since) return threat.news_lines(from,since) end,
+  watch=function(p) return threat.watch(p) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
 M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end}
