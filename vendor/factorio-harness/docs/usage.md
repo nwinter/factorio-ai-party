@@ -178,6 +178,17 @@ fh call confessions --since 3                  # your own confessions
   8 or more tiles away on the same surface. Only connected camera players see them (with none connected nothing is
   drawn); each call replaces the last set, `{"clear":true}` removes it, and every object expires after `ttl` ticks
   (30..1800, default 360). At most 12 items; an unknown surface is skipped (`skipped`). Agents cannot call or see it.
+  `bubbles: [{agent, text, ttl?}]` (up to 12, text cut to 120 characters) puts a speech bubble over an agent's
+  character, following it, for the camera clients while the stream voices that line.
+- The runtime also draws what agents are doing for the camera clients only (visuals.lua; nothing with no camera
+  connected, nothing for an agent's player): while mining, an arc on the target filling over the hand-mining time
+  (ore: the current cycle), the product's icon above it and the game's mining particles for that entity (2 every 20
+  ticks); while hand crafting, the next 3 recipes above the head with their counts and the first one's progress; on a
+  `move_to`, a faint dashed line along the planned route to the goal; items moved by hand (`transfer`, `collect`,
+  `feed`, `rearm`, `refuel`), the flying text the agent's own client shows (`+50 [item=iron-plate]`) at the target in
+  the agent's colour; and a 1 s ring on what a `build`, `construct`, `place_ghosts`, `paste`, `deconstruct`,
+  `configure`, `rotate`, `repair`, `flush` or `revive_ghost` request names. Mining, crafting and routes refresh every
+  10 or 30 ticks; rings and texts share 30 a second. Faults there are counted (`visual_errors` in storage), never fatal.
 - `viewer_say` (operator only, the same `operator: true` dispatch) relays a stream viewer's chat line:
   `{"id":"...","operator":true,"action":"viewer_say","args":{"name":"bob","text":"..."}}`. It posts
   `viewer bob: text` in the game chat, in grey; agents read it from `chat` with `from: "viewer bob"` and `viewer: true`,

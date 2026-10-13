@@ -94,6 +94,19 @@ h3 = hl.Highlights(boom)
 h3.step(snap, 3000.0)
 check(h3.fails == 1 and "rcon down" in h3.last_error["message"] and not h3.off, h3.last_error)
 
+# 3b. speech bubbles: an agent line playing (snapshot voiced) -> a bubble over the character for the rest of the clip
+voiced = {"agents": [], "voiced": [{"id": "c1", "channel": "agent", "agent": "sol", "text": "I will  take\nthe north wall",
+                                    "duration": 6.0, "started": 5000.0}]}
+b = hl.bubbles(voiced, 5002.0)
+check(b == [{"agent": "sol", "text": "I will take the north wall", "ttl": 240, "id": "c1"}], b)
+check(hl.bubbles(voiced, 5005.8) == [], "a clip nearly done gets none")
+sent4 = []
+h4 = hl.Highlights(lambda body: (sent4.append(body), {"ok": True})[1])
+body = h4.step(voiced, 5002.0)
+check(body["items"] == [] and body["bubbles"] == [{"agent": "sol", "text": "I will take the north wall", "ttl": 240}], body)
+check(h4.step(voiced, 5003.0) is None, "the same line: not again before REFRESH (its ttl shrinking is no change)")
+check(h4.step({"agents": [], "voiced": []}, 5007.0) == {"clear": True}, "the line over: cleared")
+
 # 4. harness.py: only highlights goes out as an operator draw
 import harness  # noqa: E402
 

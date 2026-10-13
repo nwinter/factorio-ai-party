@@ -62,6 +62,21 @@ def items(snapshot):
     return [it for _, it in rows[:MAX_ITEMS]]
 
 
+def bubbles(snapshot, now):
+    """Agent lines being voiced now (snapshot `voiced`, serve.py: the page's start reports) -> speech bubbles over the
+    agent's character for the rest of the clip: [{agent, text, ttl (ticks), id}]."""
+    out = []
+    for v in snapshot.get("voiced") or []:
+        if v.get("channel", "agent") != "agent" or not v.get("agent") or not v.get("text"):
+            continue
+        left = float(v.get("duration") or 8.0) - (now - float(v.get("started") or now))
+        if left < 0.5:
+            continue
+        out.append({"agent": v["agent"], "text": " ".join(str(v["text"]).split())[:120],
+                    "ttl": int(max(0.5, min(30.0, left)) * 60), "id": v.get("id")})
+    return out[:MAX_ITEMS]
+
+
 class Highlights:
     def __init__(self, send, ttl_s=TTL_S, refresh=REFRESH, min_gap=MIN_GAP):
         self.send, self.ttl_s, self.refresh, self.min_gap = send, ttl_s, refresh, min_gap
@@ -76,8 +91,10 @@ class Highlights:
         if self.off or now - self.sent_t < self.min_gap:
             return None
         its = items(snapshot)
-        key = json.dumps(its, sort_keys=True)
-        if not its:
+        talk = bubbles(snapshot, now)
+        # a bubble's ttl shrinks as its clip plays: the set changes with which lines play, not with their time left
+        key = json.dumps([its, [b["id"] for b in talk]], sort_keys=True)
+        if not its and not talk:
             if not self.drawn:
                 return None
             body = {"clear": True}
@@ -85,6 +102,8 @@ class Highlights:
             return None
         else:
             body = {"items": its, "ttl": int(self.ttl_s * 60)}
+            if talk:
+                body["bubbles"] = [{k: b[k] for k in ("agent", "text", "ttl")} for b in talk]
         try:
             reply = self.send(body)
         except Exception as e:  # the RCON link: try again on the next beat
@@ -92,7 +111,7 @@ class Highlights:
         self.sent_t = now
         if isinstance(reply, dict) and reply.get("ok") is not False:
             self.fails, self.last_error = 0, None
-            self.key, self.drawn, self.count = key, bool(its), len(its)
+            self.key, self.drawn, self.count = key, bool(its or talk), len(its)
         else:
             self.fails += 1
             self.last_error = (reply or {}).get("error") if isinstance(reply, dict) else str(reply)

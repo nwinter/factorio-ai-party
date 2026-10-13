@@ -1643,7 +1643,7 @@ function handlers.mine(p,a)
   assert(not category or hand[category],e.name..' is '..tostring(category)..': a character cannot mine it by hand (a drill that mines '..tostring(category)..' can)')
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
-  local action={kind='mine',entity=e,until_tick=game.tick+ticks,products={}}
+  local action={kind='mine',entity=e,until_tick=game.tick+ticks,products={},started=game.tick}
   for _,product in ipairs(e.prototype.mineable_properties.products or {}) do
     if product.type=='item' then action.products[#action.products+1]=product.name end
   end
@@ -2705,6 +2705,8 @@ local function transfer_one(p,a,pos,e)
     local sign,parts=a.direction=='to_player' and '+' or '-',{}
     for _,s in ipairs(stacks) do parts[#parts+1]=sign..s.count..' [item='..s.name..']' end
     p.create_local_flying_text{text=table.concat(parts,' '),position=e.position}
+    -- The same for the camera clients, in the agent's colour (visuals.lua).
+    pcall(M.visuals.moved,p,e.position,e.surface,table.concat(parts,' '))
   end
   local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred,none_held=short and a.item or nil,target_has=short and count(target) or nil,
     at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
@@ -4014,6 +4016,23 @@ M.highlights=require('highlights'){state=state,director=function(index) return M
     local pr=M.profiles.get(index)
     return {character=c,color=pr and pr.rgb or nil}
   end}
+-- What agents are doing, drawn for the camera clients only (visuals.lua):
+-- mining progress and particles, crafting queues, routes, item moves, work rings.
+M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(index) end,
+  active=function(index) return state().active[index] end,
+  color=function(index) local pr=M.profiles.get(index); return pr and pr.rgb or nil end,
+  cameras=function()
+    local out={}
+    for _,p in pairs(game.connected_players) do if M.is_director(p.index) then out[#out+1]=p.index end end
+    table.sort(out)
+    return out
+  end,
+  agents=function()
+    local out={}
+    for _,b in ipairs(M.bots.list()) do out[#out+1]=b.index end
+    for index in pairs(state().controlled or {}) do out[#out+1]=index end
+    return out
+  end}
 -- Platform health alerts in team.alerts (platalerts.lua): hits, turret ammo,
 -- repair packs, hub health, to the platform's creator, workers and riders.
 M.platalerts=require('platalerts'){state=state,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
@@ -4194,7 +4213,11 @@ function M.dispatch(request)
     local last_call=before and not before.peeked and before.call_tick or nil
     if p and p.valid then result.clock=clock_line(p,peek) end
     -- Who works on which platform, for its alerts (platalerts.lua).
-    if p and p.valid and not peek and type(request.args)=='table' then pcall(M.platalerts.note,p,request.action,request.args,result) end
+    if p and p.valid and not peek and type(request.args)=='table' then
+      pcall(M.platalerts.note,p,request.action,request.args,result)
+      -- A brief ring on what a building, removing or configuring request acted on (visuals.lua).
+      pcall(M.visuals.worked,p,request.action,request.args)
+    end
     -- An fh sleep poll keeps a sleeping agent active for votes (votes.lua).
     if p and p.valid and peek and (request.action=='sleep_check' or (request.action=='observe' and request.args.scope=='sleep_check')) then
       local c=(state().clocks or {})[p.index]; if c then c.wait_tick=game.tick end
@@ -4618,6 +4641,9 @@ function M.tick_body(event)
   scheduler.tick()
   clock.tick()
   M.cameras.tick()
+  -- Camera-only drawing must never quarantine the runtime: its faults are counted.
+  local okv,errv=pcall(M.visuals.tick,event.tick)
+  if not okv then local s=state(); s.visual_errors={count=((s.visual_errors or {}).count or 0)+1,last=tostring(errv),tick=game.tick} end
 end
 -- Operator-only remote functions (control.lua): never reachable through
 -- dispatch, so agents cannot spawn bots or move cameras.
