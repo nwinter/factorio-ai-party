@@ -146,6 +146,7 @@ def main():
     assert lab({"delivery": "sent", "relayed": True, "to": "astra", "to_all": ["astra", "sol"]}) == "→ Astra, Soul"
     assert lab({"delivery": "sent", "relayed": True}) == "→ team"
     assert lab({"delivery": "too_soon"}) == "not sent: too soon"
+    assert lab({"delivery": "waiting"}) == "queued"
     assert lab({"delivery": "busy"}) == "not sent: chat busy"
     assert lab({"chatter": True}) == "" and lab({}) == ""
     ov = open(os.path.join(STATIC, "overlay.js")).read()

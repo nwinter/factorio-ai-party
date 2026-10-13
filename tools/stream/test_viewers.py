@@ -375,8 +375,10 @@ check("relay: lane marks relayed messages", [m.get("relayed") for m in rf.lane()
 rf.ingest([{"id": "s:5", "source": "site", "author": "c", "name": "cy", "text": "me again: the copper line looks starved", "t": NOW + 40}],
           [], now=NOW + 40)
 relay.q.popleft()  # s:4 aside: cy's second line is next
-check("relay: one line per viewer per 5 min", relay.step(NOW + 70) is None and len(h.says) == 2
-      and relay.dropped["author_gap"] == 1)
+stepped = relay.step(NOW + 70)
+cy2 = [m for m in rf.lane()[0] if m["id"] == "s:5"][0]
+check("relay: a viewer's next line waits out their gap (5 min here), marked waiting", stepped is None
+      and len(h.says) == 2 and relay.dropped["author_gap"] == 0 and cy2.get("delivery") == "waiting", (cy2, relay.dropped))
 rf.ingest([{"id": "s:6", "source": "site", "author": "e", "name": "ed", "text": "old news", "t": NOW + 41}], [], now=NOW + 41)
 check("relay: stale lines are skipped", relay.step(NOW + 200) is None and len(h.says) == 2)
 long = "the factory is great " * 10
@@ -529,9 +531,31 @@ fz.ingest([{"id": "z3", "source": "youtube", "author": "c", "name": "craig", "te
             "t": NOW + 80}], [], now=NOW + 80)
 rz.step(NOW + 80)
 dl = {m["id"]: (m.get("delivery"), m.get("to")) for m in fz.lane()[0]}
-check("delivery: chatter none, then sent to one agent, then 'too soon' inside the author gap",
-      dl == {"z1": (None, None), "z2": ("sent", "astra"), "z3": ("too_soon", None)}
+check("delivery: chatter none, then sent to one agent, then waiting inside the author gap",
+      dl == {"z1": (None, None), "z2": ("sent", "astra"), "z3": ("waiting", None)}
       and hz.says == [{"name": "craig", "text": "@astra All agents, always put walls around each gun turret"}], (dl, hz.says))
+# shift05 09:30, Nick: "'Not sent: too soon' ... does that get queued? was good suggestion": it waits, others go first
+fz.ingest([{"id": "z4", "source": "youtube", "author": "j", "name": "joon", "text": "astra, the coal belt has a kink",
+            "t": NOW + 82}], [], now=NOW + 82)
+first = rz.step(NOW + 84)
+check("waiting: another viewer's line goes while craig's waits", (first or {}).get("id") == "z4" and
+      [m for m in fz.lane()[0] if m["id"] == "z3"][0]["delivery"] == "waiting", first)
+check("waiting: still inside the gap at +104", rz.step(NOW + 104) is None)
+later = rz.step(NOW + 106)
+check("waiting: craig's line goes once his 45 s pass, to the same agent", (later or {}).get("id") == "z3" and
+      later["delivery"] == "sent" and later["to"] == "astra" and "author_wait" not in later and
+      hz.says[-1]["text"] == "@astra and use more walls on the east", (later, hz.says))
+for k in range(4):  # a burst inside the lane's own limits (4 a minute): three wait, the fourth is refused
+    fz.ingest([{"id": f"zb{k}", "source": "youtube", "author": "c", "name": "craig",
+                "text": f"one more idea number {k} for the walls", "t": NOW + 110 + 16 * k}], [], now=NOW + 110 + 16 * k)
+bl = {m["id"]: m.get("delivery") for m in fz.lane()[0] if m["id"].startswith("zb")}
+check("waiting: at most three of a viewer's lines wait; more are refused as too soon",
+      sum(1 for _, a in rz.q if a == "c") == 3 and bl == {"zb0": None, "zb1": None, "zb2": None, "zb3": "too_soon"}
+      and rz.dropped["author_gap"] == 1, (bl, rz.dropped))
+check("waiting: nothing inside the gap (sent at +106)", rz.step(NOW + 150) is None)
+sent_b = [rz.step(NOW + t) for t in (151, 196, 241)]
+check("waiting: they go one per gap, in order; zb2 goes 99 s after it was written (age counts from the gap's end)",
+      [(x or {}).get("id") for x in sent_b] == ["zb0", "zb1", "zb2"] and not rz.q, sent_b)
 check("relay: the address fits inside the 120-character line",
       len(V.Relay.line({"name": "x", "text": "why " * 60 + "?"}, "gemini")["text"]) == V.RELAY_MAX)
 os.remove(switch)

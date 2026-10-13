@@ -158,8 +158,8 @@
 
   // What became of a viewer's line in the game (viewers.py Relay: delivery, to, to_all), for the viewer to see
   // (shift01 16:34, craigNZ830: "they are not being taged for agent"): "→ Astra" or "→ Astra, Sol" (delivered and
-  // addressed), "→ team" (delivered to no one agent), "not sent: too soon" (the viewer's own line came too soon after
-  // their last), "not sent: chat busy" (waited too long behind others); nothing for chatter or before the relay acts.
+  // addressed), "→ team" (delivered to no one agent), "queued" (waits out the viewer's own gap after their last), "not sent:
+  // too soon" (more than three waiting), "not sent: chat busy" (waited too long behind others); nothing for chatter or before the relay acts.
   function deliveryLabel(v, agents) {
     if (!v || v.chatter) return "";
     const shown = (n) => { const a = (agents || []).find((x) => x.name === n); return (a && a.display_name) || n; };
@@ -170,6 +170,7 @@
       return "→ " + (to.length ? to.join(", ") : "team");
     }
     if (v.operator) return "→ operator";
+    if (v.delivery === "waiting") return "queued";  // waits out the viewer's own gap, then goes
     if (v.delivery === "too_soon") return "not sent: too soon";
     if (v.delivery === "busy") return "not sent: chat busy";
     return "";

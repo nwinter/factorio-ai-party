@@ -743,6 +743,9 @@ class Relay:
     while the switch file exists. Viewers the agents voted muted (operator `votes`, read every minute) are skipped."""
 
     ASK_WINDOW = 300.0  # a viewer's follow-up question goes to the same agent; an agent asked recently is skipped
+    # A viewer's line inside their author gap waits for it, other viewers' lines going first (shift05 09:30, Nick:
+    # "'Not sent: too soon' ... does that get queued? was good suggestion"); at most this many lines wait per viewer.
+    AUTHOR_QUEUE = 3
 
     def __init__(self, harness, switch, fn="viewer_say", gap=20.0, author_gap=45.0, max_age=90.0, roster=()):
         self.h, self.switch, self.fn = harness, switch, fn
@@ -769,6 +772,10 @@ class Relay:
         if msg["name"].casefold() in self.muted:
             msg["muted"] = True
             self.dropped["muted"] += 1
+            return
+        if sum(1 for _, a in self.q if a == author) >= self.AUTHOR_QUEUE:
+            self.dropped["author_gap"] += 1  # a viewer's lines wait their turn, a few at a time
+            msg["delivery"] = "too_soon"
             return
         self.q.append((msg, author))
 
@@ -880,21 +887,33 @@ class Relay:
             return None
         self.refresh_muted(now)
         self.state = "on" if self.state != "missing" else self.state
-        while self.q and (now - self.q[0][0]["t"] > self.max_age or self.q[0][0]["name"].casefold() in self.muted):
-            m, _ = self.q.popleft()
+        for item in list(self.q):  # in place: offer() appends from the feed's thread
+            m = item[0]
+            # a line's age counts from when it may go: its own time, or its viewer's gap ending (author_wait)
             if m["name"].casefold() in self.muted:
                 m["muted"] = True
                 self.dropped["muted"] += 1
-            else:
+            elif now - max(m["t"], m.get("author_wait", m["t"])) > self.max_age:
                 m["delivery"] = "busy"  # waited past max_age behind other viewers' lines
                 self.dropped["stale"] += 1
+            else:
+                continue
+            self.q.remove(item)
         if not self.q or now - self.last < self.gap or now < self.hold:
             return None
-        msg, author = self.q.popleft()
-        if now - self.by_author.get(author, -1e9) < self.author_gap:
-            self.dropped["author_gap"] += 1
-            msg["delivery"] = "too_soon"
+        pick = None
+        for i, (m, a) in enumerate(self.q):
+            ready = self.by_author.get(a, -1e9) + self.author_gap
+            if now < ready:
+                m["delivery"], m["author_wait"] = "waiting", ready  # queued behind this viewer's last line
+                continue
+            if pick is None:
+                pick = i
+        if pick is None:
             return None
+        msg, author = item = self.q[pick]
+        self.q.remove(item)
+        msg.pop("author_wait", None)
         to, wake = self.address(msg, author, now)
         try:
             res = self.dispatch(self.fn, self.line(msg, wake))
