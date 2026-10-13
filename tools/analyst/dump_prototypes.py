@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Dump Factorio prototypes over RCON into the analyst's knowledge base (read-only Lua, nothing in the game changes).
-Space Age: locations.json carries each route's and each orbit's asteroid_spawn_definitions as the game gives them,
-and entities.json the asteroids (max_health, resistances).
+Space Age: asteroids.json lists each route's and each orbit's asteroid_spawn_definitions as the game gives them
+(asteroid, type, quality, probability, speed, spawn_points) and the asteroid entities (max_health, resistances).
 
   python3 tools/analyst/dump_prototypes.py                      # world live -> tools/analyst/kb/base-2.0.77/
   python3 tools/analyst/dump_prototypes.py --world sa --port 27031 --out tools/analyst/kb/space-age-2.0.77
+  python3 tools/analyst/dump_prototypes.py --world n --only asteroids --out tools/analyst/kb/space-age-2.0.77
 
 Each category is read in pages of names (sorted, so pages are stable) to keep RCON replies small. Every property read
-is wrapped in pcall, so a field missing in this game version is left out instead of failing the dump.
+is wrapped in pcall, so a field missing in this game version is left out instead of failing the dump. Each page goes
+as one line: the Lua holds no "--" comments (one commented out the rest of the entities page, 15:25), and no command is
+longer than the longest that ran live (MAX_COMMAND; tools/analyst/test_dump_prototypes.py checks both).
 """
 import argparse, json, os, sys
 
@@ -112,7 +115,7 @@ local types = {"assembling-machine","furnace","mining-drill","lab","boiler","gen
   "unit-spawner","turret","resource","car","spider-vehicle","locomotive","cargo-wagon","fluid-wagon",
   "storage-tank","agricultural-tower","fusion-reactor","fusion-generator","asteroid-collector","thruster",
   "space-platform-hub","cargo-landing-pad","lightning-attractor","segmented-unit","spider-unit","capture-robot",
-  "tree","simple-entity","container","logistic-container","pipe","pipe-to-ground","asteroid"}
+  "tree","simple-entity","container","logistic-container","pipe","pipe-to-ground"}
 local all = prototypes.get_entity_filtered({{filter="type", type=types}})
 local out = {}
 local list = names(all)
@@ -177,10 +180,6 @@ for i = START, math.min(#list, START + COUNT - 1) do
     r.infinite = g(function() return e.infinite_resource end)
     r.category = g(function() return e.resource_category end)
   end
-  -- Asteroids: health and resistances (what a platform's turrets face).
-  if t == "asteroid" then
-    r.resistances = g(function() return e.resistances end)
-  end
   if t == "tree" or t == "simple-entity" then
     r.mining_time = g(function() return e.mineable_properties.mining_time end)
     r.products = g(function() return products(e.mineable_properties.products) end)
@@ -201,15 +200,14 @@ if ok_l and L then
     locs[#locs+1] = {name=name, type=g(function() return l.type end), distance=g(function() return l.distance end),
       orientation=g(function() return l.orientation end), gravity_pull=g(function() return l.gravity_pull end),
       solar_power_in_space=g(function() return l.solar_power_in_space end), magnitude=g(function() return l.magnitude end),
-      surface_properties=g(function() return l.surface_properties end), order=g(function() return l.order end),
-      asteroid_spawn_definitions=g(function() return l.asteroid_spawn_definitions end)}
+      surface_properties=g(function() return l.surface_properties end), order=g(function() return l.order end)}
   end
 end
 local ok_c, C = pcall(function() return prototypes.space_connection end)
 if ok_c and C then
   for name, c in pairs(C) do
     conns[#conns+1] = {name=name, from=g(function() return c.from.name end), to=g(function() return c.to.name end),
-      length=g(function() return c.length end), asteroid_spawn_definitions=g(function() return c.asteroid_spawn_definitions end)}
+      length=g(function() return c.length end)}
   end
 end
 local props = {}
@@ -219,6 +217,49 @@ local quals = {}
 local ok_q, Q = pcall(function() return prototypes.quality end)
 if ok_q and Q then for name, q in pairs(Q) do quals[#quals+1] = {name=name, level=q.level, hidden=q.hidden} end end
 rcon.print(helpers.table_to_json({total=1, items={{locations=locs, connections=conns, surface_properties=props, qualities=quals}}}))
+""",
+    "asteroids": r"""
+local rows = {}
+local ok_c, C = pcall(function() return prototypes.space_connection end)
+if ok_c and C then for _, n in ipairs(names(C)) do rows[#rows+1] = {"route", n} end end
+local ok_l, L = pcall(function() return prototypes.space_location end)
+if ok_l and L then for _, n in ipairs(names(L)) do rows[#rows+1] = {"orbit", n} end end
+local A = g(function() return prototypes.get_entity_filtered({{filter="type", type="asteroid"}}) end) or {}
+for _, n in ipairs(names(A)) do rows[#rows+1] = {"asteroid", n} end
+local function nm(v) if type(v) == "string" then return v end return g(function() return v.name end) end
+local function defs(list)
+  local out = {}
+  for _, d in ipairs(list or {}) do
+    local pts = {}
+    for _, s in ipairs(g(function() return d.spawn_points end) or {}) do
+      pts[#pts+1] = {distance=g(function() return s.distance end), probability=g(function() return s.probability end),
+        speed=g(function() return s.speed end)}
+    end
+    out[#out+1] = {asteroid=nm(g(function() return d.asteroid end)), type=g(function() return d.type end),
+      quality=nm(g(function() return d.quality end)), probability=g(function() return d.probability end),
+      speed=g(function() return d.speed end), spawn_points=#pts > 0 and pts or nil}
+  end
+  return out
+end
+local out = {}
+for i = START, math.min(#rows, START + COUNT - 1) do
+  local kind, n = rows[i][1], rows[i][2]
+  if kind == "route" then
+    local c = C[n]
+    out[#out+1] = {kind=kind, name=n, from=g(function() return c.from.name end), to=g(function() return c.to.name end),
+      length=g(function() return c.length end), asteroids=defs(g(function() return c.asteroid_spawn_definitions end))}
+  elseif kind == "orbit" then
+    local l = L[n]
+    out[#out+1] = {kind=kind, name=n, asteroids=defs(g(function() return l.asteroid_spawn_definitions end))}
+  else
+    local e = A[n]
+    local res = {}
+    for t, r in pairs(g(function() return e.resistances end) or {}) do res[#res+1] = {type=t, decrease=r.decrease, percent=r.percent} end
+    out[#out+1] = {kind=kind, name=n, max_health=g(function() return e.get_max_health() end) or g(function() return e.max_health end),
+      resistances=res}
+  end
+end
+rcon.print(helpers.table_to_json({total=#rows, items=out}))
 """,
     "settings": r"""
 local ms = game.map_settings
@@ -242,15 +283,28 @@ rcon.print(helpers.table_to_json({items={{
 """,
 }
 
-PAGE = {"recipes": 60, "technologies": 40, "items": 80, "fluids": 80, "entities": 40, "locations": 1, "settings": 1}
+PAGE = {"recipes": 60, "technologies": 40, "items": 80, "fluids": 80, "entities": 40, "locations": 1, "settings": 1,
+        "asteroids": 3}
 SINGLE = ("settings", "locations")
+# The longest command that ran live (the entities page, 2026-10-13): nothing longer is sent.
+MAX_COMMAND = 6800
+
+
+def command(cat, start):
+    """One page's RCON command: the Lua on one line (so it may hold no "--" comment)."""
+    body = COMMON + LUA[cat].replace("START", str(start)).replace("COUNT", str(PAGE[cat]))
+    cmd = "/silent-command " + " ".join(line.strip() for line in body.splitlines() if line.strip())
+    if "--" in cmd:
+        raise SystemExit(f"{cat}: the Lua holds '--', which would comment out the rest of the one-line command")
+    if len(cmd.encode()) > MAX_COMMAND:
+        raise SystemExit(f"{cat}: command is {len(cmd.encode())} bytes, over the {MAX_COMMAND} that ran live")
+    return cmd
 
 
 def dump(rc, cat):
     out, start, total = [], 1, None
     while total is None or start <= total:
-        body = COMMON + LUA[cat].replace("START", str(start)).replace("COUNT", str(PAGE[cat]))
-        text = rc.command("/silent-command " + " ".join(line.strip() for line in body.splitlines() if line.strip()))
+        text = rc.command(command(cat, start))
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
@@ -280,7 +334,10 @@ def main():
         with open(path, "w") as f:
             json.dump(rows, f, indent=0, sort_keys=True, ensure_ascii=False)
             f.write("\n")
-        print(f"{cat}: {len(rows) if isinstance(rows, list) else 1} -> {os.path.relpath(path)}")
+        # A single record (locations, settings): its lists' sizes, not "1"
+        size = len(rows) if isinstance(rows, list) else ", ".join(f"{k} {len(v)}" for k, v in sorted(rows.items())
+                                                                   if isinstance(v, list)) or "1 record"
+        print(f"{cat}: {size} -> {os.path.relpath(path)}")
 
 
 if __name__ == "__main__":
