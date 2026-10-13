@@ -366,6 +366,19 @@ fh sleep 900 --until researched                       # ...or until the research
   yet). `fh research done` (`research_done {limit?}`): technologies your force finished lately, newest first, with
   `ago`, `unlocks` and `queued_by`. `unlocks` names recipes, `travel to PLACE`, `QUALITY quality`, given items, and
   bonuses as `modifier-type +10%` (fractions) or `+N`.
+- Editing the queue as the research GUI does: `research {remove: NAME}` (or an array; `cancel` is the same) takes it
+  out, with queued technologies that need it (`also_removed`); progress stays with the technology. `research {move:
+  NAME, to: N}` puts it at position N (1 is researched now); a move ahead of a queued prerequisite or behind a queued
+  technology that needs it is refused with the position that works. Names waiting beyond the engine queue count.
+- `research_options` (read): the open technologies (prerequisites done, not trigger technologies) whose every pack the
+  factory made in the last 10 minutes, `researchable_now` `{name, units, packs, queued}` fewest units first; the rest in
+  `waiting_for_packs`, grouped by `packs_not_made`; and `made_last_10_min` per pack. Labs or chests may still hold
+  packs of a group that waits.
+- `where_is {item, limit?, surface?}` (read): where an item is on your surface (or `surface`): `total`, `by_kind`
+  (chest, lab, machine, vehicle, pad, hub, roboport, belts, inserter_hands, characters) and `places` (each chest, lab,
+  machine, vehicle, pad, hub and teammate holding it, `{kind, entity or agent, position, count, distance}`, nearest
+  first, `limit` default 15, `more` past it). Belts and inserter hands are totals only. It scans the surface's
+  storage and belt entities once per call.
 - `fh call labs [--args '{"radius":96}']` (read; an observe scope): one `research` line (name, progress, packs, ETA at the working labs, or `stalled`) and one line per group of adjacent labs (largest 8, at most 256 labs): working count, other statuses, packs the labs lack (and how many labs), the inserters feeding them with idle ones and why (`source transport-belt (0,-3) has nothing the lab needs`, `no_power`), packs absent from all their belts and chests, and what those sources hold. Example: `labs (0,0)-(6,0): 1/3 working, 2 missing_science_packs, lack logistic (2); feeders: 3 inserters (1 lab-to-lab); 1 idle: source transport-belt (0,-3) has nothing the lab needs; no logistic on their 1 belts/chests; sources hold automation 12`.
 
 ## Retries
@@ -516,7 +529,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   (`(was yours)`), a claim posted over yours; after those, each new open unowned task or request once; and a nudge
   when another open unowned request passes 2 game minutes), `research` (each technology your force finished since your
   previous reply, once: `research done: NAME, unlocks: a, b, c (<age> ago)`; a first reply looks back 10 game
-  minutes; at most 4 lines and `+N more finished: research_done`), `alerts` (your character being hit; attacks, one
+  minutes; at most 4 lines and `+N more finished: research_done`; first, to every agent once, `research stalled: NAME
+  heads the queue and has waited <time> for PACK, which nobody made in the last 10 minutes, with no progress ...` when
+  the head of the queue has waited 10 minutes that way, at most once per 30 minutes), `alerts` (your character being hit; attacks, one
   line per incident (a 32-tile cell, ended by a quiet minute): `attack #ID at (x,y): <attackers>; likely from nest (x,y)
   N tiles DIR; <entities hit> hit N times, D damage, first <age> ago, last <age> ago`, where attackers are a visible
   group that gathered in the last 3 minutes heading there (`a group of 25 (20 small-biter, 5 medium-biter) that

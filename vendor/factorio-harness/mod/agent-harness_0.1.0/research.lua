@@ -98,11 +98,22 @@ return function(api)
   -- The reply's research lines for agent p: technologies its force finished
   -- since its previous reply; a first reply looks back ten minutes.
   function M.lines(p, h)
+    local lines, extra, force = {}, 0, p.force and p.force.name
+    -- A stalled queue head (stall_check), first: each alert once per agent; a first reply looks back ten minutes.
+    local al = api.state().research_alerts
+    if al then
+      local seen = h.research_alert
+      h.research_alert = al.seq
+      for _, e in ipairs(al.list) do
+        if e.force == force and (seen and e.seq > seen or not seen and game.tick - e.tick <= FIRST_LOOK) then
+          lines[#lines+1] = e.text
+        end
+      end
+    end
     local news = api.state().research_news
-    if not news then return nil end
+    if not news then return #lines > 0 and lines or nil end
     local from = h.research
     h.research = news.seq
-    local lines, extra, force = {}, 0, p.force and p.force.name
     for _, e in ipairs(news.list) do
       if e.force == force and (from and e.seq > from or not from and game.tick - e.tick <= FIRST_LOOK) then
         if #lines < MAX_LINES then
@@ -172,6 +183,7 @@ return function(api)
     for _, force in pairs(game.forces or {}) do
       local t = force.current_research
       poll(s, force, t)
+      if force.research_queue and (#force.research_queue > 0 or t) then M.stall_check(s, force) end
       local list = s.research_rate[force.name]
       if t or list then
         list = list or {}
@@ -410,8 +422,158 @@ return function(api)
     end
     return out
   end
+  -- Whether technology `name` needs `target` somewhere among its prerequisites.
+  local function requires(force, name, target)
+    local seen, todo = {}, {name}
+    while #todo > 0 do
+      local t = force.technologies[table.remove(todo)]
+      for pre_name, pre in pairs(t and t.prerequisites or {}) do
+        local n = type(pre_name) == 'string' and pre_name or pre.name
+        if n == target then return true end
+        if not seen[n] then seen[n] = true; todo[#todo+1] = n end
+      end
+    end
+    return false
+  end
+  local function position(list, name)
+    for i, n in ipairs(list) do if n == name then return i end end
+    return nil
+  end
+  -- research {remove}: the queue without these names and, as the research GUI
+  -- does, without queued technologies that need one of them (shift 5, 07:01:
+  -- Grok's "cancel" was an unknown argument while mining-productivity-3 waited
+  -- on production packs nobody made). Progress stays with the technology.
+  function M.without(force, list, drop)
+    local names = type(drop) == 'table' and drop or {drop}
+    assert(#names >= 1 and #names <= 64, 'remove takes a technology name or an array of 1..64 names')
+    local gone = {}
+    for _, n in ipairs(names) do
+      assert(type(n) == 'string', 'remove takes technology names')
+      assert(position(list, n), n .. ' is not in the research queue (research with no arguments lists it)')
+      gone[n] = true
+    end
+    local keep, also = {}, {}
+    for _, n in ipairs(list) do
+      if not gone[n] then
+        local needs = false
+        for g in pairs(gone) do if requires(force, n, g) then needs = true; break end end
+        if needs then also[#also+1] = n else keep[#keep+1] = n end
+      end
+    end
+    return keep, {removed=names, also=#also > 0 and also or nil}
+  end
+  -- research {move, to}: the queue with `name` at position `to`, as dragging it
+  -- in the research GUI; never ahead of what it needs or behind what needs it.
+  function M.moved(force, list, name, to)
+    assert(type(name) == 'string', 'move takes a technology name')
+    local at = position(list, name)
+    assert(at, name .. ' is not in the research queue (research with no arguments lists it)')
+    assert(type(to) == 'number' and to == math.floor(to) and to >= 1 and to <= #list, 'to must be 1..' .. #list .. ' (the queue length)')
+    table.remove(list, at)
+    table.insert(list, to, name)
+    for i, n in ipairs(list) do
+      if i < to and requires(force, n, name) then
+        error(string.format('%s needs %s: move it to %d or earlier, or move %s too', n, name, i, n), 0)
+      elseif i > to and requires(force, name, n) then
+        error(string.format('%s needs %s first: move it behind %s (to %d or later), or move %s too', name, n, n, i, n), 0)
+      end
+    end
+    return list
+  end
+
+  -- research_options: the open technologies (prerequisites done, not a trigger
+  -- technology) grouped by whether the factory made every pack they need in the
+  -- last 10 minutes (the science study: "researchable with what we make" took
+  -- many calls, and 10 red/green/blue technologies were never queued).
+  function M.options(force, a)
+    local queued, open, wanted = {}, {}, {}
+    for i, t in ipairs(force.research_queue or {}) do queued[t.name] = i end
+    for _, t in pairs(force.technologies or {}) do
+      local trigger = false
+      pcall(function() trigger = t.prototype.research_trigger ~= nil end)
+      if t.enabled and not t.researched and not trigger then
+        local ready = true
+        for _, pre in pairs(t.prerequisites or {}) do if not pre.researched then ready = false; break end end
+        if ready then
+          open[#open+1] = t
+          for _, ing in ipairs(t.research_unit_ingredients or {}) do wanted[ing.name] = true end
+        end
+      end
+    end
+    local packs = {}
+    for n in pairs(wanted) do packs[#packs+1] = n end
+    table.sort(packs)
+    local made = packs_made(force, packs)
+    local now_list, by_missing = {}, {}
+    for _, t in ipairs(open) do
+      local need, lack = {}, {}
+      for _, ing in ipairs(t.research_unit_ingredients or {}) do
+        need[#need+1] = ing.name
+        if (made[ing.name] or 0) <= 0 then lack[#lack+1] = ing.name end
+      end
+      local e = {name=t.name, units=t.research_unit_count, packs=table.concat(need, '+'), queued=queued[t.name]}
+      if #lack == 0 then now_list[#now_list+1] = e
+      else
+        local key = table.concat(lack, '+')
+        by_missing[key] = by_missing[key] or {}
+        table.insert(by_missing[key], e)
+      end
+    end
+    local function order(x, y) return (x.units or 0) < (y.units or 0) or (x.units or 0) == (y.units or 0) and x.name < y.name end
+    table.sort(now_list, order)
+    local missing = {}
+    for key, list in pairs(by_missing) do
+      table.sort(list, order)
+      missing[#missing+1] = {packs_not_made=key, count=#list, technologies=list}
+    end
+    table.sort(missing, function(x, y) return x.count > y.count or x.count == y.count and x.packs_not_made < y.packs_not_made end)
+    local made_out = {}
+    for _, n in ipairs(packs) do made_out[n] = math.floor(made[n] or 0) end
+    return {researchable_now=now_list, waiting_for_packs=missing, made_last_10_min=made_out,
+      note='researchable_now: every pack made in the last 10 minutes (labs or chests may also hold some); queued gives the queue position'}
+  end
+
+  -- A stalled queue head, said to every agent in its team research lines: the
+  -- technology at the head has waited STALL_TICKS on a pack nobody made in the
+  -- last 10 minutes, with no progress; once per STALL_REPEAT per force (shift
+  -- 4-5: status said "waits for production-science-pack" 66 times in 108 minutes,
+  -- in a field nobody read).
+  local STALL_TICKS, STALL_REPEAT, MAX_ALERTS = 36000, 108000, 20
+  function M.stall_check(s, force)
+    s.research_stall = s.research_stall or {}
+    local st = s.research_stall[force.name]
+    local head = (force.research_queue or {})[1] or force.current_research
+    local lack = {}
+    if head then
+      local names = {}
+      for _, ing in ipairs(head.research_unit_ingredients or {}) do names[#names+1] = ing.name end
+      local made = packs_made(force, names)
+      for _, n in ipairs(names) do if (made[n] or 0) <= 0 then lack[#lack+1] = n end end
+    end
+    local progress = head and force.current_research and force.current_research.name == head.name and force.research_progress or 0
+    if #lack == 0 then
+      if st then s.research_stall[force.name] = {last=st.last} end
+      return nil
+    end
+    if not (st and st.name == head.name) or progress > (st.progress or 0) + 0.0005 then
+      s.research_stall[force.name] = {name=head.name, since=game.tick, progress=progress, last=st and st.last}
+      return nil
+    end
+    if game.tick - st.since < STALL_TICKS or (st.last and game.tick - st.last < STALL_REPEAT) then return nil end
+    st.last = game.tick
+    s.research_alerts = s.research_alerts or {seq=0, list={}}
+    local al = s.research_alerts
+    al.seq = al.seq + 1
+    local text = string.format('research stalled: %s heads the queue and has waited %s for %s, which nobody made in the last 10 minutes, with no progress; the labs idle on it. research {remove=%q} or {move=%q, to=N} reorders; research_options lists what the factory can research now',
+      head.name, ago(game.tick - st.since), table.concat(lack, ', '), head.name, head.name)
+    al.list[#al.list+1] = {seq=al.seq, tick=game.tick, force=force.name, name=head.name, text=text}
+    while #al.list > MAX_ALERTS do table.remove(al.list, 1) end
+    return text
+  end
+
   M.schema = {
     research_done = {limit='1..50 (default 10)', returns='done: technologies your force finished lately, newest first: name, ago, unlocks, queued_by'},
+    research_options = {returns='researchable_now: open technologies (prerequisites done, not trigger technologies) whose every pack the factory made in the last 10 minutes {name, units, packs, queued (queue position)}, fewest units first; waiting_for_packs: the rest grouped by packs_not_made {packs_not_made, count, technologies}; made_last_10_min per pack. Read only'},
   }
   return M
 end
