@@ -914,8 +914,8 @@ def long_charts(lr, lo=None, hi=None, x0=0):
 def shift_stats(s):
     return "".join([
         stat("on stream", f'{_hours(s["started"], s["ended"]):.1f} h', _when(s["started"], s["ended"])),
-        stat("game time", f'{s["game0"]} to {s["game1"]}'),
-        stat("technologies", s["research"], f'+{s["research_new"]}'),
+        stat("game time played", longrun.game_time(s["tick1"] - s["tick0"]), f'{s["game0"]} to {s["game1"]}'),
+        stat("technologies", s["research"], f'+{s["research_new"]}' + (f' · at the end: {s["researching"]}' if s.get("researching") else "")),
         stat("rockets", s["rockets"], f'+{s["rockets_new"]}'),
         stat("science / min", "–" if s["spm"] is None else fmt_num(s["spm"]), "shift average"),
         stat("packs made", f'{s["made_total"]:,}'),
@@ -967,8 +967,6 @@ def build_shift_page(s, v, lr):
                  f'<div class="shift-text">{description_html(v.get("description", ""))}</div>'
                  + (f'<h2>Chapters</h2><ol class="chapters">{chapters}</ol>' if chapters else ""))
     mine = [f for f in lr["firsts"] if f["shift"] == s["n"]]
-    packs = "".join(f'<tr><th scope="row">{esc(lab)}</th><td class="num">{s["made"].get(item, 0):,}</td></tr>'
-                    for item, lab in longrun.PACKS if s["made"].get(item))
     lo, hi = s["tick0"] / 3600, s["tick1"] / 3600
     who = lambda w: agent(w.lower())["name"] if w.lower() in AGENTS else w  # noqa: E731  (the log's spelling varies)
     deaths = "".join(f'<li><span class="c-time">{esc(_pt(d["t"], day=False))}</span>'
@@ -994,7 +992,7 @@ def build_shift_page(s, v, lr):
 {f'<h2>Technologies researched ({len(s["techs"])})</h2><ol class="techs">' + "".join(f'<li><span class="c-time">{esc(longrun.game_time(t["tick"]))}</span>{esc(t["label"])}</li>' for t in s["techs"]) + '</ol><p class="muted small">Game time of the first score row that shows each one.</p>' if s["techs"] else ""}
 {long_charts(lr, lo - 1, hi + 1, x0=max(0, int(lo // 60) * 60))}
 <div class="two-col shift-cols">
-<section><h2>Packs made</h2>{f'<div class="table-wrap"><table class="packs"><tbody>{packs}</tbody></table></div>' if packs else '<p class="muted">None.</p>'}
+<section>{packs_bars(s["made"], "Packs made") or '<h2>Packs made</h2><p class="muted">None.</p>'}
 {plat}</section>
 <section><h2>Deaths</h2>{f'<p class="muted small">{", ".join(f"{esc(k)} {n}" for k, n in sorted(by.items(), key=lambda kv: -kv[1]))}</p><ol class="deaths">{deaths}</ol>' if deaths else '<p class="muted">None.</p>'}</section>
 </div>
@@ -1074,6 +1072,18 @@ def key_times(lr):
     return (f'<h2 id="key-times">Key times</h2><div class="keytimes">{"".join(tiles)}</div>') if tiles else ""
 
 
+def packs_bars(made, title="Science packs made"):
+    """Each pack's total as a bar (the pack's chart colour; the number in ink)."""
+    have = [(item, lab, made.get(item, 0)) for item, lab in longrun.PACKS if made.get(item)]
+    if not have:
+        return ""
+    top = max(v for _, _, v in have)
+    items = "".join(f'<li><span class="bar-label">{esc(lab)}</span><span class="bar-track"><span class="bar" '
+                    f'style="width:{100 * v / top:.1f}%;background:var({PACK_STYLE[item][0]})"></span></span>'
+                    f'<span class="bar-val">{v:,}</span></li>' for item, lab, v in have)
+    return f'<figure class="bars packs-bars"><figcaption><strong>{esc(title)}</strong></figcaption><ul>{items}</ul></figure>'
+
+
 def records(done):
     """Bests over the shifts (a shift still on counts with what it has so far)."""
     def best(key, fmt, low=False):
@@ -1107,7 +1117,7 @@ def build_long_run(lr):
     stats = "".join([stat("shift" if len(done) == 1 else "shifts", len(done)),
                      stat("on stream", f"{on_air:.0f} h"),
                      stat("game time", last["game1"]),
-                     stat("technologies", last["research"]),
+                     stat("technologies", last["research"], f'last: {last["researching"]}' if last.get("researching") else ""),
                      stat("rockets", last["rockets"]),
                      stat("science packs", f'{sum(lr["made"].values()):,}'),
                      stat("platforms", f'{len(lr["platforms"])} built', f'{len(lost_p)} lost · {len(active)} active'
@@ -1170,6 +1180,7 @@ def build_long_run(lr):
 <h2 id="charts">Charts</h2>
 <p class="muted small">Game time on the x axis; S1, S2 ...: shift starts. Hover for the Pacific time.</p>
 {long_charts(lr)}
+{packs_bars(lr["made"])}
 <h2 id="shifts">Shifts</h2>
 <div class="table-wrap"><table class="long-run wide"><thead><tr><th scope="col">Shift</th><th scope="col">When (Pacific)</th>
 <th scope="col">Game time</th><th scope="col">Technologies</th><th scope="col">Science / min</th><th scope="col">Packs made</th>

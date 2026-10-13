@@ -142,6 +142,7 @@ def scores(path):
                      "science": sum(v for k, v in produced.items() if SCIENCE.search(k)),
                      "packs": {k: v for k, v in produced.items() if SCIENCE.search(k) and isinstance(v, (int, float))},
                      "rockets": s.get("rockets") or 0,
+                     "current": s.get("current_research") if isinstance(s.get("current_research"), str) else None,
                      "platforms": [p["name"] for p in plats],
                      "at": {p["name"]: p.get("at") for p in plats},
                      "planets": list(s.get("planets") or [])})
@@ -247,6 +248,15 @@ def host_calls(path, start, limit=10):
         if m and (m.group(3).startswith("space") or BIG.search(m.group(4))):
             out.append((not m.group(3).startswith("space"), len(out), clock_at(start, m.group(1).split(":")), m.group(2), m.group(4)))
     return [c[2:] for c in sorted(sorted(out)[:limit], key=lambda c: c[1])]
+
+
+def in_progress(name):
+    """Research under way, by its plain name: 'planet-discovery-fulgora' -> 'Planet discovery: Fulgora'."""
+    if not name:
+        return None
+    if name.startswith("planet-discovery-"):
+        return "Planet discovery: " + name[len("planet-discovery-"):].capitalize()
+    return name.replace("-", " ").capitalize()
 
 
 def label(name):
@@ -415,6 +425,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
 
         row.update(started=a["t"], ended=b["t"], running=running, tick0=a["tick"], tick1=b["tick"], game0=game_time(a["tick"]),
                    game1=game_time(b["tick"]), research=b["research"], research_new=b["research"] - base["research"],
+                   researching=in_progress(b.get("current")),
                    spm=round(sum(own.values()) / mins, 1) if mins > 0 else None,
                    rockets=b["rockets"], rockets_new=b["rockets"] - base["rockets"],
                    platforms=b["platforms"], planets=b["planets"], deaths=deaths, losses=losses,

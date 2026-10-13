@@ -209,7 +209,7 @@ td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .stats-compact .stat { padding: 8px 12px; }
 .stats-compact .stat-value { font-size: 1.35rem; }
 /* records: the best shift for each, linked */
-.records { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px; margin: .6rem 0 1rem; }
+.records { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 8px; margin: .6rem 0 1rem; }
 .record { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--fx-r-1); color: inherit; text-decoration: none; }
 .record:hover { background: var(--hl); }
 .r-val { font-size: 1.35rem; font-weight: 700; color: var(--heading); font-variant-numeric: tabular-nums; }
@@ -217,7 +217,8 @@ td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .r-shift { color: var(--muted); font-size: .8rem; }
 /* the run page's jump links, key times, live banner */
 .jump { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 .6rem; font-size: .92rem; }
-.keytimes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 210px), 1fr)); gap: 8px; margin: .6rem 0 1rem; }
+.keytimes { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 8px; margin: .6rem 0 1rem; }
+@media (max-width: 600px) { .k-sub, .r-shift { font-size: .75rem; } .r-val, .k-val { font-size: 1.2rem; } }
 .keytime { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: var(--fx-r-1); color: inherit; text-decoration: none; }
 .keytime:hover { background: var(--hl); }
 .k-label { color: var(--ink-2); font-size: .88rem; font-weight: 600; }
@@ -357,6 +358,8 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .bars li { display: grid; grid-template-columns: 7.5em 1fr 2.5em; gap: 10px; align-items: center; font-size: .9rem; }
 .bar-track { height: 12px; background: var(--well); box-shadow: var(--well-shadow); border-radius: var(--fx-r-1); padding: 2px; }
 .bar { display: block; height: 100%; background: var(--s1); border-radius: 1px; min-width: 2px; }
+.packs-bars li { grid-template-columns: 7.5em 1fr 4.5em; }
+.packs-bars .bar-val { text-align: right; font-variant-numeric: tabular-nums; }
 .bar-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 
 /* incidents */
