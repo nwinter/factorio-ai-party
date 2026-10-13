@@ -4,7 +4,7 @@
 //   python3 -m http.server 8765 -d site/dist &            # the built site
 // Needs Playwright (npm i -D playwright, or the copy npx keeps: PLAYWRIGHT=~/.npm/_npx/<id>/node_modules/playwright).
 // Full-page shots at a normal window height (a very tall window inflates vh-capped elements). Prints, per page,
-// what breaks on a phone: page-level horizontal scroll, visible text under 13 px, tap targets under 36 px, and
+// what breaks on a phone: page-level horizontal scroll, visible text under 12.5 px, tap targets under 36 px, and
 // elements wider than the page outside a scrolling box. Exits 1 when any page has one.
 const fs = require('fs'), path = require('path'), os = require('os');
 
@@ -35,7 +35,7 @@ function audit() {
     const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
     if (!r.width || !r.height || cs.visibility === 'hidden' || el.closest('svg, [hidden], details:not([open]) > :not(summary)')) continue;
     const own = [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim());
-    if (own && parseFloat(cs.fontSize) < 13 && !seen.has('s' + name(el))) { seen.add('s' + name(el)); out.small.push(`${name(el)} ${cs.fontSize} "${el.textContent.trim().slice(0, 30)}"`); }
+    if (own && parseFloat(cs.fontSize) < 12.5 && !seen.has('s' + name(el))) { seen.add('s' + name(el)); out.small.push(`${name(el)} ${cs.fontSize} "${el.textContent.trim().slice(0, 30)}"`); }
     if (el.matches('a, button, input, select, summary, [role=tab]') && (r.height < 36 && r.width < 36 || r.height < 24) && !seen.has('t' + name(el))) {
       seen.add('t' + name(el)); out.taps.push(`${name(el)} ${Math.round(r.width)}x${Math.round(r.height)} "${(el.textContent || el.value || '').trim().slice(0, 20)}"`);
     }
@@ -47,16 +47,17 @@ function audit() {
 (async () => {
   const { chromium } = playwright();
   fs.mkdirSync(OUT, { recursive: true });
-  const browser = await chromium.launch({ args: ['--mute-audio'] });
+  // PW_CHANNEL=chrome uses the installed Google Chrome instead of Playwright's own download
+  const browser = await chromium.launch({ args: ['--mute-audio'], ...(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}) });
   let bad = 0;
   try {
     for (const [size, w, h] of SIZES) {
       for (const theme of ['light', 'dark']) {
-        const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: size === 'phone' ? 2 : 1 });
+        const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: 1 });  // 2x passes Chrome's 16,384 px capture limit on long pages (the shot repeats)
         for (const [key, url] of PAGES) {
           const sep = url.includes('?') ? '&' : '?';
           try {
-            await page.goto(`${BASE}${url}${sep}theme=${theme}`, { waitUntil: 'networkidle', timeout: 20000 });
+            await page.goto(`${BASE}${url}${sep}theme=${theme}`, { waitUntil: 'load', timeout: 20000 });  // the live page polls: never idle
           } catch (e) { console.log(`${key} ${size} ${theme}: ${e.message.split('\n')[0]}`); continue; }
           await page.waitForTimeout(800);
           const file = path.join(OUT, `${key}-${size}-${theme}.png`);

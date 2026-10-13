@@ -24,15 +24,37 @@
   }
 
   // milestones: show one kind (the buttons are hidden until this script runs, so without it every row shows)
+  // On a phone the full list is long: the first 15, and a button for the rest (a kind shows all of its rows).
   document.querySelectorAll('.kind-filter').forEach(function (bar) {
-    var table = bar.nextElementSibling && bar.nextElementSibling.querySelector('table');
+    var wrap = bar.nextElementSibling, table = wrap && wrap.querySelector('table');
     if (!table) return;
     bar.hidden = false;
+    var rows = Array.prototype.slice.call(table.querySelectorAll('tbody tr')), FIRST = 15, more = null;
+    function show(kind, all) {
+      var n = 0;
+      rows.forEach(function (tr) {
+        var match = !kind || tr.dataset.kind === kind;
+        tr.hidden = !match || (!all && ++n > FIRST);
+      });
+      if (more) more.hidden = all || rows.filter(function (tr) { return !kind || tr.dataset.kind === kind; }).length <= FIRST;
+    }
+    if (window.matchMedia && window.matchMedia('(max-width: 640px)').matches && rows.length > FIRST) {
+      more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'fx-btn small firsts-more';
+      more.textContent = 'Show all ' + rows.length;
+      wrap.parentNode.insertBefore(more, wrap.nextSibling);
+      more.addEventListener('click', function () {
+        var on = bar.querySelector('[aria-pressed="true"]');
+        show(on ? on.dataset.kind : '', true);
+      });
+      show('', false);
+    }
     bar.addEventListener('click', function (ev) {
       var b = ev.target.closest('button[data-kind]');
       if (!b) return;
       bar.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
-      table.querySelectorAll('tbody tr').forEach(function (tr) { tr.hidden = !!b.dataset.kind && tr.dataset.kind !== b.dataset.kind; });
+      show(b.dataset.kind, !!b.dataset.kind || !more);
     });
   });
 

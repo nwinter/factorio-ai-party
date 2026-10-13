@@ -618,7 +618,13 @@ html { scroll-padding-top: 76px; }
   .kind-filter .fx-btn, .mm-zoom .fx-btn, .fx-btn.small { min-height: 36px; }
   .vlink { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; margin: -8px 0; }
   .fx-textfield, .hl-controls label, .hl-controls select, .tlapse-controls input[type=range],
-  .tlapse-controls .fx-btn, table.compare th button { min-height: 36px; }
+  .tlapse-controls .fx-btn { min-height: 36px; }
+  /* links and controls the 390 px check found under 36 px */
+  main table.compare th button { display: inline-flex; align-items: center; min-height: 36px; }
+  details > summary { display: flex; align-items: center; min-height: 36px; }
+  .crumbs a, .live-app > p a, .search-results li > a { display: inline-flex; align-items: center; min-height: 36px; }
+  table.firsts td.num a { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; margin: -8px 0; }
+  .firsts-more { margin: .4rem 0 1rem; }
   .hl-controls label, [class*="filters"] label { display: inline-flex; align-items: center; }
   input[type=checkbox] { width: 20px; height: 20px; }
   /* charts: a 640-unit drawing scaled to a phone's width made its text about 7 px; keep it at least 520 px wide,
