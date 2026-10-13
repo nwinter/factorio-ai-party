@@ -503,6 +503,36 @@ Nick, 14:44: "The demolisher approaching should be good in a PIP camera" and "im
 - Loss insets: a few cheap pieces or friendly fire get an inset only if their threat score passes the floor (the
   13:37-13:54 insets were 1-3 pipes burned by our flamers); deaths, an agent under attack and real raids keep theirs.
 
+### The hosts know the story (2026-10-13, eng/hostcontext)
+
+Viewer Joonazan, 16:38: "why is Rook always out of the loop? Commentary without understanding context is really
+weak." Rook's 14 lines from 16:20 to 16:38 held 8 attack calls, mostly hits where nothing was lost, and lines that
+joined unrelated facts. `tools/stream/hoststory.py` in caster.py:
+
+- An attack is a host beat only when it matters:
+  - a loss in a fight within 64 tiles in the last 2 minutes;
+  - a key battle on air (its own fight, or a battle held on an incoming group);
+  - a threat score at the director's floor (1.5), using threats.py's fight score on the run's
+    `threat-history.json`, so an agent fighting a minute, rarer or bigger enemies, or a long fight count.
+
+  Until then it waits; one that comes to matter speaks then, with `why_it_matters`. A fight that ends quietly is a
+  quiet hit, which another beat may mention in a word (`quiet_hits`, last 5 minutes). Losses and deaths speak as
+  before.
+- Every host prompt carries `story`, a memo rebuilt by rules every 3 minutes and kept in
+  `runs/RUN/host-memo.json`:
+  - the team plan's goals;
+  - the last 5 headlines with clock times (headlines, space firsts, deaths, losses of 8+);
+  - each agent's plan line and last spoken line (15 minutes);
+  - research now;
+  - the analyst's open storylines (what is stuck) and its headline.
+
+  The booth guide says to know the story, not to tell it: a piece only when it explains this beat.
+- Replay: `python3 tools/stream/hostguide_replay.py --story [--writer or:MODEL]` replays shift07 16:20-16:38. It
+  shows each aired line, whether an attack is still a beat (on the director's logged threat parts; the log has no
+  positions, so a loss counts as near), and the memo; with a writer, the lines with and without it. Offline: 4 of
+  the 8 attack beats stay (losses, the 16:30 battle), 4 go (the two "Astra again" calls and the two "nothing lost"
+  turret hits).
+
 ### Spoken-line cues (2026-10-13, eng/saylook)
 
 Nick, 14:11: "I'd loved to have seen the space platform while that was narrated." `fh say "..." --aloud --look
