@@ -254,7 +254,7 @@ def maker_table(data, agent, avatar, esc):
         cells = [f'<td class="agents-cell" data-v="">{chips}</td>', f'<td data-v="{n}">{n}</td>']
         for f in MAKER_COLS:
             w = round(100 * per[f] / tops[f]) if tops[f] else 0
-            cells.append(f'<td data-v="{per[f]:.3f}">{rate(per[f])}<span class="bar" style="width:{w}%"></span></td>')
+            cells.append(f'<td data-v="{per[f]:.3f}">{rate(per[f])}<span class="bar"><i style="width:{w}%"></i></span></td>')
         cells.append(f'<td data-v="{act if act is not None else ""}">{fmt(round(act) if act is not None else None, "pct")}</td>')
         body.append(f'<tr><th scope="row">{esc(maker)}</th>{"".join(cells)}</tr>')
     return (f'<p class="small muted">Per agent-shift: one agent on one shift.</p>'
