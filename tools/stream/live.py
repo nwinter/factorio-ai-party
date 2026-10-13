@@ -359,9 +359,11 @@ class LiveSource:
                 except Exception as e:
                     errors["platform_views"] = str(e)
         views = getattr(self, "platform_views", {})
-        space["platforms"] = [dict(row, **self.platform_detail.get(row["name"], {}),
-                                   **({"view": views[row["name"]]} if row["name"] in views else {}),
-                                   **self.fresh_at(row, self.platform_detail.get(row["name"], {})))
+        # later keys win: the detail read (up to 15 s old) over the score row, the fresh location over both
+        # (dict(row, **a, **b) raised "multiple values for keyword argument 'at'" from the 15:10 deploy)
+        space["platforms"] = [{**row, **self.platform_detail.get(row["name"], {}),
+                               **({"view": views[row["name"]]} if row["name"] in views else {}),
+                               **self.fresh_at(row, self.platform_detail.get(row["name"], {}))}
                               for row in space["platforms"]]
 
     @staticmethod
