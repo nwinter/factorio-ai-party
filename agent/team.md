@@ -79,7 +79,8 @@ already targets your character.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character. Each is shown
-  once. A change to your board item, a plan line set for you, or a tell also ends your `sleep`.
+  once, so a command that sends replies to a file you don't read loses them. A change to your board item, a plan line
+  set for you, or a tell also ends your `sleep`.
 - Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished
   since your last request before the shift, and `researched_none_built`: researched technologies whose buildings the
   team has none of.
