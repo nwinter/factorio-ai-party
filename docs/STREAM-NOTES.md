@@ -308,6 +308,14 @@ On the page:
   (an agent's body there, else "first foothold" when the score lists our entities). Each raises a 🚀 alert and the
   director starts a `space_moment` segment within 150 s (segment spacing waived; still declined right after an
   attack cut). Casters can request `space` or `space_moment {moment: id}` (ids in `snapshot.space.moments`).
+  Every other arrival after a trip, home included, is a 🚀 headline alert ("Sunward is back at Nauvis", with where
+  it came from and who is aboard), with no segment.
+- Direction: space.lua's route "nauvis->vulcanus N%" names the space connection's fixed ends, whichever way it is
+  flown (shift06 14:09: Sunward from Vulcanus to Nauvis showed as "leaving Nauvis for Vulcanus"). model.py
+  `_orient_platforms` works out where a platform is headed from the schedule's current stop (pog.py score `to`),
+  then the distance moving (not while paused, since a paused platform drifts back), the way it was going, and the
+  planet it left. It turns the route and progress round for every label, the widget and the hosts. live.py lets the
+  score's location (read every round) stand over a platform detail read that is up to 15 s old.
 - Speed is `LuaSpacePlatform.speed` x 60 shown as km/s, assuming the API gives km per tick. Not yet checked against
   the game's own readout.
 
@@ -464,6 +472,17 @@ size/threshold be dynamic".
   a cut. Aftermath only: no replay.
 
 Live: `grep -E "threat|BATTLE|battle over|incoming" runs/RUN/stream-service.log`.
+
+### Spoken-line cues (2026-10-13, eng/saylook)
+
+Nick, 14:11: "I'd loved to have seen the space platform while that was narrated." `fh say "..." --aloud --look
+platform:Sunward` (or `agent:NAME`, `X,Y[@SURFACE]`, `X1,Y1,X2,Y2[@SURFACE]`) keeps a look on the chat line; without
+one, a line naming one of our platforms, or with one "(x, y)", gets an inferred look. When the line starts playing (the
+page's start report, snapshot `voiced`), onecam cuts to the look for the line plus `cue_after` (4 s) if nothing more
+interesting is on, labelled "Sol · Sunward · in orbit of Vulcanus", then goes back to the story. Under an urgent shot,
+a battle, a follow, an incoming group, a segment or an agent fighting on air, the look goes in the inset; during a
+replay or a trio it is dropped. One cue per agent per `cue_agent_gap` (180 s), cues `cue_gap` (45 s) apart;
+`director: {cues: false}` turns them off. Live: `grep "cue " runs/RUN/stream-service.log`.
 
 ## Unused cameras
 

@@ -516,7 +516,8 @@ return function(api)
   end
   -- One line per incident: where, who, from where, what was hit, when.
   -- `again`: the same incident told to the same reader before. `reader`: the
-  -- reader's surface name; an incident elsewhere names its surface.
+  -- reader's surface name; an incident elsewhere names its surface (with no
+  -- reader, an operator read, any surface but nauvis).
   function M.attack_line(v,again,reader)
     local names={}
     for name,count in pairs(v.entities or {}) do names[#names+1]=name..' x'..count end
@@ -533,7 +534,7 @@ return function(api)
     elseif v.source_tried then from=string.format('no charted nest within %d tiles',SOURCE_RANGE) end
     local at=v.at or {x=0,y=0}
     local span=v.first and v.first<v.last and 'first '..ago(game.tick-v.first)..' ago, last '..ago(game.tick-v.last)..' ago' or ago(game.tick-v.last)..' ago'
-    local on=v.surface and reader and v.surface~=reader and ' on '..v.surface or ''
+    local on=v.surface and v.surface~=(reader or 'nauvis') and ' on '..v.surface or ''
     return string.format('attack #%d%s at (%d,%d)%s: %s%s%s hit %d times, %d damage, %s',v.id or 0,on,at.x,at.y,again and ' continues' or '',
       who and who..'; ' or '',from and from..'; ' or '',table.concat(names,', '),v.hits,round(v.damage),span)
   end

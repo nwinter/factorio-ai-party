@@ -529,4 +529,27 @@ local alerts=astra('status').team.alerts
 eq(#(function() local n={} for _,l in ipairs(alerts) do if l:find('(9000,9000)',1,true) then n[#n+1]=l end end return n end)(),2)
 assert(has(alerts,' on vulcanus in (9000,9000) 1 destroyed: 1 stone-furnace'),table.concat(alerts,' | '))
 assert(has(alerts,' on platform Starling in (9000,9000) 1 destroyed: 1 gun-turret'),table.concat(alerts,' | '))
+-- status alerts.incidents: rows for programs (the stream's loss banners). 12:58 on 2026-10-13: a small demolisher
+-- destroyed Sol's 59 turrets on Vulcanus at (-223,74); the stream read the text as Nauvis and cut to an empty field.
+local demolisher={valid=true,name='small-demolisher',force={name='enemy'}}
+for k=0,58 do
+  runtime.on_event{name=11,tick=tick,entity={valid=true,name='gun-turret',position={x=-223+k%10,y=74+math.floor(k/10)},force=force,surface={name='vulcanus'}},cause=demolisher}
+end
+runtime.on_event{name=11,tick=tick,entity={valid=true,name='stone-furnace',position={x=-223,y=74},force=force,surface={name='nauvis'}},cause=enemy_biter}
+jump(60)
+local st=astra('status',{since=tick-200})
+local rows={}
+for _,r in ipairs(st.alerts.incidents or {}) do
+  local key=r.platform and r.surface..'/'..r.platform or r.box.x0==-223 and r.surface or nil
+  if key then rows[key]=r end
+end
+local v=rows.vulcanus
+eq(v.total,59); eq(v.box.x0,-223); eq(v.box.y0,74); eq(v.box.x1,-214); eq(v.box.y1,79); eq(v.names,'59 gun-turret'); eq(v.by,'59 small-demolisher')
+eq(v.platform,nil); assert(v.id and v.first_tick and v.last_tick)
+assert(v.line:find('^#%d+ on vulcanus in %(%-223,74%)%-%(%-214,79%) 59 destroyed: 59 gun%-turret by 59 small%-demolisher'),v.line)
+local n=rows.nauvis
+eq(n.total,1); eq(n.box.x0,-223); assert(n.line:find('^#%d+ in %(%-223,74%) 1 destroyed'),n.line)
+eq(rows['platform-3/Starling'].platform,'Starling')
+-- The same lines in latest, the row's line; an operator read (no character's surface) names any surface but nauvis.
+assert(has(st.alerts.latest,'on vulcanus in (-223,74)'))
 print('board: ok')

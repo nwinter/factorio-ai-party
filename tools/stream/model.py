@@ -209,10 +209,17 @@ def platform_card(p, hits=None, aboard=(), working=()):
 
 def platform_where(p):
     """A platform row (score + `platforms` detail) for the page: where it is or its route with progress, speed.
-    `at` is a location name or "from->to N%" (space.lua); speed is LuaSpacePlatform.speed, shown x60 as km/s."""
+    `at` is a location name or "from->to N%" (space.lua); speed is LuaSpacePlatform.speed, shown x60 as km/s.
+    "from->to" are the space connection's ends and N its distance from `from`, whichever way the platform flies:
+    `toward` (Model._orient_platforms) is where it is headed; toward `from`, the route and progress turn round."""
     at = p.get("at") or ""
     m = AT_RE.match(at)
-    route = {"from": planet_label(m[1]), "to": planet_label(m[2]), "pct": int(m[3])} if m else None
+    route = None
+    if m:
+        a, b, pct = m[1], m[2], int(m[3])
+        if p.get("toward") == a:  # Sunward 14:09, Vulcanus to Nauvis on nauvis->vulcanus: not "leaving Nauvis"
+            a, b, pct = b, a, 100 - pct
+        route = {"from": planet_label(a), "to": planet_label(b), "pct": pct}
     where = f"{route['from']} → {route['to']}" if route else planet_label(at) if at and at != "in transit" else "in transit"
     speed = p.get("speed")
     return {"name": p.get("name"), "where": where, "route": route, "state": p.get("state"), "paused": bool(p.get("paused")),
@@ -389,6 +396,8 @@ class Model:
         self.moments = deque(maxlen=8)
         # platforms by name as last seen (to name one that is destroyed), reads each has been missing, hub losses
         self.platform_last, self.platform_missing, self.hub_losses = {}, {}, deque(maxlen=20)
+        self.platform_course = {}  # name -> {conn, pct, toward, orbit, moving}: which way it flies, the last planet
+        self.arrivals = []  # (name, planet, came from) seen this read: _space_moments calls them
         self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
         # Space widget: status alerts' platform_hits rows by platform (live.py), and platforms lost lately
         self.platform_hits, self.platforms_lost = {}, deque(maxlen=6)
@@ -456,6 +465,7 @@ class Model:
             sp = dict(obs["space"])
             sp["platforms"] = [p for p in sp.get("platforms") or []
                                if p.get("hub", True) and p.get("state") != "waiting_for_starter_pack"]
+            sp["platforms"] = self._orient_platforms(sp["platforms"])
             self.space = sp
             self._platforms_lost(now)
         if obs.get("platform_hits") is not None:  # one status round's rows: a platform not in them took no hits lately
@@ -655,6 +665,8 @@ class Model:
                  "text": m.get("text", ""), "t": m.get("t", now)}
         if m.get("aloud"):  # the agent asked for this line to be voiced on stream (tools/stream/caster.py)
             entry["aloud"] = True
+        if isinstance(m.get("look"), dict):  # say look=: what the camera might show while it is read out (onecam cue)
+            entry["look"] = m["look"]
         if m.get("viewer"):  # a viewer's line the operator relayed into the game chat (audience.lua)
             entry["viewer"] = m["viewer"]
         if m.get("notice"):  # a harness notice: the agents' mute votes and their results (audience.lua)
@@ -1091,18 +1103,74 @@ class Model:
                 "title": f"{who} lands on {planet_label(planet)}" if who else f"First foothold on {planet_label(planet)}",
                 "facts": {"planet": planet_label(planet), "agent": who,
                           "planets_reached": len({"nauvis", *landed})}}))
+        arrivals, self.arrivals = self.arrivals, []
         if self.space_seen is None:
             self.space_seen = {k for k, _ in found}
             return
+        fired = set()
         for key, m in found:
             if key in self.space_seen:
                 continue
             self.space_seen.add(key)
+            fired.add(key)
             m.update(id=f"m-{key}", key=key, t=now, game_time=fmt_game_time(self.tick / 60))
             m["facts"]["game_time"] = m["game_time"]
             self.moments.append(m)
             self.alert("space", m["title"], key=f"space:{key}", agent=m.get("agent"), ttl=40,
                        facts=dict(m["facts"], headline=m["kind"]))
+        # every other arrival after a trip, home included (shift06 14:14:32 Sunward back at Nauvis: Astra called it,
+        # the hosts had nothing; only a first arrival at a planet other than Nauvis was a moment)
+        for name, planet, came in arrivals:
+            if f"orbit:{name}:{planet}" in fired:
+                continue
+            aboard = [a.display_name or a.name for a in self.agents.values() if a.platform == name and a.alive]
+            title = f"{name} is back at Nauvis" if planet == "nauvis" else f"{name} arrives at {planet_label(planet)}"
+            self.alert("space", title, key=f"arrive:{name}:{planet}", ttl=120, facts={
+                "headline": "platform_arrival", "platform": name, "planet": planet_label(planet),
+                "came_from": planet_label(came) if came else None, "aboard": aboard or None,
+                "game_time": fmt_game_time(self.tick / 60)})
+
+    def _orient_platforms(self, plats):
+        """Which way each travelling platform flies (`toward`, for platform_where): space.lua's "a->b N%" is the
+        space connection, fixed whichever way it is flown (shift06 14:09, Sunward from Vulcanus to Nauvis on
+        nauvis->vulcanus showed as "leaving Nauvis for Vulcanus", then "travelling to Vulcanus (5%)" a minute from
+        Nauvis). In order: the schedule's current stop (pog.py score `to`), the distance moving (not while paused: a
+        paused platform drifts back), the way it was going, the planet it last orbited; else a->b. A platform at a
+        planet after travelling is an arrival (self.arrivals)."""
+        out = []
+        for p in plats:
+            p = dict(p)
+            name, at = p.get("name"), p.get("at") or ""
+            c = self.platform_course.setdefault(name, {})
+            m = AT_RE.match(at)
+            if not m:
+                if at and at != "in transit":
+                    if c.get("moving"):
+                        came = c.get("orbit") if c.get("orbit") != at else None
+                        if not came and c.get("conn"):
+                            came = next((x for x in c["conn"] if x != at), None)
+                        self.arrivals.append((name, at, came))
+                    c.update(orbit=at, moving=False, conn=None, pct=None, toward=None)
+                elif at == "in transit":
+                    c["moving"] = True
+                out.append(p)
+                continue
+            a, b, pct = m[1], m[2], int(m[3])
+            same = c.get("conn") == (a, b)
+            if p.get("to") in (a, b):
+                toward = p["to"]
+            elif same and c.get("pct") is not None and pct != c["pct"] and not p.get("paused"):
+                toward = b if pct > c["pct"] else a
+            elif same and c.get("toward"):
+                toward = c["toward"]
+            elif c.get("orbit") in (a, b):
+                toward = b if c["orbit"] == a else a
+            else:
+                toward = b
+            c.update(conn=(a, b), pct=pct, toward=toward, moving=True)
+            p["toward"] = toward
+            out.append(p)
+        return out
 
     def _platforms_lost(self, now):
         """A platform gone from two space reads in a row is destroyed (its hub was lost: Factorio deletes the

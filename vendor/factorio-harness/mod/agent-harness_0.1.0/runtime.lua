@@ -547,7 +547,7 @@ function handlers.describe()
       describe={}, inventory={returns='the character inventory: inventory (main), guns, ammo, armor, free (slots), crafting (hand queue), warnings (nearly full, hoarding); the same as observe player and status inv'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
-        reports='teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name and incidents per 64-tile area with causes, attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
+        reports='teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
       belt_route={from='{x,y} first belt tile, or an existing belt end to extend; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
@@ -729,14 +729,13 @@ function LOSS.id(i)
   if not i.id then local s=state(); s.loss_ids=(s.loss_ids or 0)+1; i.id=s.loss_ids end
   return i.id
 end
--- "#7 in (x,y)-(x,y) 40 destroyed: ..."; `reader` (a surface name) names an incident on another surface, `before`
--- (the total the reader was told) marks a running total.
-local function describe_incident(i,reader,before)
+-- What an incident lost and what destroyed it, as text: names ("4 stone-wall, 3 gun-turret"), causes ("5 small-biter,
+-- friendly fire: 2 flamethrower-turret at (80,90)": our own entities after the enemy ones), or nil.
+function LOSS.parts(i)
   local names=counted(i.names)
   while #names>6 do table.remove(names) end
   local causes=counted(i.causes)
   while #causes>2 do table.remove(causes) end
-  -- Our own entities among the causes: "friendly fire: 2 flamethrower-turret at (80,90)", after the enemy ones.
   local friendly={}
   for _,v in ipairs(counted(i.friendly or {})) do
     local name=v:match('^%d+ (.+)$')
@@ -745,16 +744,31 @@ local function describe_incident(i,reader,before)
   end
   while #friendly>2 do table.remove(friendly) end
   if #friendly>0 then causes[#causes+1]='friendly fire: '..table.concat(friendly,', ') end
+  return table.concat(names,', '),#causes>0 and table.concat(causes,', ') or nil
+end
+-- "#7 in (x,y)-(x,y) 40 destroyed: ..."; `reader` (a surface name) names an incident on another surface; without a
+-- reader (an operator read) any surface but nauvis is named. `before` (the total the reader was told) marks a running total.
+local function describe_incident(i,reader,before)
+  local names,causes=LOSS.parts(i)
   local last=(i.last or i.first or 0)
   local span=i.first==last and ago(game.tick-last)..' ago' or ago(game.tick-i.first)..'-'..ago(game.tick-last)..' ago'
   local b=i.box
   local where=string.format('(%d,%d)',math.floor(b[1]),math.floor(b[2]))
   if b[3]-b[1]>=1 or b[4]-b[2]>=1 then where=where..'-'..string.format('(%d,%d)',math.floor(b[3]),math.floor(b[4])) end
   local on=''
-  if i.platform then on=' on platform '..i.platform elseif i.surface and reader and i.surface~=reader then on=' on '..i.surface end
+  if i.platform then on=' on platform '..i.platform
+  elseif i.surface and i.surface~=(reader or 'nauvis') then on=' on '..i.surface end
   return string.format('#%d%s in %s%s %d destroyed%s: %s%s, %s',LOSS.id(i),on,where,before and ' continue:' or '',i.total,
-    before and string.format(' (+%d since you were told)',i.total-before) or '',table.concat(names,', '),
-    #causes>0 and ' by '..table.concat(causes,', ') or '',span)
+    before and string.format(' (+%d since you were told)',i.total-before) or '',names,
+    causes and ' by '..causes or '',span)
+end
+-- status alerts.incidents: one row per loss incident for programs (the stream's loss banners and cuts): where (surface,
+-- platform, box), how many, what, by what, when; the text line beside it.
+function LOSS.row(i,reader)
+  local names,causes=LOSS.parts(i)
+  local b=i.box
+  return {id=LOSS.id(i),surface=i.surface,platform=i.platform,box={x0=math.floor(b[1]),y0=math.floor(b[2]),x1=math.ceil(b[3]),y1=math.ceil(b[4])},
+    total=i.total,names=names,by=causes,first_tick=i.first,last_tick=i.last or i.first,line=describe_incident(i,reader)}
 end
 -- Losses in the reply's team alerts: each incident once, then its running total at most once a game minute while it
 -- grows. A reader never told anything starts with the incidents of the last 5 minutes. s.losses_told[index] holds
@@ -794,10 +808,10 @@ end
 local function recent_alerts(a,p)
   local since=a.since or game.tick-18000
   local reader=p and p.surface and p.surface.name
-  local counts,latest={},{}
+  local counts,latest,rows={},{},{}
   for _,i in ipairs(losses_since(since)) do
     for name,n in pairs(i.names) do counts[name]=(counts[name] or 0)+n end
-    if #latest<8 then latest[#latest+1]=describe_incident(i,reader) end
+    if #latest<8 then local row=LOSS.row(i,reader); latest[#latest+1]=row.line; rows[#rows+1]=row end
   end
   local attacks=threat.alerts(since,reader)
   local kills={}
@@ -806,7 +820,7 @@ local function recent_alerts(a,p)
   platform_hits=okp and platform_hits or nil
   if #latest==0 and not attacks and not next(kills) and not platform_hits then return nil end
   local result=attacks or {}
-  if #latest>0 then result.losses=counts; result.latest=latest end
+  if #latest>0 then result.losses=counts; result.latest=latest; result.incidents=rows end
   result.kills=next(kills) and kills or nil
   result.platform_hits=platform_hits
   return result
@@ -3930,6 +3944,8 @@ for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
   on_viewer=function(m) M.board.on_viewer(m) end,
+  -- say look= checks (chat.lua): a platform by name, a teammate by name
+  platform=function(p,name) return space.platform(p,name) end,agents=function() return M.board.agents() end,
   mention_of=function(index,m) return M.board.mention_of(index,m) end,
   where_from=function(index) local p=M.lookup(index); return p and p.valid and M.where.from(M.board.who(p)) or nil end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
