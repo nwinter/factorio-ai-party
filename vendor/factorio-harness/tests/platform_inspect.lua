@@ -209,6 +209,18 @@ ins.drop_target=nil
 local lone=bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}})
 eq(lone.drop_target,nil); eq(lone.drop_tile,'empty-space'); eq(lone.drop_note,'drops into empty space: items it moves are thrown overboard')
 ins.drop_target=hub
+-- Repair on a platform is the game's (shift05 08:03: Astra's hub at 637/1000):
+-- inspect of the hub lists what is damaged and its repair packs, a damaged
+-- entity says how it gets repaired, and repair refuses platform targets.
+hub.health,hub.max_health=637,1000
+collector.health,collector.max_health=50,200
+local hh=bot('inspect',{platform='Starling',position={x=0,y=0}})
+eq(hh.repair_packs,'none'); eq(hh.damaged[1],'asteroid-collector (-2.5,-6.5) 50/200'); eq(hh.damaged[2],'space-platform-hub (0,0) 637/1000')
+assert(hh.repair:find('repair packs from the hub, one entity at a time',1,true),hh.repair)
+eq(bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}}).repair,nil,'not damaged: no note')
+fails(function() bot('repair',{platform='Starling',position={x=0,y=0}}) end,'repair cannot reach a space platform: the game repairs platform entities itself with repair packs from the hub')
+eq(bot('platforms',{platform='Starling'}).platforms[1].damaged[2],'space-platform-hub (0,0) 637/1000')
+hub.health,hub.max_health,collector.health,collector.max_health=nil,nil,nil,nil
 -- describe lists platform on both.
 local d=runtime.dispatch{action='describe',args={},bot='astra'}
 assert(d.actions.inspect.platform and d.actions.configure.platform)

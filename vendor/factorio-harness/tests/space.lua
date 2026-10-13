@@ -117,6 +117,26 @@ do
   platform.surface.find_entities_filtered,platform.force,platform.ejected_items=find,saved_force,nil
   defines.flow_precision_index,defines.inventory.hub_trash=nil,nil
 end
+-- Repair on a platform is the game's (shift05 08:03: Astra's hub stayed at
+-- 637/1000 while 5 packs went to turrets and an inserter): the named view
+-- lists what is damaged, most damaged first, and the hub's repair packs.
+do
+  local find,contents=platform.surface.find_entities_filtered,hub_inv.get_contents
+  local function ent(name,x,h,m) return {name=name,position={x=x,y=0},health=h,max_health=m} end
+  platform.surface.find_entities_filtered=function(f)
+    if not f.type then return {ent('space-platform-hub',0,637,1000),ent('gun-turret',-6,53,400),ent('inserter',4.5,150,150),{name='entity-ghost',position={x=1,y=1},max_health=0}} end
+    return find(f)
+  end
+  local row=space.platforms(p,{platform='alpha'}).platforms[1]
+  eq(row.repair_packs,'none'); eq(#row.damaged,2)
+  eq(row.damaged[1],'gun-turret (-6,0) 53/400'); eq(row.damaged[2],'space-platform-hub (0,0) 637/1000'); eq(row.damaged_count,nil)
+  prototypes.item['repair-pack']={type='repair-tool'}
+  hub_inv.get_contents=function() return {{name='iron-plate',count=5},{name='repair-pack',count=12}} end
+  eq(space.platforms(p,{platform='alpha'}).platforms[1].repair_packs,'repair-pack*12')
+  eq(space.platforms(p,{}).platforms[1].damaged,nil,'details only for one named platform')
+  assert(space.REPAIR_NOTE:find('one entity at a time',1,true))
+  platform.surface.find_entities_filtered,hub_inv.get_contents,prototypes.item['repair-pack']=find,contents,nil
+end
 local sch=space.platform_schedule(p,{platform='alpha',stops={{station='vulcanus',wait={{type='time',ticks=600}}},{station='nauvis',wait={{type='all_requests_satisfied'}}}},paused=false})
 eq(sch.schedule,'>vulcanus (time 10s) | nauvis (all_requests_satisfied)'); eq(platform.paused,false)
 eq(platform.schedule.records[1].wait_conditions[1].ticks,600)
