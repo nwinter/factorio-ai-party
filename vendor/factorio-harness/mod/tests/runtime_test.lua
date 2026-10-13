@@ -501,6 +501,17 @@ do
   p.surface.find_entities_filtered=function() return {beacon} end
   r=call('transfer',{position=beacon.position,item='speed-module',count=2,direction='to_entity'})
   eq(r.transferred,2); eq(r.inventory,'beacon_modules')
+  -- Inspect gives the module inventory's index (blueprint item requests name it).
+  asm.slots.index=4
+  asm.slots.get_contents=function() return {{name='speed-module',count=2,quality='normal'}} end
+  asm.get_module_inventory=function() return asm.slots end
+  asm.get_fluid_contents=function() return {} end
+  asm.get_recipe=function() return nil end
+  p.surface.find_entities_filtered=function() return {asm} end
+  local mods=call('inspect',{position=asm.position}).modules
+  eq(mods.inventory_index,4); eq(mods.slots,2); eq(mods.contents[1].name,'speed-module'); eq(mods.contents[1].count,2)
+  asm.get_module_inventory=function() return nil end
+  eq(call('inspect',{position=asm.position}).modules,nil)
   prototypes=saved_prototypes
   main={input}
 end
