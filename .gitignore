@@ -14,3 +14,4 @@ runs/voice-bench/
 runs/*/.keys/
 runs/*/*/.grok-home/
 runs/*/agent-stats.json
+site-shots/

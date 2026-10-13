@@ -17,6 +17,14 @@
     });
   }
   function safeColor(c) { return /^#[0-9a-f]{6}$/i.test(c || '') ? c : null; }
+  // an agent's colour for borders and map dots on the dark panels: a near-black one (Grok's) becomes the panel's text
+  // colour, so it shows (as agents.ac() does on the static pages)
+  function acColor(c) {
+    c = safeColor(c);
+    if (!c) return '#999999';
+    var n = parseInt(c.slice(1), 16), l = (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255;
+    return l < 0.15 ? 'var(--fx-text)' : c;
+  }
   function label(s) { s = String(s || '').replace(/[-_]/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); }
   function ago(sec) {
     if (sec == null) return '';
@@ -375,7 +383,7 @@
       }
     });
     marks += dots.map(function (d) {
-      var a = d.a, c = safeColor(a.color) || '#999999', name = (a.display_name || a.name) + (d.far ? ' ↗' : '');
+      var a = d.a, c = acColor(a.color), name = (a.display_name || a.name) + (d.far ? ' ↗' : '');
       var lab = placeLabel(d.x, d.y, textWidth(name, 6.3), taken, S, !!onCam[a.name]);
       return '<g class="dot' + (a.alive === false ? ' dead' : '') + (d.far ? ' far' : '') + '" transform="translate(' + d.x.toFixed(1) + ' ' + d.y.toFixed(1) + ')">' +
         '<title>' + esc((a.display_name || a.name) + (a.location ? ' · ' + a.location : '') + (d.far ? ' · about ' + far[a.name] + ' tiles from the base' : '')) + '</title>' +
@@ -603,7 +611,7 @@
       var mine = chat.filter(function (c) { return c.agent === a.name; }).slice(-2);
       var act = a.activity || (a.alive === false ? 'dead' : 'idle');
       var said = mine.map(function (c) { return '<li>' + esc(c.text) + '</li>'; }).join('');
-      return '<article class="agent-live" style="--ac:' + (safeColor(a.color) || '#999999') + '">' +
+      return '<article class="agent-live" style="--ac:' + acColor(a.color) + '">' +
         '<header>' + avatar(a, 48) + '<div><h3>' + esc(a.display_name || a.name) + (a.camera ? ' <span class="fx-chip fx-chip--orange cam-chip">' + esc(a.camera) + '</span>' : '') + '</h3>' +
         '<p class="fx-muted small">' + esc([a.model, a.role].filter(Boolean).join(' · ')) + '</p></div>' +
         '<span class="state" data-s="' + esc(act) + '">' + esc(ACT_LABEL[act] || act) + '</span></header>' +

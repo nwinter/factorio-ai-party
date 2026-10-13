@@ -127,7 +127,7 @@ STYLE = """<style>
 .agent-card .kv dd { font-variant-numeric: tabular-nums; }
 .agent-card .spark { display: flex; align-items: flex-end; gap: 3px; height: 34px; margin: .4rem 0 0; }
 .agent-card .spark span { flex: 1; background: var(--ac); opacity: .8; min-height: 2px; border-radius: 1px; }
-.agent-card .spark-label { font-size: .75rem; color: var(--muted); margin: .15rem 0 0; }
+.agent-card .spark-label { font-size: .82rem; color: var(--muted); margin: .15rem 0 0; }
 .records { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 10px; padding: 0; list-style: none; }
 .records li { background: var(--surface); border: 1px solid var(--panel-border); border-radius: var(--radius); box-shadow: var(--panel-shadow); padding: 10px 14px; }
 .records .r-label { color: var(--muted); font-size: .82rem; display: block; }

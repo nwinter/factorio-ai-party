@@ -375,7 +375,7 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
     ys = [p[1] for s in series for p in s["points"]] or [0, 1]
     # right margin fits the direct end labels ("Name 1.2k"), which are only drawn for <= 4 series
     longest = max((len(s["name"]) + len(fmt_num(s["points"][-1][1])) + 1 for s in series if s["points"]), default=0)
-    L, R, T, B = 48, (int(18 + 6.4 * longest) if len(series) <= 4 else 16), 14, 36
+    L, R, T, B = 48, (int(18 + 7.6 * longest) if len(series) <= 4 else 16), 14, 36  # 13-unit labels
     if hours:
         xticks = [round(x0 + v * 60, 6) for v in nice_ticks(((max(xs) or 1) - x0) / 60, 8)]
     else:
@@ -560,7 +560,7 @@ def page(title, body, active="/", description="", extra_head="", path=None, og=N
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&amp;display=swap">
 <link rel="stylesheet" href="/static/factorio-ui.css">
 <link rel="stylesheet" href="/static/style.css">
-<script>try{{var t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
+<script>try{{var t=(location.search.match(/[?&]theme=(light|dark)/)||[])[1]||localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t}}catch(e){{}}</script>
 {extra_head}
 </head>
 <body>
