@@ -86,7 +86,11 @@ fh call status
   change of quality alone is a change.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
-  ammunition in the ammo slots. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
+  ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first
+  (strongest magazine kind first; a carried gun goes into an empty gun slot before it) and say so in `equipped`
+  (`equipped from your inventory: 20 firearm-magazine to ammo slot 1`; for move_to under `combat`); when the slots run
+  dry mid-fight they are refilled the same way and the fight goes on (`last_combat.reloads`, kite `last.reloads`); with
+  nothing carried that fits a gun they fail as before. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
   to the retreat point, still firing at units in reach while ammunition lasts, and ends `retreated` there. Every kite
   end says why in `last.why` (`health 36% fell below min_health 40%; retreating to (-20,0)`, `out of ammunition`, `no
   enemies left within the scan radius`, `time up`), with `ammo_left`, `enemies_left` and `retreated_from`.
@@ -264,6 +268,11 @@ fh sleep 900 --until researched                       # ...or until the research
   within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists
   up to 3 positions within 6 tiles where it fits facing the asked direction. `placements {name, position, radius,
   direction}` (read) returns the same list without building: `placements [{position, direction}]`, `checked`.
+- A refused turret build (gun, laser, flamethrower or artillery turret) lists up to 3 spots within your build reach
+  where the game's manual build check accepts it: when blocked, the nearest to the asked position within 6 tiles of
+  it (`; nearest spots where gun-turret fits within your build reach (game build check): (5,-2), (5,2), (4,-2)`); when
+  out of reach, the ones nearest the asked position around the edge of your reach toward it, followed by `; or walk
+  closer (move_to) and build again`. `build` does not walk.
 - `fh call defense` (read; `limit` areas, default 12, max 30; cached 10 s for the whole force): `areas`, the force's
   buildings grouped by touching 32-tile cells (an outpost or a pipeline is an area of its own), largest first, each
   with a `line` (`area 1 around (27,3) (0,0)-(60,6): 74 buildings (...); 2 turrets in range (23 ammo, 1 low); 43

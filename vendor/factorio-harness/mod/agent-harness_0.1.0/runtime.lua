@@ -189,7 +189,7 @@ local function finish(index, outcome)
     last.kills=action.kills
     -- Why combat stopped, stated plainly (request #57), with what was left.
     last.why=action.why or (outcome=='timed_out' and 'time up' or outcome=='replaced' and 'replaced by another action' or nil)
-    last.enemies_left=action.seen; last.retreated_from=action.retreating
+    last.enemies_left=action.seen; last.retreated_from=action.retreating; last.reloads=action.reloads
     if p and p.valid and p.character and p.character.valid then
       last.ammo_used=kite.ammo_used(p,action); last.ammo_left=kite.ammo_count(p)
       p.shooting_state={state=defines.shooting.not_shooting,position=p.position}
@@ -259,7 +259,7 @@ local function stop_combat(index,outcome)
   end
   if state().combat then state().combat[index]=nil end
   state().last_combat=state().last_combat or {}
-  state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used}
+  state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped}
 end
 -- Set while a passive action raises: the bootstrap's failure handler calls
 -- stop_player right after, which must leave the queue alone.
@@ -526,7 +526,7 @@ function handlers.describe()
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
       equipment={operation='insert|remove',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
       shoot={position='{x,y} or auto=true',ticks='1..600',radius='1..32',gun_slot='1..3',
-        outcomes='fires real ammo from the ammo slots (fails with none); status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots)'},equip={slot='gun|ammo|armor',item='owned item name',index='default 1'},
+        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots)'},equip={slot='gun|ammo|armor',item='owned item name',index='default 1'},
       describe={}, inventory={returns='the character inventory: inventory (main), guns, ammo, armor, free (slots), crafting (hand queue), warnings (nearly full, hoarding); the same as observe player and status inv'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
@@ -1505,12 +1505,13 @@ function handlers.move_to(p,a)
   local combat
   if a.combat~=nil and a.combat~=false then
     local radius=a.combat==true and 20 or integer(a.combat,20,1,32,'combat radius')
+    local equipped=kite.ammo_count(p)==0 and kite.auto_equip(p) or nil
     local ammo=kite.ammo_count(p)
-    assert(ammo>0,'combat needs ammunition in the ammo slots: equip some (equip slot=ammo item=firearm-magazine)')
+    assert(ammo>0,'combat needs ammunition in the ammo slots and none is carried that fits a gun: craft firearm-magazine')
     state().combat=state().combat or {}
     combat_targets()[p.index]=nil
     state().combat[p.index]={until_tick=game.tick+ticks,auto=true,radius=radius,ammo_start=ammo,with_move=true}
-    combat={auto=true,radius=radius,ammo=ammo}
+    combat={auto=true,radius=radius,ammo=ammo,equipped=equipped}
   end
   state().active[p.index]=action
   if not action.direct then request_path(p,action) end
@@ -2017,7 +2018,12 @@ local function build_tile(p,a,stack,pos)
 end
 local function build_one(p,a)
   local pos=position(a.position)
-  build_reach(p,pos,'position')
+  -- A turret out of reach: the refusal lists valid spots within reach toward it (shore.lua).
+  local reached,far=pcall(build_reach,p,pos,'position')
+  if not reached then
+    local fine,hint=pcall(M.shore.reach_hint,p,a.item,pos)
+    error(tostring(far)..(fine and hint or ''),0)
+  end
   assert(type(a.item)=='string','item is required')
   local stack=p.get_main_inventory().find_item_stack{name=a.item,quality=a.quality or 'normal'}
   assert(stack,'item is not in main inventory')
@@ -2214,7 +2220,7 @@ function handlers.kite(p,a)
   -- Kiting owns both walking and shooting; a separate shoot would fight it.
   if state().combat and state().combat[p.index] then stop_combat(p.index,'replaced') end
   state().active[p.index]=action
-  return {until_tick=action.until_tick,ammo=action.ammo_start}
+  return {until_tick=action.until_tick,ammo=action.ammo_start,equipped=action.equipped}
 end
 function handlers.construct(p,a)
   assert(not p.permission_group or p.permission_group.allows_action(defines.input_action.start_walking),'permission denied: start_walking')
@@ -3241,13 +3247,15 @@ function handlers.shoot(p,a)
   if pos then assert(visible(p,pos),'firing position must be locally visible') end
   if a.gun_slot then p.character.selected_gun_index=integer(a.gun_slot,nil,1,3,'gun_slot') end
   -- The engine fires from the ammo slots and spends what it fires; without
-  -- ammo the trigger does nothing, so say so instead of "shooting".
+  -- ammo the trigger does nothing, so say so instead of "shooting". Empty
+  -- slots are first filled from carried ammo (kite.auto_equip), and the reply says so.
+  local equipped=kite.ammo_count(p)==0 and kite.auto_equip(p) or nil
   local ammo=kite.ammo_count(p)
-  assert(ammo>0,'no ammunition in the ammo slots: equip some (equip slot=ammo item=firearm-magazine) or craft firearm-magazine')
+  assert(ammo>0,'no ammunition in the ammo slots and none carried that fits a gun: craft firearm-magazine')
   state().combat=state().combat or {}
   combat_targets()[p.index]=nil
   state().combat[p.index]={until_tick=game.tick+ticks,position=pos,auto=a.auto==true,radius=integer(a.radius,24,1,32,'radius'),ammo_start=ammo}
-  return {until_tick=game.tick+ticks,ammo=ammo}
+  return {until_tick=game.tick+ticks,ammo=ammo,equipped=equipped}
 end
 function handlers.equip(p,a)
   local names={gun='character_guns',ammo='character_ammo',armor='character_armor'}
@@ -4295,7 +4303,7 @@ function M.tick_body(event)
   for index,action in pairs(state().combat or {}) do
     local ok,p=pcall(player,index)
     if not ok or event.tick>action.until_tick then stop_combat(index,ok and (action.end_outcome or 'duration_elapsed') or 'player_unavailable')
-    elseif action.ammo_start and kite.ammo_count(p)==0 then stop_combat(index,'out_of_ammo')
+    elseif action.ammo_start and kite.ammo_count(p)==0 and not kite.reload(p,action) then stop_combat(index,'out_of_ammo')
     else
       local target=action.position
       if action.auto then
