@@ -37,6 +37,74 @@ def alerts(m, prefix):
     return [a for a in m.alerts if a["key"].startswith(prefix)]
 
 
+SCORE_FAKE = r"""
+local stats = {get_input_count = function() return 5 end, get_output_count = function() return 0 end}
+local any = setmetatable({}, {__index = function() return {} end})
+local sunward = {valid = true, name = "Sunward", hub = {valid = true},
+  schedule = {current = 2, records = {{station = "vulcanus"}, {station = "nauvis"}}}}
+local starling = {valid = true, name = "Starling", hub = {valid = true}, space_location = {name = "vulcanus"}}
+game = {tick = 600, ticks_played = 600, tick_paused = false,
+  surfaces = {{name = "nauvis", planet = {}, count_entities_filtered = function() return 1 end}},
+  forces = {player = {get_item_production_statistics = function() return stats end, technologies = {},
+    platforms = {sunward, starling}, rockets_launched = 3}}}
+prototypes = {item = any, entity = any}
+helpers = {table_to_json = function(t) return t end}
+rcon = {print = function(t) OUT = t end}
+"""
+SCORE_PRINT = r"""
+print("tick", OUT.tick)
+for _, p in ipairs(OUT.platforms) do print("platform", p.name, p.at, tostring(p.to)) end
+"""
+
+
+def score_read_runs(pog):
+    """The score read as it goes over RCON: one line (harness.one_line), run by a Lua interpreter against a fake
+    game. shift07 15:10: a `--` comment inside SCORE_LUA (added with `to`) commented out the rest of the line, every
+    score read failed ("'end' expected near <eof>"), the stream showed 0h00m with no research or platforms."""
+    import shutil, subprocess, tempfile
+    from harness import one_line
+    lua = shutil.which("lua") or shutil.which("lua5.4") or shutil.which("luajit")
+    if not lua:
+        print("score read: no lua interpreter, skipped")
+        return
+    src = SCORE_FAKE + "\n" + one_line(pog.SCORE_LUA) + "\n" + SCORE_PRINT
+    with tempfile.NamedTemporaryFile("w", suffix=".lua", delete=False) as f:
+        f.write(src)
+    try:
+        r = subprocess.run([lua, f.name], capture_output=True, text=True, timeout=30)
+    finally:
+        os.unlink(f.name)
+    assert r.returncode == 0, "the one-line score read does not run: " + r.stderr
+    rows = [line.split("\t") for line in r.stdout.splitlines()]
+    assert ["tick", "600"] in rows, rows
+    assert ["platform", "Sunward", "in transit", "nauvis"] in rows, rows  # the schedule's current stop
+    assert ["platform", "Starling", "vulcanus", "nil"] in rows, rows      # no schedule: no `to`
+
+
+def observe_platforms_merges(LiveSource):
+    """live.py merges the score row, the platform detail read, the camera view and the fresh location. Row and
+    detail both carry `at` (and state): dict(row, **detail, ...) raised "multiple values for keyword argument 'at'"
+    once the score read worked again (shift07), and every snapshot stayed at tick 0."""
+    class H:
+        @staticmethod
+        def platform_views():
+            return {"Sunward": {"surface": "platform-3"}}
+    src = LiveSource.__new__(LiveSource)
+    src.h, src.next_platforms, src.platform_every, src.platform_detail = H(), 0, 15.0, {}
+    src.reader = lambda: {}
+    src.read = lambda action, args, **kw: ({"platforms": [{"name": args["platform"], "at": "nauvis->vulcanus 40%",
+                                                            "state": "on_the_path", "speed": 1.2}]}, None)
+    space = {"platforms": [{"name": "Sunward", "at": "nauvis", "state": "waiting_at_station", "hub": True, "to": "nauvis"},
+                           {"name": "Starling", "at": "in transit", "hub": True}]}
+    errors = {}
+    src.observe_platforms(space, errors)
+    assert not errors, errors
+    sun, star = space["platforms"]
+    assert sun["at"] == "nauvis" and sun["speed"] == 1.2 and sun["view"] == {"surface": "platform-3"} \
+        and sun["to"] == "nauvis" and sun["hub"] is True, sun  # arrived: the fresh location over the older detail
+    assert star["at"] == "nauvis->vulcanus 40%" and star["state"] == "on_the_path", star  # the route stands
+
+
 def main():
     # 1. platform_where
     w = platform_where({"name": "Sunward", "at": "nauvis->vulcanus 5%", "toward": "nauvis", "speed": 1.2})
@@ -177,6 +245,8 @@ def main():
     assert LiveSource.fresh_at({"at": "in transit"}, {}) == {}
     import pog
     assert "s.records[s.current]" in pog.SCORE_LUA and "to = ok and" in pog.SCORE_LUA
+    score_read_runs(pog)
+    observe_platforms_merges(LiveSource)
     print("route direction: ok (reversed route and progress, schedule, planet left, distance, paused drift, "
           "arrival home, orbit moment once, fresh location)")
 
