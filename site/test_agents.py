@@ -82,7 +82,9 @@ def make(root):
     (a / "stream-service.log").write_text(
         "[director] 23:40:58 cam2:  zoom 1.1  <- death: Opus died\n"
         "[director] 23:41:00 ON AIR cam2: @attack  <- death: Opus died\n"
-        "[director] 00:10:00 ON AIR main: @attack  <- death: Opus died\n")
+        "[director] 00:10:00 ON AIR main: @attack  <- death: Opus died\n"
+        "[director] 00:10:33 main:  zoom 1.1  <- death: Opus died\n"
+        "[director] 00:10:35 ON AIR main: @attack  <- death: Opus died\n")
     (a / "caster.log").write_text(
         "23:05:00 [caster] feed http://x\n"
         "23:05:10 [voice:Opus/el-george] (aloud) Turrets first, then the wall.\n"
@@ -130,9 +132,11 @@ def main():
         assert (o["research"], o["research_done"], s["research"], s["research_done"]) == (2, 1, 1, 1), (o, s)
         assert o["rockets"] == 1 and o["say"] == 2 and o["aloud_marked"] == 1 and o["viewer_answers"] == 1, o
         assert o["tells"] == 1 and o["confessions"] == 2 and o["voiced"] == 2 and o["voice"] == "el-george", o
-        assert o["deaths"] == 2 and s["deaths"] == 0 and (o["operator"], s["operator"]) == (0, 1), (o, s)
-        # deaths in game ticks from the first of the two lines (23:40:58, after the 23:30 score); 00:10 is past midnight
-        assert o["death_ticks"] == [3600 * 31 + (10 * 60 + 58) * 60, 3600 * 31 + 40 * 3600], o["death_ticks"]
+        assert o["deaths"] == 3 and s["deaths"] == 0 and (o["operator"], s["operator"]) == (0, 1), (o, s)
+        # deaths in game ticks from the first of the two lines (23:40:58, after the 23:30 score); 00:10 is past midnight;
+        # a second death 33 s later counts
+        assert o["death_ticks"] == [3600 * 31 + (10 * 60 + 58) * 60, 3600 * 31 + 40 * 3600,
+                                    3600 * 31 + 40 * 3600 + 33 * 60], o["death_ticks"]
         assert o["active_min"] == 5 and o["minutes"] == 6 and s["actions"] == 1, o
         assert "SECRET-ERROR-TEXT" not in json.dumps(c) and "SECRET-REQUEST-TEXT" not in json.dumps(c)
         # text kept for /chat/: the voiced lines (game tick from the wall clock, past midnight too) and confessions
@@ -173,7 +177,7 @@ def main():
         assert '<span class="r-value">10</span>' in rec and "shift 1" in rec, rec
         surv = page.split("Longest survival (game time)</span>")[1].split("</li>")[0]
         # Opus: since its 00:10 death (tick 255600) to the end of shift 2 (tick 763200); Sol played shift 1 only (1h30m)
-        assert '<span class="r-value">2h21m</span>' in surv and "Opus" in surv and "still alive" in surv, surv
+        assert '<span class="r-value">2h20m</span>' in surv and "Opus" in surv and "still alive" in surv, surv
         assert 'table class="compare"' in page and "data-v=" in page
         # by maker, per agent-shift: Anthropic is Opus on two shifts (10 and 7 built), OpenAI is Sol on one
         mk = page.split('<h2 id="makers">')[1].split("</table>")[0]
@@ -196,7 +200,7 @@ def main():
         assert by[("agent", "Opus")]["url"] == "/agents/#opus" and "Anthropic" in by[("agent", "Opus")]["sub"]
         assert by[("shift", "Shift 2")]["url"] == "/runs/long/shift-2/"
         died = [e for e in idx if e["title"] == "Opus died"]
-        assert len(died) == 2 and all(e["url"].startswith("/timeline/#e") for e in died), died
+        assert len(died) == 3 and all(e["url"].startswith("/timeline/#e") for e in died), died
         assert all(f'id="{e["url"].split("#")[1]}"' in tl for e in idx if e["kind"] == "event")
         line = next(e for e in idx if e["kind"] == "line" and e["text"].startswith("Turrets first"))
         assert line["url"].startswith("/chat/#s1-") and f'id="{line["url"].split("#")[1]}"' in chat, line
@@ -216,7 +220,7 @@ def main():
         assert 'href="/agents/"' in (out / "index.html").read_text() and 'href="/timeline/"' in page
         tl = (out / "timeline" / "index.html").read_text()
         for want in ('data-kind="research"', "Logistics", "Rocket 1", "Rockets 2 to 3", "Platform Kite built",
-                     "Reached Vulcanus", 'data-kind="death"', 'value="death" checked', "Deaths (2)"):
+                     "Reached Vulcanus", 'data-kind="death"', 'value="death" checked', "Deaths (3)"):
             assert want in tl, want
         assert tl.index("Logistics") < tl.index("Reached Vulcanus") < tl.index("Rocket 4")
     print("agents: ok (stats per shift, cache, cards, records, comparison, timeline, check.py)")
