@@ -111,7 +111,7 @@ export function formatCompact(value: unknown): string {
       lines.push(`error: ${errorText(error)}${notes.length ? '; ' + notes.join('; ') : ''}`);
     } else {
       render(rest, '', 0);
-      if (record(body)) render(body, '', 0);
+      if (record(body)) render(byClock(body), '', 0);
       else if (!empty(body)) render(body, 'result', 0);
       if (notes.length) lines.push(`warning: ${notes.join('; ')}`);
     }
@@ -124,6 +124,17 @@ export function finalLine(value: unknown): string | undefined {
   const { notes } = lift(value.result);
   if (!value.ok) return `error: ${errorText(value.error)}${notes.length ? '; ' + notes.join('; ') : ''}`;
   return notes.length ? `warning: ${notes.join('; ')}` : undefined;
+}
+/** Full status's teammates line goes right after the clock line. */
+function byClock(body: Json): Json {
+  if (typeof body.teammates !== 'string' || typeof body.clock !== 'string') return body;
+  const { teammates, ...rest } = body;
+  const out: Json = {};
+  for (const [key, entry] of Object.entries(rest)) {
+    out[key] = entry;
+    if (key === 'clock') out.teammates = teammates;
+  }
+  return out;
 }
 /** One line, whatever the value. */
 function oneLine(value: unknown): string {

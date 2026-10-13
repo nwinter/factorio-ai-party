@@ -12,6 +12,8 @@
 # are kept, and each agent starts from its notes.md of that run. POG_SPACE_AGE must match the instance's mods.
 # POG_RESUME_DIR: the previous run's directory (default runs/PREVIOUS_RUN here, else in ~/code/player-of-games).
 # POG_DRY_RUN=1: check what can be checked here and print the plan; touches nothing.
+# --stream: OBS is restarted first (tools/obs-restart.sh; POG_OBS_RESTART=0 skips it, POG_OBS_RESTARTED=1 says the
+# caller did), then tools/obs-steps.sh --stream (scene, overlay, recording, stream, vertical).
 # Each team line: name<TAB>kind<TAB>route<TAB>model<TAB>effort<TAB>label<TAB>harness
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -79,6 +81,12 @@ if [ "${POG_DRY_RUN:-0}" = 1 ]; then
     fi
   done
   echo "4. stream service, chat log, shot sync$([ "${POG_CASTER:-1}" != 0 ] && echo ', casters')$([ "${POG_ANALYST:-1}" != 0 ] && echo ', analyst')$([ "${POG_PLAYERS:-0}" = 1 ] && echo ', player votes'), recording$([ "$stream" = --stream ] && echo ', stream')"
+  if [ "$stream" = --stream ] && [ "${POG_OBS:-1}" != 0 ]; then
+    if [ "${POG_OBS_RESTART:-1}" = 0 ]; then echo "4c. OBS: no restart (POG_OBS_RESTART=0)"
+    elif [ "${POG_OBS_RESTARTED:-0}" = 1 ]; then echo "4c. OBS: restarted by the caller (shift-change)"
+    else echo "4c. OBS restart first: tools/obs-restart.sh (outputs off, close cleanly, start pog-obs, wait for the websocket)"; fi
+    echo "    then tools/obs-steps.sh --stream: $(tools/obs-steps.sh --stream --dry-run | sed 's/^.*plan: //')"
+  fi
   [ "${POG_BROKER:-0}" = 1 ] && echo "4b. RCON broker (POG_BROKER=1): sockets runs/$run/.sock/NAME.sock for $(echo $members); no key in the run"
   echo "5. agents launch$([ "${POG_FULL_TOOLS:-0}" = 1 ] && echo ' with full tools (POG_FULL_TOOLS=1: tools/, team-tools/, gamedata/, subagents, web)'); 6. supervisors and score loop"
   [ -n "$resume" ] && echo "prompt adds: $(tools/launch-agent.sh --resume-sentence)"
@@ -204,12 +212,15 @@ if [ "${POG_OBS:-1}" != 0 ]; then
   nohup ssh -N -o ControlMaster=no -o ControlPath=none -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 \
     -R 8787:127.0.0.1:8788 pogwin >/dev/null 2>&1 &
   echo $! > "$rundir/overlay-tunnel.pid"
+  # A new OBS process for each streamed shift (2026-10-13 08:29: after 24.5 h in one process Quick Sync failed with
+  # MFX_ERR_MEMORY_ALLOC and the stream stopped). tools/shift-change.sh restarts it between stop-team and this
+  # (POG_OBS_RESTARTED=1); POG_OBS_RESTART=0 skips it. A failed restart goes on with the running OBS.
+  if [ "$stream" = --stream ] && [ "${POG_OBS_RESTART:-1}" != 0 ] && [ "${POG_OBS_RESTARTED:-0}" != 1 ]; then
+    if tools/obs-restart.sh 2>&1 | tee -a "$rundir/start.log" | tail -1 > "$rundir/obs-restart.txt"; then :; fi
+    grep -q "OBS answers" "$rundir/obs-restart.txt" || log "OBS restart FAILED: going on with the running OBS"
+  fi
   sleep 3
-  "$py" tools/obs.py stream-scene >/dev/null
-  "$py" tools/obs.py scene stream >/dev/null
-  "$py" tools/obs.py reload-overlay >/dev/null || true
-  "$py" tools/obs.py start
-  [ "$stream" = --stream ] && "$py" tools/obs.py stream-start
+  tools/obs-steps.sh $stream 2>&1 | tee -a "$rundir/start.log" || log "OBS steps: a step failed (above); the run goes on"
 else
   log "POG_OBS=0: no overlay tunnel, recording or stream"
 fi

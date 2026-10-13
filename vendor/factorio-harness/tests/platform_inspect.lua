@@ -8,14 +8,15 @@ package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 storage={agent_harness={active={}}}
 defines={events={on_script_path_request_finished=10,on_entity_died=11},shooting={not_shooting=0,shooting_enemies=1},
   controllers={character=1,remote=27,spectator=2},direction={north=0,east=4,south=8,west=12},
-  inventory={chest=1,hub_main=21,asteroid_collector_output=22},build_mode={normal=1},
+  inventory={chest=1,hub_main=21,asteroid_collector_output=22,asteroid_collector_arm=23},build_mode={normal=1},
   build_check_type={manual=1,manual_ghost=2},flow_precision_index={five_seconds=0,one_minute=1},
   entity_status={working=1,waiting_for_source_items=2,full_output=3,marked_for_deconstruction=62},
   space_platform_state={waiting_at_station=6,paused=7}}
 rendering={draw_text=function() return {valid=true,destroy=function() end} end,get_object_by_id=function() return nil end}
 remote={interfaces={}}
 helpers={json_to_table=function(t) return t end}
-prototypes={entity={},item={['oxide-asteroid-chunk']={name='oxide-asteroid-chunk'},inserter={name='inserter'}},recipe={}}
+prototypes={entity={},item={['oxide-asteroid-chunk']={name='oxide-asteroid-chunk'},inserter={name='inserter'}},recipe={},
+  asteroid_chunk={['metallic-asteroid-chunk']={},['carbonic-asteroid-chunk']={},['oxide-asteroid-chunk']={}}}
 local force={name='player',chart=function() end,is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,
   get_spawn_position=function() return {x=0,y=0} end,recipes={}}
 local surface={name='nauvis',index=1}
@@ -209,6 +210,45 @@ ins.drop_target=nil
 local lone=bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}})
 eq(lone.drop_target,nil); eq(lone.drop_tile,'empty-space'); eq(lone.drop_note,'drops into empty space: items it moves are thrown overboard')
 ins.drop_target=hub
+-- Repair on a platform is the game's (shift05 08:03: Astra's hub at 637/1000):
+-- inspect of the hub lists what is damaged and its repair packs, a damaged
+-- entity says how it gets repaired, and repair refuses platform targets.
+hub.health,hub.max_health=637,1000
+collector.health,collector.max_health=50,200
+local hh=bot('inspect',{platform='Starling',position={x=0,y=0}})
+eq(hh.repair_packs,'none'); eq(hh.damaged[1],'asteroid-collector (-2.5,-6.5) 50/200'); eq(hh.damaged[2],'space-platform-hub (0,0) 637/1000')
+assert(hh.repair:find('repair packs from the hub, one entity at a time',1,true),hh.repair)
+eq(bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}}).repair,nil,'not damaged: no note')
+fails(function() bot('repair',{platform='Starling',position={x=0,y=0}}) end,'repair cannot reach a space platform: the game repairs platform entities itself with repair packs from the hub')
+eq(bot('platforms',{platform='Starling'}).platforms[1].damaged[2],'space-platform-hub (0,0) 637/1000')
+hub.health,hub.max_health,collector.health,collector.max_health=nil,nil,nil,nil
+-- flush reaches the platform the same way (the collector has no fluidbox).
+fails(function() bot('flush',{platform='Starling',position={x=-2.5,y=-6.5}}) end,'asteroid-collector has no fluidbox')
+-- Asteroid collector filters (shift05 10:37: Astra could not see the chunk
+-- filters a paste had set): get_filter gives a chunk prototype (a LuaObject
+-- that errors on keys it lacks), shown by name with the slot count and what
+-- the arms hold; configure sets them by chunk name, here through remote view.
+local function chunk(n) return setmetatable({},{__index=function(_,k) if k=='name' then return n end error("LuaAsteroidChunkPrototype doesn't contain key "..k,2) end}) end
+local cfilters={chunk('metallic-asteroid-chunk')}
+collector.filter_slot_count=2
+collector.get_filter=function(i) return cfilters[i] end
+collector.set_filter=function(i,f) assert(f==nil or prototypes.asteroid_chunk[f],'bad chunk'); cfilters[i]=f and chunk(f) or nil end
+local arm_inv=inv({stack('carbonic-asteroid-chunk',1)},2)
+collector.get_inventory=function(i) if i==22 then return out_inv end if i==23 then return arm_inv end end
+local ci=bot('inspect',{platform='Starling',position={x=-2.5,y=-6.5}})
+eq(#ci.filters,1); eq(ci.filters[1],'metallic-asteroid-chunk'); eq(ci.filter_slots,2); eq(ci.filter_mode,nil)
+eq(ci.arm[1].name,'carbonic-asteroid-chunk'); eq(ci.inventories.asteroid_collector_output[1].name,'metallic-asteroid-chunk')
+assert(ci.collector_note:find('no whitelist/blacklist mode',1,true),ci.collector_note)
+local cc=bot('configure',{platform='Starling',position={x=-2.5,y=-6.5},filters={'oxide-asteroid-chunk','carbonic-asteroid-chunk'}})
+eq(cc.filters[1],'oxide-asteroid-chunk'); eq(cc.filters[2],'carbonic-asteroid-chunk'); eq(cc.filter_slots,2)
+eq(bot('inspect',{platform='Starling',position={x=-2.5,y=-6.5}}).filters[2],'carbonic-asteroid-chunk')
+fails(function() bot('configure',{platform='Starling',position={x=-2.5,y=-6.5},filters={'oxide-asteroid-chunk','oxide-asteroid-chunk','oxide-asteroid-chunk'}}) end,'filters requires 0..2 asteroid chunk names')
+fails(function() bot('configure',{platform='Starling',position={x=-2.5,y=-6.5},filters={'iron-plate'}}) end,'unknown asteroid chunk iron-plate; chunks: carbonic-asteroid-chunk, metallic-asteroid-chunk, oxide-asteroid-chunk')
+fails(function() bot('configure',{platform='Starling',position={x=-2.5,y=-6.5},filters={'oxide-asteroid-chunk'},filter_mode='blacklist'}) end,'asteroid collectors have no filter mode')
+eq(cfilters[1].name,'oxide-asteroid-chunk','a refused configure changes nothing')
+-- [] clears every slot.
+eq(#bot('configure',{platform='Starling',position={x=-2.5,y=-6.5},filters={}}).filters,0); eq(cfilters[1],nil); eq(cfilters[2],nil)
+collector.filter_slot_count=nil
 -- describe lists platform on both.
 local d=runtime.dispatch{action='describe',args={},bot='astra'}
 assert(d.actions.inspect.platform and d.actions.configure.platform)

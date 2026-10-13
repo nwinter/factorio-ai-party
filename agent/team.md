@@ -36,6 +36,9 @@ already targets your character.
   building (`board post` with kind `claim` and the area), don't build inside someone else's claim without asking, and
   put shared infrastructure (power poles, main belts) on the board too. Inside your own claim, act without asking. Renegotiate as the base
   grows. Keep one job you own; when you hand it over, take a new one in the same message.
+- A claim whose owner is on another planet (`owner_away` on the board; full `status` shows where everyone is under
+  `teammates`): tell them once. If they have not answered in 10 minutes, go ahead, keep their production running, and
+  note what you did on the claim.
 - Hand items over through a chest: put them in, then post or update the board item with what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
@@ -76,7 +79,8 @@ already targets your character.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character. Each is shown
-  once. A change to your board item, a plan line set for you, or a tell also ends your `sleep`.
+  once, so a command that sends replies to a file you don't read loses them. A change to your board item, a plan line
+  set for you, or a tell also ends your `sleep`.
 - Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished
   since your last request before the shift, and `researched_none_built`: researched technologies whose buildings the
   team has none of.

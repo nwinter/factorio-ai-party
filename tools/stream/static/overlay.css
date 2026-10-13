@@ -241,6 +241,7 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
 .card .model { font-size: 14px; line-height: 1.25; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card .model b { color: #d0d0d0; font-weight: 600; }
 .card .model i { color: #c8c3b8; }
+.card .model .job { color: #e4dfd4; }  /* the agent's current job (plan line or notes "## Now"), ellipsed */
 .card .model .unset { color: var(--faint); font-size: 0.9em; letter-spacing: 0.02em; }
 .card .doing { display: flex; align-items: center; gap: 7px; font-size: 15px; line-height: 1.25; min-width: 0; color: #dcdcdc; }
 .card .doing .txt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }

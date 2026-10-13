@@ -218,7 +218,15 @@ def health(rundir, team, since, window=180, broker=False, stream=False, obs=None
             bad.append("OBS")
     else:
         parts.append(service)
-    parts.append("relay " + ("on" if os.path.exists(os.path.join(rundir, "viewers-relay.on")) else "off"))
+    # the OBS restart before the shift (shift-change.sh / start-team.sh: obs-restart.sh's last line); a failure is
+    # reported, the shift went on with the OBS that ran
+    restart = read(os.path.join(rundir, "obs-restart.txt")).strip()
+    if restart:
+        ok = "OBS answers" in restart
+        parts.append("OBS restarted" if ok else "OBS restart FAILED (" + re.sub(r"^\S+ obs-restart: ", "", restart)[:100] + ")")
+        if not ok:
+            bad.append("OBS restart")
+    parts.append("relay " +("on" if os.path.exists(os.path.join(rundir, "viewers-relay.on")) else "off"))
     span = f"{round(window / 60)} min" if window >= 60 else f"{round(window)} s"
     if errors or faults:
         parts.append(f"harness Lua errors in the first {span}: {len(errors)}" + (f", runtime_fault {sorted(faults)[0]}" if faults else ""))

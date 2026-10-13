@@ -4,7 +4,8 @@
 # 1. --last-run RUN: site/live/status.json's last run becomes RUN (site/status_update.py: "Shift N of the long run").
 # 2. Build: python3 site/build.py --runs-dir RUNS (the main checkout's runs/, where the shift folders are; POG_SITE_RUNS
 #    overrides).
-# 3. Check: site/check.py, site/test_live.py, site/test_longrun.py, site/test_archive.py. Any failure stops here:
+# 3. Check: site/check.py, site/test_live.py, site/test_longrun.py, site/test_archive.py, site/test_agents.py. Any
+#    failure stops here:
 #    nothing is deployed.
 # 4. Deploy: wrangler pages deploy to the preview branch, then to production (main) only if the preview went up.
 # Exit 0 when deployed (or built and checked with --no-deploy), 1 when a step failed (the log says which).
@@ -39,12 +40,19 @@ step "start (runs $runs, out $out${last:+, last run $last})"
 if [ -n "$last" ]; then
   python3 site/status_update.py "$last" --runs-dir "$runs" --status "$status" || fail "status.json update"
 fi
+# each shift's link-preview card, drawn again only when its numbers changed; a failure keeps the site's card
+# (POG_SITE_CARDS=0 skips it: tests)
+if [ "${POG_SITE_CARDS:-1}" != 0 ]; then
+  python3 site/og_card.py --shifts --runs-dir "$runs" || step "shift cards failed (shift pages keep the site's card)"
+fi
 python3 site/build.py --out "$out" --runs-dir "$runs" || fail "build"
 [ "$status" = "$root/site/live/status.json" ] || cp "$status" "$out/live/status.json"  # a test's own status file
 python3 site/check.py "$out" || fail "check.py"
 python3 site/test_live.py || fail "test_live.py"
 python3 site/test_longrun.py || fail "test_longrun.py"
 python3 site/test_archive.py || fail "test_archive.py"
+python3 site/test_agents.py || fail "test_agents.py"
+python3 site/test_moderation.py || fail "test_moderation.py"
 step "built and checked"
 [ $deploy = 1 ] || { step "done (--no-deploy)"; exit 0; }
 for branch in preview main; do

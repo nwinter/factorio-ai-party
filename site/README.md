@@ -19,13 +19,48 @@ repo's `runs/` (or `--runs-dir DIR`): each shift's `scores.jsonl`, the timestamp
 death and loss cuts in `stream-service.log`, and the hosts' Space Age lines in `caster.log`. Without a chain (a
 checkout without the shift folders) the page and its links are left out. Rebuild after a shift to add it.
 
+The page: totals, records (the best shift for each), a milestones table (first of each science pack, technologies
+that matter, rocket counts, the first platform, platform departures and arrivals, planets reached, the first death,
+the first building lost, the first viewer line in the game), charts on the save's game clock with shift starts
+marked and the Pacific time in the hover (science per minute by pack and in all, technologies, rockets), and the
+shift table. Every shift has a page, `/runs/long/shift-N/`: its numbers, milestones, charts, packs made, moments,
+deaths, its video and chapters when `videos.json` has one, and the viewer Q&A from `chat.jsonl` (viewer lines that
+reached the game, the agents' answers that name the viewer) and `caster.log` (the hosts' `viewer_reply` lines).
+
+Viewer lines deleted on YouTube stay off the site (`site/moderation.py`): `tools/stream/viewers.py` writes each
+deletion to `runs/RUN/viewer-deletions.jsonl` with the name and text(s) it removes (an author deletion: every line by
+that name, in every shift), and `site/hidden-viewers.json` (`{"names": [], "texts": []}`, edited by hand) hides a
+viewer's lines or an exact line. Relayed lines match with or without the relay's "@agent " prefix and its trim. The
+agents' and hosts' own lines stay. The shift videos' descriptions (`tools/shift_video.py`) use the same list.
+
+Times come from the score log (every 2 minutes), so a milestone's time is up to 2 minutes late. Science packs made
+add up each counter's rises between score rows and count a fall as 0 (a lost platform takes its production counts
+with it, which made the old per-minute chart go below 0); rates come from that total. Lines from the owner's channel
+account, or that name it, are left out (`keep_line` in `build.py`).
+
+With the long run come `/agents/` and `/timeline/` (`site/agents.py`). `/agents/`: a card per agent (model, maker,
+harness, the stream voice, its numbers across the shifts), records and a sortable comparison table, from
+`tools/agent_stats.py`, which reads each shift's journals, the director's deaths, `caster.log`'s voiced lines and the
+operator inbox. It caches each shift as `runs/RUN/agent-stats.json` (git-ignored; `build.py --stats-cache DIR` puts the
+caches elsewhere) and counts a shift again only when one of its sources changed: about a second per ended shift, a few
+for the live one. `python3 tools/agent_stats.py RUN --print` shows one shift's table. `/timeline/`: research,
+rockets, platforms, planets and deaths in game time, with filters. `/chat/` (`site/highlights.py`): the agents' lines
+spoken on stream and their confessions by shift, searchable (`?q=`, `?agent=`), through `clean()` and `keep_line()`.
+`/search/` (`site/search.py`): one search over agents, shifts, timeline events and chat lines, from
+`search/index.json` (written at build time, loaded when the page opens); results link `/timeline/#eN` and
+`/chat/#sN-I`. The run page ends with the base's time-lapse (`site/timelapse.py`): the snapshots the stream service
+saves once per 10 game minutes in `runs/RUN/basemap/TICK.json` (`tools/stream/basemap_log.py`), all shifts in one
+`/runs/long/timelapse.json` (about 12 KB a snapshot, loaded when the section scrolls into view), a slider with a
+mark per shift and Play. No snapshots, no section.
+
 ### Archive switch and run start (`site/content/site.json`)
 
 `"archive": false` leaves the test history out of the build: the experiments, the runs list and every run page in
 `runs`, the studies and the agent pages (which are made of those runs), and every link to them; the About page is
 then present tense only (no results, no earlier runs, no agent of the earlier runs), the long run page shows shift
 numbers without run ids, and `live/status.json`'s last run is kept only when it is a shift of the run. The nav is
-Live, The run, About. `"archive": true` (or no key) brings it all back.
+Live, The run, Agents, Timeline, About (`/agents/` is the long run's; the per-agent pages `/agents/KEY/` of the test
+runs stay out). `"archive": true` (or no key) brings it all back.
 
 `"run_start": "RUN"` is the run the long run page starts from: the chain of shifts that resumed from it, numbered
 from 1. When RUN resumed from another run's save, game time, technologies, rockets, platforms and planets count from
@@ -48,7 +83,7 @@ npx wrangler pages deploy site/dist --project-name player-of-games --branch prev
 ```
 
 `tools/site-refresh.sh [--last-run RUN] [--no-deploy]` does it all: status.json's last run, build (with the main
-checkout's `runs/`), `check.py`, `test_live.py`, `test_longrun.py`, `test_archive.py`, then preview and production (production only if
+checkout's `runs/`), `check.py`, `test_live.py`, `test_longrun.py`, `test_archive.py`, `test_agents.py`, then preview and production (production only if
 the preview went up). `tools/shift-change.sh` runs it in the background once the previous shift is stopped, with its log
 in `runs/PREV/site-refresh.log`; a failure never blocks the shift (`POG_SITE_REFRESH=0` skips it). It leaves
 `site/live/status.json` modified in the checkout: commit it when convenient.
@@ -182,7 +217,7 @@ It forwards only the fields listed in `docs/LIVE-API.md` and passes every string
 ## Files
 
 - `build.py`: generator (data loading, Markdown renderer, SVG charts, page templates)
-- `check.py`: post-build checks; `test_live.py`, `test_longrun.py`, `test_archive.py`: build tests
+- `check.py`: post-build checks; `test_live.py`, `test_longrun.py`, `test_archive.py`, `test_agents.py`: build tests
 - `content/site.json`: hand-written content
 - `config.json`: settings
 - `static/`: `style.css` (light/dark tokens on top of the art kit, layout), `site.js` (theme toggle, chart hover),

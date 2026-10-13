@@ -26,6 +26,8 @@ sys.dont_write_bytecode = True
 SITE_URL = "https://player-of-games-live.your-subdomain.workers.dev"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 LANE_MAX = 30          # messages kept in the lane (oldest first)
+SEEN_MAX = 5000        # messages remembered by id, for deletions that come later
+AUTHOR_TEXTS_MAX = 200 # lines remembered per author, for author deletions
 TEXT_MAX = 200         # lane cap (YouTube's own limit is 200; the site's too)
 RELAY_MAX = 120        # in-game line cap
 RESERVED = {"operator", "op", "mod", "moderator", "admin", "caster", "host", "hosts", "system", "server", "narrator",
@@ -193,6 +195,19 @@ URGE = r"\b(you|u|y'?all|everyone|every ?body|agents?|bots?|ais?|team|guys) (sho
 STAFF = r"operator|admin|administrator|moderator|mod|developer|dev|devs|streamer|nick|owner|caster|narrator"
 
 
+# A line to the stream's operator or owner (Nick, 2026-10-13: shift05 07:57 Joonazan's "Operator, can you explain why
+# some models are just waiting ticks? ..." went to Haiku as "@haiku Operator, ..."): "Operator, ...", "operator: ...",
+# "hey operator ...", "Nick, ...", or "@operator" / "@NickWinter" / "@Nick" anywhere.
+OPERATOR = re.compile(r"^\W*((hey|hi|hello|yo|dear|ok|okay)\s+)?(the\s+|mr\.?\s+)?(operator|nick\s?winter|nick)\b(?!['’])"
+                      r"\s*([,:!?;—–-]|$|\s+(can|could|would|why|what|how|please|pls)\b)"
+                      r"|(^|[^\w@])@(operator|nick\s?winter|nick)\b", re.I)
+
+
+def to_operator(text):
+    """True for a viewer line addressed to the operator (or Nick, the stream's owner)."""
+    return bool(OPERATOR.search(fold(text or "", leet=False)))
+
+
 def grief(text, agent_names=()):
     f = fold(text, leet=False).strip(" !.?")
     lead = "^" + NAMES + r"(go |just )?"
@@ -325,7 +340,12 @@ class Filter:
             raw = fold(clean_name(m.get("name")), leet=False)
             if raw.replace(" ", "") in RESERVED or raw in self.agent_names:
                 reasons.append("impersonation:name")
-            if impersonation(text, self.agent_names):
+            # "operator: ..." to the operator is no claim to be one, unless it orders the agents ("Operator: all agents
+            # pause") or names one (it would be relayed)
+            crew = re.search(r"\b(agents?|bots?|ais?|everyone|everybody|team|y'?all)\b", f) and not is_question(text)
+            to_op = to_operator(text) and not crew and not directive(text, self.agent_names) and not any(re.search(r"(?<![\w-])@?" + re.escape(n) + r"(?![\w-])", f.casefold())
+                                                  for n in self.agent_names if len(n) >= 2)
+            if impersonation(text, self.agent_names) and not to_op:
                 reasons.append("impersonation:text")
         key = re.sub(r"\W+", " ", unicodedata.normalize("NFKC", clean(text).casefold())).strip()
         while self.recent and now - self.recent[0][0] > 300:
@@ -725,6 +745,9 @@ class Relay:
     while the switch file exists. Viewers the agents voted muted (operator `votes`, read every minute) are skipped."""
 
     ASK_WINDOW = 300.0  # a viewer's follow-up question goes to the same agent; an agent asked recently is skipped
+    # A viewer's line inside their author gap waits for it, other viewers' lines going first (shift05 09:30, Nick:
+    # "'Not sent: too soon' ... does that get queued? was good suggestion"); at most this many lines wait per viewer.
+    AUTHOR_QUEUE = 3
 
     def __init__(self, harness, switch, fn="viewer_say", gap=20.0, author_gap=45.0, max_age=90.0, roster=()):
         self.h, self.switch, self.fn = harness, switch, fn
@@ -751,6 +774,10 @@ class Relay:
         if msg["name"].casefold() in self.muted:
             msg["muted"] = True
             self.dropped["muted"] += 1
+            return
+        if sum(1 for _, a in self.q if a == author) >= self.AUTHOR_QUEUE:
+            self.dropped["author_gap"] += 1  # a viewer's lines wait their turn, a few at a time
+            msg["delivery"] = "too_soon"
             return
         self.q.append((msg, author))
 
@@ -786,6 +813,19 @@ class Relay:
     def names_agent(self, text):
         return bool(self.named_agents(text))
 
+    def called(self, text, name):
+        """Is the agent called by name: at the start of the line ("Sol, ...", "hey sol what ...") or at its end after a
+        comma ("..., sol?")."""
+        t = text.casefold().strip()
+        d = dict(self.roster).get(name)
+        for alias in {name.casefold(), re.sub(r"^pog-", "", name.casefold()), (d or "").casefold()}:
+            if len(alias) < 2:
+                continue
+            a = r"(pog-)?" + re.escape(alias) + r"(?![\w-])"
+            if re.match(r"^\W*((hey|hi|hello|yo|ok|okay|so|and|but|oh)\W+)?" + a, t) or re.search(r",\s*" + a + r"\W*$", t):
+                return True
+        return False
+
     def set_roster(self, roster):
         """[(name, display_name)] in team order; serve.py refreshes it from the snapshot (display names, offline)."""
         self.roster = [(n, d) for n, d in roster if n]
@@ -808,6 +848,14 @@ class Relay:
         addressed longest ago). The harness has no team-wide viewer mention (a viewer's "@everyone" wakes nobody),
         and waking all nine for one line would stop the team."""
         named = self.named_agents(msg["text"])
+        prev = self.asked.get(author)
+        if (named and prev and now - prev[1] < self.ASK_WINDOW and prev[0] in [n for n, _ in self.roster]
+                and prev[0] not in [n for n, _ in named] and not any(at for _, at in named)
+                and not any(self.called(msg["text"], n) for n, _ in named)):
+            # mid-conversation, a teammate named in passing is talked about, not to: the line goes on to the agent this
+            # viewer was talking to (shift05 09:28, SeniorEngineer to Gemini: "can you stop talking to Sol who's on
+            # another planet anyway" went to Sol as "@sol can you stop talking to Sol ...")
+            return [prev[0]], [prev[0]]
         if named:
             return [n for n, _ in named], [n for n, at in named if not at]
         # the channel's staff answering viewers ("Sure, will add"), and lines to a viewer (@someone) or to Nick ("this is
@@ -862,21 +910,33 @@ class Relay:
             return None
         self.refresh_muted(now)
         self.state = "on" if self.state != "missing" else self.state
-        while self.q and (now - self.q[0][0]["t"] > self.max_age or self.q[0][0]["name"].casefold() in self.muted):
-            m, _ = self.q.popleft()
+        for item in list(self.q):  # in place: offer() appends from the feed's thread
+            m = item[0]
+            # a line's age counts from when it may go: its own time, or its viewer's gap ending (author_wait)
             if m["name"].casefold() in self.muted:
                 m["muted"] = True
                 self.dropped["muted"] += 1
-            else:
+            elif now - max(m["t"], m.get("author_wait", m["t"])) > self.max_age:
                 m["delivery"] = "busy"  # waited past max_age behind other viewers' lines
                 self.dropped["stale"] += 1
+            else:
+                continue
+            self.q.remove(item)
         if not self.q or now - self.last < self.gap or now < self.hold:
             return None
-        msg, author = self.q.popleft()
-        if now - self.by_author.get(author, -1e9) < self.author_gap:
-            self.dropped["author_gap"] += 1
-            msg["delivery"] = "too_soon"
+        pick = None
+        for i, (m, a) in enumerate(self.q):
+            ready = self.by_author.get(a, -1e9) + self.author_gap
+            if now < ready:
+                m["delivery"], m["author_wait"] = "waiting", ready  # queued behind this viewer's last line
+                continue
+            if pick is None:
+                pick = i
+        if pick is None:
             return None
+        msg, author = item = self.q[pick]
+        self.q.remove(item)
+        msg.pop("author_wait", None)
         to, wake = self.address(msg, author, now)
         try:
             res = self.dispatch(self.fn, self.line(msg, wake))
@@ -922,8 +982,16 @@ class Relay:
 class Feed:
     """Sources -> filter -> classifier -> lane (+ relay). `lane()` is what serve.py puts into the snapshot."""
 
-    def __init__(self, sources, filt=None, classifier=None, relay=None, log_path=None, record=None, max_age=120.0):
+    def __init__(self, sources, filt=None, classifier=None, relay=None, log_path=None, record=None, max_age=120.0,
+                 inbox=None, deletions=None, log_dir=None):
         self.sources = sources            # {name: source with poll() and status()}
+        self.inbox = inbox                # runs/RUN/operator-inbox.jsonl: viewer lines to the operator (to_inbox)
+        # runs/RUN/viewer-deletions.jsonl: every YouTube deletion, with the name and text(s) it removes, so the site
+        # can leave those lines out (site/moderation.py); an author deletion also drops that author's later messages
+        self.deletions = deletions
+        self.seen = collections.OrderedDict()  # message id -> {author, source, name, text}, the last SEEN_MAX
+        self.by_author = {}                # author key -> {name, texts}
+        self.deleted_authors = set()
         self.filt = filt or Filter()
         self.clf = classifier
         self.relay = relay
@@ -939,10 +1007,51 @@ class Feed:
         self.on_verdict = None             # callback(msg, reasons) for the CLI
         self.verdicts = 0
 
+    def remember(self, m):
+        """What a deletion needs to name what it removes: the message by id, and the author's name and lines."""
+        if not m.get("id"):
+            return
+        self.seen[m["id"]] = {"author": m.get("author"), "source": m.get("source"), "name": m.get("name"), "text": m.get("text")}
+        while len(self.seen) > SEEN_MAX:
+            self.seen.popitem(last=False)
+        if m.get("author"):
+            a = self.by_author.setdefault(m["author"], {"name": None, "texts": []})
+            a["name"] = m.get("name") or a["name"]
+            if m.get("text") and m["text"] not in a["texts"]:
+                a["texts"] = (a["texts"] + [m["text"]])[-AUTHOR_TEXTS_MAX:]
+
+    def preload(self, log_dir, days=2):
+        """Earlier messages from the verdict logs (viewers-*.jsonl in log_dir, the last `days`), so a deletion after a
+        restart still finds its message: rows with an author key (written since deletions are kept) fill both maps."""
+        try:
+            files = sorted(f for f in os.listdir(log_dir) if f.startswith("viewers-") and f.endswith(".jsonl"))
+        except OSError:
+            return
+        cutoff = time.time() - days * 86400
+        for f in files:
+            path = os.path.join(log_dir, f)
+            try:
+                if os.path.getmtime(path) < cutoff:
+                    continue
+                with open(path) as fh:
+                    for line in fh:
+                        try:
+                            row = json.loads(line)
+                        except ValueError:
+                            continue
+                        if isinstance(row, dict) and row.get("id"):
+                            self.remember(row)
+            except OSError:
+                continue
+
     def ingest(self, msgs, dels, now=None):
         now = now or time.time()
         passed = []
         for m in msgs:
+            self.remember(m)
+            if m.get("author") in self.deleted_authors:  # a deleted author's later messages: never shown or relayed
+                self.dropped["deleted"] += 1
+                continue
             if self.rec_f:
                 row = {"dt": round(now - self.rec_start, 2), "source": m["source"], "name": m.get("name"),
                        "text": m.get("text"), "author": m["author"]}
@@ -986,6 +1095,16 @@ class Feed:
                 # above. Only a Clef verdict opens the relay when Clef is configured.
                 relay_ok = self.clf is None or checked == "clef"
                 v["chatter"] = is_chatter(v["text"])
+                if not v.get("staff") and to_operator(v["text"]):
+                    # to the operator: into the operator's inbox, never to an agent unless the line names one too
+                    v["operator"], v["chatter"] = True, False
+                    self.to_inbox(v)
+                    named = self.relay.named_agents(v["text"]) if self.relay else []
+                    if named and relay_ok:
+                        self.relay.offer(v, author)
+                    else:
+                        v["delivery"] = "operator"
+                    continue
                 if self.relay and relay_ok and v["chatter"]:
                     if self.relay.on():
                         self.dropped["relay:chatter"] += 1  # shown, never relayed, and the viewer keeps their slot
@@ -997,7 +1116,23 @@ class Feed:
             for kind, ident in dels:
                 self.delete(kind, ident)
 
+    def to_inbox(self, v):
+        """runs/RUN/operator-inbox.jsonl (operator_inbox.py; the operator's watch reads it): {t, agent: "viewer NAME",
+        text, viewer: true}, no seq (the agents' requests resume by theirs)."""
+        if not self.inbox:
+            return
+        row = {"t": round(v.get("t") or time.time(), 1), "agent": f"viewer {v['name']}", "text": v["text"], "viewer": True,
+               "source": v.get("source")}
+        try:
+            with open(self.inbox, "a") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except OSError as e:
+            log(f"operator inbox: {e}")
+
     def delete(self, kind, ident):
+        self.record_deletion(kind, ident)
+        if kind == "author":
+            self.deleted_authors.add(ident)
         keep = [m for m in self.lane_msgs
                 if not ((kind == "id" and m["id"] == ident) or (kind == "author" and self.authors.get(m["id"]) == ident))]
         if len(keep) != len(self.lane_msgs):
@@ -1008,12 +1143,34 @@ class Feed:
                 [(m, a) for m, a in self.relay.q if not ((kind == "id" and m["id"] == ident) or
                                                           (kind == "author" and a == ident))], maxlen=20)
 
+    def record_deletion(self, kind, ident, now=None):
+        """One row in runs/RUN/viewer-deletions.jsonl: {t, kind: "id"|"author", ident, source, name, texts}."""
+        if kind == "id":
+            m = self.seen.get(ident) or {}
+            name, texts, source = m.get("name"), [m["text"]] if m.get("text") else [], m.get("source")
+        else:
+            a = self.by_author.get(ident) or {}
+            name, texts = a.get("name"), list(a.get("texts") or [])
+            source = next((m["source"] for m in self.seen.values() if m.get("author") == ident and m.get("source")), None)
+        source = source or (ident.split(":", 1)[0].replace("yt", "youtube") if ":" in ident else None)
+        row = {"t": round(now or time.time(), 1), "kind": kind, "ident": ident, "source": source, "name": name,
+               "texts": texts}
+        if not self.deletions:
+            return row
+        try:
+            with open(self.deletions, "a") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except OSError as e:
+            log(f"viewer deletions: {e}")
+        return row
+
     def verdict(self, v, reasons):
         self.verdicts += 1
         for r in sorted({r.split(":")[0] for r in reasons}):  # one count per message and kind
             self.dropped[r] += 1
         if self.log_f:
             row = {"t": round(time.time(), 2), "id": v["id"], "source": v["source"], "name": v["name"],
+                   "author": self.seen.get(v["id"], {}).get("author"),
                    "text": v["text"], "pass": not reasons, "reasons": reasons,
                    "checked": v.get("checked") or ("clef" if v.get("label") else "heuristic"), "label": v.get("label")}
             self.log_f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -1093,9 +1250,11 @@ def add_args(ap, prefix=""):
     ap.add_argument(p + "relay-fn", default="viewer_say", help="the harness's operator action that posts a viewer line")
 
 
-def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, loop=False, roster=()):
+def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, loop=False, roster=(), inbox=None,
+          deletions=None):
     """A Feed from parsed args, or None when no source is configured. roster: [(name, display_name)] in team order,
-    for addressing viewers' questions (serve.py refreshes it with Relay.set_roster)."""
+    for addressing viewers' questions (serve.py refreshes it with Relay.set_roster). inbox: the operator inbox file
+    viewer lines to the operator go to. deletions: the run's viewer-deletions.jsonl."""
     g = lambda k: getattr(a, (prefix + k).replace("-", "_"))  # noqa: E731
     sources = {}
     if g("replay"):
@@ -1116,7 +1275,10 @@ def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, l
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, time.strftime("viewers-%Y%m%d-%H%M%S.jsonl"))
-    return Feed(sources, Filter(agent_names, blocklist), clf, relay, log_path, g("record"))
+    feed = Feed(sources, Filter(agent_names, blocklist), clf, relay, log_path, g("record"), inbox=inbox, deletions=deletions)
+    if log_dir:
+        feed.preload(log_dir)
+    return feed
 
 
 def main():

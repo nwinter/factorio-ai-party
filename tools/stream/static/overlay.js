@@ -251,17 +251,21 @@
       fillAvatar(c.av, a);
       setText(c.name, a.display_name || a.name);
       setText(c.harness, a.harness || "");
-      // motto from `profiles`; an agent that never called `profile` gets a quiet note instead
+      // line two: model, then the agent's current job (a viewer, shift05: "displaying the current plan of each bot
+      // instead of the motto"; model.py job: its team-plan line, else its notes.md "## Now"); without one the motto
+      // from `profiles` (an agent that never called `profile` gets a quiet note instead), else the role
       const unset = a.profile_set === false;
-      const motto = unset ? "profile not set" : a.motto ? "“" + clean(a.motto) + "”" : "";
-      // line two: model, then the motto (or a quiet "profile not set"; the role when there is neither)
-      const msig = [a.model, a.role, motto].join("|");
+      const job = a.job ? clean(a.job) : "";
+      const motto = job ? "" : unset ? "profile not set" : a.motto ? "“" + clean(a.motto) + "”" : "";
+      const msig = [a.model, a.role, job, motto].join("|");
       if (c.model.dataset.sig !== msig) {
         c.model.dataset.sig = msig;
         c.model.textContent = "";
         c.model.append(el("b", "", a.model || "model ?"));
-        if (motto) c.model.append(document.createTextNode(" · "), el(unset ? "span" : "i", unset ? "unset" : "", motto));
+        if (job) c.model.append(document.createTextNode(" · "), el("span", "job", job));
+        else if (motto) c.model.append(document.createTextNode(" · "), el(unset ? "span" : "i", unset ? "unset" : "", motto));
         else if (a.role) c.model.append(document.createTextNode(" · " + a.role));
+        c.model.title = job && a.motto ? "“" + clean(a.motto) + "”" : "";
       }
       c.dot.className = "dot " + a.activity;
       let doing = a.action || "";

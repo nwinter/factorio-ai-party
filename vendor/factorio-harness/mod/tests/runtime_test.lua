@@ -501,6 +501,17 @@ do
   p.surface.find_entities_filtered=function() return {beacon} end
   r=call('transfer',{position=beacon.position,item='speed-module',count=2,direction='to_entity'})
   eq(r.transferred,2); eq(r.inventory,'beacon_modules')
+  -- Inspect gives the module inventory's index (blueprint item requests name it).
+  asm.slots.index=4
+  asm.slots.get_contents=function() return {{name='speed-module',count=2,quality='normal'}} end
+  asm.get_module_inventory=function() return asm.slots end
+  asm.get_fluid_contents=function() return {} end
+  asm.get_recipe=function() return nil end
+  p.surface.find_entities_filtered=function() return {asm} end
+  local mods=call('inspect',{position=asm.position}).modules
+  eq(mods.inventory_index,4); eq(mods.slots,2); eq(mods.contents[1].name,'speed-module'); eq(mods.contents[1].count,2)
+  asm.get_module_inventory=function() return nil end
+  eq(call('inspect',{position=asm.position}).modules,nil)
   prototypes=saved_prototypes
   main={input}
 end
@@ -589,6 +600,32 @@ do
   eq(call('transfer',{position={x=3,y=0},direction='to_player'}).inventory,'assembling_machine_input')
   fails(function() call('transfer',{position={x=3,y=0},item='solar-panel',inventory='rocket_silo_trash',direction='to_entity'}) end,'rocket_silo_trash is take-only (direction=to_player)')
   defines.inventory.rocket_silo_trash=nil; main=kept
+end
+-- A rocket lifts 1000 kg; the game takes more by script and then refuses the
+-- launch (shift04 07:17: 1060 kg aboard). Only what fits goes in; inspect
+-- shows the weight.
+do
+  local weights={['space-platform-foundation']=20000,['firearm-magazine']=10000,['gun-turret']=20000,['solar-panel']=20000}
+  for name,w in pairs(weights) do prototypes.item[name]=prototypes.item[name] or {}; prototypes.item[name].weight=w end
+  local cargo=inv(stack('space-platform-foundation',30),stack('firearm-magazine',28),stack('gun-turret',4),stack(nil,0))
+  cargo.get_contents=function() local out={}; for _,s in ipairs(cargo) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
+  silo.get_inventory=function(i) return ({[5]=silo_input,[7]=cargo})[i] end
+  eq(call('inspect',{position={x=3,y=0}}).rocket_weight,'960/1000 kg')
+  local kept=main
+  main=inv(stack('solar-panel',5))
+  local r=call('transfer',{position={x=3,y=0},item='solar-panel',count=5,inventory='rocket_silo_rocket',direction='to_entity'})
+  eq(r.transferred,2); eq(cargo[4].count,2); eq(main[1].count,3); eq(r.rocket_weight,'1000/1000 kg')
+  eq(r.weight_limited.requested,5); eq(r.weight_limited.fits,2)
+  eq(r.weight_limited.note,'a rocket lifts 1000 kg: 2 of 5 solar-panel (20 kg each) fit')
+  fails(function() call('transfer',{position={x=3,y=0},item='solar-panel',count=1,inventory='rocket_silo_rocket',direction='to_entity'}) end,
+    'the rocket is full by weight (1000/1000 kg of its lift): no solar-panel (20 kg each) fits')
+  eq(main[1].count,3)
+  -- Under the lift: no note.
+  cargo[1].count=29
+  r=call('transfer',{position={x=3,y=0},item='solar-panel',count=1,inventory='rocket_silo_rocket',direction='to_entity'})
+  eq(r.transferred,1); eq(r.weight_limited,nil); eq(r.rocket_weight,'1000/1000 kg')
+  for name in pairs(weights) do prototypes.item[name].weight=nil end
+  main=kept
 end
 p.surface.find_entities_filtered=find_before; main=kept_main
 -- Items merge into a partial stack of the same item before taking an empty slot.

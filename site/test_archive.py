@@ -78,20 +78,24 @@ def main():
 
         out = build(d, dict(content, archive=False, run_start="pub1"), runs)
         pages = sorted(str(p.relative_to(out)) for p in out.rglob("*.html"))
-        assert pages == ["404.html", "about/index.html", "index.html", "live/index.html", "runs/long/index.html"], pages
+        assert pages == ["404.html", "about/index.html", "agents/index.html", "chat/index.html", "index.html", "live/index.html",
+                         "runs/long/index.html", "runs/long/shift-1/index.html", "runs/long/shift-2/index.html",
+                         "search/index.html", "timeline/index.html"], pages
         before = set(content["runs"]) | set(content["studies"]) | {"shake3", "shake4", "smoke-x1"}
         ids = re.compile(r"(?<![\w-])(?:" + "|".join(map(re.escape, sorted(before))) + r"|shake\d+|smoke-[\w-]+|Fable)(?![\w-])")
         for p, t in text_files(out):
             m = ids.search(t)
             assert not m, f"{p.relative_to(out)}: {t[max(0, m.start() - 60):m.end() + 20]!r}"
             for href in re.findall(r'(?:href|src)="(/[^"]*)"', t):
-                assert not href.startswith(("/experiments/", "/studies/", "/agents/")), (p, href)
+                assert not href.startswith(("/experiments/", "/studies/")), (p, href)
+                # the long run's /agents/ (and its #cards); the test runs' agent pages /agents/KEY/ are archive only
+                assert not href.startswith("/agents/") or href.split("#")[0] == "/agents/", (p, href)
                 assert not href.startswith("/runs/") or href.startswith("/runs/long/"), (p, href)
         home = (out / "index.html").read_text()
         nav = re.search(r'<nav class="site-nav".*?</nav>', home, re.S).group(0)
-        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "The run", "About"], nav
+        assert re.findall(r">([^<]+)</a>", nav) == ["Live", "The run", "Agents", "Timeline", "Chat", "Search", "About"], nav
         page = (out / "runs" / "long" / "index.html").read_text()
-        assert "0h01m to 1h01m" in page and "researched the rocket silo" in page and "Dawn" in page
+        assert "0h01m to 1h01m" in page and "Rocket silo" in page and "Dawn" in page and "Oldship" not in page
         about = (out / "about" / "index.html").read_text()
         assert "Shattered Planet" in about and 'id="talk"' in about and "Results so far" not in about
 

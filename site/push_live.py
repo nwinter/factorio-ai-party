@@ -19,7 +19,7 @@ from build import clean, CONFIG  # noqa: E402  (same redaction rules as the stat
 
 AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profile_set", "model", "harness", "role",
               "alive", "activity", "action", "active", "position", "location", "last_said", "camera", "avatar",
-              "combat", "died_at")
+              "combat", "died_at", "job")
 TOP_KEYS = ("now", "tick", "paused", "game_time", "title", "subtitle", "research", "production", "science", "alerts",
             "board", "basemap", "shift")
 CHAT_KEYS = ("seq", "tick", "from", "agent", "text", "t")

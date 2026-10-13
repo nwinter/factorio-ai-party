@@ -45,6 +45,11 @@ sys.path.insert(0, str(ART.parent))
 import avatar as avatar_art  # noqa: E402  (tools/stream/avatar.py, reads the part lists from avatar.js)
 sys.path.insert(0, str(SITE))
 import longrun  # noqa: E402  (site/longrun.py: the long run's shifts from runs/)
+import moderation  # noqa: E402  (site/moderation.py: viewer lines deleted on YouTube or listed by hand)
+import agents as agent_pages  # noqa: E402  (site/agents.py: /agents/ and /timeline/ from tools/agent_stats.py)
+import highlights  # noqa: E402  (site/highlights.py: /chat/, the agents' spoken lines and confessions)
+import search as site_search  # noqa: E402  (site/search.py: /search/ and its index)
+import timelapse  # noqa: E402  (site/timelapse.py: the base over time on the run page)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -76,6 +81,20 @@ _REDACTIONS = [
 # Names of the owner, their accounts and personal tools that appear in some studies. The build fails if any reach
 # dist/; site.json's per-study `rewrite` list is where they get replaced.
 _BLOCKED = re.compile(r"\bNick\b|(?i:account-b|codex-b|claude-b|dropbox|cygnal|peon-ping|account-d)")
+# Chat and host lines from the owner's own channel account, or that name it, are left off the site.
+_OWNER = re.compile(r"(?i)\bnick(?:\s*winter)?\b")
+
+
+def load_long(runs_dir):
+    """The long run as the site shows it (build.py and og_card.py): redacted, the owner's lines and the viewer lines
+    deleted on YouTube or in site/hidden-viewers.json left out."""
+    hidden = moderation.load(runs_dir, os.environ.get("POG_HIDDEN_VIEWERS") or SITE / "hidden-viewers.json")  # tests: their own
+    return longrun.load(runs_dir, clean, start=CONTENT.get("run_start"), keep=keep_line, agents=list(AGENTS),
+                        hide=hidden.hides)
+
+
+def keep_line(text):
+    return not (_BLOCKED.search(text or "") or _OWNER.search(text or ""))
 
 
 def clean(text):
@@ -340,10 +359,13 @@ def fmt_num(v):
     return f"{v:g}"
 
 
-def line_chart(title, series, y_label, x_label="game time (minutes)", step=False, desc=""):
+def line_chart(title, series, y_label, x_label="game time (minutes)", step=False, desc="", hours=False, marks=(), clock=(),
+               x0=0):
     """Inline SVG line chart with legend, direct end labels (<= 4 series), hover readout and a table view.
 
-    series: [{"name": str, "points": [(x_minutes, y)]}] in fixed palette order.
+    series: [{"name": str, "points": [(x_minutes, y)], "var": "--sN", "dash": bool}] in fixed palette order.
+    hours: x ticks in hours of game time; marks: [(x_minutes, label)] dashed verticals (shift starts); clock:
+    [(x_minutes, "Oct 12, 20:17")] read by the hover for the real time; x0: the x axis starts here (a shift's page).
     """
     global _chart_n
     _chart_n += 1
@@ -354,13 +376,16 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
     # right margin fits the direct end labels ("Name 1.2k"), which are only drawn for <= 4 series
     longest = max((len(s["name"]) + len(fmt_num(s["points"][-1][1])) + 1 for s in series if s["points"]), default=0)
     L, R, T, B = 48, (int(18 + 6.4 * longest) if len(series) <= 4 else 16), 14, 36
-    xticks = nice_ticks(max(xs) or 1, 8)
+    if hours:
+        xticks = [round(x0 + v * 60, 6) for v in nice_ticks(((max(xs) or 1) - x0) / 60, 8)]
+    else:
+        xticks = [x0 + v for v in nice_ticks((max(xs) or 1) - x0, 8)]
     yticks = nice_ticks(max(ys) or 1, 5)
     xmax, ymax = xticks[-1], yticks[-1]
     pw, ph = W - L - R, H - T - B
 
     def X(v):
-        return L + pw * v / xmax
+        return L + pw * (v - x0) / ((xmax - x0) or 1)
 
     def Y(v):
         return T + ph * (1 - v / ymax)
@@ -371,7 +396,12 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
         parts.append(f'<line class="grid" x1="{L}" x2="{W-R}" y1="{Y(v):.1f}" y2="{Y(v):.1f}"/>')
         parts.append(f'<text class="tick" x="{L-6}" y="{Y(v)+4:.1f}" text-anchor="end">{fmt_num(v)}</text>')
     for v in xticks:
-        parts.append(f'<text class="tick" x="{X(v):.1f}" y="{H-B+16}" text-anchor="middle">{fmt_num(v)}</text>')
+        tick = f"{v / 60:g}h" if hours else fmt_num(v)
+        parts.append(f'<text class="tick" x="{X(v):.1f}" y="{H-B+16}" text-anchor="middle">{tick}</text>')
+    for mx, mlabel in marks:
+        if x0 <= mx <= xmax:
+            parts.append(f'<line class="mark" x1="{X(mx):.1f}" x2="{X(mx):.1f}" y1="{T}" y2="{T+ph}"/>'
+                         f'<text class="mark-label" x="{X(mx)+3:.1f}" y="{T+10}">{esc(mlabel)}</text>')
     parts.append(f'<line class="axis" x1="{L}" x2="{W-R}" y1="{T+ph}" y2="{T+ph}"/>')
     parts.append(f'<text class="axis-label" x="{L+pw/2}" y="{H-4}" text-anchor="middle">{esc(x_label)}</text>')
 
@@ -389,8 +419,11 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
                 d.append(f"H{X(x):.1f}V{Y(y):.1f}")
             else:
                 d.append(f"L{X(x):.1f},{Y(y):.1f}")
-        parts.append(f'<path class="line" style="stroke:var({var})" d="{" ".join(d)}"/>')
+        dash = ";stroke-dasharray:6 3" if s.get("dash") else ""
+        parts.append(f'<path class="line" style="stroke:var({var}){dash}" d="{" ".join(d)}"/>')
         ex, ey = pts[-1]
+        if not ey:
+            continue  # a line ending at 0 (a pack not made at the shift's end) gets no end dot or label
         parts.append(f'<circle class="end" cx="{X(ex):.1f}" cy="{Y(ey):.1f}" r="4" style="fill:var({var})"/>')
         if len(series) <= 4:
             label_slots.append([Y(ey), X(ex), s["name"], fmt_num(ey)])
@@ -410,17 +443,23 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
         legend = '<ul class="legend">' + "".join(
             f'<li><span class="swatch" style="background:var({s.get("var") or PALETTE[i % 8]})"></span>{esc(s["name"])}</li>'
             for i, s in enumerate(series)) + "</ul>"
-    data = {"L": L, "pw": pw, "xmax": xmax, "W": W, "T": T, "ph": ph, "ymax": ymax, "step": step, "y": y_label,
+    data = {"L": L, "pw": pw, "xmax": xmax, "x0": x0, "W": W, "T": T, "ph": ph, "ymax": ymax, "step": step, "y": y_label,
             "series": [{"name": s["name"], "var": s.get("var") or PALETTE[i % 8], "pts": [[round(x, 2), y] for x, y in s["points"]]}
                        for i, s in enumerate(series)]}
-    # table view
-    rows = []
-    for s in series:
-        for x, y in s["points"]:
-            rows.append(f"<tr><td>{esc(s['name'])}</td><td>{x:.1f}</td><td>{fmt_num(y)}</td></tr>")
+    if clock == "page":
+        data["clock"] = "page"  # the page's one #chart-clock list (long_charts), shared by its charts
+    elif clock:
+        data["clock"] = [[round(x, 2), c] for x, c in clock]
+    # table view: a row per x, a column per series
+    xs_all = sorted({x for s in series for x, _ in s["points"]})
+    vals = [dict(s["points"]) for s in series]
+    fx = (lambda x: longrun.game_time(x * 3600)) if hours else (lambda x: f"{x:.1f}")
+    rows = "".join(f"<tr><td>{fx(x)}</td>" + "".join(f"<td>{fmt_num(v[x]) if x in v else ''}</td>" for v in vals) + "</tr>"
+                   for x in xs_all)
+    heads = "".join(f"<th>{esc(s['name'])}</th>" for s in series) if len(series) > 1 else f"<th>{esc(y_label)}</th>"
     table = (f'<details class="table-view"><summary>Show data as a table</summary><div class="table-wrap"><table>'
-             f'<thead><tr><th>Series</th><th>Game minute</th><th>{esc(y_label)}</th></tr></thead>'
-             f'<tbody>{"".join(rows)}</tbody></table></div></details>')
+             f'<thead><tr><th>{"Game time" if hours else "Game minute"}</th>{heads}</tr></thead>'
+             f'<tbody>{rows}</tbody></table></div></details>')
     return (f'<figure class="chart" id="{cid}"><figcaption><strong>{esc(title)}</strong>'
             f'{f"<span>{esc(desc)}</span>" if desc else ""}</figcaption>{legend}'
             f'<div class="plot">{"".join(parts)}<div class="tip" hidden></div></div>'
@@ -475,17 +514,20 @@ def nav_items():
     if archive():
         return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"),
                 ("/about/", "About")]
-    return [("/", "Live")] + ([("/runs/long/", "The run")] if LONG else []) + [("/about/", "About")]
+    return [("/", "Live")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline"),
+                               ("/chat/", "Chat"), ("/search/", "Search")]
+                              if LONG else []) + [("/about/", "About")]
 
 
-def social_meta(full, site_title, description, path):
-    """Open Graph and Twitter card tags, so a shared link shows the title, a line and the card image (site/og_card.py)."""
+def social_meta(full, site_title, description, path, og=None):
+    """Open Graph and Twitter card tags, so a shared link shows the title, a line and the card image (site/og_card.py).
+    og: (image file, its public path) for a page's own card (a shift's), else the site's."""
     base = CONFIG.get("site_url", "").rstrip("/")
-    img = SITE / "static" / "og.png"
+    img, public = og or (SITE / "static" / "og.png", "/static/og.png")
     if not base or not img.exists():
         return ""
     ver = hashlib.sha256(img.read_bytes()).hexdigest()[:10]
-    image = f"{base}/static/og.png?v={ver}"
+    image = f"{base}{public}?v={ver}"
     tags = [("property", "og:type", "website"), ("property", "og:site_name", site_title), ("property", "og:title", full),
             ("property", "og:description", description)]
     if path:
@@ -499,7 +541,7 @@ def social_meta(full, site_title, description, path):
     return out + (f'<link rel="canonical" href="{esc(base + path)}">\n' if path else "")
 
 
-def page(title, body, active="/", description="", extra_head="", path=None):
+def page(title, body, active="/", description="", extra_head="", path=None, og=None):
     site_title = CONFIG.get("site_title", "Factorio AI Party")
     full = site_title if title == site_title else f"{title} · {site_title}"
     description = description or CONFIG.get("description", "")
@@ -512,7 +554,7 @@ def page(title, body, active="/", description="", extra_head="", path=None):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {ROBOTS_META}<title>{esc(full)}</title>
 <meta name="description" content="{esc(description)}">
-{social_meta(full, site_title, description, path)}<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+{social_meta(full, site_title, description, path, og)}<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&amp;display=swap">
@@ -666,7 +708,7 @@ def build_run_page(rid, run, worlds, chat):
         k = p["agent"]
         a = agent(k)
         ident = (run.get("identities") or {}).get(k, {})
-        lines = [f'<article class="agent-card" style="--ac:{a["color"]}">',
+        lines = [f'<article class="agent-card" style="--ac:{agent_pages.ac(a["color"])}">',
                  f'<header>{avatar(k, "lg")}<div><h3><a href="/agents/{k}/">{esc(a["name"])}</a></h3><p class="model">{esc(a["model"])} · {esc(a["harness"])}</p></div></header>']
         if ident.get("motto"):
             lines.append(f'<p class="motto">“{esc(ident["motto"])}”</p>')
@@ -721,6 +763,288 @@ def _chat_line(c, hl):
 
 
 LONG = None  # the long run (longrun.load), set in main() when the runs folder has a chain of shifts
+# Shift videos uploaded to YouTube (tools/yt_upload.py writes site/content/videos.json): {run id: {id, shift, title,
+# description, chapters, playlist}}. A shift with a video gets an embed on /runs/long/ and its own page.
+VIDEOS = {}
+YT_ID = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
+
+
+def load_videos(path):
+    try:
+        raw = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return {}
+    return {rid: v for rid, v in raw.items() if isinstance(v, dict) and YT_ID.match(str(v.get("id", "")))}
+
+
+def shift_video(s):
+    return VIDEOS.get(s["id"]) if not s.get("empty") else None
+
+
+def shift_href(s):
+    return f'/runs/long/shift-{s["n"]}/'
+
+
+def _naive(d):
+    return d.astimezone().replace(tzinfo=None) if d.tzinfo else d
+
+
+def video_offset(v, t):
+    """Seconds into a shift's video for a local time (scores.jsonl's `t`), from videos.json's `timeline` (each
+    recording's wall-clock span, in video order; tools/yt_upload.py): a time in a gap maps to the next recording's
+    start, one up to 2 minutes before the first to 0:00 (as tools/shift_video.py offset()); None outside it."""
+    x = longrun.parse_t(t) if t else None
+    if not v or not x or not v.get("timeline"):
+        return None
+    x, at = _naive(x), 0.0
+    for i, (a, b) in enumerate(v["timeline"]):
+        a, b = longrun.parse_t(a), longrun.parse_t(b)
+        if not a or not b:
+            return None
+        a, b = _naive(a), _naive(b)
+        if x < a:
+            return at if i else (0.0 if (a - x).total_seconds() <= 120 else None)
+        if x <= b:
+            return at + (x - a).total_seconds()
+        at += (b - a).total_seconds()
+    return None
+
+
+def video_link(n, t, lead=20):
+    """A small "watch this moment" link into shift n's video, starting `lead` seconds before t, or "" (no video, or a
+    time outside it)."""
+    s = next((x for x in (LONG or {}).get("shifts", []) if x.get("n") == n), None)
+    v = shift_video(s) if s else None
+    off = video_offset(v, t)
+    if off is None:
+        return ""
+    return (f' <a class="vlink" href="https://www.youtube.com/watch?v={esc(v["id"])}&amp;t={max(0, int(off) - lead)}s" '
+            f'title="Watch this moment" aria-label="Watch this moment">▶</a>')
+
+
+def video_embed(v, start=0):
+    """Privacy-enhanced embed (no cookies until play), 16:9, lazy."""
+    q = f"?start={int(start)}" if start else ""
+    return (f'<div class="video-wrap"><iframe src="https://www.youtube-nocookie.com/embed/{esc(v["id"])}{q}" '
+            f'title="{esc(v.get("title", "Shift video"))}" loading="lazy" allowfullscreen '
+            f'allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" '
+            f'referrerpolicy="strict-origin-when-cross-origin"></iframe></div>')
+
+
+def description_html(text):
+    """The video's description as paragraphs and lists; the chapter list is left out (the page shows its own)."""
+    text = clean(text).split("\nChapters\n")[0]
+    out = []
+    for block in text.strip().split("\n\n"):
+        lines = [ln for ln in block.split("\n") if ln.strip()]
+        items = [ln[2:] for ln in lines if ln.startswith("• ")]
+        head = [ln for ln in lines if not ln.startswith("• ")]
+        if items and len(head) <= 1:
+            out.append((f"<h3>{esc(head[0])}</h3>" if head else "") +
+                       "<ul>" + "".join(f"<li>{esc(i)}</li>" for i in items) + "</ul>")
+        else:
+            out.append("<p>" + "<br>".join(esc(ln) for ln in lines) + "</p>")
+    return "\n".join(out)
+
+
+def _pt(t, day=True):
+    """'Oct 12, 20:17' (or '20:17') from a local ISO time; '–' without one."""
+    x = longrun.parse_t(t) if t else None
+    if not x:
+        return "–"
+    return x.strftime("%b %-d, %H:%M") if day else x.strftime("%H:%M")
+
+
+def _hours(a, b):
+    x, y = longrun.parse_t(a), longrun.parse_t(b)
+    return (y - x).total_seconds() / 3600 if x and y else 0
+
+
+# every science pack: its chart colour (fixed per pack; the later planet packs reuse a colour, dashed)
+PACK_STYLE = {"automation-science-pack": ("--s8", False), "logistic-science-pack": ("--s6", False),
+              "military-science-pack": ("--s2", False), "chemical-science-pack": ("--s1", False),
+              "production-science-pack": ("--s7", False), "utility-science-pack": ("--s4", False),
+              "space-science-pack": ("--s5", False), "metallurgic-science-pack": ("--s3", False),
+              "electromagnetic-science-pack": ("--s5", True), "agricultural-science-pack": ("--s3", True),
+              "cryogenic-science-pack": ("--s1", True), "promethium-science-pack": ("--s7", True)}
+KIND_LABEL = {"science": "Science", "research": "Research", "space": "Space", "team": "Team"}
+
+
+def pack_rate_series(spm_packs, lo=None, hi=None):
+    out = []
+    for item, lab in longrun.PACKS:
+        pts = [(x, y) for x, y in spm_packs.get(item, []) if (lo is None or x >= lo) and (hi is None or x <= hi)]
+        if pts and any(y for _, y in pts):
+            var, dash = PACK_STYLE[item]
+            out.append({"name": lab, "points": pts, "var": var, "dash": dash})
+    return out
+
+
+def firsts_table(firsts, shift_links=True, filters=False):
+    if not firsts:
+        return '<p class="muted">None yet.</p>'
+    kinds = [k for k in KIND_LABEL if any(f["kind"] == k for f in firsts)]
+    bar = ('<div class="kind-filter" role="group" aria-label="Show milestones of one kind" hidden>'
+           '<button type="button" class="fx-btn small" data-kind="" aria-pressed="true">All</button>'
+           + "".join(f'<button type="button" class="fx-btn small" data-kind="{k}" aria-pressed="false">{KIND_LABEL[k]}</button>'
+                     for k in kinds) + '</div>') if filters and len(kinds) > 1 else ""
+    rows = "".join(
+        f'<tr data-kind="{f["kind"]}"><td><span class="kind kind-{f["kind"]}">{KIND_LABEL[f["kind"]]}</span></td><th scope="row">{esc(f["label"])}{video_link(f["shift"], f["t"], 20 if f["kind"] == "team" else 120)}</th>'
+        f'<td class="num">{esc(longrun.game_time(f["tick"]))}</td><td class="num">{esc(_pt(f["t"]))}</td>'
+        + (f'<td class="num"><a href="/runs/long/shift-{f["shift"]}/">{f["shift"]}</a></td>' if shift_links else "") + "</tr>"
+        for f in firsts)
+    head = ('<th scope="col">Kind</th><th scope="col">Milestone</th><th scope="col">Game time</th><th scope="col">Pacific</th>'
+            + ('<th scope="col">Shift</th>' if shift_links else ""))
+    return (f'{bar}<div class="table-wrap"><table class="firsts"><thead><tr>{head}</tr></thead><tbody>{rows}</tbody></table></div>'
+            '<p class="muted small">Score log every 2 minutes: a time is up to 2 minutes after the event. Deaths and '
+            'losses: the stream director\'s log.</p>')
+
+
+def long_charts(lr, lo=None, hi=None, x0=0):
+    """Science per minute by pack, technologies and rockets on the save's game clock, shift starts marked; one list
+    of Pacific times for the page's hovers."""
+    marks = [(x, f"S{n}") for x, n, _ in lr["bounds"]]
+    inside = (lambda pts: [(x, y) for x, y in pts if (lo is None or x >= lo) and (hi is None or x <= hi)])
+    clock = "page"
+    ps = pack_rate_series(lr["spm_packs"], lo, hi)
+    opts = dict(x_label="game time (hours)", hours=True, marks=marks, clock=clock, x0=x0)
+    charts = []
+    if ps:
+        charts.append(line_chart("Science packs per minute, by pack", ps, "packs per minute",
+                                 desc="10-game-minute windows.", **opts))
+    tot = inside(lr["spm"])
+    if tot:
+        charts.append(line_chart("Science packs per minute, all packs", [{"name": "All packs", "points": tot}],
+                                 "packs per minute", desc="10-game-minute windows.", **opts))
+    charts.append(line_chart("Technologies researched", [{"name": "Technologies", "points": inside(lr["research"])}],
+                             "technologies", step=True, **opts))
+    charts.append(line_chart("Rockets launched", [{"name": "Rockets", "points": inside(lr["rockets"])}], "rockets",
+                             step=True, **opts))
+    times = json.dumps([[x, _pt(t)] for x, t in inside(lr["clock"])]).replace("</", "<\\/")
+    return (f'<script type="application/json" id="chart-clock">{times}</script>'
+            f'<div class="chart-grid">{"".join(charts)}</div>')
+
+
+def shift_stats(s):
+    return "".join([
+        stat("on stream", f'{_hours(s["started"], s["ended"]):.1f} h', _when(s["started"], s["ended"])),
+        stat("game time played", longrun.game_time(s["tick1"] - s["tick0"]), f'{s["game0"]} to {s["game1"]}'),
+        stat("technologies", s["research"], f'+{s["research_new"]}' + (f' · at the end: {s["researching"]}' if s.get("researching") else "")),
+        stat("rockets", s["rockets"], f'+{s["rockets_new"]}'),
+        stat("science / min", "–" if s["spm"] is None else fmt_num(s["spm"]), "shift average"),
+        stat("packs made", f'{s["made_total"]:,}'),
+        stat("deaths / loss alerts", f'{s["deaths"]} / {s["losses"]}'),
+        stat("viewer messages", s["viewer_lines"])])
+
+
+def qa_html(qa, n=None):
+    items = []
+    for q in qa:
+        if q["kind"] == "viewer":
+            who = f'<span class="chip viewer">{esc(q["who"])}</span>'
+        elif q["kind"] == "agent":
+            who = agent_chip(q["who"])
+        else:
+            who = f'<span class="chip host">{esc(q["who"])}</span>'
+        items.append(f'<li class="qa-{q["kind"]}"><span class="c-time">{esc(_pt(q["t"], day=False))}{video_link(n, q["t"], 10)}</span>{who}'
+                     f'<span class="c-text">{esc(q["text"])}</span></li>')
+    if len(items) <= 40:
+        return f'<ol class="chat qa">{"".join(items)}</ol>'
+    # a long transcript: the first 30 lines, the rest one click away
+    return (f'<ol class="chat qa">{"".join(items[:30])}</ol><details class="chat-full"><summary>{len(items) - 30} more lines'
+            f'</summary><ol class="chat qa" start="31">{"".join(items[30:])}</ol></details>')
+
+
+# A shift's own link-preview card (site/og_card.py --shifts renders it from shift_card_facts into OG_SHIFTS, keyed by
+# the facts, so a card whose numbers changed is drawn again); the page uses it only when its key matches.
+OG_SHIFTS = Path(os.environ.get("POG_OG_SHIFTS") or SITE / "og" / "shifts")  # tests point it elsewhere
+OG_CARD_VERSION = "1"
+
+
+def shift_card_facts(s, lr):
+    mine = [f for f in lr["firsts"] if f["shift"] == s["n"]]
+    big = [f["label"] for f in mine if f["kind"] in ("space", "science")] + [f["label"] for f in mine if f["kind"] == "research"]
+    return {"n": s["n"], "when": f"{_when(s['started'], s['ended'])} Pacific",
+            "stats": [[f"+{s['research_new']}", "technologies"], [f"+{s['rockets_new']}", "rockets"],
+                      [f"{s['made_total']:,}", "science packs"], [longrun.game_time(s["tick1"] - s["tick0"]), "game time"]],
+            "firsts": big[:3]}
+
+
+def shift_card_key(facts):
+    return hashlib.sha256((OG_CARD_VERSION + json.dumps(facts, sort_keys=True)).encode()).hexdigest()[:16]
+
+
+def shift_card(s, lr):
+    """The shift's card image when one was rendered for its current facts, else None (the site's card)."""
+    png, key = OG_SHIFTS / f"shift-{s['n']}.png", OG_SHIFTS / f"shift-{s['n']}.key"
+    try:
+        ok = png.exists() and key.read_text().strip() == shift_card_key(shift_card_facts(s, lr))
+    except OSError:
+        ok = False
+    return png if ok else None
+
+
+def shift_summary(s, firsts):
+    """The page's description (search and link previews): the shift's numbers and its biggest firsts."""
+    bits = [f"Shift {s['n']}: {_when(s['started'], s['ended'])} Pacific", f"+{s['research_new']} technologies",
+            f"+{s['rockets_new']} rockets", f"{s['made_total']:,} science packs"]
+    big = [f["label"] for f in firsts if f["kind"] in ("space", "science")][:3]
+    return " · ".join(bits) + (". " + ", ".join(big) + "." if big else ".")
+
+
+def build_shift_page(s, v, lr):
+    done = [x for x in lr["shifts"] if not x.get("empty")]
+    i = done.index(s)
+    prev_l = f'<a href="{shift_href(done[i - 1])}">← Shift {done[i - 1]["n"]}</a>' if i else ""
+    next_l = f'<a href="{shift_href(done[i + 1])}">Shift {done[i + 1]["n"]} →</a>' if i + 1 < len(done) else ""
+    nav = f'<p class="shift-nav">{prev_l}<a href="/runs/long/">All shifts</a>{next_l}</p>'
+    now = ""
+    video = ""
+    if v:
+        watch = f"https://www.youtube.com/watch?v={esc(v['id'])}"
+        chapters = "".join(f'<li><a href="{watch}&amp;t={int(c["at"])}s">{esc(c["time"])}</a> {esc(clean(c["title"]))}</li>'
+                           for c in v.get("chapters") or [])
+        playlist = (f' · <a href="https://www.youtube.com/playlist?list={esc(v["playlist"])}">every shift</a>'
+                    if v.get("playlist") else "")
+        video = (f'{video_embed(v)}<p class="muted small"><a href="{watch}">Watch on YouTube</a>{playlist}</p>'
+                 f'<div class="shift-text">{description_html(v.get("description", ""))}</div>'
+                 + (f'<h2>Chapters</h2><ol class="chapters">{chapters}</ol>' if chapters else ""))
+    mine = [f for f in lr["firsts"] if f["shift"] == s["n"]]
+    lo, hi = s["tick0"] / 3600, s["tick1"] / 3600
+    who = lambda w: agent(w.lower())["name"] if w.lower() in AGENTS else w  # noqa: E731  (the log's spelling varies)
+    deaths = "".join(f'<li><span class="c-time">{esc(_pt(d["t"], day=False))}</span>'
+                     f'{agent_chip(d["who"].lower()) if d["who"].lower() in AGENTS else esc(d["who"])}</li>' for d in s["died"])
+    by = {}
+    for d in s["died"]:
+        by[who(d["who"])] = by.get(who(d["who"]), 0) + 1
+    calls = "".join(f'<li><span class="c-time">{esc(_pt(c["t"], day=False))}</span><span class="chip host">{esc(c["who"])}</span>'
+                    f'<span class="c-text">{esc(c["text"])}</span></li>' for c in s["calls"])
+    plat = (f'<p class="muted small">Platforms built: {esc(", ".join(s["platforms_built"]) or "none")} · '
+            f'lost: {esc(", ".join(s["platforms_lost"]) or "none")}</p>') if s["platforms_built"] or s["platforms_lost"] else ""
+    body = f"""
+{live_banner()}
+<p class="crumbs"><a href="/runs/long/">The long run</a> / Shift {s["n"]}</p>
+<h1>Shift {s["n"]}{now}</h1>
+<p class="meta">{esc(_when(s["started"], s["ended"]))} Pacific · game time {esc(s["game0"])} to {esc(s["game1"])}</p>
+{nav}
+<div class="stats">{shift_stats(s)}</div>
+{video}
+<h2>Milestones</h2>
+{firsts_table(mine, shift_links=False)}
+{f'<h2>The hosts\' calls</h2><p class="muted small">Space Age moments, and research, attacks and losses that matter, as the hosts called them. Times Pacific.</p><ol class="chat calls">{calls}</ol>' if calls else ""}
+{f'<h2>Technologies researched ({len(s["techs"])})</h2><ol class="techs">' + "".join(f'<li><span class="c-time">{esc(longrun.game_time(t["tick"]))}</span>{esc(t["label"])}</li>' for t in s["techs"]) + '</ol><p class="muted small">Game time of the first score row that shows each one.</p>' if s["techs"] else ""}
+{long_charts(lr, lo - 1, hi + 1, x0=max(0, int(lo // 60) * 60))}
+<div class="two-col shift-cols">
+<section>{packs_bars(s["made"], "Packs made") or '<h2>Packs made</h2><p class="muted">None.</p>'}
+{plat}</section>
+<section><h2>Deaths</h2>{f'<p class="muted small">{", ".join(f"{esc(k)} {n}" for k, n in sorted(by.items(), key=lambda kv: -kv[1]))}</p><ol class="deaths">{deaths}</ol>' if deaths else '<p class="muted">None.</p>'}</section>
+</div>
+{f'<h2>Viewers</h2><p class="muted small">Viewer messages that reached the game, the agents\' answers that name the viewer, and the hosts\' answers. Times Pacific.</p>{qa_html(s["qa"], s["n"])}' if s["qa"] else ""}
+{nav}
+"""
+    card = shift_card(s, lr)
+    return page(f"Shift {s['n']}", body, "/runs/" if archive() else "/runs/long/",
+                shift_summary(s, mine), path=shift_href(s), og=(card, f"/static/og/shift-{s['n']}.png") if card else None)
 
 
 def _when(a, b):
@@ -742,18 +1066,141 @@ def long_run_row(lr):
             f'<p class="run-final">{last["research"]} techs, {last["rockets"]} rockets by {esc(last["game1"])}</p></a>')
 
 
+def platforms_table(plats):
+    if not plats:
+        return ""
+    rows = "".join(
+        f'<tr><th scope="row">{esc(p["name"])}</th>'
+        f'<td data-l="Built">{esc(_pt(p["built"]))} <span class="muted">({esc(longrun.game_time(p["built_tick"]))}, '
+        f'<a href="/runs/long/shift-{p["built_shift"]}/">shift {p["built_shift"]}</a>)</span></td>'
+        f'<td data-l="Stopped at">{esc(", ".join(x.capitalize() for x in p["places"]) or "–")}</td>'
+        f'<td data-l="Lost">' + (f'{esc(_pt(p["lost"]))} <span class="muted">({esc(longrun.game_time(p["lost_tick"]))}, '
+                                 f'<a href="/runs/long/shift-{p["lost_shift"]}/">shift {p["lost_shift"]}</a>)</span>'
+                                 if p["lost"] else f'active{", at " + esc(p["at"].capitalize()) if p["at"] else ""}') + '</td></tr>'
+        for p in plats)
+    return (f'<h2 id="platforms">Space platforms</h2><div class="table-wrap"><table class="long-run platforms"><thead><tr>'
+            f'<th scope="col">Platform</th><th scope="col">Built (Pacific)</th><th scope="col">Stopped at</th>'
+            f'<th scope="col">Lost</th></tr></thead><tbody>{rows}</tbody></table></div>'
+            f'<p class="muted small">From the score log every 2 minutes. Lost: gone from the game\'s platform list.</p>')
+
+
+def live_banner():
+    """Shown by site.js only while the live API has a fresh state (the pages are built at shift changes)."""
+    api = CONFIG.get("live_api_url") or ""
+    return (f'<p class="live-banner" data-api="{esc(api)}" hidden><span class="fx-chip fx-chip--red">Live</span> '
+            f'A shift is on now. <a href="/">Watch</a></p>') if api else ""
+
+
+# the firsts worth a headline: (key, label); a "planet:" key takes the first planet reached
+KEY_TIMES = [("pack:chemical-science-pack", "Blue science"), ("tech:rocket-silo", "Rocket silo"),
+             ("rockets:1", "First rocket"), ("pack:space-science-pack", "Space science"), ("planet:", "First planet"),
+             ("rockets:100", "100 rockets"), ("pack:promethium-science-pack", "Promethium science")]
+
+
+def key_times(lr, heading='<h2 id="key-times">Key times</h2>'):
+    """The big firsts with game time, hours on stream to get there (the shifts' own time, breaks left out) and the
+    Pacific time."""
+    done = [s for s in lr["shifts"] if not s.get("empty")]
+    tiles = []
+    for key, lab in KEY_TIMES:
+        f = next((f for f in lr["firsts"] if f["key"] == key or (key.endswith(":") and f["key"].startswith(key))), None)
+        if not f:
+            continue
+        before = sum(_hours(s["started"], s["ended"]) for s in done if s["n"] < f["shift"])
+        cur = next((s for s in done if s["n"] == f["shift"]), None)
+        on_air = before + (_hours(cur["started"], f["t"]) if cur else 0)
+        name = lab if key != "planet:" else f["label"].replace(" reached", "")
+        tiles.append(f'<a class="keytime" href="/runs/long/shift-{f["shift"]}/"><span class="k-label">{esc(name)}</span>'
+                     f'<span class="k-val">{esc(longrun.game_time(f["tick"]))}</span>'
+                     f'<span class="k-sub">game time · {on_air:.1f} h on stream · {esc(_pt(f["t"]))}</span></a>')
+    return (f'{heading}<div class="keytimes">{"".join(tiles)}</div>') if tiles else ""
+
+
+def packs_bars(made, title="Science packs made"):
+    """Each pack's total as a bar (the pack's chart colour; the number in ink)."""
+    have = [(item, lab, made.get(item, 0)) for item, lab in longrun.PACKS if made.get(item)]
+    if not have:
+        return ""
+    top = max(v for _, _, v in have)
+    items = "".join(f'<li><span class="bar-label">{esc(lab)}</span><span class="bar-track"><span class="bar" '
+                    f'style="width:{100 * v / top:.1f}%;background:var({PACK_STYLE[item][0]})"></span></span>'
+                    f'<span class="bar-val">{v:,}</span></li>' for item, lab, v in have)
+    return f'<figure class="bars packs-bars"><figcaption><strong>{esc(title)}</strong></figcaption><ul>{items}</ul></figure>'
+
+
+def run_summary(lr):
+    """The homepage's run so far (site.js / live.js put it under the heading while no shift is live): totals, key
+    times, the latest milestones and the latest shift."""
+    done = [s for s in lr["shifts"] if not s.get("empty")]
+    last = done[-1]
+    planets = sorted({p for s in done for p in s["planets"] if p != "nauvis"})
+    stats = "".join([stat("shifts", len(done)), stat("game time", last["game1"]), stat("technologies", last["research"]),
+                     stat("rockets", last["rockets"]), stat("science packs", f'{sum(lr["made"].values()):,}'),
+                     stat("planets reached", len(planets), ", ".join(p.capitalize() for p in planets))])
+    latest = list(reversed(lr["firsts"][-6:]))
+    items = "".join(f'<li><a href="/runs/long/shift-{f["shift"]}/">{esc(f["label"])}</a>'
+                    f'<span class="muted small">{esc(longrun.game_time(f["tick"]))} · {esc(_pt(f["t"]))} · shift {f["shift"]}</span></li>'
+                    for f in latest)
+    return f"""
+<section id="run-summary" class="run-summary" aria-labelledby="sum-h">
+  <h2 id="sum-h">The run so far</h2>
+  <p class="meta">Up to <a href="{shift_href(last)}">shift {last["n"]}</a>, {esc(_pt(last["ended"]))} Pacific</p>
+  <div class="stats stats-compact">{stats}</div>
+  <div class="sum-cols">
+    <div>{key_times(lr, '<h3>Key times</h3>')}</div>
+    <div><h3>Latest milestones</h3><ul class="latest">{items}</ul>
+      <p><a class="fx-btn" href="/runs/long/">The whole run →</a> <a class="fx-btn ghost" href="{shift_href(last)}">Shift {last["n"]} →</a></p></div>
+  </div>
+</section>"""
+
+
+def records(done):
+    """Bests over the shifts (a shift still on counts with what it has so far)."""
+    def best(key, fmt, low=False):
+        have = [s for s in done if s.get(key) is not None]
+        if not have:
+            return None
+        s = (min if low else max)(have, key=lambda x: x[key])
+        return fmt(s[key]), s
+    out = []
+    for lab, key, fmt, low in [("Most rockets in a shift", "rockets_new", str, False),
+                               ("Most technologies in a shift", "research_new", str, False),
+                               ("Best science / min (shift average)", "spm", fmt_num, False),
+                               ("Most packs made in a shift", "made_total", lambda v: f"{v:,}", False),
+                               ("Most viewer messages in a shift", "viewer_lines", str, False),
+                               ("Fewest deaths in a shift", "deaths", str, True)]:
+        b = best(key, fmt, low)
+        if b and (low or b[1][key]):
+            out.append(f'<a class="record" href="{shift_href(b[1])}"><span class="r-val">{esc(b[0])}</span>'
+                       f'<span class="r-label">{esc(lab)}</span><span class="r-shift">Shift {b[1]["n"]}</span></a>')
+    return f'<div class="records">{"".join(out)}</div>' if out else ""
+
+
 def build_long_run(lr):
     shifts = lr["shifts"]
     done = [s for s in shifts if not s.get("empty")]
     first, last = done[0], done[-1]
-    stats = "".join([stat("shift" if len(done) == 1 else "shifts", len(done), f"{len(shifts) - len(done)} more did not start" if len(shifts) > len(done) else ""),
-                     stat("game time", last["game1"], "on one save"),
-                     stat("technologies", last["research"]),
-                     stat("rockets launched", last["rockets"]),
-                     stat("space platforms", len(last["platforms"]), ", ".join(last["platforms"]))])
+    planets = sorted({p for s in done for p in s["planets"] if p != "nauvis"})
+    active = [p for p in lr["platforms"] if not p["lost"]]
+    lost_p = [p for p in lr["platforms"] if p["lost"]]
+    on_air = sum(_hours(s["started"], s["ended"]) for s in done)
+    stats = "".join([stat("shift" if len(done) == 1 else "shifts", len(done)),
+                     stat("on stream", f"{on_air:.0f} h"),
+                     stat("game time", last["game1"]),
+                     stat("technologies", last["research"], f'last: {last["researching"]}' if last.get("researching") else ""),
+                     stat("rockets", last["rockets"]),
+                     stat("science packs", f'{sum(lr["made"].values()):,}'),
+                     stat("platforms", f'{len(lr["platforms"])} built', f'{len(lost_p)} lost · {len(active)} active'
+                          + (f' ({", ".join(p["name"] for p in active)})' if active else "")),
+                     stat("planets reached", len(planets), ", ".join(p.capitalize() for p in planets)),
+                     stat("agent deaths", sum(s["deaths"] for s in done)),
+                     stat("viewer messages", sum(s["viewer_lines"] for s in done))])
     rows = []
     # Run ids (shakeN) name the test history; without the archive the shift number is enough.
     ids = archive()
+    by_shift = {}
+    for f in lr["firsts"]:
+        by_shift.setdefault(f["shift"], []).append(f)
     for s in shifts:
         rid = f'<span class="muted small">{esc(s["id"])}</span>' if ids else ""
         if s.get("empty"):
@@ -761,42 +1208,59 @@ def build_long_run(lr):
             if ids and s.get("resumed_as"):
                 note = note.rstrip(")") + f'; resumed as {s["resumed_as"]})'
             rows.append(f'<tr class="empty"><th scope="row">–{rid}</th>'
-                        f'<td>{esc(_when(s["started"], s["ended"]))}</td><td colspan="8" class="muted">{esc(note)}</td></tr>')
+                        f'<td data-l="When">{esc(_when(s["started"], s["ended"]))}</td><td colspan="8" class="muted">{esc(note)}</td></tr>')
             continue
-        moments = "".join(f"<li>{esc(m)}</li>" for m in s["moments"][:6])
-        new_rockets = f' <span class="muted">(+{s["rockets_new"]})</span>' if s["rockets_new"] else ""
+        firsts = by_shift.get(s["n"], [])
+        notable = [f for f in firsts if f["kind"] != "research" or f["key"].startswith("tech:planet") or f["key"] in
+                   ("tech:rocket-silo", "tech:space-science-pack", "tech:oil-processing")]
+        ms = "".join(f"<li>{esc(f['label'])}</li>" for f in notable[:5])
+        more = f'<li class="muted"><a href="{shift_href(s)}">+{len(firsts) - len(notable[:5])} more</a></li>' if len(firsts) > len(notable[:5]) else ""
+        video = ' <span class="fx-chip">video</span>' if shift_video(s) else ""
+        now = ""
         rows.append(
-            f'<tr><th scope="row">{s["n"]}{rid}</th>'
-            f'<td>{esc(_when(s["started"], s["ended"]))}{" <span class=\"fx-chip fx-chip--red\">on now</span>" if s.get("running") else ""}</td>'
-            f'<td>{esc(s["game0"])} to {esc(s["game1"])}</td>'
-            f'<td>{s["research"]} <span class="muted">(+{s["research_new"]})</span></td>'
-            f'<td>{"–" if s["spm"] is None else fmt_num(s["spm"])}</td>'
-            f'<td>{s["rockets"]}{new_rockets}</td>'
-            f'<td>{esc(", ".join(s["platforms"]) or "–")}</td><td>{esc(", ".join(p.capitalize() for p in s["planets"]) or "–")}</td>'
-            f'<td>{s["deaths"]} / {s["losses"]}</td><td>{f"<ul class=moments>{moments}</ul>" if moments else ""}</td></tr>')
-    research = line_chart("Technologies researched over game time", [{"name": "Technologies", "points": lr["research"]}],
-                          "technologies", step=True, desc="Across every shift, on the save's own game clock.")
-    spm = line_chart("Science packs per minute", [{"name": "Packs per minute", "points": lr["spm"]}], "packs per minute",
-                     desc="All science packs made, averaged over 10 game minutes.")
+            f'<tr><th scope="row"><a href="{shift_href(s)}">Shift {s["n"]}</a>{rid}{now}{video}</th>'
+            f'<td data-l="When">{esc(_when(s["started"], s["ended"]))}</td>'
+            f'<td data-l="Game time">{esc(s["game0"])} to {esc(s["game1"])}</td>'
+            f'<td data-l="Technologies" class="num">{s["research"]} <span class="muted">+{s["research_new"]}</span></td>'
+            f'<td data-l="Science / min" class="num">{"–" if s["spm"] is None else fmt_num(s["spm"])}</td>'
+            f'<td data-l="Packs made" class="num">{s["made_total"]:,}</td>'
+            f'<td data-l="Rockets" class="num">{s["rockets"]} <span class="muted">+{s["rockets_new"]}</span></td>'
+            f'<td data-l="Deaths / losses" class="num">{s["deaths"]} / {s["losses"]}</td>'
+            f'<td data-l="Viewers" class="num">{s["viewer_lines"]}</td>'
+            f'<td data-l="Milestones">{f"<ul class=moments>{ms}{more}</ul>" if ms or more else ""}</td></tr>')
     crumbs = '<p class="crumbs"><a href="/runs/">Runs</a> / The long run</p>' if archive() else ""
+    vids = [(s, shift_video(s)) for s in shifts if shift_video(s)]
+    videos = "".join(
+        f'<article class="shift-video"><h3><a href="{shift_href(s)}">Shift {s["n"]}</a></h3>{video_embed(v)}'
+        f'<p class="muted small">{esc(clean(v.get("title", "")))}</p></article>' for s, v in vids)
+    videos = f'<h2 id="videos">Shift videos</h2><div class="shift-videos">{videos}</div>' if vids else ""
     body = f"""
 {crumbs}
+{live_banner()}
 <h1>The long run</h1>
-<p class="lede">One world, one factory, played in shifts around the clock: each shift resumes the last one's save with
-the same nine agents, and the game clock runs only while a shift is on. It started {esc(_when(first["started"], first["ended"]).split(" to ")[0])}.</p>
-<div class="stats">{stats}</div>
-<div class="chart-grid">{research}{spm}</div>
-<h2>Shift by shift</h2>
-<p class="muted">Times are Pacific. Science per minute is the shift's average over its game time. Deaths and loss alerts
-are the ones the stream's director cut to. Moments: milestone technologies, rockets, platforms and planets from the
-score log, and the hosts' Space Age calls.</p>
-<div class="table-wrap"><table class="long-run wide"><thead><tr><th scope="col">Shift</th><th scope="col">When</th>
-<th scope="col">Game time</th><th scope="col">Technologies</th><th scope="col">Science / min</th><th scope="col">Rockets</th>
-<th scope="col">Platforms</th><th scope="col">Planets</th><th scope="col">Deaths / loss alerts</th><th scope="col">Moments</th>
+<p class="meta">One save · started {esc(_pt(first["started"]))} Pacific · game clock paused between shifts</p>
+<nav class="jump" aria-label="On this page"><a href="#key-times">Key times</a><a href="#records">Records</a><a href="#milestones">Milestones</a>{'<a href="#platforms">Platforms</a>' if lr["platforms"] else ""}<a href="#charts">Charts</a><a href="#shifts">Shifts</a>{'<a href="#videos">Videos</a>' if vids else ""}</nav>
+<div class="stats stats-compact">{stats}</div>
+{key_times(lr)}
+<h2 id="records">Records</h2>
+{records(done)}
+<h2 id="milestones">Milestones</h2>
+{firsts_table(lr["firsts"], filters=True)}
+{platforms_table(lr["platforms"])}
+<h2 id="charts">Charts</h2>
+<p class="muted small">Game time on the x axis; S1, S2 ...: shift starts. Hover for the Pacific time.</p>
+{long_charts(lr)}
+{packs_bars(lr["made"])}
+<h2 id="shifts">Shifts</h2>
+<div class="table-wrap"><table class="long-run wide"><thead><tr><th scope="col">Shift</th><th scope="col">When (Pacific)</th>
+<th scope="col">Game time</th><th scope="col">Technologies</th><th scope="col">Science / min</th><th scope="col">Packs made</th>
+<th scope="col">Rockets</th><th scope="col">Deaths / losses</th><th scope="col">Viewers</th><th scope="col">Milestones</th>
 </tr></thead><tbody>{"".join(rows)}</tbody></table></div>
+<p class="muted small">Science / min: packs made over the shift's game time. Packs made: each counter's rises between score rows; a fall (a lost platform's counts) is not subtracted. Deaths and loss alerts: the ones the stream's director cut to.</p>
+{videos}
 """
     return page("The long run", body, "/runs/" if archive() else "/runs/long/",
-                "One world over many shifts: research, science, rockets and platforms shift by shift.", path="/runs/long/")
+                "One world over many shifts: milestones, records, charts and every shift.", path="/runs/long/")
 
 
 def build_runs_index(runs, all_worlds):
@@ -879,13 +1343,9 @@ def build_home(runs, all_worlds):
                   ("/runs/", "Runs", f"Every run with its charts and chat; the latest, {runs['shake1']['title']}, reached "
                    f"{sf['techs']} technologies by {sf['game']}."),
                   ("/studies/", "Studies", "Write-ups of the runs: what went wrong, what changed.")]
-    if LONG:
-        last = [s for s in LONG["shifts"] if not s.get("empty")][-1]
-        cards.insert(1, ("/runs/long/", "The long run", f"One world in shifts around the clock: {last['research']} "
-                         f"technologies and {last['rockets']} rockets by {last['game1']} of game time, shift by shift."))
     links = "".join(f'<a class="home-card" href="{href}"><h3>{esc(t)}</h3><p class="muted">{esc(d)}</p></a>'
                     for href, t, d in cards)
-    body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1") + f"""
+    body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1") + (run_summary(LONG) if LONG else "") + f"""
 <section class="home-more" aria-labelledby="more-h">
   <h2 id="more-h">The project</h2>
   <p class="lede">AI agents playing Factorio together, by the same rules as you: no spawned items, no teleporting,
@@ -896,15 +1356,83 @@ def build_home(runs, all_worlds):
     return page(CONFIG.get("site_title", "Factorio AI Party"), body, "/", CONFIG.get("description", ""), extra_head=LIVE_HEAD, path="/")
 
 
+RULES_ALLOWED = ["Walking at character speed", "Mining and crafting at real speed, with a real inventory",
+                 "Placing, inserting and taking within reach", "Setting the research queue", "Importing blueprint strings",
+                 "Construction robots, once researched", "Writing their own scripts on top of the honest actions"]
+RULES_BANNED = ["Creating items or buildings from nothing", "Teleporting", "Seeing map areas nobody has explored",
+                "Changing the game speed of the live world", "Console commands, Lua, or talking to the server directly",
+                "Modifying the harness or the mod"]
+
+
+def build_about_compact():
+    """The public About: numbers, how it works as labelled facts, the rules, the team. Present tense, no history."""
+    team = "".join(f'<li class="team-member" style="--ac:{agent_pages.ac(agent(k)["color"])}">{avatar(k, "lg")}<div><strong>{esc(agent(k)["name"])}</strong>'
+                   f'<span>{esc(agent(k)["model"])}</span><span class="muted">{esc(agent(k)["harness"])}</span></div></li>'
+                   for k in CONTENT["team_order"])
+    labs = sorted({agent(k)["maker"] for k in CONTENT["team_order"] if agent(k).get("maker")})
+    nums = [stat("agents", len(CONTENT["team_order"])), stat("labs", len(labs), ", ".join(labs))]
+    if LONG:
+        done = [x for x in LONG["shifts"] if not x.get("empty")]
+        last = done[-1]
+        nums += [stat("shifts", len(done)), stat("on stream", f'{sum(_hours(x["started"], x["ended"]) for x in done):.0f} h'),
+                 stat("game time", last["game1"]), stat("technologies", last["research"]), stat("rockets", last["rockets"]),
+                 stat("viewer messages", sum(x["viewer_lines"] for x in done))]
+    facts = [
+        ("Players", "9 models from 5 labs, each in its own coding harness (Codex, Claude Code, Grok Build, Antigravity, "
+                    "Muse Code). Same instructions apart from name and model."),
+        ("Controls", "One command-line tool, fh: more than 70 actions (look, walk, mine, craft, build, queue a plan, chat)."),
+        ("Game", "Factorio 2.0.77 with Space Age, Quality and Elevated Rails. A small mod runs each action tick by tick, "
+                 "under survival rules."),
+        ("Clock", "Real time: the game runs while the agents think. Shifts of about 4 hours; the game is paused between "
+                  "shifts."),
+        ("Goal", "The Shattered Planet, at the far end of the Space Age tree. The agents set their own milestones."),
+        ("Teamwork", "Game chat, and a shared board of claims, requests and the team plan. No assigned leader or roles."),
+        ("Stream", "Director cameras follow the action; two AI hosts call the game; agents speak some lines aloud."),
+        ("Viewers", "YouTube chat or the site chat on the live page, no account. Moderated, then into the game chat, "
+                    "marked as a viewer. @name gets an agent's attention. The agents can vote to mute a viewer."),
+    ]
+    dl = "".join(f'<div><dt{' id="talk"' if k == "Viewers" else ""}>{esc(k)}</dt><dd>{esc(v)}</dd></div>' for k, v in facts)
+    run_btn = ' <a class="fx-btn ghost" href="/runs/long/">The run so far</a>' if LONG else ""
+    body = f"""
+<section class="hero">
+  <p class="eyebrow">Live on YouTube</p>
+  <h1>AI agents playing Factorio together, by the same rules as you.</h1>
+  <p class="actions"><a class="fx-btn" href="/">Watch live →</a>{run_btn}</p>
+  <div class="stats stats-compact">{"".join(nums)}</div>
+</section>
+<section>
+  <h2>How it works</h2>
+  <dl class="facts">{dl}</dl>
+</section>
+<section class="fair">
+  <h2>Fair-play rules</h2>
+  <div class="two-col">
+    <div><h3>Allowed</h3><ul class="ticks">{"".join(f"<li>{esc(r)}</li>" for r in RULES_ALLOWED)}</ul></div>
+    <div><h3>Not allowed</h3><ul class="crosses">{"".join(f"<li>{esc(r)}</li>" for r in RULES_BANNED)}</ul></div>
+  </div>
+  <p class="muted small">Enforced in the mod, audited from the logs. An operator fix for a harness bug is announced in chat and logged.</p>
+</section>
+<section>
+  <h2 id="team">The team</h2>
+  <p class="muted small">Names and colours chosen by each agent.</p>
+  <ul class="team">{team}</ul>
+</section>
+"""
+    return page("About", body, "/about/", CONFIG.get("description", ""), path="/about/")
+
+
 def build_about(runs, all_worlds):
     """What the show is, how it works, the rules, the team, how to talk to the agents. With the archive it also has
-    the test history (results, the latest run, links to the experiments); without it, present tense only."""
+    the test history (results, the latest run, links to the experiments); without it, the compact present-tense
+    page (build_about_compact)."""
     arch = archive()
+    if not arch:
+        return build_about_compact()
     team = []
     for k in CONTENT["team_order"]:
         a = agent(k)
         name = f'<a href="/agents/{k}/"><strong>{esc(a["name"])}</strong></a>' if arch else f'<strong>{esc(a["name"])}</strong>'
-        team.append(f'<li class="team-member" style="--ac:{a["color"]}">{avatar(k, "lg")}<div>{name}'
+        team.append(f'<li class="team-member" style="--ac:{agent_pages.ac(a["color"])}">{avatar(k, "lg")}<div>{name}'
                     f'<span>{esc(a["model"])}</span><span class="muted">{esc(a["harness"])}</span></div></li>')
     if arch:
         fable = agent("fable")
@@ -1070,11 +1598,11 @@ def build_agent_page(key, runs, all_worlds, chats):
                     f'{f"<p class={chr(34)}muted small{chr(34)}>{len(mine)} chat messages</p>" if mine else ""}'
                     f'{f"<ul class=quotes>{q}</ul>" if q else ""}</article>')
     head = (f'<p class="crumbs"><a href="/about/">About</a> / <a href="/about/#team">The team</a></p>'
-            f'<div class="agent-head" style="--ac:{a["color"]}">{avatar(key, "xl")}<div><h1>{esc(a["name"])}</h1>'
+            f'<div class="agent-head" style="--ac:{agent_pages.ac(a["color"])}">{avatar(key, "xl")}<div><h1>{esc(a["name"])}</h1>'
             f'<p class="model">{esc(a["model"])} · {esc(a["harness"])}</p>'
             f'{f"<p class=motto>“{esc(motto)}”</p>" if motto else ""}</div></div>')
     # active=None: agent pages belong to no nav section, so nothing is highlighted
-    return page(a["name"], head + '<div class="agent-runs" style="--ac:' + a["color"] + '">' + "".join(rows) + "</div>", None,
+    return page(a["name"], head + '<div class="agent-runs" style="--ac:' + agent_pages.ac(a["color"]) + '">' + "".join(rows) + "</div>", None,
                 f'{a["name"]} ({a["model"]}) in Player of Games.')
 
 
@@ -1194,6 +1722,9 @@ def main():
                     help="where the long run's shift folders are (default: the repo's runs/; read-only)")
     ap.add_argument("--content", default=os.environ.get("POG_SITE_CONTENT"),
                     help="another site.json (tests: the archive switch and run_start; default $POG_SITE_CONTENT)")
+    ap.add_argument("--videos", default=str(SITE / "content" / "videos.json"),
+                    help="the shifts' YouTube videos (tools/yt_upload.py writes it; missing: no videos)")
+    ap.add_argument("--stats-cache", help="where tools/agent_stats.py caches each shift (default: the shift's folder)")
     args = ap.parse_args()
     if args.content:
         global CONTENT, AGENTS
@@ -1208,7 +1739,7 @@ def main():
     all_worlds = {rid: load_scores(r) for rid, r in runs.items()}
     global LONG
     # None without a chain of shifts (or without run_start's folder): no page, no links to it
-    LONG = longrun.load(args.runs_dir, clean, start=CONTENT.get("run_start"))
+    LONG = load_long(args.runs_dir)
     if CONTENT.get("run_start") and not LONG:
         print(f"note: run_start {CONTENT['run_start']} not found in {args.runs_dir}: no run page", file=sys.stderr)
 
@@ -1219,7 +1750,38 @@ def main():
 
     write("index.html", build_home(runs, all_worlds))
     if LONG:
-        write("runs/long/index.html", build_long_run(LONG))
+        global VIDEOS
+        VIDEOS = load_videos(args.videos)
+        lapse = timelapse.frames(LONG, args.runs_dir, game_time)  # site/timelapse.py: the base over time
+        if lapse:
+            write("runs/long/timelapse.json", timelapse.data(lapse))
+        write("runs/long/index.html", timelapse.inject(build_long_run(LONG), timelapse.section(lapse, esc)))
+        for s in LONG["shifts"]:
+            if not s.get("empty"):
+                write(f"runs/long/shift-{s['n']}/index.html", build_shift_page(s, shift_video(s), LONG))
+                card = shift_card(s, LONG)
+                if card:
+                    (out / "static" / "og").mkdir(parents=True, exist_ok=True)
+                    shutil.copy(card, out / "static" / "og" / f"shift-{s['n']}.png")
+        team =[k for k in AGENTS if not AGENTS[k].get("earlier")]
+        stats = agent_pages.collect(LONG, args.runs_dir, team, args.stats_cache, [agent(k)["name"] for k in AGENTS])
+        body, head = agent_pages.build_agents(stats, agent, avatar, esc)
+        write("agents/index.html", page("Agents", body, "/agents/", "Each agent's numbers across the run's shifts.",
+                                        extra_head=head, path="/agents/"))
+        events = agent_pages.timeline_events(LONG, args.runs_dir, team,
+                                             lambda t: longrun.MILESTONES.get(t, t.replace("-", " ")).capitalize(), stats)
+        body, head = agent_pages.build_timeline(events, agent, avatar, esc, game_time)
+        write("timeline/index.html", page("Timeline", body, "/timeline/", "The run's events in game time.",
+                                          extra_head=head, path="/timeline/"))
+        chat_lines = highlights.lines(stats, team, clean, keep_line)
+        body, head = highlights.build_chat(chat_lines, agent, avatar, esc, game_time, team)
+        write("chat/index.html", page("Chat highlights", body, "/chat/", "The agents' lines on stream and their confessions.",
+                                      extra_head=head, path="/chat/"))
+        entries = site_search.index(LONG, stats, events, chat_lines, agent, game_time, team)
+        write("search/index.json", json.dumps(entries, ensure_ascii=False, separators=(",", ":")))
+        body, head = site_search.build_search(entries, esc)
+        write("search/index.html", page("Search", body, "/search/", "Search the agents, shifts, events and chat.",
+                                        extra_head=head, path="/search/"))
     write("about/index.html", build_about(runs, all_worlds))
     if archive():  # the test history: experiments, earlier runs, agent pages (made of those runs), studies
         write("experiments/index.html", build_experiments(runs, all_worlds))

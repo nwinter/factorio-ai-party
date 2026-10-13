@@ -5,11 +5,12 @@ With the eng/bots runtime (detected by the `camera` remote function) it polls `p
 lands it reads `status` for every player index in the run config each round, so the page works against today's
 worlds (e.g. the paused co-op save in world c).
 """
-import math, re, time
+import math, os, re, time
 
+import basemap_log
 import operator_inbox
 from harness import Harness
-from model import SPARK_ITEMS
+from model import SPARK_ITEMS, notes_job
 from work import WorkFeed
 
 PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
@@ -70,7 +71,10 @@ class LiveSource:
         # agents' requests to the operator (tells.lua `operator`): appended to runs/RUN/operator-inbox.jsonl
         self.has_operator = False
         self.inbox_path = operator_inbox.path_for(journals)
-        self.operator_seq = operator_inbox.last_seq(self.inbox_path) if self.inbox_path else 0
+        self.journals = journals
+        self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
+        # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
+        self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
         self.platform_every = 15.0
         self.next_platforms = 0
         self.basemap_every = 60.0  # the site's live map: the base changes slowly and the read walks every building
@@ -189,6 +193,10 @@ class LiveSource:
                 obs["basemap"] = self.h.basemap(ore=ore)
                 if ore:
                     self.next_ore = time.time() + self.ore_every
+                try:  # the site's time-lapse: a snapshot per 10 game minutes in runs/RUN/basemap/
+                    basemap_log.save(self.journals, obs["basemap"])
+                except OSError as e:
+                    errors["basemap_log"] = str(e)
             except Exception as e:
                 errors["basemap"] = str(e)
 
@@ -246,6 +254,8 @@ class LiveSource:
                 if st.get("surface"):  # Space Age: the planet or platform surface the body is on
                     a["surface"], a["platform"] = st["surface"], st.get("platform")
                 a["dead_until_tick"] = st.get("dead_until_tick")
+            if self.journals:
+                a["notes_job"] = self.notes_job(name)
             obs["agents"].append(a)
         # Only `names` become agents: the run's team, or every profile when the run lists none. Profiles outside the
         # team (a human player such as Nick in shake8, fh players eng/players adds) are not agent cards.
@@ -264,6 +274,23 @@ class LiveSource:
         return obs
 
     # ---- work away from the body ----------------------------------------------------------------------------
+    def notes_job(self, name):
+        """The agent's job line from runs/RUN/AGENT/notes.md "## Now" (model.notes_job), or None."""
+        path = os.path.join(self.journals, name, "notes.md")
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            return None
+        hit = self.notes_cache.get(name)
+        if not hit or hit[0] != mtime:
+            try:
+                with open(path, errors="replace") as f:
+                    hit = (mtime, notes_job(f.read(200_000)))
+            except OSError:
+                return None
+            self.notes_cache[name] = hit
+        return hit[1]
+
     def observe_work(self, agents, errors):
         """New journal requests that land away from the agent's body: on a platform (the body never is, when it
         builds there remotely), or AWAY_TILES or more from the body on its own surface."""

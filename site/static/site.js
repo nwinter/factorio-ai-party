@@ -23,6 +23,32 @@
     return v;
   }
 
+  // milestones: show one kind (the buttons are hidden until this script runs, so without it every row shows)
+  document.querySelectorAll('.kind-filter').forEach(function (bar) {
+    var table = bar.nextElementSibling && bar.nextElementSibling.querySelector('table');
+    if (!table) return;
+    bar.hidden = false;
+    bar.addEventListener('click', function (ev) {
+      var b = ev.target.closest('button[data-kind]');
+      if (!b) return;
+      bar.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      table.querySelectorAll('tbody tr').forEach(function (tr) { tr.hidden = !!b.dataset.kind && tr.dataset.kind !== b.dataset.kind; });
+    });
+  });
+
+  // "A shift is on now": the run pages are built at shift changes, so whether a shift is live comes from the live API
+  document.querySelectorAll('.live-banner[data-api]').forEach(function (el) {
+    var api = el.dataset.api.replace(/\/$/, '');
+    if (!api || !window.fetch) return;
+    fetch(api + '/v1/state', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (d && d.state && d.age_s != null && d.age_s < 60 && !d.state.paused) el.hidden = false;
+    }).catch(function () {});
+  });
+
+  // a page's charts can share one list of [game minute, Pacific time] (#chart-clock) for the hover's real time
+  var pageClock = null;
+  try { var pc = document.getElementById('chart-clock'); if (pc) pageClock = JSON.parse(pc.textContent); } catch (e) {}
+
   document.querySelectorAll('figure.chart').forEach(function (fig) {
     var dataEl = fig.querySelector('.chart-data');
     var svg = fig.querySelector('svg');
@@ -45,8 +71,8 @@
       var rect = svg.getBoundingClientRect();
       var scale = d.W / rect.width;
       var px = (ev.clientX - rect.left) * scale;
-      var x = Math.max(0, Math.min(d.xmax, (px - d.L) / d.pw * d.xmax));
-      var sx = d.L + d.pw * x / d.xmax;
+      var x0 = d.x0 || 0, x = Math.max(x0, Math.min(d.xmax, x0 + (px - d.L) / d.pw * (d.xmax - x0)));
+      var sx = d.L + d.pw * (x - x0) / ((d.xmax - x0) || 1);
       cross.setAttribute('x1', sx); cross.setAttribute('x2', sx); cross.setAttribute('visibility', 'visible');
       var rows = '';
       d.series.forEach(function (s, i) {
@@ -59,7 +85,9 @@
           s.name.replace(/</g, '&lt;') + '</span><b>' + v.toLocaleString() + '</b></div>';
       });
       if (!rows) { tip.hidden = true; return; }
-      tip.innerHTML = '<div class="t-head">' + fmtMin(x) + ' · ' + d.y + '</div>' + rows;
+      var clock = d.clock === 'page' ? pageClock : d.clock;
+      var when = clock && clock.length ? valueAt(clock, x) : null;  // the real time (Pacific) at that game time
+      tip.innerHTML = '<div class="t-head">' + fmtMin(x) + (when ? ' · ' + when : '') + ' · ' + d.y + '</div>' + rows;
       tip.hidden = false;
       var left = sx / scale + 12;
       if (left + tip.offsetWidth > rect.width) left = sx / scale - tip.offsetWidth - 12;

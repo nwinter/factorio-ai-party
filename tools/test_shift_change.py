@@ -67,6 +67,11 @@ if [ -n "${SITE_FAILS:-}" ]; then echo "03:00:01 site-refresh: FAILED: deploy to
 echo "03:00:01 site-refresh: done"
 """
 HERDR = STUB + "exit 0\n"
+# tools/obs-restart.sh: its last line says whether OBS answers again
+OBS_RESTART = STUB + """
+if [ -n "${OBS_RESTART_FAILS:-}" ]; then echo "10:59:40 obs-restart: FAILED: OBS does not answer after 90 s: ConnectionRefusedError"; exit 1; fi
+echo "10:59:31 obs-restart: OBS answers after 12 s: active=False reconnecting=False"
+"""
 
 
 def started(calls, name):
@@ -79,7 +84,7 @@ def setup():
     runs, bin_ = os.path.join(tmp, "runs"), os.path.join(tmp, "bin")
     os.makedirs(bin_)
     for name, body in (("stop-team", STUB), ("start-team", START), ("quota", QUOTA), ("ssh", SSH), ("obs", OBS),
-                       ("pgrep", PGREP), ("herdr", HERDR), ("site-refresh", SITE)):
+                       ("pgrep", PGREP), ("herdr", HERDR), ("site-refresh", SITE), ("obs-restart", OBS_RESTART)):
         p = os.path.join(bin_, name)
         open(p, "w").write(body)
         os.chmod(p, 0o755)
@@ -109,6 +114,7 @@ def run(tmp, runs, bin_, state, *args, **env):
              POG_SC_QUOTA=f"{bin_}/quota", POG_SC_SSH=f"{bin_}/ssh", POG_SC_OBS=f"{bin_}/obs", POG_SC_PGREP=f"{bin_}/pgrep",
              POG_SC_HERDR=f"{bin_}/herdr", POG_SC_RUNS=runs, POG_SC_STATE_URL="file://" + state, POG_SC_HEALTH_WAIT="0",
              POG_SC_SITE_REFRESH=f"{bin_}/site-refresh",  # never the real one: it deploys the site
+             POG_SC_OBS_RESTART=f"{bin_}/obs-restart",  # nor the real OBS restart on the box
              STUB_LOG=os.path.join(tmp, "calls.log"), STUB_RUNS=runs, STUB_NAMES=" ".join(NAMES))
     for k in [k for k in e if k.startswith("POG_") and not k.startswith("POG_SC_")]:
         del e[k]
@@ -198,6 +204,7 @@ def dry_run():
                      "POG_TEAM_FILE=agent/team-nine.tsv"):
             assert "  " + line in start, (line, start)
         assert start.startswith(" shake12 240 --stream"), start
+        assert "then restart OBS: " in r.stdout and "  POG_OBS_RESTARTED=1" in start and not started(calls, "obs-restart"), r.stdout
         assert not os.path.exists(os.path.join(runs, ".shift-change.lock"))
         print("dry run: ok")
     finally:
@@ -235,6 +242,19 @@ def change():
         assert calls.index("site-refresh --last-run shake11") > calls.index("stop-team shake11"), calls
         assert "site refresh started" in out and "site refresh: done" in out, out
         assert os.path.exists(os.path.join(runs, "shake11", "site-refresh.log"))
+        # OBS: a new process between stop-team and start-team (2026-10-13 08:29), start-team told not to restart again
+        assert calls.index("stop-team shake11") < calls.index("obs-restart") < calls.index("start-team shake12"), calls
+        assert "  POG_OBS_RESTARTED=1\n" in rest and "OBS restarted;" in out, out
+        assert "OBS answers after 12 s" in open(os.path.join(runs, "shake12", "obs-restart.log")).read()
+        # a failed restart: the shift goes on with the running OBS, the health line says it
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", OBS_RESTART_FAILS="1")
+        assert started(calls, "start-team") and "OBS restart FAILED (going on with the running OBS)" in r.stdout, r.stdout
+        assert "OBS restart FAILED (FAILED: OBS does not answer after 90 s" in r.stdout and r.returncode == 1, r.stdout
+        # POG_OBS_RESTART=0 skips it
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", POG_OBS_RESTART="0")
+        assert r.returncode == 0 and "obs-restart" not in calls and "POG_OBS_RESTARTED" not in calls, calls
         # a failed site refresh never fails the shift
         shutil.rmtree(os.path.join(runs, "shake12"))
         r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", SITE_FAILS="1")

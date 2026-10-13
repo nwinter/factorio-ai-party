@@ -61,6 +61,12 @@ fh call status
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
   (`standing on a transport-belt facing east: it carries you; step off to stay put`); the game moves a character
   standing on a belt. `status.on_belt` shows the same for as long as it stands on one.
+- Full `status` (not `brief`) has `teammates`, one line on where every other agent is (compact output prints it right
+  after `clock:`): agents elsewhere first, grouped by planet, platform or cargo pod, then the ones on your surface,
+  nearest first, with distance and compass direction:
+  `Sol on Vulcanus; opus 25 tiles S (offline); Luna 100 tiles NE`. `dead` and `offline` are marked; a bot is offline
+  after 15 minutes with no request or sleep poll, an attached player when disconnected. Human players and directors are
+  left out.
 - `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
   distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
   your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
@@ -87,6 +93,11 @@ fh call status
   built with `build` and `place_ghosts`; fuel goes in with `refuel` or `transfer`.
 - `configure {position, recipe, quality}` sets a recipe at a quality (the machine and quality must be unlocked); a
   change of quality alone is a change.
+- `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected
+  pipes, tanks, pumps and machine fluidboxes) the entity at `position` belongs to, every fluid or only `fluid`.
+  An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the
+  error lists them. Returns `flushed {fluid: amount}`, `amount`, `index` and `segment {id, extent, size, capacity,
+  entities}`. It leaves the running action and queue alone, and the `pog-guest` group cannot flush.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first
@@ -130,6 +141,9 @@ fh board events --since 40
   messages not shown (seq 1..37): sol 23, luna 12; chat again for them`). Your own messages count as read; writing
   does not skip others' unread ones. After a (non-peek, non-since) read that left some unread, every reply's `team`
   block carries `chat_remaining: K` (the current unread count) until it reaches 0.
+- A line from a teammate who is now somewhere other than you says where: `team.tells` and `team.mentions` lines
+  (`sol (on Vulcanus), 2m ago: ...`), the `chat:` trailer's `latest`, and `away: "on Vulcanus"` on `chat` and `tells`
+  entries. Same planet: nothing is added.
 - With `--format json`, stdout stays one JSON document and the `error:` (or `warning:`) line goes to stderr; `fh
   stream` prints none.
 - The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
@@ -273,6 +287,12 @@ fh sleep 900 --until researched                       # ...or until the research
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
   on the footprint, such as a paste replacing it, with their filters). A ghost on a building yields to the building
   unless you name it (`name: "entity-ghost"`).
+- An asteroid collector: `inspect` shows `filters` (asteroid chunk names), `filter_slots`, `arm` (chunks its arms
+  hold) and its output in `inventories.asteroid_collector_output`. `configure {position, filters}` sets the chunk
+  filters as its GUI does: names from `prototypes.asteroid_chunk` (`metallic-asteroid-chunk`,
+  `carbonic-asteroid-chunk`, `oxide-asteroid-chunk`), up to `filter_slots`; `[]` clears them. The game has no
+  whitelist/blacklist mode for collectors, so `filter_mode` is refused there. With `platform` it works through remote
+  view like the other configure paths.
 - `inspect {platform, position}` and `configure {platform, position, ...}` act on your own space platform by name
   (platform coordinates, hub at 0,0; the whole platform is in sight; configure works through remote view, so a recipe
   change needs an empty, idle machine). There `inspect` adds `construction_blocked` when the entity is marked or has a
@@ -283,6 +303,10 @@ fh sleep 900 --until researched                       # ...or until the research
   that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
   enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
   200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same.
+- The game repairs a platform's entities itself, one entity at a time, with repair packs from the hub; `repair` refuses
+  platform targets (`platform`, or standing on a platform) with that reason. `platforms {platform}` and `inspect` of the
+  hub show `repair_packs` (in the hub, or `none`) and `damaged` (`gun-turret (-6,0) 53/400`, most damaged first, up to
+  10; `damaged_count` past that); `inspect` of a damaged entity there adds the `repair` note.
 - Where a platform's items go: `platforms` shows `hub_trash` per platform, and with `platform` set
   `hub_inserters_without_target` (inserters taking from the hub with nothing to drop into: `(-2.5,3.5) drops onto
   empty-space`), `thrown_overboard` (items in flight off the platform, while the game tracks them), and
@@ -300,9 +324,16 @@ fh sleep 900 --until researched                       # ...or until the research
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
 - `launch {position, platform}` sends the cargo to the platform's hub (a platform waiting for its starter pack gets it
-  as its starter pack). When the game refuses (it gives no reason), the error lists what it may check: a missing rocket,
-  cargo weight against the rocket's lift, automatic requests, a paused platform, then the silo, cargo, platform and
-  destination it saw.
+  as its starter pack). A rocket lifts 1000 kg (item prototype weights; the game takes more by script, then refuses
+  the launch): `transfer` into `rocket_silo_rocket` gives only what fits (`weight_limited {requested, fits, note}`)
+  and fails when nothing fits; its reply, `inspect` of a silo and the `platforms` silo rows show `rocket_weight` /
+  `weight` as `held/lift kg`. `launch` with more aboard fails before the game is asked: `overweight by N kg`, with the
+  cargo by weight. When the game refuses (it gives no reason), the error lists what it may check: a missing rocket,
+  automatic requests, a paused platform, then the silo, cargo, platform and destination it saw.
+- `inspect` of an entity with module slots shows `modules {inventory_index, slots, contents}`. A blueprint entity's
+  module request names that index: `items: [{id: {name: "speed-module"}, items: {in_inventory: [{inventory: 4,
+  stack: 0}, {inventory: 4, stack: 1}]}}]` (stacks count from 0 in blueprint strings). In 2.0 the index is 4 for assemblers, furnaces,
+  chemical plants, crushers and silos, 1 for beacons, 2 for mining drills, 3 for labs.
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
@@ -351,7 +382,7 @@ Gameplay actions use the same mechanics as a human player: items come from the i
 
 Some actions work at a distance, the way a player can through remote view:
 
-- `configure`, `requests` and `launch` in visible chunks
+- `configure`, `flush`, `requests` and `launch` in visible chunks
 - ghosts and deconstruction marks in charted chunks (on your own space platform with `platform`, anywhere on it)
 - `deconstruct {area, tiles}` marks tiles as a planner in tile mode does: `tiles: true` takes every minable tile in the
   area, or name them (`["space-platform-foundation"]`). The game decides each tile; the reply counts `tiles_marked`,
@@ -468,6 +499,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   NAME: ...`); a line written for you counts as yours (it wakes you from `sleep`), other edits as news.
 - A claim overlapping another agent's active claim is posted with a warning. At most 300 items are kept (finished
   ones pruned first, then notes, then the oldest).
+- A claim whose owner is now somewhere other than you says so: `owner_away: "on Vulcanus"` on board items, the overlap
+  warning (`overlaps claim #128 by sol (on Vulcanus): ...`), and the claim in `collect`'s `skipped_claims` and
+  `claimed` (`(claim by sol, on Vulcanus)`).
 - `board_events {since_seq, limit}` (for overlays) returns `{seq,tick,by,id,change,title,kind,owner,requested_by,status,text}`
   oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, `note`, or `edited`
   (the plan). A finished technology is an event with no item: `by:"research"`, `kind:"research"`, `title` the
@@ -525,8 +559,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   name, several (an array or `"luna,sol"`), or `team` (also `everyone`, `all`) for every agent but you. Each recipient
   gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
-  fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`). `tells {since?, limit?}`
-  returns the tells you sent or received `{seq,tick,from,to,team?,text}`; the operator path returns every tell, which
+  fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`), and `away` for recipients on
+  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}`
+  returns the tells you sent or received `{seq,tick,from,away?,to,team?,text}`; the operator path returns every tell, which
   the stream shows on its logistics ticker (`-> Sol: text`, never voiced). CLI: `fh tell luna "text"`,
   `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells --since N`.
 - `operator {text}` (1..500 characters, one line; longer is cut and the reply carries `cut {length, kept}`) files a
