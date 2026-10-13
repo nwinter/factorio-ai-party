@@ -60,6 +60,17 @@ DEFAULTS = {
     "max_age": 120.0,              # a clip not played within this long is dropped
     "stats_every": 30.0,
     "play_timeout": 8.0,           # a replay segment live this long with the clip not on air is ended
+    # key battles (onecam.py watch_battle; Nick on the 12:58 Demolisher replay: "a few seconds on Nauvis, several
+    # seconds of an empty field ... replay wasn't long enough and had irrelevant camera shots"): module doc
+    "buffer_s": 45.0,              # the OBS replay buffer's length (the pog profile's setting, not changed here)
+    "battle_margin": 4.0,          # a window is saved while it is this far inside the buffer
+    "battle_min": 15.0,            # a battle clip is this long ...
+    "battle_per_piece": 0.5,       # ... plus this per piece lost (59 turrets: 40 s) ...
+    "battle_cap": 40.0,            # ... at most this (and buffer_s - battle_margin)
+    "battle_footage": 8.0,         # less on-air footage of the battle than this: no clip
+    "battle_end_s": 5.0,           # quiet this long: the end window is saved (the replay airs once the battle is over)
+    "battle_live_frac": 0.9,       # the program showed this share of the battle live: no replay of it
+    "battle_gap": 2.5,             # seconds: footage samples further apart than this are separate runs
 }
 
 
@@ -95,6 +106,9 @@ class Replays:
         self.scene_ready = False
         self.next_watch = 0
         self.refreshed = None  # segment id whose banner page was reloaded
+        self.battle = None     # the key battle being covered: {key, info, shown: [t], parts: {part: score}, ...}
+        self.battle_keep = {}  # battle key -> the part to air ("start" / "end"), or "none", once it is over
+        self.battle_areas = deque(maxlen=8)  # (until, position+surface, extent): losses there are the battle's
         if start:  # selftest drives work() by hand
             threading.Thread(target=self.run, daemon=True).start()
 
@@ -112,11 +126,15 @@ class Replays:
         return None
 
     def max_age(self, c):
+        if c.get("battle"):
+            return 1200.0  # saved at its start, aired after a battle that may last minutes
         return self.cfg["fight_max_age"] if c.get("fight") or c.get("position") else self.cfg["max_age"]
 
     def waiting(self, c, now):
         """True while the fight a clip is about (or, for a death, a fight within fight_near) is still going on."""
         q = self.cfg["quiet_s"]
+        if c.get("battle"):  # until the director says the battle is over (quiet battle_after) and a part is chosen
+            return c["battle"] not in self.battle_keep
         if c.get("fight"):
             f = self.fights.get(c["fight"])
             return bool(f and now - f["last"] < q)
@@ -141,6 +159,7 @@ class Replays:
             by_name = {a["name"]: {k: a.get(k) for k in ("position", "surface")} for a in snap.get("agents") or []}
             self.frames.append((now, {s: dict(c) for s, c in (cams or {}).items()}, by_name))
         self.watch_fights(snap, cams or {}, now)
+        self.watch_battle(snap.get("battle"), snap, cams or {}, now)
         self.judge_losses(now)
 
     def shows(self, slot, cam, fight, by_name):
@@ -213,6 +232,111 @@ class Replays:
         for key in [k for k in self.cover if k not in self.fights]:
             del self.cover[key]
 
+    # ---- key battles -------------------------------------------------------------------------------------------
+    def shows_battle(self, main, info, by_name):
+        """The camera on air shows the battle: the agent fighting in it followed, or the battle's spot on the frame's
+        surface inside the frame (its area may reach in from just outside). Another surface, another place: no."""
+        fr = main.get("frame")
+        if not fr:
+            return False
+        if fr.get("follow") and fr["follow"] == info.get("agent"):
+            a = by_name.get(fr["follow"]) or {}
+            return (a.get("surface") or "nauvis") == info["position"].get("surface", "nauvis")
+        return in_frame(fr, info["position"], by_name, -min((info.get("extent") or 0) / 2, 15.0))
+
+    def battle_len(self, info):
+        c = self.cfg
+        return max(c["battle_min"], min(c["battle_cap"], c["buffer_s"] - c["battle_margin"],
+                                        c["battle_min"] + c["battle_per_piece"] * (info.get("lost") or 0)))
+
+    def runs(self, ts, lo, hi):
+        out = []
+        for t in ts:
+            if not lo <= t <= hi:
+                continue
+            if out and t - out[-1][1] <= self.cfg["battle_gap"]:
+                out[-1][1] = t
+            else:
+                out.append([t, t])
+        return out
+
+    def battle_losses(self, b, lo, hi):
+        return sum(1 for t in b["loss_ts"] if lo <= t - self.cfg["loss_lag"] <= hi)
+
+    def save_battle(self, b, part, start, end, now):
+        """Save the buffer now for this window of the battle's on-air footage (it airs once the battle is over)."""
+        score = self.battle_losses(b, start, end) * 10 + (end - start)
+        b["parts"][part] = score
+        b["saved_to"] = end
+        info = b["info"]
+        self.queue_pending({"kind": "battle", "label": info.get("label") or "Battle", "battle": b["key"],
+                            "battle_part": part, "agent": None, "agent_name": info.get("agent"),
+                            "position": info["position"], "save_at": now, "show_from": start, "show_to": end})
+        self.log(f"[replays] battle {part}: {end - start:.0f} s of on-air footage ({b['key']}, score {score:.0f})")
+
+    def watch_battle(self, info, snap, cams, now):
+        """A key battle (snapshot battle, onecam.py): what the program showed of it, sampled every tick; its start
+        window saved once the footage fills a clip (the buffer holds only buffer_s), its end window saved when it
+        goes quiet if that one has more losses; when it is over, the better one airs, unless the program showed
+        nearly all of the battle live. No on-air footage of the battle's surface and area: no replay."""
+        cfg = self.cfg
+        b = self.battle
+        if b and (not info or info["key"] != b["key"]):
+            self.finish_battle(now)
+            b = None
+        if not info:
+            return
+        if not b:
+            b = self.battle = {"key": info["key"], "info": info, "shown": [], "parts": {}, "saved_to": -1e9,
+                               "loss_ts": set()}
+        b["info"] = info
+        by_name = {a["name"]: {k: a.get(k) for k in ("position", "surface")} for a in snap.get("agents") or []}
+        if not self.playing and self.shows_battle((cams or {}).get("main") or {}, info, by_name):
+            b["shown"].append(now)
+        for f in snap.get("fights") or []:  # loss moments inside the battle's area: what makes a window worth it
+            p = f.get("position") or {}
+            q = info["position"]
+            if p.get("x") is not None and (p.get("surface") or "nauvis") == q.get("surface", "nauvis") and \
+                    ((p["x"] - q["x"]) ** 2 + (p["y"] - q["y"]) ** 2) ** 0.5 <= (info.get("extent") or 0) / 2 + 60:
+                b["loss_ts"].update(f.get("losses") or [])
+        L = self.battle_len(info)
+        lo = now - (cfg["buffer_s"] - cfg["battle_margin"])
+        runs = self.runs(b["shown"], max(lo, b["saved_to"]), now)
+        if not runs:
+            return
+        r = max(runs, key=lambda r: r[1] - r[0])
+        if "start" not in b["parts"] and r[1] - r[0] >= L:
+            self.save_battle(b, "start", r[0], r[0] + L, now)  # from its first footage on air
+        elif now - info["last"] >= cfg["battle_end_s"] and "end" not in b["parts"] and r[1] - r[0] >= cfg["battle_footage"] \
+                and info["last"] > b["saved_to"] - cfg["battle_end_s"]:
+            end = r[1]
+            start = max(r[0], end - L)
+            if not b["parts"] or self.battle_losses(b, start, end) * 10 + (end - start) > max(b["parts"].values()):
+                self.save_battle(b, "end", start, end, now)
+
+    def finish_battle(self, now):
+        b, self.battle = self.battle, None
+        info = b["info"]
+        self.battle_areas.append((now + 300, info["position"], info.get("extent") or 0))
+        span = max(1.0, info["last"] - info["first"])
+        live = sum(r[1] - r[0] + 1 for r in self.runs(b["shown"], info["first"], info["last"] + 1))
+        if not b["parts"]:
+            keep, why = "none", "no on-air footage of it" if not b["shown"] else "too little on-air footage of it"
+        elif live / span >= self.cfg["battle_live_frac"]:
+            keep, why = "none", f"the program showed {live / span:.0%} of it live"
+        else:
+            keep = max(b["parts"], key=b["parts"].get)
+            why = f"the {keep} window ({live:.0f} s of {span:.0f} s were on air)"
+        self.battle_keep[b["key"]] = keep
+        self.log(f"[replays] battle over ({info.get('label')}): replay {'none, ' if keep == 'none' else ''}{why}")
+
+    def in_battle_area(self, p, now):
+        return any(now < until and p and p.get("x") is not None and
+                   (p.get("surface") or "nauvis") == q.get("surface", "nauvis") and
+                   ((p["x"] - q["x"]) ** 2 + (p["y"] - q["y"]) ** 2) ** 0.5 <= ext / 2 + 60
+                   for until, q, ext in list(self.battle_areas) +
+                   ([(now + 1, self.battle["info"]["position"], self.battle["info"].get("extent") or 0)] if self.battle else []))
+
     def footage(self, w, lo, hi, gap=2.5):
         """The longest stretch in [lo, hi] in which the main view (the camera on air; in a trio the big tile) showed
         w's spot -> (start, end) or None. Only the main view: a replay plays the whole program recording, so footage
@@ -234,6 +358,9 @@ class Replays:
         for w in [w for w in self.loss_wait if now >= w["t_loss"] + cfg["loss_watch"]]:
             self.loss_wait.remove(w)
             label, p = w["text"] or "Loss", w["position"] or {}
+            if self.in_battle_area(p, now):
+                self.log(f"[replays] skipped loss: part of the key battle's replay ({label})")
+                continue
             run = self.footage(w, w["t_loss"] - cfg["loss_before"], w["t_loss"] + cfg["loss_watch"])
             if not run or run[1] - run[0] < cfg["loss_min_s"]:
                 self.log(f"[replays] skipped loss: the program showed its spot "
@@ -367,6 +494,11 @@ class Replays:
             return
         if now - c["show_to"] > self.max_age(c):
             self.log(f"[replays] dropped {c['id']} (never got a free moment, or its fight never ended)")
+            self.next_clip()
+            return
+        keep = self.battle_keep.get(c.get("battle")) if c.get("battle") else None
+        if keep is not None and keep != c["battle_part"]:
+            self.log(f"[replays] dropped {c['id']}: not the battle's replay ({c['battle_part']} window; keeping {keep})")
             self.next_clip()
             return
         if self.waiting(c, now):
