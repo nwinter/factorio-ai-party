@@ -106,6 +106,29 @@ return function(api)
     if not on_spot(p, cam, surface) then pcall(function() p.teleport({x=cam.position.x, y=cam.position.y}, surface) end) end
     pcall(function() p.zoom = cam.zoom end)
   end
+  -- The map's alert markers (big yellow triangles over the base in the site's terrain frame, 2026-10-13) are the
+  -- camera player's own alerts drawn on the chart: a map shot turns that player's alerts off (disable_alert, per
+  -- alert type) and the next camera call, or release, turns back on the ones it turned off (state.map_alerts).
+  local function alerts_off(p)
+    local st = api.state()
+    st.map_alerts = st.map_alerts or {}
+    local off = st.map_alerts[p.index] or {}
+    for name, t in pairs(defines.alert_type or {}) do
+      local ok, on = pcall(function() return p.is_alert_enabled(t) end)
+      if ok and on and pcall(function() p.disable_alert(t) end) then off[#off+1] = name end
+    end
+    st.map_alerts[p.index] = off[1] and off or nil
+  end
+  local function alerts_back(p)
+    local st = api.state()
+    local off = st.map_alerts and st.map_alerts[p.index]
+    if not off then return end
+    for _, name in ipairs(off) do
+      local t = defines.alert_type and defines.alert_type[name]
+      if t ~= nil then pcall(function() p.enable_alert(t) end) end
+    end
+    st.map_alerts[p.index] = nil
+  end
   local function director(index)
     assert(type(index) == 'number' and index == math.floor(index) and index >= 1, 'player must be a player index')
     local p = game.get_player(index)
@@ -117,6 +140,7 @@ return function(api)
     assert(type(args) == 'table', 'camera takes a JSON object')
     local p = director(args.player)
     local cams = store()
+    alerts_back(p)  -- after a map shot (a map shot turns them off again below)
     if args.release == true then
       local had = cams[p.index]
       cams[p.index] = nil
@@ -135,6 +159,7 @@ return function(api)
       cams[p.index] = cam
       open_map(p, cam, surface)
       clean_view(p)
+      alerts_off(p)
       return {ok=true, player=p.index, camera=M.describe(p.index)}
     end
     local cam = {zoom=1, smooth=args.smooth ~= false}
