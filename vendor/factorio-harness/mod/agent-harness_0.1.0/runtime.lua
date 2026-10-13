@@ -50,6 +50,8 @@ local function state() return storage.agent_harness end
 M.crafting=require('crafting'){state=state}
 M.claims=require('claims'){state=state}
 M.belt=require('belt')()
+-- Queues carried over a hot install (carry.lua: notes them while this loads).
+M.carry=require('carry'){state=state}
 M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
   profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)); M.nametags.refresh(b) end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
@@ -3959,6 +3961,7 @@ local function idle_tick()
 end
 local dispatch_request
 function M.dispatch(request)
+  M.carry.carry()
   -- Operator tools (RCON, never fh) read and answer the board as `operator`
   -- without a player. A failure must stop nobody (the bootstrap stops player 1).
   if request.operator==true then
@@ -4009,6 +4012,8 @@ function M.dispatch(request)
       -- A chat read that left messages unread is repeated until they are read.
       local left=request.action~='chat' and M.chat and M.chat.left(p.index)
       if left then result.team=result.team or {}; result.team.chat_remaining=left end
+      local updated=M.carry.take(p.index)
+      if updated then result.team=result.team or {}; result.team.harness_updated=updated end
       -- The first reply of a shift: plan goals, research since the agent's last shift, researched and none built.
       local ok,shift=pcall(M.research.shift_block,p,last_call,M.board.plan_for(M.board.who(p)))
       if not ok then local s=state(); s.research_errors={count=((s.research_errors or {}).count or 0)+1,last=tostring(shift),tick=game.tick}
@@ -4241,6 +4246,7 @@ function M.tick(event)
   end
 end
 function M.tick_body(event)
+  M.carry.carry()
   idle_tick()
   M.research.tick(event.tick)
   M.bots.tick(event.tick)
