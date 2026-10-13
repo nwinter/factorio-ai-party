@@ -132,6 +132,20 @@ def fmt_count(n):
 AT_RE = re.compile(r"^([\w-]+)->([\w-]+) (\d+)%$")
 
 
+# Buildings only a space platform has, and asteroid attackers: a loss line (no surface) with one of these is on a platform
+SPACE_HIT = re.compile(r"space platform hub|space-platform-hub|asteroid collector|asteroid-collector|thruster|crusher|"
+                       r"asteroid", re.I)
+HUB_LOST = re.compile(r"space[ -]platform[ -]hub", re.I)
+
+
+def platform_place(p):
+    """Where a platform is, for the hosts: "in orbit of Vulcanus", "travelling from Nauvis to Vulcanus"."""
+    w = platform_where(p)
+    if w["route"]:
+        return f"travelling from {w['route']['from']} to {w['route']['to']}"
+    return f"in orbit of {w['where']}" if w["where"] and w["where"] != "in transit" else "in transit"
+
+
 def platform_where(p):
     """A platform row (score + `platforms` detail) for the page: where it is or its route with progress, speed.
     `at` is a location name or "from->to N%" (space.lua); speed is LuaSpacePlatform.speed, shown x60 as km/s."""
@@ -311,6 +325,9 @@ class Model:
         self.space = {"rockets": 0, "planets": [], "platforms": []}
         self.space_seen = None  # moment keys already true; None until the first observation seeds it silently
         self.moments = deque(maxlen=8)
+        # platforms by name as last seen (to name one that is destroyed), reads each has been missing, hub losses
+        self.platform_last, self.platform_missing, self.hub_losses = {}, {}, deque(maxlen=20)
+        self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
         self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
         self.fights = {}  # key -> fight still reported (attacked chunk, loss, agent in combat), for replays.py
         self.space_age = bool(run.get("space_age")) or "Space Age" in (run.get("subtitle") or "")
@@ -375,6 +392,7 @@ class Model:
             sp["platforms"] = [p for p in sp.get("platforms") or []
                                if p.get("hub", True) and p.get("state") != "waiting_for_starter_pack"]
             self.space = sp
+            self._platforms_lost(now)
         if obs.get("space") is not None or any(a.get("surface") for a in obs.get("agents", [])):
             self._space_moments(now)
         for w in obs.get("work") or []:
@@ -456,7 +474,10 @@ class Model:
         if ag.seen and ag.alive and not alive and connected and ag.connected:
             ag.died_at = now
             ag.bump(5, now)
-            self.alert("death", f"{ag.display_name} died", key=f"death:{ag.name}:{int(now // 30)}", agent=ag.name)
+            where = where_label(ag.surface, ag.platform) if ag.surface else None
+            self.alert("death", f"{ag.display_name} died" + (f" on {where}" if where and where != "Nauvis" else ""),
+                       key=f"death:{ag.name}:{int(now // 30)}", agent=ag.name,
+                       facts={"headline": "agent_death", "agent": ag.display_name, "where": where})
         ag.alive = alive
         ag.connected = connected
         ag.dead_until_tick = a.get("dead_until_tick")
@@ -782,6 +803,9 @@ class Model:
             self.alert("power", f"Low power: {starved} of {machines} machines starved", key="power", ttl=90)
 
     def _ingest_event(self, e, now):
+        e = self._on_platform(e)
+        if e["kind"] == "loss" and HUB_LOST.search(e["text"]):
+            self.hub_losses.append((now, e.get("platform"), e["text"]))
         ag = self.agents.get(e.get("agent")) if e.get("agent") else None
         if e["kind"] == "attack" and ag:
             ag.bump(6, now)
@@ -797,14 +821,46 @@ class Model:
         self.alert(e["kind"], e["text"], key=e.get("key") or f"{e['kind']}:{e['text']}", agent=e.get("agent"),
                    ttl=e.get("ttl", 60), position=p)
 
-    def alert(self, kind, text, key=None, agent=None, ttl=45, position=None):
+    def alert(self, kind, text, key=None, agent=None, ttl=45, position=None, facts=None):
         now = time.time()
         key = key or f"{kind}:{text}"
         if key in self.alert_keys and now - self.alert_keys[key] < ttl:
             return
         self.alert_keys[key] = now
-        self.alerts.append({"id": f"{key}:{int(now)}", "key": key, "kind": kind, "text": text, "agent": agent,
-                            "t": now, "until": now + min(ttl, 40), "position": position})
+        row = {"id": f"{key}:{int(now)}", "key": key, "kind": kind, "text": text, "agent": agent,
+               "t": now, "until": now + min(ttl, 40), "position": position}
+        if facts:  # a headline's facts for the hosts (caster.py facts_for): names, place, cause
+            row["facts"] = facts
+        self.alerts.append(row)
+
+    # ---- which platform a fight is on -------------------------------------------------------------------------
+    def platform_of(self, e):
+        """The platform row an attack or loss is on, or None. The attack's surface names it (live.py: the platform
+        views give each platform's surface); a loss line has no surface, so space-only buildings (a hub, an asteroid
+        collector, a thruster, a crusher) or asteroid attackers place it on a platform: the only one, else unknown.
+        shift04 05:15: "A space platform hub is gone" was Skylark, never named."""
+        plats = self.space.get("platforms") or []
+        surf = ((e.get("position") or {}).get("surface") or "").lower()
+        if surf and surf != "nauvis":
+            for p in plats:
+                if surf == str((p.get("view") or {}).get("surface") or "").lower() or surf == str(p.get("name")).lower():
+                    return p
+        if not SPACE_HIT.search(e.get("text") or ""):
+            return None
+        return plats[0] if len(plats) == 1 else {"name": None}
+
+    def _on_platform(self, e):
+        p = self.platform_of(e) if e["kind"] in ("attack", "loss") else None
+        if not p:
+            return e
+        where = platform_place(p) if p.get("name") else None
+        label = f"platform {p['name']}" + (f" ({where})" if where else "") if p.get("name") else "a space platform"
+        text = e["text"]
+        text = re.sub(r"^(\d+ lost)(?: near \([^)]*\))?", rf"\1 on {label}", text)
+        text = re.sub(r"^Base under attack(?: near \([^)]*\))?", f"{label[0].upper() + label[1:]} under attack", text)
+        if HUB_LOST.search(text) and e["kind"] == "loss":
+            text += f"; the hub is gone, so {p['name'] or 'the platform'} is destroyed"
+        return dict(e, text=text, platform=p.get("name"))
 
     # ---- derived ---------------------------------------------------------------------------------------------
     def activity(self, ag, now):
@@ -867,17 +923,26 @@ class Model:
         if sp.get("rockets"):
             found.append(("rocket", {"kind": "first_rocket", "title": "First rocket launched",
                                      "facts": {"rockets": sp["rockets"]}}))
+        if self.rockets_at_start is None:
+            self.rockets_at_start = sp.get("rockets") or 0
+        elif (sp.get("rockets") or 0) > self.rockets_at_start:  # the shift's first rocket (a headline)
+            found.append(("shift_rocket", {"kind": "shift_rocket",
+                                           "title": f"Rocket {sp['rockets']} launched, the first this shift",
+                                           "facts": {"rockets": sp["rockets"]}}))
         plats = sp.get("platforms") or []
         if plats:
             p = plats[0]
             found.append(("platform", {"kind": "first_platform", "title": f"First space platform: {p['name']}",
-                                       "facts": {"platform": p["name"], "where": platform_where(p)["where"]}}))
-        for p in plats:
+                                       "facts": {"platform": p["name"], "where": platform_place(p)}}))
+        for p in plats[1:]:  # every later platform launched is a headline too
+            found.append((f"platform:{p['name']}", {"kind": "new_platform", "title": f"New space platform: {p['name']}",
+                                                    "facts": {"platform": p["name"], "where": platform_place(p)}}))
+        for p in plats:  # each platform's first arrival at each planet other than Nauvis
             loc = p.get("at") if p.get("at") in PLANET_LABELS else None
             if loc and loc != "nauvis":
-                found.append((f"orbit:{loc}", {"kind": "orbit", "title": f"{p['name']} reaches {planet_label(loc)}",
-                                               "facts": {"platform": p["name"], "planet": planet_label(loc)},
-                                               "planet": loc}))
+                found.append((f"orbit:{p['name']}:{loc}", {
+                    "kind": "orbit", "title": f"{p['name']} reaches {planet_label(loc)}",
+                    "facts": {"platform": p["name"], "planet": planet_label(loc)}, "planet": loc}))
         landed = {s: None for s in sp.get("planets") or [] if s != "nauvis"}
         for ag in self.agents.values():
             if ag.surface and ag.surface != "nauvis" and not ag.platform and ag.alive:
@@ -899,7 +964,46 @@ class Model:
             m.update(id=f"m-{key}", key=key, t=now, game_time=fmt_game_time(self.tick / 60))
             m["facts"]["game_time"] = m["game_time"]
             self.moments.append(m)
-            self.alert("space", m["title"], key=f"space:{key}", agent=m.get("agent"), ttl=40)
+            self.alert("space", m["title"], key=f"space:{key}", agent=m.get("agent"), ttl=40,
+                       facts=dict(m["facts"], headline=m["kind"]))
+
+    def _platforms_lost(self, now):
+        """A platform gone from two space reads in a row is destroyed (its hub was lost: Factorio deletes the
+        platform): a headline with its name, where it was and what did it (shift04 05:15 and shift05 07:48: "a space
+        platform hub is gone", never which). A rename (one gone, one new, same read) is not a loss."""
+        names = {p["name"]: p for p in self.space.get("platforms") or [] if p.get("name")}
+        missing = [n for n in self.platform_last if n not in names]
+        new = [n for n in names if n not in self.platform_last]
+        if missing and len(new) == len(missing):
+            for n in missing:
+                self.platform_last.pop(n, None)
+                self.platform_missing.pop(n, None)
+            missing = []
+        for n in list(self.platform_missing):
+            if n in names:
+                self.platform_missing.pop(n)
+        for n in missing:
+            self.platform_missing[n] = self.platform_missing.get(n, 0) + 1
+            if self.platform_missing[n] >= 2:
+                p = self.platform_last.pop(n)
+                self.platform_missing.pop(n)
+                self._platform_destroyed(p, now)
+        self.platform_last.update(names)
+
+    def _platform_destroyed(self, p, now):
+        where = platform_place(p)
+        cause = None
+        for t, name, text in reversed(self.hub_losses):
+            if now - t < 600 and name in (None, p["name"]):
+                m = re.search(r"\(by ([^)]*)\)", text)
+                cause = m.group(1) if m else None
+                break
+        left = sorted(self.platform_last)
+        text = f"{p['name']} destroyed {where}" + (f" by {cause}" if cause else "")
+        self.alert("headline", text, key=f"lost:{p['name']}", ttl=600, facts={
+            "headline": "platform_destroyed", "platform": p["name"], "where": where, "destroyed_by": cause,
+            "what_it_means": "its hub is gone, so the platform and everything aboard it are lost",
+            "platforms_left": left or "none", "game_time": fmt_game_time(self.tick / 60)})
 
     def space_snapshot(self, sci):
         sp = self.space
