@@ -851,9 +851,9 @@
         label.classList.add("on");
         continue;
       }
-      if (cam && (cam.battle || cam.incoming) && !cam.attack && !agents.length) { // a key battle's area, or an enemy
-        // group on its way (onecam.py), no agent in it
-        const text = cam.battle || cam.incoming;
+      if (cam && (cam.battle || cam.incoming || cam.enemy) && !cam.attack && !agents.length) { // a key battle's area,
+        // an enemy group on its way, or a big enemy coming (the inset; onecam.py), no agent in it
+        const text = cam.battle || cam.incoming || cam.enemy;
         if (label.dataset.sig !== "battle|" + text) {
           label.dataset.sig = "battle|" + text;
           label.textContent = "";

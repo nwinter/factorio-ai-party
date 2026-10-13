@@ -73,6 +73,17 @@ DEFAULTS = {
     "battle_first_s": 4.0,         # on-air footage must begin by this long after the first sign (else: aftermath)
     "battle_cover": 0.7,           # ... and cover this share of the start window
     "battle_live_frac": 0.9,       # the program showed this share of the battle live: no replay of it
+    # slow motion (Nick, 14:44: "the demolisher fight was like 5s long, very dramatic though! imagine a slow-mo instant
+    # replay"): a big-enemy battle or one with a sudden big loss gets its decisive seconds slowed down, even if seen live
+    "battle_grace": 15.0,          # a battle is judged this long after it ends (its next wave may resume it)
+    "slowmo": True,
+    "slow_speed": 45,              # percent (OBS media source speed_percent)
+    "slow_peak_s": 5.0,            # the densest stretch of losses this long is the decisive moment ...
+    "slow_before": 3.0,            # ... the clip from this long before it ...
+    "slow_after": 5.0,             # ... to this long after its start
+    "slow_sudden": 0.4,            # a sudden big loss: that stretch holds this share of the battle's pieces lost ...
+    "slow_min_pieces": 5,          # ... and at least this many
+    "slow_cover": 0.7,             # on-air footage of the battle must cover this share of the window
     "battle_gap": 2.5,             # seconds: footage samples further apart than this are separate runs
 }
 
@@ -109,6 +120,8 @@ class Replays:
         self.scene_ready = False
         self.next_watch = 0
         self.refreshed = None  # segment id whose banner page was reloaded
+        self.hold = False      # serve.py: an operator follow is on; no replay cuts away from it
+        self.ending = None     # a battle just over, judged after battle_grace (the director may resume it)
         self.battle = None     # the key battle being covered: {key, info, shown: [t], parts: {part: score}, ...}
         self.battle_keep = {}  # battle key -> the part to air ("start" / "end"), or "none", once it is over
         self.battle_areas = deque(maxlen=8)  # (until, position+surface, extent): losses there are the battle's
@@ -151,7 +164,8 @@ class Replays:
     def facts(self, now):
         c = self.clip
         return {"event": c["label"], "kind": c["kind"], "agent": c.get("agent_name"),
-                "seconds": round(c["show_to"] - c["show_from"]), "ago_s": round(now - c["show_to"])}, c["id"]
+                "seconds": round(c["show_to"] - c["show_from"]), "ago_s": round(now - c["show_to"]),
+                "speed": c.get("speed") or 100}, c["id"]  # (the banner: "Replay · slow motion" under 100)
 
     # ---- hooks from serve.py's ticker ---------------------------------------------------------------------------
     def tick(self, snap, cams, now):
@@ -273,13 +287,26 @@ class Replays:
         cfg = self.cfg
         b = self.battle
         if b and (not info or info["key"] != b["key"]):
-            self.finish_battle(now)
+            # over (or another battle): judged after battle_grace, unless the director resumes it (its next wave)
+            self.battle, self.ending = None, b
+            b["ended"] = now
             b = None
+        e = self.ending
+        if e and (now - e["ended"] >= cfg["battle_grace"] or (info and info["key"] != e["key"])):
+            self.battle, self.ending = e, None
+            self.finish_battle(now)
+            e = None
         if not info:
             return
+        if not b and e and info["key"] == e["key"]:
+            b, self.battle, self.ending = e, e, None  # resumed: the same battle
+            b["gap"] = b.get("gap", 0) + now - e["ended"]  # (the lull is no part of it the program missed)
+            self.log(f"[replays] battle resumed after {now - e['ended']:.0f} s ({e['key']})")
         if not b:
-            b = self.battle = {"key": info["key"], "info": info, "shown": [], "saved": None, "why": None}
+            b = self.battle = {"key": info["key"], "info": info, "shown": [], "saved": None, "why": None,
+                               "pieces": {}, "losses": [], "tier": 0, "slow": None, "slow_n": 0}
         b["info"] = info
+        self.watch_losses(b, snap, now)
         by_name = {a["name"]: {k: a.get(k) for k in ("position", "surface")} for a in snap.get("agents") or []}
         main = (cams or {}).get("main") or {}
         # a cut is decided here a tick or two before OBS shows it (cuts.py): the first cut_settle s after it are the
@@ -289,6 +316,80 @@ class Replays:
             b["shown"].append(now)
         if not b["saved"] and not b["why"] and now >= info["first"] - cfg["battle_lead"] + self.battle_len(info):
             self.judge_start(b, now)
+        self.judge_slow(b, now)
+
+    def watch_losses(self, b, snap, now):
+        """The battle's losses as they come in (each loss entry's pieces count up through a raid: the rise is what
+        was destroyed then, about loss_lag before the alert), and the enemy's tier from the alert texts."""
+        from threats import tier_of
+        from onecam import loss_pieces
+        info, q = b["info"], b["info"]["position"]
+        for f in snap.get("fights") or []:
+            p = f.get("position") or {}
+            if p.get("x") is None or (p.get("surface") or "nauvis") != q.get("surface", "nauvis") or \
+                    ((p["x"] - q["x"]) ** 2 + (p["y"] - q["y"]) ** 2) ** 0.5 > (info.get("extent") or 0) / 2 + 60:
+                continue
+            b["tier"] = max(b["tier"], tier_of(f.get("text")))
+            # live.py's loss alerts carry the raid's running total (19, 44, 55 ... at new positions, new keys):
+            # what was destroyed is the rise of the battle's highest count
+            n = loss_pieces(f.get("text"))
+            before = b["pieces"].get("max", 0)
+            if n > before:
+                b["losses"].append((now - self.cfg["loss_lag"], n - before))
+                b["pieces"]["max"] = n
+
+    def peak(self, b):
+        """-> (start of the densest slow_peak_s of losses, pieces in it), or None."""
+        w, best = self.cfg["slow_peak_s"], None
+        for t, _ in b["losses"]:
+            n = sum(d for u, d in b["losses"] if t <= u <= t + w)
+            if best is None or n > best[1]:
+                best = (t, n)
+        return best
+
+    def slow_worthy(self, b):
+        """A big-enemy battle (behemoths, demolishers, a nest assault) or a sudden big loss (module doc)."""
+        pk = self.peak(b)
+        if not pk:
+            return None
+        total = sum(d for _, d in b["losses"])
+        text = (b["info"].get("label") or "") + " " + str(b["info"].get("why") or "")
+        if b["tier"] >= 4 or "spawner" in text or "nest" in text:
+            return "big enemy"
+        if pk[1] >= max(self.cfg["slow_min_pieces"], self.cfg["slow_sudden"] * total):
+            return f"sudden loss ({pk[1]} of {total} pieces in {self.cfg['slow_peak_s']:g} s)"
+        return None
+
+    def judge_slow(self, b, now):
+        """Once the decisive window is over (and while it is still in the buffer), save it if the program's footage
+        of the battle covers it; a later, denser stretch saves again (the best one airs)."""
+        cfg = self.cfg
+        if not cfg["slowmo"]:
+            return
+        pk = self.peak(b)
+        if not pk or (b["slow"] and pk[1] <= b["slow"]["pieces"]):
+            return
+        start, end = pk[0] - cfg["slow_before"], pk[0] + cfg["slow_after"]
+        if now < end + 1 or now - start > cfg["buffer_s"] - 2:
+            return
+        if b.get("slow_tried") == pk:
+            return
+        b["slow_tried"] = pk
+        covered = sum(r[1] - r[0] + 1 for r in self.runs(b["shown"], start, end))
+        if covered < cfg["slow_cover"] * (end - start):
+            self.log(f"[replays] battle slow motion: no footage of its decisive moment ({covered:.0f} s of "
+                     f"{end - start:.0f} s on air) ({b['key']})")
+            return
+        b["slow_n"] += 1
+        part = f"slow{b['slow_n']}"
+        b["slow"] = {"part": part, "pieces": pk[1], "start": start, "end": end}
+        info = b["info"]
+        self.queue_pending({"kind": "battle", "label": info.get("label") or "Battle", "battle": b["key"],
+                            "battle_part": part, "speed": cfg["slow_speed"], "agent": None,
+                            "agent_name": info.get("agent"), "position": info["position"], "save_at": now,
+                            "show_from": start, "show_to": end})
+        self.log(f"[replays] battle slow motion saved: {end - start:.0f} s around {pk[1]} pieces lost in "
+                 f"{cfg['slow_peak_s']:g} s ({b['key']}, {covered:.0f} s on air)")
 
     def judge_start(self, b, now):
         """The start window, judged once it is over (or the battle ended first): saved, or why not."""
@@ -319,9 +420,14 @@ class Replays:
         if not b["saved"] and not b["why"]:
             self.judge_start(b, now)  # a battle over before its start window ended
         self.battle_areas.append((now + 300, info["position"], info.get("extent") or 0))
-        span = max(1.0, info["last"] - info["first"])
+        span = max(1.0, info["last"] - info["first"] - b.get("gap", 0))
         live = sum(r[1] - r[0] + 1 for r in self.runs(b["shown"], info["first"], info["last"] + 1))
-        if not b["saved"]:
+        worthy = self.slow_worthy(b) if b.get("slow") else None
+        if worthy and now - self.last_replay < self.cfg["spacing"]:
+            worthy = None  # the replay budget: one replay per spacing
+        if worthy:
+            keep, why = b["slow"]["part"], f"slow motion of its decisive moment: {worthy}"
+        elif not b["saved"]:
             keep, why = "none", b["why"] or "it ended before its start window was judged"
         elif live / span >= self.cfg["battle_live_frac"]:
             keep, why = "none", f"the program showed {live / span:.0%} of it live"
@@ -501,13 +607,17 @@ class Replays:
             self.log(f"[replays] dropped {c['id']}: not the battle's replay ({c['battle_part']} window; keeping {keep})")
             self.next_clip()
             return
+        if self.hold:
+            return  # an operator follow is on (serve.py): the replay airs once it ends
         if self.waiting(c, now):
             return  # never during the fight: once it has been quiet quiet_s
         cur = self.segments.cur
         if cur and cur["type"] == "attack_replay" and cur.get("clip") == c["id"]:
             return  # already queued or on air
         code, rep = self.segments.request({"type": "attack_replay", "by": "director", "reason": "replay",
-                                           "seconds": c["show_to"] - c["show_from"]}, now, ignore_spacing=True)
+                                           # a slowed clip plays longer: its seconds at speed
+                                           "seconds": (c["show_to"] - c["show_from"]) * 100.0 / (c.get("speed") or 100)},
+                                          now, ignore_spacing=True)
         if code == 200:
             self.log(f"[replays] queued {c['id']} as {rep['id']}")
         elif rep.get("skip") and self.more_clips:  # routine (segments.replay_gate): not worth holding up the next one
@@ -557,7 +667,10 @@ class Replays:
 
     def play(self, c):
         o, m = self.obs, self.cfg["media"]
-        o.call("SetInputSettings", {"inputName": m, "inputSettings": {"local_file": c["path"]}, "overlay": True})
+        # speed_percent every time (a slow-motion clip at slow_speed, every other at 100: OBS keeps the last setting)
+        o.call("SetInputSettings", {"inputName": m, "inputSettings": {"local_file": c["path"],
+                                                                     "speed_percent": int(c.get("speed") or 100)},
+                                    "overlay": True})
         dur = None
         for _ in range(20):
             time.sleep(0.15)

@@ -406,6 +406,7 @@ class Model:
         self.platform_hits, self.platforms_lost = {}, deque(maxlen=6)
         self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
         self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
+        self.big = {}  # id -> a demolisher near our buildings (big_enemies_live), as last read
         self.fights = {}  # key -> fight still reported (attacked chunk, loss, agent in combat), for replays.py
         self.space_age = bool(run.get("space_age")) or "Space Age" in (run.get("subtitle") or "")
         self.last_obs_t = None
@@ -483,6 +484,8 @@ class Model:
             self._ingest_attention(x, now)
         if obs.get("attack_groups") is not None:  # a read happened (an empty list: none on the way)
             self._ingest_groups(obs["attack_groups"], now)
+        if obs.get("big_enemies") is not None:
+            self._ingest_big(obs["big_enemies"], now)
         self.errors = obs.get("errors", {})
 
     def platform_view(self, name):
@@ -543,6 +546,37 @@ class Model:
         else:
             where = "the base"
         return f"{g.get('size') or '?'} {what} heading for {where}"
+
+    def _ingest_big(self, rows, now):
+        """Demolishers near our buildings or agents, labelled "Small demolisher · 300 tiles from Sol's gun turrets"."""
+        seen = {}
+        for e in rows:
+            if e.get("id") is None or not e.get("position"):
+                continue
+            seen[e["id"]] = dict(e, t=now, label=self.big_label(e))
+        self.big = seen
+
+    def big_label(self, e):
+        what = human_name(e.get("name") or "enemy").capitalize()
+        # whose: the agent whose character is nearest the building (bots have no player: matched by position)
+        ch = e.get("character") or {}
+        owner = self.agents.get(ch.get("player")) if ch.get("player") else None
+        if not owner and ch:
+            owner = next((ag for ag in self.agents.values() if ag.position and
+                          math.hypot(ag.position["x"] - ch["x"], ag.position["y"] - ch["y"]) <= 3), None)
+        b = e.get("nearest")
+        near_owner = owner and b and math.hypot(ch["x"] - b["x"], ch["y"] - b["y"]) <= 80
+        who = owner.display_name if owner else None
+        if b and e.get("nearest_distance") is not None:
+            things = human_name(b.get("name") or "building").lower() + "s"
+            target = f"{who}'s {things}" if near_owner else f"our {things} at ({b['x']}, {b['y']})"
+            return f"{what} · {e['nearest_distance']} tiles from {target}"
+        if who and e.get("character_distance") is not None:
+            return f"{what} · {e['character_distance']} tiles from {who}"
+        return what
+
+    def big_snapshot(self, now):
+        return [e for e in self.big.values() if now - e["t"] < 20]
 
     def incoming_snapshot(self, now):
         return [dict(g, age_s=round(now - g["first_seen"], 1)) for g in self.incoming.values() if now - g["t"] < 20]
@@ -1437,6 +1471,7 @@ class Model:
             "work": self.work_snapshot(now),
             "fights": self.fights_snapshot(now),
             "incoming": self.incoming_snapshot(now),
+            "big_enemies": self.big_snapshot(now),
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
             "cameras": cameras or {},

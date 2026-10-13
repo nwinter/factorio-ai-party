@@ -93,7 +93,14 @@ def urgent():
            "position": {"x": 200, "y": 200, "extent": 32}, "key": "area:200,200"}
     d.step(snap(team, [att]), t + 10)
     assert onair_agent(d) == ["luna"] and "inset" not in d.public(t + 10) and d.last_attack_cut < t + 10
-    # one cheap building lost far away: an inset for 20 s, the story on air stays (a running segment too)
+    # one cheap building lost far away: its threat score is under the floor (Nick 14:50: insets of "empty fields"),
+    # so its toast only; with a score that passes, an inset for 20 s, the story on air stays (a running segment too)
+    pipe0 = {"id": "l0", "kind": "loss", "t": t + 60, "text": "1 lost near (200, 200): 1 pipe (by small biters)",
+             "position": {"x": 200, "y": 200, "extent": 16}, "key": "loss:200,200"}
+    d.step(snap(team, [pipe0]), t + 60)
+    assert "inset" not in d.public(t + 60) and d.program()["inset"] is None
+    d.threats.cfg["floor"] = 0.0
+    d.last_alert = -1e9  # (the alert spacing)
     pipe = {"id": "l1", "kind": "loss", "t": t + 80, "text": "1 lost near (200, 200): 1 pipe (by small biters)",
             "position": {"x": 200, "y": 200, "extent": 16}, "key": "loss:200,200"}
     d.step(snap(team, [pipe]), t + 80)
