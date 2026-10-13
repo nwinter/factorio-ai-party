@@ -94,12 +94,40 @@ EXAMPLES = [
     "Vale: Someone in chat asks why they don't just build more labs.\nRook: Fair question.\n"
     "Vale: Labs need packs. Packs are the slow part right now.",
     "Rook: Opus is planning. Writing the next set of commands.\nVale: Long one too. Something big's coming.",
+    "Rook: Wren is gone. Lost its hub over Fulgora.\nVale: And the solar panels it was carrying.\n"
+    "Rook: Who's flying the next one?",
+    "Rook: Rocket twelve is up.\nVale: First one this shift.\nRook: Headed for Harbor, by the look of it.",
 ]
 
 
+# How a booth calls a match (eng/hostguide, viewer Joonazan, 2026-10-13: "too convoluted and AI-structured to be
+# appealing"; "<Space platform name> died to an asteroid would've been better than the slop they said"). shift04/05
+# showed the shape: one host reading a whole battle report in a line ("Oh, the space platform hub is getting hit.
+# That's asteroid debris. Nothing lost over the last three reports."), an "Oh," on most lines, a status tag at the end
+# ("and every building is still standing"), and big moments with no name. Written from sports-commentary practice:
+# play-by-play calls the action, colour reacts to it, and they talk to each other.
+DIALOGUE = (
+    "How a booth calls a game. Two people watching the same match, talking to each other. Rook calls the play: who, "
+    "what, where, in a few words, the moment it happens. Vale reacts to the call: why it matters, what it costs, what "
+    "comes next. Then they trade. One thing per line. A second fact belongs to the other host's line, or to nobody. "
+    "Lead with the name. The agent, the platform, the planet, the building. Then the verb. Kestrel is gone. Astra's "
+    "down. Rocket 40 is up. Then the stakes, in plain words, from the other host. That was the foundry cargo. Now "
+    "they're back to one platform. (Names in these notes are made up: use the ones in the facts.)\n"
+    "Never react without the subject. Not 'that hurts' or 'asteroids again', but 'Kestrel just lost its hub'. Never "
+    "read a report out: no tallies of reports, no 'this report shows', no 'over the last three', no status tag at the "
+    "end of a line like 'and every building is still standing'. Do not sum up what was just said. Do not stack "
+    "clauses with and, so, while, which, plus. No sentences shaped like a slide, such as 'X, and that's Y. Z means W.' "
+    "Do not open with Oh on every line. Most calls need no interjection at all. Let a question go across the booth "
+    "and let the other host answer it. Say less when little happens. When it is big, say it simply and let it land.\n"
+    "Bad: Oh, the space platform hub is getting hit. That's asteroid debris. Nothing lost over the last three "
+    "reports.\nGood: Rook: Asteroids are hitting Kestrel. Vale: Over Vulcanus? Those guns had better be loaded.\n"
+    "Bad: Two more raids out east. A gun turret takes the hits, and every building is still standing.\n"
+    "Good: Rook: East wall, again. Vale: Still holding. Those flamers paid for themselves.")
+
+
 def spoken_notes(rng=random):
-    """SPOKEN plus four sample exchanges."""
-    return SPOKEN + "\nThe tone, from other games (never reuse their details):\n" + "\n--\n".join(
+    """SPOKEN, the booth guide (DIALOGUE) and four sample exchanges."""
+    return SPOKEN + "\n" + DIALOGUE + "\nThe tone, from other games (never reuse their details):\n" + "\n--\n".join(
         rng.sample(EXAMPLES, 4))
 SHOW = ("The show: nine AI models from different labs (each named in the facts with its model and harness) each "
         "control one engineer in one shared Factorio world, in real time, with no cheats and no human help. Factorio "
@@ -157,7 +185,21 @@ def planet_facts(s):
     return f
 
 
-PRIORITY = {"attack": 9, "death": 9, "loss": 8, "segment": 7, "research": 7, "space": 7, "viewer": 6, "viewer_reply": 7,
+# Headlines (eng/hostguide): a platform destroyed (model.py kind "headline"), a space moment (platform launched or
+# arrived, a planet first landed on, the shift's first rocket) and an agent's death. Above every battle beat, said on
+# their own (never folded into another beat or a battle tally), as a clear call with the name and the consequence.
+HEADLINE_KINDS = ("headline", "space", "death")
+HEADLINE_CALL = ("a headline. Rook calls it first in a few words, leading with the name from the facts (the platform, "
+                 "the agent, the planet, the rocket): who or what, then what happened, then where. Vale answers with the "
+                 "consequence: what it cost, what is at stake, what changes next. No reaction without its subject.")
+HEADLINE_EXTRA = {
+    "platform_destroyed": " The platform is destroyed, not damaged: its hub is gone, so the platform and everything "
+                          "aboard are lost. Say its name.",
+    "agent_death": " The engineer respawns at the base; say what they were doing or where, if the facts say.",
+    "shift_rocket": " The first rocket of this shift.",
+}
+PRIORITY = {"headline": 10, "attack": 9, "death": 10, "loss": 8, "segment": 7, "research": 7, "space": 10, "viewer": 6,
+            "viewer_reply": 7,
             "power": 6,
             "harness": 5, "plan": 5, "operator_request": 5,
             "board": 4,
@@ -306,7 +348,7 @@ class Differ:
             self.alert_ids.add(a["id"])
             if not first:
                 ev.append({"kind": a["kind"] if a["kind"] in PRIORITY else "info", "text": a.get("text"),
-                           "agent": a.get("agent")})
+                           "agent": a.get("agent"), **({"facts": a["facts"]} if a.get("facts") else {})})
         for m in s.get("chat") or []:
             key = m.get("seq") or (m.get("tick"), m.get("from"), m.get("text"))
             if key in self.chat_keys:
@@ -799,6 +841,11 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     if e["kind"] == "chat" and e.get("react"):  # task-talk-hosts: the hosts answer the agent who just spoke on air
         f["how_to_call_it"] = ("viewers just heard this agent say it in their own voice: react to it (what it means "
                                "for the team, or how it sounds), briefly, without repeating it word for word")
+    if e["kind"] in HEADLINE_KINDS:  # eng/hostguide: a headline, said as a clear call with the name and the stakes
+        if e.get("facts"):
+            f["headline"] = {k: v for k, v in e["facts"].items() if v not in (None, "", [])}
+        f["what_happened"] = e.get("text")
+        f["how_to_call_it"] = HEADLINE_CALL + (HEADLINE_EXTRA.get((e.get("facts") or {}).get("headline")) or "")
     if e.get("operator"):  # the operator (the person running the stream) just spoke on air, in game chat as `server`
         f["operator_said"] = spoken(voices.speakable(e.get("text") or "", 300))
         f["how_to_call_it"] = ("viewers just heard the stream's operator, the person running it, say this: react "
@@ -1422,12 +1469,12 @@ class TemplateWriter:
                          "We're live. {team_size} agents, one shared world."],
                  "color": ["{team_size} different minds, one shared base. The question is whether they cooperate.",
                            "I love this format. Nobody's in charge, everybody's building."]},
-        "attack": {"pbp": ["Biters! {text}", "Here they come. {text}", "Oh, trouble. {text}"],
+        "attack": {"pbp": ["Under attack. {text}", "Here they come. {text}", "Trouble. {text}"],  # asteroids hit too
                    "color": ["This is where the defence plan gets tested for real.",
                              "You can build all day, but the biters set the schedule."]},
         "death": {"pbp": ["Oh no. {text}", "Ouch. {text}"],
                   "color": ["Ouch. They'll be back after the respawn.", "Painful, but the factory keeps running."]},
-        "loss": {"pbp": ["Damage report. {text}", "That hurts. {text}"],
+        "loss": {"pbp": ["Damage report. {text}", "{text}"],  # not "That hurts." (a reaction with no subject)
                  "color": ["Losses mean repairs, and repairs mean someone's plan just got interrupted.",
                            "Walls and turrets are consumables out here. Time to rebuild."]},
         "info": {"pbp": ["Heads up. {text}"], "color": ["Worth keeping an eye on that."]},
@@ -1442,6 +1489,9 @@ class TemplateWriter:
                           "{agent_name} {did} {title}. The board keeps moving."],
                   "color": ["That team board is how {team_size} agents avoid stepping on each other.",
                             "Good teamwork there from {agent_name}.", "Somebody has to do the chores. Thanks, {agent_name}."]},
+        # a headline (eng/hostguide): the name first, then the stakes
+        "headline": {"pbp": ["{headline_platform} is gone. Lost {headline_where}.", "{what_happened}."],
+                     "color": ["And everything aboard {headline_platform} goes with it.", "That one costs them."]},
         "space": {"pbp": ["Big moment. {text}!", "{text}! Remember this one."],
                   "color": ["That changes what this run can reach.", "A milestone. The map just got bigger."]},
         "segment": {"pbp": ["On screen now: {seg_title}.", "Let's take a closer look: {seg_title}."],
@@ -1481,7 +1531,7 @@ class TemplateWriter:
 
     def write(self, who, e, facts, recent, names):
         flat = dict(facts.get("background") or {}, **facts)
-        for key in ("agent", "viewer_message"):
+        for key in ("agent", "viewer_message", "headline"):
             for k, v in (facts.get(key) or {}).items():
                 flat[f"{key}_{k}"] = v
         cam = (facts.get("on_camera") or [{}])[0]
@@ -2074,13 +2124,17 @@ class Caster:
             # until an attack cut it, and the hosts never talked over it
             best = segs[-1]
         self.events.remove(best)
+        if best["kind"] in HEADLINE_KINDS:
+            return best  # a headline is said on its own: nothing folded into it (shift04 05:15)
         if best["prio"] >= URGENT:
             # an overrun base sends an attack, a loss or a death every few seconds; on the live world each got its
-            # own beat and the cast became a loop. Fold the pending urgent events into this one.
-            more = [e for e in self.events if e["prio"] >= URGENT]
+            # own beat and the cast became a loop. Fold the pending urgent events into this one; headlines keep
+            # their own beat (shift04 05:15: a platform's end went into an attack's "also happening").
+            more = [e for e in self.events if e["prio"] >= URGENT and e["kind"] not in HEADLINE_KINDS]
             if more:
                 best = dict(best, also=[e.get("text") or e["kind"] for e in more][-6:])
-                self.events = deque([e for e in self.events if e["prio"] < URGENT], maxlen=60)
+                self.events = deque([e for e in self.events if e["prio"] < URGENT or e["kind"] in HEADLINE_KINDS],
+                                    maxlen=60)
             return best
         # a burst of the same kind is one story: drop its siblings
         self.events = deque([e for e in self.events if e["kind"] != best["kind"]], maxlen=60)
@@ -2279,9 +2333,11 @@ class Caster:
             first = "color" if self.last_speaker == "pbp" or e.get("naturalist") else "pbp"
         lo, hi = self.a.lines
         n = lo if e["prio"] >= URGENT or e.get("react") else self.rng.randint(lo, hi)
+        if e["kind"] in HEADLINE_KINDS:  # a headline: Rook calls it, Vale says what it costs or changes
+            n, first = max(n, 2), "pbp"
         if e["kind"] == "open" and self.previous():
             n = max(n, 3)  # "previously on" takes two or three lines
-        if e["kind"] in ("attack", "loss", "death"):
+        if e["kind"] in ("attack", "loss"):  # a death is a headline: it neither carries nor resets the battle tally
             self.last_attack_t = now
             tally = getattr(self, "battle_tally", None)
             if tally and tally["reports"]:  # what happened since the last battle beat, said once

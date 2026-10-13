@@ -107,10 +107,13 @@ for kind in caster.TemplateWriter.T:
              "researching": {"tech": "Oil gathering", "percent": 67}, "technologies_done": 14,
              "on_screen_now": {"segment": "production", "title": "Production: 9.1 science per minute"},
              "viewer_message": {"from": "factoryfan", "text": "How many labs?"},
-             "analyst_answer": "They have 14 technologies and Oil gathering is at 67 percent."}
+             "analyst_answer": "They have 14 technologies and Oil gathering is at 67 percent.",
+             # facts_for always gives a headline these (eng/hostguide)
+             "what_happened": "Kestrel destroyed in orbit of Vulcanus",
+             "headline": {"platform": "Kestrel", "where": "in orbit of Vulcanus"}}
         for _ in range(4):
-            line = tw.write(who, e, f, [], names + ["Opus"])
-            if not line or "{" in line or caster.check_line(line, f, names + ["Opus"], []):
+            line = tw.write(who, e, f, [], names + ["Opus", "Kestrel"])
+            if not line or "{" in line or caster.check_line(line, f, names + ["Opus", "Kestrel"], []):
                 bad.append((kind, who, line))
 check("templates fill cleanly and pass the fact check", not bad, str(bad[:3]))
 
@@ -137,8 +140,18 @@ cs.a, cs.events = _A(), caster.deque(maxlen=60)
 for i, k in enumerate(["death", "attack", "loss", "board"]):
     cs.events.append({"kind": k, "text": f"{k} {i}", "t": now + i, "prio": caster.PRIORITY[k]})
 pk = cs.pick_event(now + 5)
-check("siege folds urgent events", pk["prio"] >= caster.URGENT and len(pk.get("also", [])) == 2
-      and [e["kind"] for e in cs.events] == ["board"], str(pk))
+# eng/hostguide: a death is a headline, said on its own first; the attack then folds the loss
+pk2 = cs.pick_event(now + 5)
+check("siege folds urgent events", pk["kind"] == "death" and not pk.get("also") and pk2["kind"] == "attack"
+      and pk2.get("also") == ["loss 2"] and [e["kind"] for e in cs.events] == ["board"], str((pk, pk2)))
+# a headline waiting while an attack is picked is not folded into it
+cs.events = caster.deque(maxlen=60)
+for i, k in enumerate(["headline", "attack", "loss"]):
+    cs.events.append({"kind": k, "text": f"{k} {i}", "t": now + i, "prio": caster.PRIORITY[k]})
+cs.events[0]["prio"] = 8  # (were it ranked below the attack)
+pa = cs.pick_event(now + 5)
+check("a headline is never folded into a battle beat", pa["kind"] == "attack" and pa.get("also") == ["loss 2"]
+      and [e["kind"] for e in cs.events] == ["headline"], str((pa, list(cs.events))))
 at = caster.facts_for({"kind": "death", "text": "sonnet died; lost assembling-machine-1 x129", "t": now, "prio": 9},
                       {"agents": [{"name": "sonnet", "display_name": "Sonnet"}]})["text"]
 check("alert text: hit counts and display names", at == "Sonnet died; lost assembling machine 1 hit 129 times", at)
@@ -370,7 +383,8 @@ mof = caster.facts_for({"kind": "segment", "segment": mo, "t": now, "prio": 7}, 
 check("a space moment is called as a milestone", "milestone" in mof.get("how_to_call_it", ""), str(mof))
 check("a line about the landing passes", caster.check_line("Astra lands on Vulcanus! Two planets reached!", mof,
                                                             ["Astra"], []) is None)
-check("space alerts rank with research, not as urgent", caster.PRIORITY["space"] == 7 < caster.URGENT)
+check("space moments, deaths and platform losses are urgent headlines (eng/hostguide)",
+      min(caster.PRIORITY[k] for k in caster.HEADLINE_KINDS) > caster.PRIORITY["attack"] >= caster.URGENT)
 check("space alert template", caster.TemplateWriter(caster.random.Random(1)).write(
     "pbp", {"kind": "space"}, {"text": "First rocket launched"}, [], []) is not None)
 
@@ -692,7 +706,7 @@ check("spoken alerts: losses, raids, power and deaths as a person says them (sha
 tl_ = caster.TemplateWriter(caster.random.Random(4)).write("pbp", {"kind": "loss"},
                                                            {"text": "11 lost: 6 pipe, 2 inserter (by small biters)"}, [], [])
 check("the loss template speaks the alert", tl_ in ("Damage report. 11 lost to small biters. 6 pipes, 2 inserters.",
-                                                    "That hurts. 11 lost to small biters. 6 pipes, 2 inserters."), tl_)
+                                                    "11 lost to small biters. 6 pipes, 2 inserters."), tl_)
 tpl = [t for kinds in caster.TemplateWriter.T.values() for ts in kinds.values() for t in ts]
 check("templates: no style faults, no dashes or semicolons, one exclamation at most", all(
     caster.style_fault(t) is None and not re.search(r"—|–|;", t) and t.count("!") <= 1 for t in tpl),

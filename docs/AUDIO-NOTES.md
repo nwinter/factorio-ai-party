@@ -1470,3 +1470,51 @@ on the HTTP endpoint (the bench's results now record the model each clip used); 
 inline IPA right (listen to "Sol", "Gemini", "Nauvis" in lines 1, 3, 4); the Cartesia `Cartesia-Version:
 2026-08-14` header; OpenAI's per-minute cost against the bill; time to first byte (the bench measures full
 responses).
+
+## Headlines and the booth guide (eng/hostguide, 2026-10-13)
+
+Viewer Joonazan: "<Space platform name> died to an asteroid would've been better than the slop they said", and "too
+convoluted and AI-structured to be appealing". In shift04, at 05:15:40, Rook said "Ooh, that hurts. A space platform
+hub is gone, and a solar panel too. Asteroids again." That was Skylark or Starling destroyed. The platform loss had
+been folded into an attack beat's "also happening".
+
+Facts (model.py):
+- Losses and attacks on a platform name it and say where it is: "1 lost on platform Skylark (in orbit of Vulcanus):
+  space platform hub ...; the hub is gone, so Skylark is destroyed".
+  - An attack's surface identifies the platform, matched through the platform views.
+  - A loss line has no surface. A space-only building (hub, asteroid collector, thruster, crusher) or an asteroid
+    attacker puts it on a platform. With one platform that platform is named; with several it reads "a space
+    platform".
+- A platform missing from two space reads in a row is a `headline` alert: "Skylark destroyed in orbit of Vulcanus by
+  medium metallic asteroids". Its facts give the platform, where, destroyed_by (from the hub loss before it), what it
+  means and platforms_left. A one-read blip or a rename is not a loss.
+- New moments: the shift's first rocket, every platform launched after the first, and each platform's first arrival
+  at each planet.
+- Every space moment and every death carries headline facts.
+
+Beats (caster.py):
+- `headline`, `space` and `death` are headlines (HEADLINE_KINDS). They have priority 10, above attacks.
+- A headline is said on its own. Nothing is folded into it, it is never folded into a battle beat, and it neither
+  carries nor resets the battle tally.
+- A headline is a two-line exchange with Rook first. Rook calls it with the name, Vale gives the consequence
+  (HEADLINE_CALL, plus a line per kind).
+- Templates: a headline template was added, and two no-subject or biter-only openings were dropped: "That hurts." on
+  losses and "Biters!" on attacks.
+
+The booth guide: `DIALOGUE`, in every prompt after SPOKEN. It is written from sports-commentary practice:
+- play-by-play calls the action (who, what, where), and colour reacts with the stakes;
+- one thing per line, and the name first;
+- no reaction without its subject;
+- no report reading: no "this report shows", no tallies of reports, no status tag at the end of a line;
+- no summing up, no stacked clauses, no slide-shaped sentences ("X, and that's Y. Z means W.");
+- not "Oh," on every line, and questions go across the booth.
+Two bad/good pairs come from shift05 lines. Its examples use a made-up platform name. Two new sample exchanges
+(a platform lost, a shift's first rocket) join EXAMPLES.
+
+Replay: `python3 tools/stream/hostguide_replay.py` runs offline with the template writer; add
+`--writer or:anthropic/claude-sonnet-5.5` for the hosts' writer (needs network and keys). Old lines are as aired; the
+new facts are the logged ones plus the headline facts. The old logs do not name the platform, so the replay assumes
+one.
+
+Tests: `test_hostguide.py`, plus `caster_selftest.py` (a death is said alone first and then the attack folds the
+loss; a headline is never folded; headlines outrank attacks; templates) and `selftest.py` (the shift's first rocket).
