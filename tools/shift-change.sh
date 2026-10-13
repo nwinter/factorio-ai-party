@@ -16,10 +16,13 @@
 #    in the health line; non-fatal; POG_OBS_RESTART=0 or POG_OBS=0 skips it).
 # 3. Afterwards (POG_SC_HEALTH_WAIT seconds, default 180): one health line (agents up, broker, OBS and the stream
 #    service, the viewer relay, harness Lua errors so far), PREV's console audit (stop-team saved it) and the site
-#    refresh's outcome (waited for up to POG_SC_SITE_WAIT seconds, default 300, then left running).
+#    refresh's outcome (waited for up to POG_SC_SITE_WAIT seconds, default 300, then left running). With --stream, a
+#    health line saying "OBS NOT streaming" runs tools/obs-recover.sh once (log runs/NEXT/obs-recover.log) and the
+#    health line again (POG_OBS_RECOVER=0 skips it).
 # --dry-run: the checks, the switches and the plan (with start-team's own dry run); stops and starts nothing.
 # Stubs for tests: POG_SC_STOP_TEAM, POG_SC_START_TEAM, POG_SC_QUOTA, POG_SC_SSH, POG_SC_OBS, POG_SC_HERDR,
-# POG_SC_PGREP, POG_SC_SITE_REFRESH, POG_SC_OBS_RESTART (commands, split on spaces), POG_SC_RUNS (where runs live), POG_SC_STATE_URL.
+# POG_SC_PGREP, POG_SC_SITE_REFRESH, POG_SC_OBS_RESTART, POG_SC_OBS_RECOVER (commands, split on spaces), POG_SC_RUNS
+# (where runs live), POG_SC_STATE_URL.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
@@ -48,6 +51,7 @@ read -ra herdr <<<"${POG_SC_HERDR:-herdr}"
 read -ra pgrep_cmd <<<"${POG_SC_PGREP:-pgrep}"
 read -ra site_refresh <<<"${POG_SC_SITE_REFRESH:-tools/site-refresh.sh}"
 read -ra obs_restart <<<"${POG_SC_OBS_RESTART:-tools/obs-restart.sh}"
+read -ra obs_recover <<<"${POG_SC_OBS_RECOVER:-tools/obs-recover.sh}"
 py=tools/.venv/bin/python; [ -x "$py" ] || py=$HOME/code/player-of-games/tools/.venv/bin/python
 read -ra obs <<<"${POG_SC_OBS:-$py tools/obs.py}"
 runs=${POG_SC_RUNS:-}
@@ -112,6 +116,8 @@ echo "      ${start_team[*]} $next $minutes${stream:+ $stream} with the switches
 [ "${POG_OBS:-1}" != 0 ] && [ "${POG_OBS_RESTART:-1}" != 0 ] && \
   echo "      then restart OBS: ${obs_restart[*]} (non-fatal; start-team gets POG_OBS_RESTARTED=1)"
 echo "      then a health line after ${POG_SC_HEALTH_WAIT:-180} s and $prev's console audit"
+[ -n "$stream" ] && [ "${POG_OBS_RECOVER:-1}" != 0 ] && \
+  echo "      if it says OBS NOT streaming: ${obs_recover[*]} once, then the health line again"
 if [ ${#refused[@]} -gt 0 ]; then
   printf 'refused: %s\n' "${refused[@]}" >&2
   exit 2
@@ -182,7 +188,17 @@ hargs=(--team "$team" --since "$started" --window "$(( $(date +%s) - started + 1
 [ "$(swval POG_BROKER 0)" = 1 ] && hargs+=(--broker)
 [ -n "$stream" ] && hargs+=(--stream)
 [ "${POG_OBS:-1}" != 0 ] && hargs+=(--obs "${obs[*]}")
-python3 tools/shift_change.py health "$next_dir" "${hargs[@]}"; healthy=$?
+health=$(python3 tools/shift_change.py health "$next_dir" "${hargs[@]}"); healthy=$?
+echo "$health"
+# 15:06: the health line said "OBS NOT streaming" and nothing acted on it (the stream was down 14 min): one recovery
+# (tools/obs-recover.sh: a plain retry of the outputs, else an OBS restart and the shift's OBS steps), then the
+# health line again. POG_OBS_RECOVER=0 skips it.
+if [ -n "$stream" ] && [ "${POG_OBS_RECOVER:-1}" != 0 ] && grep -q "OBS NOT streaming" <<<"$health"; then
+  echo "OBS is not streaming: ${obs_recover[*]}"
+  "${obs_recover[@]}" 2>&1 | tee "$next_dir/obs-recover.log" | sed 's/^/  /'
+  hargs2=("${hargs[@]}"); hargs2[5]=$(( $(date +%s) - started + 1 ))  # (the --window value: from the start until now)
+  python3 tools/shift_change.py health "$next_dir" "${hargs2[@]}"; healthy=$?
+fi
 if [ -f "$prev_dir/console-audit.json" ]; then
   echo "console audit of $prev:"
   python3 tools/console_audit.py --file "$prev_dir/console-audit.json" | sed 's/^/  /'
