@@ -23,6 +23,10 @@
     return v;
   }
 
+  // a page's charts can share one list of [game minute, Pacific time] (#chart-clock) for the hover's real time
+  var pageClock = null;
+  try { var pc = document.getElementById('chart-clock'); if (pc) pageClock = JSON.parse(pc.textContent); } catch (e) {}
+
   document.querySelectorAll('figure.chart').forEach(function (fig) {
     var dataEl = fig.querySelector('.chart-data');
     var svg = fig.querySelector('svg');
@@ -59,7 +63,8 @@
           s.name.replace(/</g, '&lt;') + '</span><b>' + v.toLocaleString() + '</b></div>';
       });
       if (!rows) { tip.hidden = true; return; }
-      var when = d.clock && d.clock.length ? valueAt(d.clock, x) : null;  // the real time (Pacific) at that game time
+      var clock = d.clock === 'page' ? pageClock : d.clock;
+      var when = clock && clock.length ? valueAt(clock, x) : null;  // the real time (Pacific) at that game time
       tip.innerHTML = '<div class="t-head">' + fmtMin(x) + (when ? ' · ' + when : '') + ' · ' + d.y + '</div>' + rows;
       tip.hidden = false;
       var left = sx / scale + 12;
