@@ -176,6 +176,43 @@ return function(api)
       row.unbuilt_ghosts=ghosts and ghosts>0 and ghosts or nil
     end
   end
+  -- Hub storage use: free slots of all.
+  function M.hub_slots(hub)
+    local inv=try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+    local free=inv and try(function() return inv.count_empty_stacks() end)
+    return free and string.format('%d of %d free',free,#inv) or nil
+  end
+  -- Why the hub cannot build or deconstruct now: no free slot for what
+  -- deconstruction removes, or ghosts whose items the hub lacks (one scan of
+  -- the platform's ghosts, at most 500, when asked).
+  function M.blockers(pl)
+    local hub=pl.hub
+    if not (hub and hub.valid) then return nil end
+    local inv=hub.get_inventory(defines.inventory.hub_main)
+    local s=pl.surface
+    local out={}
+    local free=try(function() return inv.count_empty_stacks() end)
+    if free==0 then
+      local marked=try(function() return s.count_entities_filtered{to_be_deconstructed=true} end) or 0
+      out[#out+1]=string.format('hub full: 0 of %d slots free',#inv)..(marked>0 and string.format('; %d marked for deconstruction wait for room (removed entities and their contents go to the hub)',marked) or '')
+    end
+    local need,order={},{}
+    for _,g in ipairs(try(function() return s.find_entities_filtered{type={'entity-ghost','tile-ghost'},limit=500} end) or {}) do
+      local it=try(function() return g.ghost_prototype.items_to_place_this[1] end)
+      local n=it and (type(it.name)=='string' and it.name or it.name and it.name.name)
+      if n then
+        if not need[n] then need[n]=0; order[#order+1]=n end
+        need[n]=need[n]+(it.count or 1)
+      end
+    end
+    local missing={}
+    for _,n in ipairs(order) do
+      local have=inv.get_item_count(n)
+      if have<need[n] then missing[#missing+1]=string.format('%s (ghosts need %d, hub has %d)',n,need[n],have) end
+    end
+    if #missing>0 then out[#out+1]='ghosts wait for items the hub lacks: '..table.concat(missing,', ') end
+    return #out>0 and out or nil
+  end
   function M.platforms(p,a)
     local out={platforms={}}
     for _,pl in pairs(p.force.platforms) do
@@ -187,6 +224,7 @@ return function(api)
         if hub and hub.valid then
           row.hub=hub.position
           row.hub_items=top_items(hub.get_inventory(defines.inventory.hub_main),a.platform and 64 or 12)
+          row.hub_slots=M.hub_slots(hub)
           local secs=hub.get_logistic_sections()
           if secs then
             local req={}
@@ -195,7 +233,7 @@ return function(api)
           end
           row.leave_ok=pl.can_leave_current_location and pl.can_leave_current_location() or nil
         end
-        if a.platform then detail(pl,row) end
+        if a.platform then detail(pl,row); row.construction_blocked=try(function() return M.blockers(pl) end) end
         out.platforms[#out.platforms+1]=row
       end
     end
@@ -407,7 +445,7 @@ return function(api)
     requests={target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       returns='target, sections [{index, group, controlled (set by the game, not editable), requests ["item min..max from planet"]}]; call with no set/clear to just read'},
-    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
+    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks)',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, hub_slots (free of all), requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule'},
     drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',
