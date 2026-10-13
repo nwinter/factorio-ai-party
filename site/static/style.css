@@ -237,6 +237,9 @@ td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
   table.firsts th[scope=row] { flex-basis: 100%; order: -1; }
   table.firsts td.num { font-size: .88rem; color: var(--muted); }
 }
+.techs { list-style: none; padding: 0; margin: .4rem 0; columns: 3 15em; column-gap: 24px; font-size: .92rem; }
+.techs li { break-inside: avoid; padding: 1px 0; }
+.techs .c-time { display: inline-block; min-width: 4.2em; color: var(--muted); font-variant-numeric: tabular-nums; }
 /* milestones (firsts) */
 table.firsts th[scope=row] { font-weight: 600; }
 .kind { display: inline-block; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line-strong); color: var(--ink-2); }

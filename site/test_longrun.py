@@ -128,6 +128,8 @@ def main():
         assert 'href="/runs/long/shift-2/"' in sp and "Milestones" in sp
         assert "First rocket launched" in page and "Records" in page and 'class="mark"' in page
         assert "1 built" in page and "0 lost · 1 active (Solstice)" in page and "Space platforms" in page
+        assert [(t["label"], t["tick"]) for t in s3["techs"]] == [("Rocket silo", 3600 * 102)], s3["techs"]
+        assert "Technologies researched (1)" in (out / "runs" / "long" / "shift-2" / "index.html").read_text()
         # key times (game time, hours on stream, Pacific), the kind filter, the live banner (hidden until site.js)
         assert 'id="key-times"' in page and "First rocket" in page and "1h42m" in page, "first rocket at game 102 min"
         assert 'class="kind-filter"' in page and 'data-kind="space"' in page and '<tr data-kind="research">' in page

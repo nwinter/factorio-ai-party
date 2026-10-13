@@ -253,6 +253,17 @@ def label(name):
     return name.replace("-", " ")
 
 
+TECH_LABEL = dict(TECH_FIRSTS)
+
+
+def tech_label(name):
+    """'mining-productivity-2' -> 'Mining productivity 2' (the milestones' own labels where they have one)."""
+    if name in TECH_LABEL:
+        return TECH_LABEL[name]
+    s = name.replace("-", " ")
+    return s[:1].upper() + s[1:]
+
+
 def rebase(r, origin):
     """A score row counted from origin (the save the first shift resumed from): game time, technologies, rockets,
     platforms and planets other than Nauvis that the save already had are left out."""
@@ -459,7 +470,11 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                             first(f"depart:{was}", f"First platform departure from {was.capitalize()} ({pname})", "space", g, r["t"], n)
                         elif at != "in transit":
                             first(f"arrive:{at}", f"First platform arrival at {at.capitalize()} ({pname})", "space", g, r["t"], n)
+            # every technology this shift finished, at the first row that shows it
+            for tech in sorted(r["done"] - (before_row["done"] if before_row is not None else set())):
+                row.setdefault("techs", []).append({"name": tech, "label": tech_label(tech), "tick": g, "t": r["t"]})
             before_row = r
+        row.setdefault("techs", [])
         if died:
             w, who = died[0]
             tk = tick_at(w)
