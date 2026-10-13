@@ -120,4 +120,15 @@ T.on_damaged{tick=45100,entity={valid=true,name='pipe',force=mine,surface=surfac
 a=T.alerts(45050).attacked
 local pipe_hit=a[1].at.x==100 and a[1] or a[2]
 eq(pipe_hit.line:match('; (from nest [^;]+);'),'from nest (200,10) 135 tiles NE'); eq(pipe_hit.attackers,1); eq(pipe_hit.kinds,'1 small-biter')
+-- Nine agents on one surface: the chart (every chunk) is walked once a minute
+-- and the pollution read once per 10 s for all of them; nests stay per agent.
+local walks=0
+surface.get_chunks=function() walks=walks+1; return chunks() end
+local agents={}
+for i=1,9 do agents[i]={index=10+i,surface=surface,position={x=i,y=0},force=mine} end
+game.tick=60000; scans=0
+for _=1,20 do for _,a in ipairs(agents) do T.summary(a) end; game.tick=game.tick+60 end
+eq(walks,1); eq(scans,18)
+eq(T.summary(agents[3]).chart.charted_chunks,30)
+game.tick=60000+3600; T.summary(agents[1]); eq(walks,2)
 print('threat tests passed')

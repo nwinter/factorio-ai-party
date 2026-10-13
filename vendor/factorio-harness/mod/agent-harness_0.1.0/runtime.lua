@@ -624,6 +624,7 @@ function handlers.describe()
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.research and M.research.schema or {}) do description.actions[name]=schema end
+  description.actions.status.brief='boolean: only active, last, combat, last_combat, alive, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   description.runtime_fault=state().runtime_fault or false
   return description
@@ -799,6 +800,13 @@ function handlers.status(p,a)
   a=a or {}
   local controllable,control_error=pcall(player,p.index)
   local alive=p.character and p.character.valid
+  -- What a wait polls for (fh --wait, several times a second): the action
+  -- running and the last results, none of the factory, threat or alert scans.
+  if a.brief==true then
+    return {brief=true,active=active(p.index),last=state().last and state().last[p.index] or false,combat=state().combat and state().combat[p.index] or false,
+      last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,
+      supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,tick=game.tick,position=p.position}
+  end
   local threats=alive and threat.summary(p,a.threats==true) or {}
   -- Status is the recovery channel; a survey fault is reported, not raised.
   local surveyed,factory=true,{}
@@ -812,11 +820,15 @@ function handlers.status(p,a)
   end
   -- Fluid segments past the engine's extent limit carry no flow at all.
   if alive then
-    local fc=state().fluid_check
-    if not fc or fc.surface~=p.surface.index or game.tick-fc.tick>=600 then
+    -- One check per force and surface every 10 s, shared (one slot made agents on two surfaces rescan every call).
+    state().fluid_check=nil
+    state().fluid_checks=state().fluid_checks or {}
+    local fkey=p.force.name..'/'..p.surface.index
+    local fc=state().fluid_checks[fkey]
+    if not fc or game.tick-fc.tick>=600 then
       local ok,list,limit=pcall(pipes.overlong,p,3)
       fc={tick=game.tick,surface=p.surface.index,list=ok and list or {},limit=limit}
-      state().fluid_check=fc
+      state().fluid_checks[fkey]=fc
     end
     for _,seg in ipairs(fc.list) do
       factory.warnings=factory.warnings or {}

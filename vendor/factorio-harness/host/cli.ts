@@ -502,8 +502,19 @@ async function main() {
   // Polls peek, so the team hints and chat trailer they would carry stay
   // pending for the one reply the agent sees. A runtime without peek gets
   // plain polls.
+  // Polls ask for the brief status (the action running and the last results,
+  // none of status's factory and threat scans); a runtime without it gets
+  // the full one.
   let peekable = !bridged;
+  let briefable = !bridged;
   async function poll(): Promise<Reply> {
+    if (briefable) {
+      const reply = await harness.request('status',{peek:true,brief:true});
+      const message = String(reply.error?.message ?? '');
+      if (reply.ok || !/argument (brief|peek)\b/.test(message)) return reply;
+      briefable = false;
+      if (/argument peek\b/.test(message)) peekable = false;
+    }
     if (peekable) {
       const reply = await harness.request('status',{peek:true});
       if (reply.ok || !/peek/.test(String(reply.error?.message ?? ''))) return reply;

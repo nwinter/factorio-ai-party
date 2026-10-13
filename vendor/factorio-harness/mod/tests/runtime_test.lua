@@ -36,6 +36,26 @@ advance(1); eq(p.walking_state.walking,true); eq(p.walking_state.direction,4)
 advance(1); eq(p.walking_state.walking,true)
 advance(1); eq(p.walking_state.walking,false); eq(call('status').active,false)
 eq(call('status').last.outcome,'duration_elapsed')
+-- brief: what fh --wait polls, without the factory, threat or alert scans.
+do
+  local b=call('status',{brief=true,peek=true})
+  eq(b.brief,true); eq(b.last.outcome,'duration_elapsed'); eq(b.active,false); eq(b.combat,false); eq(b.alive,true)
+  eq(b.factory,nil); eq(b.evolution,nil); eq(b.warnings,nil); eq(b.tick,tick)
+  -- The fluid check is kept per surface: status alternating between two surfaces scans each once per 10 s.
+  local pipe_scans=0
+  local home=p.surface
+  local find=home.find_entities_filtered
+  local function counting(f) if type(f.type)=='table' and f.type[1]=='pipe' then pipe_scans=pipe_scans+1 end return find(f) end
+  home.find_entities_filtered=counting
+  local away=setmetatable({index=2,name='vulcanus',find_entities_filtered=counting},{__index=home})
+  -- (home was checked by the status calls above, within the 10 s)
+  for _=1,4 do p.surface=away; call('status'); p.surface=home; call('status') end
+  eq(pipe_scans,1)
+  for _,fc in pairs(storage.agent_harness.fluid_checks) do fc.tick=fc.tick-600 end -- 10 s later
+  for _=1,4 do p.surface=away; call('status'); p.surface=home; call('status') end
+  eq(pipe_scans,3)
+  home.find_entities_filtered=find
+end
 -- Tick steering uses actual position, tolerates speed changes, and stops safely.
 call('move_to',{position={x=10,y=0},pathfind=false})
 advance(1); eq(p.walking_state.direction,4)

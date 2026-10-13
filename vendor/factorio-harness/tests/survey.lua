@@ -113,4 +113,17 @@ has(S.summary(p).warnings,'hoarding: stone 16/20 slots, not drawn down for 10m')
 -- A decrease resets the clock.
 slots[16]=stack('stone',10); game.tick=game.tick+3600; S.sample(p)
 for _,w in ipairs(S.summary(p).warnings) do assert(not w:find('hoarding'),w) end
+-- Agents on two surfaces each keep their own survey for 10 s (shift03: one
+-- entry per force made them replace each other, a rescan on nearly every status).
+local scans=0
+local function counted(s) local find=s.find_entities_filtered; s.find_entities_filtered=function(f) if type(f.type)=='table' and f.type[1]=='assembling-machine' then scans=scans+1 end return find(f) end; return s end
+counted(surface)
+local other=counted({index=2,find_entities_filtered=function(f) if f.position then return {} end if type(f.type)=='table' then return {entities[1]} end return {} end})
+local q={index=2,force=force,surface=other,get_main_inventory=function() return main end}
+game.tick=200000
+for _=1,10 do S.summary(p); S.summary(q); game.tick=game.tick+30 end
+eq(scans,2)
+eq(S.summary(q).machines['assembling-machine-1'],'1/1 working'); eq(S.summary(p).machines['assembling-machine-1'],'2/3 working, 1 low_power')
+eq(S.summary(q).as_of,200000)
+game.tick=200600; S.summary(q); eq(scans,3)
 print('survey: ok')
