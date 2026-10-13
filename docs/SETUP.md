@@ -217,6 +217,12 @@ tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_ha
   calls (`status`, `chat` with `peek`) and the world must run the current runtime (`fh deploy`).
 - OBS's old "Untitled" profile shows an expired-Twitch-login dialog on start that blocks closing and WebSocket;
   `tools/win/obs-dismiss.ps1` presses OK. `tools/win/desktop-shot.ps1` screenshots the box's desktop.
+- One OBS process for a day fails: on 2026-10-13 08:29, after 24.5 h, Quick Sync gave MFX_ERR_MEMORY_ALLOC and the
+  stream and recording stopped; restarting the outputs did not help, a new OBS did. `tools/obs-restart.sh` (outputs
+  off, `tools/win/obs-restart.ps1` closes OBS from Nick's session, forces after 30 s, starts `pog-obs`, answers the
+  Safe Mode and Authentication Failure dialogs, then waits for the websocket) runs at every shift change between
+  stop-team and start-team, and in start-team for `--stream`. Mid-shift, `tools/obs-recover.sh` retries the outputs
+  once and restarts OBS if they do not come up, then runs `tools/obs-steps.sh --stream`. All take `--dry-run`.
 - NVENC is unavailable in OBS 32 ("outdated_driver": NVIDIA driver 535.98 from 2023); recordings use Intel Quick Sync.
   OBS applies output settings changed over WebSocket only when a profile loads: switch to a temporary profile and back.
 - OBS's NDI plugin keeps an output running, which blocks frame-rate/resolution changes (stays 1080p60).

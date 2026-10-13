@@ -12,12 +12,14 @@
 #    Once PREV is stopped (its row on the site is complete), tools/site-refresh.sh --last-run PREV runs in the
 #    background (log: runs/PREV/site-refresh.log): build, check and deploy the site. It never blocks or fails a shift;
 #    POG_SITE_REFRESH=0 skips it.
+#    Between stop-team and start-team, OBS is restarted (tools/obs-restart.sh; log runs/NEXT/obs-restart.log, outcome
+#    in the health line; non-fatal; POG_OBS_RESTART=0 or POG_OBS=0 skips it).
 # 3. Afterwards (POG_SC_HEALTH_WAIT seconds, default 180): one health line (agents up, broker, OBS and the stream
 #    service, the viewer relay, harness Lua errors so far), PREV's console audit (stop-team saved it) and the site
 #    refresh's outcome (waited for up to POG_SC_SITE_WAIT seconds, default 300, then left running).
 # --dry-run: the checks, the switches and the plan (with start-team's own dry run); stops and starts nothing.
 # Stubs for tests: POG_SC_STOP_TEAM, POG_SC_START_TEAM, POG_SC_QUOTA, POG_SC_SSH, POG_SC_OBS, POG_SC_HERDR,
-# POG_SC_PGREP, POG_SC_SITE_REFRESH (commands, split on spaces), POG_SC_RUNS (where runs live), POG_SC_STATE_URL.
+# POG_SC_PGREP, POG_SC_SITE_REFRESH, POG_SC_OBS_RESTART (commands, split on spaces), POG_SC_RUNS (where runs live), POG_SC_STATE_URL.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
@@ -45,6 +47,7 @@ read -ra ssh_cmd <<<"${POG_SC_SSH:-ssh}"
 read -ra herdr <<<"${POG_SC_HERDR:-herdr}"
 read -ra pgrep_cmd <<<"${POG_SC_PGREP:-pgrep}"
 read -ra site_refresh <<<"${POG_SC_SITE_REFRESH:-tools/site-refresh.sh}"
+read -ra obs_restart <<<"${POG_SC_OBS_RESTART:-tools/obs-restart.sh}"
 py=tools/.venv/bin/python; [ -x "$py" ] || py=$HOME/code/player-of-games/tools/.venv/bin/python
 read -ra obs <<<"${POG_SC_OBS:-$py tools/obs.py}"
 runs=${POG_SC_RUNS:-}
@@ -106,13 +109,16 @@ echo "switches from $prev:"; printf '  %s\n' "$explain"
 echo "plan: POG_STOP_WORLD=1 ${stop_team[*]} $prev; close $(wc -l < "$prev_dir/panes.txt" 2>/dev/null | tr -d ' ' || echo 0) agent panes of $prev;"
 echo "      ${start_team[*]} $next $minutes${stream:+ $stream} with the switches above, POG_RESUME=$prev, POG_NEXT_SHIFT=$next_shift;"
 [ "${POG_SITE_REFRESH:-1}" != 0 ] && echo "      once $prev is stopped: ${site_refresh[*]} --last-run $prev in the background (non-fatal)"
+[ "${POG_OBS:-1}" != 0 ] && [ "${POG_OBS_RESTART:-1}" != 0 ] && \
+  echo "      then restart OBS: ${obs_restart[*]} (non-fatal; start-team gets POG_OBS_RESTARTED=1)"
 echo "      then a health line after ${POG_SC_HEALTH_WAIT:-180} s and $prev's console audit"
 if [ ${#refused[@]} -gt 0 ]; then
   printf 'refused: %s\n' "${refused[@]}" >&2
   exit 2
 fi
 if [ $dry = 1 ]; then
-  env ${sw[@]+"${sw[@]}"} POG_RESUME="$prev" POG_NEXT_SHIFT="$next_shift" POG_DRY_RUN=1 \
+  restarted=(); [ "${POG_OBS:-1}" != 0 ] && [ "${POG_OBS_RESTART:-1}" != 0 ] && restarted=(POG_OBS_RESTARTED=1)
+  env ${sw[@]+"${sw[@]}"} ${restarted[@]+"${restarted[@]}"} POG_RESUME="$prev" POG_NEXT_SHIFT="$next_shift" POG_DRY_RUN=1 \
     "${start_team[@]}" "$next" "$minutes" ${stream:+"$stream"}
   exit 0
 fi
@@ -136,6 +142,19 @@ if [ "${POG_SITE_REFRESH:-1}" != 0 ]; then
   site_pid=$!
   echo "site refresh started (pid $site_pid, log $prev_dir/site-refresh.log)"
 fi
+# A new OBS process for every shift (2026-10-13 08:29: after 24.5 h in one process Quick Sync failed with
+# MFX_ERR_MEMORY_ALLOC; only restarting OBS helped). stop-team stopped the outputs; start-team then sets the scene,
+# records and streams (POG_OBS_RESTARTED=1: no second restart there). A failure only shows in the health line: the
+# shift goes on with the OBS that runs. POG_OBS_RESTART=0 skips it.
+obs_restarted=()
+if [ "${POG_OBS:-1}" != 0 ] && [ "${POG_OBS_RESTART:-1}" != 0 ]; then
+  mkdir -p "$next_dir"
+  echo "restarting OBS"
+  "${obs_restart[@]}" 2>&1 | tee "$next_dir/obs-restart.log" | sed 's/^/  /'
+  tail -1 "$next_dir/obs-restart.log" > "$next_dir/obs-restart.txt"
+  grep -q "OBS answers" "$next_dir/obs-restart.txt" || echo "OBS restart FAILED (going on with the running OBS): $(cat "$next_dir/obs-restart.txt")"
+  obs_restarted=(POG_OBS_RESTARTED=1)
+fi
 started=$(date +%s)
 echo "starting $next"
 site_result() {  # the site refresh's outcome, waiting up to POG_SC_SITE_WAIT seconds; never changes the exit code
@@ -150,7 +169,7 @@ site_result() {  # the site refresh's outcome, waiting up to POG_SC_SITE_WAIT se
     echo "site refresh FAILED (the shift is unaffected): $(grep 'FAILED' "$prev_dir/site-refresh.log" | tail -1 | sed 's/^[0-9:]* site-refresh: //'); log $prev_dir/site-refresh.log"
   fi
 }
-if ! env ${sw[@]+"${sw[@]}"} POG_RESUME="$prev" POG_NEXT_SHIFT="$next_shift" "${start_team[@]}" "$next" "$minutes" ${stream:+"$stream"}; then
+if ! env ${sw[@]+"${sw[@]}"} ${obs_restarted[@]+"${obs_restarted[@]}"} POG_RESUME="$prev" POG_NEXT_SHIFT="$next_shift" "${start_team[@]}" "$next" "$minutes" ${stream:+"$stream"}; then
   echo "start-team $next FAILED; see $next_dir/start.log" >&2
   site_result
   exit 1
