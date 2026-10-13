@@ -67,8 +67,10 @@ DEFAULTS = {
     "battle_min": 15.0,            # a battle clip is this long ...
     "battle_per_piece": 0.5,       # ... plus this per piece lost (59 turrets: 40 s) ...
     "battle_cap": 40.0,            # ... at most this (and buffer_s - battle_margin)
-    "battle_footage": 8.0,         # less on-air footage of the battle than this: no clip
-    "battle_end_s": 5.0,           # quiet this long: the end window is saved (the replay airs once the battle is over)
+    "battle_footage": 8.0,         # a start window shorter than this (the battle was over at once): no clip
+    "battle_lead": 3.0,            # the clip starts this long before the battle's first sign, not earlier
+    "battle_first_s": 4.0,         # on-air footage must begin by this long after the first sign (else: aftermath)
+    "battle_cover": 0.7,           # ... and cover this share of the start window
     "battle_live_frac": 0.9,       # the program showed this share of the battle live: no replay of it
     "battle_gap": 2.5,             # seconds: footage samples further apart than this are separate runs
 }
@@ -260,25 +262,13 @@ class Replays:
                 out.append([t, t])
         return out
 
-    def battle_losses(self, b, lo, hi):
-        return sum(1 for t in b["loss_ts"] if lo <= t - self.cfg["loss_lag"] <= hi)
-
-    def save_battle(self, b, part, start, end, now):
-        """Save the buffer now for this window of the battle's on-air footage (it airs once the battle is over)."""
-        score = self.battle_losses(b, start, end) * 10 + (end - start)
-        b["parts"][part] = score
-        b["saved_to"] = end
-        info = b["info"]
-        self.queue_pending({"kind": "battle", "label": info.get("label") or "Battle", "battle": b["key"],
-                            "battle_part": part, "agent": None, "agent_name": info.get("agent"),
-                            "position": info["position"], "save_at": now, "show_from": start, "show_to": end})
-        self.log(f"[replays] battle {part}: {end - start:.0f} s of on-air footage ({b['key']}, score {score:.0f})")
-
     def watch_battle(self, info, snap, cams, now):
-        """A key battle (snapshot battle, onecam.py): what the program showed of it, sampled every tick; its start
-        window saved once the footage fills a clip (the buffer holds only buffer_s), its end window saved when it
-        goes quiet if that one has more losses; when it is over, the better one airs, unless the program showed
-        nearly all of the battle live. No on-air footage of the battle's surface and area: no replay."""
+        """A key battle (snapshot battle, onecam.py): what the program showed of it, sampled every tick. Its clip is
+        one window from battle_lead before its first sign (the first hit or loss the director heard of), battle_len
+        long, saved once the window is over (well inside the buffer). It airs once the battle is over, and only if the
+        program's footage covers that first moment (Nick, 13:40: the replays were "just the after-battle carnage, with
+        a few seconds of unrelated base capture beforehand"): footage that starts later is aftermath, no replay; and
+        not if the program showed nearly all of it live."""
         cfg = self.cfg
         b = self.battle
         if b and (not info or info["key"] != b["key"]):
@@ -287,46 +277,51 @@ class Replays:
         if not info:
             return
         if not b:
-            b = self.battle = {"key": info["key"], "info": info, "shown": [], "parts": {}, "saved_to": -1e9,
-                               "loss_ts": set()}
+            b = self.battle = {"key": info["key"], "info": info, "shown": [], "saved": None, "why": None}
         b["info"] = info
         by_name = {a["name"]: {k: a.get(k) for k in ("position", "surface")} for a in snap.get("agents") or []}
         if not self.playing and self.shows_battle((cams or {}).get("main") or {}, info, by_name):
             b["shown"].append(now)
-        for f in snap.get("fights") or []:  # loss moments inside the battle's area: what makes a window worth it
-            p = f.get("position") or {}
-            q = info["position"]
-            if p.get("x") is not None and (p.get("surface") or "nauvis") == q.get("surface", "nauvis") and \
-                    ((p["x"] - q["x"]) ** 2 + (p["y"] - q["y"]) ** 2) ** 0.5 <= (info.get("extent") or 0) / 2 + 60:
-                b["loss_ts"].update(f.get("losses") or [])
-        L = self.battle_len(info)
-        lo = now - (cfg["buffer_s"] - cfg["battle_margin"])
-        runs = self.runs(b["shown"], max(lo, b["saved_to"]), now)
-        if not runs:
-            return
-        r = max(runs, key=lambda r: r[1] - r[0])
-        if "start" not in b["parts"] and r[1] - r[0] >= L:
-            self.save_battle(b, "start", r[0], r[0] + L, now)  # from its first footage on air
-        elif now - info["last"] >= cfg["battle_end_s"] and "end" not in b["parts"] and r[1] - r[0] >= cfg["battle_footage"] \
-                and info["last"] > b["saved_to"] - cfg["battle_end_s"]:
-            end = r[1]
-            start = max(r[0], end - L)
-            if not b["parts"] or self.battle_losses(b, start, end) * 10 + (end - start) > max(b["parts"].values()):
-                self.save_battle(b, "end", start, end, now)
+        if not b["saved"] and not b["why"] and now >= info["first"] - cfg["battle_lead"] + self.battle_len(info):
+            self.judge_start(b, now)
+
+    def judge_start(self, b, now):
+        """The start window, judged once it is over (or the battle ended first): saved, or why not."""
+        cfg, info = self.cfg, b["info"]
+        start = info["first"] - cfg["battle_lead"]
+        end = min(start + self.battle_len(info), now)
+        shown = self.runs(b["shown"], start, end)
+        first_seen = shown[0][0] if shown else None
+        covered = sum(r[1] - r[0] + 1 for r in shown)
+        if first_seen is None or first_seen > info["first"] + cfg["battle_first_s"]:
+            b["why"] = ("aftermath only: no on-air footage of its start" if first_seen is None else
+                        f"aftermath only: footage starts {first_seen - info['first']:.0f} s after its first sign")
+        elif end - start < cfg["battle_footage"] or covered < cfg["battle_cover"] * (end - start):
+            b["why"] = f"too little footage of its start ({covered:.0f} s of {end - start:.0f} s)"
+        elif now - start > cfg["buffer_s"] - 1:
+            b["why"] = "its start has left the replay buffer"
+        else:
+            b["saved"] = (start, end)
+            self.queue_pending({"kind": "battle", "label": info.get("label") or "Battle", "battle": b["key"],
+                                "battle_part": "start", "agent": None, "agent_name": info.get("agent"),
+                                "position": info["position"], "save_at": now, "show_from": start, "show_to": end})
+            self.log(f"[replays] battle start saved: {end - start:.0f} s from {cfg['battle_lead']:g} s before its first "
+                     f"sign ({b['key']}; {covered:.0f} s of it on air)")
 
     def finish_battle(self, now):
         b, self.battle = self.battle, None
         info = b["info"]
+        if not b["saved"] and not b["why"]:
+            self.judge_start(b, now)  # a battle over before its start window ended
         self.battle_areas.append((now + 300, info["position"], info.get("extent") or 0))
         span = max(1.0, info["last"] - info["first"])
         live = sum(r[1] - r[0] + 1 for r in self.runs(b["shown"], info["first"], info["last"] + 1))
-        if not b["parts"]:
-            keep, why = "none", "no on-air footage of it" if not b["shown"] else "too little on-air footage of it"
+        if not b["saved"]:
+            keep, why = "none", b["why"] or "it ended before its start window was judged"
         elif live / span >= self.cfg["battle_live_frac"]:
             keep, why = "none", f"the program showed {live / span:.0%} of it live"
         else:
-            keep = max(b["parts"], key=b["parts"].get)
-            why = f"the {keep} window ({live:.0f} s of {span:.0f} s were on air)"
+            keep, why = "start", f"its start ({live:.0f} s of {span:.0f} s were on air)"
         self.battle_keep[b["key"]] = keep
         self.log(f"[replays] battle over ({info.get('label')}): replay {'none, ' if keep == 'none' else ''}{why}")
 

@@ -733,8 +733,18 @@ class OneCam(Director):
             self.battle = None
 
     def battle_target(self, b, by_name):
-        if b["agent"]:
-            n = b["agent"]
+        """The battle's shot, chosen once (shift06 13:29: the combat flag flickered and the camera cut between Astra
+        and the area view every few seconds): its agent while it is alive in the battle's area, then the area for
+        good."""
+        if "follow" not in b:
+            b["follow"] = b["agent"]
+        n = b["follow"]
+        if n:
+            a = by_name.get(n) or {}
+            if not (a.get("alive", True) and a.get("position") and surface_of(a) == b["surface"] and
+                    dist(a["position"], b["position"]) <= self.cfg["battle_near"] + b["extent"] / 2):
+                b["follow"] = n = None  # dead or gone from it: the area from now on
+        if n:
             ext = b["extent"] + 2 * dist(by_name[n]["position"], b["position"])
             z = min(self.cfg["attack_zoom"], self.fight_zoom(ext))
             return {"agents": [n], "follow": n, "zoom": z, "solo_zoom": z, "exact_zoom": True, "subject": n,
@@ -758,8 +768,11 @@ class OneCam(Director):
                 return  # being framed: the cut comes within ready_s
             self.pending = None
         want = self.battle_target(b, by_name)
-        if cur.get("subject") == want["subject"] and (want["subject"] != "@battle" or self.in_battle(cpos)):
-            if abs(cur["zoom"] - want["zoom"]) >= self.cfg["zoom_delta"] or cur.get("battle") != b["key"] or \
+        same = cur.get("subject") == want["subject"] and (
+            cur.get("battle") == b["key"] or want["subject"] != "@battle" or self.in_battle(cpos))
+        if same:  # on it already: reframed in place (zoom, centre), never a cut
+            cur["battle"] = b["key"]
+            if abs(cur["zoom"] - want["zoom"]) >= self.cfg["zoom_delta"] or \
                     (cpos and dist(cpos, want.get("position") or cpos) > 8):
                 self.apply(self.slot(self.onair), dict(cur, **{k: v for k, v in want.items()}, since=cur.get("since", now)),
                            f"battle: zoom {want['zoom']}", scores, now, quiet=True)

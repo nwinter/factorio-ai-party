@@ -144,33 +144,39 @@ def replays_world():
     return seg, rpl, logs
 
 
-def replay_missed_start():
-    """The camera pinned elsewhere for the first 30 s (an operator follow on Astra): the battle's footage starts at
-    the cut, a 40 s clip of it (59 turrets lost) airs once the battle is over."""
+def replay_aftermath():
+    """The camera pinned elsewhere for the first 30 s (an operator follow on Astra): footage starts long after the
+    first loss, so it is aftermath (Nick, 13:40): no replay."""
     d, _ = world()
     seg, rpl, logs = replays_world()
     t0 = 20000
-    rows = run(d, rpl, seg, t0, t0 + 200, team(), follow=("astra", t0 - 5, t0 + 30))
-    # a lull at +25..+60 saves an early candidate (8 s); the start window fills 40 s and wins on losses
-    clips = [l for l in logs if "battle start" in l]
-    assert clips and "40 s of on-air footage" in clips[0], logs
-    assert any("dropped clip-1: not the battle's replay" in l for l in logs), logs
-    assert any("from 5000 ms of 45000 ms" in l for l in logs), logs  # 40 s back from the end of the 45 s file
-    saved = rpl.status["last"] or {}
-    assert saved.get("label", "").startswith("Battle"), (saved, logs)
-    st = rpl.status
-    assert st["replays"] == 2 and sum("on air: Battle" in l for l in logs) == 1, logs  # two saved, one aired
-    shown = [t for t, r, b in rows if b and rpl.shows_battle(r, b, {"sol": {"surface": V, "position": {"x": -236, "y": 68}}})]
-    c = next(l for l in logs if l.startswith("[replays] battle over"))
-    assert "replay the start window" in c, c
-    on = [l for l in logs if l.startswith("[replays] on air: Battle")]
-    assert on, logs
+    run(d, rpl, seg, t0, t0 + 200, team(), follow=("astra", t0 - 5, t0 + 30))
+    over = next(l for l in logs if l.startswith("[replays] battle over"))
+    assert "replay none, aftermath only" in over and rpl.status["replays"] == 0, logs
     assert not any("pending loss" in l for l in logs), [l for l in logs if "loss" in l]  # the battle's losses: no loss clips
-    print(f"replay, start missed: ok ({clips[0].split('] ')[1]}; footage from +{shown[0] - t0} s)")
+    print(f"replay, aftermath: ok ({over.split('): ')[1]})")
+
+
+def replay_start_then_away():
+    """Sol on air when the first loss comes in (the start is live), then the camera is pinned elsewhere from +30 s:
+    the start window (3 s before the first sign, 40 s for 59 turrets) airs once the battle is over."""
+    d, _ = world()
+    seg, rpl, logs = replays_world()
+    t0 = 25000
+    tm = team()
+    tm[0]["interest"] = 30  # Sol on air before the raid
+    run(d, rpl, seg, t0, t0 + 200, tm, follow=("astra", t0 + 30, t0 + 600))
+    saved = next(l for l in logs if "battle start saved" in l)
+    assert "40 s from 3 s before its first sign" in saved, saved
+    c = rpl.status["last"] or {}
+    assert c.get("label", "").startswith("Battle") and sum("on air: Battle" in l for l in logs) == 1, logs
+    over = next(l for l in logs if l.startswith("[replays] battle over"))
+    assert "replay its start" in over, over
+    print(f"replay, start live then away: ok ({saved.split('] ')[1]})")
 
 
 def replay_live_and_none():
-    # on air from its first sign to the end: no replay (viewers saw it live)
+    # on air from its first sign (the cut within 2 s) to the end: no replay (viewers saw it live)
     d, _ = world()
     seg, rpl, logs = replays_world()
     run(d, rpl, seg, 30000, 30200, team())
@@ -181,8 +187,40 @@ def replay_live_and_none():
     seg, rpl, logs = replays_world()
     run(d, rpl, seg, 40000, 40200, team(), follow=("astra", 40000 - 5, 40000 + 600))
     over = next(l for l in logs if l.startswith("[replays] battle over"))
-    assert "no on-air footage" in over and rpl.status["replays"] == 0, logs
+    assert "no on-air footage of its start" in over and rpl.status["replays"] == 0, logs
     print("replay, live / no footage: ok (none either way)")
+
+
+def episodes():
+    """model.py: a fight reported again after FIGHT_EPISODE_GAP is a new fight (its own first sign); shift06 13:2x
+    "Astra is under attack" kept a first from minutes before."""
+    from model import Model, FIGHT_EPISODE_GAP
+    m = Model({"agents": {"astra": {}}})
+    m._fight("attack:astra", "attack", {"x": 0, "y": 0}, 1000, "Astra is under attack", agent="astra")
+    m._fight("attack:astra", "attack", {"x": 0, "y": 0}, 1010, "Astra is under attack", agent="astra")
+    assert m.fights["attack:astra"]["first"] == 1000
+    m._fight("attack:astra", "attack", {"x": 0, "y": 0}, 1010 + FIGHT_EPISODE_GAP + 1, "Astra is under attack", agent="astra")
+    assert m.fights["attack:astra"]["first"] == 1010 + FIGHT_EPISODE_GAP + 1
+    print("episodes: ok")
+
+
+def no_flicker():
+    """Astra fights 60 s with a combat flag that flickers (shift06 13:29: cuts between Astra and the area view every
+    few seconds): one cut to the battle, then the same shot."""
+    d, _ = world()
+    astra = agent("astra", 0, 0, 1)
+    tm = [astra, agent("luna", 300, 0, 5), agent("sol", -300, 0, 1)]
+    t0 = 50000
+    for k in range(-5, 120):
+        t = t0 + k
+        astra["combat"] = 0 <= k < 90 and (k // 3) % 2 == 0
+        fights = [{"key": "attack:astra", "kind": "attack", "text": "Astra is under attack", "first": t0, "last": t,
+                   "losses": [], "position": {"x": 0, "y": 0}, "agent": "astra"}] if 0 <= k < 90 else []
+        d.step({"agents": tm, "fights": fights, "alerts": []}, t)
+    during = [c for c in d.cuts if t0 <= c[0] < t0 + 90]
+    assert d.battles and d.battles[0][2] == "long fight", d.battles
+    assert len(during) <= 1, during
+    print(f"no flicker: ok ({len(during)} cut during the battle)")
 
 
 def lengths():
@@ -195,6 +233,9 @@ def lengths():
 if __name__ == "__main__":
     what_counts()
     director()
-    replay_missed_start()
+    replay_aftermath()
+    replay_start_then_away()
     replay_live_and_none()
+    episodes()
+    no_flicker()
     lengths()

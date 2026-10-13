@@ -18,6 +18,7 @@ from collections import deque
 
 import attention
 
+FIGHT_EPISODE_GAP = 45.0  # seconds without a report: the next report at the same key is a new fight
 ATTENTION_TTL = 120.0  # seconds: an attention point older than this is no longer where the agent is looking
 
 HALF_LIFE = 75.0  # seconds; interest decays toward 0 with this half-life
@@ -466,6 +467,11 @@ class Model:
         game seconds old, a loss for ~2 minutes, an agent's combat flag while it lasts): `last` is when it was last
         seen, so replays.py can wait until it has been quiet before airing anything about it."""
         f = self.fights.get(key)
+        if f and now - f["last"] > FIGHT_EPISODE_GAP:
+            # a new fight at the same place (or the same agent attacked again): its own first sign and losses
+            # (shift06 13:2x: "Astra is under attack" kept its first from minutes before, so every new attack on
+            # Astra counted as a fight over 30 s long, and the replay judged 0 s of 474 s as shown)
+            f = None
         if not f:
             f = self.fights[key] = {"key": key, "kind": kind, "first": now, "losses": [], "text": text, "agent": agent}
         f.update(last=now, position={k: position[k] for k in ("x", "y", "surface", "extent") if k in position})
