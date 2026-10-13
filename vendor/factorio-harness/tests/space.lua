@@ -133,7 +133,10 @@ do
   prototypes.item['repair-pack']={type='repair-tool'}
   hub_inv.get_contents=function() return {{name='iron-plate',count=5},{name='repair-pack',count=12}} end
   eq(space.platforms(p,{platform='alpha'}).platforms[1].repair_packs,'repair-pack*12')
-  eq(space.platforms(p,{}).platforms[1].damaged,nil,'details only for one named platform')
+  -- Every row has the damaged and repair packs (platforms study: hub health and
+  -- damage came only from inspect); the most damaged 3 without platform=.
+  local all=space.platforms(p,{}).platforms[1]
+  eq(#all.damaged,2); eq(all.repair_packs,'repair-pack*12'); eq(all.speed,nil,'speed only for one named platform')
   assert(space.REPAIR_NOTE:find('one entity at a time',1,true))
   platform.surface.find_entities_filtered,hub_inv.get_contents,prototypes.item['repair-pack']=find,contents,nil
 end

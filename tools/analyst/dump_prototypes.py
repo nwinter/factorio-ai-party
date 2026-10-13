@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Dump Factorio prototypes over RCON into the analyst's knowledge base (read-only Lua, nothing in the game changes).
+Space Age: locations.json carries each route's and each orbit's asteroid_spawn_definitions as the game gives them,
+and entities.json the asteroids (max_health, resistances).
 
   python3 tools/analyst/dump_prototypes.py                      # world live -> tools/analyst/kb/base-2.0.77/
   python3 tools/analyst/dump_prototypes.py --world sa --port 27031 --out tools/analyst/kb/space-age-2.0.77
@@ -110,7 +112,7 @@ local types = {"assembling-machine","furnace","mining-drill","lab","boiler","gen
   "unit-spawner","turret","resource","car","spider-vehicle","locomotive","cargo-wagon","fluid-wagon",
   "storage-tank","agricultural-tower","fusion-reactor","fusion-generator","asteroid-collector","thruster",
   "space-platform-hub","cargo-landing-pad","lightning-attractor","segmented-unit","spider-unit","capture-robot",
-  "tree","simple-entity","container","logistic-container","pipe","pipe-to-ground"}
+  "tree","simple-entity","container","logistic-container","pipe","pipe-to-ground","asteroid"}
 local all = prototypes.get_entity_filtered({{filter="type", type=types}})
 local out = {}
 local list = names(all)
@@ -175,6 +177,10 @@ for i = START, math.min(#list, START + COUNT - 1) do
     r.infinite = g(function() return e.infinite_resource end)
     r.category = g(function() return e.resource_category end)
   end
+  -- Asteroids: health and resistances (what a platform's turrets face).
+  if t == "asteroid" then
+    r.resistances = g(function() return e.resistances end)
+  end
   if t == "tree" or t == "simple-entity" then
     r.mining_time = g(function() return e.mineable_properties.mining_time end)
     r.products = g(function() return products(e.mineable_properties.products) end)
@@ -195,14 +201,15 @@ if ok_l and L then
     locs[#locs+1] = {name=name, type=g(function() return l.type end), distance=g(function() return l.distance end),
       orientation=g(function() return l.orientation end), gravity_pull=g(function() return l.gravity_pull end),
       solar_power_in_space=g(function() return l.solar_power_in_space end), magnitude=g(function() return l.magnitude end),
-      surface_properties=g(function() return l.surface_properties end), order=g(function() return l.order end)}
+      surface_properties=g(function() return l.surface_properties end), order=g(function() return l.order end),
+      asteroid_spawn_definitions=g(function() return l.asteroid_spawn_definitions end)}
   end
 end
 local ok_c, C = pcall(function() return prototypes.space_connection end)
 if ok_c and C then
   for name, c in pairs(C) do
     conns[#conns+1] = {name=name, from=g(function() return c.from.name end), to=g(function() return c.to.name end),
-      length=g(function() return c.length end)}
+      length=g(function() return c.length end), asteroid_spawn_definitions=g(function() return c.asteroid_spawn_definitions end)}
   end
 end
 local props = {}

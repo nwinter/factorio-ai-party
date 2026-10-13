@@ -392,6 +392,38 @@ Nauvis · paused" (jsdom; no screenshot from this sandbox). Tests: `test_platfor
 
 Live: `grep "platform \(visit\|departure\|work\)" runs/RUN/stream-service.log`.
 
+### Attention: where an agent is looking (2026-10-13, eng/attention)
+
+Nick, 12:00: "It would be interesting to follow its attention." In the shift05-06 journals, about 10% of the actions
+that name a map position were more than 15 tiles from the character. By agent: Sol 28%, Astra 20%, Luna 18%. Most of
+them were inspect, then transfer and configure, then remote place_ghosts and deconstruct.
+
+- `attention.py` turns a journal request into an attention point. It reads a position, an area, a list of positions,
+  entities, builds or tiles, and `platform=`. Each point has a kind: looking (observe, inspect, placements), building
+  (ghosts, paste, deconstruct, build, construct, repair), configuring (configure, requests, circuit, rotate, schedule)
+  or moving items (transfer, collect, drop, launch). It also has a verb and what is handled ("taking steel plate").
+  A scan with only a radius, move_to and reads give no point.
+- `work.py` now hands every request that has a place to live.py (`take_attention`); the work items stay as they were.
+  `model.py` keeps each agent's latest point and puts it on its snapshot row as `agents[].attention`: {kind, text,
+  position, extent, surface, platform, age_s, dist, far}. The point lasts two minutes. Its text reads like "taking
+  steel plate 40 m east", "inspecting at the oil field" (a run landmark), "configuring on Sunward" or "nearby".
+- `onecam.py` uses it when the agent on air looks or works somewhere the on-air frame does not show. That means a
+  fresh point (`attn_fresh`, 15 s) outside the frame, or on a platform the agent is not aboard. The last standby then
+  shows that spot as the inset, labelled "🏗️ Sol · placing ghosts 40 m north", and the program does not cut. The
+  inset holds `attn_hold` (15 s), and up to `attn_max` (45 s) while the agent keeps at that spot (`attn_same`,
+  12 tiles). It moves to a new spot at most every `attn_move` (8 s) and ends when the story on air changes.
+- No attention inset in the first `attn_min` (20 s) of a story, within `attn_gap` (45 s) of the last one, in a fight,
+  a trio or a replay, or while an urgent, segment or held shot is on. An alert inset takes its client.
+- The hosts get `onair.attention`. The site's live map draws a line in the agent's colour from each dot to its point
+  (dashed when near, solid when far; the tooltip gives the text and its age). push_live sends the trimmed point.
+- Tuning: `director: {attention: false}` turns the inset off. The `attn_*` keys are in `ONECAM`.
+
+Mock check (`mock9-seg.json`, mock attention every 4 to 12 s per agent, 40% of points 25 to 60 tiles away): Gemini on
+air got the inset 20 s after the cut, labelled "🏗️ Gemini · placing stone wall ghosts at copper smelting" (jsdom),
+with no cut. The site map drew 9 lines, 6 of them far. Tests: `test_attention.py`, which uses recorded journal lines.
+
+Live: `grep "attention:" runs/RUN/stream-service.log`.
+
 ## Unused cameras
 
 With fewer agents than cameras (or when the director pairs two agents on one), cam2 or cam3 would show an empty or

@@ -7,7 +7,9 @@ return function(api)
   local M={}
   local CACHE_TICKS,MINUTE,HAND_MINUTES,HOARD_TICKS,ETA_SAMPLES=600,3600,10,36000,12
   local LOW_FREE,HOARD_SHARE,LOW_AMMO=5,0.25,5
-  local SURVEY_TYPES={'assembling-machine','furnace','mining-drill','lab','boiler','inserter','burner-generator','reactor','ammo-turret'}
+  local SURVEY_TYPES={'assembling-machine','furnace','mining-drill','lab','boiler','inserter','burner-generator','reactor','ammo-turret','fluid-turret'}
+  -- Flamer oil under a quarter is low (shift 5: the outer flame line held 19.9 oil and burnt out before anyone saw).
+  local LOW_OIL=0.25
   local MACHINE_TYPES={['assembling-machine']=true,furnace=true,['mining-drill']=true,lab=true,boiler=true}
   local PLATES={'iron-plate','copper-plate','steel-plate','stone-brick','plastic-bar'}
   local function round(v) return math.floor(v+0.5) end
@@ -189,6 +191,7 @@ return function(api)
     local labs,missing,lab_count={},{},0
     local powered,starved,unpowered,unconnected=0,0,0,0
     local turrets,turret_order={},{}
+    local flamers,flamer_order={},{}
     local tech=force.current_research
     local status_ids=defines.entity_status
     for _,e in ipairs(found) do
@@ -228,6 +231,21 @@ return function(api)
           local at=string.format('(%g,%g)',e.position.x,e.position.y)
           if n==0 then t.empty=t.empty+1; if #t.empty_at<6 then t.empty_at[#t.empty_at+1]=at end
           elseif n<LOW_AMMO then t.low=t.low+1; if #t.low_at<6 then t.low_at[#t.low_at+1]=at end end
+        elseif e.type=='fluid-turret' then
+          local ok,amount,cap=pcall(function()
+            local f=e.fluidbox[1]
+            return f and f.amount or 0,e.fluidbox.get_capacity and e.fluidbox.get_capacity(1) or nil
+          end)
+          if ok then
+            local t=flamers[e.name]
+            if not t then t={total=0,dry=0,low=0,dry_at={},low_at={}}; flamers[e.name]=t; flamer_order[#flamer_order+1]=e.name end
+            t.total=t.total+1
+            local at=string.format('(%g,%g)',e.position.x,e.position.y)
+            if amount<1 then t.dry=t.dry+1; if #t.dry_at<6 then t.dry_at[#t.dry_at+1]=at end
+            elseif type(cap)=='number' and cap>0 and amount/cap<LOW_OIL then
+              t.low=t.low+1; if #t.low_at<6 then t.low_at[#t.low_at+1]=at..' '..math.floor(100*amount/cap+0.5)..'%' end
+            end
+          end
         end
         if e.type=='lab' then
           lab_count=lab_count+1
@@ -272,6 +290,17 @@ return function(api)
       end
     end
     if #ammo_parts>0 then warnings[#warnings+1]='ammo: '..table.concat(ammo_parts,'; ')..'; rearm radius=R walks every turret below count' end
+    table.sort(flamer_order)
+    local oil_parts={}
+    for _,name in ipairs(flamer_order) do
+      local t=flamers[name]
+      if t.dry+t.low>0 then
+        oil_parts[#oil_parts+1]=string.format('%s %d/%d dry',name,t.dry,t.total)
+          ..(t.dry>0 and ' at '..table.concat(t.dry_at,' ')..(t.dry>#t.dry_at and ' ...' or '') or '')
+          ..(t.low>0 and ', '..t.low..' below '..math.floor(LOW_OIL*100)..'% at '..table.concat(t.low_at,', ')..(t.low>#t.low_at and ' ...' or '') or '')
+      end
+    end
+    if #oil_parts>0 then warnings[#warnings+1]='flamer oil: '..table.concat(oil_parts,'; ')..'; fh call flamers shows each one and what is in its arc' end
     -- Only when something lacks power: 'power: 3 of 78 machines low_power; 1 unconnected'.
     if starved+unpowered+unconnected>0 then
       local parts={}

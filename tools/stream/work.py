@@ -6,10 +6,14 @@ journals nothing about who placed a ghost, but the agent's own fh journal does: 
 fh append each request (action and args) to runs/RUN/AGENT/journal.jsonl, beside the run's stream.json. WorkFeed
 tails those files from where they end when the service starts (the past is not replayed), reads only new bytes each
 poll, and keeps the requests that place or remove things. live.py then decides which ones land away from the body.
+Every request with a position, area or list also becomes an attention point (attention.py), taken by live.py with
+take_attention().
 
 ./shot is not here: the shot script calls fh without the journal and always centres on the character.
 """
 import json, os
+
+import attention
 
 # Actions whose target can be away from the body: the runtime runs these against a platform's surface when they
 # carry platform=NAME (vendor/factorio-harness runtime.lua on_platform), else at the given positions on the body's
@@ -50,6 +54,11 @@ class WorkFeed:
         self.agents = list(agents)
         self.offsets = {}  # agent -> byte offset already read (set to the file's end when first seen)
         self.partial = {}  # agent -> an unfinished last line
+        self.attention = []  # every request with an attention point (attention.py) since take_attention()
+
+    def take_attention(self):
+        out, self.attention = self.attention, []
+        return out
 
     def path(self, agent):
         return os.path.join(self.run_dir, agent, "journal.jsonl")
@@ -83,9 +92,14 @@ class WorkFeed:
                 except ValueError:
                     continue
                 q = r.get("request") or {}
-                if r.get("event") != "request" or q.get("action") not in REMOTE and q.get("action") not in ON_PLATFORM:
+                if r.get("event") != "request":
                     continue
                 args = q.get("args") if isinstance(q.get("args"), dict) else {}
+                att = attention.point(q.get("action"), args)
+                if att:
+                    self.attention.append(dict(att, agent=agent, at=r.get("at")))
+                if q.get("action") not in REMOTE and q.get("action") not in ON_PLATFORM:
+                    continue
                 plat, pos = target_of(args)
                 if q["action"] not in REMOTE and not isinstance(plat, str):
                     continue  # inspect, configure, launch ... on the body's own surface: its camera shows them

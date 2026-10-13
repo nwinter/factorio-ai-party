@@ -287,10 +287,13 @@ fh sleep 900 --until researched                       # ...or until the research
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
   on the footprint, such as a paste replacing it, with their filters). A ghost on a building yields to the building
   unless you name it (`name: "entity-ghost"`).
-- An asteroid collector: `inspect` shows `filters` (asteroid chunk names), `filter_slots`, `arm` (chunks its arms
-  hold) and its output in `inventories.asteroid_collector_output`. `configure {position, filters}` sets the chunk
-  filters as its GUI does: names from `prototypes.asteroid_chunk` (`metallic-asteroid-chunk`,
-  `carbonic-asteroid-chunk`, `oxide-asteroid-chunk`), up to `filter_slots`; `[]` clears them. The game has no
+- An asteroid collector: `inspect` shows `filters` (asteroid chunk names), `filter_slots` (the game's count, which
+  reads 0 until a filter is set), `arm` (chunks its arms hold) and its output in
+  `inventories.asteroid_collector_output`. `configure {position, filters}` sets the chunk filters as its GUI does,
+  in slots 1 onward, on a new collector too: names from `prototypes.asteroid_chunk` (`metallic-asteroid-chunk`,
+  `carbonic-asteroid-chunk`, `oxide-asteroid-chunk`); `[]` clears them. A slot the game refuses fails the call with
+  what the game said, and the slots set before it are put back. The reply reads the filters back (`not_set` lists a
+  name that did not stick). The game has no
   whitelist/blacklist mode for collectors, so `filter_mode` is refused there. With `platform` it works through remote
   view like the other configure paths.
 - `inspect {platform, position}` and `configure {platform, position, ...}` act on your own space platform by name
@@ -304,9 +307,18 @@ fh sleep 900 --until researched                       # ...or until the research
   enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
   200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same.
 - The game repairs a platform's entities itself, one entity at a time, with repair packs from the hub; `repair` refuses
-  platform targets (`platform`, or standing on a platform) with that reason. `platforms {platform}` and `inspect` of the
-  hub show `repair_packs` (in the hub, or `none`) and `damaged` (`gun-turret (-6,0) 53/400`, most damaged first, up to
-  10; `damaged_count` past that); `inspect` of a damaged entity there adds the `repair` note.
+  platform targets (`platform`, or standing on a platform) with that reason. `platforms` and `inspect` of the
+  hub show `repair_packs` (in the hub, or `none`) and `damaged` (`gun-turret (-6,0) 53/400`, most damaged first, 3 per
+  row in `platforms`, up to 10 with `platform` set and in `inspect`; `damaged_count` past that); `inspect` of a damaged
+  entity there adds the `repair` note.
+- `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
+  (under 10 rounds)`) and `ammo`, the ammo flow (`turrets hold 6 rounds, the hub firearm-magazine 920`).
+- `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
+  platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
+  unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).
+- `gamedata/locations.json` lists each route's and each orbit's `asteroid_spawn_definitions` as the game gives them,
+  and `gamedata/entities.json` the asteroids (`max_health`, `resistances`), from the next prototype dump of a Space Age
+  world (`tools/analyst/dump_prototypes.py`).
 - Where a platform's items go: `platforms` shows `hub_trash` per platform, and with `platform` set
   `hub_inserters_without_target` (inserters taking from the hub with nothing to drop into: `(-2.5,3.5) drops onto
   empty-space`), `thrown_overboard` (items in flight off the platform, while the game tracks them), and
@@ -345,15 +357,29 @@ fh sleep 900 --until researched                       # ...or until the research
   it (`; nearest spots where gun-turret fits within your build reach (game build check): (5,-2), (5,2), (4,-2)`); when
   out of reach, the ones nearest the asked position around the edge of your reach toward it, followed by `; or walk
   closer (move_to) and build again`. `build` does not walk.
-- `fh call defense` (read; `limit` areas, default 12, max 30; cached 10 s for the whole force): `areas`, the force's
-  buildings grouped by touching 32-tile cells (an outpost or a pipeline is an area of its own), largest first, each
-  with a `line` (`area 1 around (27,3) (0,0)-(60,6): 74 buildings (...); 2 turrets in range (23 ammo, 1 low); 43
-  buildings covered (2 by one turret only), 31 not; largest uncovered part (30,3)-(60,3): 31 buildings (31
-  transport-belt)`), the turrets in range (`turret_list`, lowest ammo first), and `uncovered_parts`. A building is
-  covered when its centre is within range of a gun, laser or flamethrower turret. `areas_without_turrets` lists area
-  numbers; `nests`: charted spawner groups within 256 tiles of a building, nearest first (`nest (105,2) 2 spawners, 1
-  worm: 45 tiles E of transport-belt at (60,3) (area 1); pollution reaches it`); `artillery`; `more` sums areas past
-  the limit.
+- `fh call defense` (read; `limit` areas, default 16, max 40; cached 10 s for the whole force): `areas`, the force's
+  buildings in clusters, largest first. A cluster is buildings touching by 32-tile cells; belts, pipes, poles, walls,
+  rails and turrets link cells of a cluster but never join two clusters, so an outpost is its own area and the belts
+  or pipes between clusters form a `line` area; a cluster wider or taller than 128 tiles is split into 128-tile
+  `block`s. Each area has `kind` (`cluster`, `block` or `line`), `from_centre` and `bearing` from the base centre (the
+  spawn point) and a `line` (`area 1 (cluster, 27 tiles E of base centre) around (27,3) (0,0)-(60,6): 74 buildings
+  (...); turrets in range: 2 gun (23 ammo, 1 low), 2 flamethrower (oil 13%, 1 dry); 43 buildings covered (2 by one
+  turret only), 31 not; largest uncovered part (30,3)-(60,3): 31 buildings (31 transport-belt); nests: (105,2) 45
+  tiles E polluted`), the turrets in range (`turret_list`, lowest ammo first), `ammo` (gun rounds), `flamers` (`count`,
+  `oil`, `capacity`, `dry`, `low` under 25%), `lasers`, `uncovered_parts`, and `nests`, up to 3 nests whose nearest
+  building is in the area. A building is covered when its centre is within range of a gun, laser or flamethrower
+  turret. `areas_without_turrets` lists area numbers; `nests`: charted spawner groups within 256 tiles of a building,
+  nearest first (`nest (105,2) 2 spawners, 1 worm: 45 tiles E of transport-belt at (60,3) (area 1); pollution reaches
+  it`, or `reaches it (last there 5m ago)`); pollution reaches a nest while one of its chunks had pollution in the last
+  15 game minutes, the same memory `status` enemies and the reached-nest news use (one reading at the cloud's edge
+  flickers); `artillery`; `more` sums areas past the limit.
+- `fh call flamers` (read; `limit`, default 12, max 40; cached 10 s): each flamethrower turret on your surface, the
+  most at risk first: `flamethrower-turret (0,0) facing S, oil 75% (150/200): 4 of our burnable buildings in its arc
+  within 33 tiles: 3 pipe, 1 gun-turret (nearest pipe (0,10), 10 tiles)`. The arc is the direction the turret was
+  built facing, plus or minus its turn range (60 degrees for the vanilla flamer), from its minimum range to its range
+  plus 3 tiles for burning ground; buildings with full fire resistance (walls) are left out. Also `count`, `dry`,
+  `low`, `with_buildings_in_arc`. `status` warns of dry and low flamers: `flamer oil: flamethrower-turret 1/11 dry at
+  (80,90), 2 below 25% at (84,90) 12%, ...; fh call flamers shows each one and what is in its arc`.
 - `collect` with `radius` skips stock inside another agent's active board claim and reports `skipped_claims` (`40 iron-plate in 2 places of #4 iron smelting (claim by sol); ask the owner`). `collect` on named positions still takes, and lists the claimed ones in `claimed`.
 - The `status` power warning appears only when some electric machine lacks power: `power: 3 of 78 machines low_power; 1 unconnected (fh call power lists them)` (`no_power` = connected to a network with no generation; `unconnected` = no pole reaches it).
 - `fh research` (`research` with no arguments; read): `current`, `progress`, `queue`, `pending`, and `entries`, one per
@@ -366,6 +392,19 @@ fh sleep 900 --until researched                       # ...or until the research
   yet). `fh research done` (`research_done {limit?}`): technologies your force finished lately, newest first, with
   `ago`, `unlocks` and `queued_by`. `unlocks` names recipes, `travel to PLACE`, `QUALITY quality`, given items, and
   bonuses as `modifier-type +10%` (fractions) or `+N`.
+- Editing the queue as the research GUI does: `research {remove: NAME}` (or an array; `cancel` is the same) takes it
+  out, with queued technologies that need it (`also_removed`); progress stays with the technology. `research {move:
+  NAME, to: N}` puts it at position N (1 is researched now); a move ahead of a queued prerequisite or behind a queued
+  technology that needs it is refused with the position that works. Names waiting beyond the engine queue count.
+- `research_options` (read): the open technologies (prerequisites done, not trigger technologies) whose every pack the
+  factory made in the last 10 minutes, `researchable_now` `{name, units, packs, queued}` fewest units first; the rest in
+  `waiting_for_packs`, grouped by `packs_not_made`; and `made_last_10_min` per pack. Labs or chests may still hold
+  packs of a group that waits.
+- `where_is {item, limit?, surface?}` (read): where an item is on your surface (or `surface`): `total`, `by_kind`
+  (chest, lab, machine, vehicle, pad, hub, roboport, belts, inserter_hands, characters) and `places` (each chest, lab,
+  machine, vehicle, pad, hub and teammate holding it, `{kind, entity or agent, position, count, distance}`, nearest
+  first, `limit` default 15, `more` past it). Belts and inserter hands are totals only. It scans the surface's
+  storage and belt entities once per call.
 - `fh call labs [--args '{"radius":96}']` (read; an observe scope): one `research` line (name, progress, packs, ETA at the working labs, or `stalled`) and one line per group of adjacent labs (largest 8, at most 256 labs): working count, other statuses, packs the labs lack (and how many labs), the inserters feeding them with idle ones and why (`source transport-belt (0,-3) has nothing the lab needs`, `no_power`), packs absent from all their belts and chests, and what those sources hold. Example: `labs (0,0)-(6,0): 1/3 working, 2 missing_science_packs, lack logistic (2); feeders: 3 inserters (1 lab-to-lab); 1 idle: source transport-belt (0,-3) has nothing the lab needs; no logistic on their 1 belts/chests; sources hold automation 12`.
 
 ## Retries
@@ -516,21 +555,41 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   (`(was yours)`), a claim posted over yours; after those, each new open unowned task or request once; and a nudge
   when another open unowned request passes 2 game minutes), `research` (each technology your force finished since your
   previous reply, once: `research done: NAME, unlocks: a, b, c (<age> ago)`; a first reply looks back 10 game
-  minutes; at most 4 lines and `+N more finished: research_done`), `alerts` (your character being hit; attacks, one
-  line per incident (a 32-tile cell, ended by a quiet minute): `attack #ID at (x,y): <attackers>; likely from nest (x,y)
+  minutes; at most 4 lines and `+N more finished: research_done`; first, to every agent once, `research stalled: NAME
+  heads the queue and has waited <time> for PACK, which nobody made in the last 10 minutes, with no progress ...` when
+  the head of the queue has waited 10 minutes that way, at most once per 30 minutes), `alerts` (your character being hit; attacks, one
+  line per incident (a 32-tile cell of one surface, ended by a quiet minute; on another surface than yours the line
+  says so: `attack #ID on vulcanus at (x,y): ...`, and `status` alert rows carry `surface`): `attack #ID at (x,y): <attackers>; likely from nest (x,y)
   N tiles DIR; <entities hit> hit N times, D damage, first <age> ago, last <age> ago`, where attackers are a visible
   group that gathered in the last 3 minutes heading there (`a group of 25 (20 small-biter, 5 medium-biter) that
   gathered at (x,y)`) or the distinct units seen hitting (`12 attackers seen (...)`), and the nest is the nearest
   spawner on a charted chunk within 384 tiles of the attacked point (`from nest` when the game names the unit's own
   spawner; `no charted nest within 384 tiles`); an incident you were told about comes again as `attack #ID ... continues`
   with its totals only when it had new hits and at least 2 game minutes passed; `pollution reached nest (x,y), N
-  spawners: N tiles DIR of base centre (spawn x,y), N tiles DIR of our nearest building`, once per nest; enemy groups
-  gathering, buildings destroyed, with what destroyed them: enemy kinds first, then our own force's entities as
-  `friendly fire: 2 flamethrower-turret` (`unknown source` when the cause is gone and the killing force is ours); at most
-  8 lines; these replace the old top-level `losses` field; full landing pads spilling and piles of items on the ground
-  near our buildings, once each and again when grown by half) and `reminders`
+  spawners: N tiles DIR of base centre (spawn x,y), N tiles DIR of our nearest building`, once per nest per shift
+  (a new shift hears again of nests still reached); enemy groups gathering; buildings destroyed, one numbered incident
+  per raid (losses on one surface within 32 tiles of each other, up to 192 tiles across): `losses #7 in (x,y)-(x,y)
+  12 destroyed: 8 transport-belt, 4 inserter by 20 medium-biter, 1s ago`, told once, then its running total at most
+  once a game minute while it grows (`losses #7 in ... continue: 40 destroyed (+28 since you were told): ...`);
+  `on vulcanus` or `on platform Starling` when not on your surface; with what destroyed them: enemy kinds first, then
+  our own force's entities with where they stand as `friendly fire: 2 flamethrower-turret at (80,90)` (`unknown
+  source` when the cause is gone and the killing force is ours); at most 8 lines; these replace the old top-level `losses` field; full landing pads spilling and piles of items on the ground
+  near our buildings, once each and again when grown by half; then up to 6 platform lines, below) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
+- Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
+  requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
+  aboard; a platform with none of them known goes to every agent. Each line names the platform and its surface:
+  `platform Starling (surface platform-1) hit 3 times, 380 damage, last 1s ago: gun-turret 300, space-platform-hub 80;
+  by medium-metallic-asteroid 3` (hits on our entities there since you were last told, your first look covering the
+  last 10 minutes; at most once a game minute), `...: hits per minute rising, 30 in the last minute, 2 a minute over
+  the 5 before` (10 or more and at least twice the earlier rate plus 5), `...: 1 of 2 gun-turrets empty, 1 low (under
+  10 rounds); turrets hold 4 rounds, the hub firearm-magazine 920` (the ammo flow: rounds loaded in the turrets
+  against the ammo waiting in the hub), `...: no repair packs in the hub (...)` (while it was hit in the last 10
+  minutes or the hub is damaged), `... hub health 900/1000, down 100 in 40s`. A condition that lasts comes again after
+  5 game minutes, sooner when it gets worse. Hits on a platform are no longer `attack #` incidents; `status` alerts
+  carry them as `platform_hits` rows `{platform, surface, hits, damage, entities, by, last_tick}`. Turrets and the hub
+  are read at most every 10 s per platform.
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each
   agent's first reply of it (any action, not a peek) carries `team.shift` once: `shift` (`shift N, started <age>
   ago`), `plan_goals` and `your_plan_line` (the team plan), `research_since_your_last_shift` (technologies finished
@@ -585,6 +644,13 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Operator: `tools/harness-requests.py list|show|answer|board|events|mentions` in the pog repo. Underneath, a dispatch
   request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`,
   `board_plan` (goals and other agents' lines; the operator has no line), `mention_counts` and `tells` as `operator`.
+- Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
+  `standing_s` (how long its character has had no action, no running queue and a body on the map; kept once a second
+  for agents that made a request; an fh sleep with nothing running counts as standing, a timed action does not),
+  `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
+  `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board` and `last_request_s`. `tell {to,
+  text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells, waking a sleeper
+  (woke=told), never in the game chat.
 - Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
   request against a full backlog); nothing runs per tick.
 

@@ -382,6 +382,18 @@
         taken.push({ x0: d.x - tw / 2, y0: d.y - 21, x1: d.x + tw / 2, y1: d.y - 11 });
       }
     });
+    // attention (tools/stream/attention.py): a line from the character to where the agent last looked or worked
+    // (inspect, transfer, ghosts, a scan...) in the last two minutes; solid when it is far from the character
+    marks += dots.map(function (d) {
+      var t = d.a.attention;
+      if (!t || !t.position || t.platform || !isFinite(t.position.x) || !isFinite(t.position.y) ||
+          (t.surface && t.surface !== 'nauvis') || (t.dist != null && t.dist < 3)) return '';
+      var at = spot(t.position), x = px(at.x), y = py(at.y);
+      return '<g class="attn' + (t.far ? ' far' : '') + '" style="stroke:' + acColor(d.a.color) + '"><title>' +
+        esc((d.a.display_name || d.a.name) + ' · ' + t.text + (t.age_s != null ? ' · ' + ago(t.age_s) : '')) + '</title>' +
+        '<line x1="' + d.x.toFixed(1) + '" y1="' + d.y.toFixed(1) + '" x2="' + x + '" y2="' + y + '"/>' +
+        '<circle cx="' + x + '" cy="' + y + '" r="3.5"/></g>';
+    }).join('');
     marks += dots.map(function (d) {
       var a = d.a, c = acColor(a.color), name = (a.display_name || a.name) + (d.far ? ' ↗' : '');
       var lab = placeLabel(d.x, d.y, textWidth(name, 6.3), taken, S, !!onCam[a.name]);

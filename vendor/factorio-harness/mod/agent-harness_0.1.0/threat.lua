@@ -50,7 +50,32 @@ return function(api)
     return {total=round(p.surface.get_total_pollution()),per_min=round(emitted),absorbed_per_min=round(absorbed),top=#parts>0 and table.concat(parts,', ') or nil}
   end
 
-  -- Spawners within range of our structures, clustered into bases.
+  -- Whether pollution reaches a nest. The pollution on a spawner's chunk hovers
+  -- about zero at the cloud's edge (the spawners absorb it), so one reading
+  -- flickers: shift 6's status said reached 1, 1, 0, 1, 0 on successive polls
+  -- while the defense read said reached. Every reading that finds pollution on a
+  -- nest chunk is remembered per surface; a nest counts as reached while one of
+  -- its chunks had pollution in the last REACH_WINDOW. Status, the defense read
+  -- and the news share this memory.
+  local REACH_WINDOW=54000 -- 15 game minutes
+  M.REACH_WINDOW=REACH_WINDOW
+  function M.polluted(surface,pos)
+    local st=api.state(); st.nest_reach=st.nest_reach or {}
+    local m=st.nest_reach[surface.index]
+    if not m then m={}; st.nest_reach[surface.index]=m end
+    local key=math.floor(pos.x/32)..','..math.floor(pos.y/32)
+    local amount=surface.get_pollution(pos)
+    if amount>0 then m[key]=game.tick end
+    return amount,m[key]
+  end
+  function M.reached(last) return last~=nil and game.tick-last<=REACH_WINDOW end
+  -- Not buildings: what "our nearest structure" must skip (a ghost or a car
+  -- 19 tiles from a nest made status say 19 tiles where the defense read said 107).
+  local NOT_BUILDING={character=true,car=true,['spider-vehicle']=true,locomotive=true,['cargo-wagon']=true,['fluid-wagon']=true,
+    ['artillery-wagon']=true,['entity-ghost']=true,['tile-ghost']=true,['construction-robot']=true,['logistic-robot']=true,
+    ['combat-robot']=true,['character-corpse']=true,['item-request-proxy']=true,['spider-leg']=true,['spider-unit']=true}
+  M.NOT_BUILDING=NOT_BUILDING
+  -- Spawners within range of the agent, clustered into bases.
   local function bases(p)
     local s,centre=p.surface,p.position
     local found=s.find_entities_filtered{type='unit-spawner',position=centre,radius=MAX_BASE_RANGE}
@@ -64,7 +89,9 @@ return function(api)
         local key=math.floor(e.position.x/32)..','..math.floor(e.position.y/32)
         if not base.chunks[key] then
           base.chunks[key]=true; base.keys[#base.keys+1]=key
-          base.absorbing=base.absorbing+s.get_pollution(e.position)
+          local amount,last=M.polluted(s,e.position)
+          base.absorbing=base.absorbing+amount
+          if last and (not base.polluted_tick or last>base.polluted_tick) then base.polluted_tick=last end
           if p.force.is_chunk_visible(s,{x=math.floor(e.position.x/32),y=math.floor(e.position.y/32)}) then base.visible=true end
         end
       end
@@ -73,15 +100,19 @@ return function(api)
       b.position={x=round(b.sx/b.spawners),y=round(b.sy/b.spawners)}
       b.first,b.sx,b.sy,b.chunks=nil,nil,nil,nil
       b.absorbing=round(b.absorbing)
-      -- Nearest of our structures, searched in widening rings.
+      b.reached=M.reached(b.polluted_tick)
+      -- Nearest of our buildings, searched in widening rings.
       for _,r in ipairs{64,128,256,MAX_BASE_RANGE} do
-        local ours=s.find_entities_filtered{position=b.position,radius=r,force=p.force,limit=256}
+        local ours={}
+        for _,e in pairs(s.find_entities_filtered{position=b.position,radius=r,force=p.force,limit=256}) do
+          if e.valid and not NOT_BUILDING[e.type] then ours[#ours+1]=e end
+        end
         local near=#ours>0 and s.get_closest(b.position,ours)
         if near then
           b.distance=round(api.distance(b.position,near.position)); b.direction=compass(near.position,b.position); break
         end
       end
-      if b.absorbing==0 then
+      if not b.reached then
         -- Chunks between the base and the nearest polluted chunk.
         local cx,cy=math.floor(b.position.x/32),math.floor(b.position.y/32)
         for r=1,CLOUD_SEARCH do
@@ -147,26 +178,30 @@ return function(api)
     local centre=p.force.get_spawn_position(p.surface)
     local function news(kind,b)
       st.alert_seq=(st.alert_seq or 0)+1
-      table.insert(st.enemy_news,{seq=st.alert_seq,tick=game.tick,kind=kind,position=b.position,spawners=b.spawners,
+      table.insert(st.enemy_news,{seq=st.alert_seq,tick=game.tick,kind=kind,surface=p.surface.name,position=b.position,spawners=b.spawners,
         centre={x=round(centre.x),y=round(centre.y)},from_centre=round(api.distance(centre,b.position)),bearing=compass(centre,b.position),
         nearest=b.distance,nearest_direction=b.direction})
       while #st.enemy_news>MAX_NEWS do table.remove(st.enemy_news,1) end
     end
+    -- Reached-nest news comes once per nest per shift: agents start each shift
+    -- afresh, and nests reached in an earlier shift were never told again (shift
+    -- 6: attacks came from three reached nests with no news of them).
+    local shift_tick=st.shift and st.shift.tick or -1
     for _,b in ipairs(list) do
-      local known_before,reached_before=false,false
+      local known_before,told=false,nil
       for _,key in ipairs(b.keys) do
         local n=nests[key]
-        if n then known_before=true; reached_before=reached_before or n.reached end
+        if n then known_before=true; if n.reached_told and (not told or n.reached_told>told) then told=n.reached_told end end
       end
       if not known_before and not first then news('nest_charted',b) end
-      if b.absorbing>0 and not reached_before and known_before then news('pollution_reached_nest',b) end
+      local tell=b.reached and (not told or told<shift_tick)
+      if tell then news('pollution_reached_nest',b) end
       local seen
       for _,key in ipairs(b.keys) do
         local n=nests[key] or {}
         nests[key]=n
         if b.visible then n.visible=game.tick end
-        -- Sticky: a cloud that recedes and returns is not news again.
-        n.reached=n.reached or b.absorbing>0
+        if tell then n.reached_told=game.tick end
         seen=math.max(seen or 0,n.visible or 0)
       end
       b.seen=seen and seen>0 and seen or nil
@@ -215,12 +250,13 @@ return function(api)
     note_bases(p,bases(p))
   end
   -- Lines for news after `from` (an alert_seq), oldest first.
-  function M.news_lines(from,since_tick)
+  function M.news_lines(from,since_tick,reader)
     local out={}
     for _,n in ipairs(api.state().enemy_news or {}) do
       local new=(from and (n.seq or 0)>from) or (not from and n.tick>=since_tick)
       if new and n.kind=='pollution_reached_nest' then
-        out[#out+1]=string.format('pollution reached nest (%g,%g), %d spawner%s: %d tiles %s of base centre (%g,%g)%s',n.position.x,n.position.y,
+        local on=n.surface and reader and n.surface~=reader and ' on '..n.surface or ''
+        out[#out+1]=string.format('pollution reached nest%s (%g,%g), %d spawner%s: %d tiles %s of base centre (%g,%g)%s',on,n.position.x,n.position.y,
           n.spawners or 0,n.spawners==1 and '' or 's',n.from_centre or 0,n.bearing or '?',n.centre and n.centre.x or 0,n.centre and n.centre.y or 0,
           n.nearest and string.format(', %d tiles %s of our nearest building',n.nearest,n.nearest_direction or '?') or '')
       end
@@ -237,7 +273,7 @@ return function(api)
     local entry=refresh(p,detail)
     local reached,nearest,next_base={},nil,nil
     for _,b in ipairs(entry.bases) do
-      if b.absorbing>0 then reached[#reached+1]=b; nearest=nearest or b
+      if b.reached then reached[#reached+1]=b; nearest=nearest or b
       elseif b.cloud_gap and (not next_base or b.cloud_gap<next_base.cloud_gap) then next_base=b end
     end
     local enemies
@@ -246,8 +282,20 @@ return function(api)
       local n=entry.bases[1]
       enemies.nearest=string.format('base (%g,%g) %d spawners, %s tiles %s of our structures, %s',n.position.x,n.position.y,n.spawners,
         n.distance or '?',n.direction or '?',n.seen and 'seen '..age(n.seen) or 'not seen since charted')
-      if nearest then enemies.nearest_reached=string.format('base (%g,%g) absorbing %g, %s tiles %s of our structures',
-        nearest.position.x,nearest.position.y,nearest.absorbing,nearest.distance or '?',nearest.direction or '?') end
+      if nearest then enemies.nearest_reached=string.format('base (%g,%g) pollution %s, %s tiles %s of our structures',
+        nearest.position.x,nearest.position.y,nearest.absorbing>0 and 'there now ('..nearest.absorbing..')'
+          or game.tick-nearest.polluted_tick<3600 and 'last there '..math.floor((game.tick-nearest.polluted_tick)/60)..'s ago'
+          or 'last there '..age(nearest.polluted_tick),
+        nearest.distance or '?',nearest.direction or '?') end
+      -- Every reached nest, nearest first (the defense read and the news say the same).
+      if #reached>0 then
+        local parts={}
+        for i,b in ipairs(reached) do
+          if i>6 then parts[#parts+1]='+'..(#reached-6)..' more'; break end
+          parts[#parts+1]=string.format('(%g,%g) %s tiles %s',b.position.x,b.position.y,b.distance or '?',b.direction or '?')
+        end
+        enemies.reached_list=table.concat(parts,'; ')
+      end
       if next_base then enemies.next=string.format('base (%g,%g) %d chunks from the cloud (cloud to its %s)',
         next_base.position.x,next_base.position.y,next_base.cloud_gap,next_base.cloud_direction) end
       if detail then enemies.list=entry.bases end
@@ -321,15 +369,20 @@ return function(api)
     local s=api.state(); s.attack_groups=s.attack_groups or {}
     s.alert_seq=(s.alert_seq or 0)+1
     table.insert(s.attack_groups,{seq=s.alert_seq,tick=event.tick,size=#g.members,kinds=next(kinds) and kinds_text(kinds) or nil,position={x=round(pos.x),y=round(pos.y)},
-      target=target and {x=round(target.x),y=round(target.y)} or nil})
+      target=target and {x=round(target.x),y=round(target.y)} or nil,surface=g.surface and g.surface.name or nil})
     while #s.attack_groups>MAX_GROUPS do table.remove(s.attack_groups,1) end
   end
   function M.on_damaged(event)
     local e,force=event.entity,event.force
     if not (e and e.valid and force and force.name=='enemy') then return end
     if e.force.name=='enemy' or e.force.name=='neutral' then return end
+    -- Platform hits are platalerts.lua's (runtime.lua routes them there first);
+    -- one that reaches here is not a ground attack either.
+    local surface=e.surface
+    if surface and surface.platform then return end
     local s=api.state(); s.damage=s.damage or {}
-    local key=math.floor(e.position.x/32)..','..math.floor(e.position.y/32)
+    -- Keyed by surface and chunk: hits on two planets at the same chunk are two incidents.
+    local key=(surface and surface.name or '?')..':'..math.floor(e.position.x/32)..','..math.floor(e.position.y/32)
     local area=s.damage[key]
     -- An area kept from before incidents had ids (a hot deploy) starts afresh.
     local fresh=not area or not area.id or event.tick-area.last>INCIDENT_GAP
@@ -348,13 +401,13 @@ return function(api)
       -- A quiet minute ends an incident; the next hit starts a new one.
       s.incident_seq=(s.incident_seq or 0)+1
       area.id,area.first,area.hits,area.damage,area.entities,area.by=s.incident_seq,event.tick,0,0,{},nil
-      area.at={x=round(e.position.x),y=round(e.position.y)}
+      area.at={x=round(e.position.x),y=round(e.position.y)}; area.surface=surface and surface.name or nil
       area.units,area.kinds,area.size,area.source,area.source_tried,area.group={},{},0,nil,nil,nil
       -- A visible group that gathered in the last 3 minutes heading here.
       for k=#(s.attack_groups or {}),1,-1 do
         local g=s.attack_groups[k]
         if event.tick-g.tick>10800 then break end
-        if g.target and api.distance(g.target,area.at)<=GROUP_MATCH then area.group={size=g.size,kinds=g.kinds,position=g.position}; break end
+        if g.target and (not g.surface or g.surface==area.surface) and api.distance(g.target,area.at)<=GROUP_MATCH then area.group={size=g.size,kinds=g.kinds,position=g.position}; break end
       end
     end
     -- Every hit is numbered so reply hints can say exactly what is new.
@@ -384,8 +437,9 @@ return function(api)
     return sec..'s'
   end
   -- One line per incident: where, who, from where, what was hit, when.
-  -- `again`: the same incident told to the same reader before.
-  function M.attack_line(v,again)
+  -- `again`: the same incident told to the same reader before. `reader`: the
+  -- reader's surface name; an incident elsewhere names its surface.
+  function M.attack_line(v,again,reader)
     local names={}
     for name,count in pairs(v.entities or {}) do names[#names+1]=name..' x'..count end
     table.sort(names)
@@ -401,10 +455,11 @@ return function(api)
     elseif v.source_tried then from=string.format('no charted nest within %d tiles',SOURCE_RANGE) end
     local at=v.at or {x=0,y=0}
     local span=v.first and v.first<v.last and 'first '..ago(game.tick-v.first)..' ago, last '..ago(game.tick-v.last)..' ago' or ago(game.tick-v.last)..' ago'
-    return string.format('attack #%d at (%d,%d)%s: %s%s%s hit %d times, %d damage, %s',v.id or 0,at.x,at.y,again and ' continues' or '',
+    local on=v.surface and reader and v.surface~=reader and ' on '..v.surface or ''
+    return string.format('attack #%d%s at (%d,%d)%s: %s%s%s hit %d times, %d damage, %s',v.id or 0,on,at.x,at.y,again and ' continues' or '',
       who and who..'; ' or '',from and from..'; ' or '',table.concat(names,', '),v.hits,round(v.damage),span)
   end
-  function M.alerts(since)
+  function M.alerts(since,reader)
     local s,out=api.state(),{}
     local groups={}
     for _,g in ipairs(s.attack_groups or {}) do if g.tick>since then groups[#groups+1]=g end end
@@ -412,13 +467,14 @@ return function(api)
     for key,v in pairs(s.damage or {}) do
       -- Zero-damage hits (the crash site's fire) are not an attack: readers took the wreck for one.
       if v.last>since and round(v.damage)>0 then
-        local cx,cy=key:match('^(-?%d+),(-?%d+)$')
+        -- Keys are surface:cx,cy (cx,cy before surfaces were kept).
+        local cx,cy=key:match('(-?%d+),(-?%d+)$')
         local names={}
         for name,n in pairs(v.entities) do names[#names+1]=name..' x'..n end
         table.sort(names)
-        areas[#areas+1]={id=v.id,at=v.at,chunk_centre=chunk_centre(tonumber(cx),tonumber(cy)),hits=v.hits,damage=round(v.damage),first_tick=v.first,last_tick=v.last,
+        areas[#areas+1]={id=v.id,surface=v.surface,at=v.at,chunk_centre=chunk_centre(tonumber(cx),tonumber(cy)),hits=v.hits,damage=round(v.damage),first_tick=v.first,last_tick=v.last,
           by=v.by,entities=table.concat(names,', '),attackers=(v.size or 0)>0 and v.size or nil,kinds=(v.size or 0)>0 and kinds_text(v.kinds) or nil,
-          group=v.group,source=v.source,line=v.id and v.at and M.attack_line(v) or nil}
+          group=v.group,source=v.source,line=v.id and v.at and M.attack_line(v,false,reader) or nil}
       end
     end
     table.sort(areas,function(a,b) return a.last_tick>b.last_tick end)

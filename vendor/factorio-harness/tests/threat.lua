@@ -48,7 +48,8 @@ eq(s.evolution.factor,0.25); eq(s.evolution.pollution,0.04); eq(s.evolution.delt
 eq(s.pollution.total,1234); eq(s.pollution.per_min,460); eq(s.pollution.absorbed_per_min,30)
 eq(s.pollution.top,'boiler 300, burner-mining-drill 120, stone-furnace 40')
 eq(s.enemies.bases,2); eq(s.enemies.reached,1)
-eq(s.enemies.nearest_reached,'base (85,11) absorbing 50, 45 tiles E of our structures')
+eq(s.enemies.nearest_reached,'base (85,11) pollution there now (50), 45 tiles E of our structures')
+eq(s.enemies.reached_list,'(85,11) 45 tiles E')
 eq(s.enemies.next,'base (200,10) 4 chunks from the cloud (cloud to its W)')
 eq(s.enemies.list,nil); eq(scans,1)
 eq(s.enemies.nearest,'base (85,11) 2 spawners, 45 tiles E of our structures, seen now')
@@ -131,4 +132,44 @@ for _=1,20 do for _,a in ipairs(agents) do T.summary(a) end; game.tick=game.tick
 eq(walks,1); eq(scans,18)
 eq(T.summary(agents[3]).chart.charted_chunks,30)
 game.tick=60000+3600; T.summary(agents[1]); eq(walks,2)
+-- Reach is remembered for 15 minutes: the pollution on a nest's chunk hovers about zero at the cloud's edge, and a
+-- reading of 0 right after one of 50 still counts as reached (status flickered 1, 0, 1 in shift 6).
+polluted=function(pos) local cx,cy=math.floor(pos.x/32),math.floor(pos.y/32); return (cx<=2 and cy==0) and 50 or 0 end
+game.tick=130000; local r=T.summary(p,true); eq(r.enemies.reached,1)
+polluted=function() return 0 end
+game.tick=130000+600; r=T.summary(p,true); eq(r.enemies.reached,1)
+eq(r.enemies.nearest_reached,'base (85,11) pollution last there 10s ago, 45 tiles E of our structures')
+game.tick=130000+T.REACH_WINDOW+1; eq(T.summary(p,true).enemies.reached,0)
+-- Reached-nest news once per nest per shift: a new shift tells the agents again of nests still reached.
+polluted=cloud
+game.tick=200000; T.summary(p,true)
+eq(#T.news_lines(nil,199000),0)
+storage.shift={tick=200500}
+game.tick=201000; T.summary(p,true)
+local again=T.news_lines(nil,200900)
+eq(#again,2); assert(again[1]:find('pollution reached nest (85,11)',1,true),again[1])
+game.tick=202000; T.summary(p,true); eq(#T.news_lines(nil,201500),0)
+-- The nearest structure is a building: a ghost or a car near a nest is not one.
+ours[#ours+1]={valid=true,type='entity-ghost',position={x=180,y=10}}
+ours[#ours+1]={valid=true,type='car',position={x=185,y=10}}
+game.tick=203000; local far=T.summary(p,true).enemies.list
+for _,b in ipairs(far) do if b.position.x==200 then eq(b.distance,160) end end
+-- Surfaces: hits on a platform are not attacks here; the same chunk on two planets is two incidents, and a reader
+-- elsewhere is told the surface.
+local nauvis,vulcanus,platform={index=1,name='nauvis'},{index=2,name='vulcanus'},{index=3,name='platform-3',platform={name='Starling'}}
+local function hit(tick,surf,x)
+  T.on_damaged{tick=tick,entity={valid=true,name='gun-turret',force=mine,surface=surf,position={x=x,y=5}},force=enemy,
+    cause={valid=true,name='small-biter',unit_number=tick},final_damage_amount=10}
+end
+storage.damage=nil; storage.source_memo=nil
+nauvis.find_entities_filtered=function() return {} end; vulcanus.find_entities_filtered=nauvis.find_entities_filtered
+game.tick=210000
+hit(210000,nauvis,5); hit(210000,vulcanus,6); hit(210000,platform,7)
+local rows=T.alerts(209000,'nauvis').attacked
+eq(#rows,2)
+local on_v=rows[1].surface=='vulcanus' and rows[1] or rows[2]
+eq(on_v.surface,'vulcanus'); assert(on_v.line:find('^attack #%d+ on vulcanus at %(6,5%)'),on_v.line)
+local on_n=rows[1].surface=='nauvis' and rows[1] or rows[2]
+assert(on_n.line:find('^attack #%d+ at %(5,5%)'),on_n.line)
+eq(T.attack_line(storage.damage['vulcanus:0,0'],false,'vulcanus'):find(' on '),nil)
 print('threat tests passed')
