@@ -397,7 +397,8 @@ class Model:
         # platforms by name as last seen (to name one that is destroyed), reads each has been missing, hub losses
         self.platform_last, self.platform_missing, self.hub_losses = {}, {}, deque(maxlen=20)
         self.platform_course = {}  # name -> {conn, pct, toward, orbit, moving}: which way it flies, the last planet
-        self.arrivals = []  # (name, planet, came from) seen this read: _space_moments calls them
+        self.arrivals = []  # (name, planet, came from, its first there, the run's first there) this read
+        self.planets_reached = set()  # planets any platform has been at (or our entities stand on)
         self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
         # Space widget: status alerts' platform_hits rows by platform (live.py), and platforms lost lately
         self.platform_hits, self.platforms_lost = {}, deque(maxlen=6)
@@ -465,6 +466,7 @@ class Model:
             sp = dict(obs["space"])
             sp["platforms"] = [p for p in sp.get("platforms") or []
                                if p.get("hub", True) and p.get("state") != "waiting_for_starter_pack"]
+            self.planets_reached.update(sp.get("planets") or [])  # surfaces with our entities: reached before
             sp["platforms"] = self._orient_platforms(sp["platforms"])
             self.space = sp
             self._platforms_lost(now)
@@ -1119,16 +1121,24 @@ class Model:
             self.alert("space", m["title"], key=f"space:{key}", agent=m.get("agent"), ttl=40,
                        facts=dict(m["facts"], headline=m["kind"]))
         # every other arrival after a trip, home included (shift06 14:14:32 Sunward back at Nauvis: Astra called it,
-        # the hosts had nothing; only a first arrival at a planet other than Nauvis was a moment)
-        for name, planet, came in arrivals:
+        # the hosts had nothing; only a first arrival at a planet other than Nauvis was a moment). Firsts are
+        # headlines: a platform's first arrival at a planet, the run's first there. Later ones (a ferry's round
+        # trips) are an ordinary "arrival" below battles: a headline every trip pulled the hosts off fights.
+        for name, planet, came, first, team_first in arrivals:
             if f"orbit:{name}:{planet}" in fired:
                 continue
             aboard = [a.display_name or a.name for a in self.agents.values() if a.platform == name and a.alive]
             title = f"{name} is back at Nauvis" if planet == "nauvis" else f"{name} arrives at {planet_label(planet)}"
-            self.alert("space", title, key=f"arrive:{name}:{planet}", ttl=120, facts={
-                "headline": "platform_arrival", "platform": name, "planet": planet_label(planet),
-                "came_from": planet_label(came) if came else None, "aboard": aboard or None,
-                "game_time": fmt_game_time(self.tick / 60)})
+            facts = {"platform": name, "planet": planet_label(planet), "came_from": planet_label(came) if came else None,
+                     "aboard": aboard or None, "game_time": fmt_game_time(self.tick / 60)}
+            trips = self.platform_course.get(name, {})
+            trips["arrivals"] = trips.get("arrivals", 0) + 1  # one alert per arrival (keys dedupe within a ttl)
+            key = f"arrive:{name}:{planet}:{trips['arrivals']}"
+            if first or team_first:
+                self.alert("space", title, key=key, ttl=120, facts=dict(
+                    facts, headline="platform_arrival", first_visit=True, team_first=team_first or None))
+            else:
+                self.alert("arrival", title, key=key, ttl=120, facts=facts)
 
     def _orient_platforms(self, plats):
         """Which way each travelling platform flies (`toward`, for platform_where): space.lua's "a->b N%" is the
@@ -1141,7 +1151,8 @@ class Model:
         for p in plats:
             p = dict(p)
             name, at = p.get("name"), p.get("at") or ""
-            c = self.platform_course.setdefault(name, {})
+            new = name not in self.platform_course
+            c = self.platform_course.setdefault(name, {"visited": set()})
             m = AT_RE.match(at)
             if not m:
                 if at and at != "in transit":
@@ -1149,8 +1160,10 @@ class Model:
                         came = c.get("orbit") if c.get("orbit") != at else None
                         if not came and c.get("conn"):
                             came = next((x for x in c["conn"] if x != at), None)
-                        self.arrivals.append((name, at, came))
+                        self.arrivals.append((name, at, came, at not in c["visited"], at not in self.planets_reached))
                     c.update(orbit=at, moving=False, conn=None, pct=None, toward=None)
+                    c["visited"].add(at)  # where it is when first seen counts as visited (a service restart)
+                    self.planets_reached.add(at)
                 elif at == "in transit":
                     c["moving"] = True
                 out.append(p)
@@ -1168,6 +1181,8 @@ class Model:
             else:
                 toward = b
             c.update(conn=(a, b), pct=pct, toward=toward, moving=True)
+            if new and p.get("to") in (a, b):  # first seen mid-trip (a restart): it has been where it left
+                c["visited"].add(a if toward == b else b)
             p["toward"] = toward
             out.append(p)
         return out

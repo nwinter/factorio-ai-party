@@ -37,7 +37,7 @@
     "cryogenic-science-pack": "Cryogenic", "promethium-science-pack": "Promethium" };
   const PROD_CELLS = 4, PROD_PINNED = 2, PROD_ROTATE_S = 10;
   const ATTENTION_ICON = { looking: "👁️", building: "🏗️", configuring: "⚙️", "moving items": "📦", fighting: "⚔️" };
-  const ALERT_ICON = { attack: "⚔️", loss: "🔥", death: "💀", power: "⚡", research: "🔬", info: "ℹ️", space: "🚀" };
+  const ALERT_ICON = { attack: "⚔️", loss: "🔥", death: "💀", power: "⚡", research: "🔬", info: "ℹ️", space: "🚀", arrival: "🛰️" };
   // board event verbs as a viewer reads them ("Astra took: ...")
   const VERB = { posted: "posted", taken: "took", assigned: "assigned", released: "released", started: "started",
     done: "finished", blocked: "is blocked on", dropped: "dropped", reopened: "reopened" };

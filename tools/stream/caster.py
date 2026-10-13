@@ -201,6 +201,7 @@ HEADLINE_EXTRA = {
                         "aboard, if the facts say.",
 }
 PRIORITY = {"headline": 10, "attack": 9, "death": 10, "loss": 8, "segment": 7, "research": 7, "space": 10, "viewer": 6,
+            "arrival": 6,  # a platform's later arrival (a ferry's round trip): below battles; firsts are "space"
             "viewer_reply": 7,
             "power": 6,
             "harness": 5, "plan": 5, "operator_request": 5,
@@ -843,6 +844,10 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     if e["kind"] == "chat" and e.get("react"):  # task-talk-hosts: the hosts answer the agent who just spoke on air
         f["how_to_call_it"] = ("viewers just heard this agent say it in their own voice: react to it (what it means "
                                "for the team, or how it sounds), briefly, without repeating it word for word")
+    if e["kind"] == "arrival":  # a platform's later arrival: another trip done, not a headline
+        f["arrival"] = {k: v for k, v in (e.get("facts") or {}).items() if v not in (None, "", [])}
+        f["how_to_call_it"] = ("a space platform finished another trip (it has been here before): one line, where it "
+                               "came from and who is aboard if the facts say; no big moment")
     if e["kind"] in HEADLINE_KINDS:  # eng/hostguide: a headline, said as a clear call with the name and the stakes
         if e.get("facts"):
             f["headline"] = {k: v for k, v in e["facts"].items() if v not in (None, "", [])}
@@ -1496,6 +1501,8 @@ class TemplateWriter:
                      "color": ["And everything aboard {headline_platform} goes with it.", "That one costs them."]},
         "space": {"pbp": ["Big moment. {text}!", "{text}! Remember this one."],
                   "color": ["That changes what this run can reach.", "A milestone. The map just got bigger."]},
+        "arrival": {"pbp": ["{text}.", "And {text}."],
+                    "color": ["Another trip done.", "The ferry keeps running."]},
         "segment": {"pbp": ["On screen now: {seg_title}.", "Let's take a closer look: {seg_title}."],
                     "color": ["Here's the picture: {seg_title}.", "Worth a look: {seg_title}."]},
         # only the analyst's answers have analyst_answer; a plain viewer comment still gets no template line
