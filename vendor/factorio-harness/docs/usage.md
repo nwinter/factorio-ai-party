@@ -300,9 +300,12 @@ fh sleep 900 --until researched                       # ...or until the research
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
 - `launch {position, platform}` sends the cargo to the platform's hub (a platform waiting for its starter pack gets it
-  as its starter pack). When the game refuses (it gives no reason), the error lists what it may check: a missing rocket,
-  cargo weight against the rocket's lift, automatic requests, a paused platform, then the silo, cargo, platform and
-  destination it saw.
+  as its starter pack). A rocket lifts 1000 kg (item prototype weights; the game takes more by script, then refuses
+  the launch): `transfer` into `rocket_silo_rocket` gives only what fits (`weight_limited {requested, fits, note}`)
+  and fails when nothing fits; its reply, `inspect` of a silo and the `platforms` silo rows show `rocket_weight` /
+  `weight` as `held/lift kg`. `launch` with more aboard fails before the game is asked: `overweight by N kg`, with the
+  cargo by weight. When the game refuses (it gives no reason), the error lists what it may check: a missing rocket,
+  automatic requests, a paused platform, then the silo, cargo, platform and destination it saw.
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,

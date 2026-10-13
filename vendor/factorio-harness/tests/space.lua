@@ -134,20 +134,32 @@ platform.state=0
 space.launch(p,{position={x=20.5,y=20.5},platform='alpha'})
 eq(launched.type,4); eq(launched.space_platform,platform)
 platform.state=7
--- The game says no (launch_rocket false): the error names what may stop it.
+-- Over the rocket's lift (shift04 07:17: Sol's 1060 kg): refused before the
+-- game is asked, naming the excess and the heaviest cargo.
 do
   local launch,saved=silo.launch_rocket,silo_cargo
-  silo.launch_rocket=function() return false end
-  prototypes.item.stone={weight=50000}; prototypes.utility_constants={rocket_lift_weight=1000000}
-  silo_cargo={get_contents=function() return {{name='stone',count=24}} end}
+  local asked=0
+  silo.launch_rocket=function() asked=asked+1; return false end
+  local weights={['space-platform-foundation']=20000,['firearm-magazine']=10000,['gun-turret']=20000,['fast-inserter']=20000,['solar-panel']=20000,stone=50000}
+  for name,w in pairs(weights) do prototypes.item[name]={weight=w} end
+  prototypes.utility_constants={rocket_lift_weight=1000000}
+  silo_cargo={get_contents=function() return {{name='solar-panel',count=1},{name='gun-turret',count=4},{name='space-platform-foundation',count=30},
+    {name='fast-inserter',count=4},{name='firearm-magazine',count=28}} end}
+  eq(space.platforms(p,{}).silos[1].weight,'1060/1000 kg')
   fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,
-    'the game refused the launch (launch_rocket returned false): the silo holds no rocket entity; the cargo weighs more than a rocket lifts; platform alpha is paused (platform_schedule paused=false unpauses it) [silo rocket_ready/nil, cargo 1200/1000 kg, platform alpha paused at nauvis, destination station]')
-  silo.rocket={valid=true}; platform.state=6
+    'launch refused, overweight by 60 kg: the rocket holds 1060 kg and lifts 1000 kg; take cargo out with transfer {position, direction=to_player, inventory=rocket_silo_rocket, item, count} (cargo: space-platform-foundation*30 at 20 kg, firearm-magazine*28 at 10 kg, fast-inserter*4 at 20 kg, gun-turret*4 at 20 kg, solar-panel*1 at 20 kg)')
+  eq(asked,0)
+  -- The game says no (launch_rocket false) for its own reasons: the error names what may stop it.
   silo_cargo={get_contents=function() return {{name='stone',count=20}} end}
   fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,
+    'the game refused the launch (launch_rocket returned false): the silo holds no rocket entity; platform alpha is paused (platform_schedule paused=false unpauses it) [silo rocket_ready/nil, cargo 1000/1000 kg, platform alpha paused at nauvis, destination station]')
+  silo.rocket={valid=true}; platform.state=6
+  fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,
     'the game refused the launch (launch_rocket returned false) [silo rocket_ready/nil, cargo 1000/1000 kg, platform alpha waiting_at_station at nauvis, destination station]')
+  eq(asked,2)
   silo.launch_rocket,silo_cargo,silo.rocket,platform.state=launch,saved,nil,7
-  prototypes.item.stone,prototypes.utility_constants=nil,nil
+  for name in pairs(weights) do prototypes.item[name]=nil end
+  prototypes.utility_constants=nil
 end
 platform.space_location={name='vulcanus'}
 fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,'not in orbit of nauvis')
