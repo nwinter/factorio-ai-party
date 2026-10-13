@@ -44,6 +44,12 @@ return function(api)
       out.held = held or 'nothing'
       out.pickup_target = where(try(function() return e.pickup_target end))
       out.drop_target = where(try(function() return e.drop_target end))
+      -- Nothing to drop into: the tile its items land on (on a platform,
+      -- empty space means thrown overboard).
+      if not out.drop_target then
+        out.drop_tile = try(function() local d = e.drop_position; return e.surface.get_tile(math.floor(d.x), math.floor(d.y)).name end)
+        if out.drop_tile == 'empty-space' then out.drop_note = 'drops into empty space: items it moves are thrown overboard' end
+      end
     end
     out.marked_for_deconstruction = try(function() return e.to_be_deconstructed() end) or nil
     out.marked_for_upgrade = try(function() return e.to_be_upgraded() end) or nil

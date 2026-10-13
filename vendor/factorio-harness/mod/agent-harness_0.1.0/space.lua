@@ -174,6 +174,48 @@ return function(api)
       end
       local ghosts=try(function() return s.count_entities_filtered{type={'entity-ghost','tile-ghost'}} end)
       row.unbuilt_ghosts=ghosts and ghosts>0 and ghosts or nil
+      -- Inserters taking from the hub with nothing to drop into: they put
+      -- the hub's items on the tile at their drop point (empty space: thrown
+      -- overboard).
+      local hub=pl.hub
+      local drains={}
+      for _,i in ipairs(try(function() return s.find_entities_filtered{type='inserter',limit=500} end) or {}) do
+        if hub and try(function() return i.pickup_target==hub and not i.drop_target end) then
+          local d=i.drop_position
+          local tile=try(function() return s.get_tile(math.floor(d.x),math.floor(d.y)).name end) or '?'
+          drains[#drains+1]=string.format('(%g,%g) drops onto %s',i.position.x,i.position.y,tile)
+        end
+      end
+      row.hub_inserters_without_target=#drains>0 and drains or nil
+      -- The game's item statistics for this platform's surface, last 10 minutes.
+      local stats=try(function() return pl.force.get_item_production_statistics(s) end)
+      if stats then
+        for _,c in ipairs({{'output','consumed_10min'},{'input','produced_10min'}}) do
+          local list={}
+          for name in pairs(try(function() return c[1]=='output' and stats.output_counts or stats.input_counts end) or {}) do
+            local n=try(function() return stats.get_flow_count{name=name,category=c[1],precision_index=defines.flow_precision_index.ten_minutes,count=true} end)
+            if n and n>=0.5 then list[#list+1]={name=name,n=math.floor(n+0.5)} end
+          end
+          table.sort(list,function(x,y) if x.n~=y.n then return x.n>y.n end return x.name<y.name end)
+          local parts={}
+          for i=1,math.min(12,#list) do parts[i]=list[i].name..'*'..list[i].n end
+          row[c[2]]=#parts>0 and table.concat(parts,' ')..(#list>12 and string.format(' +%d more',#list-12) or '') or nil
+        end
+      end
+    end
+    -- Items thrown overboard, while the game still tracks them.
+    local ejected=try(function() return pl.ejected_items end)
+    if ejected and #ejected>0 then
+      local by,names={},{}
+      for _,e in ipairs(ejected) do
+        local n=try(function() local it=e.item; local nm=it.name; return type(nm)=='string' and nm or nm.name end) or '?'
+        if not by[n] then by[n]=0; names[#names+1]=n end
+        by[n]=by[n]+1
+      end
+      table.sort(names)
+      local parts={}
+      for i,n in ipairs(names) do parts[i]=n..'*'..by[n] end
+      row.thrown_overboard=table.concat(parts,' ')
     end
   end
   -- Hub storage use: free slots of all.
@@ -235,6 +277,8 @@ return function(api)
           row.hub=hub.position
           row.hub_items=top_items(hub.get_inventory(defines.inventory.hub_main),a.platform and 64 or 12)
           row.hub_slots=M.hub_slots(hub)
+          local trash=defines.inventory.hub_trash and try(function() return hub.get_inventory(defines.inventory.hub_trash) end)
+          row.hub_trash=trash and top_items(trash,12) or nil
           local secs=hub.get_logistic_sections()
           if secs then
             local req={}
@@ -426,11 +470,20 @@ return function(api)
       local b=api.bot and api.bot(p)
       dest.position=a.position~=nil and api.position(a.position) or (b and b.spots and b.spots[surface.name]) or p.force.get_spawn_position(surface)
     end
-    -- A refused destination puts the items back in the hub, never strands them.
+    -- A refused destination puts the items back in the hub, never strands
+    -- them; what the hub cannot take back stays in the pod, which is kept.
     if not pcall(function() pod.cargo_pod_destination=dest end) then
-      for i=1,#cargo do if cargo[i].valid_for_read then hub_inv.insert(cargo[i]); cargo[i].clear() end end
-      pod.destroy()
-      error('the game refused the cargo pod destination '..surface.name..'; the items stay in the hub',0)
+      local kept={}
+      for i=1,#cargo do
+        local st=cargo[i]
+        if st.valid_for_read then
+          local n=hub_inv.insert(st)
+          if n>=st.count then st.clear() else st.count=st.count-n; kept[#kept+1]=st.name..'*'..st.count end
+        end
+      end
+      if #kept==0 then pod.destroy() end
+      error('the game refused the cargo pod destination '..surface.name..(#kept==0 and '; the items stay in the hub'
+        or '; the hub took back all but '..table.concat(kept,' ')..', which stay in the cargo pod on the hub'),0)
     end
     return {dropped=sent,not_sent=#left>0 and left or nil,to=surface.name,pad=pad and pad.position or nil,near=dest.position,
       note=pad and 'lands in the landing pad in ~20 s' or 'lands near that spot in ~20 s as a cargo pod container: take the items with transfer (it vanishes when empty)'}
@@ -455,7 +508,7 @@ return function(api)
     requests={target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       returns='target, sections [{index, group, controlled (set by the game, not editable), requests ["item min..max from planet"]}]; call with no set/clear to just read'},
-    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks)',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, hub_slots (free of all), requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
+    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, hub_slots (free of all), hub_trash, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule'},
     drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',

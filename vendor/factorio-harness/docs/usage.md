@@ -276,6 +276,13 @@ fh sleep 900 --until researched                       # ...or until the research
   that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
   enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
   200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same.
+- Where a platform's items go: `platforms` shows `hub_trash` per platform, and with `platform` set
+  `hub_inserters_without_target` (inserters taking from the hub with nothing to drop into: `(-2.5,3.5) drops onto
+  empty-space`), `thrown_overboard` (items in flight off the platform, while the game tracks them), and
+  `consumed_10min` / `produced_10min` from the game's item statistics for the platform surface. `inspect` on an
+  inserter with no drop target shows `drop_tile` (and `drop_note` when it is empty space: thrown overboard).
+- A `drop` whose pod destination the game refuses returns the items to the hub; what the hub cannot take back stays in
+  the cargo pod on the hub, and the error says which.
 - `transfer {position, direction: "to_player"}` takes items from a character corpse (inventory `character_corpse`); an emptied corpse is removed. It never mines the corpse (mining a corpse as a bot crashes the server; the harness takes the items instead).
 - Trash slots: a rocket silo, cargo landing pad and platform hub have one (`rocket_silo_trash`, `cargo_landing_pad_trash`,
   `hub_trash`) where the game puts items the entity will not use. `inspect` lists them in `inventories` and as one line

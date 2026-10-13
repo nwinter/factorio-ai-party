@@ -204,6 +204,11 @@ blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked
 local south
 for _,line in ipairs(blocked) do if line=='tile ghost (1.5,13.5) space-platform-foundation: in the 82 tiles south of the thruster at (1,-3), where no foundation is built' then south=true end end
 assert(south,table.concat(blocked,' | '))
+-- An inserter with nothing to drop into: the tile its items land on.
+ins.drop_target=nil
+local lone=bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}})
+eq(lone.drop_target,nil); eq(lone.drop_tile,'empty-space'); eq(lone.drop_note,'drops into empty space: items it moves are thrown overboard')
+ins.drop_target=hub
 -- describe lists platform on both.
 local d=runtime.dispatch{action='describe',args={},bot='astra'}
 assert(d.actions.inspect.platform and d.actions.configure.platform)

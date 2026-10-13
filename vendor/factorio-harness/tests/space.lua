@@ -91,6 +91,32 @@ eq(one.speed,0.012); eq(one.damaged_tiles,1); eq(one.asteroid_chunks,'metallic-a
 eq(one.thrusters,'2, lowest tank 50%'); eq(one.unbuilt_ghosts,7)
 platform.find_asteroid_chunks_filtered=function() error('no chunks API') end
 eq(space.platforms(p,{platform='alpha'}).platforms[1].asteroid_chunks,nil,'a failing read is skipped')
+-- Where hub items go (request #4): an inserter taking from the hub with
+-- nothing to drop into, items thrown overboard, the game's item statistics for
+-- the platform surface, and the hub's trash slots.
+do
+  local find,saved_force=platform.surface.find_entities_filtered,platform.force
+  local drain={position={x=-2.5,y=3.5},pickup_target=platform.hub,drop_position={x=-2.5,y=4.7}}
+  local fed={position={x=1.5,y=3.5},pickup_target=platform.hub,drop_target={name='crusher'},drop_position={x=1.5,y=4.7}}
+  platform.surface.find_entities_filtered=function(f) if f.type=='inserter' then return {drain,fed} end return find(f) end
+  platform.surface.get_tile=function(x,y) return {name=y==4 and x==-3 and 'empty-space' or 'space-platform-foundation'} end
+  defines.flow_precision_index={ten_minutes=1}; defines.inventory.hub_trash=5
+  platform.force={get_item_production_statistics=function(s)
+    assert(s==platform.surface)
+    return {output_counts={['firearm-magazine']=50,coal=1},input_counts={['solar-panel']=4},
+      get_flow_count=function(f) assert(f.precision_index==1 and f.count==true); return ({['firearm-magazine']=20,['solar-panel']=4})[f.name] or 0 end}
+  end}
+  platform.ejected_items={{item={name='firearm-magazine',quality='normal'}},{item={name='firearm-magazine',quality='normal'}},{item={name='solar-panel',quality='normal'}}}
+  local row=space.platforms(p,{platform='alpha'}).platforms[1]
+  eq(#row.hub_inserters_without_target,1); eq(row.hub_inserters_without_target[1],'(-2.5,3.5) drops onto empty-space')
+  eq(row.consumed_10min,'firearm-magazine*20'); eq(row.produced_10min,'solar-panel*4')
+  eq(row.thrown_overboard,'firearm-magazine*2 solar-panel*1')
+  eq(row.hub_trash,'iron-plate*5')
+  local all=space.platforms(p,{}).platforms[1]
+  eq(all.thrown_overboard,nil,'details only for one named platform'); eq(all.hub_trash,'iron-plate*5','every row')
+  platform.surface.find_entities_filtered,platform.force,platform.ejected_items=find,saved_force,nil
+  defines.flow_precision_index,defines.inventory.hub_trash=nil,nil
+end
 local sch=space.platform_schedule(p,{platform='alpha',stops={{station='vulcanus',wait={{type='time',ticks=600}}},{station='nauvis',wait={{type='all_requests_satisfied'}}}},paused=false})
 eq(sch.schedule,'>vulcanus (time 10s) | nauvis (all_requests_satisfied)'); eq(platform.paused,false)
 eq(platform.schedule.records[1].wait_conditions[1].ticks,600)
@@ -232,6 +258,12 @@ local coal_before=hub_inv.get_item_count{name='coal'}
 refuse=true
 fails(function() space.drop(p,{platform='alpha',items={{item='coal',count=2}}}) end,'items stay in the hub')
 eq(hub_inv.get_item_count{name='coal'},coal_before); eq(drop_pod.valid,false)
+-- The hub cannot take them back (filled meanwhile): they stay in the pod, which is kept.
+local insert=hub_inv.insert
+hub_inv.insert=function() return 0 end
+fails(function() space.drop(p,{platform='alpha',items={{item='coal',count=2}}}) end,'the hub took back all but coal*1 coal*1, which stay in the cargo pod on the hub')
+eq(drop_pod.valid,true); eq(drop_pod.cargo[1].count+drop_pod.cargo[2].count,2)
+hub_inv.insert=insert
 refuse=false
 platform.space_location=nil
 fails(function() space.drop(p,{platform='alpha',items={{item='coal',count=1}}}) end,'not stopped at a planet')
