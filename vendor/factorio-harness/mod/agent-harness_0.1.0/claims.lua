@@ -15,6 +15,11 @@ return function(api)
       if i.kind == 'claim' and ACTIVE[i.status] and i.owner and i.owner ~= me and i.area and inside(i.area, pos) then return i end
     end
   end
-  function M.label(i) return string.format('#%d %s (claim by %s)', i.id, i.title or '', i.owner) end
+  -- With reader p: where the owner is when somewhere else (where.lua).
+  function M.label(i, p)
+    local where = p and api.where_from and api.where_from(p.name)
+    local away = where and where(i.owner)
+    return string.format('#%d %s (claim by %s%s)', i.id, i.title or '', i.owner, away and ', ' .. away or '')
+  end
   return M
 end

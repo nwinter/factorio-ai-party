@@ -133,7 +133,7 @@ return function(api)
     for _,place in ipairs(api.claims and s.places or {}) do
       local c=api.claims.other(p,place.position)
       if c then
-        local key=api.claims.label(c)
+        local key=api.claims.label(c,p)
         if not skipped[key] then skipped[key]={places=0,count=0}; skipped[#skipped+1]=key end
         skipped[key].places=skipped[key].places+1; skipped[key].count=skipped[key].count+place.count
       else kept[#kept+1]=place end

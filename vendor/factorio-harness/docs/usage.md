@@ -61,6 +61,12 @@ fh call status
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
   (`standing on a transport-belt facing east: it carries you; step off to stay put`); the game moves a character
   standing on a belt. `status.on_belt` shows the same for as long as it stands on one.
+- Full `status` (not `brief`) has `teammates`, one line on where every other agent is (compact output prints it right
+  after `clock:`): agents elsewhere first, grouped by planet, platform or cargo pod, then the ones on your surface,
+  nearest first, with distance and compass direction:
+  `Sol on Vulcanus; opus 25 tiles S (offline); Luna 100 tiles NE`. `dead` and `offline` are marked; a bot is offline
+  after 15 minutes with no request or sleep poll, an attached player when disconnected. Human players and directors are
+  left out.
 - `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
   distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
   your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
@@ -135,6 +141,9 @@ fh board events --since 40
   messages not shown (seq 1..37): sol 23, luna 12; chat again for them`). Your own messages count as read; writing
   does not skip others' unread ones. After a (non-peek, non-since) read that left some unread, every reply's `team`
   block carries `chat_remaining: K` (the current unread count) until it reaches 0.
+- A line from a teammate who is now somewhere other than you says where: `team.tells` and `team.mentions` lines
+  (`sol (on Vulcanus), 2m ago: ...`), the `chat:` trailer's `latest`, and `away: "on Vulcanus"` on `chat` and `tells`
+  entries. Same planet: nothing is added.
 - With `--format json`, stdout stays one JSON document and the `error:` (or `warning:`) line goes to stderr; `fh
   stream` prints none.
 - The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
@@ -484,6 +493,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   NAME: ...`); a line written for you counts as yours (it wakes you from `sleep`), other edits as news.
 - A claim overlapping another agent's active claim is posted with a warning. At most 300 items are kept (finished
   ones pruned first, then notes, then the oldest).
+- A claim whose owner is now somewhere other than you says so: `owner_away: "on Vulcanus"` on board items, the overlap
+  warning (`overlaps claim #128 by sol (on Vulcanus): ...`), and the claim in `collect`'s `skipped_claims` and
+  `claimed` (`(claim by sol, on Vulcanus)`).
 - `board_events {since_seq, limit}` (for overlays) returns `{seq,tick,by,id,change,title,kind,owner,requested_by,status,text}`
   oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, `note`, or `edited`
   (the plan). A finished technology is an event with no item: `by:"research"`, `kind:"research"`, `title` the
@@ -541,8 +553,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   name, several (an array or `"luna,sol"`), or `team` (also `everyone`, `all`) for every agent but you. Each recipient
   gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
-  fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`). `tells {since?, limit?}`
-  returns the tells you sent or received `{seq,tick,from,to,team?,text}`; the operator path returns every tell, which
+  fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`), and `away` for recipients on
+  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}`
+  returns the tells you sent or received `{seq,tick,from,away?,to,team?,text}`; the operator path returns every tell, which
   the stream shows on its logistics ticker (`-> Sol: text`, never voiced). CLI: `fh tell luna "text"`,
   `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells --since N`.
 - `operator {text}` (1..500 characters, one line; longer is cut and the reply carries `cut {length, kept}`) files a
