@@ -25,6 +25,7 @@ prototypes={entity={
   ['chemical-plant']={name='chemical-plant',type='assembling-machine',fluidbox_prototypes={
     box{conn(8,{-1,1},{flow_direction='input'})},box{conn(8,{1,1},{flow_direction='input'})},
     box{conn(0,{-1,-1},{flow_direction='output'})},box{conn(0,{1,-1},{flow_direction='output'})}}},
+  ['flamethrower-turret']={name='flamethrower-turret',type='fluid-turret',fluidbox_prototypes={box{conn(8,{0,0},{flow_direction='input'})}}},
   ['transport-belt']={name='transport-belt',type='transport-belt'}}}
 local function key(x,y) return math.floor(x)..','..math.floor(y) end
 local mine={is_chunk_charted=function() return true end}
@@ -208,6 +209,11 @@ local cp=place('chemical-plant',30.5,0.5,0,{fluidbox={get_capacity=function() re
   get_filter=function(i) return i==1 and {name='water'} or nil end,get_pipe_connections=function() return {} end}})
 setmetatable(cp.fluidbox,{__len=function() return 2 end})
 eq(P.fluids(cp),'empty (water only)/100 | empty/100')
+-- A full flamer on a long oil line: the box's own volume (get_capacity is the whole segment's in 2.0: Astra read
+-- "fluid 19.9/21100" and a full flamer read 99.4/66700), the segment's apart.
+local fl=place('flamethrower-turret',40.5,0.5,0,{fluidbox={{name='light-oil',amount=99.4},get_capacity=function() return 66700 end,
+  get_pipe_connections=function() return {} end}})
+eq(P.fluids(fl),'light-oil 99.4/100 (segment holds up to 66700)')
 -- Ghosts report from the prototype, and see ghosts they will connect to.
 local g=place('chemical-plant',5.5,0.5,0,{ghost=true})
 place('pipe',4.5,2.5,0,{ghost=true})
