@@ -52,7 +52,7 @@ def make(root):
             ("2026-10-12T23:40:00", 1100000, ["automation", "oil-processing", "rocket-silo"], 1, ()),
             ("2026-10-13T00:20:40", 1200000, ["automation", "oil-processing", "rocket-silo"], 2, (plat,)),
             ("2026-10-13T01:50:00", 1400000, ["automation", "oil-processing", "rocket-silo", "space-science-pack"], 2,
-             (dict(plat, at=None),))]
+             (dict(plat, at="in transit"),))]
     (b / "scores.jsonl").write_text("\n".join(score(*r) for r in rows) + "\n")
     (b / "stream-service.log").write_text(
         "[director] 22:40:58 cam2:  zoom 1.1  <- death: Sol died\n"
@@ -108,6 +108,16 @@ def main():
         assert titles.get("Space platform Starling built") == 7200, ch
         assert titles.get("Starling leaves Nauvis") == 7200 + (datetime.datetime(2026, 10, 13, 1, 5, 20) - datetime.datetime(2026, 10, 13, 0, 0, 35)).seconds, ch
         assert "Sol dies (small worm turrets)" in titles and "Spotlight: Opus" in titles, ch
+
+        # two milestones a minute apart share a chapter; a lesser event that close is dropped
+        t0 = datetime.datetime(2026, 10, 12, 22, 0, tzinfo=PDT)
+        segs = [{"start": t0, "end": t0 + datetime.timedelta(hours=2)}]
+        evs = [sv.ev(t0 + datetime.timedelta(seconds=s), k, title, w) for s, k, title, w in
+               [(1000, "rocket", "First rocket launched", 92), (1050, "platform", "Space platform Starling built", 90),
+                (1060, "research", "Steel researched", 40), (3000, "depart", "Starling leaves Nauvis", 88),
+                (3040, "research", "Vulcanus discovered", 72)]]
+        got = [c["title"] for c in sv.pick_chapters(evs, segs, "Start", 7200)]
+        assert got == ["Start", "First rocket launched; space platform Starling built", "Starling leaves Nauvis"], got
         fight = [t for t in titles if t.startswith("Biters break in: 64 lost")]
         assert fight and titles[fight[0]] == (datetime.datetime(2026, 10, 12, 23, 16) - datetime.datetime(2026, 10, 12, 22, 0, 5)).seconds, ch
         assert "Craig asks: when is the first rocket?" in titles, ch

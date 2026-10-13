@@ -227,7 +227,8 @@ def score_events(sc, first_shift, base_rockets):
         for tech in sorted(b["done"] - a["done"]):
             if tech in TECHS:
                 label, w = TECHS[tech]
-                out.append(ev(t, "research", f"{label} researched", w, tech=tech, label=label))
+                title = label if label.endswith("discovered") else f"{label} researched"
+                out.append(ev(t, "research", title, w, tech=tech, label=label))
         if b["rockets"] > a["rockets"]:
             n0, n1 = a["rockets"] + 1, b["rockets"]
             if n0 == 1 and rockets_seen == 0:
@@ -261,8 +262,9 @@ def platform_rows(path):
                 s = json.loads(line).get("score") or {}
             except ValueError:
                 continue
-            if s.get("tick") is not None:
-                rows.append((s["tick"], [p for p in s.get("platforms") or [] if isinstance(p, dict)]))
+            if s.get("tick") is not None:  # between planets the score says "in transit": no place
+                rows.append((s["tick"], [dict(p, at=None) if p.get("at") == "in transit" else p
+                                         for p in s.get("platforms") or [] if isinstance(p, dict)]))
     return dict(rows)
 
 
@@ -402,14 +404,24 @@ def viewer_moments(d, tick0, names):
 
 def pick_chapters(events, segs, start_title, total):
     """YouTube's rules: the first at 0:00, at least three, each at least 10 s long. Heaviest first, MIN_GAP apart,
-    at most MAX_CHAPTERS; hour marks fill in when fewer than three."""
+    at most MAX_CHAPTERS; hour marks fill in when fewer than three. Two milestones (weight 85 or more) too close for
+    two chapters share one title."""
     placed = [(0.0, start_title)]
+    big = {}  # index in placed -> True for a milestone chapter
     for e in sorted(events, key=lambda e: (-e["weight"], e["t"])):
         o = offset(segs, e["t"])
         if e["weight"] < 30 or o is None or o < MIN_GAP or o > total - 30:  # under 30: description only
             continue
-        if all(abs(o - p) >= MIN_GAP for p, _ in placed) and len(placed) < MAX_CHAPTERS:
+        near = [i for i, (p, _) in enumerate(placed) if abs(o - p) < MIN_GAP]
+        if not near and len(placed) < MAX_CHAPTERS:
+            big[len(placed)] = e["weight"] >= 85
             placed.append((o, e["title"]))
+        elif len(near) == 1 and e["weight"] >= 85 and big.get(near[0]):
+            p, t = placed[near[0]]
+            if len(t) + len(e["title"]) < 90:
+                second = e["title"] if e["kind"] in ("depart", "arrive") else lower(e["title"])  # starts with a name
+                placed[near[0]] = (p, f"{t}; {second}")
+                big[near[0]] = False  # two to a chapter at most
     h = 3600
     while len(placed) < 3 and h < total - 30:
         if all(abs(h - p) >= MIN_GAP for p, _ in placed):
