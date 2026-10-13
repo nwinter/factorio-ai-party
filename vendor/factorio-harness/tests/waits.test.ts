@@ -151,6 +151,25 @@ test('--wait polls the brief status, then reads the full status once; a runtime 
     assert.deepEqual(statuses.at(-1).args,{});
   }
 });
+test('--wait polls once a second, sooner only when the action ends sooner (its own end tick)',async()=>{
+  for (const [untilTick,runMs] of [[100000,2500],[16,0]] as const) {
+    const times:number[]=[];let started=0;
+    await engine(request=>{
+      if(request.action==='walk'){started=Date.now();return {tick:10,ok:true,result:{until_tick:untilTick}};}
+      if(request.action!=='status' || !request.args.brief)return {ok:true,result:{active:false,last:{kind:'walk',outcome:'duration_elapsed',tick:untilTick}}};
+      times.push(Date.now());
+      const running=times.length===1 || Date.now()-started<runMs;
+      return running?{tick:10,ok:true,result:{active:{kind:'walk',until_tick:untilTick},last:false}}
+        :{tick:untilTick+1,ok:true,result:{active:false,last:{kind:'walk',outcome:'duration_elapsed',tick:untilTick}}};
+    },async port=>{
+      assert.equal(JSON.parse((await cli(port,['call','walk','--args','{"direction":"east","ticks":60}','--wait'])).stdout).ok,true);
+    });
+    const gaps=times.slice(1).map((t,i)=>t-times[i]!);
+    // 2.5 s of a long action: 4 polls (at 100 to 400 ms, 8 or more); 6 ticks left: polled again after ~200 ms.
+    if (runMs) { assert.ok(times.length<=4,`${times.length} polls`); assert.ok(gaps.every(g=>g>=950),String(gaps)); }
+    else { assert.equal(times.length,2); assert.ok(gaps[0]!<600,String(gaps)); }
+  }
+});
 test('fh sleep polls sleep_check with peek, then reads once normally; death exits nonzero',async()=>{
   for (const woke of ['mentioned','died','respawned']) {
     const seen:any[]=[];let checks=0;

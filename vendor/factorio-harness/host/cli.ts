@@ -491,13 +491,15 @@ async function main() {
       error:{code:'wait_timeout', message:`${action} is STILL RUNNING: the wait gave up after ${Math.round(waitedMs/1000)} s but the action has not finished${leftText}. `+
         `A new character action would interrupt it. Keep waiting with 'fh wait', or check 'fh call status' (active) before doing anything else.`}};
   }
-  // Poll less often while an action has time left: 100 ms near the end, at most 400 ms.
-  // (At 100 ms flat, nine waiting agents sent ~20 status requests per second.)
-  function pollDelay(status: Reply): number {
+  // Poll once a second, every 2 s once the wait passes 10 s; when the action's
+  // own end tick is nearer, just after it (at least 100 ms).
+  // (At 100 to 400 ms, waiting agents sent ~7 polls a second on world n.)
+  function pollDelay(status: Reply, started: number): number {
+    const every = Date.now()-started < 10000 ? 1000 : 2000;
     const active = status.result?.active ?? status.result?.combat;
     const tick = status.tick ?? status.result?.tick;
-    if (active?.until_tick === undefined || tick === undefined) return 250;
-    return Math.min(400, Math.max(100, Math.round((active.until_tick - tick) / 60 * 1000 / 4)));
+    if (active?.until_tick === undefined || tick === undefined) return every;
+    return Math.min(every, Math.max(100, Math.round((active.until_tick - tick) / 60 * 1000) + 100));
   }
   // Polls peek, so the team hints and chat trailer they would carry stay
   // pending for the one reply the agent sees. A runtime without peek gets
@@ -587,7 +589,7 @@ async function main() {
         // A result that ended before this action was accepted belongs to an
         // earlier action: look again briefly, then report none rather than it.
         if (status.ok && action !== 'shoot' && acceptedTick !== undefined && typeof last?.tick === 'number' && last.tick < acceptedTick) {
-          if (++staleLooks <= 3) { await delay(pollDelay(status)); continue; }
+          if (++staleLooks <= 3) { await delay(250); continue; }
           return {...status, result:{...status.result, last:undefined,
             note:`${action} is not running and recorded no result of its own (the last result, ${last.kind} ${last.outcome} at tick ${last.tick}, predates it)`}};
         }
@@ -596,7 +598,7 @@ async function main() {
         }
         return status;
       }
-      await delay(pollDelay(status));
+      await delay(pollDelay(status, started));
     }
     if (stopping) throw new Error('Stopped waiting for action; inspect status. Game actions have a bounded tick duration.');
     // Still running is not a failure of the action, but it is not done either.
@@ -672,7 +674,7 @@ async function main() {
         return {...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
           team:full.result?.team, clock:full.result?.clock, chat:full.result?.chat}};
       }
-      await delay(pollDelay(status));
+      await delay(pollDelay(status, started));
       status = await poll();
       if (!status.ok) return status;
     }
