@@ -489,6 +489,9 @@ local inventories = {
   -- storage, and what an asteroid collector gathered.
   rocket_silo_rocket = {'rocket-silo'}, cargo_landing_pad_main = {'cargo-landing-pad'}, hub_main = {'space-platform-hub'},
   asteroid_collector_output = {'asteroid-collector'},
+  -- Trash slots: where the game puts items an entity will not use (a silo's
+  -- hand-loaded cargo once automatic requests are on). Take-only.
+  rocket_silo_trash = {'rocket-silo'}, cargo_landing_pad_trash = {'cargo-landing-pad'}, hub_trash = {'space-platform-hub'},
   turret_ammo = {'ammo-turret'}, artillery_turret_ammo = {'artillery-turret'}, artillery_wagon_ammo = {'artillery-wagon'},
   car_ammo = {'car'}, car_trunk = {'car'}, spider_ammo = {'spider-vehicle'}, spider_trunk = {'spider-vehicle'},
   cargo_wagon = {'cargo-wagon'}, roboport_robot = {'roboport'}, roboport_material = {'roboport'},
@@ -499,7 +502,7 @@ local inventories = {
 }
 -- Inference order when a transfer omits its inventory (see infer_inventory).
 -- Ammo and modules only go where the item's kind says, as a player's click does.
-local take_order={'character_corpse','chest','cargo_landing_pad_main','hub_main','asteroid_collector_output','cargo_wagon','car_trunk','spider_trunk','furnace_result','assembling_machine_output','burnt_result','fuel',
+local take_order={'character_corpse','rocket_silo_trash','cargo_landing_pad_trash','hub_trash','chest','cargo_landing_pad_main','hub_main','asteroid_collector_output','cargo_wagon','car_trunk','spider_trunk','furnace_result','assembling_machine_output','burnt_result','fuel',
   'furnace_source','assembling_machine_input','lab_input','turret_ammo','artillery_turret_ammo','artillery_wagon_ammo','car_ammo','spider_ammo',
   'roboport_robot','roboport_material','rocket_silo_rocket'}
 local give_order={'chest','cargo_landing_pad_main','hub_main','cargo_wagon','car_trunk','spider_trunk','furnace_source','assembling_machine_input','lab_input','roboport_robot','roboport_material','fuel','rocket_silo_rocket'}
@@ -513,6 +516,7 @@ local function inventory(e, name)
   local matches = false
   for _, kind in ipairs(allowed) do if e.type == kind then matches=true end end
   assert(matches, 'inventory is not applicable to this entity type')
+  assert(defines.inventory[name], 'inventory unavailable')
   local inv = e.get_inventory(defines.inventory[name])
   assert(inv and inv.valid, 'inventory unavailable')
   return inv
@@ -567,9 +571,9 @@ function handlers.describe()
       nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..128 (default 32); map-known (charted) entities only: after landing on a new planet about 48 tiles around you, so explore or build a radar',limit='1..64 (default 5)',returns='entities [{name?, position, distance}], total; note when nothing was found'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',entity='rail item (a rail planner): which rail it places: straight-rail (default), half-diagonal-rail, curved-rail-a, curved-rail-b; with directions including the in-between ones (northnortheast, eastnortheast, ...); place_ghosts takes the rail names too and construct builds them',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',skip_failed='boolean, with builds: a failing entry is listed in failed {index,position,error} and the rest still build',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
       wire={from='pole {x,y} (optional name/unit_number) in reach; with color: any entity with a circuit connection',to='pole {x,y} in reach (with color: an entity)',disconnect='boolean: remove the wire instead',
         color='optional red|green: a circuit wire between two entities in reach (without it: the copper wire between poles)',from_side='with color, on a combinator: input|output (default output)',to_side='with color, on a combinator: input|output (default input)'},
-      inspect={position='{x,y}',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too'}, rotate={position='{x,y}',reverse='boolean'},
+      inspect={position='{x,y}',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too; trash: what the game put in a silo\'s, landing pad\'s or hub\'s trash slots'}, rotate={position='{x,y}',reverse='boolean'},
       configure={position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item names for a filtering inserter/loader ([] clears; slot count from the entity)',filter_mode='whitelist|blacklist (inserters)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
-      transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|cargo_landing_pad_main|hub_main|asteroid_collector_output|...; inferred when omitted (fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out)',direction='to_entity|to_player; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',up_to='optional target total cap'},
+      transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|rocket_silo_trash|cargo_landing_pad_main|hub_main|asteroid_collector_output|... (*_trash: take-only, what the game moved out); inferred when omitted (to_player takes from non-empty trash slots first;fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out)',direction='to_entity|to_player; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',up_to='optional target total cap'},
       feed={note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel; each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items)',
         radius='1..256: walk a nearest-first route through every machine in radius that wants something you hold',ticks='with radius: 1..36000 (default 3600)',
         positions='optional 1..64 positions instead of everything in reach',items='optional 1..16 item names: give only these',
@@ -2284,6 +2288,14 @@ function handlers.inspect(p,a)
     local ok,inv=pcall(inventory,e,name)
     if ok then out.inventories[name]=contents(inv) end
   end
+  -- Trash slots: one line naming what is there and how to take it.
+  for name,list in pairs(out.inventories) do
+    if name:find('_trash$') and #list>0 then
+      local parts={}
+      for i,s in ipairs(list) do parts[i]=s.count..' '..s.name..(s.quality and s.quality~='normal' and '@'..s.quality or '') end
+      out.trash=table.concat(parts,', ')..' (in '..name..', put there by the game; take: transfer {position, direction=to_player, inventory='..name..'}, item= for one kind)'
+    end
+  end
   if e.type=='assembling-machine' or e.type=='furnace' then
     local recipe=e.get_recipe(); out.recipe=recipe and recipe.name or false
     out.crafting_progress=e.crafting_progress
@@ -2396,6 +2408,9 @@ local function infer_inventory(e,a)
         local accepts=not (item and inv.can_insert) or inv.can_insert{name=a.item,quality=a.quality or 'normal'}
         if accepts and (name=='fuel' or not fuel or not e.get_fuel_inventory()) then return name,inv end
         fallback=fallback or {name,inv}
+      -- Trash slots come first when they hold something; never as a fallback.
+      elseif name:find('_trash$') then
+        if a.item and inv.get_item_count{name=a.item,quality=a.quality or 'normal'}>0 or not a.item and not inv.is_empty() then return name,inv end
       elseif not a.item or inv.get_item_count{name=a.item,quality=a.quality or 'normal'}>0 then return name,inv
       else fallback=fallback or {name,inv} end
     end
@@ -2459,6 +2474,7 @@ local function transfer_one(p,a,pos,e)
   else e=entity(p,{position=pos,name=pos.name or a.name,unit_number=pos.unit_number or a.unit_number}) end
   friendly(p,e)
   local inferred,target
+  assert(not (a.direction=='to_entity' and type(a.inventory)=='string' and a.inventory:find('_trash$')),tostring(a.inventory)..' is take-only (direction=to_player)')
   if a.inventory then target=inventory(e,a.inventory) else inferred,target=infer_inventory(e,a) end
   local sources=a.direction=='to_player' and {target} or give_sources(p,a.item)
   if a.direction=='to_player' then target=p.get_main_inventory() end

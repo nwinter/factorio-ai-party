@@ -511,6 +511,34 @@ prototypes.item['space-platform-starter-pack']={fuel_value=0}; prototypes.item['
 main=inv(stack('space-platform-starter-pack',1),stack('rocket-fuel',5))
 eq(call('transfer',{position={x=3,y=0},item='space-platform-starter-pack'}).inventory,'rocket_silo_rocket'); eq(silo_cargo[1].count,1)
 eq(call('transfer',{position={x=3,y=0},item='rocket-fuel',count=5,direction='to_entity'}).inventory,'assembling_machine_input'); eq(silo_input[1].count,5)
+-- A silo's trash slots, where the game puts cargo loaded by hand once automatic
+-- requests are on: inspect lists them; transfer takes them, named or all; nothing goes in.
+do
+  defines.inventory.rocket_silo_trash=9
+  local function listing(t)
+    t.get_contents=function() local out={}; for _,s in ipairs(t) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
+    t.is_empty=function() return #t.get_contents()==0 end
+    return t
+  end
+  local silo_trash=listing(inv(stack('space-platform-foundation',40),stack('solar-panel',7),stack('inserter',1)))
+  listing(silo_input); listing(silo_cargo)
+  silo.get_inventory=function(i) return ({[5]=silo_input,[7]=silo_cargo,[9]=silo_trash})[i] end
+  silo.get_fluid_contents=function() return {} end
+  local seen=call('inspect',{position={x=3,y=0}})
+  eq(seen.trash,'40 space-platform-foundation, 7 solar-panel, 1 inserter (in rocket_silo_trash, put there by the game; take: transfer {position, direction=to_player, inventory=rocket_silo_trash}, item= for one kind)')
+  eq(seen.inventories.rocket_silo_trash[1].count,40)
+  local kept=main
+  main=inv(stack(nil,0),stack(nil,0),stack(nil,0),stack(nil,0))
+  local took=call('transfer',{position={x=3,y=0},item='solar-panel'})
+  eq(took.direction,'to_player'); eq(took.inventory,'rocket_silo_trash'); eq(took.transferred,7)
+  took=call('transfer',{position={x=3,y=0},direction='to_player'})
+  eq(took.inventory,'rocket_silo_trash'); eq(took.transferred,41); eq(main[2].name,'space-platform-foundation')
+  eq(call('inspect',{position={x=3,y=0}}).trash,nil)
+  -- Empty trash slots: taking everything uses the silo's own inventories.
+  eq(call('transfer',{position={x=3,y=0},direction='to_player'}).inventory,'assembling_machine_input')
+  fails(function() call('transfer',{position={x=3,y=0},item='solar-panel',inventory='rocket_silo_trash',direction='to_entity'}) end,'rocket_silo_trash is take-only (direction=to_player)')
+  defines.inventory.rocket_silo_trash=nil; main=kept
+end
 p.surface.find_entities_filtered=find_before; main=kept_main
 -- Items merge into a partial stack of the same item before taking an empty slot.
 main=inv(stack(nil,0),stack('coal',5))
