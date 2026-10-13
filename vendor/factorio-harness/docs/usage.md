@@ -338,9 +338,10 @@ fh sleep 900 --until researched                       # ...or until the research
 - `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
   platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
   unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).
-- `gamedata/locations.json` lists each route's and each orbit's `asteroid_spawn_definitions` as the game gives them,
-  and `gamedata/entities.json` the asteroids (`max_health`, `resistances`), from the next prototype dump of a Space Age
-  world (`tools/analyst/dump_prototypes.py`).
+- `gamedata/asteroids.json` lists each route's (`kind: route`, `from`, `to`, `length`) and each orbit's (`kind:
+  orbit`) asteroid spawn definitions as the game gives them (`asteroid`, `type`, `quality`, `probability`, `speed`,
+  `spawn_points` along a route), and the asteroids (`kind: asteroid`, `max_health`, `resistances`), from the prototype
+  dump of a Space Age world (`tools/analyst/dump_prototypes.py --only asteroids`).
 - Where a platform's items go: `platforms` shows `hub_trash` per platform, and with `platform` set
   `hub_inserters_without_target` (inserters taking from the hub with nothing to drop into: `(-2.5,3.5) drops onto
   empty-space`), `thrown_overboard` (items in flight off the platform, while the game tracks them), and
