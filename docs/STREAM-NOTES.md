@@ -352,6 +352,46 @@ curl -s 127.0.0.1:8788/state.json | python3 -c 'import json,sys; s=json.load(sys
 A platform shot on cam3 should show the platform with space around it; an empty or black view means the client did not
 render that surface.
 
+### Platform shots with one camera on air (2026-10-12, eng/platformcam)
+
+Nick: "Do we have the camera look at the space platform sometimes?" Before this, only segments did (shift02 20:16
+"First space platform: Starling", zoomed 1.55 on the platform surface, so the client renders platforms). Sol, for the
+viewer awoo3391: "occasional platform camera view and continuous view during departure". `onecam.py` now has three
+platform shots. Each one is a standby framed on the platform with `model.platform_shot`, then a cut, and the story
+comes back afterwards:
+
+- A visit about every `platform_every` (720 s; first after `platform_first`, 420 s) for `platform_hold` (20 s). It
+  shows the platform shown longest ago. The rules are the same as the base map's: never during an urgent or segment
+  shot, a replay, a trio, an inset or a reported fight, and not within `map_gap` of a cut.
+- A departure: a platform seen still that starts travelling. It holds `depart_hold` (60 s). An urgent shot may cut
+  in; the camera goes back to the platform for what is left of the departure. A departure the camera could not show
+  within `depart_late` (30 s) is dropped. A platform already travelling when the service starts is no departure.
+- An agent's platform action. The trigger is snapshot `work` with `platform=`. `work.py` now also counts inspect,
+  configure, launch, drop, platform_schedule and requests when they carry `platform=`. The shot takes the camera if
+  the agent is on air, or if the agent scores `work_ratio` of the agent on air (after onair_dwell, and with no fight
+  and no big action on air). It holds `work_hold` (25 s), and more while requests keep coming, up to `work_max`
+  (90 s). Then it goes back to the agent's character. The same agent and platform are not shown again within
+  `work_gap` (180 s). shift02 20:16 to 21:29: Astra sent 138 such requests to Starling.
+
+Labels:
+
+| Shot | Label | Icon |
+|---|---|---|
+| Visit | "Starling · in orbit of Nauvis" (or "travelling to Vulcanus (42%) · 72 km/s") | 🛰️ |
+| Departure | "Starling · leaving Nauvis for Vulcanus" | 🚀 |
+| Agent work | "Astra · working on Starling" | none |
+
+A hurt hub adds "· hub 62%". `PLATFORM_LUA` now reads the hub's health. The hosts get `onair.platform`
+({name, why, label, agent?}), and the caster's facts carry `on_screen_platform`. GPU: no extra client. One of the
+three clients renders a small surface for 20 to 60 s.
+
+Mock check (`tools/stream/runs/mock-sa3.json` with `director: {platform_first: 15, map_every: 0}`,
+`mock_space_speed: 1`): the departure went on air at 70 s and was cut by a turret loss. It came back after the loss
+and gave way to the "reaches Vulcanus" segment. A visit followed. The page label read "🛰️ Shuttle · in orbit of
+Nauvis · paused" (jsdom; no screenshot from this sandbox). Tests: `test_platformcam.py`.
+
+Live: `grep "platform \(visit\|departure\|work\)" runs/RUN/stream-service.log`.
+
 ## Unused cameras
 
 With fewer agents than cameras (or when the director pairs two agents on one), cam2 or cam3 would show an empty or

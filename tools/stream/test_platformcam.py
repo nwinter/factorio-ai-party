@@ -140,6 +140,18 @@ def departure():
         d.step(snap(a, [plat(at="nauvis->vulcanus 3%")], alerts=[loss] if k == 50 else []), t + k)
     row = main_row(d, t + 53)
     assert row.get("attack") and not row.get("platform"), row
+    # ... and once it is over, back to the departure for what is left of it, then the story
+    back = None
+    for k in range(54, 130):
+        d.step(snap(a, [plat(at=f"nauvis->vulcanus {k - 40}%")]), t + k)
+        row = main_row(d, t + k)
+        if back is None and row.get("platform"):
+            back = k
+            assert row["platform"]["why"] == "departure", row
+        if back is not None and not row.get("platform"):
+            break
+    assert back is not None and back < 95, (back, d.cuts)
+    assert k <= 40 + 1.5 + d.cfg["depart_hold"] + 4 and row.get("agents") == ["luna"], (k, row, d.cuts)
 
 
 def work():

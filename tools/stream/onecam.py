@@ -290,6 +290,10 @@ class OneCam(Director):
         cur = self.state.get(self.onair)
         if cur and cur.get("subject") in scores and not self.pending:
             self.resume = {"subject": cur["subject"], "since": self.onair_since}
+        cp = (cur or {}).get("platform") or {}
+        if cp.get("why") == "departure" and now < cur.get("until", 0) and not reason.startswith("platform"):
+            # a departure cut short by an urgent shot: back to it after, for what is left of it (maybe_departure)
+            self.departure = {"name": cp["name"], "t": now, "label": cp["label"], "until": cur["until"]}
         nxt = self.next_slot()
         if not nxt:
             self.apply(self.slot(self.onair), dict(target, jump=True, since=now, framed=now), reason, scores, now)
@@ -606,18 +610,18 @@ class OneCam(Director):
         d = self.departure
         if not d or len(self.slots) < 2:
             return
-        if now - d["t"] > self.cfg["depart_late"]:
+        if (now > d["until"] - self.cfg["platform_hold"] / 2) if d.get("until") else now - d["t"] > self.cfg["depart_late"]:
             self.departure = None  # a replay or an urgent shot was in the way the whole time: the moment has passed
             return
         cur = self.state.get(self.onair)
-        if cur and cur.get("platform", {}).get("name") == d["name"] and now < cur.get("until", 0):
+        if cur and cur.get("platform", {}).get("name") == d["name"] and now < cur.get("until", 0) and not self.pending:
             cur["until"] = max(cur["until"], now + self.cfg["depart_hold"])  # on air already (a visit): stay
             cur["platform"] = dict(cur["platform"], why="departure", label=d["label"])
             self.departure = None
             return
         if self.plat_busy(now, segment) and not (cur and cur.get("subject") == "@map"):
             return  # (the base map gives way to a departure)
-        t = self.platform_target(d["name"], "departure", now + self.cfg["ready_s"] + self.cfg["depart_hold"],
+        t = self.platform_target(d["name"], "departure", d.get("until") or now + self.cfg["ready_s"] + self.cfg["depart_hold"],
                                  label=d["label"])
         self.departure = None
         if t:
