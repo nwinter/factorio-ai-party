@@ -357,15 +357,29 @@ fh sleep 900 --until researched                       # ...or until the research
   it (`; nearest spots where gun-turret fits within your build reach (game build check): (5,-2), (5,2), (4,-2)`); when
   out of reach, the ones nearest the asked position around the edge of your reach toward it, followed by `; or walk
   closer (move_to) and build again`. `build` does not walk.
-- `fh call defense` (read; `limit` areas, default 12, max 30; cached 10 s for the whole force): `areas`, the force's
-  buildings grouped by touching 32-tile cells (an outpost or a pipeline is an area of its own), largest first, each
-  with a `line` (`area 1 around (27,3) (0,0)-(60,6): 74 buildings (...); 2 turrets in range (23 ammo, 1 low); 43
-  buildings covered (2 by one turret only), 31 not; largest uncovered part (30,3)-(60,3): 31 buildings (31
-  transport-belt)`), the turrets in range (`turret_list`, lowest ammo first), and `uncovered_parts`. A building is
-  covered when its centre is within range of a gun, laser or flamethrower turret. `areas_without_turrets` lists area
-  numbers; `nests`: charted spawner groups within 256 tiles of a building, nearest first (`nest (105,2) 2 spawners, 1
-  worm: 45 tiles E of transport-belt at (60,3) (area 1); pollution reaches it`); `artillery`; `more` sums areas past
-  the limit.
+- `fh call defense` (read; `limit` areas, default 16, max 40; cached 10 s for the whole force): `areas`, the force's
+  buildings in clusters, largest first. A cluster is buildings touching by 32-tile cells; belts, pipes, poles, walls,
+  rails and turrets link cells of a cluster but never join two clusters, so an outpost is its own area and the belts
+  or pipes between clusters form a `line` area; a cluster wider or taller than 128 tiles is split into 128-tile
+  `block`s. Each area has `kind` (`cluster`, `block` or `line`), `from_centre` and `bearing` from the base centre (the
+  spawn point) and a `line` (`area 1 (cluster, 27 tiles E of base centre) around (27,3) (0,0)-(60,6): 74 buildings
+  (...); turrets in range: 2 gun (23 ammo, 1 low), 2 flamethrower (oil 13%, 1 dry); 43 buildings covered (2 by one
+  turret only), 31 not; largest uncovered part (30,3)-(60,3): 31 buildings (31 transport-belt); nests: (105,2) 45
+  tiles E polluted`), the turrets in range (`turret_list`, lowest ammo first), `ammo` (gun rounds), `flamers` (`count`,
+  `oil`, `capacity`, `dry`, `low` under 25%), `lasers`, `uncovered_parts`, and `nests`, up to 3 nests whose nearest
+  building is in the area. A building is covered when its centre is within range of a gun, laser or flamethrower
+  turret. `areas_without_turrets` lists area numbers; `nests`: charted spawner groups within 256 tiles of a building,
+  nearest first (`nest (105,2) 2 spawners, 1 worm: 45 tiles E of transport-belt at (60,3) (area 1); pollution reaches
+  it`, or `reaches it (last there 5m ago)`); pollution reaches a nest while one of its chunks had pollution in the last
+  15 game minutes, the same memory `status` enemies and the reached-nest news use (one reading at the cloud's edge
+  flickers); `artillery`; `more` sums areas past the limit.
+- `fh call flamers` (read; `limit`, default 12, max 40; cached 10 s): each flamethrower turret on your surface, the
+  most at risk first: `flamethrower-turret (0,0) facing S, oil 75% (150/200): 4 of our burnable buildings in its arc
+  within 33 tiles: 3 pipe, 1 gun-turret (nearest pipe (0,10), 10 tiles)`. The arc is the direction the turret was
+  built facing, plus or minus its turn range (60 degrees for the vanilla flamer), from its minimum range to its range
+  plus 3 tiles for burning ground; buildings with full fire resistance (walls) are left out. Also `count`, `dry`,
+  `low`, `with_buildings_in_arc`. `status` warns of dry and low flamers: `flamer oil: flamethrower-turret 1/11 dry at
+  (80,90), 2 below 25% at (84,90) 12%, ...; fh call flamers shows each one and what is in its arc`.
 - `collect` with `radius` skips stock inside another agent's active board claim and reports `skipped_claims` (`40 iron-plate in 2 places of #4 iron smelting (claim by sol); ask the owner`). `collect` on named positions still takes, and lists the claimed ones in `claimed`.
 - The `status` power warning appears only when some electric machine lacks power: `power: 3 of 78 machines low_power; 1 unconnected (fh call power lists them)` (`no_power` = connected to a network with no generation; `unconnected` = no pole reaches it).
 - `fh research` (`research` with no arguments; read): `current`, `progress`, `queue`, `pending`, and `entries`, one per
@@ -544,17 +558,22 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   minutes; at most 4 lines and `+N more finished: research_done`; first, to every agent once, `research stalled: NAME
   heads the queue and has waited <time> for PACK, which nobody made in the last 10 minutes, with no progress ...` when
   the head of the queue has waited 10 minutes that way, at most once per 30 minutes), `alerts` (your character being hit; attacks, one
-  line per incident (a 32-tile cell, ended by a quiet minute): `attack #ID at (x,y): <attackers>; likely from nest (x,y)
+  line per incident (a 32-tile cell of one surface, ended by a quiet minute; on another surface than yours the line
+  says so: `attack #ID on vulcanus at (x,y): ...`, and `status` alert rows carry `surface`): `attack #ID at (x,y): <attackers>; likely from nest (x,y)
   N tiles DIR; <entities hit> hit N times, D damage, first <age> ago, last <age> ago`, where attackers are a visible
   group that gathered in the last 3 minutes heading there (`a group of 25 (20 small-biter, 5 medium-biter) that
   gathered at (x,y)`) or the distinct units seen hitting (`12 attackers seen (...)`), and the nest is the nearest
   spawner on a charted chunk within 384 tiles of the attacked point (`from nest` when the game names the unit's own
   spawner; `no charted nest within 384 tiles`); an incident you were told about comes again as `attack #ID ... continues`
   with its totals only when it had new hits and at least 2 game minutes passed; `pollution reached nest (x,y), N
-  spawners: N tiles DIR of base centre (spawn x,y), N tiles DIR of our nearest building`, once per nest; enemy groups
-  gathering, buildings destroyed, with what destroyed them: enemy kinds first, then our own force's entities as
-  `friendly fire: 2 flamethrower-turret` (`unknown source` when the cause is gone and the killing force is ours); at most
-  8 lines; these replace the old top-level `losses` field; full landing pads spilling and piles of items on the ground
+  spawners: N tiles DIR of base centre (spawn x,y), N tiles DIR of our nearest building`, once per nest per shift
+  (a new shift hears again of nests still reached); enemy groups gathering; buildings destroyed, one numbered incident
+  per raid (losses on one surface within 32 tiles of each other, up to 192 tiles across): `losses #7 in (x,y)-(x,y)
+  12 destroyed: 8 transport-belt, 4 inserter by 20 medium-biter, 1s ago`, told once, then its running total at most
+  once a game minute while it grows (`losses #7 in ... continue: 40 destroyed (+28 since you were told): ...`);
+  `on vulcanus` or `on platform Starling` when not on your surface; with what destroyed them: enemy kinds first, then
+  our own force's entities with where they stand as `friendly fire: 2 flamethrower-turret at (80,90)` (`unknown
+  source` when the cause is gone and the killing force is ours); at most 8 lines; these replace the old top-level `losses` field; full landing pads spilling and piles of items on the ground
   near our buildings, once each and again when grown by half; then up to 6 platform lines, below) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
