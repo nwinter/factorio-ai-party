@@ -18,7 +18,7 @@ import urllib.request
 
 DIR = "basemap"
 EVERY_TICKS = 36000  # 10 game minutes
-KEEP = ("tick", "cell", "x0", "y0", "w", "h", "rows", "core", "nests")
+KEEP = ("tick", "cell", "x0", "y0", "w", "h", "rows", "core", "nests", "turrets")
 
 
 def newest(run_dir):

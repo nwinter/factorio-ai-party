@@ -78,7 +78,10 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
     "board": {"available": true, "open_unowned": 1, "in_progress": 2, "claims": [...], "events": [...]},
     "basemap": {"tick": 230400, "cell": 4, "x0": -112, "y0": -72, "w": 56, "h": 41, "buildings": 659,
                 "rows": ["..DDDDDD", "....S.BB"],   // one string per cell row from y0; one letter per cell from x0
-                "nests": [[150, 40, "s"], [140, 30, "w"]]},  // enemy spawners (s) and worms (w) near the base
+                "nests": [[150, 40, "s"], [140, 30, "w"]],  // enemy spawners (s) and worms (w) near the base
+                "turrets": [[12, -40, 18], [30, -40, 30]],  // ours: x, y, range in tiles (no artillery); at most 600
+                "terrain": [{"src": "/live/terrain/a.webp", "x0": -320, "y0": -200, "x1": -64, "y1": -56,
+                             "tick": 230000, "w": 1280, "h": 720}]},  // optional: map-camera frames, edges in tiles
     "cameras": {"main": {"agents": ["sol"], "pair": false, "since": 1791695548.8,
                          "attack": "Base under attack near (-48, 16): gun turret"},   // optional: a fight shot
                 "cam3": {"agents": ["sol"], "pair": false, "since": 1791695548.8,
@@ -95,7 +98,13 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
 }
 ```
 
-The map (`static/live.js`) draws `fights` as rings the size of their `extent` (solid while `age_s` is under 25,
+The map is `static/mapview.js` (the run page's time-lapse uses it too): one canvas with pan (drag), zoom (wheel,
+pinch, + and −), Reset, Full screen, layers to toggle (terrain, ore, buildings, turret range, nests, agents, attention,
+fights; turret range starts off; the choice is kept per browser), and a click or tap on an agent to centre on it and
+follow it; hover or tap names a mark. `basemap.turrets` draws the turret-range layer (the union of every turret's reach)
+and `basemap.terrain` the terrain layer: each frame's image stretched over its tile edges (`x0`, `y0` the image's top
+left, `x1`, `y1` its bottom right), older frames first, under everything else; `src` must be a site path or an https URL.
+It draws `fights` as rings the size of their `extent` (solid while `age_s` is under 25,
 faded after, a cross where `losses` happened), tags each agent a camera follows with its slot, lists what each camera
 shows (`cameras`: its agents, or the `attack`, `work` or `segment` shot), shows the research in progress over the
 map, and `space` as an inset under it. `space`, `fights` and the camera labels add a few hundred bytes to a push.

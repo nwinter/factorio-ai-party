@@ -111,7 +111,8 @@ def make(root):
         (d_ / "basemap").mkdir(exist_ok=True)
         (d_ / "basemap" / f"{tick}.json").write_text(json.dumps({
             "tick": tick, "cell": 8, "x0": -16, "y0": -8, "w": len(rows[0]), "h": len(rows), "rows": rows,
-            "core": {"cell": 2, "x0": -10, "y0": -6, "w": 3, "h": 1, "rows": ["AAS"]}}))
+            "core": {"cell": 2, "x0": -10, "y0": -6, "w": 3, "h": 1, "rows": ["AAS"]},
+            **({"nests": [[90, 10, "s"]], "turrets": [[4, 4, 18]]} if tick == 400000 else {})}))
     (b / "basemap" / "notes.json").write_text("{}")
     # the old stream service wrote the earlier shifts' requests into each new inbox again: sol's seq 1 is shift 1's
     (b / "operator-inbox.jsonl").write_text(
@@ -210,8 +211,11 @@ def main():
         assert [(f["n"], f["tick"]) for f in lapse["frames"]] == [(1, 36000), (1, 72000), (2, 400000)], lapse["frames"]
         assert lapse["frames"][0]["game"] == "10m00s", lapse["frames"][0]  # build.py's game_time
         assert lapse["frames"][2]["core"]["rows"] == ["AAS"] and len(lapse["box"]) == 4, lapse
+        # the viewer's nests and turret-range layers, from the snapshots that have them; the page loads the viewer
+        assert lapse["frames"][2]["nests"] == [[90, 10, "s"]] and lapse["frames"][2]["turrets"] == [[4, 4, 18]], lapse["frames"][2]
+        assert "nests" not in lapse["frames"][0] and "terrain" not in lapse
         run_page = (out / "runs" / "long" / "index.html").read_text()
-        assert 'id="timelapse"' in run_page and 'data-src="/runs/long/timelapse.json"' in run_page
+        assert 'id="timelapse"' in run_page and 'data-src="/runs/long/timelapse.json"' in run_page and '<script src="/static/mapview.js">' in run_page
         assert '<option value="2" label="Shift 2">' in run_page and "3 snapshots" in run_page
         assert run_page.index('id="timelapse"') < run_page.index("</main>")
         sp = (out / "search" / "index.html").read_text()

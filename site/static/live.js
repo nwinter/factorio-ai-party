@@ -227,336 +227,16 @@
   app.addEventListener('pointerdown', chartHover);
   app.addEventListener('pointerleave', chartHover, true);
 
-  // ------------------------------------------------------------------ minimap of agent positions
-  // The base layer (state.basemap, tools/stream/harness.py BASEMAP_LUA, read once a minute): rows of category
-  // letters, one per cell of `cell` tiles from (x0, y0), for the whole base, and basemap.core: the dense core at 1-2
-  // tiles a cell with each building's footprint filled. Drawn as one path per category in cell units, built once per
-  // snapshot tick and placed with a transform, so a refresh or a zoom only moves it.
-  var BASE_CATS = [['D', 'Defence'], ['R', 'Labs'], ['O', 'Oil and chemistry'], ['A', 'Assembly'], ['S', 'Smelting'],
-    ['M', 'Mining'], ['E', 'Power'], ['L', 'Logistics'], ['K', 'Storage'], ['I', 'Inserters'], ['B', 'Belts'],
-    ['T', 'Rails'], ['P', 'Pipes']];
-  var LINE_CATS = { P: 1, B: 1, I: 1, T: 1 };
-  // Ore under and around the base (basemap.ore, read every 5 minutes): its own grid, drawn faintly under the buildings.
-  var ORE_CATS = [['i', 'Iron ore'], ['c', 'Copper ore'], ['k', 'Coal'], ['s', 'Stone'], ['o', 'Crude oil'], ['u', 'Uranium ore'], ['x', 'Other resource']];
-  var pathCache = {};
-  function validGrid(g) {
-    return g && Array.isArray(g.rows) && g.rows.length && isFinite(g.x0) && isFinite(g.y0) && g.cell > 0;
-  }
-  // One <path> per letter, in cell units: a run of equal letters on a row is one rectangle.
-  function gridPaths(slot, g, cats, prefix, tick) {
-    var key = tick + ':' + g.cell + ':' + g.x0 + ':' + g.y0 + ':' + g.rows.length + ':' + g.rows.join('').length;
-    if (pathCache[slot] && pathCache[slot].key === key) return pathCache[slot];
-    var d = {};
-    cats.forEach(function (c) { d[c[0]] = []; });
-    g.rows.forEach(function (row, r) {
-      row = String(row);
-      for (var c = 0; c < row.length;) {
-        var ch = row.charAt(c), n = 1;
-        while (c + n < row.length && row.charAt(c + n) === ch) n++;
-        if (d[ch]) d[ch].push('M' + c + ' ' + r + 'h' + n + 'v1h-' + n + 'z');
-        c += n;
-      }
-    });
-    var used = cats.filter(function (c) { return d[c[0]].length; });
-    pathCache[slot] = { key: key, cats: used, paths: used.map(function (c) { return '<path class="' + prefix + c[0] + '" d="' + d[c[0]].join('') + '"/>'; }).join('') };
-    return pathCache[slot];
-  }
+  // ------------------------------------------------------------------ the map (static/mapview.js)
+  // state.basemap (tools/stream/harness.py BASEMAP_LUA, read once a minute): the coarse grid, the dense core, ore,
+  // nests, turrets with their range and terrain frames; the agents with their attention; fights and alert pins. The
+  // viewer is made once and kept across refreshes (its zoom, layers, follow and full screen with it).
   var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
-  // The view: null frames the core (and the agents near it); a wheel, drag, pinch or the +/− buttons set
-  // {cx, cy, span} in tiles, kept across refreshes until "Fit".
-  var mmView = null, mmArgs = null, mmAuto = null;
-  function minimap(agents, alerts, cams, bm, fights) {
-    mmArgs = [agents, alerts, cams, bm, fights];
-    return '<div id="mm" class="mm">' + drawMap() + '</div>';
-  }
-  function drawMap() {
-    var agents = mmArgs[0], alerts = mmArgs[1], cams = mmArgs[2], bm = mmArgs[3], fights = mmArgs[4];
-    var pts = agents.filter(function (a) { return a.position && isFinite(a.position.x) && isFinite(a.position.y); });
-    // alert pins for what the fight rings do not show (deaths, power); fights have their own markers
-    var pins = (alerts || []).filter(function (a) { return a.position && isFinite(a.position.x) && (!(fights || []).length || (a.kind !== 'attack' && a.kind !== 'loss')); });
-    var base = validGrid(bm) && bm.w > 0 ? bm : null, ore = base && validGrid(bm.ore) ? bm.ore : null;
-    var fine = base && validGrid(bm.core) && bm.core.w > 0 ? bm.core : null;
-    if (!pts.length && !base) return '<p class="fx-muted">No positions yet.</p>';
-    // Frame the base's core (basemap.core from the game, or baseCore() on the coarse grid from an older stream
-    // service), so a long pipeline or a far outpost does not shrink the base; agents, alerts, fights and outposts far
-    // outside it are pinned to the frame's edge (dashed, the distance in the tooltip), and the inset shows the whole.
-    var far = {}, core = null, bcx = 0, bcy = 0, reach = Infinity;
-    if (fine) {
-      core = { x0: fine.x0, y0: fine.y0, x1: fine.x0 + fine.w * fine.cell, y1: fine.y0 + fine.h * fine.cell };
-      core.out = outposts(base, core);
-    } else if (base) core = baseCore(base);
-    if (core) {
-      bcx = (core.x0 + core.x1) / 2; bcy = (core.y0 + core.y1) / 2;
-      reach = Math.max(96, core.x1 - core.x0, core.y1 - core.y0);
-    }
-    var dist = function (p) { return Math.round(Math.max(Math.abs(p.x - bcx), Math.abs(p.y - bcy))); };
-    var isNear = function (p) { return !core || (Math.abs(p.x - bcx) <= reach && Math.abs(p.y - bcy) <= reach); };
-    var fpos = (fights || []).filter(function (f) { return f.position && isFinite(f.position.x) && isFinite(f.position.y); });
-    var xs = [], ys = [];
-    pts.filter(function (a) { return isNear(a.position); }).map(function (a) { return a.position; })
-      .concat(pins.map(function (p) { return p.position; }), fpos.map(function (f) { return f.position; }))
-      .filter(isNear).forEach(function (p) { xs.push(p.x); ys.push(p.y); });
-    if (core) { xs.push(core.x0, core.x1); ys.push(core.y0, core.y1); }
-    var minX = Math.min.apply(0, xs), maxX = Math.max.apply(0, xs), minY = Math.min.apply(0, ys), maxY = Math.max.apply(0, ys);
-    mmAuto = { cx: (minX + maxX) / 2, cy: (minY + maxY) / 2, span: Math.max(48, maxX - minX, maxY - minY) * 1.1 };
-    var v = mmView || mmAuto, span = v.span, cx = v.cx, cy = v.cy;
-    var S = 400, k = S / span;
-    var visible = function (p) { return Math.abs(p.x - cx) <= span / 2 - 4 / k && Math.abs(p.y - cy) <= span / 2 - 4 / k; };
-    pts.forEach(function (a) { if (!visible(a.position)) far[a.name] = dist(a.position); });
-    var px = function (x) { return (S / 2 + (x - cx) * k).toFixed(1); }, py = function (y) { return (S / 2 + (y - cy) * k).toFixed(1); };
-    var grid = '', stepT = span > 400 ? 128 : span > 160 ? 64 : span > 80 ? 32 : 16;
-    for (var gx = Math.ceil((cx - span / 2) / stepT) * stepT; gx < cx + span / 2; gx += stepT) grid += '<line x1="' + px(gx) + '" x2="' + px(gx) + '" y1="0" y2="' + S + '"/>';
-    for (var gy = Math.ceil((cy - span / 2) / stepT) * stepT; gy < cy + span / 2; gy += stepT) grid += '<line y1="' + py(gy) + '" y2="' + py(gy) + '" x1="0" x2="' + S + '"/>';
-    var onCam = {}; Object.keys(cams || {}).forEach(function (slot) { (cams[slot].agents || []).forEach(function (n) { onCam[n] = slot; }); });
-    var layer = '', legend = '', inset = '', taken = [];
-    var place = function (g) { return 'translate(' + px(g.x0) + ' ' + py(g.y0) + ') scale(' + (g.cell * k).toFixed(4) + ')'; };
-    if (base) {
-      var bp = gridPaths('base', base, BASE_CATS, 'b-', base.tick);
-      var fp = fine ? gridPaths('core', fine, BASE_CATS, 'b-', base.tick) : null;
-      var op = ore ? gridPaths('ore', ore, ORE_CATS, 'o-', base.tick) : null;
-      layer = op ? '<g class="mm-ore" transform="' + place(ore) + '">' + op.paths + '</g>' : '';
-      if (fp) {
-        // the coarse grid only outside the fine core, so the two never draw over each other
-        layer += '<clipPath id="mm-out"><path clip-rule="evenodd" d="M-9999 -9999H9999V9999H-9999Z M' + px(core.x0) + ' ' + py(core.y0) +
-          'H' + px(core.x1) + 'V' + py(core.y1) + 'H' + px(core.x0) + 'Z"/></clipPath>' +
-          '<g clip-path="url(#mm-out)"><g class="mm-base" transform="' + place(base) + '">' + bp.paths + '</g></g>' +
-          '<g class="mm-base" transform="' + place(fine) + '">' + fp.paths + '</g>';
-      } else layer += '<g class="mm-base" transform="' + place(base) + '">' + bp.paths + '</g>';
-      layer += (Array.isArray(base.nests) ? base.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); }).map(function (n) {
-        return n[2] === 's' ? '<rect class="nest" x="' + (px(n[0]) - 3) + '" y="' + (py(n[1]) - 3) + '" width="6" height="6"><title>Enemy spawner</title></rect>'
-          : '<circle class="worm" cx="' + px(n[0]) + '" cy="' + py(n[1]) + '" r="2.5"><title>Worm</title></circle>';
-      }).join('');
-      var cats = {}; bp.cats.concat(fp ? fp.cats : []).forEach(function (c) { cats[c[0]] = 1; });
-      legend = '<ul class="mm-legend">' + BASE_CATS.filter(function (c) { return cats[c[0]]; }).map(function (c) { return '<li><i class="b-' + c[0] + '"></i>' + esc(c[1]) + '</li>'; }).join('') +
-        ((base.nests || []).length ? '<li><i class="nest"></i>Enemy nests</li>' : '') + '</ul>' +
-        (op && op.cats.length ? '<ul class="mm-legend mm-legend-ore">' + op.cats.map(function (c) { return '<li><i class="o-' + c[0] + '"></i>' + esc(c[1]) + '</li>'; }).join('') + '</ul>' : '');
-      // the whole base in a corner when the view shows only part of it: the overview grid and the view's frame
-      var ew = base.w * base.cell, eh = base.rows.length * base.cell;
-      if (Math.max(ew, eh) > span * 1.4) {
-        var I = 104, ki = I / Math.max(ew, eh), ix = S - I - 6, iy = S - I - 6;
-        var ip = function (x, y) { return [(ix + (x - base.x0) * ki), (iy + (y - base.y0) * ki)]; };
-        var a0 = ip(cx - span / 2, cy - span / 2), a1 = ip(cx + span / 2, cy + span / 2);
-        var vx0 = Math.max(ix, a0[0]), vy0 = Math.max(iy, a0[1]), vx1 = Math.min(ix + I, a1[0]), vy1 = Math.min(iy + I, a1[1]);
-        inset = '<g class="mm-inset"><title>The whole base; the box is this view</title><rect class="mm-inset-bg" x="' + (ix - 3) + '" y="' + (iy - 3) + '" width="' + (I + 6) + '" height="' + (I + 6) + '"/>' +
-          '<g class="mm-base" transform="translate(' + ix.toFixed(1) + ' ' + iy.toFixed(1) + ') scale(' + (base.cell * ki).toFixed(4) + ')">' + bp.paths + '</g>' +
-          (vx1 > vx0 && vy1 > vy0 ? '<rect class="mm-inset-view" x="' + vx0.toFixed(1) + '" y="' + vy0.toFixed(1) + '" width="' + Math.max(2, vx1 - vx0).toFixed(1) + '" height="' + Math.max(2, vy1 - vy0).toFixed(1) + '"/>' : '') + '</g>';
-        taken.push({ x0: ix - 3, y0: iy - 3, x1: S, y1: S });
-      }
-    }
-    // Anything outside the view sits just inside the frame edge, on the line from the view's centre towards it.
-    var edge = function (p) {
-      var dx = p.x - cx, dy = p.y - cy, lim = span / 2 - 14 / k, t = lim / Math.max(Math.abs(dx), Math.abs(dy), 1e-6);
-      return { x: cx + dx * t, y: cy + dy * t };
-    };
-    var spot = function (p) { return visible(p) ? p : edge(p); };
-    // fights (state.fights, push_live.py): a ring the size of the fought-over area; solid red while it goes on
-    // (reported in the last 25 s), faded after; a cross where something was destroyed
-    var fightMarks = fpos.map(function (f) {
-      var at = spot(f.position), pinned = at !== f.position;
-      var r = pinned ? 6 : Math.max(6, (f.extent || 16) / 2 * k), now = f.age_s != null && f.age_s < 25;
-      return '<g class="fight' + (now ? ' now' : '') + (f.kind === 'loss' ? ' loss' : '') + '" transform="translate(' + px(at.x) + ' ' + py(at.y) + ')">' +
-        '<title>' + esc(f.text + (f.age_s != null ? ' · ' + ago(f.age_s) : '') + (f.losses ? ' · ' + f.losses + ' loss' + (f.losses > 1 ? 'es' : '') : '') +
-          (pinned ? ' · about ' + dist(f.position) + ' tiles from the base' : '')) + '</title>' +
-        '<circle r="' + r.toFixed(1) + '"/>' + (f.kind === 'loss' || f.losses ? '<path d="M-3 -3L3 3M3 -3L-3 3"/>' : '') + '</g>';
-    }).join('');
-    var marks = fightMarks + pins.map(function (p) {
-      var at = spot(p.position);
-      return '<g class="pin" transform="translate(' + px(at.x) + ' ' + py(at.y) + ')"><title>' + esc(label(p.kind) + ': ' + p.text) + '</title>' +
-        '<path d="M0 -9 L8 6 L-8 6 Z"/><text y="4" text-anchor="middle">!</text></g>';
-    }).join('');
-    // outposts: building clusters outside the view, a small hollow square at the edge
-    marks += (core ? core.out : []).filter(function (o) { return !visible(o); }).map(function (o) {
-      var at = edge(o);
-      return '<rect class="outpost" x="' + (px(at.x) - 4) + '" y="' + (py(at.y) - 4) + '" width="8" height="8"><title>Outpost: ' + o.n +
-        ' building cell' + (o.n > 1 ? 's' : '') + ', about ' + dist(o) + ' tiles from the base</title></rect>';
-    }).join('');
-    // agents: the dot (ring and camera tag when on camera), then labels placed where they collide with nothing
-    var dots = pts.map(function (a) {
-      var at = a.name in far ? edge(a.position) : a.position;
-      return { a: a, x: +px(at.x), y: +py(at.y), far: a.name in far };
-    });
-    dots.forEach(function (d) {
-      taken.push({ x0: d.x - 7, y0: d.y - 7, x1: d.x + 7, y1: d.y + 7 });
-      if (onCam[d.a.name]) {
-        var tw = textWidth(CAM_SHORT[onCam[d.a.name]] || onCam[d.a.name], 5.4);
-        taken.push({ x0: d.x - tw / 2, y0: d.y - 21, x1: d.x + tw / 2, y1: d.y - 11 });
-      }
-    });
-    // attention (tools/stream/attention.py): a line from the character to where the agent last looked or worked
-    // (inspect, transfer, ghosts, a scan...) in the last two minutes; solid when it is far from the character
-    marks += dots.map(function (d) {
-      var t = d.a.attention;
-      if (!t || !t.position || t.platform || !isFinite(t.position.x) || !isFinite(t.position.y) ||
-          (t.surface && t.surface !== 'nauvis') || (t.dist != null && t.dist < 3)) return '';
-      var at = spot(t.position), x = px(at.x), y = py(at.y);
-      return '<g class="attn' + (t.far ? ' far' : '') + '" style="stroke:' + acColor(d.a.color) + '"><title>' +
-        esc((d.a.display_name || d.a.name) + ' · ' + t.text + (t.age_s != null ? ' · ' + ago(t.age_s) : '')) + '</title>' +
-        '<line x1="' + d.x.toFixed(1) + '" y1="' + d.y.toFixed(1) + '" x2="' + x + '" y2="' + y + '"/>' +
-        '<circle cx="' + x + '" cy="' + y + '" r="3.5"/></g>';
-    }).join('');
-    marks += dots.map(function (d) {
-      var a = d.a, c = acColor(a.color), name = (a.display_name || a.name) + (d.far ? ' ↗' : '');
-      var lab = placeLabel(d.x, d.y, textWidth(name, 6.3), taken, S, !!onCam[a.name]);
-      return '<g class="dot' + (a.alive === false ? ' dead' : '') + (d.far ? ' far' : '') + '" transform="translate(' + d.x.toFixed(1) + ' ' + d.y.toFixed(1) + ')">' +
-        '<title>' + esc((a.display_name || a.name) + (a.location ? ' · ' + a.location : '') + (d.far ? ' · about ' + far[a.name] + ' tiles from the base' : '')) + '</title>' +
-        (onCam[a.name] ? '<circle r="10" class="cam"/><text class="camtag" y="-13" text-anchor="middle">' + esc(CAM_SHORT[onCam[a.name]] || onCam[a.name]) + '</text>' : '') +
-        '<circle r="5.5" style="fill:' + c + '"/>' +
-        (lab ? '<text x="' + lab.x + '" y="' + lab.y + '"' + (lab.anchor !== 'start' ? ' text-anchor="' + lab.anchor + '"' : '') + '>' + esc(name) + '</text>' : '') + '</g>';
-    }).join('');
-    var cellsNote = base ? (fine ? ' Buildings near the core in ' + fine.cell + '-tile cells (each building\'s full footprint), the rest in ' + base.cell + '-tile cells'
-      : ' Buildings in ' + base.cell + '-tile cells') + (base.buildings != null ? ' (' + esc(base.buildings) + ' in all)' : '') +
-      ', refreshed every minute' + (ore ? '; ore every five minutes' : '') + '.' : '';
-    return '<div class="mm-frame"><svg class="minimap" viewBox="0 0 ' + S + ' ' + S + '" role="img" aria-label="' + (base ? 'The base and agent positions' : 'Agent positions') + '"><rect width="' + S + '" height="' + S + '" class="mm-bg"/>' +
-      '<g class="mm-grid">' + grid + '</g>' + layer + marks + inset + '</svg>' +
-      '<div class="mm-zoom"><button type="button" class="fx-btn fx-btn--icon" data-mm="in" aria-label="Zoom in">+</button>' +
-      '<button type="button" class="fx-btn fx-btn--icon" data-mm="out" aria-label="Zoom out">−</button>' +
-      (mmView ? '<button type="button" class="fx-btn" data-mm="fit">Fit</button>' : '') + '</div></div>' + legend +
-      '<p class="fx-muted small">About ' + Math.round(span) + ' tiles across; grid every ' + stepT + ' tiles. Scroll or pinch to zoom, drag to pan. ' +
-      'Orange rings: on camera. Red rings: fights (solid while going on; × where something was destroyed). Triangles: other alerts.' + cellsNote +
-      (Object.keys(far).length || (core && core.out.length) ? ' Dashed dots and hollow squares: agents and outposts outside the view, shown at the edge (hover for the distance).' : '') + '</p>';
-  }
-  // Zoom and pan: a wheel or a pinch zooms about the pointer, a drag pans (on a phone a vertical swipe still scrolls
-  // the page: the map takes only what touch-action leaves it); redrawn at most once a frame.
-  var mmFrame = 0;
-  function redrawMap() {
-    if (mmFrame) return;
-    mmFrame = requestAnimationFrame(function () {
-      mmFrame = 0;
-      var el = document.getElementById('mm');
-      if (el && mmArgs) el.innerHTML = drawMap();
-    });
-  }
-  function mapPoint(ev, svg) {
-    var r = svg.getBoundingClientRect(), v = mmView || mmAuto;
-    var fx = (ev.clientX - r.left) / r.width - 0.5, fy = (ev.clientY - r.top) / r.height - 0.5;
-    return { fx: fx, fy: fy, x: v.cx + fx * v.span, y: v.cy + fy * v.span, w: r.width };
-  }
-  function zoomAt(p, factor) {
-    var v = mmView || mmAuto, span = Math.min(4000, Math.max(24, v.span * factor));
-    mmView = { span: span, cx: p.x - p.fx * span, cy: p.y - p.fy * span };
-    redrawMap();
-  }
-  app.addEventListener('wheel', function (ev) {
-    var svg = ev.target.closest && ev.target.closest('.minimap');
-    if (!svg || !mmAuto) return;
-    ev.preventDefault();
-    zoomAt(mapPoint(ev, svg), Math.pow(1.0015, ev.deltaY * (ev.deltaMode === 1 ? 33 : 1)));
-  }, { passive: false });
-  app.addEventListener('click', function (ev) {
-    var b = ev.target.closest && ev.target.closest('[data-mm]');
-    if (!b || !mmAuto) return;
-    var v = mmView || mmAuto;
-    if (b.dataset.mm === 'fit') { mmView = null; redrawMap(); return; }
-    zoomAt({ fx: 0, fy: 0, x: v.cx, y: v.cy }, b.dataset.mm === 'in' ? 1 / 1.5 : 1.5);
-  });
-  var mmPtrs = {};
-  app.addEventListener('pointerdown', function (ev) {
-    var svg = ev.target.closest && ev.target.closest('.minimap');
-    if (!svg || !mmAuto || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
-    mmPtrs[ev.pointerId] = { x: ev.clientX, y: ev.clientY, svg: svg };
-  });
-  window.addEventListener('pointermove', function (ev) {
-    var p = mmPtrs[ev.pointerId];
-    if (!p) return;
-    var ids = Object.keys(mmPtrs), v = mmView || mmAuto, svg = document.querySelector('#mm .minimap') || p.svg;
-    var w = svg.getBoundingClientRect().width || 1;
-    if (ids.length === 1) {
-      mmView = { span: v.span, cx: v.cx - (ev.clientX - p.x) / w * v.span, cy: v.cy - (ev.clientY - p.y) / w * v.span };
-    } else if (ids.length === 2) {
-      var o = mmPtrs[ids[0] == ev.pointerId ? ids[1] : ids[0]];
-      var d0 = Math.hypot(p.x - o.x, p.y - o.y) || 1, d1 = Math.hypot(ev.clientX - o.x, ev.clientY - o.y) || 1;
-      var mid = mapPoint({ clientX: (ev.clientX + o.x) / 2, clientY: (ev.clientY + o.y) / 2 }, svg);
-      var span = Math.min(4000, Math.max(24, v.span * d0 / d1));
-      mmView = { span: span, cx: mid.x - mid.fx * span - (ev.clientX - p.x) / 2 / w * span, cy: mid.y - mid.fy * span - (ev.clientY - p.y) / 2 / w * span };
-      ev.preventDefault();
-    } else return;
-    p.x = ev.clientX; p.y = ev.clientY;
-    redrawMap();
-  }, { passive: false });
-  ['pointerup', 'pointercancel'].forEach(function (t) { window.addEventListener(t, function (ev) { delete mmPtrs[ev.pointerId]; }); });
-
-  // Outposts: building cells of the coarse grid outside the core box (pipes, belts, inserters and rails left out),
-  // grouped in 48-tile blocks, each drawn at the frame's edge when out of view.
-  function outposts(g, box) {
-    var groups = {}, out = [];
-    g.rows.forEach(function (row, r) {
-      row = String(row);
-      for (var c = 0; c < row.length; c++) {
-        var ch = row.charAt(c);
-        if (ch === '.' || ch === ' ' || LINE_CATS[ch]) continue;
-        var p = { x: g.x0 + (c + 0.5) * g.cell, y: g.y0 + (r + 0.5) * g.cell };
-        if (p.x >= box.x0 - 16 && p.x <= box.x1 + 16 && p.y >= box.y0 - 16 && p.y <= box.y1 + 16) continue;
-        var key = Math.floor(p.x / 48) + ',' + Math.floor(p.y / 48), o = groups[key] || (groups[key] = { x: 0, y: 0, n: 0 });
-        o.x += p.x; o.y += p.y; o.n += 1;
-      }
-    });
-    Object.keys(groups).forEach(function (key) { var o = groups[key]; out.push({ x: o.x / o.n, y: o.y / o.n, n: o.n }); });
-    return out;
-  }
-
-  // The base's core from the coarse grid alone (a stream service without basemap.core): where the factory is dense.
-  // Pipes, belts, inserters and rails are left out (an 84-cell pipeline to an oil outpost 400 tiles north framed the
-  // base as a thin strip), the other building cells are counted in 32-tile blocks, and the core is the box around the
-  // biggest connected group of blocks with at least a fifth of the busiest block's count (plus 8 tiles).
-  function baseCore(g) {
-    var cells = [], cell = g.cell;
-    g.rows.forEach(function (row, r) {
-      row = String(row);
-      for (var c = 0; c < row.length; c++) {
-        var ch = row.charAt(c);
-        if (ch !== '.' && ch !== ' ' && !LINE_CATS[ch]) cells.push({ x: g.x0 + (c + 0.5) * cell, y: g.y0 + (r + 0.5) * cell });
-      }
-    });
-    if (cells.length < 12) return { x0: g.x0, y0: g.y0, x1: g.x0 + g.w * cell, y1: g.y0 + g.rows.length * cell, out: [] };
-    var blocks = {}, top = 0;
-    cells.forEach(function (p) {
-      var key = Math.floor(p.x / 32) + ',' + Math.floor(p.y / 32);
-      blocks[key] = (blocks[key] || 0) + 1;
-      top = Math.max(top, blocks[key]);
-    });
-    // dense blocks, then the biggest connected group of them (8 neighbours): a dense outpost (a far oil field) is
-    // its own group and stays an outpost
-    var dense = {};
-    Object.keys(blocks).forEach(function (key) { if (blocks[key] >= Math.max(2, top / 5)) dense[key] = blocks[key]; });
-    var seen = {}, best = null;
-    Object.keys(dense).forEach(function (start) {
-      if (seen[start]) return;
-      var group = [], stack = [start], total = 0;
-      seen[start] = true;
-      while (stack.length) {
-        var key = stack.pop(), bx = +key.split(',')[0], by = +key.split(',')[1];
-        group.push([bx, by]); total += dense[key];
-        for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
-          var nk = (bx + dx) + ',' + (by + dy);
-          if (dense[nk] && !seen[nk]) { seen[nk] = true; stack.push(nk); }
-        }
-      }
-      if (!best || total > best.total) best = { total: total, group: group };
-    });
-    var box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
-    best.group.forEach(function (b) {
-      box.x0 = Math.min(box.x0, b[0] * 32 - 8); box.y0 = Math.min(box.y0, b[1] * 32 - 8);
-      box.x1 = Math.max(box.x1, b[0] * 32 + 40); box.y1 = Math.max(box.y1, b[1] * 32 + 40);
-    });
-    box.out = outposts(g, box);
-    return box;
-  }
-  // A label's width in map pixels (bold 11 px Titillium: about 6.3 px a character).
-  function textWidth(s, perChar) { return String(s).length * perChar + 2; }
-  // Put a dot's label where it overlaps no other label, dot or camera tag: right, left, below, above; none free: no
-  // label (the tooltip still names the agent). Labels stay inside the map.
-  function placeLabel(x, y, w, taken, S, hasTag) {
-    var tries = [{ x: 9, y: 4, anchor: 'start', b: [x + 8, y - 6, x + 8 + w, y + 6] },
-      { x: -9, y: 4, anchor: 'end', b: [x - 8 - w, y - 6, x - 8, y + 6] },
-      { x: 0, y: 19, anchor: 'middle', b: [x - w / 2, y + 9, x + w / 2, y + 21] }];
-    if (!hasTag) tries.push({ x: 0, y: -10, anchor: 'middle', b: [x - w / 2, y - 21, x + w / 2, y - 9] });
-    for (var i = 0; i < tries.length; i++) {
-      var b = tries[i].b;
-      if (b[0] < 0 || b[2] > S || b[1] < 0 || b[3] > S) continue;
-      var hit = taken.some(function (t) { return b[0] < t.x1 && b[2] > t.x0 && b[1] < t.y1 && b[3] > t.y0; });
-      if (!hit) { taken.push({ x0: b[0], y0: b[1], x1: b[2], y1: b[3] }); return tries[i]; }
-    }
-    return null;
+  var mapView = null;
+  function mapData(s) {
+    var bm = s.basemap || {};
+    return { base: bm, core: bm.core, ore: bm.ore, ground: bm.terrain_grid, nests: bm.nests, turrets: bm.turrets, terrain: bm.terrain,
+      agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {} };
   }
 
   // What each camera shows (state.cameras: who it follows, or the fight / work / segment shot it holds), so a viewer
@@ -588,9 +268,17 @@
   var ACT_LABEL = { acting: 'acting', thinking: 'thinking', idle: 'idle', dead: 'dead', offline: 'offline' };
   var ALERT_TONES = { attack: 'danger', death: 'danger', low_power: 'warn', research: 'info' };
   var ALERT_ICONS = { attack: '⚔', death: '✝', low_power: '⚡', research: '⚗' };
-  function card(cls, title, inner) {
-    return '<section class="fx-panel live-card ' + cls + '"><header class="fx-panel-title">' + esc(title) + '</header>' + inner + '</section>';
+  // The dashboard's cards are made once; each refresh fills their bodies (the map card keeps its viewer).
+  var CARDS = [['agents', 'Agents'], ['map', 'Map'], ['board', 'Board'], ['research', 'Research'], ['charts', 'Factory'], ['chat', 'Team chat']];
+  function cards() {
+    if ($('#cb-agents')) return;
+    $('#dash').innerHTML = CARDS.map(function (c) {
+      return '<section class="fx-panel live-card card-' + c[0] + '"><header class="fx-panel-title">' + esc(c[1]) + '</header><div class="card-body" id="cb-' + c[0] + '"></div></section>';
+    }).join('');
+    $('#cb-map').innerHTML = '<p class="map-research small" id="map-research" hidden></p><div id="mm" class="mm"></div><div id="map-cams"></div><div id="map-space"></div>';
+    if (window.PogMap) mapView = window.PogMap.create($('#mm'), { storeKey: 'pog-live-map', label: 'The base and agent positions' });
   }
+  function fill(sel, html) { var el = $(sel); if (el) el.innerHTML = html; }
   function renderState(s, age) {
     var agents = s.agents || [], chat = s.chat || [], r = s.research || {}, sci = s.science || {}, board = s.board || {};
     if (s.stream) embedPlayer(s.stream.youtube_video_id, s.stream.youtube_channel_id);
@@ -619,7 +307,7 @@
     $('#alerts').innerHTML = alerts;
 
     // agents
-    var cards = agents.map(function (a) {
+    var agentCards = agents.map(function (a) {
       var mine = chat.filter(function (c) { return c.agent === a.name; }).slice(-2);
       var act = a.activity || (a.alive === false ? 'dead' : 'idle');
       var said = mine.map(function (c) { return '<li>' + esc(c.text) + '</li>'; }).join('');
@@ -670,17 +358,17 @@
       return '<li>' + avatar(a, 24) + '<span><b>' + esc(a.display_name || c.from) + '</b> ' + esc(c.text) + '</span></li>';
     }).join('');
 
-    $('#dash').innerHTML =
-      card('card-agents', 'Agents', '<div class="agents-live">' + (cards || '<p class="fx-muted">No agents.</p>') + '</div>') +
-      card('card-map', 'Map',
-        (r.current ? '<p class="map-research small">Researching <strong>' + esc(r.label || label(r.current)) + '</strong> · ' + pct + '%</p>' : '') +
-        minimap(agents, s.alerts, s.cameras, s.basemap, s.fights) +
-        (s.cameras ? '<h4>On camera</h4><ul class="cam-lines">' + cameraLines(s.cameras, byName) + '</ul>' : '') +
-        spaceInset(s.space)) +
-      card('card-board', 'Board', boardHtml) +
-      card('card-research', 'Research', research) +
-      card('card-charts', 'Factory', '<div class="chart-grid">' + chartHtml + '</div>') +
-      card('card-chat', 'Team chat', gchat ? '<ul class="game-chat">' + gchat + '</ul>' : '<p class="fx-muted">Quiet so far.</p>');
+    cards();
+    fill('#cb-agents', '<div class="agents-live">' + (agentCards || '<p class="fx-muted">No agents.</p>') + '</div>');
+    var mr = $('#map-research');
+    if (mr) { mr.innerHTML = r.current ? 'Researching <strong>' + esc(r.label || label(r.current)) + '</strong> · ' + pct + '%' : ''; mr.hidden = !r.current; }
+    if (mapView) mapView.set(mapData(s));
+    fill('#map-cams', s.cameras ? '<h4>On camera</h4><ul class="cam-lines">' + cameraLines(s.cameras, byName) + '</ul>' : '');
+    fill('#map-space', spaceInset(s.space));
+    fill('#cb-board', boardHtml);
+    fill('#cb-research', research);
+    fill('#cb-charts', '<div class="chart-grid">' + chartHtml + '</div>');
+    fill('#cb-chat', gchat ? '<ul class="game-chat">' + gchat + '</ul>' : '<p class="fx-muted">Quiet so far.</p>');
     app.classList.toggle('is-stale', !live);
   }
 
