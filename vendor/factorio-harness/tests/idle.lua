@@ -78,15 +78,33 @@ local a=report('astra')
 assert(a.standing_s>=59 and a.standing_s<=61,a.standing_s); eq(a.alive,true); eq(a.action,nil); eq(a.queue.state,'none')
 eq(a.unread_chat,0); eq(a.unread_tells,0); eq(a.sleeping_s,nil)
 eq(report('grok').standing_s,0) -- no request yet: no clock, not counted
--- an action resets it; standing starts again when it ends
+-- work under 20 s does not end standing (a 100-tick walk); work that lasts does, and standing starts again after it
 astra('walk',{direction='east',ticks=100}); advance(61)
+a=report('astra'); assert(a.standing_s>=60,a.standing_s); eq(a.action,'walk') -- (61 s before it, still counted)
+local ai=runtime.bots.index_of('astra')
+advance(60)
+storage.agent_harness.active[ai]={kind='walk',direction=0,until_tick=tick+60*30}; advance(60*25)
 eq(report('astra').standing_s,0); eq(report('astra').action,'walk')
-advance(60*3)
+storage.agent_harness.active[ai]=nil; advance(60*3)
 a=report('astra'); assert(a.standing_s>=1 and a.standing_s<=3,a.standing_s); eq(a.action,nil)
--- a timed action it chose (wait_ticks) is not standing
-astra('wait_ticks',{ticks=54000}); advance(120)
-a=report('astra'); eq(a.standing_s,0); eq(a.action,'wait_ticks'); assert(a.action_until_s>800,a.action_until_s)
+-- a wait is not work (shift07: Sonnet's back-to-back wait_ticks for 70 minutes, never nudged): standing goes on
+-- (advance counts ticks: 60*12 is 12 s)
+astra('wait_ticks',{ticks=54000}); advance(60*12)
+a=report('astra'); assert(a.standing_s>=14,a.standing_s); eq(a.action,'wait_ticks'); assert(a.action_until_s>800,a.action_until_s)
 astra('stop'); advance(60)
+-- nor a queue held behind a direct wait (a plan runs after a direct command ends: Sonnet's loop3), nor a one-off
+-- queue wait; a repeating plan resting between its cycles is work
+local q={pending={{action='move_to',args={position={x=9,y=9}}}},history={},revision=1,paused=false}
+storage.agent_harness.queues=storage.agent_harness.queues or {}
+storage.agent_harness.queues[ai]=q
+storage.agent_harness.active[ai]={kind='wait_ticks',until_tick=tick+60*600}; advance(60*25)
+a=report('astra'); assert(a.standing_s>=25,a.standing_s); eq(a.queue.state,'running')
+storage.agent_harness.active[ai]=nil; q.pending={}
+q.current={action='wait_ticks',args={ticks=9000},until_tick=tick+9000}; advance(60*25)
+assert(report('astra').standing_s>=50,'a one-off queue wait is not work')
+q.current=nil; q.loop={{action='mine',args={}}}; q.interval=60*600; advance(60*25)
+eq(report('astra').standing_s,0,'a repeating plan resting between cycles is work')
+storage.agent_harness.queues[ai]=nil; advance(60)
 -- a sleep with nothing running is standing (shift05: Sonnet's 25-minute sleeps), and the report shows the sleep
 astra('sleep',{seconds=900}); advance(60*30)
 a=report('astra'); assert(a.standing_s>=29,a.standing_s); assert(a.sleeping_s>=29 and a.sleep_left_s>800,a.sleep_left_s)

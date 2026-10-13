@@ -738,8 +738,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `id, name, surface, position, speed (tiles/s), closing, nearest {x,y,name}, nearest_distance, eta_s, character
   {x,y,player}, character_distance`.
 - Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
-  `standing_s` (how long its character has had no action, no running queue and a body on the map; kept once a second
-  for agents that made a request; an fh sleep with nothing running counts as standing, a timed action does not),
+  `standing_s` (how long its character has had a body on the map and nothing that moves or works it; kept once a
+  second for agents that made a request). A wait is not work: `wait_ticks`, `wait_until`, `sleep`, a queue held behind
+  a direct wait (a plan runs after a direct command ends), and a one-off queue wait all count as standing. A repeating
+  plan between its cycles counts as work. Work shorter than 20 s does not end standing (shift07: Sonnet's back-to-back
+  waits, with a few seconds of its plan between them, read as busy for 70 minutes).
   `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
   `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board` and `last_request_s`. `tell {to,
   text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells, waking a sleeper

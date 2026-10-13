@@ -16,15 +16,38 @@ return function(api)
     if q.current or #q.pending > 0 or q.loop then return {state='running', steps=steps, loop=q.loop ~= nil or nil} end
     return {state='empty'}
   end
+  -- Standing: nothing moves or works the character. A wait is not work
+  -- (shift07: Sonnet's wait_ticks of 20000-30000 ticks back to back, 70
+  -- minutes, never nudged), nor a queue held behind a direct wait (a plan
+  -- runs after a direct command ends: Sonnet's loop3 moved ~10 ticks between
+  -- its waits, then its next wait interrupted it). Work shorter than BRIEF
+  -- does not end standing.
+  local WAITS = {wait_ticks=true, wait_until=true, sleep=true}
+  local BRIEF = 20 * 60
+  M.WAITS = WAITS
+  local function busy(s, index)
+    local act = s.active and s.active[index]
+    local waiting = act and WAITS[act.kind]
+    if act and not waiting then return true end
+    local q = s.queues and s.queues[index]
+    if not q or q.paused or waiting then return false end
+    local step = q.current
+    if step then return not WAITS[step.action] or q.loop ~= nil end  -- a repeating plan's own wait is the plan
+    return q.loop ~= nil or #q.pending > 0
+  end
   -- Once a second (runtime.lua idle_tick), for every agent that made a request.
   function M.stand_tick()
     local s = api.state()
-    s.stand = s.stand or {}
+    s.stand, s.busy = s.stand or {}, s.busy or {}
     for index in pairs(s.clocks or {}) do
-      local q = s.queues and s.queues[index]
-      local planned = q and not q.paused and (q.current or #q.pending > 0 or q.loop)
-      if (s.active and s.active[index]) or planned or not api.has_body(index) then s.stand[index] = nil
-      elseif not s.stand[index] then s.stand[index] = game.tick end
+      if not api.has_body(index) then s.stand[index], s.busy[index] = nil, nil
+      elseif busy(s, index) then
+        s.busy[index] = s.busy[index] or game.tick
+        if game.tick - s.busy[index] >= BRIEF then s.stand[index] = nil end
+      else
+        s.busy[index] = nil
+        if not s.stand[index] then s.stand[index] = game.tick end
+      end
     end
   end
   function M.operator.idle_report(a)
