@@ -1,13 +1,11 @@
 """The base's time-lapse on the long run page: every shift's basemap snapshots (runs/RUN/basemap/TICK.json, written
 by tools/stream/basemap_log.py, one per 10 game minutes) in one /runs/long/timelapse.json, and a section with a
 scrubbable map (a slider over all the snapshots, play, a mark per shift). For site/build.py, which adds the section
-to the run page; nothing shows until a shift has snapshots. The map uses the live map's category colours (.b-X)."""
+to the run page; nothing shows until a shift has snapshots. The map is the live map's viewer (static/mapview.js: pan,
+zoom, layers, full screen), with each snapshot's nests and turrets, and terrain frames up to its tick."""
 import json
 from pathlib import Path
 
-CATS = [("D", "Defence"), ("R", "Labs"), ("O", "Oil and chemistry"), ("A", "Assembly"), ("S", "Smelting"),
-        ("M", "Mining"), ("E", "Power"), ("L", "Logistics"), ("K", "Storage"), ("I", "Inserters"), ("B", "Belts"),
-        ("T", "Rails"), ("P", "Pipes")]
 GRID = ("cell", "x0", "y0", "w", "h", "rows")
 
 
@@ -38,7 +36,15 @@ def frames(long, runs_dir, game_time):
             if not base:
                 continue
             tick = int(p.stem)
-            out.append({"n": s["n"], "tick": tick, "game": game_time(tick), "base": base, "core": grid(b.get("core"))})
+            f = {"n": s["n"], "tick": tick, "game": game_time(tick), "base": base, "core": grid(b.get("core"))}
+            # enemy nests and our turrets with their range (the viewer's layers), where the snapshot has them
+            nests = [n[:3] for n in b.get("nests") or [] if isinstance(n, list) and len(n) >= 3]
+            turrets = [t[:3] for t in b.get("turrets") or [] if isinstance(t, list) and len(t) >= 3]
+            if nests:
+                f["nests"] = nests
+            if turrets:
+                f["turrets"] = turrets
+            out.append(f)
     return out
 
 
@@ -58,52 +64,28 @@ def frame_box(frames):
 STYLE = """
 <style>
 .tlapse { margin: 1rem 0 2rem; }
-.tlapse-stage { background: var(--well); box-shadow: var(--well-shadow); border-radius: var(--fx-r-1); }
-.tlapse-stage svg { display: block; width: 100%; height: auto; max-height: 72vh; }
-.tlapse-stage .coarse path { opacity: .45; }
-.tlapse-stage path { shape-rendering: crispEdges; }
 .tlapse-controls { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: .6rem 0; }
 .tlapse-controls input[type=range] { flex: 1 1 16em; accent-color: var(--accent); }
 .tlapse-label { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 13em; }
-.tlapse-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .82rem; color: var(--ink-2); margin: .4rem 0 0; padding: 0; list-style: none; }
-.tlapse-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; border-radius: 2px; }
 </style>"""
 
 SCRIPT = """<script>
 (function () {
-  var root = document.getElementById('tlapse'); if (!root) return;
-  var svg = root.querySelector('svg'), range = root.querySelector('input[type=range]'),
-      label = root.querySelector('.tlapse-label'), play = root.querySelector('.tlapse-play'), data = null, timer = null;
-  var CATS = %s;
-  function paths(g) {
-    var d = {}; CATS.forEach(function (c) { d[c] = []; });
-    g.rows.forEach(function (row, r) {
-      for (var c = 0; c < row.length;) {
-        var ch = row.charAt(c), n = 1;
-        while (c + n < row.length && row.charAt(c + n) === ch) n++;
-        if (d[ch]) d[ch].push('M' + c + ' ' + r + 'h' + n + 'v1h-' + n + 'z');
-        c += n;
-      }
-    });
-    return CATS.filter(function (c) { return d[c].length; }).map(function (c) {
-      return '<path class="b-' + c + '" d="' + d[c].join('') + '"/>';
-    }).join('');
-  }
-  function layer(g, cls) {
-    return '<g class="' + cls + '" transform="translate(' + g.x0 + ' ' + g.y0 + ') scale(' + g.cell + ')">' + paths(g) + '</g>';
-  }
+  var root = document.getElementById('tlapse'); if (!root || !window.PogMap) return;
+  var range = root.querySelector('input[type=range]'), label = root.querySelector('.tlapse-label'),
+      play = root.querySelector('.tlapse-play'), data = null, timer = null, view = null;
   function show(i) {
     var f = data.frames[i]; if (!f) return;
-    svg.innerHTML = layer(f.base, 'coarse') + (f.core ? layer(f.core, 'core') : '');
+    view.set({base: f.base, core: f.core, nests: f.nests, turrets: f.turrets, terrain: data.terrain, tick: f.tick, box: data.box});
     label.textContent = 'Shift ' + f.n + ' · game ' + f.game + ' · ' + (i + 1) + ' of ' + data.frames.length;
   }
   function stop() { if (timer) { clearInterval(timer); timer = null; play.textContent = 'Play'; } }
   function load() {
     if (data) return;
     data = {frames: []};
+    view = PogMap.create(root.querySelector('.tlapse-map'), {storeKey: 'pog-tlapse-map', label: 'Map of the base'});
     fetch(root.dataset.src).then(function (r) { return r.json(); }).then(function (d) {
       data = d;
-      svg.setAttribute('viewBox', d.box.join(' '));
       range.max = d.frames.length - 1; range.value = d.frames.length - 1; range.disabled = false; play.disabled = false;
       show(d.frames.length - 1);
     }).catch(function () { label.textContent = 'The time-lapse did not load.'; });
@@ -134,7 +116,6 @@ def section(frames, esc, src="/runs/long/timelapse.json"):
     shifts = sorted({f["n"] for f in frames})
     marks = "".join(f'<option value="{next(i for i, f in enumerate(frames) if f["n"] == n)}" label="Shift {n}"></option>'
                     for n in shifts)
-    legend = "".join(f'<li><i class="b-{c}"></i>{esc(name)}</li>' for c, name in CATS)
     last = frames[-1]
     return (f'{STYLE}<section class="tlapse" id="timelapse" aria-labelledby="timelapse-h">'
             f'<h2 id="timelapse-h">The base over time</h2>'
@@ -144,14 +125,17 @@ def section(frames, esc, src="/runs/long/timelapse.json"):
             f'<input type="range" min="0" max="{len(frames) - 1}" value="{len(frames) - 1}" step="1" list="tlapse-marks" '
             f'aria-label="Snapshot" disabled><datalist id="tlapse-marks">{marks}</datalist>'
             f'<span class="tlapse-label" aria-live="polite">Shift {last["n"]} · game {esc(last["game"])}</span></div>'
-            f'<div class="tlapse-stage"><svg role="img" aria-label="Map of the base" viewBox="0 0 1 1"></svg></div>'
-            f'<ul class="tlapse-legend">{legend}</ul></div>'
-            + SCRIPT.replace("%s", json.dumps([c for c, _ in CATS])) + "</section>")
+            f'<div class="tlapse-map"></div></div>'
+            '<script src="/static/mapview.js"></script>' + SCRIPT + "</section>")
 
 
-def data(frames):
-    """timelapse.json: the frame box (tiles) and the frames."""
-    return json.dumps({"box": frame_box(frames), "frames": frames}, separators=(",", ":"))
+def data(frames, terrain=None):
+    """timelapse.json: the frame box (tiles), the frames, and the terrain frames ({src, x0, y0, x1, y1, tick}: the
+    map-camera frames with their edges in tiles; each snapshot shows those up to its tick)."""
+    out = {"box": frame_box(frames), "frames": frames}
+    if terrain:
+        out["terrain"] = terrain
+    return json.dumps(out, separators=(",", ":"))
 
 
 def inject(page_html, sec):

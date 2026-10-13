@@ -50,6 +50,7 @@ import agents as agent_pages  # noqa: E402  (site/agents.py: /agents/ and /timel
 import highlights  # noqa: E402  (site/highlights.py: /chat/, the agents' spoken lines and confessions)
 import search as site_search  # noqa: E402  (site/search.py: /search/ and its index)
 import timelapse  # noqa: E402  (site/timelapse.py: the base over time on the run page)
+import terrain  # noqa: E402  (site/terrain.py: /live/terrain/, map frames under the maps)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -1646,7 +1647,8 @@ def public_status(st):
     return json.dumps(st, indent=2, ensure_ascii=False) + "\n"
 
 
-LIVE_HEAD = '<script src="/static/avatar.js" defer></script>\n<script src="/static/live.js" defer></script>'
+LIVE_HEAD = ('<script src="/static/avatar.js" defer></script>\n<script src="/static/mapview.js" defer></script>\n'
+             '<script src="/static/live.js" defer></script>')
 
 
 def live_app(heading, sample_href):
@@ -1756,6 +1758,7 @@ def main():
         if lapse:
             write("runs/long/timelapse.json", timelapse.data(lapse))
         write("runs/long/index.html", timelapse.inject(build_long_run(LONG), timelapse.section(lapse, esc)))
+        terrain.publish(out, args.runs_dir, LONG)
         for s in LONG["shifts"]:
             if not s.get("empty"):
                 write(f"runs/long/shift-{s['n']}/index.html", build_shift_page(s, shift_video(s), LONG))

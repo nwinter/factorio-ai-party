@@ -17,7 +17,12 @@ PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "re
 AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
-LOSS_RE = re.compile(r"^(?:losses )?in \((-?\d+),(-?\d+)\)(?:-\((-?\d+),(-?\d+)\))? (\d+) destroyed: (.*?)(?: by (.*?))?, (\S+) ago$")
+# status.alerts.latest lines: "in (x,y)-(x,y) N destroyed: ..." and, from eng/defensetools, "#7 [on S | on platform P]
+# in (x,y)-(x,y) [continue:] N destroyed[ (+k since you were told)]: ..."
+LOSS_RE = re.compile(r"^(?:losses )?(?:#(?P<id>\d+)(?: on (?:platform (?P<platform>.+?)|(?P<surface>\S+)))? )?"
+                     r"in \((?P<x>-?\d+),(?P<y>-?\d+)\)(?:-\((?P<x2>-?\d+),(?P<y2>-?\d+)\))?(?: continue:)? (?P<total>\d+) destroyed"
+                     r"(?: \(\+\d+ since you were told\))?: (?P<names>.*?)(?: by (?P<by>.*?))?, (?P<ago>\S+) ago$")
+LOSS_RECENT_TICKS = 2 * 3600  # as RECENT_AGO: the last loss under 2 game minutes ago
 CHUNK = 32.0  # status.alerts.attacked reports a chunk: its centre, the fight somewhere in its 32x32 tiles
 RECENT_AGO = re.compile(r"^(?:.*-)?(?:\d+s|1m\d\ds)$")  # last part of the span under 2 minutes
 
@@ -31,8 +36,9 @@ def hit_label(entities):
 
 def attacker_label(by):
     """describe_incident's "by 5 small-biter, 2 medium-biter" counts kills by each kind: "small biters". Our own
-    entities come last as "friendly fire: 2 flamethrower-turret": alone, "friendly fire from flamethrower turrets"."""
-    first = (by or "").split(",")[0].strip()
+    entities come last as "friendly fire: 2 flamethrower-turret": alone, "friendly fire from flamethrower turrets". Where
+    a burning turret stands ("2 flamethrower-turret at (80,90) (84,90)") is left out of the label."""
+    first = re.sub(r" at \(-?[\d.]+,-?[\d.]+\)(?: \(-?[\d.]+,-?[\d.]+\))*", "", by or "").split(",")[0].strip()
     if first.startswith("friendly fire:"):
         name = attacker_label(first.split(":", 1)[1])
         return f"friendly fire from {name}" if name and name != "unknown sources" else "friendly fire"
@@ -64,6 +70,9 @@ class LiveSource:
         self.board_seq = 0
         self.board_every = 15.0
         self.next_board = 0
+        self.has_groups = False  # the runtime answers attack_groups_live (describe operator_reads)
+        self.groups_every = 2.0
+        self.next_groups = 0
         self.has_confess = False
         self.confess_seq = 0
         self.has_tells = False
@@ -210,16 +219,23 @@ class LiveSource:
                 errors["profiles"] = str(e)
         names = list(self.agents_cfg) or list(profiles)
         alerts_seen = False
+        hits = None
         for name in self.status_round(names, errors):
             try:
                 st = self.agent_status(name, self.agents_cfg.get(name, {}))
                 self.status_cache[name] = st
+                if hits is None:
+                    hits = []  # a status (with alerts) was read: no platform_hits rows means none hit lately
                 if not alerts_seen and st.get("alerts"):
                     alerts_seen = True  # force-wide: one agent's copy is enough
                     obs["events"] += self.attack_events(st["alerts"], obs.get("tick") or st.get("tick") or 0)
-                    obs["events"] += self.loss_events(st["alerts"])
+                    obs["events"] += self.loss_events(st["alerts"], obs.get("tick") or st.get("tick"))
+                    # asteroid hits per platform over the last minutes (eng/platformalerts), for the Space widget
+                    hits = list(st["alerts"].get("platform_hits") or [])
             except Exception as e:
                 errors[f"status:{name}"] = str(e)
+        if hits is not None:
+            obs["platform_hits"] = hits
         for name in names:
             cfg = self.agents_cfg.get(name, {})
             p = profiles.get(name, {})
@@ -327,8 +343,12 @@ class LiveSource:
                 try:
                     res, _ = self.read("platforms", {"platform": row["name"]}, **self.reader())
                     for p in res.get("platforms") or []:
+                        # route and speed; and for the Space widget (model.platform_card) the defence, repair
+                        # packs, damaged entities and hub cargo (eng/platformalerts)
                         detail[p.get("name")] = {k: p.get(k) for k in ("state", "at", "speed", "schedule", "paused",
-                                                                       "thrusters", "weight") if p.get(k) is not None}
+                                                                       "thrusters", "weight", "defense", "repair_packs",
+                                                                       "damaged", "damaged_count", "hub_items")
+                                                 if p.get(k) is not None}
                 except Exception as e:
                     errors["platforms"] = str(e)
             self.platform_detail = detail
@@ -340,8 +360,21 @@ class LiveSource:
                     errors["platform_views"] = str(e)
         views = getattr(self, "platform_views", {})
         space["platforms"] = [dict(row, **self.platform_detail.get(row["name"], {}),
-                                   **({"view": views[row["name"]]} if row["name"] in views else {}))
+                                   **({"view": views[row["name"]]} if row["name"] in views else {}),
+                                   **self.fresh_at(row, self.platform_detail.get(row["name"], {})))
                               for row in space["platforms"]]
+
+    @staticmethod
+    def fresh_at(row, detail):
+        """The score row is read every round, the detail every platform_every s: when they disagree on whether the
+        platform is at a planet or travelling, the score's `at` stands (Sunward reached Nauvis at 14:14:32 while a
+        detail read from before still put it on its route)."""
+        at, dat = row.get("at"), detail.get("at")
+        if not dat or not at:
+            return {}
+        if at != "in transit" or "->" not in dat:  # arrived (a planet now), or departed (detail still at a planet)
+            return {"at": at}
+        return {}
 
     # ---- team board (docs/BOARD-API.md) ------------------------------------------------------------------------
     def board_probe(self):
@@ -356,6 +389,7 @@ class LiveSource:
             self.has_confess = "confessions" in actions
             self.has_tells = "tells" in actions
             self.has_operator = "operator" in actions
+            self.has_groups = "attack_groups_live" in (res.get("operator_reads") or [])
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -363,12 +397,28 @@ class LiveSource:
         if self.has_board:
             print("[live] runtime has the team board; polling board_events", flush=True)
 
+    def observe_groups(self, obs, errors):
+        """Enemy groups on their way (harness attack_groups_live, an operator read): every ~2 s while any is
+        tracked, else every 10 s; a runtime without the read is asked again with the board probe."""
+        now = time.time()
+        if not getattr(self, "has_groups", False) or now < self.next_groups:
+            return
+        try:
+            res, _ = self.h.operator_read("attack_groups_live", {})
+            groups = res.get("groups") or []
+            obs["attack_groups"] = groups
+            self.next_groups = now + (self.groups_every if groups else 10.0)
+        except Exception as e:
+            errors["attack_groups"] = str(e)
+            self.next_groups = now + 30.0
+
     def observe_board(self, obs, errors):
         if self.caps is None or not self.caps.get("harness"):
             return
-        if not self.has_board:
+        if not self.has_board or not getattr(self, "has_groups", True):
             if time.time() >= self.next_board_probe:
                 self.board_probe()
+        self.observe_groups(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})
@@ -421,24 +471,50 @@ class LiveSource:
                 errors["board"] = str(e)
 
     @staticmethod
-    def loss_events(alerts):
-        """status.alerts.latest: describe_incident() lines, e.g. "in (12,-40)-(20,-31) 7 destroyed: 4 stone-wall,
-        3 gun-turret by 5 small-biter, 1m10s-0s ago" -> loss banners (one per area)."""
+    def loss_event(x, y, x2, y2, total, names, by, surface=None, platform=None, ident=None):
+        """One loss banner: where the camera frames it (the loss rectangle's centre and size, a single point 16
+        tiles) on the incident's surface; a platform's surface goes to its platform (model.platform_of)."""
+        what = ", ".join(n.strip().replace("-", " ") for n in (names or "").split(",")[:2])
+        # a numbered line names only the platform: model.platform_of matches a platform by its name too
+        surface = surface or platform or "nauvis"
+        on = f"on {surface[:1].upper() + surface[1:]} " if surface != "nauvis" and not platform else ""
+        text = f"{total} lost {on}near ({x}, {y}): {what}" + (f" (by {attacker_label(by)})" if by else "")
+        x2, y2 = float(x if x2 is None else x2), float(y if y2 is None else y2)
+        pos = {"x": (float(x) + x2) / 2, "y": (float(y) + y2) / 2,
+               "extent": max(16.0, abs(x2 - float(x)), abs(y2 - float(y))), "surface": surface}
+        key = f"loss:{surface}:#{ident}" if ident is not None else f"loss:{x},{y}" if surface == "nauvis" else f"loss:{surface}:{x},{y}"
+        ev = {"kind": "loss", "text": text, "key": key, "ttl": 90, "position": pos}
+        if platform:
+            ev["platform"] = platform
+        return ev
+
+    @staticmethod
+    def loss_events(alerts, tick=None):
+        """status.alerts.incidents (rows with id, surface, platform, box, total, names, by, last_tick) -> loss banners
+        (one per incident) on the incident's surface. 12:58 on 2026-10-13: Sol's 59 turrets lost on Vulcanus went to
+        Nauvis (-223,74), an empty field, when the surface was read as nauvis. A runtime without rows: the text of
+        status.alerts.latest, old ("in (12,-40)-(20,-31) 7 destroyed: ...") or numbered ("#7 on vulcanus in ...")."""
         out = []
+        rows = alerts.get("incidents")
+        if isinstance(rows, list) and rows:
+            for r in rows[:3]:
+                b = r.get("box") or {}
+                if not all(isinstance(b.get(k), (int, float)) for k in ("x0", "y0", "x1", "y1")):
+                    continue
+                if tick is not None and isinstance(r.get("last_tick"), (int, float)) and tick - r["last_tick"] >= LOSS_RECENT_TICKS:
+                    continue  # the alert window is 5 game minutes; only show losses from the last minute or so
+                out.append(LiveSource.loss_event(b["x0"], b["y0"], b["x1"], b["y1"], r.get("total") or 0, r.get("names"),
+                                                 r.get("by"), r.get("surface"), r.get("platform"), r.get("id")))
+            return out
         for line in (alerts.get("latest") or [])[:3]:
             m = LOSS_RE.match(line or "")
             if not m:
                 continue
-            x, y, total, names, by, ago = m.group(1), m.group(2), int(m.group(5)), m.group(6), m.group(7), m.group(8)
-            if not RECENT_AGO.match(ago):
-                continue  # the alert window is 5 game minutes; only show losses from the last minute or so
-            what = ", ".join(n.strip().replace("-", " ") for n in names.split(",")[:2])
-            text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {attacker_label(by)})" if by else "")
-            # where the camera frames the fight: the loss rectangle's centre and size (a single point: 16 tiles)
-            x2, y2 = float(m.group(3) or x), float(m.group(4) or y)
-            pos = {"x": (float(x) + x2) / 2, "y": (float(y) + y2) / 2,
-                   "extent": max(16.0, abs(x2 - float(x)), abs(y2 - float(y))), "surface": "nauvis"}
-            out.append({"kind": "loss", "text": text, "key": f"loss:{x},{y}", "ttl": 90, "position": pos})
+            if not RECENT_AGO.match(m.group("ago")):
+                continue
+            out.append(LiveSource.loss_event(m.group("x"), m.group("y"), m.group("x2"), m.group("y2"), int(m.group("total")),
+                                             m.group("names"), m.group("by"), m.group("surface"), m.group("platform"),
+                                             m.group("id")))
         return out
 
     @staticmethod

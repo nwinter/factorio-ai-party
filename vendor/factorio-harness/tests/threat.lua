@@ -172,4 +172,43 @@ eq(on_v.surface,'vulcanus'); assert(on_v.line:find('^attack #%d+ on vulcanus at 
 local on_n=rows[1].surface=='nauvis' and rows[1] or rows[2]
 assert(on_n.line:find('^attack #%d+ at %(5,5%)'),on_n.line)
 eq(T.attack_line(storage.damage['vulcanus:0,0'],false,'vulcanus'):find(' on '),nil)
+-- Live groups for the operator (attack_groups_live): every gathered group with a target, visible or not, followed
+-- while valid; where it is, its members, state, the distances to its target and to our nearest building.
+defines.group_state={gathering=0,moving=1,attacking_distraction=2,attacking_target=3,finished=4}
+storage.live_groups=nil; storage.attack_groups=nil
+local field={index=4,name='nauvis',find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs({{valid=true,type='wall',position={x=100,y=0}},{valid=true,type='car',position={x=150,y=0}}}) do
+      if distance(e.position,f.position)<=f.radius then out[#out+1]=e end
+    end
+    return out
+  end,get_closest=function(pos,list) table.sort(list,function(a,b) return distance(a.position,pos)<distance(b.position,pos) end); return list[1] end}
+local function unit(name) return {name=name} end
+local big={valid=true,force=enemy,surface=field,position={x=300,y=0},state=0,
+  members={unit('big-biter'),unit('big-biter'),unit('medium-spitter')},
+  command={type=1,commands={{type=2},{target={valid=true,position={x=96,y=4}}}}}}
+local fogged={valid=true,force=enemy,surface=field,position={x=900,y=0},state=0,members={unit('small-biter')},
+  command={destination={x=700,y=0}}}
+local idle={valid=true,force=enemy,surface=field,position={x=0,y=900},state=0,members={unit('small-biter')}}
+game.tick=220000
+T.on_group{tick=220000,group=big}; T.on_group{tick=220000,group=fogged}; T.on_group{tick=220000,group=idle}
+local live=T.operator.attack_groups_live({}).groups
+eq(#live,2) -- a group without a target is not tracked
+eq(live[1].size,3); eq(live[1].kinds,'2 big-biter, 1 medium-spitter'); eq(live[1].state,'gathering')
+eq(live[1].target.x,96); eq(live[1].target_distance,204); eq(live[1].nearest,nil) -- 200 tiles out: no building within 160
+eq(live[2].visible,false); eq(live[2].target.x,700)
+-- it moves in: positions and distances follow the group, members as they are now
+big.position={x=180,y=0}; big.state=1; big.members={unit('big-biter'),unit('medium-spitter')}
+game.tick=221200
+live=T.operator.attack_groups_live({}).groups
+eq(live[1].position.x,180); eq(live[1].state,'moving'); eq(live[1].size,2); eq(live[1].first_size,3)
+eq(live[1].nearest.x,100); eq(live[1].nearest_distance,80); eq(live[1].age_s,20)
+-- gone (invalid) or too old: dropped
+big.valid=false
+eq(#T.operator.attack_groups_live({}).groups,1)
+game.tick=220000+36001
+eq(#T.operator.attack_groups_live({}).groups,0); eq(#storage.live_groups,0)
+-- at most 10 kept
+for i=1,12 do T.on_group{tick=game.tick,group={valid=true,force=enemy,surface=field,position={x=i,y=500},state=0,members={unit('small-biter')},command={destination={x=0,y=0}}}} end
+eq(#storage.live_groups,10); eq(#T.operator.attack_groups_live({}).groups,10)
 print('threat tests passed')

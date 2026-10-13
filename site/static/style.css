@@ -494,24 +494,27 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .state[data-s="dead"]::before { background: var(--fx-red); }
 .state[data-s="offline"] { opacity: .6; }
 
-/* minimap */
-.minimap { width: 100%; height: auto; display: block; border-radius: var(--fx-r-1); box-shadow: var(--fx-inset-shadow); }
-.minimap .mm-bg { fill: #1b1f1a; }
-.minimap .mm-grid line { stroke: #2b302a; stroke-width: 1; }
-.minimap .dot text { fill: var(--fx-text); font-size: 11px; font-weight: 600; paint-order: stroke; stroke: #000; stroke-width: 3px; }
-.minimap .dot > circle:not(.cam) { stroke: #000; stroke-width: 1.5; }
-.minimap .dot .cam { fill: none; stroke: var(--fx-orange); stroke-width: 2; }
-.minimap .dot.dead { opacity: .5; }
-/* where an agent last looked or worked (live.js attention): a line from its dot, the agent's colour */
-.minimap .attn { opacity: .55; }
-.minimap .attn line { stroke-width: 1.5; stroke-dasharray: 3 3; }
-.minimap .attn circle { fill: none; stroke-width: 1.8; }
-.minimap .attn.far { opacity: .9; }
-.minimap .attn.far line { stroke-dasharray: none; }
-.minimap .pin path { fill: var(--fx-red); stroke: #000; stroke-width: 1; }
-.minimap .pin text { fill: #fff; font-size: 10px; font-weight: 700; }
-/* base layer: one colour per building category (live.js BASE_CATS), close to the game's own map tones */
-.minimap .mm-base path { shape-rendering: crispEdges; }
+/* the map viewer (static/mapview.js): the live map and the run page's time-lapse; the canvas draws the marks, these
+   rules style the controls, the legend (.b-X and .o-X are the same colours the canvas uses) and full screen */
+.mapview { position: relative; }
+.mapview-layers { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+.mapview-layer[aria-pressed="false"] { opacity: .55; text-decoration: line-through; text-decoration-thickness: 1px; }
+.mapview-layer[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--fx-orange); }
+.mapview-stage { position: relative; border-radius: var(--fx-r-1); overflow: hidden; box-shadow: var(--fx-inset-shadow); background: #1b1f1a; }
+.mapview-canvas { display: block; width: 100%; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; }
+.mapview-canvas:active { cursor: grabbing; }
+.mapview-tools { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
+.mapview-tools .fx-btn { min-width: 30px; height: 30px; padding: 0 8px; font-size: .9rem; line-height: 1; }
+.mapview-tools .fx-btn[data-mv="in"], .mapview-tools .fx-btn[data-mv="out"] { font-size: 1.05rem; }
+.mapview-follow { position: absolute; left: 6px; top: 6px; display: flex; align-items: center; gap: 6px; padding: 3px 4px 3px 9px;
+  background: rgba(16, 18, 15, .88); border-radius: var(--fx-r-1); color: var(--fx-text); font-size: .85rem; font-weight: 600; }
+.mapview-tip { position: absolute; max-width: 216px; padding: 5px 8px; background: rgba(16, 18, 15, .94); color: #e8e6e1;
+  border: 1px solid #3a4037; border-radius: var(--fx-r-1); font-size: .82rem; line-height: 1.3; pointer-events: none; z-index: 2; }
+.mapview-scale { margin: 6px 0 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.mapview--full { position: fixed; inset: 0; z-index: 1000; background: var(--bg, #121411); padding: 10px; display: flex; flex-direction: column; overflow: auto; }
+.mapview--full .mapview-stage { flex: 1 1 auto; min-height: 0; }
+.mapview--full .mapview-canvas { height: 100%; touch-action: none; }
+.mapview:fullscreen { background: var(--bg, #121411); padding: 10px; }
 .b-D { fill: #c8553d; background: #c8553d; } .b-R { fill: #a983f0; background: #a983f0; }
 .b-O { fill: #3fa8a3; background: #3fa8a3; } .b-A { fill: #5c8fd6; background: #5c8fd6; }
 .b-S { fill: #e08a3c; background: #e08a3c; } .b-M { fill: #a6875a; background: #a6875a; }
@@ -519,37 +522,17 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .b-L { fill: #b9b9b9; background: #b9b9b9; } .b-I { fill: #9fcf6a; background: #9fcf6a; }
 .b-B { fill: #8a7d45; background: #8a7d45; } .b-T { fill: #6e6a8e; background: #6e6a8e; }
 .b-P { fill: #4a6a8a; background: #4a6a8a; }
-.mm-frame { position: relative; }
-.minimap { touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: grab; }
-.minimap:active { cursor: grabbing; }
-.mm-zoom { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; }
-.mm-zoom .fx-btn { min-width: 30px; height: 30px; padding: 0 8px; font-size: 1rem; line-height: 1; }
-.minimap .mm-inset-bg { fill: rgba(16, 18, 15, .88); stroke: #3a4037; stroke-width: 1; }
-.minimap .mm-inset-view { fill: none; stroke: var(--fx-orange); stroke-width: 1.5; }
-.minimap .nest { fill: #ff3b30; stroke: #000; stroke-width: 1; }
-.minimap .worm { fill: #ff8a7a; stroke: #000; stroke-width: .8; }
-.mm-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 0; padding: 0; font-size: .8rem; color: var(--muted); }
-.mm-legend li { display: flex; align-items: center; gap: 5px; }
-.mm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; box-shadow: 0 0 0 1px #000; }
-.mm-legend i.nest { background: #ff3b30; }
-/* ore under the base: faint, so buildings stay on top (live.js ORE_CATS) */
-.minimap .mm-ore path { shape-rendering: crispEdges; opacity: .38; }
 .o-i { fill: #7f9db4; background: #7f9db4; } .o-c { fill: #d0703a; background: #d0703a; }
 .o-k { fill: #5a5a5a; background: #5a5a5a; } .o-s { fill: #c2ab7a; background: #c2ab7a; }
 .o-o { fill: #b04fb5; background: #b04fb5; } .o-u { fill: #6fe05a; background: #6fe05a; }
 .o-x { fill: #9a9a9a; background: #9a9a9a; }
-.mm-legend-ore i { opacity: .55; }
-.minimap .dot.far > circle:not(.cam) { stroke: var(--fx-text); stroke-width: 1.5; stroke-dasharray: 2 2; }
-/* which camera follows whom; fights; the map card's research line, camera list and Space inset */
-.minimap .outpost { fill: none; stroke: var(--fx-text); stroke-width: 1.5; stroke-dasharray: 2 1.5; }
-.minimap .camtag { fill: var(--fx-orange); font-size: 8.5px; font-weight: 700; letter-spacing: .04em; paint-order: stroke; stroke: #000; stroke-width: 2.5px; }
-.minimap .fight circle { fill: rgba(224, 78, 58, .10); stroke: rgba(224, 78, 58, .55); stroke-width: 1.5; stroke-dasharray: 3 2; }
-.minimap .fight.now circle { fill: rgba(224, 78, 58, .22); stroke: #ff5a44; stroke-width: 2; stroke-dasharray: none; }
-.minimap .fight path { stroke: #ffd1c9; stroke-width: 1.6; }
-@media (prefers-reduced-motion: no-preference) {
-  .minimap .fight.now circle { animation: fight-pulse 1.6s ease-in-out infinite; }
-  @keyframes fight-pulse { 50% { stroke-opacity: .35; } }
-}
+.mm-legend { list-style: none; display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0 0; padding: 0; font-size: .8rem; color: var(--muted); }
+.mm-legend li { display: flex; align-items: center; gap: 5px; }
+.mm-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; box-shadow: 0 0 0 1px #000; }
+.mm-legend i.nest { background: #ff3b30; }
+.mm-legend li.ore i { opacity: .55; }
+.mm-legend i.mv-range { background: rgba(120, 200, 255, .35); border-radius: 50%; box-shadow: 0 0 0 1px rgba(120, 200, 255, .8); }
+.mm-legend i.mv-fight { background: rgba(224, 78, 58, .25); border-radius: 50%; box-shadow: 0 0 0 1.5px #ff5a44; }
 .map-research { margin: 0 0 6px; color: var(--fx-text); }
 .map-research strong { color: var(--fx-heading); }
 .cam-lines, ul.platforms { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: .88rem; }
@@ -621,7 +604,7 @@ html { scroll-padding-top: 76px; }
   /* tap targets */
   .jump { gap: 0 4px; }
   .jump a, .shift-nav a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 6px; }
-  .kind-filter .fx-btn, .mm-zoom .fx-btn, .fx-btn.small { min-height: 36px; }
+  .kind-filter .fx-btn, .mapview-tools .fx-btn, .fx-btn.small { min-height: 36px; }
   .vlink { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; margin: -8px 0; }
   .fx-textfield, .hl-controls label, .hl-controls select, .tlapse-controls input[type=range],
   .tlapse-controls .fx-btn { min-height: 36px; }

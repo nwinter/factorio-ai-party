@@ -189,7 +189,30 @@ def hosts():
     assert "on_air" not in caster.facts_for({"kind": "attack", "text": "Base under attack", "t": 0}, s)
 
 
+def loss_on_vulcanus():
+    """12:58 on 2026-10-13: a small demolisher destroyed Sol's 59 turrets on Vulcanus; the loss event said nauvis and
+    the main camera cut to (-223,74) on Nauvis, an empty field. The event's surface (live.py loss_events, from
+    status.alerts.incidents) is where the camera goes."""
+    import live
+    d, sent = world()
+    team = [agent("luna", 0, 0, 5), agent("sol", 400, 0, 1), agent("astra", -400, 0, 1)]
+    t = 1000
+    for k in range(3):
+        d.step(snap(team), t + k)
+    ev = live.LiveSource.loss_events({"incidents": [
+        {"id": 7, "surface": "vulcanus", "box": {"x0": -223, "y0": 74, "x1": -214, "y1": 79}, "total": 59,
+         "names": "59 gun-turret", "by": "59 small-demolisher", "last_tick": 9900}]}, 10000)[0]
+    loss = dict(ev, id="l1", t=t + 130)
+    d.step(snap(team, [loss]), t + 130)
+    d.step(snap(team), t + 131)
+    d.step(snap(team), t + 132)
+    framed = [b for b in sent if b.get("position") == {"x": -218.5, "y": 76.5}]
+    assert framed and all(b["surface"] == "vulcanus" for b in framed), sent[-3:]
+    assert d.public(t + 132)["main"]["attack"] == "59 lost on Vulcanus near (-223, 74): 59 gun turret (by small demolishers)"
+
+
 def main():
+    loss_on_vulcanus()
     hosts()
     dwell_and_standby()
     quiet_hour()

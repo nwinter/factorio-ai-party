@@ -175,8 +175,9 @@ No stream exists yet, so both YouTube keys are empty and the page shows a placeh
 live chat embed, `embed_domain` set to the page's host) and "Site chat" (our own, no accounts). Below: a dashboard
 drawn from the stream service's state: a status strip (game time, technologies, science per minute, research
 progress), alerts, one panel per agent (portrait, model and role, state, current action and place, last two chat
-lines, camera), a map of the base (buildings by category in 4-tile cells, enemy nests, from the stream service's
-once-a-minute `basemap` read) with the agents, camera rings and alert pins on top, the board (owners and recent events),
+lines, camera), a map of the base (`static/mapview.js`: buildings by category, ore, enemy nests, turret range and
+terrain frames as layers, from the stream service's once-a-minute `basemap` read; pan, zoom, full screen, follow an
+agent) with the agents, camera rings and alert pins on top, the board (owners and recent events),
 research, production and science charts for the last 30 minutes, and the team's game chat. `/live/?demo=1` shows it
 with `live/state.example.json`, a snapshot of the stream service's mock session passed through the pusher's filter.
 

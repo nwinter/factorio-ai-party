@@ -371,11 +371,28 @@ class MockSource:
             else:
                 p = {"name": "Orbital One", "at": "vulcanus", "state": "waiting_at_station", "speed": 0}
             plats.append(p)
-        if t >= 100:
-            plats.append({"name": "Shuttle", "at": "nauvis", "state": "waiting_at_station", "speed": 0, "paused": True})
+        if 100 <= t < 240:  # paused on its route (drifting back), then lost to asteroids at 240 s
+            plats.append({"name": "Shuttle", "at": "nauvis->vulcanus 43%", "state": "on_the_path", "speed": 0,
+                          "paused": True})
         for i, p in enumerate(plats):  # live.py PLATFORM_LUA: where a camera shows it (onecam.py platform shots)
             p["view"] = {"surface": f"platform-{i + 1}", "hub": {"x": 0, "y": 0}, "hub_health": 100 if i else 86,
                          "bounds": {"left": -14, "top": -10, "right": 14, "bottom": 12}}
+            # the platforms read's defence and cargo (space.lua, platalerts.lua), as text
+            hp = 860 if not i else max(120, 1000 - int((t - 100) * 6))
+            p.update(defense={"hub_health": f"{hp}/1000",
+                              "turrets": "5 gun-turrets: 0 empty, 1 low (under 10 rounds)" if not i else
+                              "3 gun-turrets: 3 empty, 0 low (under 10 rounds)",
+                              "ammo": "turrets hold 240 rounds, the hub firearm-magazine 920" if not i else
+                              "turrets hold 0 rounds, the hub no ammo"},
+                     repair_packs="repair-pack*12" if not i else "none", damaged_count=0 if not i else 4,
+                     hub_items="space-science-pack*340 firearm-magazine*920 metallic-asteroid-chunk*61 iron-plate*48"
+                     if not i else "space-platform-foundation*20")
+        obs["platform_hits"] = [{"platform": "Shuttle", "surface": "platform-2", "hits": 31, "damage": 2400,
+                                 "by": "medium-metallic-asteroid 18, small-metallic-asteroid 13"}] if 100 <= t < 240 else []
+        if 236 <= t < 240:
+            obs["events"] = obs.get("events", []) + [{"kind": "loss", "key": "loss:shuttle", "ttl": 90,
+                                                      "text": "1 lost near (0, 0): space platform hub (by medium metallic asteroids)",
+                                                      "position": {"x": 0, "y": 0, "surface": "platform-2"}}]
         if 45 <= t < 65 and int(t) % 8 == 0 and self.agents:  # an agent builds on Orbital One from the ground
             obs["work"] = [{"agent": list(self.agents)[0], "action": "place_ghosts", "verb": "building",
                             "platform": "Orbital One", "position": {"x": 4, "y": 2}, "at": now}]
@@ -391,6 +408,8 @@ class MockSource:
             a["surface"], a["platform"] = "nauvis", None
             if len(names) > 1 and a["name"] == names[1] and t >= 150:
                 a["surface"] = "vulcanus"
+            if len(names) > 2 and a["name"] == names[2] and 90 <= t < 200:  # one agent rides Orbital One
+                a["surface"], a["platform"] = "platform-1", "Orbital One"
 
     def observe(self):
         now = time.time()

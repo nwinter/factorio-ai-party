@@ -118,6 +118,7 @@ fh say - <<'EOF'                               # text with apostrophes or quotes
 I'll take copper, you've got iron
 EOF
 fh say "biters at the west wall" --aloud       # spoken on the stream
+fh say "Sunward is loaded" --aloud --look platform:Sunward   # the stream camera may show it while it is read out
 fh chat                                        # your unread messages (newest 30; remaining=K are still unread)
 fh chat --since 212 --limit 50                 # everything after seq 212, yours included; --peek reads without marking
 fh board events --since 40
@@ -597,6 +598,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   5 game minutes, sooner when it gets worse. Hits on a platform are no longer `attack #` incidents; `status` alerts
   carry them as `platform_hits` rows `{platform, surface, hits, damage, entities, by, last_tick}`. Turrets and the hub
   are read at most every 10 s per platform.
+- `status` alerts for programs (the stream's loss banners and cuts): `latest` keeps one text line per loss incident
+  (`#7 on vulcanus in (-223,74)-(-214,79) 59 destroyed: 59 gun-turret by 59 small-demolisher, 3s ago`; a surface other
+  than the reader's is named, and with no reader any surface but nauvis), and `incidents` carries the same incidents as
+  rows: `{id, surface, platform, box {x0, y0, x1, y1}, total, names, by, first_tick, last_tick, line}`, newest first,
+  at most 8. Read the surface from the row, never from the text.
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each
   agent's first reply of it (any action, not a peek) carries `team.shift` once: `shift` (`shift N, started <age>
   ago`), `plan_goals` and `your_plan_line` (the team plan), `research_since_your_last_shift` (technologies finished
@@ -651,6 +657,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Operator: `tools/harness-requests.py list|show|answer|board|events|mentions` in the pog repo. Underneath, a dispatch
   request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`,
   `board_plan` (goals and other agents' lines; the operator has no line), `mention_counts` and `tells` as `operator`.
+- Operator live attack groups (threat.lua; the pog stream follows a big group as it approaches): `attack_groups_live`
+  (read) lists up to 10 enemy groups that finished gathering with a target, visible or not, while valid and under 10
+  game minutes old: `id, surface, position, size, kinds, state (gathering|moving|attacking_*), gathered, first_size,
+  target, target_distance, nearest/nearest_distance` (our nearest building within 160 tiles), `visible`, `age_s`.
+  `describe` lists it under `operator_reads`; agents cannot call it.
 - Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
   `standing_s` (how long its character has had no action, no running queue and a body on the map; kept once a second
   for agents that made a request; an fh sleep with nothing running counts as standing, a timed action does not),

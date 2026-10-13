@@ -45,9 +45,13 @@ html body.portrait #sci.many #stage-label { display: none !important; }
 html body.portrait #space { padding: 10px 20px 12px; gap: 8px; }
 html body.portrait .space-head .panel-title { font-size: 24px; }
 html body.portrait .planet { font-size: 18px; line-height: 28px; padding: 0 10px; }
-html body.portrait .plat { font-size: 21px; grid-template-columns: 230px 1fr 130px 110px; }
-html body.portrait .plat:not(:has(.pbar)) { grid-template-columns: 230px 1fr 110px; }
-html body.portrait .plat:nth-child(n+3):not(.more) { display: none; }
+html body.portrait .plat { gap: 4px; padding-left: 10px; }
+html body.portrait .plat .pl1 { font-size: 21px; line-height: 27px; gap: 12px; }
+html body.portrait .plat .pname { max-width: 230px; }
+html body.portrait .plat .pwho { max-width: 260px; font-size: 18px; }
+html body.portrait .plat .pl2 { font-size: 17px; line-height: 24px; gap: 8px; }
+html body.portrait .pchip .hpbar { width: 54px; height: 8px; }
+html body.portrait .pchip.cargo i { width: 14px; height: 14px; }
 html body.portrait .card .world.on { font-size: 15px; line-height: 22px; max-width: 170px; }
 
 /* chat: what is left (about 470 px with 9 agents: cards end at y 1329, science at 1417), big type */

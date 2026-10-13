@@ -18,6 +18,7 @@ from collections import deque
 
 import attention
 
+FIGHT_EPISODE_GAP = 45.0  # seconds without a report: the next report at the same key is a new fight
 ATTENTION_TTL = 120.0  # seconds: an attention point older than this is no longer where the agent is looking
 
 HALF_LIFE = 75.0  # seconds; interest decays toward 0 with this half-life
@@ -150,12 +151,75 @@ def platform_place(p):
     return f"in orbit of {w['where']}" if w["where"] and w["where"] != "in transit" else "in transit"
 
 
+# The harness's platform defence as text (space.lua platforms {platform}, platalerts.lua defense): "860/1000",
+# "5 gun-turrets: 4 empty, 0 low (under 10 rounds)", "turrets hold 120 rounds, the hub firearm-magazine 920, ...";
+# hub_items and repair_packs as "name*count name@quality*count ... +N more".
+PLAT_HP = re.compile(r"^\s*(\d+)\s*/\s*(\d+)")
+PLAT_GUNS = re.compile(r"^(\d+)\s[^:]*:\s*(\d+) empty,\s*(\d+) low")
+PLAT_ROUNDS = re.compile(r"turrets hold (\d+) rounds?")
+PLAT_STACK = re.compile(r"([a-z0-9][\w-]*)(?:@[\w-]+)?\*(\d+)")
+NOT_CARGO = re.compile(r"magazine|ammo|rounds|repair-pack|cannon-shell|rocket$|^rocket\b|railgun-ammo", re.I)
+HITS_WINDOW_MIN = 5  # status alerts cover the last 5 game minutes (whole minutes): hits per minute over that
+
+
+def platform_card(p, hits=None, aboard=(), working=()):
+    """A platform row for the Space widget: platform_where plus its defence, repair packs, damaged count, cargo
+    highlights, asteroid hits per minute and who is aboard or working on it from the ground. Unknown parts are left
+    out (the score's rows between platform reads have only the name and where)."""
+    card = platform_where(p)
+    card["drifting"] = bool(p.get("paused") and card["route"])  # paused on a route: drifts back among its asteroids
+    d = p.get("defense") or {}
+    m = PLAT_HP.match(str(d.get("hub_health") or ""))
+    if m and int(m[2]):
+        card["hub"] = {"hp": int(m[1]), "max": int(m[2]), "pct": round(100 * int(m[1]) / int(m[2]))}
+    elif isinstance((p.get("view") or {}).get("hub_health"), (int, float)):
+        card["hub"] = {"pct": int(p["view"]["hub_health"])}
+    guns = str(d.get("turrets") or "")
+    m = PLAT_GUNS.match(guns)
+    if m:
+        total, empty, low = int(m[1]), int(m[2]), int(m[3])
+        card["guns"] = {"total": total, "armed": total - empty, "empty": empty, "low": low}
+    elif guns == "none":
+        card["guns"] = {"total": 0, "armed": 0, "empty": 0, "low": 0}
+    ammo = str(d.get("ammo") or "")
+    m = PLAT_ROUNDS.search(ammo)
+    if m:
+        hub_part = ammo.split("the hub", 1)[1] if "the hub" in ammo else ""
+        hub_n = sum(int(x) for x in re.findall(r"(?<![+\w])(\d+)\b(?! more)", hub_part)) if "no ammo" not in hub_part else 0
+        card["ammo"] = {"turrets": int(m[1]), "hub": hub_n}
+    if p.get("repair_packs") is not None:
+        card["repair"] = sum(int(n) for _, n in PLAT_STACK.findall(str(p["repair_packs"])))
+    dmg = p.get("damaged_count") or len(p.get("damaged") or [])
+    if p.get("defense") is not None or dmg:
+        card["damaged"] = dmg
+    cargo = [{"item": n, "count": int(c)} for n, c in PLAT_STACK.findall(str(p.get("hub_items") or ""))
+             if not NOT_CARGO.search(n)]
+    if cargo:
+        card["cargo"] = cargo[:3]
+    if hits and hits.get("hits"):
+        card["hits_per_min"] = round(hits["hits"] / HITS_WINDOW_MIN, 1)
+        if hits.get("by"):
+            card["hit_by"] = str(hits["by"]).split(",")[0].strip()
+    if aboard:
+        card["aboard"] = list(aboard)
+    if working:
+        card["working"] = list(working)
+    return card
+
+
 def platform_where(p):
     """A platform row (score + `platforms` detail) for the page: where it is or its route with progress, speed.
-    `at` is a location name or "from->to N%" (space.lua); speed is LuaSpacePlatform.speed, shown x60 as km/s."""
+    `at` is a location name or "from->to N%" (space.lua); speed is LuaSpacePlatform.speed, shown x60 as km/s.
+    "from->to" are the space connection's ends and N its distance from `from`, whichever way the platform flies:
+    `toward` (Model._orient_platforms) is where it is headed; toward `from`, the route and progress turn round."""
     at = p.get("at") or ""
     m = AT_RE.match(at)
-    route = {"from": planet_label(m[1]), "to": planet_label(m[2]), "pct": int(m[3])} if m else None
+    route = None
+    if m:
+        a, b, pct = m[1], m[2], int(m[3])
+        if p.get("toward") == a:  # Sunward 14:09, Vulcanus to Nauvis on nauvis->vulcanus: not "leaving Nauvis"
+            a, b, pct = b, a, 100 - pct
+        route = {"from": planet_label(a), "to": planet_label(b), "pct": pct}
     where = f"{route['from']} → {route['to']}" if route else planet_label(at) if at and at != "in transit" else "in transit"
     speed = p.get("speed")
     return {"name": p.get("name"), "where": where, "route": route, "state": p.get("state"), "paused": bool(p.get("paused")),
@@ -332,8 +396,13 @@ class Model:
         self.moments = deque(maxlen=8)
         # platforms by name as last seen (to name one that is destroyed), reads each has been missing, hub losses
         self.platform_last, self.platform_missing, self.hub_losses = {}, {}, deque(maxlen=20)
+        self.platform_course = {}  # name -> {conn, pct, toward, orbit, moving}: which way it flies, the last planet
+        self.arrivals = []  # (name, planet, came from) seen this read: _space_moments calls them
         self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
+        # Space widget: status alerts' platform_hits rows by platform (live.py), and platforms lost lately
+        self.platform_hits, self.platforms_lost = {}, deque(maxlen=6)
         self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
+        self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
         self.fights = {}  # key -> fight still reported (attacked chunk, loss, agent in combat), for replays.py
         self.space_age = bool(run.get("space_age")) or "Space Age" in (run.get("subtitle") or "")
         self.last_obs_t = None
@@ -396,14 +465,19 @@ class Model:
             sp = dict(obs["space"])
             sp["platforms"] = [p for p in sp.get("platforms") or []
                                if p.get("hub", True) and p.get("state") != "waiting_for_starter_pack"]
+            sp["platforms"] = self._orient_platforms(sp["platforms"])
             self.space = sp
             self._platforms_lost(now)
+        if obs.get("platform_hits") is not None:  # one status round's rows: a platform not in them took no hits lately
+            self.platform_hits = {r.get("platform"): r for r in obs["platform_hits"] if r.get("platform")}
         if obs.get("space") is not None or any(a.get("surface") for a in obs.get("agents", [])):
             self._space_moments(now)
         for w in obs.get("work") or []:
             self._ingest_work(w, now)
         for x in obs.get("attention") or []:
             self._ingest_attention(x, now)
+        if obs.get("attack_groups") is not None:  # a read happened (an empty list: none on the way)
+            self._ingest_groups(obs["attack_groups"], now)
         self.errors = obs.get("errors", {})
 
     def platform_view(self, name):
@@ -436,6 +510,38 @@ class Model:
         self.work.append(item)
         ag.bump(1.0, now)
 
+    def _ingest_groups(self, groups, now):
+        """Enemy groups on their way (harness attack_groups_live): each with a label for the page and the hosts, "38
+        biters and spitters heading for the oil field", and when it was first seen."""
+        seen = {}
+        for g in groups:
+            if not g.get("id") or not g.get("position"):
+                continue
+            old = self.incoming.get(g["id"]) or {}
+            row = dict(g, first_seen=old.get("first_seen", now), t=now)
+            row["label"] = self.group_label(row)
+            seen[g["id"]] = row
+        self.incoming = seen
+
+    def group_label(self, g):
+        kinds = str(g.get("kinds") or "")
+        words = [w for w, rx in (("biters", "biter"), ("spitters", "spitter"), ("demolishers", "demolisher"),
+                                 ("worms", "worm"), ("strafers", "strafer"), ("stompers", "stomper")) if rx in kinds]
+        what = " and ".join(words[:2]) or "enemies"
+        t = g.get("target")
+        if t and (g.get("surface") or "nauvis") == "nauvis":
+            where = self.spot_name(t)  # a landmark ("the oil field"), "spawn", or "120 m NE" (of spawn)
+            if where[0].isdigit():
+                where = f"the base, {where} of spawn"
+        elif t:
+            where = f"({round(t['x'])}, {round(t['y'])}) on {planet_label(g['surface'])}"
+        else:
+            where = "the base"
+        return f"{g.get('size') or '?'} {what} heading for {where}"
+
+    def incoming_snapshot(self, now):
+        return [dict(g, age_s=round(now - g["first_seen"], 1)) for g in self.incoming.values() if now - g["t"] < 20]
+
     def _ingest_attention(self, x, now):
         """An agent's latest request with a position, area or list (live.py, attention.py): where it is looking or
         working now. A platform's point is on the platform's surface (when its view is known)."""
@@ -466,6 +572,11 @@ class Model:
         game seconds old, a loss for ~2 minutes, an agent's combat flag while it lasts): `last` is when it was last
         seen, so replays.py can wait until it has been quiet before airing anything about it."""
         f = self.fights.get(key)
+        if f and now - f["last"] > FIGHT_EPISODE_GAP:
+            # a new fight at the same place (or the same agent attacked again): its own first sign and losses
+            # (shift06 13:2x: "Astra is under attack" kept its first from minutes before, so every new attack on
+            # Astra counted as a fight over 30 s long, and the replay judged 0 s of 474 s as shown)
+            f = None
         if not f:
             f = self.fights[key] = {"key": key, "kind": kind, "first": now, "losses": [], "text": text, "agent": agent}
         f.update(last=now, position={k: position[k] for k in ("x", "y", "surface", "extent") if k in position})
@@ -554,6 +665,8 @@ class Model:
                  "text": m.get("text", ""), "t": m.get("t", now)}
         if m.get("aloud"):  # the agent asked for this line to be voiced on stream (tools/stream/caster.py)
             entry["aloud"] = True
+        if isinstance(m.get("look"), dict):  # say look=: what the camera might show while it is read out (onecam cue)
+            entry["look"] = m["look"]
         if m.get("viewer"):  # a viewer's line the operator relayed into the game chat (audience.lua)
             entry["viewer"] = m["viewer"]
         if m.get("notice"):  # a harness notice: the agents' mute votes and their results (audience.lua)
@@ -931,6 +1044,10 @@ class Model:
             return None
         if ag.surface and ag.surface != "nauvis":  # landmarks and "m from spawn" are Nauvis coordinates
             return where_label(ag.surface, ag.platform)
+        return self.spot_name(p)
+
+    def spot_name(self, p):
+        """A Nauvis point: its run landmark, "spawn", or "120 m NE" (from spawn)."""
         best = None
         for lm in self.run.get("landmarks", []):
             d = math.hypot(p["x"] - lm["x"], p["y"] - lm["y"])
@@ -986,18 +1103,74 @@ class Model:
                 "title": f"{who} lands on {planet_label(planet)}" if who else f"First foothold on {planet_label(planet)}",
                 "facts": {"planet": planet_label(planet), "agent": who,
                           "planets_reached": len({"nauvis", *landed})}}))
+        arrivals, self.arrivals = self.arrivals, []
         if self.space_seen is None:
             self.space_seen = {k for k, _ in found}
             return
+        fired = set()
         for key, m in found:
             if key in self.space_seen:
                 continue
             self.space_seen.add(key)
+            fired.add(key)
             m.update(id=f"m-{key}", key=key, t=now, game_time=fmt_game_time(self.tick / 60))
             m["facts"]["game_time"] = m["game_time"]
             self.moments.append(m)
             self.alert("space", m["title"], key=f"space:{key}", agent=m.get("agent"), ttl=40,
                        facts=dict(m["facts"], headline=m["kind"]))
+        # every other arrival after a trip, home included (shift06 14:14:32 Sunward back at Nauvis: Astra called it,
+        # the hosts had nothing; only a first arrival at a planet other than Nauvis was a moment)
+        for name, planet, came in arrivals:
+            if f"orbit:{name}:{planet}" in fired:
+                continue
+            aboard = [a.display_name or a.name for a in self.agents.values() if a.platform == name and a.alive]
+            title = f"{name} is back at Nauvis" if planet == "nauvis" else f"{name} arrives at {planet_label(planet)}"
+            self.alert("space", title, key=f"arrive:{name}:{planet}", ttl=120, facts={
+                "headline": "platform_arrival", "platform": name, "planet": planet_label(planet),
+                "came_from": planet_label(came) if came else None, "aboard": aboard or None,
+                "game_time": fmt_game_time(self.tick / 60)})
+
+    def _orient_platforms(self, plats):
+        """Which way each travelling platform flies (`toward`, for platform_where): space.lua's "a->b N%" is the
+        space connection, fixed whichever way it is flown (shift06 14:09, Sunward from Vulcanus to Nauvis on
+        nauvis->vulcanus showed as "leaving Nauvis for Vulcanus", then "travelling to Vulcanus (5%)" a minute from
+        Nauvis). In order: the schedule's current stop (pog.py score `to`), the distance moving (not while paused: a
+        paused platform drifts back), the way it was going, the planet it last orbited; else a->b. A platform at a
+        planet after travelling is an arrival (self.arrivals)."""
+        out = []
+        for p in plats:
+            p = dict(p)
+            name, at = p.get("name"), p.get("at") or ""
+            c = self.platform_course.setdefault(name, {})
+            m = AT_RE.match(at)
+            if not m:
+                if at and at != "in transit":
+                    if c.get("moving"):
+                        came = c.get("orbit") if c.get("orbit") != at else None
+                        if not came and c.get("conn"):
+                            came = next((x for x in c["conn"] if x != at), None)
+                        self.arrivals.append((name, at, came))
+                    c.update(orbit=at, moving=False, conn=None, pct=None, toward=None)
+                elif at == "in transit":
+                    c["moving"] = True
+                out.append(p)
+                continue
+            a, b, pct = m[1], m[2], int(m[3])
+            same = c.get("conn") == (a, b)
+            if p.get("to") in (a, b):
+                toward = p["to"]
+            elif same and c.get("pct") is not None and pct != c["pct"] and not p.get("paused"):
+                toward = b if pct > c["pct"] else a
+            elif same and c.get("toward"):
+                toward = c["toward"]
+            elif c.get("orbit") in (a, b):
+                toward = b if c["orbit"] == a else a
+            else:
+                toward = b
+            c.update(conn=(a, b), pct=pct, toward=toward, moving=True)
+            p["toward"] = toward
+            out.append(p)
+        return out
 
     def _platforms_lost(self, now):
         """A platform gone from two space reads in a row is destroyed (its hub was lost: Factorio deletes the
@@ -1032,18 +1205,33 @@ class Model:
                 break
         left = sorted(self.platform_last)
         text = f"{p['name']} destroyed {where}" + (f" by {cause}" if cause else "")
+        self.platforms_lost.append({"name": p["name"], "where": where, "cause": cause, "t": now})
         self.alert("headline", text, key=f"lost:{p['name']}", ttl=600, facts={
             "headline": "platform_destroyed", "platform": p["name"], "where": where, "destroyed_by": cause,
             "what_it_means": "its hub is gone, so the platform and everything aboard it are lost",
             "platforms_left": left or "none", "game_time": fmt_game_time(self.tick / 60)})
 
-    def space_snapshot(self, sci):
+    LOST_SHOW_S = 120  # a lost platform stays in the widget this long, marked lost, with its cause
+
+    def space_snapshot(self, sci, now=None):
+        now = now or time.time()
         sp = self.space
         packs = [dict(p, label=pack_label(p["item"])) for p in sci.get("packs") or [] if p["item"] in SPACE_PACKS]
         planets = [planet_label(s) for s in sp.get("planets") or []]
-        plats = [platform_where(p) for p in sp.get("platforms") or []]
+        plats = []
+        for i, p in enumerate(sp.get("platforms") or []):
+            aboard = [a.display_name or a.name for a in self.agents.values() if a.platform == p.get("name") and a.alive]
+            working = sorted({(self.agents[w["agent"]].display_name or w["agent"]) for w in self.work
+                              if w.get("platform") == p.get("name") and now - w["t"] < 120 and w["agent"] in self.agents}
+                             - set(aboard))
+            card = platform_card(p, self.platform_hits.get(p.get("name")), aboard, working)
+            card["_i"] = i
+            plats.append(card)
+        # under fire first, then the score's order
+        plats.sort(key=lambda c: (-(c.get("hits_per_min") or 0), c.pop("_i")))
+        lost = [dict(x, ago_s=round(now - x["t"])) for x in self.platforms_lost if now - x["t"] < self.LOST_SHOW_S]
         away = sorted({where_label(a.surface, a.platform) for a in self.agents.values() if a.surface and a.surface != "nauvis"})
-        active = bool(sp.get("rockets") or plats or packs or len(planets) > 1 or away)
+        active = bool(sp.get("rockets") or plats or packs or len(planets) > 1 or away or lost)
         bits = []
         if len(planets) > 1:
             bits.append(f"{len(planets)} planets")
@@ -1055,7 +1243,9 @@ class Model:
         elif sp.get("rockets"):
             bits.append(f"{sp['rockets']} rocket" + ("s" if sp["rockets"] > 1 else ""))
         return {"space_age": self.space_age or active, "active": active, "rockets": sp.get("rockets") or 0,
-                "planets": planets, "platforms": plats, "science": packs, "away": away,
+                "planets": planets, "platforms": plats, "lost": lost, "science": packs, "away": away,
+                # the widget holds its turn in the rotation while a platform is under fire or just lost
+                "hot": bool(lost or any(c.get("hits_per_min") for c in plats)),
                 "summary": " · ".join(bits) if active else None, "moments": list(self.moments)}
 
     def _rates(self):
@@ -1184,9 +1374,10 @@ class Model:
             "basemap": self.basemap,
             "production": self.production(now),
             "science": science,
-            "space": self.space_snapshot(science),
+            "space": self.space_snapshot(science, now),
             "work": self.work_snapshot(now),
             "fights": self.fights_snapshot(now),
+            "incoming": self.incoming_snapshot(now),
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
             "cameras": cameras or {},

@@ -44,6 +44,72 @@ function audit() {
   return out;
 }
 
+// The map viewer (static/mapview.js) on the live page's sample data and on the run page's time-lapse: the map, every
+// layer on, zoomed and panned, an agent clicked (followed), full screen; prints the slowest frame (data-paint-ms) and
+// flags one over 16 ms, a canvas wider than the page, or full screen that does not fill the window.
+async function mapChecks(browser, size, w, h) {
+  const page = await browser.newPage({ viewport: { width: w, height: h }, deviceScaleFactor: size === 'phone' ? 3 : 1, hasTouch: size === 'phone' });
+  let bad = 0;
+  const shot = (name) => page.locator('.mapview').first().screenshot({ path: path.join(OUT, `map-${name}-${size}.png`) });
+  try {
+    await page.goto(`${BASE}/live/?demo=1`, { waitUntil: 'load', timeout: 20000 });
+    await page.waitForSelector('.mapview canvas', { timeout: 10000 });
+    await page.waitForTimeout(800);
+    await shot('default');
+    for (const b of await page.locator('.mapview-layer[aria-pressed="false"]').all()) await b.click();
+    await page.waitForTimeout(200);
+    await shot('layers');
+    const box = await page.locator('.mapview canvas').boundingBox();
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    let slow = 0;
+    const ms = async () => { slow = Math.max(slow, +(await page.locator('.mapview').first().getAttribute('data-paint-ms')) || 0); };
+    if (size === 'desktop') {
+      for (let i = 0; i < 4; i++) { await page.mouse.move(cx, cy); await page.mouse.wheel(0, -240); await page.waitForTimeout(60); await ms(); }
+      await page.mouse.move(cx, cy); await page.mouse.down();
+      for (let i = 1; i <= 10; i++) { await page.mouse.move(cx + i * 12, cy + i * 6); await page.waitForTimeout(20); await ms(); }
+      await page.mouse.up();
+    } else {
+      for (let i = 0; i < 3; i++) { await page.locator('[data-mv="in"]').click(); await page.waitForTimeout(60); await ms(); }
+    }
+    await shot('zoomed');
+    // a click (a tap on a phone) on an agent's dot: the map follows it
+    await page.locator('[data-mv="reset"]').click();
+    await page.waitForTimeout(100);
+    const dot = await page.evaluate(() => { const v = PogMap.viewers[0], h = v.sc && v.sc.hits.find((x) => x.agent); return h && { x: h.x, y: h.y, name: h.agent }; });
+    const cb = await page.locator('.mapview canvas').boundingBox();
+    if (dot) {
+      if (size === 'phone') await page.touchscreen.tap(cb.x + dot.x, cb.y + dot.y); else await page.mouse.click(cb.x + dot.x, cb.y + dot.y);
+      await page.waitForTimeout(150);
+      const following = await page.locator('.mapview-follow:not([hidden])').textContent().catch(() => '');
+      await shot('follow');
+      if (!/Following/.test(following || '')) { bad = 1; console.log(`map ${size}: a click on ${dot.name} did not follow it`); }
+    }
+    await page.locator('[data-mv="full"]').click();
+    await page.waitForTimeout(400);
+    const full = await page.evaluate(() => { const r = document.querySelector('.mapview canvas').getBoundingClientRect(); return { w: r.width, h: r.height, W: innerWidth, H: innerHeight }; });
+    await page.screenshot({ path: path.join(OUT, `map-full-${size}.png`) });
+    const wide = box.x + box.width > w + 1;
+    const filled = full.w >= full.W - 40 && full.h >= full.H * 0.6;
+    if (slow > 16 || wide || !filled) bad = 1;
+    console.log(`map ${size}: ${bad ? 'CHECK' : 'ok'} slowest frame ${slow} ms; canvas ${Math.round(box.width)}x${Math.round(box.height)}${wide ? ' WIDER THAN THE PAGE' : ''}; full screen ${Math.round(full.w)}x${Math.round(full.h)} of ${full.W}x${full.H}${filled ? '' : ' (does not fill)'}`);
+    await page.keyboard.press('Escape');
+    await page.goto(`${BASE}/runs/long/`, { waitUntil: 'load', timeout: 20000 });
+    const tl = page.locator('#tlapse');
+    if (await tl.count()) {
+      await tl.scrollIntoViewIfNeeded();
+      await page.waitForSelector('#tlapse .mapview canvas', { timeout: 10000 }).catch(() => null);
+      await page.waitForTimeout(800);
+      await tl.screenshot({ path: path.join(OUT, `map-timelapse-${size}.png`) });
+      console.log(`map timelapse ${size}: shot`);
+    }
+  } catch (e) {
+    console.log(`map ${size}: ${e.message.split('\n')[0]}`); bad = 1;
+  } finally {
+    await page.close();
+  }
+  return bad;
+}
+
 (async () => {
   const { chromium } = playwright();
   fs.mkdirSync(OUT, { recursive: true });
@@ -76,6 +142,7 @@ function audit() {
         }
         await page.close();
       }
+      bad += await mapChecks(browser, size, w, h);
     }
   } finally {
     await browser.close();  // the browser never outlives the script
