@@ -61,6 +61,13 @@ fh call status
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
   (`standing on a transport-belt facing east: it carries you; step off to stay put`); the game moves a character
   standing on a belt. `status.on_belt` shows the same for as long as it stands on one.
+- An underground belt or pipe-to-ground in `build` and `inspect` replies shows `paired_with` or `unpaired`; an unpaired
+  one adds `unpaired_why`, read along its reach toward where its partner would be: tiles it cannot pass under
+  (`it cannot pass under lava-hot at (-217,73), ...; the output at (-216.5,77.5) is on the far side`: lava and empty
+  space, the tiles the pipe router also keeps undergrounds from; the runtime API does not expose an underground's own
+  collision mask), a partner that is still a ghost, one in reach the game did not pair, the nearest end on its axis
+  when it does not match, or none in reach. `place_ghosts` adds `underground_warnings` for a span that crosses such
+  tiles (once per span).
 - Full `status` (not `brief`) has `teammates`, one line on where every other agent is (compact output prints it right
   after `clock:`): agents elsewhere first, grouped by planet, platform or cargo pod, then the ones on your surface,
   nearest first, with distance and compass direction:
