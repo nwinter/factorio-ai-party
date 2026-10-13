@@ -377,7 +377,7 @@ return function(api)
     end
   end
   -- Aboard, the bot does what a player in the hub can: remote view.
-  local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, land=true, drop=true,
+  local ABOARD = {status=true, describe=true, platforms=true, platform_create=true, platform_schedule=true, land=true, drop=true, drops=true,
     research=true, research_next=true, technologies=true, recipes=true, say=true, chat=true, confess=true, confessions=true,
     profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true,
     blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true}

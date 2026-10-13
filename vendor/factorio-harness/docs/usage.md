@@ -345,6 +345,20 @@ fh sleep 900 --until researched                       # ...or until the research
   inserter with no drop target shows `drop_tile` (and `drop_note` when it is empty space: thrown overboard).
 - A `drop` whose pod destination the game refuses returns the items to the hub; what the hub cannot take back stays in
   the cargo pod on the hub, and the error says which.
+- A `drop` returns its number (`drop: N`). Its pod is followed down, because pods land after the call returns and often
+  10-20 tiles from the spot they were aimed at (shift06 14:55: aimed near (14,134), landed at (0,129)). The sender,
+  and the teammates named in `to` (a name or a list), hear about it in their team block, at most 4 drop lines per
+  reply:
+  - while it is still descending: `drop #3 from Sunward to vulcanus: still descending (12s ago, aimed near
+    (14,134))`;
+  - once it has landed: `drop #3 landed at (0,129) on vulcanus: cargo-pod-container with processing-unit*50
+    roboport*3 (take them with transfer; it vanishes when empty)`, or `landed in the landing pad at (x,y)`;
+  - if no container is found within 24 tiles of where the pod was last seen, 10 s after it went: that, and what it
+    held.
+
+  An unknown `to` name fails before anything leaves the hub. The `drops {limit?}` read (aboard too) lists the last 20
+  drops newest first: `{id, by, to, platform, surface, items, ago, state, aimed_near, at, landed_in, container
+  {name, position, holds} or {gone}, note}`.
 - `transfer {position, direction: "to_player"}` takes items from a character corpse (inventory `character_corpse`); an emptied corpse is removed. It never mines the corpse (mining a corpse as a bot crashes the server; the harness takes the items instead).
 - Trash slots: a rocket silo, cargo landing pad and platform hub have one (`rocket_silo_trash`, `cargo_landing_pad_trash`,
   `hub_trash`) where the game puts items the entity will not use. `inspect` lists them in `inventories` and as one line

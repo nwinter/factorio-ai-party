@@ -41,7 +41,10 @@ local space=dofile('mod/agent-harness_0.1.0/space.lua'){
   position=function(v) return v end,
   integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
   remote_entity=function(_,a) assert(a.position.x==20.5,'no entity of ours at that position'); return silo end,
-  real=function(q) return q end,stop=function(q) q.stopped=(q.stopped or 0)+1 end}
+  real=function(q) return q end,stop=function(q) q.stopped=(q.stopped or 0)+1 end,
+  -- drops.lua's side, faked: who is told, and the record space.drop hands it
+  drops={recipients=function(to) if to==nil then return {} end assert(to~='nobody','unknown agent nobody'); return {to} end,
+    record=function(_,d) _G.drop_record=d; return 7 end}}
 -- Character requests: a manual section is created, slots are reused per item.
 local r=space.requests(p,{set={{item='iron-plate',min=100},{item='coal',min=5,max=10}}})
 eq(r.target,'character'); eq(r.sections[1].requests[1],'iron-plate 100..inf'); eq(r.sections[1].requests[2],'coal 5..10')
@@ -300,6 +303,11 @@ eq(drop_pod.cargo[1].count,3); eq(drop_pod.cargo[1].spoil_percent,0.25,'a whole 
 eq(drop_pod.cargo[2].count,2); eq(inserted.spoil_percent,0.5,'part of a stack keeps its freshness')
 eq(hub_inv.get_item_count{name='iron-plate'},2,'only what left the hub was sent')
 eq(drop_pod.cargo_pod_destination.surface,vulcanus_surface); eq(drop_pod.cargo_pod_destination.position.x,0); eq(d.to,'vulcanus')
+-- The drop is followed until it lands (drops.lua): its number, the pod, who is told.
+eq(d.drop,7); eq(drop_record.pod,drop_pod); eq(drop_record.platform,'alpha'); eq(drop_record.surface,'vulcanus')
+eq(drop_record.sent[1],'iron-plate*5'); eq(drop_record.near.x,0); assert(d.note:find('team block says where',1,true),d.note)
+fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=1}},to='nobody'}) end,'unknown agent nobody')
+eq(hub_inv.get_item_count{name='iron-plate'},2,'an unknown teammate fails before anything leaves the hub')
 -- Two items in one drop, each from its own hub stack.
 d=space.drop(p,{platform='alpha',items={{item='coal',count=5},{item='iron-plate',count=2}}})
 eq(d.dropped[1],'coal*5'); eq(d.dropped[2],'iron-plate*2'); eq(d.not_sent,nil)
