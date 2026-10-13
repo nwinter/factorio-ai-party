@@ -1,8 +1,8 @@
 // Runs static/audio.js (the overlay's voice player) in Node with a fake DOM and a fake WebAudio graph, against a
 // running serve.py. Pushes overlapping clips, then checks one voice at a time (HOSTS3 item 5): never two clips
-// playing, a clip that matters more fades the current one out (agent over host banter, urgent over an agent), the
-// rest of a Rook/Vale exchange goes before other banter, an expired clip is dropped, and every report reaches
-// /audio/status.
+// playing, no clip cut off (viewer craigNZ830, shift01: queue voice lines, play them in order), a clip that matters
+// more plays next (urgent, then an agent, then host banter), the rest of a Rook/Vale exchange goes before other
+// banter, an expired clip is dropped, and every report reaches /audio/status.
 //   python3 tools/stream/serve.py --mock --port 8796 &
 //   node --experimental-eventsource tools/stream/audio_selftest.mjs http://127.0.0.1:8796
 import fs from "node:fs";
@@ -92,11 +92,11 @@ await wait(500);
 push(mid, "B1", "--push-channel", "caster", "--push-rank", "banter", "--push-exchange", "B");
 push(short, "A2", "--push-channel", "caster", "--push-rank", "banter", "--push-exchange", "A");
 await wait(400);
-push(long, "G", "--push-channel", "agent");                               // an agent speaks aloud: A1 fades
+push(long, "G", "--push-channel", "agent");                               // an agent speaks aloud: A1 plays on
 await wait(900);
-push(short, "U", "--push-channel", "caster", "--push-rank", "urgent");   // a death: G fades
+push(short, "U", "--push-channel", "caster", "--push-rank", "urgent");   // a death: next, ahead of G
 push(short, "X", "--push-channel", "caster", "--push-rank", "banter", "--push-expires", "0");  // already stale
-await wait(14000);
+await wait(20000);
 const s2 = await status();
 note(`after: playing=${s2.playing.length} last_report=${s2.last_report ? "yes" : "no"}`);
 
@@ -106,9 +106,9 @@ note(`order: ${order.join(" ")}`);
 const checks = {
   "page connected as a listener": s0.listeners >= 1,
   "never two voices at once": maxActive === 1,
-  "an agent line fades out host banter": /fade A1/.test(text) && /stopped A1/.test(text),
-  "an urgent line fades out an agent": /fade G/.test(text) && /stopped G/.test(text),
-  "the rest of the exchange goes before other banter": order.join(" ") === "A1 G U A2 B1",
+  "no clip is cut off (no fade, no stop)": !/ fade | stopped /.test(text),
+  "what matters more plays next: urgent, the agent, then the rest of the exchange before other banter":
+    order.join(" ") === "A1 U G A2 B1",
   "an expired clip is dropped": !order.includes("X"),
   "all reports in, nothing left playing": s2.playing.length === 0 && !!s2.last_report,
 };

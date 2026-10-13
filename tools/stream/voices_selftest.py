@@ -52,7 +52,10 @@ check("every voice has an Aura-2 stand-in", all(e[3] in voices.VOICES for e in v
 check("role voices are in the catalog", all(v in voices.CATALOG for vs in voices.ROLE_VOICES.values() for v in vs))
 check("every catalog voice has a description", all(len(e[2]) > 10 for e in voices.CATALOG.values()))
 md = voices.catalog_markdown()
-check("catalog markdown leaves out caster voices", "`atlas`" not in md and "`el-liam`" not in md and "`orion`" in md)
+check("catalog markdown leaves out caster voices", "`atlas`" not in md and "`oa-cedar`" not in md
+      and "`el-eric`" not in md and "`orion`" in md)
+check("agent/voices.md is the catalog (voices.py catalog)",
+      open(os.path.join(HERE, "..", "..", "agent", "voices.md")).read() == md)
 check("descriptions avoid gender labels",
       not any(w in md.lower() for w in (" male", "female", " man,", "woman", "feminine", "masculine")))
 v = voices.assign_voices([{"name": "a", "voice": "oa-cedar"}, {"name": "b"}])
@@ -130,8 +133,8 @@ inw_only = voices.TTS("inworld", ai=FakeAI())
 d3 = voices.assign_voices(nine, tts=inw_only)
 check("a provider with few voices fills up (casters keep theirs), then Aura-2", len(set(d3.values())) == 9
       and {v for v in d3.values() if voices.provider_of(v) == "inworld"} == {"in-dennis"}, str(d3))
-check("all keys: Vale on OpenAI (PREFER), Rook on ElevenLabs (no OpenAI voice in his list), other providers' caster candidates free for agents",
-      {auto.caster_voice(r) for r in voices.ROLE_VOICES} == {"el-eric", "oa-ballad"}
+check("all keys: both hosts on OpenAI (PREFER), other providers' caster candidates free for agents",
+      {auto.caster_voice(r) for r in voices.ROLE_VOICES} == {"oa-cedar", "oa-ballad"}
       and not set(d1.values()) & voices.DEFAULT_SKIP
       and voices.provider_of(d1["sol"]) == "openai" and voices.assign_voices(
           [{"name": "x", "voice": "ca-daniel"}], tts=auto)["x"] == "ca-daniel",
@@ -188,7 +191,8 @@ flash.speak("Sol holds the line.", "orion")
 check("single-provider backend maps an Aura-2 pick to its stand-in", "/v1/text-to-speech/bIHbv24MWmeRgasZH58o" in calls[-1]["url"],
       calls[-1]["url"])
 flash.speak("Big push on the west wall!", "atlas", caster="pbp")
-check("caster role voice on a single-provider backend", "TX3LPaxmHKxFdv7VOQHJ" in calls[-1]["url"], calls[-1]["url"])
+check("caster role voice on a single-provider backend (Rook's ElevenLabs voice, el-eric)",
+      "cjVigY5qzO86Huf0OWal" in calls[-1]["url"], calls[-1]["url"])
 
 auto.speak("Iron plates. Again. Fine, Muse.", "in-dennis")
 c = calls[-1]
@@ -209,25 +213,26 @@ check("cartesia voice by name is looked up once", calls[-2]["url"].endswith("q=B
 del voices.PREMIUM["ca-test"], voices.CATALOG["ca-test"]
 
 auto.speak("A big moment for the team!", "atlas", caster="pbp")
-check("auto caster takes the first role voice of the preferred provider", calls[-1]["body"].get("voice") == "verse")
+check("auto caster takes the first role voice of the preferred provider", calls[-1]["body"].get("voice") == "cedar")
 voices.PREFER.insert(0, "eleven")  # POG_TTS_PREFER=eleven
 auto.speak("A big moment for the team!", "atlas", caster="pbp")
-check("POG_TTS_PREFER=eleven: the caster's ElevenLabs voice", "TX3LPaxmHKxFdv7VOQHJ" in calls[-1]["url"])
+check("POG_TTS_PREFER=eleven: the caster's ElevenLabs voice", "cjVigY5qzO86Huf0OWal" in calls[-1]["url"])
 check("auto casters on ElevenLabs use v4 Turbo, agents v4",
       calls[-1]["body"]["model_id"] == "eleven_v4_turbo" and auto.last["provider"] == "eleven-fast")
 auto.providers["eleven"].API = auto.providers["eleven-fast"].API = "https://fail.example"
 auto.speak("A big moment for the team!", "atlas", caster="pbp")
 check("one provider failure: this clip goes to the caster's next voice",
-      calls[-1]["body"].get("voice") == "verse" and auto.last["provider"] == "openai" and not auto.down,
+      calls[-1]["body"].get("voice") == "cedar" and auto.last["provider"] == "openai" and not auto.down,
       json.dumps(calls[-1]["body"]))
 auto.providers["openai"].URL = "https://fail.example"
 auto.speak("A big moment for the team!", "atlas", caster="pbp")
 check("both failing: the voice's Aura-2 stand-in", calls[-1]["url"] == "cf:@cf/deepgram/aura-2-en"
-      and calls[-1]["body"]["speaker"] == "aries" and auto.last["provider"] == "aura2", json.dumps(calls[-1]["body"]))
+      and calls[-1]["body"]["speaker"] == "odysseus" and auto.last["provider"] == "aura2",  # el-eric's stand-in
+      json.dumps(calls[-1]["body"]))
 auto.providers["openai"].URL = voices.OpenAITTS.URL
 auto.speak("A big moment for the team!", "atlas", caster="pbp")
 check("three failures in a row: ElevenLabs rests, the caster moves to its next voice",
-      "eleven" in auto.down and auto.caster_voice("pbp") == "oa-verse" and calls[-1]["body"].get("voice") == "verse",
+      "eleven" in auto.down and auto.caster_voice("pbp") == "oa-cedar" and calls[-1]["body"].get("voice") == "cedar",
       json.dumps(calls[-1]["body"]))
 auto.speak("Howdy, partner.", "el-george")
 check("while it rests, an agent's ElevenLabs voice has a steady OpenAI stand-in",

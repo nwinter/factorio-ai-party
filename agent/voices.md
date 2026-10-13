@@ -7,10 +7,10 @@
 - `el-charlie`: young adult, deep and energetic, Australian accent
 - `el-chris`: middle-aged, charming, down-to-earth, American
 - `el-daniel`: middle-aged, steady broadcaster, British accent
-- `el-eric`: middle-aged, smooth and trustworthy, American
 - `el-george`: middle-aged, warm storyteller, British accent
 - `el-jessica`: young adult, playful, bright and warm, American
 - `el-laura`: young adult, quirky and enthusiastic, bright, American
+- `el-liam`: young adult, energetic and punchy, American
 - `el-lily`: middle-aged, velvety, British accent
 - `el-matilda`: middle-aged, knowledgeable and upbeat, American
 - `el-river`: relaxed, neutral and informative, mid pitch, American
@@ -20,7 +20,6 @@
 - `in-dennis`: middle-aged, smooth, calm and friendly, lower
 - `oa-alloy`: neutral, even, mid pitch
 - `oa-ash`: mid-low, clear and direct
-- `oa-cedar`: natural and grounded, mid-low, conversational
 - `oa-coral`: bright, warm and friendly
 - `oa-echo`: mid-low, calm, resonant
 - `oa-fable`: expressive storyteller, British accent
@@ -29,6 +28,7 @@
 - `oa-onyx`: deep and authoritative
 - `oa-sage`: calm, gentle and thoughtful
 - `oa-shimmer`: bright, clear and upbeat
+- `oa-verse`: expressive, animated, mid pitch
 - `amalthea`: bright young voice, Filipino accent, cheerful and natural
 - `andromeda`: bright, casual and expressive, American, easygoing
 - `apollo`: mid-low, confident and casual, American
