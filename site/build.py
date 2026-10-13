@@ -409,6 +409,8 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
         dash = ";stroke-dasharray:6 3" if s.get("dash") else ""
         parts.append(f'<path class="line" style="stroke:var({var}){dash}" d="{" ".join(d)}"/>')
         ex, ey = pts[-1]
+        if not ey:
+            continue  # a line ending at 0 (a pack not made at the shift's end) gets no end dot or label
         parts.append(f'<circle class="end" cx="{X(ex):.1f}" cy="{Y(ey):.1f}" r="4" style="fill:var({var})"/>')
         if len(series) <= 4:
             label_slots.append([Y(ey), X(ex), s["name"], fmt_num(ey)])
@@ -910,8 +912,10 @@ def build_shift_page(s, v, lr):
     by = {}
     for d in s["died"]:
         by[who(d["who"])] = by.get(who(d["who"]), 0) + 1
-    # the research moments are in the milestones table; the rest (rockets, platforms, planets, the hosts' calls) here
-    moments = "".join(f"<li>{esc(m)}</li>" for m in s["moments"] if not m.startswith("researched "))
+    calls = "".join(f'<li><span class="c-time">{esc(_pt(c["t"], day=False))}</span><span class="chip host">{esc(c["who"])}</span>'
+                    f'<span class="c-text">{esc(c["text"])}</span></li>' for c in s["calls"])
+    plat = (f'<p class="muted small">Platforms built: {esc(", ".join(s["platforms_built"]) or "none")} · '
+            f'lost: {esc(", ".join(s["platforms_lost"]) or "none")}</p>') if s["platforms_built"] or s["platforms_lost"] else ""
     body = f"""
 <p class="crumbs"><a href="/runs/long/">The long run</a> / Shift {s["n"]}</p>
 <h1>Shift {s["n"]}{now}</h1>
@@ -921,10 +925,11 @@ def build_shift_page(s, v, lr):
 {video}
 <h2>Milestones</h2>
 {firsts_table(mine, shift_links=False)}
+{f'<h2>The hosts\' calls</h2><p class="muted small">Space Age moments, and research, attacks and losses that matter, as the hosts called them. Times Pacific.</p><ol class="chat calls">{calls}</ol>' if calls else ""}
 {long_charts(lr, lo - 1, hi + 1, x0=max(0, int(lo // 60) * 60))}
 <div class="two-col shift-cols">
 <section><h2>Packs made</h2>{f'<div class="table-wrap"><table class="packs"><tbody>{packs}</tbody></table></div>' if packs else '<p class="muted">None.</p>'}
-{f'<h2>Moments</h2><ul class="moments">{moments}</ul>' if moments else ""}</section>
+{plat}</section>
 <section><h2>Deaths</h2>{f'<p class="muted small">{", ".join(f"{esc(k)} {n}" for k, n in sorted(by.items(), key=lambda kv: -kv[1]))}</p><ol class="deaths">{deaths}</ol>' if deaths else '<p class="muted">None.</p>'}</section>
 </div>
 {f'<h2>Viewers</h2><p class="muted small">Viewer messages that reached the game, the agents\' answers that name the viewer, and the hosts\' answers. Times Pacific.</p>{qa_html(s["qa"])}' if s["qa"] else ""}
@@ -951,6 +956,24 @@ def long_run_row(lr):
     return (f'<a class="run-row featured" href="/runs/long/"><div><h2>The long run</h2><p class="muted">One world in '
             f'{len(done)} shifts so far, {esc(_when(done[0]["started"], last["ended"]))}</p></div>'
             f'<p class="run-final">{last["research"]} techs, {last["rockets"]} rockets by {esc(last["game1"])}</p></a>')
+
+
+def platforms_table(plats):
+    if not plats:
+        return ""
+    rows = "".join(
+        f'<tr><th scope="row">{esc(p["name"])}</th>'
+        f'<td data-l="Built">{esc(_pt(p["built"]))} <span class="muted">({esc(longrun.game_time(p["built_tick"]))}, '
+        f'<a href="/runs/long/shift-{p["built_shift"]}/">shift {p["built_shift"]}</a>)</span></td>'
+        f'<td data-l="Stopped at">{esc(", ".join(x.capitalize() for x in p["places"]) or "–")}</td>'
+        f'<td data-l="Lost">' + (f'{esc(_pt(p["lost"]))} <span class="muted">({esc(longrun.game_time(p["lost_tick"]))}, '
+                                 f'<a href="/runs/long/shift-{p["lost_shift"]}/">shift {p["lost_shift"]}</a>)</span>'
+                                 if p["lost"] else f'active{", at " + esc(p["at"].capitalize()) if p["at"] else ""}') + '</td></tr>'
+        for p in plats)
+    return (f'<h2 id="platforms">Space platforms</h2><div class="table-wrap"><table class="long-run platforms"><thead><tr>'
+            f'<th scope="col">Platform</th><th scope="col">Built (Pacific)</th><th scope="col">Stopped at</th>'
+            f'<th scope="col">Lost</th></tr></thead><tbody>{rows}</tbody></table></div>'
+            f'<p class="muted small">From the score log every 2 minutes. Lost: gone from the game\'s platform list.</p>')
 
 
 def records(done):
@@ -980,7 +1003,8 @@ def build_long_run(lr):
     done = [s for s in shifts if not s.get("empty")]
     first, last = done[0], done[-1]
     planets = sorted({p for s in done for p in s["planets"] if p != "nauvis"})
-    built = list(dict.fromkeys(p for s in done for p in s["platforms"]))
+    active = [p for p in lr["platforms"] if not p["lost"]]
+    lost_p = [p for p in lr["platforms"] if p["lost"]]
     on_air = sum(_hours(s["started"], s["ended"]) for s in done)
     stats = "".join([stat("shift" if len(done) == 1 else "shifts", len(done)),
                      stat("on stream", f"{on_air:.0f} h"),
@@ -988,7 +1012,8 @@ def build_long_run(lr):
                      stat("technologies", last["research"]),
                      stat("rockets", last["rockets"]),
                      stat("science packs", f'{sum(lr["made"].values()):,}'),
-                     stat("platforms built", len(built), ("now: " + ", ".join(last["platforms"])) if last["platforms"] else "none left now"),
+                     stat("platforms", f'{len(lr["platforms"])} built', f'{len(lost_p)} lost · {len(active)} active'
+                          + (f' ({", ".join(p["name"] for p in active)})' if active else "")),
                      stat("planets reached", len(planets), ", ".join(p.capitalize() for p in planets)),
                      stat("agent deaths", sum(s["deaths"] for s in done)),
                      stat("viewer messages", sum(s["viewer_lines"] for s in done))])
@@ -1040,6 +1065,7 @@ def build_long_run(lr):
 {records(done)}
 <h2 id="milestones">Milestones</h2>
 {firsts_table(lr["firsts"])}
+{platforms_table(lr["platforms"])}
 <h2 id="charts">Charts</h2>
 <p class="muted small">Game time on the x axis; S1, S2 ...: shift starts. Hover for the Pacific time.</p>
 {long_charts(lr)}

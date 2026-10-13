@@ -11,7 +11,7 @@
 - start.log gives only times: its account and quota lines never reach the page;
 - with the archive on, build.py --runs-dir writes /runs/long/ and links it from the homepage and the Runs list; check.py passes.
 """
-import json, os, subprocess, sys, tempfile
+import json, os, re, subprocess, sys, tempfile
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
@@ -91,6 +91,10 @@ def main():
         assert lr["made"] == {"automation-science-pack": 1810, "space-science-pack": 120}, lr["made"]
         assert s3["moments"] == ["researched the rocket silo", "first rocket launched", "platform Solstice built",
                                  "reached Vulcanus", "Platform's named. Solstice."], s3["moments"]
+        plat = lr["platforms"]  # every platform row by row: where it stopped, still active (never gone from the list)
+        assert [(p["name"], p["built_shift"], p["places"], p["lost"], p["at"]) for p in plat] == [
+            ("Solstice", 2, ["nauvis", "vulcanus"], None, "vulcanus")], plat
+        assert s3["platforms_built"] == ["Solstice"] and s3["platforms_lost"] == []
         firsts = {f["key"]: f for f in lr["firsts"]}
         assert firsts["rockets:1"]["tick"] == 3600 * 102 and firsts["rockets:1"]["shift"] == 2, firsts["rockets:1"]
         assert firsts["depart:nauvis"]["label"] == "First platform departure from Nauvis (Solstice)"
@@ -123,6 +127,9 @@ def main():
         assert "fan_1" in sp and "two turrets going up now" in sp and "owner line" not in sp and "nick" not in sp.lower().replace("nickwinter.net", "")
         assert 'href="/runs/long/shift-2/"' in sp and "Milestones" in sp
         assert "First rocket launched" in page and "Records" in page and 'class="mark"' in page
+        assert "1 built" in page and "0 lost · 1 active (Solstice)" in page and "Space platforms" in page
+        # a line that ends at 0 (space science on shift 1's page: none made yet) has no end label
+        assert not re.search(r'class="dlabel"[^>]*>[^<]*<tspan class="dval">0</tspan>', page + sp)
         # a shift with a YouTube video: its row links its page, the run page embeds it, the page has the chapters
         videos = Path(d) / "videos.json"
         videos.write_text(json.dumps({

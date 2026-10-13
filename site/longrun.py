@@ -67,6 +67,10 @@ DEATH = re.compile(r"<- (?:attack|death): (.+?) died\b")
 LOSS = re.compile(r"<- (?:attack|loss): (\d+ lost near .*)$")
 CLOCK = re.compile(r"(\d\d):(\d\d):(\d\d)")
 HOST = re.compile(r"^(\d\d:\d\d:\d\d) \[\w+\] \(space[^,]*, [^)]*\) (.*)$")
+HOST_CALL = re.compile(r"^(\d\d:\d\d:\d\d) \[(\w+)\] \((space\w*|research|attack|loss), [^)]*\) (.*)$")
+# a research, attack or loss call is a big one when it names one of these
+BIG = re.compile(r"(?i)\b(rocket|silo|platform|hub|orbit|vulcanus|fulgora|gleba|aquilo|space science|oil processing|"
+                 r"robot|nuclear|uranium|kovarex|foundry|planet|blue science|purple|yellow|metallurgic|landing)")
 HOST_REPLY = re.compile(r"^(\d\d:\d\d:\d\d) \[(\w+)\] \(viewer_reply, [^)]*\) (.*)$")
 
 
@@ -231,6 +235,20 @@ def host_replies(path, start):
     return out
 
 
+def host_calls(path, start, limit=10):
+    """The hosts' big calls: every Space Age moment, and research, attack and loss calls that name a big subject
+    (BIG): [(datetime, host, text)] in time order, at most `limit`: the Space Age moments first, then the rest in
+    order (so a long shift's early research calls do not crowd out its rocket)."""
+    if not path.exists() or not start:
+        return []
+    out = []
+    for line in path.read_text(errors="replace").splitlines():
+        m = HOST_CALL.match(line)
+        if m and (m.group(3).startswith("space") or BIG.search(m.group(4))):
+            out.append((not m.group(3).startswith("space"), len(out), clock_at(start, m.group(1).split(":")), m.group(2), m.group(4)))
+    return [c[2:] for c in sorted(sorted(out)[:limit], key=lambda c: c[1])]
+
+
 def label(name):
     return name.replace("-", " ")
 
@@ -304,6 +322,9 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
     seen_seq = set()
     agents = set(agents)
     n = 0
+    # platforms, row by row: built (first row with its hub), the places it stopped at, lost (gone from the list:
+    # the score read lists every platform the force has, and none when it has none)
+    plats, live_plats, alive = [], {}, set()
 
     def first(key, label_, kind, tick, t, shift_n):
         if key in seen_first:
@@ -347,6 +368,26 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
             running = i == len(names) - 1 and (datetime.datetime.now() - datetime.datetime.fromisoformat(b["t"])).total_seconds() < 600
         except (TypeError, ValueError):
             running = False
+        built, lost = [], []
+        for r in sc:
+            now_names = set(r["platforms"])
+            for pn in r["platforms"]:
+                rec = live_plats.get(pn)
+                if rec is None:
+                    rec = {"name": pn, "built": r["t"], "built_tick": r["tick"], "built_shift": n, "places": [],
+                           "lost": None, "lost_tick": None, "lost_shift": None, "at": None}
+                    plats.append(rec)
+                    live_plats[pn] = rec
+                    built.append(pn)
+                at = r["at"].get(pn)
+                if at and at != "in transit" and at not in rec["places"]:
+                    rec["places"].append(at)
+                rec["at"] = at
+            for pn in sorted(alive - now_names):
+                rec = live_plats.pop(pn)
+                rec.update(lost=r["t"], lost_tick=r["tick"], lost_shift=n)
+                lost.append(pn)
+            alive = now_names
         ticks = [r["raw"] for r in sc]
         stamps = [parse_t(r["t"]).timestamp() if parse_t(r["t"]) else None for r in sc]
         ok = [(x, y) for x, y in zip(ticks, stamps) if y is not None]
@@ -366,7 +407,9 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                    spm=round(sum(own.values()) / mins, 1) if mins > 0 else None,
                    rockets=b["rockets"], rockets_new=b["rockets"] - base["rockets"],
                    platforms=b["platforms"], planets=b["planets"], deaths=deaths, losses=losses,
-                   made=shift_made, made_total=sum(shift_made.values()),
+                   made=shift_made, made_total=sum(shift_made.values()), platforms_built=built, platforms_lost=lost,
+                   calls=[{"t": w.isoformat(timespec="seconds"), "who": h, "text": clean(x)}
+                          for w, h, x in host_calls(d / "caster.log", ta) if keep(x)],
                    died=[{"t": w.isoformat(timespec="seconds"), "tick": tick_at(w), "who": who} for w, who in died])
         new_techs = sorted(b["done"] - base["done"])
         for t in new_techs:
@@ -401,6 +444,10 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                     first(f"rockets:{c}", "First rocket launched" if c == 1 else f"{c} rockets launched", "space", g, r["t"], n)
             if r["platforms"]:
                 first("platform", f"First space platform ({r['platforms'][0]})", "space", g, r["t"], n)
+            if before_row is not None:
+                gone = [p for p in before_row["platforms"] if p not in r["platforms"]]
+                if gone:
+                    first("platform-lost", f"First platform lost ({gone[0]})", "space", g, r["t"], n)
             for pl in r["planets"]:
                 if pl != "nauvis":
                     first(f"planet:{pl}", f"{pl.capitalize()} reached", "space", g, r["t"], n)
@@ -498,4 +545,4 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         have = dict(pts)
         spm_packs[k] = [(x, have.get(x, 0.0)) for x in xs]
     return {"shifts": shifts, "research": research, "spm": spm, "spm_packs": spm_packs, "rockets": rockets_s,
-            "made": made, "firsts": firsts, "bounds": bounds, "clock": clock}
+            "made": made, "firsts": firsts, "bounds": bounds, "clock": clock, "platforms": plats}
