@@ -104,8 +104,7 @@ def shift_cards(runs_dir, bg, html_only=False):
     if os.environ.get("POG_SITE_CONTENT"):  # as build.py --content
         build.CONTENT = json.loads(Path(os.environ["POG_SITE_CONTENT"]).read_text())
         build.AGENTS = build.CONTENT["agents"]
-    build.LONG = lr = build.longrun.load(runs_dir, build.clean, start=build.CONTENT.get("run_start"),
-                                         keep=build.keep_line, agents=list(build.AGENTS))
+    build.LONG = lr = build.load_long(runs_dir)
     if not lr:
         return []
     build.OG_SHIFTS.mkdir(parents=True, exist_ok=True)

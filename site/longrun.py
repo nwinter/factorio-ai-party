@@ -319,12 +319,13 @@ def chat_lines(path):
     return out
 
 
-def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()):
+def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=(), hide=lambda name, text: False):
     """{"shifts": [row per shift], "research": [(game minute, technologies)], "spm": [(game minute, packs/min)],
     "spm_packs": {pack: [(game minute, packs/min)]}, "rockets": [(game minute, rockets)], "made": {pack: total},
     "firsts": [{label, kind, tick, t, shift}], "bounds": [(game minute, shift n, started)], "clock": [(game minute,
     iso time)]} or None without a chain. clean: the site's redaction (build.clean) for any text taken from logs; keep:
-    False drops a line outright (names the site must not show); agents: the agents' ids (their chat answers).
+    False drops a line outright (names the site must not show); agents: the agents' ids (their chat answers);
+    hide(viewer name, text): True leaves a viewer line out (site/moderation.py: YouTube deletions, the manual list).
     start (site.json's run_start): the chain begins at that run, and when it resumed from another run's save,
     game time, technologies, rockets, platforms and planets count from that save's last score."""
     runs_dir = Path(runs_dir)
@@ -508,12 +509,14 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                 continue
             if c.get("viewer") or who.startswith("viewer "):
                 vname = who[len("viewer "):] if who.startswith("viewer ") else who
-                viewers[vname.lower()] = c["tick"]
+                viewers[vname.lower()] = c["tick"]  # the agents' answers to a hidden line still show
+                if hide(vname, c["text"]):
+                    continue  # deleted on YouTube, or on the operator's list
                 if any(q["kind"] == "viewer" and q["who"] == clean(vname) and q["text"] == clean(c["text"])
                        and c["tick"] - q["tick"] < 5 * 3600 for q in qa[-6:]):
                     continue  # the same line again (a resend, or the relay's retry)
                 qa.append({"kind": "viewer", "who": clean(vname), "text": clean(c["text"]), "tick": c["tick"]})
-        if qa:
+        if viewers:  # any viewer spoke (shown or hidden): the agents' and hosts' answers
             for c in chat:
                 who = str(c.get("from", ""))
                 if who not in agents or not keep(c["text"]):

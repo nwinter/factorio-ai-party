@@ -52,6 +52,7 @@ python3 site/test_live.py || fail "test_live.py"
 python3 site/test_longrun.py || fail "test_longrun.py"
 python3 site/test_archive.py || fail "test_archive.py"
 python3 site/test_agents.py || fail "test_agents.py"
+python3 site/test_moderation.py || fail "test_moderation.py"
 step "built and checked"
 [ $deploy = 1 ] || { step "done (--no-deploy)"; exit 0; }
 for branch in preview main; do

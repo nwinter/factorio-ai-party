@@ -45,6 +45,7 @@ sys.path.insert(0, str(ART.parent))
 import avatar as avatar_art  # noqa: E402  (tools/stream/avatar.py, reads the part lists from avatar.js)
 sys.path.insert(0, str(SITE))
 import longrun  # noqa: E402  (site/longrun.py: the long run's shifts from runs/)
+import moderation  # noqa: E402  (site/moderation.py: viewer lines deleted on YouTube or listed by hand)
 import agents as agent_pages  # noqa: E402  (site/agents.py: /agents/ and /timeline/ from tools/agent_stats.py)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
@@ -79,6 +80,14 @@ _REDACTIONS = [
 _BLOCKED = re.compile(r"\bNick\b|(?i:account-b|codex-b|claude-b|dropbox|cygnal|peon-ping|account-d)")
 # Chat and host lines from the owner's own channel account, or that name it, are left off the site.
 _OWNER = re.compile(r"(?i)\bnick(?:\s*winter)?\b")
+
+
+def load_long(runs_dir):
+    """The long run as the site shows it (build.py and og_card.py): redacted, the owner's lines and the viewer lines
+    deleted on YouTube or in site/hidden-viewers.json left out."""
+    hidden = moderation.load(runs_dir, os.environ.get("POG_HIDDEN_VIEWERS") or SITE / "hidden-viewers.json")  # tests: their own
+    return longrun.load(runs_dir, clean, start=CONTENT.get("run_start"), keep=keep_line, agents=list(AGENTS),
+                        hide=hidden.hides)
 
 
 def keep_line(text):
@@ -1726,7 +1735,7 @@ def main():
     all_worlds = {rid: load_scores(r) for rid, r in runs.items()}
     global LONG
     # None without a chain of shifts (or without run_start's folder): no page, no links to it
-    LONG = longrun.load(args.runs_dir, clean, start=CONTENT.get("run_start"), keep=keep_line, agents=list(AGENTS))
+    LONG = load_long(args.runs_dir)
     if CONTENT.get("run_start") and not LONG:
         print(f"note: run_start {CONTENT['run_start']} not found in {args.runs_dir}: no run page", file=sys.stderr)
 

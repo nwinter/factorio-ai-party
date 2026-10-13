@@ -27,6 +27,12 @@ shift table. Every shift has a page, `/runs/long/shift-N/`: its numbers, milesto
 deaths, its video and chapters when `videos.json` has one, and the viewer Q&A from `chat.jsonl` (viewer lines that
 reached the game, the agents' answers that name the viewer) and `caster.log` (the hosts' `viewer_reply` lines).
 
+Viewer lines deleted on YouTube stay off the site (`site/moderation.py`): `tools/stream/viewers.py` writes each
+deletion to `runs/RUN/viewer-deletions.jsonl` with the name and text(s) it removes (an author deletion: every line by
+that name, in every shift), and `site/hidden-viewers.json` (`{"names": [], "texts": []}`, edited by hand) hides a
+viewer's lines or an exact line. Relayed lines match with or without the relay's "@agent " prefix and its trim. The
+agents' and hosts' own lines stay. The shift videos' descriptions (`tools/shift_video.py`) use the same list.
+
 Times come from the score log (every 2 minutes), so a milestone's time is up to 2 minutes late. Science packs made
 add up each counter's rises between score rows and count a fall as 0 (a lost platform takes its production counts
 with it, which made the old per-minute chart go below 0); rates come from that total. Lines from the owner's channel

@@ -382,8 +382,10 @@ def main():
     # viewer lines to the operator ("Operator, ...") go to the run's operator inbox, beside stream.json (not in mock)
     import operator_inbox
     inbox = operator_inbox.path_for(os.path.dirname(os.path.abspath(a.run))) if a.run and not a.mock else None
+    # YouTube deletions, with what they remove, beside it: the site leaves those lines out (site/moderation.py)
+    deletions = os.path.join(os.path.dirname(os.path.abspath(a.run)), "viewer-deletions.jsonl") if a.run and not a.mock else None
     feed = viewers.build(a, "viewers_", names, harness=getattr(source, "h", None), log_dir=a.log_dir, loop=a.mock,
-                         roster=roster, inbox=inbox)
+                         roster=roster, inbox=inbox, deletions=deletions)
     if feed:
         feed.start()
     analyst = AnalystBoard()
