@@ -708,7 +708,7 @@ def build_run_page(rid, run, worlds, chat):
         k = p["agent"]
         a = agent(k)
         ident = (run.get("identities") or {}).get(k, {})
-        lines = [f'<article class="agent-card" style="--ac:{a["color"]}">',
+        lines = [f'<article class="agent-card" style="--ac:{agent_pages.ac(a["color"])}">',
                  f'<header>{avatar(k, "lg")}<div><h3><a href="/agents/{k}/">{esc(a["name"])}</a></h3><p class="model">{esc(a["model"])} · {esc(a["harness"])}</p></div></header>']
         if ident.get("motto"):
             lines.append(f'<p class="motto">“{esc(ident["motto"])}”</p>')
@@ -1366,7 +1366,7 @@ RULES_BANNED = ["Creating items or buildings from nothing", "Teleporting", "Seei
 
 def build_about_compact():
     """The public About: numbers, how it works as labelled facts, the rules, the team. Present tense, no history."""
-    team = "".join(f'<li class="team-member" style="--ac:{agent(k)["color"]}">{avatar(k, "lg")}<div><strong>{esc(agent(k)["name"])}</strong>'
+    team = "".join(f'<li class="team-member" style="--ac:{agent_pages.ac(agent(k)["color"])}">{avatar(k, "lg")}<div><strong>{esc(agent(k)["name"])}</strong>'
                    f'<span>{esc(agent(k)["model"])}</span><span class="muted">{esc(agent(k)["harness"])}</span></div></li>'
                    for k in CONTENT["team_order"])
     labs = sorted({agent(k)["maker"] for k in CONTENT["team_order"] if agent(k).get("maker")})
@@ -1432,7 +1432,7 @@ def build_about(runs, all_worlds):
     for k in CONTENT["team_order"]:
         a = agent(k)
         name = f'<a href="/agents/{k}/"><strong>{esc(a["name"])}</strong></a>' if arch else f'<strong>{esc(a["name"])}</strong>'
-        team.append(f'<li class="team-member" style="--ac:{a["color"]}">{avatar(k, "lg")}<div>{name}'
+        team.append(f'<li class="team-member" style="--ac:{agent_pages.ac(a["color"])}">{avatar(k, "lg")}<div>{name}'
                     f'<span>{esc(a["model"])}</span><span class="muted">{esc(a["harness"])}</span></div></li>')
     if arch:
         fable = agent("fable")
@@ -1598,11 +1598,11 @@ def build_agent_page(key, runs, all_worlds, chats):
                     f'{f"<p class={chr(34)}muted small{chr(34)}>{len(mine)} chat messages</p>" if mine else ""}'
                     f'{f"<ul class=quotes>{q}</ul>" if q else ""}</article>')
     head = (f'<p class="crumbs"><a href="/about/">About</a> / <a href="/about/#team">The team</a></p>'
-            f'<div class="agent-head" style="--ac:{a["color"]}">{avatar(key, "xl")}<div><h1>{esc(a["name"])}</h1>'
+            f'<div class="agent-head" style="--ac:{agent_pages.ac(a["color"])}">{avatar(key, "xl")}<div><h1>{esc(a["name"])}</h1>'
             f'<p class="model">{esc(a["model"])} · {esc(a["harness"])}</p>'
             f'{f"<p class=motto>“{esc(motto)}”</p>" if motto else ""}</div></div>')
     # active=None: agent pages belong to no nav section, so nothing is highlighted
-    return page(a["name"], head + '<div class="agent-runs" style="--ac:' + a["color"] + '">' + "".join(rows) + "</div>", None,
+    return page(a["name"], head + '<div class="agent-runs" style="--ac:' + agent_pages.ac(a["color"]) + '">' + "".join(rows) + "</div>", None,
                 f'{a["name"]} ({a["model"]}) in Player of Games.')
 
 

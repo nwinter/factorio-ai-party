@@ -187,11 +187,24 @@ def card(k, t, data, agent, avatar, esc):
         spark = f'<div class="spark" aria-hidden="true">{bars}</div><p class="spark-label">Buildings placed per shift</p>'
     voice = data["voice"].get(k)
     maker = a.get("maker")
-    return (f'<article class="agent-card" id="{esc(k)}" style="--ac:{esc(a.get("color") or "#888")}">'
+    return (f'<article class="agent-card" id="{esc(k)}" style="--ac:{esc(ac(a.get("color")))}">'
             f'<header>{avatar(k, "lg")}<div><h3>{esc(a["name"])}</h3>'
             f'<p class="model">{esc(a.get("model", ""))}{" · " + esc(maker) if maker else ""} · {esc(a.get("harness", ""))}</p>'
             f'{f"<p class=voice>Voice: {esc(voice)}</p>" if voice else ""}</div></header>'
             f'<dl class="kv">{dl}</dl>{spark}</article>')
+
+
+def ac(color):
+    """An agent's colour for bars, borders and rings (--ac): a near-black one (Grok's #1a1a1a) becomes the page's text
+    colour, dark on the light theme and light on the dark one, so its bars show on both."""
+    c = (color or "#888").lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    try:
+        r, g, b = (int(c[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    except ValueError:
+        return color or "#888"
+    return "var(--ink)" if 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.15 else "#" + c
 
 
 def compare_table(data, agent, avatar, esc):
@@ -210,7 +223,7 @@ def compare_table(data, agent, avatar, esc):
             w = round(100 * (v or 0) / tops[f]) if tops[f] else 0
             shown = fmt(round(v) if f == "active" and v is not None else v, "pct" if f == "active" else "n")
             cells.append(f'<td data-v="{v if v is not None else ""}">{shown}<span class="bar"><i style="width:{w}%"></i></span></td>')
-        body.append(f'<tr style="--ac:{esc(a.get("color") or "#888")}"><th scope="row">'
+        body.append(f'<tr style="--ac:{esc(ac(a.get("color")))}"><th scope="row">'
                     f'<a class="chip" href="#{esc(k)}">{avatar(k, "sm")}{esc(a["name"])}</a></th>{"".join(cells)}</tr>')
     return (f'<div class="table-wrap"><table class="compare"><thead><tr>{head}</tr></thead>'
             f'<tbody>{"".join(body)}</tbody></table></div>')
