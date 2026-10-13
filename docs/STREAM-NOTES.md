@@ -465,6 +465,17 @@ size/threshold be dynamic".
 
 Live: `grep -E "threat|BATTLE|battle over|incoming" runs/RUN/stream-service.log`.
 
+### Spoken-line cues (2026-10-13, eng/saylook)
+
+Nick, 14:11: "I'd loved to have seen the space platform while that was narrated." `fh say "..." --aloud --look
+platform:Sunward` (or `agent:NAME`, `X,Y[@SURFACE]`, `X1,Y1,X2,Y2[@SURFACE]`) keeps a look on the chat line; without
+one, a line naming one of our platforms, or with one "(x, y)", gets an inferred look. When the line starts playing (the
+page's start report, snapshot `voiced`), onecam cuts to the look for the line plus `cue_after` (4 s) if nothing more
+interesting is on, labelled "Sol · Sunward · in orbit of Vulcanus", then goes back to the story. Under an urgent shot,
+a battle, a follow, an incoming group, a segment or an agent fighting on air, the look goes in the inset; during a
+replay or a trio it is dropped. One cue per agent per `cue_agent_gap` (180 s), cues `cue_gap` (45 s) apart;
+`director: {cues: false}` turns them off. Live: `grep "cue " runs/RUN/stream-service.log`.
+
 ## Unused cameras
 
 With fewer agents than cameras (or when the director pairs two agents on one), cam2 or cam3 would show an empty or
