@@ -436,6 +436,75 @@ return function(api)
     s.live_groups=keep
     return {ok=true,tick=game.tick,groups=out}
   end
+  -- Big enemies on their way (operator `big_enemies_live`; Nick, 14:44: "The demolisher approaching should be good
+  -- in a PIP camera"): segmented units (demolishers) on each planet, found by a type search every SCAN_TICKS and
+  -- kept by reference in between (a few per surface), each with where it is, how fast it moves, our nearest building
+  -- and character within BIG_RANGE and whether it is closing on them. Big biters and behemoths come as unit groups
+  -- (attack_groups_live). Read-only; the cost is one search per planet every 10 s and two radius searches per unit.
+  local SCAN_TICKS,BIG_RANGE,MAX_BIG=600,500,12
+  local function scan_big(s)
+    local found={}
+    for _,surface in pairs(game.surfaces) do
+      if not surface.platform then
+        local ok,list=pcall(function() return surface.find_entities_filtered{type='segmented-unit',force='enemy'} end)
+        if ok then
+          for _,e in ipairs(list) do
+            if e.valid and #found<MAX_BIG then found[#found+1]={entity=e,id=e.unit_number,name=e.name,surface=surface.name} end
+          end
+        end
+      end
+    end
+    s.big_enemies,s.big_scan=found,game.tick
+  end
+  -- Our nearest building (or character, with type='character') within BIG_RANGE.
+  local function nearest_of(surface,pos,type_name)
+    local list={}
+    for _,force in pairs(game.forces) do
+      if force.name~='enemy' and force.name~='neutral' and #force.players>0 then
+        local f={position=pos,radius=BIG_RANGE,force=force,limit=300,type=type_name}
+        for _,e in pairs(surface.find_entities_filtered(f)) do
+          if e.valid and (type_name or not NOT_BUILDING[e.type]) then list[#list+1]=e end
+        end
+      end
+    end
+    return #list>0 and surface.get_closest(pos,list) or nil
+  end
+  function M.operator.big_enemies_live(a)
+    local s=api.state()
+    if not s.big_enemies or game.tick-(s.big_scan or -SCAN_TICKS)>=SCAN_TICKS then scan_big(s) end
+    s.big_seen=s.big_seen or {}
+    local out,keep,seen={},{},{}
+    for _,r in ipairs(s.big_enemies) do
+      local e=r.entity
+      local ok,valid=pcall(function() return e and e.valid end)
+      if ok and valid then
+        keep[#keep+1]=r
+        local pos,surface=e.position,e.surface
+        local building=nearest_of(surface,pos,nil)
+        local character=nearest_of(surface,pos,'character')
+        local prev=s.big_seen[r.id]
+        local speed,closing
+        local bd=building and api.distance(pos,building.position)
+        if prev and game.tick>prev.tick then
+          speed=api.distance(prev.position,pos)/((game.tick-prev.tick)/60)
+          if bd and prev.building_distance then closing=bd<prev.building_distance-0.5 end
+        end
+        seen[r.id]={position={x=pos.x,y=pos.y},tick=game.tick,building_distance=bd}
+        if building or character then
+          out[#out+1]={id=r.id,name=r.name,surface=r.surface,position={x=round(pos.x),y=round(pos.y)},
+            speed=speed and round(speed,2) or nil,closing=closing,
+            nearest=building and {x=round(building.position.x),y=round(building.position.y),name=building.name} or nil,
+            nearest_distance=bd and round(bd) or nil,
+            eta_s=closing and speed and speed>0.05 and bd and round(bd/speed) or nil,
+            character=character and {x=round(character.position.x),y=round(character.position.y),
+              player=character.player and character.player.name or nil} or nil,
+            character_distance=character and round(api.distance(pos,character.position)) or nil}
+        end
+      end
+    end
+    s.big_enemies,s.big_seen=keep,seen
+    return {ok=true,tick=game.tick,enemies=out}
+  end
   function M.on_group(event)
     local g=event.group
     if not (g and g.valid and g.force.name=='enemy') then return end

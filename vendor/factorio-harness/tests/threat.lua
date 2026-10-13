@@ -211,4 +211,40 @@ eq(#T.operator.attack_groups_live({}).groups,0); eq(#storage.live_groups,0)
 -- at most 10 kept
 for i=1,12 do T.on_group{tick=game.tick,group={valid=true,force=enemy,surface=field,position={x=i,y=500},state=0,members={unit('small-biter')},command={destination={x=0,y=0}}}} end
 eq(#storage.live_groups,10); eq(#T.operator.attack_groups_live({}).groups,10)
+-- Big enemies (big_enemies_live): demolishers found by a type search every 10 s, followed by reference; their speed,
+-- whether they close on our nearest building, the ETA, the nearest character. Platforms are not searched.
+local demo={valid=true,unit_number=77,name='small-demolisher',position={x=-536,y=68}}
+local far_demo={valid=true,unit_number=78,name='medium-demolisher',position={x=3000,y=0}}
+local turret={valid=true,type='ammo-turret',name='gun-turret',position={x=-236,y=68}}
+local sol_char={valid=true,type='character',position={x=-240,y=70},player={name='sol'}}
+local searches=0
+local vul={name='vulcanus',find_entities_filtered=function(f)
+    if f.type=='segmented-unit' then searches=searches+1; return {demo,far_demo} end
+    local out={}
+    for _,e in ipairs(f.type=='character' and {sol_char} or {turret,sol_char}) do
+      if f.force==mine and distance(e.position,f.position)<=f.radius then out[#out+1]=e end
+    end
+    return out
+  end,get_closest=function(pos,list) table.sort(list,function(a,b) return distance(a.position,pos)<distance(b.position,pos) end); return list[1] end}
+demo.surface,far_demo.surface=vul,vul
+local plat_surface={name='platform-1',platform={},find_entities_filtered=function() error('platforms are not searched') end}
+game.surfaces={vulcanus=vul,['platform-1']=plat_surface}
+mine.players={{}}; game.forces={enemy=enemy,player=mine}
+game.tick=300000
+local big=T.operator.big_enemies_live({}).enemies
+eq(#big,1); eq(searches,1) -- the far one has nothing of ours within 500 tiles
+eq(big[1].name,'small-demolisher'); eq(big[1].nearest.name,'gun-turret'); eq(big[1].nearest_distance,300)
+eq(big[1].character_distance,296); eq(big[1].character.player,'sol'); eq(big[1].speed,nil); eq(big[1].eta_s,nil)
+-- 2 s later it has come 5 tiles closer: 2.5 tiles/s, closing, ~118 s away; no new search inside 10 s
+demo.position={x=-531,y=68}; game.tick=300120
+big=T.operator.big_enemies_live({}).enemies
+eq(big[1].speed,2.5); eq(big[1].closing,true); eq(big[1].eta_s,118); eq(searches,1)
+-- it turns away
+demo.position={x=-536,y=68}; game.tick=300240
+big=T.operator.big_enemies_live({}).enemies
+eq(big[1].closing,false); eq(big[1].eta_s,nil)
+-- dead: dropped; the next search after 10 s finds what is there
+demo.valid=false; game.tick=300300
+eq(#T.operator.big_enemies_live({}).enemies,0)
+game.tick=300900; T.operator.big_enemies_live({}); eq(searches,2)
 print('threat tests passed')
