@@ -353,10 +353,10 @@ def short(text, n):
     return text if len(text) <= n else text[:n - 1].rsplit(" ", 1)[0].rstrip(",.;:") + "…"
 
 
-def viewer_moments(d, tick0, names):
+def viewer_moments(d, tick0, names, hide=None):
     """Viewers' questions an agent answered: a viewer line with a question mark, and the first agent line within three
     minutes that names the viewer. Only this shift's lines (tick from its first score on): chat.jsonl starts with
-    the last shift's tail."""
+    the last shift's tail. hide(viewer, text): True leaves a line out (site/moderation.py: deleted on YouTube)."""
     path = d / "chat.jsonl"
     if not path.exists():
         return []
@@ -375,7 +375,7 @@ def viewer_moments(d, tick0, names):
             continue
         viewer = who.split(" ", 1)[1]
         text = r.get("text") or ""
-        if viewer.lower() in OWNERS or "?" not in text or text.strip() in used:
+        if viewer.lower() in OWNERS or "?" not in text or text.strip() in used or (hide and hide(viewer, text)):
             continue
         t = iso_local(r["logged_at"])
         for s in rows[i + 1:]:
@@ -716,7 +716,9 @@ def build(run, runs_dir, listing=None, utc_offset=-8, frame=None):
     fights, deaths, biggest = fight_events(d, start)
     events += fights
     events += segment_events(d, start)
-    moments = viewer_moments(d, sc[0]["tick"] if sc else 0, names)
+    import moderation  # site/moderation.py: YouTube deletions and the site's manual list
+    hidden = moderation.load(runs_dir, REPO / "site" / "hidden-viewers.json")
+    moments = viewer_moments(d, sc[0]["tick"] if sc else 0, names, hide=hidden.hides)
     events += moments
     events.sort(key=lambda e: e["t"])
 
