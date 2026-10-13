@@ -203,9 +203,10 @@ return function(api)
     local silos={}
     for _,e in pairs(p.surface.find_entities_filtered{type='rocket-silo',force=p.force,limit=16}) do
       local cargo=e.get_inventory(defines.inventory.rocket_silo_rocket)
+      local trash=defines.inventory.rocket_silo_trash and e.get_inventory(defines.inventory.rocket_silo_trash)
       silos[#silos+1]={position=e.position,status=silo_states[e.rocket_silo_status],
         parts=e.rocket_parts..'/'..e.prototype.rocket_parts_required,cargo=cargo and top_items(cargo,8) or nil,
-        auto_requests=e.use_transitional_requests or nil}
+        trash=trash and top_items(trash,8) or nil,auto_requests=e.use_transitional_requests or nil}
     end
     out.silos=#silos>0 and silos or nil
     out.planet=p.surface.planet and p.surface.planet.name or nil
@@ -250,10 +251,21 @@ return function(api)
     local silo=api.remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number})
     assert(silo.type=='rocket-silo','not a rocket silo')
     -- The silo GUI checkbox: launch on its own for platforms' requests.
+    -- Switching them on with cargo loaded by hand: the game moves that cargo
+    -- to the silo's trash slots (rocket_silo_trash), which never launch.
+    local switched
     if a.auto_requests~=nil then
       assert(type(a.auto_requests)=='boolean','auto_requests must be boolean')
+      local loaded=a.auto_requests and not silo.use_transitional_requests and top_items(silo.get_inventory(defines.inventory.rocket_silo_rocket),8)
       silo.use_transitional_requests=a.auto_requests
-      if a.platform==nil and a.orbit==nil then return {auto_requests=silo.use_transitional_requests} end
+      switched={auto_requests=silo.use_transitional_requests}
+      if loaded then
+        switched.cargo_to_trash=loaded
+        switched.note='automatic requests are on with cargo loaded by hand: the game moves that cargo out of the rocket into the silo\'s trash slots, which never launch; take it back with transfer {position, direction=to_player, inventory=rocket_silo_trash} (item= for one kind); inspect and platforms list it as trash'
+      end
+      local trash=defines.inventory.rocket_silo_trash and silo.get_inventory(defines.inventory.rocket_silo_trash)
+      switched.trash=trash and top_items(trash,8) or nil
+      if a.platform==nil and a.orbit==nil then return switched end
     end
     assert(silo.rocket_silo_status==defines.rocket_silo_status.rocket_ready,'rocket is not ready: '..tostring(silo_states[silo.rocket_silo_status])..', parts '..silo.rocket_parts..'/'..silo.prototype.rocket_parts_required)
     local cargo=top_items(silo.get_inventory(defines.inventory.rocket_silo_rocket),8)
@@ -298,7 +310,8 @@ return function(api)
     end
     if rider then api.stop(p) end
     assert(silo.launch_rocket(destination,rider),'the game refused the launch')
-    return {launched=true,to=to,cargo=cargo or 'empty',riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil}
+    return {launched=true,to=to,cargo=cargo or 'empty',riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil,
+      auto_requests=switched and switched.auto_requests,cargo_to_trash=switched and switched.cargo_to_trash,note=switched and switched.note}
   end
   -- The hub's drop slots: items from the hub inventory go down to the planet
   -- below a stopped platform in a cargo pod, to the force's landing pad there,
@@ -400,7 +413,7 @@ return function(api)
     drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',
       note='the hub\'s drop slots, from remote view: a cargo pod takes the items to the planet below a stopped platform (the landing pad if any, else a temporary container on the ground)',returns='dropped, not_sent, to, pad, near'},
     land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any). A bot lands where it last stood on that planet, else at its spawn point, wearing the armor and guns it rode up with',returns='landing (and for a bot: at, pad)'},
-    launch={position='rocket silo {x,y} in a visible chunk',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it)',returns='launched, to, cargo'},
+    launch={position='rocket silo {x,y} in a visible chunk',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it; switched on with cargo loaded by hand, the game moves that cargo to the silo\'s trash slots: cargo_to_trash, note, trash)',returns='launched, to, cargo'},
   }
   return M
 end

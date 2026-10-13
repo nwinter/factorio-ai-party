@@ -103,6 +103,29 @@ eq(l.to,'platform alpha'); eq(launched.type,4); eq(launched.surface,platform.sur
 platform.space_location={name='vulcanus'}
 fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,'not in orbit of nauvis')
 eq(space.launch(p,{position={x=20.5,y=20.5},auto_requests=true}).auto_requests,true)
+-- Switching automatic requests on with cargo loaded by hand: the game moves it
+-- to the silo's trash slots; the reply names it and how to take it back.
+do
+  defines.inventory.rocket_silo_trash=3
+  local trash={get_contents=function() return {} end}
+  local get_inv,saved=silo.get_inventory,silo_cargo
+  silo.get_inventory=function(i) if i==3 then return trash end return silo_cargo end
+  silo.use_transitional_requests=false
+  silo_cargo={get_contents=function() return {{name='space-platform-foundation',count=40},{name='solar-panel',count=7}} end}
+  local sw=space.launch(p,{position={x=20.5,y=20.5},auto_requests=true})
+  eq(sw.auto_requests,true); eq(sw.cargo_to_trash,'space-platform-foundation*40 solar-panel*7'); eq(sw.trash,nil)
+  assert(sw.note:find('moves that cargo out of the rocket into the silo\'s trash slots',1,true),sw.note)
+  assert(sw.note:find('transfer {position, direction=to_player, inventory=rocket_silo_trash}',1,true),sw.note)
+  -- Already on, or switching off: no note.
+  eq(space.launch(p,{position={x=20.5,y=20.5},auto_requests=true}).note,nil)
+  eq(space.launch(p,{position={x=20.5,y=20.5},auto_requests=false}).note,nil)
+  -- The game moved it: the reply and the platforms read list the trash.
+  silo_cargo=saved
+  trash={get_contents=function() return {{name='space-platform-foundation',count=40},{name='inserter',count=1}} end}
+  eq(space.launch(p,{position={x=20.5,y=20.5},auto_requests=true}).trash,'space-platform-foundation*40 inserter*1')
+  eq(space.platforms(p,{}).silos[1].trash,'space-platform-foundation*40 inserter*1')
+  silo.get_inventory,silo.use_transitional_requests,defines.inventory.rocket_silo_trash=get_inv,nil,nil
+end
 -- Riding needs the silo in reach and a platform; the character goes along.
 platform.space_location={name='nauvis'}
 p.can_reach_entity=function() return false end

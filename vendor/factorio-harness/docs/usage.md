@@ -262,6 +262,14 @@ fh sleep 900 --until researched                       # ...or until the research
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
 - `transfer {position, direction: "to_player"}` takes items from a character corpse (inventory `character_corpse`); an emptied corpse is removed. It never mines the corpse (mining a corpse as a bot crashes the server; the harness takes the items instead).
+- Trash slots: a rocket silo, cargo landing pad and platform hub have one (`rocket_silo_trash`, `cargo_landing_pad_trash`,
+  `hub_trash`) where the game puts items the entity will not use. `inspect` lists them in `inventories` and as one line
+  (`trash: "40 space-platform-foundation, 7 solar-panel (in rocket_silo_trash, ...)"`); `platforms` shows a silo's `trash`.
+  `transfer {position, direction: "to_player"}` takes from non-empty trash slots first (all, or `item`), or name
+  `inventory: "rocket_silo_trash"`; they are take-only.
+- `launch {position, auto_requests: true}` on a silo whose rocket holds cargo loaded by hand: the game moves that cargo
+  into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
+  `note` with the transfer that takes it back.
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
