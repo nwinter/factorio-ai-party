@@ -256,6 +256,14 @@ if [ "${POG_PUSH_LIVE:-1}" != 0 ] && { [ -f site/worker/.secrets.json ] || [ -n 
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("push-live:$!:$rundir/push-live.log")
 fi
+# Terrain for the site's maps (tools/stream/mapframes.py): a georeferenced frame of each base-map shot, from its OBS
+# source, kept per area in runs/RUN/mapframes/ (site/terrain.py publishes them). Needs OBS and system python3's numpy
+# and Pillow; POG_MAPFRAMES=0 turns it off. (Shift07 had none: it was never started.)
+if [ "${POG_OBS:-1}" != 0 ] && [ "${POG_MAPFRAMES:-1}" != 0 ]; then
+  nohup python3 -u tools/stream/mapframes.py "$rundir" --url http://127.0.0.1:8788/state.json >"$rundir/mapframes.log" 2>&1 &
+  echo $! >> "$rundir/stream-service.pid"
+  helpers+=("mapframes:$!:$rundir/mapframes.log")
+fi
 # Human players' votes (docs/PLAYERS-NOTES.md): the operator tally runs a carried kick, ban or trust; names in
 # POG_PLAYERS_PROTECT (comma-separated) are never kicked or banned.
 if [ "${POG_PLAYERS:-0}" = 1 ]; then

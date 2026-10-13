@@ -218,7 +218,8 @@ def map_zoom(state):
     return round(min(2.0, shot["zoom"]), 2) if shot else None
 
 
-def poll(run_dir, url, obs, log=print):
+def poll(run_dir, url, obs, log=lambda s: print(s, flush=True)):
+    log(f"[mapframes] {time.strftime('%H:%M:%S')} start: {url}, base-map shots -> {os.path.join(run_dir, 'mapframes')}")
     done_since = None
     while True:
         try:
