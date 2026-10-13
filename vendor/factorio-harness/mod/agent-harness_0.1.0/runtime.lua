@@ -3974,6 +3974,21 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
   agents=function() return M.board.agents() end,
   human=function(index) return not M.bots.is_index(index) and not (state().controlled and state().controlled[index]) end}
+-- Camera highlights (highlights.lua): drawn for the director camera clients
+-- only, by the stream service as the operator; no agent action reaches them.
+M.highlights=require('highlights'){state=state,director=function(index) return M.is_director(index) end,
+  agent=function(name)
+    local b=M.bots.named(name)
+    local index=b and b.index
+    local c=b and b.character
+    if not b then
+      local p=game.get_player(name)
+      if not (p and p.valid) or M.is_director(p.index) then return nil end
+      index,c=p.index,p.character
+    end
+    local pr=M.profiles.get(index)
+    return {character=c,color=pr and pr.rgb or nil}
+  end}
 -- Platform health alerts in team.alerts (platalerts.lua): hits, turret ammo,
 -- repair packs, hub health, to the platform's creator, workers and riders.
 M.platalerts=require('platalerts'){state=state,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
@@ -4118,6 +4133,7 @@ function M.dispatch(request)
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action]
+        or M.highlights.operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)

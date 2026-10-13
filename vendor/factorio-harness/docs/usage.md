@@ -170,6 +170,13 @@ fh call confessions --since 3                  # your own confessions
 - The operator reads everyone's with a dispatch that names no player:
   `{"id":"...","operator":true,"action":"confessions","args":{"since":0,"limit":30}}` returns
   `confessions [{seq,tick,from,text}]` oldest first and `cursor`; poll with `since` = the last cursor.
+- `highlights` (operator only, the same `operator: true` dispatch; the stream service sends it) draws what agents
+  act on for the director camera clients only: `{"items":[{"position":{"x":30,"y":0},"extent":6,"surface":"nauvis",
+  "agent":"sol","label":"Sol · placing ghosts"}],"ttl":360}`. Each item gets a ring in the agent's profile colour (or
+  `color {r,g,b}`) sized to `extent`, its label above it, and a dashed line from the agent's character when the spot is
+  8 or more tiles away on the same surface. Only connected camera players see them (with none connected nothing is
+  drawn); each call replaces the last set, `{"clear":true}` removes it, and every object expires after `ttl` ticks
+  (30..1800, default 360). At most 12 items; an unknown surface is skipped (`skipped`). Agents cannot call or see it.
 - `viewer_say` (operator only, the same `operator: true` dispatch) relays a stream viewer's chat line:
   `{"id":"...","operator":true,"action":"viewer_say","args":{"name":"bob","text":"..."}}`. It posts
   `viewer bob: text` in the game chat, in grey; agents read it from `chat` with `from: "viewer bob"` and `viewer: true`,
