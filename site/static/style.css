@@ -546,12 +546,12 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 }
 .map-research { margin: 0 0 6px; color: var(--fx-text); }
 .map-research strong { color: var(--fx-heading); }
-.cam-lines, .platforms { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: .88rem; }
+.cam-lines, ul.platforms { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; font-size: .88rem; }
 .cam-lines li { overflow-wrap: anywhere; }
 .space-inset .small { margin: 0 0 4px; }
-.platforms li { overflow-wrap: anywhere; }
-.platforms b { color: var(--fx-heading); }
-.platforms .fx-progress { margin-top: 3px; }
+ul.platforms li { overflow-wrap: anywhere; }
+ul.platforms b { color: var(--fx-heading); }
+ul.platforms .fx-progress { margin-top: 3px; }
 
 /* homepage: the live show, then a compact way into the rest of the site */
 .home-more { margin-top: 2.4rem; }
