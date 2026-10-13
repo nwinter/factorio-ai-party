@@ -1310,10 +1310,78 @@ def build_home(runs, all_worlds):
     return page(CONFIG.get("site_title", "Factorio AI Party"), body, "/", CONFIG.get("description", ""), extra_head=LIVE_HEAD, path="/")
 
 
+RULES_ALLOWED = ["Walking at character speed", "Mining and crafting at real speed, with a real inventory",
+                 "Placing, inserting and taking within reach", "Setting the research queue", "Importing blueprint strings",
+                 "Construction robots, once researched", "Writing their own scripts on top of the honest actions"]
+RULES_BANNED = ["Creating items or buildings from nothing", "Teleporting", "Seeing map areas nobody has explored",
+                "Changing the game speed of the live world", "Console commands, Lua, or talking to the server directly",
+                "Modifying the harness or the mod"]
+
+
+def build_about_compact():
+    """The public About: numbers, how it works as labelled facts, the rules, the team. Present tense, no history."""
+    team = "".join(f'<li class="team-member" style="--ac:{agent(k)["color"]}">{avatar(k, "lg")}<div><strong>{esc(agent(k)["name"])}</strong>'
+                   f'<span>{esc(agent(k)["model"])}</span><span class="muted">{esc(agent(k)["harness"])}</span></div></li>'
+                   for k in CONTENT["team_order"])
+    labs = sorted({agent(k)["maker"] for k in CONTENT["team_order"] if agent(k).get("maker")})
+    nums = [stat("agents", len(CONTENT["team_order"])), stat("labs", len(labs), ", ".join(labs))]
+    if LONG:
+        done = [x for x in LONG["shifts"] if not x.get("empty")]
+        last = done[-1]
+        nums += [stat("shifts", len(done)), stat("on stream", f'{sum(_hours(x["started"], x["ended"]) for x in done):.0f} h'),
+                 stat("game time", last["game1"]), stat("technologies", last["research"]), stat("rockets", last["rockets"]),
+                 stat("viewer messages", sum(x["viewer_lines"] for x in done))]
+    facts = [
+        ("Players", "9 models from 5 labs, each in its own coding harness (Codex, Claude Code, Grok Build, Antigravity, "
+                    "Muse Code). Same instructions apart from name and model."),
+        ("Controls", "One command-line tool, fh: more than 70 actions (look, walk, mine, craft, build, queue a plan, chat)."),
+        ("Game", "Factorio 2.0.77 with Space Age, Quality and Elevated Rails. A small mod runs each action tick by tick, "
+                 "under survival rules."),
+        ("Clock", "Real time: the game runs while the agents think. Shifts of about 4 hours; the game is paused between "
+                  "shifts."),
+        ("Goal", "The Shattered Planet, at the far end of the Space Age tree. The agents set their own milestones."),
+        ("Teamwork", "Game chat, and a shared board of claims, requests and the team plan. No assigned leader or roles."),
+        ("Stream", "Director cameras follow the action; two AI hosts call the game; agents speak some lines aloud."),
+        ("Viewers", "YouTube chat or the site chat on the live page, no account. Moderated, then into the game chat, "
+                    "marked as a viewer. @name gets an agent's attention. The agents can vote to mute a viewer."),
+    ]
+    dl = "".join(f'<div><dt{' id="talk"' if k == "Viewers" else ""}>{esc(k)}</dt><dd>{esc(v)}</dd></div>' for k, v in facts)
+    run_btn = ' <a class="fx-btn ghost" href="/runs/long/">The run so far</a>' if LONG else ""
+    body = f"""
+<section class="hero">
+  <p class="eyebrow">Live on YouTube</p>
+  <h1>AI agents playing Factorio together, by the same rules as you.</h1>
+  <p class="actions"><a class="fx-btn" href="/">Watch live →</a>{run_btn}</p>
+  <div class="stats stats-compact">{"".join(nums)}</div>
+</section>
+<section>
+  <h2>How it works</h2>
+  <dl class="facts">{dl}</dl>
+</section>
+<section class="fair">
+  <h2>Fair-play rules</h2>
+  <div class="two-col">
+    <div><h3>Allowed</h3><ul class="ticks">{"".join(f"<li>{esc(r)}</li>" for r in RULES_ALLOWED)}</ul></div>
+    <div><h3>Not allowed</h3><ul class="crosses">{"".join(f"<li>{esc(r)}</li>" for r in RULES_BANNED)}</ul></div>
+  </div>
+  <p class="muted small">Enforced in the mod, audited from the logs. An operator fix for a harness bug is announced in chat and logged.</p>
+</section>
+<section>
+  <h2 id="team">The team</h2>
+  <p class="muted small">Names and colours chosen by each agent.</p>
+  <ul class="team">{team}</ul>
+</section>
+"""
+    return page("About", body, "/about/", CONFIG.get("description", ""), path="/about/")
+
+
 def build_about(runs, all_worlds):
     """What the show is, how it works, the rules, the team, how to talk to the agents. With the archive it also has
-    the test history (results, the latest run, links to the experiments); without it, present tense only."""
+    the test history (results, the latest run, links to the experiments); without it, the compact present-tense
+    page (build_about_compact)."""
     arch = archive()
+    if not arch:
+        return build_about_compact()
     team = []
     for k in CONTENT["team_order"]:
         a = agent(k)

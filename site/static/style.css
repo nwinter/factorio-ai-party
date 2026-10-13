@@ -249,6 +249,11 @@ td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 @media (max-width: 860px) { .sum-cols { grid-template-columns: 1fr; } }
 .latest { list-style: none; padding: 0; margin: .4rem 0 1rem; display: grid; gap: 6px; }
 .latest li { display: grid; }
+/* the About page's facts */
+.facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 10px; margin: .6rem 0; }
+.facts > div { padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--fx-r-1); }
+.facts dt { font-weight: 700; color: var(--heading); scroll-margin-top: 80px; }
+.facts dd { margin: .2rem 0 0; color: var(--ink-2); }
 /* milestones (firsts) */
 table.firsts th[scope=row] { font-weight: 600; }
 .kind { display: inline-block; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line-strong); color: var(--ink-2); }
