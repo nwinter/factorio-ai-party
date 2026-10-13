@@ -197,6 +197,8 @@ HEADLINE_EXTRA = {
                           "aboard are lost. Say its name.",
     "agent_death": " The engineer respawns at the base; say what they were doing or where, if the facts say.",
     "shift_rocket": " The first rocket of this shift.",
+    "platform_arrival": " The platform has finished its trip and is in orbit now; say where it came from and who is "
+                        "aboard, if the facts say.",
 }
 PRIORITY = {"headline": 10, "attack": 9, "death": 10, "loss": 8, "segment": 7, "research": 7, "space": 10, "viewer": 6,
             "viewer_reply": 7,

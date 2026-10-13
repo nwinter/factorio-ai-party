@@ -354,8 +354,21 @@ class LiveSource:
                     errors["platform_views"] = str(e)
         views = getattr(self, "platform_views", {})
         space["platforms"] = [dict(row, **self.platform_detail.get(row["name"], {}),
-                                   **({"view": views[row["name"]]} if row["name"] in views else {}))
+                                   **({"view": views[row["name"]]} if row["name"] in views else {}),
+                                   **self.fresh_at(row, self.platform_detail.get(row["name"], {})))
                               for row in space["platforms"]]
+
+    @staticmethod
+    def fresh_at(row, detail):
+        """The score row is read every round, the detail every platform_every s: when they disagree on whether the
+        platform is at a planet or travelling, the score's `at` stands (Sunward reached Nauvis at 14:14:32 while a
+        detail read from before still put it on its route)."""
+        at, dat = row.get("at"), detail.get("at")
+        if not dat or not at:
+            return {}
+        if at != "in transit" or "->" not in dat:  # arrived (a planet now), or departed (detail still at a planet)
+            return {"at": at}
+        return {}
 
     # ---- team board (docs/BOARD-API.md) ------------------------------------------------------------------------
     def board_probe(self):
