@@ -440,6 +440,8 @@ def main():
                 cams = director.step(snap, now, segments.camera())
                 if follow:
                     snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
+                if hasattr(director, "battle_info"):
+                    snap["battle"] = director.battle_info(now)  # a key battle held on air (replays.py covers it)
                 if director.last_attack_cut == now:  # main just cut to a fight or death: the segment gives way
                     segments.attack_cut(now)
                     snap["segment"] = segments.public()

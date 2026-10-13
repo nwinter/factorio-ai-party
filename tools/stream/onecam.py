@@ -63,11 +63,20 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
   ("onecam" or "trio") and, in a trio, which client is in which hole.
 """
-import json, time
+import json, re, time
 
-from director import Director, BUILD, FIGHT, HOLDS, WALK, dist, frame_of, in_frame
+from director import Director, BUILD, FIGHT, HOLDS, WALK, dist, frame_of, in_frame, surface_of
 from mapcam import map_shot
 from segments import CHEAP, LOSS_RE
+
+# a key battle's enemy (alert texts: "19 lost near (-226, 68): 19 gun turret (by small demolishers)")
+BIG_ENEMY = re.compile(r"demolisher|behemoth|big (?:biter|spitter|worm)|segmented|spawner|nest", re.I)
+
+
+def loss_pieces(text):
+    """"19 lost near (-226, 68): 19 gun turret (by small demolishers)" -> 19 (0 for any other text)."""
+    m = LOSS_RE.match(text or "")
+    return int(m.group(1)) if m else 0
 
 MINOR = CHEAP + ("wall", "chest", "gate")  # a loss of at most MINOR_MAX of these is an inset, not a cut
 MINOR_MAX = 3
@@ -143,6 +152,15 @@ ONECAM = {
     "fight_near": 40.0,     # tiles (plus half the fight's extent): a fight this close to a spot is the one there
     "fight_hold_max": 180.0,
     "fight_boost": 2.5,
+    # Key battles (Nick, 12:54, Sol vs a Demolisher: "is there a good way to ensure we don't miss entirety of key
+    # battles like that?"; module doc): a big enemy, a big loss, or a long fight is a story held on air
+    "battle": True,
+    "battle_losses": 10,    # a loss of this many pieces makes a fight a key battle ...
+    "battle_long": 30.0,    # ... and so does an attack still going on after this long
+    "battle_near": 60.0,    # tiles (plus half the extents): fights this close are one battle
+    "battle_after": 20.0,   # held until the battle has been quiet this long (no attack, no agent in combat) ...
+    "battle_loss_after": 45.0,  # ... and no loss for this long (losses come in as pieces die: 12:58 had 35 s gaps)
+    "battle_max": 900.0,    # at most this long
     # Attention (Nick, 2026-10-13 12:00: "can we give a better feel in the stream for what they are paying attention
     # to?"; module doc): the agent on air looks or works away from its character -> the spot in the inset beside it
     "attention": True,
@@ -208,11 +226,12 @@ def onair_info(snap, cams):
     name = agents[0] if len(agents) == 1 and not main.get("attack") else None
     a = next((a for a in snap.get("agents") or [] if a["name"] == name), {}) if name else {}
     plat = main.get("platform")  # a space platform on air: {name, why (visit, departure, work), label, agent?}
-    doing = main.get("follow") or (f"working on {plat['name']}" if plat and name else
+    doing = main.get("follow") or ("in battle" if main.get("battle") and name else "") or (f"working on {plat['name']}" if plat and name else
                                    onair_doing(snap, name) if name else "")
     return {"agent": name, "display_name": a.get("display_name") or name, "doing": doing, "platform": plat,
             "since": main.get("since"), "client": main.get("client"), "attack": main.get("attack"),
             "follow": main.get("follow"),  # an operator follow's label on air ("Sol vs the Demolisher"), for the hosts
+            "battle": main.get("battle"),  # a key battle on air (onecam watch_battle)
             "inset": ((cams or {}).get("inset") or {}).get("attack"),
             # where the agent on air is looking, in the inset beside it: {agent, kind, text, platform, position}
             "attention": ((cams or {}).get("inset") or {}).get("attention"),
@@ -258,6 +277,8 @@ class OneCam(Director):
         self.platforms = []    # (t, name, why): platform shots ("visit", "departure", "work")
         self.follow = None     # an operator follow: {agent, until, label, by, since} (set_follow)
         self.fol = None        # the agent it pins on air at this step, or None
+        self.battle = None     # a key battle held on air (watch_battle): {key, why, label, position, surface, ...}
+        self.battles = []      # (t, key, why, label): key battles seen
         self.last_attn = -1e9  # when the last attention inset ended
         self.attns = []        # (t, agent, text): attention insets (a new spot is a new row)
 
@@ -377,6 +398,9 @@ class OneCam(Director):
         big = al["kind"] == "death" or (al["kind"] == "loss" and not minor_loss(al["text"]))
         if self.fol and subject != self.fol:
             big = False  # an operator follow: other agents' urgent events are insets or toasts, never cuts
+        elif self.battle and not self.fol and not (subject and subject == self.battle.get("agent")) and \
+                not self.in_battle(position):
+            big = False  # a key battle on air: the same for anything elsewhere
         if big and al["kind"] == "loss" and self.last_loss and now - self.last_loss["t"] < self.cfg["loss_recut"]:
             big = False  # viewers saw a loss a moment ago: an inset keeps the story on air
         if self.mode == "trio" and not big and not self.near_onair(subject, position, by_name):
@@ -509,12 +533,14 @@ class OneCam(Director):
                 self.last_attn = now
             self.inset = None
         fol = self.fol = self.following(by_name, now)
+        self.watch_battle(by_name, now)
+        pinned = fol or self.battle  # an operator follow, or a key battle: nothing else takes the camera
         attack = self.attack_target(snapshot, by_name, scores, now)
         if attack:
             self.on_alert(attack, by_name, scores, now)
         cur = self.state.get(self.onair)
         urgent_hold = cur and cur.get("subject") == "@attack" and now < cur.get("until", 0)
-        if segment and not attack and not urgent_hold and not fol:  # (an operator follow: no segment takes the camera)
+        if segment and not attack and not urgent_hold and not pinned:  # (a follow or a battle: no segment cuts in)
             pend = self.state.get(self.pending["slot"]) if self.pending else None
             if (not cur or cur.get("seg") != segment["id"]) and not (pend and pend.get("seg") == segment["id"]):
                 follow = segment.get("follow")
@@ -532,10 +558,13 @@ class OneCam(Director):
         elif cur and cur.get("subject") == "@segment" and (not segment or cur.get("seg") != segment["id"]):
             cur["until"] = 0  # the segment ended or was cut: back to normal directing
         self.watch_platforms(snapshot, now)
-        if fol:  # an operator follow: that agent on air, nothing else takes the camera
-            self.leave_trio(f"follow {fol}", now)
+        if pinned:  # an operator follow, or a key battle: on air, nothing else takes the camera
+            self.leave_trio(f"follow {fol}" if fol else f"battle: {self.battle['label']}", now)
             self.trio_pending = None
-            self.follow_direct(fol, by_name, scores, now)
+            if fol:
+                self.follow_direct(fol, by_name, scores, now)
+            else:
+                self.battle_direct(by_name, scores, now)
         elif self.mode == "trio":
             self.maybe_departure(scores, now, segment)
             self.tiles(by_name, scores, now)
@@ -602,6 +631,160 @@ class OneCam(Director):
         elif self.ready(nxt["slot"], now):
             self.cut(nxt["slot"], f"follow: {label}", now)
             self.resume = None
+
+    # -- key battles -------------------------------------------------------------------------------------------
+    def fight_spot(self, f, by_name):
+        """A fight's position with its surface (an agent's own fight: the agent's surface)."""
+        p = dict(f.get("position") or {})
+        if not p.get("surface"):
+            a = by_name.get(f.get("agent")) or {}
+            p["surface"] = surface_of(a) if a else "nauvis"
+        return p
+
+    def key_fight(self, f, now):
+        """Why a fight going on now is a key battle (a big enemy, a big loss, an attack past battle_long), or None."""
+        cfg = self.cfg
+        if now - self.fight_t(f) >= cfg["fight_quiet"] or not f.get("position"):
+            return None
+        text = f.get("text") or ""
+        if BIG_ENEMY.search(text):
+            return "big enemy"
+        if loss_pieces(text) >= cfg["battle_losses"]:
+            return "big loss"
+        if f.get("kind") != "loss" and now - f.get("first", now) >= cfg["battle_long"]:
+            return "long fight"
+        return None
+
+    def in_battle(self, p, b=None):
+        b = b or self.battle
+        if not b or not p or p.get("x") is None:
+            return False
+        if (p.get("surface") or b["surface"]) != b["surface"]:
+            return False
+        return dist(p, b["position"]) <= self.cfg["battle_near"] + (b.get("extent") or 0) / 2 + (p.get("extent") or 0) / 2
+
+    def battle_agent(self, b, by_name):
+        """The agent fighting in it: alive, on its surface, in combat (or its own fight reported), nearest first."""
+        own = {k.split(":", 1)[1] for k in b.get("fresh", ()) if k.startswith("attack:")}
+        best = None
+        for a in by_name.values():
+            p = a.get("position")
+            if not a.get("alive", True) or not p or surface_of(a) != b["surface"]:
+                continue
+            if not (a.get("combat") or plan_kind(a) in FIGHT or a["name"] in own):
+                continue
+            d = dist(p, b["position"])
+            if d <= self.cfg["battle_near"] + (b.get("extent") or 0) / 2 and (best is None or d < best[0]):
+                best = (d, a["name"])
+        return best[1] if best else None
+
+    def watch_battle(self, by_name, now):
+        """Start, grow and end the key battle from the snapshot's fights (a battle: the fights near the first one)."""
+        cfg = self.cfg
+        if not cfg["battle"]:
+            return
+        b = self.battle
+        if not b:
+            for f in sorted(self.fight_list, key=lambda f: f.get("first", now)):
+                why = self.key_fight(f, now)
+                if not why:
+                    continue
+                p = self.fight_spot(f, by_name)
+                b = self.battle = {"key": f["key"], "why": why, "position": {"x": p["x"], "y": p["y"]},
+                                   "surface": p["surface"], "extent": p.get("extent") or 0, "since": now,
+                                   "first": min(f.get("first", now), now), "last": self.fight_t(f), "keys": set(),
+                                   "lost": 0, "label": "", "agent": None}
+                cur = self.state.get(self.onair)
+                if cur and cur.get("subject") in by_name:
+                    self.resume = {"subject": cur["subject"], "since": self.onair_since}  # back to it afterwards
+                self.battles.append((now, f["key"], why, f.get("text")))
+                print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} BATTLE ({why}): {f.get('text')}",
+                      flush=True)
+                break
+            if not b:
+                return
+        b["fresh"] = set()
+        for f in self.fight_list:
+            p = self.fight_spot(f, by_name)
+            if now - self.fight_t(f) >= cfg["fight_quiet"] or not self.in_battle(dict(p, extent=0), b):
+                continue
+            b["keys"].add(f["key"])
+            b["fresh"].add(f["key"])
+            b["first"] = min(b["first"], f.get("first", now))
+            b["last"] = max(b["last"], self.fight_t(f))
+            k = "last_loss" if f.get("kind") == "loss" else "last_attack"
+            b[k] = max(b.get(k, -1e9), self.fight_t(f))
+            # the battle's area grows to cover its fights (a raid along a turret line)
+            r = max(b["extent"] / 2, dist(p, b["position"]) + (p.get("extent") or 0) / 2)
+            b["extent"] = round(min(2 * r, 120.0), 1)
+            if loss_pieces(f.get("text")) >= b["lost"]:  # live.py's loss alerts count up through a raid
+                b["lost"], b["loss_text"] = loss_pieces(f.get("text")), f["text"]
+        b["agent"] = self.battle_agent(b, by_name)
+        who = (by_name.get(b["agent"]) or {}).get("display_name") or b["agent"]
+        b["label"] = (f"{who} in battle" if who else "Battle") + \
+            (f" · {b['loss_text']}" if b.get("loss_text") else "")
+        if b["agent"]:
+            b["last_attack"] = now  # its agent still fighting in it
+        quiet = now - b.get("last_attack", -1e9) >= cfg["battle_after"] and \
+            now - b.get("last_loss", -1e9) >= cfg["battle_loss_after"]
+        if quiet or now - b["since"] >= cfg["battle_max"]:
+            print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} battle over after "
+                  f"{int(now - b['since'])} s: {b['label']}", flush=True)
+            self.battle = None
+
+    def battle_target(self, b, by_name):
+        if b["agent"]:
+            n = b["agent"]
+            ext = b["extent"] + 2 * dist(by_name[n]["position"], b["position"])
+            z = min(self.cfg["attack_zoom"], self.fight_zoom(ext))
+            return {"agents": [n], "follow": n, "zoom": z, "solo_zoom": z, "exact_zoom": True, "subject": n,
+                    "battle": b["key"]}
+        return {"agents": [], "subject": "@battle", "position": dict(b["position"]), "surface": b["surface"],
+                "zoom": self.fight_zoom(b["extent"]), "exact_zoom": True, "battle": b["key"]}
+
+    def battle_direct(self, by_name, scores, now):
+        """A key battle: the camera on air on it (its agent followed, else a fixed view on the battle's area) until it
+        has been quiet battle_after. A death or loss shot inside the battle holds as usual; the zoom follows the
+        battle's extent. Other agents' urgent events are insets (on_alert)."""
+        b = self.battle
+        cur = self.state.get(self.onair) or {}
+        cpos = dict(cur.get("position") or {}, surface=cur.get("surface")) if cur.get("position") else None
+        if cur.get("subject") in HOLDS and now < cur.get("until", 0) and self.in_battle(cpos):
+            return  # a loss or death shot of this battle
+        if self.pending:
+            p = self.state.get(self.pending["slot"]) or {}
+            ppos = dict(p.get("position") or {}, surface=p.get("surface")) if p.get("position") else None
+            if p.get("battle") == b["key"] or self.in_battle(ppos) or (b["agent"] and p.get("subject") == b["agent"]):
+                return  # being framed: the cut comes within ready_s
+            self.pending = None
+        want = self.battle_target(b, by_name)
+        if cur.get("subject") == want["subject"] and (want["subject"] != "@battle" or self.in_battle(cpos)):
+            if abs(cur["zoom"] - want["zoom"]) >= self.cfg["zoom_delta"] or cur.get("battle") != b["key"] or \
+                    (cpos and dist(cpos, want.get("position") or cpos) > 8):
+                self.apply(self.slot(self.onair), dict(cur, **{k: v for k, v in want.items()}, since=cur.get("since", now)),
+                           f"battle: zoom {want['zoom']}", scores, now, quiet=True)
+            return
+        nxt = self.next_slot()
+        if not nxt:
+            self.apply(self.slot(self.onair), dict(want, since=now), f"battle: {b['label']}", scores, now)
+            self.onair_since = now
+            return
+        t = self.state.get(nxt["slot"])
+        if not t or t.get("subject") != want["subject"] or t.get("battle") != b["key"]:
+            self.frame_on(nxt, want, f"standby: battle {b['key']}", scores, now)
+        elif self.ready(nxt["slot"], now):
+            self.cut(nxt["slot"], f"battle ({b['why']}): {b['label']}", now)
+
+    def battle_info(self, now):
+        """snapshot["battle"]: the key battle on now (the hosts; replays.py covers it from its first sign), or None."""
+        b = self.battle
+        if not b:
+            return None
+        cur = self.state.get(self.onair) or {}
+        return {"key": b["key"], "why": b["why"], "label": b["label"], "agent": b["agent"], "first": round(b["first"], 1),
+                "since": round(b["since"], 1), "last": round(b["last"], 1), "lost": b["lost"],
+                "position": dict(b["position"], surface=b["surface"]), "extent": b["extent"],
+                "on_air": cur.get("battle") == b["key"] or bool(b["agent"] and b["agent"] in (cur.get("agents") or []))}
 
     # -- attention ---------------------------------------------------------------------------------------------
     def attention_far(self, a, by_name, now):
@@ -1013,7 +1196,7 @@ class OneCam(Director):
         if need:
             r, self.resume = self.resume, None
             if r and r["subject"] in scores and r["subject"] not in inset_agents and \
-                    subj in (None, "@attack", "@segment", "@map", "@platform"):
+                    subj in (None, "@attack", "@segment", "@map", "@platform", "@battle"):
                 want, resumed = r["subject"], r  # back to the story the urgent shot interrupted
                 self.resume = r  # kept until the cut back happens
             else:
@@ -1138,6 +1321,8 @@ class OneCam(Director):
                     row["work"] = t["work"]  # the page: "Astra · working on Starling"
             if t.get("attention"):  # the inset on where the agent on air is looking: "Sol · placing ghosts 40 m north"
                 row.update(work=t["work"], attention=t["attention"])
+            if key == "main" and self.battle and t.get("battle") == self.battle["key"]:
+                row["battle"] = self.battle["label"]  # "Sol in battle · 44 lost near (-237, 64): 40 gun turret ..."
             f = self.follow
             if key == "main" and f and f["label"] and now < f["until"] and f["agent"] in (t.get("agents") or []):
                 row["follow"] = f["label"]  # the on-air card: "Following Sol · Sol vs the Demolisher"

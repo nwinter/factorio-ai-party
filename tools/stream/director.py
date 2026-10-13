@@ -201,7 +201,8 @@ class Director:
                 fell = by_name.get(al.get("agent")) or {}
                 p = fell.get("position") or al.get("position")
                 if p:
-                    return None, {"x": round(p["x"], 1), "y": round(p["y"], 1), "surface": surface_of(fell)}, al
+                    surf = surface_of(fell) if fell else (p.get("surface") or "nauvis")  # (no agent row: the alert's)
+                    return None, {"x": round(p["x"], 1), "y": round(p["y"], 1), "surface": surf}, al
                 continue
             if al.get("agent") in scores:
                 return al["agent"], None, al  # the agent itself is in the fight: following it frames the fight

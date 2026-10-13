@@ -851,6 +851,18 @@
         label.classList.add("on");
         continue;
       }
+      if (cam && cam.battle && !cam.attack && !agents.length) { // a key battle's area, no agent in it (onecam.py)
+        if (label.dataset.sig !== "battle|" + cam.battle) {
+          label.dataset.sig = "battle|" + cam.battle;
+          label.textContent = "";
+          label.append(el("span", "ico", "⚔️"), el("span", "", cam.battle));
+        }
+        frame.style.borderColor = "rgba(224,78,58,0.75)";
+        frame.style.setProperty("--bracket", "rgba(224,78,58,0.9)");
+        label.classList.remove("death");
+        label.classList.add("on", "attack");
+        continue;
+      }
       if (cam && cam.attack && !agents.length) { // a base attack nobody is near, or where an agent fell
         if (label.dataset.sig !== sig) {
           label.dataset.sig = sig;
