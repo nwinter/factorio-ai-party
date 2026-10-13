@@ -45,6 +45,7 @@ sys.path.insert(0, str(ART.parent))
 import avatar as avatar_art  # noqa: E402  (tools/stream/avatar.py, reads the part lists from avatar.js)
 sys.path.insert(0, str(SITE))
 import longrun  # noqa: E402  (site/longrun.py: the long run's shifts from runs/)
+import agents as agent_pages  # noqa: E402  (site/agents.py: /agents/ and /timeline/ from tools/agent_stats.py)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -501,7 +502,8 @@ def nav_items():
     if archive():
         return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"),
                 ("/about/", "About")]
-    return [("/", "Live")] + ([("/runs/long/", "The run")] if LONG else []) + [("/about/", "About")]
+    return [("/", "Live")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline")]
+                              if LONG else []) + [("/about/", "About")]
 
 
 def social_meta(full, site_title, description, path):
@@ -1492,6 +1494,7 @@ def main():
                     help="another site.json (tests: the archive switch and run_start; default $POG_SITE_CONTENT)")
     ap.add_argument("--videos", default=str(SITE / "content" / "videos.json"),
                     help="the shifts' YouTube videos (tools/yt_upload.py writes it; missing: no videos)")
+    ap.add_argument("--stats-cache", help="where tools/agent_stats.py caches each shift (default: the shift's folder)")
     args = ap.parse_args()
     if args.content:
         global CONTENT, AGENTS
@@ -1523,6 +1526,16 @@ def main():
         for s in LONG["shifts"]:
             if not s.get("empty"):
                 write(f"runs/long/shift-{s['n']}/index.html", build_shift_page(s, shift_video(s), LONG))
+        team = [k for k in AGENTS if not AGENTS[k].get("earlier")]
+        stats = agent_pages.collect(LONG, args.runs_dir, team, args.stats_cache, [agent(k)["name"] for k in AGENTS])
+        body, head = agent_pages.build_agents(stats, agent, avatar, esc)
+        write("agents/index.html", page("Agents", body, "/agents/", "Each agent's numbers across the run's shifts.",
+                                        extra_head=head, path="/agents/"))
+        events = agent_pages.timeline_events(LONG, args.runs_dir, team,
+                                             lambda t: longrun.MILESTONES.get(t, t.replace("-", " ")).capitalize(), stats)
+        body, head = agent_pages.build_timeline(events, agent, avatar, esc, game_time)
+        write("timeline/index.html", page("Timeline", body, "/timeline/", "The run's events in game time.",
+                                          extra_head=head, path="/timeline/"))
     write("about/index.html", build_about(runs, all_worlds))
     if archive():  # the test history: experiments, earlier runs, agent pages (made of those runs), studies
         write("experiments/index.html", build_experiments(runs, all_worlds))
