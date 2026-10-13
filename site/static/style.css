@@ -358,6 +358,8 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .bars li { display: grid; grid-template-columns: 7.5em 1fr 2.5em; gap: 10px; align-items: center; font-size: .9rem; }
 .bar-track { height: 12px; background: var(--well); box-shadow: var(--well-shadow); border-radius: var(--fx-r-1); padding: 2px; }
 .bar { display: block; height: 100%; background: var(--s1); border-radius: 1px; min-width: 2px; }
+.packs-bars li { grid-template-columns: 7.5em 1fr 4.5em; }
+.packs-bars .bar-val { text-align: right; font-variant-numeric: tabular-nums; }
 .bar-val { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 
 /* incidents */

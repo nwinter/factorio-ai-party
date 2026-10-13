@@ -1072,6 +1072,18 @@ def key_times(lr):
     return (f'<h2 id="key-times">Key times</h2><div class="keytimes">{"".join(tiles)}</div>') if tiles else ""
 
 
+def packs_bars(made, title="Science packs made"):
+    """Each pack's total as a bar (the pack's chart colour; the number in ink)."""
+    have = [(item, lab, made.get(item, 0)) for item, lab in longrun.PACKS if made.get(item)]
+    if not have:
+        return ""
+    top = max(v for _, _, v in have)
+    items = "".join(f'<li><span class="bar-label">{esc(lab)}</span><span class="bar-track"><span class="bar" '
+                    f'style="width:{100 * v / top:.1f}%;background:var({PACK_STYLE[item][0]})"></span></span>'
+                    f'<span class="bar-val">{v:,}</span></li>' for item, lab, v in have)
+    return f'<figure class="bars packs-bars"><figcaption><strong>{esc(title)}</strong></figcaption><ul>{items}</ul></figure>'
+
+
 def records(done):
     """Bests over the shifts (a shift still on counts with what it has so far)."""
     def best(key, fmt, low=False):
@@ -1168,6 +1180,7 @@ def build_long_run(lr):
 <h2 id="charts">Charts</h2>
 <p class="muted small">Game time on the x axis; S1, S2 ...: shift starts. Hover for the Pacific time.</p>
 {long_charts(lr)}
+{packs_bars(lr["made"])}
 <h2 id="shifts">Shifts</h2>
 <div class="table-wrap"><table class="long-run wide"><thead><tr><th scope="col">Shift</th><th scope="col">When (Pacific)</th>
 <th scope="col">Game time</th><th scope="col">Technologies</th><th scope="col">Science / min</th><th scope="col">Packs made</th>
