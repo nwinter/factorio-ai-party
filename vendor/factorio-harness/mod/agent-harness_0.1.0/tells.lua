@@ -104,6 +104,24 @@ return function(api)
   function M.handlers.tells(p, a) return read(a, api.who(p)) end
   -- Operator (RCON, `operator: true` dispatch): every tell, for the stream.
   function M.operator.tells(a) return read(a, nil) end
+  -- Operator: a tell from `operator` (tools/idle_nudge.py: facts for an agent
+  -- whose character stands idle). Like a teammate's: the next reply's team
+  -- tells, a wake from sleep (woke=told), never the game chat.
+  function M.operator.tell(a)
+    local text, cut = one_line(a.text)
+    local names, team = recipients(a.to, nil)
+    local s = store()
+    s.seq = s.seq + 1
+    local t = {seq=s.seq, tick=game.tick, from='operator', to=names, team=team or nil, text=text}
+    s.log[#s.log+1] = t
+    while #s.log > MAX_LOG do table.remove(s.log, 1) end
+    local index = {}
+    for _, a2 in ipairs(api.agents()) do index[a2.name] = a2.index end
+    for _, name in ipairs(names) do
+      if index[name] then api.deliver(index[name], t) end
+    end
+    return {seq=t.seq, to=team and 'team' or names, cut=cut}
+  end
 
   -- Requests to the operator (the people running the harness and stream):
   -- filed here, read by the stream service (operator_requests), which keeps

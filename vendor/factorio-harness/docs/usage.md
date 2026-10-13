@@ -585,6 +585,13 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Operator: `tools/harness-requests.py list|show|answer|board|events|mentions` in the pog repo. Underneath, a dispatch
   request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`,
   `board_plan` (goals and other agents' lines; the operator has no line), `mention_counts` and `tells` as `operator`.
+- Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
+  `standing_s` (how long its character has had no action, no running queue and a body on the map; kept once a second
+  for agents that made a request; an fh sleep with nothing running counts as standing, a timed action does not),
+  `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
+  `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board` and `last_request_s`. `tell {to,
+  text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells, waking a sleeper
+  (woke=told), never in the game chat.
 - Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
   request against a full backlog); nothing runs per tick.
 

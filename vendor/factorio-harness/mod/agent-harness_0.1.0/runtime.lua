@@ -3873,6 +3873,15 @@ function handlers.research_done(p,a) return M.research.done(p,a) end
 M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
   where_from=function(me) return M.where.from(me) end}
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
+-- Idle characters for the operator's nudge (idle.lua): idle_report, and the
+-- standing clock idle_tick keeps.
+M.idle=require('idle'){state=state,agents=function() return M.board.agents() end,
+  mention_counts=function() return M.board.operator('mention_counts',{}) end,
+  unread=function(index) return M.chat.unread(index,'peek') end,
+  has_body=function(index)
+    local ok,p=pcall(M.lookup,index)
+    return ok and p~=nil and p.valid and p.character~=nil and p.character.valid or false
+  end}
 -- Where teammates are (where.lua): status teammates, and the place of a
 -- sender or claim owner on another planet in tells, chat and the board.
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
@@ -4004,6 +4013,10 @@ local function idle_tick()
     if not now and not planned then c.idle=c.idle+1
     elseif now and now.awaiting_craft then c.craft_wait=(c.craft_wait or 0)+1 end
   end
+  -- When each character started standing (no action, no running queue, a body
+  -- on the map), once a second, unlike the per-request idle count above
+  -- (idle.lua idle_report: the operator's idle nudge).
+  if game.tick%60==0 then M.idle.stand_tick() end
 end
 local dispatch_request
 function M.dispatch(request)
@@ -4013,7 +4026,7 @@ function M.dispatch(request)
   if request.operator==true then
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
-      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action]
+      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
