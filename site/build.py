@@ -965,8 +965,6 @@ def build_shift_page(s, v, lr):
                  f'<div class="shift-text">{description_html(v.get("description", ""))}</div>'
                  + (f'<h2>Chapters</h2><ol class="chapters">{chapters}</ol>' if chapters else ""))
     mine = [f for f in lr["firsts"] if f["shift"] == s["n"]]
-    packs = "".join(f'<tr><th scope="row">{esc(lab)}</th><td class="num">{s["made"].get(item, 0):,}</td></tr>'
-                    for item, lab in longrun.PACKS if s["made"].get(item))
     lo, hi = s["tick0"] / 3600, s["tick1"] / 3600
     who = lambda w: agent(w.lower())["name"] if w.lower() in AGENTS else w  # noqa: E731  (the log's spelling varies)
     deaths = "".join(f'<li><span class="c-time">{esc(_pt(d["t"], day=False))}</span>'
