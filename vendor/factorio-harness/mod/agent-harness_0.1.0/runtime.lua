@@ -608,6 +608,7 @@ function handlers.describe()
       'Vehicles, rail placement, circuit wiring, and fluid transfers are unsupported',
       'Walk/mine completion is bounded by ticks; inspect status and observe to verify outcomes'}}
   for name,schema in pairs(scheduler and scheduler.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.orders and M.orders.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(clock and clock.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.chat and M.chat.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(space and space.schema or {}) do description.actions[name]=schema end
@@ -870,7 +871,7 @@ function handlers.status(p,a)
     return {brief=true,active=active(p.index),last=state().last and state().last[p.index] or false,combat=state().combat and state().combat[p.index] or false,
       last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,connected=p.connected,
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
-      alerts=a.alerts==true and recent_alerts(a,p) or nil,
+      alerts=a.alerts==true and recent_alerts(a,p) or nil,order=M.orders.brief(p.index),
       supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,tick=game.tick,position=p.position}
   end
   assert(a.alerts==nil,'alerts is an option of brief (a full status always has them)')
@@ -929,7 +930,7 @@ function handlers.status(p,a)
   return {crafting=alive and crafting_line(p) or nil,inv=factory.inv,factory=factory.factory,machines=factory.machines,machine_positions=factory.machine_positions,warnings=factory.warnings,factory_as_of=factory.as_of,survey_error=factory.error,
     evolution=threats.evolution,pollution=threats.pollution,enemies=threats.enemies,chart=threats.chart,threats_as_of=threats.as_of,
     alerts=alerts,runtime_fault=state().runtime_fault or false,connected=p.connected,alive=p.character and p.character.valid or false,cheat_mode=p.cheat_mode,
-    supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,
+    supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,active=now,order=M.orders.brief(p.index),
     spoiling=alive and spoil_text(main_inventory(p)) or nil,on_belt=alive and M.belt.note(p) or nil,teammates=M.where.team(p),
     surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,riding=p.driving or nil, last=state().last and state().last[p.index] or false, combat=state().combat and state().combat[p.index] or false, last_combat=state().last_combat and state().last_combat[p.index] or false, tick=game.tick, position=p.position}
 end
@@ -3914,6 +3915,23 @@ scheduler=scheduler_module{
   end
 }
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
+-- Standing orders (orders.lua): the agent's routines, run in its own queue
+-- while its character is free.
+M.orders=require('orders'){state=state,player=player,scheduler=scheduler,
+  condition=function(p,c) return conditions.check(p,c) end,validate_condition=function(c) return conditions.validate(c) end,
+  busy=function(index)
+    local action=state().active[index]
+    if action then return action.kind end
+    if state().combat and state().combat[index] then return 'shoot' end
+  end,
+  interrupt=function(index) M.stop_player(index,'interrupted') end,
+  -- The agent's own last request (a clock a peek started is not one) or fh sleep poll.
+  last_seen=function(index)
+    local c=(state().clocks or {})[index]
+    if not c then return nil end
+    return math.max(not c.peeked and c.call_tick or 0,c.wait_tick or 0)
+  end}
+for name,handler in pairs(M.orders.handlers) do handlers[name]=handler end
 clock=clock_module{state=state,lookup=function(index) return M.lookup(index) end}
 for name,handler in pairs(clock.handlers) do handlers[name]=handler end
 -- Direct wait_ticks and sleep/sleep_check (waits.lua).
@@ -3965,6 +3983,7 @@ for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
 M.idle=require('idle'){state=state,agents=function() return M.board.agents() end,
   mention_counts=function() return M.board.operator('mention_counts',{}) end,
   unread=function(index) return M.chat.unread(index,'peek') end,
+  orders=function(index) return M.orders.report(index) end,
   has_body=function(index)
     local ok,p=pcall(M.lookup,index)
     return ok and p~=nil and p.valid and p.character~=nil and p.character.valid or false
@@ -4024,7 +4043,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
+local passive={order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
 local reads={placements=true,defense=true,flamers=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -4152,6 +4171,8 @@ function M.dispatch(request)
     local before=p and p.valid and (state().clocks or {})[p.index]
     local last_call=before and not before.peeked and before.call_tick or nil
     if p and p.valid then result.clock=clock_line(p,peek) end
+    -- Standing orders: which runs and why, or what they wait for (orders.lua).
+    if p and p.valid and result.orders==nil then result.orders=M.orders.line(p.index) end
     -- Who works on which platform, for its alerts (platalerts.lua).
     if p and p.valid and not peek and type(request.args)=='table' then pcall(M.platalerts.note,p,request.action,request.args,result) end
     -- An fh sleep poll keeps a sleeping agent active for votes (votes.lua).
@@ -4232,6 +4253,7 @@ dispatch_request=function(request)
   local sleeping=request.action=='observe' and type(request.args)=='table' and request.args.scope=='sleep_check'
   if peek or sleeping or request.action=='status' or request.action=='queue_status' or request.action=='queue_cancel' then
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
+    if request.action=='queue_cancel' then M.orders.on_drive(p.index) end
     return handler(body(p),request.args or {})
   end
   -- A dead bot's observe answers when it respawns, as sleep_check does
@@ -4257,6 +4279,8 @@ dispatch_request=function(request)
     local q=state().queues and state().queues[p.index]
     if q and not q.paused then M.stop_player(p.index) end
   end
+  -- The agent's own character work and queue calls: standing orders wait a while after it (orders.lua hold).
+  if not reads[request.action] and not passive[request.action] and request.action~='queue_status' then M.orders.on_drive(p.index) end
   if passive[request.action] then
     local ok,result=pcall(handler,p,request.args or {})
     if not ok then passive_failed=game.tick; error(result,0) end
@@ -4575,6 +4599,7 @@ function M.tick_body(event)
     end
   end
   scheduler.tick()
+  M.orders.tick()
   clock.tick()
   M.cameras.tick()
 end
@@ -4671,7 +4696,7 @@ end
 M.profile=require('profile')()
 M.profile.wrap(M,{{M.board,'team','board.team'},{M.ground,'unseen','ground.unseen'},{M.research,'shift_block','research.shift_block'},
   {M.chat,'unread','chat.unread'},{M.chat,'left','chat.left'},{M.bots,'status','bots.status'},{M.bots,'tick','bots.tick'},
-  {M.research,'tick','research.tick'},{M.nametags,'tick','nametags.tick'},{M.cameras,'tick','cameras.tick'},{scheduler,'tick','scheduler.tick'},
+  {M.research,'tick','research.tick'},{M.nametags,'tick','nametags.tick'},{M.cameras,'tick','cameras.tick'},{scheduler,'tick','scheduler.tick'},{M.orders,'tick','orders.tick'},
   {clock,'tick','clock.tick'},{clock,'after_dispatch','clock.after_dispatch'},{threat,'on_damaged','threat.on_damaged'},{threat,'on_group','threat.on_group'},
   {M.players,'on_event','players.on_event'},{M.vehicles,'tick','vehicles.tick'},{M.ground,'tick','ground.tick'},{survey,'sample','survey.sample'},
   -- a full status's scans (each cached; these show when one ran and what it cost)

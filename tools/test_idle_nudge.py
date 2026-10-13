@@ -45,6 +45,13 @@ def main():
     assert n.due(row("astra", 30, alive=False), T0 + 900) == "active"
     assert n.due(row("astra", 30, action="wait_ticks"), T0 + 900) == "in an action"
     assert n.due(row("astra", 30), T0 + 3600) == "after the deadline"
+    # a standing order running for the agent is work (orders.lua; the report's orders.running), never a nudge
+    assert n.due(row("astra", 30, orders={"set": 2, "running": "restock-ammo"}), T0 + 900) == "running a standing order"
+    assert n.due(row("astra", 30, orders={"set": 2}), T0 + 900) is None
+    t = N.nudge_text(row("astra", 12, orders={"set": 2}))
+    assert "Queue: none. Standing orders: 2 set, none running. Unread for you:" in t, t
+    assert "Standing orders: 1 set, paused." in N.nudge_text(row("astra", 12, orders={"set": 1, "paused": True}))
+    assert "Standing orders" not in N.nudge_text(row("astra", 12))
     # a send that fails is logged and tried again at the next poll (not counted as a nudge)
     m = N.Nudger([], start=T0)
     bad = []
@@ -65,8 +72,8 @@ def main():
     dl = N.run_deadline(d)
     assert dl and N.time.strftime("%Y-%m-%d %H:%M", N.time.localtime(dl)) == "2026-10-13 10:56", dl
     json.dumps(rows)  # the log rows are JSON
-    print("idle nudge: ok (grace, 10 min, 20 min cooldown, deadline, team only, actions and the dead skipped, facts "
-          "text, failures retried, log rows)")
+    print("idle nudge: ok (grace, 10 min, 20 min cooldown, deadline, team only, actions, standing orders and the dead "
+          "skipped, facts text, failures retried, log rows)")
 
 
 if __name__ == "__main__":

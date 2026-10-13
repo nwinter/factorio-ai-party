@@ -247,6 +247,8 @@ class LiveSource:
                 a["connected"] = st.get("connected", True) if a["kind"] == "player" else True
                 a["last"] = st.get("last")
                 a["combat"] = bool(st.get("combat"))
+                # a standing order running in the agent's queue (orders.lua): {name, reason, step, steps}, or None
+                a["auto"] = st.get("order") or None
                 # the director's look-ahead (onecam.py): the action running now as status reports it (kind, until_tick,
                 # total/placed/remaining, bounds, destination), from the status poll this service makes anyway
                 act = st.get("active")

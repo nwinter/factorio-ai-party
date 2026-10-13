@@ -54,3 +54,9 @@ test('full status: the teammates line follows the clock line', () => {
   const output = formatCompact({ok:true,id:'s',result:{teammates:'Sol on Vulcanus; Astra 110 tiles N',alive:true,clock:'game 1m',tick:5}});
   assert.equal(output,'alive: true\nclock: "game 1m"\nteammates: "Sol on Vulcanus; Astra 110 tiles N"\ntick: 5\n');
 });
+test('the standing orders line follows the clock line (and comes before teammates)', () => {
+  const line = 'orders: restock-ammo running (3 turrets below 20), step 2/5';
+  assert.equal(formatCompact({ok:true,id:'s',result:{orders:line,built:1,clock:'game 1m'}}),`built: 1\nclock: "game 1m"\norders: "${line}"\n`);
+  assert.equal(formatCompact({ok:true,id:'s',result:{teammates:'Sol 5 tiles E',orders:line,clock:'game 1m',tick:5}}),
+    `clock: "game 1m"\norders: "${line}"\nteammates: "Sol 5 tiles E"\ntick: 5\n`);
+});

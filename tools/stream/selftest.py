@@ -247,6 +247,13 @@ def main():
     assert by["astra"]["activity"] == "acting" and by["astra"]["action"] == "mining"
     assert by["luna"]["activity"] == "dead" and "respawning" in by["luna"]["action"], by["luna"]
     assert set(by) == {"astra", "luna"}, set(by)  # ten cards in shake8; the team is two here
+    # a standing order running for an agent (orders.lua, status `order`): the card says "auto: <order>"
+    auto = {"name": "restock-ammo", "reason": "3 turrets below 20", "step": 2, "steps": 5}
+    m.ingest({"agents": [{"name": "astra", "alive": True, "active": "walk", "auto": auto}]}, time.time())
+    a2 = {a["name"]: a for a in m.snapshot(time.time())["agents"]}["astra"]
+    assert a2["action"] == "auto: restock ammo" and a2["auto"]["reason"] == "3 turrets below 20", a2
+    m.ingest({"agents": [{"name": "astra", "alive": True, "active": "mine", "auto": None}]}, time.time())
+    assert {a["name"]: a for a in m.snapshot(time.time())["agents"]}["astra"]["action"] == "mining"
     # the model keeps out names outside the team even if a source reports them
     m.ingest({"agents": [{"name": "NickWinter", "kind": "player", "alive": False, "position": {"x": 0, "y": 0}}]}, time.time())
     assert "NickWinter" not in {a["name"] for a in m.snapshot(time.time())["agents"]}

@@ -49,6 +49,8 @@ return function(api)
         sleep_left_s=sleeping and math.floor((sl.until_tick - game.tick) / 60) or nil,
         unread_chat=unread.unread or 0, unread_mentions=c.unread_mentions or 0, unread_tells=c.tells or 0,
         unread_board=c.unread_board or 0,
+        -- Standing orders (orders.lua): {set, running, reason, paused}; a running order is a running queue, so not standing.
+        orders=api.orders and api.orders(ag.index) or nil,
         last_request_s=clock and math.floor((game.tick - math.max(clock.call_tick, clock.seen_tick or 0)) / 60) or nil}
     end
     return {agents=out, tick=game.tick}

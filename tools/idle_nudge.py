@@ -8,8 +8,9 @@ replies, so it missed the team's messages. Every --poll seconds this reads the h
 (idle.lua, read only) and sends one operator tell (tells.lua: the next reply's team tells, and a wake from sleep;
 never the game chat) to an agent whose character has stood --idle-min minutes or more: no action, no running queue
 step, a body on the map (dead or in a cargo pod is not standing). A timed action the agent chose (wait_ticks,
-wait_until) is an action, so it is never nudged; an fh sleep with nothing running is standing. The tell holds facts
-only: how long, the queue and sleep state, what waits unread. At most once per --every-min minutes per agent, never in
+wait_until) is an action, so it is never nudged; an fh sleep with nothing running is standing. A standing order
+running for the agent (orders.lua: the report's `orders.running`) is work, so never nudged. The tell holds facts
+only: how long, the queue and sleep state, the standing orders set, what waits unread. At most once per --every-min minutes per agent, never in
 the first --grace-min minutes after this process starts (the shift start), and not after the run's deadline. Each
 nudge is a line in runs/RUN/nudges.jsonl (sent or not, and why not).
 """
@@ -38,6 +39,14 @@ def queue_text(q):
     return "empty" if q.get("state") == "empty" else "none"
 
 
+def orders_text(o):
+    """The report's standing orders (orders.lua report: {set, running, paused}), or '' with none set."""
+    if not o or not o.get("set"):
+        return ""
+    n = o["set"]
+    return f" Standing orders: {n} set, " + ("paused" if o.get("paused") else "none running") + "."
+
+
 def nudge_text(row):
     """The tell: facts only, no advice."""
     sleep = f", sleeping {minutes(row['sleeping_s'])} min" if row.get("sleeping_s") else ""
@@ -49,8 +58,8 @@ def nudge_text(row):
     if row.get("unread_board"):
         unread.append(count(row["unread_board"], "board line"))
     return (f"Operator (automatic, facts only): your character has stood idle for {minutes(row['standing_s'])} min "
-            f"(no action, no queue step{sleep}). Queue: {queue_text(row.get('queue'))}. Unread for you: "
-            + ", ".join(unread) + ".")
+            f"(no action, no queue step{sleep}). Queue: {queue_text(row.get('queue'))}.{orders_text(row.get('orders'))} "
+            "Unread for you: " + ", ".join(unread) + ".")
 
 
 class Nudger:
@@ -71,6 +80,8 @@ class Nudger:
             return "active"
         if row.get("action"):
             return "in an action"
+        if (row.get("orders") or {}).get("running"):
+            return "running a standing order"
         if now - self.start < self.grace_s:
             return "first minutes of the shift"
         if self.deadline and now >= self.deadline:

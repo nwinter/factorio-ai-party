@@ -30,47 +30,57 @@ the shift.
   - rearm: Astra 400 ammo transfers in queued plans, Grok 93 by hand;
   - repair: 1,429 repair steps in queued plans.
 - Repeating plans that worked were short loops (feed a row of machines, refill turrets). The failure mode is the
-  one Nick saw: a loop that finishes, then nothing until the agent's next turn (Sonnet: a short plan, then 25 min).
+  one the operator saw: a loop that finishes, then nothing until the agent's next turn (Sonnet: a short plan, then 25 min).
 
 ## Design
 
 **Orders.** Each agent has up to 6 standing orders, kept in the save (they survive shift changes):
 
 ```
-order_set {name, steps, when?, priority 1-9, cooldown_ticks?, interval_ticks?, max_ticks?}
-order_remove {name}     orders_pause / orders_resume     orders  (list with state)
+order_set {name, steps, when?, priority 1-9 (with when), cooldown_ticks? (with when), interval_ticks? (default), max_ticks?}
+order_remove {name}     orders_pause {seconds?}     orders_resume {hold_s?}     orders  (list with state)
 ```
 
 - `steps`: the same steps as `queue_submit` (any player action, labels, on_fail), at most 32.
 - With `when`: a triggered order. `when` takes the existing predicates (`ammo_below`, `item_count` on chests,
   `health_below`, `no_enemies`, `researched`...) plus three new ones: `ghosts_waiting {position, radius, at_least}`,
-  `damaged {position, radius, below}` (our buildings under a health fraction), `fuel_below {position, radius, count}`
-  (burner machines and boilers). All read only what the player could see, like the existing ones.
+  `damaged {position, radius, fraction}` (our buildings under a health fraction, default any damage),
+  `fuel_below {position, radius, count}` (burner machines: furnaces, drills, boilers, burner inserters). All read only
+  what the player could see, like the existing ones.
 - Without `when`: the default routine, run whenever no trigger holds (at most one default per agent), with
   `interval_ticks` (default 1800) between runs.
 
-**When they run.** Only when the character is free: no direct action running, the queue empty and not looping, not
-riding a rocket or aboard a platform. Then the highest-priority trigger that holds and is off cooldown runs, else the
-default. An order runs as a plan in the agent's own queue, marked with its name.
+**When they run.** Only when the character is free: no direct action running, the queue empty and not looping, a
+body on the map (not dead, riding or aboard), the agent in the game (a request of its own or an fh sleep poll in the
+last 30 min, so a world left running between shifts does not play on for absent agents), and 20 s after the agent's own last character request or queue call
+(`orders_resume {hold_s}` sets 0..600), so an agent acting step by step keeps its character between requests. Then
+the highest-priority trigger that holds and is off cooldown runs, else the default. An order runs as a plan in the
+agent's own queue, marked with its name (`queue_status` shows `order`).
 
-**Preemption.** Any request that drives the character (a direct action, `queue_submit`, `queue_repeat`, `plan_run`)
-stops a running order at once. The order keeps its remaining steps and resumes when the character is free again, if
-its trigger still holds (a default resumes; a trigger that no longer holds is dropped until it fires again). Reads,
-chat and board posts do not preempt.
+**Preemption.** Any request that drives the character (a direct action, `queue_submit`, `queue_repeat`, `plan_run`,
+`queue_cancel`) stops a running order at once; `queue_edit` is refused while one runs. The order keeps its remaining
+steps (an interrupted relative step such as `wait_ticks` is not repeated, as in a paused plan) and resumes when the
+character is free again, if its trigger still holds. A holding trigger of higher priority also stops a running order
+(the default counts 0), which resumes after. Reads, chat, crafting and board posts do not preempt.
 
-**Status.** Every reply carries one line while orders exist:
-`orders: restock-ammo running (3 turrets below 20 near (12,-40)), step 2/5` or
-`orders: waiting (patrol next in 40 s)` or `orders: paused by your move_to, restock-ammo resumes after` or
-`orders: lab-feed off after 3 failures: <reason>`. The stream state gets the running order's name and reason, so the
-overlay and site can show "auto: restock ammo" next to the agent.
+**Status.** Every reply carries one `orders` line while orders exist (right after the clock line in compact output):
+`orders: restock-ammo running (3 turrets below 20), step 2/5`,
+`orders: waiting (1 trigger not holding; patrol next in 40 s)`, `orders: patrol waits for your move_to, resumes after`,
+`orders: patrol resumes in 12 s (after your last action)`, `orders: paused (orders_resume)`, and for a failing order
+`lab-feed failed 1/3: transfer: ...` or `lab-feed off after 3 failures: ... (order_set it again)`. Status (brief and
+full) has `order {name, reason, step, steps}`; the stream overlay shows "auto: restock ammo" on the agent's card. The
+operator's `idle_report` has `orders {set, running, reason, paused}`; `tools/idle_nudge.py` never nudges an agent
+whose order is running, and its tell says how many orders are set.
 
 **Limits.**
 - Per tick: each agent's triggers are checked once a second, staggered by player index, one predicate per agent per
-  check, radius at most 64, at most 16 chest positions. No predicate runs while the character is busy.
+  check, radius at most 64, at most 16 chest positions. While the agent's own work keeps the character busy no
+  predicate runs; while an order runs, only triggers of higher priority are checked.
 - Per agent: 6 orders, 32 steps each, one order running at a time. A run stops after `max_ticks` (default 3600, up
   to 18000). A trigger waits `cooldown_ticks` (default 600, at least 300) before it can fire again.
-- Failures: an order that fails 3 runs in a row is switched off, with the reason in the status line and a `team:`
-  note; `order_set` with the same name switches it back on.
+- Failures: a failed step (or a run over `max_ticks`) fails the run; an order that fails 3 runs in a row is switched
+  off, with the reason in the status line on every reply; `order_set` with the same name switches it back on.
+- A fault in the orders code stays in the agent's orders line; it never stops the runtime.
 - Survival-fair: steps are the agent's own actions through the same handlers (walking, reach, inventory, crafting
   time). Nothing acts at a distance; nothing the agent couldn't do itself.
 
@@ -78,10 +88,21 @@ overlay and site can show "auto: restock ammo" next to the agent.
 courier runs, repairs, ghosts), so your character keeps working while you think; your own requests always come
 first.
 
-## v1 scope (eng/standing)
+## v1 (eng/standing)
 
-`orders.lua` beside `scheduler.lua` (state, `order_set`/`order_remove`/`orders`/pause and resume, the free-character
-check, trigger evaluation with the limits above, preemption hooks in the request path, the status line), the three
-new predicates in `conditions.lua`, the `team.md` paragraph, and the stream state field. Tests: Lua tests in
-`vendor/factorio-harness/tests` (free check, priority and default, cooldown, preemption and resume, failure switch-off,
-limits, the new predicates) and `npm test`. Measure again with `tools/idle_report.py` after a shift with orders.
+| Part | Where |
+|---|---|
+| Orders: state, calls, the once-a-second look, the line | `mod/agent-harness_0.1.0/orders.lua` |
+| Runs in the agent's queue, preemption, run results | `scheduler.lua` (`run_order`, `order`, `cancel_order`, `order_result`) |
+| `ghosts_waiting`, `damaged`, `fuel_below` | `conditions.lua` |
+| Request path, `orders` line, status `order`, tick | `runtime.lua` |
+| `idle_report` `orders` | `idle.lua`, `tools/idle_nudge.py` |
+| Compact output: the line after the clock | `host/format.ts`, `host/cli.ts` |
+| Overlay "auto: name" | `tools/stream/live.py`, `tools/stream/model.py` |
+| Prompt | `agent/team.md` |
+
+Tests: `tests/orders.lua` (default and hold, preemption and resume, reads not preempting, triggers and cooldown,
+priority takeover, queue calls, pause and resume, `max_ticks`, 3-failure switch-off, limits and argument checks,
+per-agent, idle clock, describe), `tests/conditions.lua` (the new predicates), `tests/format.test.ts`,
+`tools/stream/selftest.py`, `tools/test_idle_nudge.py`, and `npm test`. Next: measure again with
+`tools/idle_report.py` after a shift with orders.

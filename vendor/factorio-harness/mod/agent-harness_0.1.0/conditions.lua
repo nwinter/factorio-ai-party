@@ -1,10 +1,11 @@
 -- World predicates for plan waits and guards. Each reads only what the player
 -- could see: enemy structures on the chart, units in visible chunks, our own
--- turrets, the character's health and inventory.
+-- turrets, ghosts, buildings and burners, the character's health and inventory.
 return function(api)
   local M={}
   local ENEMY_STRUCTURES={'unit-spawner','turret'}
   local OUR_TURRETS={'ammo-turret','electric-turret','fluid-turret','artillery-turret'}
+  local BURNERS={'furnace','mining-drill','boiler','inserter','assembling-machine','reactor','burner-generator','car','locomotive'}
   local function number(v,low,high,name)
     assert(type(v)=='number' and v>=low and v<=high,name..' must be a number in '..low..'..'..high)
     return v
@@ -86,8 +87,45 @@ return function(api)
     researched=function(p,c)
       local t=p.force.technologies[c.technology]; return t.researched,c.technology..(t.researched and ' researched' or ' not researched')
     end,
+    -- Our ghosts (entities and tiles) waiting to be built.
+    ghosts_waiting=function(p,c)
+      local centre,radius=area(p,c)
+      local n=#p.surface.find_entities_filtered{position=centre,radius=radius,type={'entity-ghost','tile-ghost'},force=p.force}
+      return n>=(c.at_least or 1),n..' ghosts'
+    end,
+    -- Our buildings under a health fraction (default: any damage), the nearest named.
+    damaged=function(p,c)
+      local centre,radius=area(p,c)
+      local below=c.fraction or 1
+      local n,near,best=0,nil,nil
+      for _,e in pairs(p.surface.find_entities_filtered{position=centre,radius=radius,force=p.force}) do
+        if e.valid and e.type~='character' and e.type~='entity-ghost' and e.type~='tile-ghost' then
+          local ok,r=pcall(function() return e.get_health_ratio() end)
+          if ok and r and r<below then
+            n=n+1
+            local d=(e.position.x-centre.x)^2+(e.position.y-centre.y)^2
+            if not best or d<best then best,near=d,e end
+          end
+        end
+      end
+      return n>0,n..' damaged'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
+    end,
+    -- Our burner machines (furnaces, drills, boilers, burner inserters...) holding under count fuel items.
+    fuel_below=function(p,c)
+      local centre,radius=area(p,c)
+      local n,near,best=0,nil,nil
+      for _,e in pairs(p.surface.find_entities_filtered{position=centre,radius=radius,force=p.force,type=BURNERS}) do
+        local inv=e.valid and e.burner and e.get_fuel_inventory()
+        if inv and inv.get_item_count()<c.count then
+          n=n+1
+          local d=(e.position.x-centre.x)^2+(e.position.y-centre.y)^2
+          if not best or d<best then best,near=d,e end
+        end
+      end
+      return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
+    end,
   }
-  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|crafting_done|researched'
+  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|crafting_done|researched|ghosts_waiting|damaged|fuel_below'
   -- Argument checks run when a plan is submitted, not when it first fires.
   function M.validate(c)
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES)
@@ -107,6 +145,9 @@ return function(api)
       end
     end
     if kind=='researched' then assert(type(c.technology)=='string','researched requires technology') end
+    if kind=='ghosts_waiting' and c.at_least~=nil then number(c.at_least,1,100000,'at_least') end
+    if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
+    if kind=='fuel_below' then number(c.count,1,1000,'count') end
     return c
   end
   function M.check(p,c)

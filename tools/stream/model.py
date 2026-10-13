@@ -274,6 +274,7 @@ class Agent:
         self.last_activity_t = None  # wall time of the last observed action or speech
         self.combat = False
         self.plan = None  # the action running now with its bounds (live.py `plan`; onecam.py looks ahead with it)
+        self.auto = None  # a standing order running for it (live.py `auto`, orders.lua): {name, reason, step, steps}
         self.last_said = None
         self.interest = 0.0
         self.interest_t = time.time()
@@ -536,6 +537,8 @@ class Model:
         ag.combat = combat
         if "plan" in a:
             ag.plan = a["plan"] if active else None
+        if "auto" in a:
+            ag.auto = a["auto"] or None
         said = a.get("last_said")
         if said and said.get("text") and (not ag.last_said or said.get("tick") != ag.last_said.get("tick")):
             if ag.seen:
@@ -913,6 +916,8 @@ class Model:
             if ag.dead_until_tick and ag.dead_until_tick > self.tick:
                 return f"respawning in {math.ceil((ag.dead_until_tick - self.tick) / 60)} s"
             return "dead"
+        if ag.auto and ag.auto.get("name"):  # a standing order runs the character: "auto: restock ammo"
+            return "auto: " + str(ag.auto["name"]).replace("-", " ").replace("_", " ")
         if ag.active:
             return describe_action(ag.active)
         if ag.last and ag.last.get("kind"):
@@ -1164,7 +1169,7 @@ class Model:
                 "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen, "voice": ag.voice,
                 "voice_description": ag.voice_description, "pronouns": ag.pronouns, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at, "plan": ag.plan,
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
-                "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now),
+                "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now), "auto": ag.auto,
             })
         res = self.research
         science = self.science(now)
