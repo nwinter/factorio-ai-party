@@ -27,7 +27,7 @@ import re
 import sys
 from pathlib import Path
 
-VERSION = 4
+VERSION = 5
 # Requests that only read (no change in the game) and talk; every other action counts as a game action. The
 # clock line's "+Ns since your last request" is no measure of busy time: an agent's tools send requests too.
 READS = {"observe", "inspect", "sleep", "chat", "inventory", "inv", "tells", "board", "recipes", "placements",
@@ -245,7 +245,7 @@ def deaths(run_dir, keys, clock):
         k = key_of(m.group(2), keys)
         if not k:
             continue
-        if k in last and 0 <= (t - last[k]).total_seconds() <= 60:
+        if k in last and 0 <= (t - last[k]).total_seconds() <= 10:  # the pair is 2 s apart; a respawn can die in 30
             continue
         last[k] = t
         tick = tick_at(clock, t)
