@@ -147,7 +147,8 @@ def main():
                                   "Chapters\n0:00 Start\n1:00:05 First rocket launched",
                    "chapters": [{"at": 0, "time": "0:00", "title": "Start"},
                                 {"at": 3605, "time": "1:00:05", "title": "First rocket launched"}],
-                   "playlist": "PLx"},
+                   "playlist": "PLx", "timeline": [["2026-10-11T04:58:00-07:00", "2026-10-11T05:30:00-07:00"],
+                                                    ["2026-10-11T05:35:00-07:00", "2026-10-11T06:01:00-07:00"]]},
             "s1": {"id": "bad id <script>"}}))  # not a video id: ignored
         subprocess.run([sys.executable, str(SITE / "build.py"), "--out", str(out), "--runs-dir", str(root),
                         "--content", str(Path(d) / "site.json"), "--videos", str(videos)], check=True, capture_output=True)
@@ -159,6 +160,9 @@ def main():
         sp = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
         assert "embed/AbC_12-xyz9" in sp and "watch?v=AbC_12-xyz9&amp;t=3605s" in sp and "First rocket launched" in sp
         assert "<li>2 rockets launched</li>" in sp and "list=PLx" in sp and sp.count("1:00:05") == 1  # chapters once
+        # milestones link their moment in the video: the first rocket's row (05:40) is 32 min of the first recording
+        # plus 5 min into the second, less 2 minutes (score-log times run up to 2 minutes late)
+        assert "watch?v=AbC_12-xyz9&amp;t=2100s" in sp and "watch?v=AbC_12-xyz9&amp;t=2100s" in page
     print("long run: ok (chain, failed start, per-shift numbers, no start.log text, links, check.py, shift videos)")
 
 

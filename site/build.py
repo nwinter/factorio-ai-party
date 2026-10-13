@@ -769,6 +769,43 @@ def shift_href(s):
     return f'/runs/long/shift-{s["n"]}/'
 
 
+def _naive(d):
+    return d.astimezone().replace(tzinfo=None) if d.tzinfo else d
+
+
+def video_offset(v, t):
+    """Seconds into a shift's video for a local time (scores.jsonl's `t`), from videos.json's `timeline` (each
+    recording's wall-clock span, in video order; tools/yt_upload.py): a time in a gap maps to the next recording's
+    start, one up to 2 minutes before the first to 0:00 (as tools/shift_video.py offset()); None outside it."""
+    x = longrun.parse_t(t) if t else None
+    if not v or not x or not v.get("timeline"):
+        return None
+    x, at = _naive(x), 0.0
+    for i, (a, b) in enumerate(v["timeline"]):
+        a, b = longrun.parse_t(a), longrun.parse_t(b)
+        if not a or not b:
+            return None
+        a, b = _naive(a), _naive(b)
+        if x < a:
+            return at if i else (0.0 if (a - x).total_seconds() <= 120 else None)
+        if x <= b:
+            return at + (x - a).total_seconds()
+        at += (b - a).total_seconds()
+    return None
+
+
+def video_link(n, t, lead=20):
+    """A small "watch this moment" link into shift n's video, starting `lead` seconds before t, or "" (no video, or a
+    time outside it)."""
+    s = next((x for x in (LONG or {}).get("shifts", []) if x.get("n") == n), None)
+    v = shift_video(s) if s else None
+    off = video_offset(v, t)
+    if off is None:
+        return ""
+    return (f' <a class="vlink" href="https://www.youtube.com/watch?v={esc(v["id"])}&amp;t={max(0, int(off) - lead)}s" '
+            f'title="Watch this moment" aria-label="Watch this moment">▶</a>')
+
+
 def video_embed(v, start=0):
     """Privacy-enhanced embed (no cookies until play), 16:9, lazy."""
     q = f"?start={int(start)}" if start else ""
@@ -836,7 +873,7 @@ def firsts_table(firsts, shift_links=True, filters=False):
            + "".join(f'<button type="button" class="fx-btn small" data-kind="{k}" aria-pressed="false">{KIND_LABEL[k]}</button>'
                      for k in kinds) + '</div>') if filters and len(kinds) > 1 else ""
     rows = "".join(
-        f'<tr data-kind="{f["kind"]}"><td><span class="kind kind-{f["kind"]}">{KIND_LABEL[f["kind"]]}</span></td><th scope="row">{esc(f["label"])}</th>'
+        f'<tr data-kind="{f["kind"]}"><td><span class="kind kind-{f["kind"]}">{KIND_LABEL[f["kind"]]}</span></td><th scope="row">{esc(f["label"])}{video_link(f["shift"], f["t"], 20 if f["kind"] == "team" else 120)}</th>'
         f'<td class="num">{esc(longrun.game_time(f["tick"]))}</td><td class="num">{esc(_pt(f["t"]))}</td>'
         + (f'<td class="num"><a href="/runs/long/shift-{f["shift"]}/">{f["shift"]}</a></td>' if shift_links else "") + "</tr>"
         for f in firsts)
@@ -884,7 +921,7 @@ def shift_stats(s):
         stat("viewer messages", s["viewer_lines"])])
 
 
-def qa_html(qa):
+def qa_html(qa, n=None):
     items = []
     for q in qa:
         if q["kind"] == "viewer":
@@ -893,7 +930,7 @@ def qa_html(qa):
             who = agent_chip(q["who"])
         else:
             who = f'<span class="chip host">{esc(q["who"])}</span>'
-        items.append(f'<li class="qa-{q["kind"]}"><span class="c-time">{esc(_pt(q["t"], day=False))}</span>{who}'
+        items.append(f'<li class="qa-{q["kind"]}"><span class="c-time">{esc(_pt(q["t"], day=False))}{video_link(n, q["t"], 10)}</span>{who}'
                      f'<span class="c-text">{esc(q["text"])}</span></li>')
     if len(items) <= 40:
         return f'<ol class="chat qa">{"".join(items)}</ol>'
@@ -959,7 +996,7 @@ def build_shift_page(s, v, lr):
 {plat}</section>
 <section><h2>Deaths</h2>{f'<p class="muted small">{", ".join(f"{esc(k)} {n}" for k, n in sorted(by.items(), key=lambda kv: -kv[1]))}</p><ol class="deaths">{deaths}</ol>' if deaths else '<p class="muted">None.</p>'}</section>
 </div>
-{f'<h2>Viewers</h2><p class="muted small">Viewer messages that reached the game, the agents\' answers that name the viewer, and the hosts\' answers. Times Pacific.</p>{qa_html(s["qa"])}' if s["qa"] else ""}
+{f'<h2>Viewers</h2><p class="muted small">Viewer messages that reached the game, the agents\' answers that name the viewer, and the hosts\' answers. Times Pacific.</p>{qa_html(s["qa"], s["n"])}' if s["qa"] else ""}
 {nav}
 """
     return page(f"Shift {s['n']}", body, "/runs/" if archive() else "/runs/long/",

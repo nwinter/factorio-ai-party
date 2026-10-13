@@ -240,6 +240,7 @@ td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .techs { list-style: none; padding: 0; margin: .4rem 0; columns: 3 15em; column-gap: 24px; font-size: .92rem; }
 .techs li { break-inside: avoid; padding: 1px 0; }
 .techs .c-time { display: inline-block; min-width: 4.2em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.vlink { text-decoration: none; font-size: .8em; margin-left: 4px; color: var(--accent); }
 /* milestones (firsts) */
 table.firsts th[scope=row] { font-weight: 600; }
 .kind { display: inline-block; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line-strong); color: var(--ink-2); }
