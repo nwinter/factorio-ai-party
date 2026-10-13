@@ -372,9 +372,6 @@ return function(api)
     if a.paused~=nil then assert(type(a.paused)=='boolean','paused must be boolean'); pl.paused=a.paused end
     return {name=pl.name,state=platform_states[pl.state],at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl)}
   end
-  -- launch_rocket returned false: the game gives no reason (the API documents
-  -- false as the silo not ready), so name what it may check, the conditions
-  -- out of the ordinary first.
   -- Rocket cargo weight against the lift, in grams as the game counts them
   -- (item prototype weight; rocket_lift_weight 1000000 = 1000 kg). The game
   -- takes cargo past the lift by script and then refuses the launch.
@@ -404,12 +401,14 @@ return function(api)
     for i=1,math.min(#items,8) do local s=items[i]; parts[i]=s.name..'*'..s.count..' at '..kg(s.each)..' kg' end
     return 'overweight by '..kg(w-lift)..' kg: the rocket holds '..kg(w)..' kg and lifts '..kg(lift)..' kg; take cargo out with transfer {position, direction=to_player, inventory=rocket_silo_rocket, item, count} (cargo: '..table.concat(parts,', ')..')'
   end
+  -- launch_rocket returned false: the game gives no reason (the API documents
+  -- false as the silo not ready), so name what it may check, the conditions
+  -- out of the ordinary first. Weight is not among them: launch refuses an
+  -- overweight rocket before asking the game; the cargo kg is in what it saw.
   local function refused(silo,pl,destination)
     local odd,seen={},{}
     local entity_states=invert(defines.entity_status)
     seen[#seen+1]='silo '..tostring(silo_states[silo.rocket_silo_status])..'/'..tostring(try(function() return entity_states[silo.status] end))
-    local heavy=try(function() return overweight(silo) end)
-    if heavy then odd[#odd+1]=heavy end
     local rocket=try(function() local r=silo.rocket; return r and r.valid end)
     if not rocket then odd[#odd+1]='the silo holds no rocket entity' end
     local weight=try(function() return M.rocket_weight(silo) end)
