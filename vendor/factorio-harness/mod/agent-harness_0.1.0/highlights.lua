@@ -9,7 +9,7 @@
 -- and agents never see them: no agent action draws or reads them.
 return function(api)
   local M = {operator={}}
-  local MAX_ITEMS, DEFAULT_TTL, MIN_TTL, MAX_TTL, MAX_LABEL = 12, 360, 30, 1800, 80
+  local MAX_ITEMS, DEFAULT_TTL, MIN_TTL, MAX_TTL, MAX_LABEL, MAX_BUBBLE = 12, 360, 30, 1800, 80, 120
   local LINE_FROM = 8  -- tiles: a spot this far from the agent's character gets a line from it
   local WHITE = {r=1, g=1, b=1}
   local function store()
@@ -50,6 +50,7 @@ return function(api)
   end
   M.schema = {highlights={items='array of up to 12 {position {x,y}, extent? (tiles across), surface? (default nauvis), agent? (name: its colour and a line from its character), color? {r,g,b} 0..1, label? (1..80 characters)}',
     ttl='ticks each object lives (30..1800, default 360)', clear='true: remove the set drawn last',
+    bubbles='array of up to 12 {agent, text (1..120 characters), ttl? ticks}: a speech bubble over the agent\'s character while its line is voiced',
     returns='drawn (objects), players (the camera players who see them); with no camera client connected nothing is drawn'}}
   -- {items, ttl} or {clear=true}: replaces the set drawn last.
   function M.operator.highlights(a)
@@ -61,8 +62,14 @@ return function(api)
     local ttl = a.ttl or DEFAULT_TTL
     assert(number(ttl, MIN_TTL, MAX_TTL), 'ttl must be ' .. MIN_TTL .. '..' .. MAX_TTL .. ' ticks')
     for i, it in ipairs(items) do check(it, i) end
+    local bubbles = a.bubbles or {}
+    assert(type(bubbles) == 'table' and #bubbles <= MAX_ITEMS, 'bubbles must be an array of at most ' .. MAX_ITEMS)
+    for i, b in ipairs(bubbles) do
+      assert(type(b) == 'table' and type(b.agent) == 'string' and type(b.text) == 'string', 'bubbles[' .. i .. '] needs agent and text')
+      assert(b.ttl == nil or number(b.ttl, MIN_TTL, MAX_TTL), 'bubbles[' .. i .. '].ttl must be ' .. MIN_TTL .. '..' .. MAX_TTL .. ' ticks')
+    end
     clear()
-    if a.clear == true or #items == 0 then return {ok=true, tick=game.tick, drawn=0, cleared=true} end
+    if a.clear == true or (#items == 0 and #bubbles == 0) then return {ok=true, tick=game.tick, drawn=0, cleared=true} end
     local players = cameras()
     -- An empty players list would show the objects to everyone, agents included.
     if #players == 0 then return {ok=true, tick=game.tick, drawn=0, note='no camera client connected: nothing drawn'} end
@@ -90,6 +97,21 @@ return function(api)
           end
         end
       end
+    end
+    -- Speech bubbles: the voiced line over the agent's character (it follows the character).
+    for _, b in ipairs(bubbles) do
+      local who = api.agent(b.agent)
+      local c = who and who.character
+      if c and c.valid then
+        local text = b.text:gsub('[%c]+', ' ')
+        text = #text > MAX_BUBBLE and text:sub(1, MAX_BUBBLE - 3) .. '...' or text
+        local life = b.ttl or ttl
+        local half = math.min(9, #text * 0.11 + 0.4)
+        keep(rendering.draw_rectangle{color={r=0, g=0, b=0, a=0.6}, filled=true, left_top={entity=c, offset={-half, -3.75}},
+          right_bottom={entity=c, offset={half, -3.05}}, surface=c.surface, players=players, time_to_live=life})
+        keep(rendering.draw_text{text=text, target={entity=c, offset={0, -3.7}}, surface=c.surface, players=players,
+          color=who.color or WHITE, scale=1.1, alignment='center', time_to_live=life, use_rich_text=false})
+      else skipped = skipped + 1 end
     end
     return {ok=true, tick=game.tick, drawn=#h.ids, players=players, skipped=skipped > 0 and skipped or nil}
   end
