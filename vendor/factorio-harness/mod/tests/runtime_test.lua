@@ -1561,6 +1561,25 @@ do
   -- A force's own plant (a Gleba farm) is not an obstacle to mark.
   inside={{valid=true,type='plant',name='yumako-tree',minable=true,force=p.force,position={x=60,y=0}}}
   eq(call('place_ghosts',{entities={{name='gun-turret',position={x=60,y=0}}}}).placed,0)
+  -- Tile buildability rules (shift06 14:26: asteroid collectors skipped "on
+  -- verified empty floor"): the broken rule, not "nothing found" or the
+  -- empty space the collector's front needs.
+  inside={}
+  local get_tile,find_tiles=p.surface.get_tile,p.surface.find_tiles_filtered
+  local ground,space={layers={ground_tile=true}},{layers={empty_space=true}}
+  prototypes.entity['asteroid-collector']={name='asteroid-collector',items_to_place_this={{name='asteroid-collector',count=1}},
+    collision_box={left_top={x=-1.4,y=-1.4},right_bottom={x=1.4,y=1.4}},
+    tile_buildability_rules={{area={left_top={x=-1.4,y=-0.4},right_bottom={x=1.4,y=1.4}},required_tiles=ground,colliding_tiles=space},
+      {area={left_top={x=-1.4,y=-4.4},right_bottom={x=1.4,y=-0.6}},required_tiles=space,colliding_tiles=ground}}}
+  p.surface.get_tile=function(_,y) return y>=-2 and {name='space-platform-foundation',prototype={collision_mask=ground}}
+    or {name='empty-space',prototype={collision_mask=space}} end
+  p.surface.find_tiles_filtered=function() return {{name='empty-space',prototype={collision_mask=space}}} end
+  local ruled=call('place_ghosts',{entities={{name='asteroid-collector',position={x=60.5,y=0.5}}}})
+  eq(ruled.placed,0); eq(ruled.failed[1].name,'asteroid-collector'); eq(ruled.failed[1].position.x,60.5)
+  local err=ruled.failed[1].error
+  assert(err:find('breaks its tile rule 2 facing north: tiles x 59..61, y %-4..%-1 need empty_space and must not be ground_tile; 6 of 12 do not %(space%-platform%-foundation at %(59,%-2%)%)'),err)
+  assert(not err:find('needs landfill',1,true),err)
+  p.surface.get_tile,p.surface.find_tiles_filtered=get_tile,find_tiles
   p.surface.can_place_entity,p.surface.find_entities_filtered=can,find
 end
 -- repeat stamps the list count times, shifted each time; failures carry their copy.
