@@ -76,6 +76,12 @@ whose order is running, and its tell says how many orders are set.
 - Per tick: each agent's triggers are checked once a second, staggered by player index, one predicate per agent per
   check, radius at most 64, at most 16 chest positions. While the agent's own work keeps the character busy no
   predicate runs; while an order runs, only triggers of higher priority are checked.
+- Hold: an order starts only after the character has been free for 20 s since the agent's own last character request
+  or queue call (`orders_resume {hold_s}`: 0..600). An agent acting one request at a time keeps its character between
+  requests.
+- Agent plays: an order starts only if the agent made a request of its own (or an fh sleep poll) in the last 30 min.
+  A world left running between shifts does not play on for absent agents; the agent's next request brings its orders
+  back. A run already going finishes.
 - Per agent: 6 orders, 32 steps each, one order running at a time. A run stops after `max_ticks` (default 3600, up
   to 18000). A trigger waits `cooldown_ticks` (default 600, at least 300) before it can fire again.
 - Failures: a failed step (or a run over `max_ticks`) fails the run; an order that fails 3 runs in a row is switched
@@ -106,3 +112,77 @@ priority takeover, queue calls, pause and resume, `max_ticks`, 3-failure switch-
 per-agent, idle clock, describe), `tests/conditions.lua` (the new predicates), `tests/format.test.ts`,
 `tools/stream/selftest.py`, `tools/test_idle_nudge.py`, and `npm test`. Next: measure again with
 `tools/idle_report.py` after a shift with orders.
+
+## Live check (dev world `live`)
+
+A test bot `so1`: a default routine (patrol), a trigger (a ghost waiting) that takes over, then a `move_to`
+interrupt and the resume. A client must be connected so the game runs. About 5 minutes. From the repo root on a
+checkout of `eng/standing`:
+
+```
+# 0. Build the CLI and deploy this runtime; the bot and the world
+npm --prefix vendor/factorio-harness run build
+POG_WORLD=live bin/fh deploy
+export POG_WORLD=live FH_BOT=so1
+python3 tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","bot_create","so1"))'
+POS=$(bin/fh call status --format json | python3 -c 'import json,sys; r=json.load(sys.stdin); p=r.get("result",r)["position"]; print(int(p["x"]), int(p["y"]))')
+read X Y <<< "$POS"; echo "so1 at $X,$Y"
+```
+
+```
+# 1. Default routine: walks east, waits, walks back
+bin/fh call order_set --args '{"name":"patrol","interval_ticks":600,"steps":[{"action":"walk","args":{"direction":"east","ticks":120}},{"action":"wait_ticks","args":{"ticks":60}},{"action":"walk","args":{"direction":"west","ticks":120}},{"action":"wait_ticks","args":{"ticks":60}}]}'
+sleep 3
+bin/fh call queue_status
+bin/fh call status --args '{"brief":true}'
+```
+
+Pass: the new bot has made no character request yet, so there is no hold and patrol starts within a second or two:
+`queue_status` has `order: patrol` with reason `default routine`, its `orders:` line says
+`patrol running (default routine), step k/4`, and brief status has `order` with name `patrol`. If the stream service
+watches `live`, the overlay card for so1 shows `auto: patrol`. The 20 s hold is checked in step 3.
+
+```
+# 2. Trigger: a ghost 6 tiles east of the start; the order walks next to it, waits 30 s, steps one tile
+bin/fh call place_ghosts --args "{\"entities\":[{\"name\":\"wooden-chest\",\"position\":{\"x\":$((X+6)),\"y\":$Y}}]}"
+bin/fh call order_set --args "{\"name\":\"ghost\",\"priority\":6,\"cooldown_ticks\":600,\"when\":{\"until\":\"ghosts_waiting\",\"position\":{\"x\":$((X+6)),\"y\":$Y},\"radius\":4},\"steps\":[{\"action\":\"move_to\",\"args\":{\"position\":{\"x\":$((X+6)),\"y\":$((Y+2))}}},{\"action\":\"wait_ticks\",\"args\":{\"ticks\":1800}},{\"action\":\"move_to\",\"args\":{\"position\":{\"x\":$((X+6)),\"y\":$((Y+3))}}}]}"
+sleep 8
+bin/fh call orders
+```
+
+Pass: within a few seconds `ghost running (1 ghosts), step 1/3` (or `2/3`), and in `orders` patrol's state is
+`resumes when free` (a holding trigger of higher priority took over the running default). If patrol was between runs,
+ghost simply starts; that also passes. If `place_ghosts` refuses the spot (a tree, water), use `$((X+8))` in both
+commands. Go on to step 3 within 30 s, while ghost waits.
+
+```
+# 3. Interrupt: the bot's own move_to stops the order at once; it resumes 20 s after the move ends (the hold)
+bin/fh call move_to --args "{\"position\":{\"x\":$((X-5)),\"y\":$Y}}"
+bin/fh call queue_status
+bin/fh wait
+bin/fh call orders
+sleep 25
+bin/fh call queue_status
+```
+
+Pass: the `move_to` reply's `orders:` line says `ghost waits for your move_to, resumes after`. The `queue_status`
+right after it shows no `order` and no pending steps. After `fh wait`, the line says `ghost resumes in N s (after
+your last action)`, N up to 20. After the sleep, `queue_status` has `order: ghost` with reason `resumed` and
+`steps: 1` (the interrupted 30 s wait is not repeated, as in a paused plan; the last move_to is left; `steps: 3` if
+the interrupt came before the bot reached the ghost), and the bot walks back next to the ghost.
+
+```
+# 4. Operator view, pause, and cleanup
+python3 tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","dispatch","{\"id\":\"so-check-1\",\"operator\":true,\"action\":\"idle_report\",\"args\":{}}"))'
+bin/fh call orders_pause
+bin/fh call queue_status
+bin/fh call orders_resume
+bin/fh call order_remove --args '{"name":"ghost"}'
+bin/fh call order_remove --args '{"name":"patrol"}'
+python3 tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","bot_remove","so1"))'
+```
+
+Pass: the so1 row of `idle_report` has `orders` with `set: 2`, and while an order runs, `running` names it and
+`standing_s` is 0. After `orders_pause` the line is `orders: paused (orders_resume)` and `queue_status` has no
+`order`. After both `order_remove` calls the reply has no `orders:` line. The ghost stays on the map (a wooden chest
+ghost); remove it in the game if wanted.
