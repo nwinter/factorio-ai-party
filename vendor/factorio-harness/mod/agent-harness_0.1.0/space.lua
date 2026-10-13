@@ -183,8 +183,10 @@ return function(api)
     return free and string.format('%d of %d free',free,#inv) or nil
   end
   -- Why the hub cannot build or deconstruct now: no free slot for what
-  -- deconstruction removes, or ghosts whose items the hub lacks (one scan of
-  -- the platform's ghosts, at most 500, when asked).
+  -- deconstruction removes, ghosts whose items the hub lacks (one scan of the
+  -- platform's ghosts, at most 500, when asked), tile ghosts the foundation
+  -- rules hold back (tilecheck.lua).
+  local tiles=require('tilecheck')()
   function M.blockers(pl)
     local hub=pl.hub
     if not (hub and hub.valid) then return nil end
@@ -196,21 +198,29 @@ return function(api)
       local marked=try(function() return s.count_entities_filtered{to_be_deconstructed=true} end) or 0
       out[#out+1]=string.format('hub full: 0 of %d slots free',#inv)..(marked>0 and string.format('; %d marked for deconstruction wait for room (removed entities and their contents go to the hub)',marked) or '')
     end
+    -- Items by name and the ghost's quality: the hub builds a ghost only from
+    -- items of that quality.
     local need,order={},{}
     for _,g in ipairs(try(function() return s.find_entities_filtered{type={'entity-ghost','tile-ghost'},limit=500} end) or {}) do
       local it=try(function() return g.ghost_prototype.items_to_place_this[1] end)
       local n=it and (type(it.name)=='string' and it.name or it.name and it.name.name)
       if n then
-        if not need[n] then need[n]=0; order[#order+1]=n end
-        need[n]=need[n]+(it.count or 1)
+        local q=tiles.quality_of(g)
+        local k=n..'@'..q
+        if not need[k] then need[k]={name=n,quality=q,count=0}; order[#order+1]=k end
+        need[k].count=need[k].count+(it.count or 1)
       end
     end
     local missing={}
-    for _,n in ipairs(order) do
-      local have=inv.get_item_count(n)
-      if have<need[n] then missing[#missing+1]=string.format('%s (ghosts need %d, hub has %d)',n,need[n],have) end
+    for _,k in ipairs(order) do
+      local w=need[k]
+      local have=inv.get_item_count{name=w.name,quality=w.quality}
+      local label=w.name..(w.quality~='normal' and '@'..w.quality or '')
+      if have<w.count then missing[#missing+1]=string.format('%s (ghosts need %d, hub has %d)',label,w.count,have) end
     end
     if #missing>0 then out[#out+1]='ghosts wait for items the hub lacks: '..table.concat(missing,', ') end
+    -- Tile ghosts the foundation rules hold back.
+    for _,line in ipairs(try(function() return tiles.stalled(pl) end) or {}) do out[#out+1]=line end
     return #out>0 and out or nil
   end
   function M.platforms(p,a)

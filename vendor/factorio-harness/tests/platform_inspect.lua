@@ -24,7 +24,12 @@ local function inv(list,size)
   local t={valid=true}
   for i=1,size do t[i]=list[i] or stack(nil,0) end
   t.get_contents=function() local o={}; for i=1,size do local s=t[i]; if s.valid_for_read then o[#o+1]={name=s.name,count=s.count,quality='normal'} end end; return o end
-  t.get_item_count=function(q) local n=type(q)=='table' and q.name or q; local c=0; for i=1,size do if t[i].valid_for_read and t[i].name==n then c=c+t[i].count end end; return c end
+  t.get_item_count=function(q)
+    local n,ql=type(q)=='table' and q.name or q,type(q)=='table' and q.quality or 'normal'
+    local c=0
+    for i=1,size do if t[i].valid_for_read and t[i].name==n and t[i].quality.name==ql then c=c+t[i].count end end
+    return c
+  end
   t.count_empty_stacks=function() local c=0; for i=1,size do if not t[i].valid_for_read then c=c+1 end end; return c end
   t.is_empty=function() return t.count_empty_stacks()==size end
   return t
@@ -152,6 +157,53 @@ eq(#one.construction_blocked,2)
 hub_inv[2]=stack(nil,0); hub_inv[1]=stack('inserter',1)
 eq(bot('platforms',{platform='Starling'}).platforms[1].construction_blocked,nil)
 eq(bot('platforms',{}).platforms[1].hub_slots,'1 of 2 free')
+-- Tile ghosts the foundation rules hold back (request #3): foundation fills
+-- x -8..3, y 0..12 but for an empty channel along y=8 (x -8..-2) open to the
+-- west and a pocket at (-8,3),(-7,3). A ghost at the channel's mouth would
+-- enclose the rest, which has no ghosts: it stays unbuilt. A pocket all under
+-- ghosts, a ghost on the open edge: fine. A ghost with nothing beside it: not.
+local empty={}
+for x=-8,-2 do empty[x..',8']=true end
+empty['-8,3']=true; empty['-7,3']=true
+local gets=0
+psurf.get_tile=function(x,y)
+  gets=gets+1
+  local f=x>=-8 and x<=3 and y>=0 and y<=12 and not empty[x..','..y]
+  return {name=f and 'space-platform-foundation' or 'empty-space'}
+end
+local function tile_ghost(x,y)
+  return {valid=true,name='tile-ghost',type='tile-ghost',ghost_name='space-platform-foundation',position={x=x+0.5,y=y+0.5},force=force,surface=psurf,
+    bounding_box={left_top={x=x,y=y},right_bottom={x=x+1,y=y+1}},ghost_prototype={items_to_place_this={{name='space-platform-foundation',count=1}}},
+    get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+end
+on_platform={hub,collector,ins,ghost,tile_ghost(-8,8),tile_ghost(20,20),tile_ghost(4,5),tile_ghost(-8,3),tile_ghost(-7,3)}
+hub_inv[2]=stack('space-platform-foundation',9)
+local blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked
+eq(#blocked,3,'hub full and two tile ghosts')
+eq(blocked[1],'hub full: 0 of 2 slots free; 1 marked for deconstruction wait for room (removed entities and their contents go to the hub)')
+eq(blocked[2],'tile ghost (-7.5,8.5) space-platform-foundation: building it would enclose 6 empty tiles with no ghost: (-6.5,8.5), (-5.5,8.5), (-4.5,8.5), (-3.5,8.5), ... (the game builds no foundation that leaves a hole of empty space; those tiles need foundation ghosts too, or this ghost stays unbuilt)')
+eq(blocked[3],'tile ghost (20.5,20.5) space-platform-foundation: no foundation or tile ghost beside it (the foundation must stay one connected area)')
+assert(gets<4000,gets)
+-- inspect on the tile ghost says the same.
+local tg=bot('inspect',{platform='Starling',position={x=-7.5,y=8.5}})
+eq(tg.ghost_name,'space-platform-foundation'); eq(tg.construction_blocked[2],blocked[2])
+-- Ghosts on the rest of the channel: nothing is held back by it.
+for x=-7,-2 do on_platform[#on_platform+1]=tile_ghost(x,8) end
+hub_inv[2]=stack('space-platform-foundation',20)
+blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked
+eq(#blocked,2,table.concat(blocked,' | ')); eq(blocked[2]:find('(20.5,20.5)',1,true)~=nil,true)
+-- The hub's foundation at the ghosts' quality: an uncommon ghost lacks it.
+local q=tile_ghost(5,5); q.quality={name='uncommon'}; on_platform[#on_platform+1]=q
+blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked
+eq(blocked[2],'ghosts wait for items the hub lacks: space-platform-foundation@uncommon (ghosts need 1, hub has 0)')
+-- A ghost in the 82 tiles south of a thruster.
+local thruster={valid=true,name='thruster',type='thruster',position={x=1,y=-3},force=force,surface=psurf,
+  bounding_box={left_top={x=-1,y=-5},right_bottom={x=3,y=-1}}}
+on_platform[#on_platform+1]=thruster; on_platform[#on_platform+1]=tile_ghost(1,13)
+blocked=bot('platforms',{platform='Starling'}).platforms[1].construction_blocked
+local south
+for _,line in ipairs(blocked) do if line=='tile ghost (1.5,13.5) space-platform-foundation: in the 82 tiles south of the thruster at (1,-3), where no foundation is built' then south=true end end
+assert(south,table.concat(blocked,' | '))
 -- describe lists platform on both.
 local d=runtime.dispatch{action='describe',args={},bot='astra'}
 assert(d.actions.inspect.platform and d.actions.configure.platform)

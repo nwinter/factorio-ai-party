@@ -1,6 +1,7 @@
 -- Run from repository root: lua tests/space.lua
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 defines={space_platform_state={waiting_for_starter_pack=0,waiting_at_station=6,paused=7},
   rocket_silo_status={building_rocket=5,rocket_ready=9},inventory={hub_main=1,rocket_silo_rocket=2},
   cargo_destination={orbit=1,surface=4}}

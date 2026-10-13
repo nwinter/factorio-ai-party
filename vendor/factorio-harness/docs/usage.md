@@ -272,6 +272,10 @@ fh sleep 900 --until researched                       # ...or until the research
   ghost on it, and on the hub `hub_slots` (`0 of 65 free`). `platforms` shows `hub_slots` per platform, and with
   `platform` set, `construction_blocked`: `hub full: 0 of 65 slots free; 1 marked for deconstruction wait for room
   (removed entities and their contents go to the hub)`, `ghosts wait for items the hub lacks: inserter (ghosts need 1, hub has 0)`.
+  Items count at the ghost's quality. Tile ghosts the game's foundation rules hold back get one line each: a tile
+  that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
+  enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
+  200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same.
 - `transfer {position, direction: "to_player"}` takes items from a character corpse (inventory `character_corpse`); an emptied corpse is removed. It never mines the corpse (mining a corpse as a bot crashes the server; the harness takes the items instead).
 - Trash slots: a rocket silo, cargo landing pad and platform hub have one (`rocket_silo_trash`, `cargo_landing_pad_trash`,
   `hub_trash`) where the game puts items the entity will not use. `inspect` lists them in `inventories` and as one line

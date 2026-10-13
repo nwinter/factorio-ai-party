@@ -2300,7 +2300,7 @@ function handlers.inspect(p,a)
   local okp,pl=pcall(function() return e.surface.platform end)
   if okp and pl and space then
     if e.type=='space-platform-hub' then out.hub_slots=space.hub_slots(e) end
-    if e.type=='space-platform-hub' or e.type=='entity-ghost' or out.marked_for_deconstruction or out.ghosts_here then
+    if e.type=='space-platform-hub' or e.type=='entity-ghost' or e.type=='tile-ghost' or out.marked_for_deconstruction or out.ghosts_here then
       local okb,blocked=pcall(space.blockers,pl)
       out.construction_blocked=okb and blocked or nil
     end
