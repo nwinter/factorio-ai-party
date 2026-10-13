@@ -112,4 +112,21 @@ luna('say',{text='ok'})
 msgs=astra('chat',{}).messages
 eq(msgs[#msgs].from,'luna'); eq(msgs[#msgs].away,nil)
 eq(luna('status').chat.latest:find('sol (on Vulcanus): ',1,true),1)
+
+-- Board claims: reads and the overlap warning say where an owner elsewhere is.
+local area={left_top={x=0,y=0},right_bottom={x=20,y=20}}
+local c1=sol('board_post',{kind='claim',title='brick furnaces',area=area}).item.id
+local c2=luna('board_post',{kind='claim',title='iron smelting',area={left_top={x=30,y=0},right_bottom={x=40,y=10}}}).item.id
+r=astra('board_post',{kind='claim',title='walls',area={left_top={x=10,y=5},right_bottom={x=35,y=8}}})
+eq(r.warnings[1]..'|'..r.warnings[2],'overlaps claim #'..c1..' by sol (on Vulcanus): brick furnaces|overlaps claim #'..c2..' by luna: iron smelting')
+local function item(list,id) for _,i in ipairs(list) do if i.id==id then return i end end end
+local items=astra('board',{kind='claim'}).items
+eq(item(items,c1).owner_away,'on Vulcanus'); eq(item(items,c2).owner_away,nil); eq(item(items,r.item.id).owner_away,nil)
+eq(astra('board',{id=c1}).item.owner_away,'on Vulcanus')
+eq(item(sol('board',{kind='claim'}).items,c2).owner_away,'on Nauvis')
+eq(item(runtime.dispatch{action='board',args={kind='claim'},operator=true}.items,c1).owner_away,nil)
+-- The claim label collect and stock print.
+local astra_p=runtime.lookup(runtime.bots.index_of('astra'))
+eq(runtime.claims.label({id=c1,title='brick furnaces',owner='sol'},astra_p),'#'..c1..' brick furnaces (claim by sol, on Vulcanus)')
+eq(runtime.claims.label({id=c2,title='iron smelting',owner='luna'},astra_p),'#'..c2..' iron smelting (claim by luna)')
 print('teamwhere: ok')

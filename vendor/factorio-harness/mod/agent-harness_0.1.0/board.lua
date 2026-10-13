@@ -160,10 +160,16 @@ return function(api)
   local function overlaps(a, b)
     return a.left_top.x < b.right_bottom.x and b.left_top.x < a.right_bottom.x and a.left_top.y < b.right_bottom.y and b.left_top.y < a.right_bottom.y
   end
-  local function view(i, full)
+  -- For reader `by`: a function owner -> 'on Vulcanus' when that agent is
+  -- somewhere other than the reader (where.lua); nil for the operator.
+  local function where_for(by)
+    return by ~= OPERATOR and api.where_from and api.where_from(by) or nil
+  end
+  local function view(i, full, where)
     local notes = i.notes
     if not full and #notes > 2 then notes = {notes[#notes-1], notes[#notes]} end
-    return {id=i.id, kind=i.kind, title=i.title, owner=i.owner, requested_by=i.requested_by, status=i.status, area=i.area,
+    return {id=i.id, kind=i.kind, title=i.title, owner=i.owner, owner_away=i.kind == 'claim' and where and where(i.owner) or nil,
+      requested_by=i.requested_by, status=i.status, area=i.area,
       needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal,
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
       created_tick=i.created_tick, updated_tick=i.updated_tick}
@@ -199,9 +205,11 @@ return function(api)
     end
     item.status = (item.owner and kind ~= 'note') and 'claimed' or 'open'
     if kind == 'claim' then
+      local where = where_for(by)
       for _, other in pairs(store().items) do
         if other.kind == 'claim' and ACTIVE[other.status] and other.owner ~= by and overlaps(other.area, item.area) then
-          warnings[#warnings+1] = string.format('overlaps claim #%d by %s: %s', other.id, other.owner, other.title)
+          local away = where and where(other.owner)
+          warnings[#warnings+1] = string.format('overlaps claim #%d by %s%s: %s', other.id, other.owner, away and ' (' .. away .. ')' or '', other.title)
           over = over or {}
           over[other.owner] = over[other.owner] or other.id
         end
@@ -265,7 +273,7 @@ return function(api)
     local extra = was and was ~= item.owner and {prev_owner=was} or nil
     for _, change in ipairs(changes) do event(by, item, change, text, extra) end
     if text and #changes == 0 then event(by, item, 'note', text) end
-    return {item=view(item, true), changed=#changes > 0 and changes or nil}
+    return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil}
   end
 
   local function read(by, a)
@@ -273,7 +281,7 @@ return function(api)
     if a.id ~= nil then
       local item = b.items[a.id]
       assert(item, 'no board item #' .. tostring(a.id))
-      return {item=view(item, true)}
+      return {item=view(item, true, where_for(by))}
     end
     local limit = a.limit or 30
     assert(type(limit) == 'number' and limit >= 1 and limit <= 100, 'limit must be 1..100')
@@ -297,8 +305,8 @@ return function(api)
       end
     end
     table.sort(list, function(x, y) return x.updated_tick > y.updated_tick or (x.updated_tick == y.updated_tick and x.id > y.id) end)
-    local out = {}
-    for n = 1, math.min(limit, #list) do out[n] = view(list[n]) end
+    local out, where = {}, where_for(by)
+    for n = 1, math.min(limit, #list) do out[n] = view(list[n], false, where) end
     local unowned = open_unowned()
     local plan = (a.kind == nil or a.kind == 'plan') and a.mine ~= true and M.plan_view() or nil
     return {plan=plan, items=out, matched=#list, open_unowned=unowned, tick=game.tick}
@@ -474,14 +482,14 @@ return function(api)
   M.schema = {
     board = {mine='boolean: items I own or requested', status='active|open|claimed|doing|done|blocked|dropped or an array of them',
       kind='task|request|claim|note|harness|plan', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
-      id='one item in full (all notes)', returns='plan (the team plan: goals, doing lines, last edit), items, matched, open_unowned (open task/request items nobody owns)'},
+      id='one item in full (all notes)', returns='plan (the team plan: goals, doing lines, last edit), items, matched, open_unowned (open task/request items nobody owns); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus")'},
     board_plan = {goals='the team goals, 1..600 characters, replace the current ones ("" clears them)',
       doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
       returns='the team plan: goals, doing (one line per agent, "(set by NAME)" when someone else wrote it), edited; with no arguments it only reads'},
     board_post = {kind='task|request|claim|note', title='1..120 characters (longer is cut)',
       owner='agent name or display name (task/request; a request without owner is shown to everyone until taken)',
       area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text, array of item names/{name,count}, or {item: count}',
-      tags='up to 8 short strings', note='optional first note, 1..200 characters', returns='the item; warnings for overlapping claims or an unowned request'},
+      tags='up to 8 short strings', note='optional first note, 1..200 characters', returns='the item; warnings for overlapping claims (with where the owner is when not with you: claim #128 by sol (on Vulcanus)) or an unowned request'},
     board_update = {id='item number', status='open|claimed|doing|done|blocked|dropped (owner or requester only)',
       owner='your name takes an open unowned item; another name reassigns (owner or requester only); "" releases it',
       note='1..200 characters, anyone may add (last 10 kept)'},

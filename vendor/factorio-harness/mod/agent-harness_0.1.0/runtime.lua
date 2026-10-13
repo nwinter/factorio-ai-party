@@ -48,7 +48,7 @@ local function state() return storage.agent_harness end
 -- Bots (script-driven characters), profiles/speech bubbles and director
 -- cameras. Bot indices sit above every player index (bots.BASE).
 M.crafting=require('crafting'){state=state}
-M.claims=require('claims'){state=state}
+M.claims=require('claims'){state=state,where_from=function(me) return M.where.from(me) end}
 M.belt=require('belt')()
 -- Queues carried over a hot install (carry.lua: notes them while this loads).
 M.carry=require('carry'){state=state}
@@ -2806,7 +2806,7 @@ function handlers.collect(p,a)
   for _,t in ipairs(targets) do
     local ok,at=pcall(position,t.entity and t.entity.valid and t.entity.position or t.position)
     local c=ok and #claimed<4 and M.claims.other(p,at)
-    if c then claimed[#claimed+1]=string.format('(%g,%g) in %s',at.x,at.y,M.claims.label(c)) end
+    if c then claimed[#claimed+1]=string.format('(%g,%g) in %s',at.x,at.y,M.claims.label(c,p)) end
   end
   if #claimed>0 then out.claimed=claimed end
   if not a.positions and not a.types and not a.chests then

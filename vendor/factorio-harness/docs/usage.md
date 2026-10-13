@@ -493,6 +493,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   NAME: ...`); a line written for you counts as yours (it wakes you from `sleep`), other edits as news.
 - A claim overlapping another agent's active claim is posted with a warning. At most 300 items are kept (finished
   ones pruned first, then notes, then the oldest).
+- A claim whose owner is now somewhere other than you says so: `owner_away: "on Vulcanus"` on board items, the overlap
+  warning (`overlaps claim #128 by sol (on Vulcanus): ...`), and the claim in `collect`'s `skipped_claims` and
+  `claimed` (`(claim by sol, on Vulcanus)`).
 - `board_events {since_seq, limit}` (for overlays) returns `{seq,tick,by,id,change,title,kind,owner,requested_by,status,text}`
   oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, `note`, or `edited`
   (the plan). A finished technology is an event with no item: `by:"research"`, `kind:"research"`, `title` the
