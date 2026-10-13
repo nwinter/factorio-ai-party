@@ -1646,7 +1646,8 @@ def public_status(st):
     return json.dumps(st, indent=2, ensure_ascii=False) + "\n"
 
 
-LIVE_HEAD = '<script src="/static/avatar.js" defer></script>\n<script src="/static/live.js" defer></script>'
+LIVE_HEAD = ('<script src="/static/avatar.js" defer></script>\n<script src="/static/mapview.js" defer></script>\n'
+             '<script src="/static/live.js" defer></script>')
 
 
 def live_app(heading, sample_href):

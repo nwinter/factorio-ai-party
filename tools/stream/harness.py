@@ -84,7 +84,8 @@ rcon.print(helpers.table_to_json(out))
 #   The core is the biggest 8-connected group of 32-tile blocks holding at least a fifth of the busiest block's
 #   buildings (pipes, belts, inserters and rails not counted, so a long pipeline or rail line does not stretch it),
 #   plus 8 tiles. Fewer than 12 such buildings: the whole base.
-# Plus enemy spawners and worms near the base, and with ore the resource under and around it. Read once a minute
+# Plus enemy spawners and worms near the base, our turrets with their range ([x, y, range], at most 600; artillery left
+# out: the site's turret-range layer), and with ore the resource under and around it. Read once a minute
 # (live.py), no per-tick work (time it on a world with tools/stream/basemap_time.py). Types the game does not know
 # (no Space Age or Elevated Rails) make the read fall back to the base list. No comments inside: one_line() joins
 # the lines.
@@ -227,6 +228,22 @@ if x0 then
     nests[#nests+1] = {math.floor(e.position.x), math.floor(e.position.y), e.type == "unit-spawner" and "s" or "w"}
   end
 end
+local turrets = {}
+if x0 then
+  local RANGE = {}
+  for _, q in ipairs(pts) do
+    local e = q[4]
+    if q[3] == "D" and #turrets < 600 and (e.type == "ammo-turret" or e.type == "electric-turret" or e.type == "fluid-turret") then
+      local r = RANGE[e.name]
+      if r == nil then
+        r = 0
+        pcall(function() local ap = prototypes.entity[e.name].attack_parameters r = ap and ap.range or 0 end)
+        RANGE[e.name] = r
+      end
+      if r > 0 then turrets[#turrets+1] = {math.floor(q[1]), math.floor(q[2]), r} end
+    end
+  end
+end
 local ore = nil
 if WITHORE and x0 then
   local m = 64
@@ -257,7 +274,7 @@ if WITHORE and x0 then
 end
 rcon.print(helpers.table_to_json{tick = game.tick, cell = C, x0 = x0 and x0 * C or 0, y0 = y0 and y0 * C or 0,
   w = x0 and (x1 - x0 + 1) or 0, h = y0 and (y1 - y0 + 1) or 0, rows = rows, nests = nests, buildings = #pts, ore = ore,
-  core = core})
+  core = core, turrets = turrets})
 """
 
 CAMERA_LUA = r"""
