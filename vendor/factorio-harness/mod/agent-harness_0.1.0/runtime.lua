@@ -2018,7 +2018,12 @@ local function build_tile(p,a,stack,pos)
 end
 local function build_one(p,a)
   local pos=position(a.position)
-  build_reach(p,pos,'position')
+  -- A turret out of reach: the refusal lists valid spots within reach toward it (shore.lua).
+  local reached,far=pcall(build_reach,p,pos,'position')
+  if not reached then
+    local fine,hint=pcall(M.shore.reach_hint,p,a.item,pos)
+    error(tostring(far)..(fine and hint or ''),0)
+  end
   assert(type(a.item)=='string','item is required')
   local stack=p.get_main_inventory().find_item_stack{name=a.item,quality=a.quality or 'normal'}
   assert(stack,'item is not in main inventory')

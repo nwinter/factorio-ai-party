@@ -68,7 +68,11 @@ return function(api)
   -- The nearest valid placements of proto around pos: {position, direction}
   -- nearest first, at most 3; and how many positions the game checked.
   -- dirs: the directions to try (the first wins a tie).
-  function M.find(p, proto, pos, radius, dirs)
+  -- opts (optional): keep(centre) filters candidates before the game check;
+  -- ref: sort by distance to this point instead of pos.
+  function M.find(p, proto, pos, radius, dirs, opts)
+    opts = opts or {}
+    local ref = opts.ref or pos
     local surface = p.surface
     local pump = proto.type == 'offshore-pump'
     local water, any = water_in(surface, math.floor(pos.x) - radius - 4, math.floor(pos.y) - radius - 4,
@@ -90,7 +94,8 @@ return function(api)
             else
               keep = tiles_at(water, c, w, h, 0) == 0
             end
-            if keep then cands[#cands+1] = {position=c, dir=dir, d=d, rank=rank} end
+            if keep and opts.keep then keep = opts.keep(c) end
+            if keep then cands[#cands+1] = {position=c, dir=dir, d=((x - ref.x) ^ 2 + (y - ref.y) ^ 2) ^ 0.5, rank=rank} end
           end
         end
       end
@@ -122,10 +127,42 @@ return function(api)
     for _, s in ipairs(list) do parts[#parts+1] = string.format('(%g,%g) %s', s.position.x, s.position.y, s.direction) end
     return table.concat(parts, ', ')
   end
-  -- The text a refused build appends: for an offshore pump (any refusal) or
-  -- an entity refused by water under its footprint (water true).
+  -- Turrets: a refused build (blocked, or out of reach) lists the nearest
+  -- spots within the character's build reach where the game accepts one.
+  local TURRETS = {['ammo-turret']=true, ['electric-turret']=true, ['fluid-turret']=true, ['artillery-turret']=true}
+  local function spots(list)
+    local parts = {}
+    for _, s in ipairs(list) do parts[#parts+1] = string.format('(%g,%g)', s.position.x, s.position.y) end
+    return table.concat(parts, ', ')
+  end
+  local function in_reach(p)
+    local from, reach = p.position, (p.build_distance or 10) - 0.5
+    return function(c) return ((c.x - from.x) ^ 2 + (c.y - from.y) ^ 2) ^ 0.5 <= reach end
+  end
+  local function turret_spots(p, proto, pos, direction, centre)
+    local found = M.find(p, proto, centre or pos, 6, {direction or 0}, {keep=in_reach(p), ref=pos})
+    if #found == 0 then
+      return '; no spot for ' .. proto.name .. ' within your build reach' .. (centre and ' toward that position' or ' and 6 tiles of it') .. ' (game build check)'
+    end
+    return '; nearest spots where ' .. proto.name .. ' fits within your build reach (game build check): ' .. spots(found)
+  end
+  -- A build out of reach: for a turret, the valid spots within reach on the
+  -- way to the asked position (searched around the reach edge toward it).
+  function M.reach_hint(p, item, pos)
+    local ip = prototypes.item[item]
+    local proto = ip and ip.place_result
+    if not (proto and TURRETS[proto.type]) then return nil end
+    local from = p.position
+    local d = ((pos.x - from.x) ^ 2 + (pos.y - from.y) ^ 2) ^ 0.5
+    local step = math.max(0, (p.build_distance or 10) - 3)
+    local centre = d > 0 and {x=from.x + (pos.x - from.x) * step / d, y=from.y + (pos.y - from.y) * step / d} or from
+    return turret_spots(p, proto, pos, 0, centre) .. '; or walk closer (move_to) and build again'
+  end
+  -- The text a refused build appends: for an offshore pump (any refusal), an
+  -- entity refused by water under its footprint (water true), or a turret.
   function M.hint(p, proto, pos, direction, water)
     local pump = proto.type == 'offshore-pump'
+    if TURRETS[proto.type] and not water then return turret_spots(p, proto, pos, direction) end
     if not (pump or water) then return nil end
     if pump then
       local dirs = {direction}

@@ -128,6 +128,30 @@ local ok,err=pcall(bot,'build',{item='stone-furnace',position={x=5,y=3}})
 assert(not ok and not err:find('nearest',1,true) and not err:find('fits',1,true),err)
 eq(#checks,1)
 
+-- Turrets: a blocked build lists the nearest spots within build reach where the game accepts one; a build out of
+-- reach lists the valid spots within reach nearest the asked position. Here a gun turret fits on land 2+ tiles off y=0.
+prototypes.entity['gun-turret']={name='gun-turret',type='ammo-turret',tile_width=2,tile_height=2}
+prototypes.item['gun-turret']={name='gun-turret',place_result=prototypes.entity['gun-turret']}
+c.items['gun-turret']=2
+local can_place=surface.can_place_entity
+surface.can_place_entity=function(a)
+  if a.name=='gun-turret' then return a.position.x%1==0 and a.position.y%1==0 and a.position.x<=8 and math.abs(a.position.y)>=2 end
+  return can_place(a)
+end
+fails(function() bot('build',{item='gun-turret',position={x=5,y=0}}) end,
+  '; nearest spots where gun-turret fits within your build reach (game build check): (5,-2), (5,2), (4,-2)')
+fails(function() bot('build',{item='gun-turret',position={x=3,y=30}}) end,
+  'out of build reach: ')
+fails(function() bot('build',{item='gun-turret',position={x=3,y=30}}) end,
+  '; nearest spots where gun-turret fits within your build reach (game build check): (3,9), (2,9), (4,9); or walk closer (move_to) and build again')
+eq(c.items['gun-turret'],2)
+-- Other items out of reach: unchanged.
+ok,err=pcall(bot,'build',{item='stone-furnace',position={x=3,y=30}})
+assert(not ok and err:find('out of build reach',1,true) and not err:find('spots',1,true),err)
+-- The suggestion builds.
+eq(bot('build',{item='gun-turret',position={x=3,y=9}}).consumed,1)
+surface.can_place_entity=can_place
+
 -- placements: the same list without building.
 local p=bot('placements',{name='offshore-pump'})
 eq(p.name,'offshore-pump'); eq(p.radius,12); eq(#p.placements,3)
