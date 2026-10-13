@@ -113,7 +113,7 @@ runtime.visuals.tick(150)
 local lines=mine('line')
 eq(#lines,3,'from the character through the waypoints left to the goal'); eq(lines[1].args.from,c); eq(lines[1].args.to.x,10)
 eq(lines[3].args.to.x,20); eq(lines[1].args.dash_length,0.5); assert(lines[1].args.color.a<0.5)
-eq(mine('circle')[1].args.target.x,20)
+eq(mine('circle')[1].args.target.x,20); eq(mine('text')[1].args.text,'walking here')
 active[index]=nil
 runtime.visuals.tick(180)
 eq(#mine('line'),0)

@@ -47,8 +47,33 @@ return function(api)
     assert(it.label == nil or type(it.label) == 'string', 'items[' .. i .. '].label must be text')
     assert(it.agent == nil or type(it.agent) == 'string', 'items[' .. i .. '].agent must be an agent name')
     assert(it.surface == nil or type(it.surface) == 'string', 'items[' .. i .. '].surface must be a surface name')
+    assert(it.kind == nil or type(it.kind) == 'string', 'items[' .. i .. '].kind must be text')
+    assert(it.alpha == nil or number(it.alpha, 0, 1), 'items[' .. i .. '].alpha must be 0..1')
+    assert(it.ttl == nil or number(it.ttl, MIN_TTL, MAX_TTL), 'items[' .. i .. '].ttl must be ' .. MIN_TTL .. '..' .. MAX_TTL .. ' ticks')
   end
-  M.schema = {highlights={items='array of up to 12 {position {x,y}, extent? (tiles across), surface? (default nauvis), agent? (name: its colour and a line from its character), color? {r,g,b} 0..1, label? (1..80 characters)}',
+  -- Looking (inspect, scan) reads apart from acting: a thin dotted line and
+  -- ring; acting (building, configuring, moving items, fighting) a bold dashed one.
+  local STYLE = {looking={ring=1.5, line=1.5, dash=0.25, gap=0.75}, acting={ring=3, line=2.5, dash=1, gap=0.4}}
+  -- "{entity}" in a label: what stands at the spot ("inspecting {entity}" ->
+  -- "inspecting gun turret"), or nothing.
+  local function entity_at(surface, pos)
+    local ok, list = pcall(function() return surface.find_entities_filtered{position=pos, radius=0.6, limit=4} end)
+    for _, e in ipairs(ok and list or {}) do
+      if e.valid and e.type ~= 'character' and e.type ~= 'resource' then
+        return (e.type == 'entity-ghost' and (e.ghost_name .. ' ghost') or e.name):gsub('%-', ' ')
+      end
+    end
+    for _, e in ipairs(ok and list or {}) do
+      if e.valid and e.type == 'resource' then return (e.name:gsub('%-', ' ')) end
+    end
+    return ''
+  end
+  local function fill(label, surface, pos)
+    if not label:find('{entity}', 1, true) then return label end
+    local name = entity_at(surface, pos)
+    return (label:gsub('{entity}', function() return name end):gsub('%s+', ' '):gsub('%s+$', ''))
+  end
+  M.schema = {highlights={items='array of up to 12 {position {x,y}, extent? (tiles across), surface? (default nauvis), agent? (name: its colour and a line from its character), color? {r,g,b} 0..1, label? (1..80 characters; {entity} becomes what stands at the spot), kind? (looking: thin dotted; else bold dashed), alpha? 0..1, ttl? ticks}',
     ttl='ticks each object lives (30..1800, default 360)', clear='true: remove the set drawn last',
     bubbles='array of up to 12 {agent, text (1..120 characters), ttl? ticks}: a speech bubble over the agent\'s character while its line is voiced',
     returns='drawn (objects), players (the camera players who see them); with no camera client connected nothing is drawn'}}
@@ -80,20 +105,35 @@ return function(api)
       if not surface then skipped = skipped + 1
       else
         local who = it.agent and api.agent(it.agent)
-        local col = colour(it.color) or (who and who.color) or WHITE
+        local base = colour(it.color) or (who and who.color) or WHITE
+        -- Fading: the stream lowers alpha as the action ages (colours are premultiplied).
+        local alpha = it.alpha or 1
+        local col = {r=base.r * alpha, g=base.g * alpha, b=base.b * alpha, a=alpha}
+        local style = it.kind == 'looking' and STYLE.looking or STYLE.acting
+        local life = it.ttl or ttl
         local pos = {x=it.position.x, y=it.position.y}
         local r = math.max(1.2, (it.extent or 0) / 2 + 0.8)
-        keep(rendering.draw_circle{color=col, radius=r, width=3, filled=false, target=pos, surface=surface, players=players, time_to_live=ttl})
-        if it.label and it.label ~= '' then
-          keep(rendering.draw_text{text=it.label:sub(1, MAX_LABEL), target={x=pos.x, y=pos.y - r - 0.4}, surface=surface, players=players,
-            color=col, scale=1.4, alignment='center', vertical_alignment='bottom', time_to_live=ttl, use_rich_text=false})
+        local label = it.label and it.label ~= '' and fill(it.label, surface, pos):sub(1, MAX_LABEL) or nil
+        keep(rendering.draw_circle{color=col, radius=r, width=style.ring, filled=false, target=pos, surface=surface, players=players, time_to_live=life})
+        if label then
+          keep(rendering.draw_text{text=label, target={x=pos.x, y=pos.y - r - 0.4}, surface=surface, players=players,
+            color=col, scale=1.4, alignment='center', vertical_alignment='bottom', time_to_live=life, use_rich_text=false})
         end
         local c = who and who.character
         if c and c.valid and c.surface == surface then
-          local d = ((c.position.x - pos.x)^2 + (c.position.y - pos.y)^2)^0.5
+          local dx, dy = pos.x - c.position.x, pos.y - c.position.y
+          local d = (dx * dx + dy * dy)^0.5
           if d >= LINE_FROM then
-            keep(rendering.draw_line{color={r=col.r * 0.7, g=col.g * 0.7, b=col.b * 0.7, a=0.7}, width=2, from=c, to=pos, surface=surface,
-              players=players, time_to_live=ttl, dash_length=1, gap_length=0.6})
+            keep(rendering.draw_line{color={r=col.r * 0.8, g=col.g * 0.8, b=col.b * 0.8, a=alpha * 0.8}, width=style.line, from=c, to=pos,
+              surface=surface, players=players, time_to_live=life, dash_length=style.dash, gap_length=style.gap})
+            -- The same label at the character's end of the line, 4 tiles along
+            -- it (in frame while the camera follows the agent; the target end
+            -- may be off screen), with the distance.
+            if label then
+              keep(rendering.draw_text{text=string.format('%s · %d m', label, math.floor(d + 0.5)),
+                target={entity=c, offset={dx / d * 4, dy / d * 4 - 0.3}}, surface=surface, players=players, color=col, scale=1.1,
+                alignment='center', vertical_alignment='bottom', time_to_live=life, use_rich_text=false})
+            end
           end
         end
       end

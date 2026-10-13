@@ -552,7 +552,7 @@ class Model:
             return
         surface = ((self.platform_view(x["platform"]) or {}).get("surface") if x.get("platform")
                    else ag.surface or "nauvis")
-        ag.attention = {k: x.get(k) for k in ("kind", "action", "verb", "what", "position", "extent", "platform")}
+        ag.attention = {k: x.get(k) for k in ("kind", "action", "verb", "what", "position", "extent", "platform", "count")}
         ag.attention.update(t=now, surface=surface)
 
     def attention_row(self, ag, now):

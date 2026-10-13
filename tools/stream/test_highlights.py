@@ -50,9 +50,23 @@ check(sol["label"] == "Sol · rearming 12 turrets" and sol["surface"] == "nauvis
 check(sol["extent"] == 11.0 and sol["position"] == {"x": 5.5, "y": 0.0}, sol)
 check(sol["color"] == {"r": 1.0, "g": 0.796, "b": 0.271}, sol["color"])
 luna = next(i for i in its if i["agent"] == "luna")
-check(luna["label"] == "Luna · inspecting" and "extent" not in luna, luna)
+# an inspect names no entity: the harness fills {entity} with what stands there ("inspecting gun turret")
+check(luna["label"] == "Luna · inspecting {entity}" and "extent" not in luna, luna)
+# looking reads apart from acting; both fade over WINDOW (alpha in quarter steps) and end at it (ttl)
+check(luna["kind"] == "looking" and sol["kind"] == "acting", (luna, sol))
+check(sol["alpha"] == 0.5 and sol["ttl"] == 300, sol)  # 5 s old of 10
+check(hl.items(m.snapshot(1001.0, {}))[0]["alpha"] == 1.0, "fresh: full")
+check(all(i["alpha"] == 0.25 and i["ttl"] == 60 for i in hl.items(m.snapshot(1009.0, {}))), "nearly gone: faint")
 # too old: gone from the set
-check(hl.items(m.snapshot(1000.0 + hl.WINDOW + 1, {})) == [], "old attention is not drawn")
+check(hl.items(m.snapshot(1000.0 + hl.WINDOW, {})) == [], "attention WINDOW s old is not drawn")
+# a place_ghosts says how many
+g12 = attention.point("place_ghosts", {"entities": [{"name": "gun-turret", "position": {"x": i, "y": 0}} for i in range(12)]})
+check(hl.label(g12) == "placing 12 gun turret ghosts", hl.label(g12))
+g3 = attention.point("place_ghosts", {"entities": [{"name": n, "position": {"x": i, "y": 0}} for i, n in enumerate(["pipe", "pump", "pipe"])]})
+check(hl.label(g3) == "placing 3 ghosts", hl.label(g3))
+m.ingest({"attention": [dict(g12, agent="sol")]}, 1006.0)
+check(hl.items(m.snapshot(1007.0, {}))[0]["label"] == "Sol · placing 12 gun turret ghosts", "the count reaches the snapshot")
+m.ingest({"attention": [dict(p, agent="sol")]}, 1000.0)
 # a platform point keeps its surface
 snap2 = {"agents": [{"name": "astra", "display_name": "Astra", "color": [153, 119, 255],
                      "attention": {"kind": "building", "action": "place_ghosts", "verb": "placing ghosts", "what": "",
@@ -60,7 +74,7 @@ snap2 = {"agents": [{"name": "astra", "display_name": "Astra", "color": [153, 11
 a = hl.items(snap2)[0]
 check(a["surface"] == "platform-2" and a["label"] == "Astra · placing ghosts" and a["color"]["b"] == 1.0, a)
 # at most 12, newest first
-many = {"agents": [{"name": f"a{i}", "attention": {"verb": "inspecting", "position": {"x": i, "y": 0}, "age_s": 20 - i}}
+many = {"agents": [{"name": f"a{i}", "attention": {"verb": "inspecting", "position": {"x": i, "y": 0}, "age_s": 9.5 - i * 0.5}}
                    for i in range(15)]}
 mi = hl.items(many)
 check(len(mi) == 12 and mi[0]["agent"] == "a14", [x["agent"] for x in mi])
@@ -70,13 +84,15 @@ check(hl.rgb("#zzzzzz") is None and hl.rgb({"r": 0.5, "g": 0.5, "b": 0.5}) == {"
 sent = []
 reply = {"ok": True}
 h = hl.Highlights(lambda body: (sent.append(body), reply)[1])
-check(h.step(snap, 1005.0)["items"] == its and sent[-1]["ttl"] == 360, sent)
+check(h.step(snap, 1005.0)["items"] == its and sent[-1]["ttl"] == 240, sent)
 check(h.step(snap, 1005.2) is None, "never within MIN_GAP")
 check(h.step(snap, 1006.0) is None, "unchanged: not again before REFRESH")
-check(h.step(snap, 1009.1) is not None and len(sent) == 2, "refreshed before the objects expire")
+check(h.step(snap, 1007.1) is not None and len(sent) == 2, "refreshed before the objects expire")
+# the next fade step is a change: sent at once
+check(h.step(m.snapshot(1008.0, {}), 1008.0) is not None and len(sent) == 3, "a new fade step goes out")
 empty = {"agents": []}
 check(h.step(empty, 1010.0) == {"clear": True}, "an emptied set is cleared")
-check(h.step(empty, 1011.0) is None and len(sent) == 3, "cleared once")
+check(h.step(empty, 1011.0) is None and len(sent) == 4, "cleared once")
 check(h.public() == {"on": True, "items": 0, "error": None}, h.public())
 # refusals (an older runtime): off after FAIL_LIMIT in a row; an RCON error counts too
 reply = {"ok": False, "error": {"message": "operator requests support board, ..."}}

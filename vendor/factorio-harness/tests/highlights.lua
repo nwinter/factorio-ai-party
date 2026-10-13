@@ -69,20 +69,43 @@ eq(r.drawn,0); eq(#mine(),0); assert(r.note:find('no camera client',1,true))
 -- With the camera connected: ring and label on each spot, a line from Sol to the far one only; only the camera sees them.
 cam.connected=true; connected={nick,cam}
 r=op{items=items,ttl=300}
-eq(r.drawn,5); eq(r.players[1],2); eq(#r.players,1)
+eq(r.drawn,6); eq(r.players[1],2); eq(#r.players,1)
 local kinds={}
 local drawn=mine()
 for _,o in ipairs(drawn) do
   kinds[o.kind]=(kinds[o.kind] or 0)+1
   eq(#o.args.players,1); eq(o.args.players[1],2,'only the camera player sees it'); eq(o.args.time_to_live,300)
 end
-eq(kinds.circle,2); eq(kinds.text,2); eq(kinds.line,1)
+eq(kinds.circle,2); eq(kinds.text,3); eq(kinds.line,1)
 local ring=drawn[1].args
-eq(ring.radius,3.8); eq(ring.target.x,30)
+eq(ring.radius,3.8); eq(ring.target.x,30); eq(ring.width,3,'acting: a bold ring')
 local p=runtime.profiles.get(runtime.bots.index_of('sol'))
 eq(ring.color.r,p.rgb.r,'Sol\'s colour')
 eq(drawn[2].args.text,'Sol · placing ghosts')
-eq(drawn[3].args.from,sol_bot.character); eq(drawn[3].args.to.x,30)
+eq(drawn[3].args.from,sol_bot.character); eq(drawn[3].args.to.x,30); eq(drawn[3].args.dash_length,1)
+-- The label again on the line near Sol, 4 tiles toward the spot, with the distance (the spot may be off screen).
+local close=drawn[4].args
+eq(close.text,'Sol · placing ghosts · 30 m'); eq(close.target.entity,sol_bot.character); eq(close.target.offset[1],4)
+local function near(a,b,m) assert(math.abs(a-b)<1e-9,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
+-- Looking reads apart: a thin ring and a dotted line; alpha fades the colour; an item's own ttl.
+r=op{items={{agent='sol',position={x=0,y=20},kind='looking',alpha=0.5,ttl=120,label='Sol · inspecting {entity}'}}}
+drawn={}
+for _,o in ipairs(mine()) do if o.valid then drawn[#drawn+1]=o end end
+eq(drawn[1].args.width,1.5); eq(drawn[1].args.time_to_live,120); eq(drawn[1].args.color.a,0.5)
+near(drawn[1].args.color.r,p.rgb.r*0.5)
+eq(drawn[2].args.text,'Sol · inspecting','{entity} with nothing there: dropped')
+eq(drawn[3].args.dash_length,0.25)
+-- {entity}: what stands at the spot.
+surface.find_entities_filtered=function(f)
+  if f.radius and f.position and f.position.y==20 then return {{valid=true,type='ammo-turret',name='gun-turret'}} end
+  return {}
+end
+op{items={{agent='sol',position={x=0,y=20},kind='looking',label='Sol · inspecting {entity}'}}}
+local texts={}
+for _,o in ipairs(mine()) do if o.valid and o.kind=='text' then texts[#texts+1]=o.args.text end end
+eq(texts[1],'Sol · inspecting gun turret'); eq(texts[2],'Sol · inspecting gun turret · 20 m')
+surface.find_entities_filtered=function() return {} end
+assert(not pcall(op,{items={{position={x=1,y=1},alpha=2}}}),'alpha out of range accepted')
 -- Each call replaces the last set.
 r=op{items={{position={x=1,y=1},color={r=0,g=1,b=0}}}}
 eq(r.drawn,1); eq(live(),1); eq(objects[#objects].args.color.g,1)

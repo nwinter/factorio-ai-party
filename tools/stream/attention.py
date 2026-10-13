@@ -109,12 +109,17 @@ def point(action, args):
         what = f"{n} turret{'s' if n != 1 else ''}" if action == "rearm" else f"{n} machine{'s' if n != 1 else ''}"
     elif action in ("inspect", "configure", "place_ghosts") and isinstance(args.get("name"), str):
         what = human(args["name"])
-    elif action == "place_ghosts" and isinstance(args.get("entities"), list) and args["entities"]:
+    count = None
+    if action == "place_ghosts" and isinstance(args.get("entities"), list) and args["entities"]:
         names = {e.get("name") for e in args["entities"] if isinstance(e, dict) and e.get("name")}
+        count = len(args["entities"])
         if len(names) == 1:
             what = human(names.pop())
-    return {"kind": kind, "action": action, "verb": verb, "what": what, "position": pos, "extent": extent,
-            "platform": plat}
+    out = {"kind": kind, "action": action, "verb": verb, "what": what, "position": pos, "extent": extent,
+           "platform": plat}
+    if count:
+        out["count"] = count  # how many ghosts one place_ghosts lays (the camera label: "placing 12 ghosts")
+    return out
 
 
 COMPASS = ["east", "northeast", "north", "northwest", "west", "southwest", "south", "southeast"]

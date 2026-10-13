@@ -4,9 +4,11 @@ map?").
 
 Each agent's latest attention point (attention.py; model.py keeps it: its last request that names a place) becomes a
 highlight drawn in the game for the director camera clients only (the harness's operator `highlights`,
-highlights.lua): a ring in the agent's colour on the spot, sized to the area, a dashed line from its character when the
-spot is off to the side, and a label ("Sol · placing gun turret ghosts"). Agents never see them; nothing in the game
-changes.
+highlights.lua): a ring in the agent's colour on the spot, sized to the area, a line from its character when the spot is
+off to the side, and a label ("Sol · inspecting gun turret", "Sol · placing 12 ghosts") at the spot and again on the line
+near the character with the distance (viewers saw lines run off screen with nothing on them, 15:27). Looking (inspect,
+scan) is a thin dotted line and ring, acting a bold dashed one; each fades over WINDOW seconds and is gone after it.
+Agents never see them; nothing in the game changes.
 
 Highlights.step(snapshot, now), once per ticker beat (1 s): the set is the agents' attention rows under WINDOW seconds
 old that have a position, newest first, at most MAX_ITEMS. It goes out as one operator dispatch when it changed, and
@@ -18,11 +20,11 @@ import json
 
 import attention
 
-WINDOW = 20.0     # seconds: an attention point older than this is no longer drawn
+WINDOW = 10.0     # seconds: an action is drawn this long, fading, then gone (viewers took older lines for the walk)
 MAX_ITEMS = 12    # the harness's cap
 MIN_GAP = 0.5     # seconds between calls (at most ~2/s)
-TTL_S = 6.0       # seconds each drawn object lives in the game
-REFRESH = 4.0     # seconds: an unchanged set is sent again before it expires
+TTL_S = 4.0       # seconds each drawn object lives in the game (an item's own ttl ends it at WINDOW)
+REFRESH = 2.0     # seconds: an unchanged set is sent again before it expires
 FAIL_LIMIT = 3
 
 
@@ -41,23 +43,43 @@ def rgb(color):
     return None
 
 
+# Actions on one thing at the spot: the harness names it ({entity} -> "gun turret") when the request did not.
+ON_ENTITY = {"inspect", "configure", "rotate", "mine", "repair", "requests", "circuit", "build"}
+
+
+def label(a):
+    """What the highlight says at the spot: "inspecting gun turret" (the harness fills {entity}), "placing 12 ghosts",
+    "taking iron plate"."""
+    if a.get("action") == "place_ghosts" and (a.get("count") or 0) > 1:
+        return f"placing {a['count']} {a['what'] + ' ' if a.get('what') else ''}ghosts"
+    if a.get("action") in ON_ENTITY and not a.get("what"):
+        return f"{a['verb']} {{entity}}"
+    return attention.head(a)
+
+
 def items(snapshot):
-    """The highlight set from a snapshot: [{agent, position, surface, label, extent?, color?}], newest first."""
+    """The highlight set from a snapshot: [{agent, position, surface, label, kind, alpha, ttl, extent?, color?}],
+    newest first. Each fades as it ages (alpha in quarter steps, down to 0.25) and its objects end at WINDOW seconds
+    of age even if no further call comes."""
     rows = []
     for ag in snapshot.get("agents") or []:
         a = ag.get("attention")
         p = (a or {}).get("position")
-        if not a or not isinstance(p, dict) or (a.get("age_s") or 0) > WINDOW:
+        age = float((a or {}).get("age_s") or 0)
+        if not a or not isinstance(p, dict) or age >= WINDOW:
             continue
         who = ag.get("display_name") or ag["name"]
         it = {"agent": ag["name"], "position": {"x": round(float(p["x"]), 2), "y": round(float(p["y"]), 2)},
-              "surface": a.get("surface") or "nauvis", "label": f"{who} · {attention.head(a)}"[:80]}
+              "surface": a.get("surface") or "nauvis", "label": f"{who} · {label(a)}"[:80],
+              "kind": "looking" if a.get("kind") == "looking" else "acting",
+              "alpha": max(0.25, round(4 * (1 - age / WINDOW)) / 4),
+              "ttl": max(30, int((WINDOW - age) * 60))}
         if a.get("extent"):
             it["extent"] = min(200.0, round(float(a["extent"]), 1))
         c = rgb(ag.get("color"))
         if c:
             it["color"] = c
-        rows.append((a.get("age_s") or 0, it))
+        rows.append((age, it))
     rows.sort(key=lambda r: r[0])
     return [it for _, it in rows[:MAX_ITEMS]]
 
@@ -92,8 +114,8 @@ class Highlights:
             return None
         its = items(snapshot)
         talk = bubbles(snapshot, now)
-        # a bubble's ttl shrinks as its clip plays: the set changes with which lines play, not with their time left
-        key = json.dumps([its, [b["id"] for b in talk]], sort_keys=True)
+        # ttls shrink as things age: the set changes with what is drawn and its fade step, not with the time left
+        key = json.dumps([[{k: v for k, v in it.items() if k != "ttl"} for it in its], [b["id"] for b in talk]], sort_keys=True)
         if not its and not talk:
             if not self.drawn:
                 return None
