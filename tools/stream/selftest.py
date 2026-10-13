@@ -148,16 +148,17 @@ def space_checks():
         {"name": "Solstice", "at": "nauvis", "hub": False}, {"name": "Dawn", "at": "nauvis", "state": "waiting_for_starter_pack"}]}}, t + 0.5)
     assert not m.moments and not m.snapshot(t + 0.5)["space"]["platforms"], list(m.moments)
     m.ingest({"agents": base, "space": {"rockets": 2, "planets": ["nauvis"], "platforms": [plat]}}, t + 1)
-    assert [x["kind"] for x in m.moments] == ["first_platform"], list(m.moments)
+    # rockets 1 -> 2: the first rocket since the service started (this shift) is a moment too (eng/hostguide)
+    assert [x["kind"] for x in m.moments] == ["shift_rocket", "first_platform"], list(m.moments)
     away = [base[0], dict(base[1], surface="vulcanus")]
     m.ingest({"agents": away, "space": {"rockets": 2, "planets": ["nauvis", "vulcanus"],
                                         "platforms": [dict(plat, at="vulcanus")]}}, t + 2)
     kinds = [x["kind"] for x in m.moments]
-    assert kinds == ["first_platform", "orbit", "landing"], kinds
+    assert kinds == ["shift_rocket", "first_platform", "orbit", "landing"], kinds
     landing = m.moments[-1]
     assert landing["agent"] == "opus" and landing["facts"]["planet"] == "Vulcanus" and landing["facts"]["planets_reached"] == 2
     m.ingest({"agents": away, "space": {"rockets": 3, "planets": ["nauvis", "vulcanus"], "platforms": [dict(plat, at="vulcanus")]}}, t + 3)
-    assert len(m.moments) == 3, "each moment fires once"
+    assert len(m.moments) == 4, "each moment fires once"
     snap = m.snapshot(t + 3)
     op = next(a for a in snap["agents"] if a["name"] == "opus")
     assert op["where"] == "Vulcanus" and op["location"] == "Vulcanus", op
