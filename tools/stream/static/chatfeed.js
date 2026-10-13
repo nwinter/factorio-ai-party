@@ -163,10 +163,13 @@
   function deliveryLabel(v, agents) {
     if (!v || v.chatter) return "";
     const shown = (n) => { const a = (agents || []).find((x) => x.name === n); return (a && a.display_name) || n; };
+    // a line to the operator ("Operator, ..."): the operator's inbox, and the agents it names too
+    const op = v.operator ? ["operator"] : [];
     if (v.delivery === "sent" || v.relayed) {
-      const to = v.to_all || (v.to ? [v.to] : []);
-      return "→ " + (to.length ? to.map(shown).join(", ") : "team");
+      const to = op.concat((v.to_all || (v.to ? [v.to] : [])).map(shown));
+      return "→ " + (to.length ? to.join(", ") : "team");
     }
+    if (v.operator) return "→ operator";
     if (v.delivery === "too_soon") return "not sent: too soon";
     if (v.delivery === "busy") return "not sent: chat busy";
     return "";

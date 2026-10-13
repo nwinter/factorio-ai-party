@@ -193,6 +193,19 @@ URGE = r"\b(you|u|y'?all|everyone|every ?body|agents?|bots?|ais?|team|guys) (sho
 STAFF = r"operator|admin|administrator|moderator|mod|developer|dev|devs|streamer|nick|owner|caster|narrator"
 
 
+# A line to the stream's operator or owner (Nick, 2026-10-13: shift05 07:57 Joonazan's "Operator, can you explain why
+# some models are just waiting ticks? ..." went to Haiku as "@haiku Operator, ..."): "Operator, ...", "operator: ...",
+# "hey operator ...", "Nick, ...", or "@operator" / "@NickWinter" / "@Nick" anywhere.
+OPERATOR = re.compile(r"^\W*((hey|hi|hello|yo|dear|ok|okay)\s+)?(the\s+|mr\.?\s+)?(operator|nick\s?winter|nick)\b(?!['’])"
+                      r"\s*([,:!?;—–-]|$|\s+(can|could|would|why|what|how|please|pls)\b)"
+                      r"|(^|[^\w@])@(operator|nick\s?winter|nick)\b", re.I)
+
+
+def to_operator(text):
+    """True for a viewer line addressed to the operator (or Nick, the stream's owner)."""
+    return bool(OPERATOR.search(fold(text or "", leet=False)))
+
+
 def grief(text, agent_names=()):
     f = fold(text, leet=False).strip(" !.?")
     lead = "^" + NAMES + r"(go |just )?"
@@ -325,7 +338,10 @@ class Filter:
             raw = fold(clean_name(m.get("name")), leet=False)
             if raw.replace(" ", "") in RESERVED or raw in self.agent_names:
                 reasons.append("impersonation:name")
-            if impersonation(text, self.agent_names):
+            # "operator: ..." to the operator is no claim to be one, unless it names an agent (it would be relayed)
+            to_op = to_operator(text) and not any(re.search(r"(?<![\w-])@?" + re.escape(n) + r"(?![\w-])", f.casefold())
+                                                  for n in self.agent_names if len(n) >= 2)
+            if impersonation(text, self.agent_names) and not to_op:
                 reasons.append("impersonation:text")
         key = re.sub(r"\W+", " ", unicodedata.normalize("NFKC", clean(text).casefold())).strip()
         while self.recent and now - self.recent[0][0] > 300:
@@ -922,8 +938,10 @@ class Relay:
 class Feed:
     """Sources -> filter -> classifier -> lane (+ relay). `lane()` is what serve.py puts into the snapshot."""
 
-    def __init__(self, sources, filt=None, classifier=None, relay=None, log_path=None, record=None, max_age=120.0):
+    def __init__(self, sources, filt=None, classifier=None, relay=None, log_path=None, record=None, max_age=120.0,
+                 inbox=None):
         self.sources = sources            # {name: source with poll() and status()}
+        self.inbox = inbox                # runs/RUN/operator-inbox.jsonl: viewer lines to the operator (to_inbox)
         self.filt = filt or Filter()
         self.clf = classifier
         self.relay = relay
@@ -986,6 +1004,16 @@ class Feed:
                 # above. Only a Clef verdict opens the relay when Clef is configured.
                 relay_ok = self.clf is None or checked == "clef"
                 v["chatter"] = is_chatter(v["text"])
+                if not v.get("staff") and to_operator(v["text"]):
+                    # to the operator: into the operator's inbox, never to an agent unless the line names one too
+                    v["operator"], v["chatter"] = True, False
+                    self.to_inbox(v)
+                    named = self.relay.named_agents(v["text"]) if self.relay else []
+                    if named and relay_ok:
+                        self.relay.offer(v, author)
+                    else:
+                        v["delivery"] = "operator"
+                    continue
                 if self.relay and relay_ok and v["chatter"]:
                     if self.relay.on():
                         self.dropped["relay:chatter"] += 1  # shown, never relayed, and the viewer keeps their slot
@@ -996,6 +1024,19 @@ class Feed:
             # after the adds: a deletion can arrive in the same batch as its message
             for kind, ident in dels:
                 self.delete(kind, ident)
+
+    def to_inbox(self, v):
+        """runs/RUN/operator-inbox.jsonl (operator_inbox.py; the operator's watch reads it): {t, agent: "viewer NAME",
+        text, viewer: true}, no seq (the agents' requests resume by theirs)."""
+        if not self.inbox:
+            return
+        row = {"t": round(v.get("t") or time.time(), 1), "agent": f"viewer {v['name']}", "text": v["text"], "viewer": True,
+               "source": v.get("source")}
+        try:
+            with open(self.inbox, "a") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except OSError as e:
+            log(f"operator inbox: {e}")
 
     def delete(self, kind, ident):
         keep = [m for m in self.lane_msgs
@@ -1093,9 +1134,10 @@ def add_args(ap, prefix=""):
     ap.add_argument(p + "relay-fn", default="viewer_say", help="the harness's operator action that posts a viewer line")
 
 
-def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, loop=False, roster=()):
+def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, loop=False, roster=(), inbox=None):
     """A Feed from parsed args, or None when no source is configured. roster: [(name, display_name)] in team order,
-    for addressing viewers' questions (serve.py refreshes it with Relay.set_roster)."""
+    for addressing viewers' questions (serve.py refreshes it with Relay.set_roster). inbox: the operator inbox file
+    viewer lines to the operator go to."""
     g = lambda k: getattr(a, (prefix + k).replace("-", "_"))  # noqa: E731
     sources = {}
     if g("replay"):
@@ -1116,7 +1158,7 @@ def build(a, prefix="", agent_names=(), harness=None, log_dir=None, speed=1.0, l
     if log_dir:
         os.makedirs(log_dir, exist_ok=True)
         log_path = os.path.join(log_dir, time.strftime("viewers-%Y%m%d-%H%M%S.jsonl"))
-    return Feed(sources, Filter(agent_names, blocklist), clf, relay, log_path, g("record"))
+    return Feed(sources, Filter(agent_names, blocklist), clf, relay, log_path, g("record"), inbox=inbox)
 
 
 def main():
