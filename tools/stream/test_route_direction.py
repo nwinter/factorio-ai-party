@@ -122,7 +122,7 @@ def main():
     m = model()
     read(m, t, "nauvis->vulcanus 40%", to="nauvis")  # first seen mid-trip home
     read(m, t + 10, "nauvis", to="nauvis")
-    assert [a["kind"] for a in alerts(m, "arrive:")] == ["space"], "its first at Nauvis this service saw"
+    assert [a["kind"] for a in alerts(m, "arrive:")] == ["arrival"], "home, where the team is: a ferry, not a first"
     m = model()
     m.ingest({"agents": [], "space": {"rockets": 9, "planets": ["nauvis", "vulcanus"], "platforms": [
         {"name": "Ferry", "at": "nauvis->vulcanus 40%", "to": "vulcanus", "hub": True}]}}, t)
@@ -131,6 +131,43 @@ def main():
     m.ingest({"agents": [], "space": {"rockets": 9, "planets": ["nauvis", "vulcanus"], "platforms": [
         {"name": "Ferry", "at": "nauvis", "to": "nauvis", "hub": True}]}}, t + 10)  # (a short trip back)
     assert [a["kind"] for a in alerts(m, "arrive:")] == ["arrival"], "Nauvis: where it left from"
+
+    # restarts: the one-time "X reaches Vulcanus" moment (a headline and a segment) and arrival headlines are not
+    # taken again for a ferry's next arrival. space-memory.json in the run folder keeps where each platform has been.
+    import tempfile
+    path = os.path.join(tempfile.mkdtemp(), "space-memory.json")
+    first = model()
+    first.set_space_memory(path)  # no file yet
+    read(first, t, "nauvis", to="vulcanus")
+    read(first, t + 10, "nauvis->vulcanus 50%", to="vulcanus")
+    read(first, t + 20, "vulcanus", to="vulcanus")
+    assert [x["kind"] for x in first.moments] == ["orbit"], "its first at Vulcanus: the moment"
+    read(first, t + 30, "nauvis->vulcanus 50%", to="nauvis")
+    import json
+    mem = json.load(open(path))
+    assert mem["visited"]["Sunward"] == ["nauvis", "vulcanus"] and "vulcanus" in mem["reached"], mem
+    again = model()  # the service restarts with Sunward on its way home, then flies back to Vulcanus
+    again.set_space_memory(path)
+    read(again, t + 40, "nauvis->vulcanus 40%", to="nauvis")
+    read(again, t + 50, "nauvis", to="nauvis")
+    read(again, t + 60, "nauvis->vulcanus 50%", to="vulcanus")
+    read(again, t + 70, "vulcanus", to="vulcanus")
+    assert not again.moments, list(again.moments)
+    assert [a["kind"] for a in alerts(again, "arrive:")] == ["arrival", "arrival"], alerts(again, "arrive:")
+    assert not alerts(again, "space:orbit"), "no second 'Sunward reaches Vulcanus'"
+
+    # no memory (the first start with it, or a platform made while the service was down), first seen mid-trip:
+    # headed for a planet the team has reached, a ferry; headed somewhere new, still the moment
+    cold = model()
+    read(cold, t, "nauvis->vulcanus 60%", to="vulcanus")
+    read(cold, t + 10, "vulcanus", to="vulcanus")
+    assert not cold.moments and [a["kind"] for a in alerts(cold, "arrive:")] == ["arrival"], list(cold.moments)
+    cold = model()
+    cold.ingest({"agents": [], "space": {"rockets": 9, "planets": ["nauvis", "vulcanus"], "platforms": [
+        {"name": "Scout", "at": "nauvis->fulgora 30%", "to": "fulgora", "hub": True}]}}, t)
+    cold.ingest({"agents": [], "space": {"rockets": 9, "planets": ["nauvis", "vulcanus"], "platforms": [
+        {"name": "Scout", "at": "fulgora", "to": "fulgora", "hub": True}]}}, t + 10)
+    assert [x["kind"] for x in cold.moments] == ["orbit"] and cold.moments[0]["title"] == "Scout reaches Fulgora"
 
     # 4. live.py: the score's fresh location over a detail read from before
     from live import LiveSource

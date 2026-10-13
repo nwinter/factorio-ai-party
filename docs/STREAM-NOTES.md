@@ -313,6 +313,10 @@ On the page:
   the run's first there. Where a platform is when the service first sees it counts as visited, and so does the
   planet it left if it is first seen mid-trip. Later arrivals, such as a ferry's round trips, are 🛰️ `arrival`
   events at caster priority 6, below battles and losses, so they never pull the hosts off a fight.
+  `runs/RUN/space-memory.json` keeps where each platform has been and the planets reached, so a restart does not
+  fire a false first: neither an arrival headline nor the one-time "X reaches Vulcanus" moment. A platform with no
+  memory, first seen mid-trip to a planet the team has reached, is taken for a ferry: its arrival is an ordinary
+  one. A platform headed somewhere new still gets the moment.
 - Direction: space.lua's route "nauvis->vulcanus N%" names the space connection's fixed ends, whichever way it is
   flown (shift06 14:09: Sunward from Vulcanus to Nauvis showed as "leaving Nauvis for Vulcanus"). model.py
   `_orient_platforms` works out where a platform is headed from the schedule's current stop (pog.py score `to`),

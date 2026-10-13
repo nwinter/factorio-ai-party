@@ -13,7 +13,7 @@ An observation is a dict:
   board_events: [{seq, tick, by, id, change, title, kind?}] (optional; docs/BOARD-API.md)
   board: {items: [...], open_unowned} (optional, refreshed slowly; docs/BOARD-API.md)
 """
-import math, os, re, time
+import json, math, os, re, time
 from collections import deque
 
 import attention
@@ -399,6 +399,8 @@ class Model:
         self.platform_course = {}  # name -> {conn, pct, toward, orbit, moving}: which way it flies, the last planet
         self.arrivals = []  # (name, planet, came from, its first there, the run's first there) this read
         self.planets_reached = set()  # planets any platform has been at (or our entities stand on)
+        self.space_memory = None  # runs/RUN/space-memory.json (set_space_memory): visited and reached across restarts
+        self.orbit_known = set()  # (platform, planet) visited before this service saw it: no orbit moment for those
         self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
         # Space widget: status alerts' platform_hits rows by platform (live.py), and platforms lost lately
         self.platform_hits, self.platforms_lost = {}, deque(maxlen=6)
@@ -468,6 +470,7 @@ class Model:
                                if p.get("hub", True) and p.get("state") != "waiting_for_starter_pack"]
             self.planets_reached.update(sp.get("planets") or [])  # surfaces with our entities: reached before
             sp["platforms"] = self._orient_platforms(sp["platforms"])
+            self._save_space_memory()
             self.space = sp
             self._platforms_lost(now)
         if obs.get("platform_hits") is not None:  # one status round's rows: a platform not in them took no hits lately
@@ -1113,6 +1116,9 @@ class Model:
         for key, m in found:
             if key in self.space_seen:
                 continue
+            if m["kind"] == "orbit" and (m["facts"]["platform"], m["planet"]) in self.orbit_known:
+                self.space_seen.add(key)  # been there before this service saw it (space-memory.json, a mid-trip start)
+                continue
             self.space_seen.add(key)
             fired.add(key)
             m.update(id=f"m-{key}", key=key, t=now, game_time=fmt_game_time(self.tick / 60))
@@ -1139,6 +1145,37 @@ class Model:
                     facts, headline="platform_arrival", first_visit=True, team_first=team_first or None))
             else:
                 self.alert("arrival", title, key=key, ttl=120, facts=facts)
+
+    def set_space_memory(self, path):
+        """Keep where each platform has been, and the planets reached, in the run folder (serve.py), so a restart
+        does not take a ferry's next arrival for a first: an arrival headline, or the one-time "X reaches Vulcanus"
+        moment with its segment."""
+        self.space_memory = path
+        try:
+            with open(path) as f:
+                mem = json.load(f)
+        except (OSError, ValueError):
+            return
+        for name, planets in (mem.get("visited") or {}).items():
+            self.platform_course.setdefault(name, {"visited": set()})["visited"].update(planets)
+            self.orbit_known.update((name, pl) for pl in planets)
+        self.planets_reached.update(mem.get("reached") or [])
+
+    def _save_space_memory(self):
+        if not self.space_memory:
+            return
+        mem = {"visited": {n: sorted(c.get("visited") or ()) for n, c in sorted(self.platform_course.items())},
+               "reached": sorted(self.planets_reached)}
+        if mem == getattr(self, "_space_memory_saved", None):
+            return
+        try:
+            tmp = self.space_memory + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(mem, f)
+            os.replace(tmp, self.space_memory)
+            self._space_memory_saved = mem
+        except OSError:
+            pass
 
     def _orient_platforms(self, plats):
         """Which way each travelling platform flies (`toward`, for platform_where): space.lua's "a->b N%" is the
@@ -1183,6 +1220,13 @@ class Model:
             c.update(conn=(a, b), pct=pct, toward=toward, moving=True)
             if new and p.get("to") in (a, b):  # first seen mid-trip (a restart): it has been where it left
                 c["visited"].add(a if toward == b else b)
+                if toward in self.planets_reached:
+                    # headed for a planet the team has reached, with nothing remembered of it (no space-memory.json
+                    # yet, or made while the service was down): a ferry more likely than a first trip, so its arrival
+                    # is an ordinary one, not a false first
+                    c["visited"].add(toward)
+                for planet in c["visited"]:
+                    self.orbit_known.add((name, planet))
             p["toward"] = toward
             out.append(p)
         return out
