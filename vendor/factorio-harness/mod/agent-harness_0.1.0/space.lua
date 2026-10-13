@@ -196,7 +196,8 @@ return function(api)
         for _,t in ipairs(thrusters) do
           for i=1,2 do
             local f=try(function() return t.fluidbox[i] end)
-            local cap=try(function() return t.fluidbox.get_capacity(i) end)
+            -- the thruster's own tank, not a connected segment's capacity
+            local cap=try(function() return t.prototype.fluidbox_prototypes[i].volume end) or try(function() return t.fluidbox.get_capacity(i) end)
             low=math.min(low,f and cap and cap>0 and f.amount/cap or 0)
           end
         end

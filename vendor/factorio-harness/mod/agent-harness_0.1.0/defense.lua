@@ -70,7 +70,10 @@ return function(api)
   local function oil(e)
     local ok,amount,cap=pcall(function()
       local f=e.fluidbox[1]
-      local c=e.fluidbox.get_capacity and e.fluidbox.get_capacity(1) or nil
+      -- the turret's own tank (100), not get_capacity, which in 2.0 is the whole connected fluid segment's
+      -- (66700 on a flamer line: every flamer read 0%, shift07 15:31, Astra)
+      local pr=e.prototype local fp=pr and pr.fluidbox_prototypes and pr.fluidbox_prototypes[1]
+      local c=fp and fp.volume or (e.fluidbox.get_capacity and e.fluidbox.get_capacity(1)) or nil
       return f and f.amount or 0,c
     end)
     if not ok then return 0,nil end
