@@ -5,9 +5,13 @@
   the fights reported in the last two minutes on Nauvis, and each camera's fight / work / segment label;
 - the built homepage carries the live app and links to the rest of the site; /about/ has the old homepage, /live/
   still works; check.py passes;
-- the map (static/live.js under node, a stub DOM): framed on the base's core, basemap.core drawn over the coarse grid
-  (clipped outside it), an inset of the whole base, a legend per kind, an agent far away pinned to the edge; without
-  basemap.core (an older stream service) the core comes from the coarse grid.
+- the map viewer (static/mapview.js scene() under node): framed on the base's core, basemap.core drawn over the coarse
+  grid (clipped outside it), an inset of the whole base, an agent far away pinned to the edge; without basemap.core (an
+  older stream service) the core comes from the coarse grid; layers on and off (turret range off by default), terrain
+  frames placed by their tile edges and only up to the snapshot's tick, hits for hover and tap (agents first), and
+  paint() on a recording canvas;
+- static/live.js (a stub DOM and a stub viewer): the dashboard's cards are made once and the map gets the basemap,
+  agents, fights, alerts and cameras.
 """
 import json, os, re, shutil, subprocess, sys, tempfile, time
 
@@ -68,18 +72,25 @@ def build_tests():
         assert 'id="live-app"' in open(os.path.join(d, "live", "index.html")).read()
 
 
-MAP_JS = r"""
-// static/live.js in a stub DOM, sample mode, on the state in argv[2]; prints the dashboard's HTML
+LIVE_JS = r"""
+// static/live.js in a stub DOM with a stub map viewer, sample mode, on the state in argv[3]; prints what it drew
 const fs = require('fs');
 const state = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
 function cls() { const s = new Set(); return { add: (c) => s.add(c), remove: (c) => s.delete(c), toggle: (c, on) => (on ? s.add(c) : s.delete(c)), contains: (c) => s.has(c) }; }
 const kids = {};
+// the cards' parts exist once made; any other selector gets an element
+const find = (s) => kids[s] || (/^#(cb-|map-|mm)/.test(s) ? null : (kids[s] = el(s)));
 function el(name) {
-  return { name, dataset: {}, innerHTML: '', textContent: '', value: '', hidden: false, classList: cls(), attrs: {},
+  const e = { name, dataset: {}, textContent: '', value: '', hidden: false, classList: cls(), attrs: {}, _html: '',
     setAttribute(k, v) { this.attrs[k] = v; }, getAttribute(k) { return this.attrs[k]; }, addEventListener() {},
-    querySelector: (s) => kids[s] || (kids[s] = el(s)), querySelectorAll: () => [], scrollTop: 0, scrollHeight: 0 };
+    querySelector: (s) => find(s), querySelectorAll: () => [], scrollTop: 0, scrollHeight: 0 };
+  // ids in assigned HTML become elements, as a browser would make them
+  Object.defineProperty(e, 'innerHTML', { get() { return this._html; }, set(v) { this._html = v; for (const m of String(v).matchAll(/id="([\w-]+)"/g)) kids['#' + m[1]] = kids['#' + m[1]] || el(m[1]); } });
+  return e;
 }
+for (const id of ['dash', 'strip', 'alerts', 'run-title', 'run-sub', 'updated', 'next-shift', 'offline', 'live-badge']) kids['#' + id] = el(id);
 const app = el('app');
+app.querySelector = find;
 app.dataset = { api: '', status: '/live/status.json', poll: '10', video: '', channel: '' };
 global.window = global;
 global.addEventListener = () => {};
@@ -90,9 +101,50 @@ global.matchMedia = () => ({ matches: true });
 global.location = { search: '?demo=1', hostname: 'localhost' };
 global.localStorage = { getItem: () => null, setItem: () => {} };
 global.PogAvatar = { svg: () => '<svg/>' };
+const made = [], sets = [];
+global.PogMap = { create: (host, opts) => { made.push({ host: host.name, opts }); return { set: (d) => sets.push(d) }; } };
 global.fetch = (url) => Promise.resolve({ ok: true, json: () => Promise.resolve(url.indexOf('state') >= 0 ? state : { schema: 1 }) });
 require(process.argv[2]);
-setTimeout(() => process.stdout.write(kids['#dash'].innerHTML), 300);
+setTimeout(() => process.stdout.write(JSON.stringify({ dash: kids['#dash'].innerHTML, made, sets,
+  agents: (kids['#cb-agents'] || {}).innerHTML, cams: (kids['#map-cams'] || {}).innerHTML })), 300);
+"""
+
+SCENE_JS = r"""
+// static/mapview.js's pure part under node: prepare(), scene(), hitAt(), paint() on the data in argv[3]
+const fs = require('fs');
+global.window = global;
+require(process.argv[2]);
+const M = global.PogMap, data = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));
+const out = {};
+function summary(sc) {
+  return { span: sc.span, clip: !!sc.clip, core: !!sc.core, base: !!sc.base, inset: !!sc.inset, far: sc.far, coverage: sc.coverage.length,
+    terrain: sc.terrain, nests: sc.nests.length, agents: sc.agents.map((a) => ({ name: a.name, far: a.far, x: a.x, y: a.y, label: !!a.label })),
+    attention: sc.attention.length, fights: sc.fights.length, pins: sc.pins.length, step: sc.grid.step };
+}
+const d = M.prepare(data.full);
+out.full = summary(M.scene(d, null, 400, 400));
+out.allOn = summary(M.scene(d, null, 400, 400, Object.fromEntries(M.LAYERS.map((l) => [l[0], true]))));
+out.allOff = summary(M.scene(d, null, 400, 400, Object.fromEntries(M.LAYERS.map((l) => [l[0], false]))));
+out.old = summary(M.scene(M.prepare(data.old), null, 400, 400));
+// a 600 x 300 full-screen canvas on a fixed view: the span is across the shorter side
+const wide = M.scene(d, { cx: 40, cy: 30, span: 100 }, 600, 300, Object.fromEntries(M.LAYERS.map((l) => [l[0], true])));
+out.wide = summary(wide);
+const sc = M.scene(d, { cx: 40, cy: 30, span: 100 }, 400, 400);
+const ag = sc.agents.find((a) => !a.far);
+out.hitAgent = M.hitAt(sc, ag.x + 3, ag.y - 2);
+const nest = sc.nests[0];
+out.hitNest = nest ? M.hitAt(sc, nest.x, nest.y) : null;
+out.hitNone = M.hitAt(sc, 1, 1);
+// paint on a recording canvas: every call counted, terrain images drawn where scene() put them
+const calls = {};
+const ctx = new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...args) => { (calls[k] = calls[k] || []).push(args); }), set: (t, k, v) => { t[k] = v; return true; } });
+M.paint(ctx, wide, (src) => ({ width: 1280, height: 720, src }), 'sans-serif', null);
+out.paint = { drawImage: (calls.drawImage || []).map((c) => c.slice(1).map((n) => Math.round(n))), fill: (calls.fill || []).length,
+  fillText: (calls.fillText || []).map((c) => c[0]), rect: (calls.rect || []).length, arc: (calls.arc || []).length };
+const t0 = Date.now();
+for (let i = 0; i < 60; i++) M.paint(ctx, M.scene(d, { cx: 40 + i, cy: 30, span: 100 + i }, 400, 400), () => null, 'sans-serif', null);
+out.ms_per_frame = (Date.now() - t0) / 60;
+process.stdout.write(JSON.stringify(out));
 """
 
 
@@ -106,7 +158,7 @@ def map_state(core=True):
         rows[r] = "P"
     rows[0] = "MMM"
     bm = {"tick": 1, "cell": 4, "x0": 0, "y0": -400, "w": 20, "h": len(rows), "rows": rows, "nests": [[90, 10, "s"]],
-          "buildings": 900}
+          "buildings": 900, "turrets": [[10, 10, 18], [20, 10, 18], [70, 60, 30]]}
     if core:
         bm["core"] = {"cell": 1, "x0": -8, "y0": -8, "w": 96, "h": 80,
                       "rows": ["AAA.SS.II.BBBB.TTTT.LL.EE.PP.MMM.RR.DD" * 2 for _ in range(80)]}
@@ -114,7 +166,18 @@ def map_state(core=True):
     for a in s.get("agents", []):
         a["position"] = {"x": 30, "y": 30}
     s["agents"][0]["position"] = {"x": 2, "y": -390}  # at the pumpjacks: off the core view, pinned to the edge
+    s["agents"][1]["attention"] = {"position": {"x": 60, "y": 50}, "text": "inspecting a furnace", "dist": 36, "far": True}
     return s
+
+
+def viewer_data(s):
+    """What live.js mapData() gives the viewer, plus terrain frames: one in view, one from after the snapshot."""
+    bm = s["basemap"]
+    return {"base": bm, "core": bm.get("core"), "ore": bm.get("ore"), "nests": bm.get("nests"), "turrets": bm.get("turrets"),
+            "terrain": [{"src": "/live/terrain/a.webp", "x0": 0, "y0": 0, "x1": 64, "y1": 36, "tick": 1},
+                        {"src": "/live/terrain/later.webp", "x0": 0, "y0": 0, "x1": 64, "y1": 36, "tick": 99},
+                        {"src": "javascript:alert(1)", "x0": 0, "y0": 0, "x1": 64, "y1": 36, "tick": 1}],
+            "tick": 5, "agents": s["agents"], "fights": [], "pins": s.get("alerts") or [], "cams": s.get("cameras") or {}}
 
 
 def map_tests():
@@ -122,28 +185,49 @@ def map_tests():
         print("map: skipped (no node)")
         return
     with tempfile.TemporaryDirectory() as d:
-        js = os.path.join(d, "map.js")
-        open(js, "w").write(MAP_JS)
-        out = {}
-        for core in (True, False):
-            path = os.path.join(d, f"state-{core}.json")
-            json.dump(map_state(core), open(path, "w"))
-            r = subprocess.run(["node", js, os.path.join(SITE, "static", "live.js"), path], capture_output=True, text=True, timeout=30)
-            assert r.returncode == 0, r.stderr
-            out[core] = r.stdout
-        html = out[True]
-        assert 'id="mm"' in html and 'class="minimap"' in html
-        assert '<clipPath id="mm-out">' in html and html.count('class="mm-base"') == 3, "coarse outside the core, fine core, inset"
-        assert 'class="mm-inset"' in html, "the inset shows the whole base (the pipeline makes it 5 times the view)"
-        view = float(re.search(r"About (\d+) tiles across", html).group(1))
-        assert 90 <= view <= 200, view  # framed on the core (96 x 80 tiles, and the sample's alerts near it), not the 500-tile extent
-        for label in ("Assembly", "Rails", "Inserters", "Logistics", "Belts", "Pipes", "Defence", "Labs", "Enemy nests"):
-            assert f"</i>{label}</li>" in html, label
-        assert "1-tile cells" in html and 'data-mm="in"' in html
-        assert 'class="dot far"' in html, "the agent at the pumpjacks is pinned to the edge"
-        old = out[False]  # an older stream service without basemap.core: the core framed from the coarse grid
-        assert "mm-out" not in old and 'class="mm-inset"' in old
-        assert 70 <= float(re.search(r"About (\d+) tiles across", old).group(1)) <= 200
+        js = os.path.join(d, "scene.js")
+        open(js, "w").write(SCENE_JS)
+        path = os.path.join(d, "data.json")
+        json.dump({"full": viewer_data(map_state(True)), "old": viewer_data(map_state(False))}, open(path, "w"))
+        r = subprocess.run(["node", js, os.path.join(SITE, "static", "mapview.js"), path], capture_output=True, text=True, timeout=30)
+        assert r.returncode == 0, r.stderr
+        o = json.loads(r.stdout)
+        full = o["full"]
+        assert 90 <= full["span"] <= 200, full["span"]  # framed on the core (96 x 80 tiles and the sample's alerts), not the 500-tile extent
+        assert full["clip"] and full["core"] and full["base"], "the fine core over the coarse grid, clipped outside it"
+        assert full["inset"], "the inset shows the whole base (the pipeline makes it 5 times the view)"
+        astra = full["agents"][0]
+        assert astra["far"] and list(full["far"]) == [astra["name"]] and full["far"][astra["name"]] > 300, full["far"]
+        assert full["coverage"] == 0 and o["allOn"]["coverage"] == 3, "turret range: off by default, three turrets when on"
+        assert full["nests"] == 1 and full["attention"] == 1
+        # terrain: only frames up to the snapshot's tick, only site paths, placed by their tile edges
+        assert [t["src"] for t in full["terrain"]] == ["/live/terrain/a.webp"], full["terrain"]
+        off = o["allOff"]
+        assert not off["base"] and off["agents"] == [] and off["terrain"] == [] and off["nests"] == 0 and off["attention"] == 0
+        wide = o["wide"]  # 600 x 300 at 100 tiles across the short side: 3 px a tile, tile (40, 30) at the centre
+        t = wide["terrain"][0]
+        assert (round(t["x"]), round(t["y"]), round(t["w"]), round(t["h"])) == (180, 60, 192, 108), t
+        assert o["paint"]["drawImage"] == [[180, 60, 192, 108]], o["paint"]["drawImage"]
+        assert o["paint"]["fill"] > 10 and o["paint"]["arc"] >= 3 and any(x.startswith("Sol") or x.startswith("Grok") or x for x in o["paint"]["fillText"])
+        assert o["hitAgent"] and o["hitAgent"]["agent"] and "·" in o["hitAgent"]["text"], o["hitAgent"]
+        assert o["hitNone"] is None
+        assert o["ms_per_frame"] < 50, o["ms_per_frame"]  # scene + paint of an 80 x 96 core, well under a frame budget even in node
+        old = o["old"]  # an older stream service without basemap.core: the core framed from the coarse grid
+        assert not old["clip"] and old["inset"] and 70 <= old["span"] <= 200, old
+
+        js = os.path.join(d, "live.js")
+        open(js, "w").write(LIVE_JS)
+        spath = os.path.join(d, "state.json")
+        json.dump(map_state(True), open(spath, "w"))
+        r = subprocess.run(["node", js, os.path.join(SITE, "static", "live.js"), spath], capture_output=True, text=True, timeout=30)
+        assert r.returncode == 0, r.stderr
+        lv = json.loads(r.stdout)
+        assert lv["dash"].count('class="fx-panel live-card') == 6 and 'id="cb-map"' in lv["dash"]
+        assert len(lv["made"]) == 1 and lv["made"][0]["host"] == "mm", lv["made"]  # one viewer, kept across refreshes
+        got = lv["sets"][-1]
+        assert got["base"]["rows"] and got["core"]["cell"] == 1 and len(got["turrets"]) == 3 and got["nests"] == [[90, 10, "s"]]
+        assert [a["name"] for a in got["agents"]] == [a["name"] for a in map_state(True)["agents"]] and "cams" in got
+        assert "agent-live" in lv["agents"]
 
 
 def main():

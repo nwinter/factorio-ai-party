@@ -38,10 +38,10 @@ return function(api)
     end
     c.read[index] = next(set) and set or nil
   end
-  local function append(from, text, index, aloud, viewer, notice)
+  local function append(from, text, index, aloud, viewer, notice, look)
     local c = log()
     c.seq = c.seq + 1
-    local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil, viewer=viewer or nil, notice=notice or nil}
+    local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil, viewer=viewer or nil, notice=notice or nil, look=look}
     c.messages[#c.messages+1] = m
     while #c.messages > MAX_LOG do table.remove(c.messages, 1) end
     -- Mentions are filed per agent as the message arrives (board.lua); a
@@ -76,15 +76,65 @@ return function(api)
   end
   M.schema = {
     say = {text='1..500 characters (longer is cut to 500; the reply says so): posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
-      aloud='optional boolean: viewers also hear the line on the stream, spoken in your own voice; without it the line shows on the stream only as text, as tells do'},
+      aloud='optional boolean: viewers also hear the line on the stream, spoken in your own voice; without it the line shows on the stream only as text, as tells do',
+      look='optional: what the stream camera might show while the line is read out, a hint the director may take: {platform: NAME} | {position: {x,y}, surface?} | {area: {left_top, right_bottom}, surface?} | {agent: NAME}'},
     chat = {since='optional sequence number: every message after it, yours included (default: your unread messages)',
       limit='1..100, newest kept (default 30)', peek='boolean: read without marking as read (overlays, spectators)',
       returns='messages {seq,tick,from,away?,text,aloud?,viewer?,notice?,mention?} oldest first (away: "on Vulcanus" when the sender is a teammate somewhere other than you now):the newest `limit`, plus every older one that mentions you (mention: @|@everyone|name); viewer: a stream viewer\'s line, moderated and relayed by the stream service, from "viewer NAME", not a teammate (it mentions you only with @your name); notice: a harness line (mute votes). cursor (latest seq); remaining and digest (one line: count, seq range and senders of the messages not returned; chat again for them). Only returned messages are marked read, unless peek; while a read left some unread, every reply\'s team hints carry chat_remaining'},
   }
+  -- A camera hint for the stream (Nick, 14:11: "an easy optional parameter to suggest the director look at
+  -- something in particular when their message is read out"): checked here, kept on the message, returned by
+  -- `chat`; the stream's director decides whether to show it.
+  local function xy(v)
+    if type(v) == 'table' and type(v.x) == 'number' and type(v.y) == 'number' then return v.x, v.y end
+    if type(v) == 'table' and type(v[1]) == 'number' and type(v[2]) == 'number' then return v[1], v[2] end
+  end
+  local LOOK_FORMS = 'look must be {platform: NAME} | {position: {x,y}, surface?} | {area: {left_top, right_bottom}, surface?} | {agent: NAME}'
+  local function check_look(p, look)
+    if look == nil then return nil end
+    assert(type(look) == 'table', LOOK_FORMS)
+    if look.platform ~= nil then
+      assert(api.platform, 'look.platform: no space platforms here')
+      return {platform=api.platform(p, look.platform).name}
+    end
+    if look.agent ~= nil then
+      local want = string.lower(tostring(look.agent))
+      local names = {}
+      for _, ag in ipairs(api.agents and api.agents() or {}) do
+        if string.lower(ag.name) == want or (ag.display_name and string.lower(ag.display_name) == want) then return {agent=ag.name} end
+        names[#names+1] = ag.name
+      end
+      error('look.agent: no agent named ' .. tostring(look.agent) .. (#names > 0 and '; agents: ' .. table.concat(names, ', ') or ''), 0)
+    end
+    local surface = p.surface
+    if look.surface ~= nil then
+      surface = game.surfaces[look.surface]
+      assert(surface, 'look.surface: no surface named ' .. tostring(look.surface))
+    end
+    local x, y, extent
+    if look.position ~= nil then
+      x, y = xy(look.position)
+      assert(x, 'look.position must be {x,y}')
+      extent = 0
+    elseif look.area ~= nil then
+      assert(type(look.area) == 'table', 'look.area must be {left_top, right_bottom}')
+      local x0, y0 = xy(look.area.left_top)
+      local x1, y1 = xy(look.area.right_bottom)
+      assert(x0 and x1, 'look.area must be {left_top: {x,y}, right_bottom: {x,y}}')
+      x, y, extent = (x0 + x1) / 2, (y0 + y1) / 2, math.max(math.abs(x1 - x0), math.abs(y1 - y0))
+    else
+      error(LOOK_FORMS, 0)
+    end
+    assert(p.force.is_chunk_charted(surface, {x=math.floor(x / 32), y=math.floor(y / 32)}),
+      'look: (' .. math.floor(x) .. ',' .. math.floor(y) .. ') on ' .. surface.name .. ' is not charted')
+    return {position={x=math.floor(x * 10 + 0.5) / 10, y=math.floor(y * 10 + 0.5) / 10}, surface=surface.name,
+      extent=extent > 0 and math.floor(extent + 0.5) or nil}
+  end
   function M.handlers.say(p, a)
     local text = a.text
     assert(type(text) == 'string' and text:match('%S'), 'text is required: fh say "your words", or for text with quotes or apostrophes fh say - <<\'EOF\' (text on the next lines, then EOF)')
     assert(a.aloud == nil or type(a.aloud) == 'boolean', 'aloud must be true or false')
+    local look = check_look(p, a.look)
     text = text:gsub('[\r\n]+', ' ')
     local cut = #text > MAX_LEN and {length=#text, kept=MAX_LEN} or nil
     if cut then text = text:sub(1, MAX_LEN) end
@@ -97,7 +147,7 @@ return function(api)
     else
       game.print(line)
     end
-    local seq = append(name, text, p.index, a.aloud == true)
+    local seq = append(name, text, p.index, a.aloud == true, nil, nil, look)
     -- Your own messages count as read (is_read); others' stay unread.
     -- The speech bubble is decoration: it never fails the message.
     if api.on_say then pcall(api.on_say, p, text) end
@@ -124,7 +174,7 @@ return function(api)
       local newest = i > #picked - limit
       if newest or (how and extra < MAX_MENTIONS) then
         if not newest then extra = extra + 1 end
-        out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, away=where and where(m.from) or nil, text=m.text, aloud=m.aloud, viewer=m.viewer, notice=m.notice, mention=how or nil}
+        out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, away=where and where(m.from) or nil, text=m.text, aloud=m.aloud, viewer=m.viewer, notice=m.notice, mention=how or nil, look=m.look}
       end
     end
     if a.peek ~= true then

@@ -92,4 +92,29 @@ r=c4.handlers.chat(opus,{limit=100}); eq(r.remaining,nil); eq(r.digest,nil); eq(
 for i=1,5 do c4.handlers.say(astra,{text='p'..i}) end
 c4.handlers.chat(opus,{limit=1,peek=true}); eq(c4.left(2),nil)
 c4.handlers.chat(opus,{limit=1,since=0}); eq(c4.left(2),nil)
+-- look: a camera hint for the stream, checked and kept on the message (Sol's 14:09 line about Sunward).
+local s5={}
+local nauvis={name='nauvis'}
+local vulcanus={name='vulcanus'}
+local force={is_chunk_charted=function(surface,c) return surface==nauvis or (c.x>=-5 and c.x<=5) end}
+local sol={index=4,name='pog-sol',chat_color={r=1,g=0.8,b=0},surface=vulcanus,force=force}
+game.surfaces={nauvis=nauvis,vulcanus=vulcanus}
+local c5=dofile('mod/agent-harness_0.1.0/chat.lua'){state=function() return s5 end,
+  platform=function(p,name) if name=='Sunward' then return {name='Sunward'} end error('no platform named '..tostring(name)..'; platforms: Sunward',0) end,
+  agents=function() return {{index=1,name='astra',display_name='Astra'},{index=4,name='sol',display_name='Sol'}} end}
+r=c5.handlers.say(sol,{text='First Vulcanus to Nauvis delivery is loaded up on Sunward and ready to go home.',aloud=true,look={platform='Sunward'}})
+eq(s5.chat.messages[r.seq].look.platform,'Sunward')
+local m=c5.handlers.chat(astra,{since=0}).messages[1]; eq(m.look.platform,'Sunward'); eq(m.aloud,true)
+c5.handlers.say(sol,{text='look',look={agent='Astra'}}); eq(s5.chat.messages[2].look.agent,'astra')
+c5.handlers.say(sol,{text='here',look={position={x=10.04,y=-20}}})
+eq(s5.chat.messages[3].look.surface,'vulcanus'); eq(s5.chat.messages[3].look.position.x,10)
+c5.handlers.say(sol,{text='there',look={area={left_top={-10,-10},right_bottom={30,10}},surface='nauvis'}})
+local l=s5.chat.messages[4].look; eq(l.surface,'nauvis'); eq(l.position.x,10); eq(l.extent,40)
+fails(function() c5.handlers.say(sol,{text='x',look={platform='Starling'}}) end,'no platform named Starling')
+fails(function() c5.handlers.say(sol,{text='x',look={agent='zed'}}) end,'no agent named zed; agents: astra, sol')
+fails(function() c5.handlers.say(sol,{text='x',look={position={x=900,y=0}}}) end,'is not charted')
+fails(function() c5.handlers.say(sol,{text='x',look={surface='gleba',position={x=0,y=0}}}) end,'no surface named gleba')
+fails(function() c5.handlers.say(sol,{text='x',look={nothing=1}}) end,'look must be')
+eq(#s5.chat.messages,4) -- a refused look posts nothing
+assert(c5.schema.say.look:find('{platform: NAME}',1,true))
 print('chat: ok')

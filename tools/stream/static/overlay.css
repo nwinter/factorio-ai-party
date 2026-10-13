@@ -353,13 +353,33 @@ body:not(.portrait) #prod, body:not(.portrait) #board, body:not(.portrait) #spac
 .p-aquilo { --pc: #6ad0f0; } .platform { --pc: #c0c8d8; }
 .card .world { display: none; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card .world.on { display: inline-block; font-size: 11px; line-height: 17px; }
-.plat { display: grid; grid-template-columns: 150px 1fr 90px 74px; align-items: center; gap: 10px; font-size: 14px; min-width: 0; }
-.plat:not(:has(.pbar)) { grid-template-columns: 150px 1fr 74px; }
-.plat .pname { font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.plat .pwhere { color: #c8d0dc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.plat .pbar { height: 8px; }
-.plat .pspeed { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
-.plat.more { display: block; color: var(--faint); font-size: 12.5px; }
+/* a platform card (overlay.js platCard): line 1 name, where/route bar, speed, who; line 2 chips (hub health bar,
+   guns, ammo turrets/hub, repair packs, asteroid hits a minute, cargo); under fire: an orange edge; lost: red */
+.plat { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-left: 7px; border-left: 3px solid var(--pc, #c0c8d8); }
+.plat.hit { border-left-color: var(--fx-orange); }
+.plat.lost { border-left-color: #e04e3a; }
+.plat .pl1 { display: flex; align-items: center; gap: 8px; font-size: 13.5px; line-height: 17px; min-width: 0; }
+.plat .pname { flex: none; max-width: 130px; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plat .pwhere { flex: 0 1 auto; color: #c8d0dc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.plat .pbar { flex: 1 1 60px; min-width: 40px; height: 7px; }
+.plat .ppct, .plat .pspeed { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plat .pspeed.warn { color: var(--fx-orange); font-weight: 600; }
+.plat .pwho { margin-left: auto; flex: 0 1 auto; max-width: 150px; color: #9fd0ff; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plat .plost { flex: none; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; padding: 0 6px; line-height: 16px;
+  border-radius: var(--fx-r-1); background: #e04e3a; color: #fff; }
+.plat.lost .pname { color: #f0a090; text-decoration: line-through; }
+.plat .pl2 { display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.pchip { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 0 5px; border-radius: var(--fx-r-1);
+  background: var(--fx-deep); box-shadow: var(--fx-slot-shadow); color: #c8d0dc; font-variant-numeric: tabular-nums; }
+.pchip.warn { color: var(--fx-yellow); }
+.pchip.bad { color: #ff8a7a; }
+.pchip.hits { color: var(--fx-orange); font-weight: 700; }
+.pchip .k { color: var(--muted); }
+.pchip .hpbar { width: 34px; height: 6px; }
+.pchip.warn .hpbar i { background: var(--fx-yellow); }
+.pchip.bad .hpbar i { background: #e04e3a; }
+.pchip.cargo i { width: 10px; height: 10px; border-radius: 2px; background: var(--c, #888); }
+.plat.more { display: block; border: 0; padding: 0; color: var(--faint); font-size: 12.5px; }
 #board { flex: none; height: 156px; box-sizing: border-box; padding: 9px 14px 8px; display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
 #board[hidden] { display: none; }
 .board-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 18px; }

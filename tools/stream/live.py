@@ -70,6 +70,9 @@ class LiveSource:
         self.board_seq = 0
         self.board_every = 15.0
         self.next_board = 0
+        self.has_groups = False  # the runtime answers attack_groups_live (describe operator_reads)
+        self.groups_every = 2.0
+        self.next_groups = 0
         self.has_confess = False
         self.confess_seq = 0
         self.has_tells = False
@@ -216,16 +219,23 @@ class LiveSource:
                 errors["profiles"] = str(e)
         names = list(self.agents_cfg) or list(profiles)
         alerts_seen = False
+        hits = None
         for name in self.status_round(names, errors):
             try:
                 st = self.agent_status(name, self.agents_cfg.get(name, {}))
                 self.status_cache[name] = st
+                if hits is None:
+                    hits = []  # a status (with alerts) was read: no platform_hits rows means none hit lately
                 if not alerts_seen and st.get("alerts"):
                     alerts_seen = True  # force-wide: one agent's copy is enough
                     obs["events"] += self.attack_events(st["alerts"], obs.get("tick") or st.get("tick") or 0)
                     obs["events"] += self.loss_events(st["alerts"], obs.get("tick") or st.get("tick"))
+                    # asteroid hits per platform over the last minutes (eng/platformalerts), for the Space widget
+                    hits = list(st["alerts"].get("platform_hits") or [])
             except Exception as e:
                 errors[f"status:{name}"] = str(e)
+        if hits is not None:
+            obs["platform_hits"] = hits
         for name in names:
             cfg = self.agents_cfg.get(name, {})
             p = profiles.get(name, {})
@@ -333,8 +343,12 @@ class LiveSource:
                 try:
                     res, _ = self.read("platforms", {"platform": row["name"]}, **self.reader())
                     for p in res.get("platforms") or []:
+                        # route and speed; and for the Space widget (model.platform_card) the defence, repair
+                        # packs, damaged entities and hub cargo (eng/platformalerts)
                         detail[p.get("name")] = {k: p.get(k) for k in ("state", "at", "speed", "schedule", "paused",
-                                                                       "thrusters", "weight") if p.get(k) is not None}
+                                                                       "thrusters", "weight", "defense", "repair_packs",
+                                                                       "damaged", "damaged_count", "hub_items")
+                                                 if p.get(k) is not None}
                 except Exception as e:
                     errors["platforms"] = str(e)
             self.platform_detail = detail
@@ -346,8 +360,21 @@ class LiveSource:
                     errors["platform_views"] = str(e)
         views = getattr(self, "platform_views", {})
         space["platforms"] = [dict(row, **self.platform_detail.get(row["name"], {}),
-                                   **({"view": views[row["name"]]} if row["name"] in views else {}))
+                                   **({"view": views[row["name"]]} if row["name"] in views else {}),
+                                   **self.fresh_at(row, self.platform_detail.get(row["name"], {})))
                               for row in space["platforms"]]
+
+    @staticmethod
+    def fresh_at(row, detail):
+        """The score row is read every round, the detail every platform_every s: when they disagree on whether the
+        platform is at a planet or travelling, the score's `at` stands (Sunward reached Nauvis at 14:14:32 while a
+        detail read from before still put it on its route)."""
+        at, dat = row.get("at"), detail.get("at")
+        if not dat or not at:
+            return {}
+        if at != "in transit" or "->" not in dat:  # arrived (a planet now), or departed (detail still at a planet)
+            return {"at": at}
+        return {}
 
     # ---- team board (docs/BOARD-API.md) ------------------------------------------------------------------------
     def board_probe(self):
@@ -362,6 +389,7 @@ class LiveSource:
             self.has_confess = "confessions" in actions
             self.has_tells = "tells" in actions
             self.has_operator = "operator" in actions
+            self.has_groups = "attack_groups_live" in (res.get("operator_reads") or [])
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -369,12 +397,28 @@ class LiveSource:
         if self.has_board:
             print("[live] runtime has the team board; polling board_events", flush=True)
 
+    def observe_groups(self, obs, errors):
+        """Enemy groups on their way (harness attack_groups_live, an operator read): every ~2 s while any is
+        tracked, else every 10 s; a runtime without the read is asked again with the board probe."""
+        now = time.time()
+        if not getattr(self, "has_groups", False) or now < self.next_groups:
+            return
+        try:
+            res, _ = self.h.operator_read("attack_groups_live", {})
+            groups = res.get("groups") or []
+            obs["attack_groups"] = groups
+            self.next_groups = now + (self.groups_every if groups else 10.0)
+        except Exception as e:
+            errors["attack_groups"] = str(e)
+            self.next_groups = now + 30.0
+
     def observe_board(self, obs, errors):
         if self.caps is None or not self.caps.get("harness"):
             return
-        if not self.has_board:
+        if not self.has_board or not getattr(self, "has_groups", True):
             if time.time() >= self.next_board_probe:
                 self.board_probe()
+        self.observe_groups(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})

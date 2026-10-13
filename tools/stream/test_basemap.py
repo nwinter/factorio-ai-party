@@ -42,7 +42,8 @@ for _, e in ipairs(OURS) do e.force = "player"; all[#all+1] = e end
 for _, e in ipairs(ENEMY) do e.force = "enemy"; all[#all+1] = e end
 for _, e in ipairs(ORE) do e.force = "neutral"; all[#all+1] = e end
 prototypes = {entity = {["assembling-machine-2"] = {tile_width = 3, tile_height = 3},
-  ["boiler"] = {tile_width = 3, tile_height = 2}}}
+  ["boiler"] = {tile_width = 3, tile_height = 2}, ["gun-turret"] = {tile_width = 2, tile_height = 2, attack_parameters = {range = 18}},
+  ["flamethrower-turret"] = {tile_width = 2, tile_height = 3, attack_parameters = {range = 30}}}}
 game = {tick = 600, forces = {player = {}}, surfaces = {nauvis = {find_entities_filtered = function(f)
   if STRICT and f.type then for _, t in ipairs(f.type) do if t == "lane-splitter" then error("Unknown entity type") end end end
   local out = {}
@@ -85,6 +86,11 @@ check("an oil refinery is O, an assembler A, a turret D, a pipe P",
 check("poles are left out (no cell at 30,30) and trailing empty cells trimmed", all(len(r) <= 6 for r in m["rows"]))
 check("nests near the base only", sorted(n[2] for n in m["nests"]) == ["s", "w"])
 check("buildings counted without poles", m["buildings"] == 6)
+check("turrets with their range for the site's turret-range layer", m["turrets"] == [[9, 9, 18]])
+t = run([("gun-turret", "ammo-turret", 0, 0), ("flamethrower-turret", "fluid-turret", 10.5, 4), ("laser-turret", "electric-turret", 20, 0),
+         ("stone-wall", "wall", 3, 3)])
+check("a flamer's range from its prototype; a turret the game gives no range to (here: no prototype) and walls left out",
+      sorted(map(tuple, t["turrets"])) == [(0, 0, 18), (10, 4, 30)])
 
 wide = run([("lab", "lab", 0, 0), ("lab", "lab", 2000, 10)], max_cells=128)
 check("a wide base doubles the cell until it fits", wide["cell"] >= 16 and wide["w"] <= 128)

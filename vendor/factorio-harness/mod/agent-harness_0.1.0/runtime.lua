@@ -536,6 +536,8 @@ local handlers = {}
 local request_path,navigate,check_args
 function handlers.describe()
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
+    -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
+    operator_reads={'attack_groups_live'},
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (inspect: sight only); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
@@ -3942,6 +3944,8 @@ for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
   on_viewer=function(m) M.board.on_viewer(m) end,
+  -- say look= checks (chat.lua): a platform by name, a teammate by name
+  platform=function(p,name) return space.platform(p,name) end,agents=function() return M.board.agents() end,
   mention_of=function(index,m) return M.board.mention_of(index,m) end,
   where_from=function(index) local p=M.lookup(index); return p and p.valid and M.where.from(M.board.who(p)) or nil end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
@@ -4132,6 +4136,7 @@ function M.dispatch(request)
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action]
+        or threat.operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
