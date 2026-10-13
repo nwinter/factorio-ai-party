@@ -1756,7 +1756,8 @@ def main():
         VIDEOS = load_videos(args.videos)
         lapse = timelapse.frames(LONG, args.runs_dir, game_time)  # site/timelapse.py: the base over time
         if lapse:
-            write("runs/long/timelapse.json", timelapse.data(lapse))
+            # with the terrain frames (site/terrain.py): each snapshot draws those up to its tick
+            write("runs/long/timelapse.json", timelapse.data(lapse, terrain.terrain_frames(args.runs_dir, LONG)))
         write("runs/long/index.html", timelapse.inject(build_long_run(LONG), timelapse.section(lapse, esc)))
         terrain.publish(out, args.runs_dir, LONG)
         for s in LONG["shifts"]:
