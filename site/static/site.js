@@ -45,8 +45,8 @@
       var rect = svg.getBoundingClientRect();
       var scale = d.W / rect.width;
       var px = (ev.clientX - rect.left) * scale;
-      var x = Math.max(0, Math.min(d.xmax, (px - d.L) / d.pw * d.xmax));
-      var sx = d.L + d.pw * x / d.xmax;
+      var x0 = d.x0 || 0, x = Math.max(x0, Math.min(d.xmax, x0 + (px - d.L) / d.pw * (d.xmax - x0)));
+      var sx = d.L + d.pw * (x - x0) / ((d.xmax - x0) || 1);
       cross.setAttribute('x1', sx); cross.setAttribute('x2', sx); cross.setAttribute('visibility', 'visible');
       var rows = '';
       d.series.forEach(function (s, i) {
@@ -59,7 +59,8 @@
           s.name.replace(/</g, '&lt;') + '</span><b>' + v.toLocaleString() + '</b></div>';
       });
       if (!rows) { tip.hidden = true; return; }
-      tip.innerHTML = '<div class="t-head">' + fmtMin(x) + ' · ' + d.y + '</div>' + rows;
+      var when = d.clock && d.clock.length ? valueAt(d.clock, x) : null;  // the real time (Pacific) at that game time
+      tip.innerHTML = '<div class="t-head">' + fmtMin(x) + (when ? ' · ' + when : '') + ' · ' + d.y + '</div>' + rows;
       tip.hidden = false;
       var left = sx / scale + 12;
       if (left + tip.offsetWidth > rect.width) left = sx / scale - tip.offsetWidth - 12;

@@ -19,6 +19,19 @@ repo's `runs/` (or `--runs-dir DIR`): each shift's `scores.jsonl`, the timestamp
 death and loss cuts in `stream-service.log`, and the hosts' Space Age lines in `caster.log`. Without a chain (a
 checkout without the shift folders) the page and its links are left out. Rebuild after a shift to add it.
 
+The page: totals, records (the best shift for each), a milestones table (first of each science pack, technologies
+that matter, rocket counts, the first platform, platform departures and arrivals, planets reached, the first death,
+the first building lost, the first viewer line in the game), charts on the save's game clock with shift starts
+marked and the Pacific time in the hover (science per minute by pack and in all, technologies, rockets), and the
+shift table. Every shift has a page, `/runs/long/shift-N/`: its numbers, milestones, charts, packs made, moments,
+deaths, its video and chapters when `videos.json` has one, and the viewer Q&A from `chat.jsonl` (viewer lines that
+reached the game, the agents' answers that name the viewer) and `caster.log` (the hosts' `viewer_reply` lines).
+
+Times come from the score log (every 2 minutes), so a milestone's time is up to 2 minutes late. Science packs made
+add up each counter's rises between score rows and count a fall as 0 (a lost platform takes its production counts
+with it, which made the old per-minute chart go below 0); rates come from that total. Lines from the owner's channel
+account, or that name it, are left out (`keep_line` in `build.py`).
+
 ### Archive switch and run start (`site/content/site.json`)
 
 `"archive": false` leaves the test history out of the build: the experiments, the runs list and every run page in

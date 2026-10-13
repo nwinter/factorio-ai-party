@@ -191,6 +191,46 @@ table.long-run th[scope=row] .small { display: block; font-weight: 400; }
 table.long-run td { vertical-align: top; }
 table.long-run tr.empty td, table.long-run tr.empty th { opacity: .7; }
 table.long-run .moments { margin: 0; padding-left: 1.1em; min-width: 16em; font-size: .9rem; }
+table.long-run th[scope=row] .fx-chip { margin-left: 4px; }
+td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* phones: each shift is a card of label / value lines */
+@media (max-width: 720px) {
+  table.long-run, table.long-run tbody, table.long-run tr, table.long-run td, table.long-run th { display: block; }
+  table.long-run thead { display: none; }
+  table.long-run tr { border: 1px solid var(--line); border-radius: var(--fx-r-1); padding: 8px 10px; margin-bottom: 10px; }
+  table.long-run th[scope=row] { font-size: 1.05rem; padding: 0 0 4px; border: 0; }
+  table.long-run td { display: grid; grid-template-columns: 9em 1fr; gap: 8px; padding: 2px 0; border: 0; }
+  table.long-run td::before { content: attr(data-l); color: var(--muted); font-size: .85rem; }
+  table.long-run td[colspan] { grid-template-columns: 1fr; }
+  table.long-run .moments { min-width: 0; }
+}
+.meta { color: var(--muted); margin: -.2rem 0 1rem; }
+.stats-compact { grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.stats-compact .stat { padding: 8px 12px; }
+.stats-compact .stat-value { font-size: 1.35rem; }
+/* records: the best shift for each, linked */
+.records { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 8px; margin: .6rem 0 1rem; }
+.record { display: grid; padding: 8px 12px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--fx-r-1); color: inherit; text-decoration: none; }
+.record:hover { background: var(--hl); }
+.r-val { font-size: 1.35rem; font-weight: 700; color: var(--heading); font-variant-numeric: tabular-nums; }
+.r-label { color: var(--ink-2); font-size: .88rem; }
+.r-shift { color: var(--muted); font-size: .8rem; }
+/* milestones (firsts) */
+table.firsts th[scope=row] { font-weight: 600; }
+.kind { display: inline-block; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line-strong); color: var(--ink-2); }
+.kind-space { border-color: var(--accent); }
+/* shift markers in the run's charts */
+.chart-svg .mark { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart-svg .mark-label { fill: var(--muted); font-size: 10px; }
+/* a shift's page */
+.shift-nav { display: flex; gap: 18px; flex-wrap: wrap; margin: .4rem 0 1rem; }
+.shift-cols { align-items: start; }
+table.packs { width: auto; min-width: 14em; }
+.deaths { list-style: none; padding: 0; margin: .4rem 0; display: grid; gap: 2px; font-size: .92rem; }
+.deaths li { display: grid; grid-template-columns: 4.4em 1fr; gap: 8px; align-items: center; }
+.chip.viewer { color: var(--accent); }
+.chip.host { color: var(--muted); font-style: italic; }
+.chat.qa li.qa-viewer { background: var(--hl); }
 /* shift videos (site/content/videos.json): embeds on the long run page and each shift's page */
 .video-wrap { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: var(--fx-r-1); overflow: hidden; margin: 1rem 0 .4rem; }
 .video-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }

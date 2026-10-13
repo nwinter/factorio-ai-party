@@ -78,7 +78,8 @@ def main():
 
         out = build(d, dict(content, archive=False, run_start="pub1"), runs)
         pages = sorted(str(p.relative_to(out)) for p in out.rglob("*.html"))
-        assert pages == ["404.html", "about/index.html", "index.html", "live/index.html", "runs/long/index.html"], pages
+        assert pages == ["404.html", "about/index.html", "index.html", "live/index.html", "runs/long/index.html",
+                         "runs/long/shift-1/index.html", "runs/long/shift-2/index.html"], pages
         before = set(content["runs"]) | set(content["studies"]) | {"shake3", "shake4", "smoke-x1"}
         ids = re.compile(r"(?<![\w-])(?:" + "|".join(map(re.escape, sorted(before))) + r"|shake\d+|smoke-[\w-]+|Fable)(?![\w-])")
         for p, t in text_files(out):
@@ -91,7 +92,7 @@ def main():
         nav = re.search(r'<nav class="site-nav".*?</nav>', home, re.S).group(0)
         assert re.findall(r">([^<]+)</a>", nav) == ["Live", "The run", "About"], nav
         page = (out / "runs" / "long" / "index.html").read_text()
-        assert "0h01m to 1h01m" in page and "researched the rocket silo" in page and "Dawn" in page
+        assert "0h01m to 1h01m" in page and "Rocket silo" in page and "Dawn" in page and "Oldship" not in page
         about = (out / "about" / "index.html").read_text()
         assert "Shattered Planet" in about and 'id="talk"' in about and "Results so far" not in about
 
