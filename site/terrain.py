@@ -1,16 +1,24 @@
 """Terrain under the site's maps: the georeferenced base-map frames (tools/stream/mapframes.py, runs/RUN/mapframes/
-AREA.webp + AREA.json) published as /terrain/index.json and /terrain/*.webp. For site/build.py, which calls publish();
-the map viewers draw them with static/terrain.js (PogTerrain), the newest frame per area under the buildings.
+AREA.webp + AREA.json), in the shape the map viewer (static/mapview.js) reads:
 
-index.json: {"frames": [{src, x, y, w, h (tiles: the image's top-left corner and size), tick, shift, surface, px}]},
-oldest first, so a viewer that draws them in order has the newest on top. A frame is the newest of its area across the
-run's shifts; a viewer showing an earlier moment (the time-lapse) picks the newest at or before that tick."""
+    {"src": "/live/terrain/shift06--1_-1-4633539.webp", "x0": -641.5, "y0": -544.5, "x1": 928.6, "y1": 553.4,
+     "tick": 4633539, "w": 2048, "h": 1432}
+
+pixel (0,0) is tile (x0,y0) and pixel (w,h) tile (x1,y1); older frames first, so the newest is drawn on top.
+
+- terrain_frames(runs_dir, long): the newest frame per area over the run's shifts (Nauvis), for the time-lapse
+  (timelapse.data(), the viewer's owner calls it) and the live map;
+- publish(out, runs_dir, long): site/build.py's step: the images in out/live/terrain/ and out/live/terrain/index.json
+  {"terrain": [...]}; site/push_live.py reads that index from the deployed site into the live state's basemap.terrain
+  (a new frame shows on the live map once a site deploy has it)."""
 import json, shutil
 from pathlib import Path
 
+URL = "/live/terrain/"
+MAX_LIVE = 16  # the live state carries at most this many (the newest)
 
-def frames(long, runs_dir):
-    """The newest frame per area over the run's shifts: [{area, shift, n, image (Path), meta}] by tick."""
+
+def _rows(long, runs_dir):
     best = {}
     for s in long["shifts"]:
         d = Path(runs_dir) / s["id"] / "mapframes"
@@ -22,33 +30,50 @@ def frames(long, runs_dir):
                 meta = json.loads(jp.read_text())
             except (OSError, ValueError):
                 continue
-            box = meta.get("box")
-            if not img.is_file() or not (isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box)):
+            box, px = meta.get("box"), meta.get("px")
+            if not img.is_file() or (meta.get("surface") or "nauvis") != "nauvis":
                 continue
-            if box[2] <= 0 or box[3] <= 0:
+            if not (isinstance(box, list) and len(box) == 4 and all(isinstance(v, (int, float)) for v in box)) or box[2] <= 0 or box[3] <= 0:
                 continue
-            key = (meta.get("surface") or "nauvis", meta.get("area") or jp.stem)
-            row = {"area": jp.stem, "shift": s["id"], "n": s.get("n"), "image": img, "meta": meta}
+            if not (isinstance(px, list) and len(px) == 2 and all(isinstance(v, int) and v > 0 for v in px)):
+                continue
+            key = meta.get("area") or jp.stem
             old = best.get(key)
             if old is None or (meta.get("tick") or 0) >= (old["meta"].get("tick") or 0):
-                best[key] = row
+                best[key] = {"name": f"{s['id']}-{jp.stem}-{meta.get('tick') or 0}.webp", "image": img, "meta": meta}
     return sorted(best.values(), key=lambda r: r["meta"].get("tick") or 0)
 
 
-def publish(out, rows):
-    """Copy the images to out/terrain/ and write out/terrain/index.json; returns the index (None without frames)."""
+def _entry(r):
+    m = r["meta"]
+    x, y, w, h = m["box"]
+    return {"src": URL + r["name"], "x0": x, "y0": y, "x1": round(x + w, 1), "y1": round(y + h, 1), "tick": m.get("tick"),
+            "w": m["px"][0], "h": m["px"][1]}
+
+
+def terrain_frames(runs_dir, long):
+    """[{src, x0, y0, x1, y1, tick, w, h}], the newest frame per area, oldest first ([] without frames)."""
+    return [_entry(r) for r in _rows(long, runs_dir)]
+
+
+def publish(out, runs_dir, long):
+    """Copy the frames to out/live/terrain/ (a new frame is a new name: no stale cache) and write its index.json;
+    returns the entries ([] and nothing written without frames)."""
+    rows = _rows(long, runs_dir)
     if not rows:
-        return None
-    d = Path(out) / "terrain"
+        return []
+    d = Path(out) / "live" / "terrain"
     d.mkdir(parents=True, exist_ok=True)
-    listed = []
     for r in rows:
-        m = r["meta"]
-        name = f"{r['shift']}-{r['area']}-{m.get('tick') or 0}.webp"  # a new frame is a new name: no stale cache
-        shutil.copy(r["image"], d / name)
-        x, y, w, h = m["box"]
-        listed.append({"src": f"/terrain/{name}", "x": x, "y": y, "w": w, "h": h, "tick": m.get("tick"),
-                       "shift": r["n"], "surface": m.get("surface") or "nauvis", "px": m.get("px")})
-    index = {"frames": listed}
-    (d / "index.json").write_text(json.dumps(index, separators=(",", ":")))
-    return index
+        shutil.copy(r["image"], d / r["name"])
+    entries = [_entry(r) for r in rows]
+    (d / "index.json").write_text(json.dumps({"terrain": entries}, separators=(",", ":")))
+    return entries
+
+
+def live(index):
+    """The live state's basemap.terrain from a published index.json: the newest MAX_LIVE, oldest first."""
+    rows = [e for e in (index or {}).get("terrain") or [] if isinstance(e, dict) and str(e.get("src", "")).startswith(URL)
+            and all(isinstance(e.get(k), (int, float)) for k in ("x0", "y0", "x1", "y1", "w", "h"))]
+    rows.sort(key=lambda e: e.get("tick") or 0)
+    return rows[-MAX_LIVE:]
