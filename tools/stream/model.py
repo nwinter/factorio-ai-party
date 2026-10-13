@@ -16,6 +16,10 @@ An observation is a dict:
 import math, os, re, time
 from collections import deque
 
+import attention
+
+ATTENTION_TTL = 120.0  # seconds: an attention point older than this is no longer where the agent is looking
+
 HALF_LIFE = 75.0  # seconds; interest decays toward 0 with this half-life
 ACTION_WEIGHT = {
     "build": 3.0, "place": 3.0, "construct": 3.5, "blueprint": 4.0, "build_blueprint": 4.0, "rotate": 1.0,
@@ -283,6 +287,7 @@ class Agent:
         self.surface = None   # Space Age (status): the surface the body is on, and the platform's name when on one
         self.platform = None
         self.notes_job = None  # its notes.md "## Now" job line (live.py, notes_job), for the card
+        self.attention = None  # its latest request with a place (attention.py), with t: when it came in
 
     def bump(self, amount, now):
         self.decay(now)
@@ -397,6 +402,8 @@ class Model:
             self._space_moments(now)
         for w in obs.get("work") or []:
             self._ingest_work(w, now)
+        for x in obs.get("attention") or []:
+            self._ingest_attention(x, now)
         self.errors = obs.get("errors", {})
 
     def platform_view(self, name):
@@ -428,6 +435,31 @@ class Model:
             return  # one request after another on the same job: one item
         self.work.append(item)
         ag.bump(1.0, now)
+
+    def _ingest_attention(self, x, now):
+        """An agent's latest request with a position, area or list (live.py, attention.py): where it is looking or
+        working now. A platform's point is on the platform's surface (when its view is known)."""
+        ag = self.agents.get(x.get("agent"))
+        if not ag or not x.get("kind"):
+            return
+        surface = ((self.platform_view(x["platform"]) or {}).get("surface") if x.get("platform")
+                   else ag.surface or "nauvis")
+        ag.attention = {k: x.get(k) for k in ("kind", "action", "verb", "what", "position", "extent", "platform")}
+        ag.attention.update(t=now, surface=surface)
+
+    def attention_row(self, ag, now):
+        """snapshot agents[].attention: {kind, verb, text ("placing ghosts 40 m north"), position, extent, surface,
+        platform, age_s, dist (tiles from the character on its surface), far} while under ATTENTION_TTL old."""
+        a = ag.attention
+        if not a or now - a["t"] > ATTENTION_TTL:
+            return None
+        here = ag.position if not a.get("platform") and (ag.surface or "nauvis") == a.get("surface") else None
+        d = math.hypot(a["position"]["x"] - here["x"], a["position"]["y"] - here["y"]) \
+            if here and a.get("position") else None
+        far = (d is not None and d >= attention.FAR) or bool(a.get("platform") and ag.platform != a["platform"])
+        landmarks = self.run.get("landmarks", []) if (a.get("surface") or "nauvis") == "nauvis" else ()
+        return dict({k: v for k, v in a.items() if k != "t"}, text=attention.text(a, here, landmarks),
+                    age_s=round(now - a["t"], 1), dist=None if d is None else round(d, 1), far=far)
 
     def _fight(self, key, kind, position, now, text, agent=None, loss=False):
         """A fight still being reported (live.py re-reports an attacked chunk every poll while its last hit is under 30
@@ -1132,7 +1164,7 @@ class Model:
                 "last_said": ag.last_said, "camera": cams_by_agent.get(ag.name), "seen": ag.seen, "voice": ag.voice,
                 "voice_description": ag.voice_description, "pronouns": ag.pronouns, "avatar": ag.avatar, "combat": ag.combat, "died_at": ag.died_at, "plan": ag.plan,
                 "surface": ag.surface, "where": where_label(ag.surface, ag.platform) if ag.surface else None,
-                "on_platform": bool(ag.platform),
+                "on_platform": bool(ag.platform), "attention": self.attention_row(ag, now),
             })
         res = self.research
         science = self.science(now)

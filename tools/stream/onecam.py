@@ -51,6 +51,13 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
     launch, drop... with platform=; the character stands on Nauvis): the platform instead of the character, labelled
     "Astra · working on Starling", for `work_hold`, longer while its requests keep coming; then back to the agent.
   The hosts read snapshot onair.platform.
+- Attention (Nick: "It would be interesting to follow its attention"): each agent's latest request with a place
+  (attention.py, from its journal: inspect, transfer, configure, ghosts, scans...) is its attention point. While the
+  agent on air looks or works somewhere the on-air frame does not show (`attn_fresh`, outside the frame, or a platform
+  it is not aboard), the last standby shows that spot as the inset, labelled "Sol · placing ghosts 40 m north", for
+  `attn_hold`, longer while it keeps at that spot (`attn_max`), following it to a new spot at most every `attn_move`.
+  No cut: the story on air stays. Not in the first `attn_min` of a story, within `attn_gap` of the last one, in a fight,
+  a trio, a replay, or an urgent, segment or held shot; an alert inset takes its client. The hosts read onair.attention.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -136,6 +143,17 @@ ONECAM = {
     "fight_near": 40.0,     # tiles (plus half the fight's extent): a fight this close to a spot is the one there
     "fight_hold_max": 180.0,
     "fight_boost": 2.5,
+    # Attention (Nick, 2026-10-13 12:00: "can we give a better feel in the stream for what they are paying attention
+    # to?"; module doc): the agent on air looks or works away from its character -> the spot in the inset beside it
+    "attention": True,
+    "attn_fresh": 15.0,     # a request with a place dispatched within this long is where the agent looks now
+    "attn_min": 20.0,       # the agent has been on air this long first (a cut settles before an inset)
+    "attn_gap": 45.0,       # this long between attention insets
+    "attn_hold": 15.0,      # an attention inset stays up this long after the request ...
+    "attn_max": 45.0,       # ... more while the agent keeps at that spot, up to this
+    "attn_same": 12.0,      # tiles: a request this close to the inset's spot is the same job
+    "attn_move": 8.0,       # the inset moves to a new spot at most this often
+    "attn_zoom": 1.2,       # a single spot; an area is fitted (no closer than this)
 }
 VISIBLE = FIGHT | BUILD | WALK | {"mine", "gather", "craft", "construct", "kite", "repair", "pickup", "drive", "shoot"}
 DULL = {"craft", "wait_until", "sleep", "inspect", "feed", "insert", "take", "transfer", "research", "fuel", "observe"}
@@ -194,6 +212,8 @@ def onair_info(snap, cams):
     return {"agent": name, "display_name": a.get("display_name") or name, "doing": doing, "platform": plat,
             "since": main.get("since"), "client": main.get("client"), "attack": main.get("attack"),
             "inset": ((cams or {}).get("inset") or {}).get("attack"),
+            # where the agent on air is looking, in the inset beside it: {agent, kind, text, platform, position}
+            "attention": ((cams or {}).get("inset") or {}).get("attention"),
             # the base map: on air, or in a trio's small tile (the hosts: "here's the whole base")
             "map": "on air" if main.get("map") else "tile" if any(r.get("map") for r in (cams or {}).values()) else None}
 
@@ -234,6 +254,8 @@ class OneCam(Director):
         self.departure = None  # {"name", "t", "label"}: a departure seen, not on air yet
         self.work_shown = {}   # (agent, platform) -> when its work went on air
         self.platforms = []    # (t, name, why): platform shots ("visit", "departure", "work")
+        self.last_attn = -1e9  # when the last attention inset ended
+        self.attns = []        # (t, agent, text): attention insets (a new spot is a new row)
 
     # -- clients ----------------------------------------------------------------------------------------------
     def slot(self, name):
@@ -379,6 +401,8 @@ class OneCam(Director):
             slot = sb[-1]
         else:
             return  # no client free for it
+        if self.inset and self.inset.get("why") == "attention":
+            self.last_attn = now  # an alert takes the attention inset's client
         self.frame_on(slot, dict(target, until=now + self.cfg["inset_hold"]), f"inset: {al['text']}", scores, now)
         self.inset = {"slot": slot["slot"], "until": now + self.cfg["inset_hold"]}
 
@@ -475,6 +499,8 @@ class OneCam(Director):
         if self.pending and self.ready(self.pending["slot"], now):
             self.cut(self.pending["slot"], self.pending["reason"], now)
         if self.inset and now >= self.inset["until"]:
+            if self.inset.get("why") == "attention":
+                self.last_attn = now
             self.inset = None
         attack = self.attack_target(snapshot, by_name, scores, now)
         if attack:
@@ -505,6 +531,7 @@ class OneCam(Director):
         else:
             self.direct(by_name, scores, ranked, now)
             self.maybe_work(snapshot, by_name, scores, now, segment)
+            self.maybe_attention(by_name, scores, now, segment)
             self.maybe_map(scores, now, segment)
             self.maybe_platform(scores, now, segment)
             self.maybe_trio(by_name, scores, ranked, now)
@@ -514,6 +541,92 @@ class OneCam(Director):
             for n in (t or {}).get("agents") or []:
                 self.last_on_air[n] = now
         return self.public(now)
+
+    # -- attention ---------------------------------------------------------------------------------------------
+    def attention_far(self, a, by_name, now):
+        """The agent's attention point (snapshot agents[].attention, model.py) when it is fresh and somewhere the
+        on-air frame does not show: a spot on its surface outside the frame, or a platform it is not aboard."""
+        att = a.get("attention") or {}
+        if not att.get("far") or (att.get("age_s") or 0) > self.cfg["attn_fresh"]:
+            return None
+        if att.get("platform"):
+            view = (self.plat_rows.get(att["platform"]) or {}).get("view") or {}
+            return att if view.get("surface") else None
+        if not att.get("position"):
+            return None
+        pt = dict(att["position"], surface=att.get("surface") or "nauvis")
+        cur = self.state.get(self.onair)
+        if cur and in_frame(frame_of(cur, self.onair_frac()), pt, by_name, self.cfg["onair_edge"]):
+            return None
+        return att
+
+    def attention_target(self, att, name, who, until):
+        """A fixed shot of the attention spot for the inset, labelled "Sol placing ghosts 40 m north" (the page shows
+        "Sol · placing ghosts 40 m north")."""
+        if att.get("platform"):
+            from model import platform_shot
+            shot = platform_shot(self.plat_rows[att["platform"]]["view"])
+        else:
+            ext = att.get("extent") or 0
+            z = min(self.cfg["attn_zoom"], Director.fight_zoom(self, ext)) if ext else self.cfg["attn_zoom"]
+            shot = {"position": dict(att["position"]), "surface": att.get("surface") or "nauvis", "zoom": z,
+                    "exact_zoom": True}
+        return dict(shot, agents=[name], subject="@attention", until=until, work=f"{who} {att['text']}",
+                    attention={"agent": name, "kind": att["kind"], "text": att["text"], "platform": att.get("platform"),
+                               "position": att.get("position")})
+
+    def maybe_attention(self, by_name, scores, now, segment=None):
+        """The agent on air looks or works away from its character: that spot in the inset for attn_hold, longer
+        while it keeps at it (attn_max), moved along when it goes to a new spot (at most every attn_move). No cut:
+        the story on air stays; never during a fight, an urgent, segment or held shot, a replay, or a trio, and
+        attn_gap between insets."""
+        cfg = self.cfg
+        if not cfg["attention"] or self.mode != "onecam":
+            return
+        cur = self.state.get(self.onair) or {}
+        subj = cur.get("subject")
+        ins = self.inset
+        if ins and ins.get("why") == "attention":
+            a = by_name.get(ins["agent"])
+            if subj != ins["agent"] or not a or self.hold_layout or self.pending:
+                self.inset, self.last_attn = None, now  # the story on air moved on: the inset goes with it
+                return
+            att = self.attention_far(a, by_name, now)
+            if not att:
+                return  # it runs out at `until`
+            cap = ins["since"] + cfg["attn_max"]
+            same = att.get("platform") == ins.get("platform") and (
+                att.get("platform") or dist(att["position"], ins["position"]) <= cfg["attn_same"])
+            t = self.state.get(ins["slot"]) or {}
+            if same:
+                ins["until"] = min(max(ins["until"], now + cfg["attn_hold"]), cap)
+                t["until"] = ins["until"]
+                who = a.get("display_name") or ins["agent"]
+                t["work"] = f"{who} {att['text']}"  # "inspecting" -> "taking iron plate" at the same spot
+                t["attention"] = dict(t.get("attention") or {}, kind=att["kind"], text=att["text"])
+            elif now - ins["moved"] >= cfg["attn_move"] and now < cap - cfg["attn_move"]:
+                self.show_attention(ins["slot"], ins["agent"], a, att, scores, now, since=ins["since"])
+            return
+        if ins or self.pending or self.trio_pending or self.hold_layout or segment or subj not in scores:
+            return
+        if now - self.onair_since < cfg["attn_min"] or now - self.last_attn < cfg["attn_gap"] or \
+                now < cur.get("hold_until", 0) or self.fighting(subj, by_name, now):
+            return
+        att = self.attention_far(by_name[subj], by_name, now)
+        sb = self.standbys()
+        if not att or len(sb) < 2:
+            return  # (the first standby frames the next subject; the last one takes insets)
+        self.show_attention(sb[-1]["slot"], subj, by_name[subj], att, scores, now)
+
+    def show_attention(self, slot, name, a, att, scores, now, since=None):
+        cfg = self.cfg
+        since = now if since is None else since
+        until = min(now + cfg["ready_s"] + cfg["attn_hold"], since + cfg["attn_max"])
+        t = self.attention_target(att, name, a.get("display_name") or name, until)
+        self.frame_on(self.slot(slot), t, f"attention: {t['work']}", scores, now)
+        self.inset = {"slot": slot, "until": until, "why": "attention", "agent": name, "since": since, "moved": now,
+                      "position": att.get("position"), "platform": att.get("platform")}
+        self.attns.append((now, name, att["text"]))
 
     # -- base map ----------------------------------------------------------------------------------------------
     def map_target(self, hole, until, frac):
@@ -962,5 +1075,7 @@ class OneCam(Director):
                 row["platform"] = p
                 if t.get("work"):
                     row["work"] = t["work"]  # the page: "Astra · working on Starling"
+            if t.get("attention"):  # the inset on where the agent on air is looking: "Sol · placing ghosts 40 m north"
+                row.update(work=t["work"], attention=t["attention"])
             out[key] = row
         return out

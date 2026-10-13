@@ -261,6 +261,8 @@ class LiveSource:
         # team (a human player such as Nick in shake8, fh players eng/players adds) are not agent cards.
         if self.work:
             obs["work"] = self.observe_work(obs["agents"], errors)
+            # where each agent is paying attention (attention.py): its latest request with a position, area or list
+            obs["attention"] = self.work.take_attention()
 
         try:
             res, _ = self.h.dispatch("chat", {"since": self.chat_since, "limit": 30, "peek": True}, **self.reader())
