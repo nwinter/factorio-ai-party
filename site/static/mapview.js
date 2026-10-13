@@ -26,6 +26,7 @@
   var C = { bg: '#1b1f1a', grid: '#2b302a', text: '#e8e6e1', orange: '#ff9b2e', red: '#e04e3a', nest: '#ff3b30', worm: '#ff8a7a',
     range: 'rgba(120, 200, 255, ', inset: 'rgba(16, 18, 15, .88)' };
   var CAM_SHORT = { main: 'MAIN', cam2: 'CAM 2', cam3: 'CAM 3' };
+  var TERRAIN_DESAT = 0.6, TERRAIN_DIM = 0.45;  // how much colour the terrain loses, and how far it fades to the ground
 
   function validGrid(g) {
     return !!(g && Array.isArray(g.rows) && g.rows.length && isFinite(g.x0) && isFinite(g.y0) && g.cell > 0);
@@ -325,11 +326,23 @@
   function paint(ctx, sc, images, font, offscreen) {
     var W = sc.W, H = sc.H;
     ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
-    sc.terrain.forEach(function (t) {
+    var shown = sc.terrain.filter(function (t) {
       var img = images && images(t.src);
       if (img) { ctx.imageSmoothingEnabled = t.w < img.width; ctx.drawImage(img, t.x, t.y, t.w, t.h); }
+      return !!img;
     });
     ctx.imageSmoothingEnabled = true;
+    if (shown.length) {
+      // terrain is the background: part of its colour taken out (a grey 'saturation' blend), then dimmed toward the
+      // map's ground colour, so buildings, nests and agents stand out (and the frame's own alert icons recede);
+      // composite modes rather than ctx.filter, which older Safari ignores. One path: overlapping frames dim once.
+      ctx.save();
+      ctx.beginPath();
+      shown.forEach(function (t) { ctx.rect(t.x, t.y, t.w, t.h); });
+      ctx.globalCompositeOperation = 'saturation'; ctx.globalAlpha = TERRAIN_DESAT; ctx.fillStyle = '#808080'; ctx.fill();
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = TERRAIN_DIM; ctx.fillStyle = C.bg; ctx.fill();
+      ctx.restore();
+    }
     if (sc.ground) fillRuns(ctx, sc.ground, GROUND, 0.9);
     ctx.strokeStyle = C.grid; ctx.lineWidth = 1; ctx.beginPath();
     sc.grid.xs.forEach(function (x) { ctx.moveTo(Math.round(x) + 0.5, 0); ctx.lineTo(Math.round(x) + 0.5, H); });

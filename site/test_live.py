@@ -141,10 +141,15 @@ out.hitNest = nest ? M.hitAt(sc, nest.x, nest.y) : null;
 out.hitNone = M.hitAt(sc, 1, 1);
 // paint on a recording canvas: every call counted, terrain images drawn where scene() put them
 const calls = {};
-const ctx = new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...args) => { (calls[k] = calls[k] || []).push(args); }), set: (t, k, v) => { t[k] = v; return true; } });
+const fills = [];  // the compositing state at each fill()
+const ctx = new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...args) => {
+  (calls[k] = calls[k] || []).push(args);
+  if (k === 'fill') fills.push([t.globalCompositeOperation || 'source-over', t.globalAlpha == null ? 1 : t.globalAlpha, t.fillStyle]);
+}), set: (t, k, v) => { t[k] = v; return true; } });
 M.paint(ctx, wide, (src) => ({ width: 1280, height: 720, src }), 'sans-serif', null);
 out.paint = { drawImage: (calls.drawImage || []).map((c) => c.slice(1).map((n) => Math.round(n))), fill: (calls.fill || []).length,
-  fillText: (calls.fillText || []).map((c) => c[0]), rect: (calls.rect || []).length, arc: (calls.arc || []).length };
+  fillText: (calls.fillText || []).map((c) => c[0]), rect: (calls.rect || []).length, arc: (calls.arc || []).length,
+  terrainFills: fills.slice(0, 2) };
 const t0 = Date.now();
 for (let i = 0; i < 60; i++) M.paint(ctx, M.scene(d, { cx: 40 + i, cy: 30, span: 100 + i }, 400, 400), () => null, 'sans-serif', null);
 out.ms_per_frame = (Date.now() - t0) / 60;
@@ -224,6 +229,8 @@ def map_tests():
         t = wide["terrain"][0]
         assert (round(t["x"]), round(t["y"]), round(t["w"]), round(t["h"])) == (180, 60, 192, 108), t
         assert o["paint"]["drawImage"] == [[180, 60, 192, 108]], o["paint"]["drawImage"]
+        # terrain is a background: part desaturated (a grey 'saturation' blend), then dimmed toward the ground colour
+        assert o["paint"]["terrainFills"] == [["saturation", 0.6, "#808080"], ["source-over", 0.45, "#1b1f1a"]], o["paint"]["terrainFills"]
         assert o["paint"]["fill"] > 10 and o["paint"]["arc"] >= 3 and any(x.startswith("Sol") or x.startswith("Grok") or x for x in o["paint"]["fillText"])
         assert o["hitAgent"] and o["hitAgent"]["agent"] and "·" in o["hitAgent"]["text"], o["hitAgent"]
         assert o["hitNone"] is None
