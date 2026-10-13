@@ -36,6 +36,9 @@ already targets your character.
   building (`board post` with kind `claim` and the area), don't build inside someone else's claim without asking, and
   put shared infrastructure (power poles, main belts) on the board too. Inside your own claim, act without asking. Renegotiate as the base
   grows. Keep one job you own; when you hand it over, take a new one in the same message.
+- A claim whose owner is on another planet (`owner_away` on the board; full `status` shows where everyone is under
+  `teammates`): tell them once. If they have not answered in 10 minutes, go ahead, keep their production running, and
+  note what you did on the claim.
 - Hand items over through a chest: put them in, then post or update the board item with what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
