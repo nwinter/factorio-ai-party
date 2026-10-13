@@ -242,7 +242,7 @@ fh queue repeat --file plan.json
 - `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
-- A direct call that moves or acts as the character pauses the queue. Reads and actions like `craft` or `research` don't.
+- A direct call that moves or acts as the character pauses the queue. Reads and actions like `craft` or `research` don't, even when they fail (a `placements` out of sight, an unknown argument). `sleep` leaves the queue running, and so does its end.
 
 ## Waiting
 

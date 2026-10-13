@@ -264,11 +264,11 @@ local function stop_combat(index,outcome)
   state().last_combat=state().last_combat or {}
   state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped}
 end
--- Set while a passive action raises: the bootstrap's failure handler calls
--- stop_player right after, which must leave the queue alone.
+-- The tick a read or passive action raised: the bootstrap's failure handler
+-- calls stop_player right after, which must leave the action and queue alone.
 local passive_failed=false
 function M.stop_player(index,outcome)
-  if passive_failed and not outcome then passive_failed=false; return end
+  if passive_failed==game.tick and not outcome then passive_failed=false; return end
   if scheduler then scheduler.pause(index) end
   finish(index,outcome or 'interrupted')
   stop_combat(index,outcome or 'interrupted')
@@ -3969,7 +3969,7 @@ function M.dispatch(request)
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
     end)
-    if not ok then passive_failed=true; error(result,0) end
+    if not ok then passive_failed=game.tick; error(result,0) end
     return result
   end
   -- A bot is addressed by name and handled under its index from here on
@@ -3978,7 +3978,16 @@ function M.dispatch(request)
     assert(request.player==nil,'a request may name a player or a bot, not both')
     request.player=M.bots.index_of(request.bot)
   end
-  local result=dispatch_request(request)
+  -- A failed read or passive request, from the player lookup on, stops nothing
+  -- (shift04: a failed placements read paused Sol's queue mid wait_until;
+  -- control.lua's own list of reads lacks placements and the newer reads).
+  passive_failed=false
+  local result
+  if reads[request.action] or passive[request.action] then
+    local ok,r=pcall(dispatch_request,request)
+    if not ok then M.seated_ok=nil; passive_failed=game.tick; error(r,0) end
+    result=r
+  else result=dispatch_request(request) end
   M.seated_ok=nil
   if clock then clock.after_dispatch() end
   if request.action=='status' then M.bots.status(request.player,result) end
@@ -4038,7 +4047,7 @@ dispatch_request=function(request)
       if not M.board.open_reads[request.action] then assert(not M.is_director(p.index),'directors do not post on the board') end
     end
     local ok,result=pcall(board,p,request.args or {})
-    if not ok then passive_failed=true; error(result,0) end
+    if not ok then passive_failed=game.tick; error(result,0) end
     return result
   end
   -- Human players (players.lua): reads, votes and restore act for the agent,
@@ -4048,7 +4057,7 @@ dispatch_request=function(request)
     local p=M.lookup(request.player or 1); assert(p and p.valid,'player does not exist')
     assert(not M.is_director(p.index),'directors do not vote or restore')
     local ok,result=pcall(humans,p,request.args or {})
-    if not ok then passive_failed=true; error(result,0) end
+    if not ok then passive_failed=game.tick; error(result,0) end
     return result
   end
   -- A peek at the chat is a read any player can make (directors and
@@ -4085,7 +4094,7 @@ dispatch_request=function(request)
   end
   if passive[request.action] then
     local ok,result=pcall(handler,p,request.args or {})
-    if not ok then passive_failed=true; error(result,0) end
+    if not ok then passive_failed=game.tick; error(result,0) end
     return result
   end
   return handler(p,request.args or {})

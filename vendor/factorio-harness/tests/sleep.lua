@@ -180,5 +180,39 @@ techs.logistics.researched=true
 r=check(astra); eq(r.woke,'condition'); eq(r.saw,'logistics researched')
 wake(astra)
 fails(function() astra('sleep',{seconds=60,condition='researched'}) end,'condition is a wait_until condition')
+
+-- A queue's wait_until runs on through a sleep's end, with and without --until,
+-- and through failed reads made meanwhile (shift04: a failed placements read
+-- during Sol's sleep paused the queue and ended its wait_until interrupted).
+chest_items['iron-plate']=10
+sol('queue_submit',{steps={{action='wait_until',args={['until']='item_count',item='iron-plate',at_least=100,positions={{x=3,y=3}},timeout=18000}},
+  {action='wait_ticks',args={ticks=30}}}}); advance(2)
+local function running()
+  local q=sol('queue_status')
+  eq(q.paused,false); eq(q.active and q.active.action,'wait_until'); eq(#q.pending,1)
+  for _,h in ipairs(q.history) do assert(not (h.action=='wait_until' and h.ok==false),'wait_until failed: '..tostring(h.result and h.result.reason)) end
+end
+running()
+r=sol('sleep',{seconds=5}); assert(r.while_asleep:find('wait_until running',1,true),r.while_asleep)
+advance(100); eq(check(sol).woke,nil)
+advance(250); eq(check(sol).woke,'elapsed'); eq(wake(sol).woke,'elapsed')
+running()
+r=sol('sleep',{seconds=60,condition={['until']='item_count',item='iron-plate',at_least=20,positions={{x=3,y=3}}}})
+advance(10); eq(check(sol).woke,nil)
+chest_items['iron-plate']=30
+advance(1); eq(check(sol).woke,'condition'); wake(sol)
+running()
+-- Failed reads: a placements check out of sight, an unknown observe argument, inspect of nothing.
+sol('sleep',{seconds=30})
+fails(function() sol('placements',{name='offshore-pump',position={x=900,y=900}}) end,'')
+fails(function() sol('observe',{scope='scan',bogus=true}) end,'unknown argument bogus')
+fails(function() sol('inspect',{position={x=700,y=700}}) end,'')
+advance(1); eq(check(sol).woke,nil); wake(sol)
+running()
+-- A failed action still stops the character and pauses the queue, as before.
+fails(function() sol('move_to',{}) end,'')
+local q=sol('queue_status'); eq(q.paused,true)
+eq(q.history[#q.history].action,'wait_until'); eq(q.history[#q.history].result.reason,'interrupted')
+sol('queue_cancel',{})
 fails(function() astra('sleep',{seconds=60,condition={['until']='bogus'}}) end,'until must be one of')
 print('sleep: ok')
