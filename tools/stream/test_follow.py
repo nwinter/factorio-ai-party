@@ -54,7 +54,8 @@ def director():
     info = onair_info({"agents": team}, pub)
     assert info["agent"] == "sol" and info["doing"] == "Sol vs the Demolisher" and info["follow"] == "Sol vs the Demolisher"
     f = d.follow_info(t + 399)
-    assert f == {"agent": "sol", "label": "Sol vs the Demolisher", "until": t + 600.0, "remaining_s": 201, "by": "nick"}, f
+    assert f == {"agent": "sol", "label": "Sol vs the Demolisher", "until": t + 600.0, "remaining_s": 201, "by": "nick",
+                 "until_battle": False, "battle": None, "ended_by": None}, f
     # another agent's real loss and a death: insets, no cut; sol's own attack: labelled on air
     loss = {"id": "l1", "kind": "loss", "t": t + 400, "text": "6 lost near (300, 300): 2 gun turret, 4 stone wall",
             "position": {"x": 300, "y": 300, "extent": 20}, "key": "loss:300,300"}

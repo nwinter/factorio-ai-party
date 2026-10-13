@@ -480,6 +480,29 @@ size/threshold be dynamic".
 
 Live: `grep -E "threat|BATTLE|battle over|incoming" runs/RUN/stream-service.log`.
 
+### Big enemies coming, slow motion, a follow until its battle (2026-10-13, eng/slowmo)
+
+Nick, 14:44: "The demolisher approaching should be good in a PIP camera" and "imagine a slow-mo instant replay";
+14:47: the camera stayed on Sol after the fight; 14:50: insets of "empty fields".
+
+- `big_enemies_live` (harness, operator read): demolishers on the planets with speed, closing, ETA and our nearest
+  building and character within 500 tiles. While one closes (ETA under `enemy_eta`, 180 s) and the program is on
+  what it threatens (the agent on air or followed near the target, or the battle there), the inset follows it,
+  panning, "⚠️ Small demolisher · 120 tiles from Sol's gun turrets"; gone at contact (`enemy_contact`, 20 tiles),
+  when it turns away (`enemy_away`, 10 s), or when the program moves on. A camera client, not an HTML map: the
+  standby that takes insets is free while a follow or battle holds the camera on air.
+- Slow motion: a big-enemy battle (tier 4+, demolishers, nests) or one with a sudden big loss (40% of its pieces in
+  5 s) gets its densest 5 s of losses, from 3 s before to 5 s after, at `slow_speed` (45%) with "Replay · slow motion"
+  on the banner, even if the program showed it live; on-air footage of the battle must cover 70% of the window; one
+  replay per `spacing`. The whole clip is slowed: changing `speed_percent` mid-play restarts an OBS media source.
+- `POST /follow {agent, until_battle: true, seconds}`: the follow ends 15 s after the battle with that agent (or
+  around it) is over; `seconds` is the longest wait. Replays wait while a follow is on, so the slow motion airs then.
+- Battles end sooner: 15 s with no attack or combat and 25 s with no loss (were 20/45; Sol's 14:19:30 kill took
+  ~5 s and the hold ran 52 s). A fight in the area within `battle_resume` (45 s) resumes the same battle (12:58's
+  waves came 35 s apart), and replays judge a battle 15 s after it ends, so a resumed one stays one.
+- Loss insets: a few cheap pieces or friendly fire get an inset only if their threat score passes the floor (the
+  13:37-13:54 insets were 1-3 pipes burned by our flamers); deaths, an agent under attack and real raids keep theirs.
+
 ### Spoken-line cues (2026-10-13, eng/saylook)
 
 Nick, 14:11: "I'd loved to have seen the space platform while that was narrated." `fh say "..." --aloud --look

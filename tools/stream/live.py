@@ -390,6 +390,7 @@ class LiveSource:
             self.has_tells = "tells" in actions
             self.has_operator = "operator" in actions
             self.has_groups = "attack_groups_live" in (res.get("operator_reads") or [])
+            self.has_big = "big_enemies_live" in (res.get("operator_reads") or [])
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -398,19 +399,26 @@ class LiveSource:
             print("[live] runtime has the team board; polling board_events", flush=True)
 
     def observe_groups(self, obs, errors):
-        """Enemy groups on their way (harness attack_groups_live, an operator read): every ~2 s while any is
-        tracked, else every 10 s; a runtime without the read is asked again with the board probe."""
+        """Enemy groups on their way (harness attack_groups_live) and demolishers near our buildings
+        (big_enemies_live), operator reads: each every ~2 s while it lists something, else every 10 s; a runtime
+        without them is asked again with the board probe."""
         now = time.time()
-        if not getattr(self, "has_groups", False) or now < self.next_groups:
-            return
-        try:
-            res, _ = self.h.operator_read("attack_groups_live", {})
-            groups = res.get("groups") or []
-            obs["attack_groups"] = groups
-            self.next_groups = now + (self.groups_every if groups else 10.0)
-        except Exception as e:
-            errors["attack_groups"] = str(e)
-            self.next_groups = now + 30.0
+        if getattr(self, "has_groups", False) and now >= self.next_groups:
+            try:
+                res, _ = self.h.operator_read("attack_groups_live", {})
+                obs["attack_groups"] = res.get("groups") or []
+                self.next_groups = now + (self.groups_every if obs["attack_groups"] else 10.0)
+            except Exception as e:
+                errors["attack_groups"] = str(e)
+                self.next_groups = now + 30.0
+        if getattr(self, "has_big", False) and now >= getattr(self, "next_big", 0):
+            try:
+                res, _ = self.h.operator_read("big_enemies_live", {})
+                obs["big_enemies"] = res.get("enemies") or []
+                self.next_big = now + (self.groups_every if obs["big_enemies"] else 10.0)
+            except Exception as e:
+                errors["big_enemies"] = str(e)
+                self.next_big = now + 30.0
 
     def observe_board(self, obs, errors):
         if self.caps is None or not self.caps.get("harness"):

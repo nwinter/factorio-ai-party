@@ -688,6 +688,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   game minutes old: `id, surface, position, size, kinds, state (gathering|moving|attacking_*), gathered, first_size,
   target, target_distance, nearest/nearest_distance` (our nearest building within 160 tiles), `visible`, `age_s`.
   `describe` lists it under `operator_reads`; agents cannot call it.
+- Operator big enemies (threat.lua): `big_enemies_live` (read) lists segmented units (demolishers) on the planets
+  (searched every 10 s, followed by reference in between) with our nearest building or character within 500 tiles:
+  `id, name, surface, position, speed (tiles/s), closing, nearest {x,y,name}, nearest_distance, eta_s, character
+  {x,y,player}, character_distance`.
 - Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
   `standing_s` (how long its character has had no action, no running queue and a body on the map; kept once a second
   for agents that made a request; an fh sleep with nothing running counts as standing, a timed action does not),

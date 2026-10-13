@@ -110,26 +110,29 @@ def director():
     rows = run(d, None, None, t0, t0 + 160, tm, elsewhere=[death_nauvis])
     before = [r for t, r, b in rows if t < t0]
     assert before and before[-1]["agents"] == ["astra"], before[-1]
-    on = [(t - t0, r) for t, r, b in rows if t0 + 3 <= t <= t0 + 114]
-    for s, r in on:  # the battle's surface the whole time, from 3 s after its first sign
+    # on the battle's surface from 3 s after its first sign; the lull after the +25 loss ends it at ~+50 (no attack
+    # 15 s, no loss 25 s: battle_after, battle_loss_after), the next wave (+60) resumes the same battle
+    ends = [t for (t, r, b), (_, _, b0) in zip(rows[1:], rows) if b is None and b0 is not None]
+    assert len(ends) == 2 and t0 + 49 <= ends[0] <= t0 + 52 and t0 + 94 <= ends[1] <= t0 + 98, [e - t0 for e in ends]
+    on = [(t - t0, r) for t, r, b in rows if t0 + 3 <= t < ends[0] or t0 + 63 <= t < ends[1]]
+    for s, r in on:
         fr = r.get("frame") or {}
         where = fr.get("surface") or ("vulcanus" if fr.get("follow") == "sol" else "?")
         assert where == V, (s, r)
-    assert d.battles and d.battles[0][2].startswith("score "), d.battles
-    during = [x for x in d.layouts + d.maps if t0 < x[0] <= t0 + 114]  # (a trio before it ends at its first sign)
+    assert d.battles[0][2].startswith("score ") and d.battles[1][2] == "resume", d.battles
+    during = [x for x in d.layouts + d.maps if t0 < x[0] <= ends[1]]  # (a trio before it ends at its first sign)
     assert d.mode == "onecam" and not during, during
-    assert any(c[2].startswith("battle (big enemy)") or c[2].startswith("loss: 19 lost") for c in d.cuts), d.cuts
     r41 = next(r for t, r, b in rows if t == t0 + 41)
     assert (r41.get("frame") or {}).get("surface") == V and (r41["_inset"] or {}).get("attack") == "Luna died", r41
     b = next(b for t, r, b in rows if t == t0 + 65)
+    b0 = next(b for t, r, b in rows if t == t0 + 20)
+    assert b["key"] == b0["key"] and b["first"] == t0, (b, b0)  # one battle (replays.py sees one)
     assert b["lost"] == 67 and "59 gun turret" in b["label"] and b["agent"] is None and b["on_air"], b
-    assert b["position"]["surface"] == V and b["first"] == t0, b
-    end = next(t for t, r, b in rows if t > t0 and b is None)
-    assert t0 + 114 <= end <= t0 + 118, end - t0  # the last loss at +70: no loss for battle_loss_after (45 s)
-    after = [r for t, r, b in rows if t > end + 3]
+    assert b["position"]["surface"] == V, b
+    after = [r for t, r, b in rows if t > ends[1] + 3]
     assert after[-1]["agents"] == ["astra"], after[-1]  # back to the story it interrupted
-    print(f"director: ok (on Vulcanus +3..+114 s, death shot inside, no trio/map, a Nauvis death an inset, over at "
-          f"+{end - t0} s, back to Astra)")
+    print(f"director: ok (on Vulcanus +3..+{ends[0] - t0} s and +63..+{ends[1] - t0} s, the next wave resumes it, death "
+          f"shot inside, no trio/map, a Nauvis death an inset, back to Astra)")
 
 
 def replays_world():
@@ -154,30 +157,66 @@ def replay_aftermath():
 
 
 def replay_start_then_away():
-    """Sol on air when the first loss comes in (the start is live), then the camera is pinned elsewhere from +30 s:
-    the start window (3 s before the first sign, 40 s for 59 turrets) airs once the battle is over."""
-    d, _ = world()
-    seg, rpl, logs = replays_world()
-    t0 = 25000
-    tm = team()
-    tm[0]["interest"] = 30  # Sol on air before the raid
-    run(d, rpl, seg, t0, t0 + 200, tm, follow=("astra", t0 + 30, t0 + 600))
+    """The same raid by medium biters (no big enemy, no sudden loss): Sol on air when the first loss comes in (the
+    start is live), then the camera is pinned elsewhere from +30 s: the start window (3 s before the first sign,
+    40 s for 59 turrets) airs once the battle is over."""
+    global LOSSES
+    saved_losses, LOSSES = LOSSES, [(s, txt.replace("small demolishers", "medium biters"), x, y) for s, txt, x, y in LOSSES]
+    try:
+        d, _ = world()
+        seg, rpl, logs = replays_world()
+        rpl.cfg["slowmo"] = False  # (its first wave is a sudden loss, 25 of 55 pieces in 5 s: replay_slowmo's case)
+        t0 = 25000
+        tm = team()
+        tm[0]["interest"] = 30  # Sol on air before the raid
+        run(d, rpl, seg, t0, t0 + 200, tm, follow=("astra", t0 + 30, t0 + 600))
+    finally:
+        LOSSES = saved_losses
     saved = next(l for l in logs if "battle start saved" in l)
-    assert "40 s from 3 s before its first sign" in saved, saved
+    assert "from 3 s before its first sign" in saved, saved
     c = rpl.status["last"] or {}
     assert c.get("label", "").startswith("Battle") and sum("on air: Battle" in l for l in logs) == 1, logs
-    over = next(l for l in logs if l.startswith("[replays] battle over"))
-    assert "replay its start" in over, over
+    over = [l for l in logs if l.startswith("[replays] battle over")]
+    assert any("replay its start" in l for l in over), over
     print(f"replay, start live then away: ok ({saved.split('] ')[1]})")
 
 
+def replay_slowmo():
+    """The demolisher raid with Sol on air from its start: seen live, and still a slow-motion replay of its densest
+    5 s of losses (Nick 14:44: "imagine a slow-mo instant replay"), at 45%, the banner's facts say so."""
+    d, _ = world()
+    seg, rpl, logs = replays_world()
+    t0 = 27000
+    tm = team()
+    tm[0]["interest"] = 30
+    seen = []
+    orig = rpl.play
+    rpl.play = lambda c: (seen.append(dict(c)), orig(c))
+    run(d, rpl, seg, t0, t0 + 200, tm)
+    saved = next(l for l in logs if "battle slow motion saved" in l)
+    assert "8 s around 25 pieces lost in 5 s" in saved, saved  # 44 - 19 pieces at +12 (the alert, 2 s after)
+    over = next(l for l in logs if l.startswith("[replays] battle over"))
+    assert "slow motion of its decisive moment: big enemy" in over, over
+    assert seen and seen[0]["speed"] == 45 and seen[0]["show_to"] - seen[0]["show_from"] == 8, seen
+    assert seen[0]["show_from"] == t0 + 12 - 2 - 3, seen[0]["show_from"] - t0
+    print(f"replay, slow motion: ok ({saved.split('] ')[1]})")
+
+
 def replay_live_and_none():
-    # on air from its first sign (the cut within 2 s) to the end: no replay (viewers saw it live)
+    # on air from its first sign (the cut within 2 s) to the end: a demolisher battle still gets its slow motion;
+    # without slow motion, no replay (viewers saw it live)
     d, _ = world()
     seg, rpl, logs = replays_world()
     run(d, rpl, seg, 30000, 30200, team())
     over = next(l for l in logs if l.startswith("[replays] battle over"))
-    assert "replay none, the program showed" in over and not any("on air: Battle" in l for l in logs), logs
+    assert "slow motion of its decisive moment: big enemy" in over, over
+    d, _ = world()
+    seg, rpl, logs = replays_world()
+    rpl.cfg["slowmo"] = False
+    run(d, rpl, seg, 30000, 30200, team())
+    over = next(l for l in logs if l.startswith("[replays] battle over"))
+    # the camera went back to Astra in the lull and came back 3 s into the next wave: its start replays
+    assert "replay its start" in over, over
     # pinned elsewhere the whole battle: no footage of it, no replay (never a clip of another place)
     d, _ = world()
     seg, rpl, logs = replays_world()
@@ -231,6 +270,7 @@ if __name__ == "__main__":
     director()
     replay_aftermath()
     replay_start_then_away()
+    replay_slowmo()
     replay_live_and_none()
     episodes()
     no_flicker()

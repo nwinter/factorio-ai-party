@@ -463,6 +463,7 @@ def main():
                     if replays and not getattr(director, "fol", None):  # (no replay cuts away from a followed fight)
                         replays.on_attack_cut(director.last_attack_alert, snap, now, director.last_attack_framed)
                 if replays:
+                    replays.hold = bool(getattr(director, "fol", None))  # no replay over an operator follow
                     replays.tick(snap, cams, now)
                     snap["replay"] = replays.public()
                 if night:

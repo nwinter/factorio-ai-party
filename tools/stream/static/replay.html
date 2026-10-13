@@ -51,6 +51,8 @@
       const start = seg.started + STARTING_S;
       clock = { id: seg.id, t0: start * 1000 + offset, ago: f.ago_s != null ? f.ago_s + STARTING_S : null };
       $("what").textContent = f.event || seg.title || "";
+      // a slow-motion replay (replays.py: the decisive seconds of a big-enemy battle at f.speed %)
+      $("tag").textContent = f.speed && f.speed < 100 ? "Replay · slow motion" : "Replay";
     }
     clock.t1 = seg.ends * 1000 + offset; // a cut segment ends early
     tick();
