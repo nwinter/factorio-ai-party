@@ -86,7 +86,11 @@ fh call status
   change of quality alone is a change.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
-  ammunition in the ammo slots. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
+  ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first
+  (strongest magazine kind first; a carried gun goes into an empty gun slot before it) and say so in `equipped`
+  (`equipped from your inventory: 20 firearm-magazine to ammo slot 1`; for move_to under `combat`); when the slots run
+  dry mid-fight they are refilled the same way and the fight goes on (`last_combat.reloads`, kite `last.reloads`); with
+  nothing carried that fits a gun they fail as before. `kite {retreat: {x,y}}`: below `min_health` or out of ammunition, the character walks
   to the retreat point, still firing at units in reach while ammunition lasts, and ends `retreated` there. Every kite
   end says why in `last.why` (`health 36% fell below min_health 40%; retreating to (-20,0)`, `out of ammunition`, `no
   enemies left within the scan radius`, `time up`), with `ammo_left`, `enemies_left` and `retreated_from`.

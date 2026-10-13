@@ -19,14 +19,68 @@ return function(api)
     return inv and inv.get_item_count() or 0
   end
   M.ammo_count=ammo_count
+  -- Stronger ammo first when several kinds are carried.
+  local AMMO_RANK={['uranium-rounds-magazine']=3,['piercing-rounds-magazine']=2,['firearm-magazine']=1}
+  -- With nothing in the ammo slots, carried ammo goes into them: a carried
+  -- gun first into an empty gun slot, then per gun the first carried ammo
+  -- stack its slot accepts (the engine's own check in swap_stack). Returns
+  -- what was moved as one line, or nil when nothing was.
+  function M.auto_equip(p)
+    local ok,res=pcall(function()
+      local guns=p.get_inventory(defines.inventory.character_guns)
+      local ammo=p.get_inventory(defines.inventory.character_ammo)
+      local main=p.get_main_inventory()
+      if not (guns and ammo and main) or ammo.get_item_count()>0 then return nil end
+      local function carried(kind)
+        local out={}
+        for k,v in pairs(main.get_contents()) do
+          local name=type(v)=='table' and v.name or k
+          local proto=prototypes.item[name]
+          if proto and proto.type==kind then out[#out+1]=name end
+        end
+        table.sort(out,function(x,y) return (AMMO_RANK[x] or 0)>(AMMO_RANK[y] or 0) or (AMMO_RANK[x] or 0)==(AMMO_RANK[y] or 0) and x<y end)
+        return out
+      end
+      local moved={}
+      for i=1,#guns do
+        if not guns[i].valid_for_read then
+          for _,name in ipairs(carried('gun')) do
+            local stack=main.find_item_stack(name)
+            if stack and guns[i].swap_stack(stack) then moved[#moved+1]=name..' to gun slot '..i; break end
+          end
+        end
+        if guns[i].valid_for_read and not ammo[i].valid_for_read then
+          for _,name in ipairs(carried('ammo')) do
+            local stack=main.find_item_stack(name)
+            local count=stack and stack.count
+            if stack and ammo[i].swap_stack(stack) then moved[#moved+1]=count..' '..name..' to ammo slot '..i; break end
+          end
+        end
+      end
+      return #moved>0 and 'equipped from your inventory: '..table.concat(moved,', ') or nil
+    end)
+    return ok and res or nil
+  end
+  -- Mid-fight: slots run dry while ammo is carried. Refills them, counts the
+  -- refill into ammo_start (so ammo_used stays whole magazines spent), and
+  -- returns true; false when nothing could be equipped.
+  function M.reload(p,action)
+    local note=M.auto_equip(p)
+    if not note then return false end
+    action.ammo_start=action.ammo_start+ammo_count(p)
+    action.reloads=(action.reloads or 0)+1
+    action.equipped=note
+    return true
+  end
   function M.plan(p,a)
     local band_min,band_max=a.min_distance or 7,a.max_distance or 12
     assert(type(band_min)=='number' and type(band_max)=='number' and band_min>=2 and band_max>band_min and band_max<=30,'need 2 <= min_distance < max_distance <= 30')
     local health=a.min_health or 0.4
     assert(type(health)=='number' and health>=0 and health<1,'min_health is a fraction 0..1')
+    local equipped=ammo_count(p)==0 and M.auto_equip(p) or nil
     local ammo=ammo_count(p)
-    assert(ammo>0,'no ammunition equipped')
-    return {kind='kite',band_min=band_min,band_max=band_max,min_health=health,
+    assert(ammo>0,'no ammunition equipped, and none carried that fits a gun (craft firearm-magazine)')
+    return {kind='kite',equipped=equipped,band_min=band_min,band_max=band_max,min_health=health,
       radius=api.integer(a.radius,32,8,32,'radius'),range=a.range or 14,
       anchor=a.position and api.position(a.position),retreat=a.retreat and api.position(a.retreat),
       until_tick=game.tick+api.integer(a.ticks,3600,1,36000,'ticks'),
@@ -76,7 +130,7 @@ return function(api)
     if c.health<action.min_health*c.max_health then
       stop='low_health'
       action.why=string.format('health %d%% fell below min_health %d%%',math.floor(c.health/c.max_health*100),math.floor(action.min_health*100))
-    elseif ammo_count(p)==0 then
+    elseif ammo_count(p)==0 and not M.reload(p,action) then
       stop='out_of_ammo'; action.why='out of ammunition'
     end
     if stop then
