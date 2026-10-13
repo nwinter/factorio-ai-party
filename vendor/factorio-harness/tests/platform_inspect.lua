@@ -221,6 +221,8 @@ eq(bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}}).repair,nil,'not
 fails(function() bot('repair',{platform='Starling',position={x=0,y=0}}) end,'repair cannot reach a space platform: the game repairs platform entities itself with repair packs from the hub')
 eq(bot('platforms',{platform='Starling'}).platforms[1].damaged[2],'space-platform-hub (0,0) 637/1000')
 hub.health,hub.max_health,collector.health,collector.max_health=nil,nil,nil,nil
+-- flush reaches the platform the same way (the collector has no fluidbox).
+fails(function() bot('flush',{platform='Starling',position={x=-2.5,y=-6.5}}) end,'asteroid-collector has no fluidbox')
 -- describe lists platform on both.
 local d=runtime.dispatch{action='describe',args={},bot='astra'}
 assert(d.actions.inspect.platform and d.actions.configure.platform)

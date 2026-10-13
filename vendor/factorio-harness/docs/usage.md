@@ -87,6 +87,11 @@ fh call status
   built with `build` and `place_ghosts`; fuel goes in with `refuel` or `transfer`.
 - `configure {position, recipe, quality}` sets a recipe at a quality (the machine and quality must be unlocked); a
   change of quality alone is a change.
+- `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected
+  pipes, tanks, pumps and machine fluidboxes) the entity at `position` belongs to, every fluid or only `fluid`.
+  An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the
+  error lists them. Returns `flushed {fluid: amount}`, `amount`, `index` and `segment {id, extent, size, capacity,
+  entities}`. It leaves the running action and queue alone, and the `pog-guest` group cannot flush.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first
@@ -362,7 +367,7 @@ Gameplay actions use the same mechanics as a human player: items come from the i
 
 Some actions work at a distance, the way a player can through remote view:
 
-- `configure`, `requests` and `launch` in visible chunks
+- `configure`, `flush`, `requests` and `launch` in visible chunks
 - ghosts and deconstruction marks in charted chunks (on your own space platform with `platform`, anywhere on it)
 - `deconstruct {area, tiles}` marks tiles as a planner in tile mode does: `tiles: true` takes every minable tile in the
   area, or name them (`["space-platform-foundation"]`). The game decides each tile; the reply counts `tiles_marked`,
