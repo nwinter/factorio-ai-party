@@ -188,13 +188,18 @@ return function(api)
     end
     return entry
   end
-  -- Replies keep nest news flowing without a status call: an agent's survey
-  -- is redone when its cached one is over a minute old (status keeps 10 s).
+  -- Replies keep nest news flowing without a status call: the nests around an
+  -- agent are rechecked when neither status nor a reply did so in the last
+  -- minute (only the spawner search; the chart and pollution stay with status).
   function M.watch(p)
     if not (p.character and p.character.valid) then return end
-    local entry=api.state().threat_cache and api.state().threat_cache[p.index]
-    if entry and entry.surface==p.surface.index and game.tick-entry.tick<3600 then return end
-    refresh(p)
+    local st=api.state()
+    local entry=st.threat_cache and st.threat_cache[p.index]
+    st.threat_watch=st.threat_watch or {}
+    local last=math.max(entry and entry.surface==p.surface.index and entry.tick or -math.huge,st.threat_watch[p.index] or -math.huge)
+    if game.tick-last<3600 then return end
+    st.threat_watch[p.index]=game.tick
+    note_bases(p,bases(p))
   end
   -- Lines for news after `from` (an alert_seq), oldest first.
   function M.news_lines(from,since_tick)
@@ -400,7 +405,7 @@ return function(api)
         table.sort(names)
         areas[#areas+1]={id=v.id,at=v.at,chunk_centre=chunk_centre(tonumber(cx),tonumber(cy)),hits=v.hits,damage=round(v.damage),first_tick=v.first,last_tick=v.last,
           by=v.by,entities=table.concat(names,', '),attackers=(v.size or 0)>0 and v.size or nil,kinds=(v.size or 0)>0 and kinds_text(v.kinds) or nil,
-          group=v.group,source=v.source,line=M.attack_line(v)}
+          group=v.group,source=v.source,line=v.id and v.at and M.attack_line(v) or nil}
       end
     end
     table.sort(areas,function(a,b) return a.last_tick>b.last_tick end)

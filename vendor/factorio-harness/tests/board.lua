@@ -318,6 +318,8 @@ eq(sol('status').team,nil)
 -- Status alerts carry the same incident as fields.
 local row=sol('status',{since=0}).alerts.attacked[1]
 eq(row.attackers,3); eq(row.source.bearing,'E'); eq(row.at.y,41)
+-- The defense read is reachable through dispatch and listed in describe.
+eq(astra('defense').tick,tick); assert(astra('describe').actions.defense.returns)
 
 -- Who hears what on the stream: once per agent, in the first reply that
 -- builds a team block (here: as after a hot deploy, nobody has seen it yet).

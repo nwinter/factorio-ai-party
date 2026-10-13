@@ -782,7 +782,8 @@ return function(api)
       local new
       if v.id and told[v.id] then new = v.last > told[v.id] and game.tick - told[v.id] >= REPEAT_ATTACK
       else new = fresh(v, v.last) end
-      if new and v.damage > 0 then areas[#areas+1] = {key=key, v=v} end
+      -- An area kept from before a hot deploy has no id or point until its next hit.
+      if new and v.damage > 0 and v.id and v.at then areas[#areas+1] = {key=key, v=v} end
     end
     table.sort(areas, function(x, y) return x.v.last > y.v.last end)
     for n, area in ipairs(areas) do
