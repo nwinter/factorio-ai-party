@@ -898,16 +898,69 @@
     }
   }
 
-  // Space Age panel (right column, above chat): planets reached, space-age science made, up to three platforms with
-  // where they are or their route (progress bar) and speed. Hidden until there is something (model space.active).
+  // Space Age panel (right column, above chat): planets reached, space-age science made, then a two-line card per
+  // platform (model.platform_card): name, where or its route (bar, %), speed or paused/drifting, who is aboard or
+  // working on it; hub health bar, guns armed of all, rounds in the turrets and ammo in the hub, repair packs, asteroid
+  // hits a minute, cargo highlights. A lost platform shows for two minutes with its cause. Under fire first; two
+  // cards on the 1080p frame, three on the vertical page. Hidden until there is something (model space.active).
+  const PLAT_SHOW = () => (document.body.classList.contains("portrait") ? 3 : 2);
+  function platLine2(p) {
+    const line = el("div", "pl2");
+    if (p.hub && p.hub.pct != null) {
+      const hp = el("span", "pchip php" + (p.hub.pct < 35 ? " bad" : p.hub.pct < 70 ? " warn" : ""));
+      const bar = el("span", "bar hpbar"), i = el("i");
+      i.style.width = Math.max(0, Math.min(100, p.hub.pct)) + "%";
+      bar.append(i);
+      hp.append(el("span", "k", "hub"), bar, el("span", "v", p.hub.pct + "%"));
+      line.append(hp);
+    }
+    if (p.guns) {
+      const g = p.guns;
+      line.append(el("span", "pchip" + (g.total && !g.armed ? " bad" : g.empty || g.low ? " warn" : ""),
+        g.total ? "guns " + g.armed + "/" + g.total : "no guns"));
+    }
+    if (p.ammo) line.append(el("span", "pchip" + (!p.ammo.turrets && !p.ammo.hub ? " bad" : ""),
+      "ammo " + fmtRate(p.ammo.turrets) + " · hub " + fmtRate(p.ammo.hub)));
+    if (p.repair != null) line.append(el("span", "pchip" + (!p.repair && p.damaged ? " bad" : ""), "repair " + fmtRate(p.repair)));
+    if (p.hits_per_min) line.append(el("span", "pchip hits", "hits " + p.hits_per_min + "/min"));
+    for (const c of p.cargo || []) {
+      const chip = el("span", "pchip cargo");
+      chip.title = itemInfo(c.item)[0];
+      let icon = itemIcon(c.item, 14);
+      if (!icon) { icon = el("i"); icon.style.setProperty("--c", itemInfo(c.item)[1]); }
+      chip.append(icon, document.createTextNode(fmtRate(c.count)));
+      line.append(chip);
+    }
+    return line;
+  }
+  function platCard(p) {
+    const card = el("div", "plat" + (p.hits_per_min ? " hit" : ""));
+    const top = el("div", "pl1");
+    top.append(el("span", "pname", p.name));
+    if (p.route) {
+      const bar = el("span", "bar pbar"), i = el("i");
+      i.style.width = p.route.pct + "%";
+      bar.append(i);
+      top.append(el("span", "pwhere", p.where), bar, el("span", "ppct", p.route.pct + "%"));
+    } else top.append(el("span", "pwhere", p.where));
+    const speed = p.drifting ? "drifting back" : p.paused ? "paused" : p.speed_kms ? p.speed_kms + " km/s" : "";
+    if (speed) top.append(el("span", "pspeed" + (p.drifting ? " warn" : ""), speed));
+    const who = (p.aboard || []).map((n) => n).concat((p.working || []).map((n) => n + " (remote)"));
+    if (who.length) top.append(el("span", "pwho", who.join(", ")));
+    card.append(top);
+    const l2 = platLine2(p);
+    if (l2.children.length) card.append(l2);
+    return card;
+  }
   function renderSpace(s) {
     const sp = s.space || {};
     const box = $("space");
     if (!box) return;
     box.hidden = !sp.active;
+    box.dataset.hot = sp.hot ? "1" : "";
     if (!sp.active) return;
     const sig = JSON.stringify([sp.planets, (sp.science || []).map((p) => [p.item, fmtRate(p.total)]), sp.rockets,
-      (sp.platforms || []).slice(0, 3).map((p) => [p.name, p.where, p.route && p.route.pct, p.speed_kms, p.paused])]);
+      sp.platforms || [], (sp.lost || []).map((x) => x.name), PLAT_SHOW()]);
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
     const planets = $("space-planets");
@@ -926,21 +979,21 @@
     if (!(sp.science || []).length && sp.rockets) sci.append(el("span", "rockets", sp.rockets + (sp.rockets > 1 ? " rockets" : " rocket")));
     const plats = $("space-plats");
     plats.textContent = "";
-    const list = sp.platforms || [];
-    for (const p of list.slice(0, 3)) {
-      const row = el("div", "plat");
-      row.append(el("span", "pname", p.name), el("span", "pwhere", p.where));
-      if (p.route) {
-        const bar = el("span", "bar pbar"), i = el("i");
-        i.style.width = p.route.pct + "%";
-        bar.append(i);
-        row.append(bar);
-      }
-      row.append(el("span", "pspeed", p.paused ? "paused" : p.speed_kms ? p.speed_kms + " km/s" : ""));
+    const list = sp.platforms || [], lost = sp.lost || [], room = PLAT_SHOW();
+    let shown = 0;
+    for (const x of lost.slice(0, room)) { // a lost platform: briefly, with its cause
+      const row = el("div", "plat lost");
+      const top = el("div", "pl1");
+      top.append(el("span", "pname", x.name), el("span", "plost", "LOST"),
+        el("span", "pwhere", [x.cause, x.where].filter(Boolean).join(" · ")));
+      row.append(top);
       plats.append(row);
+      shown++;
     }
-    if (list.length > 3) plats.append(el("div", "plat more", "+" + (list.length - 3) + " more platforms"));
-    box.classList.toggle("noplats", !list.length);
+    for (const p of list.slice(0, Math.max(0, room - shown))) { plats.append(platCard(p)); shown++; }
+    const more = list.length + lost.length - shown;
+    if (more > 0) plats.append(el("div", "plat more", "+" + more + " more"));
+    box.classList.toggle("noplats", !list.length && !lost.length);
   }
 
   // A side camera nobody is on (fewer agents than cameras, or the director paired them) would show an empty or stale
@@ -1154,8 +1207,10 @@
     const ids = document.body.classList.contains("portrait") ? ["prod", "space"] : WIDGETS; // portrait has no board
     const live = ids.filter((id) => $(id) && !$(id).hidden);
     if (!live.length) return;
-    if (!live.includes(rotCur) || now - rotSince >= ROT_S) {
-      const next = live.length === 1 ? live[0] : live[(live.indexOf(rotCur) + 1) % live.length];
+    // a platform under fire or just lost: the Space widget holds the slot (model space.hot)
+    const hot = live.includes("space") && $("space").dataset.hot === "1";
+    if (hot ? rotCur !== "space" : !live.includes(rotCur) || now - rotSince >= ROT_S) {
+      const next = hot ? "space" : live.length === 1 ? live[0] : live[(live.indexOf(rotCur) + 1) % live.length];
       if (next !== rotCur) {
         rotCur = next;
         const n = $(next);

@@ -290,8 +290,18 @@ On the page:
 - Agent cards: a planet chip (Nauvis green, Vulcanus orange, Fulgora violet, Gleba lime, Aquilo ice, platforms grey)
   once the Space panel is active; off Nauvis, the card's location is the planet or platform.
 - Space panel, above chat, hidden until there is something: a rocket, a platform, space-age science, a second planet
-  or an agent away. One head row (planets, science pack totals, else rockets), then up to three platform rows (name,
-  where or route with a progress bar, km/s or "paused"). Chat gives up the height.
+  or an agent away. One head row (planets, science pack totals, else rockets). Then a two-line card per platform
+  (`model.platform_card`, eng/platformwidget; Nick: "kinda basic"), two on the 1080p frame and three on the vertical
+  page, with platforms under fire first:
+  - Line 1: the name; where it is, or its route with a bar and %; km/s, "paused" or "drifting back" (paused on a
+    route); who is aboard, and who works on it from the ground ("Sol (remote)").
+  - Line 2: chips for the hub health (bar and %), guns armed of all, ammo in the turrets and in the hub, repair packs,
+    asteroid hits a minute, and up to three cargo items.
+  A chip turns red when it is bad: no gun armed, no ammo, or no repair packs on a damaged platform. A platform lost in
+  the last two minutes shows struck through with LOST, its cause and where it was. While a platform is under fire or
+  just lost (`space.hot`), the panel holds its turn in the widget rotation. The data comes from the `platforms`
+  read's `defense`, `repair_packs`, `damaged_count` and `hub_items` (text, parsed in model.py), the status alerts'
+  `platform_hits` (hits a minute over the last 5 minutes), the agents' `platform` and the remote-work feed.
 - Science: the five planet packs and promethium count toward SPM and get chips and colours.
 - Moments, each once (what is already true when the service starts is recorded silently): first rocket, first
   platform, a platform's first arrival at each planet other than Nauvis ("orbit"), the first landing on each planet
@@ -302,8 +312,9 @@ On the page:
   the game's own readout.
 
 Mock: `serve.py --mock --run tools/stream/runs/mock-sa3.json` (three agents) plays a rocket at 20 s, the platform
-"Orbital One" at 40 s, its flight to Vulcanus from 70 to 130 s, a paused "Shuttle" at 100 s and Opus landing on
-Vulcanus at 150 s (`"mock_space_speed"` scales it). Checked in jsdom on both pages and in the selftest; not yet seen
+"Orbital One" at 40 s, its flight to Vulcanus from 70 to 130 s, a "Shuttle" paused on its route (drifting, guns
+empty, hit by asteroids) from 100 s and lost at 240 s, the third agent aboard Orbital One from 90 to 200 s, and Opus
+landing on Vulcanus at 150 s (`"mock_space_speed"` scales it). Checked in jsdom on both pages and in the selftest; not yet seen
 with a real platform, since the pilot had none by 02:00.
 
 ## Following the work, and platform shots
