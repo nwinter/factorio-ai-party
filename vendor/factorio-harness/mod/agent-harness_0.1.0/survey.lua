@@ -312,12 +312,16 @@ return function(api)
 
   -- `machines=true` adds the positions of every non-working machine (up to 16
   -- per status) and forces a fresh survey.
+  -- One entry per force and surface, shared by every agent there (shift03: one
+  -- entry per force, so agents on Nauvis, Vulcanus and a platform took turns
+  -- replacing it and nearly every status rescanned).
   function M.summary(p,detail)
     local cache=api.state().survey_cache or {}
     api.state().survey_cache=cache
-    local entry=cache[p.force.name]
-    if detail or not entry or game.tick-entry.tick>=CACHE_TICKS or entry.surface~=p.surface.index then
-      entry=survey(p); cache[p.force.name]=entry
+    local key=p.force.name..'/'..p.surface.index
+    local entry=cache[key]
+    if detail or not entry or game.tick-entry.tick>=CACHE_TICKS then
+      entry=survey(p); cache[key]=entry
     end
     local inv,warnings=M.inventory(p)
     warnings=warnings or {}

@@ -174,6 +174,19 @@ return function(api)
     end
   end
 
+  -- The nests around an agent are its own; the surface's pollution and the
+  -- force's chart there are shared by every agent on it (each agent walked
+  -- every chunk once a minute before).
+  local function shared(p,fresh)
+    local st=api.state()
+    st.threat_shared=st.threat_shared or {}
+    local key=p.force.name..'/'..p.surface.index
+    local e=st.threat_shared[key]
+    if not e then e={}; st.threat_shared[key]=e end
+    if fresh or not e.pollution or game.tick-e.pollution_tick>=CACHE_TICKS then e.pollution,e.pollution_tick=pollution(p),game.tick end
+    if fresh or not e.chart or game.tick-e.chart.tick>=CHART_TICKS then e.chart=chart(p) end
+    return e
+  end
   local function refresh(p,fresh)
     local cache=api.state().threat_cache or {}
     api.state().threat_cache=cache
@@ -181,11 +194,11 @@ return function(api)
     if fresh or not entry or game.tick-entry.tick>=CACHE_TICKS or entry.surface~=p.surface.index then
       local list=bases(p)
       note_bases(p,list)
-      local old_chart=entry and entry.surface==p.surface.index and entry.chart
-      entry={tick=game.tick,surface=p.surface.index,pollution=pollution(p),bases=list,
-        chart=(not fresh and old_chart and game.tick-old_chart.tick<CHART_TICKS) and old_chart or chart(p)}
+      entry={tick=game.tick,surface=p.surface.index,bases=list}
       cache[p.index]=entry
     end
+    local s=shared(p,fresh)
+    entry.pollution,entry.chart=s.pollution,s.chart
     return entry
   end
   -- Replies keep nest news flowing without a status call: the nests around an
