@@ -242,6 +242,13 @@ td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .techs li { break-inside: avoid; padding: 1px 0; }
 .techs .c-time { display: inline-block; min-width: 4.2em; color: var(--muted); font-variant-numeric: tabular-nums; }
 .vlink { text-decoration: none; font-size: .8em; margin-left: 4px; color: var(--accent); }
+/* the homepage's run summary */
+.run-summary { margin: 1.2rem 0 1.6rem; }
+.run-summary h2 { margin-bottom: .2rem; }
+.sum-cols { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 0 28px; align-items: start; }
+@media (max-width: 860px) { .sum-cols { grid-template-columns: 1fr; } }
+.latest { list-style: none; padding: 0; margin: .4rem 0 1rem; display: grid; gap: 6px; }
+.latest li { display: grid; }
 /* milestones (firsts) */
 table.firsts th[scope=row] { font-weight: 600; }
 .kind { display: inline-block; font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; padding: 1px 6px; border-radius: 3px; border: 1px solid var(--line-strong); color: var(--ink-2); }

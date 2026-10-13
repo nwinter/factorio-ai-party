@@ -120,6 +120,9 @@ def main():
         assert "The long run" in page and "did not start" in page and "resumed as s3" in page and "Solstice" in page
         assert "quota" not in page and "Weekly" not in page and "codex" not in page  # start.log's text never shows
         assert 'href="/runs/long/"' in (out / "index.html").read_text()
+        home = (out / "index.html").read_text()  # the run so far, which live.js moves under the heading between shifts
+        assert 'id="run-summary"' in home and "Latest milestones" in home and 'href="/runs/long/shift-2/"' in home
+        assert "placeSummary" in (out / "static" / "live.js").read_text()
         assert 'href="/runs/long/"' in (out / "runs" / "index.html").read_text()
         assert len(page) < 80000, len(page)
         assert "Shift videos" not in page and "youtube" not in (out / "runs" / "long" / "shift-1" / "index.html").read_text()

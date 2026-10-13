@@ -1051,7 +1051,7 @@ KEY_TIMES = [("pack:chemical-science-pack", "Blue science"), ("tech:rocket-silo"
              ("rockets:100", "100 rockets"), ("pack:promethium-science-pack", "Promethium science")]
 
 
-def key_times(lr):
+def key_times(lr, heading='<h2 id="key-times">Key times</h2>'):
     """The big firsts with game time, hours on stream to get there (the shifts' own time, breaks left out) and the
     Pacific time."""
     done = [s for s in lr["shifts"] if not s.get("empty")]
@@ -1067,7 +1067,7 @@ def key_times(lr):
         tiles.append(f'<a class="keytime" href="/runs/long/shift-{f["shift"]}/"><span class="k-label">{esc(name)}</span>'
                      f'<span class="k-val">{esc(longrun.game_time(f["tick"]))}</span>'
                      f'<span class="k-sub">game time · {on_air:.1f} h on stream · {esc(_pt(f["t"]))}</span></a>')
-    return (f'<h2 id="key-times">Key times</h2><div class="keytimes">{"".join(tiles)}</div>') if tiles else ""
+    return (f'{heading}<div class="keytimes">{"".join(tiles)}</div>') if tiles else ""
 
 
 def packs_bars(made, title="Science packs made"):
@@ -1080,6 +1080,32 @@ def packs_bars(made, title="Science packs made"):
                     f'style="width:{100 * v / top:.1f}%;background:var({PACK_STYLE[item][0]})"></span></span>'
                     f'<span class="bar-val">{v:,}</span></li>' for item, lab, v in have)
     return f'<figure class="bars packs-bars"><figcaption><strong>{esc(title)}</strong></figcaption><ul>{items}</ul></figure>'
+
+
+def run_summary(lr):
+    """The homepage's run so far (site.js / live.js put it under the heading while no shift is live): totals, key
+    times, the latest milestones and the latest shift."""
+    done = [s for s in lr["shifts"] if not s.get("empty")]
+    last = done[-1]
+    planets = sorted({p for s in done for p in s["planets"] if p != "nauvis"})
+    stats = "".join([stat("shifts", len(done)), stat("game time", last["game1"]), stat("technologies", last["research"]),
+                     stat("rockets", last["rockets"]), stat("science packs", f'{sum(lr["made"].values()):,}'),
+                     stat("planets reached", len(planets), ", ".join(p.capitalize() for p in planets))])
+    latest = list(reversed(lr["firsts"][-6:]))
+    items = "".join(f'<li><a href="/runs/long/shift-{f["shift"]}/">{esc(f["label"])}</a>'
+                    f'<span class="muted small">{esc(longrun.game_time(f["tick"]))} · {esc(_pt(f["t"]))} · shift {f["shift"]}</span></li>'
+                    for f in latest)
+    return f"""
+<section id="run-summary" class="run-summary" aria-labelledby="sum-h">
+  <h2 id="sum-h">The run so far</h2>
+  <p class="meta">Up to <a href="{shift_href(last)}">shift {last["n"]}</a>, {esc(_pt(last["ended"]))} Pacific</p>
+  <div class="stats stats-compact">{stats}</div>
+  <div class="sum-cols">
+    <div>{key_times(lr, '<h3>Key times</h3>')}</div>
+    <div><h3>Latest milestones</h3><ul class="latest">{items}</ul>
+      <p><a class="fx-btn" href="/runs/long/">The whole run →</a> <a class="fx-btn ghost" href="{shift_href(last)}">Shift {last["n"]} →</a></p></div>
+  </div>
+</section>"""
 
 
 def records(done):
@@ -1271,19 +1297,9 @@ def build_home(runs, all_worlds):
                   ("/runs/", "Runs", f"Every run with its charts and chat; the latest, {runs['shake1']['title']}, reached "
                    f"{sf['techs']} technologies by {sf['game']}."),
                   ("/studies/", "Studies", "Write-ups of the runs: what went wrong, what changed.")]
-    if LONG:
-        done = [s for s in LONG["shifts"] if not s.get("empty")]
-        last = done[-1]
-        latest = LONG["firsts"][-1] if LONG["firsts"] else None
-        cards.insert(1, ("/runs/long/", "The long run",
-                         f"{len(done)} shifts · {last['game1']} game time · {last['research']} technologies · "
-                         f"{last['rockets']} rockets" + (f". Latest milestone: {latest['label']}, shift {latest['shift']}." if latest else ".")))
-        cards.insert(2, (shift_href(last), f"Latest shift: {last['n']}",
-                         f"{_when(last['started'], last['ended'])} · +{last['research_new']} technologies · "
-                         f"+{last['rockets_new']} rockets · {last['viewer_lines']} viewer messages"))
     links = "".join(f'<a class="home-card" href="{href}"><h3>{esc(t)}</h3><p class="muted">{esc(d)}</p></a>'
                     for href, t, d in cards)
-    body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1") + f"""
+    body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1") + (run_summary(LONG) if LONG else "") + f"""
 <section class="home-more" aria-labelledby="more-h">
   <h2 id="more-h">The project</h2>
   <p class="lede">AI agents playing Factorio together, by the same rules as you: no spawned items, no teleporting,

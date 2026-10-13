@@ -706,9 +706,17 @@
     }).catch(function () { renderOffline(null); });
   }
 
+  // The homepage's run summary (#run-summary, built at shift changes): right under the heading while no shift is live,
+  // after the live show while one is.
+  function placeSummary(live) {
+    var sum = document.getElementById('run-summary'), head = app.querySelector('.live-head-row');
+    if (!sum || !head) return;
+    if (live) { if (sum.previousElementSibling !== app) app.parentNode.insertBefore(sum, app.nextSibling); }
+    else if (sum.previousElementSibling !== head) head.parentNode.insertBefore(sum, head.nextSibling);
+  }
   function tick() {
     var url = demo ? '/live/state.example.json' : API + '/v1/state';
-    if (!demo && !API) { setBadge('offline', 'Offline'); loadStatus(); return; }
+    if (!demo && !API) { setBadge('offline', 'Offline'); placeSummary(false); loadStatus(); return; }
     getJSON(url).then(function (d) {
       var s = demo ? d : d.state, age = demo ? 0 : d.age_s;
       var live = s && age != null && age <= LIVE_MAX_AGE;
@@ -718,7 +726,9 @@
       $('#updated').textContent = demo ? 'Sample data from the stream service\'s mock session.' : (d.received ? 'Updated ' + ago(age) : '');
       if (!live && !offlineStatus) loadStatus();
       if (s && (s.now !== lastNow || !live)) { lastNow = s.now; renderState(s, age); }
+      placeSummary(live || demo);
     }).catch(function () {
+      placeSummary(false);
       setBadge('offline', 'Offline');
       $('#updated').textContent = 'Live data is unavailable right now.';
       if (!offlineStatus) loadStatus();
