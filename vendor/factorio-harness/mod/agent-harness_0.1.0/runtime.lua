@@ -3930,6 +3930,8 @@ for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
   on_viewer=function(m) M.board.on_viewer(m) end,
+  -- say look= checks (chat.lua): a platform by name, a teammate by name
+  platform=function(p,name) return space.platform(p,name) end,agents=function() return M.board.agents() end,
   mention_of=function(index,m) return M.board.mention_of(index,m) end,
   where_from=function(index) local p=M.lookup(index); return p and p.valid and M.where.from(M.board.who(p)) or nil end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
