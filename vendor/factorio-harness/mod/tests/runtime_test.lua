@@ -42,6 +42,26 @@ advance(1); eq(p.walking_state.direction,4)
 p.position={x=9.8,y=0}; advance(1)
 eq(call('status').last.outcome,'arrived'); eq(p.walking_state.walking,false)
 eq(call('status').last.target.x,10)
+eq(call('status').last.on_belt,nil); eq(call('status').on_belt,nil)
+-- Arriving on a belt: the result and status say it carries the character
+-- (shift03), status for as long as it stands there.
+do
+local belt={valid=true,name='fast-transport-belt',direction=0}
+local belt_area
+p.surface.find_entities_filtered=function(f)
+  if f.area and f.type and f.limit==1 and p.position.x>=f.area[1][1] and p.position.x<f.area[2][1] and p.position.y>=f.area[1][2] and p.position.y<f.area[2][2] then
+    belt_area=f.area; return {belt}
+  end
+  return {}
+end
+call('move_to',{position={x=10,y=0},pathfind=false}); advance(1); advance(1)
+local note='standing on a fast-transport-belt facing north: it carries you; step off to stay put'
+eq(call('status').last.outcome,'arrived'); eq(call('status').last.on_belt,note); eq(call('status').on_belt,note)
+eq(belt_area[1][1],9); eq(belt_area[2][2],1)
+p.driving=true; eq(call('status').on_belt,nil); p.driving=false
+p.surface.find_entities_filtered=function() return {} end
+eq(call('status').on_belt,nil)
+end
 p.position={x=0,y=0}
 -- Stuck in place: sidestep on each stall, give up after the stall budget.
 call('move_to',{position={x=10,y=0},pathfind=false}); advance(9)

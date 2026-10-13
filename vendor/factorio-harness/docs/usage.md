@@ -58,6 +58,9 @@ fh call status
 - With `--wait`, the command exits nonzero unless the action ended successfully, or when the wait times out. `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
+- An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
+  (`standing on a transport-belt facing east: it carries you; step off to stay put`); the game moves a character
+  standing on a belt. `status.on_belt` shows the same for as long as it stands on one.
 - `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
   distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
   your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
