@@ -26,8 +26,9 @@ MILESTONES = {
     "cryogenic-science-pack": "cryogenic science", "promethium-science-pack": "promethium science",
     "artillery": "artillery", "laser-turret": "laser turrets", "spidertron": "the spidertron",
 }
-DEATH = re.compile(r"<- attack: (.+?) died\b")
-LOSS = re.compile(r"<- attack: (\d+) lost near")
+# the director's reason for a cut: "<- attack: ..." before shift01, "<- death: ..." / "<- loss: ..." since
+DEATH = re.compile(r"<- (?:attack|death): (.+?) died\b")
+LOSS = re.compile(r"<- (?:attack|loss): (\d+ lost near .*)$")
 HOST = re.compile(r"^(\d\d:\d\d:\d\d) \[\w+\] \(space[^,]*, [^)]*\) (.*)$")
 
 
@@ -116,16 +117,29 @@ def stream_events(path):
     same buildings several times: the number of alerts is the honest count)."""
     if not path.exists():
         return 0, 0
-    deaths, losses = set(), 0
+    deaths, losses, last = 0, 0, {}
+
+    def new(key, line):
+        """One death or alert shows on two director lines (the zoom, then the cut) a few seconds apart."""
+        try:
+            h, mi, s = map(int, line[11:19].split(":"))
+            t = h * 3600 + mi * 60 + s
+        except ValueError:
+            t = None
+        prev = last.get(key)
+        last[key] = t
+        return t is None or prev is None or not 0 <= t - prev <= 60
+
     for line in path.read_text(errors="replace").splitlines():
-        if "<- attack:" not in line:
+        if "<- " not in line:
             continue
         m = DEATH.search(line)
-        if m:
-            deaths.add((line[11:16], m.group(1)))
-        if LOSS.search(line):
+        if m and new(("death", m.group(1)), line):
+            deaths += 1
+        m = LOSS.search(line)
+        if m and new(("loss", m.group(1)), line):
             losses += 1
-    return len(deaths), losses
+    return deaths, losses
 
 
 def host_moments(path, limit=2):
