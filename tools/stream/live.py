@@ -7,6 +7,7 @@ worlds (e.g. the paused co-op save in world c).
 """
 import math, os, re, time
 
+import basemap_log
 import operator_inbox
 from harness import Harness
 from model import SPARK_ITEMS, notes_job
@@ -192,6 +193,10 @@ class LiveSource:
                 obs["basemap"] = self.h.basemap(ore=ore)
                 if ore:
                     self.next_ore = time.time() + self.ore_every
+                try:  # the site's time-lapse: a snapshot per 10 game minutes in runs/RUN/basemap/
+                    basemap_log.save(self.journals, obs["basemap"])
+                except OSError as e:
+                    errors["basemap_log"] = str(e)
             except Exception as e:
                 errors["basemap"] = str(e)
 
