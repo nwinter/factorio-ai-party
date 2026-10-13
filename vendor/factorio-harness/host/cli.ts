@@ -517,7 +517,10 @@ async function main() {
     if (!peekable) return status;
     const fresh = await harness.request('status');
     if (!fresh.ok) return status;
-    return {...fresh, ok:status.ok, ...(status.error ? {error:status.error} : {})};
+    // An earlier action's result set aside by the wait stays out (request #5).
+    const stale = status.result?.note !== undefined && status.result?.last === undefined;
+    const result = stale ? {...fresh.result, last:undefined, note:status.result!.note} : fresh.result;
+    return {...fresh, result, ok:status.ok, ...(status.error ? {error:status.error} : {})};
   }
   const compactWaits = !bridged && !values.full && outputFormat === 'compact';
   const OBSERVE_SELF = {radius:1,limit:1,exclude_resources:true,entity_types:['character']};
@@ -541,7 +544,7 @@ async function main() {
       // construct: what it did and what stopped it, blockers with coordinates (request #167); kite: why it stopped.
       ...(last?.kind === 'construct' ? {built: last.built, mined: last.mined, remaining: last.remaining || undefined,
         missing: last.missing, failed: last.failed, blockers: last.blockers} : {}),
-      why: last?.why,
+      why: last?.why, note: status.result?.note,
       team: carrier.result?.team, clock: carrier.result?.clock, chat: carrier.result?.chat,
     };
     for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];
@@ -550,23 +553,33 @@ async function main() {
   async function waitForAction(action: string, untilTick?: number, nowTick?: number, before?: unknown): Promise<Reply> {
     if (bridged) return waitForBridgeAction(action);
     const started = Date.now();
-    const done = await waitForActionEnd(action, untilTick, nowTick, started);
+    const done = await waitForActionEnd(action, untilTick, nowTick, started, nowTick);
     // A timeout or a failed poll is reported as it is.
     if (done.error?.code === 'wait_timeout' || (!done.ok && done.error?.code !== 'action_interrupted' && done.error?.code !== 'timed_out')) return done;
     return compactWaits ? brief(done, started, before, action) : finalReply(done);
   }
-  async function waitForActionEnd(action: string, untilTick: number | undefined, nowTick: number | undefined, started: number): Promise<Reply> {
+  async function waitForActionEnd(action: string, untilTick: number | undefined, nowTick: number | undefined, started: number, acceptedTick?: number): Promise<Reply> {
     const deadline = started+waitBudget(untilTick,nowTick,action === 'wait_until');
+    let staleLooks = 0;
     while (!stopping && Date.now()<deadline) {
       const status = await poll();
       const active = action === 'shoot' ? status.result?.combat : status.result?.active;
       // active may report shooting when movement has already finished. A
       // transfer/refuel/rearm short of items waits for the hand-craft queue as
-      // an active 'feed'; the radius tours run as 'gather'.
-      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel'].includes(action) ? ['gather','feed'] : ['transfer','build'].includes(action) ? ['feed'] : [action];
+      // an active 'feed'; the radius tours run as 'gather'; vehicle drive runs
+      // as 'drive' (request #5: the wait returned the previous action's result).
+      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel'].includes(action) ? ['gather','feed'] : ['transfer','build'].includes(action) ? ['feed']
+        : action === 'vehicle' ? ['drive'] : [action];
       const stillRunning = active && (action === 'shoot' || kinds.includes(active.kind));
       if (!status.ok || !stillRunning) {
         const last = action === 'shoot' ? status.result?.last_combat : status.result?.last;
+        // A result that ended before this action was accepted belongs to an
+        // earlier action: look again briefly, then report none rather than it.
+        if (status.ok && action !== 'shoot' && acceptedTick !== undefined && typeof last?.tick === 'number' && last.tick < acceptedTick) {
+          if (++staleLooks <= 3) { await delay(pollDelay(status)); continue; }
+          return {...status, result:{...status.result, last:undefined,
+            note:`${action} is not running and recorded no result of its own (the last result, ${last.kind} ${last.outcome} at tick ${last.tick}, predates it)`}};
+        }
         if (status.ok && last?.outcome && !successfulOutcomes.includes(last.outcome)) {
           return {...status,ok:false,error:endedError(action,last)};
         }

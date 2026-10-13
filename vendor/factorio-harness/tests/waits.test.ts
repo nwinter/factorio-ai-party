@@ -105,6 +105,30 @@ test('wait_ticks and a build awaiting a hand craft are waited for',async()=>{
     });
   }
 });
+test('vehicle drive --wait waits for its own drive, never the previous result (request #5)',async()=>{
+  // Each drive runs as active kind 'drive'; the status carries the previous drive's result until it ends.
+  let tick=100, polls=0, last:any={kind:'feed',outcome:'fed',tick:90};
+  const plan=[{at:100,ends:150,outcome:'blocked'},{at:200,ends:260,outcome:'arrived'}];
+  let drive=-1;
+  await engine(request=>{
+    if(request.action==='vehicle'){drive++;polls=0;tick=plan[drive]?.at ?? 300;return {tick,ok:true,result:{driving:true,until_tick:tick+600}};}
+    polls++;
+    const d=plan[drive];
+    if(d && polls<3)return {tick:tick+polls,ok:true,result:{active:{kind:'drive',until_tick:d.at+600},last}};
+    if(d){last={kind:'drive',outcome:d.outcome,tick:d.ends};}
+    return {tick:(d?.ends ?? tick)+1,ok:true,result:{active:false,last}};
+  },async port=>{
+    const drive1=cli(port,['call','vehicle','--args','{"drive":{"x":200,"y":-180}}','--wait']);
+    await assert.rejects(drive1,(error:any)=>/blocked/.test(JSON.parse(error.stdout).error.message));
+    const second=JSON.parse((await cli(port,['call','vehicle','--args','{"drive":{"x":370,"y":-130}}','--wait'])).stdout);
+    assert.equal(second.ok,true); assert.match(JSON.stringify(second.result),/"arrived"/); assert.doesNotMatch(JSON.stringify(second.result),/blocked/);
+    assert.ok(polls>=3,'the second wait saw its drive running');
+    // A drive that never shows as running and leaves no result: the earlier result is not reported as its own.
+    const third=JSON.parse((await cli(port,['call','vehicle','--args','{"drive":{"x":0,"y":0}}','--wait'])).stdout);
+    assert.doesNotMatch(JSON.stringify(third.result.completion ?? third.result),/"outcome":"arrived"/);
+    assert.match(JSON.stringify(third.result),/predates it/);
+  });
+});
 test('fh sleep polls sleep_check with peek, then reads once normally; death exits nonzero',async()=>{
   for (const woke of ['mentioned','died','respawned']) {
     const seen:any[]=[];let checks=0;
