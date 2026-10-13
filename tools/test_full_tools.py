@@ -41,7 +41,10 @@ def workspace():
         assert os.readlink(os.path.join(d, "team-tools")) == "../team-tools"
         assert os.path.isdir(os.path.join(tmp, "run", "team-tools"))
         names = sorted(os.listdir(os.path.join(d, "gamedata")))
-        assert names == sorted(n + ".json" for n in full_tools.GAMEDATA), names
+        # every listed file the dump has (asteroids: Space Age dumps only)
+        src = os.path.join(full_tools.KB, full_tools.kb_version())
+        want = [n + ".json" for n in full_tools.GAMEDATA if os.path.exists(os.path.join(src, n + ".json"))]
+        assert names == sorted(want) and "recipes.json" in names, names
         recipes = json.load(open(os.path.join(d, "gamedata", "recipes.json")))
         assert any(r["name"] == "electronic-circuit" for r in recipes)
         assert not os.access(os.path.join(d, "gamedata", "recipes.json"), os.W_OK) or os.geteuid() == 0
