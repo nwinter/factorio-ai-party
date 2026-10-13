@@ -338,8 +338,10 @@ class Filter:
             raw = fold(clean_name(m.get("name")), leet=False)
             if raw.replace(" ", "") in RESERVED or raw in self.agent_names:
                 reasons.append("impersonation:name")
-            # "operator: ..." to the operator is no claim to be one, unless it names an agent (it would be relayed)
-            to_op = to_operator(text) and not any(re.search(r"(?<![\w-])@?" + re.escape(n) + r"(?![\w-])", f.casefold())
+            # "operator: ..." to the operator is no claim to be one, unless it orders the agents ("Operator: all agents
+            # pause") or names one (it would be relayed)
+            crew = re.search(r"\b(agents?|bots?|ais?|everyone|everybody|team|y'?all)\b", f) and not is_question(text)
+            to_op = to_operator(text) and not crew and not directive(text, self.agent_names) and not any(re.search(r"(?<![\w-])@?" + re.escape(n) + r"(?![\w-])", f.casefold())
                                                   for n in self.agent_names if len(n) >= 2)
             if impersonation(text, self.agent_names) and not to_op:
                 reasons.append("impersonation:text")
