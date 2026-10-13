@@ -334,5 +334,12 @@ while read -r name pane kind; do
   echo $! >> "$rundir/supervisors.pid"
 done < "$rundir/panes.txt"
 log "supervisors running"
+# A fact-only operator tell to an agent whose character has stood 10 minutes (tools/idle_nudge.py; at most every 20
+# minutes per agent, not in the first 5): runs/RUN/nudges.jsonl. POG_IDLE_NUDGE=0 turns it off.
+if [ "${POG_IDLE_NUDGE:-1}" = 1 ]; then
+  nohup python3 tools/idle_nudge.py --run "$rundir" --world "$world" --port "$rcon" >"$rundir/idle-nudge.log" 2>&1 &
+  echo $! >> "$rundir/supervisors.pid"
+  log "idle nudges running (pid $!)"
+fi
 nohup tools/score-loop.sh "$rundir" 120 "$world" >/dev/null 2>&1 &
 echo $! > "$rundir/score-loop.pid"
