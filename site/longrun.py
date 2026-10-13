@@ -250,6 +250,15 @@ def host_calls(path, start, limit=10):
     return [c[2:] for c in sorted(sorted(out)[:limit], key=lambda c: c[1])]
 
 
+def in_progress(name):
+    """Research under way, by its plain name: 'planet-discovery-fulgora' -> 'Planet discovery: Fulgora'."""
+    if not name:
+        return None
+    if name.startswith("planet-discovery-"):
+        return "Planet discovery: " + name[len("planet-discovery-"):].capitalize()
+    return name.replace("-", " ").capitalize()
+
+
 def label(name):
     return name.replace("-", " ")
 
@@ -416,7 +425,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
 
         row.update(started=a["t"], ended=b["t"], running=running, tick0=a["tick"], tick1=b["tick"], game0=game_time(a["tick"]),
                    game1=game_time(b["tick"]), research=b["research"], research_new=b["research"] - base["research"],
-                   researching=(b["current"].replace("-", " ").capitalize()) if b.get("current") else None,  # in progress: the plain name
+                   researching=in_progress(b.get("current")),
                    spm=round(sum(own.values()) / mins, 1) if mins > 0 else None,
                    rockets=b["rockets"], rockets_new=b["rockets"] - base["rockets"],
                    platforms=b["platforms"], planets=b["planets"], deaths=deaths, losses=losses,
