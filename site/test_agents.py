@@ -72,7 +72,8 @@ def make(root):
     j.call("2026-10-13T06:05:00Z", "say", {"text": "@Joonazan yes, the wall comes first", "aloud": True})
     j.call("2026-10-13T06:05:10Z", "say", {"text": "@sol taking the turrets"})
     j.call("2026-10-13T06:05:20Z", "tell", {"to": "sol", "text": "hi"})
-    j.call("2026-10-13T06:05:30Z", "confess", {"text": "SECRET-CONFESSION-TEXT"})
+    j.call("2026-10-13T06:05:30Z", "confess", {"text": "I walked into the nest. Mail me at bot@example.com"})
+    j.call("2026-10-13T06:05:40Z", "confess", {"text": "Nick should SECRET-OWNER-LINE"})  # names the owner: left out
     with gzip.open(a / "opus" / "journal.jsonl.gz", "wt") as f:  # an ended shift's journal is compressed
         f.write(j.text())
     k = Journal()
@@ -84,7 +85,8 @@ def make(root):
         "[director] 00:10:00 ON AIR main: @attack  <- death: Opus died\n")
     (a / "caster.log").write_text(
         "23:05:00 [caster] feed http://x\n"
-        "23:05:10 [voice:Opus/el-george] (aloud) SECRET-VOICED-TEXT\n"
+        "23:05:10 [voice:Opus/el-george] (aloud) Turrets first, then the wall.\n"
+        "00:20:00 [voice:Opus/el-george] (reaction) Past midnight & still here.\n"
         "23:06:10 [voice:Operator/saturn] sol Operator: hi\n")
     (a / "operator-inbox.jsonl").write_text(
         json.dumps({"t": 1, "seq": 1, "agent": "sol", "text": "SECRET-REQUEST-TEXT"}) + "\n"
@@ -115,17 +117,22 @@ def main():
         make(root)
         c = agent_stats.compute(root / "sa", ["Opus", "Sol"])
         o, s = c["agents"]["opus"], c["agents"]["sol"]
-        assert (o["requests"], o["reads"], o["talk"], o["actions"]) == (16, 2, 4, 10), o
+        assert (o["requests"], o["reads"], o["talk"], o["actions"]) == (17, 2, 5, 10), o
         assert o["failed"] == 1 and o["built"] == 2 + 5 + 3 and o["mined"] == 1, o
         assert o["walked"] == 50 and o["moves"] == 3, o  # 0,0 to 30,40; the 2970-tile hop left out
         assert (o["research"], o["research_done"], s["research"], s["research_done"]) == (2, 1, 1, 1), (o, s)
         assert o["rockets"] == 1 and o["say"] == 2 and o["aloud_marked"] == 1 and o["viewer_answers"] == 1, o
-        assert o["tells"] == 1 and o["confessions"] == 1 and o["voiced"] == 1 and o["voice"] == "el-george", o
+        assert o["tells"] == 1 and o["confessions"] == 2 and o["voiced"] == 2 and o["voice"] == "el-george", o
         assert o["deaths"] == 2 and s["deaths"] == 0 and (o["operator"], s["operator"]) == (0, 1), (o, s)
         # deaths in game ticks from the first of the two lines (23:40:58, after the 23:30 score); 00:10 is past midnight
         assert o["death_ticks"] == [3600 * 31 + (10 * 60 + 58) * 60, 3600 * 31 + 40 * 3600], o["death_ticks"]
-        assert o["active_min"] == 5 and o["minutes"] == 5 and s["actions"] == 1, o
-        assert "SECRET" not in json.dumps(c)
+        assert o["active_min"] == 5 and o["minutes"] == 6 and s["actions"] == 1, o
+        assert "SECRET-ERROR-TEXT" not in json.dumps(c) and "SECRET-REQUEST-TEXT" not in json.dumps(c)
+        # text kept for /chat/: the voiced lines (game tick from the wall clock, past midnight too) and confessions
+        assert [r[1:] for r in o["spoken_lines"]] == [["aloud", "Turrets first, then the wall."],
+                                                      ["reaction", "Past midnight & still here."]], o["spoken_lines"]
+        assert o["spoken_lines"][1][0] == 3600 * 31 + 50 * 3600, o["spoken_lines"]  # 00:20, 50 minutes after 23:30
+        assert [t for _, t in o["confession_lines"]][0].startswith("I walked into the nest"), o["confession_lines"]
         # the cache: reused while the sources stand, recounted when one grows
         cache = Path(d) / "cache"
         c1 = agent_stats.load(root / "sa", cache)
@@ -166,7 +173,14 @@ def main():
         anth = mk.split('<th scope="row">Anthropic</th>')[1].split("</tr>")[0]
         assert '<td data-v="2">2</td>' in anth and ">8.5<" in anth and "#opus" in anth, anth
         assert '<th scope="row">OpenAI</th>' in mk and "xAI" not in mk  # only makers that played
-        assert "SECRET" not in page and "Joonazan" not in page
+        assert "SECRET" not in page and "Joonazan" not in page and "Turrets first" not in page
+        chat = (out / "chat" / "index.html").read_text()
+        for want in ("Turrets first, then the wall.", "Past midnight &amp; still here.", "Spoken · reaction",
+                     "I walked into the nest", "[email]", 'data-kind="confession"', 'data-agent="opus"',
+                     'id="hl-q"', 'value="confession" checked', "Confessions (1)", "Spoken on stream (2)", 'href="/chat/"'):
+            assert want in chat, want
+        assert "SECRET" not in chat and "example.com" not in chat and "Nick" not in chat
+        assert chat.index('id="shift-2"') < chat.index('id="shift-1"') if 'id="shift-2"' in chat else True
         assert 'href="/agents/"' in (out / "index.html").read_text() and 'href="/timeline/"' in page
         tl = (out / "timeline" / "index.html").read_text()
         for want in ('data-kind="research"', "Logistics", "Rocket 1", "Rockets 2 to 3", "Platform Kite built",

@@ -46,6 +46,7 @@ import avatar as avatar_art  # noqa: E402  (tools/stream/avatar.py, reads the pa
 sys.path.insert(0, str(SITE))
 import longrun  # noqa: E402  (site/longrun.py: the long run's shifts from runs/)
 import agents as agent_pages  # noqa: E402  (site/agents.py: /agents/ and /timeline/ from tools/agent_stats.py)
+import highlights  # noqa: E402  (site/highlights.py: /chat/, the agents' spoken lines and confessions)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -502,7 +503,8 @@ def nav_items():
     if archive():
         return [("/", "Live"), ("/experiments/", "Experiments"), ("/runs/", "Runs"), ("/studies/", "Studies"),
                 ("/about/", "About")]
-    return [("/", "Live")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline")]
+    return [("/", "Live")] + ([("/runs/long/", "The run"), ("/agents/", "Agents"), ("/timeline/", "Timeline"),
+                               ("/chat/", "Chat")]
                               if LONG else []) + [("/about/", "About")]
 
 
@@ -1757,6 +1759,10 @@ def main():
         body, head = agent_pages.build_timeline(events, agent, avatar, esc, game_time)
         write("timeline/index.html", page("Timeline", body, "/timeline/", "The run's events in game time.",
                                           extra_head=head, path="/timeline/"))
+        body, head = highlights.build_chat(highlights.lines(stats, team, clean, keep_line), agent, avatar, esc, game_time,
+                                           team)
+        write("chat/index.html", page("Chat highlights", body, "/chat/", "The agents' lines on stream and their confessions.",
+                                      extra_head=head, path="/chat/"))
     write("about/index.html", build_about(runs, all_worlds))
     if archive():  # the test history: experiments, earlier runs, agent pages (made of those runs), studies
         write("experiments/index.html", build_experiments(runs, all_worlds))

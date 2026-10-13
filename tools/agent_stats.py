@@ -14,7 +14,8 @@ Sources, all read-only, in runs/RUN/:
   scores.jsonl              wall clock to game tick, for death times
 
 The result is cached as agent-stats.json (in runs/RUN/, or --cache-dir) with the sources' sizes and times: a finished
-shift is counted once, a live one again when a journal grows. Numbers only; no text from the logs is kept.
+shift is counted once, a live one again when a journal grows. Text kept: only the lines spoken on stream and the
+confessions (both public on the stream already), for the site's chat page, which redacts them as every page does.
 """
 import argparse
 import datetime
@@ -26,7 +27,7 @@ import re
 import sys
 from pathlib import Path
 
-VERSION = 3
+VERSION = 4
 # Requests that only read (no change in the game) and talk; every other action counts as a game action. The
 # clock line's "+Ns since your last request" is no measure of busy time: an agent's tools send requests too.
 READS = {"observe", "inspect", "sleep", "chat", "inventory", "inv", "tells", "board", "recipes", "placements",
@@ -35,7 +36,8 @@ READS = {"observe", "inspect", "sleep", "chat", "inventory", "inv", "tells", "bo
 TALK = {"say", "tell", "confess", "board_plan", "board_update", "board_post", "board_claim", "operator",
         "harness_request", "plan_save", "profile", "vote"}
 DEATH = re.compile(r"^\[director\] (\d\d:\d\d:\d\d) .*<- (?:attack|death): (.+?) died\b")
-VOICE = re.compile(r"^\d\d:\d\d:\d\d \[voice:([^/\]]+)/([^\]]+)\] \((\w+)\)")
+VOICE = re.compile(r"^(\d\d:\d\d:\d\d) \[voice:([^/\]]+)/([^\]]+)\] \((\w+)\) ?(.*)$")
+TEXT_MAX = 600  # characters of a spoken line or confession kept for the site's chat page
 MENTION = re.compile(r"^\s*@([\w.-]+)")
 LEG_MAX = 400  # tiles: a longer hop between move targets is a respawn, a trip to another surface or a teleport
 
@@ -60,7 +62,7 @@ def blank():
     return {"requests": 0, "actions": 0, "talk": 0, "reads": 0, "failed": 0, "built": 0, "mined": 0, "walked": 0.0,
             "moves": 0, "research": 0, "research_done": 0, "rockets": 0, "say": 0, "aloud_marked": 0, "tells": 0,
             "confessions": 0, "viewer_answers": 0, "deaths": 0, "voiced": 0, "operator": 0, "active_min": 0,
-            "minutes": 0, "first": None, "last": None}
+            "minutes": 0, "first": None, "last": None, "confession_lines": [], "spoken_lines": []}
 
 
 def built_count(action, res):
@@ -147,6 +149,7 @@ def read_journal(path, names):
                 s["tells"] += 1
             elif a == "confess":
                 s["confessions"] += 1
+                s["confession_lines"].append([resp.get("tick"), str(args.get("text") or "")[:TEXT_MAX]])
             # jobs a queue ran: their results come back in queue replies' history (each job once)
             for h in res.get("history") or []:
                 if not isinstance(h, dict) or h.get("id") in jobs or not h.get("ok"):
@@ -251,18 +254,32 @@ def deaths(run_dir, keys, clock):
     return out
 
 
-def voices(run_dir, keys):
-    """({key: lines spoken on stream}, {key: voice id}) from caster.log."""
+def wall(day, hms, prev):
+    """A log's HH:MM:SS on the shift's day, a day later once the times wrap past midnight: (datetime, day)."""
+    h, mi, sec = map(int, hms.split(":"))
+    t = datetime.datetime.combine(day, datetime.time(h, mi, sec))
+    if prev and t < prev - datetime.timedelta(hours=12):
+        day += datetime.timedelta(days=1)
+        t += datetime.timedelta(days=1)
+    return t, day
+
+
+def voices(run_dir, keys, clock=()):
+    """({key: [[game tick, why, text] of each line spoken on stream]}, {key: voice id}) from caster.log."""
     n, v = {}, {}
     p = run_dir / "caster.log"
     if p.exists():
+        day, prev = (clock[0][0].date() if clock else datetime.date.today()), None
         for line in p.read_text(errors="replace").splitlines():
             m = VOICE.match(line)
-            if m:
-                k = key_of(m.group(1), keys)
-                if k:
-                    n[k] = n.get(k, 0) + 1
-                    v[k] = m.group(2)
+            if not m:
+                continue
+            t, day = wall(day, m.group(1), prev)
+            prev = t
+            k = key_of(m.group(2), keys)
+            if k:
+                n.setdefault(k, []).append([tick_at(clock, t) if clock else None, m.group(4), m.group(5)[:TEXT_MAX]])
+                v[k] = m.group(3)
     return n, v
 
 
@@ -301,7 +318,7 @@ def compute(run_dir, display_names=()):
     names = set(keys) | {n.lower() for n in display_names} | {"operator", "all", "team", "everyone"}
     clock = score_clock(run_dir)
     died = deaths(run_dir, keys, clock)
-    spoken, voice = voices(run_dir, keys)
+    spoken, voice = voices(run_dir, keys, clock)
     ops = operator_requests(run_dir, keys)
     agents, queued = {}, {}
     for k in keys:
@@ -319,7 +336,8 @@ def compute(run_dir, display_names=()):
     for k, s in agents.items():
         s["deaths"] = len(died.get(k, []))
         s["death_ticks"] = died.get(k, [])
-        s["voiced"] = spoken.get(k, 0)
+        s["spoken_lines"] = spoken.get(k, [])
+        s["voiced"] = len(s["spoken_lines"])
         s["voice"] = voice.get(k)
         s["operator_seqs"] = ops.get(k, [])
         s["operator"] = len(s["operator_seqs"])  # this file's; across shifts see site/agents.py
