@@ -23,6 +23,28 @@
     return v;
   }
 
+  // milestones: show one kind (the buttons are hidden until this script runs, so without it every row shows)
+  document.querySelectorAll('.kind-filter').forEach(function (bar) {
+    var table = bar.nextElementSibling && bar.nextElementSibling.querySelector('table');
+    if (!table) return;
+    bar.hidden = false;
+    bar.addEventListener('click', function (ev) {
+      var b = ev.target.closest('button[data-kind]');
+      if (!b) return;
+      bar.querySelectorAll('button').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      table.querySelectorAll('tbody tr').forEach(function (tr) { tr.hidden = !!b.dataset.kind && tr.dataset.kind !== b.dataset.kind; });
+    });
+  });
+
+  // "A shift is on now": the run pages are built at shift changes, so whether a shift is live comes from the live API
+  document.querySelectorAll('.live-banner[data-api]').forEach(function (el) {
+    var api = el.dataset.api.replace(/\/$/, '');
+    if (!api || !window.fetch) return;
+    fetch(api + '/v1/state', { cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (d && d.state && d.age_s != null && d.age_s < 60 && !d.state.paused) el.hidden = false;
+    }).catch(function () {});
+  });
+
   // a page's charts can share one list of [game minute, Pacific time] (#chart-clock) for the hover's real time
   var pageClock = null;
   try { var pc = document.getElementById('chart-clock'); if (pc) pageClock = JSON.parse(pc.textContent); } catch (e) {}
