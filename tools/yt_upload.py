@@ -307,6 +307,20 @@ def playlist_id(api, title):
     return r.get("id", "PLAYLIST_ID")
 
 
+def timeline(segments):
+    """video.json's recording segments as [[wall start, wall end]] (ISO, in video order): the site maps a moment of
+    the shift to seconds into the video with them (tools/shift_video.py offset())."""
+    out = []
+    for s in segments:
+        try:
+            t0 = datetime.datetime.fromisoformat(s["file_start"])
+            out.append([(t0 + datetime.timedelta(seconds=s["in"])).isoformat(timespec="seconds"),
+                        (t0 + datetime.timedelta(seconds=s["out"])).isoformat(timespec="seconds")])
+        except (KeyError, TypeError, ValueError):
+            return []
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("run", help="a shift folder name, or `auth`")
@@ -374,7 +388,9 @@ def main():
     site = json.loads(Path(a.videos_json).read_text()) if Path(a.videos_json).exists() else {}
     site[a.run] = {"id": vid, "shift": v["shift"], "title": v["title"], "description": v["description"],
                    "chapters": v["chapters"], "playlist": state.get("playlist_id"),
-                   "uploaded": datetime.date.today().isoformat()}
+                   "uploaded": datetime.date.today().isoformat(),
+                   # the wall-clock span of each recording in the joined video, so the site can link any moment
+                   "timeline": timeline(v.get("segments") or [])}
     Path(a.videos_json).write_text(json.dumps(site, indent=1, ensure_ascii=False) + "\n")
     print(f"https://www.youtube.com/watch?v={vid} ({a.privacy}); playlist {state.get('playlist_id')}; "
           f"{a.videos_json} updated: commit it and run tools/site-refresh.sh")
