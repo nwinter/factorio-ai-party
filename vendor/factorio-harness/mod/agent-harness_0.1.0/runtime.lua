@@ -745,10 +745,13 @@ local function recent_alerts(a)
   local attacks=threat.alerts(since)
   local kills={}
   for _,k in ipairs(state().kills or {}) do if k.tick>since then kills[k.name]=(kills[k.name] or 0)+1 end end
-  if #latest==0 and not attacks and not next(kills) then return nil end
+  local okp,platform_hits=pcall(M.platalerts.rows,since)
+  platform_hits=okp and platform_hits or nil
+  if #latest==0 and not attacks and not next(kills) and not platform_hits then return nil end
   local result=attacks or {}
   if #latest>0 then result.losses=counts; result.latest=latest end
   result.kills=next(kills) and kills or nil
+  result.platform_hits=platform_hits
   return result
 end
 -- Hand-crafting queue as the crafting panel shows it, with the time left at
@@ -3884,7 +3887,8 @@ M.board=require('board'){state=state,director=function(index) return M.is_direct
   submit=function(p,a) return handlers.queue_submit(p,a) end,
   research_lines=function(p,h) return M.research.lines(p,h) end,
   attack_line=function(v,again) return threat.attack_line(v,again) end,news_lines=function(from,since) return threat.news_lines(from,since) end,
-  watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end}
+  watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
+  platform_lines=function(p,h) return M.platalerts.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
 M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end}
@@ -3912,6 +3916,10 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
   agents=function() return M.board.agents() end,
   human=function(index) return not M.bots.is_index(index) and not (state().controlled and state().controlled[index]) end}
+-- Platform health alerts in team.alerts (platalerts.lua): hits, turret ammo,
+-- repair packs, hub health, to the platform's creator, workers and riders.
+M.platalerts=require('platalerts'){state=state,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
+  lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
 -- and attached agents are not humans.
 M.players=require('players'){state=state,
@@ -4086,6 +4094,8 @@ function M.dispatch(request)
     local before=p and p.valid and (state().clocks or {})[p.index]
     local last_call=before and not before.peeked and before.call_tick or nil
     if p and p.valid then result.clock=clock_line(p,peek) end
+    -- Who works on which platform, for its alerts (platalerts.lua).
+    if p and p.valid and not peek and type(request.args)=='table' then pcall(M.platalerts.note,p,request.action,request.args,result) end
     -- An fh sleep poll keeps a sleeping agent active for votes (votes.lua).
     if p and p.valid and peek and (request.action=='sleep_check' or (request.action=='observe' and request.args.scope=='sleep_check')) then
       local c=(state().clocks or {})[p.index]; if c then c.wait_tick=game.tick end
@@ -4228,7 +4238,9 @@ rates=rates_module{position=position,status_name=function(e) return entity_statu
 space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,
   bot=function(p) return M.bots.is(p) and M.bots.named(rawget(p,'__bot')) or nil end,
   -- Riding or landing takes the character away: controls stop and a plan pauses.
-  stop=function(p) M.stop_player(p.index) end}
+  stop=function(p) M.stop_player(p.index) end,
+  -- A platform's defence: hub health, turrets and their ammo against the hub's, repair packs (platalerts.lua).
+  defense=function(pl) return M.platalerts.defense(pl) end}
 stock=stock_module{distance=distance,integer=integer,position=position,claims=M.claims,
   -- One stop of a rearm/refuel tour: top the entity up; stop when none is left.
   visit=function(p,action,e)
@@ -4567,7 +4579,10 @@ function M.on_event(event)
   elseif event.name==defines.events.on_unit_group_finished_gathering then
     threat.on_group(event)
   elseif event.name==defines.events.on_entity_damaged then
-    threat.on_damaged(event)
+    -- A platform's hits go to its alerts (platalerts.lua), counted on a fault.
+    local ok,platform=pcall(M.platalerts.on_damaged,event)
+    if not ok then local s=state(); s.platform_alert_errors={count=((s.platform_alert_errors or {}).count or 0)+1,last=tostring(platform),tick=game.tick} end
+    if not (ok and platform) then threat.on_damaged(event) end
   elseif event.name==defines.events.on_entity_died then
     local cause=event.cause
     if cause and cause.valid and cause.type=='character' then
