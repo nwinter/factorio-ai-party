@@ -140,6 +140,10 @@ return function(api)
     end
     keep(try(function() return rendering.draw_circle{color=col, radius=0.4, width=1.5, filled=false, target={x=goal.x, y=goal.y},
       surface=c.surface, players=cams, time_to_live=SLOW + 4} end))
+    -- Said at the goal, so the route reads apart from a highlight's line to what the agent acts on.
+    keep(try(function() return rendering.draw_text{text='walking here', target={x=goal.x, y=goal.y - 0.6}, surface=c.surface,
+      players=cams, color=colour(index, 0.6), scale=0.9, alignment='center', vertical_alignment='bottom', time_to_live=SLOW + 4,
+      use_rich_text=false} end))
   end
 
   function M.tick(tick)

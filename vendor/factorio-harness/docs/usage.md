@@ -174,8 +174,11 @@ fh call confessions --since 3                  # your own confessions
 - `highlights` (operator only, the same `operator: true` dispatch; the stream service sends it) draws what agents
   act on for the director camera clients only: `{"items":[{"position":{"x":30,"y":0},"extent":6,"surface":"nauvis",
   "agent":"sol","label":"Sol · placing ghosts"}],"ttl":360}`. Each item gets a ring in the agent's profile colour (or
-  `color {r,g,b}`) sized to `extent`, its label above it, and a dashed line from the agent's character when the spot is
-  8 or more tiles away on the same surface. Only connected camera players see them (with none connected nothing is
+  `color {r,g,b}`) sized to `extent`, its label above it, and a line from the agent's character when the spot is
+  8 or more tiles away on the same surface, with the label again on the line 4 tiles from the character and the
+  distance (`Sol · inspecting gun turret · 40 m`). `{entity}` in a label becomes what stands at the spot (or nothing).
+  `kind: "looking"` draws a thin ring and dotted line, anything else a bold ring and dashed line; `alpha` (0..1) fades
+  the colour and an item's own `ttl` ends it sooner (the stream fades each over 10 s and ends it there). Only connected camera players see them (with none connected nothing is
   drawn); each call replaces the last set, `{"clear":true}` removes it, and every object expires after `ttl` ticks
   (30..1800, default 360). At most 12 items; an unknown surface is skipped (`skipped`). Agents cannot call or see it.
   `bubbles: [{agent, text, ttl?}]` (up to 12, text cut to 120 characters) puts a speech bubble over an agent's
