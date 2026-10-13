@@ -19,9 +19,10 @@ from build import clean, CONFIG  # noqa: E402  (same redaction rules as the stat
 
 AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profile_set", "model", "harness", "role",
               "alive", "activity", "action", "active", "position", "location", "last_said", "camera", "avatar",
-              "combat", "died_at", "job")
+              "combat", "died_at", "job", "attention")
 TOP_KEYS = ("now", "tick", "paused", "game_time", "title", "subtitle", "research", "production", "science", "alerts",
             "board", "basemap", "shift")
+ATTENTION_KEYS = ("kind", "text", "surface", "platform", "age_s", "dist", "far")
 CHAT_KEYS = ("seq", "tick", "from", "agent", "text", "t")
 
 
@@ -64,6 +65,12 @@ def public_fights(fights, now):
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
     out["agents"] = [{k: a[k] for k in AGENT_KEYS if k in a} for a in s.get("agents", [])]
+    for a in out["agents"]:  # the map's line from the character to where it last looked or worked
+        t = a.get("attention")
+        if t:
+            p = t.get("position") or {}
+            a["attention"] = dict({k: t[k] for k in ATTENTION_KEYS if t.get(k) is not None},
+                                  **({"position": {"x": round(p["x"], 1), "y": round(p["y"], 1)}} if "x" in p else {}))
     out["chat"] = [{k: c[k] for k in CHAT_KEYS if k in c} for c in s.get("chat", [])[-40:]]
     out["cameras"] = {slot: dict({"agents": c.get("agents", []), "pair": c.get("pair", False), "since": c.get("since")},
                                  **{k: c[k] for k in CAMERA_LABELS if c.get(k)})

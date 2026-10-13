@@ -502,6 +502,12 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 .minimap .dot > circle:not(.cam) { stroke: #000; stroke-width: 1.5; }
 .minimap .dot .cam { fill: none; stroke: var(--fx-orange); stroke-width: 2; }
 .minimap .dot.dead { opacity: .5; }
+/* where an agent last looked or worked (live.js attention): a line from its dot, the agent's colour */
+.minimap .attn { opacity: .55; }
+.minimap .attn line { stroke-width: 1.5; stroke-dasharray: 3 3; }
+.minimap .attn circle { fill: none; stroke-width: 1.8; }
+.minimap .attn.far { opacity: .9; }
+.minimap .attn.far line { stroke-dasharray: none; }
 .minimap .pin path { fill: var(--fx-red); stroke: #000; stroke-width: 1; }
 .minimap .pin text { fill: #fff; font-size: 10px; font-weight: 700; }
 /* base layer: one colour per building category (live.js BASE_CATS), close to the game's own map tones */
