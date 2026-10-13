@@ -3981,12 +3981,13 @@ function M.dispatch(request)
     assert(request.player==nil,'a request may name a player or a bot, not both')
     request.player=M.bots.index_of(request.bot)
   end
-  -- A failed read or passive request, from the player lookup on, stops nothing
-  -- (shift04: a failed placements read paused Sol's queue mid wait_until;
-  -- control.lua's own list of reads lacks placements and the newer reads).
+  -- A failed request of an action that does not drive the character, from the
+  -- argument check on, stops nothing (shift04: a failed placements read and a
+  -- board_update with an unknown argument each paused Sol's queue; control.lua's
+  -- own list of reads lacks those).
   passive_failed=false
   local result
-  if reads[request.action] or passive[request.action] then
+  if M.keeps(request.action) then
     local ok,r=pcall(dispatch_request,request)
     if not ok then M.seated_ok=nil; passive_failed=game.tick; error(r,0) end
     result=r
@@ -4024,6 +4025,13 @@ function M.dispatch(request)
     if M.chat and p and p.valid and request.action~='chat' then result.chat=M.chat.unread(p.index,peek and 'peek' or request.action=='status' and 'always' or nil) end
   end
   return result
+end
+-- Actions that never drive the character (reads, talk, the board, crafting,
+-- research, sleep, queue calls, votes; an unknown name): a direct call leaves
+-- the running action and queue alone, and so does its failure.
+function M.keeps(action)
+  return type(action)~='string' or not handlers[action] or reads[action] or passive[action] or action:match('^queue_')~=nil
+    or M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil
 end
 dispatch_request=function(request)
   local handler=handlers[request.action]; assert(handler,'unsupported action; call describe')

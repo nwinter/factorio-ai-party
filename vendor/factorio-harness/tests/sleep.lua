@@ -209,6 +209,35 @@ fails(function() sol('observe',{scope='scan',bogus=true}) end,'unknown argument 
 fails(function() sol('inspect',{position={x=700,y=700}}) end,'')
 advance(1); eq(check(sol).woke,nil); wake(sol)
 running()
+-- Failed requests of other actions that do not drive the character: the board
+-- (shift04: board_update with an unknown field stopped Sol's move_to), talk,
+-- crafting, research, sleep, votes, an unknown action.
+local posted=sol('board_post',{kind='request',title='carbon for the furnaces'})
+local item=posted.item or posted
+assert(type(item.id)=='number',tostring(item.id))
+local function failing(action,args)
+  local ok=pcall(sol,action,args)
+  eq(ok,false,action..' should fail')
+end
+failing('board_update',{id=item.id,needs={'carbon'}})
+failing('board_update',{id=99999,status='done'})
+failing('board_post',{})
+failing('say',{})
+failing('tell',{to='nobody-here',text='hi'})
+failing('chat',{bogus=true})
+failing('craft',{recipe='no-such-recipe',count=1})
+failing('cancel_craft',{bogus=true})
+failing('research',{technology='no-such-tech'})
+failing('sleep',{seconds=0})
+failing('vote',{bogus=true})
+failing('teleport',{position={x=0,y=0}})
+advance(1); running()
+-- Nor does a direct action outside a queue stop on them.
+astra('walk',{direction='east',ticks=600}); advance(1)
+local ok=pcall(astra,'board_update',{id=item.id,needs={'carbon'}}); eq(ok,false)
+ok=pcall(astra,'say',{}); eq(ok,false)
+advance(1); eq(astra('status',{brief=true,peek=true}).active.kind,'walk')
+astra('stop')
 -- A failed action still stops the character and pauses the queue, as before.
 fails(function() sol('move_to',{}) end,'')
 local q=sol('queue_status'); eq(q.paused,true)
