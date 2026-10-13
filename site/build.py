@@ -912,7 +912,7 @@ def long_charts(lr, lo=None, hi=None, x0=0):
 def shift_stats(s):
     return "".join([
         stat("on stream", f'{_hours(s["started"], s["ended"]):.1f} h', _when(s["started"], s["ended"])),
-        stat("game time", f'{s["game0"]} to {s["game1"]}'),
+        stat("game time played", longrun.game_time(s["tick1"] - s["tick0"]), f'{s["game0"]} to {s["game1"]}'),
         stat("technologies", s["research"], f'+{s["research_new"]}'),
         stat("rockets", s["rockets"], f'+{s["rockets_new"]}'),
         stat("science / min", "–" if s["spm"] is None else fmt_num(s["spm"]), "shift average"),
