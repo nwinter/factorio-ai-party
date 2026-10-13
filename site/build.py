@@ -431,17 +431,22 @@ def line_chart(title, series, y_label, x_label="game time (minutes)", step=False
             f'<li><span class="swatch" style="background:var({s.get("var") or PALETTE[i % 8]})"></span>{esc(s["name"])}</li>'
             for i, s in enumerate(series)) + "</ul>"
     data = {"L": L, "pw": pw, "xmax": xmax, "x0": x0, "W": W, "T": T, "ph": ph, "ymax": ymax, "step": step, "y": y_label,
-            "clock": [[round(x, 2), c] for x, c in clock],
             "series": [{"name": s["name"], "var": s.get("var") or PALETTE[i % 8], "pts": [[round(x, 2), y] for x, y in s["points"]]}
                        for i, s in enumerate(series)]}
-    # table view
-    rows = []
-    for s in series:
-        for x, y in s["points"]:
-            rows.append(f"<tr><td>{esc(s['name'])}</td><td>{x:.1f}</td><td>{fmt_num(y)}</td></tr>")
+    if clock == "page":
+        data["clock"] = "page"  # the page's one #chart-clock list (long_charts), shared by its charts
+    elif clock:
+        data["clock"] = [[round(x, 2), c] for x, c in clock]
+    # table view: a row per x, a column per series
+    xs_all = sorted({x for s in series for x, _ in s["points"]})
+    vals = [dict(s["points"]) for s in series]
+    fx = (lambda x: longrun.game_time(x * 3600)) if hours else (lambda x: f"{x:.1f}")
+    rows = "".join(f"<tr><td>{fx(x)}</td>" + "".join(f"<td>{fmt_num(v[x]) if x in v else ''}</td>" for v in vals) + "</tr>"
+                   for x in xs_all)
+    heads = "".join(f"<th>{esc(s['name'])}</th>" for s in series) if len(series) > 1 else f"<th>{esc(y_label)}</th>"
     table = (f'<details class="table-view"><summary>Show data as a table</summary><div class="table-wrap"><table>'
-             f'<thead><tr><th>Series</th><th>Game minute</th><th>{esc(y_label)}</th></tr></thead>'
-             f'<tbody>{"".join(rows)}</tbody></table></div></details>')
+             f'<thead><tr><th>{"Game time" if hours else "Game minute"}</th>{heads}</tr></thead>'
+             f'<tbody>{rows}</tbody></table></div></details>')
     return (f'<figure class="chart" id="{cid}"><figcaption><strong>{esc(title)}</strong>'
             f'{f"<span>{esc(desc)}</span>" if desc else ""}</figcaption>{legend}'
             f'<div class="plot">{"".join(parts)}<div class="tip" hidden></div></div>'
@@ -838,10 +843,11 @@ def firsts_table(firsts, shift_links=True):
 
 
 def long_charts(lr, lo=None, hi=None, x0=0):
-    """Science per minute by pack, technologies and rockets on the save's game clock, shift starts marked."""
+    """Science per minute by pack, technologies and rockets on the save's game clock, shift starts marked; one list
+    of Pacific times for the page's hovers."""
     marks = [(x, f"S{n}") for x, n, _ in lr["bounds"]]
-    clock = [(x, _pt(t)) for x, t in lr["clock"]]
     inside = (lambda pts: [(x, y) for x, y in pts if (lo is None or x >= lo) and (hi is None or x <= hi)])
+    clock = "page"
     ps = pack_rate_series(lr["spm_packs"], lo, hi)
     opts = dict(x_label="game time (hours)", hours=True, marks=marks, clock=clock, x0=x0)
     charts = []
@@ -856,7 +862,9 @@ def long_charts(lr, lo=None, hi=None, x0=0):
                              "technologies", step=True, **opts))
     charts.append(line_chart("Rockets launched", [{"name": "Rockets", "points": inside(lr["rockets"])}], "rockets",
                              step=True, **opts))
-    return f'<div class="chart-grid">{"".join(charts)}</div>'
+    times = json.dumps([[x, _pt(t)] for x, t in inside(lr["clock"])]).replace("</", "<\\/")
+    return (f'<script type="application/json" id="chart-clock">{times}</script>'
+            f'<div class="chart-grid">{"".join(charts)}</div>')
 
 
 def shift_stats(s):
@@ -1162,9 +1170,15 @@ def build_home(runs, all_worlds):
                    f"{sf['techs']} technologies by {sf['game']}."),
                   ("/studies/", "Studies", "Write-ups of the runs: what went wrong, what changed.")]
     if LONG:
-        last = [s for s in LONG["shifts"] if not s.get("empty")][-1]
-        cards.insert(1, ("/runs/long/", "The long run", f"One world in shifts around the clock: {last['research']} "
-                         f"technologies and {last['rockets']} rockets by {last['game1']} of game time, shift by shift."))
+        done = [s for s in LONG["shifts"] if not s.get("empty")]
+        last = done[-1]
+        latest = LONG["firsts"][-1] if LONG["firsts"] else None
+        cards.insert(1, ("/runs/long/", "The long run",
+                         f"{len(done)} shifts · {last['game1']} game time · {last['research']} technologies · "
+                         f"{last['rockets']} rockets" + (f". Latest milestone: {latest['label']}, shift {latest['shift']}." if latest else ".")))
+        cards.insert(2, (shift_href(last), f"Shift {last['n']}" + (" · on now" if last.get("running") else ""),
+                         f"{_when(last['started'], last['ended'])} · +{last['research_new']} technologies · "
+                         f"+{last['rockets_new']} rockets · {last['viewer_lines']} viewer messages"))
     links = "".join(f'<a class="home-card" href="{href}"><h3>{esc(t)}</h3><p class="muted">{esc(d)}</p></a>'
                     for href, t, d in cards)
     body = live_app(CONFIG.get("site_title", "Player of Games"), "/?demo=1") + f"""
