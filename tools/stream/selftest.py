@@ -31,11 +31,13 @@ BOARD_EVENTS = [
 class FakeHarness:
     """Answers like the eng/bots runtime described in docs/BOTS-API.md."""
 
-    def __init__(self, board=False, reject_peek=False):
+    def __init__(self, board=False, reject_peek=False, reject_brief=False):
         self.calls = []
         self.tick = 600_000
         self.board = board
         self.reject_peek = reject_peek
+        # a runtime older than peek is older than brief too
+        self.reject_brief = reject_brief or reject_peek
 
     def probe(self):
         return {"harness": True, "camera": True, "cameras": True}
@@ -74,6 +76,8 @@ class FakeHarness:
         if action == "status":
             if (args or {}).get("peek") and self.reject_peek:
                 raise RuntimeError("status: unknown argument peek for status; valid: machines, since, threats")
+            if (args or {}).get("brief") and self.reject_brief:
+                raise RuntimeError("status: unknown argument brief for status; valid: machines, since, threats")
             self.status_args = args
             return {"position": {"x": 1, "y": 2}, "alive": bot != "luna", "active": {"kind": "mine"} if bot == "astra" else False,
                     "last": {"kind": "craft", "outcome": "done", "tick": 1}, "combat": bot == "astra" and {"until_tick": 5},
@@ -269,11 +273,17 @@ def main():
     assert sorted(sum(rounds, [])) == sorted(nine["agents"]) and all(len(r) == 3 for r in rounds), rounds
 
     # status reads peek (no team-hint consumption); a runtime that rejects the argument gets plain reads
-    assert fake.status_args == {"peek": True} and src.peek_ok is True
+    # status reads are brief with alerts (none of the factory and threat scans); older runtimes get the full status
+    assert fake.status_args == {"brief": True, "alerts": True, "peek": True} and src.peek_ok is True and src.brief_ok is True
     old = FakeHarness(reject_peek=True)
     osrc = LiveSource("test", run, harness=old)
     oobs = osrc.observe()
-    assert not oobs["errors"] and osrc.peek_ok is False and old.status_args == {}, oobs["errors"]
+    assert not oobs["errors"] and osrc.peek_ok is False and osrc.brief_ok is False and old.status_args == {}, oobs["errors"]
+    nobrief = FakeHarness(reject_brief=True)
+    nsrc = LiveSource("test", run, harness=nobrief)
+    nobs = nsrc.observe()
+    assert not nobs["errors"] and nsrc.peek_ok is True and nsrc.brief_ok is False and nobrief.status_args == {"peek": True}, nobs["errors"]
+    assert any(a["name"] == "astra" and a.get("plan", {}).get("kind") == "mine" for a in nobs["agents"]), nobs["agents"]
 
     # board: never polled unless `describe` lists it; then events + items reach the snapshot
     assert not src.has_board and not any(c[0].startswith("board") for c in fake.calls)

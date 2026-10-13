@@ -156,6 +156,17 @@ runtime.on_event{name=11,tick=tick,entity={valid=true,name='stone-furnace',posit
 runtime.on_event{name=11,tick=tick,entity={valid=true,name='small-biter',position={x=1,y=2},force={name='enemy'}}}
 local alerts=call('status').alerts
 eq(alerts.losses['stone-furnace'],1); eq(alerts.losses['small-biter'],nil)
+-- The stream's read: brief with the same alerts and where the body is, and no surface scan at all.
+do
+  local scans,find=0,p.surface.find_entities_filtered
+  p.surface.find_entities_filtered=function(f) scans=scans+1; return find(f) end
+  local b=call('status',{brief=true,alerts=true,peek=true})
+  eq(b.alerts.losses['stone-furnace'],1); eq(b.alerts.latest[1],alerts.latest[1]); eq(b.surface,'nauvis'); eq(b.connected,true)
+  eq(b.factory,nil); eq(b.enemies,nil); eq(scans,0)
+  eq(call('status',{brief=true,peek=true}).alerts,nil)
+  fails(function() call('status',{alerts=true}) end,'alerts is an option of brief')
+  p.surface.find_entities_filtered=find
+end
 -- A wipe larger than any entry cap is counted whole, per area, and pushed once
 -- on the next reply of any kind.
 for i=1,80 do runtime.on_event{name=11,tick=tick,cause={valid=true,name='small-biter'},entity={valid=true,name=i<=16 and 'electric-mining-drill' or 'transport-belt',position={x=200+i%10,y=-90},force={name='player'}}} end

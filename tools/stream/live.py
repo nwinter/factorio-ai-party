@@ -57,6 +57,7 @@ class LiveSource:
         self.next_probe = 0
         self.use_profiles = profiles == "on"
         self.peek_ok = None
+        self.brief_ok = None
         self.has_board = False
         self.next_board_probe = 0
         self.board_seq = 0
@@ -125,9 +126,19 @@ class LiveSource:
         return self.h.dispatch(action, args, **who)
 
     def agent_status(self, name, cfg):
-        if cfg.get("player"):
-            return self.read("status", player=cfg["player"])[0]
-        return self.read("status", bot=name)[0]
+        """status {brief, alerts}: what the overlay reads, none of the factory and threat scans a full status runs
+        (eng/statusbrief). A runtime without them gets the full status from then on."""
+        who = {"player": cfg["player"]} if cfg.get("player") else {"bot": name}
+        if self.brief_ok is not False:
+            try:
+                res = self.read("status", {"brief": True, "alerts": True}, **who)[0]
+                self.brief_ok = True
+                return res
+            except RuntimeError as e:
+                if not re.search(r"argument (brief|alerts)\b|alerts is an option", str(e)):
+                    raise
+                self.brief_ok = False
+        return self.read("status", **who)[0]
 
     def status_round(self, names, errors):
         """Names whose status to refresh this round: all of them without profiles, a share of them with."""
