@@ -33,9 +33,10 @@ sys.dont_write_bytecode = True
 SOURCES = {"main": "stream cam1", "cam2": "stream cam2", "cam3": "stream cam3"}  # tools/obs.py stream_scene
 EVERY_TICKS = 36000      # at most one frame per area every 10 game minutes
 SETTLE_S = 3.0           # after the map goes on air, before the screenshot (the client redraws the chart)
-MIN_SCORE = 0.3          # registration F1 below this: the frame is not placed (13:07's frame: 0.39; the grid's
-                         # 8-tile cells are filled where the map draws thin belts and pipes)
-MIN_PEAK = 8.0           # and the correlation peak this many standard deviations above the mean
+MIN_SCORE = 0.2          # registration F1 below this: the frame is not placed. F1 runs low for a right match (the
+                         # grid's 8-tile cells are filled where the map draws thin belts and pipes): 13:07 0.39,
+                         # 16:29 0.37, 16:42 0.30 (skipped at 0.3 with its peak 37 sd); the peak is the main guard
+MIN_PEAK = 8.0           # the correlation peak this many standard deviations above the mean
 MAX_W = 2048             # stored width at most (px)
 AREA_TILES = 256
 UNCHARTED = (47, 47, 47)  # the map view's uncharted chunks (sampled: 46..49 grey)
