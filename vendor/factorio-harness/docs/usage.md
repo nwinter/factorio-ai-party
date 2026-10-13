@@ -287,10 +287,13 @@ fh sleep 900 --until researched                       # ...or until the research
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
   on the footprint, such as a paste replacing it, with their filters). A ghost on a building yields to the building
   unless you name it (`name: "entity-ghost"`).
-- An asteroid collector: `inspect` shows `filters` (asteroid chunk names), `filter_slots`, `arm` (chunks its arms
-  hold) and its output in `inventories.asteroid_collector_output`. `configure {position, filters}` sets the chunk
-  filters as its GUI does: names from `prototypes.asteroid_chunk` (`metallic-asteroid-chunk`,
-  `carbonic-asteroid-chunk`, `oxide-asteroid-chunk`), up to `filter_slots`; `[]` clears them. The game has no
+- An asteroid collector: `inspect` shows `filters` (asteroid chunk names), `filter_slots` (the game's count, which
+  reads 0 until a filter is set), `arm` (chunks its arms hold) and its output in
+  `inventories.asteroid_collector_output`. `configure {position, filters}` sets the chunk filters as its GUI does,
+  in slots 1 onward, on a new collector too: names from `prototypes.asteroid_chunk` (`metallic-asteroid-chunk`,
+  `carbonic-asteroid-chunk`, `oxide-asteroid-chunk`); `[]` clears them. A slot the game refuses fails the call with
+  what the game said, and the slots set before it are put back. The reply reads the filters back (`not_set` lists a
+  name that did not stick). The game has no
   whitelist/blacklist mode for collectors, so `filter_mode` is refused there. With `platform` it works through remote
   view like the other configure paths.
 - `inspect {platform, position}` and `configure {platform, position, ...}` act on your own space platform by name
