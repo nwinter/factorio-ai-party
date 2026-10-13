@@ -1,0 +1,158 @@
+-- Run from repository root: lua tests/platform_inspect.lua
+-- inspect and configure on a space platform by name (platform=), through the
+-- runtime against a fake engine: a paste of a whitelist inserter waits on a
+-- full hub (request #2: Starling's collector arm).
+local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
+local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring(err):find(text,1,true),tostring(err)) end
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
+storage={agent_harness={active={}}}
+defines={events={on_script_path_request_finished=10,on_entity_died=11},shooting={not_shooting=0,shooting_enemies=1},
+  controllers={character=1,remote=27,spectator=2},direction={north=0,east=4,south=8,west=12},
+  inventory={chest=1,hub_main=21,asteroid_collector_output=22},build_mode={normal=1},
+  build_check_type={manual=1,manual_ghost=2},flow_precision_index={five_seconds=0,one_minute=1},
+  entity_status={working=1,waiting_for_source_items=2,full_output=3,marked_for_deconstruction=62},
+  space_platform_state={waiting_at_station=6,paused=7}}
+rendering={draw_text=function() return {valid=true,destroy=function() end} end,get_object_by_id=function() return nil end}
+remote={interfaces={}}
+helpers={json_to_table=function(t) return t end}
+prototypes={entity={},item={['oxide-asteroid-chunk']={name='oxide-asteroid-chunk'},inserter={name='inserter'}},recipe={}}
+local force={name='player',chart=function() end,is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,
+  get_spawn_position=function() return {x=0,y=0} end,recipes={}}
+local surface={name='nauvis',index=1}
+local function stack(name,count) return {name=name,count=count,valid_for_read=count>0,quality={name='normal'}} end
+local function inv(list,size)
+  local t={valid=true}
+  for i=1,size do t[i]=list[i] or stack(nil,0) end
+  t.get_contents=function() local o={}; for i=1,size do local s=t[i]; if s.valid_for_read then o[#o+1]={name=s.name,count=s.count,quality='normal'} end end; return o end
+  t.get_item_count=function(q) local n=type(q)=='table' and q.name or q; local c=0; for i=1,size do if t[i].valid_for_read and t[i].name==n then c=c+t[i].count end end; return c end
+  t.count_empty_stacks=function() local c=0; for i=1,size do if not t[i].valid_for_read then c=c+1 end end; return c end
+  t.is_empty=function() return t.count_empty_stacks()==size end
+  return t
+end
+-- The platform: hub at 0,0 (full), collector, the inserter between them
+-- marked for deconstruction, and the pasted whitelist inserter's ghost on it.
+local psurf={name='platform-1',index=2}
+local hub_inv=inv({stack('iron-plate',100),stack('carbon',50)},2)
+local hub={valid=true,name='space-platform-hub',type='space-platform-hub',position={x=0,y=0},force=force,surface=psurf,direction=0,
+  bounding_box={left_top={x=-2,y=-2},right_bottom={x=2,y=2}},get_inventory=function(i) if i==21 then return hub_inv end end,
+  get_fluid_contents=function() return {} end}
+local out_inv=inv({stack('metallic-asteroid-chunk',9),stack('carbonic-asteroid-chunk',8),stack('oxide-asteroid-chunk',3)},5)
+local collector={valid=true,name='asteroid-collector',type='asteroid-collector',position={x=-2.5,y=-6.5},force=force,surface=psurf,direction=0,
+  bounding_box={left_top={x=-4,y=-8},right_bottom={x=-1,y=-5.5}},get_inventory=function(i) if i==22 then return out_inv end end,
+  get_fluid_contents=function() return {} end}
+local filters={}
+local ins={valid=true,name='inserter',type='inserter',position={x=-2.5,y=-4.5},force=force,surface=psurf,direction=0,status=62,
+  bounding_box={left_top={x=-3,y=-5},right_bottom={x=-2,y=-4}},pickup_position={x=-2.5,y=-5.5},drop_position={x=-2.5,y=-3.5},
+  filter_slot_count=5,use_filters=false,inserter_filter_mode='whitelist',held_stack=stack(nil,0),pickup_target=collector,drop_target=hub,
+  get_filter=function(i) return filters[i] end,set_filter=function(i,f) filters[i]=f and {name=f} or nil end,
+  to_be_deconstructed=function() return true end,to_be_upgraded=function() return false end,
+  get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+local ghost={valid=true,name='entity-ghost',type='entity-ghost',ghost_name='inserter',ghost_type='inserter',position={x=-2.5,y=-4.5},force=force,surface=psurf,direction=0,
+  bounding_box=ins.bounding_box,filter_slot_count=5,inserter_filter_mode='whitelist',use_filters=true,
+  get_filter=function(i) if i==1 then return {name='oxide-asteroid-chunk',quality='normal'} end end,
+  ghost_prototype={items_to_place_this={{name='inserter',count=1}}},get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+local on_platform={hub,collector,ins,ghost}
+local function inside(e,pos) local b=e.bounding_box; return pos.x>=b.left_top.x and pos.x<=b.right_bottom.x and pos.y>=b.left_top.y and pos.y<=b.right_bottom.y end
+local function types(f,e)
+  if f.type==nil then return true end
+  if type(f.type)=='string' then return e.type==f.type end
+  for _,t in ipairs(f.type) do if e.type==t then return true end end
+  return false
+end
+psurf.find_entities_filtered=function(f)
+  local out={}
+  for _,e in ipairs(on_platform) do
+    local ok=types(f,e) and (f.name==nil or e.name==f.name) and (f.force==nil or e.force==f.force)
+    if ok and f.to_be_deconstructed then ok=e.to_be_deconstructed and e.to_be_deconstructed() end
+    if ok and f.position then
+      local d=((e.position.x-f.position.x)^2+(e.position.y-f.position.y)^2)^0.5
+      ok=f.radius and d<=f.radius or (not f.radius and inside(e,f.position))
+    end
+    if ok and f.area then local a=f.area; ok=e.position.x>=a.left_top.x and e.position.x<=a.right_bottom.x and e.position.y>=a.left_top.y and e.position.y<=a.right_bottom.y end
+    if ok then out[#out+1]=e end
+  end
+  return out
+end
+psurf.count_entities_filtered=function(f) return #psurf.find_entities_filtered(f) end
+local platform={valid=true,name='Starling',index=1,force=force,surface=psurf,hub=hub,state=6,space_location={name='nauvis'}}
+psurf.platform=platform
+hub.get_logistic_sections=function() return nil end
+force.platforms={platform}
+-- Nauvis, where the bot stands.
+local function character(pos)
+  local c={valid=true,name='character',type='character',force=force,surface=surface,position=pos,unit_number=100,
+    driving=false,build_distance=10,reach_distance=10,character_running_speed=0.15,walking_state={walking=false}}
+  local main=inv({},10)
+  c.get_main_inventory=function() return main end
+  c.get_item_count=function() return 0 end
+  c.insert=function(s) return s.count end
+  c.can_reach_entity=function(e) return e.surface==surface end
+  c.destroy=function() c.valid=false end
+  return c
+end
+surface.find_entities_filtered=function() return {} end
+surface.count_entities_filtered=function() return 0 end
+surface.find_non_colliding_position=function() return {x=3,y=0} end
+surface.create_entity=function(args) if args.name=='character' then return character(args.position) end end
+surface.get_total_pollution=function() return 0 end; surface.get_chunks=function() return function() end end; surface.get_pollution=function() return 0 end
+surface.request_path=function() return 1 end
+local nick={index=1,name='nick',valid=true,connected=true,controller_type=1,physical_controller_type=1,cheat_mode=false,driving=false,force=force,surface=surface,position={x=50,y=50},chat_color={r=1,g=1,b=1}}
+nick.character=character({x=50,y=50})
+nick.print=function() end
+local players={nick}
+game={tick=0,players=players,forces={player=force,enemy={name='enemy',get_evolution_factor=function() return 0 end,get_evolution_factor_by_time=function() return 0 end,
+  get_evolution_factor_by_pollution=function() return 0 end,get_evolution_factor_by_killing_spawners=function() return 0 end}},
+  get_player=function(i) if type(i)=='string' then for _,p in ipairs(players) do if p.name==i then return p end end return nil end return players[i] end,
+  get_surface=function() return surface end,print=function() end,connected_players=players,
+  get_pollution_statistics=function() return {input_counts={},output_counts={},get_flow_count=function() return 0 end} end}
+local runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
+local function bot(action,args) return runtime.dispatch{action=action,args=args,bot='astra'} end
+runtime.operator.bot_create('astra')
+
+-- The inserter: status by name, its (empty) filters and mode, what it holds,
+-- where it picks up and drops, the deconstruction mark, the ghost replacing
+-- it with its whitelist, and why the hub is not getting on with it.
+local r=bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}})
+eq(r.name,'inserter'); eq(r.status_name,'marked_for_deconstruction')
+eq(#r.filters,0); eq(r.use_filters,false); eq(r.filter_mode,'whitelist'); eq(r.held,'nothing')
+eq(r.pickup_target,'asteroid-collector (-2.5,-6.5)'); eq(r.drop_target,'space-platform-hub (0,0)')
+eq(r.marked_for_deconstruction,true); eq(r.marked_for_upgrade,nil)
+eq(#r.ghosts_here,1); eq(r.ghosts_here[1].name,'inserter'); eq(r.ghosts_here[1].filters[1],'oxide-asteroid-chunk'); eq(r.ghosts_here[1].filter_mode,'whitelist')
+eq(r.construction_blocked[1],'hub full: 0 of 2 slots free; 1 marked for deconstruction wait for room (removed entities and their contents go to the hub)')
+eq(r.construction_blocked[2],'ghosts wait for items the hub lacks: inserter (ghosts need 1, hub has 0)')
+-- Off the platform the same position is on Nauvis: nothing there.
+fails(function() bot('inspect',{position={x=-2.5,y=-4.5}}) end,'entity not found at (-2.5,-4.5): nothing within 3 tiles')
+fails(function() bot('inspect',{platform='Kestrel',position={x=-2.5,y=-4.5}}) end,'no platform named Kestrel; platforms: Starling')
+-- The ghost by name; the collector's output; the hub's slots.
+eq(bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5},name='entity-ghost'}).ghost_name,'inserter')
+local c=bot('inspect',{platform='Starling',position={x=-2.5,y=-6.5}})
+eq(c.inventories.asteroid_collector_output[3].name,'oxide-asteroid-chunk'); eq(c.inventories.asteroid_collector_output[3].count,3)
+eq(c.construction_blocked,nil)
+local h=bot('inspect',{platform='Starling',position={x=0,y=0}})
+eq(h.hub_slots,'0 of 2 free'); eq(#h.construction_blocked,2)
+-- Anywhere on the platform is in sight, beyond the 32 tiles of a character.
+collector.position={x=-2.5,y=-60.5}; collector.bounding_box={left_top={x=-4,y=-62},right_bottom={x=-1,y=-59}}
+eq(bot('inspect',{platform='Starling',position={x=-2.5,y=-60.5}}).name,'asteroid-collector')
+collector.position={x=-2.5,y=-6.5}; collector.bounding_box={left_top={x=-4,y=-8},right_bottom={x=-1,y=-5.5}}
+-- A held stack.
+ins.held_stack=stack('oxide-asteroid-chunk',3)
+eq(bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}}).held,'3 oxide-asteroid-chunk')
+
+-- configure on the platform: inserter filters through remote view.
+local cf=bot('configure',{platform='Starling',position={x=-2.5,y=-4.5},filters={'oxide-asteroid-chunk'},filter_mode='whitelist'})
+eq(cf.filters[1],'oxide-asteroid-chunk'); eq(filters[1].name,'oxide-asteroid-chunk'); eq(ins.use_filters,true)
+eq(bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}}).filters[1],'oxide-asteroid-chunk')
+
+-- platforms: hub slots on every row; one platform by name says what holds up building.
+local all=bot('platforms',{})
+eq(all.platforms[1].hub_slots,'0 of 2 free'); eq(all.platforms[1].construction_blocked,nil)
+local one=bot('platforms',{platform='Starling'}).platforms[1]
+eq(#one.construction_blocked,2)
+-- Room in the hub and the item there: nothing blocks.
+hub_inv[2]=stack(nil,0); hub_inv[1]=stack('inserter',1)
+eq(bot('platforms',{platform='Starling'}).platforms[1].construction_blocked,nil)
+eq(bot('platforms',{}).platforms[1].hub_slots,'1 of 2 free')
+-- describe lists platform on both.
+local d=runtime.dispatch{action='describe',args={},bot='astra'}
+assert(d.actions.inspect.platform and d.actions.configure.platform)
+print('platform_inspect: ok')
