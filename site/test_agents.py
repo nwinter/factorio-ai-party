@@ -180,6 +180,22 @@ def main():
                      'id="hl-q"', 'value="confession" checked', "Confessions (1)", "Spoken on stream (2)", 'href="/chat/"'):
             assert want in chat, want
         assert "SECRET" not in chat and "example.com" not in chat and "Nick" not in chat
+        # search: the index has the agents, shifts, events and chat lines, each with a link that exists
+        tl = (out / "timeline" / "index.html").read_text()
+        idx = json.loads((out / "search" / "index.json").read_text())
+        kinds = {e["kind"] for e in idx}
+        assert kinds == {"agent", "shift", "event", "line"}, kinds
+        by = {(e["kind"], e["title"]): e for e in idx}
+        assert by[("agent", "Opus")]["url"] == "/agents/#opus" and "Anthropic" in by[("agent", "Opus")]["sub"]
+        assert by[("shift", "Shift 2")]["url"] == "/runs/long/shift-2/"
+        died = [e for e in idx if e["title"] == "Opus died"]
+        assert len(died) == 2 and all(e["url"].startswith("/timeline/#e") for e in died), died
+        assert all(f'id="{e["url"].split("#")[1]}"' in tl for e in idx if e["kind"] == "event")
+        line = next(e for e in idx if e["kind"] == "line" and e["text"].startswith("Turrets first"))
+        assert line["url"].startswith("/chat/#s1-") and f'id="{line["url"].split("#")[1]}"' in chat, line
+        assert "SECRET" not in json.dumps(idx) and "example.com" not in json.dumps(idx)
+        sp = (out / "search" / "index.html").read_text()
+        assert 'id="search-q"' in sp and "/search/index.json" in sp and 'href="/search/"' in sp
         assert chat.index('id="shift-2"') < chat.index('id="shift-1"') if 'id="shift-2"' in chat else True
         assert 'href="/agents/"' in (out / "index.html").read_text() and 'href="/timeline/"' in page
         tl = (out / "timeline" / "index.html").read_text()

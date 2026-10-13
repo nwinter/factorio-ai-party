@@ -145,6 +145,7 @@ table.compare th[aria-sort=ascending] button::after { content: " ▴"; }
 .tl-filters { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: .6rem 0 1rem; font-size: .92rem; }
 .tl-filters label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
 table.timeline-table td { font-variant-numeric: tabular-nums; }
+table.timeline-table tr:target > * { background: var(--hl); }
 table.timeline-table td.kind { white-space: nowrap; color: var(--muted); }
 table.timeline-table tr[data-kind=rocket] td.kind, table.timeline-table tr[data-kind=platform] td.kind,
 table.timeline-table tr[data-kind=planet] td.kind { color: var(--accent); font-weight: 600; }
@@ -368,10 +369,11 @@ def build_timeline(events, agent, avatar, esc, game_time):
     filters = "".join(f'<label><input type="checkbox" value="{k}" checked> {esc(label)} ({counts[k]})</label>'
                       for k, label in KINDS)
     rows = []
-    for tick, n, kind, text, who in events:
+    for i, (tick, n, kind, text, who) in enumerate(events):
         chip = (f'<a class="chip" href="/agents/#{esc(who)}">{avatar(who, "sm")}{esc(agent(who)["name"])}</a> '
                 if who else "")
-        rows.append(f'<tr data-kind="{kind}"><td>{esc(game_time(tick))}</td><td>{n}</td>'
+        # id e<i>: the site search links an event (search.py uses the same order)
+        rows.append(f'<tr id="e{i}" data-kind="{kind}"><td>{esc(game_time(tick))}</td><td>{n}</td>'
                     f'<td class="kind">{esc(KIND_ONE[kind])}</td><td>{chip}{esc(text)}</td></tr>')
     body = (f'<h1>Timeline</h1><p class="lede">The long run\'s events in game time.</p>'
             f'<fieldset class="tl-filters"><legend class="small muted">Show</legend>{filters}</fieldset>'

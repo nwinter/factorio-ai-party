@@ -38,7 +38,11 @@ harness, the stream voice, its numbers across the shifts), records and a sortabl
 operator inbox. It caches each shift as `runs/RUN/agent-stats.json` (git-ignored; `build.py --stats-cache DIR` puts the
 caches elsewhere) and counts a shift again only when one of its sources changed: about a second per ended shift, a few
 for the live one. `python3 tools/agent_stats.py RUN --print` shows one shift's table. `/timeline/`: research,
-rockets, platforms, planets and deaths in game time, with filters.
+rockets, platforms, planets and deaths in game time, with filters. `/chat/` (`site/highlights.py`): the agents' lines
+spoken on stream and their confessions by shift, searchable (`?q=`, `?agent=`), through `clean()` and `keep_line()`.
+`/search/` (`site/search.py`): one search over agents, shifts, timeline events and chat lines, from
+`search/index.json` (written at build time, loaded when the page opens); results link `/timeline/#eN` and
+`/chat/#sN-I`.
 
 ### Archive switch and run start (`site/content/site.json`)
 

@@ -17,6 +17,7 @@ table.hl td.kind { white-space: nowrap; font-size: .82rem; color: var(--muted); 
 table.hl tr[data-kind=confession] td.kind { color: var(--accent); font-weight: 600; }
 table.hl td.text { overflow-wrap: anywhere; min-width: 16em; }
 .hl-shift[hidden] { display: none; }
+table.hl tr:target > * { background: var(--hl); }
 </style>"""
 
 SCRIPT = """<script>
@@ -86,10 +87,11 @@ def build_chat(shifts, agent, avatar, esc, game_time, order=()):
     sections = []
     for n, rows in reversed(shifts):  # the newest shift first
         trs = []
-        for tick, k, kind, why, text in rows:
+        for i, (tick, k, kind, why, text) in enumerate(rows):
             label = "Confession" if kind == "confession" else f"Spoken{' · ' + WHY[why] if why in WHY else ''}"
-            # a coloured name per row (an avatar on each of a thousand rows doubled the page)
-            trs.append(f'<tr data-kind="{kind}" data-agent="{esc(k)}"><td class="t">{esc(game_time(tick))}</td>'
+            # a coloured name per row (an avatar on each of a thousand rows doubled the page); id s<shift>-<i> for
+            # the site search's links
+            trs.append(f'<tr id="s{n}-{i}" data-kind="{kind}" data-agent="{esc(k)}"><td class="t">{esc(game_time(tick))}</td>'
                        f'<td class="who {esc(k)}">{esc(agent(k)["name"])}</td>'
                        f'<td class="kind">{esc(label)}</td><td class="text">{esc(text)}</td></tr>')
         sections.append(f'<section class="hl-shift" id="shift-{n}"><h2>Shift {n}<span class="h-sub">{len(rows)} lines</span></h2>'
