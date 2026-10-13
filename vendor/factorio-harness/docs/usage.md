@@ -264,6 +264,15 @@ fh sleep 900 --until researched                       # ...or until the research
   within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists
   up to 3 positions within 6 tiles where it fits facing the asked direction. `placements {name, position, radius,
   direction}` (read) returns the same list without building: `placements [{position, direction}]`, `checked`.
+- `fh call defense` (read; `limit` areas, default 12, max 30; cached 10 s for the whole force): `areas`, the force's
+  buildings grouped by touching 32-tile cells (an outpost or a pipeline is an area of its own), largest first, each
+  with a `line` (`area 1 around (27,3) (0,0)-(60,6): 74 buildings (...); 2 turrets in range (23 ammo, 1 low); 43
+  buildings covered (2 by one turret only), 31 not; largest uncovered part (30,3)-(60,3): 31 buildings (31
+  transport-belt)`), the turrets in range (`turret_list`, lowest ammo first), and `uncovered_parts`. A building is
+  covered when its centre is within range of a gun, laser or flamethrower turret. `areas_without_turrets` lists area
+  numbers; `nests`: charted spawner groups within 256 tiles of a building, nearest first (`nest (105,2) 2 spawners, 1
+  worm: 45 tiles E of transport-belt at (60,3) (area 1); pollution reaches it`); `artillery`; `more` sums areas past
+  the limit.
 - `collect` with `radius` skips stock inside another agent's active board claim and reports `skipped_claims` (`40 iron-plate in 2 places of #4 iron smelting (claim by sol); ask the owner`). `collect` on named positions still takes, and lists the claimed ones in `claimed`.
 - The `status` power warning appears only when some electric machine lacks power: `power: 3 of 78 machines low_power; 1 unconnected (fh call power lists them)` (`no_power` = connected to a network with no generation; `unconnected` = no pole reaches it).
 - `fh research` (`research` with no arguments; read): `current`, `progress`, `queue`, `pending`, and `entries`, one per
@@ -421,7 +430,15 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   (`(was yours)`), a claim posted over yours; after those, each new open unowned task or request once; and a nudge
   when another open unowned request passes 2 game minutes), `research` (each technology your force finished since your
   previous reply, once: `research done: NAME, unlocks: a, b, c (<age> ago)`; a first reply looks back 10 game
-  minutes; at most 4 lines and `+N more finished: research_done`), `alerts` (your character being hit, attacked areas with attacker and entities hit, enemy groups
+  minutes; at most 4 lines and `+N more finished: research_done`), `alerts` (your character being hit; attacks, one
+  line per incident (a 32-tile cell, ended by a quiet minute): `attack #ID at (x,y): <attackers>; likely from nest (x,y)
+  N tiles DIR; <entities hit> hit N times, D damage, first <age> ago, last <age> ago`, where attackers are a visible
+  group that gathered in the last 3 minutes heading there (`a group of 25 (20 small-biter, 5 medium-biter) that
+  gathered at (x,y)`) or the distinct units seen hitting (`12 attackers seen (...)`), and the nest is the nearest
+  spawner on a charted chunk within 384 tiles of the attacked point (`from nest` when the game names the unit's own
+  spawner; `no charted nest within 384 tiles`); an incident you were told about comes again as `attack #ID ... continues`
+  with its totals only when it had new hits and at least 2 game minutes passed; `pollution reached nest (x,y), N
+  spawners: N tiles DIR of base centre (spawn x,y), N tiles DIR of our nearest building`, once per nest; enemy groups
   gathering, buildings destroyed, with what destroyed them: enemy kinds first, then our own force's entities as
   `friendly fire: 2 flamethrower-turret` (`unknown source` when the cause is gone and the killing force is ours); at most
   8 lines; these replace the old top-level `losses` field; full landing pads spilling and piles of items on the ground
