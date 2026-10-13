@@ -1,6 +1,6 @@
 // Voice player for the stream overlay: plays clips that tools/stream/caster.py pushes through serve.py.
 // One voice at a time (Nick, HOSTS3 item 5): one queue for the hosts (Rook and Vale) and the agents' voiced chat. A
-// new clip waits for the one playing, or, when it matters more, fades it out and plays next. Rank, high to low:
+// new clip waits for the one playing (never cuts it off); when it matters more it plays next. Rank, high to low:
 // urgent events (attack, death, rocket: rank "urgent" from caster.py) > an agent speaking aloud > answers to viewers >
 // host banter. A Rook/Vale exchange stays together (its next line goes before other clips of the same rank), and a
 // clip still waiting when it expires is dropped, never played late. In OBS, enable "Control audio via OBS" on the
@@ -106,8 +106,10 @@
 
   function arrive(clip) {
     queue.push(clip);
-    if (current && !current.cut && rankOf(clip) > current.rank) interrupt();
-    else playNext();
+    // No clip cuts another off (viewer craigNZ830, shift01 17:23: "when two voice chats are being read, dont have the
+    // second one cut the first one out. add them too a list to play in order"): a clip that matters more goes to the
+    // front of the queue and plays when the current one ends.
+    playNext();
   }
 
   // an agent's colour lightened until it reads on the grey caption (4.5:1, as overlay.js does for names)

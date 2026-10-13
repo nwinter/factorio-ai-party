@@ -177,7 +177,9 @@ def family_rank(fam):
 # provider is available; with a single-provider backend it takes the first voice of that provider. Never given to an
 # agent. Provisional picks from bench run 1's measurements (see docs/AUDIO-NOTES.md), not yet chosen by ear.
 ROLE_VOICES = {  # oa-verse and oa-ballad move their pitch most of the OpenAI voices on the caster lines
-    "pbp": ["oa-verse", "el-liam", "ca-daniel", "in-alex", "atlas"],
+    # Rook moved off oa-verse (viewer Joonazan, shift01 17:23: "Can you give Rook a less annoying voice"): ElevenLabs
+    # Eric, smooth and steady; Aura-2 atlas when ElevenLabs is down
+    "pbp": ["el-eric", "ca-daniel", "in-alex", "atlas"],
     "color": ["oa-ballad", "el-alice", "ca-gemma", "in-ashley", "thalia"],
 }
 # Left out of the agents' default voices (an agent can still pick them): the flattest in bench run 1.

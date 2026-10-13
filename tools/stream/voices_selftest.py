@@ -130,8 +130,8 @@ inw_only = voices.TTS("inworld", ai=FakeAI())
 d3 = voices.assign_voices(nine, tts=inw_only)
 check("a provider with few voices fills up (casters keep theirs), then Aura-2", len(set(d3.values())) == 9
       and {v for v in d3.values() if voices.provider_of(v) == "inworld"} == {"in-dennis"}, str(d3))
-check("all keys: casters on OpenAI (PREFER), other providers' caster candidates free for agents",
-      {auto.caster_voice(r) for r in voices.ROLE_VOICES} == {"oa-verse", "oa-ballad"}
+check("all keys: Vale on OpenAI (PREFER), Rook on ElevenLabs (no OpenAI voice in his list), other providers' caster candidates free for agents",
+      {auto.caster_voice(r) for r in voices.ROLE_VOICES} == {"el-eric", "oa-ballad"}
       and not set(d1.values()) & voices.DEFAULT_SKIP
       and voices.provider_of(d1["sol"]) == "openai" and voices.assign_voices(
           [{"name": "x", "voice": "ca-daniel"}], tts=auto)["x"] == "ca-daniel",
