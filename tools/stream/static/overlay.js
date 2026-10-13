@@ -36,6 +36,7 @@
     "metallurgic-science-pack": "Metallurgic", "electromagnetic-science-pack": "Electromagnetic", "agricultural-science-pack": "Agricultural",
     "cryogenic-science-pack": "Cryogenic", "promethium-science-pack": "Promethium" };
   const PROD_CELLS = 4, PROD_PINNED = 2, PROD_ROTATE_S = 10;
+  const ATTENTION_ICON = { looking: "👁️", building: "🏗️", configuring: "⚙️", "moving items": "📦" };
   const ALERT_ICON = { attack: "⚔️", loss: "🔥", death: "💀", power: "⚡", research: "🔬", info: "ℹ️", space: "🚀" };
   // board event verbs as a viewer reads them ("Astra took: ...")
   const VERB = { posted: "posted", taken: "took", assigned: "assigned", released: "released", started: "started",
@@ -867,6 +868,8 @@
         label.textContent = "";
         // (a platform work shot shows the platform, not the character: "Astra · working on Starling")
         if (onecam && slot === "main" && !cam.work) label.append(el("span", "following", "Following"));
+        // the inset on where the agent on air is looking or working (onecam.py attention): its kind as an icon
+        if (cam.attention) label.append(el("span", "ico", ATTENTION_ICON[cam.attention.kind] || "👁️"));
         label.append(...agents.flatMap((a, i) => {
           const who = el("span", "who");
           applyPalette(who, a);

@@ -9,6 +9,16 @@ import bisect, json, math, os, random, time
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCORES = os.path.join(ROOT, "runs", "2026-10-10-coop1", "scores.jsonl")
 # notes.md "## Now" job lines for the first agents (shift05's, model.notes_job); the rest show their mottos
+# journal requests with a place (shift06's shapes; X and Y become a spot near or away from the agent)
+MOCK_ATTENTION = [
+    ("inspect", {"position": {"x": "X", "y": "Y"}}),
+    ("transfer", {"position": {"x": "X", "y": "Y"}, "item": "iron-plate", "count": 200, "direction": "to_player"}),
+    ("transfer", {"position": {"x": "X", "y": "Y"}, "item": "coal", "count": 50, "direction": "to_entity"}),
+    ("configure", {"position": {"x": "X", "y": "Y"}, "recipe": "electronic-circuit"}),
+    ("place_ghosts", {"entities": [{"name": "stone-wall", "position": {"x": "X", "y": "Y"}}]}),
+    ("observe", {"position": {"x": "X", "y": "Y"}, "radius": 12}),
+    ("requests", {"position": {"x": "X", "y": "Y"}}),
+]
 MOCK_JOBS = ["Peregrine ferry above Vulcanus plus east/south defense", "Keep burners, furnaces and boilers fuelled",
              "Blue-science courier: advanced circuits into the chem assemblers, packs to the labs"]
 
@@ -504,6 +514,27 @@ class MockSource:
                 obs["basemap"] = (sample.get("state") or sample).get("basemap")
             except (OSError, ValueError):
                 pass
+        obs["attention"] = self.attention_step(obs["agents"], now)
         if self.space_age:
             self.space_step(now, obs)
         return obs
+
+    def attention_step(self, agents, now):
+        """Requests with a place (attention.py), as the agents' journals give them: every few seconds an agent
+        inspects, takes items, configures or places ghosts, often near its character, sometimes 25-60 tiles away."""
+        import attention
+        r, out = self.rng, []
+        nxt = self.__dict__.setdefault("next_attention", {})
+        for a in agents:
+            if now < nxt.get(a["name"], 0) or not a.get("position"):
+                continue
+            nxt[a["name"]] = now + r.uniform(4, 12)
+            action, args = r.choice(MOCK_ATTENTION)
+            far = r.random() < 0.4
+            d, ang = (r.uniform(25, 60) if far else r.uniform(3, 12)), r.uniform(0, 2 * math.pi)
+            x, y = a["position"]["x"] + d * math.cos(ang), a["position"]["y"] + d * math.sin(ang)
+            args = json.loads(json.dumps(args).replace('"X"', str(round(x, 1))).replace('"Y"', str(round(y, 1))))
+            p = attention.point(action, args)
+            if p:
+                out.append(dict(p, agent=a["name"], at=now))
+        return out
