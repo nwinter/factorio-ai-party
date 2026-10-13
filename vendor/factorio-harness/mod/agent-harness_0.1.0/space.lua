@@ -339,6 +339,34 @@ return function(api)
     if a.paused~=nil then assert(type(a.paused)=='boolean','paused must be boolean'); pl.paused=a.paused end
     return {name=pl.name,state=platform_states[pl.state],at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl)}
   end
+  -- launch_rocket returned false: the game gives no reason (the API documents
+  -- false as the silo not ready), so name what it may check, the conditions
+  -- out of the ordinary first.
+  local function refused(silo,pl,destination)
+    local odd,seen={},{}
+    local entity_states=invert(defines.entity_status)
+    seen[#seen+1]='silo '..tostring(silo_states[silo.rocket_silo_status])..'/'..tostring(try(function() return entity_states[silo.status] end))
+    local rocket=try(function() local r=silo.rocket; return r and r.valid end)
+    if not rocket then odd[#odd+1]='the silo holds no rocket entity' end
+    local weight=try(function()
+      local w=0
+      for _,s in ipairs(silo.get_inventory(defines.inventory.rocket_silo_rocket).get_contents()) do w=w+prototypes.item[s.name].weight*s.count end
+      return w
+    end)
+    local lift=try(function() return prototypes.utility_constants.rocket_lift_weight end)
+    if weight then seen[#seen+1]='cargo '..math.floor(weight/1000+0.5)..(lift and '/'..math.floor(lift/1000+0.5) or '')..' kg' end
+    if weight and lift and weight>lift then odd[#odd+1]='the cargo weighs more than a rocket lifts' end
+    if silo.use_transitional_requests then odd[#odd+1]='automatic requests are on (the silo fills and sends rockets for platforms\' requests itself)' end
+    if pl then
+      local state=platform_states[pl.state]
+      local paused=pl.paused or state=='paused'
+      seen[#seen+1]='platform '..pl.name..' '..tostring(state)..(paused and state~='paused' and ' (paused)' or '')..' at '..tostring(location(pl))
+      if paused then odd[#odd+1]='platform '..pl.name..' is paused (platform_schedule paused=false unpauses it)' end
+      if destination.station and not destination.station.valid then odd[#odd+1]='the hub is gone' end
+    end
+    seen[#seen+1]='destination '..tostring(invert(defines.cargo_destination)[destination.type])
+    return 'the game refused the launch (launch_rocket returned false)'..(#odd>0 and ': '..table.concat(odd,'; ') or '')..' ['..table.concat(seen,', ')..']'
+  end
   function M.launch(p,a)
     local silo=api.remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number})
     assert(silo.type=='rocket-silo','not a rocket silo')
@@ -381,9 +409,9 @@ return function(api)
         assert(not items or items.is_empty(),'only armor and guns travel with the rider: put down everything in '..inv..' first (ship it as rocket cargo)')
       end
     end
-    local destination,to
+    local destination,to,pl
     if a.platform~=nil then
-      local pl=M.platform(p,a.platform)
+      pl=M.platform(p,a.platform)
       local here=p.surface.planet and p.surface.planet.name
       assert(pl.space_location and pl.space_location.name==here,'platform '..pl.name..' is not in orbit of '..tostring(here)..' (at '..tostring(location(pl))..')')
       -- Cargo for a platform lands in its hub (a station); the space_platform
@@ -403,12 +431,12 @@ return function(api)
       -- The rocket flies with its own cargo pod; the bot rides it (bots.lua).
       api.bots.can_board(bot)
       local pod=try(function() local r=silo.rocket; return r and r.valid and r.attached_cargo_pod or nil end)
-      assert(silo.launch_rocket(destination),'the game refused the launch')
-      api.bots.board(bot,M.platform(p,a.platform),pod)
+      if not silo.launch_rocket(destination) then error(refused(silo,pl,destination),0) end
+      api.bots.board(bot,pl,pod)
       return {launched=true,to=to,cargo='empty',riding='the bot rides the rocket\'s cargo pod (~40 s), then is aboard '..a.platform..' with remote view only: poll status (travel)'}
     end
     if rider then api.stop(p) end
-    assert(silo.launch_rocket(destination,rider),'the game refused the launch')
+    if not silo.launch_rocket(destination,rider) then error(refused(silo,pl,destination),0) end
     return {launched=true,to=to,cargo=cargo or 'empty',riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil,
       auto_requests=switched and switched.auto_requests,cargo_to_trash=switched and switched.cargo_to_trash,note=switched and switched.note}
   end

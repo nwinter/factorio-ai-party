@@ -134,6 +134,21 @@ platform.state=0
 space.launch(p,{position={x=20.5,y=20.5},platform='alpha'})
 eq(launched.type,4); eq(launched.space_platform,platform)
 platform.state=7
+-- The game says no (launch_rocket false): the error names what may stop it.
+do
+  local launch,saved=silo.launch_rocket,silo_cargo
+  silo.launch_rocket=function() return false end
+  prototypes.item.stone={weight=50000}; prototypes.utility_constants={rocket_lift_weight=1000000}
+  silo_cargo={get_contents=function() return {{name='stone',count=24}} end}
+  fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,
+    'the game refused the launch (launch_rocket returned false): the silo holds no rocket entity; the cargo weighs more than a rocket lifts; platform alpha is paused (platform_schedule paused=false unpauses it) [silo rocket_ready/nil, cargo 1200/1000 kg, platform alpha paused at nauvis, destination station]')
+  silo.rocket={valid=true}; platform.state=6
+  silo_cargo={get_contents=function() return {{name='stone',count=20}} end}
+  fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,
+    'the game refused the launch (launch_rocket returned false) [silo rocket_ready/nil, cargo 1000/1000 kg, platform alpha waiting_at_station at nauvis, destination station]')
+  silo.launch_rocket,silo_cargo,silo.rocket,platform.state=launch,saved,nil,7
+  prototypes.item.stone,prototypes.utility_constants=nil,nil
+end
 platform.space_location={name='vulcanus'}
 fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,'not in orbit of nauvis')
 eq(space.launch(p,{position={x=20.5,y=20.5},auto_requests=true}).auto_requests,true)
