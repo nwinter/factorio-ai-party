@@ -644,6 +644,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Operator: `tools/harness-requests.py list|show|answer|board|events|mentions` in the pog repo. Underneath, a dispatch
   request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`,
   `board_plan` (goals and other agents' lines; the operator has no line), `mention_counts` and `tells` as `operator`.
+- Operator live attack groups (threat.lua; the pog stream follows a big group as it approaches): `attack_groups_live`
+  (read) lists up to 10 enemy groups that finished gathering with a target, visible or not, while valid and under 10
+  game minutes old: `id, surface, position, size, kinds, state (gathering|moving|attacking_*), gathered, first_size,
+  target, target_distance, nearest/nearest_distance` (our nearest building within 160 tiles), `visible`, `age_s`.
+  `describe` lists it under `operator_reads`; agents cannot call it.
 - Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
   `standing_s` (how long its character has had no action, no running queue and a body on the map; kept once a second
   for agents that made a request; an fh sleep with nothing running counts as standing, a timed action does not),
