@@ -104,6 +104,13 @@ def make(root):
     m.call("2026-10-13T09:00:00Z", "build", {}, result={"built": 7})
     (b / "opus" / "journal.jsonl").write_text(m.text())
     (b / "stream-service.log").write_text("")
+    # basemap snapshots (tools/stream/basemap_log.py): two in shift 1, one in shift 2, and a file that is none
+    for d_, tick, rows in ((a, 36000, ["A."]), (a, 72000, ["AS"]), (b, 400000, ["ASM", "E.."])):
+        (d_ / "basemap").mkdir(exist_ok=True)
+        (d_ / "basemap" / f"{tick}.json").write_text(json.dumps({
+            "tick": tick, "cell": 8, "x0": -16, "y0": -8, "w": len(rows[0]), "h": len(rows), "rows": rows,
+            "core": {"cell": 2, "x0": -10, "y0": -6, "w": 3, "h": 1, "rows": ["AAS"]}}))
+    (b / "basemap" / "notes.json").write_text("{}")
     # the old stream service wrote the earlier shifts' requests into each new inbox again: sol's seq 1 is shift 1's
     (b / "operator-inbox.jsonl").write_text(
         json.dumps({"t": 2, "seq": 1, "agent": "sol", "text": "SECRET-REQUEST-TEXT"}) + "\n"
@@ -194,6 +201,15 @@ def main():
         line = next(e for e in idx if e["kind"] == "line" and e["text"].startswith("Turrets first"))
         assert line["url"].startswith("/chat/#s1-") and f'id="{line["url"].split("#")[1]}"' in chat, line
         assert "SECRET" not in json.dumps(idx) and "example.com" not in json.dumps(idx)
+        # the time-lapse: all shifts' snapshots in order, on the run page
+        lapse = json.loads((out / "runs" / "long" / "timelapse.json").read_text())
+        assert [(f["n"], f["tick"]) for f in lapse["frames"]] == [(1, 36000), (1, 72000), (2, 400000)], lapse["frames"]
+        assert lapse["frames"][0]["game"] == "10m00s", lapse["frames"][0]  # build.py's game_time
+        assert lapse["frames"][2]["core"]["rows"] == ["AAS"] and len(lapse["box"]) == 4, lapse
+        run_page = (out / "runs" / "long" / "index.html").read_text()
+        assert 'id="timelapse"' in run_page and 'data-src="/runs/long/timelapse.json"' in run_page
+        assert '<option value="2" label="Shift 2">' in run_page and "3 snapshots" in run_page
+        assert run_page.index('id="timelapse"') < run_page.index("</main>")
         sp = (out / "search" / "index.html").read_text()
         assert 'id="search-q"' in sp and "/search/index.json" in sp and 'href="/search/"' in sp
         assert chat.index('id="shift-2"') < chat.index('id="shift-1"') if 'id="shift-2"' in chat else True

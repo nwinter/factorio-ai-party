@@ -48,6 +48,7 @@ import longrun  # noqa: E402  (site/longrun.py: the long run's shifts from runs/
 import agents as agent_pages  # noqa: E402  (site/agents.py: /agents/ and /timeline/ from tools/agent_stats.py)
 import highlights  # noqa: E402  (site/highlights.py: /chat/, the agents' spoken lines and confessions)
 import search as site_search  # noqa: E402  (site/search.py: /search/ and its index)
+import timelapse  # noqa: E402  (site/timelapse.py: the base over time on the run page)
 
 CONTENT = json.loads((SITE / "content" / "site.json").read_text())
 CONFIG = json.loads((SITE / "config.json").read_text())
@@ -1742,7 +1743,10 @@ def main():
     if LONG:
         global VIDEOS
         VIDEOS = load_videos(args.videos)
-        write("runs/long/index.html", build_long_run(LONG))
+        lapse = timelapse.frames(LONG, args.runs_dir, game_time)  # site/timelapse.py: the base over time
+        if lapse:
+            write("runs/long/timelapse.json", timelapse.data(lapse))
+        write("runs/long/index.html", timelapse.inject(build_long_run(LONG), timelapse.section(lapse, esc)))
         for s in LONG["shifts"]:
             if not s.get("empty"):
                 write(f"runs/long/shift-{s['n']}/index.html", build_shift_page(s, shift_video(s), LONG))

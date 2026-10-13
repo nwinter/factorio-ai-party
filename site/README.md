@@ -42,7 +42,10 @@ rockets, platforms, planets and deaths in game time, with filters. `/chat/` (`si
 spoken on stream and their confessions by shift, searchable (`?q=`, `?agent=`), through `clean()` and `keep_line()`.
 `/search/` (`site/search.py`): one search over agents, shifts, timeline events and chat lines, from
 `search/index.json` (written at build time, loaded when the page opens); results link `/timeline/#eN` and
-`/chat/#sN-I`.
+`/chat/#sN-I`. The run page ends with the base's time-lapse (`site/timelapse.py`): the snapshots the stream service
+saves once per 10 game minutes in `runs/RUN/basemap/TICK.json` (`tools/stream/basemap_log.py`), all shifts in one
+`/runs/long/timelapse.json` (about 12 KB a snapshot, loaded when the section scrolls into view), a slider with a
+mark per shift and Play. No snapshots, no section.
 
 ### Archive switch and run start (`site/content/site.json`)
 
