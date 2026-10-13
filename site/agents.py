@@ -49,6 +49,16 @@ def collect(long, runs_dir, keys, cache_dir=None, names=()):
             continue
         st = agent_stats.load(runs_dir / s["id"], cache_dir, names)
         shifts.append((s["n"], s["id"], st))
+    # operator requests: each seq (the game's id) in the first shift whose inbox has it (until the stream service's
+    # fix each new inbox repeated the earlier shifts' requests)
+    filed = set()
+    for _, _, st in shifts:
+        new = set()
+        for a in st["agents"].values():
+            mine = [q for q in a.get("operator_seqs") or [] if q not in filed]
+            a["operator"] = len(mine)
+            new.update(mine)
+        filed |= new
     totals, per, voice = {}, {}, {}
     for n, _, st in shifts:
         for k, a in st["agents"].items():

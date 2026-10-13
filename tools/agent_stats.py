@@ -26,7 +26,7 @@ import re
 import sys
 from pathlib import Path
 
-VERSION = 2
+VERSION = 3
 # Requests that only read (no change in the game) and talk; every other action counts as a game action. The
 # clock line's "+Ns since your last request" is no measure of busy time: an agent's tools send requests too.
 READS = {"observe", "inspect", "sleep", "chat", "inventory", "inv", "tells", "board", "recipes", "placements",
@@ -267,6 +267,9 @@ def voices(run_dir, keys):
 
 
 def operator_requests(run_dir, keys):
+    """{key: [seq of each request]} from the inbox, each seq once (the game's id for the request). Until the stream
+    service's fix a shift's inbox also held the earlier shifts' requests again: site/agents.py counts a seq in the
+    first shift that has it. Viewer lines to the operator ("viewer NAME") are no agent's."""
     n = {}
     p = run_dir / "operator-inbox.jsonl"
     if p.exists():
@@ -276,8 +279,8 @@ def operator_requests(run_dir, keys):
             except ValueError:
                 continue
             k = key_of(str(r.get("agent") or ""), keys) if not r.get("viewer") else None
-            if k:
-                n[k] = n.get(k, 0) + 1
+            if k and isinstance(r.get("seq"), int) and r["seq"] not in n.get(k, []):
+                n.setdefault(k, []).append(r["seq"])
     return n
 
 
@@ -318,7 +321,8 @@ def compute(run_dir, display_names=()):
         s["death_ticks"] = died.get(k, [])
         s["voiced"] = spoken.get(k, 0)
         s["voice"] = voice.get(k)
-        s["operator"] = ops.get(k, 0)
+        s["operator_seqs"] = ops.get(k, [])
+        s["operator"] = len(s["operator_seqs"])  # this file's; across shifts see site/agents.py
     return {"version": VERSION, "run": run_dir.name, "tick0": clock[0][1] if clock else None,
             "tick1": clock[-1][1] if clock else None, "agents": agents, "sources": sources(run_dir, keys)}
 

@@ -102,6 +102,11 @@ def make(root):
     m.call("2026-10-13T09:00:00Z", "build", {}, result={"built": 7})
     (b / "opus" / "journal.jsonl").write_text(m.text())
     (b / "stream-service.log").write_text("")
+    # the old stream service wrote the earlier shifts' requests into each new inbox again: sol's seq 1 is shift 1's
+    (b / "operator-inbox.jsonl").write_text(
+        json.dumps({"t": 2, "seq": 1, "agent": "sol", "text": "SECRET-REQUEST-TEXT"}) + "\n"
+        + json.dumps({"t": 3, "seq": 2, "agent": "opus", "text": "SECRET-REQUEST-TEXT"}) + "\n"
+        + json.dumps({"t": 3, "seq": 2, "agent": "opus", "text": "SECRET-REQUEST-TEXT"}) + "\n")
 
 
 def main():
@@ -130,6 +135,13 @@ def main():
         with open(root / "sa" / "sol" / "journal.jsonl", "a") as f:
             f.write("\n")
         assert agent_stats.load(root / "sa", cache)["agents"]["opus"]["built"] == 10 == c1["agents"]["opus"]["built"]
+
+        sys.path.insert(0, str(SITE))
+        import agents as agent_pages
+        import longrun
+        data = agent_pages.collect(longrun.load(root, start="sa"), root, ["opus", "sol"], cache)
+        assert (data["totals"]["sol"]["operator"], data["totals"]["opus"]["operator"]) == (1, 1), data["totals"]
+        assert [a["operator"] for _, a in data["per_shift"]["opus"]] == [0, 1], data["per_shift"]["opus"]
 
         out = Path(d) / "dist"
         content = json.loads((SITE / "content" / "site.json").read_text())
