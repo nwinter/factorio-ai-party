@@ -134,7 +134,8 @@ STYLE = """<style>
 .records .r-value { font-size: 1.4rem; font-weight: 700; color: var(--heading); font-variant-numeric: tabular-nums; margin-right: .4em; }
 .records .r-shift { color: var(--muted); font-size: .82rem; }
 table.compare td { font-variant-numeric: tabular-nums; white-space: nowrap; position: relative; }
-table.compare td .bar { position: absolute; left: 0; bottom: 2px; height: 3px; background: var(--ac, var(--accent)); opacity: .7; }
+table.compare td .bar { position: absolute; left: 12px; right: 12px; bottom: 3px; height: 3px; border-radius: 2px; background: var(--line); }
+table.compare td .bar i { display: block; height: 100%; border-radius: 2px; background: var(--ac, var(--accent)); opacity: .8; }
 table.compare th button { all: unset; cursor: pointer; }
 table.compare th button:focus-visible { outline: var(--fx-focus); }
 table.compare th[aria-sort] button::after { content: " ▾"; }
@@ -205,7 +206,7 @@ def compare_table(data, agent, avatar, esc):
             v = t[f]
             w = round(100 * (v or 0) / tops[f]) if tops[f] else 0
             shown = fmt(round(v) if f == "active" and v is not None else v, "pct" if f == "active" else "n")
-            cells.append(f'<td data-v="{v if v is not None else ""}">{shown}<span class="bar" style="width:{w}%"></span></td>')
+            cells.append(f'<td data-v="{v if v is not None else ""}">{shown}<span class="bar"><i style="width:{w}%"></i></span></td>')
         body.append(f'<tr style="--ac:{esc(a.get("color") or "#888")}"><th scope="row">'
                     f'<a class="chip" href="#{esc(k)}">{avatar(k, "sm")}{esc(a["name"])}</a></th>{"".join(cells)}</tr>')
     return (f'<div class="table-wrap"><table class="compare"><thead><tr>{head}</tr></thead>'
