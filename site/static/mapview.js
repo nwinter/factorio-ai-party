@@ -7,8 +7,9 @@
 // Data (set()): base, core, ore (grids {cell, x0, y0, w, h, rows}: one letter a cell, harness BASEMAP_LUA), nests
 // [[x, y, 's'|'w']], turrets [[x, y, range]], terrain [{src, x0, y0, x1, y1, tick}] (georeferenced map-camera
 // frames: the image's edges in tiles), tick (draw terrain frames up to it), agents [{name, display_name, color,
-// position, alive, action, location, attention}], fights, pins, cams, box [x0, y0, w, h] (a fixed frame instead of
-// the framing on the base's core).
+// position, alive, action, location, attention, surface, where, on_platform, travel}], fights, pins, cams, box
+// [x0, y0, w, h] (a fixed frame instead of the framing on the base's core). The map is Nauvis: an agent on another
+// planet, aboard a platform or in a cargo pod is listed in the map's corner ("Sol · Vulcanus"), never drawn.
 (function (root) {
   'use strict';
   // the live map's colours (style.css .b-X and .o-X: the legends use those)
@@ -30,6 +31,14 @@
     return !!(g && Array.isArray(g.rows) && g.rows.length && isFinite(g.x0) && isFinite(g.y0) && g.cell > 0);
   }
   function ok(p) { return !!(p && isFinite(p.x) && isFinite(p.y)); }
+  // Not on Nauvis: another planet, aboard a platform, or riding a cargo pod (travel: ascending, aboard, descending).
+  function elsewhere(a) { return !!(a.on_platform || a.travel || (a.surface && a.surface !== 'nauvis')); }
+  function whereText(a) {
+    if (a.travel) return a.location || a.where || 'cargo pod';
+    if (a.on_platform) return (a.where || 'a platform') + ' (platform)';
+    var s = a.where || String(a.surface || '').replace(/[-_]/g, ' ');
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
   // A grid's runs of equal letters: {letter: [[col, row, n], ...]}, cached on the grid's content.
   var runCache = {};
   function runs(g) {
@@ -120,7 +129,8 @@
     var base = validGrid(data.base) && data.base.rows.length ? data.base : null;
     var core = validGrid(data.core) && data.core.w > 0 ? data.core : null;
     var d = { base: base, fine: core, ore: validGrid(data.ore) ? data.ore : null, ground: validGrid(data.ground) ? data.ground : null };
-    d.agents = (data.agents || []).filter(function (a) { return a && ok(a.position); });
+    d.away = (data.agents || []).filter(function (a) { return a && elsewhere(a); });
+    d.agents = (data.agents || []).filter(function (a) { return a && ok(a.position) && !elsewhere(a); });
     d.fights = (data.fights || []).filter(function (f) { return f && ok(f.position); });
     d.pins = (data.pins || []).filter(function (p) { return p && ok(p.position); });
     d.nests = (Array.isArray(data.nests) ? data.nests : []).filter(function (n) { return n && isFinite(n[0]) && isFinite(n[1]); });
@@ -246,8 +256,16 @@
     }) : [];
     var onCam = {};
     Object.keys(d.cams).forEach(function (slot) { (d.cams[slot].agents || []).forEach(function (n) { onCam[n] = slot; }); });
-    sc.agents = []; sc.attention = [];
+    sc.agents = []; sc.attention = []; sc.away = [];
     if (on.agents) {
+      // agents off Nauvis: one row each in the bottom-left corner, bottom up
+      d.away.forEach(function (a, i) {
+        var text = (a.display_name || a.name) + ' · ' + whereText(a), y = H - 14 - i * 20;
+        var m = { name: a.name, text: text, color: a.color, x: 8, y: y, w: textWidth(text, 6.3) + 22, dead: a.alive === false };
+        sc.away.push(m);
+        taken.push([m.x, y - 9, m.x + m.w, y + 9]);
+        sc.hits.push({ x: m.x + 9, y: y, r: 10, text: text + (a.action ? ' · ' + a.action : '') });
+      });
       var dots = d.agents.map(function (a) {
         var far = !inView(a.position), at = far ? edge(a.position) : a.position;
         if (far) sc.far[a.name] = d.dist(a.position);
@@ -382,6 +400,14 @@
       }
       ctx.globalAlpha = 1;
     });
+    sc.away.forEach(function (a) {
+      ctx.globalAlpha = a.dead ? 0.6 : 1;
+      ctx.fillStyle = C.inset; ctx.fillRect(a.x - 3, a.y - 9, a.w, 18);
+      ctx.fillStyle = a.color || C.text; circle(ctx, a.x + 6, a.y, 4.5); ctx.fill();
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.font = '600 11px ' + font; ctx.textAlign = 'left'; ctx.fillStyle = C.text; ctx.fillText(a.text, a.x + 16, a.y + 4);
+      ctx.globalAlpha = 1;
+    });
     if (sc.inset) {
       var s = sc.inset;
       ctx.fillStyle = C.inset; ctx.strokeStyle = '#3a4037'; ctx.lineWidth = 1;
@@ -400,7 +426,7 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
   function has(d, layer) {
     return layer === 'terrain' ? d.terrain.length > 0 || !!d.ground : layer === 'ore' ? !!d.ore : layer === 'buildings' ? !!d.base :
-      layer === 'coverage' ? d.turrets.length > 0 : layer === 'nests' ? d.nests.length > 0 : layer === 'agents' ? d.agents.length > 0 :
+      layer === 'coverage' ? d.turrets.length > 0 : layer === 'nests' ? d.nests.length > 0 : layer === 'agents' ? d.agents.length + d.away.length > 0 :
       layer === 'attention' ? d.agents.some(function (a) { return a.attention && ok(a.attention.position); }) :
       layer === 'alerts' ? d.fights.length + d.pins.length > 0 : false;
   }

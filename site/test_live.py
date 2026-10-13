@@ -36,7 +36,10 @@ def payload_tests():
                     "position": {"x": 1, "y": 1, "surface": "platform-1"}}]
     s["cameras"] = {"main": {"agents": [], "pair": False, "since": now, "attack": "Base under attack", "zoom": 1.2, "player": 3},
                     "cam3": {"agents": ["sol"], "pair": False, "since": now, "work": "Sol building on Solstice (from the ground)"}}
+    s["agents"][1].update(surface="vulcanus", where="Vulcanus", on_platform=False, travel=None)
     out = push_live.public_state(s)
+    sol = out["agents"][1]
+    assert (sol["surface"], sol["where"], sol["on_platform"], sol["travel"]) == ("vulcanus", "Vulcanus", False, None), sol
     assert out["space"] == {"rockets": 3, "planets": ["Nauvis"], "summary": "1 platform", "platforms": [
         {"name": "Solstice", "where": "Nauvis → Vulcanus", "route": {"from": "Nauvis", "to": "Vulcanus", "pct": 42},
          "state": "on_the_path", "paused": False, "speed_kms": 72}]}, out["space"]
@@ -119,7 +122,8 @@ const out = {};
 function summary(sc) {
   return { span: sc.span, clip: !!sc.clip, core: !!sc.core, base: !!sc.base, inset: !!sc.inset, far: sc.far, coverage: sc.coverage.length,
     terrain: sc.terrain, nests: sc.nests.length, agents: sc.agents.map((a) => ({ name: a.name, far: a.far, x: a.x, y: a.y, label: !!a.label })),
-    attention: sc.attention.length, fights: sc.fights.length, pins: sc.pins.length, step: sc.grid.step };
+    attention: sc.attention.length, fights: sc.fights.length, pins: sc.pins.length, step: sc.grid.step,
+    away: sc.away.map((a) => [a.text, Math.round(a.x), Math.round(a.y)]) };
 }
 const d = M.prepare(data.full);
 out.full = summary(M.scene(d, null, 400, 400));
@@ -167,6 +171,10 @@ def map_state(core=True):
         a["position"] = {"x": 30, "y": 30}
     s["agents"][0]["position"] = {"x": 2, "y": -390}  # at the pumpjacks: off the core view, pinned to the edge
     s["agents"][1]["attention"] = {"position": {"x": 60, "y": 50}, "text": "inspecting a furnace", "dist": 36, "far": True}
+    # off Nauvis: Luna on Vulcanus (its coordinates are Vulcanus's), Opus aboard a platform, Grok in a cargo pod
+    s["agents"][2].update(surface="vulcanus", where="Vulcanus", position={"x": 5000, "y": -3000})
+    s["agents"][3].update(surface="platform-1", where="Solstice", on_platform=True, position={"x": 0, "y": 0})
+    s["agents"][6].update(surface="nauvis", travel="descending", location="cargo pod to Nauvis")
     return s
 
 
@@ -200,6 +208,14 @@ def map_tests():
         assert astra["far"] and list(full["far"]) == [astra["name"]] and full["far"][astra["name"]] > 300, full["far"]
         assert full["coverage"] == 0 and o["allOn"]["coverage"] == 3, "turret range: off by default, three turrets when on"
         assert full["nests"] == 1 and full["attention"] == 1
+        # agents off Nauvis are listed in the corner, never drawn on the map nor framing it
+        names = [a["name"] for a in full["agents"]]
+        assert "luna" not in names and "opus" not in names and "grok" not in names and "sol" in names, names
+        away = [a[0] for a in full["away"]]
+        assert away[:2] == ["Luna · Vulcanus", "Opus · Solstice (platform)"] and len(away) == 3, away
+        assert away[2].startswith("Grok") and away[2].endswith(" · cargo pod to Nauvis"), away  # its display name
+        assert full["away"][0][1:] == [8, 386] and full["away"][1][2] == 366, full["away"]
+        assert o["allOff"]["away"] == []
         # terrain: only frames up to the snapshot's tick, only site paths, placed by their tile edges
         assert [t["src"] for t in full["terrain"]] == ["/live/terrain/a.webp"], full["terrain"]
         off = o["allOff"]

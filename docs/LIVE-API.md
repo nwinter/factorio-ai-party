@@ -104,6 +104,9 @@ fights; turret range starts off; the choice is kept per browser), and a click or
 follow it; hover or tap names a mark. `basemap.turrets` draws the turret-range layer (the union of every turret's reach)
 and `basemap.terrain` the terrain layer: each frame's image stretched over its tile edges (`x0`, `y0` the image's top
 left, `x1`, `y1` its bottom right), older frames first, under everything else; `src` must be a site path or an https URL.
+The map is Nauvis: an agent whose `surface` is another planet, or with `on_platform` or `travel` set (a cargo pod), is
+listed in its bottom-left corner instead ("Luna · Vulcanus", "Opus · Solstice (platform)") and takes no part in
+the framing; each agent row carries `surface`, `where`, `on_platform` and `travel` from the stream service for that.
 It draws `fights` as rings the size of their `extent` (solid while `age_s` is under 25,
 faded after, a cross where `losses` happened), tags each agent a camera follows with its slot, lists what each camera
 shows (`cameras`: its agents, or the `attack`, `work` or `segment` shot), shows the research in progress over the
