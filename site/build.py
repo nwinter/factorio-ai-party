@@ -721,6 +721,74 @@ def _chat_line(c, hl):
 
 
 LONG = None  # the long run (longrun.load), set in main() when the runs folder has a chain of shifts
+# Shift videos uploaded to YouTube (tools/yt_upload.py writes site/content/videos.json): {run id: {id, shift, title,
+# description, chapters, playlist}}. A shift with a video gets an embed on /runs/long/ and its own page.
+VIDEOS = {}
+YT_ID = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
+
+
+def load_videos(path):
+    try:
+        raw = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return {}
+    return {rid: v for rid, v in raw.items() if isinstance(v, dict) and YT_ID.match(str(v.get("id", "")))}
+
+
+def shift_video(s):
+    return VIDEOS.get(s["id"]) if not s.get("empty") else None
+
+
+def shift_href(s):
+    return f'/runs/long/shift-{s["n"]}/'
+
+
+def video_embed(v, start=0):
+    """Privacy-enhanced embed (no cookies until play), 16:9, lazy."""
+    q = f"?start={int(start)}" if start else ""
+    return (f'<div class="video-wrap"><iframe src="https://www.youtube-nocookie.com/embed/{esc(v["id"])}{q}" '
+            f'title="{esc(v.get("title", "Shift video"))}" loading="lazy" allowfullscreen '
+            f'allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; web-share" '
+            f'referrerpolicy="strict-origin-when-cross-origin"></iframe></div>')
+
+
+def description_html(text):
+    """The video's description as paragraphs and lists; the chapter list is left out (the page shows its own)."""
+    text = clean(text).split("\nChapters\n")[0]
+    out = []
+    for block in text.strip().split("\n\n"):
+        lines = [ln for ln in block.split("\n") if ln.strip()]
+        items = [ln[2:] for ln in lines if ln.startswith("• ")]
+        head = [ln for ln in lines if not ln.startswith("• ")]
+        if items and len(head) <= 1:
+            out.append((f"<h3>{esc(head[0])}</h3>" if head else "") +
+                       "<ul>" + "".join(f"<li>{esc(i)}</li>" for i in items) + "</ul>")
+        else:
+            out.append("<p>" + "<br>".join(esc(ln) for ln in lines) + "</p>")
+    return "\n".join(out)
+
+
+def build_shift_page(s, v):
+    watch = f"https://www.youtube.com/watch?v={esc(v['id'])}"
+    chapters = "".join(f'<li><a href="{watch}&amp;t={int(c["at"])}s">{esc(c["time"])}</a> {esc(clean(c["title"]))}</li>'
+                       for c in v.get("chapters") or [])
+    stats = "".join([stat("game time", f'{s["game0"]} to {s["game1"]}'),
+                     stat("technologies", s["research"], f'+{s["research_new"]} this shift'),
+                     stat("rockets launched", s["rockets"], f'+{s["rockets_new"]} this shift' if s["rockets_new"] else ""),
+                     stat("deaths / loss alerts", f'{s["deaths"]} / {s["losses"]}')])
+    body = f"""
+<p class="crumbs"><a href="/runs/long/">The long run</a> / Shift {s["n"]}</p>
+<h1>Shift {s["n"]}</h1>
+<p class="lede">{esc(_when(s["started"], s["ended"]))} Pacific. {esc(clean(v.get("title", "")))}</p>
+{video_embed(v)}
+<p class="muted small"><a href="{watch}">Watch on YouTube</a>{f' · <a href="https://www.youtube.com/playlist?list={esc(v["playlist"])}">every shift</a>' if v.get("playlist") else ""}</p>
+<div class="stats">{stats}</div>
+<div class="shift-text">{description_html(v.get("description", ""))}</div>
+{f'<h2>Chapters</h2><ol class="chapters">{chapters}</ol>' if chapters else ""}
+"""
+    return page(f"Shift {s['n']}", body, "/runs/" if archive() else "/runs/long/",
+                f"Shift {s['n']} of the long run: the video, its chapters and what happened.",
+                path=shift_href(s))
 
 
 def _when(a, b):
@@ -765,8 +833,10 @@ def build_long_run(lr):
             continue
         moments = "".join(f"<li>{esc(m)}</li>" for m in s["moments"][:6])
         new_rockets = f' <span class="muted">(+{s["rockets_new"]})</span>' if s["rockets_new"] else ""
+        num = (f'<a href="{shift_href(s)}">{s["n"]}</a><span class="small"><a href="{shift_href(s)}">video</a></span>'
+               if shift_video(s) else str(s["n"]))
         rows.append(
-            f'<tr><th scope="row">{s["n"]}{rid}</th>'
+            f'<tr><th scope="row">{num}{rid}</th>'
             f'<td>{esc(_when(s["started"], s["ended"]))}{" <span class=\"fx-chip fx-chip--red\">on now</span>" if s.get("running") else ""}</td>'
             f'<td>{esc(s["game0"])} to {esc(s["game1"])}</td>'
             f'<td>{s["research"]} <span class="muted">(+{s["research_new"]})</span></td>'
@@ -779,6 +849,12 @@ def build_long_run(lr):
     spm = line_chart("Science packs per minute", [{"name": "Packs per minute", "points": lr["spm"]}], "packs per minute",
                      desc="All science packs made, averaged over 10 game minutes.")
     crumbs = '<p class="crumbs"><a href="/runs/">Runs</a> / The long run</p>' if archive() else ""
+    vids = [(s, shift_video(s)) for s in shifts if shift_video(s)]
+    videos = "".join(
+        f'<article class="shift-video"><h3><a href="{shift_href(s)}">Shift {s["n"]}</a></h3>{video_embed(v)}'
+        f'<p class="muted small">{esc(clean(v.get("title", "")))}</p></article>' for s, v in vids)
+    videos = (f'<h2>Shift videos</h2><p class="muted">Each shift\'s stream as its own video, with chapters. '
+              f'YouTube keeps no live archive past 12 hours.</p><div class="shift-videos">{videos}</div>') if vids else ""
     body = f"""
 {crumbs}
 <h1>The long run</h1>
@@ -794,6 +870,7 @@ score log, and the hosts' Space Age calls.</p>
 <th scope="col">Game time</th><th scope="col">Technologies</th><th scope="col">Science / min</th><th scope="col">Rockets</th>
 <th scope="col">Platforms</th><th scope="col">Planets</th><th scope="col">Deaths / loss alerts</th><th scope="col">Moments</th>
 </tr></thead><tbody>{"".join(rows)}</tbody></table></div>
+{videos}
 """
     return page("The long run", body, "/runs/" if archive() else "/runs/long/",
                 "One world over many shifts: research, science, rockets and platforms shift by shift.", path="/runs/long/")
@@ -1194,6 +1271,8 @@ def main():
                     help="where the long run's shift folders are (default: the repo's runs/; read-only)")
     ap.add_argument("--content", default=os.environ.get("POG_SITE_CONTENT"),
                     help="another site.json (tests: the archive switch and run_start; default $POG_SITE_CONTENT)")
+    ap.add_argument("--videos", default=str(SITE / "content" / "videos.json"),
+                    help="the shifts' YouTube videos (tools/yt_upload.py writes it; missing: no videos)")
     args = ap.parse_args()
     if args.content:
         global CONTENT, AGENTS
@@ -1219,7 +1298,12 @@ def main():
 
     write("index.html", build_home(runs, all_worlds))
     if LONG:
+        global VIDEOS
+        VIDEOS = load_videos(args.videos)
         write("runs/long/index.html", build_long_run(LONG))
+        for s in LONG["shifts"]:
+            if shift_video(s):
+                write(f"runs/long/shift-{s['n']}/index.html", build_shift_page(s, shift_video(s)))
     write("about/index.html", build_about(runs, all_worlds))
     if archive():  # the test history: experiments, earlier runs, agent pages (made of those runs), studies
         write("experiments/index.html", build_experiments(runs, all_worlds))

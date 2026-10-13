@@ -191,6 +191,15 @@ table.long-run th[scope=row] .small { display: block; font-weight: 400; }
 table.long-run td { vertical-align: top; }
 table.long-run tr.empty td, table.long-run tr.empty th { opacity: .7; }
 table.long-run .moments { margin: 0; padding-left: 1.1em; min-width: 16em; font-size: .9rem; }
+/* shift videos (site/content/videos.json): embeds on the long run page and each shift's page */
+.video-wrap { position: relative; aspect-ratio: 16 / 9; background: #000; border-radius: var(--fx-r-1); overflow: hidden; margin: 1rem 0 .4rem; }
+.video-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.shift-videos { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 18px; }
+.shift-video h3 { margin: 0; }
+.shift-video .video-wrap { margin: .4rem 0; }
+ol.chapters { list-style: none; padding: 0; columns: 2 18rem; font-size: .92rem; }
+ol.chapters li { break-inside: avoid; margin: 0 0 .3rem; }
+ol.chapters a { font-variant-numeric: tabular-nums; margin-right: .4em; }
 
 /* tables: deep wells with the kit's header bar */
 .table-wrap { overflow-x: auto; border-radius: var(--fx-r-1); background: var(--well); box-shadow: var(--well-shadow); margin: 1rem 0; }
