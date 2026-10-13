@@ -161,6 +161,11 @@ def main():
         # Opus: since its 00:10 death (tick 255600) to the end of shift 2 (tick 763200); Sol played shift 1 only (1h30m)
         assert '<span class="r-value">2h21m</span>' in surv and "Opus" in surv and "still alive" in surv, surv
         assert 'table class="compare"' in page and "data-v=" in page
+        # by maker, per agent-shift: Anthropic is Opus on two shifts (10 and 7 built), OpenAI is Sol on one
+        mk = page.split('<h2 id="makers">')[1].split("</table>")[0]
+        anth = mk.split('<th scope="row">Anthropic</th>')[1].split("</tr>")[0]
+        assert '<td data-v="2">2</td>' in anth and ">8.5<" in anth and "#opus" in anth, anth
+        assert '<th scope="row">OpenAI</th>' in mk and "xAI" not in mk  # only makers that played
         assert "SECRET" not in page and "Joonazan" not in page
         assert 'href="/agents/"' in (out / "index.html").read_text() and 'href="/timeline/"' in page
         tl = (out / "timeline" / "index.html").read_text()
