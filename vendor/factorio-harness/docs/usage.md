@@ -116,7 +116,9 @@ fh board events --since 40
 - Compact `--wait` replies show the acceptance, then `outcome`, `action`, `waited_s`, `position`, `health` (when
   hurt), `inventory` (change over the wait, e.g. `stone+20 coal-6`), `detail` (the action's result), then `team`, one
   `clock:` line and `chat:`. `--full` (or `--format json`) gives the whole completion status as before. `fh wait` is
-  compact the same way. Wait polls are `status {peek:true}` (falling back to plain status on an older runtime), so the
+  compact the same way. Wait polls are `status {peek:true, brief:true}` (only `active`, `last`, `combat`, `last_combat`, `alive`,
+  `position` and `tick`, none of status's factory and threat scans; falling back to `status {peek:true}`, then plain
+  status, on an older runtime), so the
   team hints, the chat trailer and the turn clock are left for the reply you see; it reads one small `observe` after.
 - `chat` is lossless: it returns your unread messages (or all after `since`), newest `limit` (default 30), plus every
   older one that mentions you (`mention: @|@everyone|name`, up to 100 more), oldest first, and marks only those
@@ -408,6 +410,7 @@ fh --bot astra call status                                                      
 - The server's `auto_pause` stops the game while no client is connected; keep a director client connected while bots play.
 - Cost check (operator): `remote.call("agent_harness","profile_ticks",600)` times the harness tick for 600 ticks and writes the average to the server log (`agent-harness tick average ...`). Nine bots: about 0.05 ms per tick idle, 0.26 ms with all nine pathfinding at once.
 - Where the time goes (operator): `/silent-command rcon.print(remote.call("agent_harness","profile_ticks",{seconds=60}))` (1..600 s; `{stop=true}` ends a run early) times every dispatch by action (`observe/sleep_check` with its scope; operator relays marked `(operator)`), the encoding of each reply (`encode <action>`, timed once more beside control.lua's own), every forwarded event by name, the harness tick and parts of the reply and tick (`part board.team`, `part threat.on_damaged`, ...; inside their dispatch or tick). The server log gets `agent-harness profile second tick=T n=N key=K time=...` per key per game second (`key=*` is all harness work in that second, parts excluded), then `profile total` per key and `profile done`. A LuaProfiler reading cannot be compared in Lua, so rank them offline: `python3 tools/profile_log.py factorio-current.log` prints the worst keys (count, total, average, worst second) and the busiest game seconds. Runtime-only; nothing runs while no profile is on.
+- Status cost: the factory survey (machines, belts, science, plates, fuel/power/ammo/lab warnings), the fluid check, the pollution read and the chart walk are kept per force and surface and shared by every agent there (survey, fluid and pollution every 10 s, the chart every minute; `factory_as_of`/`threats_as_of` give the tick when older). The enemy bases around an agent stay its own (every 10 s). fh's wait polls use `status {brief: true}`.
 
 ## Profiles, speech bubbles, cameras
 

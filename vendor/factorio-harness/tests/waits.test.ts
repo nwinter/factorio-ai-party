@@ -129,6 +129,28 @@ test('vehicle drive --wait waits for its own drive, never the previous result (r
     assert.match(JSON.stringify(third.result),/predates it/);
   });
 });
+test('--wait polls the brief status, then reads the full status once; a runtime without brief gets full polls',async()=>{
+  for (const knowsBrief of [true,false]) {
+    const seen:any[]=[];let polls=0;
+    await engine(request=>{
+      seen.push(request);
+      if(request.action==='walk')return {tick:10,ok:true,result:{until_tick:70}};
+      if(request.args.brief && !knowsBrief)return {ok:false,error:{code:'action_failed',message:'unknown argument brief for status; valid: since, threats, machines, peek'}};
+      polls++;
+      if(polls<3)return {tick:10+polls,ok:true,result:{active:{kind:'walk',until_tick:70},last:false,brief:request.args.brief}};
+      return {tick:71,ok:true,result:{active:false,last:{kind:'walk',outcome:'duration_elapsed',tick:70},factory:request.args.brief?undefined:{science:'x'}}};
+    },async port=>{
+      const out=JSON.parse((await cli(port,['--full','call','walk','--args','{"direction":"east","ticks":60}','--wait'])).stdout);
+      // The reply the agent sees is the full status, as before.
+      assert.equal(out.ok,true); assert.equal(out.result.completion.last.outcome,'duration_elapsed'); assert.equal(out.result.completion.factory.science,'x');
+    });
+    const statuses=seen.filter(r=>r.action==='status');
+    const pollArgs=statuses.slice(0,-1).map(r=>JSON.stringify(r.args));
+    if (knowsBrief) assert.deepEqual(pollArgs,Array(pollArgs.length).fill('{"peek":true,"brief":true}'));
+    else assert.deepEqual(pollArgs.slice(1),Array(pollArgs.length-1).fill('{"peek":true}'));
+    assert.deepEqual(statuses.at(-1).args,{});
+  }
+});
 test('fh sleep polls sleep_check with peek, then reads once normally; death exits nonzero',async()=>{
   for (const woke of ['mentioned','died','respawned']) {
     const seen:any[]=[];let checks=0;
