@@ -109,7 +109,6 @@ for _, s in ipairs(all) do
 end
 for _, p in pairs(f.platforms or {}) do
   if p.valid then
-    -- the schedule's current stop: where a travelling platform is headed (a space connection's from/to are fixed)
     local ok, to = pcall(function() local s = p.schedule; local r = s and s.records and s.records[s.current]; return r and r.station end)
     platforms[#platforms+1] = {name = p.name, at = p.space_location and p.space_location.name or "in transit",
       hub = (p.hub ~= nil and p.hub.valid) or false, to = ok and type(to) == "string" and to or nil}
