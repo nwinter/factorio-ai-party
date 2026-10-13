@@ -92,7 +92,45 @@ def main():
     read(m, t + 50, "nauvis")
     read(m, t + 60, "nauvis->vulcanus 2%", to="vulcanus")
     read(m, t + 70, "vulcanus")  # a second visit: a plain arrival call
-    assert [x["text"] for x in alerts(m, "arrive:")] == ["Sunward is back at Nauvis", "Sunward arrives at Vulcanus"]
+    assert [(x["text"], x["kind"]) for x in alerts(m, "arrive:")] == [
+        ("Sunward is back at Nauvis", "arrival"), ("Sunward arrives at Vulcanus", "arrival")], \
+        "it was seen at Nauvis before it left, and the orbit moment was its first at Vulcanus"
+
+    # a ferry's round trips: the first arrival at each planet is a headline, every later one an ordinary arrival
+    import caster
+    m = model()
+    read(m, t, "vulcanus", to="vulcanus")
+    seq = []
+    for trip in range(6):
+        dest = "nauvis" if trip % 2 == 0 else "vulcanus"
+        base = t + 100 * (trip + 1)
+        read(m, base, "nauvis->vulcanus 50%", to=dest)
+        read(m, base + 50, dest, to=dest)
+    for a in alerts(m, "arrive:"):
+        seq.append((a["text"], a["kind"], (a.get("facts") or {}).get("headline")))
+    assert seq[0] == ("Sunward is back at Nauvis", "space", "platform_arrival"), seq  # its first at Nauvis
+    assert all(k == "arrival" and h is None for _, k, h in seq[1:]) and len(seq) == 6, seq  # Vulcanus: seen at start
+    assert caster.PRIORITY["arrival"] < caster.PRIORITY["loss"] < caster.PRIORITY["attack"]
+    assert "arrival" not in caster.HEADLINE_KINDS
+    ev = {"kind": "arrival", "prio": caster.PRIORITY["arrival"], "text": seq[-1][0], "facts": {"platform": "Sunward"}}
+    assert caster.clip_rank(ev) == "banter"
+    f = caster.facts_for(ev, {})
+    assert f["arrival"]["platform"] == "Sunward" and "no big moment" in f["how_to_call_it"] and "headline" not in f
+
+    # the run's first platform at a planet is a headline even for a second platform; a restart mid-trip (rows
+    # with the schedule's stop) counts the planet it left as visited, so the trip's end is no false first
+    m = model()
+    read(m, t, "nauvis->vulcanus 40%", to="nauvis")  # first seen mid-trip home
+    read(m, t + 10, "nauvis", to="nauvis")
+    assert [a["kind"] for a in alerts(m, "arrive:")] == ["space"], "its first at Nauvis this service saw"
+    m = model()
+    m.ingest({"agents": [], "space": {"rockets": 9, "planets": ["nauvis", "vulcanus"], "platforms": [
+        {"name": "Ferry", "at": "nauvis->vulcanus 40%", "to": "vulcanus", "hub": True}]}}, t)
+    m.ingest({"agents": [], "space": {"rockets": 9, "planets": ["nauvis", "vulcanus"], "platforms": [
+        {"name": "Ferry", "at": "nauvis->vulcanus 60%", "to": "vulcanus", "hub": True}]}}, t + 5)
+    m.ingest({"agents": [], "space": {"rockets": 9, "planets": ["nauvis", "vulcanus"], "platforms": [
+        {"name": "Ferry", "at": "nauvis", "to": "nauvis", "hub": True}]}}, t + 10)  # (a short trip back)
+    assert [a["kind"] for a in alerts(m, "arrive:")] == ["arrival"], "Nauvis: where it left from"
 
     # 4. live.py: the score's fresh location over a detail read from before
     from live import LiveSource

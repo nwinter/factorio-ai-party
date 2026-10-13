@@ -308,8 +308,11 @@ On the page:
   (an agent's body there, else "first foothold" when the score lists our entities). Each raises a 🚀 alert and the
   director starts a `space_moment` segment within 150 s (segment spacing waived; still declined right after an
   attack cut). Casters can request `space` or `space_moment {moment: id}` (ids in `snapshot.space.moments`).
-  Every other arrival after a trip, home included, is a 🚀 headline alert ("Sunward is back at Nauvis", with where
-  it came from and who is aboard), with no segment.
+  Every other arrival after a trip, home included, is an alert with where it came from and who is aboard, and no
+  segment ("Sunward is back at Nauvis"). Only firsts are 🚀 headlines: a platform's first arrival at a planet, or
+  the run's first there. Where a platform is when the service first sees it counts as visited, and so does the
+  planet it left if it is first seen mid-trip. Later arrivals, such as a ferry's round trips, are 🛰️ `arrival`
+  events at caster priority 6, below battles and losses, so they never pull the hosts off a fight.
 - Direction: space.lua's route "nauvis->vulcanus N%" names the space connection's fixed ends, whichever way it is
   flown (shift06 14:09: Sunward from Vulcanus to Nauvis showed as "leaving Nauvis for Vulcanus"). model.py
   `_orient_platforms` works out where a platform is headed from the schedule's current stop (pog.py score `to`),
