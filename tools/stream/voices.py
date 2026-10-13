@@ -173,13 +173,14 @@ def family_rank(fam):
     return PREFER.index(fam) if fam in PREFER else len(PREFER)
 
 
-# The two casters, by role. With `--tts auto` each role takes the first voice in its list (in PREFER order) whose
-# provider is available; with a single-provider backend it takes the first voice of that provider. Never given to an
-# agent. Provisional picks from bench run 1's measurements (see docs/AUDIO-NOTES.md), not yet chosen by ear.
+# The two casters, by role. With `--tts auto` each role takes the first voice in its list whose provider is up (list
+# order, not PREFER); with a single-provider backend it takes the list's first voice of that provider. Never given to an
+# agent by default. Provisional picks from bench run 1's measurements (see docs/AUDIO-NOTES.md), not yet chosen by ear.
 ROLE_VOICES = {  # oa-verse and oa-ballad move their pitch most of the OpenAI voices on the caster lines
-    # Rook moved off oa-verse (viewer Joonazan, shift01 17:23: "Can you give Rook a less annoying voice"): OpenAI cedar,
-    # natural and grounded (the ElevenLabs key ran into its own quota the same minute, so not el-eric)
-    "pbp": ["oa-cedar", "el-eric", "ca-daniel", "in-alex", "atlas"],
+    # Rook moved off oa-verse (viewer Joonazan, shift01 17:23: "Can you give Rook a less annoying voice"): ElevenLabs
+    # Eric, smooth and steady (the key's limit was raised after its 17:28 quota error), OpenAI cedar while ElevenLabs
+    # rests, then Aura-2 atlas
+    "pbp": ["el-eric", "oa-cedar", "atlas"],
     "color": ["oa-ballad", "el-alice", "ca-gemma", "in-ashley", "thalia"],
 }
 # Left out of the agents' default voices (an agent can still pick them): the flattest in bench run 1.
@@ -224,8 +225,11 @@ def assign_voices(agents, taken=(), tts=None):
     (when `tts`, by default the latest premium-backend TTS made, can design one), and the rest get distinct voices
     by name hash."""
     tts = tts or _designer
-    if tts is not None and tts.providers:  # only the voices the casters will use on this backend are held back
-        reserved = {tts.caster_voice(r) for r in ROLE_VOICES}
+    if tts is not None and tts.providers:
+        # every host voice this backend can speak is held back, not only the one on air: a host moves down its list
+        # while a provider rests, and an agent's default must not change with it (or become the host's voice after)
+        reserved = {v for vs in ROLE_VOICES.values() for v in vs
+                    if provider_of(v) == "aura2" or provider_of(v) in tts.providers}
     else:
         reserved = {v for vs in ROLE_VOICES.values() for v in vs}
     out, used = {}, set(taken) | set(CASTERS.values()) | reserved | {OPERATOR_VOICE}
@@ -866,7 +870,10 @@ class TTS:
         return self.backend, like
 
     def caster_voice(self, role):
-        for v in sorted(ROLE_VOICES.get(role, []), key=lambda v: family_rank(FAMILY.get(provider_of(v), "aura2"))):
+        """The role's voice: under auto the first voice in its ROLE_VOICES list whose provider is up (list order, not
+        PREFER: Rook is el-eric, oa-cedar while ElevenLabs rests, then Aura-2 atlas); on a single-provider backend the
+        list's first voice of that provider."""
+        for v in ROLE_VOICES.get(role, []):
             p = provider_of(v)
             if self.backend == "auto" and (p == "aura2" or self.up(p)):
                 return v
@@ -909,20 +916,26 @@ class TTS:
             self._failed(prov, x)
             key = None  # a stand-in's clip is not cached as the voice's
             vid = self.effective(voice, caster)
-            # this clip: the caster's next voice or the closest voice of another working provider, else the voice's
-            # Aura-2 stand-in
+            # this clip: the caster's next voice in its list that is up, else its Aura-2 voice (atlas for Rook); an
+            # agent's voice goes to the closest voice of another working provider, else its Aura-2 stand-in
             avoid = FAMILY.get(prov)
-            alt = caster and next((v for v in sorted(ROLE_VOICES.get(caster, []), key=lambda v: family_rank(
-                FAMILY.get(provider_of(v), "aura2"))) if FAMILY.get(provider_of(v)) not in (None, avoid)
-                and self.up(provider_of(v))), None)
-            prov, ref = (provider_of(alt), CATALOG[alt][1]) if alt else self.substitute(vid, avoid=avoid)
+            alt = caster and next((v for v in ROLE_VOICES.get(caster, []) if FAMILY.get(provider_of(v)) not in
+                                   (None, avoid) and self.up(provider_of(v))), None)
+            aura = caster and next((CATALOG[v][3] for v in ROLE_VOICES.get(caster, []) if provider_of(v) == "aura2"),
+                                   None)
+            if alt:
+                prov, ref = provider_of(alt), CATALOG[alt][1]
+            elif aura:
+                prov, ref = "aura2", aura
+            else:
+                prov, ref = self.substitute(vid, avoid=avoid)
             audio = None
             if prov != "aura2":
                 try:
                     audio, ctype = self._synth(prov, text, ref, m, instruction, caster, voice)
                 except (TTSError, KeyError, ValueError) as y:
                     self._failed(prov, y)
-                    prov, ref = "aura2", (CATALOG.get(vid) or DESIGNED.get(vid) or CATALOG["orion"])[3]
+                    prov, ref = "aura2", aura or (CATALOG.get(vid) or DESIGNED.get(vid) or CATALOG["orion"])[3]
             if audio is None:
                 if self.ai is None:
                     raise TTSError(f"{x}; no Workers AI for the Aura-2 fallback") from None

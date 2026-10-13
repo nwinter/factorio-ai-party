@@ -1,4 +1,5 @@
 - `ca-archie`: British accent, lower voice
+- `ca-daniel`: American, lower voice, even all-rounder
 - `ca-jacqueline`: American, lighter voice, composed
 - `ca-skylar`: American, lighter voice, even all-rounder
 - `el-bill`: old, wise and crackly, American
@@ -17,6 +18,7 @@
 - `el-roger`: laid-back, casual, resonant mid-low, American
 - `el-sarah`: young adult, soft and confident, American
 - `el-will`: young adult, relaxed optimist, American
+- `in-alex`: energetic and expressive, mid-range, a little nasal
 - `in-dennis`: middle-aged, smooth, calm and friendly, lower
 - `oa-alloy`: neutral, even, mid pitch
 - `oa-ash`: mid-low, clear and direct
