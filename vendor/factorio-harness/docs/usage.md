@@ -87,6 +87,11 @@ fh call status
   built with `build` and `place_ghosts`; fuel goes in with `refuel` or `transfer`.
 - `configure {position, recipe, quality}` sets a recipe at a quality (the machine and quality must be unlocked); a
   change of quality alone is a change.
+- `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected
+  pipes, tanks, pumps and machine fluidboxes) the entity at `position` belongs to, every fluid or only `fluid`.
+  An entity with several segments holding fluid (a chemical plant's input and output) needs `fluid` or `index`; the
+  error lists them. Returns `flushed {fluid: amount}`, `amount`, `index` and `segment {id, extent, size, capacity,
+  entities}`. It leaves the running action and queue alone, and the `pog-guest` group cannot flush.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first
@@ -283,6 +288,10 @@ fh sleep 900 --until researched                       # ...or until the research
   that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
   enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
   200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same.
+- The game repairs a platform's entities itself, one entity at a time, with repair packs from the hub; `repair` refuses
+  platform targets (`platform`, or standing on a platform) with that reason. `platforms {platform}` and `inspect` of the
+  hub show `repair_packs` (in the hub, or `none`) and `damaged` (`gun-turret (-6,0) 53/400`, most damaged first, up to
+  10; `damaged_count` past that); `inspect` of a damaged entity there adds the `repair` note.
 - Where a platform's items go: `platforms` shows `hub_trash` per platform, and with `platform` set
   `hub_inserters_without_target` (inserters taking from the hub with nothing to drop into: `(-2.5,3.5) drops onto
   empty-space`), `thrown_overboard` (items in flight off the platform, while the game tracks them), and
@@ -299,6 +308,17 @@ fh sleep 900 --until researched                       # ...or until the research
 - `launch {position, auto_requests: true}` on a silo whose rocket holds cargo loaded by hand: the game moves that cargo
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
+- `launch {position, platform}` sends the cargo to the platform's hub (a platform waiting for its starter pack gets it
+  as its starter pack). A rocket lifts 1000 kg (item prototype weights; the game takes more by script, then refuses
+  the launch): `transfer` into `rocket_silo_rocket` gives only what fits (`weight_limited {requested, fits, note}`)
+  and fails when nothing fits; its reply, `inspect` of a silo and the `platforms` silo rows show `rocket_weight` /
+  `weight` as `held/lift kg`. `launch` with more aboard fails before the game is asked: `overweight by N kg`, with the
+  cargo by weight. When the game refuses (it gives no reason), the error lists what it may check: a missing rocket,
+  automatic requests, a paused platform, then the silo, cargo, platform and destination it saw.
+- `inspect` of an entity with module slots shows `modules {inventory_index, slots, contents}`. A blueprint entity's
+  module request names that index: `items: [{id: {name: "speed-module"}, items: {in_inventory: [{inventory: 4,
+  stack: 0}, {inventory: 4, stack: 1}]}}]` (stacks count from 0 in blueprint strings). In 2.0 the index is 4 for assemblers, furnaces,
+  chemical plants, crushers and silos, 1 for beacons, 2 for mining drills, 3 for labs.
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
@@ -347,7 +367,7 @@ Gameplay actions use the same mechanics as a human player: items come from the i
 
 Some actions work at a distance, the way a player can through remote view:
 
-- `configure`, `requests` and `launch` in visible chunks
+- `configure`, `flush`, `requests` and `launch` in visible chunks
 - ghosts and deconstruction marks in charted chunks (on your own space platform with `platform`, anywhere on it)
 - `deconstruct {area, tiles}` marks tiles as a planner in tile mode does: `tiles: true` takes every minable tile in the
   area, or name them (`["space-platform-foundation"]`). The game decides each tile; the reply counts `tiles_marked`,

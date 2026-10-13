@@ -145,8 +145,40 @@ return function(api)
   -- asteroid chunks in reach, thruster tanks and unbuilt ghosts. Each read is
   -- guarded so a missing field never hides the rest.
   local function try(fn) local ok,v=pcall(fn); if ok then return v end end
+  -- The game repairs a platform's entities itself, one at a time, with repair
+  -- packs from the hub (no robots in space; remote view cannot repair).
+  M.REPAIR_NOTE='the game repairs platform entities itself with repair packs from the hub, one entity at a time (no robots in space, and remote view cannot repair); put repair packs in the hub (hub requests or a rocket) and read platforms {platform} for damaged and repair_packs'
+  -- What is damaged (most damaged first) and the repair packs in the hub.
+  function M.repair_view(pl)
+    local out={}
+    local hub=pl.hub
+    local inv=hub and hub.valid and try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+    local packs={}
+    for _,st in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+      if try(function() return prototypes.item[st.name].type end)=='repair-tool' then packs[#packs+1]=st.name..'*'..st.count end
+    end
+    out.repair_packs=#packs>0 and table.concat(packs,' ') or 'none'
+    local list={}
+    try(function()
+      for _,e in ipairs(pl.surface.find_entities_filtered{force=pl.force,limit=5000}) do
+        local h,m=e.health,e.max_health
+        if h and m and m>0 and h<m then list[#list+1]={e=e,h=h,m=m} end
+      end
+    end)
+    table.sort(list,function(x,y) return x.h/x.m<y.h/y.m end)
+    local rows={}
+    for i=1,math.min(#list,10) do
+      local d=list[i]
+      rows[i]=string.format('%s (%g,%g) %d/%d',d.e.name,d.e.position.x,d.e.position.y,math.floor(d.h),math.floor(d.m))
+    end
+    out.damaged=#rows>0 and rows or nil
+    out.damaged_count=#list>10 and #list or nil
+    return out
+  end
   local function detail(pl,row)
     row.speed=try(function() return pl.speed and math.floor(pl.speed*1000+0.5)/1000 end)
+    local repair=M.repair_view(pl)
+    row.repair_packs,row.damaged,row.damaged_count=repair.repair_packs,repair.damaged,repair.damaged_count
     local damaged=try(function() return #pl.damaged_tiles end)
     row.damaged_tiles=damaged and damaged>0 and damaged or nil
     local chunks=try(function() return pl.find_asteroid_chunks_filtered{} end)
@@ -298,7 +330,8 @@ return function(api)
       local trash=defines.inventory.rocket_silo_trash and e.get_inventory(defines.inventory.rocket_silo_trash)
       silos[#silos+1]={position=e.position,status=silo_states[e.rocket_silo_status],
         parts=e.rocket_parts..'/'..e.prototype.rocket_parts_required,cargo=cargo and top_items(cargo,8) or nil,
-        trash=trash and top_items(trash,8) or nil,auto_requests=e.use_transitional_requests or nil}
+        trash=trash and top_items(trash,8) or nil,auto_requests=e.use_transitional_requests or nil,
+        weight=cargo and M.rocket_weight(e) or nil}
     end
     out.silos=#silos>0 and silos or nil
     out.planet=p.surface.planet and p.surface.planet.name or nil
@@ -339,6 +372,59 @@ return function(api)
     if a.paused~=nil then assert(type(a.paused)=='boolean','paused must be boolean'); pl.paused=a.paused end
     return {name=pl.name,state=platform_states[pl.state],at=location(pl),paused=pl.paused or nil,schedule=schedule_text(pl)}
   end
+  -- launch_rocket returned false: the game gives no reason (the API documents
+  -- false as the silo not ready), so name what it may check, the conditions
+  -- out of the ordinary first.
+  -- Rocket cargo weight against the lift, in grams as the game counts them
+  -- (item prototype weight; rocket_lift_weight 1000000 = 1000 kg). The game
+  -- takes cargo past the lift by script and then refuses the launch.
+  local function kg(g) return string.format('%g',math.floor(g/100+0.5)/10) end
+  function M.rocket_load(silo)
+    local inv=silo.get_inventory(defines.inventory.rocket_silo_rocket)
+    local w,items=0,{}
+    for _,s in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+      local each=try(function() return prototypes.item[s.name].weight end) or 0
+      w=w+each*s.count; items[#items+1]={name=s.name,count=s.count,each=each}
+    end
+    table.sort(items,function(x,y) local wx,wy=x.each*x.count,y.each*y.count; if wx~=wy then return wx>wy end return x.name<y.name end)
+    return w,try(function() return prototypes.utility_constants.rocket_lift_weight end) or 1000000,items
+  end
+  function M.rocket_weight(silo) local w,lift=M.rocket_load(silo); return kg(w)..'/'..kg(lift)..' kg' end
+  -- How many of an item still fit under the lift, and the load it joins.
+  function M.rocket_room(silo,item)
+    local w,lift=M.rocket_load(silo)
+    local each=try(function() return prototypes.item[item].weight end) or 0
+    local room=each>0 and math.max(0,math.floor((lift-w)/each)) or math.huge
+    return room,{weight=M.rocket_weight(silo),each=kg(each)..' kg',room=room~=math.huge and room or nil}
+  end
+  local function overweight(silo)
+    local w,lift,items=M.rocket_load(silo)
+    if w<=lift then return nil end
+    local parts={}
+    for i=1,math.min(#items,8) do local s=items[i]; parts[i]=s.name..'*'..s.count..' at '..kg(s.each)..' kg' end
+    return 'overweight by '..kg(w-lift)..' kg: the rocket holds '..kg(w)..' kg and lifts '..kg(lift)..' kg; take cargo out with transfer {position, direction=to_player, inventory=rocket_silo_rocket, item, count} (cargo: '..table.concat(parts,', ')..')'
+  end
+  local function refused(silo,pl,destination)
+    local odd,seen={},{}
+    local entity_states=invert(defines.entity_status)
+    seen[#seen+1]='silo '..tostring(silo_states[silo.rocket_silo_status])..'/'..tostring(try(function() return entity_states[silo.status] end))
+    local heavy=try(function() return overweight(silo) end)
+    if heavy then odd[#odd+1]=heavy end
+    local rocket=try(function() local r=silo.rocket; return r and r.valid end)
+    if not rocket then odd[#odd+1]='the silo holds no rocket entity' end
+    local weight=try(function() return M.rocket_weight(silo) end)
+    if weight then seen[#seen+1]='cargo '..weight end
+    if silo.use_transitional_requests then odd[#odd+1]='automatic requests are on (the silo fills and sends rockets for platforms\' requests itself)' end
+    if pl then
+      local state=platform_states[pl.state]
+      local paused=pl.paused or state=='paused'
+      seen[#seen+1]='platform '..pl.name..' '..tostring(state)..(paused and state~='paused' and ' (paused)' or '')..' at '..tostring(location(pl))
+      if paused then odd[#odd+1]='platform '..pl.name..' is paused (platform_schedule paused=false unpauses it)' end
+      if destination.station and not destination.station.valid then odd[#odd+1]='the hub is gone' end
+    end
+    seen[#seen+1]='destination '..tostring(invert(defines.cargo_destination)[destination.type])
+    return 'the game refused the launch (launch_rocket returned false)'..(#odd>0 and ': '..table.concat(odd,'; ') or '')..' ['..table.concat(seen,', ')..']'
+  end
   function M.launch(p,a)
     local silo=api.remote_entity(p,{position=a.position,name=a.name,unit_number=a.unit_number})
     assert(silo.type=='rocket-silo','not a rocket silo')
@@ -361,6 +447,8 @@ return function(api)
     end
     assert(silo.rocket_silo_status==defines.rocket_silo_status.rocket_ready,'rocket is not ready: '..tostring(silo_states[silo.rocket_silo_status])..', parts '..silo.rocket_parts..'/'..silo.prototype.rocket_parts_required)
     local cargo=top_items(silo.get_inventory(defines.inventory.rocket_silo_rocket),8)
+    local heavy=overweight(silo)
+    if heavy then error('launch refused, '..heavy,0) end
     -- Riding: the character climbs into the rocket, as a player does
     -- standing at the silo, and arrives in the platform hub.
     local rider,bot
@@ -381,9 +469,9 @@ return function(api)
         assert(not items or items.is_empty(),'only armor and guns travel with the rider: put down everything in '..inv..' first (ship it as rocket cargo)')
       end
     end
-    local destination,to
+    local destination,to,pl
     if a.platform~=nil then
-      local pl=M.platform(p,a.platform)
+      pl=M.platform(p,a.platform)
       local here=p.surface.planet and p.surface.planet.name
       assert(pl.space_location and pl.space_location.name==here,'platform '..pl.name..' is not in orbit of '..tostring(here)..' (at '..tostring(location(pl))..')')
       -- Cargo for a platform lands in its hub (a station); the space_platform
@@ -403,12 +491,12 @@ return function(api)
       -- The rocket flies with its own cargo pod; the bot rides it (bots.lua).
       api.bots.can_board(bot)
       local pod=try(function() local r=silo.rocket; return r and r.valid and r.attached_cargo_pod or nil end)
-      assert(silo.launch_rocket(destination),'the game refused the launch')
-      api.bots.board(bot,M.platform(p,a.platform),pod)
+      if not silo.launch_rocket(destination) then error(refused(silo,pl,destination),0) end
+      api.bots.board(bot,pl,pod)
       return {launched=true,to=to,cargo='empty',riding='the bot rides the rocket\'s cargo pod (~40 s), then is aboard '..a.platform..' with remote view only: poll status (travel)'}
     end
     if rider then api.stop(p) end
-    assert(silo.launch_rocket(destination,rider),'the game refused the launch')
+    if not silo.launch_rocket(destination,rider) then error(refused(silo,pl,destination),0) end
     return {launched=true,to=to,cargo=cargo or 'empty',riding=rider and 'the character rides along (~40 s); actions fail until it sits in the hub: poll status (platform, riding)' or nil,
       auto_requests=switched and switched.auto_requests,cargo_to_trash=switched and switched.cargo_to_trash,note=switched and switched.note}
   end
@@ -515,13 +603,13 @@ return function(api)
     requests={target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       returns='target, sections [{index, group, controlled (set by the game, not editable), requests ["item min..max from planet"]}]; call with no set/clear to just read'},
-    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, hub_slots (free of all), hub_trash, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
+    platforms={platform='optional name: only this one, with its full hub inventory, speed (LuaSpacePlatform.speed), repair_packs (in the hub; the game repairs platform entities itself with them, one at a time), damaged (most damaged first, up to 10; damaged_count past that), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), schedule, hub, hub_items, hub_slots (free of all), hub_trash, requests, leave_ok}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule'},
     drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',
       note='the hub\'s drop slots, from remote view: a cargo pod takes the items to the planet below a stopped platform (the landing pad if any, else a temporary container on the ground)',returns='dropped, not_sent, to, pad, near'},
     land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any). A bot lands where it last stood on that planet, else at its spawn point, wearing the armor and guns it rode up with',returns='landing (and for a bot: at, pad)'},
-    launch={position='rocket silo {x,y} in a visible chunk',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it; switched on with cargo loaded by hand, the game moves that cargo to the silo\'s trash slots: cargo_to_trash, note, trash)',returns='launched, to, cargo'},
+    launch={position='rocket silo {x,y} in a visible chunk',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it; switched on with cargo loaded by hand, the game moves that cargo to the silo\'s trash slots: cargo_to_trash, note, trash)',returns='launched, to, cargo',refused='overweight by N kg (a rocket lifts 1000 kg; the cargo listed by weight) before the game is asked; when the game refuses, what it may check'},
   }
   return M
 end
