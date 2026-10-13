@@ -50,3 +50,7 @@ test('arrays of records nested inside records keep every row', () => {
   const single = formatCompact({enemies:{bases:1,list:[base(338)]}});
   assert.match(single,/list\[1\]:\n    0: spawners=2 absorbing=0 position=338,-27 distance=205 direction=E/);
 });
+test('full status: the teammates line follows the clock line', () => {
+  const output = formatCompact({ok:true,id:'s',result:{teammates:'Sol on Vulcanus; Astra 110 tiles N',alive:true,clock:'game 1m',tick:5}});
+  assert.equal(output,'alive: true\nclock: "game 1m"\nteammates: "Sol on Vulcanus; Astra 110 tiles N"\ntick: 5\n');
+});

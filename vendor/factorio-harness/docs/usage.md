@@ -61,6 +61,12 @@ fh call status
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
   (`standing on a transport-belt facing east: it carries you; step off to stay put`); the game moves a character
   standing on a belt. `status.on_belt` shows the same for as long as it stands on one.
+- Full `status` (not `brief`) has `teammates`, one line on where every other agent is (compact output prints it right
+  after `clock:`): agents elsewhere first, grouped by planet, platform or cargo pod, then the ones on your surface,
+  nearest first, with distance and compass direction:
+  `Sol on Vulcanus; opus 25 tiles S (offline); Luna 100 tiles NE`. `dead` and `offline` are marked; a bot is offline
+  after 15 minutes with no request or sleep poll, an attached player when disconnected. Human players and directors are
+  left out.
 - `use_item {item, position}` throws a capsule you hold (grenade, cluster grenade, poison or slowdown capsule, defender,
   distractor or destroyer capsule) at a position in sight: the game's own projectile from the capsule's action, from
   your character, so damage and kills are the game's. The item prototype's range, minimum range and cooldown apply
