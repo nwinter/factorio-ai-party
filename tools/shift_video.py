@@ -484,7 +484,8 @@ def describe(n, row, start, end, events, chapters, team, deaths, biggest, moment
     when = f"Streamed live {start.strftime('%b %-d, %Y')}, {pacific(start)} to {pacific(end)} Pacific ({game})."
     lines = [lede, "", when, "", "What happened"]
     if row:
-        techs = [lower(e["label"]) for e in sorted(events, key=lambda e: -e["weight"]) if e["kind"] == "research"][:4]
+        techs = [f"the {e['label'].replace(' discovered', ' discovery')}" if e["label"].endswith(" discovered")
+                 else lower(e["label"]) for e in sorted(events, key=lambda e: -e["weight"]) if e["kind"] == "research"][:4]
         including = ", ".join(techs[:-1]) + f" and {techs[-1]}" if len(techs) > 1 else "".join(techs)
         in_all = f" ({row['research']} in all)" if row["research"] != row["research_new"] else ""
         lines.append(f"• {row['research_new']} new technologies{in_all}"
