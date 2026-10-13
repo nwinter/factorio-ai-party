@@ -144,6 +144,34 @@ def platform_where(p):
             "speed_kms": round(speed * 60) if isinstance(speed, (int, float)) and speed else None, "view": p.get("view")}
 
 
+# notes.md "## Now" (the agents' own state for their next turn) opens with the clock more often than the job: shift05
+# Astra "Game16h40, deadline2026-10-13 10:56PDT (~2h57 remaining). Nauvis position69.86,64.58,8deaths, ... Main job
+# Peregrine ferry aboveVulcanus plus east/south defense.", Haiku "Deadline 10:56 PDT (2h58m left ...). Goal: keep
+# burners, furnaces and boilers fuelled; ..."
+CLOCKISH = re.compile(r"deadline|remaining|\bleft at\b|\bgame ?\d+h|\b\d+h\d+m?\b|\bP[DS]T\b|\bUTC\b|position ?-?\d|"
+                      r"\d+ ?deaths|^deaths?\b|^shift ?\d|^tick\b|^(game )?time\b|^next( concrete)? steps?\b|`|^\d+\.$|"
+                      r"^(do not|don'?t|never)\b|^sleep \d",
+                      re.I)
+JOBISH = re.compile(r"^((main|current|my)\s+)?(job|goal|task|focus|role)s?\b[\s:,-]*|^(doing|working on|now|currently)\b"
+                    r"[\s:,-]*", re.I)
+
+
+def notes_job(md, limit=90):
+    """The agent's job from its notes.md: the first sentence of "## Now" that names a job ("Main job ...", "Goal: ..."),
+    else its first sentence that is not the clock, deadline or position; trimmed. None without a usable line."""
+    m = re.search(r"^##\s*Now\b[^\n]*\n(.*?)(?=^##\s|\Z)", md or "", re.M | re.S)
+    if not m:
+        return None
+    sents = [s.strip(" -*•\t") for line in m.group(1).splitlines() for s in re.split(r"(?<=[.;!?])\s+", line)]
+    sents = [s for s in sents if len(s) >= 6 and not CLOCKISH.search(s)]
+    if not sents:
+        return None
+    pick = next((s for s in sents[:4] if JOBISH.match(s)), sents[0])  # (further down: older shifts' lines)
+    pick = JOBISH.sub("", pick, count=1).strip().rstrip(".;")
+    pick = pick[:1].upper() + pick[1:]
+    return pick if len(pick) <= limit else pick[:limit - 1].rsplit(" ", 1)[0] + "…"
+
+
 def platform_shot(view, margin=10.0):
     """A camera shot of a whole platform from its view (live.py PLATFORM_LUA): the centre of its entities' bounds on
     its surface, at the zoom that fits them. A director client at zoom 1 shows ~60x34 tiles (1920x1080 at 32 px per
@@ -240,6 +268,7 @@ class Agent:
         self.avatar = None  # profile.avatar: parts for avatar.js (docs/ART-NOTES.md); None draws the name default
         self.surface = None   # Space Age (status): the surface the body is on, and the platform's name when on one
         self.platform = None
+        self.notes_job = None  # its notes.md "## Now" job line (live.py, notes_job), for the card
 
     def bump(self, amount, now):
         self.decay(now)
@@ -409,6 +438,8 @@ class Model:
                 setattr(ag, key, a[key])
         if "avatar" in a:
             ag.avatar = a["avatar"] if isinstance(a["avatar"], dict) else None
+        if "notes_job" in a:
+            ag.notes_job = a["notes_job"]
         if "profile_set" in a:
             ag.profile_set = a["profile_set"]
         if a.get("position"):
@@ -978,9 +1009,16 @@ class Model:
             for name in cam.get("agents") or []:
                 cams_by_agent.setdefault(name, slot)
         agents = []
+        # each card's current job (shift05 07:57, a viewer: "displaying the current plan of each bot instead of the
+        # motto"): its line in the team plan, else its notes.md "## Now" job line; the page falls back to the motto
+        plan_lines = {d["agent"]: d["text"] for d in reversed((self.plan_snapshot() or {}).get("doing") or [])
+                      if d.get("agent") and d.get("text")}
         for ag in self.agents.values():
             ag.decay(now)
+            job, job_from = (plan_lines[ag.name], "plan") if ag.name in plan_lines else \
+                (ag.notes_job, "notes") if ag.notes_job else (None, None)
             agents.append({
+                "job": job, "job_from": job_from,
                 "name": ag.name, "kind": ag.kind, "display_name": ag.display_name, "color": ag.color,
                 "glyph": ag.glyph, "motto": ag.motto, "profile_set": ag.profile_set, "model": ag.cfg.get("model"), "harness": ag.cfg.get("harness"),
                 "role": ag.cfg.get("role"), "alive": ag.alive, "activity": self.activity(ag, now),

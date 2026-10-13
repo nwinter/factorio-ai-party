@@ -8,6 +8,9 @@ import bisect, json, math, os, random, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCORES = os.path.join(ROOT, "runs", "2026-10-10-coop1", "scores.jsonl")
+# notes.md "## Now" job lines for the first agents (shift05's, model.notes_job); the rest show their mottos
+MOCK_JOBS = ["Peregrine ferry above Vulcanus plus east/south defense", "Keep burners, furnaces and boilers fuelled",
+             "Blue-science courier: advanced circuits into the chem assemblers, packs to the labs"]
 
 # What the agents "chose" with `profile`. Deliberately awkward picks (near-white, near-black, long name, emoji)
 # so the page's contrast fallback and truncation get exercised.
@@ -474,7 +477,9 @@ class MockSource:
             "confessions": self.confessions[-10:],
             "tells": self.tells[-10:],
         }
-        for a in obs["agents"]:
+        for i, a in enumerate(obs["agents"]):
+            if i < len(MOCK_JOBS):  # notes.md "## Now" job lines (live.py notes_job) for the cards
+                a["notes_job"] = MOCK_JOBS[i]
             if now < self.unset.get(a["name"], 0):
                 a.update(display_name=None, color=None, glyph=None, motto=None, profile_set=False)
             else:

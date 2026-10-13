@@ -607,6 +607,8 @@
         '<header>' + avatar(a, 48) + '<div><h3>' + esc(a.display_name || a.name) + (a.camera ? ' <span class="fx-chip fx-chip--orange cam-chip">' + esc(a.camera) + '</span>' : '') + '</h3>' +
         '<p class="fx-muted small">' + esc([a.model, a.role].filter(Boolean).join(' · ')) + '</p></div>' +
         '<span class="state" data-s="' + esc(act) + '">' + esc(ACT_LABEL[act] || act) + '</span></header>' +
+        // its current job: its team-plan line, else its notes.md "## Now" (tools/stream/model.py job)
+        (a.job ? '<p class="agent-job">' + esc(a.job) + '</p>' : '') +
         '<p class="agent-doing">' + esc(a.action || (act === 'thinking' ? 'thinking…' : '–')) + (a.location ? ' <span class="fx-muted">at ' + esc(a.location) + '</span>' : '') + '</p>' +
         (said ? '<ul class="agent-said">' + said + '</ul>' : '') + '</article>';
     }).join('');
