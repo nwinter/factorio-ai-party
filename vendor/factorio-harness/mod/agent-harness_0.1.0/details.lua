@@ -25,16 +25,36 @@ return function(api)
     if type(f) == 'string' then return f end
     return f ~= nil and try(function() return f.name end) or nil
   end
+  -- A collector's filter_slot_count reads 0 until a filter is set (shift06
+  -- 11:57: a new collector refused configure, a paste worked), so its slots
+  -- are read past the count, until get_filter fails (at most 32).
+  local MAX_CHUNK_SLOTS = 32
+  local function chunk_slots(e, n)
+    local out = {}
+    for i = 1, n do
+      local ok, f = pcall(function() return e.get_filter(i) end)
+      if not ok then break end
+      out[i] = chunk_name(f) or false
+    end
+    return out
+  end
+  -- {filters, filter_slots} of an asteroid collector or its ghost: chunk
+  -- names, and the game's filter_slot_count.
+  local function chunk_filters(e)
+    local slots = try(function() return e.filter_slot_count end) or 0
+    local list = {}
+    for _, name in ipairs(chunk_slots(e, math.max(slots, MAX_CHUNK_SLOTS))) do
+      if name then list[#list+1] = name end
+    end
+    return {filters=list, filter_slots=slots}
+  end
   -- {filters, filter_mode, use_filters} of an inserter, loader or their ghost;
   -- {filters, filter_slots} of an asteroid collector or its ghost.
   local function filters(e)
+    if collector(e) then return chunk_filters(e) end
     local slots = try(function() return e.filter_slot_count end) or 0
     if slots <= 0 then return nil end
     local list = {}
-    if collector(e) then
-      for i = 1, slots do list[#list+1] = chunk_name(try(function() return e.get_filter(i) end)) end
-      return {filters=list, filter_slots=slots}
-    end
     for i = 1, slots do
       local n = item_name(try(function() return e.get_filter(i) end))
       if n then list[#list+1] = n end
@@ -49,8 +69,10 @@ return function(api)
   end
   M.COLLECTOR_NOTE = 'filters are asteroid chunk names (configure {position, filters}); the game has no whitelist/blacklist mode for collectors'
   -- configure {filters} on an asteroid collector, as its GUI's chunk filter
-  -- slots: chunk names up to filter_slot_count, [] clears.
-  function M.configure_collector(e, a, slots)
+  -- slots: chunk names in slots 1.., [] clears. filter_slot_count is not
+  -- trusted (it reads 0 before the first filter): each slot is set and only
+  -- the game's refusal fails it, with the slots set before put back.
+  function M.configure_collector(e, a)
     assert(a.filter_mode == nil, 'asteroid collectors have no filter mode (the game has none): filters lists the chunks')
     local known = {}
     for name in pairs(prototypes.asteroid_chunk or {}) do known[#known+1] = name end
@@ -58,9 +80,26 @@ return function(api)
     for _, name in ipairs(a.filters) do
       assert(type(name) == 'string' and (prototypes.asteroid_chunk or {})[name], 'unknown asteroid chunk ' .. tostring(name) .. '; chunks: ' .. table.concat(known, ', '))
     end
-    for i = 1, slots do e.set_filter(i, a.filters[i]) end
-    local f = filters(e)
-    return {filters=f and f.filters or {}, filter_slots=slots, note=M.COLLECTOR_NOTE}
+    local count = try(function() return e.filter_slot_count end) or 0
+    local was = chunk_slots(e, math.max(count, #a.filters, 1))
+    local function put(i, name) return pcall(function() e.set_filter(i, name) end) end
+    for i, name in ipairs(a.filters) do
+      local ok, err = put(i, name)
+      if not ok then
+        for j = 1, i - 1 do put(j, was[j] or nil) end
+        error(string.format('the game refused %s in filter slot %d: %s%s', name, i, tostring(err):gsub('%s+', ' '),
+          i > 1 and ' (slots 1..' .. (i - 1) .. ' are as they were)' or ''), 0)
+      end
+    end
+    -- The slots after the list: cleared where they held a filter.
+    for i = #a.filters + 1, #was do if was[i] then put(i, nil) end end
+    local f = chunk_filters(e)
+    local got, missing = {}, {}
+    for _, name in ipairs(f.filters) do got[name] = (got[name] or 0) + 1 end
+    for _, name in ipairs(a.filters) do
+      if (got[name] or 0) > 0 then got[name] = got[name] - 1 else missing[#missing+1] = name end
+    end
+    return {filters=f.filters, filter_slots=f.filter_slots, not_set=#missing > 0 and missing or nil, note=M.COLLECTOR_NOTE}
   end
   M.collector = collector
   local function where(t)
