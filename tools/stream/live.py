@@ -17,7 +17,12 @@ PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "re
 AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
-LOSS_RE = re.compile(r"^(?:losses )?in \((-?\d+),(-?\d+)\)(?:-\((-?\d+),(-?\d+)\))? (\d+) destroyed: (.*?)(?: by (.*?))?, (\S+) ago$")
+# status.alerts.latest lines: "in (x,y)-(x,y) N destroyed: ..." and, from eng/defensetools, "#7 [on S | on platform P]
+# in (x,y)-(x,y) [continue:] N destroyed[ (+k since you were told)]: ..."
+LOSS_RE = re.compile(r"^(?:losses )?(?:#(?P<id>\d+)(?: on (?:platform (?P<platform>.+?)|(?P<surface>\S+)))? )?"
+                     r"in \((?P<x>-?\d+),(?P<y>-?\d+)\)(?:-\((?P<x2>-?\d+),(?P<y2>-?\d+)\))?(?: continue:)? (?P<total>\d+) destroyed"
+                     r"(?: \(\+\d+ since you were told\))?: (?P<names>.*?)(?: by (?P<by>.*?))?, (?P<ago>\S+) ago$")
+LOSS_RECENT_TICKS = 2 * 3600  # as RECENT_AGO: the last loss under 2 game minutes ago
 CHUNK = 32.0  # status.alerts.attacked reports a chunk: its centre, the fight somewhere in its 32x32 tiles
 RECENT_AGO = re.compile(r"^(?:.*-)?(?:\d+s|1m\d\ds)$")  # last part of the span under 2 minutes
 
@@ -31,8 +36,9 @@ def hit_label(entities):
 
 def attacker_label(by):
     """describe_incident's "by 5 small-biter, 2 medium-biter" counts kills by each kind: "small biters". Our own
-    entities come last as "friendly fire: 2 flamethrower-turret": alone, "friendly fire from flamethrower turrets"."""
-    first = (by or "").split(",")[0].strip()
+    entities come last as "friendly fire: 2 flamethrower-turret": alone, "friendly fire from flamethrower turrets". Where
+    a burning turret stands ("2 flamethrower-turret at (80,90) (84,90)") is left out of the label."""
+    first = re.sub(r" at \(-?[\d.]+,-?[\d.]+\)(?: \(-?[\d.]+,-?[\d.]+\))*", "", by or "").split(",")[0].strip()
     if first.startswith("friendly fire:"):
         name = attacker_label(first.split(":", 1)[1])
         return f"friendly fire from {name}" if name and name != "unknown sources" else "friendly fire"
@@ -217,7 +223,7 @@ class LiveSource:
                 if not alerts_seen and st.get("alerts"):
                     alerts_seen = True  # force-wide: one agent's copy is enough
                     obs["events"] += self.attack_events(st["alerts"], obs.get("tick") or st.get("tick") or 0)
-                    obs["events"] += self.loss_events(st["alerts"])
+                    obs["events"] += self.loss_events(st["alerts"], obs.get("tick") or st.get("tick"))
             except Exception as e:
                 errors[f"status:{name}"] = str(e)
         for name in names:
@@ -421,24 +427,50 @@ class LiveSource:
                 errors["board"] = str(e)
 
     @staticmethod
-    def loss_events(alerts):
-        """status.alerts.latest: describe_incident() lines, e.g. "in (12,-40)-(20,-31) 7 destroyed: 4 stone-wall,
-        3 gun-turret by 5 small-biter, 1m10s-0s ago" -> loss banners (one per area)."""
+    def loss_event(x, y, x2, y2, total, names, by, surface=None, platform=None, ident=None):
+        """One loss banner: where the camera frames it (the loss rectangle's centre and size, a single point 16
+        tiles) on the incident's surface; a platform's surface goes to its platform (model.platform_of)."""
+        what = ", ".join(n.strip().replace("-", " ") for n in (names or "").split(",")[:2])
+        # a numbered line names only the platform: model.platform_of matches a platform by its name too
+        surface = surface or platform or "nauvis"
+        on = f"on {surface[:1].upper() + surface[1:]} " if surface != "nauvis" and not platform else ""
+        text = f"{total} lost {on}near ({x}, {y}): {what}" + (f" (by {attacker_label(by)})" if by else "")
+        x2, y2 = float(x if x2 is None else x2), float(y if y2 is None else y2)
+        pos = {"x": (float(x) + x2) / 2, "y": (float(y) + y2) / 2,
+               "extent": max(16.0, abs(x2 - float(x)), abs(y2 - float(y))), "surface": surface}
+        key = f"loss:{surface}:#{ident}" if ident is not None else f"loss:{x},{y}" if surface == "nauvis" else f"loss:{surface}:{x},{y}"
+        ev = {"kind": "loss", "text": text, "key": key, "ttl": 90, "position": pos}
+        if platform:
+            ev["platform"] = platform
+        return ev
+
+    @staticmethod
+    def loss_events(alerts, tick=None):
+        """status.alerts.incidents (rows with id, surface, platform, box, total, names, by, last_tick) -> loss banners
+        (one per incident) on the incident's surface. 12:58 on 2026-10-13: Sol's 59 turrets lost on Vulcanus went to
+        Nauvis (-223,74), an empty field, when the surface was read as nauvis. A runtime without rows: the text of
+        status.alerts.latest, old ("in (12,-40)-(20,-31) 7 destroyed: ...") or numbered ("#7 on vulcanus in ...")."""
         out = []
+        rows = alerts.get("incidents")
+        if isinstance(rows, list) and rows:
+            for r in rows[:3]:
+                b = r.get("box") or {}
+                if not all(isinstance(b.get(k), (int, float)) for k in ("x0", "y0", "x1", "y1")):
+                    continue
+                if tick is not None and isinstance(r.get("last_tick"), (int, float)) and tick - r["last_tick"] >= LOSS_RECENT_TICKS:
+                    continue  # the alert window is 5 game minutes; only show losses from the last minute or so
+                out.append(LiveSource.loss_event(b["x0"], b["y0"], b["x1"], b["y1"], r.get("total") or 0, r.get("names"),
+                                                 r.get("by"), r.get("surface"), r.get("platform"), r.get("id")))
+            return out
         for line in (alerts.get("latest") or [])[:3]:
             m = LOSS_RE.match(line or "")
             if not m:
                 continue
-            x, y, total, names, by, ago = m.group(1), m.group(2), int(m.group(5)), m.group(6), m.group(7), m.group(8)
-            if not RECENT_AGO.match(ago):
-                continue  # the alert window is 5 game minutes; only show losses from the last minute or so
-            what = ", ".join(n.strip().replace("-", " ") for n in names.split(",")[:2])
-            text = f"{total} lost near ({x}, {y}): {what}" + (f" (by {attacker_label(by)})" if by else "")
-            # where the camera frames the fight: the loss rectangle's centre and size (a single point: 16 tiles)
-            x2, y2 = float(m.group(3) or x), float(m.group(4) or y)
-            pos = {"x": (float(x) + x2) / 2, "y": (float(y) + y2) / 2,
-                   "extent": max(16.0, abs(x2 - float(x)), abs(y2 - float(y))), "surface": "nauvis"}
-            out.append({"kind": "loss", "text": text, "key": f"loss:{x},{y}", "ttl": 90, "position": pos})
+            if not RECENT_AGO.match(m.group("ago")):
+                continue
+            out.append(LiveSource.loss_event(m.group("x"), m.group("y"), m.group("x2"), m.group("y2"), int(m.group("total")),
+                                             m.group("names"), m.group("by"), m.group("surface"), m.group("platform"),
+                                             m.group("id")))
         return out
 
     @staticmethod

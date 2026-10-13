@@ -590,6 +590,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   5 game minutes, sooner when it gets worse. Hits on a platform are no longer `attack #` incidents; `status` alerts
   carry them as `platform_hits` rows `{platform, surface, hits, damage, entities, by, last_tick}`. Turrets and the hub
   are read at most every 10 s per platform.
+- `status` alerts for programs (the stream's loss banners and cuts): `latest` keeps one text line per loss incident
+  (`#7 on vulcanus in (-223,74)-(-214,79) 59 destroyed: 59 gun-turret by 59 small-demolisher, 3s ago`; a surface other
+  than the reader's is named, and with no reader any surface but nauvis), and `incidents` carries the same incidents as
+  rows: `{id, surface, platform, box {x0, y0, x1, y1}, total, names, by, first_tick, last_tick, line}`, newest first,
+  at most 8. Read the surface from the row, never from the text.
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each
   agent's first reply of it (any action, not a peek) carries `team.shift` once: `shift` (`shift N, started <age>
   ago`), `plan_goals` and `your_plan_line` (the team plan), `research_since_your_last_shift` (technologies finished
