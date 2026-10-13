@@ -209,6 +209,8 @@ ins.drop_target=nil
 local lone=bot('inspect',{platform='Starling',position={x=-2.5,y=-4.5}})
 eq(lone.drop_target,nil); eq(lone.drop_tile,'empty-space'); eq(lone.drop_note,'drops into empty space: items it moves are thrown overboard')
 ins.drop_target=hub
+-- flush reaches the platform the same way (the collector has no fluidbox).
+fails(function() bot('flush',{platform='Starling',position={x=-2.5,y=-6.5}}) end,'asteroid-collector has no fluidbox')
 -- describe lists platform on both.
 local d=runtime.dispatch{action='describe',args={},bot='astra'}
 assert(d.actions.inspect.platform and d.actions.configure.platform)

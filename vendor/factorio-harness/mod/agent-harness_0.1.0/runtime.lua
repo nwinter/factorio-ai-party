@@ -617,6 +617,7 @@ function handlers.describe()
   for name,schema in pairs(M.labs and M.labs.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.audience and M.audience.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.capsules and M.capsules.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.flush and M.flush.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circuits and M.circuits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.trains and M.trains.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
@@ -3329,6 +3330,15 @@ for name,handler in pairs(blueprint_handlers) do handlers[name]=handler end
 -- Grenades and other capsules (capsules.lua, request #89).
 M.capsules=require('capsules'){state=state,position=position,assert_visible=assert_visible,held=held}
 handlers.use_item=M.capsules.handlers.use_item
+-- The fluid GUI's flush (flush.lua, Sol's request): reach as configure.
+M.flush=require('flush'){integer=integer,friendly=friendly,target=function(p,a)
+  local near,e=pcall(entity,p,a)
+  if near then return e end
+  local ok,far=pcall(remote_entity,p,a)
+  if not ok then error(e,0) end
+  return far
+end}
+handlers.flush=M.flush.handlers.flush
 -- Circuit wires and settings (circuits.lua), train stops and schedules (trains.lua).
 M.circuits=require('circuits'){entity=entity,friendly=friendly}
 handlers.circuit=M.circuits.handlers.circuit
@@ -3741,7 +3751,7 @@ local function on_platform(p,name)
     __index=function(_,k) if k=='surface' then return pl.surface elseif k=='position' then return hub end return p[k] end,
     __newindex=function(_,k,v) p[k]=v end})
 end
-for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','paste','blueprint_place','grid','scan','inspect','configure'}) do
+for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','paste','blueprint_place','grid','scan','inspect','configure','flush'}) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
     if a.platform==nil then return handler(p,a) end
@@ -3750,7 +3760,7 @@ for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','past
     return handler(on_platform(p,a.platform),args)
   end
 end
-local permissions={walk='start_walking',move_to='start_walking',mine='begin_mining',pickup='change_picking_state',repair='start_repair',craft='craft',cancel_craft='cancel_craft',build='build',build_path='build',construct='build',place_ghosts='build',belt_route='build',pipe_route='build',pole_route='build',wire='wire_dragging',kite='change_shooting_state',revive_ghost='build',rotate='rotate_entity',configure='setup_assembling_machine',transfer='inventory_transfer',refuel='inventory_transfer',rearm='inventory_transfer',collect='inventory_transfer',feed='inventory_transfer',research='start_research',research_next='start_research',shoot='change_shooting_state',equip='inventory_transfer'}
+local permissions={walk='start_walking',move_to='start_walking',mine='begin_mining',pickup='change_picking_state',repair='start_repair',craft='craft',cancel_craft='cancel_craft',build='build',build_path='build',construct='build',place_ghosts='build',belt_route='build',pipe_route='build',pole_route='build',wire='wire_dragging',kite='change_shooting_state',revive_ghost='build',rotate='rotate_entity',configure='setup_assembling_machine',flush='flush_opened_entity_fluid',transfer='inventory_transfer',refuel='inventory_transfer',rearm='inventory_transfer',collect='inventory_transfer',feed='inventory_transfer',research='start_research',research_next='start_research',shoot='change_shooting_state',equip='inventory_transfer'}
 for name,input in pairs(permissions) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
@@ -3878,7 +3888,7 @@ function handlers.wait_until(p,a)
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
-local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
+local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
 local reads={placements=true,defense=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
