@@ -19,11 +19,16 @@ local function player(index,name,controller)
     assert(p.controller_type==defines.controllers.cutscene,'not in a cutscene')
     log[#log+1]='exit_cutscene'; p.controller_type=defines.controllers.character
   end
+  -- As seen live (14:24): the remote view opens where the spectator stands,
+  -- not at set_controller's position.
   p.set_controller=function(c)
     assert(p.controller_type~=defines.controllers.cutscene,'set_controller during the cutscene')
     log[#log+1]='set_controller'; p.controller_type=c.type; p.last_controller=c
   end
-  p.teleport=function() end
+  p.teleport=function(pos,surface)
+    p.position={x=pos.x,y=pos.y}; if surface then p.surface=surface end
+    log[#log+1]='teleport'
+  end
   p.exit_remote_view=function() log[#log+1]='exit_remote_view'; p.controller_type=defines.controllers.spectator end
   p.surface={name='nauvis'}
   return p
@@ -59,8 +64,28 @@ assert(not pcall(cams.set,{player=2,map=true,position={x=0,y=0},zoom=3}),'map zo
 people[4]=player(4,'luna',defines.controllers.character)
 local api_bot={character={valid=true,position={x=5,y=5},surface={name='nauvis'}},position={x=5,y=5}}
 log={}
-local st2={}
 local cams2=require('cameras'){state=function() return st end,bot=function(n) return n=='luna' and api_bot or nil end,controlled=function() return false end}
 cams2.set{player=2,follow='luna',zoom=1}
 eq(c2.controller_type,defines.controllers.spectator); eq(log[1],'exit_remote_view')
+eq(c2.position.x,5); eq(c2.position.y,5) -- follow shots as before: on the subject
+-- A base-map shot after following Luna shows the asked spot and zoom, not
+-- Luna (14:24: every "Base map" shot was centred on the last subject).
+c2.zoom=1
+r=cams2.set{player=2,map=true,position={x=120,y=-40},zoom=0.1}
+eq(c2.controller_type,defines.controllers.remote); eq(c2.position.x,120); eq(c2.position.y,-40); eq(c2.zoom,0.1)
+eq(r.camera.position.x,120)
+-- An entity the remote view centres on is dropped.
+c2.centered_on={valid=true}
+cams2.set{player=2,map=true,position={x=60,y=10},zoom=0.1}
+eq(c2.centered_on,nil); eq(c2.position.x,60)
+-- A view that drifts off the spot is put back on the next tick; one on it is left alone.
+c2.position={x=5,y=5}
+game.tick=601; cams2.tick()
+eq(c2.position.x,60); eq(c2.position.y,10); eq(c2.controller_type,defines.controllers.remote)
+log={}
+game.tick=602; cams2.tick()
+eq(#log,0)
+-- Back to following: the spectator is on Luna again.
+cams2.set{player=2,follow='luna',zoom=1}
+eq(c2.controller_type,defines.controllers.spectator); eq(c2.position.x,5)
 print('cameras ok ('..assertions..' assertions)')

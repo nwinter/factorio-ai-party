@@ -537,3 +537,7 @@ class LiveSource:
 
     def send_camera(self, body):
         return self.h.camera(body)
+
+    def send_highlights(self, body):
+        """highlights.py: the camera-only rings and labels, one operator dispatch per update."""
+        return self.h.operator_draw("highlights", body)

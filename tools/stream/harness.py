@@ -18,6 +18,10 @@ import pog  # noqa: E402  (tools/pog.py: Rcon client, ports, SCORE_LUA)
 READ_ACTIONS = {"status", "profiles", "chat", "power", "cameras", "describe", "board", "board_events", "platforms"}
 # Operator reads (eng/board audience.lua): every agent's `confess` lines, for viewers only. Gated on `describe`.
 OPERATOR_READS = {"confessions", "tells", "operator_requests", "attack_groups_live"}
+# Operator drawing for the camera clients only (highlights.lua): rings and labels on what agents act on, seen by the
+# director camera players alone; nothing in the game changes. A runtime without it refuses the operator request,
+# which stops nobody.
+OPERATOR_DRAWS = {"highlights"}
 
 # Extra operator reads for the overlay (same privilege level as `pog.py score`): research progress, the costliest
 # finished technologies (to seed "recent milestones" on start), machines starved of power, and how dark it is
@@ -385,6 +389,13 @@ class Harness:
         if not reply.get("ok"):
             raise RuntimeError(f"{action}: {reply.get('error', {}).get('message', raw)}")
         return reply.get("result", {}), reply.get("tick")
+
+    def operator_draw(self, action, args=None):
+        """Camera-only drawing (OPERATOR_DRAWS) through the same operator dispatch; returns the reply."""
+        if action not in OPERATOR_DRAWS:
+            raise ValueError(f"{action} is not an operator draw")
+        req = {"id": "stream-" + uuid.uuid4().hex[:12], "action": action, "args": args or {}, "operator": True}
+        return json.loads(self.command(f'/silent-command rcon.print(remote.call("agent_harness", "dispatch", {lua_string(json.dumps(req))}))'))
 
     def score(self):
         return self.lua(pog.SCORE_LUA)

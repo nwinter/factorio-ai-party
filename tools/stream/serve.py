@@ -11,7 +11,8 @@ Serves http://HOST:PORT/ (the overlay page for the OBS browser source), /state.j
 snapshot per update), /director.json (recent camera decisions), and the voice queue: POST /audio (caster.py pushes
 clips), /audio-events (SSE, new clips), GET /segments and POST /segment (timed shots for the casters and the
 director, tools/stream/segments.py), /audio/clip/ID, POST /audio/played and /audio/status (page playback reports). Director decisions are appended to
-tools/stream/logs/director-<start>.jsonl. Only read actions and the operator `camera` function are ever sent.
+tools/stream/logs/director-<start>.jsonl. Only read actions, the operator `camera` function and the operator
+`highlights` drawing (seen by the camera clients alone, highlights.py; --no-highlights turns it off) are ever sent.
 """
 import argparse, json, mimetypes, os, sys, threading, time, traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -313,6 +314,8 @@ def main():
     ap.add_argument("--poll", type=float, default=3.0, help="seconds between harness polls (2-5)")
     ap.add_argument("--cameras", help="director player indices, main first (e.g. 3,4,5); overrides the run config")
     ap.add_argument("--no-camera", action="store_true", help="decide and log but never call the camera function")
+    ap.add_argument("--no-highlights", action="store_true",
+                    help="never draw the camera highlights (rings and labels on what agents act on, highlights.py)")
     ap.add_argument("--profiles", choices=["auto", "on", "off"], default="auto",
                     help="poll `profiles` (auto: only when the harness has the eng/bots camera function)")
     ap.add_argument("--mock-speed", type=float, default=4.0, help="mock: game seconds per wall second")
@@ -356,6 +359,11 @@ def main():
         camera = source.send_camera
     if a.no_camera:
         camera = lambda body: {"ok": False, "stub": True, "disabled": True}  # noqa: E731
+    # what agents act on, drawn for the camera clients only (highlights.py, the harness's operator `highlights`)
+    highlights = None
+    if not a.mock and not a.no_camera and not a.no_highlights and run.get("highlights", True) is not False:
+        from highlights import Highlights
+        highlights = Highlights(source.send_highlights)
 
     os.makedirs(a.log_dir, exist_ok=True)
     log_path = os.path.join(a.log_dir, time.strftime("director-%Y%m%d-%H%M%S.jsonl"))
@@ -480,6 +488,9 @@ def main():
                     feed.relay.set_roster([(ag["name"], ag.get("display_name")) for ag in snap["agents"]
                                            if ag.get("activity") != "offline"] or roster)
                 snap["analyst"] = analyst.public(now)
+                if highlights:
+                    highlights.step(snap, now)
+                    snap["highlights"] = highlights.public()
                 hub.publish(snap)
             except Exception:
                 traceback.print_exc()
