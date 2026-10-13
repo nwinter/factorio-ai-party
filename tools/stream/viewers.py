@@ -813,6 +813,19 @@ class Relay:
     def names_agent(self, text):
         return bool(self.named_agents(text))
 
+    def called(self, text, name):
+        """Is the agent called by name: at the start of the line ("Sol, ...", "hey sol what ...") or at its end after a
+        comma ("..., sol?")."""
+        t = text.casefold().strip()
+        d = dict(self.roster).get(name)
+        for alias in {name.casefold(), re.sub(r"^pog-", "", name.casefold()), (d or "").casefold()}:
+            if len(alias) < 2:
+                continue
+            a = r"(pog-)?" + re.escape(alias) + r"(?![\w-])"
+            if re.match(r"^\W*((hey|hi|hello|yo|ok|okay|so|and|but|oh)\W+)?" + a, t) or re.search(r",\s*" + a + r"\W*$", t):
+                return True
+        return False
+
     def set_roster(self, roster):
         """[(name, display_name)] in team order; serve.py refreshes it from the snapshot (display names, offline)."""
         self.roster = [(n, d) for n, d in roster if n]
@@ -835,6 +848,14 @@ class Relay:
         addressed longest ago). The harness has no team-wide viewer mention (a viewer's "@everyone" wakes nobody),
         and waking all nine for one line would stop the team."""
         named = self.named_agents(msg["text"])
+        prev = self.asked.get(author)
+        if (named and prev and now - prev[1] < self.ASK_WINDOW and prev[0] in [n for n, _ in self.roster]
+                and prev[0] not in [n for n, _ in named] and not any(at for _, at in named)
+                and not any(self.called(msg["text"], n) for n, _ in named)):
+            # mid-conversation, a teammate named in passing is talked about, not to: the line goes on to the agent this
+            # viewer was talking to (shift05 09:28, SeniorEngineer to Gemini: "can you stop talking to Sol who's on
+            # another planet anyway" went to Sol as "@sol can you stop talking to Sol ...")
+            return [prev[0]], [prev[0]]
         if named:
             return [n for n, _ in named], [n for n, at in named if not at]
         # the channel's staff answering viewers ("Sure, will add"), and lines to a viewer (@someone) or to Nick ("this is

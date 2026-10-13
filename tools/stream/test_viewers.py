@@ -558,6 +558,17 @@ check("waiting: they go one per gap, in order; zb2 goes 99 s after it was writte
       [(x or {}).get("id") for x in sent_b] == ["zb0", "zb1", "zb2"] and not rz.q, sent_b)
 check("relay: the address fits inside the 120-character line",
       len(V.Relay.line({"name": "x", "text": "why " * 60 + "?"}, "gemini")["text"]) == V.RELAY_MAX)
+# shift05 09:28: SeniorEngineer, talking with Gemini, named Sol in passing; the line went to Sol
+ra = V.Relay(FakeHarness(), switch, gap=0, author_gap=0, roster=SHIFT01)
+ra.asked["se"] = ("gemini", NOW - 60)
+for text, want in [("can you stop talking to Sol who's on another planet anyway", "gemini"),
+                   ("what do you think of Sol's ferry?", "gemini"), ("Sol, what's your plan?", "sol"),
+                   ("hey sol how is vulcanus", "sol"), ("@sol what is your long term plan with vulkanus", "sol"),
+                   ("nice work, sol", "sol")]:
+    to, _ = ra.address({"text": text, "name": "SeniorEngineer"}, "se", NOW)
+    check(f"address mid-conversation: {text!r} -> {want}", to and to[0] == want, to)
+to, _ = ra.address({"text": "can you stop talking to Sol", "name": "x"}, "x", NOW)
+check("address: a new viewer naming an agent still reaches it", to == ["sol"], to)
 os.remove(switch)
 
 # ---- Clef -------------------------------------------------------------------------------------------------------------

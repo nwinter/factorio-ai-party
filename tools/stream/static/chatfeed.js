@@ -87,8 +87,11 @@
 
   // The viewer line an answer answers. The agents saw the viewer lines relayed into the game chat (lane "viewer",
   // from "viewer NAME"), so those count first: among that viewer's lines before the answer in the last 10 minutes,
-  // the one sharing the most words with it, else the most recent (shift01 16:32: both pins showed Joonazan's latest
-  // line under answers to two earlier questions). Without game copies, the viewer's lane lines the same way.
+  // those addressed to the answering agent ("@sol ..."; any, if none is), the most recent unless an earlier one shares
+  // at least two more words with the answer (shift01 16:32: both pins showed Joonazan's latest line under answers to
+  // two earlier questions; shift05 09:38: Sol answered "@sol what is your long term plan with vulkanus" in 5 s, but
+  // "vulkanus" shares no word with "Vulcanus" and an older line shared one, so the older line was pinned again).
+  // Without game copies, the viewer's lane lines the same way.
   function questionFor(s, m, copies, viewers) {
     const before = (c) => (seqOf(c) != null && seqOf(m) != null ? c.seq < m.seq
       : c.tick != null && m.tick != null ? c.tick <= m.tick : (c.t || 0) <= (m.t || 0) + 2);
@@ -98,24 +101,30 @@
     if (!name) return null;
     const skip = new Set(viewerShortNames(name));
     const aw = words(m.text, skip);
-    const best = (rows, text) => {
-      let pick = null, score = -1;
-      for (const r of rows) { const sc = overlap(aw, words(text(r), skip)); if (sc >= score) { pick = r; score = sc; } }
-      return pick; // rows oldest first: on a tie the most recent wins
+    const agent = String(m.agent || "").toLowerCase();
+    const atAgent = (text) => !!agent && new RegExp("(^|\\s)@" + esc(agent) + "\\b").test(String(text || "").toLowerCase());
+    const best = (rows, text, mine) => {
+      const own = rows.filter(mine);
+      const pool = own.length ? own : rows;  // oldest first
+      if (!pool.length) return null;
+      let pick = pool[pool.length - 1], score = overlap(aw, words(text(pick), skip));
+      for (const r of pool) { const sc = overlap(aw, words(text(r), skip)); if (sc >= score + 2) { pick = r; score = sc; } }
+      return pick;
     };
     const cs = copies.filter((c) => c.vname === name && before(c) && recent(c));
     const lane = viewers.filter((v) => v.name === name);
     if (cs.length) {
-      const c = best(cs, (r) => bare(r.text));
+      const c = best(cs, (r) => bare(r.text), (r) => atAgent(r.text));
       const body = bare(c.text).toLowerCase();
       // the same line in the viewers lane (its YT/SITE badge and key), else the game copy itself
       const v = [...lane].reverse().find((v) => {
-        const t = String(v.text || "").toLowerCase();
+        const t = bare(v.text).toLowerCase();  // the viewer's own "@sol " too
         return body && (t.startsWith(body) || body.startsWith(t));
       });
       return v || { id: "c" + String(c.seq ?? c.tick), name, text: bare(c.text), t: c.t, source: "youtube" };
     }
-    return best(lane.filter((v) => (v.t || 0) <= (m.t || 0) + 2 && (m.t || 0) - (v.t || 0) <= ANSWER_WINDOW_S), (r) => r.text);
+    return best(lane.filter((v) => (v.t || 0) <= (m.t || 0) + 2 && (m.t || 0) - (v.t || 0) <= ANSWER_WINDOW_S), (r) => r.text,
+      (r) => r.to === agent || (r.to_all || []).includes(agent) || atAgent(r.text));
   }
 
   // s: the snapshot (now, tick, chat, viewers). -> [{key, kind: "qa"|"viewer"|"operator", v (the viewer line), answers

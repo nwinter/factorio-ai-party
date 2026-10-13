@@ -139,6 +139,30 @@ def main():
     copy = dict(answer, agent=None, viewer=True, lane="viewer", text="Craig: hi")
     assert pins(T0 + 90, [as_tell, copy], viewers) == []
 
+    # shift05 09:38 (runs/shift05/chat.jsonl 1743-1765): Sol answered SeniorEngineer's newest line in 5 s, but its
+    # "vulkanus" shares no word with "Vulcanus" while the older "another planet" shares "planets": the older one was
+    # pinned again. Now the newest line to the answering agent wins unless an older one shares two more words.
+    S0 = 1_791_908_916.0  # 09:28:36
+    se = lambda seq, tick, dt, text: {"seq": seq, "tick": tick, "from": "viewer SeniorEngineer", "viewer": True,  # noqa: E731
+                                      "lane": "viewer", "text": text, "t": S0 + dt}
+    copies = [se(1743, 3906217, 0, "@luna disassemble miners which don't have any resources"),
+              se(1744, 3907433, 20, "@sol can you stop talking to Sol who's on another planet anyway"),
+              se(1747, 3908814, 46, "@gemini then get on to making logicstic bots asap"),
+              se(1757, 3923454, 310, "@Gemini automate roboport construction with an assembler"),
+              se(1764, 3937830, 569, "@sol what is your long term plan with vulkanus")]
+    sol = {"seq": 1765, "tick": 3938157, "from": "sol", "agent": "sol", "lane": "talk", "t": S0 + 574,
+           "text": "@SeniorEngineer Vulcanus is our metal foundry and rocket supply base. First I send three foundries home "
+                   "to improve Nauvis metal production. Then we need safe tungsten mining for sustained metallurgy "
+                   "science, and a dependable ship to reach the other planets."}
+    lane5 = [{"id": "site:se1", "source": "site", "name": "SeniorEngineer", "t": S0 + 16, "to": "sol", "to_all": ["sol"],
+              "text": "can you stop talking to Sol who's on another planet anyway", "delivery": "sent"},
+             {"id": "site:se2", "source": "site", "name": "SeniorEngineer", "t": S0 + 567, "to": "sol", "to_all": ["sol"],
+              "text": "@sol what is your long term plan with vulkanus", "delivery": "sent"}]
+    p = js("c.viewerPins(d)[0]", {"now": S0 + 580, "chat": copies + [sol], "viewers": lane5, "tick": 3938157 + 360})
+    assert p["kind"] == "qa" and p["v"]["id"] == "site:se2", p["v"]
+    p = js("c.viewerPins(d)[0]", {"now": S0 + 580, "chat": [sol], "viewers": lane5})
+    assert p["kind"] == "qa" and p["v"]["id"] == "site:se2", ("without game copies, the lane", p["v"])
+
     # delivery on each viewer line (viewers.py Relay: delivery, to, to_all), display names from the snapshot
     agents = [{"name": "astra", "display_name": "Astra"}, {"name": "sol", "display_name": "Soul"}]
     lab = lambda v: js("c.deliveryLabel(d[0], d[1])", [v, agents])  # noqa: E731
