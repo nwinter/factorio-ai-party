@@ -128,8 +128,8 @@ SCRIPT = """<script>
 
 
 def section(frames, esc, src="/runs/long/timelapse.json"):
-    """The run page's time-lapse section ("" without frames)."""
-    if not frames:
+    """The run page's time-lapse section ("" until there are two frames to move between)."""
+    if len(frames or []) < 2:
         return ""
     shifts = sorted({f["n"] for f in frames})
     marks = "".join(f'<option value="{next(i for i, f in enumerate(frames) if f["n"] == n)}" label="Shift {n}"></option>'
