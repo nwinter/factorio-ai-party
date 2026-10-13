@@ -142,6 +142,7 @@ def scores(path):
                      "science": sum(v for k, v in produced.items() if SCIENCE.search(k)),
                      "packs": {k: v for k, v in produced.items() if SCIENCE.search(k) and isinstance(v, (int, float))},
                      "rockets": s.get("rockets") or 0,
+                     "current": s.get("current_research") if isinstance(s.get("current_research"), str) else None,
                      "platforms": [p["name"] for p in plats],
                      "at": {p["name"]: p.get("at") for p in plats},
                      "planets": list(s.get("planets") or [])})
@@ -415,6 +416,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
 
         row.update(started=a["t"], ended=b["t"], running=running, tick0=a["tick"], tick1=b["tick"], game0=game_time(a["tick"]),
                    game1=game_time(b["tick"]), research=b["research"], research_new=b["research"] - base["research"],
+                   researching=(b["current"].replace("-", " ").capitalize()) if b.get("current") else None,  # in progress: the plain name
                    spm=round(sum(own.values()) / mins, 1) if mins > 0 else None,
                    rockets=b["rockets"], rockets_new=b["rockets"] - base["rockets"],
                    platforms=b["platforms"], planets=b["planets"], deaths=deaths, losses=losses,

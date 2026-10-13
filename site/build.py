@@ -913,7 +913,7 @@ def shift_stats(s):
     return "".join([
         stat("on stream", f'{_hours(s["started"], s["ended"]):.1f} h', _when(s["started"], s["ended"])),
         stat("game time played", longrun.game_time(s["tick1"] - s["tick0"]), f'{s["game0"]} to {s["game1"]}'),
-        stat("technologies", s["research"], f'+{s["research_new"]}'),
+        stat("technologies", s["research"], f'+{s["research_new"]}' + (f' · at the end: {s["researching"]}' if s.get("researching") else "")),
         stat("rockets", s["rockets"], f'+{s["rockets_new"]}'),
         stat("science / min", "–" if s["spm"] is None else fmt_num(s["spm"]), "shift average"),
         stat("packs made", f'{s["made_total"]:,}'),
@@ -1105,7 +1105,7 @@ def build_long_run(lr):
     stats = "".join([stat("shift" if len(done) == 1 else "shifts", len(done)),
                      stat("on stream", f"{on_air:.0f} h"),
                      stat("game time", last["game1"]),
-                     stat("technologies", last["research"]),
+                     stat("technologies", last["research"], f'last: {last["researching"]}' if last.get("researching") else ""),
                      stat("rockets", last["rockets"]),
                      stat("science packs", f'{sum(lr["made"].values()):,}'),
                      stat("platforms", f'{len(lr["platforms"])} built', f'{len(lost_p)} lost · {len(active)} active'
