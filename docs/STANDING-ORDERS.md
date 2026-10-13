@@ -103,15 +103,35 @@ first.
 | `ghosts_waiting`, `damaged`, `fuel_below` | `conditions.lua` |
 | Request path, `orders` line, status `order`, tick | `runtime.lua` |
 | `idle_report` `orders` | `idle.lua`, `tools/idle_nudge.py` |
+| Operator kill switch `orders_kill` | `orders.lua` (`M.operator`), `runtime.lua` (operator dispatch), `tools/orders_kill.py` |
 | Compact output: the line after the clock | `host/format.ts`, `host/cli.ts` |
 | Overlay "auto: name" | `tools/stream/live.py`, `tools/stream/model.py` |
 | Prompt | `agent/team.md` |
 
 Tests: `tests/orders.lua` (default and hold, preemption and resume, reads not preempting, triggers and cooldown,
 priority takeover, queue calls, pause and resume, `max_ticks`, 3-failure switch-off, limits and argument checks,
-per-agent, idle clock, describe), `tests/conditions.lua` (the new predicates), `tests/format.test.ts`,
-`tools/stream/selftest.py`, `tools/test_idle_nudge.py`, and `npm test`. Next: measure again with
-`tools/idle_report.py` after a shift with orders.
+per-agent, idle clock, the operator kill switch, describe), `tests/conditions.lua` (the new predicates),
+`tests/format.test.ts`, `tools/stream/selftest.py`, `tools/test_idle_nudge.py`, and `npm test`. Next: measure again
+with `tools/idle_report.py` after a shift with orders.
+
+## Operator kill switch
+
+```
+python3 tools/orders_kill.py --world live on       # stop every running order; start none
+python3 tools/orders_kill.py --world live status
+python3 tools/orders_kill.py --world live off      # orders start again after each agent's hold
+```
+
+| | |
+|---|---|
+| Call | dispatch `{"operator": true, "action": "orders_kill", "args": {"on": true\|false}}`; no `on`: state only |
+| Who | operator only (RCON); from an agent it fails as `unsupported action` |
+| `on: true` | every agent's running order stops at once; no resume, no failure counted; nothing starts, triggers included |
+| While on | every agent's `orders:` line is `orders: paused by the operator`; `orders` has `paused_by_operator: true` and each order's state `paused by the operator`; `idle_report` `orders.operator_paused`; `order_set`, `order_remove`, `orders_pause` work; an agent's `orders_resume` does not lift it |
+| `on: false` | orders start again `hold` (20 s default) after the switch; a stopped order starts afresh |
+| Reply | `on`, `since_tick`, `stopped` (agents whose order stopped), `agents_with_orders` |
+| Persistence | world state: survives a runtime deploy and a save and restart |
+| Ships with | a runtime deploy (`fh deploy`); no `control.lua` change, no client refresh |
 
 ## Live check (dev world `live`)
 
@@ -172,8 +192,15 @@ your last action)`, N up to 20. After the sleep, `queue_status` has `order: ghos
 the interrupt came before the bot reached the ghost), and the bot walks back next to the ghost.
 
 ```
-# 4. Operator view, pause, and cleanup
+# 4. Operator view, kill switch, pause, and cleanup
 python3 tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("agent_harness","dispatch","{\"id\":\"so-check-1\",\"operator\":true,\"action\":\"idle_report\",\"args\":{}}"))'
+python3 tools/orders_kill.py --world live on
+bin/fh call queue_status
+sleep 30
+bin/fh call orders
+python3 tools/orders_kill.py --world live off
+sleep 25
+bin/fh call queue_status
 bin/fh call orders_pause
 bin/fh call queue_status
 bin/fh call orders_resume
@@ -183,6 +210,9 @@ python3 tools/pog.py --world live rcon '/silent-command rcon.print(remote.call("
 ```
 
 Pass: the so1 row of `idle_report` has `orders` with `set: 2`, and while an order runs, `running` names it and
-`standing_s` is 0. After `orders_pause` the line is `orders: paused (orders_resume)` and `queue_status` has no
+`standing_s` is 0. `orders_kill.py on` prints `stopped: so1` if an order was running (the ghost trigger still
+holds); the `queue_status` after it has no `order`, its line is `orders: paused by the operator`, and after the 30 s
+`orders` still shows nothing running, each order's state `paused by the operator`. After `off` and 25 s,
+`queue_status` has `order: ghost` (reason `1 ghosts`, the run starts afresh) or patrol. After `orders_pause` the line is `orders: paused (orders_resume)` and `queue_status` has no
 `order`. After both `order_remove` calls the reply has no `orders:` line. The ghost stays on the map (a wooden chest
 ghost); remove it in the game if wanted.

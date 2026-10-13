@@ -3944,7 +3944,7 @@ scheduler=scheduler_module{
 for name,handler in pairs(scheduler.handlers) do handlers[name]=handler end
 -- Standing orders (orders.lua): the agent's routines, run in its own queue
 -- while its character is free.
-M.orders=require('orders'){state=state,player=player,scheduler=scheduler,
+M.orders=require('orders'){state=state,player=player,scheduler=scheduler,agents=function() return M.board.agents() end,
   condition=function(p,c) return conditions.check(p,c) end,validate_condition=function(c) return conditions.validate(c) end,
   busy=function(index)
     local action=state().active[index]
@@ -4198,7 +4198,7 @@ function M.dispatch(request)
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action]
-        or M.highlights.operator[request.action] or threat.operator[request.action]
+        or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)

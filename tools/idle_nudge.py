@@ -40,11 +40,12 @@ def queue_text(q):
 
 
 def orders_text(o):
-    """The report's standing orders (orders.lua report: {set, running, paused}), or '' with none set."""
+    """The report's standing orders (orders.lua report: {set, running, paused, operator_paused}), or '' with none set."""
     if not o or not o.get("set"):
         return ""
     n = o["set"]
-    return f" Standing orders: {n} set, " + ("paused" if o.get("paused") else "none running") + "."
+    state = "paused by the operator" if o.get("operator_paused") else "paused" if o.get("paused") else "none running"
+    return f" Standing orders: {n} set, {state}."
 
 
 def nudge_text(row):

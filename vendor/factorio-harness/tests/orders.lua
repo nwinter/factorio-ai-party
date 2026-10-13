@@ -247,6 +247,47 @@ eq(sol_runs(),runs); eq(sol('queue_status',{peek=true}).order,nil)
 sol('status')
 advance(61)
 eq(sol('queue_status').order.name,'courier')
+
+-- The operator's kill switch (orders_kill, operator dispatch only): every running order stops, nothing starts,
+-- triggers included, until it is switched off; agents see 'orders: paused by the operator'.
+astra('status')
+body.health=100
+until_running('heal',300)
+eq(sol('queue_status').order.name,'courier')
+fails(function() astra('orders_kill',{on=true}) end,'unsupported action') -- agents cannot reach it
+eq(op('orders_kill',{}).on,false)
+until_running('heal',300) -- the agent's failed call stopped its own order; the trigger still holds
+r=op('orders_kill',{on=true})
+local killed_at=tick
+eq(r.on,true); eq(r.since_tick,killed_at); eq(table.concat(r.stopped,','),'astra,sol'); eq(r.agents_with_orders,2)
+eq(running(),nil); eq(sol('queue_status').order,nil)
+eq(astra('status').orders,'orders: paused by the operator'); eq(sol('status').orders,'orders: paused by the operator')
+eq(report('astra').orders.operator_paused,true); eq(report('astra').orders.running,nil)
+local o=astra('orders')
+eq(o.paused_by_operator,true)
+eq(o.list[1].name,'heal'); eq(o.list[1].state,'paused by the operator'); eq(o.list[1].failures,0); eq(o.list[1].last.outcome,'stopped')
+advance(3000) -- the trigger holds and both agents play: nothing starts
+eq(running(),nil); eq(sol('queue_status').order,nil)
+-- the agent's own orders_resume does not lift it; order_set still works and waits too
+has(astra('orders_resume',{}).note,'paused by the operator')
+sol('order_set',{name='courier',steps={wait(3000)}})
+advance(300)
+eq(running(),nil); eq(sol('queue_status').order,nil)
+-- on again changes nothing and stops nobody; a bad value fails
+r=op('orders_kill',{on=true})
+eq(#r.stopped,0); eq(r.since_tick,killed_at)
+fails(function() op('orders_kill',{on='yes'}) end,'on: true stops all standing orders')
+-- off: orders start again after each agent's hold, afresh (no resume of the stopped run)
+r=op('orders_kill',{on=false})
+eq(r.on,false); eq(r.since_tick,nil)
+has(astra('status').orders,'orders: start in 1 s') -- the hold (1 s for Astra) runs from the switch
+advance(30)
+eq(running(),nil)
+until_running('heal',300)
+has(astra('queue_status').order.reason,'health 40%')
+for _=1,120 do if sol('queue_status').order then break end; advance(1) end
+eq(sol('queue_status').order.name,'courier'); eq(sol('queue_status').order.reason,'default routine')
+body.health=250
 -- describe documents the calls (argument checks come from it)
 local actions=astra('describe').actions
 assert(actions.order_set and actions.order_remove and actions.orders and actions.orders_pause and actions.orders_resume)

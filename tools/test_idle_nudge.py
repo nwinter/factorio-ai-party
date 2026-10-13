@@ -51,6 +51,8 @@ def main():
     t = N.nudge_text(row("astra", 12, orders={"set": 2}))
     assert "Queue: none. Standing orders: 2 set, none running. Unread for you:" in t, t
     assert "Standing orders: 1 set, paused." in N.nudge_text(row("astra", 12, orders={"set": 1, "paused": True}))
+    t = N.nudge_text(row("astra", 12, orders={"set": 1, "paused": True, "operator_paused": True}))
+    assert "Standing orders: 1 set, paused by the operator." in t, t
     assert "Standing orders" not in N.nudge_text(row("astra", 12))
     # a send that fails is logged and tried again at the next poll (not counted as a nudge)
     m = N.Nudger([], start=T0)

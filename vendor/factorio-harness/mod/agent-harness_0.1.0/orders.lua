@@ -17,8 +17,10 @@
 -- Limits: 6 orders of 32 steps; each agent looked at once a second (staggered
 -- by index) with at most one condition checked; when radius 64, 16 positions;
 -- a run stops after max_ticks; 3 failed runs in a row switch an order off.
+-- The operator's switch (orders_kill, operator dispatch only) stops every
+-- agent's running order and starts none until it is switched off again.
 return function(api)
-  local M={handlers={}}
+  local M={handlers={},operator={}}
   local MAX_ORDERS,MAX_STEPS,MAX_RADIUS,MAX_POSITIONS,MAX_FAILS=6,32,64,16,3
   local CHECK,HOLD=60,1200
   local function int(v,default,low,high,name)
@@ -47,6 +49,7 @@ return function(api)
     if b.paused_until and game.tick>=b.paused_until then b.paused,b.paused_until=nil,nil end
     return b.paused
   end
+  local function killed() return api.state().orders_kill end
   -- Orders start only while their agent plays: a request of its own (or an fh
   -- sleep poll) in the last AWAY ticks. A world left running between shifts
   -- does not play on for absent agents.
@@ -70,6 +73,12 @@ return function(api)
     if not o or r.outcome=='replaced' or r.outcome=='removed' then return end
     if r.outcome=='interrupted' and r.remaining and #r.remaining>0 then
       o.resume=r.remaining; return
+    end
+    -- The operator's stop: no failure, no resume; the order starts afresh once switched back on.
+    if r.outcome=='stopped' then
+      o.resume=nil; o.held=nil; o.next_tick=game.tick
+      o.last={outcome='stopped',reason=r.reason,tick=r.tick or game.tick}
+      return
     end
     if r.outcome=='failed' then
       o.failures=o.failures+1
@@ -140,6 +149,7 @@ return function(api)
   -- Once a tick: the agents whose second it is. A fault stays with the agent's
   -- orders (shown in its line), never the runtime.
   function M.tick()
+    if killed() then return end
     for index,b in pairs(api.state().orders or {}) do
       if #b.list>0 and game.tick%CHECK==index%CHECK then
         local ok,err=pcall(look,index,b)
@@ -156,6 +166,7 @@ return function(api)
     local running=api.scheduler.order(index)
     if running and running.name==o.name then return 'running' end
     if o.off then return 'off' end
+    if killed() then return 'paused by the operator' end
     if o.resume then return 'resumes when free' end
     if game.tick<o.next_tick then return (o.when and 'cooling ' or 'next in ')..secs(o.next_tick-game.tick)..' s' end
     if o.when then return o.held and o.held.tick>game.tick-600 and (o.held.met and 'holds' or 'not holding') or 'ready' end
@@ -184,6 +195,8 @@ return function(api)
     for _,o in ipairs(b.list) do if o.resume then waiting=o; break end end
     if running then
       parts[1]=string.format('%s running (%s), step %d/%d',running.name,running.reason or '',running.step,running.total)
+    elseif killed() then
+      parts[1]='paused by the operator'
     elseif b.paused then
       parts[1]='paused'..(b.paused_until and ' for '..secs(b.paused_until-game.tick)..' s' or '')..' (orders_resume)'
     else
@@ -219,7 +232,8 @@ return function(api)
     local b=book(index)
     if not b or #b.list==0 then return nil end
     local running=api.scheduler.order(index)
-    return {set=#b.list,running=running and running.name or nil,reason=running and running.reason or nil,paused=b.paused or nil}
+    return {set=#b.list,running=running and running.name or nil,reason=running and running.reason or nil,paused=b.paused or nil,
+      operator_paused=killed() and true or nil}
   end
   function M.handlers.order_set(p,a)
     local name=a.name
@@ -267,7 +281,7 @@ return function(api)
   function M.handlers.orders(p)
     local b=book(p.index)
     if not b or #b.list==0 then return {list={},note='no standing orders: order_set {name, steps, when?, priority?}'} end
-    return {list=list(p.index,b),hold_s=secs(b.hold),paused=b.paused or nil}
+    return {list=list(p.index,b),hold_s=secs(b.hold),paused=b.paused or nil,paused_by_operator=killed() and true or nil}
   end
   -- Stops a running order (it resumes after) and starts none until orders_resume or the time is up.
   function M.handlers.orders_pause(p,a)
@@ -284,7 +298,38 @@ return function(api)
     local b=book(p.index,true)
     b.paused,b.paused_until=nil,nil
     if a.hold_s~=nil then b.hold=int(a.hold_s,nil,0,600,'hold_s')*60 end
-    return {paused=false,hold_s=secs(b.hold)}
+    return {paused=false,hold_s=secs(b.hold),
+      note=killed() and 'orders are paused by the operator for everyone: they start again when the operator switches them back on' or nil}
+  end
+  -- Operator only (runtime.lua dispatch with operator=true; agents cannot reach it).
+  -- on=true stops every running order (no resume, no failure counted) and
+  -- starts none, triggers included, for every agent until on=false; on=false
+  -- lets them start again `hold` after now. No `on`: the switch's state.
+  function M.operator.orders_kill(a)
+    local on=a.on
+    assert(on==nil or type(on)=='boolean','on: true stops all standing orders, false lets them run again')
+    local s=api.state()
+    local names={}
+    for _,ag in ipairs(api.agents() or {}) do names[ag.index]=ag.name end
+    local stopped,agents={},0
+    if on==true and not s.orders_kill then
+      s.orders_kill={tick=game.tick}
+      for index,b in pairs(s.orders or {}) do
+        settle(b,api.scheduler.order_result(index))
+        if api.scheduler.order(index) then
+          api.scheduler.cancel_order(index,'stopped','paused by the operator')
+          settle(b,api.scheduler.order_result(index))
+          stopped[#stopped+1]=names[index] or ('#'..index)
+        end
+      end
+      table.sort(stopped)
+    elseif on==false and s.orders_kill then
+      s.orders_kill=nil
+      for _,b in pairs(s.orders or {}) do b.busy_tick=game.tick end
+    end
+    for _,b in pairs(s.orders or {}) do if #b.list>0 then agents=agents+1 end end
+    local k=s.orders_kill
+    return {ok=true,tick=game.tick,on=k and true or false,since_tick=k and k.tick or nil,stopped=stopped,agents_with_orders=agents}
   end
   M.schema={
     order_set={name='1..32 letters, digits, - or _; the same name replaces that order (and switches one that went off back on)',
