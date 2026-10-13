@@ -625,6 +625,26 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   near our buildings, once each and again when grown by half; then up to 6 platform lines, below) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
+- Game alerts and warnings in `team.alerts` (pushalerts.lua): what a player's alert panel and entity status icons
+  show, without pulling a full status.
+  - Entity statuses on planet surfaces: `no power`, `not connected to power` (no pole reaches them), `low power`,
+    `out of fuel`, gun turrets `out of ammo`, flamethrower turrets `out of flamer oil`.
+  - The game's alerts, read from an agent player's alert panel: `no_material_for_construction`,
+    `not_enough_construction_robots`, `not_enough_repair_packs`, `no_storage`, `train_out_of_fuel`,
+    `unclaimed_cargo`, `collector_path_blocked`, ... Attacks, losses and the game's own turret alert are told
+    elsewhere and are left out.
+
+  Each line is a group of one kind in one area, where 64-tile cells that touch make one area, with a hint:
+  `8 assembling-machine-2 no power near (125,40); fh call power`, `12 gun-turret out of ammo near (67,-170)
+  (was 9); rearm`, `2 (1 entity-ghost, 1 transport-belt) ghosts waiting for materials (no robot can bring them)
+  near (-41,11)`. A group goes to whoever's active board claim covers its centre, else the agents who built there
+  (`last_user`), else the nearest agent on that surface.
+
+  At most one digest every 150 s per agent, with up to 5 lines (`+N more alert groups: fh call game_alerts`). Only
+  groups that are new, or larger than when you were last told, are shown. A group that clears and comes back is new
+  again. The scan is shared and at most 30 s old. `game_alerts {surface?, kind?}` (read) lists every group now,
+  worst first: `{kind, surface, count, center, names, at, line, to}`, where `to` says who hears it and why
+  (claim, built, nearest).
 - Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
   requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
   aboard; a platform with none of them known goes to every agent. Each line names the platform and its surface:

@@ -631,6 +631,7 @@ function handlers.describe()
   for name,schema in pairs(M.research and M.research.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.stores and M.stores.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.drops and M.drops.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.pushalerts and M.pushalerts.schema or {}) do description.actions[name]=schema end
   description.actions.status.brief='boolean: only active, last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
@@ -3974,7 +3975,7 @@ M.board=require('board'){state=state,director=function(index) return M.is_direct
   research_lines=function(p,h) return M.research.lines(p,h) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
-  platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end}
+  platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
 M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end}
@@ -4085,7 +4086,7 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
-local reads={placements=true,defense=true,flamers=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true}
+local reads={placements=true,defense=true,flamers=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -4358,6 +4359,14 @@ survey=survey_module{state=state,status_name=function(e) return entity_status_na
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end}
 function handlers.labs(p,a) return M.labs.view(p,a) end
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
+-- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
+M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
+  place=function(index) return M.where.place(index) end,
+  -- an agent player's alert panel (camera players have theirs switched off: cameras.lua)
+  alert_reader=function(force)
+    for _,pl in pairs(force.players) do if pl.valid and pl.connected and not M.is_director(pl.index) then return pl end end
+  end}
+function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 -- Where drops landed (drops.lua): their pods followed down, told in the team block, the drops read.
 M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve}
 function handlers.drops(p,a) return M.drops.read(p,a) end
