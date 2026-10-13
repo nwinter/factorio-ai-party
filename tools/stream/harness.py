@@ -269,7 +269,8 @@ rcon.print(type(r) == "string" and r or helpers.table_to_json({ok = true, result
 
 # Space Age: where a camera can show each platform (read-only, operator level like SCORE_LUA): its surface name (the
 # camera call takes surfaces, the `platforms` read gives none), the hub (the runtime builds remote work around it) and
-# the bounds of our entities there, so a fixed view fits the whole platform. A platform still waiting for its starter
+# the bounds of our entities there, so a fixed view fits the whole platform, and the hub's health in % (onecam.py's
+# platform label says it when the hub is hurt). A platform still waiting for its starter
 # pack has no surface and is skipped.
 PLATFORM_LUA = r"""
 local f = game.forces.player
@@ -283,8 +284,10 @@ for _, pl in pairs(f.platforms) do
       local p = e.position
       x0, y0, x1, y1 = math.min(x0, p.x), math.min(y0, p.y), math.max(x1, p.x), math.max(y1, p.y)
     end
+    local hp = nil
+    pcall(function() if pl.hub and pl.hub.valid and pl.hub.max_health > 0 then hp = math.floor(100 * pl.hub.health / pl.hub.max_health) end end)
     out[#out + 1] = {name = pl.name, surface = s.name, hub = {x = hub.x, y = hub.y},
-      bounds = {left = x0, top = y0, right = x1, bottom = y1}}
+      bounds = {left = x0, top = y0, right = x1, bottom = y1}, hub_health = hp}
   end
 end
 rcon.print(helpers.table_to_json{platforms = out})

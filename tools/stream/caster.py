@@ -867,6 +867,14 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["on_screen_map"] = {"where": "the whole picture" if shows_map == "on air" else "one small tile",
                               "note": "viewers see the whole base on Factorio's map now (the core and its outposts): "
                                       "a moment to say what is where, e.g. 'here's the whole base'"}
+    plat = (s.get("onair") or {}).get("platform")  # onecam.py: a space platform on air (a visit, a departure, work)
+    if plat:
+        f["on_screen_platform"] = {
+            "platform": plat.get("name"), "shown_as": plat.get("label"), "why": plat.get("why"),
+            "note": {"departure": "viewers watch this platform leave for another planet now: a moment to mark",
+                     "work": "viewers see the platform this agent is building on from the ground (remote view)"}.get(
+                         plat.get("why"), "viewers see this space platform in orbit now: a moment to say what it is for "
+                                          "and how it is coming along")}
     onair = (s.get("onair") or {}).get("agent")
     if onair and e["kind"] in ("lull", "camera", "chat", "board", "plan", "research_start"):
         # one camera on air (onecam.py): the regular beats lean on the agent viewers are watching

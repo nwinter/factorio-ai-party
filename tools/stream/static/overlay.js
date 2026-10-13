@@ -816,7 +816,8 @@
       if (slot === "inset") frame.classList.toggle("on", !!cam); // up only while the director has an inset
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
       if (slot !== "main" && slot !== "inset" && !(onecam && curMode !== "trio")) renderFill(frame, s, !agents.length && !(cam && cam.attack));
-      const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "");
+      const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "")
+        + "|" + (cam && cam.work || "");
       const death = !!(cam && cam.attack && cam.alert === "death");
       label.classList.toggle("attack", !!(cam && cam.attack) && !death);
       label.classList.toggle("death", death);
@@ -825,6 +826,19 @@
           label.dataset.sig = "map";
           label.textContent = "";
           label.append(el("span", "ico", "🗺️"), el("span", "", cam.map));
+        }
+        label.classList.remove("attack", "death");
+        frame.style.borderColor = "";
+        frame.style.removeProperty("--bracket");
+        label.classList.add("on");
+        continue;
+      }
+      if (cam && cam.platform && !agents.length) { // a space platform: a visit or a departure (onecam.py)
+        const psig = "plat|" + cam.platform.label;
+        if (label.dataset.sig !== psig) {
+          label.dataset.sig = psig;
+          label.textContent = "";
+          label.append(el("span", "ico", cam.platform.why === "departure" ? "🚀" : "🛰️"), el("span", "", cam.platform.label));
         }
         label.classList.remove("attack", "death");
         frame.style.borderColor = "";
@@ -847,7 +861,8 @@
       if (label.dataset.sig !== sig) {
         label.dataset.sig = sig;
         label.textContent = "";
-        if (onecam && slot === "main") label.append(el("span", "following", "Following"));
+        // (a platform work shot shows the platform, not the character: "Astra · working on Starling")
+        if (onecam && slot === "main" && !cam.work) label.append(el("span", "following", "Following"));
         label.append(...agents.flatMap((a, i) => {
           const who = el("span", "who");
           applyPalette(who, a);

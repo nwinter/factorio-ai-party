@@ -40,6 +40,17 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
   program cuts to it for `map_hold` (15 s), labelled "Base map", then back to the story it interrupted. Never during
   an urgent or segment shot, a replay, a trio or an inset. A check-in trio shows the map in one small tile. A client
   that showed the map is released when it is off air (cameras.lua makes it a spectator again).
+- Space platforms (Nick: "Do we have the camera look at the space platform sometimes?"): the snapshot's
+  space.platforms with a view (live.py PLATFORM_LUA: surface, hub, bounds). A standby shows one platform whole
+  (model.platform_shot, a fixed view on its surface), labelled "Starling · in orbit of Nauvis" (or travelling to X):
+  - a visit about every `platform_every` (12 min) for `platform_hold` (20 s), the platform shown longest ago first;
+    like the base map, never during an urgent or segment shot, a replay, a trio, an inset, a fight, or near a cut;
+  - a departure (a platform starts travelling; Sol for a viewer: "continuous view during departure"): on it for
+    `depart_hold` (60 s), "Starling · leaving Nauvis for Vulcanus"; only urgent shots and segments come first;
+  - an agent's platform action (snapshot `work` on a platform: place_ghosts, paste, deconstruct, inspect, configure,
+    launch, drop... with platform=; the character stands on Nauvis): the platform instead of the character, labelled
+    "Astra · working on Starling", for `work_hold`, longer while its requests keep coming; then back to the agent.
+  The hosts read snapshot onair.platform.
 - public(): "main" is the camera on air and "inset" the inset while it is up (what viewers see), so the overlay,
   model.py, replays.py, the casters and push_live keep reading cameras.main; in a trio also "cam2" and "cam3", the
   small tiles. program() is what cuts.py applies: which client is on air and which, if any, is the inset; the layout
@@ -106,6 +117,17 @@ ONECAM = {
     "map_hold": 15.0,       # seconds on the map
     "map_trio": True,       # a check-in trio shows the map in one small tile
     "map_gap": 30.0,        # no base map within this long after another cut (16:44:05 came 2 s after one)
+    # Space platforms (Nick, 21:25: "Do we have the camera look at the space platform sometimes?"; module doc)
+    "platform_every": 720.0,  # a platform visit about this often while a platform has a surface (0: never)
+    "platform_first": 420.0,  # the first one this long after the start (the base map's comes at 300 s)
+    "platform_hold": 20.0,    # seconds on a visit
+    "depart_hold": 60.0,      # a platform leaving for another planet: on it this long (Sol for awoo3391, 21:23)
+    "depart_late": 30.0,      # a departure seen this long ago (a replay, an urgent shot in the way) is not shown
+    "work_hold": 25.0,        # an agent's platform action shows the platform this long ...
+    "work_max": 90.0,         # ... more while its requests keep coming, up to this
+    "work_fresh": 12.0,       # a platform action dispatched within this long is news
+    "work_gap": 180.0,        # the same agent's work on the same platform is shown again after this long
+    "work_ratio": 0.8,        # an agent off air: its platform action takes over if it scores this share of the one on air
     # Fights (a viewer at 16:45: "dont move 'on air' away from agents under attack"): while the agent on air is
     # shooting or under attack, or the fight on air is still reported, no cut away but an urgent one; an attack shot
     # holds until its fight has been quiet fight_quiet; an agent under attack is a strong pick.
@@ -167,7 +189,9 @@ def onair_info(snap, cams):
     agents = main.get("agents") or []
     name = agents[0] if len(agents) == 1 and not main.get("attack") else None
     a = next((a for a in snap.get("agents") or [] if a["name"] == name), {}) if name else {}
-    return {"agent": name, "display_name": a.get("display_name") or name, "doing": onair_doing(snap, name) if name else "",
+    plat = main.get("platform")  # a space platform on air: {name, why (visit, departure, work), label, agent?}
+    doing = f"working on {plat['name']}" if plat and name else onair_doing(snap, name) if name else ""
+    return {"agent": name, "display_name": a.get("display_name") or name, "doing": doing, "platform": plat,
             "since": main.get("since"), "client": main.get("client"), "attack": main.get("attack"),
             "inset": ((cams or {}).get("inset") or {}).get("attack"),
             # the base map: on air, or in a trio's small tile (the hosts: "here's the whole base")
@@ -203,6 +227,13 @@ class OneCam(Director):
         self.basemap = None    # the snapshot's basemap (mapcam.map_shot frames the map camera from it)
         self.maps = []         # (t, where): base map shots, on air or in a trio tile
         self.fight_list = []   # the snapshot's fights still reported (fight_t: when each last went on)
+        self.plat_rows = {}    # name -> the snapshot's platform row (model.platform_where: where, route, view)
+        self.plat_moving = {}  # name -> travelling at the last look (a departure: False -> True)
+        self.plat_shown = {}   # name -> when it was last on air
+        self.last_platform = None  # when the last visit went on air (None: platform_first after the start)
+        self.departure = None  # {"name", "t", "label"}: a departure seen, not on air yet
+        self.work_shown = {}   # (agent, platform) -> when its work went on air
+        self.platforms = []    # (t, name, why): platform shots ("visit", "departure", "work")
 
     # -- clients ----------------------------------------------------------------------------------------------
     def slot(self, name):
@@ -288,6 +319,8 @@ class OneCam(Director):
         cur = self.state.get(self.onair)
         if not cur:
             return False
+        if cur.get("platform"):
+            return False  # a platform shot: its agent's character is on Nauvis, out of the picture
         if subject and subject in (cur.get("agents") or []):
             return True
         return bool(position) and in_frame(frame_of(cur, self.onair_frac()), position, by_name,
@@ -461,11 +494,15 @@ class OneCam(Director):
                     self.urgent(target, f"segment: {segment['label']}", scores, now)
         elif cur and cur.get("subject") == "@segment" and (not segment or cur.get("seg") != segment["id"]):
             cur["until"] = 0  # the segment ended or was cut: back to normal directing
+        self.watch_platforms(snapshot, now)
+        self.maybe_departure(scores, now, segment)
         if self.mode == "trio":
             self.tiles(by_name, scores, now)
         else:
             self.direct(by_name, scores, ranked, now)
+            self.maybe_work(snapshot, by_name, scores, now, segment)
             self.maybe_map(scores, now, segment)
+            self.maybe_platform(scores, now, segment)
             self.maybe_trio(by_name, scores, ranked, now)
         self.release_maps(now)
         shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
@@ -501,6 +538,155 @@ class OneCam(Director):
         self.last_map = now
         self.maps.append((now, "on air"))
         self.urgent(t, "base map", scores, now)
+
+    # -- space platforms ---------------------------------------------------------------------------------------
+    @staticmethod
+    def travelling(row):
+        return bool(row.get("route")) or row.get("state") == "on_the_path"
+
+    def platform_label(self, name, why="visit"):
+        """"Starling · in orbit of Nauvis", "Starling · travelling to Vulcanus (42%) · 72 km/s", "Starling · leaving
+        Nauvis for Vulcanus"; the hub's health when it is hurt."""
+        row = self.plat_rows.get(name) or {}
+        route = row.get("route")
+        if why == "departure" and route:
+            text = f"{name} · leaving {route['from']} for {route['to']}"
+        elif route:
+            text = f"{name} · travelling to {route['to']}" + (f" ({route['pct']}%)" if route.get("pct") else "")
+        elif self.travelling(row) or not row.get("where"):
+            text = f"{name} · in transit"
+        else:
+            text = f"{name} · in orbit of {row['where']}" + (" · paused" if row.get("paused") else "")
+        if route and row.get("speed_kms"):
+            text += f" · {row['speed_kms']} km/s"
+        hp = (row.get("view") or {}).get("hub_health")
+        if isinstance(hp, (int, float)) and hp < 100:
+            text += f" · hub {round(hp)}%"
+        return text
+
+    def watch_platforms(self, snapshot, now):
+        """The snapshot's platforms; one that starts travelling (it was seen still) is a departure."""
+        rows = [p for p in (snapshot.get("space") or {}).get("platforms") or [] if p.get("name")]
+        if not rows and not snapshot.get("space"):
+            return  # no space data in this snapshot (the director keeps what it saw)
+        self.plat_rows = {p["name"]: p for p in rows}
+        for p in rows:
+            moving = self.travelling(p)
+            if moving and self.plat_moving.get(p["name"]) is False and p.get("view"):
+                self.departure = {"name": p["name"], "t": now, "label": self.platform_label(p["name"], "departure")}
+                print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} departure: "
+                      f"{self.departure['label']}", flush=True)
+            self.plat_moving[p["name"]] = moving
+
+    def platform_target(self, name, why, until, agent=None, label=None):
+        from model import platform_shot
+        view = (self.plat_rows.get(name) or {}).get("view")
+        if not view or not view.get("surface"):
+            return None
+        t = dict(platform_shot(view), agents=[agent] if agent else [], subject="@platform", until=until,
+                 platform={"name": name, "why": why, "label": label or self.platform_label(name, why)})
+        if agent:
+            t["platform"]["agent"] = agent
+        return t
+
+    def show_platform(self, t, scores, now):
+        p = t["platform"]
+        self.plat_shown[p["name"]] = now
+        self.platforms.append((now, p["name"], p["why"]))
+        self.urgent(t, f"platform {p['why']}: {p['label']}", scores, now)
+
+    def plat_busy(self, now, segment):
+        """An urgent or segment shot holds the camera, or something is being framed: no platform shot now."""
+        cur = self.state.get(self.onair)
+        return bool(self.hold_layout or self.pending or self.trio_pending or segment or
+                    (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0)) or
+                    (cur and now < cur.get("hold_until", 0)))  # an agent in the fight an urgent cut went to
+
+    def maybe_departure(self, scores, now, segment=None):
+        d = self.departure
+        if not d or len(self.slots) < 2:
+            return
+        if now - d["t"] > self.cfg["depart_late"]:
+            self.departure = None  # a replay or an urgent shot was in the way the whole time: the moment has passed
+            return
+        cur = self.state.get(self.onair)
+        if cur and cur.get("platform", {}).get("name") == d["name"] and now < cur.get("until", 0):
+            cur["until"] = max(cur["until"], now + self.cfg["depart_hold"])  # on air already (a visit): stay
+            cur["platform"] = dict(cur["platform"], why="departure", label=d["label"])
+            self.departure = None
+            return
+        if self.plat_busy(now, segment) and not (cur and cur.get("subject") == "@map"):
+            return  # (the base map gives way to a departure)
+        t = self.platform_target(d["name"], "departure", now + self.cfg["ready_s"] + self.cfg["depart_hold"],
+                                 label=d["label"])
+        self.departure = None
+        if t:
+            self.show_platform(t, scores, now)
+
+    def maybe_platform(self, scores, now, segment=None):
+        """A visit: about every platform_every while a platform can be shown, the one shown longest ago."""
+        cfg = self.cfg
+        plats = sorted(n for n, p in self.plat_rows.items() if (p.get("view") or {}).get("surface"))
+        if not cfg["platform_every"] or not plats or len(self.slots) < 2 or self.mode != "onecam":
+            return
+        last = self.last_platform if self.last_platform is not None else \
+            self.started - cfg["platform_every"] + cfg["platform_first"]
+        if now - last < cfg["platform_every"]:
+            return
+        if (self.plat_busy(now, segment) or self.inset or now - self.last_program_cut < cfg["map_gap"] or
+                any(now - self.fight_t(f) < cfg["fight_quiet"] for f in self.fight_list)):
+            return
+        name = min(plats, key=lambda n: (self.plat_shown.get(n, -1e9), n))
+        t = self.platform_target(name, "visit", now + cfg["ready_s"] + cfg["platform_hold"])
+        if t:
+            self.last_platform = now
+            self.show_platform(t, scores, now)
+
+    def maybe_work(self, snapshot, by_name, scores, now, segment=None):
+        """An agent's platform action (snapshot work with a platform view): the platform instead of the character, if
+        the agent is on air or scores near the one on air; held while its requests keep coming."""
+        cfg = self.cfg
+        fresh = {}
+        for w in snapshot.get("work") or []:
+            if w.get("platform") and w.get("agent") in by_name and now - w.get("t", -1e9) < cfg["work_fresh"] and \
+                    w["t"] > fresh.get(w["agent"], {}).get("t", -1e9):
+                fresh[w["agent"]] = w
+        if not fresh or len(self.slots) < 2:
+            return
+        cur = self.state.get(self.onair)
+        cp = (cur or {}).get("platform") or {}
+        if cp.get("why") == "work" and now < cur.get("until", 0):
+            w = fresh.get(cp.get("agent"))
+            if w and w["platform"] == cp["name"] and now - cur.get("since", now) < cfg["work_max"]:
+                cur["until"] = max(cur["until"], min(now + cfg["work_hold"], cur["since"] + cfg["work_max"]))
+            return
+        if self.plat_busy(now, segment) or self.mode != "onecam":
+            return
+        subj = (cur or {}).get("subject")
+        for agent, w in sorted(fresh.items(), key=lambda kv: -kv[1]["t"]):
+            if now - self.work_shown.get((agent, w["platform"]), -1e9) < cfg["work_gap"]:
+                continue
+            if self.fighting(agent, by_name, now):
+                continue
+            if agent != subj:
+                if subj not in scores or now - self.onair_since < cfg["onair_dwell"] or \
+                        now - self.last_program_cut < cfg["cut_spacing"] or self.fighting(subj, by_name, now) or \
+                        big_plan(by_name[subj]) or scores.get(agent, 0) < scores[subj] * cfg["work_ratio"]:
+                    continue
+            who = by_name[agent].get("display_name") or agent
+            name = w["platform"]
+            if name not in self.plat_rows and w.get("view"):
+                self.plat_rows[name] = {"name": name, "view": w["view"]}
+            t = self.platform_target(name, "work", now + cfg["ready_s"] + cfg["work_hold"], agent=agent,
+                                     label=f"{who} · working on {name}")
+            if not t:
+                continue
+            t["work"] = f"{who} working on {name}"
+            self.work_shown[(agent, name)] = now
+            self.show_platform(t, scores, now)
+            if agent != subj:
+                self.resume = {"subject": agent, "since": now}  # then the agent's own character
+            return
 
     def release_maps(self, now):
         """A client that showed the map and is off air now (not about to be shown either) is released: cameras.lua
@@ -648,7 +834,8 @@ class OneCam(Director):
         resumed = None
         if need:
             r, self.resume = self.resume, None
-            if r and r["subject"] in scores and r["subject"] not in inset_agents and subj in (None, "@attack", "@segment"):
+            if r and r["subject"] in scores and r["subject"] not in inset_agents and \
+                    subj in (None, "@attack", "@segment", "@map", "@platform"):
                 want, resumed = r["subject"], r  # back to the story the urgent shot interrupted
                 self.resume = r  # kept until the cut back happens
             else:
@@ -764,5 +951,12 @@ class OneCam(Director):
                 row["surface"] = t["surface"]
             if t.get("map"):
                 row["map"] = "Base map"  # the page's label; the hosts' onair.map
+            if t.get("platform"):  # {name, why, label, agent?}: a visit and a work shot read the latest row
+                p = dict(t["platform"])
+                if p["why"] == "visit":
+                    p["label"] = self.platform_label(p["name"])
+                row["platform"] = p
+                if t.get("work"):
+                    row["work"] = t["work"]  # the page: "Astra · working on Starling"
             out[key] = row
         return out

@@ -368,8 +368,9 @@ class Model:
             view = self.platform_view(w["platform"])
             if not view:
                 return  # its surface is not known yet (the platform read runs every 15 s): nothing to cut to
-            item.update(surface=view["surface"], view=view,
-                        label=f"{who} {w.get('verb') or 'building'} on {w['platform']} (from the ground)")
+            verb = w.get("verb") or "building"
+            on = "" if verb.endswith((" to", " from", " on")) else " on"  # "launching a rocket to Starling"
+            item.update(surface=view["surface"], view=view, label=f"{who} {verb}{on} {w['platform']} (from the ground)")
         else:
             if not w.get("position"):
                 return

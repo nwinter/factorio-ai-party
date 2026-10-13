@@ -360,6 +360,12 @@ class MockSource:
             plats.append(p)
         if t >= 100:
             plats.append({"name": "Shuttle", "at": "nauvis", "state": "waiting_at_station", "speed": 0, "paused": True})
+        for i, p in enumerate(plats):  # live.py PLATFORM_LUA: where a camera shows it (onecam.py platform shots)
+            p["view"] = {"surface": f"platform-{i + 1}", "hub": {"x": 0, "y": 0}, "hub_health": 100 if i else 86,
+                         "bounds": {"left": -14, "top": -10, "right": 14, "bottom": 12}}
+        if 45 <= t < 65 and int(t) % 8 == 0 and self.agents:  # an agent builds on Orbital One from the ground
+            obs["work"] = [{"agent": list(self.agents)[0], "action": "place_ghosts", "verb": "building",
+                            "platform": "Orbital One", "position": {"x": 4, "y": 2}, "at": now}]
         planets = ["nauvis"] + (["vulcanus"] if t >= 150 else [])
         obs["space"] = {"rockets": rockets, "planets": planets, "platforms": plats}
         made = obs.setdefault("produced", {})

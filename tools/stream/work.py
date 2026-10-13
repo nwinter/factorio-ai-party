@@ -16,6 +16,11 @@ import json, os
 # surface (ghosts, paste and deconstruction need no walking).
 REMOTE = {"place_ghosts": "building", "paste": "pasting a blueprint", "blueprint_place": "pasting a blueprint",
           "deconstruct": "deconstructing", "cancel_deconstruction": "cancelling deconstruction"}
+# Platform actions that count only with platform=NAME (else they act where the body is): views and settings through
+# remote view (runtime.lua on_platform), a rocket launched to the platform, cargo dropped from its hub, its schedule
+# and hub requests (space.lua).
+ON_PLATFORM = {"inspect": "inspecting", "configure": "configuring", "launch": "launching a rocket to",
+               "drop": "dropping cargo from", "platform_schedule": "scheduling", "requests": "setting requests on"}
 MAX_READ = 1 << 20  # per file per poll: a burst of observe replies cannot stall the tick
 
 
@@ -78,9 +83,12 @@ class WorkFeed:
                 except ValueError:
                     continue
                 q = r.get("request") or {}
-                if r.get("event") != "request" or q.get("action") not in REMOTE:
+                if r.get("event") != "request" or q.get("action") not in REMOTE and q.get("action") not in ON_PLATFORM:
                     continue
-                plat, pos = target_of(q.get("args") or {})
-                out.append({"agent": agent, "action": q["action"], "verb": REMOTE[q["action"]], "platform": plat,
-                            "position": pos, "at": r.get("at")})
+                args = q.get("args") if isinstance(q.get("args"), dict) else {}
+                plat, pos = target_of(args)
+                if q["action"] not in REMOTE and not isinstance(plat, str):
+                    continue  # inspect, configure, launch ... on the body's own surface: its camera shows them
+                out.append({"agent": agent, "action": q["action"], "verb": REMOTE.get(q["action"]) or
+                            ON_PLATFORM[q["action"]], "platform": plat, "position": pos, "at": r.get("at")})
         return out
