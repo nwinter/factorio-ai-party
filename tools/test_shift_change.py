@@ -57,8 +57,15 @@ OBS = STUB + """
 [ -n "${OBS_DOWN:-}" ] && { echo "ConnectionRefusedError" >&2; exit 1; }
 case $1 in
   status) echo "active=True paused=False time=01:00:00" ;;
-  stream-status) echo "active=${STREAMING:-False} reconnecting=False" ;;
+  stream-status) if [ -e "$STUB_RUNS/.streaming" ]; then echo "active=True reconnecting=False"
+                 else echo "active=${STREAMING:-False} reconnecting=False"; fi ;;
 esac
+"""
+# tools/obs-recover.sh: brings the stream back (the OBS stub then says active) unless RECOVER_FAILS
+OBS_RECOVER = STUB + """
+if [ -n "${RECOVER_FAILS:-}" ]; then echo "15:20:01 obs-recover: FAILED: the stream is still not active after a restart"; exit 1; fi
+touch "$STUB_RUNS/.streaming"
+echo "15:20:01 obs-recover: recovered after a restart: active=True"
 """
 PGREP = STUB + '[ -n "${OTHER_START:-}" ] && echo 4242; exit 0\n'
 # tools/site-refresh.sh: its last line says how it went, as the real one's does
@@ -84,7 +91,8 @@ def setup():
     runs, bin_ = os.path.join(tmp, "runs"), os.path.join(tmp, "bin")
     os.makedirs(bin_)
     for name, body in (("stop-team", STUB), ("start-team", START), ("quota", QUOTA), ("ssh", SSH), ("obs", OBS),
-                       ("pgrep", PGREP), ("herdr", HERDR), ("site-refresh", SITE), ("obs-restart", OBS_RESTART)):
+                       ("pgrep", PGREP), ("herdr", HERDR), ("site-refresh", SITE), ("obs-restart", OBS_RESTART),
+                       ("obs-recover", OBS_RECOVER)):
         p = os.path.join(bin_, name)
         open(p, "w").write(body)
         os.chmod(p, 0o755)
@@ -115,6 +123,7 @@ def run(tmp, runs, bin_, state, *args, **env):
              POG_SC_HERDR=f"{bin_}/herdr", POG_SC_RUNS=runs, POG_SC_STATE_URL="file://" + state, POG_SC_HEALTH_WAIT="0",
              POG_SC_SITE_REFRESH=f"{bin_}/site-refresh",  # never the real one: it deploys the site
              POG_SC_OBS_RESTART=f"{bin_}/obs-restart",  # nor the real OBS restart on the box
+             POG_SC_OBS_RECOVER=f"{bin_}/obs-recover",
              STUB_LOG=os.path.join(tmp, "calls.log"), STUB_RUNS=runs, STUB_NAMES=" ".join(NAMES))
     for k in [k for k in e if k.startswith("POG_") and not k.startswith("POG_SC_")]:
         del e[k]
@@ -251,6 +260,20 @@ def change():
         r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", OBS_RESTART_FAILS="1")
         assert started(calls, "start-team") and "OBS restart FAILED (going on with the running OBS)" in r.stdout, r.stdout
         assert "OBS restart FAILED (FAILED: OBS does not answer after 90 s" in r.stdout and r.returncode == 1, r.stdout
+        # 15:06: OBS up but not streaming (Quick Sync missing): obs-recover once, then the health line again
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream")
+        assert "OBS NOT streaming" in r.stdout and "OBS is not streaming: " in r.stdout and started(calls, "obs-recover"), r.stdout
+        assert r.stdout.rstrip().count("health: ") == 2 and "OBS streaming, service ok" in r.stdout, r.stdout
+        assert r.returncode == 0, r.stdout  # healthy after the recovery
+        assert "recovered after a restart" in open(os.path.join(runs, "shake12", "obs-recover.log")).read()
+        os.remove(os.path.join(runs, ".streaming"))
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", RECOVER_FAILS="1")
+        assert started(calls, "obs-recover") and r.returncode == 1 and r.stdout.count("; OBS NOT streaming,") == 2, r.stdout
+        shutil.rmtree(os.path.join(runs, "shake12"))
+        r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", POG_OBS_RECOVER="0")
+        assert not started(calls, "obs-recover") and r.returncode == 1, calls
         # POG_OBS_RESTART=0 skips it
         shutil.rmtree(os.path.join(runs, "shake12"))
         r, calls = run(tmp, runs, bin_, state, "shake11", "shake12", "240", "--stream", STREAMING="True", POG_OBS_RESTART="0")

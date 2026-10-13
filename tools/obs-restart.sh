@@ -5,8 +5,11 @@
 # 1. outputs: obs.py stream-stop, stop (saves the recording), replay-stop; errors ignored (a broken OBS may refuse).
 # 2. tools/winps.sh tools/win/obs-restart.ps1: close OBS cleanly from Nick's desktop session, force after 30 s, start
 #    the pog-obs task, answer the Safe Mode ("Run in Normal Mode") and Authentication Failure dialogs; prints each step.
+#    It also clears stale crash markers, answers "OBS Studio Crash Detected", and starts OBS once more when the new
+#    process's log says a Quick Sync encoder was not found (15:06).
 # 3. obs-websocket: wait until `obs.py stream-status` answers (up to --wait, default 90 s).
-# Exit 0 when OBS answers again, 1 when not (callers go on with whatever runs). Scenes, recording and stream are the
+# Exit 0 when OBS answers again with Quick Sync, 1 when not, or when Quick Sync is still missing after two starts
+# (callers go on with whatever runs). Scenes, recording and stream are the
 # caller's (tools/obs-steps.sh). --dry-run: the plan and the box's state (obs-restart.ps1 -DryRun); touches nothing.
 # Stubs for tests: POG_OR_OBS, POG_OR_WINPS (commands, split on spaces), POG_OR_SLEEP (seconds per websocket try).
 set -uo pipefail
@@ -42,14 +45,21 @@ for cmd in stream-stop stop replay-stop; do
 done
 
 # 2. Close and start on the box.
-"${winps[@]}" tools/win/obs-restart.ps1 2>&1 | sed 's/^/  box: /'
-box_rc=${PIPESTATUS[0]}
+box=$("${winps[@]}" tools/win/obs-restart.ps1 2>&1)
+box_rc=$?
+sed 's/^/  box: /' <<<"$box"
 [ "$box_rc" = 0 ] || say "the box's restart reported a problem (exit $box_rc); checking the websocket anyway"
+# Quick Sync missing after both starts (15:06: "Encoder ID 'obs_qsv11_v2' not found", StartStream then failed)
+qsv=$(grep -o "qsv: MISSING again.*" <<<"$box" | head -1)
 
 # 3. obs-websocket answers.
 t0=$(date +%s)
 while :; do
   if out=$("${obs[@]}" stream-status 2>&1); then
+    if [ -n "$qsv" ]; then  # (the last line is what shift-change.sh's health line reports)
+      say "FAILED: OBS answers but Quick Sync did not load after two starts (${qsv#qsv: MISSING again }): the stream cannot start"
+      exit 1
+    fi
     say "OBS answers after $(( $(date +%s) - t0 )) s: $out"
     exit 0
   fi

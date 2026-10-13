@@ -47,7 +47,17 @@ echo "${RESTART_DOWN:-2}" > "$STATE/down"
 echo "10:59:01 close: CloseMainWindow on pid 4242 (up 24.5 h): sent"
 echo "10:59:04 close: exited cleanly in 3 s"
 echo "10:59:20 start: OBS up in 15 s (window 'OBS 32.2.2 - Profile: pog', websocket 4455 listening)"
-echo "10:59:20 done"
+case ${QSV:-ok} in  # 15:06: Quick Sync did not load in the new process
+  ok) echo "10:59:23 qsv: ok (no Quick Sync encoder missing in the log)" ;;
+  once) echo "10:59:23 qsv: MISSING in the new process (obs_qsv11_hevc, obs_qsv11_v2 not found): restarting once more"
+        echo "10:59:45 start: OBS up in 16 s (window 'OBS 32.2.2 - Profile: pog', websocket 4455 listening)"
+        echo "10:59:48 qsv: ok after the second start" ;;
+  missing) echo "10:59:23 qsv: MISSING in the new process (obs_qsv11_hevc, obs_qsv11_v2 not found): restarting once more"
+           echo "10:59:45 start: OBS up in 16 s (window 'OBS 32.2.2 - Profile: pog', websocket 4455 listening)"
+           echo "10:59:48 qsv: MISSING again (obs_qsv11_hevc, obs_qsv11_v2 not found): the stream cannot start; a reboot of the box may be needed"
+           echo "10:59:48 done"; exit 2 ;;
+esac
+echo "10:59:48 done"
 exit "${BOX_FAILS:-0}"
 """
 VERTICAL = r"""#!/usr/bin/env bash
@@ -82,6 +92,7 @@ def run(tmp, bin_, state, script, *args, **env):
     e = {k: v for k, v in os.environ.items() if not k.startswith("POG_")}
     e.update(STUB_LOG=log, STATE=state, POG_OR_OBS=f"{bin_}/obs", POG_OR_WINPS=f"{bin_}/winps", POG_OR_SLEEP="0",
              POG_OS_OBS=f"{bin_}/obs", POG_OS_VERTICAL=f"{bin_}/vertical", POG_OS_SLEEP="0",
+             POG_OS_POLL="0", POG_OS_ACTIVE_WAIT="2",
              POG_REC_OBS=f"{bin_}/obs", POG_REC_SETTLE="0")
     e.update(env)
     r = subprocess.run([os.path.join(ROOT, "tools", script), *args], cwd=ROOT, env=e, capture_output=True, text=True,
@@ -109,6 +120,13 @@ def restart():
         # the box's script fails (no session?) but OBS answers: exit 0, the problem printed
         r, _ = run(tmp, bin_, state, "obs-restart.sh", BOX_FAILS="1", RESTART_DOWN="0")
         assert r.returncode == 0 and "reported a problem (exit 1)" in r.stdout, r.stdout
+        # Quick Sync missing once (15:06): the box restarts once more, then fine; missing twice: FAILED although OBS answers
+        r, _ = run(tmp, bin_, state, "obs-restart.sh", QSV="once", RESTART_DOWN="0")
+        assert r.returncode == 0 and "box: 10:59:48 qsv: ok after the second start" in r.stdout, r.stdout
+        r, _ = run(tmp, bin_, state, "obs-restart.sh", QSV="missing", RESTART_DOWN="0")
+        last = r.stdout.strip().splitlines()[-1]
+        assert r.returncode == 1 and "FAILED: OBS answers but Quick Sync did not load after two starts" in last, r.stdout
+        assert "obs_qsv11_v2 not found" in last, last
         # dry run: the plan and the box's own dry run, nothing stopped
         r, calls = run(tmp, bin_, state, "obs-restart.sh", "--dry-run")
         assert r.returncode == 0 and "plan: 1." in r.stdout and "box: dry run: nothing closed or started" in r.stdout
@@ -124,13 +142,21 @@ def steps():
         r, calls = run(tmp, bin_, state, "obs-steps.sh", "--stream")
         assert r.returncode == 0, r.stdout + r.stderr
         assert [l for l in calls.splitlines()] == ["obs stream-scene", "obs scene stream", "obs reload-overlay", "obs start",
-                                                   "obs stream-start", "vertical status"], calls
+                                                   "obs status", "obs stream-start", "obs stream-status",
+                                                   "vertical status"], calls
+        assert "recording: active" in r.stdout and "stream: active" in r.stdout, r.stdout
         assert "vertical: streaming (started with the main stream)" in r.stdout, r.stdout
         put(state, stream=0, record=0)
         r, calls = run(tmp, bin_, state, "obs-steps.sh", "--stream", VERTICAL_ON="False")
         assert "vertical start --yes" in calls and "vertical start: " in r.stdout, (calls, r.stdout)
         r, calls = run(tmp, bin_, state, "obs-steps.sh")  # no --stream: recording only
         assert "stream-start" not in calls and "vertical" not in calls and r.returncode == 0, calls
+        # 15:06: StartStream accepted, the output never active (Quick Sync missing): FAILED, exit 1, no vertical
+        put(state, stream=0, record=0, broken=1)
+        r, calls = run(tmp, bin_, state, "obs-steps.sh", "--stream")
+        assert r.returncode == 1 and "stream: FAILED: not active after 2 s" in r.stdout, r.stdout
+        assert "recording: FAILED: not active" in r.stdout and "vertical" not in calls, (r.stdout, calls)
+        put(state, broken=0)
         put(state, down=100)
         r, _ = run(tmp, bin_, state, "obs-steps.sh", "--stream")
         assert r.returncode == 1 and "recording: FAILED" in r.stdout and "stream: FAILED" in r.stdout, r.stdout
@@ -183,7 +209,9 @@ def recover():
 def scripts():
     ps = open(os.path.join(ROOT, "tools", "win", "obs-restart.ps1")).read()
     for s in ("LogonType Interactive", "CloseMainWindow", "Stop-Process -Id $p.Id -Force", "Start-ScheduledTask -TaskName '__OBSTASK__'",
-              "'Safe Mode'", "Press $w 'Normal'", "'{ESC}'", "Authentication Failure", "LocalPort 4455", "-DryRun", "Say 'done'"):
+              "'Safe Mode|Crash Detected'", "Press $w 'Normal'", "'{ESC}'", "Authentication Failure", "LocalPort 4455",
+              "-DryRun", "Say 'done'", "'.sentinel'", "-Filter 'run_*'", "Encoder ID '(obs_qsv11[^']*)' not found",
+              "qsv: MISSING again", "if ($stale)", "exit 2"):
         assert s in ps, s
     st = open(os.path.join(ROOT, "tools", "start-team.sh")).read()
     assert "tools/obs-restart.sh" in st and "tools/obs-steps.sh $stream" in st and "POG_OBS_RESTARTED" in st
