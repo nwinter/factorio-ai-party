@@ -273,7 +273,8 @@ t=astra('status').team
 assert(has(t.alerts,'you were hit 1 times (12 damage) by small-biter, 1s ago; health 250'),table.concat(t.alerts,' | '))
 assert(has(t.alerts,'attack #1 at (40,40): by small-biter; stone-furnace x1 hit 1 times, 30 damage, 1s ago'),table.concat(t.alerts,' | '))
 assert(has(t.alerts,': by small-biter; no charted nest within 384 tiles; character x1 hit 1 times'))
-assert(has(t.alerts,'losses in (41,40) 1 destroyed: 1 stone-furnace by 1 small-biter'))
+assert(has(t.alerts,' in (41,40) 1 destroyed: 1 stone-furnace by 1 small-biter'))
+assert(has(t.alerts,' in (41,40)'):find('^losses #%d+ in'))
 eq(astra('status').team,nil)
 -- Every agent hears about the attack; only astra about her character.
 t=sol('status').team
@@ -288,24 +289,25 @@ fails(function() astra('plan_run',{name='x'}) end,'')
 ac.valid=true
 -- A quiet minute starts a new incident at the same place.
 jump(4000)
-runtime.on_event{name=12,tick=tick,entity={valid=true,name='inserter',type='inserter',position={x=40,y=41},force=force},force=enemy,cause=biter,final_damage_amount=5}
+-- The nearest charted spawner is looked up once, at the incident's first hit by a unit.
+local spawner={valid=true,name='biter-spawner',type='unit-spawner',position={x=200,y=41}}
+local find=surface.find_entities_filtered
+surface.find_entities_filtered=function(f) if f.type=='unit-spawner' and f.radius==384 then return {spawner} end return find(f) end
+runtime.on_event{name=12,tick=tick,entity={valid=true,name='inserter',type='inserter',position={x=40,y=41},force=force,surface=surface},force=enemy,cause=biter,final_damage_amount=5}
+surface.find_entities_filtered=find
 t=sol('status').team
 assert(has(t.alerts,'inserter x1 hit 1 times, 5 damage'),table.concat(t.alerts,' | '))
 local id=has(t.alerts,'inserter x1'):match('^attack #(%d+) at %(40,41%)')
 assert(id,table.concat(t.alerts,' | '))
 -- More hits on the same incident: not repeated within 2 minutes, then once as "continues" with the totals.
--- Distinct attackers are counted by kind; the nearest charted spawner is looked up once.
-local spawner={valid=true,name='biter-spawner',type='unit-spawner',position={x=200,y=41}}
-local find=surface.find_entities_filtered
+-- Distinct attackers are counted by kind.
 jump(600)
-surface.find_entities_filtered=function(f) if f.type=='unit-spawner' then return {spawner} end return find(f) end
 runtime.on_event{name=12,tick=tick,entity={valid=true,name='inserter',type='inserter',position={x=40,y=41},force=force,surface=surface},force=enemy,
   cause={valid=true,name='medium-biter',unit_number=9001},final_damage_amount=5}
 runtime.on_event{name=12,tick=tick,entity={valid=true,name='inserter',type='inserter',position={x=40,y=41},force=force,surface=surface},force=enemy,
   cause={valid=true,name='small-biter',unit_number=9002},final_damage_amount=5}
 runtime.on_event{name=12,tick=tick,entity={valid=true,name='inserter',type='inserter',position={x=40,y=41},force=force,surface=surface},force=enemy,
   cause={valid=true,name='small-biter',unit_number=9003},final_damage_amount=5}
-surface.find_entities_filtered=find
 jump(60)
 t=sol('status').team
 eq(t and has(t.alerts,'attack #'..id),nil)
@@ -476,7 +478,7 @@ for _,i in ipairs(losses) do assert(i.key~=first_key,'the oldest incident was ev
 jump(60)
 local st=astra('status')
 assert(has(st.alerts.latest,'1 gun-turret'),table.concat(st.alerts.latest,' | '))
-assert(has(st.team.alerts,'losses in (1,-2000) 1 destroyed: 1 gun-turret'),table.concat(st.team.alerts,' | '))
+assert(has(st.team.alerts,' in (1,-2000) 1 destroyed: 1 gun-turret'),table.concat(st.team.alerts,' | '))
 eq(storage.agent_harness.runtime_fault,nil)
 -- A save from before the fix keeps an incident with last=nil: status still works, it counts by its first tick (old
 -- here), and it is the first evicted.
@@ -488,7 +490,7 @@ sol('status'); astra('status',{since=0})
 lose('stone-furnace',1,-3000)
 eq(#storage.agent_harness.losses,64)
 for _,i in ipairs(storage.agent_harness.losses) do assert(i.key~='99,99','the incident without last went first') end
-assert(has(astra('status').team.alerts,'losses in (1,-3000) 1 destroyed: 1 stone-furnace'))
+assert(has(astra('status').team.alerts,' in (1,-3000) 1 destroyed: 1 stone-furnace'))
 eq(storage.agent_harness.runtime_fault,nil)
 
 -- Friendly fire (shake11-12: our flamethrower turrets burnt gun turrets, radars, belts and their own oil lines): a
@@ -500,16 +502,31 @@ local function died(name,x,y,cause,killer)
 end
 died('gun-turret',5000,5000,flamer,force); died('radar',5001,5001,flamer,force); died('pipe',5002,5000,nil,force)
 jump(60)
-local line=has(astra('status').team.alerts,'(5000,5000)')
+local function unnumbered(line) return line and (line:gsub('^losses #%d+ ','losses ')) end
+local line=unnumbered(has(astra('status').team.alerts,'(5000,5000)'))
 eq(line,'losses in (5000,5000)-(5002,5001) 3 destroyed: 1 gun-turret, 1 pipe, 1 radar by friendly fire: 2 flamethrower-turret, 1 unknown source, 1s ago')
 died('transport-belt',6000,6000,enemy_biter,{name='enemy'}); died('transport-belt',6001,6000,flamer,force)
 died('stone-wall',6002,6000,enemy_biter,{name='enemy'})
 jump(60)
-line=has(astra('status').team.alerts,'(6000,6000)')
+line=unnumbered(has(astra('status').team.alerts,'(6000,6000)'))
 eq(line,'losses in (6000,6000)-(6002,6000) 3 destroyed: 2 transport-belt, 1 stone-wall by 2 medium-biter, friendly fire: 1 flamethrower-turret, 1s ago')
 -- status alerts carry the same lines; enemy-only lines read as before.
 assert(has(astra('status').alerts.latest,'by 2 medium-biter, friendly fire: 1 flamethrower-turret'))
 died('stone-wall',7000,7000,enemy_biter,{name='enemy'})
 jump(60)
-eq(has(astra('status').team.alerts,'(7000,7000)'),'losses in (7000,7000) 1 destroyed: 1 stone-wall by 1 medium-biter, 1s ago')
+eq(unnumbered(has(astra('status').team.alerts,'(7000,7000)')),'losses in (7000,7000) 1 destroyed: 1 stone-wall by 1 medium-biter, 1s ago')
+-- Friendly fire names where the burning turret stands (shift 5-6: a pipe row burnt 8 times, no flamer named).
+local flamer_at={valid=true,name='flamethrower-turret',force=force,position={x=8010,y=8004}}
+died('pipe',8000,8000,flamer_at,force); died('pipe',8001,8000,flamer_at,force)
+jump(60)
+eq(unnumbered(has(astra('status').team.alerts,'(8000,8000)')),
+  'losses in (8000,8000)-(8001,8000) 2 destroyed: 2 pipe by friendly fire: 2 flamethrower-turret at (8010,8004), 1s ago')
+-- Another surface is named, and a platform by its name.
+runtime.on_event{name=11,tick=tick,entity={valid=true,name='stone-furnace',position={x=9000,y=9000},force=force,surface={name='vulcanus'}},cause=enemy_biter}
+runtime.on_event{name=11,tick=tick,entity={valid=true,name='gun-turret',position={x=9000,y=9000},force=force,surface={name='platform-3',platform={name='Starling'}}},cause=enemy_biter}
+jump(60)
+local alerts=astra('status').team.alerts
+eq(#(function() local n={} for _,l in ipairs(alerts) do if l:find('(9000,9000)',1,true) then n[#n+1]=l end end return n end)(),2)
+assert(has(alerts,' on vulcanus in (9000,9000) 1 destroyed: 1 stone-furnace'),table.concat(alerts,' | '))
+assert(has(alerts,' on platform Starling in (9000,9000) 1 destroyed: 1 gun-turret'),table.concat(alerts,' | '))
 print('board: ok')

@@ -172,26 +172,32 @@ end
 for i=1,80 do runtime.on_event{name=11,tick=tick,cause={valid=true,name='small-biter'},entity={valid=true,name=i<=16 and 'electric-mining-drill' or 'transport-belt',position={x=200+i%10,y=-90},force={name='player'}}} end
 -- Losses ride in the reply's team alerts.
 local function loss_line(reply)
-  for _,line in ipairs(reply.team and reply.team.alerts or {}) do if line:find('^losses in ') then return line end end
+  for _,line in ipairs(reply.team and reply.team.alerts or {}) do if line:find('^losses #%d+ ') then return line end end
 end
 local pushed=call('status')
-assert(loss_line(pushed):find('losses in (200,-90)-(209,-90) 80 destroyed: 64 transport-belt, 16 electric-mining-drill by 80 small-biter',1,true),loss_line(pushed))
+assert(loss_line(pushed):find(' in (200,-90)-(209,-90) 80 destroyed: 64 transport-belt, 16 electric-mining-drill by 80 small-biter',1,true),loss_line(pushed))
 eq(pushed.alerts.losses['transport-belt'],64); eq(pushed.alerts.losses['electric-mining-drill'],16)
 eq(loss_line(call('queue_status')),nil)
+-- A loss 10 tiles away joins the raid; its running total comes at most once a game minute (shift 5: every growth
+-- was a new line).
 runtime.on_event{name=11,tick=tick,entity={valid=true,name='inserter',position={x=205,y=-80},force={name='player'}}}
-assert(loss_line(call('queue_status')):find('81 destroyed',1,true))
+eq(loss_line(call('queue_status')),nil)
+tick=tick+3600; game.tick=tick
+local grown=loss_line(call('queue_status'))
+assert(grown:find(' in (200,-90)-(209,-80) continue: 81 destroyed (+1 since you were told): ',1,true),grown)
+eq(loss_line(call('queue_status')),nil)
 -- A cell quiet for 5 minutes, or a new shift, starts a new incident; the old
 -- one stays in status alerts with since (shake5: a raid total grew across two shifts).
 ;(function()
-  local start=tick
+  local start=tick-3600 -- the furnace and the raid, before the minute waited above
   tick=tick+5*3600+1; game.tick=tick
   runtime.on_event{name=11,tick=tick,entity={valid=true,name='inserter',position={x=206,y=-80},force={name='player'}}}
   local line=loss_line(call('queue_status'))
-  assert(line:find('losses in (206,-80) 1 destroyed: 1 inserter',1,true),line)
+  assert(line:find('^losses #%d+ in %(206,%-80%) 1 destroyed: 1 inserter'),line)
   local closed=runtime.operator.shift_start(); eq(closed.ok,true); eq(closed.incidents_closed,3)
   runtime.on_event{name=11,tick=tick,entity={valid=true,name='inserter',position={x=207,y=-80},force={name='player'}}}
   line=loss_line(call('queue_status'))
-  assert(line:find('losses in (207,-80) 1 destroyed',1,true),line)
+  assert(line:find(' in (207,-80) 1 destroyed',1,true),line)
   local history=call('status',{since=start-1}).alerts
   eq(#history.latest,4); eq(history.losses.inserter,3); eq(history.losses['transport-belt'],64)
   eq(#call('status').alerts.latest,2) -- the last 5 minutes: the two new incidents

@@ -802,13 +802,13 @@ return function(api)
     table.sort(areas, function(x, y) return x.v.last > y.v.last end)
     for n, area in ipairs(areas) do
       if n > 3 then lines[#lines+1] = string.format('+%d more attacked areas: status alerts', #areas - 3); break end
-      lines[#lines+1] = api.attack_line(area.v, area.v.id and told[area.v.id] ~= nil)
+      lines[#lines+1] = api.attack_line(area.v, area.v.id and told[area.v.id] ~= nil, p.surface and p.surface.name)
       if area.v.id then shown[area.v.id] = game.tick end
     end
     -- Only incidents still kept are remembered.
     h.attacks = next(shown) and shown or nil
     if api.news_lines then
-      for _, line in ipairs(api.news_lines(h.news_seq, game.tick - FIRST_ALERTS)) do lines[#lines+1] = line end
+      for _, line in ipairs(api.news_lines(h.news_seq, game.tick - FIRST_ALERTS, p.surface and p.surface.name)) do lines[#lines+1] = line end
       h.news_seq = s.alert_seq or 0
     end
     local groups = 0
@@ -816,7 +816,8 @@ return function(api)
       local g = s.attack_groups[k]
       if not fresh(g, g.tick) or groups >= 2 then break end
       groups = groups + 1
-      lines[#lines+1] = string.format('enemy group of %d gathered at (%d,%d)%s, %s ago', g.size, g.position.x, g.position.y,
+      local on = g.surface and p.surface and g.surface ~= p.surface.name and ' on ' .. g.surface or ''
+      lines[#lines+1] = string.format('enemy group of %d gathered%s at (%d,%d)%s, %s ago', g.size, on, g.position.x, g.position.y,
         g.target and string.format(' heading for (%d,%d)', g.target.x, g.target.y) or '', ago(game.tick - g.tick))
     end
     for _, line in ipairs(losses or {}) do lines[#lines+1] = line end

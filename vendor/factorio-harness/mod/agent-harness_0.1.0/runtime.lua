@@ -650,20 +650,33 @@ end
 -- quiet for 5 minutes, or a new shift (operator shift_start), starts a new
 -- incident (shake5: one raid's total grew across two shifts and read as one
 -- raid); the old ones stay in status alerts with since.
+-- Since the shift 5 study, an incident is one raid: losses on the same surface within LOSS.join tiles of its box join
+-- it (while the box stays under LOSS.span tiles), it has an id, and a reader is told it once and then its running
+-- total at most once a game minute while it grows (shift 5: 839 loss lines for about 30 raids, each growth repeated).
+-- (One table: runtime.lua's main chunk is at Lua's 200-local limit.)
 local LOSS_CELL,MAX_INCIDENTS=64,64
+local LOSS={join=32,span=192,again=3600,first=18000}
 -- An incident's latest tick is `(i.last or i.first or 0)`: saves from before shake11 can hold one created without
 -- `last` (it was set only after the 64-incident cap check, which then failed on it in the tick: shake10's quarantines).
 -- friendly: the cause is one of the entity's own force (shake11-12: our flamethrower turrets burnt gun turrets, radars,
--- belts and their own oil lines in 8 and 11 areas), kept apart from enemy causes.
-local function record_loss(tick,e,cause,friendly)
+-- belts and their own oil lines in 8 and 11 areas), kept apart from enemy causes, with where the cause stood.
+local function record_loss(tick,e,cause,friendly,cause_at)
   local s=state()
   s.losses=s.losses or {}
-  local cx,cy=math.floor(e.position.x/LOSS_CELL),math.floor(e.position.y/LOSS_CELL)
-  local key=cx..','..cy
+  local x,y=e.position.x,e.position.y
+  local surface=e.surface and e.surface.name or nil
   local incident
-  for _,i in ipairs(s.losses) do if i.key==key and not i.closed and tick-(i.last or i.first or 0)<=5*3600 then incident=i; break end end
+  for _,i in ipairs(s.losses) do
+    local b=i.box
+    if i.surface==surface and not i.closed and tick-(i.last or i.first or 0)<=5*3600
+      and x>=b[1]-LOSS.join and x<=b[3]+LOSS.join and y>=b[2]-LOSS.join and y<=b[4]+LOSS.join
+      and math.max(b[3],x)-math.min(b[1],x)<=LOSS.span and math.max(b[4],y)-math.min(b[2],y)<=LOSS.span then incident=i; break end
+  end
   if not incident then
-    incident={key=key,box={e.position.x,e.position.y,e.position.x,e.position.y},first=tick,last=tick,names={},causes={},total=0}
+    s.loss_ids=(s.loss_ids or 0)+1
+    local ok,platform=pcall(function() return e.surface.platform and e.surface.platform.name end)
+    incident={id=s.loss_ids,key=math.floor(x/LOSS_CELL)..','..math.floor(y/LOSS_CELL),surface=surface,platform=ok and platform or nil,
+      box={x,y,x,y},first=tick,last=tick,names={},causes={},total=0}
     s.losses[#s.losses+1]=incident
     if #s.losses>MAX_INCIDENTS then
       local oldest=1
@@ -677,7 +690,17 @@ local function record_loss(tick,e,cause,friendly)
   b[1],b[2],b[3],b[4]=math.min(b[1],e.position.x),math.min(b[2],e.position.y),math.max(b[3],e.position.x),math.max(b[4],e.position.y)
   incident.last=tick; incident.seq=s.loss_seq; incident.total=incident.total+1
   incident.names[e.name]=(incident.names[e.name] or 0)+1
-  if cause and friendly then incident.friendly=incident.friendly or {}; incident.friendly[cause]=(incident.friendly[cause] or 0)+1
+  if cause and friendly then
+    incident.friendly=incident.friendly or {}; incident.friendly[cause]=(incident.friendly[cause] or 0)+1
+    -- Where the burning turret stands (up to 2 per name), so the reader can find it.
+    if cause_at then
+      incident.friendly_at=incident.friendly_at or {}
+      local list=incident.friendly_at[cause] or {}; incident.friendly_at[cause]=list
+      local at=string.format('(%g,%g)',cause_at.x,cause_at.y)
+      local known=false
+      for _,v in ipairs(list) do if v==at then known=true end end
+      if not known and #list<2 then list[#list+1]=at end
+    end
   elseif cause then incident.causes[cause]=(incident.causes[cause] or 0)+1 end
 end
 local function losses_since(since)
@@ -700,13 +723,25 @@ local function counted(t)
   for i,v in ipairs(names) do names[i]=v[2]..' '..v[1] end
   return names
 end
-local function describe_incident(i)
+-- An incident kept from before ids gets one when next read.
+function LOSS.id(i)
+  if not i.id then local s=state(); s.loss_ids=(s.loss_ids or 0)+1; i.id=s.loss_ids end
+  return i.id
+end
+-- "#7 in (x,y)-(x,y) 40 destroyed: ..."; `reader` (a surface name) names an incident on another surface, `before`
+-- (the total the reader was told) marks a running total.
+local function describe_incident(i,reader,before)
   local names=counted(i.names)
   while #names>6 do table.remove(names) end
   local causes=counted(i.causes)
   while #causes>2 do table.remove(causes) end
-  -- Our own entities among the causes: "friendly fire: 2 flamethrower-turret", after the enemy ones.
-  local friendly=counted(i.friendly or {})
+  -- Our own entities among the causes: "friendly fire: 2 flamethrower-turret at (80,90)", after the enemy ones.
+  local friendly={}
+  for _,v in ipairs(counted(i.friendly or {})) do
+    local name=v:match('^%d+ (.+)$')
+    local at=name and i.friendly_at and i.friendly_at[name]
+    friendly[#friendly+1]=v..(at and #at>0 and ' at '..table.concat(at,' ') or '')
+  end
   while #friendly>2 do table.remove(friendly) end
   if #friendly>0 then causes[#causes+1]='friendly fire: '..table.concat(friendly,', ') end
   local last=(i.last or i.first or 0)
@@ -714,35 +749,56 @@ local function describe_incident(i)
   local b=i.box
   local where=string.format('(%d,%d)',math.floor(b[1]),math.floor(b[2]))
   if b[3]-b[1]>=1 or b[4]-b[2]>=1 then where=where..'-'..string.format('(%d,%d)',math.floor(b[3]),math.floor(b[4])) end
-  return string.format('in %s %d destroyed: %s%s, %s',where,i.total,table.concat(names,', '),
+  local on=''
+  if i.platform then on=' on platform '..i.platform elseif i.surface and reader and i.surface~=reader then on=' on '..i.surface end
+  return string.format('#%d%s in %s%s %d destroyed%s: %s%s, %s',LOSS.id(i),on,where,before and ' continue:' or '',i.total,
+    before and string.format(' (+%d since you were told)',i.total-before) or '',table.concat(names,', '),
     #causes>0 and ' by '..table.concat(causes,', ') or '',span)
 end
--- Losses this player has not been told about, once, in the reply's team
--- alerts. Incidents that grew since are repeated whole so the totals stay readable.
+-- Losses in the reply's team alerts: each incident once, then its running total at most once a game minute while it
+-- grows. A reader never told anything starts with the incidents of the last 5 minutes. s.losses_told[index] holds
+-- {id -> {tick, total}} for incidents still kept.
 local function unseen_losses(p)
   local s=state()
-  s.losses_seen=s.losses_seen or {}
-  local seen=s.losses_seen[p.index] or 0
-  s.losses_seen[p.index]=s.loss_seq or 0
-  local incidents={}
-  for _,i in ipairs(s.losses or {}) do if (i.seq or 0)>seen then incidents[#incidents+1]=i end end
-  if #incidents==0 then return nil end
-  table.sort(incidents,function(a,b) return a.seq>b.seq end)
+  s.losses_told=s.losses_told or {}
+  local told=s.losses_told[p.index]
+  local new_reader=told==nil
+  told=told or {}
+  -- What a reader saw before ids (s.losses_seen, a loss_seq) counts as told.
+  local seen=s.losses_seen and s.losses_seen[p.index]
+  if s.losses_seen then s.losses_seen[p.index]=nil end
+  local kept,due={},{}
+  for _,i in ipairs(s.losses or {}) do
+    local id=LOSS.id(i)
+    local t=told[id]
+    if not t and seen and (i.seq or 0)<=seen then t={tick=game.tick,total=i.total} end
+    if t then
+      kept[id]=t
+      if i.total>t.total and game.tick-t.tick>=LOSS.again then due[#due+1]={i=i,before=t.total} end
+    elseif not (new_reader and not seen and game.tick-(i.last or i.first or 0)>LOSS.first) then due[#due+1]={i=i}
+    else kept[id]={tick=game.tick,total=i.total} end
+  end
+  s.losses_told[p.index]=kept
+  if #due==0 then return nil end
+  table.sort(due,function(a,b) return (a.i.last or 0)>(b.i.last or 0) end)
   local lines={}
-  for n,i in ipairs(incidents) do
-    if n>4 then lines[#lines+1]=string.format('+%d more areas with losses; status alerts lists them',#incidents-4); break end
-    lines[#lines+1]=describe_incident(i):gsub('^in ','losses in ',1)
+  local reader=p.surface and p.surface.name
+  for n,d in ipairs(due) do
+    if n>4 then lines[#lines+1]=string.format('+%d more areas with losses; status alerts lists them',#due-4); break end
+    lines[#lines+1]='losses '..describe_incident(d.i,reader,d.before)
+    kept[d.i.id]={tick=game.tick,total=d.i.total}
   end
   return lines
 end
-local function recent_alerts(a)
+local function recent_alerts(a,p)
   local since=a.since or game.tick-18000
+  local reader=p and p.surface and p.surface.name
   local counts,latest={},{}
   for _,i in ipairs(losses_since(since)) do
     for name,n in pairs(i.names) do counts[name]=(counts[name] or 0)+n end
-    if #latest<8 then latest[#latest+1]=describe_incident(i) end
+    if #latest<8 then latest[#latest+1]=describe_incident(i,reader) end
   end
-  local attacks=threat.alerts(since)
+  local attacks=threat.alerts(since,reader)
   local kills={}
   for _,k in ipairs(state().kills or {}) do if k.tick>since then kills[k.name]=(kills[k.name] or 0)+1 end end
   local okp,platform_hits=pcall(M.platalerts.rows,since)
@@ -815,7 +871,7 @@ function handlers.status(p,a)
     return {brief=true,active=active(p.index),last=state().last and state().last[p.index] or false,combat=state().combat and state().combat[p.index] or false,
       last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,connected=p.connected,
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
-      alerts=a.alerts==true and recent_alerts(a) or nil,
+      alerts=a.alerts==true and recent_alerts(a,p) or nil,
       supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,tick=game.tick,position=p.position}
   end
   assert(a.alerts==nil,'alerts is an option of brief (a full status always has them)')
@@ -857,12 +913,13 @@ function handlers.status(p,a)
     if shown<3 and area.damage>0 then
       shown=shown+1
       factory.warnings=factory.warnings or {}
-      table.insert(factory.warnings,shown,string.format('under attack near (%g,%g): %s hit %d times%s, %s ago',area.chunk_centre.x,area.chunk_centre.y,
+      local on=area.surface and area.surface~=p.surface.name and ' on '..area.surface or ''
+      table.insert(factory.warnings,shown,string.format('under attack%s near (%g,%g): %s hit %d times%s, %s ago',on,area.chunk_centre.x,area.chunk_centre.y,
         area.entities,area.hits,area.by and ' by '..area.by or '',ago(game.tick-area.last_tick)))
     end
   end
   -- Items on the ground: full landing pads that spill, piles near our buildings (ground.lua, a pass every 30 s).
-  local alerts=recent_alerts(a)
+  local alerts=recent_alerts(a,p)
   local ground=alive and M.ground.alerts(p)
   if ground then alerts=alerts or {}; alerts.ground_items=ground end
   if now and now.stuck_s then
@@ -3886,7 +3943,7 @@ M.board=require('board'){state=state,director=function(index) return M.is_direct
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
   submit=function(p,a) return handlers.queue_submit(p,a) end,
   research_lines=function(p,h) return M.research.lines(p,h) end,
-  attack_line=function(v,again) return threat.attack_line(v,again) end,news_lines=function(from,since) return threat.news_lines(from,since) end,
+  attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
   platform_lines=function(p,h) return M.platalerts.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
@@ -4606,7 +4663,7 @@ function M.on_event(event)
     local cause=event.cause and event.cause.valid and event.cause or nil
     local own=e.force.name
     local friendly=(cause and cause.force and cause.force.name==own) or (not cause and event.force and event.force.name==own) or false
-    record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or nil,friendly)
+    record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or nil,friendly,friendly and cause and cause.position or nil)
   end
 end
 -- Operator profiler (profile.lua): dispatches, events, the tick and these parts.
