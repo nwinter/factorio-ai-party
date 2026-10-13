@@ -128,6 +128,13 @@ def main():
         assert 'href="/runs/long/shift-2/"' in sp and "Milestones" in sp
         assert "First rocket launched" in page and "Records" in page and 'class="mark"' in page
         assert "1 built" in page and "0 lost · 1 active (Solstice)" in page and "Space platforms" in page
+        # key times (game time, hours on stream, Pacific), the kind filter, the live banner (hidden until site.js)
+        assert 'id="key-times"' in page and "First rocket" in page and "1h42m" in page, "first rocket at game 102 min"
+        assert 'class="kind-filter"' in page and 'data-kind="space"' in page and '<tr data-kind="research">' in page
+        assert 'class="live-banner"' in page and " hidden>" in page.split('class="live-banner"')[1][:200]
+        assert '">on now</span>' not in page  # no "on now" chip from the build: a built page goes stale
+        sp2 = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
+        assert 'content="Shift 2: Oct 11, 05:00 to 06:00 Pacific · +1 technologies · +2 rockets' in sp2
         # a line that ends at 0 (space science on shift 1's page: none made yet) has no end label
         assert not re.search(r'class="dlabel"[^>]*>[^<]*<tspan class="dval">0</tspan>', page + sp)
         # a shift with a YouTube video: its row links its page, the run page embeds it, the page has the chapters

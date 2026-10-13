@@ -895,7 +895,19 @@ def qa_html(qa):
             who = f'<span class="chip host">{esc(q["who"])}</span>'
         items.append(f'<li class="qa-{q["kind"]}"><span class="c-time">{esc(_pt(q["t"], day=False))}</span>{who}'
                      f'<span class="c-text">{esc(q["text"])}</span></li>')
-    return f'<ol class="chat qa">{"".join(items)}</ol>'
+    if len(items) <= 40:
+        return f'<ol class="chat qa">{"".join(items)}</ol>'
+    # a long transcript: the first 30 lines, the rest one click away
+    return (f'<ol class="chat qa">{"".join(items[:30])}</ol><details class="chat-full"><summary>{len(items) - 30} more lines'
+            f'</summary><ol class="chat qa" start="31">{"".join(items[30:])}</ol></details>')
+
+
+def shift_summary(s, firsts):
+    """The page's description (search and link previews): the shift's numbers and its biggest firsts."""
+    bits = [f"Shift {s['n']}: {_when(s['started'], s['ended'])} Pacific", f"+{s['research_new']} technologies",
+            f"+{s['rockets_new']} rockets", f"{s['made_total']:,} science packs"]
+    big = [f["label"] for f in firsts if f["kind"] in ("space", "science")][:3]
+    return " · ".join(bits) + (". " + ", ".join(big) + "." if big else ".")
 
 
 def build_shift_page(s, v, lr):
@@ -950,7 +962,7 @@ def build_shift_page(s, v, lr):
 {nav}
 """
     return page(f"Shift {s['n']}", body, "/runs/" if archive() else "/runs/long/",
-                f"Shift {s['n']} of the long run: numbers, milestones, charts and viewer questions.", path=shift_href(s))
+                shift_summary(s, mine), path=shift_href(s))
 
 
 def _when(a, b):
