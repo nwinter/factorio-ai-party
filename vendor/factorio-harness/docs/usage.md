@@ -528,7 +528,18 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   gathering, buildings destroyed, with what destroyed them: enemy kinds first, then our own force's entities as
   `friendly fire: 2 flamethrower-turret` (`unknown source` when the cause is gone and the killing force is ours); at most
   8 lines; these replace the old top-level `losses` field; full landing pads spilling and piles of items on the ground
-  near our buildings, once each and again when grown by half) and `reminders`
+  near our buildings, once each and again when grown by half; then up to 6 platform lines, below) and `reminders`
+- Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
+  requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
+  aboard; a platform with none of them known goes to every agent:
+  `platform Starling hit 3 times, 380 damage, last 1s ago: gun-turret 300, space-platform-hub 80; by
+  medium-metallic-asteroid 3` (hits on our entities there since you were last told, your first look covering the last
+  10 minutes; at most once a game minute), `platform Starling: hits per minute rising, 30 in the last minute, 2 a
+  minute over the 5 before` (10 or more and at least twice the earlier rate plus 5), `platform Starling: 1 of 2
+  gun-turrets empty, 1 low (under 10 rounds)`, `platform Starling: no repair packs in the hub (...)` (while it was hit
+  in the last 10 minutes or the hub is damaged), `platform Starling hub health 900/1000, down 100 in 40s`. A condition
+  that lasts comes again after 5 game minutes, sooner when it gets worse. Hits on a platform are no longer `attack #`
+  incidents. Turrets and the hub are read at most every 10 s per platform.
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each

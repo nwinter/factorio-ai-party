@@ -3864,7 +3864,8 @@ M.board=require('board'){state=state,director=function(index) return M.is_direct
   submit=function(p,a) return handlers.queue_submit(p,a) end,
   research_lines=function(p,h) return M.research.lines(p,h) end,
   attack_line=function(v,again) return threat.attack_line(v,again) end,news_lines=function(from,since) return threat.news_lines(from,since) end,
-  watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end}
+  watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
+  platform_lines=function(p,h) return M.platalerts.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
 M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end}
@@ -3878,6 +3879,10 @@ for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
   agents=function() return M.board.agents() end,
   human=function(index) return not M.bots.is_index(index) and not (state().controlled and state().controlled[index]) end}
+-- Platform health alerts in team.alerts (platalerts.lua): hits, turret ammo,
+-- repair packs, hub health, to the platform's creator, workers and riders.
+M.platalerts=require('platalerts'){state=state,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
+  lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
 -- and attached agents are not humans.
 M.players=require('players'){state=state,
@@ -4048,6 +4053,8 @@ function M.dispatch(request)
     local before=p and p.valid and (state().clocks or {})[p.index]
     local last_call=before and not before.peeked and before.call_tick or nil
     if p and p.valid then result.clock=clock_line(p,peek) end
+    -- Who works on which platform, for its alerts (platalerts.lua).
+    if p and p.valid and not peek and type(request.args)=='table' then pcall(M.platalerts.note,p,request.action,request.args,result) end
     -- An fh sleep poll keeps a sleeping agent active for votes (votes.lua).
     if p and p.valid and peek and (request.action=='sleep_check' or (request.action=='observe' and request.args.scope=='sleep_check')) then
       local c=(state().clocks or {})[p.index]; if c then c.wait_tick=game.tick end
@@ -4529,7 +4536,10 @@ function M.on_event(event)
   elseif event.name==defines.events.on_unit_group_finished_gathering then
     threat.on_group(event)
   elseif event.name==defines.events.on_entity_damaged then
-    threat.on_damaged(event)
+    -- A platform's hits go to its alerts (platalerts.lua), counted on a fault.
+    local ok,platform=pcall(M.platalerts.on_damaged,event)
+    if not ok then local s=state(); s.platform_alert_errors={count=((s.platform_alert_errors or {}).count or 0)+1,last=tostring(platform),tick=game.tick} end
+    if not (ok and platform) then threat.on_damaged(event) end
   elseif event.name==defines.events.on_entity_died then
     local cause=event.cause
     if cause and cause.valid and cause.type=='character' then

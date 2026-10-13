@@ -821,6 +821,11 @@ return function(api)
     end
     for _, line in ipairs(losses or {}) do lines[#lines+1] = line end
     while #lines > MAX_ALERT_LINES do table.remove(lines) end
+    -- Our platforms (platalerts.lua), with their own cap of 6 lines.
+    if api.platform_lines then
+      local ok, list = pcall(api.platform_lines, p, h)
+      for i, line in ipairs(ok and list or {}) do if i <= 6 then lines[#lines+1] = line end end
+    end
     return #lines > 0 and lines or nil
   end
   -- Who hears what on the stream: once per agent (h.stream_note holds the
