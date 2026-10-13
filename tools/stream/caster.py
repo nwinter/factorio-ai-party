@@ -763,8 +763,16 @@ def card_facts(seg):
     return f
 
 
+def loss_count(e):
+    """Buildings lost in a loss alert ("9 lost near (24, -89): 8 transport belt, 1 radar"), 0 when unknown."""
+    m = re.match(r"\s*(\d+) lost", e.get("text") or "")
+    return int(m.group(1)) if m else 0
+
+
 def facts_for(e, s, baseline=None, deadline=None, shift=None):
     f = {"event": e["kind"], "game_time": spoken_time(s.get("game_time")), "team_size": len(s.get("agents") or [])}
+    if e.get("since_last_report"):  # battle beats held back since the last one: sum them up in one line
+        f["since_last_battle_report"] = e["since_last_report"]
     gm = re.match(r"(\d+)h(\d+)m", s.get("game_time") or "")
     if gm and int(gm.group(1)):  # "sixty-five minutes in" for 1h05m
         f["game_minutes"] = int(gm.group(1)) * 60 + int(gm.group(2))
@@ -2238,6 +2246,14 @@ class Caster:
         # A plain attack within --attack-gap of the last attack beat is dropped; deaths and losses still speak.
         if e and e["kind"] == "attack" and not e.get("also") and \
                 now - getattr(self, "last_attack_t", 0) < getattr(self.a, "attack_gap", 0):
+            self.tally_battle(e)
+            return
+        # shift03 02:18, viewer s0nycz3kk via Astra: "Rook battle reports grouped rather than announcing every turret
+        # loss". A loss within --loss-gap of the last battle beat goes into a tally the next battle beat sums up;
+        # deaths and big losses (--loss-big buildings or more) still speak at once.
+        if e and e["kind"] == "loss" and now - getattr(self, "last_attack_t", 0) < getattr(self.a, "loss_gap", 0) \
+                and loss_count(e) < getattr(self.a, "loss_big", 8):
+            self.tally_battle(e)
             return
         # shake12 04:04-04:11: replays back to back ("Let's run that back" three times in 2.5 minutes, one pipe or one
         # belt each); the card still plays, the hosts let a second replay within 60 s go by
@@ -2267,6 +2283,10 @@ class Caster:
             n = max(n, 3)  # "previously on" takes two or three lines
         if e["kind"] in ("attack", "loss", "death"):
             self.last_attack_t = now
+            tally = getattr(self, "battle_tally", None)
+            if tally and tally["reports"]:  # what happened since the last battle beat, said once
+                e = dict(e, since_last_report=dict(tally, lost=dict(tally["lost"])))
+            self.battle_tally = {"reports": 0, "attacks": 0, "lost": {}}
         self.say_exchange(e, s, first, n)
         # attack replays: the director queues each saved clip itself (eng/stream2), so the hosts only talk over them
         if e["kind"] == "research":
@@ -2285,6 +2305,17 @@ class Caster:
             y["event"] = None
             return dict(e, t=now)
         return "quiet"
+
+    def tally_battle(self, e):
+        """Count a battle beat that was not spoken, for the next one to sum up."""
+        tally = getattr(self, "battle_tally", None) or {"reports": 0, "attacks": 0, "lost": {}}
+        tally["reports"] += 1
+        if e["kind"] == "attack":
+            tally["attacks"] += 1
+        for n, name in re.findall(r"(\d+) ([a-z][a-z -]*?)(?:,|\(|$)", (e.get("text") or "").split(":", 1)[-1]):
+            name = name.strip()
+            tally["lost"][name] = tally["lost"].get(name, 0) + int(n)
+        self.battle_tally = tally
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()
@@ -2771,6 +2802,9 @@ def parser():
     ap.add_argument("--lull", type=float, default=150,
                     help="seconds of silence before the hosts fill with a topic of their own, and only when something "
                          "changed (0: never silent, the old continuous cast)")
+    ap.add_argument("--loss-gap", type=float, default=180,
+                    help="seconds after a battle beat in which a smaller loss is tallied for the next one, not said")
+    ap.add_argument("--loss-big", type=int, default=8, help="a loss of this many buildings or more always speaks")
     ap.add_argument("--attack-gap", type=float, default=120,
                     help="seconds after an attack, loss or death beat before a plain attack is said again (0: every one)")
     ap.add_argument("--quiet", type=float, default=90,
