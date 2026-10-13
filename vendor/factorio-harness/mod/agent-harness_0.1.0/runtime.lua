@@ -606,6 +606,7 @@ function handlers.describe()
   for name,schema in pairs(M.trains and M.trains.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shore and M.shore.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.defense and M.defense.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
@@ -3284,6 +3285,9 @@ M.ground=require('ground'){state=state,real=real,distance=distance,position=posi
 -- pumps or onto water list them; the placements read returns them.
 M.shore=require('shore'){position=position,integer=integer,assert_visible=assert_visible,directions=directions}
 handlers.placements=M.shore.handlers.placements
+-- The defense read (defense.lua): built-up areas, turret cover and ammo, nests near them.
+M.defense=require('defense'){state=state}
+handlers.defense=M.defense.handlers.defense
 -- Ghosts at absolute positions, as a player places them from the cursor or
 -- the map: anywhere charted, no items needed. `construct` then builds them.
 -- One ghost as a player's ghost placement (shift-build): manual ghost checks
@@ -3754,7 +3758,9 @@ function M.is_director(index) return not M.bots.is_index(index) and M.cameras.di
 M.board=require('board'){state=state,director=function(index) return M.is_director(index) end,bots=function() return M.bots.list() end,
   profile=function(index) return M.profiles.get(index) end,validate_plan=function(a) return scheduler.validate(a) end,
   submit=function(p,a) return handlers.queue_submit(p,a) end,
-  research_lines=function(p,h) return M.research.lines(p,h) end}
+  research_lines=function(p,h) return M.research.lines(p,h) end,
+  attack_line=function(v,again) return threat.attack_line(v,again) end,news_lines=function(from,since) return threat.news_lines(from,since) end,
+  watch=function(p) return threat.watch(p) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
 M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end}
@@ -3809,7 +3815,7 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true}
-local reads={placements=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
+local reads={placements=true,defense=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys

@@ -135,14 +135,21 @@ return function(api)
 
   -- Remembers each nest chunk: when it was last visible and whether the cloud
   -- reached it, so a newly charted nest or newly reached one becomes news.
-  local function note_bases(list)
+  -- News is numbered with the attack alerts (alert_seq) so replies push each
+  -- item once; it carries the bearing and distance from the base centre (the
+  -- force's spawn position) and from our nearest structure.
+  local function note_bases(p,list)
     local st=api.state()
     local first=st.nests==nil
     local nests=st.nests or {}
     st.nests=nests
     st.enemy_news=st.enemy_news or {}
+    local centre=p.force.get_spawn_position(p.surface)
     local function news(kind,b)
-      table.insert(st.enemy_news,{tick=game.tick,kind=kind,position=b.position,spawners=b.spawners})
+      st.alert_seq=(st.alert_seq or 0)+1
+      table.insert(st.enemy_news,{seq=st.alert_seq,tick=game.tick,kind=kind,position=b.position,spawners=b.spawners,
+        centre={x=round(centre.x),y=round(centre.y)},from_centre=round(api.distance(centre,b.position)),bearing=compass(centre,b.position),
+        nearest=b.distance,nearest_direction=b.direction})
       while #st.enemy_news>MAX_NEWS do table.remove(st.enemy_news,1) end
     end
     for _,b in ipairs(list) do
@@ -158,7 +165,8 @@ return function(api)
         local n=nests[key] or {}
         nests[key]=n
         if b.visible then n.visible=game.tick end
-        n.reached=b.absorbing>0
+        -- Sticky: a cloud that recedes and returns is not news again.
+        n.reached=n.reached or b.absorbing>0
         seen=math.max(seen or 0,n.visible or 0)
       end
       b.seen=seen and seen>0 and seen or nil
@@ -172,13 +180,39 @@ return function(api)
     local entry=cache[p.index]
     if fresh or not entry or game.tick-entry.tick>=CACHE_TICKS or entry.surface~=p.surface.index then
       local list=bases(p)
-      note_bases(list)
+      note_bases(p,list)
       local old_chart=entry and entry.surface==p.surface.index and entry.chart
       entry={tick=game.tick,surface=p.surface.index,pollution=pollution(p),bases=list,
         chart=(not fresh and old_chart and game.tick-old_chart.tick<CHART_TICKS) and old_chart or chart(p)}
       cache[p.index]=entry
     end
     return entry
+  end
+  -- Replies keep nest news flowing without a status call: the nests around an
+  -- agent are rechecked when neither status nor a reply did so in the last
+  -- minute (only the spawner search; the chart and pollution stay with status).
+  function M.watch(p)
+    if not (p.character and p.character.valid) then return end
+    local st=api.state()
+    local entry=st.threat_cache and st.threat_cache[p.index]
+    st.threat_watch=st.threat_watch or {}
+    local last=math.max(entry and entry.surface==p.surface.index and entry.tick or -math.huge,st.threat_watch[p.index] or -math.huge)
+    if game.tick-last<3600 then return end
+    st.threat_watch[p.index]=game.tick
+    note_bases(p,bases(p))
+  end
+  -- Lines for news after `from` (an alert_seq), oldest first.
+  function M.news_lines(from,since_tick)
+    local out={}
+    for _,n in ipairs(api.state().enemy_news or {}) do
+      local new=(from and (n.seq or 0)>from) or (not from and n.tick>=since_tick)
+      if new and n.kind=='pollution_reached_nest' then
+        out[#out+1]=string.format('pollution reached nest (%g,%g), %d spawner%s: %d tiles %s of base centre (%g,%g)%s',n.position.x,n.position.y,
+          n.spawners or 0,n.spawners==1 and '' or 's',n.from_centre or 0,n.bearing or '?',n.centre and n.centre.x or 0,n.centre and n.centre.y or 0,
+          n.nearest and string.format(', %d tiles %s of our nearest building',n.nearest,n.nearest_direction or '?') or '')
+      end
+    end
+    return out
   end
   local function age(tick)
     local m=math.floor((game.tick-tick)/3600)
@@ -215,8 +249,46 @@ return function(api)
   end
 
   -- Attack alerts: gathered groups in visible chunks, and damage to our
-  -- entities by enemies summarised per chunk.
-  local MAX_GROUPS,MAX_AREAS,INCIDENT_GAP=16,64,3600
+  -- entities by enemies summarised per chunk as incidents. An incident keeps
+  -- what the game knows: the attacked point, the attackers seen (distinct
+  -- units, by kind), a gathered group heading there, and the nearest charted
+  -- spawner they likely came from (looked up once per incident).
+  local MAX_GROUPS,MAX_AREAS,INCIDENT_GAP,MAX_UNITS,SOURCE_RANGE,GROUP_MATCH=16,64,3600,200,384,64
+  local function charted(force,surface,pos)
+    return force.is_chunk_charted(surface,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)})
+  end
+  -- The nearest spawner on a chunk the force has charted, within SOURCE_RANGE
+  -- of `at`. A unit's own spawner (when the engine exposes it) wins if charted.
+  -- Lookups close in time and place share one search.
+  function M.source(force,surface,at,unit)
+    local ok,own=pcall(function() return unit and unit.valid and unit.spawner end)
+    if ok and type(own)=='table' and own.valid and charted(force,surface,own.position) then
+      return {position={x=round(own.position.x),y=round(own.position.y)},distance=round(api.distance(at,own.position)),bearing=compass(at,own.position),spawned=true}
+    end
+    local s=api.state()
+    local memo=s.source_memo
+    if not (memo and memo.surface==surface.index and memo.force==force.name and game.tick-memo.tick<60 and api.distance(memo.at,at)<=96) then
+      local best,bd
+      for _,e in pairs(surface.find_entities_filtered{type='unit-spawner',position=at,radius=SOURCE_RANGE,force='enemy'}) do
+        if e.valid and charted(force,surface,e.position) then
+          local d=api.distance(at,e.position)
+          if not bd or d<bd then best,bd=e.position,d end
+        end
+      end
+      memo={tick=game.tick,surface=surface.index,force=force.name,at=at,position=best and {x=round(best.x),y=round(best.y)} or nil}
+      s.source_memo=memo
+    end
+    if not memo.position then return nil end
+    return {position=memo.position,distance=round(api.distance(at,memo.position)),bearing=compass(at,memo.position)}
+  end
+  local function kinds_text(kinds)
+    local list={}
+    for name,n in pairs(kinds or {}) do list[#list+1]={name,n} end
+    table.sort(list,function(a,b) return a[2]>b[2] or a[2]==b[2] and a[1]<b[1] end)
+    for i,v in ipairs(list) do list[i]=v[2]..' '..v[1] end
+    while #list>4 do table.remove(list) end
+    return table.concat(list,', ')
+  end
   function M.on_group(event)
     local g=event.group
     if not (g and g.valid and g.force.name=='enemy') then return end
@@ -228,9 +300,14 @@ return function(api)
     if not visible then return end
     local command=g.command
     local target=command and (command.target and command.target.valid and command.target.position or command.destination)
+    local kinds={}
+    for _,u in ipairs(g.members or {}) do
+      local ok,name=pcall(function() return u.name end)
+      if ok and name then kinds[name]=(kinds[name] or 0)+1 end
+    end
     local s=api.state(); s.attack_groups=s.attack_groups or {}
     s.alert_seq=(s.alert_seq or 0)+1
-    table.insert(s.attack_groups,{seq=s.alert_seq,tick=event.tick,size=#g.members,position={x=round(pos.x),y=round(pos.y)},
+    table.insert(s.attack_groups,{seq=s.alert_seq,tick=event.tick,size=#g.members,kinds=next(kinds) and kinds_text(kinds) or nil,position={x=round(pos.x),y=round(pos.y)},
       target=target and {x=round(target.x),y=round(target.y)} or nil})
     while #s.attack_groups>MAX_GROUPS do table.remove(s.attack_groups,1) end
   end
@@ -241,6 +318,8 @@ return function(api)
     local s=api.state(); s.damage=s.damage or {}
     local key=math.floor(e.position.x/32)..','..math.floor(e.position.y/32)
     local area=s.damage[key]
+    -- An area kept from before incidents had ids (a hot deploy) starts afresh.
+    local fresh=not area or not area.id or event.tick-area.last>INCIDENT_GAP
     if not area then
       local count=0
       for _ in pairs(s.damage) do count=count+1 end
@@ -250,17 +329,67 @@ return function(api)
         for k,v in pairs(s.damage) do if not oldest or v.last<s.damage[oldest].last then oldest=k end end
         s.damage[oldest]=nil
       end
-      area={first=event.tick,hits=0,damage=0,entities={}}; s.damage[key]=area
-    elseif event.tick-area.last>INCIDENT_GAP then
+      area={}; s.damage[key]=area
+    end
+    if fresh then
       -- A quiet minute ends an incident; the next hit starts a new one.
-      area.first,area.hits,area.damage,area.entities,area.by=event.tick,0,0,{},nil
+      s.incident_seq=(s.incident_seq or 0)+1
+      area.id,area.first,area.hits,area.damage,area.entities,area.by=s.incident_seq,event.tick,0,0,{},nil
+      area.at={x=round(e.position.x),y=round(e.position.y)}
+      area.units,area.kinds,area.size,area.source,area.source_tried,area.group={},{},0,nil,nil,nil
+      -- A visible group that gathered in the last 3 minutes heading here.
+      for k=#(s.attack_groups or {}),1,-1 do
+        local g=s.attack_groups[k]
+        if event.tick-g.tick>10800 then break end
+        if g.target and api.distance(g.target,area.at)<=GROUP_MATCH then area.group={size=g.size,kinds=g.kinds,position=g.position}; break end
+      end
     end
     -- Every hit is numbered so reply hints can say exactly what is new.
     s.alert_seq=(s.alert_seq or 0)+1; area.seq=s.alert_seq
     area.last=event.tick; area.hits=area.hits+1; area.damage=area.damage+(event.final_damage_amount or 0)
     area.entities[e.name]=(area.entities[e.name] or 0)+1
-    area.by=event.cause and event.cause.valid and event.cause.name or area.by
+    local cause=event.cause and event.cause.valid and event.cause or nil
+    area.by=cause and cause.name or area.by
+    if cause then
+      local id=cause.unit_number
+      if id and area.size<MAX_UNITS and not area.units[id] then
+        area.units[id]=true; area.size=area.size+1; area.kinds[cause.name]=(area.kinds[cause.name] or 0)+1
+      end
+      -- The source is looked up once per incident, on the first hit by a unit.
+      if not area.source_tried and e.surface then
+        area.source_tried=true
+        local ok,src=pcall(M.source,e.force,e.surface,area.at,cause)
+        area.source=ok and src or nil
+      end
+    end
     if api.on_character_hit and e.type=='character' then api.on_character_hit(event) end
+  end
+  local function ago(ticks)
+    local sec=math.floor(ticks/60)
+    if sec>=3600 then return string.format('%dh%02dm',math.floor(sec/3600),math.floor(sec/60)%60) end
+    if sec>=60 then return string.format('%dm%02ds',math.floor(sec/60),sec%60) end
+    return sec..'s'
+  end
+  -- One line per incident: where, who, from where, what was hit, when.
+  -- `again`: the same incident told to the same reader before.
+  function M.attack_line(v,again)
+    local names={}
+    for name,count in pairs(v.entities or {}) do names[#names+1]=name..' x'..count end
+    table.sort(names)
+    while #names>5 do table.remove(names) end
+    local who
+    if v.group then
+      who=string.format('a group of %d%s that gathered at (%d,%d)',v.group.size,v.group.kinds and ' ('..v.group.kinds..')' or '',v.group.position.x,v.group.position.y)
+    elseif (v.size or 0)>0 then who=string.format('%d attacker%s seen (%s)',v.size,v.size==1 and '' or 's',kinds_text(v.kinds))
+    elseif v.by then who='by '..v.by end
+    local from
+    if v.source then
+      from=string.format('%s nest (%d,%d) %d tiles %s',v.source.spawned and 'from' or 'likely from',v.source.position.x,v.source.position.y,v.source.distance,v.source.bearing)
+    elseif v.source_tried then from=string.format('no charted nest within %d tiles',SOURCE_RANGE) end
+    local at=v.at or {x=0,y=0}
+    local span=v.first and v.first<v.last and 'first '..ago(game.tick-v.first)..' ago, last '..ago(game.tick-v.last)..' ago' or ago(game.tick-v.last)..' ago'
+    return string.format('attack #%d at (%d,%d)%s: %s%s%s hit %d times, %d damage, %s',v.id or 0,at.x,at.y,again and ' continues' or '',
+      who and who..'; ' or '',from and from..'; ' or '',table.concat(names,', '),v.hits,round(v.damage),span)
   end
   function M.alerts(since)
     local s,out=api.state(),{}
@@ -274,7 +403,9 @@ return function(api)
         local names={}
         for name,n in pairs(v.entities) do names[#names+1]=name..' x'..n end
         table.sort(names)
-        areas[#areas+1]={chunk_centre=chunk_centre(tonumber(cx),tonumber(cy)),hits=v.hits,damage=round(v.damage),last_tick=v.last,by=v.by,entities=table.concat(names,', ')}
+        areas[#areas+1]={id=v.id,at=v.at,chunk_centre=chunk_centre(tonumber(cx),tonumber(cy)),hits=v.hits,damage=round(v.damage),first_tick=v.first,last_tick=v.last,
+          by=v.by,entities=table.concat(names,', '),attackers=(v.size or 0)>0 and v.size or nil,kinds=(v.size or 0)>0 and kinds_text(v.kinds) or nil,
+          group=v.group,source=v.source,line=v.id and v.at and M.attack_line(v) or nil}
       end
     end
     table.sort(areas,function(a,b) return a.last_tick>b.last_tick end)
