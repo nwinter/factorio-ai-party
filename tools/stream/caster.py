@@ -122,7 +122,11 @@ DIALOGUE = (
     "Bad: Oh, the space platform hub is getting hit. That's asteroid debris. Nothing lost over the last three "
     "reports.\nGood: Rook: Asteroids are hitting Driftwood. Vale: Over Vulcanus? Those guns had better be loaded.\n"
     "Bad: Two more raids out east. A gun turret takes the hits, and every building is still standing.\n"
-    "Good: Rook: East wall, again. Vale: Still holding. Those flamers paid for themselves.")
+    "Good: Rook: East wall, again. Vale: Still holding. Those flamers paid for themselves.\n"
+    "Know the story, don't tell it. The facts may carry a story memo: the team's goals, the last big moments with "
+    "their times, what each agent is on and why, what is stuck. It is there so the hosts understand the beat: who "
+    "this is, why they are there, what it changes. Use a piece only when it explains this beat, in a few words. Never "
+    "read it out, list it, or join it to a beat it has nothing to do with. The beat's own facts come first.")
 
 
 def spoken_notes(rng=random):
@@ -351,7 +355,9 @@ class Differ:
             self.alert_ids.add(a["id"])
             if not first:
                 ev.append({"kind": a["kind"] if a["kind"] in PRIORITY else "info", "text": a.get("text"),
-                           "agent": a.get("agent"), **({"facts": a["facts"]} if a.get("facts") else {})})
+                           "agent": a.get("agent"), **({"facts": a["facts"]} if a.get("facts") else {}),
+                           # an attack's fight and place, for hoststory.AttackGate
+                           **({"alert_key": a.get("key"), "position": a.get("position")} if a["kind"] == "attack" else {})})
         for m in s.get("chat") or []:
             key = m.get("seq") or (m.get("tick"), m.get("from"), m.get("text"))
             if key in self.chat_keys:
@@ -805,6 +811,20 @@ def card_facts(seg):
     if seg.get("type") in CARD_CALLS:
         # not "muted" or "banner" for a replay: the first version read those production notes out on air
         f["how_to_call_it"] = CARD_CALLS[seg["type"]]
+    return f
+
+
+def story_facts(f, e, story=None, gate=None, now=None):
+    """hoststory.py's part of a beat's facts: why an attack is a beat at all, the run's story memo (for understanding,
+    not for reciting), and quiet hits of the last minutes (a word at most)."""
+    if e.get("why_it_matters"):
+        f["why_it_matters"] = e["why_it_matters"]
+    memo = story.facts() if story else None
+    if memo:
+        f["story"] = memo
+    quiet = gate.quiet_note(now or time.time()) if gate else None
+    if quiet:
+        f["quiet_hits"] = quiet
     return f
 
 
@@ -1996,6 +2016,12 @@ class Caster:
         self.log_path = os.path.join(a.log_dir, time.strftime("caster-%Y%m%d-%H%M%S.jsonl"))
         self.t0 = time.time()
         self.stats = {"caster_lines": 0, "agent_lines": 0, "fallbacks": 0, "skipped_no_listener": 0}
+        # the hosts know the story (hoststory.py, viewer Joonazan 16:38): attack beats only when they matter, against
+        # the director's threat history; a rolling memo of the run in every prompt, kept in the run folder
+        import hoststory
+        run_dir = getattr(a, "run_dir", None)
+        self.gate = hoststory.AttackGate(os.path.join(run_dir, "threat-history.json") if run_dir else None)
+        self.story = hoststory.StoryMemo(os.path.join(run_dir, "host-memo.json") if run_dir else None)
 
     # -- plumbing
     def on_snapshot(self, s):
@@ -2005,16 +2031,26 @@ class Caster:
             reads = self.__dict__.setdefault("watch_reads", deque(maxlen=60))
             if yt.get("watching_t") and (not reads or reads[-1][0] != yt["watching_t"]):
                 reads.append((yt["watching_t"], yt.get("watching")))
+            now = time.time()
+            gate, story = self.__dict__.get("gate"), self.__dict__.get("story")
             for e in self.differ.diff(s):
                 if e["kind"] in ("death", "loss", "attack"):  # counts for the hosts (they counted wrongly themselves)
                     self.__dict__.setdefault("tally", deque(maxlen=2000)).append((time.time(), e["kind"]))
+                if story:
+                    story.note(e, now)
                 if e["kind"] == "operator":  # voiced by the chat thread at once, outside the agents' pacing
                     self.__dict__.setdefault("op_q", deque(maxlen=10)).append(e)
                 elif e["kind"] == "chat":
                     # the hosts hear a chat line only once it aired in the agent's voice (yield_to), not as it is typed
                     self.chat_q.append(e)
+                elif gate:  # an attack is a beat only when it matters (hoststory.AttackGate); the rest as before
+                    self.events.extend(gate.admit(e, s, now))
                 else:
                     self.events.append(e)
+            if gate:
+                self.events.extend(gate.poll(s, now))
+            if story:
+                story.update(s, now)
 
     def status(self):
         try:
@@ -2408,6 +2444,7 @@ class Caster:
         used = self.used_framings()
         if used:  # HOSTS6 item 2: a memory of framings across the shift, not only the last few lines
             facts["framings_used_lately"] = used
+        story_facts(facts, e, getattr(self, "story", None), getattr(self, "gate", None), time.time())
         names = list(self.names(s).values())
         recent = list(self.recent)
         lines, backend, err, lat = [], "template", None, 0.0
