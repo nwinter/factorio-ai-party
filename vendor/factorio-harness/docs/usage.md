@@ -304,9 +304,18 @@ fh sleep 900 --until researched                       # ...or until the research
   enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
   200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same.
 - The game repairs a platform's entities itself, one entity at a time, with repair packs from the hub; `repair` refuses
-  platform targets (`platform`, or standing on a platform) with that reason. `platforms {platform}` and `inspect` of the
-  hub show `repair_packs` (in the hub, or `none`) and `damaged` (`gun-turret (-6,0) 53/400`, most damaged first, up to
-  10; `damaged_count` past that); `inspect` of a damaged entity there adds the `repair` note.
+  platform targets (`platform`, or standing on a platform) with that reason. `platforms` and `inspect` of the
+  hub show `repair_packs` (in the hub, or `none`) and `damaged` (`gun-turret (-6,0) 53/400`, most damaged first, 3 per
+  row in `platforms`, up to 10 with `platform` set and in `inspect`; `damaged_count` past that); `inspect` of a damaged
+  entity there adds the `repair` note.
+- `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
+  (under 10 rounds)`) and `ammo`, the ammo flow (`turrets hold 6 rounds, the hub firearm-magazine 920`).
+- `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
+  platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
+  unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).
+- `gamedata/locations.json` lists each route's and each orbit's `asteroid_spawn_definitions` as the game gives them,
+  and `gamedata/entities.json` the asteroids (`max_health`, `resistances`), from the next prototype dump of a Space Age
+  world (`tools/analyst/dump_prototypes.py`).
 - Where a platform's items go: `platforms` shows `hub_trash` per platform, and with `platform` set
   `hub_inserters_without_target` (inserters taking from the hub with nothing to drop into: `(-2.5,3.5) drops onto
   empty-space`), `thrown_overboard` (items in flight off the platform, while the game tracks them), and
@@ -529,19 +538,21 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `friendly fire: 2 flamethrower-turret` (`unknown source` when the cause is gone and the killing force is ours); at most
   8 lines; these replace the old top-level `losses` field; full landing pads spilling and piles of items on the ground
   near our buildings, once each and again when grown by half; then up to 6 platform lines, below) and `reminders`
-- Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
-  requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
-  aboard; a platform with none of them known goes to every agent:
-  `platform Starling hit 3 times, 380 damage, last 1s ago: gun-turret 300, space-platform-hub 80; by
-  medium-metallic-asteroid 3` (hits on our entities there since you were last told, your first look covering the last
-  10 minutes; at most once a game minute), `platform Starling: hits per minute rising, 30 in the last minute, 2 a
-  minute over the 5 before` (10 or more and at least twice the earlier rate plus 5), `platform Starling: 1 of 2
-  gun-turrets empty, 1 low (under 10 rounds)`, `platform Starling: no repair packs in the hub (...)` (while it was hit
-  in the last 10 minutes or the hub is damaged), `platform Starling hub health 900/1000, down 100 in 40s`. A condition
-  that lasts comes again after 5 game minutes, sooner when it gets worse. Hits on a platform are no longer `attack #`
-  incidents. Turrets and the hub are read at most every 10 s per platform.
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
+- Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
+  requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
+  aboard; a platform with none of them known goes to every agent. Each line names the platform and its surface:
+  `platform Starling (surface platform-1) hit 3 times, 380 damage, last 1s ago: gun-turret 300, space-platform-hub 80;
+  by medium-metallic-asteroid 3` (hits on our entities there since you were last told, your first look covering the
+  last 10 minutes; at most once a game minute), `...: hits per minute rising, 30 in the last minute, 2 a minute over
+  the 5 before` (10 or more and at least twice the earlier rate plus 5), `...: 1 of 2 gun-turrets empty, 1 low (under
+  10 rounds); turrets hold 4 rounds, the hub firearm-magazine 920` (the ammo flow: rounds loaded in the turrets
+  against the ammo waiting in the hub), `...: no repair packs in the hub (...)` (while it was hit in the last 10
+  minutes or the hub is damaged), `... hub health 900/1000, down 100 in 40s`. A condition that lasts comes again after
+  5 game minutes, sooner when it gets worse. Hits on a platform are no longer `attack #` incidents; `status` alerts
+  carry them as `platform_hits` rows `{platform, surface, hits, damage, entities, by, last_tick}`. Turrets and the hub
+  are read at most every 10 s per platform.
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each
   agent's first reply of it (any action, not a peek) carries `team.shift` once: `shift` (`shift N, started <age>
   ago`), `plan_goals` and `your_plan_line` (the team plan), `research_since_your_last_shift` (technologies finished

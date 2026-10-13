@@ -33,6 +33,7 @@ return function(api)
     local r = by[pl.index]
     if not r then r = {minutes={}, workers={}, seq=0}; by[pl.index] = r end
     r.name = pl.name
+    r.surface = try(function() return pl.surface.name end) or r.surface
     return r
   end
   local function counts(t, limit)
@@ -121,25 +122,49 @@ return function(api)
     return not any
   end
 
-  -- Turrets, the hub's repair packs and health: read at most every 10 s.
-  local function scan(pl, r)
-    local sc = r.scan
-    if sc and game.tick - sc.tick < SCAN_TICKS then return sc end
-    sc = {tick=game.tick, turrets=0, empty=0, low=0, packs=0}
+  -- A platform's defence as the GUI shows it: its ammo turrets (empty, low,
+  -- rounds loaded), the ammo and repair packs in the hub, the hub's health.
+  local function read(pl)
+    local sc = {tick=game.tick, turrets=0, empty=0, low=0, rounds=0, packs=0, hub_ammo={}}
     for _, t in ipairs(try(function() return pl.surface.find_entities_filtered{type='ammo-turret', force=pl.force} end) or {}) do
       local inv = try(function() return t.get_inventory(defines.inventory.turret_ammo) end)
       local n = inv and try(function() return inv.get_item_count() end) or 0
-      sc.turrets = sc.turrets + 1
+      sc.turrets = sc.turrets + 1; sc.rounds = sc.rounds + n
       if n == 0 then sc.empty = sc.empty + 1 elseif n < LOW_AMMO then sc.low = sc.low + 1 end
-      sc.turret_name = sc.turret_name or t.name
+      if sc.turret_name and sc.turret_name ~= t.name then sc.turret_name = 'turret' else sc.turret_name = t.name end
     end
     local hub = pl.hub
     if hub and hub.valid then
       sc.health = try(function() return hub.health end); sc.max = try(function() return hub.max_health end)
       local inv = try(function() return hub.get_inventory(defines.inventory.hub_main) end)
       for _, st in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
-        if try(function() return prototypes.item[st.name].type end) == 'repair-tool' then sc.packs = sc.packs + st.count end
+        local kind = try(function() return prototypes.item[st.name].type end)
+        if kind == 'repair-tool' then sc.packs = sc.packs + st.count
+        elseif kind == 'ammo' then sc.hub_ammo[st.name] = (sc.hub_ammo[st.name] or 0) + st.count end
       end
+    end
+    return sc
+  end
+  -- Ammo flow: what the turrets hold against what waits in the hub.
+  local function ammo_text(sc)
+    local hub = counts(sc.hub_ammo, 3)
+    return string.format('turrets hold %d rounds, the hub %s', sc.rounds, hub ~= '' and hub or 'no ammo')
+  end
+  -- The platforms read's row (space.lua): fresh, not cached.
+  function M.defense(pl)
+    if not pl.surface then return nil end
+    local sc = read(pl)
+    return {hub_health=sc.health and sc.max and string.format('%d/%d', round(sc.health), round(sc.max)) or nil,
+      turrets=sc.turrets > 0 and string.format('%d %s%s: %d empty, %d low (under %d rounds)', sc.turrets, sc.turret_name,
+        sc.turrets == 1 and '' or 's', sc.empty, sc.low, LOW_AMMO) or 'none',
+      ammo=ammo_text(sc)}
+  end
+  -- For the alerts: read at most every 10 s per platform.
+  local function scan(pl, r)
+    local sc = r.scan
+    if sc and game.tick - sc.tick < SCAN_TICKS then return sc end
+    sc = read(pl)
+    do
       if sc.health then
         r.hub = r.hub or {}
         r.hub[#r.hub+1] = {tick=game.tick, health=sc.health}
@@ -174,6 +199,28 @@ return function(api)
   end
   local function minute(r, m) local b = r.minutes[m]; return b and b.hits or 0 end
 
+  -- status alerts.platform_hits: per platform hit after `since` (whole
+  -- minutes, at most the last 10): {platform, surface, hits, damage,
+  -- entities, by, last_tick}, most recent first.
+  function M.rows(since)
+    local out = {}
+    for _, r in pairs(store().by) do
+      if r.last_hit and r.last_hit > since then
+        local x = {hits=0, damage=0, entities={}, by={}}
+        for m, b in pairs(r.minutes) do
+          if m >= math.floor(since / 3600) then
+            x.hits = x.hits + b.hits; x.damage = x.damage + b.damage
+            for n, d in pairs(b.entities) do x.entities[n] = (x.entities[n] or 0) + d end
+            for n, c in pairs(b.by) do x.by[n] = (x.by[n] or 0) + c end
+          end
+        end
+        out[#out+1] = {platform=r.name, surface=r.surface, hits=x.hits, damage=round(x.damage), entities=counts(x.entities, 5),
+          by=next(x.by) and counts(x.by, 3) or nil, last_tick=r.last_hit}
+      end
+    end
+    table.sort(out, function(a, b) return a.last_tick > b.last_tick end)
+    return #out > 0 and out or nil
+  end
   -- The lines for agent p; h is its hint state (board.lua).
   function M.lines(p, h)
     local by = store().by
@@ -186,7 +233,9 @@ return function(api)
       if r and addressed(pl, r, me) then
         local seen = h.platforms[pl.index] or {}
         h.platforms[pl.index] = seen
-        local name = pl.name
+        -- Every line names the platform and its surface (status alerts rows:
+        -- platform, surface; ground alerts name a surface the same way).
+        local name = pl.name .. ' (surface ' .. pl.surface.name .. ')'
         local sc = scan(pl, r)
         -- Hits since this reader was last told (first look: the last 10 minutes).
         if r.seq > (seen.seq or 0) and r.total and game.tick - (seen.hit_tick or -DAMAGE_GAP) >= DAMAGE_GAP then
@@ -209,12 +258,13 @@ return function(api)
             seen.rising, seen.rising_tick = last, game.tick
           end
         else seen.rising = nil end
-        -- Turrets empty or low.
+        -- Turrets empty or low, with the ammo flow: what the turrets hold
+        -- against what waits in the hub (Kestrel: 920 in the hub, 4 of 5 empty).
         local level = sc.empty * 1000 + sc.low
         if level > 0 then
           if level > (seen.turrets or 0) or game.tick - (seen.turrets_tick or -REPEAT) >= REPEAT then
-            lines[#lines+1] = string.format('platform %s: %d of %d %s%s empty%s', name, sc.empty, sc.turrets, sc.turret_name or 'turret', sc.turrets == 1 and '' or 's',
-              sc.low > 0 and string.format(', %d low (under %d rounds)', sc.low, LOW_AMMO) or '')
+            lines[#lines+1] = string.format('platform %s: %d of %d %s%s empty%s; %s', name, sc.empty, sc.turrets, sc.turret_name or 'turret', sc.turrets == 1 and '' or 's',
+              sc.low > 0 and string.format(', %d low (under %d rounds)', sc.low, LOW_AMMO) or '', ammo_text(sc))
             seen.turrets, seen.turrets_tick = level, game.tick
           end
         else seen.turrets = nil end

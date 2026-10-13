@@ -744,10 +744,13 @@ local function recent_alerts(a)
   local attacks=threat.alerts(since)
   local kills={}
   for _,k in ipairs(state().kills or {}) do if k.tick>since then kills[k.name]=(kills[k.name] or 0)+1 end end
-  if #latest==0 and not attacks and not next(kills) then return nil end
+  local okp,platform_hits=pcall(M.platalerts.rows,since)
+  platform_hits=okp and platform_hits or nil
+  if #latest==0 and not attacks and not next(kills) and not platform_hits then return nil end
   local result=attacks or {}
   if #latest>0 then result.losses=counts; result.latest=latest end
   result.kills=next(kills) and kills or nil
+  result.platform_hits=platform_hits
   return result
 end
 -- Hand-crafting queue as the crafting panel shows it, with the time left at
@@ -4197,7 +4200,9 @@ rates=rates_module{position=position,status_name=function(e) return entity_statu
 space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,
   bot=function(p) return M.bots.is(p) and M.bots.named(rawget(p,'__bot')) or nil end,
   -- Riding or landing takes the character away: controls stop and a plan pauses.
-  stop=function(p) M.stop_player(p.index) end}
+  stop=function(p) M.stop_player(p.index) end,
+  -- A platform's defence: hub health, turrets and their ammo against the hub's, repair packs (platalerts.lua).
+  defense=function(pl) return M.platalerts.defense(pl) end}
 stock=stock_module{distance=distance,integer=integer,position=position,claims=M.claims,
   -- One stop of a rearm/refuel tour: top the entity up; stop when none is left.
   visit=function(p,action,e)
