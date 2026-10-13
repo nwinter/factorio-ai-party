@@ -137,12 +137,15 @@ table.compare td { font-variant-numeric: tabular-nums; white-space: nowrap; posi
 table.compare td .bar { position: absolute; left: 12px; right: 12px; bottom: 3px; height: 3px; border-radius: 2px; background: var(--line); }
 table.compare td .bar i { display: block; height: 100%; border-radius: 2px; background: var(--ac, var(--accent)); opacity: .8; }
 table.compare th button { all: unset; cursor: pointer; }
+table.makers td.agents-cell { white-space: normal; min-width: 12em; }
+table.makers td.agents-cell .chip { margin-right: 8px; font-size: .88rem; }
 table.compare th button:focus-visible { outline: var(--fx-focus); }
 table.compare th[aria-sort] button::after { content: " ▾"; }
 table.compare th[aria-sort=ascending] button::after { content: " ▴"; }
 .tl-filters { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: .6rem 0 1rem; font-size: .92rem; }
 .tl-filters label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
 table.timeline-table td { font-variant-numeric: tabular-nums; }
+table.timeline-table tr:target > * { background: var(--hl); }
 table.timeline-table td.kind { white-space: nowrap; color: var(--muted); }
 table.timeline-table tr[data-kind=rocket] td.kind, table.timeline-table tr[data-kind=platform] td.kind,
 table.timeline-table tr[data-kind=planet] td.kind { color: var(--accent); font-weight: 600; }
@@ -213,6 +216,53 @@ def compare_table(data, agent, avatar, esc):
             f'<tbody>{"".join(body)}</tbody></table></div>')
 
 
+MAKER_COLS = ["actions", "built", "walked", "deaths", "research", "rockets", "say", "voiced"]
+
+
+def rate(v):
+    return f"{v:,.0f}" if v >= 100 else f"{v:.1f}"
+
+
+def maker_rows(data, agent):
+    """[(maker, [keys], agent-shifts, {field: per agent-shift}, minutes acting %)], most game actions per agent-shift
+    first. An agent-shift is one agent on one shift, so a lab with three agents compares with a lab with one."""
+    groups = {}
+    for k, t in data["totals"].items():
+        groups.setdefault(agent(k).get("maker") or "Other", []).append(k)
+    rows = []
+    for maker, ks in groups.items():
+        n = sum(data["totals"][k]["shifts"] for k in ks)
+        if not n:
+            continue
+        per = {f: sum(data["totals"][k][f] or 0 for k in ks) / n for f in MAKER_COLS}
+        mins = sum(data["totals"][k]["minutes"] for k in ks)
+        act = 100 * sum(data["totals"][k]["active_min"] for k in ks) / mins if mins else None
+        rows.append((maker, ks, n, per, act))
+    return sorted(rows, key=lambda r: -r[3]["actions"])
+
+
+def maker_table(data, agent, avatar, esc):
+    labels = {f: label for f, label, _ in CARD}
+    rows = maker_rows(data, agent)
+    tops = {f: max((r[3][f] for r in rows), default=0) for f in MAKER_COLS}
+    head = ('<th scope="col">Maker</th><th scope="col">Agents</th>'
+            '<th scope="col"><button type="button">Agent-shifts</button></th>'
+            + "".join(f'<th scope="col"><button type="button">{esc(labels[f])}</button></th>' for f in MAKER_COLS)
+            + '<th scope="col"><button type="button">Minutes acting</button></th>')
+    body = []
+    for maker, ks, n, per, act in rows:
+        chips = " ".join(f'<a class="chip" href="#{esc(k)}">{avatar(k, "sm")}{esc(agent(k)["name"])}</a>' for k in ks)
+        cells = [f'<td class="agents-cell" data-v="">{chips}</td>', f'<td data-v="{n}">{n}</td>']
+        for f in MAKER_COLS:
+            w = round(100 * per[f] / tops[f]) if tops[f] else 0
+            cells.append(f'<td data-v="{per[f]:.3f}">{rate(per[f])}<span class="bar"><i style="width:{w}%"></i></span></td>')
+        cells.append(f'<td data-v="{act if act is not None else ""}">{fmt(round(act) if act is not None else None, "pct")}</td>')
+        body.append(f'<tr><th scope="row">{esc(maker)}</th>{"".join(cells)}</tr>')
+    return (f'<p class="small muted">Per agent-shift: one agent on one shift.</p>'
+            f'<div class="table-wrap"><table class="compare makers"><thead><tr>{head}</tr></thead>'
+            f'<tbody>{"".join(body)}</tbody></table></div>')
+
+
 def build_agents(data, agent, avatar, esc):
     """The /agents/ page body and its head extras."""
     shifts = data["shifts"]
@@ -233,6 +283,7 @@ def build_agents(data, agent, avatar, esc):
             f'the director\'s death log and the stream\'s voice log.</p>'
             f'<h2 id="records">Records</h2><ul class="records">{"".join(recs)}</ul>'
             f'<h2 id="compare">Comparison</h2>{compare_table(data, agent, avatar, esc)}'
+            f'<h2 id="makers">By maker</h2>{maker_table(data, agent, avatar, esc)}'
             f'<h2 id="cards">The team</h2><div class="agent-grid">{cards}</div>'
             f'<h2 id="notes">Definitions</h2><dl class="kv defs">'
             + "".join(f"<div><dt>{esc(a)}</dt><dd>{esc(b)}</dd></div>" for a, b in DEFS) + "</dl>" + SORT_JS)
@@ -318,10 +369,11 @@ def build_timeline(events, agent, avatar, esc, game_time):
     filters = "".join(f'<label><input type="checkbox" value="{k}" checked> {esc(label)} ({counts[k]})</label>'
                       for k, label in KINDS)
     rows = []
-    for tick, n, kind, text, who in events:
+    for i, (tick, n, kind, text, who) in enumerate(events):
         chip = (f'<a class="chip" href="/agents/#{esc(who)}">{avatar(who, "sm")}{esc(agent(who)["name"])}</a> '
                 if who else "")
-        rows.append(f'<tr data-kind="{kind}"><td>{esc(game_time(tick))}</td><td>{n}</td>'
+        # id e<i>: the site search links an event (search.py uses the same order)
+        rows.append(f'<tr id="e{i}" data-kind="{kind}"><td>{esc(game_time(tick))}</td><td>{n}</td>'
                     f'<td class="kind">{esc(KIND_ONE[kind])}</td><td>{chip}{esc(text)}</td></tr>')
     body = (f'<h1>Timeline</h1><p class="lede">The long run\'s events in game time.</p>'
             f'<fieldset class="tl-filters"><legend class="small muted">Show</legend>{filters}</fieldset>'
