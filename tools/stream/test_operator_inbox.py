@@ -40,6 +40,31 @@ check("a restart resumes after the last seq", operator_inbox.last_seq(path) == 2
 rows = operator_inbox.append(path, reqs + [{"seq": 3, "tick": 1200, "from": "grok", "text": "x"}], 2, now=1001.0)
 check("only the new one is appended", [r["seq"] for r in rows] == [3] and len(open(path).readlines()) == 3)
 
+# A new shift: its folder resumed from the last one; the save still holds every request, so it starts after the earlier
+# shifts' last seq (shift03 to 05 each wrote all the earlier ones again). Viewer lines (no seq) are no cursor.
+runs = tempfile.mkdtemp()
+for name, parent, seqs in (("s1", None, []), ("s2", "s1", [1, 2]), ("s3", "s2", []), ("s4", "s3", [])):
+    os.mkdir(os.path.join(runs, name))
+    if parent:
+        open(os.path.join(runs, name, "resumed-from"), "w").write(parent + "\n")
+    with open(os.path.join(runs, name, operator_inbox.NAME), "w") as f:
+        for s in seqs:
+            f.write(json.dumps({"t": 1, "seq": s, "agent": "astra", "text": "x", "tick": 100 * s}) + "\n")
+with open(os.path.join(runs, "s4", operator_inbox.NAME), "a") as f:
+    f.write(json.dumps({"t": 2, "agent": "viewer Joonazan", "text": "operator: hi", "viewer": True}) + "\n")
+check("a new shift starts after the earlier shifts' last seq", operator_inbox.start_seq(
+    operator_inbox.path_for(os.path.join(runs, "s4"))) == 2)
+check("the shift's own requests first", operator_inbox.start_seq(operator_inbox.path_for(os.path.join(runs, "s2"))) == 2)
+check("no earlier shift: 0", operator_inbox.start_seq(operator_inbox.path_for(os.path.join(runs, "s1"))) == 0)
+open(os.path.join(runs, "s1", "resumed-from"), "w").write("s3\n")  # s1 -> s3 -> s2 (seq 2)
+check("followed back several shifts", operator_inbox.start_seq(operator_inbox.path_for(os.path.join(runs, "s1"))) == 2)
+open(os.path.join(runs, "s1", "resumed-from"), "w").write("s4\n")  # s1 -> s4 -> s3 -> s2 ... and s2 -> s1
+open(os.path.join(runs, "s2", operator_inbox.NAME), "w").close()
+check("a resumed-from loop ends", operator_inbox.start_seq(operator_inbox.path_for(os.path.join(runs, "s3"))) == 0)
+open(os.path.join(runs, "s2", operator_inbox.NAME), "w").write(json.dumps({"t": 1, "seq": 2, "agent": "a", "text": "x"}) + "\n")
+check("a resumed-from naming a path is ignored", (open(os.path.join(runs, "s1", "resumed-from"), "w").write("../x\n")
+      and operator_inbox.start_seq(operator_inbox.path_for(os.path.join(runs, "s1"))) == 0))
+
 # live.py: polled as an operator read with the cursor, rows go to obs and the file.
 import live  # noqa: E402
 

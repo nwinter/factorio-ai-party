@@ -72,7 +72,8 @@ class LiveSource:
         self.inbox_path = operator_inbox.path_for(journals)
         self.journals = journals
         self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
-        self.operator_seq = operator_inbox.last_seq(self.inbox_path) if self.inbox_path else 0
+        # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
+        self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
         self.platform_every = 15.0
         self.next_platforms = 0
         self.basemap_every = 60.0  # the site's live map: the base changes slowly and the read walks every building
