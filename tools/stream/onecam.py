@@ -208,9 +208,11 @@ def onair_info(snap, cams):
     name = agents[0] if len(agents) == 1 and not main.get("attack") else None
     a = next((a for a in snap.get("agents") or [] if a["name"] == name), {}) if name else {}
     plat = main.get("platform")  # a space platform on air: {name, why (visit, departure, work), label, agent?}
-    doing = f"working on {plat['name']}" if plat and name else onair_doing(snap, name) if name else ""
+    doing = main.get("follow") or (f"working on {plat['name']}" if plat and name else
+                                   onair_doing(snap, name) if name else "")
     return {"agent": name, "display_name": a.get("display_name") or name, "doing": doing, "platform": plat,
             "since": main.get("since"), "client": main.get("client"), "attack": main.get("attack"),
+            "follow": main.get("follow"),  # an operator follow's label on air ("Sol vs the Demolisher"), for the hosts
             "inset": ((cams or {}).get("inset") or {}).get("attack"),
             # where the agent on air is looking, in the inset beside it: {agent, kind, text, platform, position}
             "attention": ((cams or {}).get("inset") or {}).get("attention"),
@@ -254,6 +256,8 @@ class OneCam(Director):
         self.departure = None  # {"name", "t", "label"}: a departure seen, not on air yet
         self.work_shown = {}   # (agent, platform) -> when its work went on air
         self.platforms = []    # (t, name, why): platform shots ("visit", "departure", "work")
+        self.follow = None     # an operator follow: {agent, until, label, by, since} (set_follow)
+        self.fol = None        # the agent it pins on air at this step, or None
         self.last_attn = -1e9  # when the last attention inset ended
         self.attns = []        # (t, agent, text): attention insets (a new spot is a new row)
 
@@ -371,6 +375,8 @@ class OneCam(Director):
                 target.update(zoom=self.fight_zoom(position.get("extent")), exact_zoom=True)
         target.update(label=al["text"], kind=al["kind"], attack_t=now, fight=al.get("key"))
         big = al["kind"] == "death" or (al["kind"] == "loss" and not minor_loss(al["text"]))
+        if self.fol and subject != self.fol:
+            big = False  # an operator follow: other agents' urgent events are insets or toasts, never cuts
         if big and al["kind"] == "loss" and self.last_loss and now - self.last_loss["t"] < self.cfg["loss_recut"]:
             big = False  # viewers saw a loss a moment ago: an inset keeps the story on air
         if self.mode == "trio" and not big and not self.near_onair(subject, position, by_name):
@@ -502,12 +508,13 @@ class OneCam(Director):
             if self.inset.get("why") == "attention":
                 self.last_attn = now
             self.inset = None
+        fol = self.fol = self.following(by_name, now)
         attack = self.attack_target(snapshot, by_name, scores, now)
         if attack:
             self.on_alert(attack, by_name, scores, now)
         cur = self.state.get(self.onair)
         urgent_hold = cur and cur.get("subject") == "@attack" and now < cur.get("until", 0)
-        if segment and not attack and not urgent_hold:
+        if segment and not attack and not urgent_hold and not fol:  # (an operator follow: no segment takes the camera)
             pend = self.state.get(self.pending["slot"]) if self.pending else None
             if (not cur or cur.get("seg") != segment["id"]) and not (pend and pend.get("seg") == segment["id"]):
                 follow = segment.get("follow")
@@ -525,10 +532,15 @@ class OneCam(Director):
         elif cur and cur.get("subject") == "@segment" and (not segment or cur.get("seg") != segment["id"]):
             cur["until"] = 0  # the segment ended or was cut: back to normal directing
         self.watch_platforms(snapshot, now)
-        self.maybe_departure(scores, now, segment)
-        if self.mode == "trio":
+        if fol:  # an operator follow: that agent on air, nothing else takes the camera
+            self.leave_trio(f"follow {fol}", now)
+            self.trio_pending = None
+            self.follow_direct(fol, by_name, scores, now)
+        elif self.mode == "trio":
+            self.maybe_departure(scores, now, segment)
             self.tiles(by_name, scores, now)
         else:
+            self.maybe_departure(scores, now, segment)
             self.direct(by_name, scores, ranked, now)
             self.maybe_work(snapshot, by_name, scores, now, segment)
             self.maybe_attention(by_name, scores, now, segment)
@@ -541,6 +553,55 @@ class OneCam(Director):
             for n in (t or {}).get("agents") or []:
                 self.last_on_air[n] = now
         return self.public(now)
+
+    # -- operator follow ---------------------------------------------------------------------------------------
+    def set_follow(self, agent, until, label=None, by=None, now=None):
+        """The operator pins the camera on air on one agent until `until` (serve.py POST /follow, or
+        runs/RUN/director-follow.json); agent None ends it."""
+        self.follow = {"agent": agent, "until": float(until), "label": label or None, "by": by or "operator",
+                       "since": now or time.time()} if agent else None
+
+    def following(self, by_name, now):
+        """The agent an operator follow pins on air now, or None (off, over, or the agent is gone)."""
+        f = self.follow
+        if not f or now >= f["until"]:
+            return None
+        return f["agent"] if f["agent"] in by_name else None
+
+    def follow_info(self, now):
+        """snapshot["follow"]: {agent, label, until, remaining_s, by}, or None."""
+        f = self.follow
+        if not f or now >= f["until"]:
+            return None
+        return {"agent": f["agent"], "label": f["label"], "until": round(f["until"], 1),
+                "remaining_s": int(f["until"] - now), "by": f["by"]}
+
+    def follow_direct(self, name, by_name, scores, now):
+        """An operator follow: the camera on air stays on `name` (zoom follows its activity); if it is elsewhere, a
+        standby is framed on the agent and the program cuts to it. No rotation, trio, base map, platform shot,
+        attention inset or segment meanwhile; other agents' urgent events are insets (on_alert)."""
+        cur = self.state.get(self.onair) or {}
+        if self.pending:
+            if (self.state.get(self.pending["slot"]) or {}).get("subject") == name:
+                return  # its own fight being framed: the cut comes within ready_s
+            self.pending = None
+        if cur.get("subject") == name:
+            self.keep(cur, by_name, now)
+            return
+        label = self.follow["label"] or name
+        z = self.zoom_for(by_name[name], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
+        shot = {"agents": [name], "follow": name, "zoom": z, "solo_zoom": z, "subject": name}
+        nxt = self.next_slot()
+        if not nxt:  # one client: retarget it on air
+            self.apply(self.slot(self.onair), dict(shot, since=now), f"follow: {label}", scores, now)
+            self.onair_since = now
+            return
+        t = self.state.get(nxt["slot"])
+        if not t or t.get("subject") != name:
+            self.frame_on(nxt, shot, f"standby: follow {name}", scores, now)
+        elif self.ready(nxt["slot"], now):
+            self.cut(nxt["slot"], f"follow: {label}", now)
+            self.resume = None
 
     # -- attention ---------------------------------------------------------------------------------------------
     def attention_far(self, a, by_name, now):
@@ -1077,5 +1138,8 @@ class OneCam(Director):
                     row["work"] = t["work"]  # the page: "Astra · working on Starling"
             if t.get("attention"):  # the inset on where the agent on air is looking: "Sol · placing ghosts 40 m north"
                 row.update(work=t["work"], attention=t["attention"])
+            f = self.follow
+            if key == "main" and f and f["label"] and now < f["until"] and f["agent"] in (t.get("agents") or []):
+                row["follow"] = f["label"]  # the on-air card: "Following Sol · Sol vs the Demolisher"
             out[key] = row
         return out
