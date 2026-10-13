@@ -4,11 +4,15 @@
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 local assertions=0
 local function eq(a,b) assertions=assertions+1; assert(a==b,tostring(a)..' ~= '..tostring(b)) end
-defines={controllers={character=1,spectator=2,cutscene=3,remote=4}}
+defines={controllers={character=1,spectator=2,cutscene=3,remote=4},
+  alert_type={entity_destroyed=1,no_material_for_construction=2,turret_out_of_ammo=3,entity_under_attack=4}}
 local log={}
 local function player(index,name,controller)
   local p={index=index,name=name,valid=true,connected=true,controller_type=controller,show_on_map=true,
-    position={x=0,y=0},game_view_settings={show_hotkey_suggestions=true}}
+    position={x=0,y=0},game_view_settings={show_hotkey_suggestions=true},alerts_on={[1]=true,[2]=true,[3]=true,[4]=false}}
+  p.is_alert_enabled=function(t) return p.alerts_on[t]==true end
+  p.disable_alert=function(t) p.alerts_on[t]=false; return true end
+  p.enable_alert=function(t) p.alerts_on[t]=true; return true end
   if controller~=defines.controllers.spectator then
     local c={valid=true}
     c.destroy=function() c.valid=false; log[#log+1]='destroy' end
@@ -88,4 +92,18 @@ eq(#log,0)
 -- Back to following: the spectator is on Luna again.
 cams2.set{player=2,follow='luna',zoom=1}
 eq(c2.controller_type,defines.controllers.spectator); eq(c2.position.x,5)
+-- Alerts: a map shot turns the camera player's alerts off (their markers covered the base in the terrain frame);
+-- the next camera call turns back on the ones it turned off, and leaves one that was off (under attack) off.
+eq(c2.alerts_on[1],true); eq(c2.alerts_on[2],true); eq(c2.alerts_on[4],false)
+cams2.set{player=2,map=true,position={x=60,y=10},zoom=0.1}
+eq(c2.alerts_on[1],false); eq(c2.alerts_on[2],false); eq(c2.alerts_on[3],false); eq(c2.alerts_on[4],false)
+cams2.set{player=2,map=true,position={x=70,y=10},zoom=0.1} -- map to map: still off
+eq(c2.alerts_on[2],false)
+cams2.set{player=2,follow='luna',zoom=1}
+eq(c2.alerts_on[1],true); eq(c2.alerts_on[2],true); eq(c2.alerts_on[3],true); eq(c2.alerts_on[4],false)
+eq(st.map_alerts[2],nil)
+cams2.set{player=2,map=true,position={x=60,y=10},zoom=0.1}
+eq(c2.alerts_on[2],false)
+cams2.set{player=2,release=true} -- a release turns them back on too
+eq(c2.alerts_on[2],true); eq(c2.alerts_on[4],false)
 print('cameras ok ('..assertions..' assertions)')

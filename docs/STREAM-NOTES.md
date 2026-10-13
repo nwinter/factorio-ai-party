@@ -632,6 +632,9 @@ run config brings back the director below).
   released or given its next subject, and cameras.lua makes it a spectator again (`exit_remote_view`); the 5 s
   recheck leaves a map camera in the remote controller. The hosts: `onair.map` ("on air" or "tile") and the caster's
   `on_screen_map`. replays.py gets no frame from a map shot. Off: `"map_every": 0` in the run config's `director`.
+  The map shot turns the camera player's alerts off (`disable_alert` per alert type: their markers, big yellow
+  triangles, covered the base on stream and in the site's terrain frames) and the next camera call or release turns
+  back on the ones it turned off. tools/stream/mapframes.py saves a georeferenced frame of it for the site's maps.
 - Trio (Nick, 2026-10-12: he liked the old one-big-two-small layout because each tile said who was doing what):
   sometimes the program shows all three clients in layout-3cam.json's holes, the one on air in the big tile (no cut:
   the same client stays on air) and the two standbys in small tiles, each labelled "Luna · fixing the north wall"
