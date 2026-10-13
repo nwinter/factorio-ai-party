@@ -4,7 +4,7 @@ local function fails(fn,text) local ok,err=pcall(fn); assert(not ok and tostring
 package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 defines={space_platform_state={waiting_for_starter_pack=0,waiting_at_station=6,paused=7},
   rocket_silo_status={building_rocket=5,rocket_ready=9},inventory={hub_main=1,rocket_silo_rocket=2},
-  cargo_destination={orbit=1,surface=4}}
+  cargo_destination={orbit=1,station=2,surface=3,space_platform=4}}
 prototypes={item={['iron-plate']={},coal={},['space-platform-starter-pack']={}},space_location={nauvis={},vulcanus={}}}
 -- A manual logistic section with slots like the engine's (gaps allowed).
 local function section(manual,group)
@@ -126,7 +126,14 @@ fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end
 silo.rocket_silo_status=9
 fails(function() space.launch(p,{position={x=20.5,y=20.5}}) end,'orbit=true')
 local l=space.launch(p,{position={x=20.5,y=20.5},platform='alpha'})
-eq(l.to,'platform alpha'); eq(launched.type,4); eq(launched.surface,platform.surface); eq(l.cargo,'empty')
+-- Cargo goes to the hub as a station (a surface destination on a platform
+-- makes the game refuse: shift04 07:17, Peregrine paused in orbit).
+eq(l.to,'platform alpha'); eq(launched.type,2); eq(launched.station,platform.hub); eq(launched.surface,nil); eq(l.cargo,'empty')
+-- A new platform waiting for its starter pack: the space_platform destination.
+platform.state=0
+space.launch(p,{position={x=20.5,y=20.5},platform='alpha'})
+eq(launched.type,4); eq(launched.space_platform,platform)
+platform.state=7
 platform.space_location={name='vulcanus'}
 fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,'not in orbit of nauvis')
 eq(space.launch(p,{position={x=20.5,y=20.5},auto_requests=true}).auto_requests,true)
@@ -191,7 +198,7 @@ carried[10]=false
 launched=nil
 local br=bot_space.launch(bot,{position={x=20.5,y=20.5},platform='alpha',ride=true})
 eq(checked,record); eq(boarded.b,record); eq(boarded.pl,platform); eq(boarded.pod,silo.rocket.attached_cargo_pod)
-eq(launched.surface,platform.surface,'the rocket flies to the platform'); assert(br.riding:find('aboard alpha',1,true))
+eq(launched.station,platform.hub,'the rocket flies to the platform'); assert(br.riding:find('aboard alpha',1,true))
 eq(p.stopped,1,'boarding stops the bot in bots.lua, not here')
 eq(bot_space.land(bot,{}).landing,'nauvis'); eq(landed,record)
 -- Landing: only from our platform stopped at a planet.

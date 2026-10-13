@@ -385,9 +385,16 @@ return function(api)
     if a.platform~=nil then
       local pl=M.platform(p,a.platform)
       local here=p.surface.planet and p.surface.planet.name
-      assert(pl.surface and pl.hub and pl.hub.valid,'platform '..pl.name..' has no hub yet')
       assert(pl.space_location and pl.space_location.name==here,'platform '..pl.name..' is not in orbit of '..tostring(here)..' (at '..tostring(location(pl))..')')
-      destination={type=defines.cargo_destination.surface,surface=pl.surface}; to='platform '..pl.name
+      -- Cargo for a platform lands in its hub (a station); the space_platform
+      -- destination only takes the starter pack a new platform waits for.
+      if pl.state==defines.space_platform_state.waiting_for_starter_pack then
+        destination={type=defines.cargo_destination.space_platform,space_platform=pl}
+      else
+        assert(pl.surface and pl.hub and pl.hub.valid,'platform '..pl.name..' has no hub yet')
+        destination={type=defines.cargo_destination.station,station=pl.hub}
+      end
+      to='platform '..pl.name
     else
       assert(a.orbit==true,'give platform=<name>, or orbit=true to launch into orbit with no platform (cargo is lost unless it has launch products)')
       destination={type=defines.cargo_destination.orbit}; to='orbit'
