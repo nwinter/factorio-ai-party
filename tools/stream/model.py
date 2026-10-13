@@ -151,6 +151,62 @@ def platform_place(p):
     return f"in orbit of {w['where']}" if w["where"] and w["where"] != "in transit" else "in transit"
 
 
+# The harness's platform defence as text (space.lua platforms {platform}, platalerts.lua defense): "860/1000",
+# "5 gun-turrets: 4 empty, 0 low (under 10 rounds)", "turrets hold 120 rounds, the hub firearm-magazine 920, ...";
+# hub_items and repair_packs as "name*count name@quality*count ... +N more".
+PLAT_HP = re.compile(r"^\s*(\d+)\s*/\s*(\d+)")
+PLAT_GUNS = re.compile(r"^(\d+)\s[^:]*:\s*(\d+) empty,\s*(\d+) low")
+PLAT_ROUNDS = re.compile(r"turrets hold (\d+) rounds?")
+PLAT_STACK = re.compile(r"([a-z0-9][\w-]*)(?:@[\w-]+)?\*(\d+)")
+NOT_CARGO = re.compile(r"magazine|ammo|rounds|repair-pack|cannon-shell|rocket$|^rocket\b|railgun-ammo", re.I)
+HITS_WINDOW_MIN = 5  # status alerts cover the last 5 game minutes (whole minutes): hits per minute over that
+
+
+def platform_card(p, hits=None, aboard=(), working=()):
+    """A platform row for the Space widget: platform_where plus its defence, repair packs, damaged count, cargo
+    highlights, asteroid hits per minute and who is aboard or working on it from the ground. Unknown parts are left
+    out (the score's rows between platform reads have only the name and where)."""
+    card = platform_where(p)
+    card["drifting"] = bool(p.get("paused") and card["route"])  # paused on a route: drifts back among its asteroids
+    d = p.get("defense") or {}
+    m = PLAT_HP.match(str(d.get("hub_health") or ""))
+    if m and int(m[2]):
+        card["hub"] = {"hp": int(m[1]), "max": int(m[2]), "pct": round(100 * int(m[1]) / int(m[2]))}
+    elif isinstance((p.get("view") or {}).get("hub_health"), (int, float)):
+        card["hub"] = {"pct": int(p["view"]["hub_health"])}
+    guns = str(d.get("turrets") or "")
+    m = PLAT_GUNS.match(guns)
+    if m:
+        total, empty, low = int(m[1]), int(m[2]), int(m[3])
+        card["guns"] = {"total": total, "armed": total - empty, "empty": empty, "low": low}
+    elif guns == "none":
+        card["guns"] = {"total": 0, "armed": 0, "empty": 0, "low": 0}
+    ammo = str(d.get("ammo") or "")
+    m = PLAT_ROUNDS.search(ammo)
+    if m:
+        hub_part = ammo.split("the hub", 1)[1] if "the hub" in ammo else ""
+        hub_n = sum(int(x) for x in re.findall(r"(?<![+\w])(\d+)\b(?! more)", hub_part)) if "no ammo" not in hub_part else 0
+        card["ammo"] = {"turrets": int(m[1]), "hub": hub_n}
+    if p.get("repair_packs") is not None:
+        card["repair"] = sum(int(n) for _, n in PLAT_STACK.findall(str(p["repair_packs"])))
+    dmg = p.get("damaged_count") or len(p.get("damaged") or [])
+    if p.get("defense") is not None or dmg:
+        card["damaged"] = dmg
+    cargo = [{"item": n, "count": int(c)} for n, c in PLAT_STACK.findall(str(p.get("hub_items") or ""))
+             if not NOT_CARGO.search(n)]
+    if cargo:
+        card["cargo"] = cargo[:3]
+    if hits and hits.get("hits"):
+        card["hits_per_min"] = round(hits["hits"] / HITS_WINDOW_MIN, 1)
+        if hits.get("by"):
+            card["hit_by"] = str(hits["by"]).split(",")[0].strip()
+    if aboard:
+        card["aboard"] = list(aboard)
+    if working:
+        card["working"] = list(working)
+    return card
+
+
 def platform_where(p):
     """A platform row (score + `platforms` detail) for the page: where it is or its route with progress, speed.
     `at` is a location name or "from->to N%" (space.lua); speed is LuaSpacePlatform.speed, shown x60 as km/s."""
@@ -334,6 +390,8 @@ class Model:
         # platforms by name as last seen (to name one that is destroyed), reads each has been missing, hub losses
         self.platform_last, self.platform_missing, self.hub_losses = {}, {}, deque(maxlen=20)
         self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
+        # Space widget: status alerts' platform_hits rows by platform (live.py), and platforms lost lately
+        self.platform_hits, self.platforms_lost = {}, deque(maxlen=6)
         self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
         self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
         self.fights = {}  # key -> fight still reported (attacked chunk, loss, agent in combat), for replays.py
@@ -400,6 +458,8 @@ class Model:
                                if p.get("hub", True) and p.get("state") != "waiting_for_starter_pack"]
             self.space = sp
             self._platforms_lost(now)
+        if obs.get("platform_hits") is not None:  # one status round's rows: a platform not in them took no hits lately
+            self.platform_hits = {r.get("platform"): r for r in obs["platform_hits"] if r.get("platform")}
         if obs.get("space") is not None or any(a.get("surface") for a in obs.get("agents", [])):
             self._space_moments(now)
         for w in obs.get("work") or []:
@@ -1077,18 +1137,33 @@ class Model:
                 break
         left = sorted(self.platform_last)
         text = f"{p['name']} destroyed {where}" + (f" by {cause}" if cause else "")
+        self.platforms_lost.append({"name": p["name"], "where": where, "cause": cause, "t": now})
         self.alert("headline", text, key=f"lost:{p['name']}", ttl=600, facts={
             "headline": "platform_destroyed", "platform": p["name"], "where": where, "destroyed_by": cause,
             "what_it_means": "its hub is gone, so the platform and everything aboard it are lost",
             "platforms_left": left or "none", "game_time": fmt_game_time(self.tick / 60)})
 
-    def space_snapshot(self, sci):
+    LOST_SHOW_S = 120  # a lost platform stays in the widget this long, marked lost, with its cause
+
+    def space_snapshot(self, sci, now=None):
+        now = now or time.time()
         sp = self.space
         packs = [dict(p, label=pack_label(p["item"])) for p in sci.get("packs") or [] if p["item"] in SPACE_PACKS]
         planets = [planet_label(s) for s in sp.get("planets") or []]
-        plats = [platform_where(p) for p in sp.get("platforms") or []]
+        plats = []
+        for i, p in enumerate(sp.get("platforms") or []):
+            aboard = [a.display_name or a.name for a in self.agents.values() if a.platform == p.get("name") and a.alive]
+            working = sorted({(self.agents[w["agent"]].display_name or w["agent"]) for w in self.work
+                              if w.get("platform") == p.get("name") and now - w["t"] < 120 and w["agent"] in self.agents}
+                             - set(aboard))
+            card = platform_card(p, self.platform_hits.get(p.get("name")), aboard, working)
+            card["_i"] = i
+            plats.append(card)
+        # under fire first, then the score's order
+        plats.sort(key=lambda c: (-(c.get("hits_per_min") or 0), c.pop("_i")))
+        lost = [dict(x, ago_s=round(now - x["t"])) for x in self.platforms_lost if now - x["t"] < self.LOST_SHOW_S]
         away = sorted({where_label(a.surface, a.platform) for a in self.agents.values() if a.surface and a.surface != "nauvis"})
-        active = bool(sp.get("rockets") or plats or packs or len(planets) > 1 or away)
+        active = bool(sp.get("rockets") or plats or packs or len(planets) > 1 or away or lost)
         bits = []
         if len(planets) > 1:
             bits.append(f"{len(planets)} planets")
@@ -1100,7 +1175,9 @@ class Model:
         elif sp.get("rockets"):
             bits.append(f"{sp['rockets']} rocket" + ("s" if sp["rockets"] > 1 else ""))
         return {"space_age": self.space_age or active, "active": active, "rockets": sp.get("rockets") or 0,
-                "planets": planets, "platforms": plats, "science": packs, "away": away,
+                "planets": planets, "platforms": plats, "lost": lost, "science": packs, "away": away,
+                # the widget holds its turn in the rotation while a platform is under fire or just lost
+                "hot": bool(lost or any(c.get("hits_per_min") for c in plats)),
                 "summary": " · ".join(bits) if active else None, "moments": list(self.moments)}
 
     def _rates(self):
@@ -1229,7 +1306,7 @@ class Model:
             "basemap": self.basemap,
             "production": self.production(now),
             "science": science,
-            "space": self.space_snapshot(science),
+            "space": self.space_snapshot(science, now),
             "work": self.work_snapshot(now),
             "fights": self.fights_snapshot(now),
             "incoming": self.incoming_snapshot(now),
