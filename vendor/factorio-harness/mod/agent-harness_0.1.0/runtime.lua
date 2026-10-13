@@ -4388,7 +4388,9 @@ M.operator={
   bot_remove=function(name) local out=M.bots.remove(name); return {ok=true,tick=game.tick,bot=out} end,
   bots=function() local out={}; for _,b in ipairs(M.bots.list()) do out[#out+1]={name=b.name,index=b.index,alive=M.bots.alive(b),position=b.position,dead_until_tick=b.dead_until_tick} end; return {ok=true,tick=game.tick,bots=out} end,
   camera=function(args) return M.cameras.set(args) end,
+  -- A table ({seconds=N} or {stop=true}) runs the dispatch/event profiler (profile.lua).
   profile_ticks=function(n)
+    if type(n)=='table' then return M.profile.start(n) end
     n=integer(n,600,1,36000,'ticks')
     local total=helpers.create_profiler(true)
     profiling={n=n,left=n,total=total}
@@ -4465,4 +4467,11 @@ function M.on_event(event)
     record_loss(event.tick,e,cause and cause.name or (friendly and 'unknown source') or nil,friendly)
   end
 end
+-- Operator profiler (profile.lua): dispatches, events, the tick and these parts.
+M.profile=require('profile')()
+M.profile.wrap(M,{{M.board,'team','board.team'},{M.ground,'unseen','ground.unseen'},{M.research,'shift_block','research.shift_block'},
+  {M.chat,'unread','chat.unread'},{M.chat,'left','chat.left'},{M.bots,'status','bots.status'},{M.bots,'tick','bots.tick'},
+  {M.research,'tick','research.tick'},{M.nametags,'tick','nametags.tick'},{M.cameras,'tick','cameras.tick'},{scheduler,'tick','scheduler.tick'},
+  {clock,'tick','clock.tick'},{clock,'after_dispatch','clock.after_dispatch'},{threat,'on_damaged','threat.on_damaged'},{threat,'on_group','threat.on_group'},
+  {M.players,'on_event','players.on_event'},{M.vehicles,'tick','vehicles.tick'},{M.ground,'tick','ground.tick'},{survey,'sample','survey.sample'}})
 return M

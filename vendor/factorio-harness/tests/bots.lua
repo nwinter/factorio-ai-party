@@ -520,6 +520,19 @@ helpers.create_profiler=function() timers=timers+1; return {stop=function() end,
 eq(runtime.operator.profile_ticks(5).until_tick,tick+5)
 advance(4); eq(#logged,0); advance(1); eq(#logged,1); eq(logged.divided,5); eq(logged[1][5],9)
 advance(5); eq(#logged,1)
+-- With a table it runs the dispatch/event profiler (profile.lua): a status
+-- dispatch and the tick are logged per game second, then totals and done.
+helpers.create_profiler=function() return {stop=function() end,add=function() end} end
+eq(runtime.operator.profile_ticks({seconds=1}).until_tick,tick+60)
+bot('status',{})
+advance(61)
+local profiled={}
+for _,m in ipairs(logged) do if type(m)=='table' and type(m[2])=='string' then profiled[#profiled+1]=m[2]..(m[7] or '') end end
+local function has(s) for _,l in ipairs(profiled) do if l:find(s,1,true) then return true end end return false end
+assert(has('agent-harness profile second tick=dispatch status'),table.concat(profiled,'\n'))
+assert(has('agent-harness profile total ticks=dispatch status')); assert(has('agent-harness profile done from_tick='))
+assert(has('agent-harness profile second tick=part board.team')); assert(has('agent-harness profile total ticks=tick'))
+local after=#logged; advance(60); eq(#logged,after)
 -- A bot's screenshot is rendered by one director client, centred on the bot
 -- (shake1/2: with no by_player every client rendered it into its own folder
 -- and ./shot never delivered); none connected is an error, not a silent no-op.
