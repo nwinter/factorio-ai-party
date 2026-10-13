@@ -13,3 +13,4 @@ runs/*/*/journal.jsonl.gz
 runs/voice-bench/
 runs/*/.keys/
 runs/*/*/.grok-home/
+runs/*/agent-stats.json

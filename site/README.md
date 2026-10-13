@@ -32,13 +32,22 @@ add up each counter's rises between score rows and count a fall as 0 (a lost pla
 with it, which made the old per-minute chart go below 0); rates come from that total. Lines from the owner's channel
 account, or that name it, are left out (`keep_line` in `build.py`).
 
+With the long run come `/agents/` and `/timeline/` (`site/agents.py`). `/agents/`: a card per agent (model, maker,
+harness, the stream voice, its numbers across the shifts), records and a sortable comparison table, from
+`tools/agent_stats.py`, which reads each shift's journals, the director's deaths, `caster.log`'s voiced lines and the
+operator inbox. It caches each shift as `runs/RUN/agent-stats.json` (git-ignored; `build.py --stats-cache DIR` puts the
+caches elsewhere) and counts a shift again only when one of its sources changed: about a second per ended shift, a few
+for the live one. `python3 tools/agent_stats.py RUN --print` shows one shift's table. `/timeline/`: research,
+rockets, platforms, planets and deaths in game time, with filters.
+
 ### Archive switch and run start (`site/content/site.json`)
 
 `"archive": false` leaves the test history out of the build: the experiments, the runs list and every run page in
 `runs`, the studies and the agent pages (which are made of those runs), and every link to them; the About page is
 then present tense only (no results, no earlier runs, no agent of the earlier runs), the long run page shows shift
 numbers without run ids, and `live/status.json`'s last run is kept only when it is a shift of the run. The nav is
-Live, The run, About. `"archive": true` (or no key) brings it all back.
+Live, The run, Agents, Timeline, About (`/agents/` is the long run's; the per-agent pages `/agents/KEY/` of the test
+runs stay out). `"archive": true` (or no key) brings it all back.
 
 `"run_start": "RUN"` is the run the long run page starts from: the chain of shifts that resumed from it, numbered
 from 1. When RUN resumed from another run's save, game time, technologies, rockets, platforms and planets count from
@@ -61,7 +70,7 @@ npx wrangler pages deploy site/dist --project-name player-of-games --branch prev
 ```
 
 `tools/site-refresh.sh [--last-run RUN] [--no-deploy]` does it all: status.json's last run, build (with the main
-checkout's `runs/`), `check.py`, `test_live.py`, `test_longrun.py`, `test_archive.py`, then preview and production (production only if
+checkout's `runs/`), `check.py`, `test_live.py`, `test_longrun.py`, `test_archive.py`, `test_agents.py`, then preview and production (production only if
 the preview went up). `tools/shift-change.sh` runs it in the background once the previous shift is stopped, with its log
 in `runs/PREV/site-refresh.log`; a failure never blocks the shift (`POG_SITE_REFRESH=0` skips it). It leaves
 `site/live/status.json` modified in the checkout: commit it when convenient.
@@ -195,7 +204,7 @@ It forwards only the fields listed in `docs/LIVE-API.md` and passes every string
 ## Files
 
 - `build.py`: generator (data loading, Markdown renderer, SVG charts, page templates)
-- `check.py`: post-build checks; `test_live.py`, `test_longrun.py`, `test_archive.py`: build tests
+- `check.py`: post-build checks; `test_live.py`, `test_longrun.py`, `test_archive.py`, `test_agents.py`: build tests
 - `content/site.json`: hand-written content
 - `config.json`: settings
 - `static/`: `style.css` (light/dark tokens on top of the art kit, layout), `site.js` (theme toggle, chart hover),
