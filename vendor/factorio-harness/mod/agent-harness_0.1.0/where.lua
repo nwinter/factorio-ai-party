@@ -56,7 +56,7 @@ return function(api)
   -- reader, so a chat read of 30 lines looks each sender up once.
   function M.from(me)
     local index, mine, memo = nil, false, {}
-    for _, a in ipairs(api.agents()) do index = index or {}; index[a.name] = a.index end
+    for _, a in ipairs(try(api.agents) or {}) do index = index or {}; index[a.name] = a.index end
     return function(name)
       if name == nil or name == me or not index or not index[name] then return nil end
       if memo[name] == nil then

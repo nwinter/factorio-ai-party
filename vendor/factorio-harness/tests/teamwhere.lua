@@ -88,4 +88,28 @@ nick.connected=true; nick.surface=vulcanus; nick.position={x=0,y=0}; nick.physic
 assert(astra('status').teammates:find('nick 7 tiles SE',1,true))
 -- describe tells what the line holds.
 assert(astra('describe',{}).actions.status.reports:find('teammates (one line',1,true))
+
+-- Tells: a line from a teammate elsewhere says where; tell says where its recipients are.
+local r=astra('tell',{to='sol,luna',text='may I build in claim 235?'})
+eq(r.away,'sol is on Vulcanus')
+eq(astra('tell',{to='luna',text='hi'}).away,nil)
+eq(astra('tell',{to='kai',text='hub?'}).away,'kai is on platform Peregrine')
+eq(sol('status').team.tells[1],'astra (on Nauvis), 0s ago: may I build in claim 235?')
+eq(luna('status').team.tells[1],'astra, 0s ago: may I build in claim 235?')
+sol('tell',{to='astra',text='go ahead'})
+eq(astra('status').team.tells[1],'sol (on Vulcanus), 0s ago: go ahead')
+local tl=astra('tells',{}).tells
+eq(tl[#tl].from,'sol'); eq(tl[#tl].away,'on Vulcanus'); eq(tl[1].away,nil)
+eq(sol('tells',{}).tells[1].away,'on Nauvis')
+-- Chat: mention lines, chat reads and the unread trailer.
+sol('say',{text='@astra the furnaces are yours'})
+st=astra('status')
+eq(st.team.mentions[1],'sol (on Vulcanus) @you, 0s ago: @astra the furnaces are yours')
+eq(st.chat.latest,'sol (on Vulcanus): @astra the furnaces are yours')
+local msgs=astra('chat',{}).messages
+eq(msgs[#msgs].away,'on Vulcanus')
+luna('say',{text='ok'})
+msgs=astra('chat',{}).messages
+eq(msgs[#msgs].from,'luna'); eq(msgs[#msgs].away,nil)
+eq(luna('status').chat.latest:find('sol (on Vulcanus): ',1,true),1)
 print('teamwhere: ok')

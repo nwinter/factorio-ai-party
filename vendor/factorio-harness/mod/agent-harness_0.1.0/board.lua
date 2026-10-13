@@ -624,12 +624,18 @@ return function(api)
     if box.dropped > 0 then
       lines[1] = string.format('%d older mentions did not fit (%d kept); read chat', box.dropped, MAX_PENDING)
     end
+    -- A sender on another planet says where (where.lua).
+    local where = #box.list > 0 and api.where_from and api.where_from(who(p))
+    local function from(m)
+      local w = where and where(m.from)
+      return w and m.from .. ' (' .. w .. ')' or m.from
+    end
     for _, m in ipairs(box.list) do
       if m.tell then
-        tells[#tells+1] = string.format('%s%s, %s ago: %s', m.from, m.team and ' to team' or '', ago(game.tick - m.tick), m.text)
+        tells[#tells+1] = string.format('%s%s, %s ago: %s', from(m), m.team and ' to team' or '', ago(game.tick - m.tick), m.text)
       else
         local tag = m.how == '@' and ' @you' or m.how == '@everyone' and ' @everyone' or ''
-        lines[#lines+1] = string.format('%s%s, %s ago: %s', m.from, tag, ago(game.tick - m.tick), m.text)
+        lines[#lines+1] = string.format('%s%s, %s ago: %s', from(m), tag, ago(game.tick - m.tick), m.text)
       end
     end
     box.list, box.dropped = {}, 0

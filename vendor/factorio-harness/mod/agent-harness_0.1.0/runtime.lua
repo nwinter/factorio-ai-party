@@ -3846,7 +3846,8 @@ for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
   on_viewer=function(m) M.board.on_viewer(m) end,
-  mention_of=function(index,m) return M.board.mention_of(index,m) end}
+  mention_of=function(index,m) return M.board.mention_of(index,m) end,
+  where_from=function(index) local p=M.lookup(index); return p and p.valid and M.where.from(M.board.who(p)) or nil end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
 -- Confessionals and the operator's viewer relay (audience.lua).
 M.audience=require('audience'){state=state,post_viewer=function(name,text) return M.chat.viewer(name,text) end,
@@ -3862,13 +3863,14 @@ M.board=require('board'){state=state,director=function(index) return M.is_direct
   submit=function(p,a) return handlers.queue_submit(p,a) end,
   research_lines=function(p,h) return M.research.lines(p,h) end,
   attack_line=function(v,again) return threat.attack_line(v,again) end,news_lines=function(from,since) return threat.news_lines(from,since) end,
-  watch=function(p) return threat.watch(p) end}
+  watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
 M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end}
 function handlers.research_done(p,a) return M.research.done(p,a) end
 -- Tells: lines to named teammates outside the chat (tells.lua).
-M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver}
+M.tells=require('tells'){state=state,resolve=M.board.resolve,agents=M.board.agents,who=M.board.who,deliver=M.board.deliver,
+  where_from=function(me) return M.where.from(me) end}
 for name,handler in pairs(M.tells.handlers) do handlers[name]=handler end
 -- Where teammates are (where.lua): status teammates, and the place of a
 -- sender or claim owner on another planet in tells, chat and the board.

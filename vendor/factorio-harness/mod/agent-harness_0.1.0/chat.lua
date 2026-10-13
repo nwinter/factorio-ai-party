@@ -79,7 +79,7 @@ return function(api)
       aloud='optional boolean: viewers also hear the line on the stream, spoken in your own voice; without it the line shows on the stream only as text, as tells do'},
     chat = {since='optional sequence number: every message after it, yours included (default: your unread messages)',
       limit='1..100, newest kept (default 30)', peek='boolean: read without marking as read (overlays, spectators)',
-      returns='messages {seq,tick,from,text,aloud?,viewer?,notice?,mention?} oldest first: the newest `limit`, plus every older one that mentions you (mention: @|@everyone|name); viewer: a stream viewer\'s line, moderated and relayed by the stream service, from "viewer NAME", not a teammate (it mentions you only with @your name); notice: a harness line (mute votes). cursor (latest seq); remaining and digest (one line: count, seq range and senders of the messages not returned; chat again for them). Only returned messages are marked read, unless peek; while a read left some unread, every reply\'s team hints carry chat_remaining'},
+      returns='messages {seq,tick,from,away?,text,aloud?,viewer?,notice?,mention?} oldest first (away: "on Vulcanus" when the sender is a teammate somewhere other than you now):the newest `limit`, plus every older one that mentions you (mention: @|@everyone|name); viewer: a stream viewer\'s line, moderated and relayed by the stream service, from "viewer NAME", not a teammate (it mentions you only with @your name); notice: a harness line (mute votes). cursor (latest seq); remaining and digest (one line: count, seq range and senders of the messages not returned; chat again for them). Only returned messages are marked read, unless peek; while a read left some unread, every reply\'s team hints carry chat_remaining'},
   }
   function M.handlers.say(p, a)
     local text = a.text
@@ -118,12 +118,13 @@ return function(api)
     -- however old (up to MAX_MENTIONS more); the rest go into one digest line.
     local MAX_MENTIONS = 100
     local extra = 0
+    local where = api.where_from and api.where_from(p.index)
     for i, m in ipairs(picked) do
       local how = api.mention_of and api.mention_of(p.index, m)
       local newest = i > #picked - limit
       if newest or (how and extra < MAX_MENTIONS) then
         if not newest then extra = extra + 1 end
-        out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, aloud=m.aloud, viewer=m.viewer, notice=m.notice, mention=how or nil}
+        out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, away=where and where(m.from) or nil, text=m.text, aloud=m.aloud, viewer=m.viewer, notice=m.notice, mention=how or nil}
       end
     end
     if a.peek ~= true then
@@ -178,7 +179,9 @@ return function(api)
       if mode ~= 'always' and c.told[index] == latest.seq then return nil end
       c.told[index] = latest.seq
     end
-    return {unread=n, latest=latest.from .. ': ' .. latest.text, read_with='chat'}
+    local where = api.where_from and api.where_from(index)
+    local away = where and where(latest.from)
+    return {unread=n, latest=latest.from .. (away and ' (' .. away .. ')' or '') .. ': ' .. latest.text, read_with='chat'}
   end
   function M.on_console_chat(event)
     local p = event.player_index and game.get_player(event.player_index)
