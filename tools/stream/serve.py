@@ -368,6 +368,8 @@ def main():
         if a.trio:
             frac.update(trio_force=True)
         director = OneCam(slots, camera, log_path, **dict(frac, **(run.get("director") or {})))
+        if a.run and not a.mock:  # the run's own attack history scales the threat scores (threats.py)
+            director.set_threat_history(os.path.join(os.path.dirname(os.path.abspath(a.run)), "threat-history.json"))
         if not a.mock and not a.no_cuts and run.get("cuts", True) is not False:
             from obsws import OBS
             host, _, port = a.obs.partition(":")

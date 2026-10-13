@@ -851,11 +851,13 @@
         label.classList.add("on");
         continue;
       }
-      if (cam && cam.battle && !cam.attack && !agents.length) { // a key battle's area, no agent in it (onecam.py)
-        if (label.dataset.sig !== "battle|" + cam.battle) {
-          label.dataset.sig = "battle|" + cam.battle;
+      if (cam && (cam.battle || cam.incoming) && !cam.attack && !agents.length) { // a key battle's area, or an enemy
+        // group on its way (onecam.py), no agent in it
+        const text = cam.battle || cam.incoming;
+        if (label.dataset.sig !== "battle|" + text) {
+          label.dataset.sig = "battle|" + text;
           label.textContent = "";
-          label.append(el("span", "ico", "⚔️"), el("span", "", cam.battle));
+          label.append(el("span", "ico", cam.battle ? "⚔️" : "⚠️"), el("span", "", text));
         }
         frame.style.borderColor = "rgba(224,78,58,0.75)";
         frame.style.setProperty("--bracket", "rgba(224,78,58,0.9)");

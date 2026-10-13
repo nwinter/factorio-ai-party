@@ -91,18 +91,14 @@ def run(d, rpl, seg, t0, t1, tm, follow=None, elsewhere=()):
 
 
 def what_counts():
+    """Which fights become battles is threats.py's (test_threats.py); here: the demolisher raid scores far above
+    the bar, and the pieces read from the loss texts."""
     d, _ = world()
-    t = 5000
-    f = {"key": "k", "first": t - 5, "last": t, "position": {"x": 0, "y": 0}}
-    assert d.key_fight(dict(f, kind="loss", text=LOSSES[0][1], losses=[t]), t) == "big enemy"
-    assert d.key_fight(dict(f, kind="loss", text="12 lost near (5, 5): 12 stone wall (by medium biters)", losses=[t]), t) == "big loss"
-    assert d.key_fight(dict(f, kind="loss", text="3 lost near (5, 5): 3 stone wall (by medium biters)", losses=[t]), t) is None
-    assert d.key_fight(dict(f, kind="attack", text="Base under attack near (5, 5): gun turret", first=t - 31), t) == "long fight"
-    assert d.key_fight(dict(f, kind="attack", text="Base under attack near (5, 5): gun turret"), t) is None
-    assert d.key_fight(dict(f, kind="attack", text="Luna is under attack (behemoth biters)"), t) == "big enemy"
-    assert d.key_fight(dict(f, kind="loss", text=LOSSES[0][1], losses=[t - 40], last=t), t) is None  # over
+    rows = run(d, None, None, 60000, 60030, team())
+    assert d.battles and d.battles[0][2].startswith("score "), d.battles
+    assert float(d.battles[0][2].split()[1]) >= 10, d.battles  # tier 5 (demolishers) against a usual tier 1
     assert loss_pieces(LOSSES[4][1]) == 67 and loss_pieces("Sol died") == 0
-    print("what counts: ok")
+    print(f"what counts: ok (the 12:58 raid: {d.battles[0][2]})")
 
 
 def director():
@@ -119,7 +115,7 @@ def director():
         fr = r.get("frame") or {}
         where = fr.get("surface") or ("vulcanus" if fr.get("follow") == "sol" else "?")
         assert where == V, (s, r)
-    assert d.battles and d.battles[0][2] == "big enemy", d.battles
+    assert d.battles and d.battles[0][2].startswith("score "), d.battles
     during = [x for x in d.layouts + d.maps if t0 < x[0] <= t0 + 114]  # (a trio before it ends at its first sign)
     assert d.mode == "onecam" and not during, during
     assert any(c[2].startswith("battle (big enemy)") or c[2].startswith("loss: 19 lost") for c in d.cuts), d.cuts
@@ -218,7 +214,7 @@ def no_flicker():
                    "losses": [], "position": {"x": 0, "y": 0}, "agent": "astra"}] if 0 <= k < 90 else []
         d.step({"agents": tm, "fights": fights, "alerts": []}, t)
     during = [c for c in d.cuts if t0 <= c[0] < t0 + 90]
-    assert d.battles and d.battles[0][2] == "long fight", d.battles
+    assert d.battles, d.battles  # (an agent attacked for a minute: agent + duration parts, over the floor)
     assert len(during) <= 1, during
     print(f"no flicker: ok ({len(during)} cut during the battle)")
 

@@ -424,6 +424,36 @@ with no cut. The site map drew 9 lines, 6 of them far. Tests: `test_attention.py
 
 Live: `grep "attention:" runs/RUN/stream-service.log`.
 
+### Key battles, incoming groups and threat scores (2026-10-13, eng/follow, eng/incoming)
+
+Nick, 12:54: "is there a good way to ensure we don't miss entirety of key battles"; 13:40: "both still were just the
+after-battle carnage ... Can we follow biter attacks as they approach a base?"; 13:45: "Shouldn't the attack group
+size/threshold be dynamic".
+
+- Operator follow: `POST /follow {agent, seconds <= 1800, label?, by}`, `DELETE /follow`; kept in
+  runs/RUN/director-follow.json. The camera stays on that agent; other agents' urgent events become insets.
+- Threat scores (`threats.py`): an enemy group or a fight scores on its size against the run's last 30 (percentile,
+  squared), a unit tier above the usual mix (double the first 3 times), and what it is aimed at (near an agent, an
+  outpost outside the base map's core, a new direction). A fight also scores for an agent in it and how long it has
+  gone on. A budget of `threat_budget` (4) followed groups and battle holds per hour goes to the highest scores. The
+  bar falls to `threat_floor` (1.5) when candidates are rare and rises when they are frequent; a spent budget passes
+  nothing. The history is kept in runs/RUN/threat-history.json; each score and decision is in the director log
+  (`"threat": {...}`) and the service log (`threat group|battle KEY: take|skip (why; parts)`).
+- Incoming (`harness attack_groups_live`, an operator read polled every ~2 s while groups exist): a group that passes
+  is followed with a wide fixed view that pans with it, labelled "⚠️ Incoming · 37 biters and spitters heading for the
+  oil field", at most every `incoming_spacing` (600 s) and never over an urgent, segment or replay shot. At contact
+  (the group attacking, within `incoming_contact` tiles of our nearest building, or a fight there) the battle hold
+  takes over at the same place with no cut, so the start is live. `director: {incoming: false}` turns it off.
+- Battles: a fight that passes the bar (or a followed group's contact) holds the camera: its agent while alive in the
+  area, then a fixed view, chosen once (no back-and-forth); until 20 s with no attack or combat and 45 s with no loss.
+  A fight reported again after 45 s quiet is a new fight (model.py); shift06 13:2x kept old first times, so every
+  attack on Astra was a "long fight".
+- Replays of a battle: one window from 3 s before its first sign, aired only if on-air footage starts within 4 s of
+  that sign and covers 70% of the window, and the program did not show 90% of it live; footage counts from 2 s after
+  a cut. Aftermath only: no replay.
+
+Live: `grep -E "threat|BATTLE|battle over|incoming" runs/RUN/stream-service.log`.
+
 ## Unused cameras
 
 With fewer agents than cameras (or when the director pairs two agents on one), cam2 or cam3 would show an empty or

@@ -335,6 +335,7 @@ class Model:
         self.platform_last, self.platform_missing, self.hub_losses = {}, {}, deque(maxlen=20)
         self.rockets_at_start = None  # the shift's first rocket is a headline (seeded with the count at start)
         self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
+        self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
         self.fights = {}  # key -> fight still reported (attacked chunk, loss, agent in combat), for replays.py
         self.space_age = bool(run.get("space_age")) or "Space Age" in (run.get("subtitle") or "")
         self.last_obs_t = None
@@ -405,6 +406,8 @@ class Model:
             self._ingest_work(w, now)
         for x in obs.get("attention") or []:
             self._ingest_attention(x, now)
+        if obs.get("attack_groups") is not None:  # a read happened (an empty list: none on the way)
+            self._ingest_groups(obs["attack_groups"], now)
         self.errors = obs.get("errors", {})
 
     def platform_view(self, name):
@@ -436,6 +439,38 @@ class Model:
             return  # one request after another on the same job: one item
         self.work.append(item)
         ag.bump(1.0, now)
+
+    def _ingest_groups(self, groups, now):
+        """Enemy groups on their way (harness attack_groups_live): each with a label for the page and the hosts, "38
+        biters and spitters heading for the oil field", and when it was first seen."""
+        seen = {}
+        for g in groups:
+            if not g.get("id") or not g.get("position"):
+                continue
+            old = self.incoming.get(g["id"]) or {}
+            row = dict(g, first_seen=old.get("first_seen", now), t=now)
+            row["label"] = self.group_label(row)
+            seen[g["id"]] = row
+        self.incoming = seen
+
+    def group_label(self, g):
+        kinds = str(g.get("kinds") or "")
+        words = [w for w, rx in (("biters", "biter"), ("spitters", "spitter"), ("demolishers", "demolisher"),
+                                 ("worms", "worm"), ("strafers", "strafer"), ("stompers", "stomper")) if rx in kinds]
+        what = " and ".join(words[:2]) or "enemies"
+        t = g.get("target")
+        if t and (g.get("surface") or "nauvis") == "nauvis":
+            where = self.spot_name(t)  # a landmark ("the oil field"), "spawn", or "120 m NE" (of spawn)
+            if where[0].isdigit():
+                where = f"the base, {where} of spawn"
+        elif t:
+            where = f"({round(t['x'])}, {round(t['y'])}) on {planet_label(g['surface'])}"
+        else:
+            where = "the base"
+        return f"{g.get('size') or '?'} {what} heading for {where}"
+
+    def incoming_snapshot(self, now):
+        return [dict(g, age_s=round(now - g["first_seen"], 1)) for g in self.incoming.values() if now - g["t"] < 20]
 
     def _ingest_attention(self, x, now):
         """An agent's latest request with a position, area or list (live.py, attention.py): where it is looking or
@@ -937,6 +972,10 @@ class Model:
             return None
         if ag.surface and ag.surface != "nauvis":  # landmarks and "m from spawn" are Nauvis coordinates
             return where_label(ag.surface, ag.platform)
+        return self.spot_name(p)
+
+    def spot_name(self, p):
+        """A Nauvis point: its run landmark, "spawn", or "120 m NE" (from spawn)."""
         best = None
         for lm in self.run.get("landmarks", []):
             d = math.hypot(p["x"] - lm["x"], p["y"] - lm["y"])
@@ -1193,6 +1232,7 @@ class Model:
             "space": self.space_snapshot(science),
             "work": self.work_snapshot(now),
             "fights": self.fights_snapshot(now),
+            "incoming": self.incoming_snapshot(now),
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
             "cameras": cameras or {},

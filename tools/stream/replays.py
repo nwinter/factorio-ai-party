@@ -68,7 +68,8 @@ DEFAULTS = {
     "battle_per_piece": 0.5,       # ... plus this per piece lost (59 turrets: 40 s) ...
     "battle_cap": 40.0,            # ... at most this (and buffer_s - battle_margin)
     "battle_footage": 8.0,         # a start window shorter than this (the battle was over at once): no clip
-    "battle_lead": 3.0,            # the clip starts this long before the battle's first sign, not earlier
+    "cut_settle": 2.0,             # on-air footage counts from this long after a cut (OBS switches a tick later)
+    "battle_lead": 3.0,           # the clip starts this long before the battle's first sign, not earlier
     "battle_first_s": 4.0,         # on-air footage must begin by this long after the first sign (else: aftermath)
     "battle_cover": 0.7,           # ... and cover this share of the start window
     "battle_live_frac": 0.9,       # the program showed this share of the battle live: no replay of it
@@ -280,7 +281,11 @@ class Replays:
             b = self.battle = {"key": info["key"], "info": info, "shown": [], "saved": None, "why": None}
         b["info"] = info
         by_name = {a["name"]: {k: a.get(k) for k in ("position", "surface")} for a in snap.get("agents") or []}
-        if not self.playing and self.shows_battle((cams or {}).get("main") or {}, info, by_name):
+        main = (cams or {}).get("main") or {}
+        # a cut is decided here a tick or two before OBS shows it (cuts.py): the first cut_settle s after it are the
+        # camera before (13:35's replay opened on "unrelated base capture")
+        settled = now - (main.get("since") or 0) >= cfg["cut_settle"]
+        if not self.playing and settled and self.shows_battle(main, info, by_name):
             b["shown"].append(now)
         if not b["saved"] and not b["why"] and now >= info["first"] - cfg["battle_lead"] + self.battle_len(info):
             self.judge_start(b, now)

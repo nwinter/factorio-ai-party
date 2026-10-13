@@ -64,6 +64,9 @@ class LiveSource:
         self.board_seq = 0
         self.board_every = 15.0
         self.next_board = 0
+        self.has_groups = False  # the runtime answers attack_groups_live (describe operator_reads)
+        self.groups_every = 2.0
+        self.next_groups = 0
         self.has_confess = False
         self.confess_seq = 0
         self.has_tells = False
@@ -356,6 +359,7 @@ class LiveSource:
             self.has_confess = "confessions" in actions
             self.has_tells = "tells" in actions
             self.has_operator = "operator" in actions
+            self.has_groups = "attack_groups_live" in (res.get("operator_reads") or [])
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -363,12 +367,28 @@ class LiveSource:
         if self.has_board:
             print("[live] runtime has the team board; polling board_events", flush=True)
 
+    def observe_groups(self, obs, errors):
+        """Enemy groups on their way (harness attack_groups_live, an operator read): every ~2 s while any is
+        tracked, else every 10 s; a runtime without the read is asked again with the board probe."""
+        now = time.time()
+        if not getattr(self, "has_groups", False) or now < self.next_groups:
+            return
+        try:
+            res, _ = self.h.operator_read("attack_groups_live", {})
+            groups = res.get("groups") or []
+            obs["attack_groups"] = groups
+            self.next_groups = now + (self.groups_every if groups else 10.0)
+        except Exception as e:
+            errors["attack_groups"] = str(e)
+            self.next_groups = now + 30.0
+
     def observe_board(self, obs, errors):
         if self.caps is None or not self.caps.get("harness"):
             return
-        if not self.has_board:
+        if not self.has_board or not getattr(self, "has_groups", True):
             if time.time() >= self.next_board_probe:
                 self.board_probe()
+        self.observe_groups(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})
