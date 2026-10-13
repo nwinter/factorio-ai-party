@@ -46,6 +46,10 @@ end
 for i,n in ipairs{0,20,200} do
   entities[#entities+1]=machine('flamethrower-turret','fluid-turret','working',20+i,{fluidbox={[1]=n>0 and {amount=n} or nil,get_capacity=function() return 200 end}})
 end
+-- A full flamer on a long oil line (shift07 15:31): get_capacity is the whole segment's in 2.0 (66700); its own tank
+-- is the prototype's volume (100), so 99 is neither dry nor low.
+entities[#entities+1]=machine('flamethrower-turret','fluid-turret','working',24,{prototype={fluidbox_prototypes={{volume=100}}},
+  fluidbox={[1]={amount=99},get_capacity=function() return 66700 end}})
 -- Belts: one unpaired entrance, one pair, a line end, and a belt pointing
 -- into the back of another belt (no output connection, belt ahead).
 local ugs={{position={x=-3.5,y=-27.5},belt_to_ground_type='input'},{position={x=0.5,y=5.5},belt_to_ground_type='output',neighbours={}}}
@@ -72,7 +76,7 @@ eq(s.machine_positions,nil)
 has(s.warnings,'fuel: boiler 1/3 no_fuel, 1 burning their last fuel')
 has(s.warnings,'power: 1 of 4 machines low_power (fh call power lists them)')
 has(s.warnings,'ammo: gun-turret 1/3 empty at (11,0), 1 below 5 at (12,0); rearm radius=R')
-has(s.warnings,'flamer oil: flamethrower-turret 1/3 dry at (21,0), 1 below 25% at (22,0) 10%; fh call flamers')
+has(s.warnings,'flamer oil: flamethrower-turret 1/4 dry at (21,0), 1 below 25% at (22,0) 10%; fh call flamers')
 has(s.warnings,'belts: 1 unpaired undergrounds: input (-3.5,-27.5)')
 has(s.warnings,'belts: 1 belts point into a belt they cannot feed: (0.5,9.5) into transport-belt')
 eq(s.factory.belt_ends,'1 line ends')

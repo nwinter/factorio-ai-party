@@ -290,20 +290,46 @@ On the page:
 - Agent cards: a planet chip (Nauvis green, Vulcanus orange, Fulgora violet, Gleba lime, Aquilo ice, platforms grey)
   once the Space panel is active; off Nauvis, the card's location is the planet or platform.
 - Space panel, above chat, hidden until there is something: a rocket, a platform, space-age science, a second planet
-  or an agent away. One head row (planets, science pack totals, else rockets), then up to three platform rows (name,
-  where or route with a progress bar, km/s or "paused"). Chat gives up the height.
+  or an agent away. One head row (planets, science pack totals, else rockets). Then a two-line card per platform
+  (`model.platform_card`, eng/platformwidget; Nick: "kinda basic"), two on the 1080p frame and three on the vertical
+  page, with platforms under fire first:
+  - Line 1: the name; where it is, or its route with a bar and %; km/s, "paused" or "drifting back" (paused on a
+    route); who is aboard, and who works on it from the ground ("Sol (remote)").
+  - Line 2: chips for the hub health (bar and %), guns armed of all, ammo in the turrets and in the hub, repair packs,
+    asteroid hits a minute, and up to three cargo items.
+  A chip turns red when it is bad: no gun armed, no ammo, or no repair packs on a damaged platform. A platform lost in
+  the last two minutes shows struck through with LOST, its cause and where it was. While a platform is under fire or
+  just lost (`space.hot`), the panel holds its turn in the widget rotation. The data comes from the `platforms`
+  read's `defense`, `repair_packs`, `damaged_count` and `hub_items` (text, parsed in model.py), the status alerts'
+  `platform_hits` (hits a minute over the last 5 minutes), the agents' `platform` and the remote-work feed.
 - Science: the five planet packs and promethium count toward SPM and get chips and colours.
 - Moments, each once (what is already true when the service starts is recorded silently): first rocket, first
   platform, a platform's first arrival at each planet other than Nauvis ("orbit"), the first landing on each planet
   (an agent's body there, else "first foothold" when the score lists our entities). Each raises a 🚀 alert and the
   director starts a `space_moment` segment within 150 s (segment spacing waived; still declined right after an
   attack cut). Casters can request `space` or `space_moment {moment: id}` (ids in `snapshot.space.moments`).
+  Every other arrival after a trip, home included, is an alert with where it came from and who is aboard, and no
+  segment ("Sunward is back at Nauvis"). Only firsts are 🚀 headlines: a platform's first arrival at a planet, or
+  the run's first there. Where a platform is when the service first sees it counts as visited, and so does the
+  planet it left if it is first seen mid-trip. Later arrivals, such as a ferry's round trips, are 🛰️ `arrival`
+  events at caster priority 6, below battles and losses, so they never pull the hosts off a fight.
+  `runs/RUN/space-memory.json` keeps where each platform has been and the planets reached, so a restart does not
+  fire a false first: neither an arrival headline nor the one-time "X reaches Vulcanus" moment. A platform with no
+  memory, first seen mid-trip to a planet the team has reached, is taken for a ferry: its arrival is an ordinary
+  one. A platform headed somewhere new still gets the moment.
+- Direction: space.lua's route "nauvis->vulcanus N%" names the space connection's fixed ends, whichever way it is
+  flown (shift06 14:09: Sunward from Vulcanus to Nauvis showed as "leaving Nauvis for Vulcanus"). model.py
+  `_orient_platforms` works out where a platform is headed from the schedule's current stop (pog.py score `to`),
+  then the distance moving (not while paused, since a paused platform drifts back), the way it was going, and the
+  planet it left. It turns the route and progress round for every label, the widget and the hosts. live.py lets the
+  score's location (read every round) stand over a platform detail read that is up to 15 s old.
 - Speed is `LuaSpacePlatform.speed` x 60 shown as km/s, assuming the API gives km per tick. Not yet checked against
   the game's own readout.
 
 Mock: `serve.py --mock --run tools/stream/runs/mock-sa3.json` (three agents) plays a rocket at 20 s, the platform
-"Orbital One" at 40 s, its flight to Vulcanus from 70 to 130 s, a paused "Shuttle" at 100 s and Opus landing on
-Vulcanus at 150 s (`"mock_space_speed"` scales it). Checked in jsdom on both pages and in the selftest; not yet seen
+"Orbital One" at 40 s, its flight to Vulcanus from 70 to 130 s, a "Shuttle" paused on its route (drifting, guns
+empty, hit by asteroids) from 100 s and lost at 240 s, the third agent aboard Orbital One from 90 to 200 s, and Opus
+landing on Vulcanus at 150 s (`"mock_space_speed"` scales it). Checked in jsdom on both pages and in the selftest; not yet seen
 with a real platform, since the pilot had none by 02:00.
 
 ## Following the work, and platform shots
@@ -423,6 +449,70 @@ air got the inset 20 s after the cut, labelled "🏗️ Gemini · placing stone 
 with no cut. The site map drew 9 lines, 6 of them far. Tests: `test_attention.py`, which uses recorded journal lines.
 
 Live: `grep "attention:" runs/RUN/stream-service.log`.
+
+### Key battles, incoming groups and threat scores (2026-10-13, eng/follow, eng/incoming)
+
+Nick, 12:54: "is there a good way to ensure we don't miss entirety of key battles"; 13:40: "both still were just the
+after-battle carnage ... Can we follow biter attacks as they approach a base?"; 13:45: "Shouldn't the attack group
+size/threshold be dynamic".
+
+- Operator follow: `POST /follow {agent, seconds <= 1800, label?, by}`, `DELETE /follow`; kept in
+  runs/RUN/director-follow.json. The camera stays on that agent; other agents' urgent events become insets.
+- Threat scores (`threats.py`): an enemy group or a fight scores on its size against the run's last 30 (percentile,
+  squared), a unit tier above the usual mix (double the first 3 times), and what it is aimed at (near an agent, an
+  outpost outside the base map's core, a new direction). A fight also scores for an agent in it and how long it has
+  gone on. A budget of `threat_budget` (4) followed groups and battle holds per hour goes to the highest scores. The
+  bar falls to `threat_floor` (1.5) when candidates are rare and rises when they are frequent; a spent budget passes
+  nothing. The history is kept in runs/RUN/threat-history.json; each score and decision is in the director log
+  (`"threat": {...}`) and the service log (`threat group|battle KEY: take|skip (why; parts)`).
+- Incoming (`harness attack_groups_live`, an operator read polled every ~2 s while groups exist): a group that passes
+  is followed with a wide fixed view that pans with it, labelled "⚠️ Incoming · 37 biters and spitters heading for the
+  oil field", at most every `incoming_spacing` (600 s) and never over an urgent, segment or replay shot. At contact
+  (the group attacking, within `incoming_contact` tiles of our nearest building, or a fight there) the battle hold
+  takes over at the same place with no cut, so the start is live. `director: {incoming: false}` turns it off.
+- Battles: a fight that passes the bar (or a followed group's contact) holds the camera: its agent while alive in the
+  area, then a fixed view, chosen once (no back-and-forth); until 20 s with no attack or combat and 45 s with no loss.
+  A fight reported again after 45 s quiet is a new fight (model.py); shift06 13:2x kept old first times, so every
+  attack on Astra was a "long fight".
+- Replays of a battle: one window from 3 s before its first sign, aired only if on-air footage starts within 4 s of
+  that sign and covers 70% of the window, and the program did not show 90% of it live; footage counts from 2 s after
+  a cut. Aftermath only: no replay.
+
+Live: `grep -E "threat|BATTLE|battle over|incoming" runs/RUN/stream-service.log`.
+
+### Big enemies coming, slow motion, a follow until its battle (2026-10-13, eng/slowmo)
+
+Nick, 14:44: "The demolisher approaching should be good in a PIP camera" and "imagine a slow-mo instant replay";
+14:47: the camera stayed on Sol after the fight; 14:50: insets of "empty fields".
+
+- `big_enemies_live` (harness, operator read): demolishers on the planets with speed, closing, ETA and our nearest
+  building and character within 500 tiles. While one closes (ETA under `enemy_eta`, 180 s) and the program is on
+  what it threatens (the agent on air or followed near the target, or the battle there), the inset follows it,
+  panning, "⚠️ Small demolisher · 120 tiles from Sol's gun turrets"; gone at contact (`enemy_contact`, 20 tiles),
+  when it turns away (`enemy_away`, 10 s), or when the program moves on. A camera client, not an HTML map: the
+  standby that takes insets is free while a follow or battle holds the camera on air.
+- Slow motion: a big-enemy battle (tier 4+, demolishers, nests) or one with a sudden big loss (40% of its pieces in
+  5 s) gets its densest 5 s of losses, from 3 s before to 5 s after, at `slow_speed` (45%) with "Replay · slow motion"
+  on the banner, even if the program showed it live; on-air footage of the battle must cover 70% of the window; one
+  replay per `spacing`. The whole clip is slowed: changing `speed_percent` mid-play restarts an OBS media source.
+- `POST /follow {agent, until_battle: true, seconds}`: the follow ends 15 s after the battle with that agent (or
+  around it) is over; `seconds` is the longest wait. Replays wait while a follow is on, so the slow motion airs then.
+- Battles end sooner: 15 s with no attack or combat and 25 s with no loss (were 20/45; Sol's 14:19:30 kill took
+  ~5 s and the hold ran 52 s). A fight in the area within `battle_resume` (45 s) resumes the same battle (12:58's
+  waves came 35 s apart), and replays judge a battle 15 s after it ends, so a resumed one stays one.
+- Loss insets: a few cheap pieces or friendly fire get an inset only if their threat score passes the floor (the
+  13:37-13:54 insets were 1-3 pipes burned by our flamers); deaths, an agent under attack and real raids keep theirs.
+
+### Spoken-line cues (2026-10-13, eng/saylook)
+
+Nick, 14:11: "I'd loved to have seen the space platform while that was narrated." `fh say "..." --aloud --look
+platform:Sunward` (or `agent:NAME`, `X,Y[@SURFACE]`, `X1,Y1,X2,Y2[@SURFACE]`) keeps a look on the chat line; without
+one, a line naming one of our platforms, or with one "(x, y)", gets an inferred look. When the line starts playing (the
+page's start report, snapshot `voiced`), onecam cuts to the look for the line plus `cue_after` (4 s) if nothing more
+interesting is on, labelled "Sol · Sunward · in orbit of Vulcanus", then goes back to the story. Under an urgent shot,
+a battle, a follow, an incoming group, a segment or an agent fighting on air, the look goes in the inset; during a
+replay or a trio it is dropped. One cue per agent per `cue_agent_gap` (180 s), cues `cue_gap` (45 s) apart;
+`director: {cues: false}` turns them off. Live: `grep "cue " runs/RUN/stream-service.log`.
 
 ## Unused cameras
 
@@ -569,6 +659,9 @@ run config brings back the director below).
   released or given its next subject, and cameras.lua makes it a spectator again (`exit_remote_view`); the 5 s
   recheck leaves a map camera in the remote controller. The hosts: `onair.map` ("on air" or "tile") and the caster's
   `on_screen_map`. replays.py gets no frame from a map shot. Off: `"map_every": 0` in the run config's `director`.
+  The map shot turns the camera player's alerts off (`disable_alert` per alert type: their markers, big yellow
+  triangles, covered the base on stream and in the site's terrain frames) and the next camera call or release turns
+  back on the ones it turned off. tools/stream/mapframes.py saves a georeferenced frame of it for the site's maps.
 - Trio (Nick, 2026-10-12: he liked the old one-big-two-small layout because each tile said who was doing what):
   sometimes the program shows all three clients in layout-3cam.json's holes, the one on air in the big tile (no cut:
   the same client stays on air) and the two standbys in small tiles, each labelled "Luna · fixing the north wall"

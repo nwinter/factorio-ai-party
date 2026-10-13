@@ -326,6 +326,41 @@ def main():
     assert [l["text"] for l in losses] == ["3 lost near (5000, 5000): 1 gun turret, 1 pipe (by friendly fire from flamethrower turrets)",
                                            "3 lost near (6000, 6000): 2 transport belt, 1 stone wall (by medium biters)",
                                            "1 lost near (7000, 7000): 1 pipe (by friendly fire)"], losses
+    # eng/defensetools' numbered lines (text, from a runtime without alerts.incidents): the surface they name, a running
+    # total, the flamer's position left out of the label
+    losses = LiveSource.loss_events({"latest": [
+        "#7 on vulcanus in (-223,74)-(-214,79) 59 destroyed: 59 gun-turret by 59 small-demolisher, 3s ago",
+        "losses #8 in (12,-40) continue: 9 destroyed (+2 since you were told): 9 pipe by friendly fire: 9 flamethrower-turret at (80,90) (84,90), 1m10s-0s ago",
+        "#9 on platform Starling in (3,-4) 1 destroyed: 1 gun-turret by 1 medium-metallic-asteroid, 2s ago"]})
+    assert [l["text"] for l in losses] == [
+        "59 lost on Vulcanus near (-223, 74): 59 gun turret (by small demolishers)",
+        "9 lost near (12, -40): 9 pipe (by friendly fire from flamethrower turrets)",
+        "1 lost near (3, -4): 1 gun turret (by medium metallic asteroids)"], losses
+    assert losses[0]["position"] == {"x": -218.5, "y": 76.5, "extent": 16.0, "surface": "vulcanus"}, losses
+    assert losses[0]["key"] == "loss:vulcanus:#7" and losses[2]["platform"] == "Starling", losses
+    # status.alerts.incidents rows win over the text: 12:58 on 2026-10-13, Sol's 59 turrets on Vulcanus were cut to
+    # (-223,74) on Nauvis, an empty field
+    rows = {"latest": ["#7 in (-223,74) 59 destroyed: 59 gun-turret, 3s ago"], "incidents": [
+        {"id": 7, "surface": "vulcanus", "box": {"x0": -223, "y0": 74, "x1": -214, "y1": 79}, "total": 59,
+         "names": "59 gun-turret", "by": "59 small-demolisher", "first_tick": 9000, "last_tick": 9900},
+        {"id": 8, "surface": "nauvis", "box": {"x0": 12, "y0": -40, "x1": 20, "y1": -31}, "total": 7,
+         "names": "4 stone-wall, 3 gun-turret", "by": "5 small-biter", "first_tick": 9500, "last_tick": 9990},
+        {"id": 9, "surface": "platform-3", "platform": "Starling", "box": {"x0": 3, "y0": -4, "x1": 3, "y1": -4}, "total": 1,
+         "names": "1 gun-turret", "by": "1 medium-metallic-asteroid", "first_tick": 9990, "last_tick": 9990},
+        {"id": 3, "surface": "nauvis", "box": {"x0": 0, "y0": 0, "x1": 0, "y1": 0}, "total": 2, "names": "2 pipe",
+         "last_tick": 10000 - 2 * 3600}]}
+    losses = LiveSource.loss_events(rows, 10000)
+    assert [l["text"] for l in losses] == ["59 lost on Vulcanus near (-223, 74): 59 gun turret (by small demolishers)",
+                                           "7 lost near (12, -40): 4 stone wall, 3 gun turret (by small biters)",
+                                           "1 lost near (3, -4): 1 gun turret (by medium metallic asteroids)"], losses
+    assert losses[0]["position"]["surface"] == "vulcanus" and losses[1]["position"] == {"x": 16.0, "y": -35.5, "extent": 16.0, "surface": "nauvis"}
+    assert losses[2]["position"]["surface"] == "platform-3" and losses[2]["platform"] == "Starling", losses
+    # the director frames it there: a cut to Vulcanus, not to Nauvis
+    from segments import LOSS_RE as SEG_LOSS
+    from onecam import minor_loss
+    assert SEG_LOSS.match(losses[0]["text"]).group(1) == "59" and not minor_loss(losses[0]["text"])
+    assert minor_loss("2 lost on Vulcanus near (1, 2): 2 transport belt (by small biters)")
+
     # hit counts ("x3") and kill counts never reach the banner or the replay title (shake3: read on air as enemies)
     hits = LiveSource.attack_events({"attacked": [
         {"chunk_centre": {"x": -48, "y": 16}, "damage": 40, "last_tick": 100, "entities": "character x3"},

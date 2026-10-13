@@ -197,8 +197,11 @@ HEADLINE_EXTRA = {
                           "aboard are lost. Say its name.",
     "agent_death": " The engineer respawns at the base; say what they were doing or where, if the facts say.",
     "shift_rocket": " The first rocket of this shift.",
+    "platform_arrival": " The platform has finished its trip and is in orbit now; say where it came from and who is "
+                        "aboard, if the facts say.",
 }
 PRIORITY = {"headline": 10, "attack": 9, "death": 10, "loss": 8, "segment": 7, "research": 7, "space": 10, "viewer": 6,
+            "arrival": 6,  # a platform's later arrival (a ferry's round trip): below battles; firsts are "space"
             "viewer_reply": 7,
             "power": 6,
             "harness": 5, "plan": 5, "operator_request": 5,
@@ -369,7 +372,7 @@ class Differ:
                 # an answer to a viewer is heard like an --aloud line (shift01 16:09: Astra's "Yes, Craig, the base is
                 # growing north..." was judged logistics and stayed text)
                 ev.append({"kind": "chat", "agent": m["agent"], "text": m.get("text", ""),
-                           "aloud": bool(m.get("aloud") or asked), "seq": m.get("seq")})
+                           "aloud": bool(m.get("aloud") or asked), "seq": m.get("seq"), "look": m.get("look")})
         board = s.get("board") or {}
         for b in board.get("events") or []:  # eng/stream2's board snapshot: {seq, by, agent, verb, title, kind}
             seq = b.get("seq") if b.get("seq") is not None else (b.get("tick"), b.get("id"), b.get("verb"))
@@ -841,6 +844,10 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     if e["kind"] == "chat" and e.get("react"):  # task-talk-hosts: the hosts answer the agent who just spoke on air
         f["how_to_call_it"] = ("viewers just heard this agent say it in their own voice: react to it (what it means "
                                "for the team, or how it sounds), briefly, without repeating it word for word")
+    if e["kind"] == "arrival":  # a platform's later arrival: another trip done, not a headline
+        f["arrival"] = {k: v for k, v in (e.get("facts") or {}).items() if v not in (None, "", [])}
+        f["how_to_call_it"] = ("a space platform finished another trip (it has been here before): one line, where it "
+                               "came from and who is aboard if the facts say; no big moment")
     if e["kind"] in HEADLINE_KINDS:  # eng/hostguide: a headline, said as a clear call with the name and the stakes
         if e.get("facts"):
             f["headline"] = {k: v for k, v in e["facts"].items() if v not in (None, "", [])}
@@ -1494,6 +1501,8 @@ class TemplateWriter:
                      "color": ["And everything aboard {headline_platform} goes with it.", "That one costs them."]},
         "space": {"pbp": ["Big moment. {text}!", "{text}! Remember this one."],
                   "color": ["That changes what this run can reach.", "A milestone. The map just got bigger."]},
+        "arrival": {"pbp": ["{text}.", "And {text}."],
+                    "color": ["Another trip done.", "The ferry keeps running."]},
         "segment": {"pbp": ["On screen now: {seg_title}.", "Let's take a closer look: {seg_title}."],
                     "color": ["Here's the picture: {seg_title}.", "Worth a look: {seg_title}."]},
         # only the analyst's answers have analyst_answer; a plain viewer comment still gets no template line
@@ -2589,7 +2598,9 @@ class Caster:
             log(f"[voice:{names.get(m['agent'])}/{vmap.get(m['agent'])}] ({label}) {text}")
             dur = self.voice(text, vmap.get(m["agent"], "orion"), None,
                              {"channel": "agent", "speaker": names.get(m["agent"], m["agent"]), "agent": m["agent"],
-                              "color": ag.get("color"), "glyph": ag.get("glyph"), "text": text, "expires_in": 20},
+                              "color": ag.get("color"), "glyph": ag.get("glyph"), "text": text, "expires_in": 20,
+                              # the line as said and its say look= (the director's cue when it starts playing)
+                              "seq": m.get("seq"), "said": m.get("text"), "look": m.get("look")},
                              {"type": "agent", "agent": m["agent"], "label": label, "line": text},
                              hold=lambda: self.caster_free)  # only a caster clip already pushed: agents go first
             self.agent_free = time.time() + dur + 0.4

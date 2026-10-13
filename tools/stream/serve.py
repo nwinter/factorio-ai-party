@@ -11,7 +11,8 @@ Serves http://HOST:PORT/ (the overlay page for the OBS browser source), /state.j
 snapshot per update), /director.json (recent camera decisions), and the voice queue: POST /audio (caster.py pushes
 clips), /audio-events (SSE, new clips), GET /segments and POST /segment (timed shots for the casters and the
 director, tools/stream/segments.py), /audio/clip/ID, POST /audio/played and /audio/status (page playback reports). Director decisions are appended to
-tools/stream/logs/director-<start>.jsonl. Only read actions and the operator `camera` function are ever sent.
+tools/stream/logs/director-<start>.jsonl. Only read actions, the operator `camera` function and the operator
+`highlights` drawing (seen by the camera clients alone, highlights.py; --no-highlights turns it off) are ever sent.
 """
 import argparse, json, mimetypes, os, sys, threading, time, traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -128,7 +129,7 @@ class AudioHub:
                     "clips": len(self.order)}
 
 
-def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None):
+def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None):
     audio = audio or AudioHub()
     segments = segments or Segments()
     analyst = analyst or AnalystBoard()
@@ -216,6 +217,17 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(200, json.dumps(analyst.mark_used(body.get("id"))).encode(), "application/json")
             if path == "/analyst/answer":  # a viewer question the analyst answered, for the hosts (snapshot analyst.answers)
                 return self.send(200, json.dumps(analyst.answer(body)).encode(), "application/json")
+            if path == "/follow":  # the operator pins the camera on air on one agent (follow.py)
+                if not follow:
+                    return self.send(409, b'{"error": "follow needs the onecam director"}', "application/json")
+                code, reply = follow.request(body)
+                return self.send(code, json.dumps(reply).encode(), "application/json")
+            self.send(404, b"not found", "text/plain")
+
+        def do_DELETE(self):
+            if self.path.split("?", 1)[0] == "/follow" and follow:
+                code, reply = follow.clear()
+                return self.send(code, json.dumps(reply).encode(), "application/json")
             self.send(404, b"not found", "text/plain")
 
         def sse_head(self):
@@ -302,6 +314,8 @@ def main():
     ap.add_argument("--poll", type=float, default=3.0, help="seconds between harness polls (2-5)")
     ap.add_argument("--cameras", help="director player indices, main first (e.g. 3,4,5); overrides the run config")
     ap.add_argument("--no-camera", action="store_true", help="decide and log but never call the camera function")
+    ap.add_argument("--no-highlights", action="store_true",
+                    help="never draw the camera highlights (rings and labels on what agents act on, highlights.py)")
     ap.add_argument("--profiles", choices=["auto", "on", "off"], default="auto",
                     help="poll `profiles` (auto: only when the harness has the eng/bots camera function)")
     ap.add_argument("--mock-speed", type=float, default=4.0, help="mock: game seconds per wall second")
@@ -345,6 +359,11 @@ def main():
         camera = source.send_camera
     if a.no_camera:
         camera = lambda body: {"ok": False, "stub": True, "disabled": True}  # noqa: E731
+    # what agents act on, drawn for the camera clients only (highlights.py, the harness's operator `highlights`)
+    highlights = None
+    if not a.mock and not a.no_camera and not a.no_highlights and run.get("highlights", True) is not False:
+        from highlights import Highlights
+        highlights = Highlights(source.send_highlights)
 
     os.makedirs(a.log_dir, exist_ok=True)
     log_path = os.path.join(a.log_dir, time.strftime("director-%Y%m%d-%H%M%S.jsonl"))
@@ -357,6 +376,8 @@ def main():
         if a.trio:
             frac.update(trio_force=True)
         director = OneCam(slots, camera, log_path, **dict(frac, **(run.get("director") or {})))
+        if a.run and not a.mock:  # the run's own attack history scales the threat scores (threats.py)
+            director.set_threat_history(os.path.join(os.path.dirname(os.path.abspath(a.run)), "threat-history.json"))
         if not a.mock and not a.no_cuts and run.get("cuts", True) is not False:
             from obsws import OBS
             host, _, port = a.obs.partition(":")
@@ -376,6 +397,8 @@ def main():
         host, _, port = a.obs.partition(":")
         night = NightLift(obs=OBS(host, int(port or 4455)), **(run.get("night") or {}))
     model = Model(run)
+    if a.run and not a.mock:  # where each platform has been, kept across restarts (no false "first" arrivals)
+        model.set_space_memory(os.path.join(os.path.dirname(os.path.abspath(a.run)), "space-memory.json"))
     hub = Hub()
     names = [n for k, cfg in (run.get("agents") or {}).items() for n in (k, (cfg or {}).get("display_name")) if n]
     roster = [(k, (cfg or {}).get("display_name")) for k, cfg in (run.get("agents") or {}).items()]
@@ -389,6 +412,12 @@ def main():
     if feed:
         feed.start()
     analyst = AnalystBoard()
+    audio = AudioHub()  # the voice clips; the director reads which agent line is playing (say look= cues)
+    follow = None
+    if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
+        from follow import FollowControl
+        follow = FollowControl(director, os.path.join(os.path.dirname(os.path.abspath(a.run)), "director-follow.json")
+                               if a.run and not a.mock else None, roster)
     lock = threading.Lock()
     source_info = {"source": getattr(source, "name", "mock"), "poll_ok": None, "poll_error": None}
 
@@ -419,13 +448,22 @@ def main():
                     cur = segments.cur
                     director.hold_layout = bool(replays and replays.playing) or bool(
                         cur and cur["type"] == "attack_replay" and cur["state"] in ("starting", "live"))
+                if follow:
+                    follow.sync(now)
+                with audio.cond:  # agent lines playing now (the page's start reports): onecam cues their looks
+                    snap["voiced"] = [dict(v, id=k) for k, v in audio.playing.items() if v.get("channel") == "agent"]
                 cams = director.step(snap, now, segments.camera())
+                if follow:
+                    snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
+                if hasattr(director, "battle_info"):
+                    snap["battle"] = director.battle_info(now)  # a key battle held on air (replays.py covers it)
                 if director.last_attack_cut == now:  # main just cut to a fight or death: the segment gives way
                     segments.attack_cut(now)
                     snap["segment"] = segments.public()
-                    if replays:
+                    if replays and not getattr(director, "fol", None):  # (no replay cuts away from a followed fight)
                         replays.on_attack_cut(director.last_attack_alert, snap, now, director.last_attack_framed)
                 if replays:
+                    replays.hold = bool(getattr(director, "fol", None))  # no replay over an operator follow
                     replays.tick(snap, cams, now)
                     snap["replay"] = replays.public()
                 if night:
@@ -453,6 +491,9 @@ def main():
                     feed.relay.set_roster([(ag["name"], ag.get("display_name")) for ag in snap["agents"]
                                            if ag.get("activity") != "offline"] or roster)
                 snap["analyst"] = analyst.public(now)
+                if highlights:
+                    highlights.step(snap, now)
+                    snap["highlights"] = highlights.public()
                 hub.publish(snap)
             except Exception:
                 traceback.print_exc()
@@ -469,7 +510,7 @@ def main():
     threading.Thread(target=ticker, daemon=True).start()
     try:
         server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,
-                                                                    analyst=analyst))
+                                                                    analyst=analyst, follow=follow, audio=audio))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

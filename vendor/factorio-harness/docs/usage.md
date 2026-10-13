@@ -118,6 +118,7 @@ fh say - <<'EOF'                               # text with apostrophes or quotes
 I'll take copper, you've got iron
 EOF
 fh say "biters at the west wall" --aloud       # spoken on the stream
+fh say "Sunward is loaded" --aloud --look platform:Sunward   # the stream camera may show it while it is read out
 fh chat                                        # your unread messages (newest 30; remaining=K are still unread)
 fh chat --since 212 --limit 50                 # everything after seq 212, yours included; --peek reads without marking
 fh board events --since 40
@@ -170,6 +171,27 @@ fh call confessions --since 3                  # your own confessions
 - The operator reads everyone's with a dispatch that names no player:
   `{"id":"...","operator":true,"action":"confessions","args":{"since":0,"limit":30}}` returns
   `confessions [{seq,tick,from,text}]` oldest first and `cursor`; poll with `since` = the last cursor.
+- `highlights` (operator only, the same `operator: true` dispatch; the stream service sends it) draws what agents
+  act on for the director camera clients only: `{"items":[{"position":{"x":30,"y":0},"extent":6,"surface":"nauvis",
+  "agent":"sol","label":"Sol · placing ghosts"}],"ttl":360}`. Each item gets a ring in the agent's profile colour (or
+  `color {r,g,b}`) sized to `extent`, its label above it, and a line from the agent's character when the spot is
+  8 or more tiles away on the same surface, with the label again on the line 4 tiles from the character and the
+  distance (`Sol · inspecting gun turret · 40 m`). `{entity}` in a label becomes what stands at the spot (or nothing).
+  `kind: "looking"` draws a thin ring and dotted line, anything else a bold ring and dashed line; `alpha` (0..1) fades
+  the colour and an item's own `ttl` ends it sooner (the stream fades each over 10 s and ends it there). Only connected camera players see them (with none connected nothing is
+  drawn); each call replaces the last set, `{"clear":true}` removes it, and every object expires after `ttl` ticks
+  (30..1800, default 360). At most 12 items; an unknown surface is skipped (`skipped`). Agents cannot call or see it.
+  `bubbles: [{agent, text, ttl?}]` (up to 12, text cut to 120 characters) puts a speech bubble over an agent's
+  character, following it, for the camera clients while the stream voices that line.
+- The runtime also draws what agents are doing for the camera clients only (visuals.lua; nothing with no camera
+  connected, nothing for an agent's player): while mining, an arc on the target filling over the hand-mining time
+  (ore: the current cycle), the product's icon above it and the game's mining particles for that entity (2 every 20
+  ticks); while hand crafting, the next 3 recipes above the head with their counts and the first one's progress; on a
+  `move_to`, a faint dashed line along the planned route to the goal; items moved by hand (`transfer`, `collect`,
+  `feed`, `rearm`, `refuel`), the flying text the agent's own client shows (`+50 [item=iron-plate]`) at the target in
+  the agent's colour; and a 1 s ring on what a `build`, `construct`, `place_ghosts`, `paste`, `deconstruct`,
+  `configure`, `rotate`, `repair`, `flush` or `revive_ghost` request names. Mining, crafting and routes refresh every
+  10 or 30 ticks; rings and texts share 30 a second. Faults there are counted (`visual_errors` in storage), never fatal.
 - `viewer_say` (operator only, the same `operator: true` dispatch) relays a stream viewer's chat line:
   `{"id":"...","operator":true,"action":"viewer_say","args":{"name":"bob","text":"..."}}`. It posts
   `viewer bob: text` in the game chat, in grey; agents read it from `chat` with `from: "viewer bob"` and `viewer: true`,
@@ -316,9 +338,10 @@ fh sleep 900 --until researched                       # ...or until the research
 - `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
   platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
   unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).
-- `gamedata/locations.json` lists each route's and each orbit's `asteroid_spawn_definitions` as the game gives them,
-  and `gamedata/entities.json` the asteroids (`max_health`, `resistances`), from the next prototype dump of a Space Age
-  world (`tools/analyst/dump_prototypes.py`).
+- `gamedata/asteroids.json` lists each route's (`kind: route`, `from`, `to`, `length`) and each orbit's (`kind:
+  orbit`) asteroid spawn definitions as the game gives them (`asteroid`, `type`, `quality`, `probability`, `speed`,
+  `spawn_points` along a route), and the asteroids (`kind: asteroid`, `max_health`, `resistances`), from the prototype
+  dump of a Space Age world (`tools/analyst/dump_prototypes.py --only asteroids`).
 - Where a platform's items go: `platforms` shows `hub_trash` per platform, and with `platform` set
   `hub_inserters_without_target` (inserters taking from the hub with nothing to drop into: `(-2.5,3.5) drops onto
   empty-space`), `thrown_overboard` (items in flight off the platform, while the game tracks them), and
@@ -326,6 +349,20 @@ fh sleep 900 --until researched                       # ...or until the research
   inserter with no drop target shows `drop_tile` (and `drop_note` when it is empty space: thrown overboard).
 - A `drop` whose pod destination the game refuses returns the items to the hub; what the hub cannot take back stays in
   the cargo pod on the hub, and the error says which.
+- A `drop` returns its number (`drop: N`). Its pod is followed down, because pods land after the call returns and often
+  10-20 tiles from the spot they were aimed at (shift06 14:55: aimed near (14,134), landed at (0,129)). The sender,
+  and the teammates named in `to` (a name or a list), hear about it in their team block, at most 4 drop lines per
+  reply:
+  - while it is still descending: `drop #3 from Sunward to vulcanus: still descending (12s ago, aimed near
+    (14,134))`;
+  - once it has landed: `drop #3 landed at (0,129) on vulcanus: cargo-pod-container with processing-unit*50
+    roboport*3 (take them with transfer; it vanishes when empty)`, or `landed in the landing pad at (x,y)`;
+  - if no container is found within 24 tiles of where the pod was last seen, 10 s after it went: that, and what it
+    held.
+
+  An unknown `to` name fails before anything leaves the hub. The `drops {limit?}` read (aboard too) lists the last 20
+  drops newest first: `{id, by, to, platform, surface, items, ago, state, aimed_near, at, landed_in, container
+  {name, position, holds} or {gone}, note}`.
 - `transfer {position, direction: "to_player"}` takes items from a character corpse (inventory `character_corpse`); an emptied corpse is removed. It never mines the corpse (mining a corpse as a bot crashes the server; the harness takes the items instead).
 - Trash slots: a rocket silo, cargo landing pad and platform hub have one (`rocket_silo_trash`, `cargo_landing_pad_trash`,
   `hub_trash`) where the game puts items the entity will not use. `inspect` lists them in `inventories` and as one line
@@ -347,6 +384,21 @@ fh sleep 900 --until researched                       # ...or until the research
   stack: 0}, {inventory: 4, stack: 1}]}}]` (stacks count from 0 in blueprint strings). In 2.0 the index is 4 for assemblers, furnaces,
   chemical plants, crushers and silos, 1 for beacons, 2 for mining drills, 3 for labs.
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
+  An entity with tile buildability rules (an asteroid collector: its rear rows on foundation, its front row and the
+  tiles ahead of it empty space) names the rule its spot breaks: `placement blocked: breaks its tile rule 2 facing
+  north: tiles x 59..61, y -4..-1 need empty_space and must not be ground_tile; 6 of 12 do not
+  (space-platform-foundation at (59,-2))`. `place_ghosts` failures carry `{index, name, position, error}`.
+- A `paste` (`blueprint_place`) that creates fewer ghosts than the blueprint holds explains each blueprint entity
+  that is not there. It finds the shift the game used from what stands where the layout puts things. It returns:
+  - `not_placed` (the first 20, plus `not_placed_count`), each `{name, position, direction, reason}`, where the reason
+    is outside the charted area, a broken tile rule, what blocks the footprint, or "placeable here now: the paste
+    skipped it";
+  - `existing_entities` / `existing_ghosts`, counting only those at the blueprint's own spots;
+  - `settings_differ` (`settings_differ_count`), for entities and ghosts already there whose recipe, filters or
+    modules differ from the blueprint, each `{name, position, ghost?, differs, fix}`, where `fix` is the `configure`
+    call that sets them (modules: `transfer`);
+  - `reason`, a one-line summary.
+  A paste never changes what was already there.
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
   within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists
@@ -577,6 +629,26 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   near our buildings, once each and again when grown by half; then up to 6 platform lines, below) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
+- Game alerts and warnings in `team.alerts` (pushalerts.lua): what a player's alert panel and entity status icons
+  show, without pulling a full status.
+  - Entity statuses on planet surfaces: `no power`, `not connected to power` (no pole reaches them), `low power`,
+    `out of fuel`, gun turrets `out of ammo`, flamethrower turrets `out of flamer oil`.
+  - The game's alerts, read from an agent player's alert panel: `no_material_for_construction`,
+    `not_enough_construction_robots`, `not_enough_repair_packs`, `no_storage`, `train_out_of_fuel`,
+    `unclaimed_cargo`, `collector_path_blocked`, ... Attacks, losses and the game's own turret alert are told
+    elsewhere and are left out.
+
+  Each line is a group of one kind in one area, where 64-tile cells that touch make one area, with a hint:
+  `8 assembling-machine-2 no power near (125,40); fh call power`, `12 gun-turret out of ammo near (67,-170)
+  (was 9); rearm`, `2 (1 entity-ghost, 1 transport-belt) ghosts waiting for materials (no robot can bring them)
+  near (-41,11)`. A group goes to whoever's active board claim covers its centre, else the agents who built there
+  (`last_user`), else the nearest agent on that surface.
+
+  At most one digest every 150 s per agent, with up to 5 lines (`+N more alert groups: fh call game_alerts`). Only
+  groups that are new, or larger than when you were last told, are shown. A group that clears and comes back is new
+  again. The scan is shared and at most 30 s old. `game_alerts {surface?, kind?}` (read) lists every group now,
+  worst first: `{kind, surface, count, center, names, at, line, to}`, where `to` says who hears it and why
+  (claim, built, nearest).
 - Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
   requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
   aboard; a platform with none of them known goes to every agent. Each line names the platform and its surface:
@@ -590,6 +662,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   5 game minutes, sooner when it gets worse. Hits on a platform are no longer `attack #` incidents; `status` alerts
   carry them as `platform_hits` rows `{platform, surface, hits, damage, entities, by, last_tick}`. Turrets and the hub
   are read at most every 10 s per platform.
+- `status` alerts for programs (the stream's loss banners and cuts): `latest` keeps one text line per loss incident
+  (`#7 on vulcanus in (-223,74)-(-214,79) 59 destroyed: 59 gun-turret by 59 small-demolisher, 3s ago`; a surface other
+  than the reader's is named, and with no reader any surface but nauvis), and `incidents` carries the same incidents as
+  rows: `{id, surface, platform, box {x0, y0, x1, y1}, total, names, by, first_tick, last_tick, line}`, newest first,
+  at most 8. Read the surface from the row, never from the text.
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each
   agent's first reply of it (any action, not a peek) carries `team.shift` once: `shift` (`shift N, started <age>
   ago`), `plan_goals` and `your_plan_line` (the team plan), `research_since_your_last_shift` (technologies finished
@@ -644,6 +721,15 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - Operator: `tools/harness-requests.py list|show|answer|board|events|mentions` in the pog repo. Underneath, a dispatch
   request with `"operator": true` and no player or bot may call `board`, `board_events`, `board_update`, `board_post`,
   `board_plan` (goals and other agents' lines; the operator has no line), `mention_counts` and `tells` as `operator`.
+- Operator live attack groups (threat.lua; the pog stream follows a big group as it approaches): `attack_groups_live`
+  (read) lists up to 10 enemy groups that finished gathering with a target, visible or not, while valid and under 10
+  game minutes old: `id, surface, position, size, kinds, state (gathering|moving|attacking_*), gathered, first_size,
+  target, target_distance, nearest/nearest_distance` (our nearest building within 160 tiles), `visible`, `age_s`.
+  `describe` lists it under `operator_reads`; agents cannot call it.
+- Operator big enemies (threat.lua): `big_enemies_live` (read) lists segmented units (demolishers) on the planets
+  (searched every 10 s, followed by reference in between) with our nearest building or character within 500 tiles:
+  `id, name, surface, position, speed (tiles/s), closing, nearest {x,y,name}, nearest_distance, eta_s, character
+  {x,y,player}, character_distance`.
 - Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
   `standing_s` (how long its character has had no action, no running queue and a body on the map; kept once a second
   for agents that made a request; an fh sleep with nothing running counts as standing, a timed action does not),

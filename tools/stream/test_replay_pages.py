@@ -53,7 +53,7 @@ const code = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 let now = 1e12;
 const els = {};
 const el = () => ({ textContent: "", style: {}, firstChild: { style: {} } });
-for (const id of ["frame", "bar", "what", "ago", "time"]) els[id] = el();
+for (const id of ["frame", "bar", "what", "ago", "time", "tag"]) els[id] = el();
 const classes = new Set();
 const document = { getElementById: (id) => els[id],
   body: { classList: { toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)), contains: (c) => classes.has(c) } } };
@@ -84,6 +84,12 @@ run(9000);
 out.after_12s = [width(), els.ago.textContent];
 run(4000);                                                // past the end with no snapshot: the banner goes
 out.after_end_on = classes.has("on");
+out.tag = els.tag.textContent;
+// a slow-motion replay (replays.py speed under 100): the tag says so
+send({ now: 2002.5, segment: Object.assign({}, seg, { id: "seg-10", started: 2000, ends: 2020, state: "live",
+  facts: { event: "Battle · 16 lost near (-230, 78)", ago_s: 20, speed: 45 } }) });
+run(0);
+out.slow_tag = els.tag.textContent;
 console.log(JSON.stringify(out));
 """
 
@@ -95,6 +101,7 @@ def banner_tests():
     assert out["starting_on"] is False, out
     on, w0, what = out["live_start"]
     assert on and w0 == 0 and what == "Luna died", out
+    assert out["tag"] == "Replay" and out["slow_tag"] == "Replay · slow motion", out
     assert abs(out["after_3s"] - 20.0) < 0.2, out  # 3 s of a 15 s replay
     assert abs(out["after_3s_snapshot"] - 20.0) < 0.2, out
     w12, ago = out["after_12s"]

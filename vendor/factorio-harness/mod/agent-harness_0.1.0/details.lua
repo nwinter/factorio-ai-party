@@ -102,6 +102,7 @@ return function(api)
     return {filters=f.filters, filter_slots=f.filter_slots, not_set=#missing > 0 and missing or nil, note=M.COLLECTOR_NOTE}
   end
   M.collector = collector
+  M.filters = filters  -- placewhy.lua: a pasted entity's filters against its blueprint's
   local function where(t)
     return t and t.valid and string.format('%s (%g,%g)', t.name, t.position.x, t.position.y) or nil
   end

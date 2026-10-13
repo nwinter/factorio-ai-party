@@ -205,6 +205,100 @@ return function(api)
   function H.copy(p,a) return capture(p,a,false) end
   function H.cut(p,a) return capture(p,a,true) end
 
+  -- A short paste, entity by entity (placewhy.lua). Where each blueprint
+  -- entity landed: its offset turned with the paste, plus the shift the game
+  -- used, read from the ghosts and entities standing where the layout puts
+  -- them (the shift most of them agree on), else the paste position snapped
+  -- to the grid. Each spot without its entity gets the game's reason;
+  -- entities there from before with other settings (recipe, filters,
+  -- modules) are listed with the configure call that fixes them.
+  local MAX_ROWS=20
+  local function explain(p,a,entities,pos,direction,box,before,ghost_key,out)
+    local W=api.placewhy
+    local function turn(e)
+      local x,y=e.position.x,e.position.y
+      if a.flip_horizontal then x=-x end
+      if a.flip_vertical then y=-y end
+      return W.rotate(x,y,direction)
+    end
+    local found={}
+    for _,e in pairs(p.surface.find_entities_filtered{area=box,force=p.force}) do
+      if e.valid and e.type~='tile-ghost' then
+        local name=e.type=='entity-ghost' and e.ghost_name or e.name
+        found[name]=found[name] or {}
+        table.insert(found[name],e)
+      end
+    end
+    local votes,shift,best,near={},nil,0,math.huge
+    for i,e in ipairs(entities) do
+      if i>256 then break end
+      local x,y=turn(e)
+      for _,f in ipairs(found[e.name] or {}) do
+        local ox,oy=f.position.x-x,f.position.y-y
+        local k=ox..','..oy
+        votes[k]=(votes[k] or 0)+1
+        local d=(ox-pos.x)^2+(oy-pos.y)^2
+        if votes[k]>best or (votes[k]==best and d<near) then best,near,shift=votes[k],d,{x=ox,y=oy} end
+      end
+    end
+    if not shift then
+      local e=entities[1]
+      local proto=prototypes.entity[e.name]
+      local w,h=proto and proto.tile_width or 1,proto and proto.tile_height or 1
+      if ((e.direction or 0)+direction)%8==4 then w,h=h,w end
+      local x,y=turn(e)
+      local function snap(v,odd) return odd and math.floor(v)+0.5 or math.floor(v+0.5) end
+      shift={x=snap(pos.x+x,w%2==1)-x,y=snap(pos.y+y,h%2==1)-y}
+    end
+    local missing,differ,old_ghosts,old_entities,nmiss,ndiff={},{},0,0,0,0
+    for _,e in ipairs(entities) do
+      local x,y=turn(e)
+      local at={x=shift.x+x,y=shift.y+y}
+      local dir=((e.direction or 0)+direction)%16
+      local match
+      for _,f in ipairs(found[e.name] or {}) do
+        if math.abs(f.position.x-at.x)<0.01 and math.abs(f.position.y-at.y)<0.01 then match=f; break end
+      end
+      if not match then
+        nmiss=nmiss+1
+        if #missing<MAX_ROWS then
+          local ok,why=pcall(function()
+            local proto=prototypes.entity[e.name]
+            local chunk={x=math.floor(at.x/32),y=math.floor(at.y/32)}
+            if not ((api.own_platform and api.own_platform(p)) or p.force.is_chunk_charted(p.surface,chunk)) then
+              return string.format('outside the charted area (chunk %d,%d)',chunk.x,chunk.y)
+            end
+            local rule=W.tile_rules(p.surface,proto,at,dir)
+            if rule then return rule end
+            if p.surface.can_place_entity{name=e.name,position=at,direction=dir,force=p.force,
+                build_check_type=defines.build_check_type.manual_ghost,forced=true} then
+              return 'placeable here now: the paste skipped it (place_ghosts it)'
+            end
+            return api.blocked and api.blocked(p,proto,at,dir) or 'the game refuses it here'
+          end)
+          missing[#missing+1]={name=e.name,position=at,direction=W.direction_name(dir),reason=ok and why or tostring(why)}
+        end
+      elseif match.type=='entity-ghost' and before[ghost_key(match)]==nil then
+        -- a ghost this paste made
+      else
+        if match.type=='entity-ghost' then old_ghosts=old_ghosts+1 else old_entities=old_entities+1 end
+        local ok,d=pcall(W.settings_diff,match,e)
+        if ok and d then
+          ndiff=ndiff+1
+          if #differ<MAX_ROWS then differ[#differ+1]={name=e.name,position=match.position,ghost=match.type=='entity-ghost' or nil,differs=d.differs,fix=d.fix} end
+        end
+      end
+    end
+    out.expected=#entities; out.existing_ghosts=old_ghosts; out.existing_entities=old_entities
+    out.not_placed_count=nmiss; out.not_placed=#missing>0 and missing or nil
+    out.settings_differ_count=ndiff>0 and ndiff or nil; out.settings_differ=#differ>0 and differ or nil
+    local parts={}
+    if old_ghosts+old_entities>0 then parts[#parts+1]=string.format('%d already there from before (%d built, %d ghosts)',old_ghosts+old_entities,old_entities,old_ghosts) end
+    if nmiss>0 then parts[#parts+1]=string.format('%d not placed: not_placed says why%s',nmiss,nmiss>#missing and ' (first '..#missing..')' or '') end
+    if ndiff>0 then parts[#parts+1]=string.format('%d of those from before have other settings than the blueprint: settings_differ, fix with configure',ndiff) end
+    out.reason=#parts>0 and table.concat(parts,'; ') or 'the game placed fewer ghosts than the blueprint holds'
+  end
+
   function H.blueprint_place(p,a)
     permission(p,'build')
     local pos=api.position(a.position)
@@ -279,17 +373,10 @@ return function(api)
           end
         end
         -- Explain a short paste: the engine silently skips positions that
-        -- already hold a matching ghost or entity, or that collide.
-        if out.count<#entities then
-          local names={}
-          for _,e in ipairs(entities) do names[e.name]=true end
-          local ghosts_there,built_there=0,0
-          for _,e in pairs(ghosts()) do if e.valid and before[ghost_key(e)] and names[e.ghost_name] then ghosts_there=ghosts_there+1 end end
-          for _,e in pairs(p.surface.find_entities_filtered{area=box,force=p.force}) do if e.valid and names[e.name] then built_there=built_there+1 end end
-          out.expected=#entities; out.existing_ghosts=ghosts_there; out.existing_entities=built_there
-          out.reason=(ghosts_there>0 or built_there>0) and 'matching ghosts or entities already occupy the area (pasted or built before?)'
-            or 'placements collided with other entities or terrain'
-        end
+        -- already hold a matching ghost or entity, that collide, or whose
+        -- tiles break the entity's rules. Per blueprint entity: there now (new
+        -- ghost, or one from before), or not placed and why.
+        if out.count<#entities then explain(p,a,entities,pos,direction,box,before,ghost_key,out) end
         return out
       end)
     end)

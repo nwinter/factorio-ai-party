@@ -350,22 +350,169 @@ return function(api)
     while #list>4 do table.remove(list) end
     return table.concat(list,', ')
   end
+  -- Live attack groups for the operator (`attack_groups_live`: the pog stream follows a big group as it
+  -- approaches a base). Every enemy group that finishes gathering with a target is kept, visible or not (the
+  -- operator reads it, agents never do), while it is valid and at most LIVE_TICKS old; at most MAX_LIVE, the
+  -- oldest dropped.
+  local MAX_LIVE,LIVE_TICKS,NEAR_RADIUS=10,36000,160
+  M.operator={}
+  local function command_target(command)
+    if not command then return nil end
+    if command.target and command.target.valid then return command.target.position end
+    if command.destination then return command.destination end
+    for _,c in ipairs(command.commands or {}) do
+      local t=command_target(c)
+      if t then return t end
+    end
+  end
+  local function member_kinds(members)
+    local kinds={}
+    for _,u in ipairs(members or {}) do
+      local ok,name=pcall(function() return u.name end)
+      if ok and name then kinds[name]=(kinds[name] or 0)+1 end
+    end
+    return kinds
+  end
+  local function visible_to_players(surface,pos)
+    for _,force in pairs(game.forces) do
+      if force.name~='enemy' and force.name~='neutral' and #force.players>0 and force.is_chunk_visible(surface,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)}) then return true end
+    end
+    return false
+  end
+  local function track(g,tick,target,kinds)
+    local s=api.state(); s.live_groups=s.live_groups or {}
+    s.live_seq=(s.live_seq or 0)+1
+    local pos=g.position
+    table.insert(s.live_groups,{id=s.live_seq,group=g,tick=tick,surface=g.surface and g.surface.name or nil,
+      gathered={x=round(pos.x),y=round(pos.y)},target=target and {x=round(target.x),y=round(target.y)} or nil,
+      first_size=#(g.members or {}),first_kinds=next(kinds) and kinds_text(kinds) or nil})
+    while #s.live_groups>MAX_LIVE do table.remove(s.live_groups,1) end
+  end
+  local STATE_NAMES
+  local function state_name(v)
+    if not STATE_NAMES then
+      STATE_NAMES={}
+      for name,n in pairs(defines.group_state or {}) do STATE_NAMES[n]=name end
+    end
+    return STATE_NAMES[v] or (v~=nil and tostring(v) or nil)
+  end
+  -- Our nearest building to a point (any non-enemy force with players), within NEAR_RADIUS.
+  local function nearest_building(surface,pos)
+    local ours={}
+    for _,force in pairs(game.forces) do
+      if force.name~='enemy' and force.name~='neutral' and #force.players>0 then
+        for _,e in pairs(surface.find_entities_filtered{position=pos,radius=NEAR_RADIUS,force=force,limit=200}) do
+          if e.valid and not NOT_BUILDING[e.type] then ours[#ours+1]=e end
+        end
+      end
+    end
+    local near=#ours>0 and surface.get_closest(pos,ours)
+    return near and near.position or nil
+  end
+  -- Each live group: where it is now, its members by kind, its target, how far it has to go to the target and to
+  -- our nearest building, and its state (gathering, moving, attacking_*); invalid or finished groups are dropped.
+  function M.operator.attack_groups_live(a)
+    local s=api.state()
+    local keep,out={},{}
+    for _,r in ipairs(s.live_groups or {}) do
+      local g=r.group
+      local ok,valid=pcall(function() return g and g.valid end)
+      if ok and valid and game.tick-r.tick<=LIVE_TICKS then
+        local members=g.members or {}
+        if #members>0 then
+          keep[#keep+1]=r
+          local pos=g.position
+          local target=command_target(g.command) or r.target
+          local near=nearest_building(g.surface,pos)
+          out[#out+1]={id=r.id,surface=r.surface,position={x=round(pos.x),y=round(pos.y)},size=#members,
+            kinds=kinds_text(member_kinds(members)),state=state_name(g.state),gathered=r.gathered,first_size=r.first_size,
+            target=target and {x=round(target.x),y=round(target.y)} or nil,
+            target_distance=target and round(api.distance(pos,target)) or nil,
+            nearest=near and {x=round(near.x),y=round(near.y)} or nil,nearest_distance=near and round(api.distance(pos,near)) or nil,
+            visible=visible_to_players(g.surface,pos),age_s=round((game.tick-r.tick)/60)}
+        end
+      end
+    end
+    s.live_groups=keep
+    return {ok=true,tick=game.tick,groups=out}
+  end
+  -- Big enemies on their way (operator `big_enemies_live`; Nick, 14:44: "The demolisher approaching should be good
+  -- in a PIP camera"): segmented units (demolishers) on each planet, found by a type search every SCAN_TICKS and
+  -- kept by reference in between (a few per surface), each with where it is, how fast it moves, our nearest building
+  -- and character within BIG_RANGE and whether it is closing on them. Big biters and behemoths come as unit groups
+  -- (attack_groups_live). Read-only; the cost is one search per planet every 10 s and two radius searches per unit.
+  local SCAN_TICKS,BIG_RANGE,MAX_BIG=600,500,12
+  local function scan_big(s)
+    local found={}
+    for _,surface in pairs(game.surfaces) do
+      if not surface.platform then
+        local ok,list=pcall(function() return surface.find_entities_filtered{type='segmented-unit',force='enemy'} end)
+        if ok then
+          for _,e in ipairs(list) do
+            if e.valid and #found<MAX_BIG then found[#found+1]={entity=e,id=e.unit_number,name=e.name,surface=surface.name} end
+          end
+        end
+      end
+    end
+    s.big_enemies,s.big_scan=found,game.tick
+  end
+  -- Our nearest building (or character, with type='character') within BIG_RANGE.
+  local function nearest_of(surface,pos,type_name)
+    local list={}
+    for _,force in pairs(game.forces) do
+      if force.name~='enemy' and force.name~='neutral' and #force.players>0 then
+        local f={position=pos,radius=BIG_RANGE,force=force,limit=300,type=type_name}
+        for _,e in pairs(surface.find_entities_filtered(f)) do
+          if e.valid and (type_name or not NOT_BUILDING[e.type]) then list[#list+1]=e end
+        end
+      end
+    end
+    return #list>0 and surface.get_closest(pos,list) or nil
+  end
+  function M.operator.big_enemies_live(a)
+    local s=api.state()
+    if not s.big_enemies or game.tick-(s.big_scan or -SCAN_TICKS)>=SCAN_TICKS then scan_big(s) end
+    s.big_seen=s.big_seen or {}
+    local out,keep,seen={},{},{}
+    for _,r in ipairs(s.big_enemies) do
+      local e=r.entity
+      local ok,valid=pcall(function() return e and e.valid end)
+      if ok and valid then
+        keep[#keep+1]=r
+        local pos,surface=e.position,e.surface
+        local building=nearest_of(surface,pos,nil)
+        local character=nearest_of(surface,pos,'character')
+        local prev=s.big_seen[r.id]
+        local speed,closing
+        local bd=building and api.distance(pos,building.position)
+        if prev and game.tick>prev.tick then
+          speed=api.distance(prev.position,pos)/((game.tick-prev.tick)/60)
+          if bd and prev.building_distance then closing=bd<prev.building_distance-0.5 end
+        end
+        seen[r.id]={position={x=pos.x,y=pos.y},tick=game.tick,building_distance=bd}
+        if building or character then
+          out[#out+1]={id=r.id,name=r.name,surface=r.surface,position={x=round(pos.x),y=round(pos.y)},
+            speed=speed and round(speed,2) or nil,closing=closing,
+            nearest=building and {x=round(building.position.x),y=round(building.position.y),name=building.name} or nil,
+            nearest_distance=bd and round(bd) or nil,
+            eta_s=closing and speed and speed>0.05 and bd and round(bd/speed) or nil,
+            character=character and {x=round(character.position.x),y=round(character.position.y),
+              player=character.player and character.player.name or nil} or nil,
+            character_distance=character and round(api.distance(pos,character.position)) or nil}
+        end
+      end
+    end
+    s.big_enemies,s.big_seen=keep,seen
+    return {ok=true,tick=game.tick,enemies=out}
+  end
   function M.on_group(event)
     local g=event.group
     if not (g and g.valid and g.force.name=='enemy') then return end
     local pos=g.position
-    local visible
-    for _,force in pairs(game.forces) do
-      if force.name~='enemy' and force.name~='neutral' and #force.players>0 and force.is_chunk_visible(g.surface,{x=math.floor(pos.x/32),y=math.floor(pos.y/32)}) then visible=true end
-    end
-    if not visible then return end
-    local command=g.command
-    local target=command and (command.target and command.target.valid and command.target.position or command.destination)
-    local kinds={}
-    for _,u in ipairs(g.members or {}) do
-      local ok,name=pcall(function() return u.name end)
-      if ok and name then kinds[name]=(kinds[name] or 0)+1 end
-    end
+    local target=command_target(g.command)
+    local kinds=member_kinds(g.members)
+    if target then track(g,event.tick,target,kinds) end
+    if not visible_to_players(g.surface,pos) then return end
     local s=api.state(); s.attack_groups=s.attack_groups or {}
     s.alert_seq=(s.alert_seq or 0)+1
     table.insert(s.attack_groups,{seq=s.alert_seq,tick=event.tick,size=#g.members,kinds=next(kinds) and kinds_text(kinds) or nil,position={x=round(pos.x),y=round(pos.y)},
@@ -438,7 +585,8 @@ return function(api)
   end
   -- One line per incident: where, who, from where, what was hit, when.
   -- `again`: the same incident told to the same reader before. `reader`: the
-  -- reader's surface name; an incident elsewhere names its surface.
+  -- reader's surface name; an incident elsewhere names its surface (with no
+  -- reader, an operator read, any surface but nauvis).
   function M.attack_line(v,again,reader)
     local names={}
     for name,count in pairs(v.entities or {}) do names[#names+1]=name..' x'..count end
@@ -455,7 +603,7 @@ return function(api)
     elseif v.source_tried then from=string.format('no charted nest within %d tiles',SOURCE_RANGE) end
     local at=v.at or {x=0,y=0}
     local span=v.first and v.first<v.last and 'first '..ago(game.tick-v.first)..' ago, last '..ago(game.tick-v.last)..' ago' or ago(game.tick-v.last)..' ago'
-    local on=v.surface and reader and v.surface~=reader and ' on '..v.surface or ''
+    local on=v.surface and v.surface~=(reader or 'nauvis') and ' on '..v.surface or ''
     return string.format('attack #%d%s at (%d,%d)%s: %s%s%s hit %d times, %d damage, %s',v.id or 0,on,at.x,at.y,again and ' continues' or '',
       who and who..'; ' or '',from and from..'; ' or '',table.concat(names,', '),v.hits,round(v.damage),span)
   end

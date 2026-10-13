@@ -78,7 +78,10 @@ already targets your character.
   game chat as `server:`. It is not for help with the game. Viewers see it on the ticker.
 - Replies carry a `team:` block when something is new for you: first every message that mentions you (in full), then
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
-  your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character. Each is shown
+  your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
+  game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
+  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials; at most one digest every
+  2.5 minutes, new or worse only; `./fh call game_alerts` lists them all). Each is shown
   once, so a command that sends replies to a file you don't read loses them. A change to your board item, a plan line
   set for you, or a tell also ends your `sleep`.
 - Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished

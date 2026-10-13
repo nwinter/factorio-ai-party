@@ -34,10 +34,14 @@ ACTIONS = {
     "platform_schedule": ("configuring", "scheduling"),
     "transfer": ("moving items", "moving"),
     "collect": ("moving items", "collecting"),
+    "mine": ("moving items", "mining"),
+    "rearm": ("moving items", "rearming"),
+    "refuel": ("moving items", "refuelling"),
+    "shoot": ("fighting", "shooting at"),
     "drop": ("moving items", "dropping cargo"),
     "launch": ("moving items", "launching a rocket"),
 }
-KINDS = ("looking", "building", "configuring", "moving items")
+KINDS = ("looking", "building", "configuring", "moving items", "fighting")
 FAR = 15.0  # tiles: attention this far from the character is "elsewhere" (the measured 10% above)
 
 
@@ -100,14 +104,22 @@ def point(action, args):
         what = human(args.get("item")) or "items"
     elif action == "collect":
         what = human(args.get("item"))
+    elif action in ("rearm", "refuel") and isinstance(args.get("positions"), list) and args["positions"]:
+        n = len(args["positions"])
+        what = f"{n} turret{'s' if n != 1 else ''}" if action == "rearm" else f"{n} machine{'s' if n != 1 else ''}"
     elif action in ("inspect", "configure", "place_ghosts") and isinstance(args.get("name"), str):
         what = human(args["name"])
-    elif action == "place_ghosts" and isinstance(args.get("entities"), list) and args["entities"]:
+    count = None
+    if action == "place_ghosts" and isinstance(args.get("entities"), list) and args["entities"]:
         names = {e.get("name") for e in args["entities"] if isinstance(e, dict) and e.get("name")}
+        count = len(args["entities"])
         if len(names) == 1:
             what = human(names.pop())
-    return {"kind": kind, "action": action, "verb": verb, "what": what, "position": pos, "extent": extent,
-            "platform": plat}
+    out = {"kind": kind, "action": action, "verb": verb, "what": what, "position": pos, "extent": extent,
+           "platform": plat}
+    if count:
+        out["count"] = count  # how many ghosts one place_ghosts lays (the camera label: "placing 12 ghosts")
+    return out
 
 
 COMPASS = ["east", "northeast", "north", "northwest", "west", "southwest", "south", "southeast"]
@@ -139,11 +151,15 @@ def place(att, body, landmarks=()):
     return f"at ({round(p['x'])}, {round(p['y'])})"
 
 
+def head(att):
+    """What the agent does there, without where: "placing gun turret ghosts", "taking iron plate", "inspecting" (the
+    camera highlight's label sits on the spot itself)."""
+    if att.get("action") == "place_ghosts" and att.get("what"):
+        return f"placing {att['what']} ghosts"
+    return f"{att['verb']} {att['what']}".strip() if att.get("what") else att["verb"]
+
+
 def text(att, body=None, landmarks=()):
     """"placing ghosts 40 m north", "taking iron plate at the smelter row", "configuring on Sunward"."""
-    if att.get("action") == "place_ghosts" and att.get("what"):
-        head = f"placing {att['what']} ghosts"
-    else:
-        head = f"{att['verb']} {att['what']}".strip() if att.get("what") else att["verb"]
     where_ = place(att, body, landmarks)
-    return f"{head} {where_}".strip()
+    return f"{head(att)} {where_}".strip()

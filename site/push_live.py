@@ -16,10 +16,12 @@ SITE = Path(__file__).resolve().parent
 sys.path.insert(0, str(SITE))
 sys.dont_write_bytecode = True
 from build import clean, CONFIG  # noqa: E402  (same redaction rules as the static site)
+import terrain  # noqa: E402  (site/terrain.py: the map frames the site publishes under /live/terrain/)
 
 AGENT_KEYS = ("name", "kind", "display_name", "color", "glyph", "motto", "profile_set", "model", "harness", "role",
               "alive", "activity", "action", "active", "position", "location", "last_said", "camera", "avatar",
-              "combat", "died_at", "job", "attention")
+              "combat", "died_at", "job", "attention",
+              "surface", "where", "on_platform", "travel")  # where the body is: the map lists agents off Nauvis at its edge
 TOP_KEYS = ("now", "tick", "paused", "game_time", "title", "subtitle", "research", "production", "science", "alerts",
             "board", "basemap", "shift")
 ATTENTION_KEYS = ("kind", "text", "surface", "platform", "age_s", "dist", "far")
@@ -88,6 +90,31 @@ def public_state(s):
     return scrub(out)
 
 
+TERRAIN_EVERY = 300.0  # seconds between reads of the site's terrain index
+_terrain = {"t": None, "rows": []}
+
+
+def site_terrain(site_url, now=None, opener=urllib.request.urlopen):
+    """basemap.terrain: the map frames the deployed site has (its /live/terrain/index.json, site/terrain.py), read at
+    most every 5 minutes; the last list stays when a read fails (a 404: none published yet)."""
+    now = time.time() if now is None else now
+    if site_url and (_terrain["t"] is None or now - _terrain["t"] >= TERRAIN_EVERY):
+        _terrain["t"] = now
+        try:
+            with opener(site_url.rstrip("/") + terrain.URL + "index.json", timeout=5) as r:
+                _terrain["rows"] = terrain.live(json.load(r))
+        except (urllib.error.URLError, OSError, ValueError):
+            pass
+    return _terrain["rows"]
+
+
+def with_terrain(state, rows):
+    """The state with basemap.terrain (only beside a basemap: the viewer draws frames under the buildings)."""
+    if rows and isinstance(state.get("basemap"), dict):
+        state["basemap"] = dict(state["basemap"], terrain=rows)
+    return state
+
+
 def token():
     t = os.environ.get("POG_LIVE_TOKEN")
     if t:
@@ -120,7 +147,7 @@ def main():
         t0 = time.time()
         try:
             with urllib.request.urlopen(a.source, timeout=5) as r:
-                state = public_state(json.load(r))
+                state = with_terrain(public_state(json.load(r)), site_terrain(CONFIG.get("site_url")))
             body = json.dumps(state, separators=(",", ":")).encode()
             if a.print:
                 print(json.dumps(state, indent=1))

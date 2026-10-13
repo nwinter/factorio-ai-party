@@ -536,6 +536,8 @@ local handlers = {}
 local request_path,navigate,check_args
 function handlers.describe()
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
+    -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
+    operator_reads={'attack_groups_live','big_enemies_live'},
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (inspect: sight only); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
@@ -545,7 +547,7 @@ function handlers.describe()
       describe={}, inventory={returns='the character inventory: inventory (main), guns, ammo, armor, free (slots), crafting (hand queue), warnings (nearly full, hoarding); the same as observe player and status inv'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
-        reports='teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name and incidents per 64-tile area with causes, attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
+        reports='teammates (one line: each other agent\'s planet, platform or cargo pod, grouped; on your surface, distance in tiles and compass direction, nearest first; dead and offline marked, a bot being offline after 15 min with no request or sleep poll); crafting (hand queue: items, seconds left, head entry);spoiling (Space Age: spoilable items carried, "name*count fresh%" stalest first); on_belt (while the character stands on a belt, underground or splitter, which carries it; also on last when an action ends there); evolution (factor, time/pollution/kills parts, delta over >=5 min); pollution (total, per_min emitted/absorbed, top 3 emitters, cloud chunks/extent on the chart and directions where it leaves the chart); enemies (bases known from the chart within 512 tiles, nearest with when it was last seen, how many our cloud reaches and reached_list, each with distance and direction from our nearest building; a base counts as reached while one of its chunks had pollution in the last 15 minutes, as in the defense read; next to be reached); chart (charted/visible chunks, extent, radars); alerts (losses: destroyed counts by name; latest: one line per loss incident (a raid: losses within 32 tiles on one surface) with causes; incidents: the same as rows {id, surface, platform, box {x0,y0,x1,y1}, total, names, by, first_tick, last_tick, line}; attacked areas, attack groups gathering in visible chunks, enemy_news: nest_charted, pollution_reached_nest; ground_items: a cargo landing pad that is full while item stacks lie within 40 tiles of it (position, slots, stacks, items), and piles of 100+ item stacks in a 64-tile cell holding our buildings (box, stacks, items); refreshed every 30 s, new or grown by half also in team.alerts); inv (free slots); factory (science consumed and plates produced per min over 1m|10m, research eta/next, hand share: items fed/collected/crafted by the character vs factory consumption/production over 10m); machines (per name: working count and other statuses); warnings (inventory nearly full, hoarding, no_fuel, low_power, labs missing packs, research idle or ending)'}, stop={}, walk={direction='north|northeast|east|southeast|south|southwest|west|northwest', ticks='1..600'},
       build_path={points='2..64 tile-centred axis-aligned waypoints; at most 512 belt tiles',item='transport-belt by default',ticks='1..36000',start_index='resume at this tile index; default 1',end_direction='optional final belt direction',note='walks to a far start (or resume tile) with the pathfinder, then steers along the line placing belts'},
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
       belt_route={from='{x,y} first belt tile, or an existing belt end to extend; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
@@ -598,7 +600,7 @@ function handlers.describe()
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited'},
       research={technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput measured over the last 5 minutes, waits_for a pack nobody made in 10 minutes; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
       blueprint_import={blueprint='export string',slot='default clipboard'},blueprint_export={slot='default clipboard',layout='true returns normalized relative layout and material costs instead of export string'},blueprint_list={},blueprint_delete={slot='name'},
-      blueprint_capture={area='{left_top:{x,y},right_bottom:{x,y}}',slot='default clipboard',tiles='boolean',station_names='boolean'},copy={area='{left_top:{x,y},right_bottom:{x,y}}'},cut={area='{left_top:{x,y},right_bottom:{x,y}}'},paste={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost'},blueprint_place={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost'},deconstruct={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}} up to 256x256 of charted map',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: mark every item stack on the ground in the area, as a planner over items on the ground (construction robots carry them to storage chests); other entities then only with entity_names/entity_types. Returns item_stacks (marked), item_stacks_already, items [{name,count,stacks}], robot_networks and storage_chests (logistic networks whose construction area covers marked stacks), outside_construction_area (stacks no roboport covers)',
+      blueprint_capture={area='{left_top:{x,y},right_bottom:{x,y}}',slot='default clipboard',tiles='boolean',station_names='boolean'},copy={area='{left_top:{x,y},right_bottom:{x,y}}'},cut={area='{left_top:{x,y},right_bottom:{x,y}}'},paste={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',returns='count, by_name, bounds; fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason'},blueprint_place={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',returns='count, by_name, bounds; fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason'},deconstruct={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}} up to 256x256 of charted map',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: mark every item stack on the ground in the area, as a planner over items on the ground (construction robots carry them to storage chests); other entities then only with entity_names/entity_types. Returns item_stacks (marked), item_stacks_already, items [{name,count,stacks}], robot_networks and storage_chests (logistic networks whose construction area covers marked stacks), outside_construction_area (stacks no roboport covers)',
         tiles='optional: true (every minable tile in the area) or 1..32 tile names, e.g. ["space-platform-foundation"]: marks tiles as a planner in tile mode does (robots take them back to the hub or a roboport); entities then only with entity_names/entity_types. Returns tiles_marked, tiles_already, tiles_refused with refused {under_entity, engine, not_minable, error}, tiles_blocked (marked tiles under entities not marked; a note names them)'},cancel_deconstruction={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}}',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: unmark the item stacks on the ground in the area (item_stacks)',
         tiles='optional: true or 1..32 tile names: clears tile marks (tiles_cancelled); entities then only with entity_names/entity_types'},
       screenshot={path='relative .png path under script-output',width='320..1920',height='240..1080'}},
@@ -629,6 +631,8 @@ function handlers.describe()
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.research and M.research.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.stores and M.stores.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.drops and M.drops.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.pushalerts and M.pushalerts.schema or {}) do description.actions[name]=schema end
   description.actions.status.brief='boolean: only active, last, combat, last_combat, alive, connected, surface, platform, position and tick (what fh --wait polls); without it, factory, machines, fuel/power/ammo/lab warnings, pollution and chart are shared by every agent on the same surface and refreshed every 10 s (factory_as_of, threats_as_of give the tick when older)'
   description.actions.status.alerts='boolean, with brief: add the alerts block (losses, attacked areas, groups, enemy news; read from what the game reported, no scan)'
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
@@ -728,14 +732,13 @@ function LOSS.id(i)
   if not i.id then local s=state(); s.loss_ids=(s.loss_ids or 0)+1; i.id=s.loss_ids end
   return i.id
 end
--- "#7 in (x,y)-(x,y) 40 destroyed: ..."; `reader` (a surface name) names an incident on another surface, `before`
--- (the total the reader was told) marks a running total.
-local function describe_incident(i,reader,before)
+-- What an incident lost and what destroyed it, as text: names ("4 stone-wall, 3 gun-turret"), causes ("5 small-biter,
+-- friendly fire: 2 flamethrower-turret at (80,90)": our own entities after the enemy ones), or nil.
+function LOSS.parts(i)
   local names=counted(i.names)
   while #names>6 do table.remove(names) end
   local causes=counted(i.causes)
   while #causes>2 do table.remove(causes) end
-  -- Our own entities among the causes: "friendly fire: 2 flamethrower-turret at (80,90)", after the enemy ones.
   local friendly={}
   for _,v in ipairs(counted(i.friendly or {})) do
     local name=v:match('^%d+ (.+)$')
@@ -744,16 +747,31 @@ local function describe_incident(i,reader,before)
   end
   while #friendly>2 do table.remove(friendly) end
   if #friendly>0 then causes[#causes+1]='friendly fire: '..table.concat(friendly,', ') end
+  return table.concat(names,', '),#causes>0 and table.concat(causes,', ') or nil
+end
+-- "#7 in (x,y)-(x,y) 40 destroyed: ..."; `reader` (a surface name) names an incident on another surface; without a
+-- reader (an operator read) any surface but nauvis is named. `before` (the total the reader was told) marks a running total.
+local function describe_incident(i,reader,before)
+  local names,causes=LOSS.parts(i)
   local last=(i.last or i.first or 0)
   local span=i.first==last and ago(game.tick-last)..' ago' or ago(game.tick-i.first)..'-'..ago(game.tick-last)..' ago'
   local b=i.box
   local where=string.format('(%d,%d)',math.floor(b[1]),math.floor(b[2]))
   if b[3]-b[1]>=1 or b[4]-b[2]>=1 then where=where..'-'..string.format('(%d,%d)',math.floor(b[3]),math.floor(b[4])) end
   local on=''
-  if i.platform then on=' on platform '..i.platform elseif i.surface and reader and i.surface~=reader then on=' on '..i.surface end
+  if i.platform then on=' on platform '..i.platform
+  elseif i.surface and i.surface~=(reader or 'nauvis') then on=' on '..i.surface end
   return string.format('#%d%s in %s%s %d destroyed%s: %s%s, %s',LOSS.id(i),on,where,before and ' continue:' or '',i.total,
-    before and string.format(' (+%d since you were told)',i.total-before) or '',table.concat(names,', '),
-    #causes>0 and ' by '..table.concat(causes,', ') or '',span)
+    before and string.format(' (+%d since you were told)',i.total-before) or '',names,
+    causes and ' by '..causes or '',span)
+end
+-- status alerts.incidents: one row per loss incident for programs (the stream's loss banners and cuts): where (surface,
+-- platform, box), how many, what, by what, when; the text line beside it.
+function LOSS.row(i,reader)
+  local names,causes=LOSS.parts(i)
+  local b=i.box
+  return {id=LOSS.id(i),surface=i.surface,platform=i.platform,box={x0=math.floor(b[1]),y0=math.floor(b[2]),x1=math.ceil(b[3]),y1=math.ceil(b[4])},
+    total=i.total,names=names,by=causes,first_tick=i.first,last_tick=i.last or i.first,line=describe_incident(i,reader)}
 end
 -- Losses in the reply's team alerts: each incident once, then its running total at most once a game minute while it
 -- grows. A reader never told anything starts with the incidents of the last 5 minutes. s.losses_told[index] holds
@@ -793,10 +811,10 @@ end
 local function recent_alerts(a,p)
   local since=a.since or game.tick-18000
   local reader=p and p.surface and p.surface.name
-  local counts,latest={},{}
+  local counts,latest,rows={},{},{}
   for _,i in ipairs(losses_since(since)) do
     for name,n in pairs(i.names) do counts[name]=(counts[name] or 0)+n end
-    if #latest<8 then latest[#latest+1]=describe_incident(i,reader) end
+    if #latest<8 then local row=LOSS.row(i,reader); latest[#latest+1]=row.line; rows[#rows+1]=row end
   end
   local attacks=threat.alerts(since,reader)
   local kills={}
@@ -805,7 +823,7 @@ local function recent_alerts(a,p)
   platform_hits=okp and platform_hits or nil
   if #latest==0 and not attacks and not next(kills) and not platform_hits then return nil end
   local result=attacks or {}
-  if #latest>0 then result.losses=counts; result.latest=latest end
+  if #latest>0 then result.losses=counts; result.latest=latest; result.incidents=rows end
   result.kills=next(kills) and kills or nil
   result.platform_hits=platform_hits
   return result
@@ -1628,7 +1646,7 @@ function handlers.mine(p,a)
   assert(not category or hand[category],e.name..' is '..tostring(category)..': a character cannot mine it by hand (a drill that mines '..tostring(category)..' can)')
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
-  local action={kind='mine',entity=e,until_tick=game.tick+ticks,products={}}
+  local action={kind='mine',entity=e,until_tick=game.tick+ticks,products={},started=game.tick}
   for _,product in ipairs(e.prototype.mineable_properties.products or {}) do
     if product.type=='item' then action.products[#action.products+1]=product.name end
   end
@@ -1983,8 +2001,12 @@ local function placement_error(p,proto,pos,direction,near)
     return ' by '..table.concat(found,', ')..(clearable and '; mine it, or place_ghosts (marks it) + construct (clears it)' or '')
       ..(items and '; a build takes items on the ground into your inventory, and this one did not fit: free a slot (or stand next to it and fh call pickup)' or '')
   end
+  -- Tile buildability rules (asteroid collectors: rear rows on foundation, the
+  -- front in empty space): the broken one; with rules, they judge the tiles.
+  local rule,ruled=M.placewhy.tile_rules(p.surface,proto,pos,direction)
+  if rule then return ': '..rule end
   local tiles={}
-  for _,tile in pairs(p.surface.find_tiles_filtered{area=area,limit=16}) do
+  for _,tile in pairs(ruled and {} or p.surface.find_tiles_filtered{area=area,limit=16}) do
     local mask=tile.prototype.collision_mask
     local layers=mask and mask.layers or {}
     if (layers.water_tile or layers.empty_space or layers.lava_tile) and not tiles[tile.name] then tiles[tile.name]=true; tiles[#tiles+1]=tile.name end
@@ -2686,6 +2708,8 @@ local function transfer_one(p,a,pos,e)
     local sign,parts=a.direction=='to_player' and '+' or '-',{}
     for _,s in ipairs(stacks) do parts[#parts+1]=sign..s.count..' [item='..s.name..']' end
     p.create_local_flying_text{text=table.concat(parts,' '),position=e.position}
+    -- The same for the camera clients, in the agent's colour (visuals.lua).
+    pcall(M.visuals.moved,p,e.position,e.surface,table.concat(parts,' '))
   end
   local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred,none_held=short and a.item or nil,target_has=short and count(target) or nil,
     at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
@@ -3433,8 +3457,11 @@ function handlers.equip(p,a)
   assert(inv[index].swap_stack(source),'item incompatible with slot or displaced item cannot fit')
   return {equipped=a.item,slot=a.slot,index=index}
 end
+-- Why a ghost was not placed, and settings a pasted-over entity lacks (placewhy.lua).
+M.placewhy=require('placewhy'){filters=function(e) return M.details.filters(e) end}
 local blueprint_handlers=blueprint_module{position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,
-  ground_mark=function(p,box,cancel,out) return M.ground.mark(p,box,cancel,out) end}
+  ground_mark=function(p,box,cancel,out) return M.ground.mark(p,box,cancel,out) end,
+  placewhy=M.placewhy,blocked=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end}
 for name,handler in pairs(blueprint_handlers) do handlers[name]=handler end
 -- Grenades and other capsules (capsules.lua, request #89).
 M.capsules=require('capsules'){state=state,position=position,assert_visible=assert_visible,held=held}
@@ -3529,7 +3556,7 @@ local function place_ghost_list(p,list)
       bounds.left=math.min(bounds.left,g.x); bounds.top=math.min(bounds.top,g.y)
       bounds.right=math.max(bounds.right,g.x); bounds.bottom=math.max(bounds.bottom,g.y)
     end)
-    if ok then placed=placed+1 else failed[#failed+1]={index=i,error=reason(err)} end
+    if ok then placed=placed+1 else failed[#failed+1]={index=i,name=type(spec)=='table' and spec.name or nil,position=type(spec)=='table' and spec.position or nil,error=reason(err)} end
   end
   return {placed=placed,failed=#failed>0 and failed or nil,bounds=bounds,obstacles_marked=marked>0 and marked or nil}
 end
@@ -3946,6 +3973,8 @@ for name,handler in pairs(M.waits.handlers) do handlers[name]=handler end
 M.chat=M.chat_module{state=state,on_say=function(p,text) M.profiles.say(p,text) end,audience=function() return M.cameras.audience() end,
   on_message=function(m) M.board.on_message(m) end,on_read=function(index,messages) M.board.on_read(index,messages) end,
   on_viewer=function(m) M.board.on_viewer(m) end,
+  -- say look= checks (chat.lua): a platform by name, a teammate by name
+  platform=function(p,name) return space.platform(p,name) end,agents=function() return M.board.agents() end,
   mention_of=function(index,m) return M.board.mention_of(index,m) end,
   where_from=function(index) local p=M.lookup(index); return p and p.valid and M.where.from(M.board.who(p)) or nil end}
 for name,handler in pairs(M.chat.handlers) do handlers[name]=handler end
@@ -3964,7 +3993,7 @@ M.board=require('board'){state=state,director=function(index) return M.is_direct
   research_lines=function(p,h) return M.research.lines(p,h) end,
   attack_line=function(v,again,reader) return threat.attack_line(v,again,reader) end,news_lines=function(from,since,reader) return threat.news_lines(from,since,reader) end,
   watch=function(p) return threat.watch(p) end,where_from=function(me) return M.where.from(me) end,
-  platform_lines=function(p,h) return M.platalerts.lines(p,h) end}
+  platform_lines=function(p,h) return M.platalerts.lines(p,h) end,drop_lines=function(p,h) return M.drops.lines(p,h) end,push_lines=function(p,h) return M.pushalerts.lines(p,h) end}
 for name,handler in pairs(M.board.handlers) do handlers[name]=handler end
 -- Research news, who queued what, and the queue's times (research.lua).
 M.research=require('research'){state=state,board_event=function(by,item,change,text) return M.board.system_event(by,item,change,text) end}
@@ -3993,6 +4022,38 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
   agents=function() return M.board.agents() end,
   human=function(index) return not M.bots.is_index(index) and not (state().controlled and state().controlled[index]) end}
+-- Camera highlights (highlights.lua): drawn for the director camera clients
+-- only, by the stream service as the operator; no agent action reaches them.
+M.highlights=require('highlights'){state=state,director=function(index) return M.is_director(index) end,
+  agent=function(name)
+    local b=M.bots.named(name)
+    local index=b and b.index
+    local c=b and b.character
+    if not b then
+      local p=game.get_player(name)
+      if not (p and p.valid) or M.is_director(p.index) then return nil end
+      index,c=p.index,p.character
+    end
+    local pr=M.profiles.get(index)
+    return {character=c,color=pr and pr.rgb or nil}
+  end}
+-- What agents are doing, drawn for the camera clients only (visuals.lua):
+-- mining progress and particles, crafting queues, routes, item moves, work rings.
+M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(index) end,
+  active=function(index) return state().active[index] end,
+  color=function(index) local pr=M.profiles.get(index); return pr and pr.rgb or nil end,
+  cameras=function()
+    local out={}
+    for _,p in pairs(game.connected_players) do if M.is_director(p.index) then out[#out+1]=p.index end end
+    table.sort(out)
+    return out
+  end,
+  agents=function()
+    local out={}
+    for _,b in ipairs(M.bots.list()) do out[#out+1]=b.index end
+    for index in pairs(state().controlled or {}) do out[#out+1]=index end
+    return out
+  end}
 -- Platform health alerts in team.alerts (platalerts.lua): hits, turret ammo,
 -- repair packs, hub health, to the platform's creator, workers and riders.
 M.platalerts=require('platalerts'){state=state,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
@@ -4044,7 +4105,7 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
-local reads={placements=true,defense=true,flamers=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true}
+local reads={placements=true,defense=true,flamers=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -4137,6 +4198,7 @@ function M.dispatch(request)
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
       local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action]
+        or M.highlights.operator[request.action] or threat.operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
       return M.board.operator(request.action,request.args)
@@ -4174,7 +4236,11 @@ function M.dispatch(request)
     -- Standing orders: which runs and why, or what they wait for (orders.lua).
     if p and p.valid and result.orders==nil then result.orders=M.orders.line(p.index) end
     -- Who works on which platform, for its alerts (platalerts.lua).
-    if p and p.valid and not peek and type(request.args)=='table' then pcall(M.platalerts.note,p,request.action,request.args,result) end
+    if p and p.valid and not peek and type(request.args)=='table' then
+      pcall(M.platalerts.note,p,request.action,request.args,result)
+      -- A brief ring on what a building, removing or configuring request acted on (visuals.lua).
+      pcall(M.visuals.worked,p,request.action,request.args)
+    end
     -- An fh sleep poll keeps a sleeping agent active for votes (votes.lua).
     if p and p.valid and peek and (request.action=='sleep_check' or (request.action=='observe' and request.args.scope=='sleep_check')) then
       local c=(state().clocks or {})[p.index]; if c then c.wait_tick=game.tick end
@@ -4317,7 +4383,18 @@ survey=survey_module{state=state,status_name=function(e) return entity_status_na
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end}
 function handlers.labs(p,a) return M.labs.view(p,a) end
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
-space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,
+-- The game's alerts and key warnings, pushed to the agents they concern (pushalerts.lua).
+M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
+  place=function(index) return M.where.place(index) end,
+  -- an agent player's alert panel (camera players have theirs switched off: cameras.lua)
+  alert_reader=function(force)
+    for _,pl in pairs(force.players) do if pl.valid and pl.connected and not M.is_director(pl.index) then return pl end end
+  end}
+function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
+-- Where drops landed (drops.lua): their pods followed down, told in the team block, the drops read.
+M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve}
+function handlers.drops(p,a) return M.drops.read(p,a) end
+space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,
   bot=function(p) return M.bots.is(p) and M.bots.named(rawget(p,'__bot')) or nil end,
   -- Riding or landing takes the character away: controls stop and a plan pauses.
   stop=function(p) M.stop_player(p.index) end,
@@ -4436,6 +4513,7 @@ function M.tick_body(event)
   idle_tick()
   M.research.tick(event.tick)
   M.bots.tick(event.tick)
+  M.drops.tick(event.tick)
   M.nametags.tick(event.tick)
   M.seated_ok=nil
   for index,action in pairs(state().active) do
@@ -4602,6 +4680,9 @@ function M.tick_body(event)
   M.orders.tick()
   clock.tick()
   M.cameras.tick()
+  -- Camera-only drawing must never quarantine the runtime: its faults are counted.
+  local okv,errv=pcall(M.visuals.tick,event.tick)
+  if not okv then local s=state(); s.visual_errors={count=((s.visual_errors or {}).count or 0)+1,last=tostring(errv),tick=game.tick} end
 end
 -- Operator-only remote functions (control.lua): never reachable through
 -- dispatch, so agents cannot spawn bots or move cameras.

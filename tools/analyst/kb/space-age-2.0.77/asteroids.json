@@ -1,0 +1,3070 @@
+[
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 5e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.0001875,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.00043750000000000006,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0008125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.00075,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.0006875,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.0006250000000000001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.0003375,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0002999999999999999,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.00028125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.00021875000000000003,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0001354166666666667,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0003333333333333333,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.00038194444444444446,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.00013888888888888892,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.0005625000000000001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0005,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.0009375,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.0008750000000000001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0005416666666666668,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.00025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.00015277777777777772,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.00048611111111111115,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.00011250000000000002,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0002,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "big-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.000125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.00043750000000000006,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.0009375000000000002,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0015624999999999999,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.00125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.0009375,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.0006250000000000004,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.0001874999999999999,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "big-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.00025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.00065625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.0004687500000000001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0002604166666666666,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0005555555555555556,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.0005208333333333332,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.00013888888888888892,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.0003124999999999999,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "big-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.0021875000000000006,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.0018750000000000001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0010416666666666664,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0004166666666666666,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.0002083333333333333,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.0004861111111111114,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 6.249999999999997e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "huge-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 3.125e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.00015624999999999998,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0004687500000000001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.000625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.00078125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.0009374999999999999,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.00065625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.00075,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "huge-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 4.6875e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 7.812499999999999e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 7.812500000000002e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0002777777777777778,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.00043402777777777775,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.0002083333333333333,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.0010937500000000003,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.00125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "huge-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.00015625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.00031249999999999995,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.00031250000000000006,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0002083333333333333,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.00017361111111111112,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.0007291666666666665,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.00021875000000000003,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0005,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+}
+],
+"from": "aquilo",
+"kind": "route",
+"length": 100000,
+"name": "aquilo-solar-system-edge",
+"to": "solar-system-edge"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 9.687500000000002e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 5e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.001875,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.00019375000000000005,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.000625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0019375,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "medium-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 7.8125e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.001875,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.00015625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.000625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0015624999999999999,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "big-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 4.6875000000000015e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.000125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "big-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 9.375000000000003e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.00025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "big-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0009375000000000002,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+}
+],
+"from": "fulgora",
+"kind": "route",
+"length": 30000,
+"name": "fulgora-aquilo",
+"to": "aquilo"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0012,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0001125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 5e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.003,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.000225,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0006,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.00225,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "medium-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 7.8125e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.00015625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0005,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0015624999999999999,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "big-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 4.6875000000000015e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.000125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "big-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 9.375000000000003e-05,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.00025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "big-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.0009375000000000002,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+}
+],
+"from": "gleba",
+"kind": "route",
+"length": 30000,
+"name": "gleba-aquilo",
+"to": "aquilo"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0012,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.003,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.001875,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0006,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.000625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "medium-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0052499999999999995,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0065625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.001875,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0005,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0016875,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.000625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+}
+],
+"from": "gleba",
+"kind": "route",
+"length": 15000,
+"name": "gleba-fulgora",
+"to": "fulgora"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.008333333333333331,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.001875,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.004166666666666666,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.000625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "medium-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0075,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0053124999999999995,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.001875,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0021875,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.000625,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+}
+],
+"from": "nauvis",
+"kind": "route",
+"length": 15000,
+"name": "nauvis-fulgora",
+"to": "fulgora"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0012,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.008333333333333331,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.003,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.004166666666666666,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0006,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "medium-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0052499999999999995,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0062499999999999995,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.002,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0005,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+}
+],
+"from": "nauvis",
+"kind": "route",
+"length": 15000,
+"name": "nauvis-gleba",
+"to": "gleba"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.002,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.008333333333333331,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0008,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.004166666666666666,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0004,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "medium-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0075,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.004,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.002,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0005,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+}
+],
+"from": "nauvis",
+"kind": "route",
+"length": 15000,
+"name": "nauvis-vulcanus",
+"to": "vulcanus"
+},
+{
+"asteroids": [
+{
+"asteroid": "huge-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.001,
+"probability": 0.00075,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.002,
+"probability": 0.0008159819639278556,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.01445876127254509,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.01137700400801603,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.045128006012024054,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.03231765834932822,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.004143332962220738,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.010410659733593454,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.0026108197840994493,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.999,
+"probability": 0.006767054807047491,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "huge-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.001,
+"probability": 0.00125,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.002,
+"probability": 0.0013599699398797595,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.008675256763527052,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.03413101202404809,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.03868114801030633,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0071817018554062705,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.012429998886662215,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.002602664933398364,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.007832459352298347,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.999,
+"probability": 0.0013534109614094982,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "huge-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.001,
+"probability": 0.0005,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.002,
+"probability": 0.0005439879759519038,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.023134018036072145,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.015169338677354708,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.019340574005153165,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.017954254638515674,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.016573331848882954,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.0065066623334959104,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.003481093045465933,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.999,
+"probability": 0.0027068219228189964,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "huge-promethium-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.001,
+"probability": 0,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.002,
+"probability": 6.799849699398797e-06,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.2,
+"probability": 0.0011567009018036074,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.3,
+"probability": 0.0076984393787575146,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.4,
+"probability": 0.041259891210993424,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.05612500000000001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.6,
+"probability": 0.06712199398797596,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.7,
+"probability": 0.0781189879759519,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.8,
+"probability": 0.08911598196392788,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.999,
+"probability": 0.11100000000000002,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+}
+],
+"from": "solar-system-edge",
+"kind": "route",
+"length": 4000000,
+"name": "solar-system-edge-shattered-planet",
+"to": "shattered-planet"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.002,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0012,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0008,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.003,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0004,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0006,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "medium-metallic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0052499999999999995,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-carbonic-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.001,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0052499999999999995,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0025,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+},
+{
+"asteroid": "medium-oxide-asteroid",
+"spawn_points": [
+{
+"distance": 0,
+"probability": 0,
+"speed": 0
+},
+{
+"distance": 0.1,
+"probability": 0.0005,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.5,
+"probability": 0.0015,
+"speed": 0.016666666666666666
+},
+{
+"distance": 0.9,
+"probability": 0.0005,
+"speed": 0.016666666666666666
+},
+{
+"distance": 1,
+"probability": 0,
+"speed": 0
+}
+],
+"type": "entity"
+}
+],
+"from": "vulcanus",
+"kind": "route",
+"length": 15000,
+"name": "vulcanus-gleba",
+"to": "gleba"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"probability": 5e-05,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"probability": 0.0001,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"probability": 0.001,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "big-metallic-asteroid",
+"probability": 0.000125,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "big-carbonic-asteroid",
+"probability": 0.00025,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "big-oxide-asteroid",
+"probability": 0.0025,
+"speed": 0.016666666666666666,
+"type": "entity"
+}
+],
+"kind": "orbit",
+"name": "aquilo"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"probability": 0.0025,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"probability": 0.001875,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"probability": 0.000625,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "medium-metallic-asteroid",
+"probability": 0.0025,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "medium-carbonic-asteroid",
+"probability": 0.001875,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "medium-oxide-asteroid",
+"probability": 0.000625,
+"speed": 0.016666666666666666,
+"type": "entity"
+}
+],
+"kind": "orbit",
+"name": "fulgora"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"probability": 0.0012,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"probability": 0.003,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"probability": 0.0006,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "medium-metallic-asteroid",
+"probability": 0.001,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "medium-carbonic-asteroid",
+"probability": 0.0025,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "medium-oxide-asteroid",
+"probability": 0.0005,
+"speed": 0.016666666666666666,
+"type": "entity"
+}
+],
+"kind": "orbit",
+"name": "gleba"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"probability": 0.0125,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"probability": 0.008333333333333331,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"probability": 0.004166666666666666,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+}
+],
+"kind": "orbit",
+"name": "nauvis"
+},
+{
+"asteroids": [
+{
+"asteroid": "huge-metallic-asteroid",
+"probability": 0.0026108197840994493,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "huge-carbonic-asteroid",
+"probability": 0.007832459352298347,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "huge-oxide-asteroid",
+"probability": 0.003481093045465933,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "huge-promethium-asteroid",
+"probability": 0.08911598196392788,
+"speed": 0.016666666666666666,
+"type": "entity"
+}
+],
+"kind": "orbit",
+"name": "shattered-planet"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"probability": 0.0002999999999999999,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"probability": 0.0005,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"probability": 0.0002,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "huge-metallic-asteroid",
+"probability": 0.00075,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "huge-carbonic-asteroid",
+"probability": 0.00125,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "huge-oxide-asteroid",
+"probability": 0.0005,
+"speed": 0.016666666666666666,
+"type": "entity"
+}
+],
+"kind": "orbit",
+"name": "solar-system-edge"
+},
+{
+"asteroids": {},
+"kind": "orbit",
+"name": "space-location-unknown"
+},
+{
+"asteroids": [
+{
+"asteroid": "metallic-asteroid-chunk",
+"probability": 0.002,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "carbonic-asteroid-chunk",
+"probability": 0.0008,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "oxide-asteroid-chunk",
+"probability": 0.0004,
+"speed": 0.016666666666666666,
+"type": "asteroid-chunk"
+},
+{
+"asteroid": "medium-metallic-asteroid",
+"probability": 0.0025,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "medium-carbonic-asteroid",
+"probability": 0.001,
+"speed": 0.016666666666666666,
+"type": "entity"
+},
+{
+"asteroid": "medium-oxide-asteroid",
+"probability": 0.0005,
+"speed": 0.016666666666666666,
+"type": "entity"
+}
+],
+"kind": "orbit",
+"name": "vulcanus"
+},
+{
+"kind": "asteroid",
+"max_health": 2000,
+"name": "big-carbonic-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.10000000149011612,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.949999988079071,
+"type": "laser"
+},
+{
+"decrease": 2000,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 2000,
+"name": "big-metallic-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.10000000149011612,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.949999988079071,
+"type": "laser"
+},
+{
+"decrease": 2000,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 2000,
+"name": "big-oxide-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.10000000149011612,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.949999988079071,
+"type": "laser"
+},
+{
+"decrease": 2000,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 4000,
+"name": "big-promethium-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.10000000149011612,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.949999988079071,
+"type": "laser"
+},
+{
+"decrease": 2000,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 5000,
+"name": "huge-carbonic-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.9900000095367432,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.9900000095367432,
+"type": "laser"
+},
+{
+"decrease": 3000,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 5000,
+"name": "huge-metallic-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.9900000095367432,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.9900000095367432,
+"type": "laser"
+},
+{
+"decrease": 3000,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 5000,
+"name": "huge-oxide-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.9900000095367432,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.9900000095367432,
+"type": "laser"
+},
+{
+"decrease": 3000,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 10000,
+"name": "huge-promethium-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.9900000095367432,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.9900000095367432,
+"type": "laser"
+},
+{
+"decrease": 3000,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 400,
+"name": "medium-carbonic-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.30000001192092896,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.8999999761581421,
+"type": "laser"
+},
+{
+"decrease": 0,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 400,
+"name": "medium-metallic-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.30000001192092896,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.8999999761581421,
+"type": "laser"
+},
+{
+"decrease": 0,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 400,
+"name": "medium-oxide-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.30000001192092896,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.8999999761581421,
+"type": "laser"
+},
+{
+"decrease": 0,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 800,
+"name": "medium-promethium-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.30000001192092896,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.8999999761581421,
+"type": "laser"
+},
+{
+"decrease": 0,
+"percent": 0.10000000149011612,
+"type": "physical"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 100,
+"name": "small-carbonic-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.5,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.20000000298023224,
+"type": "laser"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 100,
+"name": "small-metallic-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.5,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.20000000298023224,
+"type": "laser"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 100,
+"name": "small-oxide-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.5,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.20000000298023224,
+"type": "laser"
+}
+]
+},
+{
+"kind": "asteroid",
+"max_health": 200,
+"name": "small-promethium-asteroid",
+"resistances": [
+{
+"decrease": 0,
+"percent": 1,
+"type": "electric"
+},
+{
+"decrease": 0,
+"percent": 0.5,
+"type": "explosion"
+},
+{
+"decrease": 0,
+"percent": 1,
+"type": "fire"
+},
+{
+"decrease": 0,
+"percent": 0.20000000298023224,
+"type": "laser"
+}
+]
+}
+]

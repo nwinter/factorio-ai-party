@@ -9,6 +9,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { RconClient, RconOutcomeUnknown } from './rcon.js';
 import { Harness, type Reply } from './harness.js';
 import { renderMap } from './view.js';
+import { parseLook } from './look.js';
 import { formatCompact, finalLine } from './format.js';
 import { parseDeadline, deadlineText } from './deadline.js';
 import { bundleRuntime } from './bundle.js';
@@ -53,6 +54,7 @@ const help = `fh — Factorio agent CLI
   fh plan save NAME --file plan.json         Save a queue plan by name (yours, up to 50); plan run NAME submits it
   fh plan run|show|delete NAME, fh plan list Run (--args '{"mode":"replace"}'), inspect or delete saved plans
   fh say "text" [--aloud]                   Post in chat; or --text-file F, or stdin (fh say - <<'EOF' ... EOF)
+       [--look platform:NAME|agent:NAME|X,Y[@SURFACE]|X1,Y1,X2,Y2[@SURFACE]]  what the stream camera might show
   fh chat [--since SEQ] [--limit N] [--peek] Your unread messages (newest N; remaining=K are still unread), or all after SEQ
   fh confess "text"                         A line for the stream audience only (teammates never see it); input as for say
   fh operator "text"                        A request to the operator (harness bugs, tools, viewer asks); input as for say
@@ -190,7 +192,7 @@ async function main() {
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
-    full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'},
+    full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'},
     'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'},
   }});
   let command = positionals[0];
@@ -336,6 +338,10 @@ async function main() {
     if (values.aloud) {
       if (command !== 'say') throw new Error(`--aloud applies to say; ${command === 'tell' ? 'a tell stays off the chat and the voice' : command === 'operator' ? 'an operator request goes to the operator, not the voice' : 'a confession always goes to the stream'}`);
       args.aloud = true;
+    }
+    if (values.look !== undefined) {
+      if (command !== 'say') throw new Error('--look applies to say');
+      args.look = parseLook(values.look);
     }
     values.args = JSON.stringify(args);
     positionals.splice(1, positionals.length - 1, command);

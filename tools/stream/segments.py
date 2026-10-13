@@ -41,7 +41,8 @@ MOMENT_FRESH_S = 150.0
 # A loss clip of one of these, alone, is routine: shake12 aired three replays in 41 s at 04:04, often one pipe or one
 # belt. It airs only when nothing else has for a while (Segments.replay_gate).
 CHEAP = ("pipe", "pipe to ground", "transport belt", "underground belt", "electric pole", "inserter")
-LOSS_RE = re.compile(r"^(\d+) lost near \([^)]*\): (.*?)(?: \(by .*\))?$")  # live.py loss_events
+# live.py loss_events: "9 lost near (24, -89): ..." or, off Nauvis, "59 lost on Vulcanus near (-223, 74): ..."
+LOSS_RE = re.compile(r"^(\d+) lost (?:on [A-Z][\w -]* )?near \([^)]*\): (.*?)(?: \(by .*\))?$")
 
 
 def cheap_loss(label):

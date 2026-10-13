@@ -134,13 +134,17 @@ return function(api)
     local defs=boxes(proto)
     local parts={}
     for i=1,count do
-      local fluid,amount,capacity,filter
+      local fluid,amount,capacity,filter,segment
       if not fb then
         fluid,amount,capacity=defs[i] and defs[i].filter and defs[i].filter.name,0,defs[i] and volume(defs[i]) or 0
       else
         local f=fb[i]
+        -- The box's own volume: get_capacity is the whole connected segment's in 2.0 (a flamer on a long line read
+        -- "fluid 19.9/21100", and 99.4/66700 for a full one); the segment's, when larger, comes apart.
         local okc,cap=pcall(fb.get_capacity,i)
-        fluid,amount,capacity=f and f.name,f and f.amount or 0,okc and cap or 0
+        local own=defs[i] and volume(defs[i])
+        fluid,amount,capacity=f and f.name,f and f.amount or 0,own or (okc and cap) or 0
+        if own and okc and type(cap)=='number' and cap>own+0.5 then segment=cap end
         -- An empty box a recipe has fixed to one fluid says which.
         if not f then
           local okf,flt=pcall(fb.get_filter,i)
@@ -162,6 +166,7 @@ return function(api)
         end
       end
       local head=fluid and fluid..' '..round(amount)..'/'..round(capacity) or 'empty'..(filter and ' ('..filter..' only)' or '')..'/'..round(capacity)
+      if segment then head=head..' (segment holds up to '..round(segment)..')' end
       -- Pipes and tanks share a segment: its extent, flagged past the limit.
       local sb=fb and M.segment_box(e,i)
       if sb then

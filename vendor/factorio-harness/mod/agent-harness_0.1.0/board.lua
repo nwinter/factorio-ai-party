@@ -827,6 +827,16 @@ return function(api)
       local ok, list = pcall(api.platform_lines, p, h)
       for i, line in ipairs(ok and list or {}) do if i <= 6 then lines[#lines+1] = line end end
     end
+    -- Drops this agent sent or was named in: still descending, or where they landed (drops.lua).
+    if api.drop_lines then
+      local ok, list = pcall(api.drop_lines, p, h)
+      for i, line in ipairs(ok and list or {}) do if i <= 4 then lines[#lines+1] = line end end
+    end
+    -- The game's alerts and warnings for areas this agent claimed, built or is nearest (pushalerts.lua).
+    if api.push_lines then
+      local ok, list = pcall(api.push_lines, p, h)
+      for _, line in ipairs(ok and list or {}) do lines[#lines+1] = line end
+    end
     return #lines > 0 and lines or nil
   end
   -- Who hears what on the stream: once per agent (h.stream_note holds the

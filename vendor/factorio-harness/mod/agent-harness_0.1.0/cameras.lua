@@ -87,6 +87,48 @@ return function(api)
       return p.position, p.surface
     end
   end
+  -- A map camera's view on its spot. Every "Base map" shot (14:24) showed the
+  -- camera's last subject: the remote view opens where the spectator stands
+  -- (teleported onto that subject) and may stay centred on an entity. So the
+  -- spectator goes to the spot first, the view is opened there, anything it
+  -- centres on is dropped, a view still elsewhere is moved, and the zoom comes
+  -- last (the tick re-centres one that drifts off the spot).
+  local function on_spot(p, cam, surface)
+    local here = p.position
+    return p.surface and surface and p.surface.name == surface.name and here and distance(here, cam.position) <= 1
+  end
+  local function open_map(p, cam, surface)
+    if p.controller_type ~= defines.controllers.remote then
+      pcall(function() p.teleport({x=cam.position.x, y=cam.position.y}, surface) end)
+      p.set_controller{type=defines.controllers.remote, position={x=cam.position.x, y=cam.position.y}, surface=surface, chart_mode_cutoff=CHART_CUTOFF}
+    end
+    pcall(function() if p.centered_on then p.centered_on = nil end end)
+    if not on_spot(p, cam, surface) then pcall(function() p.teleport({x=cam.position.x, y=cam.position.y}, surface) end) end
+    pcall(function() p.zoom = cam.zoom end)
+  end
+  -- The map's alert markers (big yellow triangles over the base in the site's terrain frame, 2026-10-13) are the
+  -- camera player's own alerts drawn on the chart: a map shot turns that player's alerts off (disable_alert, per
+  -- alert type) and the next camera call, or release, turns back on the ones it turned off (state.map_alerts).
+  local function alerts_off(p)
+    local st = api.state()
+    st.map_alerts = st.map_alerts or {}
+    local off = st.map_alerts[p.index] or {}
+    for name, t in pairs(defines.alert_type or {}) do
+      local ok, on = pcall(function() return p.is_alert_enabled(t) end)
+      if ok and on and pcall(function() p.disable_alert(t) end) then off[#off+1] = name end
+    end
+    st.map_alerts[p.index] = off[1] and off or nil
+  end
+  local function alerts_back(p)
+    local st = api.state()
+    local off = st.map_alerts and st.map_alerts[p.index]
+    if not off then return end
+    for _, name in ipairs(off) do
+      local t = defines.alert_type and defines.alert_type[name]
+      if t ~= nil then pcall(function() p.enable_alert(t) end) end
+    end
+    st.map_alerts[p.index] = nil
+  end
   local function director(index)
     assert(type(index) == 'number' and index == math.floor(index) and index >= 1, 'player must be a player index')
     local p = game.get_player(index)
@@ -98,6 +140,7 @@ return function(api)
     assert(type(args) == 'table', 'camera takes a JSON object')
     local p = director(args.player)
     local cams = store()
+    alerts_back(p)  -- after a map shot (a map shot turns them off again below)
     if args.release == true then
       local had = cams[p.index]
       cams[p.index] = nil
@@ -112,10 +155,11 @@ return function(api)
       local surface = args.surface and game.get_surface(args.surface) or p.surface
       assert(surface, 'no surface named ' .. tostring(args.surface))
       make_director(p)  -- a spectator first (a character never stays behind)
-      p.set_controller{type=defines.controllers.remote, position={x=pos.x, y=pos.y}, surface=surface, chart_mode_cutoff=CHART_CUTOFF}
-      pcall(function() p.zoom = z end)
+      local cam = {map=true, position={x=pos.x, y=pos.y}, surface=surface.name, zoom=z, smooth=false}
+      cams[p.index] = cam
+      open_map(p, cam, surface)
       clean_view(p)
-      cams[p.index] = {map=true, position={x=pos.x, y=pos.y}, surface=surface.name, zoom=z, smooth=false}
+      alerts_off(p)
       return {ok=true, player=p.index, camera=M.describe(p.index)}
     end
     local cam = {zoom=1, smooth=args.smooth ~= false}
@@ -188,12 +232,14 @@ return function(api)
       local p = game.get_player(index)
       if not (p and p.valid) then store()[index] = nil
       elseif p.connected and cam.map then
-        -- a map camera stays in the remote controller; a reconnect drops it out: back into the chart
+        -- a map camera stays in the remote controller on its spot; a reconnect drops it out: back into the chart,
+        -- and a view that drifted off the spot is put back
+        local s = game.get_surface(cam.surface) or p.surface
         if p.controller_type ~= defines.controllers.remote then
           make_director(p)
-          local s = game.get_surface(cam.surface) or p.surface
-          pcall(function() p.set_controller{type=defines.controllers.remote, position=cam.position, surface=s, chart_mode_cutoff=CHART_CUTOFF} end)
-          pcall(function() p.zoom = cam.zoom end)
+          pcall(open_map, p, cam, s)
+        elseif not on_spot(p, cam, s) then
+          pcall(open_map, p, cam, s)
         end
       elseif p.connected then
         -- A reconnect can bring back a character or reset the view settings.

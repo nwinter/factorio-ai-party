@@ -234,7 +234,9 @@ return function(api)
         elseif e.type=='fluid-turret' then
           local ok,amount,cap=pcall(function()
             local f=e.fluidbox[1]
-            return f and f.amount or 0,e.fluidbox.get_capacity and e.fluidbox.get_capacity(1) or nil
+            -- the turret's own tank, not the connected segment's capacity (see defense.lua oil)
+            local pr=e.prototype local fp=pr and pr.fluidbox_prototypes and pr.fluidbox_prototypes[1]
+            return f and f.amount or 0,fp and fp.volume or (e.fluidbox.get_capacity and e.fluidbox.get_capacity(1)) or nil
           end)
           if ok then
             local t=flamers[e.name]

@@ -111,8 +111,14 @@ def make(root):
         (d_ / "basemap").mkdir(exist_ok=True)
         (d_ / "basemap" / f"{tick}.json").write_text(json.dumps({
             "tick": tick, "cell": 8, "x0": -16, "y0": -8, "w": len(rows[0]), "h": len(rows), "rows": rows,
-            "core": {"cell": 2, "x0": -10, "y0": -6, "w": 3, "h": 1, "rows": ["AAS"]}}))
+            "core": {"cell": 2, "x0": -10, "y0": -6, "w": 3, "h": 1, "rows": ["AAS"]},
+            **({"nests": [[90, 10, "s"]], "turrets": [[4, 4, 18]]} if tick == 400000 else {})}))
     (b / "basemap" / "notes.json").write_text("{}")
+    # a terrain frame (tools/stream/mapframes.py) in shift 2, between its snapshots' ticks
+    (b / "mapframes").mkdir(exist_ok=True)
+    (b / "mapframes" / "0_0.webp").write_bytes(b"RIFF....WEBP")
+    (b / "mapframes" / "0_0.json").write_text(json.dumps({"tick": 390000, "surface": "nauvis", "box": [-40, -30, 160, 90],
+                                                          "px": [1600, 900], "area": "0_0"}))
     # the old stream service wrote the earlier shifts' requests into each new inbox again: sol's seq 1 is shift 1's
     (b / "operator-inbox.jsonl").write_text(
         json.dumps({"t": 2, "seq": 1, "agent": "sol", "text": "SECRET-REQUEST-TEXT"}) + "\n"
@@ -210,8 +216,17 @@ def main():
         assert [(f["n"], f["tick"]) for f in lapse["frames"]] == [(1, 36000), (1, 72000), (2, 400000)], lapse["frames"]
         assert lapse["frames"][0]["game"] == "10m00s", lapse["frames"][0]  # build.py's game_time
         assert lapse["frames"][2]["core"]["rows"] == ["AAS"] and len(lapse["box"]) == 4, lapse
+        # the viewer's nests and turret-range layers, from the snapshots that have them; the page loads the viewer
+        assert lapse["frames"][2]["nests"] == [[90, 10, "s"]] and lapse["frames"][2]["turrets"] == [[4, 4, 18]], lapse["frames"][2]
+        assert "nests" not in lapse["frames"][0]
+        # the terrain frames (site/terrain.py) go with the time-lapse, published beside the live map's
+        ter = lapse.get("terrain") or [{}]
+        assert len(ter) == 1 and ter[0]["src"].startswith("/live/terrain/") and ter[0]["src"].endswith("-0_0-390000.webp"), ter
+        assert {k: ter[0][k] for k in ("x0", "y0", "x1", "y1", "tick", "w", "h")} == {"x0": -40, "y0": -30, "x1": 120, "y1": 60,
+                                                                                    "tick": 390000, "w": 1600, "h": 900}, ter
+        assert (out / lapse["terrain"][0]["src"].lstrip("/")).is_file()
         run_page = (out / "runs" / "long" / "index.html").read_text()
-        assert 'id="timelapse"' in run_page and 'data-src="/runs/long/timelapse.json"' in run_page
+        assert 'id="timelapse"' in run_page and 'data-src="/runs/long/timelapse.json"' in run_page and '<script src="/static/mapview.js">' in run_page
         assert '<option value="2" label="Shift 2">' in run_page and "3 snapshots" in run_page
         assert run_page.index('id="timelapse"') < run_page.index("</main>")
         sp = (out / "search" / "index.html").read_text()

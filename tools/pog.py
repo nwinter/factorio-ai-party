@@ -108,8 +108,11 @@ for _, s in ipairs(all) do
   if s.planet and s.count_entities_filtered{force = f, limit = 1} > 0 then planets[#planets+1] = s.name end
 end
 for _, p in pairs(f.platforms or {}) do
-  if p.valid then platforms[#platforms+1] = {name = p.name, at = p.space_location and p.space_location.name or "in transit",
-    hub = (p.hub ~= nil and p.hub.valid) or false} end
+  if p.valid then
+    local ok, to = pcall(function() local s = p.schedule; local r = s and s.records and s.records[s.current]; return r and r.station end)
+    platforms[#platforms+1] = {name = p.name, at = p.space_location and p.space_location.name or "in transit",
+      hub = (p.hub ~= nil and p.hub.valid) or false, to = ok and type(to) == "string" and to or nil}
+  end
 end
 local cur = f.current_research
 rcon.print(helpers.table_to_json{tick = game.tick, ticks_played = game.ticks_played, paused = game.tick_paused,
