@@ -348,6 +348,21 @@ fh sleep 900 --until researched                       # ...or until the research
   stack: 0}, {inventory: 4, stack: 1}]}}]` (stacks count from 0 in blueprint strings). In 2.0 the index is 4 for assemblers, furnaces,
   chemical plants, crushers and silos, 1 for beacons, 2 for mining drills, 3 for labs.
 - A refused placement names what is in the footprint; another player's or bot's character is named (`placement blocked by sol's character standing at (3.0,4.5) (ask them to move, or build elsewhere)`).
+  An entity with tile buildability rules (an asteroid collector: its rear rows on foundation, its front row and the
+  tiles ahead of it empty space) names the rule its spot breaks: `placement blocked: breaks its tile rule 2 facing
+  north: tiles x 59..61, y -4..-1 need empty_space and must not be ground_tile; 6 of 12 do not
+  (space-platform-foundation at (59,-2))`. `place_ghosts` failures carry `{index, name, position, error}`.
+- A `paste` (`blueprint_place`) that creates fewer ghosts than the blueprint holds explains each blueprint entity
+  that is not there. It finds the shift the game used from what stands where the layout puts things. It returns:
+  - `not_placed` (the first 20, plus `not_placed_count`), each `{name, position, direction, reason}`, where the reason
+    is outside the charted area, a broken tile rule, what blocks the footprint, or "placeable here now: the paste
+    skipped it";
+  - `existing_entities` / `existing_ghosts`, counting only those at the blueprint's own spots;
+  - `settings_differ` (`settings_differ_count`), for entities and ghosts already there whose recipe, filters or
+    modules differ from the blueprint, each `{name, position, ghost?, differs, fix}`, where `fix` is the `configure`
+    call that sets them (modules: `transfer`);
+  - `reason`, a one-line summary.
+  A paste never changes what was already there.
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
   within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists

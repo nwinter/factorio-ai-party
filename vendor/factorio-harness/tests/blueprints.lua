@@ -48,6 +48,8 @@ local H=dofile('mod/agent-harness_0.1.0/blueprints.lua'){
   visible=function(player,v)return (v.x-player.position.x)^2+(v.y-player.position.y)^2<=32*32 end,
   own_platform=function(player) local pl=player.surface.platform; return pl~=nil and pl.force==player.force end,
   real=function(player) if type(player)=='table' and rawget(player,'__platform') then return rawget(player,'__player') end return player end,
+  placewhy=dofile('mod/agent-harness_0.1.0/placewhy.lua'){filters=function(e) return {filters=e._filters or {}} end},
+  blocked=function(_,proto,pos) return string.format('placement blocked by big-rock (%g,%g)',pos.x,pos.y) end,
 }
 local box={left_top={x=-2,y=-2},right_bottom={x=2,y=2}}
 local function fails(fn,pattern)
@@ -215,4 +217,100 @@ fails(function() H.deconstruct(pp,{area=parea,tiles=true}) end,'area tile limit'
 ps.find_tiles_filtered=bounded
 -- Off a platform, tiles still need charted chunks.
 fails(function() H.deconstruct(p,{area={left_top={x=40,y=40},right_bottom={x=42,y=42}},tiles=true}) end,'uncharted')
+
+-- A short paste says, per blueprint entity, why it is not there (Astra,
+-- shift06 14:26: a 50-entity Sunward paste returned count 0, existing 37 and
+-- nothing about the other 13). A platform: foundation from y=-2 down, empty
+-- space above. The game shifts the paste to (10,0) though it was asked for
+-- (10.9,0.2): the shift is read from what stands where the layout says.
+local ground,space={layers={ground_tile=true}},{layers={empty_space=true}}
+prototypes.tile['space-platform-foundation'].collision_mask=ground
+prototypes.tile['empty-space'].collision_mask=space
+prototypes.entity['asteroid-collector']={name='asteroid-collector',tile_width=3,tile_height=3,
+  selection_box={left_top={x=-1.5,y=-1.5},right_bottom={x=1.5,y=1.5}},
+  tile_buildability_rules={{area={left_top={x=-1.4,y=-0.4},right_bottom={x=1.4,y=1.4}},required_tiles=ground,colliding_tiles=space},
+    {area={left_top={x=-1.4,y=-4.4},right_bottom={x=1.4,y=-0.6}},required_tiles=space,colliding_tiles=ground}}}
+prototypes.entity['assembling-machine-1']={name='assembling-machine-1',tile_width=3,tile_height=3,
+  selection_box={left_top={x=-1.5,y=-1.5},right_bottom={x=1.5,y=1.5}}}
+defines.build_check_type={manual_ghost=2}
+local world,unit={},100
+local function put(name,x,y,extra)
+  unit=unit+1
+  local e={valid=true,name=name,type='container',position={x=x,y=y},force=p.force,unit_number=unit}
+  for k,v in pairs(extra or {}) do e[k]=v end
+  world[#world+1]=e
+  return e
+end
+local function ghost(name,x,y,extra)
+  return put('entity-ghost',x,y,{type='entity-ghost',ghost_name=name,_filters=extra and extra._filters})
+end
+-- From before: the assembler built with another recipe, a collector ghost with no filter, a stray chest.
+put('assembling-machine-1',6.5,1.5,{type='assembling-machine',get_recipe=function() return {name='iron-gear-wheel'} end})
+ghost('asteroid-collector',3.5,-1.5,{_filters={}})
+put('chest',12.5,3.5)
+local s2={platform={force=p.force}}
+s2.get_tile=function(_,y) local name=y>=-2 and 'space-platform-foundation' or 'empty-space'; return {name=name,prototype=prototypes.tile[name]} end
+s2.find_entities_filtered=function(f)
+  local types=type(f.type)=='table' and f.type or f.type and {f.type}
+  local out={}
+  for _,e in ipairs(world) do
+    local ok=e.valid and e.position.x>=f.area.left_top.x and e.position.x<=f.area.right_bottom.x
+      and e.position.y>=f.area.left_top.y and e.position.y<=f.area.right_bottom.y
+    if ok and types then ok=false; for _,t in ipairs(types) do if e.type==t then ok=true end end end
+    if ok then out[#out+1]=e end
+  end
+  return out
+end
+s2.can_place_entity=function(a) eq(a.build_check_type,2); return not (a.position.x==8.5 and a.position.y==2.5) end
+local bp={kind='blueprint',entities={
+  {name='asteroid-collector',position={x=0.5,y=-1.5},chunk_filter={{index=1,name='metallic-asteroid-chunk'}}}, -- placed
+  {name='asteroid-collector',position={x=4.5,y=0.5}},                -- its front on foundation: tile rule 2
+  {name='assembling-machine-1',position={x=-3.5,y=1.5},recipe='copper-cable'}, -- there, other recipe
+  {name='chest',position={x=-1.5,y=2.5}},                             -- a rock in the way
+  {name='chest',position={x=1.5,y=2.5}},                              -- placed
+  {name='asteroid-collector',position={x=-6.5,y=-1.5},chunk_filter={{index=1,name='metallic-asteroid-chunk'}}}}} -- an old ghost, no filter
+sources.sunward=bp
+local accept={['10.5,-1.5']=true,['11.5,2.5']=true}
+local stack_build=function(args)
+  for _,e in ipairs(bp.entities) do
+    local x,y=10+e.position.x,0+e.position.y
+    if accept[x..','..y] then ghost(e.name,x,y) end
+  end
+  eq(args.surface,s2)
+end
+H.blueprint_import(p,{blueprint='sunward',slot='sunward'})
+local pp2=setmetatable({__platform='Sunward',__player=p},{__index=function(_,k)
+  if k=='surface' then return s2 elseif k=='position' then return {x=0,y=0} end return p[k] end})
+local make=game.create_inventory
+game.create_inventory=function() local inv=make(); rawset(inv[1],'build_blueprint',stack_build); return inv end
+local r2=H.paste(pp2,{slot='sunward',position={x=10.9,y=0.2}})
+game.create_inventory=make
+eq(r2.count,2,'two new ghosts'); eq(r2.expected,6); eq(r2.existing_entities,1); eq(r2.existing_ghosts,1)
+eq(r2.not_placed_count,2); eq(#r2.not_placed,2)
+local np={}
+for _,row in ipairs(r2.not_placed) do np[row.position.x..','..row.position.y]=row end
+local rule=np['14.5,0.5']
+assert(rule and rule.name=='asteroid-collector' and rule.direction=='north','the collector at its real spot, not the asked-for shift')
+assert(rule.reason:find('breaks its tile rule 2 facing north: tiles x 13..15, y %-4..%-1 need empty_space and must not be ground_tile; 6 of 12 do not'),rule.reason)
+eq(np['8.5,2.5'].reason,'placement blocked by big-rock (8.5,2.5)')
+eq(r2.settings_differ_count,2)
+local sd={}
+for _,row in ipairs(r2.settings_differ) do sd[row.name]=row end
+eq(sd['assembling-machine-1'].differs[1],'recipe iron-gear-wheel, blueprint copper-cable')
+eq(sd['assembling-machine-1'].fix,'configure {position={x=6.5,y=1.5}, recipe=copper-cable}')
+eq(sd['asteroid-collector'].differs[1],'filters none, blueprint metallic-asteroid-chunk'); eq(sd['asteroid-collector'].ghost,true)
+assert(sd['asteroid-collector'].fix:find('filters=[metallic-asteroid-chunk]',1,true) and sd['asteroid-collector'].fix:find('a ghost',1,true))
+assert(r2.reason:find('2 already there from before (1 built, 1 ghosts)',1,true) and r2.reason:find('2 not placed: not_placed says why',1,true)
+  and r2.reason:find('settings_differ',1,true),r2.reason)
+
+-- Modules: counted from the blueprint's 2.0 item requests against the module inventory.
+local W=dofile('mod/agent-harness_0.1.0/placewhy.lua'){}
+prototypes.item={['speed-module']={type='module'},['iron-plate']={type='item'}}
+local am={valid=true,type='assembling-machine',position={x=1.5,y=1.5},get_recipe=function() return {name='copper-cable'} end,
+  get_module_inventory=function() return {get_contents=function() return {{name='speed-module',count=1,quality='normal'}} end} end}
+local d=W.settings_diff(am,{name='assembling-machine-2',recipe='copper-cable',items={{id={name='speed-module'},items={in_inventory={{inventory=4,stack=0},{inventory=4,stack=1}}}},
+  {id={name='iron-plate'},items={in_inventory={{inventory=2,stack=0,count=5}}}}}})
+eq(d.differs[1],'modules speed-module*1, blueprint speed-module*2'); assert(d.fix:find('transfer',1,true),d.fix)
+eq(W.settings_diff(am,{recipe='copper-cable'}),nil,'the same settings: nothing to say')
+eq(W.tile_rules(s2,prototypes.entity.chest,{x=0,y=0},0),nil)
 print('blueprint policy tests passed')
