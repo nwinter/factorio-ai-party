@@ -118,6 +118,7 @@ fh say - <<'EOF'                               # text with apostrophes or quotes
 I'll take copper, you've got iron
 EOF
 fh say "biters at the west wall" --aloud       # spoken on the stream
+fh say "Sunward is loaded" --aloud --look platform:Sunward   # the stream camera may show it while it is read out
 fh chat                                        # your unread messages (newest 30; remaining=K are still unread)
 fh chat --since 212 --limit 50                 # everything after seq 212, yours included; --peek reads without marking
 fh board events --since 40

@@ -69,6 +69,25 @@ from director import Director, BUILD, FIGHT, HOLDS, WALK, dist, frame_of, in_fra
 from mapcam import map_shot
 from segments import CHEAP, LOSS_RE
 
+COORD_RE = re.compile(r"\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)")
+
+
+def infer_look(text, platforms):
+    """A spoken line without say look= (Nick, 14:11: Sol's "first Vulcanus -> Nauvis delivery is loaded up and ready to
+    go home"): one of our platforms named in it looks at that platform, else one "(x, y)" in it looks there (on the
+    speaker's surface); two platforms or two spots: no look."""
+    t = text or ""
+    named = [p for p in platforms if re.search(r"(?<!\w)" + re.escape(p) + r"(?!\w)", t, re.I)]
+    if len(named) == 1:
+        return {"platform": named[0], "inferred": True}
+    if named:
+        return None
+    pts = COORD_RE.findall(t)
+    if len(pts) == 1:
+        return {"position": {"x": float(pts[0][0]), "y": float(pts[0][1])}, "inferred": True}
+    return None
+
+
 def loss_pieces(text):
     """"19 lost near (-226, 68): 19 gun turret (by small demolishers)" -> 19 (0 for any other text)."""
     m = LOSS_RE.match(text or "")
@@ -166,6 +185,14 @@ ONECAM = {
     "battle_after": 20.0,   # held until the battle has been quiet this long (no attack, no agent in combat) ...
     "battle_loss_after": 45.0,  # ... and no loss for this long (losses come in as pieces die: 12:58 had 35 s gaps)
     "battle_max": 900.0,    # at most this long
+    # Spoken-line cues (Nick, 14:11: an agent's line "can suggest the director look at something ... at lower
+    # priority, but enough to cut over if something else more interesting isn't happening"; module doc)
+    "cues": True,
+    "cue_after": 4.0,       # a cue holds for the line's length plus this
+    "cue_max": 40.0,        # (a line counted at most this long)
+    "cue_agent_gap": 180.0,  # one shown cue per agent this often
+    "cue_gap": 45.0,        # shown cues together at most this often
+    "cue_late": 3.0,        # a line that started playing longer ago than this is no cue (missed tick, a restart)
     # Attention (Nick, 2026-10-13 12:00: "can we give a better feel in the stream for what they are paying attention
     # to?"; module doc): the agent on air looks or works away from its character -> the spot in the inset beside it
     "attention": True,
@@ -286,6 +313,10 @@ class OneCam(Director):
         self.battle = None     # a key battle held on air (watch_battle): {key, why, label, position, surface, ...}
         self.battles = []      # (t, key, why, label): key battles seen
         self.last_battle_end = -1e9
+        self.cues_seen = set()  # voice clip ids already judged
+        self.cue_last = {}      # agent -> when its last cue was shown
+        self.last_cue = -1e9
+        self.cues = []          # (t, agent, decision, label)
         self.fight_cands = {}  # fight episode -> {score, t, pieces, text, taken?}: candidates for a battle
         self.incoming = None   # a followed enemy group: {id, since, label, score, until}
         self.last_incoming = -1e9
@@ -599,6 +630,7 @@ class OneCam(Director):
             self.maybe_map(scores, now, segment)
             self.maybe_platform(scores, now, segment)
             self.maybe_trio(by_name, scores, ranked, now)
+        self.maybe_cue(snapshot, by_name, scores, now, segment)
         self.release_maps(now)
         shown = [self.onair, self.inset and self.inset["slot"]] + list((self.trio or {}).get("tiles", {}).values())
         for t in (self.state.get(s) for s in shown if s):
@@ -966,6 +998,106 @@ class OneCam(Director):
                 "since": round(b["since"], 1), "last": round(b["last"], 1), "lost": b["lost"],
                 "position": dict(b["position"], surface=b["surface"]), "extent": b["extent"],
                 "on_air": cur.get("battle") == b["key"] or bool(b["agent"] and b["agent"] in (cur.get("agents") or []))}
+
+    # -- spoken-line cues ----------------------------------------------------------------------------------------
+    def cue_target(self, look, agent, who, until, by_name):
+        """A look -> (target, label) or (None, why not): a platform's whole view, a spot or area framed like
+        attention (on the look's surface, else the speaker's), or another agent followed."""
+        if look.get("platform"):
+            name = look["platform"]
+            row = self.plat_rows.get(name) or {}
+            if not (row.get("view") or {}).get("surface"):
+                return None, f"no view of {name} yet"
+            label = f"{who} · {self.platform_label(name)}"
+            return self.platform_target(name, "cue", until, label=label), label
+        if look.get("agent"):
+            n = next((a["name"] for a in by_name.values()
+                      if look["agent"].lower() in (a["name"].lower(), str(a.get("display_name") or "").lower())), None)
+            if not n:
+                return None, f"no agent {look['agent']}"
+            tdisp = by_name[n].get("display_name") or n
+            z = self.zoom_for(by_name[n], self.cfg["solo_zoom"]) or self.cfg["solo_zoom"]
+            label = f"{tdisp} ({who} on the mic)"
+            return {"agents": [n], "follow": n, "subject": "@work", "zoom": z, "until": until, "work": label}, label
+        p = look.get("position")
+        if not p or p.get("x") is None:
+            return None, "no place in the look"
+        speaker = by_name.get(agent) or {}
+        surface = look.get("surface") or surface_of(speaker) if speaker else look.get("surface") or "nauvis"
+        ext = look.get("extent") or 0
+        z = min(self.cfg["attn_zoom"], Director.fight_zoom(self, ext)) if ext else self.cfg["attn_zoom"]
+        label = f"{who} at ({round(p['x'])}, {round(p['y'])})"
+        return {"agents": [agent] if agent in by_name else [], "subject": "@work",
+                "position": {"x": p["x"], "y": p["y"]}, "surface": surface, "zoom": z, "exact_zoom": True,
+                "until": until, "work": label}, label
+
+    def cue_decision(self, agent, now, by_name, segment):
+        """-> ("cut" | "inset" | "drop", why). Below urgent shots, battles, follows, incoming groups and segments
+        (an inset then, or nothing), above routine rotation; spacing per agent and for all cues."""
+        cfg = self.cfg
+        cur = self.state.get(self.onair) or {}
+        if now - self.cue_last.get(agent, -1e9) < cfg["cue_agent_gap"]:
+            return "drop", f"spacing: {agent}'s last cue {int(now - self.cue_last[agent])} s ago"
+        if now - self.last_cue < cfg["cue_gap"]:
+            return "drop", f"spacing: the last cue {int(now - self.last_cue)} s ago"
+        if self.hold_layout or self.mode == "trio":
+            return "drop", "a replay or a trio is on air"
+        busy = ("an operator follow" if self.fol else "a battle" if self.battle else "an incoming group" if self.incoming
+                else "a segment" if segment else "an urgent shot" if self.pending or
+                (cur.get("subject") in HOLDS and now < cur.get("until", 0)) else None)
+        subj = cur.get("subject")
+        if not busy and subj in by_name and (self.fighting(subj, by_name, now) or big_plan(by_name[subj])):
+            busy = f"{subj} {'fighting' if self.fighting(subj, by_name, now) else plan_kind(by_name[subj])} on air"
+        if not busy:
+            return "cut", "nothing more interesting on air"
+        if (self.inset and self.inset.get("why") not in ("attention", "cue")) or len(self.standbys()) < 2:
+            return "drop", f"{busy}; no client free for an inset"
+        return "inset", busy
+
+    def maybe_cue(self, snapshot, by_name, scores, now, segment=None):
+        """An agent's line that starts playing (snapshot voiced: the page's start report) with a look (say look=, or
+        inferred: a platform named in it, one "(x, y)") is a cue: a cut to the look for the line plus cue_after if
+        nothing more interesting is on, else the look in the inset, else nothing; each decision is logged."""
+        cfg = self.cfg
+        if not cfg["cues"]:
+            return
+        plats = [n for n, p in self.plat_rows.items() if (p.get("view") or {}).get("surface")]
+        for v in snapshot.get("voiced") or []:
+            cid = v.get("id")
+            if not cid or cid in self.cues_seen:
+                continue
+            self.cues_seen.add(cid)
+            agent, line = v.get("agent"), v.get("said") or v.get("text") or ""
+            look = v.get("look") if isinstance(v.get("look"), dict) else None
+            look = look or infer_look(line, plats)
+            if not look:
+                continue
+            started = float(v.get("started") or now)
+            until = started + min(float(v.get("duration") or 8.0), cfg["cue_max"]) + cfg["cue_after"]
+            who = (by_name.get(agent) or {}).get("display_name") or v.get("speaker") or agent
+            target, label = self.cue_target(look, agent, who, until, by_name)
+            if not target:
+                decision, why = "drop", label
+            elif now - started > cfg["cue_late"]:
+                decision, why = "drop", f"the line started {int(now - started)} s ago"
+            else:
+                decision, why = self.cue_decision(agent, now, by_name, segment)
+            if decision == "cut":
+                self.urgent(target, f"cue: {label}", scores, now)
+            elif decision == "inset":
+                slot = self.slot(self.inset["slot"]) if self.inset else self.standbys()[-1]
+                self.frame_on(slot, target, f"inset cue: {label}", scores, now)
+                self.inset = {"slot": slot["slot"], "until": until, "why": "cue"}
+            if decision != "drop":
+                self.cue_last[agent] = self.last_cue = now
+            self.cues.append((now, agent, decision, label))
+            entry = {"agent": agent, "look": look, "line": line[:120], "decision": decision, "why": why, "label": label}
+            if self.log_path:
+                with open(self.log_path, "a") as f:
+                    f.write(json.dumps({"t": round(now, 1), "time": time.strftime("%H:%M:%S", time.localtime(now)),
+                                        "slot": "program", "reason": f"cue {decision}: {why}", "cue": entry}) + "\n")
+            print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} cue {decision} ({why}): {label}"
+                  f"{' (inferred)' if look.get('inferred') else ''}", flush=True)
 
     # -- attention ---------------------------------------------------------------------------------------------
     def attention_far(self, a, by_name, now):
@@ -1377,7 +1509,7 @@ class OneCam(Director):
         if need:
             r, self.resume = self.resume, None
             if r and r["subject"] in scores and r["subject"] not in inset_agents and \
-                    subj in (None, "@attack", "@segment", "@map", "@platform", "@battle", "@incoming"):
+                    subj in (None, "@attack", "@segment", "@map", "@platform", "@battle", "@incoming", "@work"):
                 want, resumed = r["subject"], r  # back to the story the urgent shot interrupted
                 self.resume = r  # kept until the cut back happens
             else:
@@ -1502,6 +1634,8 @@ class OneCam(Director):
                     row["work"] = t["work"]  # the page: "Astra · working on Starling"
             if t.get("attention"):  # the inset on where the agent on air is looking: "Sol · placing ghosts 40 m north"
                 row.update(work=t["work"], attention=t["attention"])
+            elif t.get("subject") == "@work" and t.get("work"):  # a spoken-line cue: "Sol · at (120, -40)"
+                row["work"] = t["work"]
             if key == "main" and t.get("subject") == "@incoming" and t.get("incoming"):
                 row["incoming"] = t["incoming"]  # "Incoming · 38 biters and spitters heading for the oil field"
             if key == "main" and self.battle and t.get("battle") == self.battle["key"]:

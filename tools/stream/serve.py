@@ -402,6 +402,7 @@ def main():
     if feed:
         feed.start()
     analyst = AnalystBoard()
+    audio = AudioHub()  # the voice clips; the director reads which agent line is playing (say look= cues)
     follow = None
     if mode == "onecam":  # an operator follow, kept beside stream.json so a restart keeps it (follow.py)
         from follow import FollowControl
@@ -439,6 +440,8 @@ def main():
                         cur and cur["type"] == "attack_replay" and cur["state"] in ("starting", "live"))
                 if follow:
                     follow.sync(now)
+                with audio.cond:  # agent lines playing now (the page's start reports): onecam cues their looks
+                    snap["voiced"] = [dict(v, id=k) for k, v in audio.playing.items() if v.get("channel") == "agent"]
                 cams = director.step(snap, now, segments.camera())
                 if follow:
                     snap["follow"] = director.follow_info(now)  # the hosts: who the operator pinned on air, and why
@@ -493,7 +496,7 @@ def main():
     threading.Thread(target=ticker, daemon=True).start()
     try:
         server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,
-                                                                    analyst=analyst, follow=follow))
+                                                                    analyst=analyst, follow=follow, audio=audio))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

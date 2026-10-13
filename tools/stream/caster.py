@@ -371,7 +371,7 @@ class Differ:
                 # an answer to a viewer is heard like an --aloud line (shift01 16:09: Astra's "Yes, Craig, the base is
                 # growing north..." was judged logistics and stayed text)
                 ev.append({"kind": "chat", "agent": m["agent"], "text": m.get("text", ""),
-                           "aloud": bool(m.get("aloud") or asked), "seq": m.get("seq")})
+                           "aloud": bool(m.get("aloud") or asked), "seq": m.get("seq"), "look": m.get("look")})
         board = s.get("board") or {}
         for b in board.get("events") or []:  # eng/stream2's board snapshot: {seq, by, agent, verb, title, kind}
             seq = b.get("seq") if b.get("seq") is not None else (b.get("tick"), b.get("id"), b.get("verb"))
@@ -2591,7 +2591,9 @@ class Caster:
             log(f"[voice:{names.get(m['agent'])}/{vmap.get(m['agent'])}] ({label}) {text}")
             dur = self.voice(text, vmap.get(m["agent"], "orion"), None,
                              {"channel": "agent", "speaker": names.get(m["agent"], m["agent"]), "agent": m["agent"],
-                              "color": ag.get("color"), "glyph": ag.get("glyph"), "text": text, "expires_in": 20},
+                              "color": ag.get("color"), "glyph": ag.get("glyph"), "text": text, "expires_in": 20,
+                              # the line as said and its say look= (the director's cue when it starts playing)
+                              "seq": m.get("seq"), "said": m.get("text"), "look": m.get("look")},
                              {"type": "agent", "agent": m["agent"], "label": label, "line": text},
                              hold=lambda: self.caster_free)  # only a caster clip already pushed: agents go first
             self.agent_free = time.time() + dur + 0.4
