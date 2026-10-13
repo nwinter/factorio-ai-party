@@ -39,6 +39,11 @@ step "start (runs $runs, out $out${last:+, last run $last})"
 if [ -n "$last" ]; then
   python3 site/status_update.py "$last" --runs-dir "$runs" --status "$status" || fail "status.json update"
 fi
+# each shift's link-preview card, drawn again only when its numbers changed; a failure keeps the site's card
+# (POG_SITE_CARDS=0 skips it: tests)
+if [ "${POG_SITE_CARDS:-1}" != 0 ]; then
+  python3 site/og_card.py --shifts --runs-dir "$runs" || step "shift cards failed (shift pages keep the site's card)"
+fi
 python3 site/build.py --out "$out" --runs-dir "$runs" || fail "build"
 [ "$status" = "$root/site/live/status.json" ] || cp "$status" "$out/live/status.json"  # a test's own status file
 python3 site/check.py "$out" || fail "check.py"

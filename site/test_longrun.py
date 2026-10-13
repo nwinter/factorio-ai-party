@@ -142,6 +142,25 @@ def main():
         assert 'content="Shift 2: Oct 11, 05:00 to 06:00 Pacific · +1 technologies · +2 rockets' in sp2
         # a line that ends at 0 (space science on shift 1's page: none made yet) has no end label
         assert not re.search(r'class="dlabel"[^>]*>[^<]*<tspan class="dval">0</tspan>', page + sp)
+        # a shift's own link-preview card: og_card.py --shifts writes its HTML (no browser here); the build uses a
+        # rendered card only when its key matches the shift's facts
+        og = Path(d) / "og"
+        env = dict(os.environ, POG_OG_SHIFTS=str(og), POG_SITE_CONTENT=str(Path(d) / "site.json"))
+        subprocess.run([sys.executable, str(SITE / "og_card.py"), "--shifts", "--runs-dir", str(root), "--html-only"],
+                       check=True, capture_output=True, env=env)
+        card = (og / "shift-2.html").read_text()
+        assert "Shift 2" in card and "+2" in card and "First rocket launched" in card and "Oct 11, 05:00 to 06:00" in card
+        import build as site_build
+        (og / "shift-2.png").write_bytes(b"\x89PNG fake")
+        (og / "shift-2.key").write_text(site_build.shift_card_key(site_build.shift_card_facts(s3, lr)) + "\n")
+        (og / "shift-1.png").write_bytes(b"\x89PNG old")
+        (og / "shift-1.key").write_text("stale\n")  # drawn for other numbers: not used
+        subprocess.run([sys.executable, str(SITE / "build.py"), "--out", str(out), "--runs-dir", str(root),
+                        "--content", str(Path(d) / "site.json")], check=True, capture_output=True, env=env)
+        sp2 = (out / "runs" / "long" / "shift-2" / "index.html").read_text()
+        assert "/static/og/shift-2.png?v=" in sp2 and (out / "static" / "og" / "shift-2.png").exists()
+        assert "/static/og.png?v=" in (out / "runs" / "long" / "shift-1" / "index.html").read_text()
+        assert not (out / "static" / "og" / "shift-1.png").exists()
         # a shift with a YouTube video: its row links its page, the run page embeds it, the page has the chapters
         videos = Path(d) / "videos.json"
         videos.write_text(json.dumps({

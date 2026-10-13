@@ -504,14 +504,15 @@ def nav_items():
     return [("/", "Live")] + ([("/runs/long/", "The run")] if LONG else []) + [("/about/", "About")]
 
 
-def social_meta(full, site_title, description, path):
-    """Open Graph and Twitter card tags, so a shared link shows the title, a line and the card image (site/og_card.py)."""
+def social_meta(full, site_title, description, path, og=None):
+    """Open Graph and Twitter card tags, so a shared link shows the title, a line and the card image (site/og_card.py).
+    og: (image file, its public path) for a page's own card (a shift's), else the site's."""
     base = CONFIG.get("site_url", "").rstrip("/")
-    img = SITE / "static" / "og.png"
+    img, public = og or (SITE / "static" / "og.png", "/static/og.png")
     if not base or not img.exists():
         return ""
     ver = hashlib.sha256(img.read_bytes()).hexdigest()[:10]
-    image = f"{base}/static/og.png?v={ver}"
+    image = f"{base}{public}?v={ver}"
     tags = [("property", "og:type", "website"), ("property", "og:site_name", site_title), ("property", "og:title", full),
             ("property", "og:description", description)]
     if path:
@@ -525,7 +526,7 @@ def social_meta(full, site_title, description, path):
     return out + (f'<link rel="canonical" href="{esc(base + path)}">\n' if path else "")
 
 
-def page(title, body, active="/", description="", extra_head="", path=None):
+def page(title, body, active="/", description="", extra_head="", path=None, og=None):
     site_title = CONFIG.get("site_title", "Factorio AI Party")
     full = site_title if title == site_title else f"{title} · {site_title}"
     description = description or CONFIG.get("description", "")
@@ -538,7 +539,7 @@ def page(title, body, active="/", description="", extra_head="", path=None):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {ROBOTS_META}<title>{esc(full)}</title>
 <meta name="description" content="{esc(description)}">
-{social_meta(full, site_title, description, path)}<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+{social_meta(full, site_title, description, path, og)}<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&amp;display=swap">
@@ -939,6 +940,35 @@ def qa_html(qa, n=None):
             f'</summary><ol class="chat qa" start="31">{"".join(items[30:])}</ol></details>')
 
 
+# A shift's own link-preview card (site/og_card.py --shifts renders it from shift_card_facts into OG_SHIFTS, keyed by
+# the facts, so a card whose numbers changed is drawn again); the page uses it only when its key matches.
+OG_SHIFTS = Path(os.environ.get("POG_OG_SHIFTS") or SITE / "og" / "shifts")  # tests point it elsewhere
+OG_CARD_VERSION = "1"
+
+
+def shift_card_facts(s, lr):
+    mine = [f for f in lr["firsts"] if f["shift"] == s["n"]]
+    big = [f["label"] for f in mine if f["kind"] in ("space", "science")] + [f["label"] for f in mine if f["kind"] == "research"]
+    return {"n": s["n"], "when": f"{_when(s['started'], s['ended'])} Pacific",
+            "stats": [[f"+{s['research_new']}", "technologies"], [f"+{s['rockets_new']}", "rockets"],
+                      [f"{s['made_total']:,}", "science packs"], [longrun.game_time(s["tick1"] - s["tick0"]), "game time"]],
+            "firsts": big[:3]}
+
+
+def shift_card_key(facts):
+    return hashlib.sha256((OG_CARD_VERSION + json.dumps(facts, sort_keys=True)).encode()).hexdigest()[:16]
+
+
+def shift_card(s, lr):
+    """The shift's card image when one was rendered for its current facts, else None (the site's card)."""
+    png, key = OG_SHIFTS / f"shift-{s['n']}.png", OG_SHIFTS / f"shift-{s['n']}.key"
+    try:
+        ok = png.exists() and key.read_text().strip() == shift_card_key(shift_card_facts(s, lr))
+    except OSError:
+        ok = False
+    return png if ok else None
+
+
 def shift_summary(s, firsts):
     """The page's description (search and link previews): the shift's numbers and its biggest firsts."""
     bits = [f"Shift {s['n']}: {_when(s['started'], s['ended'])} Pacific", f"+{s['research_new']} technologies",
@@ -997,8 +1027,9 @@ def build_shift_page(s, v, lr):
 {f'<h2>Viewers</h2><p class="muted small">Viewer messages that reached the game, the agents\' answers that name the viewer, and the hosts\' answers. Times Pacific.</p>{qa_html(s["qa"], s["n"])}' if s["qa"] else ""}
 {nav}
 """
+    card = shift_card(s, lr)
     return page(f"Shift {s['n']}", body, "/runs/" if archive() else "/runs/long/",
-                shift_summary(s, mine), path=shift_href(s))
+                shift_summary(s, mine), path=shift_href(s), og=(card, f"/static/og/shift-{s['n']}.png") if card else None)
 
 
 def _when(a, b):
@@ -1709,6 +1740,10 @@ def main():
         for s in LONG["shifts"]:
             if not s.get("empty"):
                 write(f"runs/long/shift-{s['n']}/index.html", build_shift_page(s, shift_video(s), LONG))
+                card = shift_card(s, LONG)
+                if card:
+                    (out / "static" / "og").mkdir(parents=True, exist_ok=True)
+                    shutil.copy(card, out / "static" / "og" / f"shift-{s['n']}.png")
     write("about/index.html", build_about(runs, all_worlds))
     if archive():  # the test history: experiments, earlier runs, agent pages (made of those runs), studies
         write("experiments/index.html", build_experiments(runs, all_worlds))
