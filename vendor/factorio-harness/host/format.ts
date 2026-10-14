@@ -125,6 +125,54 @@ export function finalLine(value: unknown): string | undefined {
   if (!value.ok) return `error: ${errorText(value.error)}${notes.length ? '; ' + notes.join('; ') : ''}`;
   return notes.length ? `warning: ${notes.join('; ')}` : undefined;
 }
+/**
+ * `fh help ACTION`: one action's arguments from describe, about 1 KB (agents grepped describe.json 52-75 times a
+ * shift). Each argument's text is cut to a line; an unknown name lists the actions it resembles.
+ */
+export function actionHelp(describe: unknown, action: string, max = 1100): string {
+  const actions = record(describe) && record(describe.actions) ? describe.actions : {};
+  const schema = actions[action];
+  if (!record(schema)) {
+    const names = Object.keys(actions).sort();
+    const near = names.filter(n => n.includes(action) || action.includes(n) || n.split('_').some(w => w.length > 2 && action.includes(w)));
+    return `unknown action ${action}${near.length ? '; did you mean: ' + near.slice(0, 8).join(', ') : ''} (${names.length} actions: fh help ACTION)\n`;
+  }
+  const cut = (s: string, n: number) => s.length > n ? s.slice(0, n - 3).trimEnd() + '...' : s;
+  const doc = new Set(['returns', 'note', 'reports', 'outcomes', 'usage']);
+  const args = Object.keys(schema).filter(k => !doc.has(k)).sort((a, b) => (a === 'position' ? -1 : b === 'position' ? 1 : a.localeCompare(b)));
+  const lines = [`${action}: fh call ${action} --args '{...}'`];
+  for (const key of args) lines.push(`  ${key}: ${cut(String(schema[key]), 150)}`);
+  for (const key of ['returns', 'note', 'outcomes']) if (typeof schema[key] === 'string') lines.push(`${key}: ${cut(schema[key] as string, 220)}`);
+  let out = '';
+  for (const line of lines) {
+    if (out.length + line.length + 1 > max) { out += `... (${lines.length - out.split('\n').length + 1} more lines: fh call describe)\n`; break; }
+    out += line + '\n';
+  }
+  return out;
+}
+/**
+ * A long compact reply in pages (agent-minds study: Codex drops the middle of output past about 40 KB, agy keeps the
+ * last 8 KB): the first `page` bytes at a line boundary, a line saying what is left and how to see it, and the final
+ * error:/warning: line again so `| tail -1` still finds it; `rest` is what `fh more` prints next. Text that fits, as it is.
+ */
+export function paginate(text: string, page = 8000, slack = 2000): { shown: string; rest?: string } {
+  if (Buffer.byteLength(text) <= page + slack) return { shown: text };
+  const lines = text.replace(/\n$/, '').split('\n');
+  const tail = lines[lines.length - 1] ?? '';
+  const last = /^(error|warning): /.test(tail) ? tail : undefined;
+  const body = last ? lines.slice(0, -1) : lines;
+  let used = 0, n = 0;
+  while (n < body.length) {
+    const size = Buffer.byteLength(body[n] ?? '') + 1;
+    if (n > 0 && used + size > page) break;
+    used += size; n++;
+  }
+  const restLines = body.slice(n);
+  const rest = restLines.join('\n') + '\n' + (last ? last + '\n' : '');
+  const kb = Math.max(1, Math.round(Buffer.byteLength(rest) / 1024));
+  const shown = body.slice(0, n).join('\n') + '\n' + `[${restLines.length} more lines, ${kb} KB: ./fh more]\n` + (last ? last + '\n' : '');
+  return { shown, rest };
+}
 /** Full status's teammates line goes right after the clock line. */
 function byClock(body: Json): Json {
   if (typeof body.teammates !== 'string' || typeof body.clock !== 'string') return body;
@@ -151,7 +199,8 @@ function errorText(error: unknown): string {
 // They move from the body to the final error/warning line, so `| tail -1`
 // still shows them; copies nested in a --wait reply are reported too.
 const NOTES: Record<string, string> = { short: 'short', awaiting_craft: 'awaiting_craft', errors: 'not done',
-  none_held: 'none held', tiles_refused: 'tiles refused', extent_warning: 'fluid' };
+  none_held: 'none held', tiles_refused: 'tiles refused', extent_warning: 'fluid', corrected: 'corrected',
+  nothing_moved: 'nothing moved', repeated: 'repeated' };
 function lift(result: unknown): { body: unknown; notes: string[] } {
   if (!record(result)) return { body: result, notes: [] };
   const notes: string[] = [];

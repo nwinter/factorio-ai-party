@@ -56,7 +56,7 @@ return function(api)
     tell = {to='a teammate name or display name, several (array or "luna,sol"), or "team" for everyone',
       text='1..500 characters, one line (longer is cut to 500; the reply says so)',
       returns='seq and to (cut {length, kept} when the text was cut; away "sol is on Vulcanus" for recipients on another planet, platform or in a cargo pod): the line goes to each recipient\'s next reply (team: tells), wakes them if asleep (woke=told), and stays out of the game chat; viewers see it as text on the stream\'s logistics ticker, never spoken'},
-    tells = {since='optional sequence number', limit='1..100, newest kept (default 30)',
+    tells = {since='optional sequence number (default: the tells since your last read, or the last 10 on a first read; since=0 lists them all)', limit='1..100, newest kept (default 30)',
       returns='tells you sent or received {seq,tick,from,away?,to,team?,text} oldest first (away: "on Vulcanus" when the sender is somewhere other than you now), and cursor'},
   }
   function M.handlers.tell(p, a)
@@ -84,9 +84,22 @@ return function(api)
   end
   local function read(a, me)
     assert(a.since == nil or type(a.since) == 'number', 'since must be a number')
+    local s = store()
+    -- An agent's read without since: the tells since its last read (the last
+    -- 10 on a first read), and the cursor moves (agent-minds study: tells
+    -- replies were 7.9 KB at the median, every read listing the last 30).
+    s.cursors = s.cursors or {}
+    local cursor_read = me ~= nil and a.since == nil
+    if cursor_read then
+      local args = {}
+      for k, v in pairs(a) do args[k] = v end
+      args.since = s.cursors[me] or 0
+      args.limit = a.limit or (s.cursors[me] and 30 or 10)
+      if a.peek ~= true then s.cursors[me] = s.seq end
+      a = args
+    end
     local limit = a.limit or 30
     assert(type(limit) == 'number' and limit >= 1 and limit <= 100, 'limit must be 1..100')
-    local s = store()
     local picked = {}
     for _, t in ipairs(s.log) do
       local mine = me == nil or t.from == me
