@@ -748,6 +748,7 @@ class Model:
             where = where_label(ag.surface, ag.platform) if ag.surface else None
             # (the casters' facts name no planet while Nauvis is the only one in play: Nick 12:35, item 4)
             self.alert("death", f"{ag.display_name} died" + (f" on {where}" if where and where != "Nauvis" else ""),
+                       surface=ag.surface or "nauvis",
                        key=f"death:{ag.name}:{int(now // 30)}", agent=ag.name,
                        facts={"headline": "agent_death", "agent": ag.display_name,
                               "where": where if where != "Nauvis" or self.space_in_play() else None})
@@ -782,7 +783,8 @@ class Model:
                 self._fight(f"attack:{ag.name}", "attack", ag.position, now, text, agent=ag.name)
             if was != "hurt":
                 ag.bump(6, now)
-                self.alert("attack", text, key=f"attack:{ag.name}", agent=ag.name, ttl=60, position=ag.position)
+                self.alert("attack", text, key=f"attack:{ag.name}", agent=ag.name, ttl=60, position=ag.position,
+                           surface=ag.surface or "nauvis")
         elif state == "fighting":
             foe = enemy_label(info.get("target"))
             text = f"{ag.display_name} is fighting {foe}" if foe else f"{ag.display_name} is firing"
@@ -790,7 +792,8 @@ class Model:
                 self._fight(f"fight:{ag.name}", "fight", ag.position, now, text, agent=ag.name)
             if was not in ("hurt", "fighting"):
                 ag.bump(3, now)
-                self.alert("fight", text, key=f"fight:{ag.name}", agent=ag.name, ttl=60, position=ag.position)
+                self.alert("fight", text, key=f"fight:{ag.name}", agent=ag.name, ttl=60, position=ag.position,
+                           surface=ag.surface or "nauvis")
         ag.combat_state, ag.combat_info = state, info
         ag.combat = state in ("hurt", "fighting")
         if "plan" in a:
@@ -1138,9 +1141,13 @@ class Model:
                 if other.position and math.hypot(other.position["x"] - p["x"], other.position["y"] - p["y"]) <= 60:
                     other.bump(4, now)
         self.alert(e["kind"], e["text"], key=e.get("key") or f"{e['kind']}:{e['text']}", agent=e.get("agent"),
-                   ttl=e.get("ttl", 60), position=p)
+                   ttl=e.get("ttl", 60), position=p, surface=(p or {}).get("surface") or (
+                       ag.surface if ag and ag.surface else "nauvis" if e["kind"] in ("attack", "loss") else None),
+                   platform=e.get("platform"))
 
-    def alert(self, kind, text, key=None, agent=None, ttl=45, position=None, facts=None):
+    def alert(self, kind, text, key=None, agent=None, ttl=45, position=None, facts=None, surface=None, platform=None):
+        """surface: where it happened (a planet or a platform's surface; None for research, power, space news), for the
+        hosts (caster.py: each battle fact says its planet; viewer Joonazan, 13:38: lines that mix planets)."""
         now = time.time()
         key = key or f"{kind}:{text}"
         if key in self.alert_keys and now - self.alert_keys[key] < ttl:
@@ -1150,6 +1157,10 @@ class Model:
                "t": now, "until": now + min(ttl, 40), "position": position}
         if facts:  # a headline's facts for the hosts (caster.py facts_for): names, place, cause
             row["facts"] = facts
+        if surface:
+            row["surface"] = surface
+        if platform:
+            row["platform"] = platform
         self.alerts.append(row)
 
     # ---- which platform a fight is on -------------------------------------------------------------------------

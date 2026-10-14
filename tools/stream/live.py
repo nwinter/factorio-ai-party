@@ -629,11 +629,14 @@ class LiveSource:
                 continue  # zero-damage hits: the crash site's fire, not an attack
             c = area.get("chunk_centre") or {}
             what = hit_label((area.get("entities") or "").split(",")[0])
-            near = f"near ({round(c.get('x', 0))}, {round(c.get('y', 0))})"
+            surface = area.get("surface") or "nauvis"
+            # off Nauvis the text says the planet (the hosts joined Nauvis turret hits to Sol on Gleba, 11:15-12:57)
+            on = f"on {surface[:1].upper() + surface[1:]} " if surface != "nauvis" else ""
+            near = f"{on}near ({round(c.get('x', 0))}, {round(c.get('y', 0))})"
             text = f"Engineer under attack {near}" if what == "an engineer" else \
                 f"Base under attack {near}" + (f": {what}" if what else "")
             out.append({"kind": "attack", "text": text, "key": f"area:{c.get('x')},{c.get('y')}", "ttl": 60,
-                        "position": dict(c, extent=CHUNK, surface=area.get("surface") or "nauvis")})
+                        "position": dict(c, extent=CHUNK, surface=surface)})
         return out
 
     def send_camera(self, body):

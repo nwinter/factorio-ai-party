@@ -586,6 +586,28 @@ The site's agents page has a "Now" block per card (guns and ammo, armor and equi
 largest stacks, free slots, crafting, building), filled by site.js from the live API every 30 s and hidden when no
 shift is on. push_live.py publishes `agents[].loadout`.
 
+### Each battle fact on its planet (2026-10-14, eng/planetmix)
+
+Viewer Joonazan, 13:38: "There are no biters on Gleba. There are also other announcements that sound like they are
+mixing planets." In 11:10-14:10, 11 host lines put a fight on the wrong planet or joined two planets' facts (the list is
+in report-planetmix.md): Sol's guard read as an attack on Gleba (10, eng/attackflag), Nauvis's turrets joined to it (3:
+the battle tally and a folded "also happening" covered every planet), biters or spitters "on Gleba" (5), and the
+analyst's "the team is on Nauvis, where there are no stomper nests" (1: its status is one planet's, unlabelled).
+
+- live.py: an attacked area off Nauvis says its planet ("Base under attack on Gleba near (176, 48): gun turret").
+- model.py: alerts carry `surface` (an agent's attack, fight and death: the agent's; an area or a loss: its own).
+- caster.py: events keep it; a battle fact (attack, loss, death, fight) gets `planet` and `enemies_there` (none while
+  Nauvis is the only planet in play); the battle tally is kept per surface (take_tally); a beat folds only urgent events
+  of its own surface; the show notes say each battle fact's planet is the one to say, never joined with another
+  planet's, and who attacks where (Nauvis biters, spitters, worms; Gleba pentapods, no biters; Vulcanus demolishers;
+  Fulgora none); attack numbers count hits by enemies, not biters. check_line (wrong_enemy) refuses an enemy named
+  where it does not live ("biters do not live on Gleba") and a planet a battle fact does not give; saying an enemy is
+  absent ("Fulgora has no biters") passes.
+- The analyst: its status block and `game_status` say which planet they cover; `game_status {agent}` reads another
+  planet as an agent there; `game_agents` lists who is where; the agents in its prompt carry their planet; its rule
+  names each planet's attackers.
+- Tests: tools/stream/test_planetmix.py; caster_selftest's numbers_mean check says enemies.
+
 ### Under attack only when hit (2026-10-14, eng/attackflag)
 
 Viewer Joonazan, 13:36: "I'm pretty sure biters are not hitting anyone on Gleba. What's going on with all the

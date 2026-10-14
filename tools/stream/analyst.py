@@ -36,7 +36,7 @@ short explainer of a game mechanic that is on screen. Judge the team honestly bu
 
 Facts you must get right (the hosts often get them wrong):
 - Research progress is never lost. Switching research keeps the progress; labs only consume science packs.
-- "Lost" buildings and damaged buildings are ours; biters are the attackers. Losses listed "by small biter" name the enemy.
+- "Lost" buildings and damaged buildings are ours; the planet's enemies are the attackers (Nauvis: biters, spitters, worms; Gleba: pentapods, no biters; Vulcanus: demolishers; Fulgora: none). Losses listed "by small biter" name the enemy.
 - Pollution is not damage; it spreads by chunk and makes biter nests send attacks when it reaches them.
 - On this stream "SPM" means all science pack colours summed per minute (the overlay headline). Say "per minute".
 - Several 2.0 technologies are trigger techs, finished by an action (steam power: craft 50 iron plates; oil \
@@ -298,7 +298,9 @@ class Digest:
             try:
                 st = self.game.status()
                 keep = {k: st.get(k) for k in ("evolution", "pollution", "enemies", "alerts", "power", "factory") if st.get(k)}
-                parts.append("## Harness status (threats, pollution, power)\n" + json.dumps(keep, ensure_ascii=False)[:2500])
+                where = str(st.get("surface") or "nauvis").capitalize()
+                parts.append(f"## Harness status on {where} only (threats, pollution, power of the planet the status was "
+                             f"read on; other planets are not in it)\n" + json.dumps(keep, ensure_ascii=False)[:2500])
             except Exception as e:
                 parts.append(f"(status unavailable: {e})")
         parts.append("## Reference rates (exact for this version; quote these instead of computing)\n" + self.reference_rates(snap))
@@ -328,7 +330,8 @@ class Digest:
         except Exception as e:
             parts.append(f"(chat unavailable: {e})")
         if feed:
-            ag = [f"{x.get('display_name') or x.get('name')} ({x.get('model') or '?'}; {x.get('role') or 'no role'}): "
+            ag = [f"{x.get('display_name') or x.get('name')} ({x.get('model') or '?'}; {x.get('role') or 'no role'}) "
+                  f"on {x.get('where') or str(x.get('surface') or 'nauvis').capitalize()}: "
                   f"{x.get('activity')}{', ' + x['action'] if x.get('action') else ''}" for x in feed.get("agents") or []]
             if ag:
                 parts.append("## Agents on the stream (names to use)\n" + "\n".join(ag))
