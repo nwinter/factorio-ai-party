@@ -338,6 +338,16 @@ return function(api)
     if game.tick>=action.wait_end then return action.got>0 and 'collected' or 'nothing_collected' end
   end
   -- The wait's count: what it took, what the machine made, what its inserters took (per item, as name*count lines).
+  -- A wait carried over a harness update (carry.lua) from a runtime that did not count its output each tick (before
+  -- shift12 13:45): counting starts now, from what the output holds.
+  function M.carried(action)
+    local w=action.wait and action.waiting
+    if type(w)~='table' or w.arrived then return end
+    local t=action.targets and action.targets[1]
+    local e=t and t.entity
+    local now=e and e.valid and counts(output_of(e)) or {}
+    w.last=now; w.arrived={}; w.grabbed={}; w.gone={}; w.hands={}; w.counted_from=game.tick
+  end
   function M.wait_report(action)
     local w=action.waiting
     if not w then return nil end
@@ -357,6 +367,11 @@ return function(api)
     if w.arrived then
       out.made=line(w.arrived); out.inserters_took=line(w.grabbed)
       out.left_otherwise=next(w.gone) and line(w.gone)..' (spoiled, or another player took it)' or nil
+      -- Carried over a harness update from a runtime that did not count (M.carried).
+      if w.counted_from then
+        out.counted_from=string.format('made, inserters_took and left_otherwise are counted from tick %d (a harness update); the wait began at tick %d',
+          w.counted_from,w.since)
+      end
     end
     -- Products a craft makes only by chance: how often.
     local chance,odds={},{}
