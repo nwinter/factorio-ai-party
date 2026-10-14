@@ -276,9 +276,12 @@ let journalPath: string | undefined;
 let paceState: PaceState | undefined;
 const paceNotes: Record<string, unknown> = {};
 function pace(): PaceState { return paceState ??= loadPace(paceFile); }
+// A reply to an --id retry may come from the game's or the broker's record with its old tick: no rollback, no speed.
+let retriedId: string | undefined;
 function notePace(reply: unknown) {
   const tick = reply && typeof reply === 'object' ? (reply as Reply).tick : undefined;
   if (typeof tick !== 'number' || !paceFile) return;
+  if (retriedId !== undefined && (reply as Reply).id === retriedId) return;
   const now = Date.now();
   const seen = seeTick(pace(), tick, now);
   savePace(paceFile, pace());
@@ -705,6 +708,7 @@ async function main() {
   operatorFile = process.env.FH_OPERATOR_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.operator-tells.jsonl') : undefined);
   paceFile = process.env.FH_PACE_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-pace.json') : undefined);
   journalPath = values.journal ? resolve(values.journal) : undefined;
+  retriedId = values.id;
   projectsFile = process.env.FH_PROJECTS_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.projects.json') : undefined);
   lookaheadFile = process.env.FH_LOOKAHEAD_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.lookahead.json') : undefined);
   lookaheadName = bot ?? (values.journal ? dirname(resolve(values.journal)).split('/').pop() ?? '' : '');

@@ -147,6 +147,13 @@ test('the CLI: the clock names a slow game, a rollback is said once with redo, a
     assert.equal(Object.keys(out.result)[0], 'rolled_back', 'first in the reply');
     out = JSON.parse((await cli(port, ['call', 'status', '--journal', journal])).stdout);
     assert.equal(out.result.rolled_back, undefined, 'once');
+    // An --id retry answered from a record carries its old tick: it moves nothing (else the next call reads a rollback).
+    const kept = tick; tick = 100100;
+    out = JSON.parse((await cli(port, ['call', 'build', '--id', 'retry-1', '--journal', journal])).stdout);
+    assert.equal(out.result.rolled_back, undefined);
+    tick = kept;
+    out = JSON.parse((await cli(port, ['call', 'status', '--journal', journal])).stdout);
+    assert.equal(out.result.rolled_back, undefined, 'the retry moved nothing');
   });
   // The game is unreachable: since when, and nothing was sent; the first reply after says how long.
   const closed = await new Promise<number>(resolve => { const s = createServer().listen(0, '127.0.0.1', () => { const a = s.address() as any; s.close(() => resolve(a.port)); }); });
