@@ -159,8 +159,14 @@ already targets your character.
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
   `collect` over several targets ends with a `tally` line. `feed`, `collect` and `transfer` take `area {left_top,
   right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`).
+  `feed` gives a burner fuel when its fuel slots are empty, or with `fuel` (`true` or a fuel name); a furnace with no
+  recipe yet takes the `item`/`items` it smelts; each named machine gets a row (`gave` or `got`, and its `fuel`).
 - Reach is measured to an entity's edge: 10 tiles for buildings, 2.7 for ore, trees and rocks. `rotate` is one
   90-degree turn clockwise (`reverse` counter-clockwise, `direction` a facing to turn to) and replies `before`/`after`.
+  `mine` at a mined-out resource tile mines the nearest tile of the same resource within `radius` (default 8), one in
+  reach first, and names it in `instead`. `fh research` times (`done_in`) use the last minute's lab throughput.
+  `repair` on an undamaged entity is ok with `unchanged: "not damaged"`; `repair` takes `positions` or `area` and
+  reports `repaired` and `already_full`.
 - What you take over a personal request's max goes to your trash slots: `transfer`, `collect` and `pickup` say how much
   (`trash`); `"up_to": true` stops at the max, `"keep_max": true` refuses the take. A paste leaves the requests of a hub
   or requester chest it lands on (`requests_kept`).
