@@ -468,6 +468,7 @@ eq(pl.entities[1].position.x,11.5); eq(pl.entities[2].position.x,7.5); eq(pl.ent
 local hp=H.plan(pp4,{slot='offhub'})
 eq(hp.anchor.by,'hub'); eq(hp.entities[1].position.x,0); eq(hp.entities[1].position.y,0); eq(hp.entities[2].position.x,10.5)
 fails(function() H.plan(p,{slot='plan'}) end,'position is required')
+fails(function() H.plan(pp4,{slot='offhub',flip_horizontal=true}) end,'flips are not supported')
 
 -- The team library (operator 00:50): blueprint_save captures our entities by area or positions into a named entry in
 -- storage; blueprint_list lists it; blueprint_place, paste and plan take name; delete and rename: the author any time,

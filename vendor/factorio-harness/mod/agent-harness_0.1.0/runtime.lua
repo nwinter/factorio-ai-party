@@ -4446,7 +4446,13 @@ function handlers.dry_run(p,a)
   local q=p
   if inner.platform~=nil and action~='build' then q=on_platform(p,inner.platform) end
   local kind=action=='build' and 'build' or action=='place_ghosts' and 'ghosts' or 'paste'
-  local plan={kind=kind,details=details,entities={},tiles={},standing=kind~='build'}
+  local plan={kind=kind,mode=inner.mode,details=details,entities={},tiles={},standing=kind~='build'}
+  -- Bounded work: a plan past these is refused before anything is checked.
+  local function bounded()
+    assert(#plan.entities<=M.dryrun.MAX_ENTITIES and #plan.tiles<=M.dryrun.MAX_TILES,string.format(
+      'a dry run checks at most %d entities and %d tiles; this plan has %d entities and %d tiles so far (fewer repeat copies, or part of the layout)',
+      M.dryrun.MAX_ENTITIES,M.dryrun.MAX_TILES,#plan.entities,#plan.tiles))
+  end
   local copies,dx,dy=1,0,0
   local r=inner['repeat']
   if r~=nil then
@@ -4522,15 +4528,18 @@ function handlers.dry_run(p,a)
       for _,t in ipairs(pl.tiles) do t.copy=copy; plan.tiles[#plan.tiles+1]=t end
       paste=paste or {slot=pl.slot,label=pl.label,origin_at=pl.origin_at,center_at=pl.center_at,anchor=pl.anchor}
     end
+    bounded()
   end
   local out,_,counts=M.dryrun.check(q,plan)
   out.action=action
   out.paste=paste
   if kind=='paste' and (inner.mode or 'normal')=='normal' and (counts.refused_now or 0)>0 then
-    out.paste_note=string.format('a normal paste is all or nothing: with %d entr%s the game refuses there now, it places no ghost at all; mode forced places the rest',
+    out.paste_note=string.format('a normal paste is all or nothing: with %d entr%s the game refuses there now, it places no ghost at all; mode forced places the rest and marks trees and rocks in the way',
       counts.refused_now,counts.refused_now==1 and 'y' or 'ies')
-  elseif kind=='build' and (counts.blocked or 0)>0 then
-    out.build_note='a build batch stops at the first entry that fails (the ones before it stay built); skip_failed builds the rest'
+  elseif kind=='build' and counts.fail_first then
+    out.build_note=inner.skip_failed and string.format('skip_failed: entries that fail are skipped, the first #%d (%s)',counts.fail_first,counts.fail_why)
+      or string.format('a build batch stops at the first entry that fails (the ones before it stay built): entry #%d (%s); with skip_failed the others build',
+        counts.fail_first,counts.fail_why)
   end
   return out
 end

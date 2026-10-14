@@ -59,6 +59,7 @@ local function world(tiles, entities, opts)
   end
   for _, e in ipairs(entities) do
     e.valid = true; e.force = e.force or force; e.prototype = e.prototype or prototypes.entity[e.name]
+    if e.type == 'entity-ghost' then e.ghost_prototype = prototypes.entity[e.ghost_name] end
     e.bounding_box = bbox(e)
   end
   local function meets(a, b)
@@ -206,9 +207,9 @@ local g = dryrun.check(p2, {kind='ghosts', standing=true, details=true, entities
 }, tiles=fill})
 local gr = {}
 for _, r in ipairs(g.entities) do gr[r.index] = r end
-eq(gr[1].status, 'ok'); has(gr[1].why, '1 tree/rock there get marked for removal')
+eq(gr[1].status, 'ok'); has(gr[1].why, 'place_ghosts marks tree-01 (-8,6) for removal (construct mines trees and rocks)')
 eq(gr[1].footprint, '-9,5..-8,6', 'details: footprints')
-eq(gr[2].status, 'after_tiles'); has(gr[2].why, 'placeable once the planned tiles under it are laid; the game refuses its ghost on the tiles there now, and place_ghosts places entity ghosts before tile ghosts')
+eq(gr[2].status, 'after_tiles'); has(gr[2].why, 'placeable once the tiles under it are laid; the game refuses its ghost on the tiles there now, and place_ghosts places entity ghosts before tile ghosts')
 eq(gr[3].status, 'ok'); has(gr[3].why, 'replaces assembling-machine-1 (-10.5,-6.5)')
 eq(g.tiles.planned, 4); eq(g.tiles.refused, 1); has(g.tiles.refused_rows[1], '(0.5,5.5) landfill: landfill cannot go on grass-1')
 eq(g.standing.reach, 10); eq(g.entities[1].reach, nil, 'ghosts: reach is no problem of the plan')
@@ -239,6 +240,91 @@ for x = 6, 70 do wide[#wide+1] = {name='space-platform-foundation', position={x=
 for y = -1, 40 do wide[#wide+1] = {name='space-platform-foundation', position={x=70.5, y=y+0.5}} end
 local open = dryrun.check(pp, {kind='ghosts', entities={}, tiles=wide})
 eq(open.tiles.holes, nil, 'a region past the hole limit is open space')
+
+-- A paste takes what its mode takes (review, 22:46): a normal paste is all or nothing and marks nothing, so a tree
+-- blocks it; forced marks trees and rocks; superforced our own entities too.
+local tree_world = world(planet, {{name='tree-01', type='tree', position={x=5.5, y=0.5}, minable=true, force={name='neutral'}},
+  {name='stone-furnace', type='furnace', position={x=12, y=0}, minable=true}, me})
+local tp = {surface=tree_world, force=force, position={x=0, y=0}, build_distance=10, character=me,
+  get_main_inventory=function() return {get_item_count=function() return 0 end} end}
+local function paste(mode, name, pos)
+  local o, recs, c = dryrun.check(tp, {kind='paste', mode=mode, entities={{index=1, name=name, position=pos}}})
+  return recs[1], c, o
+end
+local r1, c1 = paste('normal', 'assembling-machine-1', {x=5.5, y=0.5})
+eq(r1.status, 'blocked'); has(r1.why, 'blocked by tree-01 (5.5,0.5)'); eq(c1.refused_now, 1)
+local r2, c2 = paste('forced', 'assembling-machine-1', {x=5.5, y=0.5})
+eq(r2.status, 'ok'); has(r2.note, 'the paste marks tree-01 (5.5,0.5) for removal'); eq(c2.refused_now, nil)
+local r3 = paste('forced', 'gun-turret', {x=12, y=0})
+eq(r3.status, 'blocked', 'forced does not take our own entities'); has(r3.why, 'stone-furnace (12,0)')
+local r4 = paste('superforced', 'gun-turret', {x=12, y=0})
+eq(r4.status, 'ok'); has(r4.note, 'the paste marks stone-furnace (12,0) for removal')
+
+-- Rails cross rails, and a signal beside a planned rail waits for it (review: signalled rail blueprints read blocked).
+prototypes.entity['straight-rail'] = {name='straight-rail', type='straight-rail', tile_width=2, tile_height=2, collision_box=box(0.7),
+  collision_mask=mask('object', 'rail', 'water_tile'), items_to_place_this={{name='rail', count=1}}}
+prototypes.entity['rail-signal'] = {name='rail-signal', type='rail-signal', tile_width=1, tile_height=1, collision_box=box(0.2),
+  collision_mask=mask('object', 'rail', 'water_tile'), items_to_place_this={{name='rail-signal', count=1}}}
+local rail_world = world(planet, {me})
+local engine = rail_world.can_place_entity
+rail_world.can_place_entity = function(a) if a.name == 'rail-signal' then return false end return engine(a) end
+local rp = {surface=rail_world, force=force, position={x=0, y=0}, build_distance=10, character=me,
+  get_main_inventory=function() return {get_item_count=function() return 0 end} end}
+local ro, rrecs, rc = dryrun.check(rp, {kind='paste', entities={{index=1, name='straight-rail', position={x=4, y=0}},
+  {index=2, name='straight-rail', position={x=4, y=0}, direction=4}, {index=3, name='rail-signal', position={x=5.5, y=-1.5}}}})
+eq(rrecs[2].status, 'ok', 'a crossing rail is no collision'); eq(rrecs[3].status, 'after_rails'); has(rrecs[3].note, "goes with the plan's rails")
+eq(rc.refused_now, nil, 'no all-or-nothing note for a signalled rail paste'); has(ro.summary, "1 with the plan's rails")
+local alone = select(2, dryrun.check(rp, {kind='ghosts', entities={{index=1, name='rail-signal', position={x=5.5, y=-1.5}}}}))
+eq(alone[1].status, 'blocked', 'without planned rails the game refuses it')
+
+-- Pole ghosts already ordered join too (review: a planned pole 7 tiles from a pole ghost 7 tiles from a built pole).
+local chain_world = world(planet, {{name='small-electric-pole', type='electric-pole', position={x=-4.5, y=0.5}, electric_network_id=3},
+  {name='entity-ghost', type='entity-ghost', ghost_name='small-electric-pole', position={x=2.5, y=0.5}}, me})
+local cp = {surface=chain_world, force=force, position={x=0, y=0}, build_distance=10, character=me,
+  get_main_inventory=function() return {get_item_count=function() return 0 end} end}
+local co = dryrun.check(cp, {kind='ghosts', entities={{index=1, name='small-electric-pole', position={x=9.5, y=0.5}}}})
+eq(co.power.islands, nil); has(co.power.connected[1], 'planned pole #1 reaches the built network of')
+
+-- Tile ghosts already ordered count as tiles to come: a furnace on the pond over landfill ghosts is placeable after
+-- them, and a platform ring closed by foundation ghosts encloses no hole they already fill.
+local pond_world = world(planet, {{name='tile-ghost', type='tile-ghost', ghost_name='landfill', position={x=19.5, y=9.5}},
+  {name='tile-ghost', type='tile-ghost', ghost_name='landfill', position={x=20.5, y=9.5}},
+  {name='tile-ghost', type='tile-ghost', ghost_name='landfill', position={x=19.5, y=10.5}},
+  {name='tile-ghost', type='tile-ghost', ghost_name='landfill', position={x=20.5, y=10.5}}, me})
+local pdp = {surface=pond_world, force=force, position={x=15, y=10}, build_distance=10, character=me,
+  get_main_inventory=function() return {get_item_count=function() return 0 end} end}
+local pr = select(2, dryrun.check(pdp, {kind='paste', entities={{index=1, name='stone-furnace', position={x=20, y=10}}}}))
+eq(pr[1].status, 'after_tiles')
+local hole_ghosts = {}
+for x = 7, 9 do for y = -1, 1 do hole_ghosts[#hole_ghosts+1] = {name='tile-ghost', type='tile-ghost', ghost_name='space-platform-foundation', position={x=x+0.5, y=y+0.5}} end end
+local ps2 = world(deck, hole_ghosts, {platform={hub=hub}})
+local pl2 = dryrun.check({surface=ps2, force=force, position={x=0, y=0}}, {kind='ghosts', entities={}, tiles=ring})
+eq(pl2.tiles.holes, nil, 'the hole is ordered already')
+
+-- A build batch names the entry it stops at (review: exists, out of reach and late tiles never counted).
+local _, _, bc = dryrun.check(p, {kind='build', entities={
+  {index=1, name='small-electric-pole', position={x=2.5, y=0.5}, item='small-electric-pole'},
+  {index=2, name='assembling-machine-1', position={x=-10.5, y=-6.5}, item='assembling-machine-1'},
+  {index=3, name='small-electric-pole', position={x=30.5, y=0.5}, item='small-electric-pole'}}})
+eq(bc.fail_first, 2); eq(bc.fail_why, 'target already contains this entity')
+local _, _, bc2 = dryrun.check(p, {kind='build', entities={{index=1, name='small-electric-pole', position={x=30.5, y=0.5}, item='small-electric-pole'}}})
+eq(bc2.fail_first, 1); has(bc2.fail_why, 'out of reach: 30.5 tiles from you, reach 10')
+local _, _, bc3 = dryrun.check(p, {kind='build', entities={}, tiles={{index=1, name='landfill', item='landfill', position={x=0.5, y=5.5}}}})
+eq(bc3.fail_first, 1); eq(bc3.fail_why, 'no tile of its brush can be laid there')
+
+-- Bounded work (review: 2048 entries over water took 9 s in standing spots): every entry out of reach over a lake,
+-- no free spot near any, standing gives up after a bounded number of looks.
+local function lake(x, y) if x >= 30 then return 'water' end return 'grass-1' end
+local lake_world = world(lake, {me})
+local lp = {surface=lake_world, force=force, position={x=0, y=0}, build_distance=10, character=me,
+  get_main_inventory=function() return {get_item_count=function() return 0 end} end}
+local many = {}
+for i = 0, 1023 do many[#many+1] = {index=i+1, name='stone-furnace', position={x=60+2*(i % 32), y=2*math.floor(i/32)}} end
+local t0 = os.clock()
+local lo2 = dryrun.check(lp, {kind='ghosts', standing=true, entities=many})
+local spent = os.clock()-t0
+assert(spent < 1.5, string.format('1024 entries over water took %.2f s', spent))
+has(lo2.standing.no_spot, 'no free spot within reach of'); assert(lo2.standing.more, 'the rest are counted')
 
 -- Snapping, footprints and runs.
 local snapped = dryrun.snap(prototypes.entity['assembling-machine-1'], {x=5, y=0}, 0)

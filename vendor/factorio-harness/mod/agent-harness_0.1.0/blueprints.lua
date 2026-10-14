@@ -608,6 +608,9 @@ return function(api)
     ['legacy-straight-rail']=true,['legacy-curved-rail']=true,['train-stop']=true,['rail-signal']=true,['rail-chain-signal']=true,['rail-ramp']=true}
   function H.plan(p,a)
     local on_platform=type(p)=='table' and rawget(p,'__platform')~=nil
+    -- As blueprint_place: a platform or a bot pastes without a cursor, unflipped.
+    assert(not (type(p)=='table' and (rawget(p,'__platform') or rawget(p,'__bot')) and (a.flip_horizontal or a.flip_vertical)),
+      'flips are not supported when pasting on a platform or as a bot')
     assert(a.anchor==nil or a.anchor=='hub' or a.anchor=='center' or a.anchor=='saved','anchor must be hub, center or saved')
     local pos=a.position~=nil and api.position(a.position) or nil
     local direction=directions[a.direction or 'north']; assert(direction, 'blueprint direction must be north, east, south, or west')
