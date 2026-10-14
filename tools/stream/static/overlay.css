@@ -228,6 +228,7 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
   margin-left: auto; flex: none; font-size: 12px; font-weight: 600; color: var(--faint);
   white-space: nowrap; max-width: 92px; overflow: hidden; text-overflow: ellipsis;
 }
+.card.squeezed .harness { display: none; }
 .card .tok {
   flex: none; font-size: 12px; font-weight: 600; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums;
 }
