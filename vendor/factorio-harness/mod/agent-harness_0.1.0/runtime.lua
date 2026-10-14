@@ -243,6 +243,8 @@ local function finish(index, outcome)
   if action and action.retreated and (outcome=='arrived' or outcome=='arrived_near') then outcome='retreated' end
   -- The goal lets a caller tell its own completion from one that replaced it.
   if action then s.last[index]={kind=action.kind, outcome=outcome, tick=game.tick, target=action.kind=='move_to' and action.position or nil} end
+  -- An action's own report goes to last as it stands (clear_cliffs: thrown, destroyed, skipped, left).
+  if action and type(action.report)=='table' then for k,v in pairs(action.report) do s.last[index][k]=v end end
   -- Why it went back, from where, the health then and now (retreat.lua).
   if action and action.retreated then
     local r=action.retreated
@@ -6390,8 +6392,12 @@ M.dryrun=require('dryrun'){placewhy=M.placewhy,charted=charted,own_platform=own_
   rail_overlaps=function(shape,l,t,r,b) return M.rails.overlaps(shape,l,t,r,b) end}
 M.ports=require('ports'){boxes=function(proto) return pipes.boxes(proto) end,defined=function(e) return pipes.defined(e) end}
 -- Grenades and other capsules (capsules.lua, request #89).
-M.capsules=require('capsules'){state=state,position=position,assert_visible=assert_visible,held=held}
+M.capsules=require('capsules'){state=state,position=position,assert_visible=assert_visible,held=held,distance=distance,integer=integer,
+  start=function(p,action) if state().active[p.index] then finish(p.index,'replaced') else stop(p) end; state().active[p.index]=action end,
+  request_path=function(p,nav) return request_path(p,nav) end,navigate=function(p,nav) return navigate(p,nav) end,
+  stop_walking=function(p) p.walking_state={walking=false,direction=defines.direction.north} end}
 handlers.use_item=M.capsules.handlers.use_item
+handlers.clear_cliffs=M.capsules.handlers.clear_cliffs
 -- The fluid GUI's flush (flush.lua, Sol's request): reach as configure.
 M.flush=require('flush'){integer=integer,friendly=friendly,target=function(p,a)
   local near,e=pcall(entity,p,a)
@@ -9203,6 +9209,9 @@ function M.tick_action(index,action,event)
     end
   elseif action.kind=='pickup' and action.area then
     local outcome=M.ground.tick(p,action,event.tick)
+    if outcome then finish(index,outcome) end
+  elseif action.kind=='clear_cliffs' then
+    local outcome=M.capsules.tick_cliffs(p,action,event.tick)
     if outcome then finish(index,outcome) end
   elseif action.kind=='pickup' then
     -- One item stack every 6 ticks; done when none is left in reach. No

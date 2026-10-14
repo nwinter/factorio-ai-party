@@ -239,6 +239,8 @@ already targets your character.
   remote view while your character stays put; its guns do not fire that way.
 - `equipment {"vehicle":311799,"operation":"insert","item":"energy-shield-equipment"}` works a tank's (6x8) or spidertron's
   (10x6) equipment grid in reach or seated; `"operation":"list"` shows it, also by remote view; `inspect` on it too.
+- `clear_cliffs {"positions":[{"x":82,"y":38.5}]}` throws cliff explosives you hold at those cliffs, walking into their 10-tile
+  range (`use_item {"item":"cliff-explosives","position":...}` too); `last.destroyed` names the cliffs gone, `last.left` the rest.
 - `vehicle {drive}` follows the engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes
   through units (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does.
   It keeps its turning room clear of our buildings and brakes before any of ours (`last.spared`). With no room near the
