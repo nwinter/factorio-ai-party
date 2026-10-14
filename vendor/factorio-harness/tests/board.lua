@@ -523,6 +523,13 @@ died('pipe',8000,8000,flamer_at,force); died('pipe',8001,8000,flamer_at,force)
 jump(60)
 eq(unnumbered(has(astra('status').team.alerts,'(8000,8000)')),
   'losses in (8000,8000)-(8001,8000) 2 destroyed: 2 pipe by friendly fire: 2 flamethrower-turret at (8010,8004), 1s ago')
+-- What the game removes on its own is no loss (Luna, 08:56: an emptied cargo pod's container vanished and was told as
+-- friendly fire from an unknown source): no incident, no line.
+runtime.on_event{name=11,tick=tick,entity={valid=true,name='cargo-pod-container',type='temporary-container',position={x=8500,y=8500},force=force},force=force}
+runtime.on_event{name=11,tick=tick,entity={valid=true,name='item-on-ground',type='item-entity',position={x=8501,y=8500},force=force},force=force}
+jump(60)
+for _,l in ipairs(astra('status').team.alerts or {}) do assert(not l:find('(8500,8500)',1,true),l) end
+for _,i in ipairs(astra('status').alerts.incidents or {}) do assert(i.box.x0~=8500,'no incident for the pod') end
 -- Another surface is named, and a platform by its name.
 runtime.on_event{name=11,tick=tick,entity={valid=true,name='stone-furnace',position={x=9000,y=9000},force=force,surface={name='vulcanus'}},cause=enemy_biter}
 runtime.on_event{name=11,tick=tick,entity={valid=true,name='gun-turret',position={x=9000,y=9000},force=force,surface={name='platform-3',platform={name='Starling'}}},cause=enemy_biter}

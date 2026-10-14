@@ -1,6 +1,7 @@
 -- Run from repository root: lua tests/defense.lua
 -- The defense read: built-up areas, turret cover and ammo, uncovered parts, nests near our buildings.
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 defines={inventory={turret_ammo=1,artillery_turret_ammo=2}}
 local storage={}
 local force={name='player',is_chunk_charted=function(_,c) return c.x<20 end}
@@ -79,11 +80,22 @@ for x=0,18,2 do machine(x,0) end
 for x=20,299 do add('pipe','pipe',x,0) end
 add('pumpjack','mining-drill',300,0)
 for x=1000,1300,8 do machine(x,0) end
--- A flamer in the first cluster with a quarter of its oil, and a dry one.
-local function flamer(x,y,amount,direction)
-  return add('flamethrower-turret','fluid-turret',x,y,{direction=direction or 8,prototype={turret_range=30,attack_parameters={range=30,min_range=6,turn_range=1/3}},
-    fluidbox={[1]={amount=amount},get_capacity=function() return 200 end}})
+-- A flamethrower turret as the 2.0 engine has it: a 100-unit fluidbox on the pipe line and a 100-unit buffer it fires
+-- from, filled from the box; get_fluid_contents holds both (world n, 2026-10-14: four flamers on a drained line read
+-- fluidbox[1] nil and contents crude-oil 86 to 100); get_capacity is the whole segment's. box: oil in the fluidbox,
+-- buffer: oil in the buffer.
+local FLAMER={name='flamethrower-turret',turret_range=30,fluidbox_prototypes={{volume=100}},fluid_buffer_size=100,
+  attack_parameters={range=30,min_range=6,turn_range=1/3,fluids={{type='crude-oil'},{type='heavy-oil',damage_modifier=1.05},
+    {type='light-oil',damage_modifier=1.1}}}}
+local function flamer(x,y,box,direction,buffer,fluid)
+  fluid=fluid or 'crude-oil'
+  local contents={}
+  if (box or 0)+(buffer or 0)>0 then contents[fluid]=(box or 0)+(buffer or 0) end
+  return add('flamethrower-turret','fluid-turret',x,y,{direction=direction or 8,prototype=FLAMER,
+    fluidbox={[1]=(box or 0)>0 and {name=fluid,amount=box} or nil,get_capacity=function() return 66700 end},
+    get_fluid_contents=function() return contents end})
 end
+-- In the first cluster: one with crude oil in its box, a dry one.
 flamer(10,4,50); flamer(12,4,0)
 game.tick=2000
 r=D.handlers.defense(p,{})
@@ -92,8 +104,9 @@ for _,a in ipairs(r.areas) do kinds[#kinds+1]=a.kind..' '..a.box end
 eq(table.concat(kinds,' | '),'line (64,0)-(255,0) | cluster (0,0)-(63,4) | cluster (256,0)-(300,0) | block (1024,0)-(1144,0) | block (1152,0)-(1272,0) '
   ..'| block (1000,0)-(1016,0) | block (1280,0)-(1296,0)')
 local first=r.areas[2]
-eq(first.flamers.count,2); eq(first.flamers.oil,50); eq(first.flamers.capacity,400); eq(first.flamers.dry,1); eq(first.flamers.low,nil)
-assert(first.line:find('turrets in range: 2 flamethrower (oil 13%, 1 dry)',1,true),first.line)
+eq(first.flamers.count,2); eq(first.flamers.with_oil,1); eq(first.flamers.oil,50); eq(first.flamers.capacity,400); eq(first.flamers.dry,1)
+eq(first.flamers.low,nil)
+assert(first.line:find('turrets in range: 2 flamethrower (1 of 2 with oil (crude-oil 50 at (10,4)); oil 13%, 1 dry)',1,true),first.line)
 eq(first.ammo,0)
 assert(r.areas[4].line:find('^area 4 %(block, %d+ tiles E of base centre%)'),r.areas[4].line)
 
@@ -113,7 +126,7 @@ assert(nest.line:find('pollution reaches it (last there 5m ago)',1,true),nest.li
 for k in pairs(ours) do ours[k]=nil end
 storage.defense_cache=nil
 local wall_proto={resistances={fire={percent=1}}}
-local f=flamer(0,0,150,8) -- facing south
+local f=flamer(0,0,100,8,50) -- facing south: a full box and half a buffer
 add('pipe','pipe',0,10); add('pipe','pipe',5,15); add('pipe','pipe',0,32) -- in the arc (32: burning ground past range 30)
 add('pipe','pipe',0,-10) -- behind
 add('pipe','pipe',0,3) -- under min range
@@ -123,25 +136,34 @@ add('stone-wall','wall',2,10,{prototype=wall_proto})
 add('gun-turret','ammo-turret',-3,12)
 flamer(100,100,0,0) -- facing north, nothing near
 local fl=D.handlers.flamers(p,{})
-eq(fl.count,2); eq(fl.dry,1); eq(fl.with_buildings_in_arc,1)
+eq(fl.count,2); eq(fl.dry,1); eq(fl.with_oil,1); eq(fl.with_buildings_in_arc,1)
+eq(fl.summary,'1 of 2 with oil (crude-oil 150 at (0,0))')
 local row=fl.flamers[1]
 eq(row.at_risk,4); eq(row.facing,'S'); eq(row.kinds,'3 pipe, 1 gun-turret'); eq(row.nearest.name,'pipe'); eq(row.nearest.distance,10)
-eq(row.line,'flamethrower-turret (0,0) facing S, oil 75% (150/200): 4 of our burnable buildings in its arc within 33 tiles: 3 pipe, 1 gun-turret '
+eq(row.line,'flamethrower-turret (0,0) facing S, oil crude-oil 150/200 (75%): 4 of our burnable buildings in its arc within 33 tiles: 3 pipe, 1 gun-turret '
   ..'(nearest pipe (0,10), 10 tiles)')
-eq(fl.flamers[2].line,'flamethrower-turret (100,100) facing N, oil 0% (0/200): none of our burnable buildings in its arc')
+eq(fl.flamers[2].line,'flamethrower-turret (100,100) facing N, oil none/200 (0%): none of our burnable buildings in its arc')
 
--- A full flamer on a long oil line (shift07 15:31, Astra): get_capacity is the whole segment's in 2.0 (66700), the
--- turret's own tank is its prototype's volume (100); 99 of 100 is neither dry nor low, in the read and the area.
+-- Astra, shift11 16:36: its pipe drained (fluidbox[1] nil, get_capacity the whole segment's 66700), 87.2 crude oil in
+-- its buffer, and it burnt a reactor; the read said dry. It holds oil: in the read and the area, 87 of 200.
 for k in pairs(ours) do ours[k]=nil end
 storage.defense_cache=nil
-add('flamethrower-turret','fluid-turret',0,0,{direction=8,prototype={turret_range=30,attack_parameters={range=30,min_range=6,turn_range=1/3},
-  fluidbox_prototypes={{volume=100}}},fluidbox={[1]={amount=99},get_capacity=function() return 66700 end}})
-add('pipe','pipe',0,10)
+flamer(64.5,-121,0,4,87.2)
+add('pipe','pipe',70,-121)
 game.tick=game.tick+1000
 fl=D.handlers.flamers(p,{})
-eq(fl.count,1); eq(fl.dry,nil); eq(fl.low,nil); eq(fl.flamers[1].oil,99); eq(fl.flamers[1].capacity,100)
-assert(fl.flamers[1].line:find('oil 99% (99/100)',1,true),fl.flamers[1].line)
+eq(fl.count,1); eq(fl.with_oil,1); eq(fl.dry,nil); eq(fl.low,nil); eq(fl.flamers[1].oil,87); eq(fl.flamers[1].capacity,200)
+eq(fl.flamers[1].fluid,'crude-oil'); eq(fl.summary,'1 of 1 with oil (crude-oil 87 at (64.5,-121))')
+assert(fl.flamers[1].line:find('oil crude-oil 87/200 (44%)',1,true),fl.flamers[1].line)
 local area=D.handlers.defense(p,{}).areas[1]
-eq(area.flamers.count,1); eq(area.flamers.oil,99); eq(area.flamers.capacity,100); eq(area.flamers.dry,nil); eq(area.flamers.low,nil)
-assert(area.line:find('1 flamethrower (oil 99%)',1,true),area.line)
+eq(area.flamers.count,1); eq(area.flamers.oil,87); eq(area.flamers.capacity,200); eq(area.flamers.dry,nil); eq(area.flamers.low,nil)
+assert(area.line:find('1 flamethrower (1 of 1 with oil (crude-oil 87 at (64.5,-121)); oil 44%)',1,true),area.line)
+-- Any oil it fires counts (light oil here); a fluid it does not fire (water) is no oil: dry.
+for k in pairs(ours) do ours[k]=nil end
+storage.defense_cache=nil
+flamer(0,0,40,8,0,'light-oil'); flamer(30,0,60,8,0,'water'); flamer(60,0,10,8,0,'heavy-oil')
+game.tick=game.tick+1000
+fl=D.handlers.flamers(p,{})
+eq(fl.count,3); eq(fl.with_oil,2); eq(fl.dry,1); eq(fl.low,2)  -- 40 and 10 of 200, under a quarter
+eq(fl.summary,'2 of 3 with oil (heavy-oil 10 at (60,0), light-oil 40 at (0,0))')
 print('defense: ok')

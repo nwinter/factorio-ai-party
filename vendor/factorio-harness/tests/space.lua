@@ -135,6 +135,28 @@ do
   eq(row.hub_trash,'iron-plate*5')
   local all=space.platforms(p,{}).platforms[1]
   eq(all.thrown_overboard,nil,'details only for one named platform'); eq(all.hub_trash,'iron-plate*5','every row')
+  -- Where the hub's trash goes (operator 09:04: Sunward's trash on Gleba, no landing pad): down to the planet the
+  -- platform is stopped at, to its pad or as cargo-pod containers near (0,0); kept while flying.
+  eq(all.hub_trash_note,nil,'a location not known as a planet: no note')
+  local saved_loc=platform.space_location
+  platform.space_location={name='gleba',type='planet'}
+  eq(space.platforms(p,{}).platforms[1].hub_trash_note,'the game sends the hub\'s trash down to gleba in cargo pods while the platform is stopped there: to its landing pad, or, with none there, as cargo-pod containers on the ground near (0,0) (where_is lists them)')
+  platform.space_location,platform.space_connection,platform.distance=nil,{from={name='nauvis'},to={name='gleba'},length=15000},0.5
+  eq(space.platforms(p,{}).platforms[1].hub_trash_note,'the hub keeps its trash while flying; when the platform stops at a planet, the game sends it down in cargo pods: to its landing pad, or, with none there, as cargo-pod containers on the ground near (0,0) (where_is lists them)')
+  -- requests on a hub: a max under what it holds is named, with the trash and where it goes.
+  hub_inv.get_item_count=function(it) assert(it.name=='iron-plate' and it.quality=='normal'); return 5 end
+  local rq=space.requests(p,{platform='alpha',set={{item='iron-plate',min=0,max=2}}})
+  eq(rq.over_max[1],'iron-plate: the hub holds 5, 3 over the max 2'); eq(rq.hub_trash,'iron-plate*5')
+  assert(rq.trash_note:find('^in flight the game moves what is over a max to the hub\'s trash within a second%. the hub keeps its trash while flying'),rq.trash_note)
+  platform.space_location,platform.space_connection={name='gleba',type='planet'},nil
+  rq=space.requests(p,{platform='alpha',set={{item='iron-plate',min=0,max=2}}})
+  assert(rq.trash_note:find('^while the platform is stopped the game leaves what is over a max in the hub; once it flies, the game moves that to the trash, which goes down at the next stop%. the game sends the hub\'s trash down to gleba'),rq.trash_note)
+  platform.space_location,platform.space_connection={name='nauvis'},{from={name='nauvis'},to={name='gleba'},length=15000}
+  rq=space.requests(p,{platform='alpha',set={{item='iron-plate',min=0,max=9}}})
+  eq(rq.over_max,nil); assert(rq.trash_note:find('^the hub keeps its trash while flying'),rq.trash_note)
+  hub_inv.get_item_count=nil
+  space.requests(p,{platform='alpha',clear={'iron-plate'}})
+  platform.space_location,platform.space_connection,platform.distance=saved_loc,nil,nil
   platform.surface.find_entities_filtered,platform.force,platform.ejected_items=find,saved_force,nil
   defines.flow_precision_index,defines.inventory.hub_trash=nil,nil
 end

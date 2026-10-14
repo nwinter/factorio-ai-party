@@ -798,6 +798,8 @@ CARD_CALLS = {
     "space": "the card shows the team's progress toward space: say where they are on the way",
     "hauling": "the card ranks the agents by items moved by hand this shift: read the top names and their numbers as "
                "they are, with no verdict on anyone",
+    "tokens": "the card ranks the agents by tokens their models read and wrote this shift (most read again from cache): "
+              "read the top names and their numbers as they are, with no verdict on anyone",
 }
 
 

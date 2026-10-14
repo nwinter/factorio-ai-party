@@ -228,6 +228,10 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
   margin-left: auto; flex: none; font-size: 12px; font-weight: 600; color: var(--faint);
   white-space: nowrap; max-width: 92px; overflow: hidden; text-overflow: ellipsis;
 }
+.card .tok {
+  flex: none; font-size: 12px; font-weight: 600; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.card .tok:empty { display: none; }
 .card .name {
   font-size: 21px; font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
   color: var(--agent-ink, var(--ink)); transition: color 600ms ease;
@@ -546,6 +550,8 @@ body.seg-full #alerts .alert:not(:last-child) { display: none; }
 #segment.lower .sbody { gap: 6px; }
 #segment.lower .shead.big { font-size: 26px; }
 #segment.lower .stable { grid-template-columns: 1fr 96px 72px; padding: 4px 10px; }
+#segment.lower.seg-tokens .stable { grid-template-columns: minmax(0, 1fr) 70px 66px 60px 88px; gap: 0; }
+#segment.lower.seg-tokens .stable .td { font-size: 15px; line-height: 1.3; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 #segment.lower .stable .th { font-size: 12px; padding: 2px 0; }
 #segment.lower .stable .td { font-size: 18px; padding: 2px 0; gap: 8px; }
 #segment.lower .srow { font-size: 17px; }
@@ -663,3 +669,30 @@ body.onecam .alert .ico { width: 26px; height: 26px; font-size: 14px; }
 body.onecam #cam-inset .cam-label { left: 0; bottom: 0; height: 26px; box-sizing: border-box; max-width: 100%;
   padding: 0 10px 0 3px; border-radius: 0; background: transparent; box-shadow: none; z-index: 1; transform: none; }
 #cam-inset .cam-label .avatar { width: 22px !important; height: 22px !important; }
+
+/* Loadout strips (overlay.js renderLoadouts; Nick 08:55): inside the main camera's lower left, above its bar, and
+   along the inset's top; one mode at a time (combat, building, carrying). */
+.loadout { position: absolute; z-index: 3; padding: 8px 12px; min-width: 220px; max-width: 420px; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 6px; font-size: 16px; color: var(--head); pointer-events: none; }
+.loadout.lo-main { left: 16px; bottom: calc(var(--bar-h, 0px) + 16px); }
+.loadout.lo-inset { left: 6px; top: 6px; min-width: 0; max-width: calc(100% - 12px); padding: 5px 8px; gap: 4px; font-size: 13px; }
+.loadout .lo-head { display: flex; gap: 10px; align-items: baseline; font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--accent); }
+.loadout .lo-why, .loadout .lo-armor { color: var(--muted); font-weight: 600; letter-spacing: 0.02em; text-transform: none; }
+.loadout.lo-combat .lo-head { color: var(--dead, #e04e3a); }
+.loadout .lo-gun, .loadout .lo-craft, .loadout .lo-bar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.loadout .lo-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.loadout .lo-count { font-size: 30px; font-variant-numeric: tabular-nums; line-height: 1; }
+.loadout.lo-inset .lo-count { font-size: 20px; }
+.loadout .lo-other { font-size: 13px; color: var(--muted); }
+.loadout .lo-empty { color: var(--dead, #e04e3a); font-weight: 700; }
+.loadout .lo-bar .lo-k { width: 52px; font-size: 12px; color: var(--muted); text-transform: uppercase; }
+.loadout .lo-bar .bar, .loadout .lo-craft .bar { flex: 1; min-width: 80px; }
+.loadout .lo-bar .lo-v { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.loadout .lo-bar.shield .bar > i { background: #4aa3ff; }
+.loadout .lo-bar.health .bar > i { background: var(--acting, #6fd36a); }
+.loadout .lo-queue, .loadout .lo-items, .loadout .lo-equip { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.loadout .lo-q, .loadout .lo-item, .loadout .lo-eq { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.loadout .lo-equip { font-size: 12px; color: var(--muted); }
+.loadout .lo-build { font-size: 14px; color: var(--muted); }
+.loadout .lo-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; }

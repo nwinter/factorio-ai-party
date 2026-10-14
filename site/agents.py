@@ -1,12 +1,15 @@
 """/agents/: one card per agent with its numbers across the long run's shifts, records and a comparison table; and
 /timeline/: the run's events in order. For site/build.py; the numbers come from tools/agent_stats.py (cached per
-shift), the events from the shifts' score logs and the director's deaths. Labels and numbers only."""
+shift) and the agents' token use from tools/stream/tokens.py (their CLIs' session logs, cached per shift), the events
+from the shifts' score logs and the director's deaths. Labels and numbers only."""
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 import agent_stats  # noqa: E402
+# tools/stream/tokens.py (agent_stats puts tools/stream at the end of the path: site/highlights.py stays the site's)
+import tokens as token_logs  # noqa: E402
 
 # (key, label, kind): kind "n" a count, "tiles" a distance, "pct" a share
 CARD = [("shifts", "Shifts", "n"), ("actions", "Game actions", "n"), ("built", "Buildings placed", "n"),
@@ -102,7 +105,49 @@ def collect(long, runs_dir, keys, cache_dir=None, names=()):
         if current > best:
             best, best_n = current, None
         survival[k] = (best, best_n, current)
-    return {"shifts": shifts, "totals": totals, "per_shift": per, "voice": voice, "survival": survival}
+    return {"shifts": shifts, "totals": totals, "per_shift": per, "voice": voice, "survival": survival,
+            "tokens": collect_tokens(shifts, runs_dir, list(totals), cache_dir)}
+
+
+TOKEN_SUM = ["total", "input", "cache_read", "cache_write", "output", "reasoning", "calls", "compactions"]
+
+
+def collect_tokens(shifts, runs_dir, keys, cache_dir=None):
+    """{"totals": {key: TOKEN_SUM summed, shifts, actions, per_action, cached %, context_max, resets}, "per_shift":
+    {key: [(n, row)]}, "last": (n, {key: row})}: the agents' token use (tools/stream/tokens.py), a shift at a time;
+    shifts with no session log found count nothing. A shift before the last has ended, so its cache is final; "last"
+    is the latest ended shift with numbers (the live one only when no other has any)."""
+    per, totals, last, ended = {}, {}, None, None
+    for i, (n, sid, st) in enumerate(shifts):
+        try:
+            c = token_logs.load(Path(runs_dir) / sid, cache_dir, final=i < len(shifts) - 1)
+        except OSError:
+            continue
+        rows = {k: r for k, r in (c.get("agents") or {}).items() if k in keys and r.get("total")}
+        if not rows:
+            continue
+        for k, r in rows.items():
+            actions = (st["agents"].get(k) or {}).get("actions") or 0
+            # a context reset: a compaction, or (agy) each fresh conversation after the shift's first
+            r = dict(r, actions=actions, resets=(r.get("compactions") or 0) + max(0, (r.get("conversations") or 0) - 1))
+            per.setdefault(k, []).append((n, r))
+            t = totals.setdefault(k, {f: 0 for f in TOKEN_SUM} | {"shifts": 0, "actions": 0, "context_max": 0,
+                                                                  "resets": 0, "conversations": 0})
+            for f in TOKEN_SUM:
+                t[f] += r.get(f) or 0
+            t["shifts"] += 1
+            t["actions"] += actions
+            t["resets"] += r["resets"]
+            t["conversations"] += r.get("conversations") or 0
+            t["context_max"] = max(t["context_max"], r.get("context_max") or 0)
+        last = (n, rows)
+        if i < len(shifts) - 1:
+            ended = last
+    totals = {k: totals[k] for k in keys if k in totals}
+    for t in totals.values():
+        t["per_action"] = t["total"] / t["actions"] if t["actions"] else None
+        t["cached"] = 100 * t["cache_read"] / t["input"] if t["input"] else None
+    return {"totals": totals, "per_shift": per, "last": ended or last}
 
 
 def records(data):
@@ -132,6 +177,10 @@ STYLE = """<style>
 .agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 16px; }
 .agent-card { padding: 14px 16px; border-top: 4px solid var(--ac); }
 .agent-card .voice { margin: .15rem 0 0; color: var(--muted); font-size: .82rem; }
+.agent-card .agent-now { margin: .5rem 0; padding: .4rem .6rem; border-left: 3px solid var(--ac); background: var(--surface); }
+.agent-card .agent-now h4 { margin: 0 0 .2rem; font-size: .82rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.agent-card .now-kv { grid-template-columns: 1fr; }
+.agent-card .now-kv dd { overflow-wrap: anywhere; }
 .agent-card .kv { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
 .agent-card .kv dd { font-variant-numeric: tabular-nums; }
 .agent-card .spark { display: flex; align-items: flex-end; gap: 3px; height: 34px; margin: .4rem 0 0; }
@@ -154,6 +203,15 @@ table.compare th[aria-sort] button::after { content: " ▾"; }
 table.compare th[aria-sort=ascending] button::after { content: " ▴"; }
 .tl-filters { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: .6rem 0 1rem; font-size: .92rem; }
 .tl-filters label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+table.compare td .tspark { display: inline-flex; align-items: flex-end; gap: 2px; height: 22px; vertical-align: middle; }
+table.compare td .tspark span { width: 7px; background: var(--ac, var(--accent)); opacity: .8; min-height: 2px; border-radius: 1px; }
+.ctx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 12px; }
+.ctx-grid figure { margin: 0; padding: 8px 10px; background: var(--surface); border: 1px solid var(--panel-border); border-radius: var(--radius); border-top: 3px solid var(--ac); }
+.ctx-grid figcaption { display: flex; justify-content: space-between; gap: 8px; font-size: .85rem; color: var(--muted); }
+.ctx-grid figcaption b { color: var(--heading); }
+.ctx-grid svg { display: block; width: 100%; height: 64px; }
+.ctx-grid svg polyline { fill: none; stroke: var(--ac); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.ctx-grid svg line { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 2; vector-effect: non-scaling-stroke; }
 table.timeline-table td { font-variant-numeric: tabular-nums; }
 table.timeline-table tr:target > * { background: var(--hl); }
 table.timeline-table td.kind { white-space: nowrap; color: var(--muted); }
@@ -188,6 +246,10 @@ def card(k, t, data, agent, avatar, esc):
                  for f, label, kind in CARD)
     best, best_n, current = data["survival"].get(k, (0, None, 0))
     dl += f"<div><dt>Longest survival</dt><dd>{game_span(best)}</dd></div>"
+    tok = (data.get("tokens") or {}).get("totals", {}).get(k)
+    if tok:
+        dl += (f"<div><dt>Tokens</dt><dd>{token_logs.short(tok['total'])}</dd></div>"
+               f"<div><dt>Tokens per game action</dt><dd>{token_logs.short(tok['per_action']) if tok['per_action'] else '–'}</dd></div>")
     rows = data["per_shift"].get(k, [])
     top = max((r.get("built") or 0 for _, r in rows), default=0)
     spark = ""
@@ -201,6 +263,7 @@ def card(k, t, data, agent, avatar, esc):
             f'<header>{avatar(k, "lg")}<div><h3>{esc(a["name"])}</h3>'
             f'<p class="model">{esc(a.get("model", ""))}{" · " + esc(maker) if maker else ""} · {esc(a.get("harness", ""))}</p>'
             f'{f"<p class=voice>Voice: {esc(voice)}</p>" if voice else ""}</div></header>'
+            f'<section class="agent-now" data-agent="{esc(k)}" hidden><h4>Now</h4><dl class="kv now-kv"></dl></section>'
             f'<dl class="kv">{dl}</dl>{spark}</article>')
 
 
@@ -237,6 +300,100 @@ def compare_table(data, agent, avatar, esc):
                     f'<a class="chip" href="#{esc(k)}">{avatar(k, "sm")}{esc(a["name"])}</a></th>{"".join(cells)}</tr>')
     return (f'<div class="table-wrap"><table class="compare"><thead><tr>{head}</tr></thead>'
             f'<tbody>{"".join(body)}</tbody></table></div>')
+
+
+TOKEN_COLS = [("total", "Tokens", "short"), ("input", "Input", "short"), ("cached", "Cached", "pct"),
+              ("output", "Output", "short"), ("calls", "Turns", "n"), ("per_action", "Per game action", "short"),
+              ("context_max", "Peak context", "short"), ("resets", "Context resets", "n")]
+
+
+def token_cell(v, kind):
+    if v is None:
+        return "–"
+    if kind == "short":
+        return token_logs.short(v)
+    if kind == "pct":
+        return f"{v:.0f}%"
+    return f"{v:,}"
+
+
+def token_table(data, agent, avatar, esc):
+    """The run's token use by agent (most first), each with its tokens per shift as bars."""
+    tk = data["tokens"]
+    totals = tk["totals"]
+    tops = {f: max((t.get(f) or 0 for t in totals.values()), default=0) for f, _, _ in TOKEN_COLS}
+    head = '<th scope="col">Agent</th>' + "".join(
+        f'<th scope="col"><button type="button">{esc(label)}</button></th>' for _, label, _ in TOKEN_COLS) + \
+        '<th scope="col">By shift</th>'
+    body = []
+    for k, t in sorted(totals.items(), key=lambda kv: -kv[1]["total"]):
+        a = agent(k)
+        cells = []
+        for f, _, kind in TOKEN_COLS:
+            v = t.get(f)
+            w = round(100 * (v or 0) / tops[f]) if tops[f] else 0
+            title = f' title="{round(v):,}"' if kind == "short" and v is not None else ""
+            cells.append(f'<td data-v="{v if v is not None else ""}"{title}>{token_cell(v, kind)}'
+                         f'<span class="bar"><i style="width:{w}%"></i></span></td>')
+        rows = tk["per_shift"].get(k, [])
+        top = max((r["total"] for _, r in rows), default=0)
+        bars = "".join(f'<span style="height:{max(8, round(100 * r["total"] / top))}%" '
+                       f'title="Shift {n}: {token_logs.short(r["total"])} tokens"></span>' for n, r in rows) if top else ""
+        cells.append(f'<td data-v=""><span class="tspark" aria-hidden="true">{bars}</span></td>')
+        body.append(f'<tr style="--ac:{esc(ac(a.get("color")))}"><th scope="row">'
+                    f'<a class="chip" href="#{esc(k)}">{avatar(k, "sm")}{esc(a["name"])}</a></th>{"".join(cells)}</tr>')
+    return (f'<div class="table-wrap"><table class="compare tokens"><thead><tr>{head}</tr></thead>'
+            f'<tbody>{"".join(body)}</tbody></table></div>')
+
+
+def context_charts(data, agent, esc):
+    """Each agent's context size through the latest shift with token numbers (its largest prompt per minute), all on
+    one time axis and one scale; a dashed line at each compaction."""
+    last = data["tokens"].get("last")
+    if not last:
+        return ""
+    n, rows = last
+    series = {k: r.get("context_minutes") or [] for k, r in rows.items()}
+    pts = [p for s in series.values() for p in s]
+    if not pts:
+        return ""
+    t0, t1 = min(p[0] for p in pts), max(p[0] for p in pts)
+    top = max(p[1] for p in pts) or 1
+    span = max(60, t1 - t0)
+    W, H = 240, 60
+
+    def x(t):
+        return round(W * (t - t0) / span, 1)
+    figs = []
+    for k in data["tokens"]["totals"]:
+        s = series.get(k)
+        if not s:
+            continue
+        r = rows[k]
+        line = " ".join(f"{x(t)},{round(H - H * v / top, 1)}" for t, v in s)
+        marks = "".join(f'<line x1="{x(c)}" x2="{x(c)}" y1="0" y2="{H}"/>' for c in r.get("compaction_at") or []
+                        if t0 <= c <= t1)
+        a = agent(k)
+        figs.append(f'<figure style="--ac:{esc(ac(a.get("color")))}"><figcaption><b>{esc(a["name"])}</b>'
+                    f'<span>peak {token_logs.short(r.get("context_max"))}</span></figcaption>'
+                    f'<svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" role="img" '
+                    f'aria-label="{esc(a["name"])}: context size through shift {n}, peak {r.get("context_max") or 0:,} tokens">'
+                    f'{marks}<polyline points="{line}"/></svg></figure>')
+    if not figs:
+        return ""
+    return (f'<h3 id="context">Context size through shift {n}</h3><p class="small muted">The largest prompt per minute, '
+            f'on one scale (top: {token_logs.short(top)} tokens); dashed lines are compactions.</p>'
+            f'<div class="ctx-grid">{"".join(figs)}</div>')
+
+
+def tokens_section(data, agent, avatar, esc):
+    tk = data.get("tokens") or {}
+    if not tk.get("totals"):
+        return ""
+    shifts = sorted({n for rows in tk["per_shift"].values() for n, _ in rows})
+    span = f"shift {shifts[0]}" if len(shifts) == 1 else f"shifts {shifts[0]} to {shifts[-1]}"
+    return (f'<h2 id="tokens">Tokens</h2><p class="small muted">Read from each agent\'s CLI session logs, {esc(span)}.</p>'
+            f'{token_table(data, agent, avatar, esc)}{context_charts(data, agent, esc)}')
 
 
 HAUL_COLS = [("haul_items", "Items"), ("haul_calls", "Calls"), ("haul_direct_items", "Direct"),
@@ -358,7 +515,7 @@ def maker_table(data, agent, avatar, esc):
             f'<tbody>{"".join(body)}</tbody></table></div>')
 
 
-def build_agents(data, agent, avatar, esc):
+def build_agents(data, agent, avatar, esc, api=None):
     """The /agents/ page body and its head extras."""
     shifts = data["shifts"]
     n0, n1 = (shifts[0][0], shifts[-1][0]) if shifts else (None, None)
@@ -380,7 +537,9 @@ def build_agents(data, agent, avatar, esc):
             f'<h2 id="compare">Comparison</h2>{compare_table(data, agent, avatar, esc)}'
             f'<h2 id="makers">By maker</h2>{maker_table(data, agent, avatar, esc)}'
             f'<h2 id="hauling">Hand hauling</h2>{hauling_table(data, agent, avatar, esc)}'
-            f'<h2 id="cards">The team</h2><div class="agent-grid">{cards}</div>'
+            f'{tokens_section(data, agent, avatar, esc)}'
+            # each card's "Now" (guns, armor, inventory, crafting, building) comes from the live API (site.js)
+            f'<h2 id="cards">The team</h2><div class="agent-grid"{f" data-api={chr(34)}{esc(api)}{chr(34)}" if api else ""}>{cards}</div>'
             f'<h2 id="notes">Definitions</h2><dl class="kv defs">'
             + "".join(f"<div><dt>{esc(a)}</dt><dd>{esc(b)}</dd></div>" for a, b in DEFS) + "</dl>" + SORT_JS)
     return body, STYLE
@@ -401,7 +560,16 @@ DEFS = [("Game actions", "requests that change the game: moves, builds, crafts, 
         ("Tiles carried", "straight lines from where an item was taken or last put to where it is put; legs over "
                           "400 tiles left out"),
         ("Top repeated haul", "puts of one item from one 10-tile area to another, most often"),
-        ("Longest survival", "game time between deaths, or since the last one")]
+        ("Longest survival", "game time between deaths, or since the last one"),
+        ("Tokens", "tokens the agent's model read and wrote: input (every prompt token, the cached ones too) plus "
+                   "output, summed over its model calls, from its CLI's own session log; a CLI's compaction summaries "
+                   "count where its log has them (Codex, Muse)"),
+        ("Cached", "the share of input read from the provider's prompt cache"),
+        ("Turns", "model calls: one request to the model and its reply"),
+        ("Tokens per game action", "tokens over the game actions in the same shifts"),
+        ("Peak context", "the largest prompt of one model call"),
+        ("Context resets", "compactions (the CLI replaces the conversation with a summary and goes on); Gemini's loop "
+                           "starts a fresh conversation about every 10 minutes instead, counted here too")]
 
 
 # ---------------------------------------------------------------- timeline

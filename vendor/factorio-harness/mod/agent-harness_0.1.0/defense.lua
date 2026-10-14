@@ -12,6 +12,7 @@
 -- The `flamers` read: each flamethrower turret's oil and our own buildings
 -- inside its arc that fire can burn (the friendly-fire risk: shift 5-6 lost a
 -- pipe row in front of the southeast flamers 8 times).
+local flameroil=require('flameroil')
 return function(api)
   local M={handlers={},schema={}}
   local CELL,BLOCK,CACHE_TICKS,MAX_AREAS,MAX_GAPS,MAX_TURRETS,MAX_NESTS,AREA_NESTS,NEST_RANGE,LOW_AMMO,LOW_OIL=32,4,600,16,3,6,8,3,256,10,0.25
@@ -66,18 +67,13 @@ return function(api)
     end
     return r
   end
-  -- A flamer's oil: what its fluidbox holds and can hold.
+  -- A flamer's oil: all it holds, its own buffer too, of the fluids it fires, and its fluidboxes' volume plus that
+  -- buffer (flameroil.lua; not get_capacity, which in 2.0 is the whole connected segment's: 66700 on a flamer line,
+  -- shift07 15:31; nor fluidbox[1] alone, empty once the line drains while the buffer still fires, shift11 16:36).
   local function oil(e)
-    local ok,amount,cap=pcall(function()
-      local f=e.fluidbox[1]
-      -- the turret's own tank (100), not get_capacity, which in 2.0 is the whole connected fluid segment's
-      -- (66700 on a flamer line: every flamer read 0%, shift07 15:31, Astra)
-      local pr=e.prototype local fp=pr and pr.fluidbox_prototypes and pr.fluidbox_prototypes[1]
-      local c=fp and fp.volume or (e.fluidbox.get_capacity and e.fluidbox.get_capacity(1)) or nil
-      return f and f.amount or 0,c
-    end)
+    local ok,amount,cap,fluid=pcall(flameroil.read,e)
     if not ok then return 0,nil end
-    return amount or 0,(type(cap)=='number' and cap>0) and cap or nil
+    return amount or 0,cap,fluid
   end
   local function ammo(e)
     if e.type=='ammo-turret' then
@@ -180,7 +176,7 @@ return function(api)
         if not LINK[e.type] then c.anchor=true end
         if GUARD[e.type] then
           local t={name=e.name,position={x=e.position.x,y=e.position.y},range=range(e),ammo=ammo(e),type=e.type}
-          if e.type=='fluid-turret' then t.oil,t.cap=oil(e) end
+          if e.type=='fluid-turret' then t.oil,t.cap,t.fluid=oil(e) end
           turrets[#turrets+1]=t
           maxr=math.max(maxr,t.range)
           tcells[key]=tcells[key] or {}; table.insert(tcells[key],t)
@@ -307,6 +303,7 @@ return function(api)
   local function area_out(i,a,nests)
     local list,ammo_total,empty,low={},0,0,0
     local guns,lasers,flamers,dry,low_oil,oil_sum,cap_sum=0,0,0,0,0,0,0
+    local oiled={}  -- the flamers, for flameroil.summary
     table.sort(a.turrets,function(x,y) return (x.ammo or math.huge)<(y.ammo or math.huge) end)
     for _,t in ipairs(a.turrets) do
       if t.type=='ammo-turret' then
@@ -315,6 +312,7 @@ return function(api)
       elseif t.type=='fluid-turret' then
         flamers=flamers+1
         oil_sum=oil_sum+(t.oil or 0); cap_sum=cap_sum+(t.cap or 0)
+        oiled[#oiled+1]={amount=t.oil or 0,fluid=t.fluid,position=t.position}
         if (t.oil or 0)<1 then dry=dry+1 elseif t.cap and t.oil/t.cap<LOW_OIL then low_oil=low_oil+1 end
       elseif t.type=='electric-turret' then lasers=lasers+1 end
       if #list<MAX_TURRETS then list[#list+1]={name=t.name,position={x=t.position.x,y=t.position.y},ammo=t.ammo} end
@@ -328,8 +326,8 @@ return function(api)
     local parts={}
     if guns>0 then parts[#parts+1]=string.format('%d gun (%d ammo%s%s)',guns,ammo_total,empty>0 and ', '..empty..' empty' or '',low>0 and ', '..low..' low' or '') end
     if flamers>0 then
-      parts[#parts+1]=string.format('%d flamethrower (oil %s%s%s)',flamers,cap_sum>0 and round(100*oil_sum/cap_sum)..'%' or round(oil_sum)..'',
-        dry>0 and ', '..dry..' dry' or '',low_oil>0 and ', '..low_oil..' low' or '')
+      parts[#parts+1]=string.format('%d flamethrower (%s; oil %s%s%s)',flamers,flameroil.summary(oiled,1),
+        cap_sum>0 and round(100*oil_sum/cap_sum)..'%' or round(oil_sum)..'',dry>0 and ', '..dry..' dry' or '',low_oil>0 and ', '..low_oil..' low' or '')
     end
     if lasers>0 then parts[#parts+1]=lasers..' laser' end
     local line=string.format('area %d (%s, %d tiles %s of base centre) around (%d,%d) %s: %d buildings (%s); %s',i,a.kind,a.from_centre,a.bearing,a.centre.x,a.centre.y,
@@ -347,7 +345,7 @@ return function(api)
     if #near>0 then line=line..'; nests: '..table.concat(near,', ') end
     return {area=i,kind=a.kind,line=line,centre=a.centre,from_centre=a.from_centre,bearing=a.bearing,box=box_text(a.box),buildings=a.buildings,kinds=counted(a.kinds,5),
       turrets=#a.turrets,ammo=ammo_total,empty=empty>0 and empty or nil,low=low>0 and low or nil,
-      flamers=flamers>0 and {count=flamers,oil=round(oil_sum),capacity=cap_sum>0 and round(cap_sum) or nil,dry=dry>0 and dry or nil,low=low_oil>0 and low_oil or nil} or nil,
+      flamers=flamers>0 and {count=flamers,with_oil=flamers-dry,oil=round(oil_sum),capacity=cap_sum>0 and round(cap_sum) or nil,dry=dry>0 and dry or nil,low=low_oil>0 and low_oil or nil} or nil,
       lasers=lasers>0 and lasers or nil,turret_list=list[1] and list or nil,
       covered=a.covered,covered_once=a.single,uncovered=uncovered,uncovered_parts=gaps[1] and gaps or nil,nests=near[1] and near or nil}
   end
@@ -442,14 +440,15 @@ return function(api)
     return cached(p,'flamers',limit,function()
       local s,force=p.surface,p.force
       local list,dry,low,at_risk=0,0,0,0
-      local rows={}
+      local rows,oiled={},{}
       for _,e in pairs(s.find_entities_filtered{force=force,type='fluid-turret'}) do
         if e.valid then
           list=list+1
           local g=arc(e)
           local face=facing(e)
-          local amount,cap=oil(e)
+          local amount,cap,fluid=oil(e)
           if amount<1 then dry=dry+1 elseif cap and amount/cap<LOW_OIL then low=low+1 end
+          oiled[#oiled+1]={amount=amount,fluid=fluid,position=e.position}
           local kinds,count,nearest,nd={},0,nil,nil
           local reach=g.range+FIRE_MARGIN
           for _,b in pairs(s.find_entities_filtered{force=force,position=e.position,radius=reach}) do
@@ -464,10 +463,10 @@ return function(api)
           end
           if count>0 then at_risk=at_risk+1 end
           local dir=names[math.floor(face/(math.pi/4)+0.5)%8+1]
-          local oil_text=cap and string.format('%d%% (%d/%d)',round(100*amount/cap),round(amount),round(cap)) or tostring(round(amount))
+          local oil_text=(amount<1 and 'none' or (fluid or 'oil')..' '..round(amount))..(cap and string.format('/%d (%d%%)',round(cap),round(100*amount/cap)) or '')
           rows[#rows+1]={position={x=e.position.x,y=e.position.y},facing=dir,oil=round(amount),capacity=cap and round(cap) or nil,at_risk=count,
             kinds=count>0 and counted(kinds,4) or nil,
-            nearest=nearest and {name=nearest.name,position={x=nearest.position.x,y=nearest.position.y},distance=round(nd)} or nil,
+            fluid=fluid,nearest=nearest and {name=nearest.name,position={x=nearest.position.x,y=nearest.position.y},distance=round(nd)} or nil,
             line=string.format('%s (%g,%g) facing %s, oil %s: %s',e.name,e.position.x,e.position.y,dir,oil_text,
               count==0 and 'none of our burnable buildings in its arc'
               or string.format('%d of our burnable buildings in its arc within %d tiles: %s (nearest %s (%g,%g), %d tiles)',count,reach,counted(kinds,4),
@@ -477,14 +476,16 @@ return function(api)
       table.sort(rows,function(x,y) return x.at_risk>y.at_risk or x.at_risk==y.at_risk and (x.position.x<y.position.x or x.position.x==y.position.x and x.position.y<y.position.y) end)
       local shown={}
       for i=1,math.min(limit,#rows) do shown[i]=rows[i] end
-      return {flamers=shown[1] and shown or nil,count=list,dry=dry>0 and dry or nil,low=low>0 and low or nil,with_buildings_in_arc=at_risk,
+      return {summary=list>0 and flameroil.summary(oiled) or nil,flamers=shown[1] and shown or nil,count=list,with_oil=list-dry,
+        dry=dry>0 and dry or nil,low=low>0 and low or nil,with_buildings_in_arc=at_risk,
         more=#rows>limit and string.format('+%d more flamers: limit raises the count',#rows-limit) or nil}
     end)
   end
   M.schema.flamers={limit='optional: flamers listed (default '..MAX_FLAMERS..', max 40)',
-    returns='read, cached 10 s: flamers [{line, position, facing, oil, capacity, at_risk, kinds, nearest {name, position, distance}}], the most at risk '
-    ..'first: each flamethrower turret on your surface with its oil, and our own buildings that fire can burn (fire resistance under 100%; walls are '
-    ..'immune) inside its arc: the direction it was built facing, plus or minus its turn range, from its minimum range to its range plus '
-    ..FIRE_MARGIN..' tiles for burning ground; count, dry (no oil), low (under 25%), with_buildings_in_arc, more'}
+    returns='read, cached 10 s: summary (N of M with oil (crude-oil 87 at (x,y), ...)), flamers [{line, position, facing, oil, fluid, capacity, at_risk, kinds, '
+    ..'nearest {name, position, distance}}], the most at risk first: each flamethrower turret on your surface with its oil (all it holds, its own '
+    ..'buffer too: a flamer fires from it after its pipe has drained; capacity: its fluidbox plus that buffer), and our own buildings that fire can burn '
+    ..'(fire resistance under 100%; walls are immune) inside its arc: the direction it was built facing, plus or minus its turn range, from its minimum '
+    ..'range to its range plus '..FIRE_MARGIN..' tiles for burning ground; count, with_oil, dry (no oil), low (under 25%), with_buildings_in_arc, more'}
   return M
 end

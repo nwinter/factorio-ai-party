@@ -43,14 +43,18 @@ local entities={
 for i,n in ipairs{0,3,20} do
   entities[#entities+1]=machine('gun-turret','ammo-turret','working',10+i,{get_inventory=function() return {get_item_count=function() return n end} end})
 end
--- Flamers: one dry, one at 10% (low), one full.
-for i,n in ipairs{0,20,200} do
-  entities[#entities+1]=machine('flamethrower-turret','fluid-turret','working',20+i,{fluidbox={[1]=n>0 and {amount=n} or nil,get_capacity=function() return 200 end}})
+-- Flamers as the 2.0 engine has them: a 100-unit fluidbox on the pipe line (get_capacity: the whole segment's, 66700)
+-- and a 100-unit buffer it fires from; get_fluid_contents holds both. One dry, one with 20 of 200 (low), one full,
+-- Astra's (shift11 16:36: its pipe drained, 87.2 crude oil in its buffer; status said dry), and one with crude oil in
+-- its box.
+local FLAMER={name='flamethrower-turret',fluidbox_prototypes={{volume=100}},fluid_buffer_size=100,
+  attack_parameters={fluids={{type='crude-oil'},{type='heavy-oil'},{type='light-oil'}}}}
+for i,f in ipairs{{0,0},{0,20},{100,100},{0,87.2},{87.2,0}} do
+  local contents=f[1]+f[2]>0 and {['crude-oil']=f[1]+f[2]} or {}
+  entities[#entities+1]=machine('flamethrower-turret','fluid-turret','working',20+i,{prototype=FLAMER,
+    fluidbox={[1]=f[1]>0 and {name='crude-oil',amount=f[1]} or nil,get_capacity=function() return 66700 end},
+    get_fluid_contents=function() return contents end})
 end
--- A full flamer on a long oil line (shift07 15:31): get_capacity is the whole segment's in 2.0 (66700); its own tank
--- is the prototype's volume (100), so 99 is neither dry nor low.
-entities[#entities+1]=machine('flamethrower-turret','fluid-turret','working',24,{prototype={fluidbox_prototypes={{volume=100}}},
-  fluidbox={[1]={amount=99},get_capacity=function() return 66700 end}})
 -- Belts: one unpaired entrance, one pair, a line end, and a belt pointing
 -- into the back of another belt (no output connection, belt ahead).
 local ugs={{position={x=-3.5,y=-27.5},belt_to_ground_type='input'},{position={x=0.5,y=5.5},belt_to_ground_type='output',neighbours={}}}
@@ -77,7 +81,7 @@ eq(s.machine_positions,nil)
 has(s.warnings,'fuel: boiler 1/3 no_fuel, 1 burning their last fuel')
 has(s.warnings,'power: 1 of 4 machines low_power (fh call power lists them)')
 has(s.warnings,'ammo: gun-turret 1/3 empty at (11,0), 1 below 5 at (12,0); rearm radius=R')
-has(s.warnings,'flamer oil: flamethrower-turret 1/4 dry at (21,0), 1 below 25% at (22,0) 10%; fh call flamers')
+has(s.warnings,'flamer oil: flamethrower-turret 4 of 5 with oil (crude-oil 20 at (22,0), ...); 1/5 dry at (21,0), 1 below 25% at (22,0) 10%; fh call flamers')
 has(s.warnings,'belts: 1 unpaired undergrounds: input (-3.5,-27.5)')
 has(s.warnings,'belts: 1 belts point into a belt they cannot feed: (0.5,9.5) into transport-belt')
 eq(s.factory.belt_ends,'1 line ends')

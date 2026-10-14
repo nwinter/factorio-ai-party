@@ -13,6 +13,7 @@ import itertools, math, re, threading, time
 from collections import deque
 
 import hauling
+import tokens
 from model import SCIENCE, platform_shot
 
 STARTING_S = 2.5   # page fade-in; the caster writes its exchange now and speaks on "live"
@@ -39,6 +40,9 @@ TYPES = {
     # Items each agent moved by hand this shift (operator 05:00, viewer Joonazan); the director shows it every
     # hauling_every, ranked, numbers only.
     "hauling": {"title": "Hand hauling this shift", "params": {}, "seconds": [10, 16]},
+    # Tokens each agent's model read and wrote this shift (operator 08:55, from Nick); the director shows it every
+    # tokens_every, halfway between the hauling cards, ranked, numbers only.
+    "tokens": {"title": "Tokens this shift", "params": {}, "seconds": [10, 16]},
 }
 LULL_ORDER = ["production", "spotlight", "research", "space", "overview", "recap"]
 MOMENT_FRESH_S = 150.0
@@ -69,7 +73,8 @@ def human(item):
 
 class Segments:
     def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9,
-                 recap_every=1200.0, replay_spacing=90.0, cheap_quiet=180.0, hauling_every=1800.0):
+                 recap_every=1200.0, replay_spacing=90.0, cheap_quiet=180.0, hauling_every=1800.0,
+                 tokens_every=1800.0):
         self.spacing = spacing            # seconds between segment starts, whoever asks
         # Replays skip `spacing` (replays.py), so they have their own: one start per replay_spacing (shake12: three in
         # 41 s). A single cheap building's loss airs only when no segment has started for cheap_quiet and no fight cut
@@ -93,6 +98,9 @@ class Segments:
         # The hand hauling card: due this long after the last one (or the service start), at the next free slot.
         self.hauling_every = hauling_every
         self.last_hauling = time.time()
+        # The token card: the same, its first one half a period in (between the hauling cards, not after one).
+        self.tokens_every = tokens_every
+        self.last_tokens = time.time() - tokens_every / 2
         self.urgent_quiet = urgent_quiet  # no segment within this long of an attack cut on the main camera
         self.overview_zoom = overview_zoom
         self.spotlight_zoom = spotlight_zoom
@@ -133,6 +141,8 @@ class Segments:
             return "no Space Age moment yet"
         if kind == "hauling" and not ((snap.get("hauling") or {}).get("rows")):
             return "no hand hauling counted this shift yet"
+        if kind == "tokens" and not any(r.get("total") for r in (snap.get("tokens") or {}).get("rows") or []):
+            return "no tokens counted this shift yet"
         return None
 
     def moments(self, snap, fresh_only=False, now=None):
@@ -241,6 +251,8 @@ class Segments:
                 self.last_recap = now
             if kind == "hauling":
                 self.last_hauling = now
+            if kind == "tokens":
+                self.last_tokens = now
             return 200, {k: seg[k] for k in ("id", "state", "seconds", "title", "facts")} | {"eta": STARTING_S}
 
     # ---- the clock (called once a second with the latest snapshot) ---------------------------------------------
@@ -290,6 +302,11 @@ class Segments:
             code, _ = self.request({"type": "hauling", "by": "director", "reason": "hauling due"}, now)
             if code != 200 and self.why_unavailable("hauling", snap, now):
                 self.last_hauling = now  # nothing counted yet: the next one is due in hauling_every
+        elif (self.cur is None and self.queue is None and now - self.last_tokens >= self.tokens_every
+              and now - self.last_start >= self.spacing and self.urgent_since(snap, now) >= 60):
+            code, _ = self.request({"type": "tokens", "by": "director", "reason": "tokens due"}, now)
+            if code != 200 and self.why_unavailable("tokens", snap, now):
+                self.last_tokens = now  # nothing counted yet: the next one is due in tokens_every
         elif self.cur is None and self.queue is None and now - self.last_end >= self.lull_after:
             self.lull(snap, now)
         return self.public()
@@ -428,6 +445,26 @@ class Segments:
         facts = {"rows": rows, "minutes": minutes,
                  "line": hauling.card_line(h.get("rows") or [], self.HAULING_ROWS, lambda n: names.get(n, n))}
         return "Hand hauling this shift", facts, None
+
+    TOKEN_ROWS = 9
+
+    def build_tokens(self, params, snap, now):
+        """Tokens each agent's model read and wrote this shift, most first (tokens.py TokenFeed): the share read from
+        cache, model calls (turns), tokens per game action, and the team's total."""
+        t = snap.get("tokens") or {}
+        names = {a["name"]: a.get("display_name") or a["name"] for a in snap.get("agents") or [] if a.get("name")}
+        counted = [r for r in t.get("rows") or [] if r.get("total")]
+        rows = []
+        for i, r in enumerate(counted[:self.TOKEN_ROWS], 1):
+            rows.append({"rank": i, "agent": names.get(r["name"], r["name"]), "tokens": r["total"],
+                         "cached_pct": round(100 * (r.get("cache_read") or 0) / r["input"]) if r.get("input") else 0,
+                         "output": r.get("output") or 0, "turns": r.get("calls") or 0,
+                         "per_action": round(r["total"] / r["actions"]) if r.get("actions") else None})
+        minutes = round((t["t"] - t["since"]) / 60) if t.get("t") and t.get("since") else None
+        team = sum(r["total"] for r in counted)
+        facts = {"rows": rows, "minutes": minutes, "team_tokens": team, "team_text": tokens.short(team),
+                 "line": tokens.card_line(counted, 5, lambda n: names.get(n, n))}
+        return "Tokens this shift", facts, None
 
     def build_space(self, params, snap, now):
         sp = snap.get("space") or {}

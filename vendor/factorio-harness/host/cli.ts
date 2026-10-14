@@ -765,14 +765,21 @@ async function main() {
         path: last.path, steered: last.steered, pocket: last.pocket, escaped: last.escaped, mine_to_get_out: last.mine_to_get_out,
         // a spot it reaches within build reach when it gave up, a squeeze walked along gaps, each leg of a via walk (round0620c)
         build_spot: last.build_spot, build_spot_note: last.build_spot_note, build_spot_squeeze: last.build_spot_squeeze, squeezed: last.squeezed,
-        legs: legLines(last.legs)} : {}),
+        legs: legLines(last.legs),
+        // a walk to a target's reach: how near it ended, an end within reach counted as arrived, a spot walked to (movetarget)
+        reach: last.reach, reach_note: last.reach_note, reach_walk: last.reach_walk} : {}),
       // vehicle drive: the path it followed and a back-up (vehicles.lua).
-      ...(last?.kind === 'drive' ? {path_length: last.path_length, backed_up: last.backed_up} : {}),
+      ...(last?.kind === 'drive' ? {path_length: last.path_length, backed_up: last.backed_up,
+        // remote driving and a drive's guns (remotedrive): the vehicle driven by remote view, rounds fired and kills
+        remote: last.remote, vehicle: last.vehicle, shots: last.shots, kills: last.kills, kills_by_name: last.kills_by_name, combat_ended: last.combat_ended} : {}),
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
       // collect over a radius: moved per item, places touched, what fell short.
       tally: last?.tally,
+      // collect waiting at a machine (collectwait): what it took against what the machine made and its inserters took.
+      ...(last?.kind === 'gather' && last?.took !== undefined ? {took: last.took, made: last.made, inserters_took: last.inserters_took,
+        crafts: last.crafts, waited_s: last.waited_s} : {}),
       // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
       moved: last?.moved, inv: last?.inv,
       // A courier (transfer or collect with pick and to): where it took from, what it took and what arrived.
@@ -1024,6 +1031,8 @@ async function main() {
         || (['transfer','collect'].includes(action) && reply.result?.op === 'transfer' && reply.result?.until_tick !== undefined)
         // transfer {walk: true} with a target out of reach: a tour (until_tick); all in reach, it moved at once
         || (action === 'transfer' && args.walk === true && reply.result?.until_tick !== undefined)
+        // collect {wait_ticks | keep_taking}: standing at a machine, taking its products as they come (collectwait)
+        || (action === 'collect' && (args.wait_ticks !== undefined || args.keep_taking !== undefined) && reply.result?.until_tick !== undefined)
         || (action === 'vehicle' && args.drive !== undefined)
         // drop full: pods past the free hatches go as each hatch frees up (space.lua).
         || (action === 'drop' && reply.result?.until_tick !== undefined);

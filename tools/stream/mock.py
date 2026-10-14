@@ -176,6 +176,40 @@ def load_timeline():
     return rows
 
 
+# Tokens and model calls per minute per agent, about shift10's (tokens.py), for the token card and the cards' figure
+MOCK_TOKENS = {"gemini": (1_035_000, 11.7), "astra": (595_000, 7.8), "luna": (558_000, 6.4), "muse": (377_000, 3.3),
+               "grok": (307_000, 3.1), "opus": (233_000, 1.7), "sol": (177_000, 2.0), "sonnet": (112_000, 1.0),
+               "haiku": (109_000, 1.7)}
+
+
+class MockTokens:
+    """tokens.TokenFeed's result for --mock: each agent's tokens grow at about its shift10 rate, from 40 minutes in."""
+
+    def __init__(self, run, start_min=40.0):
+        self.names = list((run.get("agents") or {}).keys()) or list(MOCK_TOKENS)
+        self.t0 = time.time() - start_min * 60
+        self.latest = None
+
+    def snapshot(self):
+        now = time.time()
+        if self.latest and now - self.latest["t"] < 60:
+            return self.latest
+        mins = (now - self.t0) / 60
+        rows = []
+        for i, name in enumerate(self.names):
+            rate, calls = MOCK_TOKENS.get(name, (150_000, 1.5))
+            total = int(rate * mins)
+            output = total // 300
+            rows.append({"name": name, "total": total, "input": total - output, "cache_read": int((total - output) * 0.96),
+                         "cache_write": 0, "output": output, "reasoning": output // 3, "calls": int(calls * mins),
+                         "compactions": int(mins // 45), "conversations": int(mins // 10) + 1 if name == "gemini" else None,
+                         "context": 40_000 + (i * 7919 + int(mins) * 1500) % 110_000, "context_max": 150_000,
+                         "actions": int(mins * 1.4)})
+        rows.sort(key=lambda r: (-r["total"], r["name"]))
+        self.latest = {"t": round(now, 1), "since": self.t0, "rows": rows}
+        return self.latest
+
+
 class MockSource:
     name = "mock"
 

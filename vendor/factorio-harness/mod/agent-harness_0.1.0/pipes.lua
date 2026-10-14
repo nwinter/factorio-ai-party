@@ -4,6 +4,7 @@
 -- machines and belts with pipe-to-ground pairs (open on one side, joined
 -- underground). Plans only; the caller places the result as ghosts.
 local heap=require('heap')
+local flameroil=require('flameroil')
 return function(api)
   local M={}
   local DIRS={0,4,8,12}
@@ -177,6 +178,14 @@ return function(api)
         head=head..' extent '..M.span(sb)..(M.span(sb)>limit and ' > limit '..limit..': flow stops, add a pump' or '')
       end
       parts[#parts+1]=head..(#words>0 and ' '..table.concat(words,' ') or '')
+    end
+    -- A fluid turret fires from a buffer of its own, filled from this box: it holds oil after its pipe has drained
+    -- (flameroil.lua; Astra, shift11 16:36).
+    if e.type=='fluid-turret' then
+      local okt,amount,cap,fluid=pcall(flameroil.read,e)
+      if okt then
+        table.insert(parts,1,string.format('turret holds %s%s',amount>=1 and (fluid or 'oil')..' '..round(amount) or 'no oil',cap and '/'..round(cap) or ''))
+      end
     end
     return table.concat(parts,' | ')
   end

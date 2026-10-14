@@ -79,6 +79,17 @@ Every poll (default 3 s), over one persistent RCON connection, using the same
   plus the science packs (about 35 names; the Lua skips items the game does not know or never made, so a fresh map
   costs little).
 
+Token use per agent (`tools/stream/tokens.py`, operator 08:55, from Nick): a thread of its own (`TokenFeed`, started
+by serve.py beside the run's stream.json; `"tokens": false` in the run config turns it off) reads the agents' CLI
+session logs once a minute, never the game. A session belongs to an agent by its workspace, `runs/RUN/AGENT`: Claude
+Code's project folders (opus on its own Claude profile), Codex rollouts whose `session_meta` cwd is the workspace
+(forked subagents too), the workspace's own Grok home log, agy conversations whose opening names the run, Muse sessions
+with the workspace as cwd. The homes come from `ai-session routes`. Each file is read on from where the last read
+stopped, 4 MB at a time with a pause between chunks: a whole shift reads in about a second (shift10: 39 files,
+140 MB, 0.8 s), and each later poll costs about 10 ms. The poller hands the latest result to the model, which keeps
+it without the per-minute context series. It feeds the "tokens" card and each agent card's figure (`23.8M tok` after
+the harness label; in portrait at the right end of the name line). The same module counts ended shifts for the site.
+
 `harness.Harness.dispatch` refuses anything outside `READ_ACTIONS` (`status`, `profiles`, `chat`, `power`, `cameras`)
 and refuses `chat` without `peek`. The only non-read call is the operator `camera` remote function, sent through a
 guard that prints `{"ok":false,"stub":true}` when the harness lacks it, which is what happens until eng/bots lands.
@@ -256,6 +267,7 @@ page (the alert stays in the state for the casters). `model.research_news`, `sta
 | attack_replay | 15-40 | the OBS "replay" scene (see Replays); available while a fresh clip waits | program scene switch |
 | space | 15-30 | panel: planets reached, rockets, platforms (where or route, speed), space-age science made, who is off Nauvis; available once the Space panel shows | unchanged |
 | space_moment `{moment}` | 12-25 | a Space Age moment (below): full panel, or a lower card for a landing with an agent | a landing follows the agent (zoom 0.9) |
+| tokens | 10-16 | lower card "Tokens this shift": every agent with tokens counted, most first: tokens (input, cached ones included, plus output), the share read from cache, turns (model calls) and tokens per game action, and the team's total (`tokens.py` TokenFeed). The director starts it every 30 min (`tokens_every`), the first 15 min after the service starts (between the hauling cards), at a free slot, not within 60 s of a fight cut; unavailable while nothing is counted | unchanged |
 | hauling | 10-16 | lower card "Hand hauling this shift": the top 5 agents by items moved by hand, items and calls (harness `hauling`, read every 5 min by live.py into `runs/RUN/hauling.jsonl`; this shift = last read less the first). The director starts it every 30 min (`hauling_every`) at a free slot, not within 60 s of a fight cut; unavailable while nothing is counted | unchanged |
 
 Rules (the director has the last word): one segment start per 180 s whoever asks (`spacing`). When the director
@@ -544,6 +556,31 @@ interesting is on, labelled "Sol · Sunward · in orbit of Vulcanus", then goes 
 a battle, a follow, an incoming group, a segment or an agent fighting on air, the look goes in the inset; during a
 replay or a trio it is dropped. One cue per agent per `cue_agent_gap` (180 s), cues `cue_gap` (45 s) apart;
 `director: {cues: false}` turns them off. Live: `grep "cue " runs/RUN/stream-service.log`.
+
+### Loadout strips: guns, armor, building, what they carry (2026-10-14, eng/loadout)
+
+Nick, 08:55: "Especially when they are in combat, I'd like to see their guns/ammo. This can't be shown all the time,
+but maybe we can find good heuristics." live.py reads the harness's operator `loadout` every 4 s once `describe`
+lists it (a failed read waits 30 s). tools/stream/loadout.py keeps the rows and picks one mode per agent:
+
+- `combat`: shooting (shoot or kite), health lower than 10 s before, in a vehicle, a fight within 48 tiles reported
+  in the last 30 s (snapshot `fights`), or the stream's own combat flag. The strip shows the gun in hand with its
+  ammo count large, the other guns small, shield and health bars, and armor equipment.
+- `building`: a build action running (build x of y) or the hand-craft queue busy (the head with its progress bar, the
+  next few).
+- `carrying`: otherwise, for 12 s every 3 min, offset per agent so they do not all show at once. The largest 6 stacks
+  and armor equipment.
+- otherwise nothing.
+
+Snapshot: each agent row has `loadout` (`{mode, ...}` or null) and the top level `loadouts` (every agent's full row,
+for push_live.py and the site). overlay.js `renderLoadouts` draws one strip inside the main camera's frame (lower
+left, above the bar; hidden while a segment card is up) and one along the inset's top (smaller), for the first agent
+each camera shows. Icons come from items.js, with a coloured swatch for items it does not draw. CSS: `.loadout.lo-main`
+and `.loadout.lo-inset`. It goes live with a serve.py restart (the overlay reloads on its static version).
+
+The site's agents page has a "Now" block per card (guns and ammo, armor and equipment, shield, health, vehicle,
+largest stacks, free slots, crafting, building), filled by site.js from the live API every 30 s and hidden when no
+shift is on. push_live.py publishes `agents[].loadout`.
 
 ## Unused cameras
 

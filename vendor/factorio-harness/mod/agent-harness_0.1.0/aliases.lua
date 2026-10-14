@@ -9,7 +9,7 @@ return function(api)
   -- action -> {wrong name = real name}; counts are shift05-07 journal errors.
   local RENAME = {
     craft = {item='recipe', name='recipe'},
-    move_to = {target='position', to='position', pos='position', destination='position', waypoints='via', through='via'},
+    move_to = {to='position', pos='position', destination='position', waypoints='via', through='via'},
     map = {center='position', centre='position'},
     scan = {names='name', entity_names='name', entity='name', types='type', range='radius', field='fields', center='position'},
     nearest = {entity='name', names='name', types='type', center='position'},
@@ -80,7 +80,7 @@ return function(api)
   -- tells whether an action takes an argument (describe's schema).
   function M.fix(action, args, takes)
     if type(args) ~= 'table' or type(action) ~= 'string' then return action, args, nil end
-    local notes = {}
+    local notes, silent = {}, false
     local out = {}
     for k, v in pairs(args) do out[k] = v end
     -- board with an item id and a change is an update; with a title, a post.
@@ -153,8 +153,16 @@ return function(api)
           if not (xy(v).x == xy(P).x and xy(v).y == xy(P).y) then all[#all+1] = v end
         end
         out.positions, out.position = all, nil
-        notes[#notes+1] = L and 'position and positions are one list (position first)' or 'position is positions (a list)'
+        -- (a collect waiting at one machine takes its one position this way: nothing to correct)
+        if action == 'collect' and (out.wait_ticks ~= nil or out.keep_taking ~= nil) and not L then silent = true
+        else notes[#notes+1] = L and 'position and positions are one list (position first)' or 'position is positions (a list)' end
       end
+    end
+    -- move_to target is an entity whose reach the walk goes to ({position} or {unit_number}, with reach); a plain
+    -- {x,y} target without reach is the position it always was.
+    if action == 'move_to' and is_pos(out.target) and out.reach == nil and out.position == nil then
+      out.position, out.target = out.target, nil
+      notes[#notes+1] = 'target is position'
     end
     -- fh sends scan, nearest, map ... as observe {scope}: the view's own names.
     local view = action == 'observe' and type(out.scope) == 'string' and out.scope or action
@@ -166,7 +174,7 @@ return function(api)
         notes[#notes+1] = wrong .. ' is ' .. right
       end
     end
-    if #notes == 0 then return action, args, nil end
+    if #notes == 0 then return action, silent and out or args, nil end
     table.sort(notes)
     return action, out, {notes=notes, call=action .. ' ' .. encode(out)}
   end

@@ -13,7 +13,7 @@
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
   local M = {}
-  M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true, rail_route=true}
+  M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true, rail_route=true, belt_route=true}
   local MAX_ROWS, MAX_LISTED, HOLE_LIMIT, FLOOD_BUDGET, MAX_SPOTS = 30, 200, 1024, 20000, 8
   local MAX_INSERTERS = 64
   local DIRS = {{1,0},{-1,0},{0,1},{0,-1}}
@@ -153,6 +153,25 @@ return function(api)
     end
     local v = best or (locked and locked..' (not researched)')
     remedy_cache[k] = v or false
+    return v
+  end
+
+  -- For route planners (belt_route), per tile name in the caller's cache (one
+  -- plan): whether the entity collides with that tile kind, and the unlocked
+  -- tile item that makes it buildable (item; nil when none can).
+  function M.tile_info(force, proto, tile_name, cache)
+    local v = cache[tile_name]
+    if v then return v end
+    local mask = cache.mask__
+    if not mask then mask = layers(try(function() return proto.collision_mask end)); cache.mask__ = mask end
+    local tp = prototypes.tile[tile_name]
+    local tl = tp and layers(tp.collision_mask) or {out_of_map=true}
+    v = {collides=collide(mask, tl)}
+    if v.collides and tp then
+      local fix = remedy(force, tile_name, tl, mask)
+      if fix and not fix:find(' ', 1, true) then v.item = fix end
+    end
+    cache[tile_name] = v
     return v
   end
 
