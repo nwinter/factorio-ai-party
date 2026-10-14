@@ -5,7 +5,7 @@ local assertions=0
 local function eq(a,b) assertions=assertions+1; assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 log=function() end
 storage={}; defines={events={on_tick=1,on_script_path_request_finished=2,on_entity_died=3,on_player_created=4,on_built_entity=5,on_console_command=9,
-  on_research_finished=40,on_research_queued=41},input_action={deconstruct=1,upgrade=2,import_blueprint_string=3}}
+  on_research_finished=40,on_research_queued=41,on_rocket_launch_ordered=42},input_action={deconstruct=1,upgrade=2,import_blueprint_string=3}}
 -- Permission groups: the guest group is created at init with the planners and blueprint import denied.
 local groups={}
 local function group(name) local g={name=name,players={},denied={}}
@@ -35,6 +35,8 @@ for _,id in ipairs(events.forwarded) do forwarded_ids[id]=true end
 eq(forwarded_ids[2] and forwarded_ids[3] and forwarded_ids[5],true); eq(forwarded_ids[4],nil)
 -- Research news (research.lua): a finished and a queued technology.
 eq(forwarded_ids[40] and forwarded_ids[41],true)
+-- Rocket launches (silo.lua's last launch).
+eq(forwarded_ids[42],true)
 -- Forwarded engine events reach runtime.on_event; a failure quarantines the runtime.
 local forwarded={}
 package.loaded.runtime.on_event=function(e) forwarded[#forwarded+1]=e.name; if e.fail then error('bad event') end end

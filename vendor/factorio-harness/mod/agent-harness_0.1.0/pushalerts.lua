@@ -274,7 +274,7 @@ return function(api)
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
-    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry; per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 10 min of fuel at the draw), robots_busy (no idle logistic robot for 10 min); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
+    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry; per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 10 min of fuel at the draw), robots_busy (no idle logistic robot for 10 min); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M
