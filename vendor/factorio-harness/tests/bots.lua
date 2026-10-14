@@ -172,14 +172,24 @@ surface.can_place_entity=function() return true end
   local box={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
   local function machine()
     local m={valid=true,type='assembling-machine',name='assembling-machine-1',position={x=3.5,y=0.5},force=force,
-      prototype={fast_replaceable_group='assembling-machine',collision_box=box}}
+      prototype={fast_replaceable_group='assembling-machine',collision_box=box,mineable_properties={products={{type='item',name='assembling-machine-1',amount=1}}}}}
     m.get_recipe=function() return {name='iron-gear-wheel'},{name='normal'} end
+    -- Mined into the holding inventory the build gives it (replace.lua).
     m.mine=function(args)
-      if args.inventory.full then return false end
-      m.valid=false; c.items['assembling-machine-1']=(c.items['assembling-machine-1'] or 0)+1; return true
+      local slot=args.inventory[1]
+      slot.valid_for_read=true; slot.name='assembling-machine-1'; slot.count=1; slot.quality={name='normal'}
+      m.valid=false; return true
     end
     return m
   end
+  -- One slot is enough for the old machine; the character's fake inventory has no slots (its insert takes all).
+  game.create_inventory=function(n)
+    local inv={}
+    for i=1,n do local s={valid_for_read=false}; s.clear=function() s.valid_for_read=false; s.count=0 end; inv[i]=s end
+    inv.destroy=function() end
+    return inv
+  end
+  prototypes=prototypes or {}; prototypes.item=prototypes.item or {}
   local old=machine()
   surface.find_entities_filtered=function(a) if a.area and a.force and old.valid then return {old} end return {} end
   local make=surface.create_entity
@@ -195,14 +205,14 @@ surface.can_place_entity=function() return true end
   eq(r.replaced.name,'assembling-machine-1'); eq(r.replaced.recipe,'iron-gear-wheel'); eq(r.replaced.recipe_kept,true)
   eq(recipes[1][1],'iron-gear-wheel'); eq(recipes[1][2],'normal')
   eq(c.items['assembling-machine-1'],1); eq(c.items['assembling-machine-2'],0)
-  -- No room in the inventory for the old machine: refused, nothing changes.
-  old=machine(); c.items['assembling-machine-2']=1
-  local main=c.get_main_inventory(); main.full=true
+  eq(r.replaced.contents,'it was empty')
+  -- No room in the inventory for the old machine (no free slot, and the build's own stack of 2 frees none): refused,
+  -- nothing changes.
+  old=machine(); c.items['assembling-machine-2']=2
   local made=#created
   local ok2,err2=pcall(bot,'build',{item='assembling-machine-2',position={x=3.5,y=0.5}})
-  assert(not ok2 and err2:find('cannot replace assembling-machine-1 (3.5,0.5): your inventory has no room',1,true),err2)
-  eq(old.valid,true); eq(#created,made); eq(c.items['assembling-machine-2'],1)
-  main.full=nil
+  assert(not ok2 and err2:find('cannot replace assembling-machine-1 (3.5,0.5): your inventory has no room for 1 assembling-machine-1 (0 free slots, 1 needed); nothing moved',1,true),err2)
+  eq(old.valid,true); eq(#created,made); eq(c.items['assembling-machine-2'],2)
   -- Overlapping but not on the same centre: refused, naming it.
   old=machine(); old.position={x=4.5,y=0.5}
   ok2,err2=pcall(bot,'build',{item='assembling-machine-2',position={x=3.5,y=0.5}})

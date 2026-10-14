@@ -215,6 +215,11 @@ already targets your character.
   `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
   "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
   `inspect` of a ghost shows the same.
+- A `build` over a chest of the same fast-replace group keeps its contents in the new chest; what it cannot hold
+  comes to you (`replaced.contents`), and with no room for that nothing moves. Inserter and loader filters show in
+  `scan` rows (`filters: whitelist: iron-plate`, `off`, `set by circuit`); `configure {position, filters, filter_mode
+  | mode, use_filters}` and `circuit_set {settings: {filters, filter_mode}}` set them. An unknown argument's refusal
+  names the closest valid name, and on `configure` and `circuit_set` what that entity takes.
 - The team blueprint library, kept in the save across shifts: `blueprint_save {name, area | positions, description,
   anchor}` stores what the team built; `blueprint_list` lists entries (author, size, counts, last used);
   `blueprint_place {name, position, direction, dry_run}` pastes one; `blueprint_rename` and `blueprint_delete {name}`:

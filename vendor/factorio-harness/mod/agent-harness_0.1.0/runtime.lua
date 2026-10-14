@@ -719,6 +719,11 @@ local function summary(e)
     -- 'no pickup target', 'no drop target' (targets.lua).
     out.io_warning=M.targets and M.targets.missing(e) or nil
   end
+  -- Item filters in use, one line (details.lua filters_line).
+  if (e.type=='inserter' or e.type=='loader' or e.type=='loader-1x1') and M.details then
+    local ok,line=pcall(M.details.filters_line,e)
+    out.filters=ok and line or nil
+  end
   -- A drill drops onto one tile beside its footprint: which, and into what
   -- (sapilot board #4: Astra placed output chests by trial).
   if e.type=='mining-drill' then
@@ -830,10 +835,10 @@ function handlers.describe()
         note='inserter rates are estimates (arm rotation x stack size)'},
       grid={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',returns='one character per tile: rows [{y,row}] from origin, ruler, legend {char: names}. Upper case buildings by type, belts ^>v<, U/J underground in/out, S splitter, ? ghost, @ character, # other; lower case ore; ~ water'},
       power={area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',limit='unpowered rows 1..256 (default 32)',note='networks with a pole in the area: poles, production/consumption kW (5 s average) by prototype, unpowered machines (no_power|low_power|unconnected)'},
-      scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)',returns='entities, total, truncated, ore; ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the area by item (rows for them only when name or type asks: item-on-ground, item-entity)'},
+      scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype)|filters (inserters, loaders: "whitelist: items", "blacklist: items", "off (filters: items)", "set by circuit", none; our inserters and loaders with filters in use carry it unasked); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)',returns='entities, total, truncated, ore; ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the area by item (rows for them only when name or type asks: item-on-ground, item-entity)'},
       nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..128 (default 32); map-known (charted) entities only: after landing on a new planet about 48 tiles around you, so explore or build a radar',limit='1..64 (default 5)',returns='entities [{name?, position, distance}], total; note when nothing was found'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={dry_run='boolean: build nothing; check every entry from where you stand (a read): placeable or why not, out of reach (distance vs build reach), items short (held + hand-craft queue), tiles needing landfill, poles\'s wire reach, and standing spots that reach every entry; inserters: each planned inserter\'s pickup and drop target, as place_ghosts dry_run gives them',item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',entity='rail item (a rail planner): which rail it places: straight-rail (default), half-diagonal-rail, curved-rail-a, curved-rail-b; with directions including the in-between ones (northnortheast, eastnortheast, ...); place_ghosts takes the rail names too and construct builds them',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',skip_failed='boolean, with builds: a failing entry is listed in failed {index,position,error} and the rest still build',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired, and unpaired_why (lava or empty space under its reach, its partner a ghost or out of reach, or none in reach)',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
       inspect={position='{x,y}',positions='optional 1..32 positions: one inspect each in one call, results in order (an entry that fails has position and error)',platform='optional platform name: inspect on that space platform (platform coordinates, hub at 0,0; the whole platform is in sight)',note='read-only, without reach: any entity in sight (32 tiles of the character), or by remote view any entity on your surface in a chunk our force sees now (radar coverage or a character\'s sight), as the map shows it (by: remote view; surface= another surface reads the same way); out of both, the refusal names the nearest radar coverage; in_reach says whether acting on it would reach; holds (a chest, logistic chest, wagon, car or spider trunk, landing pad, hub): one line, the largest stacks first as name*count, then slots used of the total and the red-X limit; requests (requester, buffer): item held/asked per request, summed over active sections; output_fill (assembler, furnace): each product in the output held of its stack size and %, and full when the machine stopped for it (status full_output), e.g. copper-cable 200/200 (100%), full; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too; trash: what the game put in a silo\'s, landing pad\'s or hub\'s trash slots; rocket_weight (a silo): cargo held/lift kg; modules {inventory_index (the inventory a blueprint module request names), slots, contents}; filters, filter_mode, use_filters (inserters, loaders); an asteroid collector: filters (chunk names), filter_slots (the game\'s count; 0 until a filter is set), arm (chunks its arms hold), its output under inventories.asteroid_collector_output; held (an inserter\'s hand), pickup_target, drop_target, io_warning (\'no pickup target\', \'no drop target\': the engine\'s targets; also in io and observe rows; build and rotate replies read what stands on the points, as the engine sets targets a tick later; a builds batch lists inserters_without_target after all its entries; an inserter ghost: what stands on its points); marked_for_deconstruction, marked_for_upgrade; ghosts_here (ghosts on the footprint, with their filters); on a platform: hub_slots, repair_packs and damaged (most damaged first, up to 10; damaged_count past that) on the hub, repair (how a damaged entity there gets repaired), and construction_blocked (hub full, ghosts whose items the hub lacks); spoiling: per inventory (and a belt\'s lanes, an inserter\'s hand, an item on the ground) each spoilable item, the time until its first stack spoils and how spoiled that stack is, and how many spoil within 5 min, earliest first; an item that hatches into enemies when it spoils (pentapod-egg, biter-egg) says hatches, and what into; hatch_warning sums those up (count, into what, the first, how many within 5 min); output_spoil (an assembler, furnace or biochamber whose products spoil): what the next products start at, the count-weighted spoilage of the spoilable ingredients in its input (bioflux from 15 yumako-mash at 80% and 12 jelly at 20%: about 53%), or fresh when the recipe resets freshness (pentapod-egg); an agricultural tower: tower {state, seeds, output, area, cells (growing, grown, free with soil for which seeds, blocked by what, no soil), plantable_now, planted_10min, plants (time until grown), harvest_made_10min}'}, rotate={direction='optional compass name (north, east, south, west; 2.0 numbers 0, 4, 8, 12 too): turn until it faces this way, one 90-degree turn at a time as the R key does',returns='rotated, before, after (compass names; 2.0 directions: north 0, east 4, south 8, west 12), turns (how many 90-degree turns it took), entity; one call without direction is one 90-degree turn clockwise, reverse=true counter-clockwise',position='{x,y}',reverse='boolean'},
-      configure={surface='optional planet name: act there by remote view, where our force sees the chunk',auto_requests='rocket silo: boolean, the GUI\'s automatic requests (fill and launch for platforms\' requests in orbit; switched on with cargo loaded by hand, that cargo goes to the trash slots: cargo_to_trash, note)',send_to_orbit_automatically='rocket silo: boolean, the GUI\'s send to orbit automatically; a silo reply reads back settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}',position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',platform='optional platform name: configure on that space platform through remote view (platform coordinates, hub at 0,0)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item names for a filtering inserter/loader, or asteroid chunk names (metallic-asteroid-chunk, ...) for an asteroid collector ([] clears; up to the entity\'s filter slot count; a collector\'s count reads 0 until a filter is set, so there each slot is tried and only the game\'s refusal fails it; the reply reads the filters back, not_set for a name that did not stick)',filter_mode='whitelist|blacklist (inserters; asteroid collectors have no filter mode in the game)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
+      configure={surface='optional planet name: act there by remote view, where our force sees the chunk',auto_requests='rocket silo: boolean, the GUI\'s automatic requests (fill and launch for platforms\' requests in orbit; switched on with cargo loaded by hand, that cargo goes to the trash slots: cargo_to_trash, note)',send_to_orbit_automatically='rocket silo: boolean, the GUI\'s send to orbit automatically; a silo reply reads back settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}',position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',platform='optional platform name: configure on that space platform through remote view (platform coordinates, hub at 0,0)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item names (one name alone too) for a filtering inserter/loader, or asteroid chunk names (metallic-asteroid-chunk, ...) for an asteroid collector ([] clears and, on an inserter, turns filtering off; up to the entity\'s filter slot count; a collector\'s count reads 0 until a filter is set, so there each slot is tried and only the game\'s refusal fails it; the reply reads the filters back, not_set for a name that did not stick)',filter_mode='whitelist|blacklist (inserters; alias mode; alone it keeps the items; asteroid collectors have no filter mode in the game)',use_filters='inserters: true|false, the GUI\'s use filters (false keeps the items, unused)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change; filters: filters, filter_mode, use_filters read back, line (whitelist: items | blacklist: items | off (filters: items) | set by circuit), before (the line before)'},
       transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',area='or {left_top, right_bottom} up to 128x128: our entities of types (default chests, machines, labs, silos, boilers, drills, turrets, wagons, vehicles, landing pads, roboports, agricultural towers) with their centre inside, as positions (at most 64; area_targets counts them)',types='with area: entity types to take (1..16)',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|rocket_silo_trash|cargo_landing_pad_main|hub_main|asteroid_collector_output|... (*_trash: take-only, what the game moved out); inferred when omitted (to_player takes from non-empty trash slots first; fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; tally with 2+ positions: one line, moved per item, targets touched of the total, short (full, holding none, failed with the first reason); a target out of reach fails at once, without walking: entity is out of reach: NAME at (x,y) is D tiles away, reach R; in reach from (x,y) (a free spot); inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out); into rocket_silo_rocket only what fits under the rocket\'s 1000 kg lift (rocket_weight held/lift kg; weight_limited {requested,fits,note} when fewer fit; fails when none fits)',direction='to_entity|to_player (from_player, give, put, insert, to_chest, to_container = to_entity; from_entity, take, from_chest, from_container = to_player; to_entity=true, from_entity=true, or to_entity={x,y} / from_entity={x,y} as the target, noted in corrected); any container: chests, logistic chests, car and spider trunks, cargo wagons, landing pads, hubs; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',keep_max='true (to_player): refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken; up_to=true stops at that max instead (left_at_max); every take over it says so in trash',up_to='a number: the target total cap (tops the target up to it); true: move what there is, min(count, held or in the source, room), never failing on a short or empty source: moved, short {asked, moved, reason: none_held|source_short|target_full}; as a queue step it never pauses the plan for that'},
       feed={area='or {left_top, right_bottom} up to 128x128: our machines of types (default as in reach; with recipe assemblers and furnaces) with their centre inside, as positions (at most 64; those on another recipe are counted in other_recipe; area_targets counts them)',note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s; a furnace with no recipe yet the items or item named that it smelts), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel when its fuel slots are empty (or with fuel=true, fuel=NAME, or a fuel named in items); each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items, entities)',
         returns='transferred, items, entities: per machine fed {position, name, gave, fuel (its fuel slots after: "coal 10" or "empty")}, with positions or area also each one that got nothing (got nothing); unchanged (count); held; nothing_moved: why nothing was given (what you carry and the machines hold, burners left alone because they hold fuel, furnaces with no recipe yet)',
@@ -1489,13 +1494,20 @@ local scan_fields={
   end,
   -- Fluidboxes with contents and where each pipe connection leads.
   fluids=function(e) return pipes.fluids(e) end,
+  -- Item filters (inserters, loaders): whitelist|blacklist: items, off, set by circuit; none without.
+  filters=function(e)
+    local ok,line=pcall(M.details.filters_line,e)
+    if ok and line then return line end
+    local slots=(pcall(function() return e.filter_slot_count end)) and e.filter_slot_count or 0
+    return slots>0 and 'none' or nil
+  end,
   target=function(e)
     local ok,t=pcall(function() return e.shooting_target end)
     return ok and t and t.valid and t.name..'@'..math.floor(t.position.x+0.5)..','..math.floor(t.position.y+0.5) or nil
   end,
 }
 -- Fields that change over time; hidden for other forces' entities under fog.
-local live_fields={hp=true,fuel=true,inventory=true,output=true,spoil=true,status=true,ammo=true,target=true,amount=true,lanes=true,fluids=true}
+local live_fields={hp=true,fuel=true,inventory=true,output=true,spoil=true,status=true,ammo=true,target=true,amount=true,lanes=true,fluids=true,filters=true}
 -- Ore letters are stable per name within one reply: the first unused letter
 -- of the name, upper-cased.
 local function ore_letters(names)
@@ -1533,7 +1545,7 @@ function handlers.scan(p,a)
   for _,v in ipairs(type(a.fields)=='string' and {a.fields} or a.fields or {}) do
     for f in tostring(v):gmatch('[^|,%s]+') do fields[#fields+1]=f end
   end
-  for _,f in ipairs(fields) do assert(scan_fields[f],'unknown field '..tostring(f)..'; use hp|fuel|inventory|output|spoil|status|recipe|direction|amount|range|ammo|target|lanes|io|fluids') end
+  for _,f in ipairs(fields) do assert(scan_fields[f],'unknown field '..tostring(f)..'; use hp|fuel|inventory|output|spoil|status|recipe|direction|amount|range|ammo|target|lanes|io|fluids|filters') end
   local limit=integer(a.limit,256,1,1024,'limit')
   local filtered=a.name~=nil or a.type~=nil
   local out={entities={},truncated=false}
@@ -1574,6 +1586,11 @@ function handlers.scan(p,a)
     if e.type=='entity-ghost' or e.type=='tile-ghost' then row.ghost_name=e.ghost_name; row.ghost_type=e.ghost_type end
     local live=e.force==p.force or p.force.is_chunk_visible(p.surface,chunk_of(e.position))
     for _,f in ipairs(fields) do if live or not live_fields[f] then row[f]=scan_fields[f](e) end end
+    -- An inserter or loader with item filters in use says so unasked (Sonnet 06:20: stale filters blocked a line).
+    if row.filters==nil and e.force==p.force and (e.type=='inserter' or e.type=='loader' or e.type=='loader-1x1') then
+      local ok,line=pcall(M.details.filters_line,e)
+      row.filters=ok and line or nil
+    end
     out.entities[#out.entities+1]=row
   end
   out.total=#rows
@@ -2511,7 +2528,7 @@ local function build_direct(p,stack,pos,direction,quality,kind,place)
     end
   end
   local ghost=surface.find_entities_filtered{position=pos,radius=0.1,ghost_name=proto.name,force=p.force,limit=1}[1]
-  local e,replaced
+  local e,replaced,plan,hold
   if ghost then
     local _,revived=ghost.revive{raise_revive=true}
     e=revived
@@ -2522,8 +2539,10 @@ local function build_direct(p,stack,pos,direction,quality,kind,place)
     -- fast_replace does not do: both machines stayed on the tiles (shake5:
     -- assembling-machine-2 over -1, the old one kept running; request #68).
     -- A machine of the same group on the same centre is replaced as a
-    -- player's build does: the old one (and its contents) into the
-    -- inventory, its recipe set on the new one. Any other overlap is refused.
+    -- player's build does: a chest's contents into the new chest as far as
+    -- it holds them, the rest and the old one into the inventory, all or
+    -- nothing (replace.lua); its recipe set on the new one. Any other
+    -- overlap is refused.
     local group=proto.fast_replaceable_group
     if group then
       local cb=proto.collision_box or {left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}
@@ -2542,9 +2561,10 @@ local function build_direct(p,stack,pos,direction,quality,kind,place)
           assert(o.name~=proto.name,'target already contains this entity')
           local ok,recipe,rq=pcall(function() if o.get_recipe then return o.get_recipe() end end)
           local old={name=o.name,recipe=ok and recipe and recipe.name or nil,recipe_quality=ok and rq and rq.name or nil}
-          local mined=o.mine{inventory=p.get_main_inventory(),raise_destroyed=true}
-          assert(mined and not o.valid,string.format('cannot replace %s (%g,%g): your inventory has no room for it and its contents; free some slots, then build again',
-            old.name,pos.x,pos.y))
+          plan=M.replace.plan(p,o,proto,quality,(need==1 and stack.count==1) and 1 or 0)
+          if plan.error then error(plan.error,0) end
+          hold=M.replace.take(o,plan)
+          assert(hold,string.format('cannot replace %s (%g,%g): the game did not remove it; nothing moved',old.name,pos.x,pos.y))
           replaced=old
           break
         end
@@ -2554,9 +2574,14 @@ local function build_direct(p,stack,pos,direction,quality,kind,place)
     if proto.type=='underground-belt' then args.type=kind or underground_type(surface,proto,pos,direction) end
     e=surface.create_entity(args)
   end
-  if not e then error(placement_error(p,proto,pos,direction,true),0) end
+  if not e then
+    -- The replaced entity's items go to the character after all.
+    if hold then M.replace.give(p,nil,hold,{item={},kept={},keep=false,any=plan.any}) end
+    error(placement_error(p,proto,pos,direction,true),0)
+  end
   if need>1 then p.get_main_inventory().remove{name=stack.name,count=need,quality=quality}
   elseif stack.count>1 then stack.count=stack.count-1 else stack.clear() end
+  if hold then replaced.contents=M.replace.give(p,e,hold,plan) end
   -- The replaced machine's recipe goes on the new one when it can make it.
   if replaced and replaced.recipe and e.set_recipe then
     local ok=pcall(e.set_recipe,replaced.recipe,replaced.recipe_quality)
@@ -3085,17 +3110,27 @@ local function configure_filters(e,a)
   end
   local slots=e.filter_slot_count or 0
   assert(slots>0,e.name..' has no filter slots')
-  assert(type(a.filters)=='table' and #a.filters<=slots,'filters requires 0..'..slots..' item names')
-  for _,name in ipairs(a.filters) do assert(prototypes.item[name],'unknown item '..tostring(name)) end
+  -- One name is a list of one; filter_mode or use_filters alone keep the items (Sonnet 06:20: stale filters).
+  local list=type(a.filters)=='string' and {a.filters} or a.filters
+  assert(list==nil or (type(list)=='table' and #list<=slots),'filters requires 0..'..slots..' item names')
+  for _,name in ipairs(list or {}) do assert(prototypes.item[name],'unknown item '..tostring(name)) end
+  local inserter=e.type=='inserter'
+  assert(a.use_filters==nil or (inserter and type(a.use_filters)=='boolean'),'use_filters is true or false, on an inserter')
+  local before=M.details.filters_line(e) or 'none'
   if a.filter_mode~=nil then
     assert(a.filter_mode=='whitelist' or a.filter_mode=='blacklist','filter_mode is whitelist or blacklist')
+    assert(inserter,'filter_mode applies to inserters')
     e.inserter_filter_mode=a.filter_mode
   end
-  for i=1,slots do e.set_filter(i,a.filters[i]) end
-  if e.type=='inserter' then e.use_filters=#a.filters>0 end
-  local mode=e.type=='inserter' and e.inserter_filter_mode or nil
-  return {filters=a.filters,filter_mode=mode}
+  if list then
+    for i=1,slots do e.set_filter(i,list[i]) end
+    if inserter then e.use_filters=#list>0 end
+  end
+  if a.use_filters~=nil then e.use_filters=a.use_filters end
+  local now=M.details.filters(e) or {filters={}}
+  return {filters=now.filters,filter_mode=now.filter_mode,use_filters=now.use_filters,line=M.details.filters_line(e) or 'none',before=before}
 end
+M.configure_filters=configure_filters
 -- Out of reach, 2.0's remote view still opens the machine: recipes and
 -- filters change the same way, but contents cannot come back to the
 -- character, so a remote recipe change needs an empty, idle machine.
@@ -3130,7 +3165,7 @@ function handlers.configure(p,a)
     out.settings=M.silo.settings(e); out.remote=not near or nil
     return out
   end
-  if a.filters~=nil then return configure_filters(e,a) end
+  if a.filters~=nil or (a.recipe==nil and (a.filter_mode~=nil or a.use_filters~=nil)) then return configure_filters(e,a) end
   assert(e.type=='assembling-machine','only assembling machines support recipe configuration')
   local recipe=type(a.recipe)=='string' and p.force.recipes[a.recipe]
   assert(recipe and recipe.enabled,'recipe is unavailable')
@@ -4504,6 +4539,7 @@ M.targets=require('targets'){}
 M.keep=require('keep'){}
 -- Personal logistics: what a take puts over the character's request max goes to trash (trash.lua).
 M.trash=require('trash'){}
+M.replace=require('replace'){}
 local blueprint_handlers=blueprint_module{position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,targets=M.targets,keep=M.keep,
   ground_mark=function(p,box,cancel,out) return M.ground.mark(p,box,cancel,out) end,
   placewhy=M.placewhy,blocked=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
@@ -4577,7 +4613,8 @@ end
 M.silo=require('silo'){state=state,cargo=M.cargo,position=position,status_name=function(e) return entity_status_names[e.status] end}
 function handlers.silo(p,a) return M.silo.read(p,a) end
 -- Circuit wires and settings (circuits.lua), train stops and schedules (trains.lua).
-M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendly=friendly,own_platform=own_platform,position=position}
+M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendly=friendly,own_platform=own_platform,position=position,
+  configure_filters=function(e,a) return M.configure_filters(e,a) end}
 handlers.circuit_set=M.circuits.handlers.circuit_set
 -- The old name: queued plans and orders call handlers by name (direct calls run as circuit_set, aliases.lua).
 handlers.circuit=handlers.circuit_set
@@ -5881,11 +5918,53 @@ function check_args(action,args)
       local valid={}
       for k in pairs(set) do valid[#valid+1]=k end
       table.sort(valid)
-      error('unknown argument '..tostring(key)..' for '..action..'; valid: '..(#valid>0 and table.concat(valid,', ') or 'none'),0)
+      -- The valid name nearest the unknown one (Luna 06:20: filter on configure): a plural or singular, a name
+      -- that starts with it, or at most 2 letters apart.
+      local function apart(x,y)
+        if math.abs(#x-#y)>2 then return 3 end
+        local row={}
+        for j=0,#y do row[j]=j end
+        for i=1,#x do
+          local prev,diag=row[0],row[0]
+          row[0]=i
+          for j=1,#y do
+            prev=row[j]
+            row[j]=math.min(row[j]+1,row[j-1]+1,diag+(x:sub(i,i)==y:sub(j,j) and 0 or 1))
+            diag=prev
+          end
+        end
+        return row[#y]
+      end
+      local k,closest,best=tostring(key),nil,3
+      for _,v in ipairs(valid) do
+        local d=(v==k..'s' or k==v..'s') and 0 or (#k>=3 and v:sub(1,#k)==k) and 1 or (#k>=4 and apart(k,v)) or 3
+        if d<best then closest,best=v,d end
+      end
+      error('unknown argument '..k..' for '..action..'; valid: '..(#valid>0 and table.concat(valid,', ') or 'none')
+        ..(closest and '; closest name: '..closest or ''),0)
     end
   end
 end
 M.check_args=check_args
+-- An unknown argument of configure or circuit_set also names what the entity at the position takes (Luna 06:20:
+-- configure {filter} on a long-handed inserter): "; long-handed-inserter at (3.5,2.5) takes: filters, ...".
+function M.entity_args(request)
+  local a=request.args
+  if (request.action~='configure' and request.action~='circuit_set') or type(a)~='table' or type(a.position)~='table' then return '' end
+  local p=player(request.player)
+  local ok,e=pcall(entity,p,{position=a.position,name=a.name,unit_number=a.unit_number})
+  if not ok then ok,e=pcall(remote_entity,p,{position=a.position,name=a.name,unit_number=a.unit_number}) end
+  if not ok or not e then return '' end
+  local what
+  if request.action=='configure' then
+    local takes={inserter='filters, filter_mode (alias mode), use_filters',loader='filters',['loader-1x1']='filters',
+      ['asteroid-collector']='filters (asteroid chunk names)',['assembling-machine']='recipe, quality, force',
+      ['rocket-silo']='auto_requests, send_to_orbit_automatically'}
+    what=takes[e.type] or (e.type=='furnace' and 'nothing of its own: a furnace takes its recipe from what it smelts')
+      or 'nothing of its own: configure sets recipes (assembling machines), item filters (inserters, loaders, asteroid collectors) and rocket silo switches'
+  else what=M.circuits.takes(e) end
+  return string.format('; %s at (%g,%g) takes: %s; and position, name, unit_number, platform, surface',e.name,e.position.x,e.position.y,what)
+end
 -- Whether an action takes an argument (describe's schema, as check_args reads it).
 function M.takes(action,key)
   if not allowed_args then pcall(check_args,'describe',{}) end
@@ -6152,7 +6231,11 @@ end
 dispatch_request=function(request)
   local handler=handlers[request.action]; assert(handler,'unsupported action; call describe')
   M.seated_ok=(reads[request.action] or passive[request.action] or M.away(request.args) or request.action=='vehicle' or request.action=='shoot') and true or nil
-  check_args(request.action,request.args)
+  local args_ok,args_err=pcall(check_args,request.action,request.args)
+  if not args_ok then
+    local ok,hint=pcall(M.entity_args,request)
+    error(tostring(args_err)..(ok and hint or ''),0)
+  end
   if request.action=='describe' or request.action=='profiles' or request.action=='cameras' then return handler() end
   if M.bots.is_index(request.player) and (request.action=='attach' or request.action=='detach') then
     return {bot=M.bots.record(request.player).name,attached=request.action=='attach',note='bots need no attach'}

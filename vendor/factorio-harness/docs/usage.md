@@ -60,8 +60,12 @@ fh call status
   `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` is `builds`, `board_post` `text` is
   `title`, `recipes`/`technologies` `search`/`name` are `prefix`, `transfer` `to_player: true` is `direction`, and a
   `board` call with an `id` and a `note`, `owner` or `status` is `board_update`. A valid argument is never renamed; a
-  corrected call that still fails says `[ran as ...]`; any other unknown argument fails with the valid list. `scan`
-  `fields` also takes one string (`"status|hp"` or `"status,hp"`).
+  corrected call that still fails says `[ran as ...]`; any other unknown argument fails with the valid list and the
+  valid name nearest it (`closest name: filters`: a plural or singular, a name it starts, or up to 2 letters apart).
+  On `configure` and `circuit_set` the refusal also names what the entity at the position takes (Luna 06:20):
+  `long-handed-inserter at (10.5,0.5) takes: filters, filter_mode (alias mode), use_filters; and position, name,
+  unit_number, platform, surface`; for `circuit_set`, its arguments and settings. `configure` `mode` is
+  `filter_mode` and `filter` is `filters`. `scan` `fields` also takes one string (`"status|hp"` or `"status,hp"`).
 - `transfer`, `collect`, `feed`, `inspect`, `rearm` and `refuel` run `position` and `positions` as one list and say so
   in `corrected`: one `{x,y}` given as `positions`, a list given as `position`, a `position` where only `positions` is
   taken (`collect`, `feed`, `rearm`, `refuel`), or both at once (`position` first). A plain `position` where it is
@@ -689,6 +693,16 @@ fh sleep 900 --until researched                       # ...or until the research
   unless you name it (`name: "entity-ghost"`). So does a flying robot, a biter, a projectile or any unselectable entity
   over it, in `inspect`, `transfer`, `collect` and every other call on a position: `name` or `unit_number` picks it,
   and alone at the position it is the target.
+- Inserter and loader item filters (Sonnet 06:20: three inserters with stale filters blocked a line):
+  - Read: `scan` rows, observe entity rows and `build` replies of our inserters and loaders with filters in use carry
+    `filters` as one line: `whitelist: iron-plate, coal`, `blacklist: coal`, `whitelist: no items set`, `off (filters:
+    copper-plate)` (items set, use filters off), `set by circuit (now: ...)` (the inserter's circuit setting
+    `circuit_set_filters`). `scan fields=filters` adds it to every row that has filter slots (`none` without filters).
+  - Set: `configure {position, filters, filter_mode, use_filters}`: `filters` takes item names or one name (`[]`
+    clears and turns filtering off); `filter_mode` (alias `mode`) alone changes the mode and keeps the items;
+    `use_filters: false` keeps the items, unused. `filter` runs as `filters`. The reply reads back `filters`,
+    `filter_mode`, `use_filters`, `line` and `before` (the line before the change). `circuit_set {position, settings:
+    {filters, filter_mode, use_filters}}` sets them the same way and returns the line in `filters`.
 - `inspect` on a roboport or a logistic chest shows `logistic_network`: its `id`, `roboports`, `logistic_area` and
   `construction_area`, `logistic_robots` and `construction_robots` `{total, idle, working, charging, waiting}` and a
   `line` (the networks read's words), or `none: in no logistic network: no roboport's logistic area covers it`. On a
@@ -867,6 +881,16 @@ fh sleep 900 --until researched                       # ...or until the research
   tiles ahead of it empty space) names the rule its spot breaks: `placement blocked: breaks its tile rule 2 facing
   north: tiles x 59..61, y -4..-1 need empty_space and must not be ground_tile; 6 of 12 do not
   (space-platform-foundation at (59,-2))`. `place_ghosts` failures carry `{index, name, position, error}`.
+- A `build` over an entity of the same fast-replace group on the same centre (a chest over a chest, an assembler over
+  an assembler) replaces it as the game's fast replace does (Sonnet, Astra 06:20: six chests drained into
+  inventories). A chest's contents go into the new chest as far as it holds them (item data such as spoilage moves
+  with them); the rest and the old entity's item go to your inventory. The reply's `replaced` names the old entity
+  and says where its contents went in `contents`: `kept 3200 copper-plate in the new iron-chest; 400 copper-plate moved
+  to you`, `it was empty`. Where every stack goes is worked out first: when your inventory cannot take the old item
+  and what the new entity does not hold, the build is refused and nothing moves (`cannot replace steel-chest (7.5,0.5):
+  your inventory has no room for 400 copper-plate, 1 steel-chest (2 free slots, 5 needed); nothing moved`). The slot
+  the placed item frees counts. A machine's contents and modules come to your inventory; its recipe goes on the new
+  one (`recipe_kept`).
 - A `paste` (`blueprint_place`) that creates fewer ghosts than the blueprint holds explains each blueprint entity
   that is not there. It finds the shift the game used from what stands where the layout puts things. It returns:
   - `not_placed` (the first 20, plus `not_placed_count`), each `{name, position, direction, reason}`, where the reason

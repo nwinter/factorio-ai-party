@@ -879,6 +879,7 @@ local set_filters={}
 prototypes.item['stone-brick']={type='item'}
 local fi={valid=true,name='fast-inserter',type='inserter',position={x=3,y=0},force=p.force,filter_slot_count=5,inserter_filter_mode='whitelist'}
 fi.set_filter=function(i,f) set_filters[i]=f or false end
+fi.get_filter=function(i) return set_filters[i] and {name=set_filters[i]} or nil end
 p.surface.find_entities_filtered=function() return {fi} end
 local filtered=call('configure',{position=fi.position,filters={'stone-brick'},filter_mode='whitelist'})
 eq(filtered.filters[1],'stone-brick'); eq(set_filters[1],'stone-brick'); eq(set_filters[2],false); eq(fi.use_filters,true)
