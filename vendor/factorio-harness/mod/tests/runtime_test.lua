@@ -637,7 +637,7 @@ p.surface.find_entities_filtered=function(f) return {f.position.x==3 and f1 or f
 main=inv(stack(nil,0),stack(nil,0),stack(nil,0))
 local batch=call('transfer',{positions={{x=3,y=0},{x=4,y=0},{x=40,y=0}},direction='to_player'})
 eq(batch.transferred,8); eq(batch.items[1].name,'iron-plate'); eq(batch.items[2].count,3)
-eq(batch.entities[2].transferred,3); assert(batch.entities[3].error:find('outside local visible area'))
+eq(batch.entities[2].moved,3); assert(batch.entities[3].error:find('outside local visible area'))
 eq(f1.slots[2][1].count,2); eq(main[1].count,5); eq(flying[#flying],'+3 [item=copper-plate]')
 prototypes={item={coal={fuel_value=4000000},['iron-ore']={fuel_value=0}}}
 main=inv(stack('coal',10),stack('iron-ore',10))
@@ -823,8 +823,8 @@ eq(main[2].count,8); eq(main[1].valid_for_read,false)
 -- total caps a batch, filled in order, and is echoed back.
 main=inv(stack('coal',50))
 local capped=call('transfer',{positions={{x=3,y=0},{x=4,y=0}},item='coal',count=5,total=7,inventory='fuel',direction='to_entity'})
-eq(capped.transferred,7); eq(capped.total,7); eq(capped.entities[1].transferred,5); eq(capped.entities[2].transferred,2)
-eq(call('transfer',{positions={{x=3,y=0},{x=4,y=0}},item='coal',total=3,inventory='fuel',direction='to_entity'}).entities[1].transferred,3)
+eq(capped.transferred,7); eq(capped.total,7); eq(capped.entities[1].moved,5); eq(capped.entities[2].moved,2)
+eq(call('transfer',{positions={{x=3,y=0},{x=4,y=0}},item='coal',total=3,inventory='fuel',direction='to_entity'}).entities[1].moved,3)
 fails(function() call('transfer',{positions={{x=3,y=0}},total=3,direction='to_player'}) end,'total requires item')
 -- A full character inventory is named, not reported as a quiet partial move.
 main=inv(stack('iron-plate',100))
@@ -879,6 +879,7 @@ local set_filters={}
 prototypes.item['stone-brick']={type='item'}
 local fi={valid=true,name='fast-inserter',type='inserter',position={x=3,y=0},force=p.force,filter_slot_count=5,inserter_filter_mode='whitelist'}
 fi.set_filter=function(i,f) set_filters[i]=f or false end
+fi.get_filter=function(i) return set_filters[i] and {name=set_filters[i]} or nil end
 p.surface.find_entities_filtered=function() return {fi} end
 local filtered=call('configure',{position=fi.position,filters={'stone-brick'},filter_mode='whitelist'})
 eq(filtered.filters[1],'stone-brick'); eq(set_filters[1],'stone-brick'); eq(set_filters[2],false); eq(fi.use_filters,true)
@@ -2724,6 +2725,69 @@ end)()
   eq(brief.drop_pending,nil); eq(brief.last_drop.outcome,'failed'); eq(brief.last_drop.why,'the platform or its hub is gone')
   eq(brief.last_drop.result.not_sent,'coal*50'); eq(brief.last_drop.result.dropped[1],'iron-plate*1000')
   st.drop_jobs=nil; st.last_drop=nil
+end)()
+;(function()
+  -- inspect over an area (Gemini, shift10): one compact row per chest or machine of ours in sight, reading order.
+  local find,at,vis=p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible
+  -- inspect reads in sight or by remote view in a chunk our force sees (read_sight): chunk x 1 (the far chest) is dark.
+  p.force.is_chunk_visible=function(_,ch) return ch.x<1 end
+  local inv_defs={chest=defines.inventory.chest,assembling_machine_input=defines.inventory.assembling_machine_input,
+    assembling_machine_output=defines.inventory.assembling_machine_output}
+  defines.inventory.chest=defines.inventory.chest or 1; defines.inventory.assembling_machine_input=902; defines.inventory.assembling_machine_output=903
+  local function inv(list,size)
+    local t={valid=true}
+    t.get_contents=function() return list end
+    t.is_empty=function() return #list==0 end
+    t.count_empty_stacks=function() return size-#list end
+    t.get_bar=function() return size+1 end
+    setmetatable(t,{__len=function() return size end})
+    return t
+  end
+  local function chest(x,y,list) return {valid=true,name='iron-chest',type='container',position={x=x,y=y},force=p.force,
+    get_inventory=function(i) if i==defines.inventory.chest then return inv(list,32) end end} end
+  local a=chest(2.5,1.5,{{name='iron-plate',count=150,quality='normal'},{name='coal',count=20,quality='normal'}})
+  local b=chest(1.5,1.5,{})
+  local c={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=1.5,y=4.5},force=p.force,status=1,
+    get_recipe=function() return {name='electronic-circuit'} end,
+    get_inventory=function(i) if i==902 then return inv({{name='copper-cable',count=8,quality='normal'}},4) elseif i==903 then return inv({},1) end end}
+  local far=chest(60.5,1.5,{})
+  local list={a,b,c,far}
+  p.position={x=0,y=0}
+  p.surface.find_entities_filtered=function(f) if f.area and f.force then return list end return {} end
+  local r=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}})
+  eq(r.count,3); eq(r.entities[1].position.x,1.5); eq(r.entities[2].position.x,2.5); eq(r.entities[3].name,'assembling-machine-2')
+  eq(r.entities[1].holds,'empty; 0 of 32 slots'); eq(r.entities[2].holds,'iron-plate*150 coal*20; 2 of 32 slots')
+  eq(r.entities[3].holds,'in: copper-cable*8'); eq(r.entities[3].recipe,'electronic-circuit'); eq(r.entities[1].status_name,nil,'a chest has none')
+  eq(r.not_in_sight,'1 more in the area in chunks our force does not see now (radar coverage or a character\'s sight lights a chunk)')
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=200,y=10}}}) end,'at most 128x128')
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},position={x=1,y=1}}) end,'give area, positions or position: one of them')
+  fails(function() call('inspect',{position={x=1.5,y=1.5},types={'container'}}) end,'types goes with area')
+  list={far}
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no chest or machine of ours with its centre in (0,0)-(64,10) in a chunk our force sees now (1 in chunks it does not')
+  list={}
+  for i=1,65 do list[i]=chest(i%30+0.5,math.floor(i/30)+0.5,{}) end
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=31,y=3}}}) end,'65 entities in the area; at most 64')
+  p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible=find,at,vis
+  for k,v in pairs(inv_defs) do defines.inventory[k]=v end
+end)()
+;(function()
+  -- Build and ghost replies: logistic chests outside every roboport's area (networks.lua), entrances fed from the side.
+  local coverage=runtime.networks.coverage
+  runtime.networks.coverage=function(_,_,pos) return pos.x>100 and 'outside logistic coverage: nearest roboport (0,0), 75 tiles from its area' or nil end
+  local s={find_entities_filtered=function(f)
+    if f.type=='underground-belt' then return {{valid=true,name='underground-belt',type='underground-belt',position={x=6.5,y=84.5},direction=0,belt_to_ground_type='input'}} end
+    return {}
+  end}
+  local far={valid=true,type='logistic-container',name='requester-chest',position={x=120.5,y=0.5},surface=s,force=p.force}
+  local near={valid=true,type='logistic-container',name='requester-chest',position={x=10.5,y=0.5},surface=s,force=p.force}
+  local ghost={valid=true,type='entity-ghost',ghost_type='logistic-container',ghost_name='buffer-chest',position={x=130.5,y=0.5},surface=s,force=p.force}
+  local ins={valid=true,type='inserter',name='inserter',position={x=7.5,y=84.5},drop_position={x=6.3,y=84.5},direction=4,surface=s,force=p.force}
+  local cover,side=runtime.build_notes(p,{far,near,ghost,ins})
+  eq(#cover,2); eq(cover[1],'requester-chest (120.5,0.5): outside logistic coverage: nearest roboport (0,0), 75 tiles from its area')
+  eq(cover[2]:match('^buffer%-chest %(130.5,0.5%): outside') ~= nil,true,'a ghost by its ghost name')
+  eq(#side,1); eq(side[1]:match('^inserter %(7.5,84.5%) drops onto underground%-belt %(6.5,84.5%), an entrance flowing north, from its east side') ~= nil,true)
+  eq(select(1,runtime.build_notes(p,{near})),nil); eq(select(2,runtime.build_notes(p,{near})),nil)
+  runtime.networks.coverage=coverage
 end)()
 ;(function()
   -- inspect by remote view (Astra, operator 04:57): on our own surface the map shows every entity in a chunk our

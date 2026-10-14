@@ -110,12 +110,16 @@ function parseUntil(text: string): Record<string, unknown> {
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) return object(JSON.parse(trimmed),'--until');
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N [at X,Y X,Y], or a wait_until condition as JSON';
+  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N [at X,Y X,Y], platform_arrived PLATFORM [PLANET], or a wait_until condition as JSON';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
   }
   if (kind === 'crafting_done' || kind === 'crafted') return {until:'crafting_done'};
+  // Gemini, shift10: wait for a platform's arrival in orbit (any stop, or the planet named).
+  if (kind === 'platform_arrived' && rest.length >= 1 && rest.length <= 2 && !rest.some(word => word.includes('='))) {
+    return rest[1] ? {until:'platform_arrived', platform:rest[0], location:rest[1]} : {until:'platform_arrived', platform:rest[0]};
+  }
   const value = (v: string): unknown => /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
   if ((kind === 'item_count' || kind === 'items') && /[<>]/.test(rest.join(' '))) {
     const match = rest.join(' ').match(/^([\w-]+)\s*(>=|<)\s*(\d+)(?:\s+(?:at|in)\s+(.+))?$/);
@@ -737,6 +741,8 @@ async function main() {
       why: last?.why, note: status.result?.note,
       // collect over a radius: moved per item, places touched, what fell short.
       tally: last?.tally,
+      // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
+      moved: last?.moved, inv: last?.inv,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
     };
     for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];

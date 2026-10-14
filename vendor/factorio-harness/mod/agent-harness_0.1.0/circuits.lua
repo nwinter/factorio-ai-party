@@ -54,6 +54,8 @@ return function(api)
     turret={on_off=true, ignore_unlisted_targets_condition='condition', read_ammo='bool', set_ignore_unlisted_targets='bool', set_priority_list='bool'},
     wall={circuit_condition='condition', open_gate='bool', output_signal='signal', read_sensor='bool'},
   }
+  -- Item filter settings of inserters and loaders: set on the entity (configure's filters), not its circuit behavior.
+  local FILTER_SETTINGS = {filters='filters', filter_mode='filter_mode', mode='filter_mode', use_filters='use_filters'}
   -- read's short names from before settings (each a switch above).
   local READ_ALIASES = {inserter={hand='circuit_read_hand_contents'}, transport_belt={contents='read_contents'}, mining_drill={resources='circuit_read_resources'}}
   -- Signal kinds and the prototype tables that hold their names.
@@ -68,7 +70,7 @@ return function(api)
       enable='"ice < 300" or {signal, comparator, value|signal2}; false: off',
       logistic='a condition as enable, on the logistic network (connects it); false: off',
       read='{switch: bool}: hand, contents, resources, speed, ammo, ... (read_X); train stop names',
-      settings='{name: value}: any switch, mode, signal or condition by its readback name',
+      settings='{name: value}: any switch, mode, signal or condition by its readback name; inserters and loaders also filters (item names), filter_mode (whitelist|blacklist), use_filters, as configure sets them (reply filters: the line)',
       signals='constant combinator: [{signal, count}] (first section; [] clears)', on='constant combinator: on/off',
       arithmetic='{first, operation (+ - * / % ^ << >> AND OR XOR), second, output}',
       decider='{first, comparator, constant|second, output, copy_input} or {conditions, outputs}',
@@ -459,9 +461,24 @@ return function(api)
   local function settings_list(kind, props)
     local list = names(props)
     if props.on_off then table.insert(list, 1, 'enable, logistic') end
+    if kind == 'inserter' then list[#list+1] = 'filters, filter_mode, use_filters' elseif kind == 'loader' then list[#list+1] = 'filters' end
     if kind == 'constant_combinator' then list[#list+1] = 'signals, on' end
     if kind == 'arithmetic_combinator' or kind == 'decider_combinator' or kind == 'selector_combinator' then list[#list+1] = kind:gsub('_combinator', '') end
     return #list > 0 and table.concat(list, ', ') or 'none'
+  end
+  -- circuit_set's arguments for this entity (an unknown argument's reply names them).
+  function M.takes(e)
+    local cb = try(function() return e.get_control_behavior() or e.get_or_create_control_behavior() end)
+    if not cb then return 'nothing: it has no circuit connection' end
+    local kind = kind_of(cb)
+    local props = props_of(cb, kind)
+    local list = {}
+    if props.on_off then list[#list+1] = 'enable, logistic' end
+    for _, n in ipairs(names(props)) do if props[n] == 'bool' then list[#list+1] = 'read'; break end end
+    list[#list+1] = 'settings (' .. settings_list(kind, props) .. ')'
+    if kind == 'constant_combinator' then list[#list+1] = 'signals, on' end
+    if kind == 'arithmetic_combinator' or kind == 'decider_combinator' or kind == 'selector_combinator' then list[#list+1] = (kind:gsub('_combinator', '')) end
+    return table.concat(list, ', ')
   end
   local function setting(kind, props, name, v, e)
     local k = props[name]
@@ -614,9 +631,17 @@ return function(api)
       local keys = {}
       for k in pairs(a.settings) do keys[#keys+1] = tostring(k) end
       table.sort(keys)
+      -- An inserter's or loader's item filters, as configure sets them (Sonnet 06:20).
+      local filters = {}
       for _, k in ipairs(keys) do
-        local v = setting(kind, props, k, a.settings[k], e)
-        step('settings.' .. k, function() cb[k] = v end)
+        if FILTER_SETTINGS[k] and (kind == 'inserter' or kind == 'loader') then filters[FILTER_SETTINGS[k]] = a.settings[k]
+        else
+          local v = setting(kind, props, k, a.settings[k], e)
+          step('settings.' .. k, function() cb[k] = v end)
+        end
+      end
+      if next(filters) then
+        step('settings.filters', function() out.filters = api.configure_filters(e, filters).line end)
       end
     end
     if a.signals ~= nil or a.on ~= nil then

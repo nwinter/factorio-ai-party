@@ -94,6 +94,15 @@ test('a transfer over several targets closes with its tally, before the team and
   assert.match(formatCompact({ok:true,id:'t',result:{tally:'moved nothing; 0 of 2 targets touched',nothing_moved:'none of 2 targets'}}),
     /tally: "moved nothing; 0 of 2 targets touched"\nwarning: nothing moved: none of 2 targets\n$/);
 });
+test('an item move ends with the inventory line after the move, after the team and clock lines (Muse 06:27)', () => {
+  const output = formatCompact({ok:true,id:'t',result:{inv:'free 18/20; held: iron-plate 100',moved:50,transferred:50,
+    clock:'game 1m',tally:'moved 50 iron-plate; 2 of 2 targets touched',team:{alerts:['x']}}});
+  assert.equal(output,'moved: 50\ntransferred: 50\ntally: "moved 50 iron-plate; 2 of 2 targets touched"\nclock: "game 1m"\n'+
+    'team: alerts=[x]\ninv: "free 18/20; held: iron-plate 100"\n');
+  // A move that runs over ticks: moved 0, timed, and the line; the warning line still comes last.
+  assert.match(formatCompact({ok:true,id:'t',result:{until_tick:90,moved:0,timed:'moves until tick 90',inv:'free 18/20',nothing_moved:'x'}}),
+    /until_tick: 90\nmoved: 0\ntimed: "moves until tick 90"\ninv: "free 18\/20"\nwarning: nothing moved: x\n$/);
+});
 test('the standing orders line follows the clock line (and comes before teammates)', () => {
   const line = 'orders: restock-ammo running (3 turrets below 20), step 2/5';
   assert.equal(formatCompact({ok:true,id:'s',result:{orders:line,built:1,clock:'game 1m'}}),`built: 1\nclock: "game 1m"\norders: "${line}"\n`);
