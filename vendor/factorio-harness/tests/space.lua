@@ -580,4 +580,32 @@ do
   platform.schedule,platform.state,platform.space_location,platform.space_connection,platform.hub=saved.sched,saved.state,saved.loc,saved.conn,saved.hub
   platform.get_schedule=nil
 end
+-- A hub's Request missing construction materials (Astra, shift12 19:16): read in every hub reply, switched by
+-- construction_requests through keep.lua (faked here: the setting on the hub).
+do
+  local hub=platform.hub
+  local fake={construction=function(e) return e.construction_on and {} or nil end,
+    set_construction=function(e,on) if not e.stuck then e.construction_on=on end; return e.construction_on==true end}
+  local space3=dofile('mod/agent-harness_0.1.0/space.lua'){state=function() return space_state end,position=function(v) return v end,
+    integer=function(v,d) return v==nil and d or v end,remote_entity=function() return silo end,real=function(q) return q end,
+    keep=function() return fake end}
+  eq(space3.requests(p,{platform='alpha'}).construction_requests,'off')
+  eq(space3.requests(p,{platform='alpha',construction_requests=true}).construction_requests,
+    'on (switched on now: the game fills its section from the platform\'s ghosts within a second)')
+  eq(space3.requests(p,{platform='alpha'}).construction_requests,'on')
+  eq(space3.requests(p,{platform='alpha',construction_requests=false}).construction_requests,'off (switched off now)')
+  fails(function() space3.requests(p,{platform='alpha',construction_requests='yes'}) end,'construction_requests must be true or false')
+  fails(function() space3.requests(p,{construction_requests=true}) end,'construction_requests is a platform hub setting')
+  hub.stuck=true
+  fails(function() space3.requests(p,{platform='alpha',construction_requests=true}) end,'the game kept Request missing construction materials off')
+  hub.stuck,hub.construction_on=nil,nil
+  eq(space3.requests(p,{}).construction_requests,nil,'not a hub')
+  -- A manual section requesting an item of the game's section too: the hub requests the sum.
+  fake.construction=function() return {filters={{value={name='coal',quality='normal'},min=3},{value={name='iron-plate',quality='uncommon'},min=19}}} end
+  local rq=space3.requests(p,{platform='alpha',set={{item='coal',min=3,from='nauvis'}}})
+  eq(rq.construction_overlap,'manual sections request these too, and the hub requests the sum: coal 3+3')
+  hub_sections.get_section(2).active=false
+  eq(space3.requests(p,{platform='alpha'}).construction_overlap,nil,'a section that is off requests nothing')
+  hub_sections.get_section(2).active=true
+end
 print('space: ok')
