@@ -191,7 +191,8 @@ surface.request_path=function(a) asked[#asked+1]=a; return 900+#asked end
 car.position={x=60,y=20}; car.orientation=0.25; car.speed=0
 r=astra('vehicle',{drive={x=100,y=20}})
 eq(r.pathfinding,true); eq(r.avoid_enemies,'worms (range + 4)')
-eq(#asked,1); eq(asked[1].bounding_box[2][1],1); eq(asked[1].collision_mask.layers.car,true); eq(asked[1].entity_to_ignore,car); eq(asked[1].radius,4)
+-- first as wide as its diagonal plus a tile (1.22 + 0.5 for a 1.4 by 2.0 car)
+eq(#asked,1); assert(math.abs(asked[1].bounding_box[2][1]-1.7207)<0.001,asked[1].bounding_box[2][1]); eq(asked[1].collision_mask.layers.car,true); eq(asked[1].entity_to_ignore,car); eq(asked[1].radius,4)
 drive_ticks(30); eq(car.position.x,60) -- no path yet: it waits
 runtime.on_event{name=10,id=901,path={{position={x=60,y=20}},{position={x=70,y=5}},{position={x=90,y=5}},{position={x=100,y=20}}}}
 local lowest=20
@@ -219,8 +220,10 @@ assert(last.backed_up:find('backed off and asked for a new path',1,true),last.ba
 blocked=false; asked={}
 astra('vehicle',{drive={x=100,y=90}})
 runtime.on_event{name=10,id=901}
-eq(#asked,2); eq(asked[2].bounding_box[2][1],0.7)
+eq(#asked,2); eq(asked[2].bounding_box[2][1],1) -- as wide as it is long
 runtime.on_event{name=10,id=902}
+eq(#asked,3); eq(asked[3].bounding_box[2][1],0.7) -- as wide as it is wide
+runtime.on_event{name=10,id=903}
 drive_ticks(1)
 last=astra('status').last
 eq(last.outcome,'unreachable'); eq(last.why,'no path for the car (1.4 by 2.0 tiles) to (100,90)')

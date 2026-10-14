@@ -13,7 +13,7 @@ return function(api)
     vehicle = {position='{x,y} of a car, tank, spidertron, locomotive or wagon (enter within 10 tiles; go_to: a spidertron in sight)',
       enter='true: get in (driver seat if free, else a car or spidertron passenger seat); a train you ride runs its schedule as usual',
       exit='true: get out of the vehicle you are in',
-      drive='{x,y}: drive the car or tank you are driving to there (a timed action: outcomes arrived | blocked | unreachable | no_safe_route | timed_out; ticks 1..36000, default 3600). It follows the engine\'s path for the vehicle\'s box (a square as wide as its length, then as its width): around cliffs, water, trees and buildings, steering at a point a few tiles ahead on the path. Neither moving nor turning for 1.5 s against something solid: it backs off 1 s with the wheel turned and asks for a path again, once (last.backed_up); stuck again it ends blocked (last.why names what is in front)',
+      drive='{x,y}: drive the car or tank you are driving to there (a timed action: outcomes arrived | blocked | unreachable | no_safe_route | timed_out; ticks 1..36000, default 3600). It follows the engine\'s path for the vehicle\'s box (a square as wide as its diagonal plus a tile, then as its length, then as its width): around cliffs, water, trees and buildings, steering at a point a few tiles ahead on the path. Neither moving nor turning for 1.5 s against something solid: it backs off 1 s with the wheel turned and asks for a path again, once (last.backed_up); stuck again it ends blocked (last.why names what is in front)',
       pathfind='with drive: default true; false steers straight at the target',
       reverse='with drive: optional true: back there, rear first (to back out of a crowd or off an obstacle). Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding the key does; last.rammed counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it',
       avoid_enemies='with drive: as move_to (default: worms\' range + 4; true: worms and spawners + 8; a margin 0..32; false: no check)',
@@ -156,7 +156,10 @@ return function(api)
   -- Opus (shift09 03:20): a tank driven straight at its target got stuck on
   -- cliffs and was killed. A drive follows the engine's path for the
   -- vehicle's box (cliffs, water, trees and buildings block it), as a square
-  -- as wide as the vehicle is long (it turns), else as wide as it is wide.
+  -- as wide as the vehicle's diagonal plus a tile (it turns, and steering a
+  -- few tiles ahead cuts corners: on a private copy a tank caught a cliff's
+  -- end on a path planned as wide as it is long), else as wide as it is
+  -- long, else as wide as it is wide.
   local function halves(v)
     local ok, box = pcall(function() return v.prototype.collision_box end)
     if not (ok and box) then return 1, 0.7 end
@@ -166,11 +169,15 @@ return function(api)
     return math.max(w, l), math.min(w, l)
   end
   M.halves = halves
+  function M.box_halves(v)
+    local long, short = halves(v)
+    return {(long * long + short * short) ^ 0.5 + 0.5, long, short}
+  end
   function M.request(p, nav)
     local v = p.character and p.character.vehicle
     if not (v and v.valid) then nav.path_state = 'failed'; return end
-    local long, short = halves(v)
-    local h = (nav.path_level or 0) == 0 and long or short
+    local levels = M.box_halves(v)
+    local h = levels[math.min(#levels, (nav.path_level or 0) + 1)]
     nav.path_id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=v.prototype.collision_mask, start=v.position,
       goal=nav.position, force=p.force, radius=nav.tolerance + 1, entity_to_ignore=v, can_open_gates=false,
       pathfind_flags={prefer_straight_paths=true, no_break=false, cache=false}}
@@ -191,7 +198,7 @@ return function(api)
     if not nav or event.id ~= nav.path_id then return end
     if event.path then return M.use(p, nav, event.path) end
     if event.try_again_later then nav.path_state = 'busy'; return end
-    if (nav.path_level or 0) == 0 then nav.path_level = 1; return M.request(p, nav) end
+    if (nav.path_level or 0) < 2 then nav.path_level = (nav.path_level or 0) + 1; return M.request(p, nav) end
     local v = p.character and p.character.vehicle
     local long, short = 0, 0
     if v and v.valid then long, short = halves(v) end
@@ -238,7 +245,15 @@ return function(api)
     end
     local ok, n = pcall(function() return surface.count_tiles_filtered{area={{x - 1.5, y - 1.5}, {x + 1.5, y + 1.5}}, collision_mask='player'} end)
     if ok and n > 0 then names[#names+1] = n .. ' water or other tiles' end
-    return #names > 0 and table.concat(names, ', ') or 'nothing that collides'
+    if #names > 0 then return table.concat(names, ', ') end
+    -- Nothing there: what it touches all round (a corner caught turning).
+    local units, solid, tiles = M.contact(v, surface, back, true)
+    for _, e in ipairs(solid) do
+      if #names < 3 and not have[e.name] then have[e.name] = true; names[#names+1] = string.format('%s (%g,%g)', e.name, math.floor(e.position.x * 2 + 0.5) / 2, math.floor(e.position.y * 2 + 0.5) / 2) end
+    end
+    if tiles > 0 then names[#names+1] = tiles .. ' water or other tiles' end
+    if #names > 0 then return 'nothing; beside it: ' .. table.concat(names, ', ') end
+    return #units > 0 and (#units .. ' units') or 'nothing that collides'
   end
   -- Units are no block (Astra, shift10 04:10: a drive into an attack group
   -- ended blocked and left the tank surrounded, unable to back out): what the

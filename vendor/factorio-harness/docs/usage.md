@@ -1105,8 +1105,9 @@ Some actions work at a distance, the way a player can through remote view:
   true}` gets out; `vehicle {drive: {x,y}}` drives the car or tank you drive there, a timed action steering as a
   player's keys do (Opus, shift09 03:20: a tank driven straight at its target got stuck on cliffs and was killed;
   Astra, shift10 04:10: a drive into an attack group ended blocked and left the tank surrounded):
-  - It follows the engine's path for the vehicle's box (a square as wide as the vehicle is long, else as wide as it
-    is wide), around cliffs, water, trees and buildings, aiming a few tiles ahead on the path. `last.path_length`.
+  - It follows the engine's path for the vehicle's box (a square as wide as its diagonal plus a tile, else as wide as
+    it is long, else as wide as it is wide), around cliffs, water, trees and buildings, aiming a few tiles ahead on the
+    path. `last.path_length`.
   - Neither moving nor turning for 1.5 s against something solid, it backs off 1 s with the wheel turned toward the
     path and asks for a path again, once (`last.backed_up: stuck at (30.0,123.7) (in front: cliff (30,126.5)):
     backed off and asked for a new path`); stuck again it ends `blocked`, `last.why` naming what is in front.
@@ -1115,7 +1116,7 @@ Some actions work at a distance, the way a player can through remote view:
   - `reverse: true` backs there, rear first (out of a crowd, off an obstacle), the same way.
   - `avoid_enemies` works as for `move_to`. `pathfind: false` steers straight at the target (`blocked` after 3 s
     without progress).
-  - Outcomes `arrived`, `blocked`, `unreachable` (no path for the vehicle's length nor its width, `last.why`),
+  - Outcomes `arrived`, `blocked`, `unreachable` (no path for any of the three boxes, `last.why`),
     `no_safe_route`, `timed_out`; `--wait` waits for it and shows `path_length`, `backed_up`, `rammed` and the enemy
     fields.
   `vehicle {position, go_to: {x,y}}` sends a spidertron walking by itself (from outside, or the one you ride; one
