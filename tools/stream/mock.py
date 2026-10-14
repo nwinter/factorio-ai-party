@@ -594,11 +594,41 @@ class MockSource:
                 obs["basemap"] = (sample.get("state") or sample).get("basemap")
             except (OSError, ValueError):
                 pass
+        if now >= getattr(self, "next_clouds", 0):  # like the live source's read, every minute
+            self.next_clouds = now + 60
+            obs["clouds"] = self.cloud_rows(gsec)
         obs["attention"] = self.attention_step(obs["agents"], now)
         obs["loadout"] = self.loadout_rows(now)
         if self.space_age:
             self.space_step(now, obs)
         return obs
+
+    @staticmethod
+    def cloud_rows(gsec):
+        """The harness's `clouds` read (threat.lua) as live.py passes it on: the demo base's pollution on Nauvis, a
+        blob that grows over the game hour and reaches the nests east of it, and a spore cloud on Gleba that reached a
+        pentapod nest. Colours as world n's prototypes.airborne_pollutant."""
+        grow = min(1.0, 0.5 + gsec / 7200)
+
+        def blob(cx, cy, r, peak, squash=1.0):
+            cells = []
+            for x in range(cx - r - 1, cx + r + 2):
+                for y in range(cy - r - 1, cy + r + 2):
+                    d = math.hypot(x - cx, (y - cy) * squash)
+                    if d <= r:
+                        cells.append([x, y, round(peak * (1 - d / (r + 1)) ** 2 + 0.4 * ((x * 7 + y * 3) % 5), 1)])
+            return cells
+        return [
+            {"surface": "nauvis", "force": "player", "tick": int(gsec * 60),
+             "pollutant": {"name": "pollution", "color": {"r": 0.549, "g": 0, "b": 0, "a": 0.584}},
+             "cells": blob(0, 0, int(3 + 3 * grow), 180, 1.3),
+             "reached": [{"tick": int(gsec * 60), "position": {"x": 150, "y": 40}, "spawners": 2}] if grow > 0.6 else None},
+            {"surface": "gleba", "force": "player", "tick": int(gsec * 60),
+             "pollutant": {"name": "spores", "color": {"r": 0.549, "g": 0.549, "b": 0, "a": 0.584}},
+             "cells": blob(-7, 9, 3, 14.4),
+             "reached": [{"tick": int(gsec * 60), "position": {"x": -150, "y": 330}, "spawners": 1}]},
+            {"surface": "vulcanus", "force": "player", "tick": int(gsec * 60), "cells": {}, "chunks": 0, "max": 0, "total": 0},
+        ]
 
     def loadout_rows(self, now):
         """The harness's `loadout` read as live.py passes it on (loadout.lua): a fighter shoots with a submachine gun,

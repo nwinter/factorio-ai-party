@@ -66,9 +66,12 @@ return function(api)
   -- mode (game time stands still between requests there); a sleep that ran
   -- out (elapsed) or ended in death is not repeated, nor is one given a
   -- condition. It cannot spin: every repeat needs a wake, and every wake a
-  -- real event.
+  -- real event. A board line wakes once too, like tells, mentions and eggs:
+  -- a sleep begun too soon after the reply that showed them to read it keeps
+  -- sleeping, and what that reply showed comes again in a later reply
+  -- (missed.lua; Opus, shift12 12:26).
   local REPEAT_TICKS, REPEATS = 600, 3
-  local REPEAT = {board=true, damaged=true, condition=true, queue_done=true, queue_stalled=true}
+  local REPEAT = {damaged=true, condition=true, queue_done=true, queue_stalled=true}
   local function repeat_of(p, seconds)
     local prev = sleeps()[p.index]
     local woke = prev and prev.out and prev.out.woke

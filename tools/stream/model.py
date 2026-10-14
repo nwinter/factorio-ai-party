@@ -17,6 +17,7 @@ import json, math, os, re, time
 from collections import deque
 
 import attention
+import clouds as clouds_mod
 import loadout as loadouts_mod
 import tokens
 
@@ -140,6 +141,34 @@ def clamp(v, lo, hi):
 
 def planet_label(name):
     return PLANET_LABELS.get(name) or (name or "?").replace("-", " ").capitalize()
+
+
+_LETTERS_DIGIT = re.compile(r"([a-z]{3,})(?=\d)")
+_DIGIT_LETTERS = re.compile(r"(\d)(?=[a-z]{3,})")
+_THOUSANDS = re.compile(r"(\d)k(?=[a-z]{3,})")   # 28kgreens is 28k greens, not 28 kgreens
+_TICKED = re.compile(r"(`[^`]*`)")
+
+
+def spaced(text):
+    """A tell as the ticker and chat panel show it (operator 13:05: Codex agents run words and numbers together in
+    tells: needs200AP, hold500, despite9landfillheld; their say lines are fine). A space where a run of 3+ lowercase
+    letters meets a digit, and where a number meets a run of 3+ lowercase letters. Left alone: hyphenated names
+    (assembling-machine-2, iron-plate*50), anything in backticks, units of 1-2 letters (10k, 5m, 2nd), decimals and
+    coordinates (no 3-letter run in them), links."""
+    if not text or not any(c.isdigit() for c in text):
+        return text
+    out = []
+    for part in _TICKED.split(text):
+        if part.startswith("`") and part.endswith("`") and len(part) > 1:
+            out.append(part)
+            continue
+        tokens = re.split(r"(\s+)", part)
+        for i, tok in enumerate(tokens):
+            if tok and not tok.isspace() and "-" not in tok and "://" not in tok and "_" not in tok:
+                tok = _DIGIT_LETTERS.sub(r"\1 ", _THOUSANDS.sub(r"\1k ", _LETTERS_DIGIT.sub(r"\1 ", tok)))
+            tokens[i] = tok
+        out.append("".join(tokens))
+    return "".join(out)
 
 
 def where_label(surface, platform=None):
@@ -411,6 +440,8 @@ class Model:
         self.power = None
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
+        self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
+        self.clouds_t = None
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
         # Space Age: score's rockets/planets/platforms plus platform detail (live.py); moments fire once each
@@ -481,6 +512,8 @@ class Model:
         if obs.get("basemap"):
             ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
             self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
+        if obs.get("clouds") is not None:  # a read happened: a surface missing from it has no cloud now
+            self.clouds, self.clouds_t = clouds_mod.normalise(obs["clouds"]), now
         if obs.get("power"):
             self._ingest_power(obs["power"], now)
         for e in obs.get("board_events") or []:
@@ -697,9 +730,11 @@ class Model:
             ag.died_at = now
             ag.bump(5, now)
             where = where_label(ag.surface, ag.platform) if ag.surface else None
+            # (the casters' facts name no planet while Nauvis is the only one in play: Nick 12:35, item 4)
             self.alert("death", f"{ag.display_name} died" + (f" on {where}" if where and where != "Nauvis" else ""),
                        key=f"death:{ag.name}:{int(now // 30)}", agent=ag.name,
-                       facts={"headline": "agent_death", "agent": ag.display_name, "where": where})
+                       facts={"headline": "agent_death", "agent": ag.display_name,
+                              "where": where if where != "Nauvis" or self.space_in_play() else None})
         ag.alive = alive
         ag.connected = connected
         ag.dead_until_tick = a.get("dead_until_tick")
@@ -801,9 +836,11 @@ class Model:
         names = ["team"] if to == "team" else [n for n in (to or []) if isinstance(n, str)]
         shown = ", ".join("team" if n == "team" else (self.agents[m].display_name or n) if (m := self._match_sender(n))
                           else n for n in names)
+        # (spaced: words and numbers apart for the ticker and the chat panel; operator 13:05)
+        body = spaced(t.get("text", ""))
         entry = {"seq": f"t{t.get('seq')}", "tick": t.get("tick"), "from": t.get("from"), "agent": sender,
-                 "text": f"\u2192 {shown}: {t.get('text', '')}", "t": t.get("t", now), "tell": True, "lane": "tell",
-                 "to_shown": shown, "to": names, "body": t.get("text", "")}
+                 "text": f"\u2192 {shown}: {body}", "t": t.get("t", now), "tell": True, "lane": "tell",
+                 "to_shown": shown, "to": names, "body": body}
         self.chat.append(entry)
         if sender:
             self.agents[sender].bump(1, now)
@@ -816,7 +853,7 @@ class Model:
             return
         self.chat_seen.add(key)
         sender = self._match_sender(r.get("agent", ""))
-        text = r.get("text", "")
+        text = spaced(r.get("text", ""))
         entry = {"seq": f"o{r.get('seq')}", "tick": r.get("tick"), "from": r.get("agent"), "agent": sender,
                  "text": f"→ operator: {text}", "t": r.get("t", now), "tell": True, "operator": True, "lane": "tell",
                  "to_shown": "operator", "to": ["operator"], "body": text}
@@ -1374,6 +1411,13 @@ class Model:
 
     LOST_SHOW_S = 120  # a lost platform stays in the widget this long, marked lost, with its cause
 
+    def space_in_play(self):
+        """Space beyond Nauvis (the space widget's active, without the science packs): a rocket, a platform, another
+        planet with our entities, or an agent away from Nauvis."""
+        sp = self.space
+        return bool(sp.get("rockets") or sp.get("platforms") or len(sp.get("planets") or []) > 1
+                    or any(a.surface and a.surface != "nauvis" for a in self.agents.values()))
+
     def space_snapshot(self, sci, now=None):
         now = now or time.time()
         sp = self.space
@@ -1541,6 +1585,8 @@ class Model:
             "research_news": self.research_news_snapshot(now),
             "darkness": self.darkness,
             "basemap": self.basemap,
+            # the map's pollution and spore layer, one row per surface (clouds.py; the overlay's map shots, the site)
+            "clouds": [dict(c, age_s=round(now - self.clouds_t)) for c in self.clouds.values()] if self.clouds_t else [],
             "production": self.production(now),
             "science": science,
             "space": self.space_snapshot(science, now),

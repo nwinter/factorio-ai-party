@@ -460,6 +460,20 @@ def main():
     cams4 = d3.step(m3.snapshot(t + 7.5), t + 7.5)
     assert cams4["main"]["agents"] == [] and cams4["main"]["alert"] == "death" and "died" in cams4["main"]["attack"], cams4
     assert sent3[-1]["position"] == {"x": 40, "y": 5} and sent3[-1]["zoom"] == d3.cfg["death_zoom"], sent3[-1]
+    # Nick 12:35 (item 4): a death on Nauvis names no planet in the casters' facts while Nauvis is the only planet in
+    # play; once another agent stands elsewhere it does
+    m5 = Model({"agents": {"astra": {}, "sol": {}}})
+    m5.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "surface": "nauvis"},
+                          {"name": "sol", "position": {"x": 9, "y": 0}, "surface": "nauvis"}]})
+    m5.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "surface": "nauvis", "alive": False}]})
+    deaths = [al for al in m5.alerts if al["kind"] == "death"]
+    assert deaths and deaths[-1]["facts"]["where"] is None, deaths
+    m5.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "surface": "nauvis", "alive": True},
+                          {"name": "sol", "position": {"x": 9, "y": 0}, "surface": "vulcanus"}]})
+    m5.alert_keys.clear()
+    m5.ingest({"agents": [{"name": "astra", "position": {"x": 0, "y": 0}, "surface": "nauvis", "alive": False}]})
+    deaths = [al for al in m5.alerts if al["kind"] == "death"]
+    assert deaths[-1]["facts"]["where"] == "Nauvis", deaths
 
     # production: science per minute headline, items ranked by the stage the factory has reached
     m4 = Model({})
@@ -694,6 +708,19 @@ def main():
     assert [(c["seq"], c["lane"], c["agent"], c["text"]) for c in told] == [
         ("t1", "tell", "astra", "→ Luna: 29 plates in the chest (3,4)"), ("t2", "tell", "luna", "→ team: north belt is down")], told
     assert [(c["to_shown"], c["body"]) for c in told] == [("Luna", "29 plates in the chest (3,4)"), ("team", "north belt is down")]
+    # Words and numbers run together (operator 13:05: Codex agents' tells) get a space on the ticker and chat panel;
+    # hyphenated names, backticks, short units, decimals and coordinates stay as written
+    from model import spaced
+    assert spaced("needs200AP") == "needs 200AP" and spaced("hold500") == "hold 500"
+    assert spaced("despite9landfillheld") == "despite 9 landfillheld"
+    assert spaced("Purple currently only101provider, toward30/min?") == "Purple currently only 101 provider, toward 30/min?"
+    assert spaced("You have 28kgreens") == "You have 28k greens"
+    for same in ("assembling-machine-2 at (12.5,-30.5)", "10k plates, 5m left, 2nd try", "`hold500` as typed", "2.5 MW",
+                 "iron-plate*50", "41h45 ETA~6min", "pole(-114,449) lost"):
+        assert spaced(same) == same.replace("~6min", "~6 min"), (same, spaced(same))
+    m9.ingest({"tells": [{"seq": 90, "tick": 99, "from": "astra", "to": ["luna"], "text": "Silo currently0/50, lacks50PU"}]})
+    sp = [c for c in m9.chat if c.get("seq") == "t90"][0]
+    assert sp["body"] == "Silo currently 0/50, lacks 50PU" and sp["text"] == "→ Luna: Silo currently 0/50, lacks 50PU", sp
     # a burst of tells does not push the conversation out of the window, nor the conversation the tells
     m9.ingest({"tells": [{"seq": 10 + k, "tick": 9 + k, "from": "astra", "to": ["luna"], "text": f"item {k}"} for k in range(40)]})
     win = m9.chat_window()
