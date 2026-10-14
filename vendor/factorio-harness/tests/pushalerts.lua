@@ -286,4 +286,86 @@ do
   eq(g['lost_target.furnace'],nil); eq(st6.push_inserters.player.units[702],nil)
   ents.nauvis={}
 end
+-- 7. Turrets rebuilt empty (Astra, shift10: 15+ gun turrets rebuilt by robots with no ammo and destroyed again): a
+-- turret first seen after a whole read was built since; empty 60 s or more after it was first seen, it leaves no_ammo
+-- for a rebuilt_empty group that names it with its ammo request; armed, it is like any other turret.
+do
+  local st7={board={items={}}}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st7 end,
+    agents=function() return {{index=1,name='astra'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return {key='nauvis',position={x=200,y=10}} end}
+  ents.nauvis={}; ents.vulcanus={}
+  ent('nauvis','gun-turret','ammo-turret',200.5,10.5,{unit_number=900})   -- empty, there before the first read
+  local function read() game.tick=game.tick+1800; local out={} for _,g in ipairs(R.read(astra,{}).groups) do out[g.kind]=g end return out end
+  local g=read()
+  eq(g.no_ammo.count,1,'the first read: every turret was there before it'); eq(g.rebuilt_empty,nil)
+  local a=ent('nauvis','gun-turret','ammo-turret',210,10,{unit_number=901,
+    item_request_proxy={item_requests={{name='firearm-magazine',count=10,quality='normal'}}}})
+  local b=ent('nauvis','gun-turret','ammo-turret',214,10,{unit_number=902})
+  g=read(); eq(g.no_ammo.count,3,'first seen empty: out of ammo'); eq(g.rebuilt_empty,nil)
+  g=read(); eq(g.no_ammo.count,3,'30 s on: still out of ammo')
+  g=read()
+  eq(g.no_ammo.count,1,'60 s on: the old one only'); eq(g.rebuilt_empty.count,2)
+  eq(g.rebuilt_empty.line,'2 gun-turret rebuilt empty near (212,10): no ammo since built, 60+ s: gun-turret (210,10) requests 10 firearm-magazine; gun-turret (214,10) no ammo request; rearm')
+  eq(#R.read(astra,{kind='rebuilt_empty'}).groups,1)
+  local told=R.lines(astra,{})
+  assert(has(told,'2 gun-turret rebuilt empty near (212,10)'),table.concat(told,' | '))
+  -- Armed, it leaves; gone, it is forgotten; a turret armed when first seen is never named.
+  a.rounds=10; b.valid=false
+  ent('nauvis','gun-turret','ammo-turret',220,10,{unit_number=903,rounds=5})
+  g=read(); eq(g.rebuilt_empty,nil); eq(g.no_ammo.count,1); eq(st7.push_turrets.player.units[902],nil)
+  a.rounds=0
+  g=read(); g=read(); g=read()
+  eq(g.rebuilt_empty,nil,'armed once: an empty turret like any other'); eq(g.no_ammo.count,2)
+  -- A turret that died and was rebuilt from its ghost has its old unit number again (2.0): the death marks it, so
+  -- rebuilt between two reads it is still named.
+  local c=ent('nauvis','gun-turret','ammo-turret',240,10,{unit_number=905,rounds=20,force=force})
+  g=read(); eq(st7.push_turrets.player.units[905].new,nil,'an armed turret like any other')
+  c.valid=false; R.turret_died(c)
+  local c2=ent('nauvis','gun-turret','ammo-turret',240,10,{unit_number=905})
+  g=read(); g=read(); g=read()
+  eq(g.rebuilt_empty.count,1); eq(g.rebuilt_empty.lost[1],'gun-turret (240,10) no ammo request')
+  c2.valid=false
+  -- The background read (the banded walk) keeps the same memory.
+  local st8={board={items={}}}
+  local BG=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st8 end,
+    agents=function() return {{index=1,name='astra'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return {key='nauvis',position={x=200,y=10}} end,
+    network_groups=function() return {} end}
+  force.players={{}}; game.forces={player=force}
+  local function bgpass()
+    game.tick=game.tick+1800
+    local n=0
+    repeat game.tick=game.tick+1; finds={}; BG.tick(game.tick); n=n+1 until (st8.push_jobs and not st8.push_jobs.player and n>1) or n>5000
+    assert(n<=5000,'a pass ends')
+    local out={} for _,x in ipairs(BG.read(astra,{}).groups) do out[x.kind]=x end return out
+  end
+  g=bgpass(); eq(g.rebuilt_empty,nil); eq(g.no_ammo.count,2)
+  ent('nauvis','gun-turret','ammo-turret',230,10,{unit_number=904})
+  g=bgpass(); eq(g.rebuilt_empty,nil); eq(g.no_ammo.count,3)
+  g=bgpass(); g=bgpass()
+  eq(g.rebuilt_empty.count,1); eq(g.rebuilt_empty.lost[1],'gun-turret (230,10) no ammo request')
+  -- A read under way when the memory first exists (a deploy mid-read) saw part of the map before it: it marks nothing
+  -- built since; the next whole read does.
+  local st9={board={items={}}}
+  local B2=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st9 end,
+    agents=function() return {{index=1,name='astra'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return {key='nauvis',position={x=200,y=10}} end,
+    network_groups=function() return {} end}
+  game.tick=game.tick+1; B2.tick(game.tick)
+  assert(st9.push_jobs.player,'a read under way'); st9.push_jobs.player.tgen=nil; st9.push_turrets=nil
+  local n=0
+  repeat game.tick=game.tick+1; B2.tick(game.tick); n=n+1 until not st9.push_jobs.player or n>5000
+  eq(st9.push_turrets.player.ready,nil,'begun before its memory: not a whole read for it')
+  game.tick=game.tick+1800; n=0
+  repeat game.tick=game.tick+1; B2.tick(game.tick); n=n+1 until (not st9.push_jobs.player and n>1) or n>5000
+  eq(st9.push_turrets.player.ready,true)
+  force.players={}; game.forces=nil; ents.nauvis={}
+end
 print('pushalerts: ok')

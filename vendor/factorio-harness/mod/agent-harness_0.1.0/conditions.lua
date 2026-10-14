@@ -30,6 +30,37 @@ return function(api)
     local inv=e.type=='ammo-turret' and e.get_inventory(defines.inventory.turret_ammo)
     return inv and inv.get_item_count() or nil
   end
+  -- A rocket silo as its GUI shows it: the rocket's state and its cargo
+  -- (Luna, shift10 06:20: an item_count wait for the item rocket stayed 0 at a
+  -- silo whose rocket was ready; the rocket is no item, the item rocket is ammunition).
+  local silo_states
+  local function rocket_state(e)
+    if not silo_states then silo_states={}; for k,v in pairs(defines.rocket_silo_status) do silo_states[v]=k end end
+    local ok,st=pcall(function() return e.rocket_silo_status end)
+    return ok and (silo_states[st] or tostring(st)) or 'unknown',ok and st==defines.rocket_silo_status.rocket_ready
+  end
+  local function silo_line(e)
+    local state,ready=rocket_state(e)
+    local parts=''
+    pcall(function() parts=string.format(', parts %d/%d',e.rocket_parts,e.prototype.rocket_parts_required) end)
+    local cargo={}
+    local ok,inv=pcall(e.get_inventory,defines.inventory.rocket_silo_rocket)
+    if ok and inv then
+      for _,c in ipairs(inv.get_contents()) do cargo[#cargo+1]=c.name..'*'..c.count end
+    end
+    return string.format('rocket-silo (%g,%g): %s%s, cargo %s',e.position.x,e.position.y,state,parts,
+      #cargo>0 and table.concat(cargo,' ') or 'none'),ready
+  end
+  -- Our rocket silo on the tile c.position (any tile of its footprint).
+  local function silo_at(p,c)
+    assert(c.position,'rocket_ready requires position (a rocket silo\'s, any tile of it)')
+    local pos=api.position(c.position)
+    -- An area search meets the footprint (a position and radius only the silo's centre, read on a copy of world n).
+    for _,e in pairs(p.surface.find_entities_filtered{area={{pos.x-0.01,pos.y-0.01},{pos.x+0.01,pos.y+0.01}},type='rocket-silo',force=p.force}) do
+      if e.valid then return e end
+    end
+    error(string.format('no rocket silo of ours at (%g,%g) on %s',pos.x,pos.y,p.surface.name),0)
+  end
   -- Each returns met, and a short description of what it saw.
   local checks={
     no_enemy_structures=function(p,c)
@@ -61,26 +92,35 @@ return function(api)
       return r>c.fraction,string.format('health %d%%',math.floor(r*100))
     end,
     -- In the character's main inventory, or summed over our entities on the
-    -- given tiles (chests, machines: every inventory they have).
+    -- given tiles (chests, machines: every inventory they have; a rocket
+    -- silo's rocket cargo too, which the game counts with the silo's own; each
+    -- silo's rocket state and cargo follow in saw).
     item_count=function(p,c)
       local n,where=0,''
       if c.positions then
-        local seen=0
+        local seen,silos=0,{}
         for _,raw in ipairs(c.positions) do
           for _,e in pairs(p.surface.find_entities_filtered{position=api.position(raw),radius=0.3,force=p.force}) do
-            if e.valid and e~=p.character then
+            -- A silo's rocket stands on its centre and holds nothing of its own (the silo counts the cargo).
+            if e.valid and e~=p.character and e.type~='rocket-silo-rocket' and e.type~='rocket-silo-rocket-shadow' then
               local ok,k=pcall(e.get_item_count,c.item)
               if ok and k then n=n+k end
               seen=seen+1
+              if e.type=='rocket-silo' and #silos<4 then silos[#silos+1]=(silo_line(e)) end
             end
           end
         end
-        where=' in '..seen..' entities'
+        where=' in '..seen..' entities'..(#silos>0 and '; '..table.concat(silos,'; ') or '')
       else
         n=p.get_main_inventory().get_item_count(c.item)
       end
       local met=(c.at_least==nil or n>=c.at_least) and (c.below==nil or n<c.below)
       return met,c.item..' '..n..where
+    end,
+    -- A silo's rocket built and ready to launch (the GUI's rocket state).
+    rocket_ready=function(p,c)
+      local line,ready=silo_line(silo_at(p,c))
+      return ready,line
     end,
     crafting_done=function(p)
       local n=p.crafting_queue_size; return n==0,n..' crafts queued'
@@ -139,7 +179,7 @@ return function(api)
       return n>0,n..' burners below '..c.count..' fuel'..(near and string.format(' (nearest %s at %d,%d)',near.name,math.floor(near.position.x),math.floor(near.position.y)) or '')
     end,
   }
-  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived'
+  local NAMES='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|rocket_ready|crafting_done|researched|ghosts_waiting|damaged|fuel_below|platform_arrived'
   -- Argument checks run when a plan is submitted, not when it first fires.
   function M.validate(c)
     assert(type(c)=='table' and checks[c['until']],'until must be one of '..NAMES)
@@ -159,6 +199,7 @@ return function(api)
       end
     end
     if kind=='researched' then assert(type(c.technology)=='string','researched requires technology') end
+    if kind=='rocket_ready' then assert(c.position~=nil,'rocket_ready requires position (a rocket silo\'s, any tile of it)') end
     if kind=='ghosts_waiting' and c.at_least~=nil then number(c.at_least,1,100000,'at_least') end
     if kind=='damaged' and c.fraction~=nil then number(c.fraction,0.01,1,'fraction') end
     if kind=='fuel_below' then number(c.count,1,1000,'count') end

@@ -9,7 +9,7 @@ return function(api)
   -- action -> {wrong name = real name}; counts are shift05-07 journal errors.
   local RENAME = {
     craft = {item='recipe', name='recipe'},
-    move_to = {target='position', to='position', pos='position', destination='position'},
+    move_to = {target='position', to='position', pos='position', destination='position', waypoints='via', through='via'},
     map = {center='position', centre='position'},
     scan = {names='name', entity_names='name', entity='name', types='type', range='radius', field='fields', center='position'},
     nearest = {entity='name', names='name', types='type', center='position'},

@@ -21,14 +21,22 @@ return function(api)
   -- cos and sin of each of the four directions an inserter takes.
   local TURN = {[0]={1, 0}, [4]={0, 1}, [8]={-1, 0}, [12]={0, -1}}
   local function xy(v) return v.x or v[1] or 0, v.y or v[2] or 0 end
-  -- Pickup and drop points of an inserter prototype at pos facing dir.
+  -- Pickup and drop points of an inserter prototype at pos facing dir, on
+  -- the engine's grid of 1/256 tile (Astra, shift10: build replies said a
+  -- long-handed inserter had no drop target where inspect a moment later
+  -- showed the furnace). The prototype gives a long-handed drop of 2.2; the
+  -- engine places it 2.19921875 off, and a stone furnace's box edge sits at
+  -- x.30078125: on a private 2.0.77 server 8 of 96 long-handed drops into
+  -- furnaces and assemblers fell outside the box at the unrounded point and
+  -- inside at the engine's, where the engine targeted all 96 as these do.
+  local function grid(v) return math.floor(v*256+0.5)/256 end
   function M.points(proto, pos, dir)
     local pv, dv = try(function() return proto.inserter_pickup_position end), try(function() return proto.inserter_drop_position end)
     if not (pv and dv) then return nil end
     local t = TURN[(dir or 0) % 16] or TURN[0]
     local function turn(v)
       local x, y = xy(v)
-      return {x=pos.x+x*t[1]-y*t[2], y=pos.y+x*t[2]+y*t[1]}
+      return {x=grid(pos.x+x*t[1]-y*t[2]), y=grid(pos.y+x*t[2]+y*t[1])}
     end
     return turn(pv), turn(dv)
   end

@@ -119,10 +119,91 @@ nav={position={x=40,y=5},tolerance=0.5}
 P.give_up(p,nav)
 eq(nav.path_state,'probing'); eq(asked[1].radius,27.75); eq(paths[51],7)
 P.on_finished(p,nav,{id=51,path=path{{3,5},{12,5}}})
-eq(nav.path_state,'unreachable'); eq(nav.reachable.x,12); eq(nav.why,'no path for the character to (40,5) on the tile, half- or quarter-tile grid')
+eq(nav.reachable.x,12); eq(nav.why,'no path for the character to (40,5) on the tile, half- or quarter-tile grid')
+-- Its end is 28 tiles off (Grok, shift10 06:20): a spot within build reach (10) is asked for, first a
+-- box with room to turn on the tile grid, then the character's own box on the quarter-tile grid.
+eq(nav.path_state,'probing'); eq(asked[2].radius,9); eq(asked[2].bounding_box[1][1],-0.35); eq(asked[2].path_resolution_modifier,nil)
+P.on_finished(p,nav,{id=52})
+eq(nav.path_state,'probing'); eq(asked[3].radius,9); eq(asked[3].bounding_box[1][1],-0.2); eq(asked[3].path_resolution_modifier,2)
+P.on_finished(p,nav,{id=53,path=path{{3,5},{31,5}}})
+eq(nav.path_state,'unreachable'); eq(nav.spot.pos.x,31); eq(nav.spot.room,true); eq(nav.spot.reach,10)
+eq(nav.reachable.x,31,'the spot is nearer than the first probe\'s end')
+-- In a gap 0.66 tiles wide (the character's 0.4 box fits, a 0.7 one with room to turn does not), room only out of build reach: named with what hems it in.
+boxes={{name='pipe',box={30,-6,30.67,16}},{name='offshore-pump',box={31.33,-6,32,16}}}
+asked={}
 nav={position={x=40,y=5},tolerance=0.5}
-P.give_up(p,nav); P.on_finished(p,nav,{id=52})
-eq(nav.reachable,nil); eq(nav.why,'no path for the character to (40,5), nor to anywhere within 27 tiles of it')
+P.give_up(p,nav); P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked,path=path{{3,5},{31,5}}})
+eq(nav.path_state,'unreachable'); eq(nav.spot.room,nil); eq(nav.spot.pos.x,31); eq(nav.spot.width,0.7)
+eq(nav.spot.by[1],'pipe (30.3,5)'); eq(nav.spot.by[2],'offshore-pump (31.7,5)')
+-- Room joined to the gap within build reach: that spot instead.
+boxes={{name='pipe',box={30,4,30.67,6}},{name='offshore-pump',box={31.33,4,32,6}}}
+asked={}
+nav={position={x=40,y=5},tolerance=0.5}
+P.give_up(p,nav); P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked,path=path{{3,5},{31,5}}})
+eq(nav.spot.room,true); assert(nav.spot.pos.y<4 or nav.spot.pos.y>6,'out of the gap: '..nav.spot.pos.y); assert(((nav.spot.pos.x-40)^2+(nav.spot.pos.y-5)^2)^0.5<=9.75)
+boxes={}
+-- The first probe's end within build reach and with room: named at once.
+asked={}
+nav={position={x=14,y=5},tolerance=0.5}
+P.give_up(p,nav); P.on_finished(p,nav,{id=50+#asked,path=path{{3,5},{8,5}}})
+eq(nav.path_state,'unreachable'); eq(#asked,1); eq(nav.spot.pos.x,8); eq(nav.spot.room,true)
+-- No path request finds a way, and the target is too far for the character's own steps (a 64-tile box): none.
+asked={}
+nav={position={x=60,y=5},tolerance=0.5}
+P.give_up(p,nav); P.on_finished(p,nav,{id=50+#asked})
+eq(nav.reachable,nil); eq(nav.why,'no path request found a way for the character to (60,5), nor to anywhere within 42 tiles of it')
+P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked})
+eq(nav.path_state,'unreachable'); eq(nav.spot.none,true); eq(nav.spot.goal.x,60)
+-- Within the box, ground the requests missed (a target in water fails them all): the character's own steps find a
+-- spot with room, at most 9.25 tiles off (build reach less the arrival radius and a quarter tile).
+asked={}
+nav={position={x=40,y=5},tolerance=0.5}
+P.give_up(p,nav); for _=1,3 do P.on_finished(p,nav,{id=50+#asked}) end
+eq(nav.path_state,'searching')
+while nav.path_state=='searching' do P.search_tick(p,nav) end
+eq(nav.spot.searched,true); eq(nav.spot.room,true); assert(((nav.spot.pos.x-40)^2+(nav.spot.pos.y-5)^2)^0.5<=9.25,'within 9.25')
+-- The copy of world n's slit (round0620c): a lake round (60.5,140.5), a pier from the south ending 8.5 tiles from it,
+-- two assembling machines across the pier's end leaving a 0.6-tile slit. No path request ends in the slit (read on
+-- the copy); the character's own steps do: the only spots within build reach of the lake's centre lie in it.
+boxes={{name='deepwater',box={46,126,57,155}},{name='deepwater',box={63,126,75,155}},{name='deepwater',box={57,126,63,149}},
+  {name='assembling-machine-1',box={57.3,149.3,59.7,151.7}},{name='assembling-machine-1',box={60.3,149.3,62.7,151.7}}}
+local found=P.reach_search(surface,{x=60.5,y=160.5},0.2,{x=60.5,y=140.5},9.75,{ignore=me})
+eq(found.room,false); eq(found.spot.x,60); assert(found.spot.y<=150.25 and found.spot.y>=149.2,'in the slit: '..found.spot.y)
+eq(found.trail[1].x,60.5); eq(found.trail[#found.trail].y,found.spot.y)
+for i=2,#found.trail do local q=found.trail[i]; assert(q.y>=found.spot.y,'the trail comes down the pier') end
+-- Too far apart for the 64-tile box: none.
+eq(P.reach_search(surface,{x=0,y=200},0.2,{x=60.5,y=140.5},9.75,{ignore=me}),nil)
+-- The unreachable walk names it, through the probes that find nothing (none ends in the slit).
+p.position={x=60.5,y=160.5}
+asked={}
+nav={position={x=60.5,y=140.5},tolerance=0.5}
+P.give_up(p,nav); P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked})
+-- The search runs a slice a tick (path_state searching) while the character stands.
+eq(nav.path_state,'searching'); local slices=0
+while nav.path_state=='searching' do P.search_tick(p,nav); slices=slices+1 end
+assert(slices>=2,'more than one slice: '..slices)
+eq(nav.path_state,'unreachable'); eq(nav.spot.searched,true); eq(nav.spot.room,nil); eq(nav.spot.pos.x,60); eq(nav.spot.via,nil)
+local by=table.concat(nav.spot.by,'; ')
+has(by,'assembling-machine-1 (58.5,150.5)'); has(by,'assembling-machine-1 (61.5,150.5)')
+assert(((nav.spot.pos.x-60.5)^2+(nav.spot.pos.y-140.5)^2)^0.5<=9.25,'within 9.25')
+-- squeeze=true walks it: the search's trail, waypoint by waypoint, when no path request found a route.
+asked={}
+nav={position={x=60,y=150},tolerance=0.5,squeeze=true}
+P.give_up(p,nav)
+eq(nav.path_state,'searching'); eq(nav.squeeze_tried,true)
+while nav.path_state=='searching' do P.search_tick(p,nav) end
+eq(nav.path_state,'trail'); eq(nav.reach,0.12); eq(nav.squeezed.from.y,160.5); assert(#nav.waypoints>=2,'a trail')
+local last_wp=nav.waypoints[#nav.waypoints].position
+assert(((last_wp.x-60)^2+(last_wp.y-150)^2)^0.5<=0.5,'the trail ends within the arrival radius')
+eq(#asked,0,'no probe asked')
+-- A squeeze search that finds nothing goes on as a give-up does: the probes.
+asked={}
+nav={position={x=60.5,y=140.5},tolerance=0.5,squeeze=true}
+P.give_up(p,nav); eq(nav.path_state,'searching')
+while nav.path_state=='searching' do P.search_tick(p,nav) end
+eq(nav.path_state,'probing'); eq(#asked,1)
+boxes={}
+p.position={x=3,y=5}
 -- Ungenerated ground: blind steering as before.
 surface.is_chunk_generated=function() return false end
 nav={position={x=400,y=5},tolerance=0.5}
