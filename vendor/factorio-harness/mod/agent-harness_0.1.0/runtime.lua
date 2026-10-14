@@ -726,6 +726,7 @@ function handlers.describe()
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shore and M.shore.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.defense and M.defense.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.ores and M.ores.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.tells and M.tells.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.players and M.players.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.votes and M.votes.schema or {}) do description.actions[name]=schema end
@@ -3923,6 +3924,11 @@ end
 M.defense=require('defense'){state=state,polluted=function(s,pos) return threat.polluted(s,pos) end,reached=function(last) return threat.reached(last) end}
 handlers.defense=M.defense.handlers.defense
 handlers.flamers=M.defense.handlers.flamers
+-- Every resource patch on the charted map (ores.lua, Opus: finding new iron in
+-- one call): amount left, distances, nests within 50 tiles, our drills on it.
+M.ores=require('ores'){state=state,integer=integer,position=position,
+  charted=function(force,surface,chunk) local pl=surface.platform if pl and pl.force==force then return true end return force.is_chunk_charted(surface,chunk) end}
+handlers.ores=M.ores.handlers.ores
 -- Ghosts at absolute positions, as a player places them from the cursor or
 -- the map: anywhere charted, no items needed. `construct` then builds them.
 -- One ghost as a player's ghost placement (shift-build): manual ghost checks
@@ -4403,7 +4409,7 @@ do
       __index=function(_,k) if k=='surface' then return s end return p[k] end,
       __newindex=function(_,k,v) p[k]=v end})
   end
-  for _,name in ipairs({'inspect','circuit_set','circuit','wire'}) do
+  for _,name in ipairs({'inspect','circuit_set','circuit','wire','ores'}) do
     local handler=handlers[name]
     handlers[name]=function(p,a)
       if a.surface==nil then return handler(p,a) end
@@ -4816,7 +4822,7 @@ passive.circuit_set=true; passive.wire=true
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','blueprint_save','blueprint_rename'}) do passive[name]=true end
-local reads={cargo=true,silo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,networks=true}
+local reads={ores=true,cargo=true,silo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,networks=true}
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
@@ -5072,8 +5078,8 @@ function M.dispatch_inner(request)
       -- A repeating plan's rounds with short steps, when they changed (scheduler.lua).
       local rounds=scheduler.round_news(p.index)
       if rounds then result.team=result.team or {}; result.team.queue=rounds end
-      -- The first reply of a shift: plan goals, research since the agent's last shift, researched and none built.
-      local ok,shift=pcall(M.research.shift_block,p,last_call,M.board.plan_for(M.board.who(p)))
+      -- The first reply of a shift: plan goals, open projects, research since the agent's last shift, researched and none built.
+      local ok,shift=pcall(M.research.shift_block,p,last_call,function() return M.board.plan_for(M.board.who(p)) end)
       if not ok then local s=state(); s.research_errors={count=((s.research_errors or {}).count or 0)+1,last=tostring(shift),tick=game.tick}
       elseif shift then
         -- The networks, one line each, next to researched_none_built (networks.lua).
@@ -5448,6 +5454,7 @@ function M.tick_body(event)
   pcall(M.pushalerts.tick,event.tick)  -- the alert read, one stage a tick (task-statuscost)
   pcall(survey.tick,event.tick)  -- status's factory survey, a slice a tick (task-statuscost)
   pcall(threat.tick,event.tick)  -- the chart sweep, a slice a tick (task-statuscost)
+  M.ores.tick()  -- queued chunks of an ore survey, a few a tick (never raises)
   M.seated_ok=nil
   for index,action in pairs(state().active) do
     local ok,p=pcall(player,index,action.kind=='drive')

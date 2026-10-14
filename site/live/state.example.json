@@ -421,7 +421,10 @@
     "owner": "gemini",
     "owner_agent": "gemini",
     "t": 1791695912.241597
-   }
+   },
+   {"seq": 27, "tick": 231200, "by": "luna", "agent": "luna", "id": 4, "verb": "step", "title": "Nuclear power plant",
+    "kind": "project", "owner": "opus", "owner_agent": "opus", "t": 1791695912.9, "progress": "3 of 6 steps",
+    "steps_done": 3, "steps_total": 6, "step": "3. Reactor and heat exchangers"}
   ],
   "open_unowned": 2,
   "in_progress": 2,
@@ -440,6 +443,11 @@
    }
   ],
   "claims_total": 2,
+  "projects": [
+   {"id": 4, "title": "Nuclear power plant", "owner": "opus", "agent": "opus", "status": "claimed", "progress": "3 of 6 steps", "done": 3, "total": 6},
+   {"id": 15, "title": "Rail line to the north iron field", "owner": null, "agent": null, "status": "open", "progress": "1 of 4 steps", "done": 1, "total": 4}
+  ],
+  "projects_total": 2,
   "changelog": [
    {
     "text": "plan_save / plan_run macros",

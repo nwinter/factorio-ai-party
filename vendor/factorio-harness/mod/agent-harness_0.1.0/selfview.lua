@@ -365,7 +365,8 @@ return function(api)
 
   -- The previous shift for the team, in the first reply of a shift (kept per shift).
   local ACTIVE_ITEM = {open=true, claimed=true, doing=true, blocked=true}
-  local NOT_ITEMS = {plan=true, note=true, claim=true}
+  -- Open projects are long-lived by design: the shift block lists them apart (board.lua project_lines).
+  local NOT_ITEMS = {plan=true, note=true, claim=true, project=true}
   function M.retro(p)
     local s = api.state()
     local shift = s.shift

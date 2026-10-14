@@ -782,6 +782,23 @@ fh sleep 900 --until researched                       # ...or until the research
   machine, vehicle, pad, hub and teammate holding it, `{kind, entity or agent, position, count, distance}`, nearest
   first, `limit` default 15, `more` past it). Belts and inserter hands are totals only. It scans the surface's
   storage and belt entities once per call.
+- `fh call ores --args '{"resource":"iron-ore"}'` (read; optional `resource`: a name or a list, default every
+  resource; `surface`: a planet; `position`: measure from there; `min_amount`; `limit` 1..100, default 20): every
+  resource patch on the charted chunks of the surface, nearest first, the same for everyone apart from distances. A
+  patch is the tiles of one resource in 4x4 cells that touch (fluid wells: 16x16 cells), across chunk borders: ore a
+  few tiles apart is one patch, an oil field's wells up to about 30 tiles apart are one field. Each row: `resource`,
+  `centre` (the tiles' mean), `box`, `tiles` (fluids: `wells`), `amount` left (oil, geysers and vents: `yield`, summed
+  over the wells, each well's as the game shows it), `distance` and `direction` from you to the nearest tile (on
+  another surface only with `position`), `from_building` and `building` (our nearest building, one kept per 8x8 cell,
+  and its distance to the patch's nearest tile), `spawners`, `worms` and `nearest_nest` within 50 tiles (on charted
+  chunks, as the map draws them), `miners` (our mining drills on it: the patch their mining target is on, else one
+  under their mining area) and `chart_edge` (ore reaches the edge of the charted map, so the patch may go on past
+  it). Also `count`, `more`, `resources` (patches and the total per resource on the surface) and `survey`. Cost: what
+  each chunk holds is kept with the tick it was read. The first call on a surface reads the chunks around you (about
+  2 ms) and the harness tick reads the rest outward, a few chunks a tick (median 1.5 ms a tick; world n's nauvis takes
+  about 60 ticks), so later calls show every patch; a call 5 min after a pass began starts the next. A dense ore chunk
+  is read 8 rows a tick. Between passes a call takes under 1 ms; the first call after a pass builds the patches again
+  (5-9 ms). `min_amount` on oil and the other infinite resources compares their yield %.
 - `fh call labs [--args '{"radius":96}']` (read; an observe scope): one `research` line (name, progress, packs, ETA at the working labs, or `stalled`) and one line per group of adjacent labs (largest 8, at most 256 labs): working count, other statuses, packs the labs lack (and how many labs), the inserters feeding them with idle ones and why (`source transport-belt (0,-3) has nothing the lab needs`, `no_power`), packs absent from all their belts and chests, and what those sources hold. Example: `labs (0,0)-(6,0): 1/3 working, 2 missing_science_packs, lack logistic (2); feeders: 3 inserters (1 lab-to-lab); 1 idle: source transport-belt (0,-3) has nothing the lab needs; no logistic on their 1 belts/chests; sources hold automation 12`.
 - `fh call science [--args '{"pack":"logistic-science-pack","surface":"nauvis"}']` (read; an observe scope): per pack the current research needs (or `pack`), over the whole surface and the same for everyone: `line` (made and used in 10 min from the game's statistics, the assemblers set to it and their states, packs in their output, in chests, on belts and in labs, labs that have none, carried by agents, the largest chests) and `reach`: where else it sits (chests by kind, inserter hands, robots), the inserters taking from its makers (output side full: into what), the inserters feeding the labs (by status, what the waiting ones' sources hold), each logistic network's requesters for it (met, on the way, unmet with reasons, as `supply` gives them) and the worst lab (position, the packs it lacks, its feeder's source, the nearest stock). One scan for all packs (`supply`'s, with labs as the users).
   Each pack also has `chain` (Sonnet, shift09: "I spend most cycles diagnosing that by hand"): its recipe tree from the pack down, built from the same scan's crafters (assemblers, furnaces, silos; no other find), each step with its makers and made and used per minute (the force's item or fluid statistics over 10 minutes). The line follows the ingredient most of a step's makers lack while more than half of them lack one, and ends at the first step whose makers mostly do not, or that no crafter makes: `chain: chemical-science-pack: 9 of 14 makers lack advanced-circuit, made 12/min, used 30/min; advanced-circuit: 12 of 17 makers lack plastic-bar, made 8/min, used 20/min; plastic-bar: 4 of 4 working, made 30/min, used 52/min`. A maker lacks an ingredient when its status is an ingredient shortage and its input holds less than one craft of it. `chain_tree` lists every step down to what no crafter makes (ores, crude oil, water): `{item, depth, made_per_min, used_per_min, makers, working, states, lacking {ingredient: makers}}`, at most 40 steps (`chain_cut`); a step's makers are the crafters whose recipe (a furnace's last one when idle) makes it, and its children the ingredients of those recipes.
@@ -948,6 +965,9 @@ fh board post --args '{"kind":"request","title":"10 red science assemblers at 0,
 fh board post --args '{"kind":"claim","title":"iron smelting","area":{"left_top":{"x":-60,"y":-30},"right_bottom":{"x":-40,"y":-20}}}'
 fh board update --args '{"id":4,"owner":"astra"}'           # take an open unowned item (your own name)
 fh board update --args '{"id":4,"status":"done","note":"6 assemblers running"}'
+fh board post --args '{"kind":"project","title":"nuclear plant","goal":"...","steps":["mine uranium","centrifuges"]}'
+fh board update --args '{"id":12,"done":[1,2],"step":"turbines"}'   # anyone: steps done, a step added
+fh board projects                                           # open projects as rows; --args '{"id":12}' one in full
 fh board request --args '{"title":"...","problem":"...","proposal":"..."}'   # harness_request
 fh board plan                                               # the team plan (board_plan): goals and who is on what
 fh board plan goals "robots by hour 3; oil next"            # replace the goals ("" clears them)
@@ -956,8 +976,8 @@ fh board plan for luna "scouting south"                     # another agent's li
 fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 ```
 
-- Items: `task`, `request`, `claim` (needs `area`; owner is the poster), `note`; `harness` items come from
-  `harness_request`. Status `open|claimed|doing|done|blocked|dropped`; naming an owner makes an open item `claimed`.
+- Items: `task`, `request`, `claim` (needs `area`; owner is the poster), `note`, `project` (below); `harness` items
+  come from `harness_request`. Status `open|claimed|doing|done|blocked|dropped`; naming an owner makes an open item `claimed`.
 - `owner` takes an agent name, display name or player name without `pog-`, any case; an unknown name fails with the
   roster. Anyone may take an open unowned item or add a note; only the owner or requester changes status, reassigns or
   releases (`owner: ""`). Titles are cut at 120 bytes and notes at 200 instead of failing; the last 10 notes are kept.
@@ -973,14 +993,41 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   notes on it but no status or owner. Each edit is a board event (`kind:"plan"`, `change:"edited"`, `text` what
   changed, `owner` the agent whose line changed) and a `board` hint line for every other agent (`team plan edited by
   NAME: ...`); a line written for you counts as yours (it wakes you from `sleep`), other edits as news.
+- Projects (`kind: "project"`, operator 00:50): a long job that outlives an agent's context and its shift (a rail
+  line, a nuclear plant, a robot mall). `board_post {kind:"project", title, owner?, goal?, steps?, area?, areas?,
+  handoff?, note?}`: `steps` is the checklist (texts, at most 40, each cut at 160 bytes), `areas` up to 8, `goal` up to
+  600 characters, `handoff` up to 1000; it may have no owner. `board_update {id, ...}`: anyone adds steps (`step`, a
+  text or an array), marks steps done or not done (`done`, `undone`: step numbers; a done step keeps who did it and
+  when) and adds notes (the last 20 kept); the agent who added a step, or the owner, removes it (`remove_step`; the
+  other steps keep their numbers); the owner replaces the `goal`, the `handoff` text and the `areas` (`""` or `[]`
+  clears), and so may anyone when the project has no owner or its owner has made no request for 30 minutes, who may
+  then also take it with `owner` (a quiet task's 20 minutes are 30 for a project). Status and reassigning are as for
+  a task. `board {id}` shows it in full: `progress` (`3 of 7 steps`, `no steps yet`), `goal` and `goal_edited`,
+  `steps` (`[x] 1. mine uranium (done by astra, 1h02m ago)`, `[ ] 2. centrifuges`), `areas`, `handoff` and
+  `handoff_edited`, `owner_state` (its owner's last request) and the notes; a list row has `next_steps` (the first 3
+  not done) and the goal and handoff cut to 160. An agent's plain `board` read lists the open projects apart, one line
+  each, its own first (`projects: ["#12 nuclear plant: 3 of 7 steps; owner sol (last request 4m00s ago); next 4.
+  turbines; handoff: ..."]`, at most 8 and `+N more`), and leaves them out of `items`; `fh board projects` reads
+  `{kind:"project", status:"active"}`. Board aliases: `board` with an `id` and `step`, `done`, `undone`,
+  `remove_step`, `goal`, `handoff` or `areas` is `board_update`; `steps` there is `step`, and `step` in a post is
+  `steps`. Open projects are never pruned; at most 30 are open at once (a post past that fails).
+- A project's events (`board_events`): `step_added`, `step_done`, `step_undone`, `step_removed`, `goal`, `handoff`,
+  `areas`, each with `text` (the steps or what changed), and every project event carries the project's `progress`,
+  `steps_done` and `steps_total` after the change. Its owner and poster hear of others' changes in `team.board`
+  (`#12 (yours) step done by astra: nuclear plant - 4. turbines (4 of 7 steps)`); step changes are news there and wake
+  nobody, a goal, handoff, areas, status or owner change by someone else wakes as any change to their item. Everyone
+  else hears of a new project once (`#12 new project by sol: nuclear plant (no owner; 0 of 3 steps)`, news). The first
+  reply of a shift lists the open projects (`team.shift.projects`, the same lines), and fh keeps the last such list and
+  the project items its replies carried in `.projects.json` next to the journal (`FH_PROJECTS_FILE`), which the
+  post-compaction brief shows (pog `tools/context.py`). The shift retro's `open board items` leaves projects out.
 - A claim overlapping another agent's active claim is posted with a warning. At most 300 items are kept (finished
-  ones pruned first, then notes, then the oldest).
+  ones pruned first, then notes, then the oldest that is not an open project).
 - A claim whose owner is now somewhere other than you says so: `owner_away: "on Vulcanus"` on board items, the overlap
   warning (`overlaps claim #128 by sol (on Vulcanus): ...`), and the claim in `collect`'s `skipped_claims` and
   `claimed` (`(claim by sol, on Vulcanus)`).
 - `board_events {since_seq, limit}` (for overlays) returns `{seq,tick,by,id,change,title,kind,owner,requested_by,status,text}`
-  oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, `note`, or `edited`
-  (the plan). A finished technology is an event with no item: `by:"research"`, `kind:"research"`, `title` the
+  oldest first and a `cursor`. `change`: `posted`, `taken`, `assigned`, `released`, a status name, `note`, `edited`
+  (the plan), or a project's changes (above). A finished technology is an event with no item: `by:"research"`, `kind:"research"`, `title` the
   technology, `change:"done"`, `text` `unlocks: ...`; it gives nobody a `board` hint line (the `research` lines do that).
   `board` and `board_events` work for any player, including directors without a character.
 - Board actions never stop the character when they fail (like `say`), and work while a bot is dead.
@@ -1134,7 +1181,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   at most 8. Read the surface from the row, never from the text.
 - `shift`: on a resumed world, the operator's `shift_start` (tools/start-team.sh) begins a numbered shift, and each
   agent's first reply of it (any action, not a peek) carries `team.shift` once: `shift` (`shift N, started <age>
-  ago`), `plan_goals` and `your_plan_line` (the team plan), `research_since_your_last_shift` (technologies finished
+  ago`), `plan_goals` and `your_plan_line` (the team plan), `projects` (the open projects, one line each, the agent's
+  own first: `#12 nuclear plant: 3 of 7 steps; owner sol (last request 3h10m ago); next 4. turbines; handoff: ...`),
+  `research_since_your_last_shift` (technologies finished
   after the agent's last request before this shift, the last 12 and a count of earlier ones: the research news, plus
   what `force.technologies` shows researched since the snapshot taken at the start of the agent's previous shift (and
   at the runtime's first sample), so no research event is needed; nothing before the first snapshot is known) and

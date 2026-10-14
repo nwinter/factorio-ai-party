@@ -130,6 +130,7 @@ BOARD_SCRIPT = [
     ("request", "sonnet", "200 iron gear wheels for the belt mall", None),
     ("claim", "luna", "West wall and turret line", None),
     ("task", "astra", "Third iron smelting column", "astra"),
+    ("project", "opus", "Nuclear power plant", "opus"),
     ("request", "sol", "More green circuits into the labs", None),
     ("claim", "opus", "Power plant and offshore pumps", None),
     ("harness", "grok", "Way to save a build order and replay it", "operator"),
@@ -141,7 +142,15 @@ BOARD_SCRIPT = [
     ("task", "grok", "Assembler row for engines", "grok"),
     ("request", "opus", "Steel for 4 more boilers", None),
     ("claim", "haiku", "South-west copper patch", None),
+    ("project", "luna", "Rail line to the north iron field", "luna"),
 ]
+# Projects (board kind project, eng/projects): a checklist anyone ticks off.
+PROJECT_STEPS = {
+    "Nuclear power plant": ["Uranium mining", "Centrifuges", "Reactor and heat exchangers", "Steam turbines",
+                            "Offshore pumps to the exchangers", "Fuel cell supply"],
+    "Rail line to the north iron field": ["Survey the route", "Rails to the field", "Stations at both ends",
+                                          "Two locomotives and wagons"],
+}
 CHANGELOG = {"Way to save a build order and replay it": "harness v4: plan_save / plan_run macros",
              "Tell me when a lab runs dry": "harness v5: labs out of packs in status warnings"}
 
@@ -288,14 +297,20 @@ class MockSource:
             a["phase"], a["active"], a["until"] = "act", r.choice(ACTIONS[a["site"]]), now + r.uniform(6, 35)
 
     # ---- team board -------------------------------------------------------------------------------------------
-    def board_event(self, item, by, change, gsec):
-        """Same shape as eng/board's board.lua: change is posted | taken | assigned | released | note | a status."""
+    def board_event(self, item, by, change, gsec, text=None):
+        """Same shape as eng/board's board.lua: change is posted | taken | assigned | released | note | a status
+        (a project's also step_done, with its progress)."""
         self.board_seq += 1
         item["updated_tick"] = int(gsec * 60)
         change = {"owner": "taken"}.get(change, change.replace("status:", ""))
-        self.board_log.append({"seq": self.board_seq, "tick": int(gsec * 60), "by": by, "id": item["id"],
-                               "change": change, "title": item["title"], "kind": item["kind"], "owner": item["owner"],
-                               "requested_by": item["requested_by"], "status": item["status"]})
+        e = {"seq": self.board_seq, "tick": int(gsec * 60), "by": by, "id": item["id"], "change": change,
+             "title": item["title"], "kind": item["kind"], "owner": item["owner"],
+             "requested_by": item["requested_by"], "status": item["status"], "text": text}
+        if item["kind"] == "project":
+            done = sum(1 for s in item["steps"] if s["done_by"])
+            item["progress"] = f"{done} of {len(item['steps'])} steps"
+            e.update(progress=item["progress"], steps_done=done, steps_total=len(item["steps"]))
+        self.board_log.append(e)
         self.board_log = self.board_log[-100:]
 
     def board_step(self, now, gsec):
@@ -312,13 +327,25 @@ class MockSource:
             if kind == "claim":
                 x, y = SITES[ROLES.get(by, ["spawn"])[0]]
                 item["area"] = {"left_top": {"x": x - 20, "y": y - 20}, "right_bottom": {"x": x + 20, "y": y + 20}}
+            if kind == "project":
+                item["steps"] = [{"n": k + 1, "text": t, "done_by": None} for k, t in enumerate(PROJECT_STEPS[title])]
+                item["status"] = "claimed" if owner else "open"
             self.board_items[item["id"]] = item
             self.board_event(item, by, "posted", gsec)
             return
         if not live:
             return
         it = r.choice(live)
-        if it["kind"] == "request" and it["status"] == "open":
+        if it["kind"] == "project":
+            left = [s for s in it["steps"] if not s["done_by"]]
+            if left:
+                s = left[0]
+                s["done_by"] = r.choice([it["owner"] or it["requested_by"]] + names)
+                self.board_event(it, s["done_by"], "step_done", gsec, f"{s['n']}. {s['text']}")
+            else:
+                it["status"] = "done"
+                self.board_event(it, it["owner"] or it["requested_by"], "status:done", gsec)
+        elif it["kind"] == "request" and it["status"] == "open":
             taker = r.choice([n for n in names if n != it["requested_by"]])
             it["owner"], it["status"] = taker, "claimed"
             self.board_event(it, taker, "owner", gsec)

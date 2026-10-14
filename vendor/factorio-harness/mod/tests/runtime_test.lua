@@ -2171,6 +2171,47 @@ end
   p.surface.find_entities_filtered=find
   prototypes.item,prototypes.utility_constants,prototypes.quality,prototypes.entity['rocket-silo']=items,uc,quality,silo
 end)()
+-- ores (ores.lua): every resource patch on the charted map through dispatch, a read that leaves the walk running;
+-- its aliases; surface= names another planet (no distance from the caller there).
+;(function()
+  local find,entities,platforms,get_surface,at=p.surface.find_entities_filtered,prototypes.entity,p.force.platforms,game.get_surface,p.position
+  local chunks,surfaces,forces,charted,count=p.surface.get_chunks,game.surfaces,game.forces,p.force.is_chunk_charted,p.surface.count_entities_filtered
+  p.position={x=0,y=0}
+  prototypes.entity=setmetatable({['iron-ore']={type='resource',mineable_properties={products={{type='item',name='iron-ore'}}}}},{__index=entities})
+  local function ore(x,y,amount) return {valid=true,name='iron-ore',type='resource',position={x=x+0.5,y=y+0.5},amount=amount} end
+  local function one_chunk(x,y) return function() local done=false; return function() if not done then done=true; return {x=x,y=y} end end end end
+  p.surface.find_entities_filtered=function(f) if f.type=='resource' then return {ore(10,-5,500),ore(11,-5,500)} end return {} end
+  p.surface.get_chunks=one_chunk(0,-1)
+  p.surface.count_entities_filtered=function(f) return #p.surface.find_entities_filtered(f) end
+  local vulcanus={name='vulcanus',index=2,get_chunks=one_chunk(-1,-1),find_entities_filtered=function(f) if f.type=='resource' then return {ore(-5,-5,700)} end return {} end}
+  vulcanus.count_entities_filtered=function(f) return #vulcanus.find_entities_filtered(f) end
+  game.surfaces=setmetatable({nauvis=p.surface,vulcanus=vulcanus},{__index=function(_,k) return ({p.surface,vulcanus})[k] end})
+  game.forces=setmetatable({player=p.force},{__index=forces})
+  -- The caller's chunk is always charted (a character charts around itself).
+  p.force.is_chunk_charted=function(s,c) if s==vulcanus then return c.x==0 and c.y==0 or c.x==-1 and c.y==-1 end return c.x==0 and (c.y==-1 or c.y==0) end
+  storage.agent_harness.ores,storage.agent_harness.ores_busy=nil,nil
+  call('walk',{direction='east',ticks=600})
+  local r=call('ores',{})
+  eq(r.count,1); eq(r.patches[1].tiles,2); eq(r.patches[1].amount,1000); eq(r.patches[1].distance,11); eq(r.patches[1].direction,'E')
+  assert(r.survey:find('^2 charted chunks read; the last pass began'),r.survey)
+  eq(call('status').active.kind,'walk'); call('stop',{})
+  -- Two charted chunks: the first call's own budget read them all, so the harness tick has nothing to do.
+  eq(storage.agent_harness.ores_busy,nil); eq(call('ores',{}).count,1)
+  local named=call('ores',{name='iron-ore',limit=5})
+  assert(named.corrected and named.corrected:find('name is resource',1,true),tostring(named.corrected)); eq(named.count,1)
+  fails(function() call('ores',{resource='iron-plate'}) end,'iron-plate is not a resource; resources: iron-ore')
+  fails(function() call('ores',{radius=5}) end,'unknown argument radius for ores')
+  p.force.platforms={}
+  game.get_surface=function(name) if name=='vulcanus' then return vulcanus end end
+  local v=call('ores',{surface='vulcanus'})
+  eq(v.surface,'vulcanus'); eq(v.patches[1].amount,700); eq(v.patches[1].distance,nil); eq(v.from,nil)
+  eq(call('ores',{surface='vulcanus',position={x=-5,y=0}}).patches[1].distance,4)
+  fails(function() call('ores',{surface='aquilo'}) end,'no surface named aquilo; planets and surfaces: nauvis, vulcanus')
+  advance(2); eq(storage.agent_harness.ores_busy,nil)
+  p.surface.find_entities_filtered,prototypes.entity,p.force.platforms,game.get_surface,p.position=find,entities,platforms,get_surface,at
+  p.surface.get_chunks,game.surfaces,game.forces,p.force.is_chunk_charted,p.surface.count_entities_filtered=chunks,surfaces,forces,charted,count
+  storage.agent_harness.ores,storage.agent_harness.ores_busy=nil,nil
+end)()
 -- Replies (00:20 round): transfer's direction named any way on a requester, car trunk or wagon (Haiku); an out of
 -- reach target's distance, reach and a spot that reaches it (Haiku); inspect's holds and requests lines (Muse); and
 -- the tally closing a transfer over several targets (Muse).

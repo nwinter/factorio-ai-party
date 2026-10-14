@@ -54,7 +54,8 @@ const help = `fh — Factorio agent CLI
   fh blueprint save|rename|delete --args JSON The team library: save {name, area|positions}, place {name, position}
   fh queue submit --file plan.json           Queue in-game execution; optional --args for mode
   fh queue status|edit|cancel|resume          Inspect/revise pending work; cancel controls immediately
-  fh board [--args '{"mine":true}']          Team board (tasks, requests, claims, notes), newest first
+  fh board [--args '{"mine":true}']          Team board (tasks, requests, claims, notes, projects), newest first
+  fh board projects [--args '{"id":N}']      Open projects: progress, next steps, handoff (an id: one in full)
   fh board post|update|events|request --args JSON   board_post, board_update, board_events, harness_request
   fh board plan [goals "text"|doing "text"|for NAME "text"]
                                             The team plan: goals and one line per agent ("" or - for stdin as for say)
@@ -198,6 +199,42 @@ function noteOperator(reply: unknown) {
       } catch (error) { process.stderr.write(`operator file: ${String(error)}\n`); }
     }
   }
+}
+// Open board projects for the workspace's post-compaction brief (pog tools/context.py): FH_PROJECTS_FILE (default
+// .projects.json next to the journal) holds the lines the last list carried (the shift block's `projects`, a plain
+// board read's `projects`), with each project item a later reply carried put in by its id, or taken out once closed.
+let projectsFile: string | undefined;
+const OPEN = new Set(['open','claimed','doing','blocked']);
+function projectLine(item: Record<string, unknown>): string {
+  const steps = Array.isArray(item.next_steps) ? item.next_steps : Array.isArray(item.steps) ? item.steps : [];
+  const next = steps.find((s): s is string => typeof s === 'string' && s.startsWith('[ ] '));
+  const handoff = typeof item.handoff === 'string' ? item.handoff.slice(0, 140) : '';
+  return `#${item.id} ${item.title}${item.status === 'blocked' ? ' (blocked)' : ''}: ${item.progress}; ${item.owner ? `owner ${item.owner}` : 'no owner'}`
+    + (next ? `; next ${next.slice(4)}` : '') + (handoff ? `; handoff: ${handoff}` : '');
+}
+function noteProjects(reply: unknown) {
+  const result = reply && typeof reply === 'object' ? (reply as Reply).result as Record<string, unknown> | undefined : undefined;
+  if (!projectsFile || !result || typeof result !== 'object') return;
+  const team = result.team && typeof result.team === 'object' ? result.team as Record<string, unknown> : {};
+  const shift = team.shift && typeof team.shift === 'object' ? team.shift as Record<string, unknown> : {};
+  const lists = [shift.projects, result.projects].filter(Array.isArray) as unknown[][];
+  const items = [result.item, ...(Array.isArray(result.items) ? result.items : [])]
+    .filter((i): i is Record<string, unknown> => !!i && typeof i === 'object' && (i as Record<string, unknown>).kind === 'project');
+  if (!lists.length && !items.length) return;
+  try {
+    let lines: string[] = [];
+    try {
+      const saved = JSON.parse(readFileSync(projectsFile, 'utf8')) as {lines?: unknown};
+      if (Array.isArray(saved.lines)) lines = saved.lines.filter((l): l is string => typeof l === 'string');
+    } catch { /* the first one */ }
+    for (const list of lists) lines = list.filter((l): l is string => typeof l === 'string');
+    for (const item of items) {
+      const at = lines.findIndex(l => l.startsWith(`#${item.id} `));
+      if (!OPEN.has(String(item.status))) { if (at >= 0) lines.splice(at, 1); continue; }
+      if (at >= 0) lines[at] = projectLine(item); else lines.push(projectLine(item));
+    }
+    writeFileSync(projectsFile, JSON.stringify({at:new Date().toISOString(), lines}) + '\n');
+  } catch (error) { process.stderr.write(`projects file: ${String(error)}\n`); }
 }
 // The OPERATOR: lines not yet on stdout, for the head of the next stdout write.
 function operatorHead(): string {
@@ -391,8 +428,14 @@ async function main() {
   }
   if (command === 'board') {
     const operation = positionals[1] ?? 'list';
-    const actions: Record<string, string> = {list:'board', post:'board_post', update:'board_update', events:'board_events', request:'harness_request'};
-    if (!actions[operation]) throw new Error('board expects list, post, update, events, request, or plan');
+    const actions: Record<string, string> = {list:'board', projects:'board', post:'board_post', update:'board_update', events:'board_events', request:'harness_request'};
+    if (!actions[operation]) throw new Error('board expects list, projects, post, update, events, request, or plan');
+    // fh board projects: the open projects as rows (progress, the next steps, the handoff); --args '{"id":N}' shows one in full.
+    if (operation === 'projects') {
+      const args = object(JSON.parse(values.args ?? '{}'),'args');
+      if (args.id === undefined) { args.kind ??= 'project'; args.status ??= 'active'; }
+      values.args = JSON.stringify(args);
+    }
     positionals[1] = actions[operation]!;
     command = 'call';
   }
@@ -559,9 +602,10 @@ async function main() {
     client = rcon;
   }
   operatorFile = process.env.FH_OPERATOR_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.operator-tells.jsonl') : undefined);
+  projectsFile = process.env.FH_PROJECTS_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.projects.json') : undefined);
   {
     const inner = harness;
-    harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); return reply; }};
+    harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); return reply; }};
   }
   let stopping = false;
   const stop = () => { stopping = true; client.close(); };

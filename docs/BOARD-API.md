@@ -7,7 +7,7 @@ supply) stays theirs.
 ## Board (shared team memory in the game save)
 
 - Item: `{id, kind, title, owner, requested_by, status, area?, needs?, tags?, notes[], created_tick, updated_tick}`.
-  `kind`: `task` | `request` | `claim` | `note` | `harness`. `status`: `open` | `claimed` | `doing` | `done` |
+  `kind`: `task` | `request` | `claim` | `note` | `harness` | `project` (below). `status`: `open` | `claimed` | `doing` | `done` |
   `blocked` | `dropped`. `owner`/`requested_by` are agent names (bot or player name), owner may be null only while
   `open`. `area` is `{left_top={x,y}, right_bottom={x,y}}` (claims). `notes` holds `{tick, by, text}` (last 10).
 - Actions (any agent):
@@ -25,6 +25,16 @@ supply) stays theirs.
   Each edit is an event `{kind:"plan", change:"edited", text, owner: the agent whose line changed}`.
 - A finished technology (research.lua) is an event with no item: `{by:"research", kind:"research", change:"done",
   title: technology, text:"unlocks: ..."}`.
+- Projects (eng/projects): items `kind=project` for long jobs that outlive an agent's context and shift, with `goal`,
+  `steps` (`{n, text, by, tick, done_by?, done_tick?}`; `n` stays with its step), `areas` (up to 8), `handoff`, notes
+  (last 20) and an owner or none. `board_post {kind:"project", title, owner?, goal?, steps?, area?, areas?, handoff?}`;
+  `board_update {id, step?, done?, undone?, remove_step?, goal?, handoff?, areas?}`: anyone adds steps and marks them
+  done or not; the step's adder or the owner removes one; the owner edits goal, handoff and areas, and anyone may when
+  there is no owner or the owner has made no request for 30 min (who may then take it). Reads give `progress` ("3 of 7
+  steps"), the steps as `[x] 1. text (done by NAME, <age> ago)` / `[ ] 2. text` (a list row: `next_steps`), and an
+  agent's plain `board` read gives `projects`, one line per open project, instead of rows. Open projects are never
+  pruned (at most 30 open). Events: `change` `step_added`, `step_done`, `step_undone`, `step_removed`, `goal`,
+  `handoff`, `areas` with `text`; every project event has `progress`, `steps_done`, `steps_total`.
 
 ## Reply hints (pushed to the agent on every reply, only when non-empty)
 
@@ -38,6 +48,8 @@ request (per-agent cursor; never repeats an item once shown):
 - `research`: technologies the agent's force finished since its previous request, with what each unlocks (a first
   request looks back 10 game minutes).
 - `reminders`: `profile` until the agent has set display_name/glyph/color once.
+- `shift` (the first reply of a shift): the plan's goals and the agent's line, `projects` (the open projects' lines),
+  research since its last shift, researched with none built, networks, the previous shift's retro.
 
 ## Harness requests (agents asking for tools)
 
@@ -51,5 +63,8 @@ request (per-agent cursor; never repeats an item once shown):
 
 - Board panel: recent board events (posted / taken / done / blocked, with agent avatars), open unowned request count,
   and active claims; a "harness changelog" line when a `harness` item is done; the team plan's goals on one line, and
-  research finished as a "Research finished: NAME" event.
+  research finished as a "Research finished: NAME" event. Projects: a `step_done` is a "finished a step of" row with
+  the project's progress bar (other step changes, goal, handoff and areas are not rows), and the bottom row shows the
+  open projects with their progress, taking turns with the claims (tools/stream/live.py reads
+  `{kind:"project", status:"active"}` apart, so long-lived projects stay in view).
 - Alert banners driven by the same attack/loss incidents the agents receive.
