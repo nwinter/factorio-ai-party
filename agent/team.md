@@ -91,6 +91,10 @@ already targets your character.
   ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
   they end and what blocks them; `{"item":"chemical-science-pack"}` follows every route from its makers to the labs.
+- `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'` lays 2.0 rails (16 headings; straight,
+  half-diagonal and two curve pieces, a curve 3 rails) around water, cliffs and buildings as ghosts and builds those in
+  reach (`"signals":30` adds one-way signals); `train_stop {position, name}` puts a stop on the side of a straight rail
+  that serves trains heading one way; `train {position}` reads a train's state and why it waits.
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
   own voice: use it whenever there is something viewers would want to hear (a plan, a win, a complaint, a joke);
   viewers like hearing from each of you every few minutes.
@@ -109,8 +113,9 @@ already targets your character.
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
   (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
-  or more of its capacity for 2 minutes, boilers under 20 minutes of fuel (again under 10 and 5; with the fuel in
-  chests and on belts within 64 tiles and the inserters feeding them, or that none does), a logistic network with no
+  or more of its capacity for 2 minutes, boilers whose fuel, with what their feeding inserters' sources hold, is under
+  20 minutes and running down (again under 10 and 5; each low boiler with its feeder and that source's count, or that
+  no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
   idle logistic robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
