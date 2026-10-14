@@ -187,6 +187,8 @@ already targets your character.
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
   standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,
   `eta_min` (at the current speed) and `next_stop`.
+- `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
+  (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 
