@@ -19,6 +19,7 @@
 -- one digest per agent every 150 s, new or worsening groups only; the
 -- game_alerts read lists them all. The scan is kept in storage for 30 s so
 -- every peer computes the same lines.
+local flameroil = require('flameroil')
 return function(api)
   local M = {}
   local CELL, SCAN_TICKS, DIGEST_TICKS, MAX_LINES, MAX_SCAN = 64, 1800, 9000, 5, 20000
@@ -190,7 +191,8 @@ return function(api)
           local tk, td = turret_kind(e, inv and inv.get_item_count() == 0, tmem)
           if tk then kind, detail = tk, td end
         elseif e.type == 'fluid-turret' then
-          local amount = try(function() local f = e.fluidbox[1]; return f and f.amount or 0 end)
+          -- all it holds, its own buffer too (flameroil.lua; fluidbox[1] alone reads empty once the pipe drains)
+          local amount = try(function() return (flameroil.read(e)) end)
           if amount and amount < 1 then kind = 'flamer_dry' end
         end
         if kind then add(groups, kind, s.name, e, e.position, e.name, builder(e), detail) end

@@ -1292,23 +1292,30 @@ fh sleep 900 --until researched                       # ...or until the research
   or pipes between clusters form a `line` area; a cluster wider or taller than 128 tiles is split into 128-tile
   `block`s. Each area has `kind` (`cluster`, `block` or `line`), `from_centre` and `bearing` from the base centre (the
   spawn point) and a `line` (`area 1 (cluster, 27 tiles E of base centre) around (27,3) (0,0)-(60,6): 74 buildings
-  (...); turrets in range: 2 gun (23 ammo, 1 low), 2 flamethrower (oil 13%, 1 dry); 43 buildings covered (2 by one
+  (...); turrets in range: 2 gun (23 ammo, 1 low), 2 flamethrower (1 of 2 with oil (crude-oil 50 at (10,4)); oil 13%,
+  1 dry); 43 buildings covered (2 by one
   turret only), 31 not; largest uncovered part (30,3)-(60,3): 31 buildings (31 transport-belt); nests: (105,2) 45
   tiles E polluted`), the turrets in range (`turret_list`, lowest ammo first), `ammo` (gun rounds), `flamers` (`count`,
-  `oil`, `capacity`, `dry`, `low` under 25%), `lasers`, `uncovered_parts`, and `nests`, up to 3 nests whose nearest
+  `with_oil`, `oil`, `capacity`, `dry`, `low` under 25%), `lasers`, `uncovered_parts`, and `nests`, up to 3 nests whose nearest
   building is in the area. A building is covered when its centre is within range of a gun, laser or flamethrower
   turret. `areas_without_turrets` lists area numbers; `nests`: charted spawner groups within 256 tiles of a building,
   nearest first (`nest (105,2) 2 spawners, 1 worm: 45 tiles E of transport-belt at (60,3) (area 1); pollution reaches
   it`, or `reaches it (last there 5m ago)`); pollution reaches a nest while one of its chunks had pollution in the last
   15 game minutes, the same memory `status` enemies and the reached-nest news use (one reading at the cloud's edge
   flickers); `artillery`; `more` sums areas past the limit.
-- `fh call flamers` (read; `limit`, default 12, max 40; cached 10 s): each flamethrower turret on your surface, the
-  most at risk first: `flamethrower-turret (0,0) facing S, oil 75% (150/200): 4 of our burnable buildings in its arc
-  within 33 tiles: 3 pipe, 1 gun-turret (nearest pipe (0,10), 10 tiles)`. The arc is the direction the turret was
-  built facing, plus or minus its turn range (60 degrees for the vanilla flamer), from its minimum range to its range
-  plus 3 tiles for burning ground; buildings with full fire resistance (walls) are left out. Also `count`, `dry`,
-  `low`, `with_buildings_in_arc`. `status` warns of dry and low flamers: `flamer oil: flamethrower-turret 1/11 dry at
-  (80,90), 2 below 25% at (84,90) 12%, ...; fh call flamers shows each one and what is in its arc`.
+- `fh call flamers` (read; `limit`, default 12, max 40; cached 10 s): `summary` (`12 of 12 with oil (crude-oil 86 at
+  (36,96.5), ...)`, the least oil first) and each flamethrower turret on your surface, the most at risk first:
+  `flamethrower-turret (0,0) facing S, oil crude-oil 150/200 (75%): 4 of our burnable buildings in its arc within 33
+  tiles: 3 pipe, 1 gun-turret (nearest pipe (0,10), 10 tiles)`. A flamer's oil is all it holds of the fluids it fires
+  (crude, heavy and light oil), as `inspect` reads it: its fluidbox on the pipe and the buffer it fires from, which
+  still holds oil after the pipe has drained (Astra, shift11: every flamer read dry while one held 87 oil and burnt a
+  reactor); its capacity is the box's 100 plus the buffer's 100. The arc is the direction the turret was built facing,
+  plus or minus its turn range (60 degrees for the vanilla flamer), from its minimum range to its range plus 3 tiles
+  for burning ground; buildings with full fire resistance (walls) are left out. Also `count`, `with_oil`, `dry`,
+  `low`, `with_buildings_in_arc`. `status` warns of dry and low flamers by the same read: `flamer oil:
+  flamethrower-turret 10 of 11 with oil (crude-oil 12 at (84,90), ...); 1/11 dry at (80,90), 2 below 25% at (84,90)
+  12%, ...; fh call flamers shows each one and what is in its arc`; observe rows' `fluids` start with `turret holds
+  crude-oil 87/200`.
 - `collect` with `radius` skips stock inside another agent's active board claim and reports `skipped_claims` (`40 iron-plate in 2 places of #4 iron smelting (claim by sol); ask the owner`). `collect` on named positions still takes, and lists the claimed ones in `claimed`.
 - The `status` power warning appears only when some electric machine lacks power: `power: 3 of 78 machines low_power; 1 unconnected (fh call power lists them)` (`no_power` = connected to a network with no generation; `unconnected` = no pole reaches it).
 - `fh research` (`research` with no arguments; read): `current`, `progress`, `queue`, `pending`, and `entries`, one per

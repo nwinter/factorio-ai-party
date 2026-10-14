@@ -57,7 +57,14 @@ storage.board.items[2]={kind='claim',status='done',owner='luna',area={left_top={
 -- 5 furnaces out of fuel near the start, built by nobody known: the nearest agent (astra).
 for i=1,5 do ent('nauvis','stone-furnace','furnace',i*2,2,{status=3}) end
 -- A dry flamer and a working assembler on Vulcanus; a platform's entities are platalerts' (never scanned).
-ent('vulcanus','flamethrower-turret','fluid-turret',10,10,{fluidbox={{amount=0}}})
+-- Flamers as the 2.0 engine has them (a fluidbox on the pipe line and a buffer it fires from; get_fluid_contents holds
+-- both): a dry one, and one on a drained line (fluidbox[1] nil) with 87.2 crude oil in its buffer (Astra, shift11 16:36:
+-- that one fired and burnt a reactor), which is not out of oil.
+local FLAMER={name='flamethrower-turret',fluidbox_prototypes={{volume=100}},fluid_buffer_size=100,
+  attack_parameters={fluids={{type='crude-oil'},{type='heavy-oil'},{type='light-oil'}}}}
+ent('vulcanus','flamethrower-turret','fluid-turret',10,10,{prototype=FLAMER,fluidbox={},get_fluid_contents=function() return {} end})
+ent('vulcanus','flamethrower-turret','fluid-turret',12,10,{prototype=FLAMER,fluidbox={},
+  get_fluid_contents=function() return {['crude-oil']=87.2} end})
 ent('platform-1','assembling-machine-1','assembling-machine',0,0,{status=1})
 -- The game's alert panel (an agent player's): ghosts waiting for materials; turret and loss alerts are told elsewhere.
 local ghost={valid=true,name='entity-ghost',position={x=-40.5,y=10.5}}

@@ -25,7 +25,8 @@ prototypes={entity={
   ['chemical-plant']={name='chemical-plant',type='assembling-machine',fluidbox_prototypes={
     box{conn(8,{-1,1},{flow_direction='input'})},box{conn(8,{1,1},{flow_direction='input'})},
     box{conn(0,{-1,-1},{flow_direction='output'})},box{conn(0,{1,-1},{flow_direction='output'})}}},
-  ['flamethrower-turret']={name='flamethrower-turret',type='fluid-turret',fluidbox_prototypes={box{conn(8,{0,0},{flow_direction='input'})}}},
+  ['flamethrower-turret']={name='flamethrower-turret',type='fluid-turret',fluidbox_prototypes={box{conn(8,{0,0},{flow_direction='input'})}},
+    fluid_buffer_size=100},
   ['transport-belt']={name='transport-belt',type='transport-belt'}}}
 local function key(x,y) return math.floor(x)..','..math.floor(y) end
 local mine={is_chunk_charted=function() return true end}
@@ -258,7 +259,12 @@ eq(P.fluids(cp),'empty (water only)/100 | empty/100')
 -- "fluid 19.9/21100" and a full flamer read 99.4/66700), the segment's apart.
 local fl=place('flamethrower-turret',40.5,0.5,0,{fluidbox={{name='light-oil',amount=99.4},get_capacity=function() return 66700 end,
   get_pipe_connections=function() return {} end}})
-eq(P.fluids(fl),'light-oil 99.4/100 (segment holds up to 66700)')
+eq(P.fluids(fl),'turret holds light-oil 99.4/200 | light-oil 99.4/100 (segment holds up to 66700)')
+-- The turret also fires from a buffer of its own (Astra, shift11 16:36): on a drained line its box is empty and the
+-- buffer still holds oil; the line says what the turret holds, box and buffer (get_fluid_contents).
+local drained=place('flamethrower-turret',44.5,0.5,0,{fluidbox=setmetatable({get_capacity=function() return 66700 end,
+  get_pipe_connections=function() return {} end},{__len=function() return 1 end}),get_fluid_contents=function() return {['crude-oil']=87.2} end})
+eq(P.fluids(drained):match('^turret holds crude%-oil 87%.2/200 | empty/100'),'turret holds crude-oil 87.2/200 | empty/100',P.fluids(drained))
 -- Ghosts report from the prototype, and see ghosts they will connect to.
 local g=place('chemical-plant',5.5,0.5,0,{ghost=true})
 place('pipe',4.5,2.5,0,{ghost=true})
