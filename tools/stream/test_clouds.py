@@ -11,6 +11,7 @@
    a cloud that reached nests it had not reached before (none at the start: old news), at most every cloud_every.
 5. A cloud shot is no base map for mapframes.py and the hosts (onair.map None, onair.cloud set); the camera row
    carries map_view (position, surface, the zoom sent) for the overlay.
+6. site/push_live.py passes the clouds to the site (colour, cells, reached nests), the most polluted CLOUD_CELLS.
 """
 import os, sys
 
@@ -171,8 +172,30 @@ def director():
     print(f"director: ok ({len(d.cloud_shots)} cloud shots: {[s[2] for s in d.cloud_shots]})")
 
 
+def site():
+    """push_live.py: the clouds go to the site with their colour, cells and reached nests; past CLOUD_CELLS cells in
+    all, the most polluted are kept."""
+    sys.path.insert(0, os.path.join(HERE, "..", "..", "site"))
+    import push_live
+    m = Model({"agents": {}})
+    m.ingest({"agents": [], "clouds": ROWS}, now=1000)
+    out = push_live.public_state(m.snapshot(1000))["clouds"]
+    assert [c["surface"] for c in out] == ["nauvis", "gleba"] and out[1]["color"] == {"r": 0.549, "g": 0.549, "b": 0.0, "a": 0.584}
+    assert out[1]["reached"] == [{"x": -150, "y": 330}] and len(out[1]["cells"]) == 29, out[1]
+    keep, push_live.CLOUD_CELLS = push_live.CLOUD_CELLS, 10
+    try:
+        small = push_live.public_clouds(m.snapshot(1000)["clouds"])
+    finally:
+        push_live.CLOUD_CELLS = keep
+    kept = [c for r in small for c in r["cells"]]
+    every = sorted((c[2] for r in m.snapshot(1000)["clouds"] for c in r["cells"]), reverse=True)
+    assert len(kept) == 10 and min(c[2] for c in kept) == every[9], (len(kept), every[:10])
+    print("site: ok")
+
+
 if __name__ == "__main__":
     normalise()
+    site()
     framing()
     live_and_model()
     director()

@@ -586,6 +586,47 @@ The site's agents page has a "Now" block per card (guns and ammo, armor and equi
 largest stacks, free slots, crafting, building), filled by site.js from the live API every 30 s and hidden when no
 shift is on. push_live.py publishes `agents[].loadout`.
 
+### Pollution and spore clouds (2026-10-14, eng/spores)
+
+Viewer Joonazan, 13:00: "can you show a shot of Gleba's spore cloud?"
+
+- Data: the harness's background chart sweep (threat.lua, about once a game minute on each surface an agent is on)
+  already reads every charted chunk's pollution, spores on Gleba; it keeps the polluted ones (`{cx, cy, amount}`, up
+  to 6000 a surface) with the surface's pollutant and its map colour. The operator read `clouds {surface?}` hands
+  them over with the nests the cloud reached (the `pollution_reached_nest` news). live.py reads it every 60 s once
+  `describe` lists it; model.py carries snapshot `clouds`: per surface with a cloud `{surface, label ("Spores on
+  Gleba"), pollutant, color {r, g, b, a, css}, cells [[cx, cy, amount]], chunks, max, total, tick, reached [{x, y}],
+  age_s}` (tools/stream/clouds.py). The colours are the game's: pollution dark red, spores olive (world n's
+  `prototypes.airborne_pollutant`).
+- Cloud shot (onecam.py): a map camera on that surface framed on every polluted chunk and the nests it reached
+  (clouds.shot, the zoom rounded down to what director.apply sends), labelled "Spores on Gleba", for `cloud_hold`
+  (20 s). The operator calls it:
+
+      curl -X POST localhost:8788/cloud -d '{"surface": "gleba", "seconds": 30, "by": "nick"}'
+
+  (no surface: the spores, else the biggest cloud; seconds 5..120). It waits out a segment, a key battle or a followed
+  group (up to `cloud_late`, 10 min); an operator follow refuses it (409, DELETE /follow first). A surface with no
+  cloud read yet: 400 with the clouds there are. On its own the director shows a cloud when it reaches nests it had not
+  reached before (the reached nests at the service's start are old news), at most every `cloud_every` (30 min), with
+  the base map's guards (no fight, no held shot, inset, trio or segment, `map_gap` after a cut).
+- A cloud shot is no base map: snapshot `onair.map` stays None (mapframes.py takes terrain frames only of the base
+  map, and the hosts' "here's the whole base" stays for it); `onair.cloud` is `{surface, label, why}` and the hosts
+  get `on_screen_cloud` (label, chunks, max per chunk, nests reached).
+- Overlay: every map shot's camera row carries `map_view {position, surface, zoom (the one sent), size}`;
+  overlay.js `renderCloud` draws that surface's cells on a canvas in the hole (1 tile = hole height / 1080 x 32 x zoom
+  px, the client's centre crop), alpha from 0.3 to 1 of the colour's own by log(amount) against the cloud's max, the
+  reached nests ringed, and a key at the bottom left ("Spores per chunk, up to 24.8 · 26 chunks · nests reached: 1").
+  The base map gets Nauvis's pollution the same way. Factorio's own map pollution layer (the camera player's map view
+  settings) stays as it was; not checked on the camera clients whether it is on.
+- Site: push_live.py publishes `clouds` (the 6000 most polluted cells over all surfaces); mapview.js has a
+  Pollution (Spores) layer drawn under the buildings, the chunk's amount on hover or tap ("Spores 14.7 in chunk
+  (-7, -5), tiles -224..-193, -160..-129"), a key, and a surface switch (Nauvis | Spores on Gleba) when another surface
+  has a cloud: that view has only the cloud, the nests it reached and the agents there, the others listed in the
+  corner.
+- Mock: MockSource.cloud_rows (Nauvis around the demo base, growing and reaching a nest; Gleba with one reached nest),
+  also in site/live/state.example.json for `?demo`. Tests: tools/stream/test_clouds.py, site/test_live.py (map),
+  vendor/factorio-harness/tests/threat.lua.
+
 ## Unused cameras
 
 With fewer agents than cameras (or when the director pairs two agents on one), cam2 or cam3 would show an empty or

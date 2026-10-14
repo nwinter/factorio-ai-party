@@ -73,7 +73,7 @@ def reached_keys(cloud):
     return {(cloud["surface"], round(n["x"] or 0), round(n["y"] or 0)) for n in cloud.get("reached") or []}
 
 
-def shot(cloud, hole=(1208, 1032), frac=None, margin=1, min_zoom=0.015, max_zoom=0.5):
+def shot(cloud, hole=(1208, 1032), frac=None, margin=1, min_zoom=0.01, max_zoom=0.5):
     """A cloud -> {"position": {x, y}, "zoom", "size": [w, h] tiles} that shows every polluted chunk and every nest it
     reached (a margin of chunks around), or None. As mapcam.map_shot: 1920 px across at zoom z show 1920 / (32 z)
     tiles, and the hole shows `frac` of the client's width."""
@@ -88,5 +88,6 @@ def shot(cloud, hole=(1208, 1032), frac=None, margin=1, min_zoom=0.015, max_zoom
     if frac is None:
         frac = min(1.0, (hole[0] / hole[1]) / (CLIENT[0] / CLIENT[1]))
     z = min(CLIENT[0] * frac / (32.0 * w), CLIENT[1] / (32.0 * h))
-    return {"position": {"x": (x0 + x1) / 2, "y": (y0 + y1) / 2}, "zoom": round(max(min_zoom, min(max_zoom, z)), 3),
-            "size": [w, h]}
+    # rounded down to what director.apply sends (2 decimals): rounded up, 0.117 -> 0.12 cut the frame's edges off
+    return {"position": {"x": (x0 + x1) / 2, "y": (y0 + y1) / 2},
+            "zoom": max(min_zoom, min(max_zoom, math.floor(z * 100) / 100)), "size": [w, h]}
