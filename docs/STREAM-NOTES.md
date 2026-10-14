@@ -586,6 +586,29 @@ The site's agents page has a "Now" block per card (guns and ammo, armor and equi
 largest stacks, free slots, crafting, building), filled by site.js from the live API every 30 s and hidden when no
 shift is on. push_live.py publishes `agents[].loadout`.
 
+### Under attack only when hit (2026-10-14, eng/attackflag)
+
+Viewer Joonazan, 13:36: "I'm pretty sure biters are not hitting anyone on Gleba. What's going on with all the
+incorrect attack reports?" Any running shoot made the agent "under attack": Sol's standing order "guard" (shoot auto
+by the egg breeders on Gleba, nothing in range) gave 7 insets and fight records between 12:52 and 13:41, Astra's
+`move_to combat` walks on Nauvis 3 more; none of them had a hit on a character.
+
+- The runtime's status `combat` now says what the shoot does (target in range, `fired_tick`, `kills_10s`) and status
+  `hurt` the last hit by another force on the character or its vehicle (usage.md). live.py passes both on.
+- model.py `combat_state`: `hurt` (a hit in the last 15 game seconds): "Sol is under attack by a small biter", the
+  attack alert (the director's urgent rules, the hosts' attack event), fight `attack:sol`; `fighting` (a target in
+  range, a shot in the last 10 s, a kill): "Sol is fighting a small wriggler pentapod", a fight `fight:sol` of kind
+  `fight` and an alert of kind `fight` (a toast, an info event for the hosts, no urgent cut), the card "fighting";
+  `guard` (a shoot with nothing to shoot at): nothing, the card "on guard", the action `guard` (no fight kind for the
+  director, weight 0.3). A runtime without the new fields: a shoot at a position fights, an auto shoot guards; the
+  mock's `combat: true` is a hit. Snapshot agents carry `combat_state` and `combat_info`.
+- Incoming groups: "aimed at an agent" counts only agents on the group's surface (Sol on Gleba at (46, 51) counted
+  for Nauvis groups heading for (47, 34)). A demolisher's label matches its owner by position on its own surface.
+- The last hour (12:43-13:43) replayed: 10 agent "under attack" insets, 0 remain; 26 area hits (turrets, belts) and
+  8 losses stay; all 41 attacked areas the team's status replies listed were on Nauvis. The hour before: 3 agent
+  insets, 1 remains (Astra in the 12:10 tank fight). Tests: tools/stream/test_attackflag.py,
+  vendor/factorio-harness/tests/attackflag.lua.
+
 ### Pollution and spore clouds (2026-10-14, eng/spores)
 
 Viewer Joonazan, 13:00: "can you show a shot of Gleba's spore cloud?"

@@ -15,6 +15,7 @@ from model import SPARK_ITEMS, notes_job
 from work import WorkFeed
 
 PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
+COMBAT_KEYS = ("auto", "position", "radius", "until_tick", "target", "fired_tick", "kills_10s", "hurt", "vehicle")
 AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
@@ -277,7 +278,11 @@ class LiveSource:
                 a.setdefault("position", st.get("position"))
                 a["connected"] = st.get("connected", True) if a["kind"] == "player" else True
                 a["last"] = st.get("last")
-                a["combat"] = bool(st.get("combat"))
+                # what the shoot does now and the last hit (status combat and hurt): model.combat_state tells under
+                # attack from fighting from a guard with nothing in range (viewer Joonazan, 13:36)
+                c = st.get("combat")
+                a["combat"] = {k: c[k] for k in COMBAT_KEYS if k in c} if isinstance(c, dict) else bool(c)
+                a["hurt"] = st.get("hurt")
                 # a standing order running in the agent's queue (orders.lua): {name, reason, step, steps}, or None
                 a["auto"] = st.get("order") or None
                 # the director's look-ahead (onecam.py): the action running now as status reports it (kind, until_tick,
