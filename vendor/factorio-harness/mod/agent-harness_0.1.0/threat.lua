@@ -175,8 +175,11 @@ return function(api)
   end
   local function chart_new(s,force)
     local c=force.get_spawn_position(s)
-    return {charted=0,visible=0,polluted=0,box={},cloud={},beyond={},gen={},centre={x=c.x,y=c.y}}
+    return {charted=0,visible=0,polluted=0,box={},cloud={},beyond={},gen={},centre={x=c.x,y=c.y},cells={}}
   end
+  -- The cloud layer for the stream map (viewer Joonazan, operator 13:02: Gleba's spore cloud): each charted chunk's
+  -- amount as the game's map pollution layer shows it, {cx, cy, amount}, at most MAX_CELLS (the sweep reads it anyway).
+  local MAX_CELLS=6000
   local function chart_chunk(t,s,force,c)
     grow(t.gen,c.x,c.y)
     local is_charted=force.is_chunk_charted(s,c)
@@ -184,10 +187,21 @@ return function(api)
       t.charted=t.charted+1; grow(t.box,c.x,c.y)
       if force.is_chunk_visible(s,c) then t.visible=t.visible+1 end
     end
-    if s.get_pollution(chunk_centre(c.x,c.y))>0 then
-      if is_charted then t.polluted=t.polluted+1; grow(t.cloud,c.x,c.y)
+    local amount=s.get_pollution(chunk_centre(c.x,c.y))
+    if amount>0 then
+      if is_charted then
+        t.polluted=t.polluted+1; grow(t.cloud,c.x,c.y)
+        t.cells=t.cells or {}
+        if #t.cells<MAX_CELLS then t.cells[#t.cells+1]={c.x,c.y,math.floor(amount*10+0.5)/10} end
       else t.beyond[compass(t.centre,chunk_centre(c.x,c.y))]=true end
     end
+  end
+  -- The surface's pollutant (2.0: pollution on Nauvis, spores on Gleba, none on Vulcanus/Fulgora) and its map colour.
+  local function pollutant(s)
+    local ok,p=pcall(function() return s.pollutant_type end)
+    if not (ok and p) then return nil end
+    local okc,c=pcall(function() return p.chart_color end)
+    return {name=p.name,color=okc and c and {r=c.r or c[1],g=c.g or c[2],b=c.b or c[3],a=c.a or c[4]} or nil}
   end
   local function chart_done(t,s,force,tick)
     local function extent(b)
@@ -197,7 +211,8 @@ return function(api)
     for _,name in ipairs(names) do if t.beyond[name] then dirs[#dirs+1]=name end end
     return {tick=tick or game.tick,charted_chunks=t.charted,visible_chunks=t.visible,extent=extent(t.box),
       radars=#s.find_entities_filtered{type='radar',force=force},gen=t.gen,
-      cloud={chunks=t.polluted,extent=extent(t.cloud),beyond_chart=#dirs>0 and table.concat(dirs,',') or nil}}
+      cloud={chunks=t.polluted,extent=extent(t.cloud),beyond_chart=#dirs>0 and table.concat(dirs,',') or nil},
+      cells=t.cells or {},pollutant=pollutant(s)}
   end
   local function chart(p)
     local s,force=p.surface,p.force
@@ -508,6 +523,33 @@ return function(api)
     end
     local near=#ours>0 and surface.get_closest(pos,ours)
     return near and near.position or nil
+  end
+  -- The cloud layer (viewer Joonazan, operator 13:02): per surface an agent is on (the background chart's last
+  -- sweep, about once a minute), every charted chunk's pollution or spores {cx, cy, amount} as the game's map
+  -- pollution layer shows them, the pollutant's name and map colour, and the nests the cloud reached lately (the
+  -- pollution_reached_nest news). a.surface: one surface by name.
+  function M.operator.clouds(a)
+    local st=api.state()
+    local out={}
+    local keys={}
+    for key in pairs(st.threat_shared or {}) do keys[#keys+1]=key end
+    table.sort(keys)
+    for _,key in ipairs(keys) do
+      local e=st.threat_shared[key]
+      local s=e.surface and game.get_surface(e.surface)
+      local c=e.chart
+      if s and c and c.cells and (not a or a.surface==nil or a.surface==s.name) then
+        local mx,total=0,0
+        for _,cell in ipairs(c.cells) do total=total+cell[3]; if cell[3]>mx then mx=cell[3] end end
+        local reached={}
+        for _,n in ipairs(st.enemy_news or {}) do
+          if n.kind=='pollution_reached_nest' and n.surface==s.name then reached[#reached+1]={tick=n.tick,position=n.position,spawners=n.spawners} end
+        end
+        out[#out+1]={surface=s.name,force=e.force,tick=c.tick,pollutant=c.pollutant,cells=c.cells,chunks=#c.cells,max=mx,total=math.floor(total),
+          reached=#reached>0 and reached or nil}
+      end
+    end
+    return {clouds=out,tick=game.tick}
   end
   -- Each live group: where it is now, its members by kind, its target, how far it has to go to the target and to
   -- our nearest building, and its state (gathering, moving, attacking_*); invalid or finished groups are dropped.
