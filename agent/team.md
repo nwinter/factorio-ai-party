@@ -106,8 +106,11 @@ already targets your character.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `feed {"recipe": NAME,
-  "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `inspect {"positions": [...]}`
-  inspects up to 32 entities in one call.
+  "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `feed` takes `item` or `items`;
+  `inspect {"positions": [...]}` inspects up to 32 entities in one call; `collect {"radius": N}` without `item` takes
+  every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
+  in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
+  line in the team block when a round's short steps differ from the round before.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever
