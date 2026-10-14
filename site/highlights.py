@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 KINDS = [("spoken", "Spoken on stream"), ("confession", "Confessions")]
-SEEN = {"voiced": "On stream", "chat": "In chat", "private": "Private"}
+SEEN = {"voiced": "On stream", "chat": "In chat"}
 MOMENTS = Path(__file__).resolve().parent / "content" / "moments.json"
 WHY = {"aloud": "aloud", "reaction": "reaction", "plan": "plan", "strategy": "strategy", "request": "request"}
 
@@ -86,17 +86,24 @@ def lines(data, keys, clean, keep_line):
     return out
 
 
+PUBLIC_KINDS = ("voiced", "chat", "confession")
+
+
 def load_moments(clean, path=MOMENTS):
-    """site/content/moments.json with every quote through clean(); [] without the file."""
+    """site/content/moments.json with every quote through clean(); [] without the file. Only what viewers already saw
+    (site/moments.py writes no other): a quote whose kind is not voiced, chat or a confession is dropped here too."""
     try:
         data = json.loads(Path(path).read_text())
     except (OSError, ValueError):
         return []
     out = []
     for m in data if isinstance(data, list) else []:
-        if not isinstance(m, dict) or not m.get("quotes"):
+        if not isinstance(m, dict):
             continue
-        out.append(dict(m, quotes=[dict(q, text=clean(q.get("text") or "")) for q in m["quotes"] if q.get("text")]))
+        quotes = [dict(q, text=clean(q.get("text") or "")) for q in m.get("quotes") or []
+                  if q.get("text") and any(k in str(q.get("kind") or "").lower() for k in PUBLIC_KINDS)]
+        if quotes:
+            out.append(dict(m, quotes=quotes, seen=[s for s in m.get("seen") or [] if s in ("voiced", "chat")]))
     return out
 
 

@@ -26,22 +26,30 @@ QUIET_WINDOW = 300   # quiet hits this recent are mentioned in a word
 MEMO_EVERY = 180
 HEADLINES = 5
 # Moments from the agents' own minds (site/moments.py -> site/content/moments.json, from the agent-minds study): the
-# latest few marked for the memo, one line each, with whether viewers saw it.
+# latest few marked for the memo, one line each. Only what viewers already saw (spoken on stream, chat, confessions):
+# moments.json holds no other, and a quote of another kind is skipped here too.
 MOMENTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "site", "content", "moments.json")
 MEMO_MOMENTS = 3
-SEEN = {"voiced": "said on stream", "chat": "in chat", "private": "private, viewers didn't see it"}
+SEEN = {"voiced": "said on stream", "chat": "in chat"}
+PUBLIC_KINDS = ("voiced", "chat", "confession")
 
 
 def memo_moments(path=MOMENTS, k=MEMO_MOMENTS):
-    """['Gemini and Muse (shift 7, 17:45 to 17:50), the 2,187 circuits in Muse's pocket: "quote" (said on stream;
-    private, viewers didn't see it)'], the latest k moments marked for the memo, each with its last quote (the
-    resolution, when a moment has several); [] without the file."""
+    """['Astra (shift 7, 16:06), five thousand circuits out of reach: "quote" (said on stream)'], the latest k moments
+    marked for the memo, each with its last seen quote (the resolution, when a moment has several); [] without the
+    file."""
     try:
         with open(path) as f:
             data = json.load(f)
     except (OSError, ValueError):
         return []
-    rows = [m for m in data if isinstance(m, dict) and "memo" in (m.get("fits") or []) and m.get("quotes")]
+    rows = []
+    for m in data if isinstance(data, list) else []:
+        if not isinstance(m, dict) or "memo" not in (m.get("fits") or []):
+            continue
+        quotes = [q for q in m.get("quotes") or [] if any(p in str(q.get("kind") or "").lower() for p in PUBLIC_KINDS)]
+        if quotes:
+            rows.append(dict(m, quotes=quotes))
     rows.sort(key=lambda m: (m.get("shift") or 0, str(m.get("time") or "")), reverse=True)
     out = []
     for m in rows[:k]:

@@ -200,7 +200,8 @@ def main():
         # the highlights (site/content/moments.json, the agent-minds study) above the lines
         n_moments = len(json.loads((SITE / "content" / "moments.json").read_text()))
         assert f'id="highlights"><h2>Highlights<span class="h-sub">{n_moments} moments</span>' in chat
-        assert chat.index('id="highlights"') < chat.index('class="hl-shift"') and 'id="m3"' in chat and "Seen: <span" in chat
+        assert chat.index('id="highlights"') < chat.index('class="hl-shift"') and 'id="m5"' in chat and "Seen: <span" in chat
+        assert 'id="m3"' not in chat and 'class="private"' not in chat  # private moments stay in the study
         # search: the index has the agents, shifts, events and chat lines, each with a link that exists
         tl = (out / "timeline" / "index.html").read_text()
         idx = json.loads((out / "search" / "index.json").read_text())
