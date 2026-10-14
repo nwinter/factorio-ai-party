@@ -782,7 +782,22 @@ fh sleep 900 --until researched                       # ...or until the research
     `nothing_collected` (nothing to take), `inventory_full`, `unreached` (no place reached) or `timed_out`. All targets
     in reach: the plain transfer at once. Giving with none held (and none in the hand-craft queue) is refused before
     walking; with `up_to: true` it is a short (`none_held`). Not with `total`. As a queue step it runs until the tour
-    ends; `transferred` counts as done.
+    ends; `transferred` counts as done. The reply's `legs` lists the route (Opus 10:50): each stop in the order it
+    walks them with `position`, `name`, `walk` (tiles from the stop before, or from you) and `in_reach` (now); the
+    first 16, `legs_more` past them.
+  - `feed {positions, walk: true}` does the same for a feed (Opus 10:50: reach errors at 10.x tiles cost many
+    retries): when any listed machine is out of reach, one timed tour (`ticks` default 3600) walks a nearest-first
+    route through them and feeds each as a `radius` tour does; the reply has `places`, `out_of_reach`, `legs` and
+    `until_tick`, `last.entities` a row per stop, `--wait` follows it. All in reach: the feed at once.
+  - `transfer {item, from: "nearest"}` (Haiku 10:50: an ammo chest held pipes and no magazines, which cost a walk)
+    takes from the nearest of our chests (container, logistic and linked chests) in reach that holds the item now,
+    as the map shows them; `radius` (1..64) looks that far and walks there (a timed call, as `walk`). `from_nearest`
+    says which: `wooden-chest at (56.5,34.5), 7.0 tiles from you, holds 200 firearm-magazine (2 chests checked, 1
+    holding it)`. None: refused, naming the nearest within 32 tiles (`radius=24 walks there`); with `up_to: true`,
+    moved 0 and a short. `from: {x,y}` is still the position.
+  - A take from a named chest that holds none of the item says where the nearest chest holding it is, in
+    `nothing_moved`: `...; the nearest holding firearm-magazine: wooden-chest at (56.5,34.5), 7.0 tiles from you,
+    holds 180 (transfer from: "nearest")`.
   - `transfer` or `collect {positions, item | items, pick, to}` (Luna 07:57: a repeating seed courier walked 300+ tile
     laps from empty seed chests):
     - `pick: "first_with_stock"` reads every listed place as `inspect` does (in sight, or by remote view where our
@@ -1128,7 +1143,13 @@ fh sleep 900 --until researched                       # ...or until the research
   and what the new entity does not hold, the build is refused and nothing moves (`cannot replace steel-chest (7.5,0.5):
   your inventory has no room for 400 copper-plate, 1 steel-chest (2 free slots, 5 needed); nothing moved`). The slot
   the placed item frees counts. A machine's contents and modules come to your inventory; its recipe goes on the new
-  one (`recipe_kept`).
+  one (`recipe_kept`). Its settings go on the new one as the game's fast replace keeps them (Sol 10:50: inserter ->
+  fast inserter lost filters, wires and circuit settings): item filters with their mode and use filters, the
+  inserter stack size override, a splitter's filter and priorities, every circuit and copper wire, the circuit
+  settings (enable and logistic conditions, and each setting `circuit_set` names for that kind), a chest's limit and
+  logistic request sections. `replaced.kept` lists them (`filters whitelist: coal`, `1 of 1 wires`, `circuit settings
+  (circuit_condition, circuit_enable_disable, circuit_read_hand_contents)`); `replaced.not_kept` names any the new
+  entity refused.
 - Turret ghosts request ammo (Astra, shift10: 15+ gun turrets rebuilt empty and destroyed again; turretammo.lua). A
   turret ghost from `place_ghosts`, `paste` or `blueprint_place` gets a 2.0 item request (insert plan) for ammo in its
   ammo slots, so the construction robots that build it bring the ammo from the logistic network too.
