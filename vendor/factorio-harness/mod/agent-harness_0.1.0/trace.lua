@@ -53,13 +53,20 @@ return function(api)
   -- What remote view shows: our own platform whole, else visible chunks (radar coverage), cached per chunk.
   local function sight(p, surface)
     local pl = try(function() return surface.platform end)
-    if pl and pl.force == p.force then return function() return true end end
-    local cache = {}
+    if pl and pl.force == p.force then return function() return true end, function() return true end end
+    local cache, charted = {}, {}
+    -- Charted chunks out of sight: the map draws the buildings there as last seen, not what they hold now.
     return function(pos)
       local cx, cy = math.floor(pos.x / 32), math.floor(pos.y / 32)
       local key = cx .. ',' .. cy
       local v = cache[key]
       if v == nil then v = try(function() return p.force.is_chunk_visible(surface, {x=cx, y=cy}) end) == true; cache[key] = v end
+      return v
+    end, function(pos)
+      local cx, cy = math.floor(pos.x / 32), math.floor(pos.y / 32)
+      local key = cx .. ',' .. cy
+      local v = charted[key]
+      if v == nil then v = try(function() return p.force.is_chunk_charted(surface, {x=cx, y=cy}) end) == true; charted[key] = v end
       return v
     end
   end
@@ -544,6 +551,10 @@ return function(api)
       routes[n] = route
       local e, k = s.e, s.k
       local run, run_from, run_side, run_name, last, onto
+      -- Out of sight on charted ground (Grok 12:20: three hops down the south copper line, each trace stopped at the
+      -- radar edge): the walk goes on by the layout the map draws (belts, inserters, buildings as last seen), with
+      -- no contents or states there, and stops where the layout ends or the map is uncharted.
+      local dark
       local function close(pos)
         if run then
           route.path[#route.path+1] = run == 1 and string.format('%s %s %s lane', run_name, at(run_from), run_side)
@@ -554,9 +565,21 @@ return function(api)
       while true do
         if budget.tiles >= MAX_TILES then close(last and last.position or e.position); route.stop = 'walk capped at ' .. MAX_TILES .. ' belt tiles'; break end
         if seen and not seen(e.position) then
+          if not (budget.charted and budget.charted(e.position)) then
+            close(last and last.position or e.position)
+            route.stop = 'reaches uncharted ground at ' .. at(e.position) .. (dark and ' (out of sight from ' .. at(dark) .. ')' or '')
+            break
+          end
+          if not dark then
+            close(last and last.position or e.position)
+            dark = e.position
+            route.dark = true
+            route.path[#route.path+1] = 'out of sight from ' .. at(e.position) .. ' (no radar coverage): layout as last seen, contents unknown'
+          end
+        elseif dark then
           close(last and last.position or e.position)
-          route.stop = 'goes out of sight at ' .. at(e.position) .. ' (no radar coverage there)'
-          break
+          route.path[#route.path+1] = 'back in sight at ' .. at(e.position)
+          dark = nil
         end
         local key = tostring(e.unit_number) .. ':' .. k
         if visited[key] then
@@ -567,12 +590,12 @@ return function(api)
         visited[key] = n
         budget.tiles = budget.tiles + 1
         if #route.tiles < 400 then route.tiles[#route.tiles+1] = e end
-        if last and last ~= e then
+        if last and last ~= e and not dark then
           merges_at(route, e, k, last)
           if route.join_open then route.joins = route.joins or {}; route.joins[route.join_open.at] = route.join_open end
         end
-        if last then droppers_at(route, e, k, idx_of(e)) end
-        for _, c in ipairs(try(function() return e.get_transport_line(k).get_contents() end) or {}) do
+        if last and not dark then droppers_at(route, e, k, idx_of(e)) end
+        for _, c in ipairs(not dark and try(function() return e.get_transport_line(k).get_contents() end) or {}) do
           route.carries[c.name] = (route.carries[c.name] or 0) + c.count
           route.mine[c.name] = (route.mine[c.name] or 0) + c.count
           local j = route.join_open
@@ -583,7 +606,7 @@ return function(api)
           close(last and last.position or e.position)
           if e.type == 'transport-belt' then run, run_from, run_side, run_name = 1, e.position, side(k), e.name
           elseif not (last and last == e) then
-            local f = e.type == 'splitter' and splitter_filter(e)
+            local f = e.type == 'splitter' and not dark and splitter_filter(e)
             route.path[#route.path+1] = string.format('%s %s %s lane%s', e.name, at(e.position), side(k),
               f and string.format(' (filter %s to the %s)', f, try(function() return e.splitter_output_priority end) or '?') or '')
           end
@@ -596,10 +619,15 @@ return function(api)
             local fl = filters_of(i)
             local t = row.drop
             local this_lane = picks_lane(i, k)
+            if dark then fl = nil end
             if not item or allows(fl, item) then
-              local name, cnt = hand(i)
-              local st = status(i)
-              local text = string.format('%s %s %s%s', i.name, at(i.position), st, fl and ' filter ' .. filter_text(fl) or '')
+              local name, cnt, st, text
+              if dark then text = string.format('%s %s (out of sight)', i.name, at(i.position))
+              else
+                name, cnt = hand(i)
+                st = status(i)
+                text = string.format('%s %s %s%s', i.name, at(i.position), st, fl and ' filter ' .. filter_text(fl) or '')
+              end
               if name then text = text .. string.format(', holding %d %s', cnt, name) end
               if not this_lane then text = text .. ', picks only the ' .. (side(k) == 'left' and 'right' or 'left') .. ' lane'
               else
@@ -619,7 +647,7 @@ return function(api)
                   queue[#queue+1] = {e=t, k=drop_lane(t, i), from=string.format('%s %s onto %s', i.name, at(i.position), place(t)), hops=(s.hops or 0) + 1}
                 end
               else
-                local full = CONTAINER[t.type] and container_full(t, item)
+                local full = not dark and CONTAINER[t.type] and container_full(t, item)
                 text = text .. ' -> ' .. place(t) .. (full and ' (full)' or '')
                 if item and CONTAINER[t.type] and no_request(t, item) then text = text .. ' (a requester chest with no request for ' .. item .. ')' end
                 if item and this_lane then
@@ -629,7 +657,7 @@ return function(api)
                   elseif CONTAINER[t.type] then budget.boxes[#budget.boxes+1] = {e=t, route=n, hops=s.hops or 0} end
                 end
               end
-              if FULL[st] and name then text = text .. ' (holding what it cannot drop)' end
+              if st and FULL[st] and name then text = text .. ' (holding what it cannot drop)' end
               route.takers[#route.takers+1] = text
             end
           end
@@ -643,6 +671,15 @@ return function(api)
             for _, x in ipairs(nexts) do if (f == item) == (splitter_side(e, x.e) == prio) then keep[#keep+1] = x end end
             if #keep > 0 then nexts = keep end
           end
+        end
+        if #nexts == 0 and dark then
+          -- The layout ends out of sight: the first gap, the tile it would output into.
+          close(e.position)
+          local d = try(function() return e.direction end) or 0
+          local step = ({[0]={0,-1}, [4]={1,0}, [8]={0,1}, [12]={-1,0}})[d] or {0,0}
+          route.stop = string.format('the layout ends at %s, out of sight: nothing on the map at %s after it (layout as last seen, contents unknown)',
+            place(e), at({x=e.position.x+step[1], y=e.position.y+step[2]}))
+          break
         end
         if #nexts == 0 then
           close(e.position)
@@ -682,7 +719,7 @@ return function(api)
       merges=#route.merges > 0 and route.merges or nil, takers=#route.takers > 0 and route.takers or nil, stop=stop,
       nobody_takes=route.any_taker and #nobody > 0 and table.concat(nobody, ', ') or nil}
   end
-  local function new_budget(seen) return {tiles=0, visited={}, routes={}, reached={}, boxes={}, queued=0, seen=seen} end
+  local function new_budget(seen, charted) return {tiles=0, visited={}, routes={}, reached={}, boxes={}, queued=0, seen=seen, charted=charted} end
 
   -- The merges of all routes, once each.
   local function all_merges(routes)
@@ -772,7 +809,7 @@ return function(api)
     end
     local force = p.force
     local pk = packs(p)
-    local seen = sight(p, surface)
+    local seen, charted = sight(p, surface)
     local idx_of, areas = cells(surface, force)
     -- near {x,y} (+ radius): makers and labs in that area only (a whole-surface read is the costly part).
     local area
@@ -795,7 +832,7 @@ return function(api)
     for k = MAX_MAKERS + 1, #makers do makers[k] = nil end
     local out = {item=item, surface=surface.name, area=area and (at(area.position) .. ' radius ' .. area.radius) or nil}
     local starts, notes = {}, {}
-    local budget = new_budget(seen)
+    local budget = new_budget(seen, charted)
     for _, m in ipairs(makers) do
       local st = status(m)
       states[st] = (states[st] or 0) + 1

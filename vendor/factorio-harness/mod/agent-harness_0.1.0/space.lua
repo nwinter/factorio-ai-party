@@ -122,6 +122,19 @@ return function(api)
       assert(ok,'the game refused from_buffers: '..tostring(err))
     end
     if chest then pcall(function() buffers=chest.request_from_buffers end) end
+    -- A hub's Request missing construction materials (Astra, shift12 19:16: a paste switched Starling's off and its
+    -- construction requests vanished): switched as the GUI's checkbox does (keep.lua).
+    local hub=a.platform~=nil and M.platform(p,a.platform).hub or (chest and chest.type=='space-platform-hub' and chest) or nil
+    local keep=api.keep and api.keep()
+    local switched
+    if a.construction_requests~=nil then
+      assert(type(a.construction_requests)=='boolean','construction_requests must be true or false (the hub\'s Request missing construction materials)')
+      assert(hub and hub.valid,'construction_requests is a platform hub setting (Request missing construction materials)')
+      assert(keep,'construction_requests is not available in this runtime')
+      local on=keep.set_construction(hub,a.construction_requests)
+      assert(on==a.construction_requests,'the game kept Request missing construction materials '..(on and 'on' or 'off'))
+      switched=true
+    end
     assert(a.active==nil or type(a.active)=='boolean','active must be true or false: switch the section on or off')
     local changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil or a.active~=nil
     local touched
@@ -167,6 +180,29 @@ return function(api)
         #off>1 and 's' or '',table.concat(off,', '),#off>1 and 'are' or 'is',#off>1 and 'their' or 'its')
     end
     out.changed_section=touched and touched.index or nil
+    if hub and hub.valid and keep then
+      local c=keep.construction(hub)
+      out.construction_requests=c and (switched and 'on (switched on now: the game fills its section from the platform\'s ghosts within a second)' or 'on')
+        or (switched and 'off (switched off now)' or 'off')
+      -- Items a manual section requests too (Astra restored Starling's construction requests by hand): the hub
+      -- requests the sum (checked on 2.0.77: crusher 3 in each made 6).
+      local theirs,both={},{}
+      for _,f in ipairs(c and c.filters or {}) do
+        local v=f.value
+        if v and v.name then theirs[v.name..'@'..(v.quality or 'normal')]=f.min or 0 end
+      end
+      for i=1,c and secs.sections_count or 0 do
+        local s=secs.get_section(i)
+        if s.is_manual and s.active~=false then
+          for _,f in ipairs(s.filters or {}) do
+            local v=f.value
+            local k=v and v.name and v.name..'@'..(v.quality or 'normal')
+            if k and theirs[k] and (f.min or 0)>0 and #both<8 then both[#both+1]=string.format('%s %d+%d',v.name,theirs[k],f.min) end
+          end
+        end
+      end
+      if #both>0 then out.construction_overlap='manual sections request these too, and the hub requests the sum: '..table.concat(both,', ') end
+    end
     -- A hub: what is over a max goes to its trash, and where the trash goes.
     if a.platform~=nil or (chest and chest.type=='space-platform-hub') then
       local pl=a.platform~=nil and M.platform(p,a.platform) or chest.surface.platform
@@ -1038,7 +1074,8 @@ return function(api)
     requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
-      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section, note (sections that are off but hold requests); on a platform hub: over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); call with no set/clear/active to just read'},
+      construction_requests='platform hub: boolean, the hub\'s Request missing construction materials (on: the game keeps a section requesting what the platform\'s ghosts need; a paste of a hub blueprint that has it off switches it off, and paste switches it back on)',
+      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section, note (sections that are off but hold requests); on a platform hub: construction_requests (on: its controlled section lists what the ghosts need), construction_overlap (items a manual section requests too: the hub requests the sum), over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); call with no set/clear/active to just read'},
     platforms={platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), thrust_inputs (a line per thruster input under half full: the pumps, tanks and machines behind it and why they stop, down to the hub\'s asteroid chunks), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, stops (each stop with its wait conditions: waiting here with how far each is (time left, inactivity, the hub\'s count for item_count, unmet requests), flying to it, next), hub, hub_items, hub_slots (free of all), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)'},

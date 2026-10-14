@@ -655,7 +655,9 @@ return function(api)
     local cb = behavior(e)
     local kind = kind_of(cb)
     local props = props_of(cb, kind)
-    local steps, out = {}, {entity=e.name, position=e.position, by=by}
+    -- A ghost by what it builds (its own name is entity-ghost): it takes the same settings (Astra 12:20).
+    local ghost = e.type == 'entity-ghost'
+    local steps, out = {}, {entity=ghost and try(function() return e.ghost_name end) or e.name, ghost=ghost or nil, position=e.position, by=by}
     local function step(what, fn) steps[#steps+1] = {what=what, fn=fn} end
     local function refuse(arg, text) error(string.format('%s: %s %s (its circuit settings: %s)', arg, e.name, text, settings_list(kind, props)), 0) end
     if a.enable ~= nil then

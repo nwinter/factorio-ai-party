@@ -302,4 +302,21 @@ local g={valid=true,position={x=0,y=0},direction=2,ghost_prototype={collision_bo
   bounding_box={left_top={x=-0.7,y=-1.35},right_bottom={x=0.7,y=1.35},orientation=0.125}}
 local found,newly=C.mark_obstacles(cp,g)
 eq(newly,1); eq(on.marked,true); eq(off.marked,false)
+-- A cliff under a ghost gets the mark too, as a player's placement gives it once cliff explosives are researched
+-- (Sol 12:20: belts over cliffs that nothing would clear); it comes back as the third value, not counted with trees.
+do
+  local cliff={valid=true,type='cliff',name='cliff',position={x=0.5,y=1},marked=false,
+    bounding_box={left_top={x=-1.5,y=0.6},right_bottom={x=2.5,y=1.4}}}
+  cliff.to_be_deconstructed=function() return cliff.marked end
+  cliff.order_deconstruction=function() cliff.marked=true; return true end
+  local tech={researched=false}
+  local cp2={force={technologies={['cliff-explosives']=tech}},surface={find_entities_filtered=function(f) return f.type=='cliff' and {cliff} or {} end}}
+  local belt={valid=true,position={x=0.5,y=0.5},direction=0,ghost_prototype={collision_box={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}}},
+    bounding_box={left_top={x=0.1,y=0.1},right_bottom={x=0.9,y=0.9}}}
+  local _,n,cliffs=C.mark_obstacles(cp2,belt)
+  eq(n,0); eq(#cliffs,0); eq(cliff.marked,false,'not researched: no mark')
+  tech.researched=true
+  _,n,cliffs=C.mark_obstacles(cp2,belt)
+  eq(n,0); eq(#cliffs,1); eq(cliff.marked,true)
+end
 print('rails ok')
