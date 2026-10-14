@@ -88,21 +88,28 @@ def urgent():
     for k in range(3):
         d.step(snap(team), t + k)
     assert onair_agent(d) == ["luna"]
-    # an attack far away with nothing lost yet: its toast only, no inset and no cut
+    # an attack far away with nothing lost yet (a viewer, 18:19: "please show all attacks in the pop up window"):
+    # an inset, no cut
     att = {"id": "a1", "kind": "attack", "t": t + 10, "text": "Base under attack near (200, 200): gun turret",
            "position": {"x": 200, "y": 200, "extent": 32}, "key": "area:200,200"}
     d.step(snap(team, [att]), t + 10)
-    assert onair_agent(d) == ["luna"] and "inset" not in d.public(t + 10) and d.last_attack_cut < t + 10
-    # one cheap building lost far away: its threat score is under the floor (Nick 14:50: insets of "empty fields"),
-    # so its toast only; with a score that passes, an inset for 20 s, the story on air stays (a running segment too)
-    pipe0 = {"id": "l0", "kind": "loss", "t": t + 60, "text": "1 lost near (200, 200): 1 pipe (by small biters)",
-             "position": {"x": 200, "y": 200, "extent": 16}, "key": "loss:200,200"}
-    d.step(snap(team, [pipe0]), t + 60)
-    assert "inset" not in d.public(t + 60) and d.program()["inset"] is None
-    d.threats.cfg["floor"] = 0.0
-    d.last_alert = -1e9  # (the alert spacing)
-    pipe = {"id": "l1", "kind": "loss", "t": t + 80, "text": "1 lost near (200, 200): 1 pipe (by small biters)",
-            "position": {"x": 200, "y": 200, "extent": 16}, "key": "loss:200,200"}
+    pub = d.public(t + 10)
+    assert onair_agent(d) == ["luna"] and pub["inset"]["attack"] == att["text"] and d.last_attack_cut < t + 10, pub
+    # the same fight reported again: no new inset (still up, a little longer)
+    again = dict(att, id="a1b", t=t + 14)
+    n = len(sent)
+    d.step(snap(team, [again]), t + 14)
+    assert len(sent) == n and d.inset["until"] >= t + 24, (sent[n:], d.inset)
+    for k in range(15, 40):
+        d.step(snap(team), t + k)
+    # pipes burned by our own flamers: its toast only
+    burn = {"id": "f1", "kind": "loss", "t": t + 50, "text": "2 lost near (90, 87): 2 pipe (by friendly fire from flamethrower turrets)",
+            "position": {"x": 90, "y": 87, "extent": 8}, "key": "loss:90,87"}
+    d.step(snap(team, [burn]), t + 50)
+    assert "inset" not in d.public(t + 50) and d.program()["inset"] is None
+    # one cheap building lost far away to biters: an inset for 20 s, the story on air stays
+    pipe = {"id": "l1", "kind": "loss", "t": t + 80, "text": "1 lost near (250, -200): 1 pipe (by small biters)",
+            "position": {"x": 250, "y": -200, "extent": 16}, "key": "loss:250,-200"}
     d.step(snap(team, [pipe]), t + 80)
     pub = d.public(t + 80)
     assert pub["inset"]["attack"] == pipe["text"] and onair_agent(d) == ["luna"] and d.program()["inset"], pub
