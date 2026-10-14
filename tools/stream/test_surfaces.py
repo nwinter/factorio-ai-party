@@ -7,6 +7,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.dont_write_bytecode = True
 from onecam import OneCam  # noqa: E402
+import onecam  # noqa: E402
+
+# The cases below are written for a planet that stays new 3 game hours (the default is 6 since 2026-10-14).
+onecam.ONECAM["surface_new_hours"] = 3.0
 
 SLOTS = [{"slot": "main", "player": 3}, {"slot": "cam2", "player": 4}, {"slot": "cam3", "player": 5}]
 NAUVIS = ["astra", "luna", "opus", "sonnet", "haiku", "grok", "muse"]
