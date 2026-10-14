@@ -4,7 +4,8 @@
 -- ... if they are building things (the game's little display of building
 -- progress and queue)"). One operator read, `loadout {names?, top?}`, per
 -- agent: guns and ammo slots with the gun selected, armor and the equipment
--- in its grid (shield and battery charge), the main inventory's largest
+-- in its grid (shield and battery charge), the vehicle it sits in and that
+-- vehicle's grid (vehicle_equipment), the main inventory's largest
 -- stacks and free slots, the hand-craft queue with the head's progress, the
 -- build action running (done of total), health, vehicle, and whether it is
 -- shooting. Cheap: the agent's own inventories only, no surface scans.
@@ -29,11 +30,8 @@ return function(api)
   local function inventory(p, id)
     return id and try(function() return p.get_inventory(id) end) or nil
   end
-  local function equipment(armor_inv)
-    local st = armor_inv and armor_inv[1]
-    if not (st and st.valid_for_read) then return nil end
-    local out = {name=st.name, quality=quality(st.quality)}
-    local grid = try(function() return st.grid end)
+  -- A grid's equipment by name (most first), shield and battery charge, size.
+  local function grid_view(out, grid)
     if grid then
       local by, order = {}, {}
       for _, e in ipairs(try(function() return grid.equipment end) or {}) do
@@ -52,6 +50,11 @@ return function(api)
       out.grid = {width=try(function() return grid.width end), height=try(function() return grid.height end)}
     end
     return out
+  end
+  local function equipment(armor_inv)
+    local st = armor_inv and armor_inv[1]
+    if not (st and st.valid_for_read) then return nil end
+    return grid_view({name=st.name, quality=quality(st.quality)}, try(function() return st.grid end))
   end
   local function top_items(inv, n)
     local list = {}
@@ -98,6 +101,9 @@ return function(api)
     row.health = {now=math.floor((try(function() return c.health end) or 0) + 0.5), max=math.floor((try(function() return c.max_health end) or 0) + 0.5)}
     local v = try(function() return c.vehicle end)
     row.vehicle = v and try(function() return v.name end) or nil
+    -- The vehicle's own grid, when it has one (a tank, a spidertron; operator 09:13).
+    local vgrid = v and try(function() return v.grid end)
+    if vgrid then row.vehicle_equipment = grid_view({}, vgrid) end
     local d = defines.inventory
     row.guns = slots(inventory(p, d.character_guns))
     row.ammo = slots(inventory(p, d.character_ammo))

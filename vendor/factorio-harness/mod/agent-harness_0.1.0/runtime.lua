@@ -910,7 +910,7 @@ function handlers.describe()
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (inspect and cargo weigh: sight, or by remote view anywhere on your surface in a chunk our force sees now, by: remote view); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
-      equipment={operation='insert|remove',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
+      equipment={operation='insert|remove|list (default list)',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal',vehicle='optional: a vehicle\'s grid instead of your armor\'s, by unit_number or {x,y} (a tank 6x8 and a spidertron 10x6 have one; a car, locomotive or wagon does not); insert and remove in reach or seated, as its GUI allows; list also by remote view in a chunk our force sees',returns='insert/remove: what moved, where, grid (size, equipment, free_cells, shield, battery_mj); list: the same with rows (each piece at its cell)'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
       shoot={position='{x,y} or auto=true',ticks='1..600',vehicle='optional: the vehicle whose guns fire (unit_number or {x,y}): the one you sit in as its gunner; a vehicle you drive by remote view is refused (its guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player); a whole drive\'s fire: vehicle {drive, combat: true}',radius='1..32 (in a vehicle 1..36, default its gun\'s range)',gun_slot='1..3 (in a vehicle: 1..its guns)',
         gun='in a vehicle: a gun name (tank-cannon, tank-machine-gun, tank-flamethrower, vehicle-machine-gun, spidertron-rocket-launcher-1..4)',
         ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
@@ -3267,6 +3267,9 @@ function handlers.inspect(p,a)
   local e,by=entity(p,a,true)
   local out=summary(e); out.inventories={}
   out.by=by
+  -- A vehicle's equipment grid (a tank's, a spidertron's), as its GUI shows it (grids.lua).
+  local okg,grid=pcall(function() return e.grid end)
+  if okg and grid then out.equipment=M.grids.view(grid) end
   -- A bot aboard a platform has no body to reach with (remote view only).
   local okr,inr=pcall(function() return p.can_reach_entity(e) end)
   out.in_reach=okr and inr==true
@@ -5041,21 +5044,28 @@ function handlers.revive_ghost(p,a)
   result.revived=not e.valid
   return result
 end
+-- Equipment grids (grids.lua): the armor's, or a vehicle's by vehicle= (operator 09:13, a viewer via Astra).
+M.grids=require('grids'){position=position,out_of_reach=function(p,e) return M.out_of_reach(p,e) end}
 function handlers.equipment(p,a)
-  local grid=p.character.grid; assert(grid,'equipped armor has no equipment grid')
+  local op=a.operation or 'list'
+  assert(op=='insert' or op=='remove' or op=='list','operation must be insert, remove or list')
+  local grid,where=M.grids.target(p,a,op=='list')
+  if op=='list' then local out=M.grids.view(grid,true); out.where=where; return out end
   local inv=p.get_main_inventory()
-  if a.operation=='insert' then
+  if op=='insert' then
     assert(type(a.item)=='string','item required')
     local stack=inv.find_item_stack{name=a.item,quality=a.quality or 'normal'}
     assert(stack and stack.prototype.place_as_equipment_result,'equipment item missing')
     local pos=a.position and position(a.position)
     if pos then integer(pos.x,nil,0,grid.width-1,'x'); integer(pos.y,nil,0,grid.height-1,'y') end
     local equipment=grid.put{name=stack.prototype.place_as_equipment_result.name,quality=stack.quality,position=pos,by_player=real(p)}
-    assert(equipment,'equipment does not fit')
+    if not equipment then
+      local v=M.grids.view(grid)
+      error(string.format('%s does not fit in %s %s (%d free cells%s)',a.item,where,v.grid,v.free_cells,pos and string.format(', at (%d,%d)',pos.x,pos.y) or ''),0)
+    end
     stack.count=stack.count-1
-    return {inserted=equipment.name,position=equipment.position}
+    return {inserted=equipment.name,position=equipment.position,where=where,grid=M.grids.view(grid)}
   end
-  assert(a.operation=='remove','operation must be insert or remove')
   local pos=position(a.position)
   local equipment=grid.get(pos); assert(equipment,'equipment not found')
   local item={name=equipment.prototype.take_result.name,quality=equipment.quality.name,count=1}
@@ -5066,7 +5076,7 @@ function handlers.equipment(p,a)
   if inserted<removed.count then
     p.surface.spill_item_stack{position=p.position,stack={name=removed.name,quality=removed.quality,count=removed.count-inserted},enable_looted=true,force=p.force}
   end
-  return {removed=removed.name}
+  return {removed=removed.name,where=where,grid=M.grids.view(grid)}
 end
 function handlers.shoot(p,a)
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
@@ -6942,7 +6952,9 @@ function M.remote(p,action,args)
 end
 dispatch_request=function(request)
   local handler=handlers[request.action]; assert(handler,'unsupported action; call describe')
-  M.seated_ok=(reads[request.action] or passive[request.action] or M.away(request.args) or request.action=='vehicle' or request.action=='shoot') and true or nil
+  -- equipment too: the vehicle's grid and the armor's open seated, as their GUIs do (operator 09:13).
+  M.seated_ok=(reads[request.action] or passive[request.action] or M.away(request.args) or request.action=='vehicle' or request.action=='shoot'
+    or request.action=='equipment') and true or nil
   local args_ok,args_err=pcall(check_args,request.action,request.args)
   if not args_ok then
     local ok,hint=pcall(M.entity_args,request)

@@ -26,8 +26,10 @@ local inventories = {
 local main = inv({st('iron-plate', 400), empty, empty, empty}, {{name='iron-plate', quality='normal', count=400},
   {name='copper-cable', quality='normal', count=1200}, {name='stone-furnace', quality='normal', count=12},
   {name='solar-panel', quality='uncommon', count=3}})
+local tank_grid = {shield=0, max_shield=0, available_in_batteries=0, battery_capacity=0, width=6, height=8,
+  equipment={{name='energy-shield-equipment', type='energy-shield-equipment'}, {name='personal-laser-defense-equipment', type='active-defense-equipment'}}}
 local character = {valid=true, health=212.6, max_health=350, surface={name='nauvis'}, selected_gun_index=1,
-  vehicle={name='tank'}}
+  vehicle={name='tank', grid=tank_grid}}
 local astra = {valid=true, character=character, get_inventory=function(i) return inventories[i] end, get_main_inventory=function() return main end,
   crafting_queue={{recipe='iron-gear-wheel', count=10, prerequisite=true}, {recipe='electronic-circuit', count=20}, {recipe='inserter', count=5}},
   crafting_queue_progress=0.4567}
@@ -50,6 +52,9 @@ eq(a.armor.name, 'power-armor-mk2'); eq(a.armor.quality, 'rare')
 eq(a.armor.equipment[1].name, 'energy-shield-equipment'); eq(a.armor.equipment[1].count, 2); eq(#a.armor.equipment, 4)
 eq(a.armor.shield.now, 37); eq(a.armor.shield.max, 150); eq(a.armor.battery_mj.now, 12.3); eq(a.armor.battery_mj.max, 40)
 eq(a.armor.grid.width, 10)
+-- the tank it sits in and its own grid (operator 09:13)
+eq(a.vehicle_equipment.grid.width, 6); eq(a.vehicle_equipment.grid.height, 8); eq(#a.vehicle_equipment.equipment, 2)
+eq(a.vehicle_equipment.equipment[1].name, 'energy-shield-equipment'); eq(a.vehicle_equipment.shield, nil)
 -- the main inventory's largest stacks, free slots
 eq(a.items[1].name, 'copper-cable'); eq(a.items[1].count, 1200); eq(a.items[2].name, 'iron-plate'); eq(a.items[4].quality, 'uncommon')
 eq(a.item_kinds, 4); eq(a.slots.free, 3); eq(a.slots.total, 4)
