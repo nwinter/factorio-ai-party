@@ -1116,7 +1116,7 @@ return function(api)
     for _, a in ipairs(agents()) do
       if mention_how(a, text, false) == '@' then
         local box = inbox(a.index)
-        box.list[#box.list+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, how='@', viewer=true}
+        box.list[#box.list+1] = {seq=m.seq, tick=m.tick, from=m.from, text=m.text, how='@', viewer=true, source=m.source}
         while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end
       end
     end
@@ -1196,6 +1196,7 @@ return function(api)
     -- A sender on another planet says where (where.lua).
     local where = #box.list > 0 and api.where_from and api.where_from(who(p))
     local function from(m)
+      if m.source then return m.from .. ' (' .. m.source .. ')' end  -- a viewer: where they wrote, YouTube or site
       local w = where and where(m.from)
       return w and m.from .. ' (' .. w .. ')' or m.from
     end

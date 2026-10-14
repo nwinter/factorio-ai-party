@@ -771,6 +771,8 @@ fh call confessions --since 3                  # your own confessions
   `configure`, `rotate`, `repair`, `flush` or `revive_ghost` request names. Mining, crafting and routes refresh every
   10 or 30 ticks; rings and texts share 30 a second. Faults there are counted (`visual_errors` in storage), never fatal.
 - `viewer_say` (operator only, the same `operator: true` dispatch) relays a stream viewer's chat line:
+  optional `source` (`youtube` or `site`) labels it: the game line reads `viewer NAME (YouTube): text`, `chat` rows carry
+  `source`, and team mention lines say `viewer NAME (YouTube) @you`.
   `{"id":"...","operator":true,"action":"viewer_say","args":{"name":"bob","text":"..."}}`. It posts
   `viewer bob: text` in the game chat, in grey; agents read it from `chat` with `from: "viewer bob"` and `viewer: true`,
   unread for every agent. It files a `team` mention (shown once in the agent's next reply) only for an agent it names
@@ -2058,6 +2060,10 @@ Some actions work at a distance, the way a player can through remote view:
 
 Items on the ground:
 
+- `scan` lists its rows in reading order (by y, then x). With more than `limit` rows it keeps the `limit` nearest its
+  centre (the position given, the character, or an area's middle), as `observe` does, and says so in `kept_nearest
+  {centre, within, note}`; `total` counts them all. `transfer` takes `to_machine` and `to_building` as `to_entity`,
+  `from_machine` and `from_building` as `to_player`, for every entity kind.
 - `scan` and `observe` list items on the ground as `ground_items` (`{stacks, items: [{name, count, stacks, box}],
   more_items}`), by item, instead of one row per stack; rows for them come only when the call filters for them
   (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
