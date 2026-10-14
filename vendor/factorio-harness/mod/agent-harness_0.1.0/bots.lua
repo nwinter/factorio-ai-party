@@ -383,7 +383,7 @@ return function(api)
     blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true, ports=true, cargo=true}
   local ON_PLATFORM = {place_ghosts=true, deconstruct=true, cancel_deconstruction=true, paste=true, blueprint_place=true, grid=true, scan=true}
   -- Remote view of a platform or a planet by name (platform= or surface=).
-  local REMOTE = {inspect=true, circuit_set=true, circuit=true, wire=true, trace=true, ores=true}
+  local REMOTE = {inspect=true, circuit_set=true, circuit=true, wire=true, trace=true, ores=true, preflight=true}
   local VIEWS = {platforms=true, sleep_check=true}
   function M.check_action(index, action, args)
     local b = bots().by_index[index]

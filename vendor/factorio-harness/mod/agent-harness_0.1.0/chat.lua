@@ -38,10 +38,11 @@ return function(api)
     end
     c.read[index] = next(set) and set or nil
   end
-  local function append(from, text, index, aloud, viewer, notice, look)
+  local function append(from, text, index, aloud, viewer, notice, look, source)
     local c = log()
     c.seq = c.seq + 1
-    local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil, viewer=viewer or nil, notice=notice or nil, look=look}
+    local m = {seq=c.seq, tick=game.tick, from=from, player=index, text=text, aloud=aloud or nil, viewer=viewer or nil, notice=notice or nil, look=look,
+      source=source}
     c.messages[#c.messages+1] = m
     while #c.messages > MAX_LOG do table.remove(c.messages, 1) end
     -- Mentions are filed per agent as the message arrives (board.lua); a
@@ -65,14 +66,18 @@ return function(api)
   end
   -- A stream viewer's line relayed by the operator (audience.lua rate-limits
   -- it): unread for every agent, from "viewer NAME", flagged viewer.
-  function M.viewer(name, text)
-    local line = '[color=0.62,0.62,0.62]viewer ' .. name .. ':[/color] ' .. text
+  -- Where a viewer wrote (Luna 13:54, a viewer's suggestion: one feed with clear source labels): YouTube or the site.
+  local SOURCES = {youtube='YouTube', site='site'}
+  M.SOURCES = SOURCES
+  function M.viewer(name, text, source)
+    source = SOURCES[source] or nil
+    local line = '[color=0.62,0.62,0.62]viewer ' .. name .. (source and ' (' .. source .. ')' or '') .. ':[/color] ' .. text
     if api.audience then
       for _, viewer in ipairs(api.audience()) do viewer.print(line) end
     else
       game.print(line)
     end
-    return append('viewer ' .. name, text, nil, nil, true)
+    return append('viewer ' .. name, text, nil, nil, true, nil, nil, source)
   end
   M.schema = {
     say = {text='1..500 characters (longer is cut to 500; the reply says so): posted to the game chat as this player (people and other agents see it) and shown over your character for 8 s; @name or @everyone notifies teammates',
@@ -80,7 +85,7 @@ return function(api)
       look='optional: what the stream camera might show while the line is read out, a hint the director may take: {platform: NAME} | {position: {x,y}, surface?} | {area: {left_top, right_bottom}, surface?} | {agent: NAME}'},
     chat = {since='optional sequence number: every message after it, yours included (default: your unread messages)',
       limit='1..100, newest kept (default 30)', peek='boolean: read without marking as read (overlays, spectators)',
-      returns='messages {seq,tick,from,away?,text,aloud?,viewer?,notice?,mention?} oldest first (away: "on Vulcanus" when the sender is a teammate somewhere other than you now):the newest `limit`, plus every older one that mentions you (mention: @|@everyone|name); viewer: a stream viewer\'s line, moderated and relayed by the stream service, from "viewer NAME", not a teammate (it mentions you only with @your name); notice: a harness line (mute votes). cursor (latest seq); remaining and digest (one line: count, seq range and senders of the messages not returned; chat again for them). Only returned messages are marked read, unless peek; while a read left some unread, every reply\'s team hints carry chat_remaining'},
+      returns='messages {seq,tick,from,away?,text,aloud?,viewer?,source?,notice?,mention?} oldest first (away: "on Vulcanus" when the sender is a teammate somewhere other than you now):the newest `limit`, plus every older one that mentions you (mention: @|@everyone|name); viewer: a stream viewer\'s line, moderated and relayed by the stream service, from "viewer NAME", not a teammate (it mentions you only with @your name); source: where the viewer wrote, YouTube or site; every line, team and viewers, in one sequence (seq); notice: a harness line (mute votes). cursor (latest seq); remaining and digest (one line: count, seq range and senders of the messages not returned; chat again for them). Only returned messages are marked read, unless peek; while a read left some unread, every reply\'s team hints carry chat_remaining'},
   }
   -- A camera hint for the stream (Nick, 14:11: "an easy optional parameter to suggest the director look at
   -- something in particular when their message is read out"): checked here, kept on the message, returned by
@@ -174,7 +179,7 @@ return function(api)
       local newest = i > #picked - limit
       if newest or (how and extra < MAX_MENTIONS) then
         if not newest then extra = extra + 1 end
-        out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, away=where and where(m.from) or nil, text=m.text, aloud=m.aloud, viewer=m.viewer, notice=m.notice, mention=how or nil, look=m.look}
+        out[#out+1] = {seq=m.seq, tick=m.tick, from=m.from, away=where and where(m.from) or nil, text=m.text, aloud=m.aloud, viewer=m.viewer, source=m.source, notice=m.notice, mention=how or nil, look=m.look}
       end
     end
     if a.peek ~= true then

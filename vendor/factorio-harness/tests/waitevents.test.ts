@@ -386,6 +386,38 @@ test('build --wait follows a step-aside through the rest of the batch and exits 
     assert.equal(reply.ok,true); assert.equal(reply.result.built,1); assert.equal(statusPolls,0);
   });
 });
+// shift12 15:20 (Sonnet): load_silo waiting for its rocket runs as a timed 'feed' action that loads (and launches)
+// once the rocket is there: --wait follows it and exits by its outcome; loaded at once, there is nothing to wait for.
+test('load_silo --wait follows the wait for the rocket and exits by its outcome',async()=>{
+  let polls=0, outcome='fed';
+  const args='{"position":{"x":65.5,"y":14.5},"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward"}';
+  await engine(request=>{
+    if(request.action==='load_silo')return {ok:true,tick:100,result:{waiting:{why:'the rocket is not ready to launch yet',rocket:'building the rocket: parts 46/50'},until_tick:3700}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:60,y:12},inventory:[]}}};
+    polls++;
+    if(polls<3)return {ok:true,tick:100+polls,result:{active:{kind:'feed',handler:'load_silo',until_tick:3700}}};
+    return {ok:true,tick:900,result:{active:false,last:{kind:'feed',handler:'load_silo',outcome,tick:900,
+      result:outcome==='fed'?{complete:true,launch:{launched:true,to:'platform Sunward'}}:undefined,
+      error:outcome==='failed'?'not launched: agricultural-science-pack 200 short':undefined}}};
+  },async port=>{
+    const reply=JSON.parse((await cli(port,['call','load_silo','--args',args,'--wait'])).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.accepted.waiting.why,'the rocket is not ready to launch yet');
+    assert.equal(reply.result.completion.last.outcome,'fed'); assert.equal(reply.result.completion.last.result.launch.launched,true);
+    assert(polls>=3,'it waited for the rocket');
+    polls=0; outcome='failed';
+    const failed:any=await cli(port,['call','load_silo','--args',args,'--wait']).then(()=>assert.fail('exit 1 expected'),(error:any)=>error);
+    assert.equal(failed.code,1); assert.match(failed.stdout,/Control ended: failed/);
+  });
+  let statusPolls=0;
+  await engine(request=>{
+    if(request.action==='load_silo')return {ok:true,result:{complete:true,loaded:[{item:'agricultural-science-pack',loaded:1000}]}};
+    statusPolls++;
+    return {ok:true,result:{active:false}};
+  },async port=>{
+    const reply=JSON.parse((await cli(port,['call','load_silo','--args',args,'--wait'])).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.complete,true); assert.equal(statusPolls,0);
+  });
+});
 // Sol 12:20: collect --wait --wait-timeout 60000 read STILL RUNNING at 62 s over a gather that had ended collected
 // (got 10 of 10) at 54.2 s game time: the poll after the deadline showed it ended and was not judged. That poll now
 // ends the wait by the outcome; fh wait likewise. An action still running there still times out (exit 3).

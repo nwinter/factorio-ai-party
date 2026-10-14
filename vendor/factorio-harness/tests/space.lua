@@ -61,6 +61,35 @@ eq(r.sections[1].requests[1],'iron-plate 1..inf')
 eq(#space.requests(p,{clear_all=true}).sections[1].requests,0)
 fails(function() space.requests(p,{set={{item='nope',min=1}}}) end,'unknown item: nope')
 fails(function() space.requests(p,{set={{item='coal',min=5,max=2}}}) end,'max must be at least min')
+-- set as a map (friction2: Muse's {"low-density-structure": 100} set nothing and the reply said changed_section 1; the
+-- silo requester stayed at min 4 for 11.7 min): the call runs as the list (aliases.lua, the reply's corrected says so);
+-- a map that reaches the handler is refused with the list form; a call that changes nothing names no changed section.
+do
+  prototypes.item['low-density-structure']={}; prototypes.item.grenade={}
+  local aliases=dofile('mod/agent-harness_0.1.0/aliases.lua'){}
+  local takes=function() return true end
+  local _,args,fix=aliases.fix('requests',{position={x=1,y=2},set={['low-density-structure']=100,coal={min=5,max=10},['iron-plate']={count=7}}},takes)
+  eq(#args.set,3); eq(args.set[1].item,'coal'); eq(args.set[1].min,5); eq(args.set[1].max,10)
+  eq(args.set[2].item,'iron-plate'); eq(args.set[2].min,7); eq(args.set[2].count,nil)
+  eq(args.set[3].item,'low-density-structure'); eq(args.set[3].min,100); eq(args.position.x,1)
+  eq(fix.notes[1],'set as a map {item: min} is the list [{item, min}]')
+  eq(fix.call,'requests {"position":{"x":1,"y":2},"set":[{"item":"coal","max":10,"min":5},{"item":"iron-plate","min":7},{"item":"low-density-structure","min":100}]}')
+  -- a list, or a map of something else, is left as it is
+  local list={{item='coal',min=1}}
+  local _,same,none=aliases.fix('requests',{set=list},takes); eq(same.set,list); eq(none,nil)
+  _,same,none=aliases.fix('requests',{set={coal='lots'}},takes); eq(same.set.coal,'lots'); eq(none,nil)
+  args.position=nil; r=space.requests(p,args)
+  eq(r.changed_section,1); eq(r.stored[3],'low-density-structure 100..inf')
+  fails(function() space.requests(p,{set={coal='lots'}}) end,'set requires an array of {item,min,max?,quality?,from?}: [{"item":"iron-plate","min":100}]')
+  r=space.requests(p,{clear={'grenade'}})
+  eq(r.changed_section,nil); eq(r.unchanged,'this call set, cleared and switched nothing in section 1')
+  eq(r.stored[1],'grenade: no request to clear in section 1')
+  r=space.requests(p,{set={}})
+  eq(r.changed_section,nil); eq(r.unchanged,'this call set, cleared and switched nothing in section 1')
+  r=space.requests(p,{clear={'coal','iron-plate','low-density-structure'}})
+  eq(r.changed_section,1); eq(r.unchanged,nil)
+  prototypes.item['low-density-structure']=nil; prototypes.item.grenade=nil
+end
 -- Platform hub requests skip the game-controlled section and name the planet.
 r=space.requests(p,{platform='alpha',set={{item='iron-plate',min=100,from='nauvis'}}})
 eq(r.target,'platform alpha'); eq(r.sections[2].requests[1],'iron-plate 100..inf from nauvis'); eq(r.sections[1].controlled,true)

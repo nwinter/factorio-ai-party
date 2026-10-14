@@ -359,6 +359,20 @@ return function(api)
   -- A reply that carries the steps' corrections.
   local function with(out,corrected) out.corrected=corrected; return out end
   function M.handlers.queue_submit(p,a)
+    -- dry_run (Luna 15:20): the plan checked as a submit checks it, nothing queued, the queue left as it is; the silo
+    -- cargo its steps would leave before each launch (rocketload.lua M.simulate).
+    assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
+    if a.dry_run then
+      local items,corrected=steps(a)
+      guards(a)
+      assert(#items<=MAX_PENDING,'queue capacity exceeded')
+      local out={dry_run=true,queued=false,steps=#items}
+      if api.simulate then
+        local ok,sim=pcall(api.simulate,p,items)
+        if ok then for k,v in pairs(sim) do out[k]=v end else out.simulate_error=api.reason and api.reason(sim) or tostring(sim) end
+      end
+      return with(out,corrected)
+    end
     local q=queue(p.index); revision(q,a)
     local items,corrected=steps(a)
     local new_guards=guards(a)
@@ -514,7 +528,8 @@ return function(api)
       returns='active (the running step in full, running_s: how long it has run), pending (the next step), history (the newest 3), pending_count, history_total, last_failure, waiting, guards, repeating, cycle'},
     queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
       name='optional 1..32 characters: names the loop in its round lines',note='a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
-    queue_submit={steps='array of {action,args,wait?,label?,on_fail?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace pending only',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them'},
+    queue_submit={steps='array of {action,args,wait?,label?,on_fail?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace pending only',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them',
+      dry_run='true: check the plan as a submit does and queue nothing (the queue is left as it is); returns steps, corrected, and the silo cargo the steps would leave: launches [{step, label, silo, cargo (before that launch), kg, min_cargo (lines), platform_now, would_refuse}], silos_after, notes (steps whose item moves are not counted); counted from what you, the chests and the silos hold now through transfer, load_silo and launch steps'},
     queue_edit={expected_revision='required from queue_status',index='1-based pending index',remove='count to remove',steps='replacement steps'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
