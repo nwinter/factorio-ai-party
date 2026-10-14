@@ -225,8 +225,10 @@ return function(api)
         end
       end
       local out = output_of(e)
-      -- A silo's rocket: what it will launch (a platform's request, an export).
+      -- A silo's rocket: what it will launch (a platform's request, an export). Counted once, as silo cargo: a silo's
+      -- output inventory is that rocket (Astra, 06:29: 90 counted for 45 in the rocket).
       local rocket = e.type == 'rocket-silo' and inventory(e, 'rocket_silo_rocket') or nil
+      if rocket then out = nil end
       for name, t in pairs(T) do
         local n = count(out, name)
         if n > 0 then t.outputs = t.outputs + n; spot(t, e, n, 'output'); spoil_at(t, e, 'output', function(acc) sp.inventory(out, acc) end) end

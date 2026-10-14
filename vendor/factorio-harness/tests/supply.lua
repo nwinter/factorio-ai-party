@@ -154,6 +154,8 @@ local silo=entity{name='rocket-silo',type='rocket-silo',position={x=250,y=0},sta
 local rocket=inv({[AC]=10})
 silo.get_inventory=function(id) return id==9 and rocket or nil end
 silo.get_item_count=function(name) return rocket.get_item_count(name) end
+-- A silo's output inventory is its rocket (Astra, 06:29: 90 counted for 45): counted once, as silo cargo.
+silo.get_output_inventory=function() return rocket end
 defines.inventory.rocket_silo_rocket=9
 N12.requester_points[#N12.requester_points+1]=point(silo,N12,3,{{name=AC,count=50}})
 -- A platform hub on the other surface.

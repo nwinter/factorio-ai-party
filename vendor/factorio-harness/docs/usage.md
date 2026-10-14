@@ -856,8 +856,13 @@ fh sleep 900 --until researched                       # ...or until the research
   the launch): `transfer` into `rocket_silo_rocket` gives only what fits (`weight_limited {requested, fits, note}`)
   and fails when nothing fits; its reply, `inspect` of a silo and the `platforms` silo rows show `rocket_weight` /
   `weight` as `held/lift kg`. `launch` with more aboard fails before the game is asked: `overweight by N kg`, with the
-  cargo by weight. When the game refuses (it gives no reason), the error lists what it may check: a missing rocket,
+  cargo by weight. An empty rocket is refused too unless `allow_empty: true` (or a rider is the payload), since a
+  launch spends its parts (Sol, 06:29: Luna launched empty while bio science sat in a chest nearby): `launch refused:
+  the rocket holds nothing, ...; science in chests within 32 tiles: wooden-chest (30.5,22.5)
+  agricultural-science-pack*120`. When the game refuses (it gives no reason), the error lists what it may check: a missing rocket,
   automatic requests, a paused platform, then the silo, cargo, platform and destination it saw.
+- supply and science count a silo's rocket once, as silo cargo (`silo rockets N`); its output inventory is that rocket,
+  which was also counted under machine outputs (Astra, 06:29: 90 counted for 45 in the rocket).
 - `inspect` of an entity with module slots shows `modules {inventory_index, slots, contents}`. A blueprint entity's
   module request names that index: `items: [{id: {name: "speed-module"}, items: {in_inventory: [{inventory: 4,
   stack: 0}, {inventory: 4, stack: 1}]}}]` (stacks count from 0 in blueprint strings). In 2.0 the index is 4 for assemblers, furnaces,

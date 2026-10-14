@@ -225,6 +225,8 @@ already targets your character.
   parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
   last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
+  `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
+  chests near the silo.
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
   patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.
