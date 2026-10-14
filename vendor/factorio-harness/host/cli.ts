@@ -631,7 +631,7 @@ async function main() {
   }
   // arrived_near: stopped beside a goal inside an entity, which is where callers want to be.
   // target_destroyed: a shoot at an entity ended because it is gone.
-  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear'];
+  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear','dropped'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
@@ -706,10 +706,13 @@ async function main() {
     // shoot runs on the combat channel: its own outcome is last_combat, not
     // the previous movement's last (shake2: a shoot "returned outcome move_to").
     const shot = action === 'shoot';
-    const last = shot ? status.result?.last_combat : status.result?.last;
+    // A full drop's waiting pods run on their own channel too (drop_pending, then last_drop).
+    const last = shot ? status.result?.last_combat : action === 'drop' ? status.result?.last_drop : status.result?.last;
     const player = self.ok ? self.result?.player : undefined;
     const result: Record<string, unknown> = {
-      outcome: last?.outcome ?? (status.result?.active ? 'running' : 'idle'), action: shot ? 'shoot' : last?.kind,
+      // A feed is the call that waited for a hand craft (build, transfer, rearm, refuel): named as that call.
+      outcome: last?.outcome ?? (status.result?.active ? 'running' : 'idle'),
+      action: shot ? 'shoot' : last?.kind === 'feed' && typeof last?.handler === 'string' ? last.handler : last?.kind,
       waited_s: Math.round((Date.now()-started)/100)/10,
       position: player?.position ?? status.result?.position,
       health: player && player.health < player.max_health ? `${Math.round(player.health)}/${Math.round(player.max_health)}` : undefined,
@@ -752,20 +755,20 @@ async function main() {
     let staleLooks = 0;
     while (!stopping && Date.now()<deadline) {
       const status = await poll();
-      const active = action === 'shoot' ? status.result?.combat : status.result?.active;
+      const active = action === 'shoot' ? status.result?.combat : action === 'drop' ? status.result?.drop_pending : status.result?.active;
       // active may report shooting when movement has already finished. A
       // transfer/refuel/rearm short of items waits for the hand-craft queue as
       // an active 'feed'; the radius tours run as 'gather'; vehicle drive runs
       // as 'drive' (request #5: the wait returned the previous action's result).
       const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel'].includes(action) ? ['gather','feed'] : ['transfer','build'].includes(action) ? ['feed']
         : action === 'vehicle' ? ['drive'] : [action];
-      const stillRunning = active && (action === 'shoot' || kinds.includes(active.kind));
+      const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind));
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
         if (!throughTells) return {...status, result:{...status.result, interrupted:{inbox:status.result!.inbox, active}}};
         noteTell(status);
       }
       if (!status.ok || !stillRunning) {
-        const last = action === 'shoot' ? status.result?.last_combat : status.result?.last;
+        const last = action === 'shoot' ? status.result?.last_combat : action === 'drop' ? status.result?.last_drop : status.result?.last;
         // A result that ended before this action was accepted belongs to an
         // earlier action: look again briefly, then report none rather than it.
         if (status.ok && action !== 'shoot' && acceptedTick !== undefined && typeof last?.tick === 'number' && last.tick < acceptedTick) {
@@ -817,8 +820,10 @@ async function main() {
   // A timed action that hit its own limit says so first (timed_out), with the
   // condition a wait_until was still waiting for.
   function endedError(action: string, last: any) {
-    // A walk that gave up says why on the error line (move_to: unreachable, blocked).
-    if (last.outcome !== 'timed_out') return {code:'action_interrupted',message:`Control ended: ${last.outcome}${typeof last.why === 'string' ? `: ${last.why}` : ''}`};
+    // A walk that gave up says why on the error line (move_to: unreachable, blocked); an action that failed says
+    // its error (Sol, shift09: a build that waited for a hand craft and then hit trees read "Control ended: failed").
+    const why = typeof last.why === 'string' ? last.why : typeof last.error === 'string' ? last.error : undefined;
+    if (last.outcome !== 'timed_out') return {code:'action_interrupted',message:`Control ended: ${last.outcome}${why !== undefined ? `: ${why}` : ''}`};
     const what = action === 'wait_until' ? `wait_until timed_out: ${last.condition ?? 'condition'} not met${last.saw !== undefined ? ` (saw ${JSON.stringify(last.saw)})` : ''}; `+
       `the timeout comes from --wait-timeout MS (up to 900000) or args.timeout ticks (up to 54000)` : `${action} timed_out at its own tick limit`;
     return {code:'timed_out',message:what};
@@ -973,7 +978,9 @@ async function main() {
     const waits = bridged ? ['walk','mine','build'].includes(action)
       : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
-        || (action === 'vehicle' && args.drive !== undefined);
+        || (action === 'vehicle' && args.drive !== undefined)
+        // drop full: pods past the free hatches go as each hatch frees up (space.lua).
+        || (action === 'drop' && reply.result?.until_tick !== undefined);
     if (wait && reply.ok && waits) {
       onAccepted?.(reply);
       const completion = await waitForAction(action, reply.result?.until_tick, reply.tick, before);

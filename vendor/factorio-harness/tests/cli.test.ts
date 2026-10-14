@@ -546,6 +546,53 @@ test('move_to and drive --wait show gaps, escapes, enemies gone around; no_safe_
     });
   }
 });
+test('a build that waited for a hand craft and then failed keeps the blocker on the error line',async()=>{
+  // Sol, shift09: the silo build hit trees after its craft and read "Control ended: failed".
+  let polls=0;
+  const error='placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)';
+  await engine(request=>{
+    if(request.action==='build')return {ok:true,result:{awaiting_craft:{item:'rocket-silo',held:0,need:1,crafting:1},until_tick:900}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:60,y:19},health:250,max_health:250,inventory:[]},clock:'c'}};
+    polls++;
+    return {ok:true,result:polls<2?{active:{kind:'feed',awaiting_craft:true,until_tick:900}}:{active:false,last:{kind:'feed',handler:'build',outcome:'failed',tick:5,error}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','build','--args','{"item":"rocket-silo","position":{"x":65.5,"y":14.5}}','--wait']);
+    assert.equal(code,1);
+    assert.match(stdout,/error_result: outcome=failed action=build /);
+    assert.ok(stdout.endsWith(`\nerror: action_interrupted: Control ended: failed: ${error}\n`),stdout);
+  });
+});
+test('drop --wait follows a full drop\'s pods that wait for a hatch, apart from the character\'s action',async()=>{
+  let polls=0;
+  const pods=[{pod:1,drop:4,items:'iron-plate*1000',slots:10},{pod:2,drop:5,items:'coal*300',slots:6}];
+  await engine(request=>{
+    if(request.action==='drop')return {ok:true,result:{drop:4,pods:[pods[0]],pods_waiting:'1 more pod wait for a free hatch',until_tick:900}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:1,y:1},health:250,max_health:250,inventory:[]},clock:'c'}};
+    polls++;
+    // The character walks meanwhile: its own action is no part of the drop's wait.
+    return {ok:true,result:polls<3?{active:{kind:'move_to',until_tick:5000},drop_pending:{kind:'drop',pods_sent:1,pods_left:1,until_tick:900}}
+      :{active:{kind:'move_to',until_tick:5000},last_drop:{kind:'drop',outcome:'dropped',tick:7,result:{pods,dropped:['iron-plate*1000','coal*300']}}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','drop','--args','{"platform":"Sunward","full":true,"items":[{"item":"iron-plate","count":1000},{"item":"coal","count":300}]}','--wait']);
+    assert.equal(code,0,stdout);
+    assert.ok(polls>=3,'it polled until the pods were sent');
+    assert.match(stdout,/outcome: dropped\n\s*action: drop\n/);
+    assert.match(stdout,/coal\*300/);
+  });
+  // Pods not sent: the error line says why.
+  polls=0;
+  await engine(request=>{
+    if(request.action==='drop')return {ok:true,result:{drop:4,pods:[pods[0]],until_tick:900}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:1,y:1},health:250,max_health:250,inventory:[]},clock:'c'}};
+    polls++;
+    return {ok:true,result:polls<2?{drop_pending:{kind:'drop',pods_left:1,until_tick:900}}
+      :{last_drop:{kind:'drop',outcome:'failed',tick:7,why:'platform Sunward left vulcanus (at vulcanus->nauvis 2%)',result:{pods:[pods[0]],not_sent:'coal*300'}}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','drop','--args','{"platform":"Sunward","full":true,"items":[{"item":"coal","count":300}]}','--wait']);
+    assert.equal(code,1);
+    assert.ok(stdout.endsWith('\nerror: action_interrupted: Control ended: failed: platform Sunward left vulcanus (at vulcanus->nauvis 2%)\n'),stdout);
+  });
+});
 test('polls fall back to plain status on a runtime without peek',async()=>{
   const seen:any[]=[];
   await engine(request=>{

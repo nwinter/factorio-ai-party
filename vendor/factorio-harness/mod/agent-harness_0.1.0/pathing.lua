@@ -288,20 +288,18 @@ return function(api)
   -- steps with its own box, belts walkable), within 24 tiles and 6000 steps.
   -- Closed: the steps ran out of room before the window edge or the cap;
   -- then the nearest step to goal, the area and what blocked the edge.
-  -- opts.open_pad: stop at the nearest step where a box padded by it fits
-  -- (room to turn), with the trail there (open, trail); opts.keep_seen: the
-  -- steps flooded (seen), for dig.
+  -- opts: ignore (an entity), force (its gates open for the character, as
+  -- for the pathfinder), skip (unit numbers left out: entities just built),
+  -- extra (planned boxes {x0, y0, x1, y1, name, id}; planned lists the ids
+  -- of those the flood ran into), open (tile keys "x,y" planned tiles make
+  -- walkable), search (steps around start to look for a free one, default 1),
+  -- open_pad (stop at the nearest step where a box padded by it fits, room
+  -- to turn, with the trail there: open, trail, steps; that flood goes
+  -- nearest step first, so the trail is a shortest one).
   local WINDOW, CAP, STEP = 24, 6000, 0.25
   M.WINDOW, M.STEP = WINDOW, STEP
   local function cell(i, j) return i * 65536 + j end
   local NEIGHBOURS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
-  -- The start step: where it stands, else a neighbouring step it fits on.
-  local function first_step(hit, start, half)
-    local si, sj = math.floor(start.x / STEP + 0.5), math.floor(start.y / STEP + 0.5)
-    for _, d in ipairs({{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, -1}, {1, -1}, {-1, 1}}) do
-      if not hit((si + d[1]) * STEP, (sj + d[2]) * STEP, half) then return si + d[1], sj + d[2] end
-    end
-  end
   -- Corners of a trail joined where the box sweeps the straight line between them.
   local function smooth(points, hit, h)
     local out, i = {points[1]}, 1
@@ -314,21 +312,106 @@ return function(api)
   end
   function M.region(surface, start, half, opts)
     opts = opts or {}
+    local WINDOW = opts.window or WINDOW
     local pad = opts.open_pad
     local area = {{start.x - WINDOW, start.y - WINDOW}, {start.x + WINDOW, start.y + WINDOW}}
-    local hit = grid(boxes_in(surface, area, opts.ignore), half + (pad or 0))
+    local boxes = {}
+    local skip, open = opts.skip, opts.open
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask='player'} end) or {}) do
+      if e.valid and e ~= opts.ignore and e.type ~= 'character' and not (e.type == 'gate' and opts.force and e.force == opts.force)
+        and not (skip and e.unit_number and skip[e.unit_number]) then
+        local b = e.bounding_box
+        boxes[#boxes+1] = {b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y, e.name}
+      end
+    end
+    for _, t in ipairs(try(function() return surface.find_tiles_filtered{area=area, collision_mask='player'} end) or {}) do
+      if not (open and open[t.position.x .. ',' .. t.position.y]) then
+        boxes[#boxes+1] = {t.position.x, t.position.y, t.position.x + 1, t.position.y + 1, t.name}
+      end
+    end
+    for _, b in ipairs(opts.extra or {}) do boxes[#boxes+1] = b end
+    -- Boxes by 2-tile bucket, each in every bucket its reach touches (the
+    -- padded box's reach when looking for room to turn).
+    local reach = half + (pad or 0)
+    local bucket = {}
+    local function key(x, y) return math.floor(x / 2) * 65536 + math.floor(y / 2) end
+    for _, b in ipairs(boxes) do
+      for bx = math.floor((b[1] - reach) / 2), math.floor((b[3] + reach) / 2) do
+        for by = math.floor((b[2] - reach) / 2), math.floor((b[4] + reach) / 2) do
+          local k = bx * 65536 + by
+          local list = bucket[k]
+          if not list then list = {}; bucket[k] = list end
+          list[#list+1] = b
+        end
+      end
+    end
     local blockers = {}
-    local si, sj = first_step(hit, start, half)
-    if not si then return {closed=true, tiles=0, x0=start.x, y0=start.y, x1=start.x, y1=start.y, by={}, nearest={x=start.x, y=start.y}, stuck=true} end
-    local seen, queue, head = {[cell(si, sj)]=true}, {{si, sj}}, 1
+    -- The first box a box of half size h (the character's when not given) at (x, y) overlaps.
+    local function hit(x, y, h)
+      h = h or half
+      for _, b in ipairs(bucket[key(x, y)] or {}) do
+        if x + h > b[1] and x - h < b[3] and y + h > b[2] and y - h < b[4] then return b end
+      end
+    end
+    local si, sj = math.floor(start.x / STEP + 0.5), math.floor(start.y / STEP + 0.5)
+    local found
+    -- The nearest free step: rings around start, nearest first.
+    for r = 0, opts.search or 1 do
+      local best, bd
+      for di = -r, r do
+        for dj = -r, r do
+          if math.max(math.abs(di), math.abs(dj)) == r and not hit((si + di) * STEP, (sj + dj) * STEP) then
+            local d = di * di + dj * dj
+            if not bd or d < bd then best, bd = {di, dj}, d end
+          end
+        end
+      end
+      if best then si, sj = si + best[1], sj + best[2]; found = true; break end
+    end
+    if not found then return {closed=true, tiles=0, x0=start.x, y0=start.y, x1=start.x, y1=start.y, by={}, nearest={x=start.x, y=start.y}, stuck=true, planned={}} end
+    -- Farthest step first (a max-heap on the distance from start in steps):
+    -- in the open the flood reaches the window edge after a few hundred steps
+    -- instead of filling the cap (6000 steps, 25 ms on a private 2.0.77
+    -- server); a closed area is flooded whole either way. Looking for room to
+    -- turn it goes nearest first (a queue), each step noting where it came from.
+    local seen, found = {[cell(si, sj)]=true}, 1
+    local heap, hn = {{si, sj, 0}}, 1
+    local queue, head = pad and {{si, sj}} or nil, 1
     local from = pad and {} or nil
+    local function push(i, j)
+      if queue then queue[#queue+1] = {i, j}; return end
+      local d = math.max(math.abs(i - si), math.abs(j - sj))
+      hn = hn + 1; heap[hn] = {i, j, d}
+      local k = hn
+      while k > 1 do
+        local up = math.floor(k / 2)
+        if heap[up][3] >= d then break end
+        heap[up], heap[k] = heap[k], heap[up]; k = up
+      end
+    end
+    local function pop()
+      if queue then local c = queue[head]; head = head + 1; return c end
+      local top = heap[1]
+      heap[1] = heap[hn]; heap[hn] = nil; hn = hn - 1
+      local k = 1
+      while true do
+        local l, r, m = 2 * k, 2 * k + 1, k
+        if l <= hn and heap[l][3] > heap[m][3] then m = l end
+        if r <= hn and heap[r][3] > heap[m][3] then m = r end
+        if m == k then break end
+        heap[m], heap[k] = heap[k], heap[m]; k = m
+      end
+      return top
+    end
+    local function more() if queue then return head <= #queue end return hn > 0 end
+    local planned = {}
     local x0, y0, x1, y1 = si, sj, si, sj
     local goal, best, bd = opts.goal, nil, nil
-    local edge, open = false, nil
-    while head <= #queue do
-      local c = queue[head]; head = head + 1
+    local edge, opening = false, nil
+    while more() do
+      local c = pop()
       local i, j = c[1], c[2]
-      if pad and not hit(i * STEP, j * STEP, half + pad) then open = c; break end
+      if pad and not hit(i * STEP, j * STEP, half + pad) then opening = c; break end
       if goal then
         local d = (i * STEP - goal.x) ^ 2 + (j * STEP - goal.y) ^ 2
         if not bd or d < bd then best, bd = c, d end
@@ -341,33 +424,109 @@ return function(api)
           local x, y = n[1] * STEP, n[2] * STEP
           if math.abs(x - start.x) >= WINDOW - 1 or math.abs(y - start.y) >= WINDOW - 1 then edge = true
           else
-            local b = hit(x, y, half)
-            if b then blockers[b[5]] = (blockers[b[5]] or 0) + 1
+            local b = hit(x, y)
+            if b then
+              blockers[b[5]] = (blockers[b[5]] or 0) + 1
+              if b[6] then planned[b[6]] = true end
             else
-              queue[#queue+1] = n
+              found = found + 1
+              push(n[1], n[2])
               if from then from[k] = c end
               x0, y0, x1, y1 = math.min(x0, n[1]), math.min(y0, n[2]), math.max(x1, n[1]), math.max(y1, n[2])
             end
           end
         end
       end
-      if edge or #queue > CAP then break end
+      -- Looking for room to turn, the window edge is no end: the steps go on to the cap.
+      if (edge and not pad) or found > CAP then break end
     end
-    if open then
-      local trail, c = {}, open
+    if opening then
+      local trail, c = {}, opening
       while c do trail[#trail+1] = {x=c[1] * STEP, y=c[2] * STEP}; c = from[cell(c[1], c[2])] end
       local ordered = {}
       for k = #trail, 1, -1 do ordered[#ordered+1] = trail[k] end
-      return {open={x=open[1] * STEP, y=open[2] * STEP}, trail=smooth(ordered, hit, half + 0.01), steps=#trail - 1}
+      return {open={x=opening[1] * STEP, y=opening[2] * STEP}, trail=smooth(ordered, hit, half + 0.01), steps=#trail - 1}
     end
-    local closed = not edge and #queue <= CAP
+    local closed = not edge and found <= CAP
     local by = {}
     for name, n in pairs(blockers) do by[#by+1] = {name=name, n=n} end
     table.sort(by, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.name < b.name end)
     local names = {}
     for i = 1, math.min(6, #by) do names[i] = by[i].name end
-    return {closed=closed, tiles=math.floor(#queue * STEP * STEP + 0.5), x0=x0 * STEP, y0=y0 * STEP, x1=x1 * STEP, y1=y1 * STEP,
-      by=names, nearest=best and {x=best[1] * STEP, y=best[2] * STEP} or nil, seen=opts.keep_seen and seen or nil}
+    return {closed=closed, tiles=math.floor(found * STEP * STEP + 0.5), x0=x0 * STEP, y0=y0 * STEP, x1=x1 * STEP, y1=y1 * STEP,
+      by=names, nearest=best and {x=best[1] * STEP, y=best[2] * STEP} or nil, planned=planned}
+  end
+  local function area_text(r, half)
+    return string.format('the area %s-%s (about %d tiles) has no gap the character (%.1f tiles wide) fits through%s',
+      at({x=r.x0, y=r.y0}), at({x=r.x1, y=r.y1}), r.tiles, half * 2, #r.by > 0 and ('; around it: ' .. table.concat(r.by, ', ')) or '')
+  end
+  M.area_text = area_text
+  -- Whether planned boxes close the character in where it stands (Gemini,
+  -- shift09: a placement trapped the character in a closed box): the area
+  -- it reaches with them placed, and those that each fill the last gap out
+  -- (without that one alone it gets out). planned: {{x0, y0, x1, y1, name,
+  -- id, base=true}} per planned entity, and pieces {..., id, ids} that stand
+  -- only while every entity in ids does (a wall stretched toward a planned
+  -- neighbour); opts as region's (open: tiles the plan makes walkable). nil
+  -- when it still gets out; {already=true, region} when it is closed in now.
+  -- These look 16 tiles out (about 1 ms a flood on a private 2.0.77 server,
+  -- against 3-5 ms at the walk's 24): no way out within that is closed in.
+  local MAX_TRIES, TRAP_WINDOW = 6, 16
+  function M.closes_in(surface, start, half, planned, opts)
+    opts = opts or {}
+    local function flood(extra, open)
+      return M.region(surface, start, half, {ignore=opts.ignore, force=opts.force, extra=extra, open=open, search=opts.search, window=TRAP_WINDOW})
+    end
+    local after = flood(planned, opts.open)
+    if not (after and after.closed) or after.stuck then return nil end
+    local before = flood(nil, nil)
+    if before and before.closed then
+      if before.stuck then return nil end
+      return {already=true, region=before}
+    end
+    local function without(id)
+      local rest = {}
+      for _, o in ipairs(planned) do
+        local keep = o[6] ~= id
+        for _, need in ipairs(keep and o.ids or {}) do if need == id then keep = false end end
+        if keep then rest[#rest+1] = o end
+      end
+      return rest
+    end
+    local gaps, around, tries = {}, {}, 0
+    for _, b in ipairs(planned) do
+      if b.base and after.planned[b[6]] then
+        around[#around+1] = b
+        if tries < MAX_TRIES then
+          tries = tries + 1
+          local r = flood(without(b[6]), opts.open)
+          if r and not r.closed then gaps[#gaps+1] = b end
+        end
+      end
+    end
+    return {region=after, gaps=gaps, around=around}
+  end
+  -- After a build: closed in now, and not without the entities just built;
+  -- those that each fill the last gap out. nil otherwise.
+  function M.closed_by(surface, start, half, built, opts)
+    opts = opts or {}
+    local function flood(skip) return M.region(surface, start, half, {ignore=opts.ignore, force=opts.force, skip=skip, window=TRAP_WINDOW}) end
+    local now = flood(nil)
+    if not (now and now.closed) or now.stuck then return nil end
+    local all = {}
+    for _, e in ipairs(built) do if e.valid and e.unit_number then all[e.unit_number] = true end end
+    if not next(all) then return nil end
+    local before = flood(all)
+    if not before or before.closed then return nil end
+    local gaps = {}
+    for i, e in ipairs(built) do
+      if i > MAX_TRIES then break end
+      if e.valid and e.unit_number then
+        local r = flood({[e.unit_number]=true})
+        if r and not r.closed then gaps[#gaps+1] = e end
+      end
+    end
+    return {region=now, gaps=gaps}
   end
 
   -- Closed in: the fewest entities to mine for a way out. A search over
@@ -479,7 +638,7 @@ return function(api)
     local half = M.half(c)
     local here = p.position
     if n == 1 and M.clear_at(p.surface, here, half + PAD, c) then return false end
-    local r = M.region(p.surface, here, half, {ignore=c, open_pad=M.ESCAPE_PADS[n]})
+    local r = M.region(p.surface, here, half, {ignore=c, force=p.force, open_pad=M.ESCAPE_PADS[n]})
     if not r.open or (r.steps == 0 and dist(here, r.open) < 0.05) then return false end
     nav.escapes = n
     nav.escape = {from={x=here.x, y=here.y}, to=r.open}

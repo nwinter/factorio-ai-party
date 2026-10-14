@@ -581,18 +581,27 @@ return function(api)
       auto_requests=switched and switched.auto_requests,cargo_to_trash=switched and switched.cargo_to_trash,note=switched and switched.note}
   end
   -- The hub's drop slots: items from the hub inventory go down to the planet
-  -- below a stopped platform in a cargo pod, to the force's landing pad there,
+  -- below a stopped platform in cargo pods, to the force's landing pad there,
   -- else near position (default: a bot's last spot there, else the spawn
-  -- point), where the pod lands as a temporary container to empty by hand.
-  function M.drop(p,a)
+  -- point), where a pod lands as a temporary container to empty by hand.
+  -- Checked on 2.0.77: a pod holds 10 slots and no weight limit (the
+  -- cargo-pod prototype's inventory_size; the prototype API does not give
+  -- it), and the hub sends one pod per output hatch (3 on a hub), each hatch
+  -- free again 120 ticks after its pod. The list splits into pods in its own
+  -- order (cargo.lua pods): without full the first pod goes and the reply says
+  -- what stays in the hub (short); full=true sends every pod, the ones waiting
+  -- for a free hatch as a timed action (Astra, shift09: a Gleba kit took three
+  -- calls, and the first partial drop read as complete).
+  local POD_SLOTS,HATCH_TICKS=10,120
+  local function drop_args(p,a)
     local own=p.surface and p.surface.platform
     local pl=M.platform(p,a.platform or (own and own.name))
     assert(pl.hub and pl.hub.valid,'platform '..pl.name..' has no hub yet')
     local loc=pl.space_location
     assert(loc and loc.type=='planet','platform '..pl.name..' is not stopped at a planet (at '..tostring(location(pl))..')')
     assert(type(a.items)=='table' and #a.items>=1 and #a.items<=20,'items requires 1..20 {item,count,quality?}')
-    local to=api.drops and api.drops.recipients(a.to) or {}
-    local hub_inv=pl.hub.get_inventory(defines.inventory.hub_main)
+    assert(a.full==nil or type(a.full)=='boolean','full must be true or false')
+    assert(a.dry_run==nil or type(a.dry_run)=='boolean','dry_run must be true or false')
     -- Repeated entries add up; the hub must hold the total.
     local want,by={},{}
     for i,r in ipairs(a.items) do
@@ -603,71 +612,228 @@ return function(api)
       if by[key] then by[key].count=by[key].count+count
       else by[key]={name=name,quality=quality,count=count}; want[#want+1]=by[key] end
     end
-    for _,w in ipairs(want) do
-      local have=hub_inv.get_item_count{name=w.name,quality=w.quality}
-      assert(have>=w.count,'the hub of '..pl.name..' holds '..have..' '..w.name..(w.quality~='normal' and '@'..w.quality or '')..', not '..w.count)
+    return pl,loc,want
+  end
+  local function label(name,quality) return name..(quality and quality~='normal' and '@'..quality or '') end
+  local function items_text(list)
+    local parts={}
+    for _,w in ipairs(list) do if w.count>0 then parts[#parts+1]=label(w.name,w.quality)..'*'..w.count end end
+    return table.concat(parts,' ')
+  end
+  local function output_hatches(hub)
+    local n=0
+    for _,h in ipairs(try(function() return hub.cargo_hatches end) or {}) do
+      if try(function() return h.is_output_compatible end) then n=n+1 end
     end
-    local planet=game.planets[loc.name]
-    local surface=planet.surface or planet.create_surface()
-    local pod=try(function() return pl.hub.create_cargo_pod() end)
-    assert(pod and pod.valid,'the hub has no free cargo hatch right now; try again shortly')
-    local cargo=pod.get_inventory(defines.inventory.cargo_unit)
-    -- The hub's own stacks move (freshness, grids and other item data go
-    -- along): whole stacks by transfer_stack, the last part of one as a copy
-    -- with its spoil progress, taken off the hub stack.
-    local sent,left={},{}
-    for _,w in ipairs(want) do
-      local need=w.count
-      for i=1,#hub_inv do
-        if need<=0 then break end
-        local st=hub_inv[i]
-        if st.valid_for_read and st.name==w.name and (st.quality and st.quality.name or 'normal')==w.quality then
-          if st.count<=need then
-            local n=st.count
-            local slot=cargo.find_empty_stack()
-            if slot and slot.transfer_stack(st) then need=need-n end
-          else
-            local def={name=w.name,quality=w.quality,count=need}
-            local spoil=try(function() return st.spoil_percent end)
-            if spoil and spoil>0 then def.spoil_percent=spoil end
-            local moved=cargo.insert(def)
-            if moved>0 then st.count=st.count-moved; need=need-moved end
+    return n
+  end
+  -- Up to n of an item from the hub's stacks into a pod's cargo, the hub's
+  -- own stacks: a whole stack by transfer_stack (into a part stack of the
+  -- same item first, then an empty slot), the last part of one as a copy
+  -- with its spoil progress, taken off the hub stack. Returns the count moved.
+  local function fill(hub_inv,cargo,name,quality,n)
+    local need=n
+    local function same(st) return st.valid_for_read and st.name==name and (st.quality and st.quality.name or 'normal')==quality end
+    for i=1,#hub_inv do
+      if need<=0 then break end
+      local st=hub_inv[i]
+      if same(st) then
+        if st.count<=need then
+          local before=st.count
+          for j=1,#cargo do
+            if not st.valid_for_read then break end
+            local c=cargo[j]
+            if same(c) and c.count<c.prototype.stack_size then c.transfer_stack(st) end
           end
+          if st.valid_for_read then
+            local slot=cargo.find_empty_stack()
+            if slot then slot.transfer_stack(st) end
+          end
+          local after=st.valid_for_read and st.count or 0
+          need=need-(before-after)
+          if after>0 then break end
+        else
+          local def={name=name,quality=quality,count=need}
+          local spoil=try(function() return st.spoil_percent end)
+          if spoil and spoil>0 then def.spoil_percent=spoil end
+          local moved=cargo.insert(def)
+          if moved>0 then st.count=st.count-moved; need=need-moved end
+          if moved<def.count then break end
         end
       end
-      local moved=w.count-need
-      sent[#sent+1]=w.name..(w.quality~='normal' and '@'..w.quality or '')..'*'..moved
-      if need>0 then left[#left+1]=w.name..'*'..need end
     end
-    if cargo.is_empty() then pod.destroy(); error('nothing fit in the cargo pod',0) end
+    return n-need
+  end
+  -- Sends the job's next pods while the hub has a free hatch (at most limit).
+  -- Items the hub no longer holds go to job.short; what did not fit in its
+  -- pod goes on to the next one.
+  local function send(p,job,limit)
+    local pl=job.platform
+    local hub=pl.hub
+    local hub_inv=hub.get_inventory(defines.inventory.hub_main)
+    local n=0
+    while #job.pods>0 and (not limit or n<limit) do
+      -- What the hub still holds of the next pod's items (inserters and
+      -- construction take from the hub meanwhile).
+      local takes,any={},false
+      for i,w in ipairs(job.pods[1].items) do
+        local have=hub_inv.get_item_count{name=w.name,quality=w.quality}
+        takes[i]=math.min(have,w.count)
+        any=any or takes[i]>0
+      end
+      local pod=any and try(function() return hub.create_cargo_pod() end)
+      if any and not (pod and pod.valid) then break end
+      local plan=table.remove(job.pods,1)
+      local cargo=pod and pod.get_inventory(defines.inventory.cargo_unit)
+      local sent,carry={},{}
+      for i,w in ipairs(plan.items) do
+        if takes[i]<w.count then job.short[#job.short+1]={name=w.name,quality=w.quality,count=w.count-takes[i]} end
+        local moved=takes[i]>0 and fill(hub_inv,cargo,w.name,w.quality,takes[i]) or 0
+        if moved>0 then sent[#sent+1]={name=w.name,quality=w.quality,count=moved} end
+        if moved<takes[i] then carry[#carry+1]={name=w.name,quality=w.quality,count=takes[i]-moved} end
+      end
+      if #carry>0 then table.insert(job.pods,1,{items=carry}) end
+      if pod and cargo.is_empty() then pod.destroy(); error('nothing fit in the cargo pod',0) end
+      if pod then
+        -- A refused destination puts the items back in the hub, never strands
+        -- them; what the hub cannot take back stays in the pod, which is kept.
+        if not pcall(function() pod.cargo_pod_destination=job.dest end) then
+          local kept={}
+          for i=1,#cargo do
+            local st=cargo[i]
+            if st.valid_for_read then
+              local back=hub_inv.insert(st)
+              if back>=st.count then st.clear() else st.count=st.count-back; kept[#kept+1]=st.name..'*'..st.count end
+            end
+          end
+          if #kept==0 then pod.destroy() end
+          error('the game refused the cargo pod destination '..job.surface..(#kept==0 and '; the items stay in the hub'
+            or '; the hub took back all but '..table.concat(kept,' ')..', which stay in the cargo pod on the hub'),0)
+        end
+        -- Followed until it lands (drops.lua): where it came down goes to the
+        -- sender's and the `to` teammates' team block.
+        local text={}
+        for _,w in ipairs(sent) do text[#text+1]=label(w.name,w.quality)..'*'..w.count end
+        local used=0
+        for i=1,#cargo do if cargo[i].valid_for_read then used=used+1 end end
+        local id=api.drops and api.drops.record(p,{pod=pod,platform=pl.name,surface=job.surface,pad=job.pad,near=job.dest.position,sent=text,to=job.to})
+        job.sent[#job.sent+1]={pod=#job.sent+1,drop=id,items=table.concat(text,' '),slots=used}
+        for _,w in ipairs(sent) do
+          local k=w.name..'@'..w.quality
+          job.moved[k]=(job.moved[k] or 0)+w.count
+        end
+        n=n+1
+      end
+    end
+    return n
+  end
+  local function landing(p,a,surface)
     local pad=surface.find_entities_filtered{type='cargo-landing-pad',force=p.force,limit=1}[1]
     local dest={type=defines.cargo_destination.surface,surface=surface}
     if not pad then
       local b=api.bot and api.bot(p)
       dest.position=a.position~=nil and api.position(a.position) or (b and b.spots and b.spots[surface.name]) or p.force.get_spawn_position(surface)
     end
-    -- A refused destination puts the items back in the hub, never strands
-    -- them; what the hub cannot take back stays in the pod, which is kept.
-    if not pcall(function() pod.cargo_pod_destination=dest end) then
-      local kept={}
-      for i=1,#cargo do
-        local st=cargo[i]
-        if st.valid_for_read then
-          local n=hub_inv.insert(st)
-          if n>=st.count then st.clear() else st.count=st.count-n; kept[#kept+1]=st.name..'*'..st.count end
-        end
-      end
-      if #kept==0 then pod.destroy() end
-      error('the game refused the cargo pod destination '..surface.name..(#kept==0 and '; the items stay in the hub'
-        or '; the hub took back all but '..table.concat(kept,' ')..', which stay in the cargo pod on the hub'),0)
+    return pad,dest
+  end
+  local function moved_list(job,want)
+    local out={}
+    for _,w in ipairs(want) do
+      local n=job.moved[w.name..'@'..w.quality] or 0
+      if n>0 then out[#out+1]=label(w.name,w.quality)..'*'..n end
     end
-    -- Followed until it lands (drops.lua): where it came down goes to the
-    -- sender's and the `to` teammates' team block.
-    local id=api.drops and api.drops.record(p,{pod=pod,platform=pl.name,surface=surface.name,pad=pad and pad.position or nil,
-      near=dest.position,sent=sent,to=to})
-    return {drop=id,dropped=sent,not_sent=#left>0 and left or nil,to=surface.name,pad=pad and pad.position or nil,near=dest.position,
-      tell=#to>0 and to or nil,
-      note=pad and 'lands in the landing pad in ~20 s' or 'lands in ~20 s as a cargo pod container, often 10-20 tiles from that spot (pods scatter): your next reply\'s team block says where (drops lists them); take the items with transfer (it vanishes when empty)'}
+    return out
+  end
+  local function short_text(job)
+    if #job.short==0 then return nil end
+    return 'the hub held less than asked: '..items_text(job.short)..' not sent'
+  end
+  local LANDS_NOTE='lands in ~20 s as a cargo pod container, often 10-20 tiles from that spot (pods scatter): your next reply\'s team block says where (drops lists them); take the items with transfer (it vanishes when empty)'
+  function M.drop(p,a)
+    local pl,loc,want=drop_args(p,a)
+    local pending=a.full and not a.dry_run and api.pending and api.pending(p)
+    assert(not pending,pending and string.format('your last full drop from %s still has %d pod%s waiting for a hatch (status drop_pending); it ends by itself',
+      pending.platform.valid and pending.platform.name or '?',#pending.pods,#pending.pods==1 and '' or 's'))
+    local hub_inv=pl.hub.get_inventory(defines.inventory.hub_main)
+    local split=api.cargo.pods(want,POD_SLOTS)
+    local planet=game.planets[loc.name]
+    if a.dry_run then
+      local held={}
+      for _,w in ipairs(want) do
+        local have=hub_inv.get_item_count{name=w.name,quality=w.quality}
+        if have<w.count then held[#held+1]=string.format('%s: the hub holds %d of %d',label(w.name,w.quality),have,w.count) end
+      end
+      local surface=planet.surface
+      local pad=surface and surface.find_entities_filtered{type='cargo-landing-pad',force=p.force,limit=1}[1]
+      local rows={}
+      for i,pod in ipairs(split.pods) do rows[i]=string.format('pod %d (%d slots): %s',i,pod.slots,pod.text) end
+      local hatches=output_hatches(pl.hub)
+      return {dry_run=true,note='nothing was sent',platform=pl.name,to=loc.name,pad=pad and pad.position or nil,
+        pods=rows,pod_slots=string.format('a cargo pod holds %d slots (no weight limit); the list takes %d stacks',POD_SLOTS,split.stacks),
+        hatches=hatches>0 and string.format('%d output hatches: up to %d pods leave at once, each hatch sends its next %d s after its last',hatches,hatches,HATCH_TICKS/60) or nil,
+        sends=#split.pods>1 and string.format('without full only pod 1 goes (the rest stay in the hub); full: true sends all %d pods',#split.pods) or nil,
+        short=#held>0 and held or nil}
+    end
+    for _,w in ipairs(want) do
+      local have=hub_inv.get_item_count{name=w.name,quality=w.quality}
+      assert(have>=w.count,'the hub of '..pl.name..' holds '..have..' '..label(w.name,w.quality)..', not '..w.count)
+    end
+    local to=api.drops and api.drops.recipients(a.to) or {}
+    local surface=planet.surface or planet.create_surface()
+    local pad,dest=landing(p,a,surface)
+    local total=#split.pods
+    local job={kind='drop',platform=pl,planet=loc.name,surface=surface.name,pad=pad and pad.position or nil,dest=dest,to=to,
+      pods=split.pods,sent={},short={},moved={},want=want,full=a.full==true}
+    send(p,job,not job.full and 1 or nil)
+    if #job.sent==0 and not job.full then
+      assert(#job.pods==0,'the hub has no free cargo hatch right now (each sends one pod every '..(HATCH_TICKS/60)..' s); full: true waits for one')
+      error('nothing fit in the cargo pod',0)
+    end
+    local out={drop=job.sent[1] and job.sent[1].drop or nil,dropped=moved_list(job,want),to=surface.name,pad=job.pad,near=dest.position,
+      tell=#to>0 and to or nil,note=pad and 'lands in the landing pad in ~20 s' or LANDS_NOTE}
+    if job.full or #job.sent>1 then out.pods=job.sent end
+    local left={}
+    for _,pod in ipairs(job.pods) do for _,w in ipairs(pod.items) do left[#left+1]=w end end
+    if not job.full and #left>0 then
+      out.short=string.format('not sent, still in the hub: %s (a cargo pod holds %d slots and the list takes %d pods; full: true sends them all)',
+        items_text(left),POD_SLOTS,total)
+    elseif #left>0 then
+      -- full: the rest go as hatches free up (runtime drop_jobs_tick).
+      job.until_tick=game.tick+HATCH_TICKS*(#job.pods+1)+600
+      api.start(p,job)
+      out.pods_waiting=string.format('%d more pod%s wait for a free hatch (each sends one every %d s): %s; your character and queue go on; status drop_pending shows them, --wait waits for them',
+        #job.pods,#job.pods==1 and '' or 's',HATCH_TICKS/60,items_text(left))
+      out.until_tick=job.until_tick
+    end
+    out.short=out.short or short_text(job)
+    return out
+  end
+  -- A full drop's pods that wait for a hatch (runtime drop_jobs_tick, every
+  -- 10 ticks): nil while some wait; dropped | short | failed when done.
+  function M.drop_tick(p,job)
+    local pl=job.platform
+    if not (pl and pl.valid and pl.hub and pl.hub.valid) then job.why='the platform or its hub is gone'; return 'failed' end
+    local loc=pl.space_location
+    if not (loc and loc.name==job.planet) then
+      job.why='platform '..pl.name..' left '..job.planet..' (at '..tostring(location(pl))..')'
+      return 'failed'
+    end
+    local ok,err=pcall(send,p,job)
+    if not ok then job.why=tostring(err); return 'failed' end
+    if #job.pods>0 then return nil end
+    job.why=short_text(job)
+    return #job.short>0 and 'short' or 'dropped'
+  end
+  -- What a finished drop reports (runtime finish): each pod's contents, what
+  -- went, what was not sent and why.
+  function M.drop_result(job,outcome)
+    local left={}
+    for _,pod in ipairs(job.pods or {}) do for _,w in ipairs(pod.items) do left[#left+1]=w end end
+    local why=job.why
+    if not why and #left>0 then
+      why=string.format('%d pod%s not sent (%s): %s',#job.pods,#job.pods==1 and '' or 's',outcome,items_text(left))
+    end
+    return {pods=job.sent,dropped=moved_list(job,job.want or {}),not_sent=#left>0 and items_text(left) or nil,short=short_text(job),to=job.surface},why
   end
   -- The hub's "drop to planet": the character descends in a cargo pod to the
   -- planet the platform is stopped at (a landing pad if there is one).
@@ -694,7 +860,9 @@ return function(api)
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)'},
     drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',to='optional teammate name or list: told where it landed too, in their team block',
-      note='the hub\'s drop slots, from remote view: a cargo pod takes the items to the planet below a stopped platform (the landing pad if any, else a temporary container on the ground)',returns='drop (its number), dropped, not_sent, to, pad, near, tell; where it lands comes in the team block (drop #N landed at (x,y) on PLANET: cargo-pod-container with ...), and the drops read lists recent drops'},
+      full='true: send every pod the list takes (a pod holds 10 slots); pods beyond the free hatches go as each hatch frees up (one every 2 s) while your character and queue go on (status drop_pending, then last_drop: outcome dropped | short | failed | timed_out; --wait waits for them). Without it only the first pod goes and short says what stays in the hub',
+      dry_run='true: send nothing; the pod split (each pod\'s items, in the list\'s order), the hatches, and what the hub holds less of',
+      note='the hub\'s drop slots, from remote view: cargo pods take the items to the planet below a stopped platform (the landing pad if any, else a temporary container on the ground)',returns='drop (the first pod\'s number), dropped, pods [{pod, drop, items, slots}] (full, or more than one), short (what stays in the hub), pods_waiting and until_tick (full: pods waiting for a hatch), to, pad, near, tell; where each pod lands comes in the team block (drop #N landed at (x,y) on PLANET: cargo-pod-container with ...), and the drops read lists recent drops'},
     land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any). A bot lands where it last stood on that planet, else at its spawn point, wearing the armor and guns it rode up with',returns='landing (and for a bot: at, pad)'},
     launch={position='rocket silo {x,y} in a visible chunk (any tile of it)',surface='optional planet name: the silo there by remote view, where our force sees the chunk (e.g. vulcanus from a platform above it); platform stays the destination',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it; switched on with cargo loaded by hand, the game moves that cargo to the silo\'s trash slots: cargo_to_trash, note, trash)',returns='launched, to, cargo; settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}: the silo\'s switches after the call',refused='overweight by N kg (a rocket lifts 1000 kg; the cargo listed by weight) before the game is asked; when the game refuses, what it may check'},
   }

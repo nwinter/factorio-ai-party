@@ -58,4 +58,25 @@ local packs = cargo.weigh({{name='repair-pack', count=21}}, lift, slots)
 eq(packs.fewest, 2); eq(packs.rockets, 2)
 local ok, err = pcall(cargo.weigh, {{name='nope', count=1}}, lift, slots)
 assert(not ok and tostring(err):find('unknown item nope', 1, true), err)
+-- Cargo pods from a platform hub (space.lua drop): slots alone, no weight
+-- limit, the list's order kept (Astra's 10:12 Gleba kit, shift09: it went
+-- down in three drops of 10 slots each).
+local kitp = {['stone-brick']=100, ['assembling-machine-2']=50, ['steel-plate']=100, ['electric-engine-unit']=50, ['processing-unit']=100,
+  pipe=100, ['low-density-structure']=50, ['rocket-fuel']=10}
+for name, st in pairs(kitp) do prototypes.item[name] = prototypes.item[name] or {weight=1000, stack_size=st} end
+local gleba = cargo.pods({{name='stone-brick', count=500}, {name='assembling-machine-2', count=1}, {name='steel-plate', count=1000},
+  {name='electric-engine-unit', count=200}, {name='processing-unit', count=250}, {name='pipe', count=100}, {name='low-density-structure', count=50},
+  {name='rocket-fuel', count=50}}, 10)
+eq(gleba.stacks, 30); eq(gleba.fewest, 3); eq(#gleba.pods, 3)
+eq(gleba.pods[1].text, 'stone-brick*500 assembling-machine-2*1 steel-plate*400'); eq(gleba.pods[1].slots, 10)
+eq(gleba.pods[2].text, 'steel-plate*600 electric-engine-unit*200'); eq(gleba.pods[3].text, 'processing-unit*250 pipe*100 low-density-structure*50 rocket-fuel*50')
+eq(gleba.pods[3].items[1].name, 'processing-unit'); eq(gleba.pods[3].items[1].quality, 'normal'); eq(gleba.pods[3].items[1].count, 250)
+-- No weight limit: 3 starter packs (a rocket each) share a pod.
+eq(#cargo.pods({{name='space-platform-starter-pack', count=3}}, 10).pods, 1)
+-- A part stack is topped up before a new slot; qualities are kinds of their own.
+local mixed = cargo.pods({{name='iron-plate', count=950}, {name='iron-plate', count=60, quality='rare'}, {name='iron-plate', count=40}}, 10)
+eq(#mixed.pods, 2); eq(mixed.pods[1].text, 'iron-plate*990', 'the repeated entry joins its kind: 10 slots')
+eq(mixed.pods[2].text, 'iron-plate@rare*60'); eq(mixed.pods[2].items[1].quality, 'rare')
+-- 990 and then 5 more of the same: the part stack (90) takes them, no new slot.
+eq(#cargo.pods({{name='iron-plate', count=995}}, 10).pods, 1)
 print('cargo: ok')

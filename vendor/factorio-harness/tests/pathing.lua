@@ -47,6 +47,58 @@ eq(r.closed,true); eq(r.nearest.x,3); eq(r.nearest.y,1.25); eq(r.x0,1.25); eq(r.
 eq(r.by[1],'steam-engine')
 local open=P.region(surface,{x=3,y=5},0.1,{ignore=me})
 eq(open.closed,false)
+-- The trap checks (Gemini, shift09: a placement trapped the character). A
+-- fake surface of entity boxes {name, box, type?, force?, unit?}.
+local function fake(list)
+  return {find_tiles_filtered=function() return {} end,find_entities_filtered=function(f)
+    local out={}
+    if f.collision_mask=='player' then
+      local a=f.area
+      for _,b in ipairs(list) do
+        local x0,y0,x1,y1=b.box[1],b.box[2],b.box[3],b.box[4]
+        if x1>a[1][1] and x0<a[2][1] and y1>a[1][2] and y0<a[2][2] then
+          out[#out+1]={valid=true,name=b.name,type=b.type or 'wall',force=b.force,unit_number=b.unit,bounding_box={left_top={x=x0,y=y0},right_bottom={x=x1,y=y1}}}
+        end
+      end
+    end
+    return out
+  end}
+end
+-- A pocket 4 tiles wide: walls left, right and below; the top open.
+local pocket={{name='stone-wall',box={0,0,1,8}},{name='stone-wall',box={5,0,6,8}},{name='stone-wall',box={0,8,6,9}}}
+local ps=fake(pocket)
+eq(P.region(ps,{x=3,y=5},0.2,{window=16}).closed,false,'open at the top')
+-- Planned: a lid on top closes it; it alone fills the last gap. A box elsewhere is not around it.
+local lid={1,-0.2,5,0.2,'stone-wall','lid',base=true}
+local far={20,20,21,21,'stone-wall','far',base=true}
+local res=P.closes_in(ps,{x=3,y=5},0.2,{lid,far},{})
+eq(#res.gaps,1); eq(res.gaps[1],lid); eq(#res.around,1); eq(res.region.closed,true); eq(res.region.tiles,28)
+eq(P.area_text(res.region,0.2),'the area (1.3,0.5)-(4.8,7.8) (about 28 tiles) has no gap the character (0.4 tiles wide) fits through; around it: stone-wall')
+-- Two lid halves 0.42 apart (two lone pipes): a 0.4 character slips through; joined (a piece between
+-- them that stands only while both do) they close it, and without either the gap is back.
+local a={1,-0.29,3.29,0.29,'pipe','a',base=true}
+local b={3.71,-0.29,5,0.29,'pipe','b',base=true}
+eq(P.closes_in(ps,{x=3,y=5},0.2,{a,b},{}),nil,'0.42 apart: open')
+local seam={3.29,-0.29,3.71,0.29,'pipe','a',ids={'a','b'}}
+res=P.closes_in(ps,{x=3,y=5},0.2,{a,b,seam},{})
+eq(#res.gaps,2,'without either one a gap out stays')
+-- Closed in already: said so, nothing blamed on the plan.
+local shut=fake({{name='stone-wall',box={0,0,1,8}},{name='stone-wall',box={5,0,6,8}},{name='stone-wall',box={0,8,6,9}},{name='stone-wall',box={1,-1,5,0}}})
+res=P.closes_in(shut,{x=3,y=5},0.2,{far},{}); eq(res.already,true)
+-- Our gate opens for the character: no wall; another force's gate is one.
+local gated=fake({{name='stone-wall',box={0,0,1,8}},{name='stone-wall',box={5,0,6,8}},{name='stone-wall',box={0,8,6,9}},
+  {name='stone-wall',box={1,-1,2.7,0}},{name='stone-wall',box={3.3,-1,5,0}},{name='gate',type='gate',force='us',box={2.7,-1,3.3,0}}})
+eq(P.region(gated,{x=3,y=5},0.2,{force='us',window=16}).closed,false); eq(P.region(gated,{x=3,y=5},0.2,{force='them',window=16}).closed,true)
+-- After a build: closed now, open without what was just built; that one filled the last gap.
+local built={valid=true,unit_number=9,name='stone-wall',position={x=3,y=-0.5}}
+local after=fake({{name='stone-wall',box={0,0,1,8}},{name='stone-wall',box={5,0,6,8}},{name='stone-wall',box={0,8,6,9}},{name='stone-wall',box={1,-1,5,0},unit=9}})
+res=P.closed_by(after,{x=3,y=5},0.2,{built},{})
+eq(#res.gaps,1); eq(res.gaps[1],built); eq(res.region.closed,true)
+eq(P.closed_by(after,{x=3,y=5},0.2,{{valid=true,unit_number=4,name='pipe',position={x=20,y=20}}},{}),nil,'closed before that build too')
+eq(P.closed_by(ps,{x=3,y=5},0.2,{built},{}),nil,'still open')
+-- Farthest step first: the open pocket ends at the window edge, the closed one is flooded whole.
+eq(P.region(ps,{x=3,y=5},0.2,{window=16}).tiles<28,true)
+
 -- Giving up closed in: why names the area and what closes it in; nearest reachable to the goal.
 local p={index=7,position={x=3,y=5},surface=surface,character=me,force={}}
 local nav={position={x=3,y=-5},tolerance=0.5}
@@ -192,9 +244,9 @@ eq(P.start_centre(sol).x,54.5)
 -- Closed in by our pipes: give_up names the pipe whose mining opens a way out.
 local pen={{0,0,4,0.8,'pipe'},{0,3.2,4,4,'pipe'},{0,0.8,0.8,3.2,'pipe'},{3.2,0.8,4,3.2,'pipe'}}
 local ps=box_surface(pen)
-local closed=P.region(ps,{x=2,y=2},0.2,{keep_seen=true})
+local closed=P.region(ps,{x=2,y=2},0.2)
 eq(closed.closed,true)
-local dug=P.dig(ps,{x=2,y=2},0.2,{force='ours',inside=closed.seen})
+local dug=P.dig(ps,{x=2,y=2},0.2,{force='ours'})
 assert(dug and #dug.mine==1 and dug.mine[1].name=='pipe','one pipe to mine')
 local penned={index=9,position={x=2,y=2},surface=ps,force='ours',character=sol.character}
 ps.is_chunk_generated=function() return true end
@@ -206,6 +258,5 @@ eq(nav.path_state,'unreachable'); has(nav.why,'; mining pipe ('); has(nav.why,')
 -- Cliffs all round: no way out by mining.
 local cliffs={{0,0,4,0.8,'cliff','cliff'},{0,3.2,4,4,'cliff','cliff'},{0,0.8,0.8,3.2,'cliff','cliff'},{3.2,0.8,4,3.2,'cliff','cliff'}}
 local cs=box_surface(cliffs)
-closed=P.region(cs,{x=2,y=2},0.2,{keep_seen=true})
-eq(P.dig(cs,{x=2,y=2},0.2,{force='ours',inside=closed.seen}),nil)
+eq(P.dig(cs,{x=2,y=2},0.2,{force='ours'}),nil)
 print('pathing: ok')
