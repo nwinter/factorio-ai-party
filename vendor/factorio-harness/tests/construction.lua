@@ -234,7 +234,8 @@ walls=nil
 -- Deconstruction marks are hand-mined: timed like mine, one at a time, from a
 -- stand point in reach; a full inventory stops the action and names the entity.
 local neutral={name='neutral'}
-local function tree(x) return {valid=true,name='tree',type='tree',minable=true,force=neutral,position={x=x,y=.5},prototype={},to_be_deconstructed=function() return true end} end
+local function tree(x) return {valid=true,name='tree',type='tree',minable=true,force=neutral,position={x=x,y=.5},
+  prototype={mineable_properties={products={{type='item',name='wood',amount=4}}}},to_be_deconstructed=function() return true end} end
 ghosts={};marked={tree(140.5),tree(141.5),tree(160.5),{valid=true,name='rock',type='simple-entity',minable=true,force={name='enemy'},position={x=141,y=1},to_be_deconstructed=function() return true end}}
 -- Hand-mining reaches only resource_reach_distance (to the entity edge).
 p.resource_reach_distance=2.7
@@ -264,9 +265,18 @@ eq(#clear.pending,3) -- other forces' entities are not ours to mine
 eq(run_timed(clear),'constructed');eq(clear.mined,3);eq(#navs,1)
 eq(mined_at[1],30);eq(mined_at[2],60) -- sequential, each after its full mining time
 marked={tree(170.5),tree(171.5)};p.full=true;mined_at={};p.position={x=170.5,y=3.5}
+local can_insert=p.can_insert
+p.can_insert=function() return not p.full end
 local full=C.plan_ghosts(p,{},{})
-eq(run_timed(full),'inventory_full');eq(full.mined,0);eq(full.failed[1].name,'tree');eq(full.failed[1].error,'inventory_full')
+eq(run_timed(full),'inventory_full');eq(full.mined,0);eq(full.failed[1].name,'tree');eq(full.failed[1].error,'inventory_full: no room for wood')
 eq(C.remaining(full),1)
+-- The engine refusing with room for the products is no full inventory (Sol 15:38: inventory_full with 73 free slots):
+-- that entry fails, named, and the rest goes on.
+p.full=true; p.can_insert=function() return true end
+marked={tree(170.5)}; mined_at={}
+local refused=C.plan_ghosts(p,{},{})
+eq(run_timed(refused),'incomplete'); eq(refused.failed[1].error,'the engine would not mine tree (170.5,0.5) by hand (a stump, remnant or the like)')
+p.can_insert=can_insert
 marked={};p.full=nil
 -- Trees under a ghost are marked like a player's ghost placement and mined
 -- before it is built; a ghost whose item is still being hand-crafted is
@@ -491,5 +501,43 @@ do
   local found=C.tile_obstacles(q,g)
   eq(#found,1); eq(found[1],slip); eq(marked[slip],true); eq(marked[oak],nil,'its mask lets landfill in'); eq(marked[far],nil,'not on the tile')
   eq(marked[cane],nil,'the tile takes the cane away')
+end
+-- Tiles marked for deconstruction are mined by hand as tiles (minetile; Sol 15:38: construct over a
+-- deconstructible-tile-proxy on landfill ended inventory_full with 73 free slots, the proxy mined as an entity).
+do
+  local proxy={valid=true,name='deconstructible-tile-proxy',type='deconstructible-tile-proxy',minable=true,force=p.force,
+    position={x=194.5,y=58.5},to_be_deconstructed=function() return false end}
+  local q={position={x=196,y=55},force=p.force,
+    surface={find_entities_filtered=function(f)
+      if f.type=='deconstructible-tile-proxy' then return {proxy} end
+      if f.to_be_deconstructed then return {proxy} end
+      return {}
+    end,get_tile=function() return {name='landfill'} end},
+    can_reach_entity=function() return true end}
+  local mined,checked={},0
+  local T={reach=function() return 10 end,in_reach=function(_,x,y) eq(x,194); eq(y,58); return true end,
+    check=function(_,x,y) checked=checked+1; return {ticks=30} end,
+    mine=function(_,x,y) mined[#mined+1]=x..','..y; proxy.valid=false; return {position={x=x,y=y},tile='landfill',restored='wetland-yumako'} end}
+  local CT=dofile('mod/agent-harness_0.1.0/construction.lua'){
+    position=function(v)return {x=v.x,y=v.y}end,distance=distance,integer=integer,visible=function()return true end,
+    directions={north=0,east=4,south=8,west=12},known=function()return true end,reason=function(e)return tostring(e) end,
+    hand_mining_ticks=function() return 30 end,request_path=function() end,navigate=function() return 'arrived' end,tilemine=T}
+  local act=CT.plan_ghosts(q,{},{})
+  eq(#act.pending,1,'one entry: the tile, not the proxy as an entity too'); eq(act.pending[1].tile.x,194); eq(act.pending[1].name,'landfill')
+  game.tick=0
+  local outcome
+  for _=1,100 do outcome=CT.tick_ghosts(q,act); if outcome then break end; game.tick=game.tick+1 end
+  eq(outcome,'constructed'); eq(act.tiles_mined,1); eq(act.mined,0); eq(mined[1],'194,58'); eq(checked,1)
+  -- refused when its time comes (something stood on it meanwhile): failed, named; inventory_full only for no room
+  proxy.valid=true; mined={}
+  T.mine=function() return nil,'landfill at (194,58) has wooden-chest (194.5,58.5) on it: mine it first' end
+  act=CT.plan_ghosts(q,{},{})
+  for _=1,100 do outcome=CT.tick_ghosts(q,act); if outcome then break end; game.tick=game.tick+1 end
+  eq(outcome,'incomplete'); eq(act.failed[1].error,'landfill at (194,58) has wooden-chest (194.5,58.5) on it: mine it first')
+  eq(act.failed[1].name,'landfill'); eq(act.failed[1].position.x,194)
+  T.mine=function() return nil,'inventory_full','landfill' end
+  act=CT.plan_ghosts(q,{},{})
+  for _=1,100 do outcome=CT.tick_ghosts(q,act); if outcome then break end; game.tick=game.tick+1 end
+  eq(outcome,'inventory_full')
 end
 print('continuous construction tests passed')

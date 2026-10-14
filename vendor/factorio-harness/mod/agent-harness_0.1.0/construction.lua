@@ -137,6 +137,7 @@ return function(api)
   -- Building reaches build_distance; hand-mining trees, rocks and marked
   -- entities only resource_reach_distance, so their stand points sit closer.
   local function reach(p,rec)
+    if rec and rec.tile then return api.tilemine.reach(p)-0.5 end
     if rec and rec.mine then return (p.resource_reach_distance or 2.7)-0.2 end
     return p.build_distance-0.5
   end
@@ -199,9 +200,26 @@ return function(api)
     end
     -- Entities marked for deconstruction are mined by hand, as a player
     -- clears marks without robots; contents go to the inventory.
+    -- (a tile's deconstruction mark, a deconstructible-tile-proxy, is mined as its tile below: Sol 15:38, mined as an
+    -- entity it ended the construct inventory_full with 73 free slots)
     for _,e in pairs(p.surface.find_entities_filtered{area=box,to_be_deconstructed=true}) do
-      if e.valid and e.type~='entity-ghost' and (e.force==p.force or e.force.name=='neutral') and e.minable and api.known(p,e) then
+      if e.valid and e.type~='entity-ghost' and e.type~='deconstructible-tile-proxy' and (e.force==p.force or e.force.name=='neutral') and e.minable and api.known(p,e) then
         add(e)
+      end
+    end
+    -- Tiles marked for deconstruction are mined by hand too (tilemine.lua; Sol, operator 15:30: landfill on a farm with
+    -- no robots there): the tile under each goes back, the product to the inventory.
+    if api.tilemine then
+      for _,e in pairs(p.surface.find_entities_filtered{area=box,type='deconstructible-tile-proxy',force=p.force}) do
+        if e.valid and e.type=='deconstructible-tile-proxy' and api.known(p,e) then
+          local x,y=math.floor(e.position.x),math.floor(e.position.y)
+          local key='tile:'..x..','..y
+          if not action.seen[key] then
+            action.seen[key]=true
+            local ok,t=pcall(function() return p.surface.get_tile(x,y).name end)
+            pending[#pending+1]={ghost=e,mine=true,tile={x=x,y=y},name=ok and t or 'tile',pos={x=x+0.5,y=y+0.5},tries=0,stand_fails=0}
+          end
+        end
       end
     end
     assert(#pending<=MAX_GHOSTS,'more than '..MAX_GHOSTS..' ghosts; construct a smaller area')
@@ -583,6 +601,7 @@ return function(api)
   -- here: the character's position this tick.
   local function buildable(p,rec,here)
     local g,pos=rec.ghost,pos_of(rec)
+    if rec.tile then return api.tilemine.in_reach(p,rec.tile.x,rec.tile.y) and api.visible(p,pos) end
     if rec.mine then
       -- Hand reach is to the entity's edge; nothing farther than this can be in it.
       return api.distance(here,pos)<=reach(p,rec)+4 and p.can_reach_entity(g) and api.visible(p,pos)
@@ -604,7 +623,8 @@ return function(api)
   end
   local function fail(action,rec,err)
     local g=rec.ghost
-    action.failed[#action.failed+1]={name=g.valid and (rec.mine and g.name or g.ghost_name) or nil,position=rec.position or rec.ghost.position,error=err}
+    action.failed[#action.failed+1]={name=rec.tile and rec.name or g.valid and (rec.mine and g.name or g.ghost_name) or nil,
+      position=rec.tile or rec.position or rec.ghost.position,error=err}
   end
   -- Candidates ring the target at two radii plus the in-reach point on the
   -- straight line toward the character. Coverage wins; walking distance only
@@ -661,9 +681,26 @@ return function(api)
     if not e.valid then action.mining=nil; action.gone=action.gone+1; drop(action,index_of(action,rec)); return end
     if game.tick<m.done_tick then return true end
     action.mining=nil
+    if rec.tile then
+      local row,why=api.tilemine.mine(p,rec.tile.x,rec.tile.y)
+      if row then action.tiles_mined=(action.tiles_mined or 0)+1; drop(action,index_of(action,rec)); return end
+      fail(action,rec,why); drop(action,index_of(action,rec))
+      return why=='inventory_full' and 'inventory_full' or nil
+    end
     if p.mine_entity(e,false) and not e.valid then action.mined=action.mined+1; drop(action,index_of(action,rec)); return end
-    fail(action,rec,'inventory_full'); drop(action,index_of(action,rec))
-    return 'inventory_full'
+    -- inventory_full only when a product has no room (Sol 15:38: said with 73 free slots); else the engine would not
+    -- mine it by hand, named, and the rest goes on.
+    local full
+    local okp,prods=pcall(function() return e.prototype.mineable_properties.products end)
+    for _,pr in ipairs(okp and prods or {}) do
+      if (pr.type==nil or pr.type=='item') and not p.can_insert{name=pr.name,count=pr.amount or pr.amount_max or 1} then full=pr.name; break end
+    end
+    if full then
+      fail(action,rec,'inventory_full: no room for '..full); drop(action,index_of(action,rec))
+      return 'inventory_full'
+    end
+    fail(action,rec,string.format('the engine would not mine %s (%g,%g) by hand (a stump, remnant or the like)',e.name,e.position.x,e.position.y))
+    drop(action,index_of(action,rec))
   end
   function M.tick_ghosts(p,action)
     if not action.pending then return 'interrupted' end -- started by an older bundle
@@ -680,7 +717,8 @@ return function(api)
       action.next_marks=game.tick+30
       local cancelled={}
       for _,rec in ipairs(action.pending) do
-        if rec.mine and rec.ghost.valid and not rec.ghost.to_be_deconstructed() then cancelled[rec]=true end
+        -- (a tile's mark is its proxy: gone when cancelled)
+        if rec.mine and not rec.tile and rec.ghost.valid and not rec.ghost.to_be_deconstructed() then cancelled[rec]=true end
       end
       drop_set(action,cancelled)
     end
@@ -691,6 +729,12 @@ return function(api)
       local rec=action.pending[i]
       local g=rec.ghost
       if not g.valid then action.gone=action.gone+1; drop(action,i)
+      elseif rec.tile then
+        if not action.mining and buildable(p,rec,here) then
+          local info=api.tilemine.check(p,rec.tile.x,rec.tile.y)
+          if info.why then fail(action,rec,info.why); drop(action,i)
+          else action.mining={rec=rec,done_tick=game.tick+info.ticks} end
+        end
       elseif rec.mine then
         if not action.mining and buildable(p,rec,here) then action.mining={rec=rec,done_tick=game.tick+api.hand_mining_ticks(p,g)} end
       elseif buildable(p,rec,here) and not (rec.under and awaits_tiles(rec)) then
