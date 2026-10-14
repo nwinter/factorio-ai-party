@@ -98,8 +98,9 @@ already targets your character.
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
   (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
-  or more of its capacity for 2 minutes, boilers under 10 minutes of fuel, a logistic network with no idle logistic
-  robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
+  or more of its capacity for 2 minutes, boilers under 20 minutes of fuel (again under 10 and 5; with the fuel in
+  chests and on belts within 64 tiles and the inserters feeding them, or that none does), a logistic network with no
+  idle logistic robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
   your character's time by kind (the time before a request counts toward that request's kind), the hand hauls you
