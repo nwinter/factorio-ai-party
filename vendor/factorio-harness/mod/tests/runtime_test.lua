@@ -1991,4 +1991,33 @@ for _,action in ipairs({'paste','blueprint_place'}) do
   eq(pcall(runtime.check_args,action,{anchor='hub',mode='forced'}),true)
   eq(pcall(runtime.check_args,action,{position={x=0,y=0},forced=true}),false)
 end
+-- cargo (cargo.lua): a list or what a chest holds, weighed against a rocket's lift and slots; a read.
+-- (A function of its own: this chunk is near Lua's 200 locals.)
+;(function()
+  local find,items,uc,quality,silo=p.surface.find_entities_filtered,prototypes.item,prototypes.utility_constants,prototypes.quality,prototypes.entity['rocket-silo']
+  defines.inventory.chest=defines.inventory.chest or 1
+  defines.inventory.rocket_silo_rocket=defines.inventory.rocket_silo_rocket or 21
+  prototypes.item={thruster={weight=200000,stack_size=10},['cargo-bay']={weight=100000,stack_size=10},['iron-plate']={weight=1000,stack_size=100}}
+  prototypes.utility_constants={rocket_lift_weight=1000000}
+  prototypes.quality={normal={},rare={}}
+  prototypes.entity['rocket-silo']={get_inventory_size=function() return 20 end}
+  local w=call('cargo',{items={thruster=3,['cargo-bay']=5}})
+  eq(w.total_kg,1100); eq(w.fewest,2); eq(w.rockets,2); eq(w.items[1].name,'thruster'); eq(w.lift,'1000 kg and 20 cargo slots a rocket')
+  local q=call('cargo',{items={{name='iron-plate',count=50,quality='rare'}}})
+  eq(q.items[1].quality,'rare'); eq(q.total_kg,50)
+  local chest={valid=true,name='steel-chest',type='container',position={x=1.5,y=0.5},force=p.force}
+  chest.get_inventory=function(i) eq(i,defines.inventory.chest)
+    return {valid=true,get_contents=function() return {{name='iron-plate',count=1200,quality='normal'}} end} end
+  p.surface.find_entities_filtered=function(f) if f.position then return {chest} end return {} end
+  local c=call('cargo',{position={x=1.5,y=0.5}})
+  eq(c.total_kg,1200); eq(c.rockets,2); eq(c.from.inventory,'chest'); eq(c.split[1].items,'iron-plate*1000')
+  fails(function() call('cargo',{items={nope=1}}) end,'unknown item nope')
+  fails(function() call('cargo',{items={thruster=0}}) end,'count of thruster out of range')
+  fails(function() call('cargo',{}) end,'cargo takes items')
+  fails(function() call('cargo',{items={thruster=1},position={x=1.5,y=0.5}}) end,'one of them')
+  chest.get_inventory=function() return {valid=true,get_contents=function() return {} end} end
+  fails(function() call('cargo',{position={x=1.5,y=0.5}}) end,'holds nothing in chest')
+  p.surface.find_entities_filtered=find
+  prototypes.item,prototypes.utility_constants,prototypes.quality,prototypes.entity['rocket-silo']=items,uc,quality,silo
+end)()
 print('runtime: '..assertions..' assertions passed')

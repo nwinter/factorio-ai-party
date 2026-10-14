@@ -126,6 +126,9 @@ already targets your character.
   reach every placement. `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},
   "direction":"north","recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid
   the recipe puts there; `inspect` of a ghost shows the same.
+- `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'` (or a chest, silo or pad `position`) weighs a
+  rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
+  and one split into rockets that keeps each within both.
 - Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
   standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,

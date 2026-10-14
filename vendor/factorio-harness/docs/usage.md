@@ -477,6 +477,18 @@ fh sleep 900 --until researched                       # ...or until the research
 - `launch {position, auto_requests: true}` on a silo whose rocket holds cargo loaded by hand: the game moves that cargo
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
+- `cargo {items: {name: count}}` (or `[{name, count, quality}]`, or `position` of a chest, rocket silo (its loaded
+  cargo), landing pad, platform hub, wagon or vehicle in sight; `platform` for one on a platform) weighs a rocket cargo
+  list before it is staged (cargo.lua; Sol rebuilt three kits into two after working the weights out offline). A
+  read: `lift` (`1000 kg and 20 cargo slots a rocket`: the utility constant `rocket_lift_weight` and the silo's rocket
+  inventory), `items [{name, quality, count, each_kg, kg, stacks, per_rocket, share}]` heaviest first (`per_rocket`:
+  as many as one rocket takes alone, by weight and by its slots; `share`: of a rocket's lift), `total_kg`, `stacks`,
+  `fewest` (rockets by total weight and by stacks), `rockets` and `split [{rocket, kg, slots, items}]`: one split in
+  which every rocket stays within both, heaviest items first, each into the first rocket with room (a part stack's
+  room counted before a new slot); `note` when it takes more rockets than `fewest`; `too_heavy` for an item heavier
+  than a rocket lifts. Item weights are the 2.0 prototypes' (grams in the game, kg here; the API gives one weight
+  per item, used for every quality); stacks of different qualities take their own slots. Shift world, 2026-10-13: 2 thrusters, 4 cargo bays, 30
+  foundation, 150 processing units and 40 rocket fuel are 2300 kg, 3 rockets.
 - `launch {position, platform}` sends the cargo to the platform's hub (a platform waiting for its starter pack gets it
   as its starter pack). A rocket lifts 1000 kg (item prototype weights; the game takes more by script, then refuses
   the launch): `transfer` into `rocket_silo_rocket` gives only what fits (`weight_limited {requested, fits, note}`)
