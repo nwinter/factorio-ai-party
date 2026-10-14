@@ -2139,6 +2139,19 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   boilers part names the lowest boiler: the lowest of those under 20 min and not refilled, else the lowest of all,
   with its minutes, its fuel and its feeder (`lowest boiler (66,16): 4 min of coal; no inserter feeds it`; read:
   `lowest_boiler {position, min, fuel, feeder, feeder_has_fuel}`; Haiku, 07:55).
+- Boilers (networks.lua; Haiku, 06:20): `boilers {surface?}` (read, `fh call boilers`, default your surface) lists every
+  boiler of ours on the surface, grouped by the electric network its steam feeds (as `networks` maps them: the steam
+  generators on its output's fluid segment, else one within 12 tiles; `network: null` and `no electric network found`
+  otherwise). Networks with a boiler not working come first, and those boilers first in each (then by position). Each
+  network: `line` (`electric #7: 11 boilers: 1 output full, 2 no fuel, 8 working`), `total`, `not_working`, `boilers`,
+  `more`. Each boiler: `position`, `name`, `state` (`working`, `no fuel`, `output full`, `no water`, `low water`, `low
+  temperature`, `disabled by circuit`, or the game's status in words), `status` (the game's name), `working`, `fuel`
+  (its fuel slots, `coal*20`), `burning`, `water` and `steam` (`water 200/200`), `feeder` (the inserter dropping into it
+  and what it takes from, with the fuel there: `burner-inserter (60,14) from wooden-chest (41,13) holding 400 coal`; a
+  belt: the fuel on it and up to 64 tiles upstream, else what loads that run; or `no inserter feeds it`) and
+  `feeder_has_fuel` (fuel in its hand or at its source), as the `boiler_fuel` alert reads them. At most 64 rows: the
+  not-working ones, then up to 4 working ones in a network with a stopped boiler (all in a network where every boiler
+  works); `more` counts the rows left out (all working). Feeders are read only for the rows shown.
 - Space platforms' power (Astra, 13:10: `networks {surface: "Starling"}` matched nothing, a platform's surface being
   `platform-3`; `power` took no platform; inspect showed no maximum). `networks {platform}` (a name or index) and
   `networks {surface}` with a platform's name or its surface's name read that platform's surface; an unknown name is
@@ -2160,19 +2173,6 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `capacity_mj`, `charge_kw`, `discharge_kw`), and `now`: what all of its name on its electric network make or draw
   (`all solar-panel on electric network #280 make 2.4 MW now (5 s average)`; the game counts power by prototype, not
   per entity), or `no electric network: no pole reaches it`. (`power` stays the "unpowered: ..." line.)
-- Boilers (networks.lua; Haiku, 06:20): `boilers {surface?}` (read, `fh call boilers`, default your surface) lists every
-  boiler of ours on the surface, grouped by the electric network its steam feeds (as `networks` maps them: the steam
-  generators on its output's fluid segment, else one within 12 tiles; `network: null` and `no electric network found`
-  otherwise). Networks with a boiler not working come first, and those boilers first in each (then by position). Each
-  network: `line` (`electric #7: 11 boilers: 1 output full, 2 no fuel, 8 working`), `total`, `not_working`, `boilers`,
-  `more`. Each boiler: `position`, `name`, `state` (`working`, `no fuel`, `output full`, `no water`, `low water`, `low
-  temperature`, `disabled by circuit`, or the game's status in words), `status` (the game's name), `working`, `fuel`
-  (its fuel slots, `coal*20`), `burning`, `water` and `steam` (`water 200/200`), `feeder` (the inserter dropping into it
-  and what it takes from, with the fuel there: `burner-inserter (60,14) from wooden-chest (41,13) holding 400 coal`; a
-  belt: the fuel on it and up to 64 tiles upstream, else what loads that run; or `no inserter feeds it`) and
-  `feeder_has_fuel` (fuel in its hand or at its source), as the `boiler_fuel` alert reads them. At most 64 rows: the
-  not-working ones, then up to 4 working ones in a network with a stopped boiler (all in a network where every boiler
-  works); `more` counts the rows left out (all working). Feeders are read only for the rows shown.
 - Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
   requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
   aboard; a platform with none of them known goes to every agent. Each line names the platform and its surface:
