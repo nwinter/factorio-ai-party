@@ -112,7 +112,8 @@ return function(api)
     return false
   end
   -- The tile item that makes this tile buildable for the entity (mask), the
-  -- force's unlocked ones first; nil when none can (out of map).
+  -- force's unlocked ones first; nil when none can (out of map). Kept for one
+  -- check: research changes what is unlocked.
   local remedy_cache = {}
   local function remedy(force, tile_name, tile_layers, mask)
     local k = tile_name..'|'..table.concat((function() local t = {} for l in pairs(mask) do t[#t+1] = l end table.sort(t) return t end)(), '+')
@@ -135,6 +136,7 @@ return function(api)
   -- name (tile), position, item?}}, details?}. p: the player, bot or platform
   -- proxy the real call would run as.
   function M.check(p, plan)
+    remedy_cache = {}
     local s, force = p.surface, p.force
     local on_platform = api.own_platform(p)
     local kind = plan.kind
