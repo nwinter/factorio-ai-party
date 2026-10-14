@@ -113,9 +113,10 @@ already targets your character.
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
   (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
-  or more of its capacity for 2 minutes, boilers whose fuel, with what their feeding inserters' sources hold, is under
-  20 minutes and running down (again under 10 and 5; each low boiler with its feeder and that source's count, or that
-  no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
+  or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
+  inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
+  as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that
+  source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
   idle logistic robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
@@ -123,7 +124,10 @@ already targets your character.
   repeated 5 or more times, what failed (by reason, top 3), alerts still open in your claims, and losses near where
   your character was (`review (last 2h): 412 actions: ...; time: 48% walking, 21% item moves, 9% building, 22%
   waits`, `repeated hauls: iron-plate (13,40) -> wooden-chest (89,-3) x38, ...`, `failed: 31 (...)`, ...);
-  `./fh call review` shows it any time.
+  `./fh call review` shows it any time. `science` is one line, at most every 5 minutes and only when it changed:
+  the research, labs working N of M, the pack the most labs hold none of with made and used per minute and the
+  first short step of its chain, the largest electric network's draw, capacity and headroom, and its boilers (how
+  many have fuel at their feeders; how many are under 20 minutes and not refilled, and the lowest).
   Each is shown once, so a command that sends replies to a file you don't read loses them. A change to your board
   item, a plan line set for you, or a tell also ends your `sleep`.
 - Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished
