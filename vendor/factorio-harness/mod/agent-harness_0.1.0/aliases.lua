@@ -23,10 +23,12 @@ return function(api)
     ores = {name='resource', ore='resource', resources='resource', center='position', centre='position', min='min_amount', amount='min_amount'},
     board_post = {text='title', name='title', step='steps'},
     board_update = {steps='step'},
-    recipes = {search='prefix', name='prefix', recipe='prefix', filter='prefix'},
+    recipes = {search='prefix', name='prefix', recipe='prefix', filter='prefix', item='prefix'},
+    -- observe scope=craftable {item} (Gemini, shift10: 5 refusals): the recipes asked about.
+    craftable = {item='recipes', recipe='recipes', name='recipes'},
     technologies = {search='prefix', name='prefix', filter='prefix', technology='prefix'},
     mine = {entity='name'},
-    transfer = {from='position', target='position'},
+    transfer = {target='position', amount='count', quantity='count', qty='count'},
     inspect = {target='position'},
     configure = {target='position', auto_launch='send_to_orbit_automatically', planet='surface', mode='filter_mode', filter='filters'},
     launch = {planet='surface'},
@@ -39,8 +41,9 @@ return function(api)
   }
   -- A project's changes (board.lua board_update).
   local PROJECT_CHANGES = {'step', 'done', 'undone', 'remove_step', 'goal', 'handoff', 'areas'}
-  -- A one-name list given where a name is taken: its name.
+  -- A one-name list given where a name is taken: its name; one name given where a list is taken: a list of it.
   local SINGLE = {prefix=true}
+  local LISTED = {recipes=true}
   -- Actions whose positions is a list of targets of the same move or read.
   local LISTS = {transfer=true, collect=true, feed=true, inspect=true, rearm=true, refuel=true, repair=true}
   -- transfer direction names for the same two moves.
@@ -102,14 +105,40 @@ return function(api)
     -- ({to_entity={x,y}}, Haiku shift09): the direction, and the position. A direction named the other way round
     -- (from_entity, to_chest ...) is its to_entity/to_player name.
     if action == 'transfer' then
+      -- The same target named twice (Muse, shift11 17:18: position and to_entity, then position and to, both at the
+      -- silo, 8 refusals during a rocket load): the one position, and the side it names.
+      for _, d in ipairs{'to_entity', 'from_entity', 'to', 'from'} do
+        local v = out[d]
+        if is_pos(v) and is_pos(out.position) and xy(v).x == xy(out.position).x and xy(v).y == xy(out.position).y and out.pick == nil then
+          local real = (d == 'to' or d == 'to_entity') and 'to_entity' or 'to_player'
+          if out.direction == nil or out.direction == real or DIRECTION[out.direction] == real then
+            out[d] = nil; out.direction = real
+            notes[#notes+1] = d .. ' at the same place as position is direction="' .. real .. '"'
+          end
+        end
+      end
+      -- to or from as the one target, without pick (pick takes to: where what it took is given): the position and
+      -- the side. Both given: a move between two entities, which only pick makes (the refusal shows it).
+      if out.pick == nil and out.position == nil and out.positions == nil then
+        if is_pos(out.to) and not is_pos(out.from) and (out.direction == nil or out.direction == 'to_entity') then
+          out.position, out.to, out.direction = xy(out.to), nil, 'to_entity'
+          notes[#notes+1] = 'to={x,y} without pick is position=... direction="to_entity"'
+        elseif is_pos(out.from) and not is_pos(out.to) and (out.direction == nil or out.direction == 'to_player') then
+          out.position, out.from, out.direction = xy(out.from), nil, 'to_player'
+          notes[#notes+1] = 'from={x,y} without pick is position=... direction="to_player"'
+        end
+      end
       if type(out.direction) == 'string' and DIRECTION[out.direction] then
         notes[#notes+1] = 'direction ' .. out.direction .. ' is ' .. DIRECTION[out.direction]
         out.direction = DIRECTION[out.direction]
       end
+      -- A place to take from and one to give to (Luna, shift11: from_entity and to_entity): a move between two
+      -- entities, which only pick makes; neither is taken as the target (the refusal shows the pick form).
+      local two = (is_pos(out.from_entity) or is_pos(out.from)) and (is_pos(out.to_entity) or is_pos(out.to))
       for _, d in ipairs{'to_player', 'to_entity', 'from_entity', 'from_player'} do
         local v, real = out[d], DIRECTION[d] or d
         local where = is_pos(v) and 'position' or is_list(v) and 'positions' or nil
-        if (v == true or (where and out[where] == nil)) and (out.direction == nil or out.direction == real) then
+        if not (two and where) and (v == true or (where and out[where] == nil)) and (out.direction == nil or out.direction == real) then
           out[d] = nil; out.direction = real
           if where then out[where] = v end
           notes[#notes+1] = d .. (where and '={x,y}' or '=true') .. ' is direction="' .. real .. '"' .. (where and ' ' .. where .. '=...' or '')
@@ -170,6 +199,7 @@ return function(api)
       if out[wrong] ~= nil and out[right] == nil and not takes(view, wrong) and takes(view, right) then
         local v = out[wrong]
         if SINGLE[right] and type(v) == 'table' and #v == 1 then v = v[1] end
+        if LISTED[right] and type(v) == 'string' then v = {v} end
         out[right], out[wrong] = v, nil
         notes[#notes+1] = wrong .. ' is ' .. right
       end

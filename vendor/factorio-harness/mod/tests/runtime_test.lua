@@ -2003,6 +2003,7 @@ end
 body.position={x=-4,y=-28}
 local exit=call('build',{item='underground-belt',position={x=-5.5,y=-27.5},direction='west'})
 eq(made_ug.belt_to_ground_type,'output'); eq(exit.entity.underground,'output'); eq(exit.entity.flow,'west'); eq(exit.entity.paired_with.x,-3.5)
+eq(exit.entity.belt,'moves items west to (-6.5,-27.5) (no belt takes them there: they stop at its end); fed underground from (-3.5,-27.5)')
 entrance.neighbours=nil
 eq(call('build',{item='underground-belt',position={x=-5.5,y=-27.5},direction='east'}).entity.unpaired,true) -- flowing the other way
 eq(made_ug.belt_to_ground_type,'input')
@@ -2061,6 +2062,34 @@ do
   prototypes.entity,prototypes.item,prototypes.get_item_filtered=entity_protos,item_protos,filtered
   p.surface.can_place_entity,p.surface.create_entity,p.surface.find_logistic_network_by_position=can,create,net
 end
+-- Placed belt ghosts: the last one says where it moves items, read once the call's ghosts stand (beltflow.lua;
+-- Grok, shift11: a belt facing south read as feeding the tile at lower y).
+;(function()
+  local entity_protos=prototypes.entity
+  local can,create,find=p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered
+  local belt={name='transport-belt',type='transport-belt',items_to_place_this={{name='transport-belt',count=1}}}
+  prototypes.entity={['transport-belt']=belt}
+  local made={}
+  p.surface.can_place_entity=function() return true end
+  p.surface.create_entity=function(a)
+    local g={valid=true,name='entity-ghost',type='entity-ghost',ghost_type='transport-belt',ghost_name=a.inner_name,ghost_prototype=belt,
+      position=a.position,direction=a.direction,surface=p.surface,force=p.force}
+    made[#made+1]=g; return g
+  end
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    if type(f.type)=='table' and f.area and f.area[1] then
+      for _,g in ipairs(made) do
+        if g.position.x>=f.area[1][1] and g.position.x<=f.area[2][1] and g.position.y>=f.area[1][2] and g.position.y<=f.area[2][2] then out[#out+1]=g end
+      end
+    end
+    return out
+  end
+  local r=call('place_ghosts',{entities={{name='transport-belt',position={x=20.5,y=4.5},direction='south'},{name='transport-belt',position={x=20.5,y=5.5},direction='south'}}})
+  eq(r.placed,2,r.failed and r.failed[1].error); eq(r.last_belt,'transport-belt (20.5,5.5): moves items south to (20.5,6.5); fed from (20.5,4.5)')
+  prototypes.entity=entity_protos
+  p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered=can,create,find
+end)()
 -- A ghost goes over trees and rocks and marks them, though the engine's check
 -- refuses them (shake3: "placement blocked by tree-08" from place_ghosts),
 -- and over a stump, which stays until the build (out of reach here); anything
@@ -3231,5 +3260,126 @@ end)()
   assert(#path_requests>=n0+8,'the ladder, the near probe and the walk to the spot were asked')
   p.surface.find_entities_filtered,p.can_reach_entity,game.get_entity_by_unit_number,p.build_distance,p.reach_distance=find,reach,get,bd,rd
   p.position={x=0,y=0}
+end)()
+;(function()
+  -- Every example call runs as written (Luna, shift11: fh help launch / transfer; operator 10:50 item 6): the runtime's
+  -- own (describe's examples, printed by fh help) and every `fh call ACTION --args '{...}'` in docs/usage.md and
+  -- agent/team.md go through the argument check, and the alias fixer finds nothing to correct in them.
+  local function decode(text)
+    local i=1
+    local function ws() i=text:find('[^%s]',i) or #text+1 end
+    local value
+    local function str()
+      local out,j={},i+1
+      while true do
+        local c=text:sub(j,j)
+        if c=='"' then i=j+1; return table.concat(out) end
+        if c=='\\' then local n=text:sub(j+1,j+1); out[#out+1]=({n='\n',t='\t',r='\r'})[n] or n; j=j+2
+        else out[#out+1]=c; j=j+1 end
+        assert(j<=#text+1,'unterminated string')
+      end
+    end
+    value=function()
+      ws()
+      local c=text:sub(i,i)
+      if c=='{' then
+        local t={}; i=i+1; ws()
+        if text:sub(i,i)=='}' then i=i+1; return t end
+        while true do
+          ws(); local k=str(); ws(); assert(text:sub(i,i)==':','expected :'); i=i+1
+          t[k]=value(); ws()
+          local d=text:sub(i,i); i=i+1
+          if d=='}' then return t end
+          assert(d==',','expected , or } at '..i)
+        end
+      elseif c=='[' then
+        local t={}; i=i+1; ws()
+        if text:sub(i,i)==']' then i=i+1; return t end
+        while true do
+          t[#t+1]=value(); ws()
+          local d=text:sub(i,i); i=i+1
+          if d==']' then return t end
+          assert(d==',','expected , or ]')
+        end
+      elseif c=='"' then return str()
+      elseif text:sub(i,i+3)=='true' then i=i+4; return true
+      elseif text:sub(i,i+4)=='false' then i=i+5; return false
+      elseif text:sub(i,i+3)=='null' then i=i+4; return nil
+      else
+        local num=text:match('^-?%d+%.?%d*[eE]?[-+]?%d*',i)
+        assert(num and #num>0,'bad value at '..i..': '..text:sub(i,i+10))
+        i=i+#num; return tonumber(num)
+      end
+    end
+    return value()
+  end
+  local checked={}
+  local check
+  check=function(where,action,args)
+    local ok,err=pcall(runtime.check_args,action,args)
+    assert(ok,where..': '..action..' '..runtime.aliases.encode(args)..': '..tostring(err))
+    local _,_,fix=runtime.aliases.fix(action,args,runtime.takes)
+    assert(fix==nil,where..': '..action..' '..runtime.aliases.encode(args)..' is not as the runtime takes it: '..table.concat(fix and fix.notes or {},'; '))
+    checked[#checked+1]=action
+    -- queue steps inside (order_set, queue_submit, queue_repeat): each step too
+    for i,step in ipairs(type(args.steps)=='table' and args.steps or {}) do
+      if type(step)=='table' and type(step.action)=='string' then check(where..' step '..i,step.action,step.args or {}) end
+    end
+  end
+  local d=call('describe')
+  local n=0
+  for name,schema in pairs(d.actions) do
+    for i,ex in ipairs(schema.examples or {}) do n=n+1; check('describe '..name..' example '..i,name,ex) end
+  end
+  assert(d.actions.launch.examples and d.actions.transfer.examples,'launch and transfer carry examples')
+  local docs,found=0,0
+  for _,path in ipairs({'docs/usage.md','../../agent/team.md'}) do
+    -- (the compacted-module run works in a copy without the docs: describe's examples only there)
+    local f=io.open(path)
+    local text=f and f:read('a') or ''
+    if f then f:close(); found=found+1 end
+    for action,json in text:gmatch("fh call ([%w_]+) %-%-args '(%b{})'") do
+      assert(d.actions[action],path..': fh call '..action..' is no action')
+      -- placeholders: a bare N is a number
+      local args=decode((json:gsub('([:%[,]%s*)N([,%]}])','%11%2')))
+      docs=docs+1; check(path,action,args)
+    end
+  end
+  assert(n>=20 and (found==0 or docs>=15),'examples checked: '..n..' in describe, '..docs..' in the docs')
+end)()
+;(function()
+  -- Argument refusals name the form that works, with the caller's own values (Muse, Luna, shift11; operator 11:02).
+  -- Two places, to take from and to give to: the pick form.
+  fails(function() call('transfer',{from_entity={x=52.5,y=45.5},to_entity={x=65.5,y=14.5},item='agricultural-science-pack',count=1000}) end,
+    [[for transfer; valid: ]])
+  fails(function() call('transfer',{from_entity={x=52.5,y=45.5},to_entity={x=65.5,y=14.5},item='agricultural-science-pack',count=1000}) end,
+    [[; for this call: fh call transfer --args '{"count":1000,"item":"agricultural-science-pack","pick":"first_with_stock","positions":[{"x":52.5,"y":45.5}],"to":{"x":65.5,"y":14.5}}']])
+  -- to on another entity than position's (Muse 17:18:55 named the silo twice; on its own tiles the call runs as a
+  -- give there): a move between the two, which pick makes.
+  fails(function() call('transfer',{position={x=15.5,y=59.5},item='rocket-fuel',count=50,direction='to_entity',to={x=30.5,y=60.5},inventory='rocket_silo_rocket'}) end,
+    [[items and to go with pick (pick + positions + item or items + to: take at the first listed place holding it, give at to); for this call: fh call transfer --args '{"count":50,"item":"rocket-fuel","pick":"first_with_stock","positions":[{"x":15.5,"y":59.5}],"to":{"x":30.5,"y":60.5}}']])
+  -- items: one item a call.
+  fails(function() call('transfer',{position={x=35.5,y=35.5},direction='to_player',items={pipe=16,['small-electric-pole']=8}}) end,
+    [[for this call: fh call transfer --args '{"count":16,"direction":"to_player","item":"pipe","position":{"x":35.5,"y":35.5}}' (transfer moves one item a call: 2 named, one call each; or pick with items, the first a place holds)]])
+  -- Another action's unknown argument: its example.
+  fails(function() call('technologies',{pack='electromagnetic-science-pack'}) end,
+    [[unknown argument pack for technologies; valid: available, limit, prefix; e.g. fh call technologies --args '{"prefix":"automation"}']])
+  -- A range says the range and the value.
+  fails(function() call('nearest',{name='iron-ore',radius=500}) end,[[radius out of range: a whole number 1..128, got 500; e.g. fh call nearest --args '{"name":"iron-ore","radius":64}']])
+  -- launch without its silo (Luna 17:43): the silos there, a ready rocket first, and the call.
+  local find=p.surface.find_entities_filtered
+  defines.rocket_silo_status=defines.rocket_silo_status or {building_rocket=1,rocket_ready=9}
+  local proto={rocket_parts_required=50}
+  p.surface.find_entities_filtered=function(f)
+    if f.type=='rocket-silo' then
+      return {{valid=true,name='rocket-silo',position={x=14.5,y=140.5},rocket_silo_status=defines.rocket_silo_status.building_rocket,rocket_parts=12,prototype=proto},
+        {valid=true,name='rocket-silo',position={x=65.5,y=14.5},rocket_silo_status=defines.rocket_silo_status.rocket_ready,rocket_parts=0,prototype=proto}}
+    end
+    return find(f)
+  end
+  fails(function() call('launch',{platform='Sunward'}) end,
+    [[launch takes the silo: position (or unit_number); e.g. fh call launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'; silos on ]])
+  fails(function() call('launch',{platform='Sunward'}) end,[[: rocket-silo (65.5,14.5) rocket ready; rocket-silo (14.5,140.5) building_rocket, parts 12/50]])
+  p.surface.find_entities_filtered=find
 end)()
 print('runtime: '..assertions..' assertions passed')

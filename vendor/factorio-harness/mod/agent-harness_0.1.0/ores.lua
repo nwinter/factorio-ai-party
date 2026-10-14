@@ -30,6 +30,9 @@ return function(api)
   M.CELL, M.FLUID_CELL, M.NEST_RANGE, M.REFRESH_TICKS = CELL, FLUID_CELL, NEST_RANGE, REFRESH_TICKS
   -- Work units: an engine call or an entity read is 1.
   M.CALL_BUDGET, M.TICK_BUDGET = 400, 400
+  -- The rows read live (refresh below): the chunks under them read again within LIVE_BUDGET units a call, unless
+  -- read in the last LIVE_FRESH ticks; at most MAX_UNDER drills with no_minable_resources checked for ore under them.
+  M.LIVE_BUDGET, M.LIVE_FRESH, M.MAX_UNDER = 6000, 300, 64
   -- Not buildings: what "our nearest building" skips (threat.lua's list, and
   -- the transient entities a force's find returns).
   local NOT_BUILDING = {character=true, car=true, ['spider-vehicle']=true, locomotive=true, ['cargo-wagon']=true,
@@ -486,6 +489,122 @@ return function(api)
     return m < 1 and math.floor(ticks/60)..' s ago' or m..' min ago'
   end
 
+  -- The rows read live (Sonnet, shift11 16:16: 26 drills on Vulcanus coal said no_minable_resources and he took the
+  -- patch for depleted while it held 659k coal around them; at 16:29 the read still showed 26 miners after he had
+  -- removed them): the chunks under each row's patch, nearest row first, are read again now within LIVE_BUDGET units.
+  -- Whether any chunk was read.
+  local function refresh(entry, surface, force, rows, limit)
+    local budget, any, seen = M.LIVE_BUDGET, false, {}
+    for i = 1, math.min(limit, #rows) do
+      local q = rows[i].q
+      for cx = math.floor(q.l/32), math.floor((q.r-1)/32) do
+        for cy = math.floor(q.t/32), math.floor((q.b-1)/32) do
+          local k = ckey(cx, cy)
+          local d = entry.dense
+          if budget <= 0 then return any end
+          if not seen[k] and not (d and d.cx == cx and d.cy == cy) then
+            seen[k] = true
+            local t = entry.chunks[k]
+            if not t or game.tick-t > M.LIVE_FRESH then
+              local n = surface.count_entities_filtered{area={{cx*32, cy*32}, {cx*32+32, cy*32+32}}, type='resource'}
+              budget = budget-1
+              if n < budget then
+                -- The ore only: the chunk's buildings, drills and nests stay as the pass read them (the drills on
+                -- each row are read live below).
+                local old = entry.data[k] or {}
+                local rec = {t=game.tick, by={}, cells={}, buildings=old.buildings, drills=old.drills, enemies=old.enemies}
+                local units = read_ore(surface, rec, cx*32, cy*32, 0, 32)
+                finish(rec)
+                budget, any = budget-units, true
+                -- Kept without a rebuild of the patches (a few milliseconds each, every call while drills mine): the
+                -- rows count their own tiles and amount from it (recount); the next pass's rebuild takes it in.
+                if not entry.chunks[k] then entry.count = entry.count+1 end
+                entry.chunks[k] = rec.t
+                entry.data[k] = (rec.cells or rec.buildings or rec.drills or rec.enemies) and rec or nil
+              end
+            end
+          end
+        end
+      end
+    end
+    return any
+  end
+  -- A patch's tiles and amount from the chunks under it as last read: the cells of its resource inside its box.
+  local function recount(entry, q)
+    local tiles, amount = 0, 0
+    for cx = math.floor(q.l/32), math.floor((q.r-1)/32) do
+      for cy = math.floor(q.t/32), math.floor((q.b-1)/32) do
+        local rec = entry.data[ckey(cx, cy)]
+        for _, c in ipairs(rec and rec.cells or {}) do
+          if c.name == q.name and c.l >= q.l and c.r <= q.r and c.t >= q.t and c.b <= q.b then
+            tiles, amount = tiles+c.n, amount+c.amount
+          end
+        end
+      end
+    end
+    return tiles, amount
+  end
+  -- When the chunks under a patch were read: the oldest of them, in ticks ago.
+  local function age(entry, q)
+    local oldest = 0
+    for cx = math.floor(q.l/32), math.floor((q.r-1)/32) do
+      for cy = math.floor(q.t/32), math.floor((q.b-1)/32) do
+        local t = entry.chunks[ckey(cx, cy)]
+        if t then oldest = math.max(oldest, game.tick-t) end
+      end
+    end
+    return oldest
+  end
+  local status_names
+  local function status_name(s)
+    if not status_names then
+      status_names = {}
+      for k, v in pairs(try(function() return defines.entity_status end) or {}) do status_names[v] = k end
+    end
+    return s and status_names[s] or 'unknown'
+  end
+  -- Our mining drills on a patch now, by status, and for each one with no_minable_resources the patch's ore still
+  -- under its mining area (none: mined out there). A drill counts when its mining area overlaps the patch's box and
+  -- it mines this resource or nothing. Returns count, {status = n}, [{x, y, tiles, amount}].
+  local function drills_on(surface, force, q, checks)
+    local by, under, n = {}, {}, 0
+    local found = surface.find_entities_filtered{area={{q.l-5, q.t-5}, {q.r+5, q.b+5}}, type='mining-drill', force=force}
+    for _, d in pairs(found) do
+      if d.valid then
+        local r = radius[d.name]
+        if not r then r = try(function() return d.prototype.mining_drill_radius end) or 1; radius[d.name] = r end
+        local x, y = d.position.x, d.position.y
+        if x+r > q.l and x-r < q.r and y+r > q.t and y-r < q.b then
+          local target = try(function() return d.mining_target end)
+          local mines = target and target.valid and target.name
+          if not mines or mines == q.name then
+            n = n+1
+            local st = status_name(d.status)
+            by[st] = (by[st] or 0)+1
+            if st == 'no_minable_resources' and checks.left > 0 then
+              checks.left = checks.left-1
+              local tiles, amount = 0, 0
+              for _, o in pairs(surface.find_entities_filtered{area={{x-r, y-r}, {x+r, y+r}}, type='resource', name=q.name}) do
+                tiles, amount = tiles+1, amount+o.amount
+              end
+              under[#under+1] = {x=x, y=y, tiles=tiles, amount=amount}
+            end
+          end
+        end
+      end
+    end
+    return n, by, under
+  end
+  -- {status = n} as 'working 12, no_minable_resources 10', most first.
+  local function by_text(by)
+    local list = {}
+    for k, v in pairs(by) do list[#list+1] = {k, v} end
+    table.sort(list, function(x, y) return x[2] > y[2] or x[2] == y[2] and x[1] < y[1] end)
+    for i, e in ipairs(list) do list[i] = e[2]..' '..e[1] end
+    return table.concat(list, ', ')
+  end
+  local function fmt(n) return tostring(round(n)):reverse():gsub('(%d%d%d)', '%1,'):reverse():gsub('^,', '') end
+
   function M.handlers.ores(p, a)
     a = a or {}
     local want
@@ -534,31 +653,64 @@ return function(api)
     if busy(entry) then api.state().ores_busy = true end
     -- Patches are built again when chunks were read since; while a pass is
     -- under way at most once a second (a rebuild is a few milliseconds).
-    if not entry.patches or (entry.built ~= entry.changed and (not busy(entry) or game.tick-entry.built_tick >= 60)) then
+    local function rebuild()
       entry.patches = M.build(entry.data, charted_fn(force, surface, entry))
       entry.built, entry.built_tick = entry.changed, game.tick
     end
-    local rows, totals, torder = {}, {}, {}
-    for _, q in ipairs(entry.patches) do
-      local t = totals[q.name]
-      if not t then t = {patches=0, amount=0, yield=q.yield ~= nil}; totals[q.name] = t; torder[#torder+1] = q.name end
-      t.patches = t.patches+1; t.amount = t.amount+(q.yield or q.amount)
-      if (not want or want[q.name]) and (not min or (q.yield or q.amount) >= min) then
-        rows[#rows+1] = {q=q, d=origin and to_patch(q, origin.x, origin.y) or nil}
+    if not entry.patches or (entry.built ~= entry.changed and (not busy(entry) or game.tick-entry.built_tick >= 60)) then rebuild() end
+    local function select()
+      local rows, totals, torder = {}, {}, {}
+      for _, q in ipairs(entry.patches) do
+        local t = totals[q.name]
+        if not t then t = {patches=0, amount=0, yield=q.yield ~= nil}; totals[q.name] = t; torder[#torder+1] = q.name end
+        t.patches = t.patches+1; t.amount = t.amount+(q.yield or q.amount)
+        if (not want or want[q.name]) and (not min or (q.yield or q.amount) >= min) then
+          rows[#rows+1] = {q=q, d=origin and to_patch(q, origin.x, origin.y) or nil}
+        end
       end
+      table.sort(rows, function(x, y)
+        local dx, dy = x.d or x.q.building_d or math.huge, y.d or y.q.building_d or math.huge
+        if dx ~= dy then return dx < dy end
+        if x.q.name ~= y.q.name then return x.q.name < y.q.name end
+        return x.q.tiles > y.q.tiles
+      end)
+      return rows, totals, torder
     end
-    table.sort(rows, function(x, y)
-      local dx, dy = x.d or x.q.building_d or math.huge, y.d or y.q.building_d or math.huge
-      if dx ~= dy then return dx < dy end
-      if x.q.name ~= y.q.name then return x.q.name < y.q.name end
-      return x.q.tiles > y.q.tiles
-    end)
+    -- The rows' chunks read again (each row counts its own tiles and amount from them below).
+    local rows, totals, torder = select()
+    refresh(entry, surface, force, rows, limit)
     local out = {}
+    local checks = {left=M.MAX_UNDER}
     for i = 1, math.min(limit, #rows) do
       local q, d = rows[i].q, rows[i].d
-      local row = {resource=q.name, centre=q.centre, box=box_text(q), miners=q.miners, chart_edge=q.chart_edge or nil}
-      if q.fluid then row.wells = q.tiles else row.tiles = q.tiles end
-      if q.yield then row.yield = q.yield..'%' else row.amount = q.amount end
+      local row = {resource=q.name, centre=q.centre, box=box_text(q), chart_edge=q.chart_edge or nil}
+      local old = age(entry, q)
+      row.read = old <= M.LIVE_FRESH and 'now' or ago(old)
+      local tiles, amount = q.tiles, q.amount
+      if not q.fluid and old <= M.LIVE_FRESH then tiles, amount = recount(entry, q) end
+      if q.fluid then row.wells = q.tiles else row.tiles = tiles end
+      if q.yield then row.yield = q.yield..'%' else row.amount = amount end
+      -- Our drills on it now, by status; those with no_minable_resources checked for ore under them.
+      local n, by, under = drills_on(surface, force, q, checks)
+      row.miners = n
+      if n > 0 then row.drills = by_text(by) end
+      if #under > 0 then
+        local bare, held = 0, {}
+        for _, u in ipairs(under) do
+          if u.tiles == 0 then bare = bare+1
+          elseif #held < 6 then held[#held+1] = string.format('(%g,%g) %d tiles %s', u.x, u.y, u.tiles, fmt(u.amount)) end
+        end
+        local parts = {}
+        if bare > 0 then
+          parts[#parts+1] = string.format('no %s left under %d of the %d drills with no_minable_resources (mined out there)',
+            q.name, bare, #under)
+        end
+        if #held > 0 then parts[#parts+1] = string.format('%s still under %s', q.name, table.concat(held, ', ')) end
+        if not q.yield then
+          parts[#parts+1] = string.format('the patch holds %s %s in %s tiles (read %s)', fmt(amount), q.name, fmt(tiles), row.read)
+        end
+        row.depleted_drills = table.concat(parts, '; ')
+      end
       if d then row.distance = round(d); row.direction = d > 0 and compass(origin, q.centre) or nil end
       if q.building_d then
         row.from_building = round(q.building_d)
@@ -595,7 +747,10 @@ return function(api)
     min_amount='optional: leave out patches with less left (oil and other infinite resources: their yield %)', limit='1..100 patches (default 20)',
     returns='read: patches [{resource, centre, box, tiles (fluids: wells), amount (left; oil and other infinite resources: yield, summed over the wells), distance and direction from you '
       ..'(or position; none on another surface), from_building (tiles from the patch to our nearest building) and building, spawners, worms '
-      ..'and nearest_nest within '..NEST_RANGE..' tiles, miners (our mining drills on it), chart_edge (ore reaches the edge of the charted map: '
+      ..'and nearest_nest within '..NEST_RANGE..' tiles, miners (our mining drills on it now), drills (them by status: working, no_minable_resources ...), '
+      ..'depleted_drills (the ones with no_minable_resources checked against the ore under their mining area: mined out there, or what is left '
+      ..'under them, and what the patch still holds), read (now: the chunks under the row were read in this call, else how long ago; '
+      ..'the rows nearest first are read again within a budget), chart_edge (ore reaches the edge of the charted map: '
       ..'it may go on past it)}] nearest first (on another surface: nearest our buildings first); count (patches that match), more, '
       ..'resources (patches and amount per resource), survey (chunks read: the first call on a surface reads the chunks around you '
       ..'and the rest is read a few chunks a tick, so later calls show every patch; a call 5 min after a pass began starts the next). '
