@@ -59,6 +59,7 @@ const help = `fh — Factorio agent CLI
   fh confess "text"                         A line for the stream audience only (teammates never see it); input as for say
   fh operator "text"                        A request to the operator (harness bugs, tools, viewer asks); input as for say
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
+                                            --fyi: no answer needed; it waits for their next reply and wakes nobody
   fh tells [--since SEQ]                    Tells you sent or received
   fh players [NAME] [--args '{"minutes":10}'] Human players on the map: where, group, what each built, removed, ordered, moved
   fh vote [no] mute|unmute|kick|ban|trust NAME "reason"
@@ -192,7 +193,7 @@ async function main() {
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
-    full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'},
+    full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'}, fyi:{type:'boolean'},
     'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'},
   }});
   let command = positionals[0];
@@ -342,6 +343,10 @@ async function main() {
     if (values.look !== undefined) {
       if (command !== 'say') throw new Error('--look applies to say');
       args.look = parseLook(values.look);
+    }
+    if (values.fyi) {
+      if (command !== 'tell') throw new Error('--fyi applies to tell');
+      args.fyi = true;
     }
     values.args = JSON.stringify(args);
     positionals.splice(1, positionals.length - 1, command);

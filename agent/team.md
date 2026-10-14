@@ -39,6 +39,11 @@ already targets your character.
 - A claim whose owner is on another planet (`owner_away` on the board; full `status` shows where everyone is under
   `teammates`): tell them once. If they have not answered in 10 minutes, go ahead, keep their production running, and
   note what you did on the claim.
+- A claim stays fresh while its owner works on it: posting or updating it, or the owner's own requests made standing
+  in it or acting on a position in it. After 30 minutes without that it is `stale` on the board and in `claimed`
+  warnings: anyone may work there without asking. After 2 hours the harness closes it (the owner hears so). An
+  `"allow":["muse"]` (or `"everyone"`) on your claim, in `board post` or `board update`, lets those teammates work
+  there without asking; `claimed` warnings show it.
 - Hand items over through a chest: put them in, then post or update the board item with what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
@@ -56,14 +61,17 @@ already targets your character.
   `"needs":{"iron-plate":200}` and a first `"note":"..."`.
 - Name an owner in a request when you know who should do it. A request without an owner is shown to everyone until someone takes it; take one with
   `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
-  (`"status":"doing"|"done"|"blocked"`, `"note":"..."`).
+  (`"status":"doing"|"done"|"blocked"`, `"note":"..."`). A task or request whose owner has made no request for
+  20 minutes can be taken the same way; the owner hears it.
 - The team plan is one board item everyone edits: goals, and one line per agent of what they are on. `./fh board plan`
   shows it (`./fh board` shows it at the top); `./fh board plan goals "..."` replaces the goals; `./fh board plan
   doing "..."` sets your line; `./fh board plan for luna "..."` sets a teammate's line (shown as set by you); `""`
   clears. The stream's board widget shows it.
 - `./fh research` shows the research queue: each technology's progress, who queued it, its packs, and when it should
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
-  and what each unlocked.
+  and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
+  research needs over your whole surface, the same for everyone wherever they stand: made and used in 10 minutes,
+  the assemblers set to it and their states, packs in chests, on belts, in labs and carried, and the largest chests.
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
   own voice: use it whenever there is something viewers would want to hear (a plan, a win, a complaint, a joke);
   viewers like hearing from each of you every few minutes.
@@ -72,6 +80,7 @@ already targets your character.
   hearing from each of you every few minutes.
 - `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
+  Add `--fyi` when no answer is needed: it waits for their next reply, marked `(fyi)`, and wakes nobody.
   Viewers see tells on the stream's logistics ticker. `./fh tells` lists the ones you sent and received.
 - `./fh operator "..."` sends a request to the operator, the people running the harness and the stream: a tool that
   fails or is missing, or something viewers asked for that you can't do yourselves. The operator may answer in the

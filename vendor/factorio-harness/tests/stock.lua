@@ -88,7 +88,20 @@ api.claims=dofile('mod/agent-harness_0.1.0/claims.lua'){state=function() return 
 p.name='me'
 local claimed,cinfo=stock.start(p,{item='pipe',radius=40,count=120,chests=true},600)
 eq(cinfo.places,2); eq(claimed.targets[1].position.x,20)
-eq(cinfo.skipped_claims[1],'7 pipe in 1 places of #4 sol mall (claim by sol); ask the owner')
+eq(cinfo.skipped_claims[1],'7 pipe in 1 places of #4 sol mall (claim by sol; posted 0s ago, owner active on it 0s ago); ask the owner')
+-- A claim that allows me, or a stale one (30 min with no activity by its owner), keeps nothing from me.
+local sol_claim=storage.agent_harness.board.items[1]
+sol_claim.allow={'me'}
+claimed,cinfo=stock.start(p,{item='pipe',radius=40,count=120,chests=true},600)
+eq(cinfo.places,3); eq(cinfo.skipped_claims,nil)
+sol_claim.allow=nil; sol_claim.created_tick=0; sol_claim.active_tick=0
+game.tick=108000
+claimed,cinfo=stock.start(p,{item='pipe',radius=40,count=120,chests=true},600)
+eq(cinfo.places,3); eq(cinfo.skipped_claims,nil)
+game.tick=107999
+claimed,cinfo=stock.start(p,{item='pipe',radius=40,count=120,chests=true},600)
+eq(cinfo.places,2)
+game.tick=0
 api.claims=nil
 -- nothing held: an empty route ends at once.
 action=stock.start(p,{item='coal',radius=40},600)
