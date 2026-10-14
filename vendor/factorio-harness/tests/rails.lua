@@ -232,8 +232,18 @@ fails(function() R.stop_spot(p,{position={x=1,y=1}}) end,'no straight north-sout
 reset(); for y=-9,9,2 do rail('straight-rail',1,y,0) end
 signals[1]={valid=true,name='rail-signal',position={x=2.5,y=-5.5}}
 c=R.stop_spot(p,{position={x=-1,y=1}})
-has(R.line_signals(p,c[1]),'the rail signals beside this line ((2.5,-5.5)) all serve trains heading north')
+has(R.line_signals(p,c[1]),'the rail signals of this line ((2.5,-5.5)) serve only trains heading north, so it runs one way and the game refuses a stop for trains heading south')
 eq(R.line_signals(p,R.stop_spot(p,{position={x=3,y=1}})[1]),nil)
+-- A built rail asks the engine: its segment's signals at either end, in and out.
+defines.rail_direction={front=0,back=1}
+local seg={valid=true,position={x=1,y=1},direction=0,
+  get_rail_end=function(d) return {location={direction=d==0 and 0 or 8}} end,
+  get_rail_segment_signal=function(d,in_else_out)
+    -- One signal: the out signal at the north end (trains heading north leave there).
+    if d==0 and in_else_out==false then return {position={x=2.5,y=-19.5}} end
+  end}
+has(R.line_signals(p,{heading=8,rail={e=seg}}),'the rail signals of this line ((2.5,-19.5)) serve only trains heading north')
+eq(R.line_signals(p,{heading=0,rail={e=seg}}),nil)
 
 -- The train readback: state names and why it waits.
 local T=dofile('mod/agent-harness_0.1.0/trains.lua'){}

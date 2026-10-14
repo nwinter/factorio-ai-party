@@ -180,20 +180,29 @@ return function(api)
     local out,seen={},{}
     local function add(t) if not seen[t] and #out<4 then seen[t]=true; out[#out+1]=t end end
     local area={left_top=ob.left_top,right_bottom=ob.right_bottom}
+    -- Only what the rail collides with (a robot flying over does not count).
+    local mine=prototypes.entity[name] and prototypes.entity[name].collision_mask
+    local function collides(e)
+      local ok,om=pcall(function() return (e.type=='entity-ghost' and e.ghost_prototype or e.prototype).collision_mask end)
+      if not (ok and om and mine) then return true end
+      for k in pairs(om.layers or {}) do if mine.layers and mine.layers[k] then return true end end
+      return false
+    end
+    local function at(pos) return fmt(math.floor(pos.x*10+0.5)/10,math.floor(pos.y*10+0.5)/10) end
     for _,e in pairs(s.find_entities_filtered{area=area,limit=24}) do
-      if e.valid and e.type~='resource' and e.type~='corpse' and e.type~='item-entity' and e.type~='fish' then
+      if e.valid and e.type~='resource' and e.type~='corpse' and e.type~='item-entity' and e.type~='fish' and e.type~='character' and collides(e) then
         local nm=e.type=='entity-ghost' and e.ghost_name or e.name
         local rail=PIECE_INDEX[nm]~=nil
         local same=rail and nm==name and math.abs(e.position.x-x)<0.01 and math.abs(e.position.y-y)<0.01 and norm(nm,e.direction)==norm(name,dir)
         local b=e.bounding_box
         local hit=b and (b.orientation==nil or b.orientation==0) and M.overlaps(ob,b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y)
         if b and b.orientation and b.orientation~=0 then hit=true end
-        if same then add((e.type=='entity-ghost' and 'a ghost of the same rail ' or 'the same rail ')..fmt(e.position.x,e.position.y))
-        elseif hit and not rail and e.type~='character' and not CLEARABLE[e.type] then
+        if same then add((e.type=='entity-ghost' and 'a ghost of the same rail ' or 'the same rail ')..at(e.position))
+        elseif hit and not rail and not CLEARABLE[e.type] then
           local what=e.type=='entity-ghost' and 'ghost '..nm or nm
           if e.force and e.force.name~='neutral' and e.force~=p.force then what=what..' of force '..e.force.name end
-          add(what..' '..fmt(e.position.x,e.position.y))
-        elseif hit and e.type=='character' then add('a character '..fmt(math.floor(e.position.x*10+0.5)/10,math.floor(e.position.y*10+0.5)/10)) end
+          add(what..' '..at(e.position))
+        end
       end
     end
     for _,t in pairs(s.find_tiles_filtered{area=area,limit=32}) do
@@ -382,7 +391,7 @@ return function(api)
       local c=closest
       local text={why}
       if c then
-        text[#text+1]=string.format('the nearest end reached is %s heading %s, %d tiles from %s',fmt(c.x,c.y),NAMES[c.d],math.floor(c.h+0.5),fmt(target.x,target.y))
+        text[#text+1]=string.format('the nearest end reached is %s heading %s, %.1f tiles from %s',fmt(c.x,c.y),NAMES[c.d],c.h,fmt(target.x,target.y))
         -- What blocks the pieces tried around there: each kind once, with
         -- where it stands and how many more.
         local kinds,order,seen_at={},{},{}
@@ -554,31 +563,48 @@ return function(api)
     table.sort(cands,function(u,v) return u.dist<v.dist end)
     return cands
   end
-  -- Rail signals beside the straight line a stop candidate's rail is on
-  -- (within 64 tiles along it), by side: a line signalled on one side only
-  -- runs one way, and the game refuses a stop for trains heading the other.
+  -- Why the game refuses a stop with nothing in the way: the rail's segment
+  -- has rail signals for trains heading the other way only (a line signalled
+  -- on one side runs one way). A built rail asks the engine for the signals
+  -- at its segment's ends; a rail ghost looks along its straight line
+  -- (64 tiles) for signals beside it.
   function M.line_signals(p,c)
-    local rp=c.rail.e.position
-    local ns=c.heading==0 or c.heading==8
-    local area=ns and {left_top={x=rp.x-2,y=rp.y-64},right_bottom={x=rp.x+2,y=rp.y+64}}
-      or {left_top={x=rp.x-64,y=rp.y-2},right_bottom={x=rp.x+64,y=rp.y+2}}
-    local sides={}
-    local function add(e)
-      local off=ns and e.position.x-rp.x or e.position.y-rp.y
-      -- North-south: east of the rail serves trains heading north; east-west:
-      -- south of it serves trains heading east.
-      local h=ns and (off>0 and 0 or 8) or (off>0 and 4 or 12)
-      sides[h]=sides[h] or {}
-      table.insert(sides[h],e)
-    end
-    for _,e in pairs(p.surface.find_entities_filtered{area=area,type={'rail-signal','rail-chain-signal'},force=p.force}) do add(e) end
-    for _,e in pairs(p.surface.find_entities_filtered{area=area,ghost_type={'rail-signal','rail-chain-signal'},force=p.force}) do add(e) end
     local want,other=c.heading,opposite(c.heading)
-    if (sides[want] and #sides[want]>0) or not (sides[other] and #sides[other]>0) then return nil end
+    local mine,theirs={},{}
+    local r=c.rail.e
+    if not c.rail.ghost and r.valid and r.get_rail_segment_signal then
+      local rd={}
+      for _,d in pairs(defines.rail_direction) do
+        local ok,en=pcall(r.get_rail_end,d)
+        if ok and en then rd[en.location.direction]=d end
+      end
+      if rd[want]==nil or rd[other]==nil then return nil end
+      local function add(list,d,in_else_out)
+        local ok,sg=pcall(r.get_rail_segment_signal,d,in_else_out)
+        if ok and sg then list[#list+1]=sg end
+      end
+      add(mine,rd[want],false); add(mine,rd[other],true)
+      add(theirs,rd[other],false); add(theirs,rd[want],true)
+    else
+      local rp=r.position
+      local ns=want==0 or want==8
+      local area=ns and {left_top={x=rp.x-2,y=rp.y-64},right_bottom={x=rp.x+2,y=rp.y+64}}
+        or {left_top={x=rp.x-64,y=rp.y-2},right_bottom={x=rp.x+64,y=rp.y+2}}
+      local function add(e)
+        local off=ns and e.position.x-rp.x or e.position.y-rp.y
+        -- North-south: east of the rail serves trains heading north;
+        -- east-west: south of it serves trains heading east.
+        local h=ns and (off>0 and 0 or 8) or (off>0 and 4 or 12)
+        table.insert(h==want and mine or theirs,e)
+      end
+      for _,e in pairs(p.surface.find_entities_filtered{area=area,type={'rail-signal','rail-chain-signal'},force=p.force}) do add(e) end
+      for _,e in pairs(p.surface.find_entities_filtered{area=area,ghost_type={'rail-signal','rail-chain-signal'},force=p.force}) do add(e) end
+    end
+    if #mine>0 or #theirs==0 then return nil end
     local list={}
-    for i,e in ipairs(sides[other]) do if i<=3 then list[#list+1]=fmt(e.position.x,e.position.y) end end
-    return string.format('the rail signals beside this line (%s%s) all serve trains heading %s, so it runs one way and the game refuses a stop for trains heading %s',
-      table.concat(list,' '),#sides[other]>3 and ' ...' or '',NAMES[other],NAMES[want])
+    for i,e in ipairs(theirs) do if i<=3 then list[#list+1]=fmt(e.position.x,e.position.y) end end
+    return string.format('the rail signals of this line (%s%s) serve only trains heading %s, so it runs one way and the game refuses a stop for trains heading %s',
+      table.concat(list,' '),#theirs>3 and ' ...' or '',NAMES[other],NAMES[want])
   end
 
   M.schema={
