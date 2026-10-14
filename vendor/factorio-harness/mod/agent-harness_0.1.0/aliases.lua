@@ -42,7 +42,7 @@ return function(api)
   -- A one-name list given where a name is taken: its name.
   local SINGLE = {prefix=true}
   -- Actions whose positions is a list of targets of the same move or read.
-  local LISTS = {transfer=true, collect=true, feed=true, inspect=true, rearm=true, refuel=true}
+  local LISTS = {transfer=true, collect=true, feed=true, inspect=true, rearm=true, refuel=true, repair=true}
   -- transfer direction names for the same two moves.
   local DIRECTION = {from_entity='to_player', from_player='to_entity', to_chest='to_entity', from_chest='to_player',
     to_container='to_entity', from_container='to_player', to_character='to_player', from_character='to_entity',

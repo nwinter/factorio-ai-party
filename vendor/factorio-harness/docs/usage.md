@@ -641,6 +641,18 @@ fh sleep 900 --until researched                       # ...or until the research
   that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
   enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
   200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same.
+- `repair` on an undamaged entity (Astra 03:42: a repair patrol logged 2481 `entity does not need repair` errors in a
+  shift, which hid the real failures) is ok: `{unchanged: "not damaged", name, position, health}`, nothing started, no
+  repair tool needed, `last` outcome `nothing_to_do`; a queue step with it succeeds and the plan goes on. Its health is
+  read in sight (32 tiles); reach applies only to a damaged one. A damaged target with no repair tool held still fails
+  (`no repair tool in inventory`).
+- `repair {"positions": [...]}` (1..64, each may carry `name` or `unit_number`) or `{"area": {left_top, right_bottom}}`
+  (up to 128x128: our entities with health in it): one timed action (`ticks` 1..36000, default 3600) through every
+  damaged one, nearest first, walking to each out of reach. The reply: `targets`, `damaged`, `already_full`, `failed` and
+  `first_error` (positions naming no entity); none damaged is `unchanged` as above. `last`: `repaired`, `already_full`
+  (also those full by the time it got there), `unreached` (no path), `lost` (gone), `left`, and `tally` (`repaired 2,
+  1 already full, 1 not reached`); outcomes `repair_completed` | `timed_out` | `repair_tool_exhausted`. With damaged
+  targets and no repair tool held it fails before starting: `no repair tool in inventory (1 of 3 targets damaged)`.
 - The game repairs a platform's entities itself, one entity at a time, with repair packs from the hub; `repair` refuses
   platform targets (`platform`, or standing on a platform) with that reason. `platforms` and `inspect` of the
   hub show `repair_packs` (in the hub, or `none`) and `damaged` (`gun-turret (-6,0) 53/400`, most damaged first, 3 per

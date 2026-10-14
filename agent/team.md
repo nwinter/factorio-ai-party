@@ -153,6 +153,8 @@ already targets your character.
   90-degree turn clockwise (`reverse` counter-clockwise, `direction` a facing to turn to) and replies `before`/`after`.
   `mine` at a mined-out resource tile mines the nearest tile of the same resource within `radius` (default 8), one in
   reach first, and names it in `instead`. `fh research` times (`done_in`) use the last minute's lab throughput.
+  `repair` on an undamaged entity is ok with `unchanged: "not damaged"`; `repair` takes `positions` or `area` and
+  reports `repaired` and `already_full`.
 - What you take over a personal request's max goes to your trash slots: `transfer`, `collect` and `pickup` say how much
   (`trash`); `"up_to": true` stops at the max, `"keep_max": true` refuses the take. A paste leaves the requests of a hub
   or requester chest it lands on (`requests_kept`).

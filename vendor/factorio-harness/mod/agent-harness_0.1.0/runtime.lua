@@ -287,6 +287,16 @@ local function finish(index, outcome)
       last.left=math.max(0,#action.targets-action.index+1)>0 and #action.targets-action.index+1 or nil
     end
   end
+  -- repair over positions or an area: repaired against already full, and what was not reached.
+  if action and action.kind=='repair' and action.targets then
+    local last,left=s.last[index],#action.targets-action.index+1
+    last.repaired=action.repaired; last.already_full=action.already_full
+    last.lost=action.lost>0 and action.lost or nil; last.unreached=action.unreached>0 and action.unreached or nil
+    last.left=left>0 and left or nil
+    last.tally=string.format('repaired %d, %d already full%s%s%s',action.repaired,action.already_full,
+      action.unreached>0 and string.format(', %d not reached',action.unreached) or '',action.lost>0 and string.format(', %d gone',action.lost) or '',
+      left>0 and string.format(', %d left (%s)',left,outcome) or '')
+  end
   -- A walk that ends on a belt: the game carries the character on (shift03).
   if action and action.kind~='drive' then s.last[index].on_belt=M.belt.note(body(M.lookup(index))) end
   stop(body(M.lookup(index)))
@@ -718,7 +728,10 @@ function handlers.describe()
         platform='optional platform name: place on that space platform (its hub builds ghosts from hub items); positions are platform coordinates, hub at 0,0',['repeat']='optional {count 1..64, dx, dy}: stamp the list count times, each shifted by dx,dy; per-copy rows',returns='placed, failed [{index,error}], bounds (construct defaults to them), obstacles_marked (trees/rocks under the ghosts, marked for deconstruction like a player placement; construct mines them); underground_warnings: an underground belt or pipe-to-ground ghost whose span crosses tiles an underground cannot pass under (lava, empty space), which stays unpaired; inserters_without_target [{name, position, missing, pickup, drop}] (first 16; inserters_without_target_count past them): inserter ghosts with nothing to take from or put into on a point once the call\'s ghosts stand'},
       construct={area='optional {left_top,right_bottom} <=256x256; default: ghosts from the last paste',ticks='1..216000 (default 36000)',note='builds every ghost in reach from inventory and hand-mines every entity marked for deconstruction (timed like mine; contents to inventory, stops with inventory_full), then walks to the free stand point (never on a footprint) covering the most remaining ghosts near the nearest one; blocked ghosts retry once after moving; trees/rocks under ghosts are marked and mined first; ghosts whose item is in the hand-crafting queue are awaited (status awaiting_craft), not missing; status reports built/mined/remaining/missing/failed and blockers (trees/rocks in the way of a ghost, marked and mined first, also when a build bumps into one: name, position, ghost, at, cleared); outcomes: constructed (everything done) | incomplete (ghosts left for missing items or failures; a plan step fails) | nothing_to_do (a success, completes at once) | inventory_full | timed_out'},
       move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: the engine pathfinder: a padded box on the tile grid (with a twin request avoiding belts, kept when at most 6 tiles or a quarter longer), then the character\'s own box from the nearest free tile centre, on the half-tile grid, and on the quarter-tile grid with a wider goal; when none finds a route the walk ends at once as unreachable (a target on ungenerated ground is steered to directly); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',note='never ends on a belt: arriving on one it steps to the nearest free tile without a belt within the arrival radius (else within 3 tiles)',combat='optional true or a radius 1..32 (default 20): fire at enemies in range while walking, as shoot auto does (needs ammunition), until the walk ends; status/last_combat report it (outcome move_ended, ammo_used)',status='last reports why (unreachable: closed in, with the area and what closes it in, or no path; blocked; timed_out), nearest_reachable and reachable_gap (its distance to the target), off_belt, path (off belts), steered (without a path), replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity) | unreachable (no route for the character: why, nearest_reachable) | blocked | timed_out'},
-      pickup={ticks='1..600 (default 30); over an area 1..36000 (default 3600)',area='optional {left_top,right_bottom} up to 64x64: pick up every item stack on the ground in it',position='optional centre of the square for radius (default you)',radius='optional 1..32 (default 8): the square around position, instead of area',items='optional 1..16 item names: only stacks of these',note='takes items on the ground within your pickup distance (stand on or next to them; refused when none is in reach); outcomes picked_up | duration_elapsed | inventory_full | nothing_in_reach, last.picked {item: count}. Over an area (area, position/radius or items): one stack every 6 ticks, walking to the nearest stack left in the area; refused when it holds none; returns item_stacks and items; outcomes picked_up (none left) | inventory_full | blocked (stacks it could not walk to: last.skipped; it stops after 8) | timed_out; last.picked, last.left (stacks still in the area)'},repair={position='{x,y}',ticks='1..600',item='repair-pack by default',platform='refused: the game repairs platform entities itself, one at a time, with repair packs from the hub; platforms {platform} and inspect of the hub list damaged and repair_packs'},
+      pickup={ticks='1..600 (default 30); over an area 1..36000 (default 3600)',area='optional {left_top,right_bottom} up to 64x64: pick up every item stack on the ground in it',position='optional centre of the square for radius (default you)',radius='optional 1..32 (default 8): the square around position, instead of area',items='optional 1..16 item names: only stacks of these',note='takes items on the ground within your pickup distance (stand on or next to them; refused when none is in reach); outcomes picked_up | duration_elapsed | inventory_full | nothing_in_reach, last.picked {item: count}. Over an area (area, position/radius or items): one stack every 6 ticks, walking to the nearest stack left in the area; refused when it holds none; returns item_stacks and items; outcomes picked_up (none left) | inventory_full | blocked (stacks it could not walk to: last.skipped; it stops after 8) | timed_out; last.picked, last.left (stacks still in the area)'},repair={position='{x,y}',ticks='1..600; with positions or area 1..36000 (default 3600)',item='repair-pack by default',
+        positions='or 1..64 {x,y} (each may carry name or unit_number): every damaged one, nearest first, walking to each (a timed action; outcomes repair_completed | timed_out | repair_tool_exhausted; last: repaired, already_full, unreached, lost, left, tally)',
+        area='or {left_top, right_bottom} up to 128x128: every entity of ours with health in it, as positions (at most 64 damaged)',
+        returns='an undamaged target (or none damaged among positions/area): ok with unchanged "not damaged", nothing started, no repair tool needed, last outcome nothing_to_do (a queue step goes on); with positions/area: targets, damaged, already_full, failed and first_error (positions that name no entity), until_tick; a damaged target with no repair tool held fails (no repair tool in inventory)',platform='refused: the game repairs platform entities itself, one at a time, with repair packs from the hub; platforms {platform} and inspect of the hub list damaged and repair_packs'},
       mine={position='{x,y}', ticks='1..600', name='optional', radius='1..32 (default 8): a resource tile at position that is mined out (the resource named, or the one an earlier mine at that position took): the tile of the same resource within radius of it, one in reach first, is mined instead; the reply\'s instead (and last.instead) names it', outcomes='target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       stock={item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance}; made_by (crafters set to a recipe making it); held (your inventory); summary line'},
@@ -1917,23 +1930,110 @@ function handlers.pickup(p,a)
   state().active[p.index]={kind='pickup',until_tick=game.tick+ticks,reach=reach}
   return {until_tick=game.tick+ticks}
 end
-function handlers.repair(p,a)
-  assert(a.platform==nil and not (p.surface and p.surface.platform),'repair cannot reach a space platform: '..(space and space.REPAIR_NOTE or ''))
-  local e=entity(p,a); friendly(p,e)
-  assert(e.health and e.health<e.max_health,'entity does not need repair')
-  local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
-  if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
-  local borrowed=false
+-- Repair (Astra 03:42: a patrol of repair steps logged 2481 "entity does not need repair" errors in a shift, which
+-- hid the real failures). An undamaged target is a success: unchanged, last nothing_to_do, no repair tool needed.
+-- positions or area: every damaged entity among them in one timed action, nearest first, walking to each, counted
+-- as repaired against already full. A damaged target with no repair tool held still fails.
+-- A block: its helpers take no top-level local slots (tests/locals.lua).
+do
+local MAX_REPAIR=64
+local function damaged(e)
+  local ok,hurt=pcall(function() return e.health~=nil and e.max_health~=nil and e.health<e.max_health end)
+  return ok and hurt
+end
+local function has_health(e)
+  local ok,yes=pcall(function() return e.health~=nil and (e.max_health or 0)>0 end)
+  return ok and yes
+end
+-- Puts a repair tool in the cursor (from the inventory); true when it was borrowed.
+local function hold_tool(p,a,why)
+  if p.cursor_stack.valid_for_read then
+    assert(p.cursor_stack.prototype.type=='repair-tool','cursor must hold a repair tool')
+    return false
+  end
+  local tool=p.get_main_inventory().find_item_stack(a.item or 'repair-pack')
+  assert(tool and tool.prototype.type=='repair-tool','no repair tool in inventory'..(why or ''))
+  assert(p.cursor_stack.swap_stack(tool),'cannot hold repair tool')
+  return true
+end
+-- Nothing to repair: the reply, and the last a finished action leaves (a --wait and a queue step see nothing_to_do).
+local function unchanged(p,out)
+  out.unchanged='not damaged'
+  local s=state(); s.last=s.last or {}
+  s.last[p.index]={kind='repair',outcome='nothing_to_do',tick=game.tick,unchanged=out.unchanged,already_full=out.already_full}
+  return out
+end
+-- A list action's next target: the current one counts as repaired (worked on and now full), already full (full
+-- before it was reached), or lost (gone).
+function M.repair_next(p,action)
+  local e=action.entity
+  if e and not e.valid then action.lost=action.lost+1
+  elseif e and action.working then action.repaired=action.repaired+1
+  elseif e then action.already_full=action.already_full+1 end
+  action.index=action.index+1; action.entity=action.targets[action.index]; action.working=nil; action.nav=nil
+  if not M.bots.is(p) then p.repair_state={repairing=false,position=p.position} end
+end
+function M.repair_done(e) return not (e and e.valid) or not damaged(e) end
+local function repair_list(p,a)
+  assert(a.position==nil and a.radius==nil,'give position, positions or area: one of them')
+  assert(a.positions==nil or a.area==nil,'give positions or area, not both')
+  local found,errors={},{}
+  if a.area~=nil then
+    assert(type(a.area)=='table' and a.area.left_top and a.area.right_bottom,'area requires left_top and right_bottom')
+    local lt,rb=position(a.area.left_top),position(a.area.right_bottom)
+    assert(lt.x<rb.x and lt.y<rb.y and rb.x-lt.x<=128 and rb.y-lt.y<=128,'area must be nonempty and at most 128x128')
+    for _,e in pairs(p.surface.find_entities_filtered{area={left_top=lt,right_bottom=rb},force=p.force}) do
+      if e.valid and e.type~='character' and has_health(e) then found[#found+1]=e end
+    end
+    assert(#found>0,string.format('no entity of ours with health in (%g,%g)-(%g,%g)',lt.x,lt.y,rb.x,rb.y))
+  else
+    assert(type(a.positions)=='table' and #a.positions>=1 and #a.positions<=MAX_REPAIR,'positions requires 1..'..MAX_REPAIR..' entries')
+    for _,pos in ipairs(a.positions) do
+      local ok,e=pcall(function()
+        local t=entity(p,{position=pos,name=type(pos)=='table' and pos.name or nil,unit_number=type(pos)=='table' and pos.unit_number or nil},true)
+        friendly(p,t)
+        return t
+      end)
+      if ok then found[#found+1]=e else errors[#errors+1]=reason(e) end
+    end
+  end
+  local todo,full={},0
+  for _,e in ipairs(found) do if damaged(e) then todo[#todo+1]=e else full=full+1 end end
+  local out={targets=#found,damaged=#todo,already_full=full,failed=#errors>0 and #errors or nil,first_error=errors[1]}
+  if #todo==0 then
+    assert(#found>0,errors[1] or 'no target')
+    return unchanged(p,out)
+  end
+  assert(#todo<=MAX_REPAIR,string.format('%d damaged entities; at most %d (a smaller area)',#todo,MAX_REPAIR))
+  table.sort(todo,function(x,y) return distance(p.position,x.position)<distance(p.position,y.position) end)
+  local ticks=integer(a.ticks,3600,1,36000,'ticks')
+  -- A missing tool fails before the running action is touched.
   if not p.cursor_stack.valid_for_read then
     local tool=p.get_main_inventory().find_item_stack(a.item or 'repair-pack')
-    assert(tool and tool.prototype.type=='repair-tool','no repair tool in inventory')
-    assert(p.cursor_stack.swap_stack(tool),'cannot hold repair tool')
-    borrowed=true
+    assert(tool and tool.prototype.type=='repair-tool',string.format('no repair tool in inventory (%d of %d targets damaged)',#todo,#found))
   end
-  assert(p.cursor_stack.prototype.type=='repair-tool','cursor must hold a repair tool')
+  if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+  local borrowed=hold_tool(p,a)
+  state().active[p.index]={kind='repair',entity=todo[1],targets=todo,index=1,repaired=0,already_full=full,lost=0,unreached=0,
+    borrowed_cursor=borrowed or M.bots.is(p),until_tick=game.tick+ticks}
+  out.until_tick=game.tick+ticks
+  return out
+end
+function handlers.repair(p,a)
+  assert(a.platform==nil and not (p.surface and p.surface.platform),'repair cannot reach a space platform: '..(space and space.REPAIR_NOTE or ''))
+  if a.positions~=nil or a.area~=nil then return repair_list(p,a) end
+  -- Seen first (health shows on hover), then reached: an undamaged target out of reach is unchanged too.
+  local e=entity(p,a,true); friendly(p,e)
+  assert(has_health(e),e.name..' has no health to repair')
+  if not damaged(e) then return unchanged(p,{name=e.name,position=e.position,health=e.health}) end
+  if not p.can_reach_entity(e) then error(M.out_of_reach(p,e),0) end
+  local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
+  if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
+  local borrowed=hold_tool(p,a)
   -- A bot's cursor is invisible to it: always put the tool back afterwards.
   state().active[p.index]={kind='repair',entity=e,borrowed_cursor=borrowed or M.bots.is(p),until_tick=game.tick+ticks}
   return {until_tick=game.tick+ticks}
+end
 end
 -- Hand-crafting what our machines already made wastes the character's time:
 -- stock of the product within STOCK_RADIUS is stated, and a craft of at least
@@ -6146,7 +6246,7 @@ function M.tick_body(event)
       action.told=from and kind..' by '..from or kind
       finish(index,kind)
     elseif event.tick>action.until_tick then
-      finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil) and 'timed_out' or 'duration_elapsed')
+      finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil or (action.kind=='repair' and action.targets~=nil)) and 'timed_out' or 'duration_elapsed')
     elseif action.kind=='wait_until' then
       if event.tick>=action.next_check then
         action.next_check=event.tick+FEED_CHECK
@@ -6211,6 +6311,31 @@ function M.tick_body(event)
             action.trashed=M.trash.count(p,action.trashed,name,q,n)
             if n>=count then item.destroy() else item.stack.count=count-n end
           end
+        end
+      end
+    elseif action.kind=='repair' and action.targets then
+      -- positions or area: the next damaged target once this one is full or gone; walk to one out of reach.
+      while action.entity and M.repair_done(action.entity) do M.repair_next(p,action) end
+      local e=action.entity
+      if not e then finish(index,'repair_completed')
+      elseif not p.can_reach_entity(e) then
+        if not action.nav then
+          action.nav={position=e.position,tolerance=math.max(1,(p.reach_distance or 10)-3),max_stalls=6,replans=0,stalled=0,last_position=p.position}
+          request_path(p,action.nav)
+        end
+        if navigate(p,action.nav) then
+          action.unreached=action.unreached+1; action.entity=nil
+          p.walking_state={walking=false,direction=defines.direction.north}
+          M.repair_next(p,action)
+        end
+      elseif not p.cursor_stack.valid_for_read or p.cursor_stack.prototype.type~='repair-tool' then finish(index,'repair_tool_exhausted')
+      else
+        if action.nav then action.nav=nil; p.walking_state={walking=false,direction=defines.direction.north} end
+        action.working=true
+        if M.bots.is(p) then M.bots.repair(p,e)
+        else
+          if p.selected~=e then p.selected=e end
+          if not p.repair_state.repairing then p.repair_state={repairing=true,position=e.position} end
         end
       end
     elseif action.kind=='repair' then

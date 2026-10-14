@@ -485,6 +485,48 @@ eq(bot('repair',{position={x=2,y=0},ticks=300}).until_tick,tick+300)
 advance(10); eq(furnace.health,110); eq(pack.durability,290)
 advance(100); eq(furnace.health,200); eq(bot('status',{}).last.outcome,'repair_completed')
 eq(pack.valid_for_read,false); eq(c2.items['repair-pack'],2) -- back in the inventory
+-- Astra 03:42 (2481 "entity does not need repair" errors in a shift from a repair patrol): an undamaged target is ok,
+-- unchanged, nothing started, last nothing_to_do; in a queue the steps succeed and the plan goes on.
+local r=bot('repair',{position={x=2,y=0}})
+eq(r.unchanged,'not damaged'); eq(r.until_tick,nil); eq(r.health,200)
+eq(bot('status',{}).last.outcome,'nothing_to_do'); eq(bot('status',{}).active,false)
+bot('queue_submit',{steps={{action='repair',args={position={x=2,y=0}}},{action='repair',args={position={x=2,y=0}}},{action='wait_ticks',args={ticks=1}}}})
+advance(3)
+local qh=bot('queue_status',{}).history
+eq(qh[#qh-2].action,'repair'); eq(qh[#qh-2].ok,true); eq(qh[#qh-2].result.unchanged,'not damaged'); eq(qh[#qh-1].ok,true); eq(qh[#qh].action,'wait_ticks')
+-- Positions or an area: every damaged one, nearest first, counted as repaired against already full.
+local f2={valid=true,name='stone-furnace',type='furnace',force=force,position={x=3,y=0},health=150,max_health=200,minable=true,prototype={repair_speed_modifier=1}}
+local f3={valid=true,name='stone-furnace',type='furnace',force=force,position={x=4,y=0},health=200,max_health=200,minable=true,prototype={repair_speed_modifier=1}}
+furnace.health=180
+surface.find_entities_filtered=function(f)
+  local all={furnace,f2,f3}
+  if f.position then
+    for _,e in ipairs(all) do if e.position.x==f.position.x and e.position.y==f.position.y then return {e} end end
+    return {}
+  end
+  return all
+end
+local list=bot('repair',{positions={{x=2,y=0},{x=3,y=0},{x=4,y=0}},ticks=600})
+eq(list.targets,3); eq(list.damaged,2); eq(list.already_full,1); eq(list.until_tick,tick+600)
+eq(bot('status',{}).active.kind,'repair')
+advance(200)
+local rl=bot('status',{}).last
+eq(rl.outcome,'repair_completed'); eq(rl.repaired,2); eq(rl.already_full,1); eq(rl.tally,'repaired 2, 1 already full')
+eq(furnace.health,200); eq(f2.health,200); eq(pack.valid_for_read,false)
+-- A list of positions given as position runs as positions (corrected says so).
+local as_list=bot('repair',{position={{x=2,y=0},{x=4,y=0}}})
+eq(as_list.targets,2); eq(as_list.unchanged,'not damaged'); assert(as_list.corrected,'corrected names the call as it ran')
+local area={left_top={x=1,y=-1},right_bottom={x=5,y=1}}
+local none=bot('repair',{area=area})
+eq(none.unchanged,'not damaged'); eq(none.already_full,3); eq(none.damaged,0); eq(bot('status',{}).last.outcome,'nothing_to_do')
+-- No repair pack: undamaged is still ok; a damaged target fails, single or in a list.
+c2.items['repair-pack']=0
+eq(bot('repair',{position={x=3,y=0}}).unchanged,'not damaged')
+f2.health=120
+fails(function() bot('repair',{position={x=3,y=0}}) end,'no repair tool in inventory')
+fails(function() bot('repair',{area=area}) end,'no repair tool in inventory (1 of 3 targets damaged)')
+fails(function() bot('repair',{area=area,positions={{x=3,y=0}}}) end,'give positions or area, not both')
+c2.items['repair-pack']=2; f2.health=200
 surface.find_entities_filtered=function() return {} end
 -- Removal kills the character (its corpse keeps the items) and forgets the bot.
 local removed=runtime.operator.bot_remove('opus')

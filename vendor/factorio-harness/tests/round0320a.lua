@@ -142,4 +142,47 @@ far.valid=false
 fails(function() grok('mine',{position={x=60.5,y=-50.5}}) end,'entity not found at (60.5,-50.5)')
 -- describe lists radius.
 assert(grok('describe',{}).actions.mine.radius:find('mined out',1,true))
+
+-- 5. repair over positions (Astra 03:42): a target in reach is repaired; one the character cannot walk to (this fake
+-- never moves it) counts as not reached, and the tally says so.
+local function furnace(x,y,health)
+  local e={valid=true,name='stone-furnace',type='furnace',force=force,position={x=x,y=y},health=health,max_health=200,minable=true,
+    bounding_box={left_top={x=x-0.9,y=y-0.9},right_bottom={x=x+0.9,y=y+0.9}},prototype={repair_speed_modifier=1}}
+  world[#world+1]=e
+  return e
+end
+body.can_reach_entity=function(e) return box_distance(body.position,e)<=(e.type=='resource' and 2.7 or 10) end
+body.position={x=0.5,y=0.5}
+local near=furnace(3,0,150)
+local unreachable=furnace(25,0,100)
+local whole=furnace(5,0,200)
+local pack={valid_for_read=false,prototype={type='repair-tool',speed=2},name='repair-pack',durability=300}
+local packs=1
+body.cursor_stack={valid_for_read=false,swap_stack=function() pack.valid_for_read=true; pack.count=1; packs=0
+  setmetatable(body.cursor_stack,{__index=pack}); body.cursor_stack.valid_for_read=nil; return true end}
+pack.drain_durability=function(n) pack.durability=pack.durability-n end
+pack.clear=function() pack.valid_for_read=false end
+body.get_main_inventory().find_item_stack=function(name) if name=='repair-pack' and packs>0 then return {count=packs,prototype=pack.prototype} end end
+body.get_main_inventory().insert=function(st) packs=packs+st.count; return st.count end
+body.repair_state={repairing=false}
+local rep=grok('repair',{positions={{x=25,y=0},{x=3,y=0},{x=5,y=0}},ticks=3000})
+eq(rep.damaged,2); eq(rep.already_full,1)
+advance(200)
+eq(near.health,200)
+-- The walk to (25,0) waits on a path this fake never answers: the time runs out with it left.
+eq(grok('status').active.kind,'repair')
+advance(2801)
+local rl=grok('status').last
+eq(rl.outcome,'timed_out'); eq(rl.repaired,1); eq(rl.already_full,1); eq(rl.left,1)
+eq(rl.tally,'repaired 1, 1 already full, 1 left (timed_out)')
+eq(unreachable.health,100)
+-- The engine answers that no path leads there (each request of the pathing ladder): not reached, and the list ends.
+grok('repair',{positions={{x=25,y=0}},ticks=3000})
+for _=1,40 do
+  advance(5)
+  runtime.on_event{name=defines.events.on_script_path_request_finished,tick=tick,id=1,path=nil,try_again_later=false}
+  if not grok('status').active then break end
+end
+rl=grok('status').last
+eq(rl.outcome,'repair_completed'); eq(rl.unreached,1); eq(rl.repaired,0); eq(rl.tally,'repaired 0, 0 already full, 1 not reached')
 print('round0320a: ok')
