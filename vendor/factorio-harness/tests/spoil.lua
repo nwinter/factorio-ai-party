@@ -106,8 +106,8 @@ nauvis.find_entities_filtered=function() error('nauvis has no egg flow: never se
 game.surfaces={nauvis=nauvis,gleba=gleba}
 setmetatable(game.surfaces,{__pairs=function(t) return next,{nauvis=nauvis,gleba=gleba},nil end})
 local function run(n) for _=1,n do game.tick=game.tick+1; S.tick(game.tick) end end
-run(1) -- anchors: the biochamber that breeds eggs (cell 0,0 of gleba); nauvis never searched
-eq(st.eggs.anchors['gleba|0,0'].x,0)
+run(4) -- anchors, a job walked in bands (walk.lua): the biochamber that breeds eggs (cell 0,0 of gleba); nauvis never searched
+eq(st.eggs.anchor_job,nil); eq(st.eggs.anchors['gleba|0,0'].x,0); eq(st.eggs.watched[1],'pentapod-egg'); eq(#st.eggs.watched,1)
 run(10)
 -- The chest and the biochamber share a cell: one place (the chest's eggs first), the far chest is not looked at.
 eq(#st.eggs.places,1); local place=st.eggs.places[1]
@@ -135,8 +135,15 @@ eq(st.eggs.seq,2); eq(place.news,2)
 lines=S.alert_lines(sol,hs,'sol')
 eq(#lines,1); has(lines[1],'the first hatch into big-wriggler-pentapod-premature in')
 has(S.news(sol,1,'sol'),'eggs hatching: 15 pentapod-egg')
--- Hatched (the stack gone): nothing left to tell.
+-- Hatched, while the biochamber's later eggs stay in the cell: a new batch, told again under 5 min.
 egg_chest_inv[1]={valid_for_read=false}
+game.tick=game.tick+1800
+run(12)
+place=st.eggs.places[1]
+eq(place.entity,'biochamber'); eq(place.count,3); eq(place.news,3); eq(st.eggs.seq,3)
+lines=S.alert_lines(sol,hs,'sol')
+eq(#lines,1); has(lines[1],'3 pentapod-egg in biochamber at (49.5,44.5)')
+-- All gone: nothing left to tell.
 bio.get_inventory=function() return inv{} end
 game.tick=game.tick+1800
 run(12)

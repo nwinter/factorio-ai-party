@@ -230,12 +230,13 @@ return function(api)
   local function cell_key(surface, pos) return surface .. '|' .. math.floor(pos.x / M.CELL) .. ',' .. math.floor(pos.y / M.CELL) end
   -- Every ANCHOR_TICKS: the cells around crafting machines whose recipe makes
   -- or uses an item that hatches, and which of those items flow anywhere (the
-  -- sweep checks only those, and any found before).
-  local function refresh_anchors(w, force, names)
-    local set = {}
-    for _, name in ipairs(names) do set[name] = true end
-    local anchors = {}
-    local live = {}
+  -- sweep checks only those, and any found before). A job of its own: the
+  -- surfaces where one flows, walked in bands of chunks a tick (walk.lua;
+  -- operator 04:00: whole-surface finds made background jobs burst).
+  local walk = api.walk or require('walk'){state=api.state}
+  local function start_anchors(w, force, names, tick)
+    local live, surfaces = {}, {}
+    for _, s in ipairs(flowing(force, names)) do surfaces[#surfaces+1] = s.name end
     for _, s in pairs(game.surfaces) do
       local stats = try(function() return force.get_item_production_statistics(s) end)
       for _, name in ipairs(names) do
@@ -245,18 +246,30 @@ return function(api)
     for _, p in ipairs(w.places or {}) do live[p.item:match('^[^@]+')] = true end
     local watched = {}
     for _, name in ipairs(names) do if live[name] then watched[#watched+1] = name end end
-    w.watched = watched
-    for _, s in ipairs(flowing(force, names)) do
-      for _, e in ipairs(try(function() return s.find_entities_filtered{force=force, type={'assembling-machine', 'furnace'}} end) or {}) do
-        local r = try(function() return e.get_recipe() end)
-        local uses = false
-        for _, list in ipairs{r and r.products or {}, r and r.ingredients or {}} do
-          for _, x in ipairs(list) do if set[x.name] then uses = true end end
-        end
-        if uses then anchors[cell_key(s.name, e.position)] = {surface=s.name, x=math.floor(e.position.x / M.CELL), y=math.floor(e.position.y / M.CELL)} end
-      end
+    w.anchor_job = {start=tick, surfaces=surfaces, i=1, anchors={}, watched=watched}
+  end
+  local function anchor_step(w, force, names)
+    local job = w.anchor_job
+    local name = job.surfaces[job.i]
+    if not name then
+      w.anchors, w.watched, w.anchor_tick, w.anchor_job = job.anchors, job.watched, job.start, nil
+      return
     end
-    w.anchors, w.anchor_tick = anchors, game.tick
+    local s = game.surfaces[name]
+    if not s then job.i = job.i + 1; job.walk = nil; return end
+    job.walk = job.walk or walk.start(s)
+    local list = walk.band(job.walk, s, {force=force, type={'assembling-machine', 'furnace'}})
+    if not list then job.i = job.i + 1; job.walk = nil; return end
+    local set = {}
+    for _, n in ipairs(names) do set[n] = true end
+    for _, e in ipairs(list) do
+      local r = try(function() return e.get_recipe() end)
+      local uses = false
+      for _, part in ipairs{r and r.products or {}, r and r.ingredients or {}} do
+        for _, x in ipairs(part) do if set[x.name] then uses = true end end
+      end
+      if uses then job.anchors[cell_key(s.name, e.position)] = {surface=s.name, x=math.floor(e.position.x / M.CELL), y=math.floor(e.position.y / M.CELL)} end
+    end
   end
   -- The background sweep, a stage a tick: cells (found, then read SLICE a
   -- tick), then characters and hubs, then the merge into places.
@@ -267,10 +280,11 @@ return function(api)
     local names = w.watched or all
     local force = api.force and api.force()
     if not force then return end
+    if w.anchor_job then return anchor_step(w, force, all) end
     local job = w.job
     if not job then
       if w.tick and tick - w.tick < M.SWEEP_TICKS then return end
-      if not w.anchor_tick or tick - w.anchor_tick >= M.ANCHOR_TICKS then refresh_anchors(w, force, all); return end
+      if not w.anchor_tick or tick - w.anchor_tick >= M.ANCHOR_TICKS then start_anchors(w, force, all, tick); return end
       if #names == 0 and #(w.places or {}) == 0 then w.tick = tick; return end
       local cells, seen = {}, {}
       for key, c in pairs(w.anchors or {}) do if not seen[key] then seen[key] = true; cells[#cells+1] = c end end
@@ -339,13 +353,16 @@ return function(api)
       elseif f.tick - game.tick <= M.WARN_TICKS then first.others = first.others + f.count end
     end
     -- A place crossing a mark (under 5 min, then under 1 min) is news, kept
-    -- on the place (its seq) until it hatches, for agents who reply later.
+    -- on the place (its seq) until it hatches, for agents who reply later. A
+    -- later first stack than the one told about (that one hatched or went) is
+    -- a new batch: its marks count again.
     local told = {}
     for _, f in ipairs(places) do
       local left = f.tick - game.tick
       local mark = left <= M.LAST_TICKS and 2 or (left <= M.WARN_TICKS and 1 or 0)
       local before = (w.told or {})[f.key]
-      if mark > (before and before.mark or 0) then w.seq = (w.seq or 0) + 1; before = {mark=mark, seq=w.seq} end
+      if before and f.tick > (before.tick or 0) + 600 then before = nil end
+      if mark > (before and before.mark or 0) then w.seq = (w.seq or 0) + 1; before = {mark=mark, seq=w.seq, tick=f.tick} end
       if before then told[f.key] = before; f.news = before.seq end
     end
     w.places, w.told, w.tick, w.job = places, told, job.start, nil
