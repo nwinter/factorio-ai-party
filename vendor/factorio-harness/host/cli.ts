@@ -752,7 +752,9 @@ async function main() {
         path: last.path, steered: last.steered, pocket: last.pocket, escaped: last.escaped, mine_to_get_out: last.mine_to_get_out,
         // a spot it reaches within build reach when it gave up, a squeeze walked along gaps, each leg of a via walk (round0620c)
         build_spot: last.build_spot, build_spot_note: last.build_spot_note, build_spot_squeeze: last.build_spot_squeeze, squeezed: last.squeezed,
-        legs: legLines(last.legs)} : {}),
+        legs: legLines(last.legs),
+        // a walk to a target's reach: how near it ended, an end within reach counted as arrived, a spot walked to (movetarget)
+        reach: last.reach, reach_note: last.reach_note, reach_walk: last.reach_walk} : {}),
       // vehicle drive: the path it followed and a back-up (vehicles.lua).
       ...(last?.kind === 'drive' ? {path_length: last.path_length, backed_up: last.backed_up} : {}),
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,

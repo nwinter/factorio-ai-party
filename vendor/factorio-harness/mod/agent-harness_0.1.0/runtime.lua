@@ -161,6 +161,12 @@ local function finish(index, outcome)
   local s=state()
   s.last=s.last or {}
   local action=s.active[index]
+  -- A walk to a target's reach that ends another way while within it counts as arrived (Astra, operator 07:55:
+  -- an unreachable end within transfer reach broke an && chain).
+  if action and action.kind=='move_to' and action.reach_target and M.REACH_ENDS[outcome] then
+    local pb=body(M.lookup(index))
+    if pb and pb.valid and M.in_reach(pb,action.reach_target)==true then action.reach_ended=outcome; outcome='arrived' end
+  end
   -- A walk around enemies ends at its goal, not its current leg's corner (avoid.lua).
   if action and action.foes and action.foes.goal then action.position=action.foes.goal; action.tolerance=action.foes.tolerance or action.tolerance end
   -- The goal lets a caller tell its own completion from one that replaced it.
@@ -212,6 +218,17 @@ local function finish(index, outcome)
     local pb=body(M.lookup(index))
     local here=pb and pb.valid and pb.character and pb.character.valid and pb.position
     local at=M.pathing.at
+    -- A target's reach: how near it ended, how it got there.
+    local rt=action.reach_target
+    if rt then
+      last.target=rt.center
+      last.reach=here and M.reach_text(pb,rt) or nil
+      if action.reach_ended then last.reach_note=string.format('within its reach already when the walk ended %s',action.reach_ended) end
+      local rw=action.reach_walk
+      if rw then
+        last.reach_walk=string.format('no path led within reach of it (%s); walked toward %s, a spot within reach',rw.why or 'no path',at(rw.to))
+      end
+    end
     if outcome=='unreachable' then
       last.why=action.why
       if action.reachable then
@@ -221,10 +238,12 @@ local function finish(index, outcome)
       -- A spot it can reach within build reach of the goal, or none (pathing.lua).
       local sp=action.spot
       if sp and sp.none then
-        last.build_spot_note=string.format('no spot the character can reach is within build reach (%g tiles) of %s',sp.reach,at(sp.goal))
+        last.build_spot_note=string.format('no spot the character can reach is within %s (%g tiles) of %s',sp.label or 'build reach',sp.reach,at(sp.goal))
       elseif sp then
         last.build_spot={x=math.floor(sp.pos.x*10+0.5)/10,y=math.floor(sp.pos.y*10+0.5)/10}
-        local head=string.format('%s is reachable and within build reach of %s: %.1f tiles (build reach %g)',at(sp.pos),at(sp.goal),distance(sp.pos,sp.goal),sp.reach)
+        local label=sp.label or 'build reach'
+        local head=string.format('%s is reachable and within %s of %s: %.1f tiles (%s %g)',at(sp.pos),label,at(sp.goal),
+          action.reach_box and M.pathing.goal_dist(action,sp.pos) or distance(sp.pos,sp.goal),label,sp.reach)
         local call=string.format('move_to {position=%s%s, squeeze=true}',at(sp.pos),sp.via and ', via=['..at(sp.via)..']' or '')
         local gap=string.format('a gap narrower than %.1f tiles%s',sp.width or 0.7,#(sp.by or {})>0 and ' ('..table.concat(sp.by,', ')..')' or '')
         if sp.room and not sp.searched then last.build_spot_note=head
@@ -268,8 +287,9 @@ local function finish(index, outcome)
     M.avoid.report(last,action)
     local ob=action.off_belt
     if ob then
+      local where=ob.reach and 'within reach of the target' or 'within the arrival radius'
       last.off_belt=ob.spot and string.format('arrived on a %s; stepped to %s, the nearest free tile without a belt %s',ob.belt,at(ob.spot),
-        ob.within and 'within the arrival radius' or '(none within the arrival radius)') or ('arrived on a '..ob.belt..'; no free tile without a belt within 3 tiles')
+        ob.within and where or '(none '..where..')') or ('arrived on a '..ob.belt..'; no free tile without a belt within 3 tiles')
     end
     -- move_to combat fires for the walk only: the combat channel ends next tick.
     local combat=s.combat and s.combat[index]
@@ -577,9 +597,12 @@ function M.target_rank(e,args)
 end
 local function entity(p,args,read_only)
   local pos = position(args.position)
-  -- A read sees by remote view too (read_sight); an action needs the character's sight.
+  -- A read sees by remote view too (read_sight); an action needs the character's sight; a walk's target
+  -- (read_only 'walk': move_to target) any entity the map draws, on a charted chunk.
   local by
-  if read_only then by=M.read_sight(p,pos,'target') else assert_visible(p,pos,'target') end
+  if read_only=='walk' then
+    if not charted(p,pos) then error(string.format('target (%g,%g) is on a chunk the map has not charted',pos.x,pos.y),0) end
+  elseif read_only then by=M.read_sight(p,pos,'target') else assert_visible(p,pos,'target') end
   local candidates = p.surface.find_entities_filtered{position=pos, radius=0.2, name=args.name}
   -- Ore under a building is never the intended target unless named explicitly
   -- (resource: the fallback, ore or an item on the ground).
@@ -861,7 +884,7 @@ function handlers.describe()
         tiles='optional {name, area={left_top,right_bottom}}: fill up to 4096 tile ghosts (landfill over water, foundation beside a platform); returns tiles_placed, tiles_existing (same ghost already there), tiles_refused (not placeable there)',
         platform='optional platform name: place on that space platform (its hub builds ghosts from hub items); positions are platform coordinates, hub at 0,0',['repeat']='optional {count 1..64, dx, dy}: stamp the list count times, each shifted by dx,dy; per-copy rows',returns='placed, failed [{index,error}], bounds (construct defaults to them), obstacles_marked (trees/rocks under the ghosts, marked for deconstruction like a player placement; construct mines them); underground_warnings: an underground belt or pipe-to-ground ghost whose span crosses tiles an underground cannot pass under (lava, empty space), which stays unpaired; inserters_without_target [{name, position, missing, pickup, drop}] (first 16; inserters_without_target_count past them): inserter ghosts with nothing to take from or put into on a point once the call\'s ghosts stand'},
       construct={area='optional {left_top,right_bottom} <=256x256; default: ghosts from the last paste',ticks='1..216000 (default 36000)',note='builds every ghost in reach from inventory and hand-mines every entity marked for deconstruction (timed like mine; contents to inventory, stops with inventory_full), then walks to the free stand point (never on a footprint) covering the most remaining ghosts near the nearest one; blocked ghosts retry once after moving; trees/rocks under ghosts are marked and mined first; ghosts whose item is in the hand-crafting queue are awaited (status awaiting_craft), not missing; status reports built/mined/remaining/missing/failed and blockers (trees/rocks in the way of a ghost, marked and mined first, also when a build bumps into one: name, position, ghost, at, cleared); outcomes: constructed (everything done) | incomplete (ghosts left for missing items or failures; a plan step fails) | nothing_to_do (a success, completes at once) | inventory_full | timed_out'},
-      move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: the engine pathfinder: a padded box on the tile grid (with a twin request avoiding belts, kept when at most 6 tiles or a quarter longer), then the character\'s own box from the nearest free tile centre, on the half-tile grid, and on the quarter-tile grid with a wider goal; when none finds a route the walk ends at once as unreachable (a target on ungenerated ground is steered to directly); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',note='never ends on a belt: arriving on one it steps to the nearest free tile without a belt within the arrival radius (else within 3 tiles). Where the path ends short of the target, the rest is walked straight only with room to turn (a 0.7-tile box): a gap narrower than that ends the walk before it (arrived_near; last.pocket says where). Squeezed into a gap no path leads out of, it walks out along the gaps to the nearest spot with room first (last.escaped); closed in, last.mine_to_get_out names the fewest of our entities, trees or rocks whose mining opens a way out',unsafe_goal='optional true: go to a goal or via point inside an enemy weapon\'s reach anyway (the reply\'s unsafe_goal names it); without it such a move_to is refused: goal (x,y) is inside big-worm-turret (x,y) range 38 (13.0 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it: (x,y), N tiles from it',squeeze='optional true: walk the last stretch into a narrow gap anyway; where no path request leads (none leads into a gap narrower than 0.7 tiles), walk the character\'s own steps there (a search over quarter-tile steps, up to 64 tiles a side; last.squeezed)',via='optional 1..16 points {x,y} (or [x,y]) walked in order before position, in one call: each leg its own walk, pathfound and checked for enemies as a single move_to (a via point counts as reached within 1 tile, or tolerance when larger; only the last leg steps off a belt; ticks covers the whole walk); a leg that does not arrive ends the walk with its outcome; last.legs lists each leg {to, outcome, s (seconds), why, avoided_enemies} and then those not walked; status active.leg says which (2 of 4); a queue step resumed after a pause goes on from the first via point it had not reached',avoid_enemies='default: worms the map shows are kept out of range + 4 tiles; true: worms and spawners (their units\' sight: 30 tiles on Nauvis, 40 on Gleba) + 8; a number 0..32: that margin; false: no check. A path through one\'s reach is walked as legs around the nest (corners of octagons around each worm\'s or spawner\'s reach, each leg the engine\'s path); a goal or via point inside a worm\'s range (with true, a spawner\'s units\' sight too) is refused, naming the weapon and the nearest safe spot toward it (outside every reach + the margin), unless unsafe_goal; a nest with the start in a weapon\'s range, or the goal with unsafe_goal, is not avoided, and one with the start or goal in its margin only keeps its discs short of them (last.enemies_at_start_or_goal names both); last.avoided_enemies names what was gone around; with no way round, a path crossing only a margin is walked (last.passed_within_margin) and one crossing a range ends no_safe_route',combat='optional true or a radius 1..32 (default 20): fire at enemies in range while walking, as shoot auto does (needs ammunition), until the walk ends; status/last_combat report it (outcome move_ended, ammo_used)',status='last reports why (unreachable: closed in, with the area and what closes it in, or no path; blocked; timed_out), nearest_reachable and reachable_gap (its distance to the target); unreachable: build_spot, a spot the character reaches within 9.25 tiles of the target (build reach 10), with room to turn when one is found, and build_spot_note saying so, or that it lies in a gap or only the character\'s own steps found it (build_spot_squeeze: the note names the move_to squeeze=true call that walks there), or that no reachable spot is within build reach; off_belt, path (off belts), steered (without a path), replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity; or stopped before a narrow gap: pocket) | unreachable (no route for the character: why, nearest_reachable, build_spot, mine_to_get_out) | no_safe_route (every way passes within an enemy\'s reach: why) | blocked | timed_out'},
+      move_to={position='{x,y}, within 512 tiles',target='or an entity: {position={x,y}} (any tile of it, on a chunk the map draws; name or unit_number pick one of several there), or {unit_number=N} alone for what the game finds by number (vehicles and the like): the walk goes until the character is within reach of it (to its box, as the engine measures reach), choosing the nearest reachable spot itself, and arrives there; already within it, it arrives at once; a walk that ends another way (unreachable, blocked, timed_out ...) while within it counts as arrived (last.reach_note); with no path within reach it walks once to a spot within reach the give-up found (last.reach_walk); last.reach: how near it ended (iron-chest (12.5,3.5): 8.7 tiles to its box (transfer reach 10)); a plain {x,y} without reach is position',reach='with target: transfer (default: the engine\'s own test, 10 tiles; ore, trees and rocks 2.7), build (build_distance, 10) or tiles 0.5..64 to the box',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: the engine pathfinder: a padded box on the tile grid (with a twin request avoiding belts, kept when at most 6 tiles or a quarter longer), then the character\'s own box from the nearest free tile centre, on the half-tile grid, and on the quarter-tile grid with a wider goal; when none finds a route the walk ends at once as unreachable (a target on ungenerated ground is steered to directly); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',note='never ends on a belt: arriving on one it steps to the nearest free tile without a belt within the arrival radius (else within 3 tiles). Where the path ends short of the target, the rest is walked straight only with room to turn (a 0.7-tile box): a gap narrower than that ends the walk before it (arrived_near; last.pocket says where). Squeezed into a gap no path leads out of, it walks out along the gaps to the nearest spot with room first (last.escaped); closed in, last.mine_to_get_out names the fewest of our entities, trees or rocks whose mining opens a way out',unsafe_goal='optional true: go to a goal or via point inside an enemy weapon\'s reach anyway (the reply\'s unsafe_goal names it); without it such a move_to is refused: goal (x,y) is inside big-worm-turret (x,y) range 38 (13.0 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it: (x,y), N tiles from it',squeeze='optional true: walk the last stretch into a narrow gap anyway; where no path request leads (none leads into a gap narrower than 0.7 tiles), walk the character\'s own steps there (a search over quarter-tile steps, up to 64 tiles a side; last.squeezed)',via='optional 1..16 points {x,y} (or [x,y]) walked in order before position, in one call: each leg its own walk, pathfound and checked for enemies as a single move_to (a via point counts as reached within 1 tile, or tolerance when larger; only the last leg steps off a belt; ticks covers the whole walk); a leg that does not arrive ends the walk with its outcome; last.legs lists each leg {to, outcome, s (seconds), why, avoided_enemies} and then those not walked; status active.leg says which (2 of 4); a queue step resumed after a pause goes on from the first via point it had not reached',avoid_enemies='default: worms the map shows are kept out of range + 4 tiles; true: worms and spawners (their units\' sight: 30 tiles on Nauvis, 40 on Gleba) + 8; a number 0..32: that margin; false: no check. A path through one\'s reach is walked as legs around the nest (corners of octagons around each worm\'s or spawner\'s reach, each leg the engine\'s path); a goal or via point inside a worm\'s range (with true, a spawner\'s units\' sight too) is refused, naming the weapon and the nearest safe spot toward it (outside every reach + the margin), unless unsafe_goal; a nest with the start in a weapon\'s range, or the goal with unsafe_goal, is not avoided, and one with the start or goal in its margin only keeps its discs short of them (last.enemies_at_start_or_goal names both); last.avoided_enemies names what was gone around; with no way round, a path crossing only a margin is walked (last.passed_within_margin) and one crossing a range ends no_safe_route',combat='optional true or a radius 1..32 (default 20): fire at enemies in range while walking, as shoot auto does (needs ammunition), until the walk ends; status/last_combat report it (outcome move_ended, ammo_used)',status='last reports why (unreachable: closed in, with the area and what closes it in, or no path; blocked; timed_out), nearest_reachable and reachable_gap (its distance to the target); unreachable: build_spot, a spot the character reaches within 9.25 tiles of the target (build reach 10), with room to turn when one is found, and build_spot_note saying so, or that it lies in a gap or only the character\'s own steps found it (build_spot_squeeze: the note names the move_to squeeze=true call that walks there), or that no reachable spot is within build reach; off_belt, path (off belts), steered (without a path), replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity; or stopped before a narrow gap: pocket) | unreachable (no route for the character: why, nearest_reachable, build_spot, mine_to_get_out) | no_safe_route (every way passes within an enemy\'s reach: why) | blocked | timed_out'},
       pickup={ticks='1..600 (default 30); over an area 1..36000 (default 3600)',area='optional {left_top,right_bottom} up to 64x64: pick up every item stack on the ground in it',position='optional centre of the square for radius (default you)',radius='optional 1..32 (default 8): the square around position, instead of area',items='optional 1..16 item names: only stacks of these',note='takes items on the ground within your pickup distance (stand on or next to them; refused when none is in reach); outcomes picked_up | duration_elapsed | inventory_full | nothing_in_reach, last.picked {item: count}, last.moved (the count) and last.inv (the inventory line after); the reply: moved 0, timed (until when), inv. Over an area (area, position/radius or items): one stack every 6 ticks, walking to the nearest stack left in the area; refused when it holds none; returns item_stacks and items; outcomes picked_up (none left) | inventory_full | blocked (stacks it could not walk to: last.skipped; it stops after 8) | timed_out; last.picked, last.left (stacks still in the area)'},repair={position='{x,y}',ticks='1..600; with positions or area 1..36000 (default 3600)',item='repair-pack by default',
         positions='or 1..64 {x,y} (each may carry name or unit_number): every damaged one, nearest first, walking to each (a timed action; outcomes repair_completed | timed_out | repair_tool_exhausted; last: repaired, already_full, unreached, lost, left, tally)',
         area='or {left_top, right_bottom} up to 128x128: every entity of ours with health in it, as positions (at most 64 damaged)',
@@ -1997,6 +2020,73 @@ M.avoid=require('avoid'){state=state,
     if nav.vehicle then M.vehicles.request(p,nav) else request_path(p,nav) end
     return true
   end}
+M.REACH_ENDS={unreachable=true,blocked=true,arrived_near=true,timed_out=true,no_safe_route=true}
+-- move_to target (Astra, operator 07:55: a walk that ended unreachable while
+-- already within transfer reach of its target broke an && chain): the walk
+-- goes until the character is within reach of the entity, measured to its box
+-- as the engine measures reach, and counts as arrived there. The entity by
+-- unit_number or a position on its footprint, on a chunk the map draws; reach
+-- transfer (the engine's own test: 10 tiles, ore, trees and rocks 2.7), build
+-- (build_distance) or tiles.
+function M.walk_target(p,a)
+  local t=a.target
+  assert(type(t)=='table','target is an entity: {position={x,y}} or {unit_number=N}, with optional name; reach is build, transfer or tiles')
+  local e
+  assert(t.unit_number==nil or type(t.unit_number)=='number','target.unit_number must be a number')
+  if t.unit_number~=nil and t.position==nil and t.x==nil and t[1]==nil then
+    -- By number alone the game finds only prototypes flagged get-by-unit-number (vehicles and the like; read on a
+    -- private 2.0.77 server: an iron chest's own number found nothing): others need their position too.
+    local ok,found=pcall(function() return game.get_entity_by_unit_number(t.unit_number) end)
+    e=ok and found or nil
+    if not (e and e.valid) then
+      error(string.format('the game finds no entity by unit_number %d alone (only vehicles and the like); give its position too: target={position={x,y},unit_number=%d}',t.unit_number,t.unit_number),0)
+    end
+    if e.surface~=p.surface then error(string.format('unit_number %d (%s) is on %s; the character is on %s',t.unit_number,e.name,e.surface.name,p.surface.name),0) end
+    if not charted(p,e.position) then error(string.format('target %s (%g,%g) is on a chunk the map has not charted',e.name,e.position.x,e.position.y),0) end
+  else
+    e=entity(p,{position=t.position or t,name=t.name,unit_number=t.unit_number},'walk')
+  end
+  local reach=a.reach==nil and 'transfer' or a.reach
+  local r,kind
+  if reach=='transfer' then r=M.reach_for(p,e); kind='transfer reach'
+  elseif reach=='build' then r=p.build_distance or 10; kind='build reach'
+  else
+    assert(type(reach)=='number' and reach>=0.5 and reach<=64,'reach is build, transfer or a number of tiles 0.5..64 (to the entity\'s box)')
+    r=reach; kind='reach'
+  end
+  local b=e.bounding_box
+  return {entity=e,name=e.name,unit_number=e.unit_number,center={x=e.position.x,y=e.position.y},r=r,kind=kind,transfer=reach=='transfer' or nil,
+    box={b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y}}
+end
+-- Within the walk's reach of its target now: the distance to its box within reach less a quarter tile (a margin:
+-- on a copy of world n a walk stopped where the engine's test first held, 10.0 tiles off), and for transfer the
+-- engine's own test too (can_reach_entity). 'gone' when the entity is no more.
+function M.in_reach(p,rt)
+  local e=rt.entity
+  if not (e and e.valid) then return 'gone' end
+  if M.box_distance(p.position,e)>rt.r-0.25 then return false end
+  if rt.transfer then
+    local ok,r=pcall(function() return p.can_reach_entity(e) end)
+    if ok then return r==true end
+  end
+  return true
+end
+-- 'iron-chest (12.5,3.5): 8.7 tiles to its box (transfer reach 10)'.
+function M.reach_text(p,rt)
+  local e=rt.entity
+  local d=e and e.valid and M.box_distance(p.position,e)
+  return string.format('%s (%g,%g)%s (%s %g)',rt.name,rt.center.x,rt.center.y,d and string.format(': %.1f tiles to its box',d) or ' is gone',rt.kind,rt.r)
+end
+-- A spot within the target's reach that the give-up found (pathing.lua: the
+-- build spot, else the nearest reachable point), and whether it takes squeeze.
+function M.reach_spot(p,nav,rt)
+  local e=rt.entity
+  if not (e and e.valid) then return nil end
+  local function within(q) return q and M.box_distance(q,e)<=rt.r-0.25 end
+  local sp=nav.spot
+  if sp and sp.pos and within(sp.pos) then return {x=sp.pos.x,y=sp.pos.y},(sp.searched or not sp.room) and true or nil end
+  if within(nav.reachable) then return {x=nav.reachable.x,y=nav.reachable.y},nil end
+end
 -- via: points walked in order before position in one call (Opus, operator
 -- 06:26: worm detours took 5-6 chained move_tos a trip). Each leg is a walk of
 -- its own, pathfound and checked for enemies as a single move_to; a via point
@@ -2068,12 +2158,21 @@ function M.via_report(action)
   return legs
 end
 function handlers.move_to(p,a)
-  local target=position(a.position)
+  -- target: an entity's reach (M.walk_target); its centre is the walk's position.
+  local rt
+  if a.target~=nil or a.reach~=nil then
+    assert(a.target~=nil,'reach goes with target (an entity: {position={x,y}} or {unit_number=N})')
+    assert(a.position==nil,'give position or target, not both')
+    assert(a.within==nil and a.tolerance==nil,'with target, reach says how near (within/tolerance are for position)')
+    rt=M.walk_target(p,a)
+  end
+  local target=rt and rt.center or position(a.position)
   local via=a.via~=nil and M.via_points(p,a.via,target) or nil
   if not via then assert(distance(p.position,target)<=512,'movement target must be within 512 tiles') end
   local ticks=integer(a.ticks,3600,1,36000,'ticks')
-  -- `within` reads naturally for "stop once in reach"; both mean the same.
-  local tolerance=a.within or a.tolerance or 0.5
+  -- `within` reads naturally for "stop once in reach"; both mean the same. A target's path ends within its
+  -- reach of the centre less a tile and a half (its box is nearer still).
+  local tolerance=rt and math.max(0.25,math.min(10,rt.r-1.5)) or a.within or a.tolerance or 0.5
   assert(type(tolerance)=='number' and tolerance>=0.25 and tolerance<=10,'tolerance/within out of range 0.25..10')
   assert(a.squeeze==nil or type(a.squeeze)=='boolean','squeeze must be true or false')
   -- A goal (or via point) inside a weapon's reach the map shows is refused unless unsafe_goal
@@ -2098,7 +2197,10 @@ function handlers.move_to(p,a)
   end
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   local action={kind='move_to',position=target,tolerance=tolerance,off_belts=true,
-    until_tick=game.tick+ticks,last_position=p.position,stalled=0,replans=0,direct=a.pathfind==false,pocket_check=true,squeeze=a.squeeze==true or nil}
+    until_tick=game.tick+ticks,last_position=p.position,stalled=0,replans=0,direct=a.pathfind==false,pocket_check=true,squeeze=a.squeeze==true or nil,
+    avoid_mode=M.avoid.mode(a.avoid_enemies),reach_target=rt}
+  -- The give-up's spots for a target count within its reach, to its box (pathing.lua).
+  if rt then action.reach_r=rt.r; action.reach_box=rt.box; action.reach_label=rt.kind end
   if via then
     action.via={points=via,final=target,tolerance=tolerance,legs={},mode=M.avoid.mode(a.avoid_enemies),args=a}
     M.via_leg(p,action,1)
@@ -2117,10 +2219,13 @@ function handlers.move_to(p,a)
     combat={auto=true,radius=radius,ammo=ammo,equipped=equipped}
   end
   state().active[p.index]=action
-  local foes
+  local foes,in_reach
+  if rt then in_reach=M.in_reach(p,rt)==true end
   if not action.direct then foes=M.avoid.start(p,action,M.avoid.mode(a.avoid_enemies)); request_path(p,action) end
   return {until_tick=game.tick+ticks,position=target,pathfinding=not action.direct,combat=combat,avoid_enemies=foes and M.avoid.describe(foes.mode) or nil,
-    via=via and #via or nil,legs=via and #via+1 or nil,unsafe_goal=unsafe and table.concat(unsafe,'; ') or nil}
+    via=via and #via or nil,legs=via and #via+1 or nil,unsafe_goal=unsafe and table.concat(unsafe,'; ') or nil,
+    target=rt and {name=rt.name,position=rt.center,unit_number=rt.unit_number} or nil,reach=rt and string.format('%s %g',rt.kind,rt.r) or nil,
+    in_reach=in_reach}
 end
 -- Hand-mining time for the character, including force and character bonuses.
 local function hand_mining_ticks(p,e)
@@ -6940,11 +7045,21 @@ navigate=function(p,nav)
     if distance(pos,nav.step_off)<=0.3 or game.tick-nav.step_off_tick>120 then return 'arrived' end
     steer(p,nav.step_off,nav); return
   end
-  if distance(pos,goal)<=math.max(nav.tolerance,(p.character_running_speed or 0)*0.55) then
+  -- A target's reach (move_to target), on the last leg: arrived once within it.
+  local rt=nav.reach_target
+  if rt and nav.via and nav.via.index<=#nav.via.points then rt=nil end
+  local reached
+  if rt then
+    reached=M.in_reach(p,rt)
+    if reached=='gone' then nav.why=string.format('the target %s (%g,%g) is gone',rt.name,rt.center.x,rt.center.y); return 'failed' end
+  end
+  if reached or distance(pos,goal)<=math.max(nav.tolerance,(p.character_running_speed or 0)*0.55) then
     local belt=nav.off_belts and M.pathing.belt_at(p.surface,pos)
     if not belt then return 'arrived' end
-    local spot,within=M.pathing.off_belt_spot(p,goal,nav.tolerance)
-    nav.off_belt={belt=belt.name,spot=spot,within=within}
+    -- A target's reach: the free tile must stay within it (a walk that stopped in reach on a belt stepped 4 tiles
+    -- further in, to a tile within the arrival radius of the target's centre).
+    local spot,within=M.pathing.off_belt_spot(p,goal,nav.tolerance,rt and reached and function(c) return M.box_distance(c,rt.entity)<=rt.r-0.25 end or nil)
+    nav.off_belt={belt=belt.name,spot=spot,within=within,reach=rt and reached and true or nil}
     if not spot then return 'arrived' end
     nav.step_off=spot; nav.step_off_tick=game.tick; steer(p,spot,nav); return
   end
@@ -6962,7 +7077,21 @@ navigate=function(p,nav)
     if nav.found then M.pathing.grace(p,nav) end
     if nav.path_state=='pending' or nav.path_state=='probing' or nav.path_state=='scanning' then p.walking_state={walking=false,direction=defines.direction.north}; nav.stalled=0; nav.progress_tick=nil; return end
   end
-  if nav.path_state=='unreachable' then return 'unreachable' end
+  if nav.path_state=='unreachable' then
+    -- A target's reach: once, walk to a spot within it the give-up found (M.reach_spot), squeezing if it takes that.
+    if rt and not nav.reach_walk then
+      local spot,squeeze=M.reach_spot(p,nav,rt)
+      if spot then
+        nav.reach_walk={from={x=pos.x,y=pos.y},to=spot,squeeze=squeeze,why=nav.why}
+        for _,k in ipairs(M.LEG_FIELDS) do nav[k]=nil end
+        nav.position=spot; nav.tolerance=0.5
+        if squeeze then nav.squeeze=true end
+        if nav.avoid_mode and not nav.direct then M.avoid.start(p,nav,nav.avoid_mode) end
+        request_path(p,nav); return
+      end
+    end
+    return 'unreachable'
+  end
   if nav.path_state=='unsafe' then return 'no_safe_route' end
   -- Closed in: the way out by mining, a tick after the flood (pathing.lua dig_step).
   if nav.path_state=='digging' then p.walking_state={walking=false,direction=defines.direction.north}; M.pathing.dig_step(p,nav); return end

@@ -9,7 +9,7 @@ return function(api)
   -- action -> {wrong name = real name}; counts are shift05-07 journal errors.
   local RENAME = {
     craft = {item='recipe', name='recipe'},
-    move_to = {target='position', to='position', pos='position', destination='position', waypoints='via', through='via'},
+    move_to = {to='position', pos='position', destination='position', waypoints='via', through='via'},
     map = {center='position', centre='position'},
     scan = {names='name', entity_names='name', entity='name', types='type', range='radius', field='fields', center='position'},
     nearest = {entity='name', names='name', types='type', center='position'},
@@ -155,6 +155,12 @@ return function(api)
         out.positions, out.position = all, nil
         notes[#notes+1] = L and 'position and positions are one list (position first)' or 'position is positions (a list)'
       end
+    end
+    -- move_to target is an entity whose reach the walk goes to ({position} or {unit_number}, with reach); a plain
+    -- {x,y} target without reach is the position it always was.
+    if action == 'move_to' and is_pos(out.target) and out.reach == nil and out.position == nil then
+      out.position, out.target = out.target, nil
+      notes[#notes+1] = 'target is position'
     end
     -- fh sends scan, nearest, map ... as observe {scope}: the view's own names.
     local view = action == 'observe' and type(out.scope) == 'string' and out.scope or action
