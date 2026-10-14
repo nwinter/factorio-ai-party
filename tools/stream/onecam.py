@@ -222,6 +222,23 @@ ONECAM = {
     "attn_same": 12.0,      # tiles: a request this close to the inset's spot is the same job
     "attn_move": 8.0,       # the inset moves to a new spot at most this often
     "attn_zoom": 1.2,       # a single spot; an area is fitted (no closer than this)
+    # Surface balance (viewer awoo3391, 19:34: "the camera feed needs a real priority system"; 8 of 9 agents on Nauvis,
+    # so rotation by agent showed Nauvis while Gemini landed on Fulgora and Sol worked Vulcanus): on-air seconds per
+    # surface over the last surface_window; a surface other than Nauvis with an agent on it is due surface_share of
+    # the time, more while the planet is new to the run (plus surface_new_share, fading over surface_new_hours from the
+    # first time an agent was seen there). An agent on a surface under its share scores up to 1 + surface_bonus
+    # (scaled by how far under); a Nauvis agent scores 1 - nauvis_penalty while another surface is under its share.
+    # Only the story choice uses scores: urgent shots, battles, follows, incoming groups, segments and the dwell rules
+    # come first as before. surface_bonus 0 turns it off.
+    "surface_window": 1800.0,
+    "surface_share": 0.25,
+    "surface_new_share": 0.10,
+    "surface_new_hours": 3.0,
+    "surface_bonus": 1.5,
+    "nauvis_penalty": 0.15,
+    "surface_total": 0.6,    # the other surfaces' targets together at most this (scaled down): Nauvis keeps 40%
+    "surface_floor": 300.0,  # seconds: shares over at least this much time (a fresh start does not swing at once)
+    "surface_warmup": 180.0,  # seconds of air history before the balance applies (no swing right after a restart)
 }
 VISIBLE = FIGHT | BUILD | WALK | {"mine", "gather", "craft", "construct", "kite", "repair", "pickup", "drive", "shoot"}
 DULL = {"craft", "wait_until", "sleep", "inspect", "feed", "insert", "take", "transfer", "research", "fuel", "observe"}
@@ -304,6 +321,11 @@ class OneCam(Director):
         self.resume = None     # {"subject", "since"}: the story an urgent shot interrupted, taken up again after it
         self.last_loss = None  # {"t", "position"} of the last loss that cut
         self.cuts = []       # (t, slot, reason)
+        self.surface_air = []      # (t, surface, seconds): what the program showed, for the surface balance
+        self.surface_seen = {}     # surface -> when an agent was first seen there (how new the planet is)
+        self.surface_t = None      # the last step's time (on-air seconds are counted between steps)
+        self.surface_terms = {}    # agent -> its surface factor this step (1.0: none)
+        self.surface_log = None    # {"share": {surface: %}, "target": {surface: %}} for the score line
         self.mode = "onecam"   # or "trio"
         self.mode_since = None  # None: since the start (self.started)
         self.trio = None       # {"tiles": {"cam2": client slot, "cam3": ...}, "agents", "why", "until"} while on
@@ -591,7 +613,85 @@ class OneCam(Director):
             else:
                 f = 1.0
             out[n] = round(out[n] * f, 3)
+        self.surface_terms = self.surface_factors(agents, out, now)
+        for n, f in self.surface_terms.items():
+            out[n] = round(out[n] * f, 3)
         return out
+
+    # -- surface balance ---------------------------------------------------------------------------------------
+    @staticmethod
+    def surface_of(a):
+        return str((a or {}).get("surface") or "nauvis").lower()
+
+    def onair_surface(self, by_name):
+        """The surface the program shows: the followed agent's, else the shot's own (a fixed view, a platform, the map)."""
+        cur = self.state.get(self.onair)
+        if not cur:
+            return None
+        who = cur.get("follow") or (cur.get("agents") or [None])[0]
+        if who and who in by_name:
+            return self.surface_of(by_name[who])
+        return str(cur.get("surface") or (cur.get("position") or {}).get("surface") or "nauvis").lower()
+
+    def account_surface(self, by_name, now):
+        """Count the seconds since the last step to the surface on air; forget what is older than surface_window."""
+        for a in by_name.values():
+            if a.get("alive") and a.get("seen", True):
+                self.surface_seen.setdefault(self.surface_of(a), now)
+        last, self.surface_t = self.surface_t, now
+        s = self.onair_surface(by_name)
+        if last is not None and s and now > last:
+            self.surface_air.append((now, s, min(now - last, 10.0)))
+        cut = now - self.cfg["surface_window"]
+        while self.surface_air and self.surface_air[0][0] < cut:
+            self.surface_air.pop(0)
+
+    def surface_shares(self, now):
+        total = {}
+        for _, s, dt in self.surface_air:
+            total[s] = total.get(s, 0.0) + dt
+        span = max(sum(total.values()), self.cfg["surface_floor"])
+        return {s: v / span for s, v in total.items()}
+
+    def surface_factors(self, agents, scored, now):
+        """agent -> score factor: up for an agent on an under-served surface other than Nauvis, down for a Nauvis agent
+        while one is under-served; {} when the balance is off or every surface is served."""
+        cfg = self.cfg
+        if not cfg["surface_bonus"] or not scored or sum(dt for _, _, dt in self.surface_air) < cfg["surface_warmup"]:
+            self.surface_log = None
+            return {}
+        share = self.surface_shares(now)
+        live = {self.surface_of(a) for a in agents if a["name"] in scored}
+        target = {}
+        for s in live - {"nauvis"}:
+            age_h = (now - self.surface_seen.get(s, now)) / 3600.0
+            novelty = max(0.0, 1.0 - age_h / cfg["surface_new_hours"]) if cfg["surface_new_hours"] else 0.0
+            target[s] = cfg["surface_share"] + cfg["surface_new_share"] * novelty
+        whole = sum(target.values())
+        if cfg["surface_total"] and whole > cfg["surface_total"]:
+            target = {s: t * cfg["surface_total"] / whole for s, t in target.items()}
+        short = {s: t for s, t in target.items() if share.get(s, 0.0) < t}
+        out = {}
+        for a in agents:
+            n, s = a["name"], self.surface_of(a)
+            if n not in scored:
+                continue
+            if s in short:
+                out[n] = round(1.0 + cfg["surface_bonus"] * (short[s] - share.get(s, 0.0)) / short[s], 3)
+            elif s == "nauvis" and short:
+                out[n] = round(1.0 - cfg["nauvis_penalty"], 3)
+        self.surface_log = {"share": {s: round(100 * v) for s, v in sorted(share.items())},
+                            "target": {s: round(100 * v) for s, v in sorted(target.items())}} if target else None
+        return out
+
+    def surface_note(self, name, by_name):
+        """' (surface fulgora 4% of 35%: x2.3)' for a cut the balance helped, else ''."""
+        f = self.surface_terms.get(name)
+        if not f or f <= 1.0 or not self.surface_log:
+            return ""
+        s = self.surface_of(by_name.get(name))
+        return (f" (surface {s} {self.surface_log['share'].get(s, 0)}% of {self.surface_log['target'].get(s, 0)}%:"
+                f" x{f})")
 
     @staticmethod
     def fight_t(f):
@@ -630,6 +730,7 @@ class OneCam(Director):
         agents = snapshot["agents"]
         by_name = {a["name"]: a for a in agents}
         self.track(agents, now)
+        self.account_surface(by_name, now)
         self.basemap = snapshot.get("basemap") or self.basemap
         self.fight_list = list(snapshot.get("fights") or [])
         scores = self.scores(agents, now)
@@ -1694,10 +1795,11 @@ class OneCam(Director):
                 if scores[cand] > scores[subj] * cfg["switch_margin"] + cfg["switch_bias"]:
                     want = cand
                     reason = f"{cand} {scores[cand]} beats {subj} {scores[subj]}" + \
-                        (f" ({plan_kind(by_name[cand])} ahead)" if big_plan(by_name[cand]) else "")
+                        (f" ({plan_kind(by_name[cand])} ahead)" if big_plan(by_name[cand]) else "") + \
+                        self.surface_note(cand, by_name)
                 elif held >= cfg["onair_max"] and scores[cand] >= scores[subj] * cfg["rotate_ratio"]:
                     want = cand
-                    reason = f"rotate after {int(held)} s"
+                    reason = f"rotate after {int(held)} s" + self.surface_note(cand, by_name)
             still = self.still_s(subj, now)
             ended = now - self.plan_end.get(subj, -1e9) < cfg["onair_dwell"]
             if not want and not holding and held >= cfg["still_min"] and \
@@ -1726,7 +1828,7 @@ class OneCam(Director):
                            scores, now, quiet=True)
         if want and nxt and self.state[nxt["slot"]].get("subject") == want and self.ready(nxt["slot"], now):
             self.cut(nxt["slot"], reason if not need else f"back to {want}" if resumed else
-                     (f"{subj} unavailable" if subj else "initial"), now)
+                     (f"{subj} unavailable" if subj else "initial") + self.surface_note(want, by_name), now)
             self.want[nxt["slot"]] = (self.state[nxt["slot"]]["zoom"], now)
             if resumed:
                 self.resume = None
