@@ -47,14 +47,17 @@ return function(api)
     assert(secs,e.name..' has no logistic requests')
     return e.name..' at '..string.format('(%g,%g)',e.position.x,e.position.y),secs,e
   end
+  -- One request as the GUI shows it: name, min..max (or =n), and on a hub
+  -- the planet it imports from (exact requests too: Astra's `calcite=500`
+  -- hid `from vulcanus`, 02:00).
   local function filter_text(f,hub)
     local v=f.value
     if not v then return nil end
     local name=type(v)=='table' and v.name or v
     local quality=type(v)=='table' and v.quality or nil
     local text=name..(quality and quality~='normal' and '@'..quality or '')
-    if f.max and f.max==f.min then return text..'='..f.min end
-    text=text..' '..(f.min or 0)..'..'..(f.max and tostring(f.max) or 'inf')
+    if f.max and f.max==f.min then text=text..'='..f.min
+    else text=text..' '..(f.min or 0)..'..'..(f.max and tostring(f.max) or 'inf') end
     local from=hub and f.import_from and (type(f.import_from)=='string' and f.import_from or f.import_from.name)
     return from and text..' from '..from or text
   end
@@ -64,7 +67,9 @@ return function(api)
       local sec=secs.get_section(i)
       local rows={}
       for _,f in ipairs(sec.filters or {}) do local t=filter_text(f,hub); if t then rows[#rows+1]=t end end
-      out[#out+1]={index=i,group=sec.group~='' and sec.group or nil,active=sec.active==false and false or nil,
+      -- A section switched off requests nothing (the GUI's checkbox). Said
+      -- as off=true: false values drop out of the compact reply.
+      out[#out+1]={index=i,group=sec.group~='' and sec.group or nil,off=sec.active==false or nil,
         controlled=not sec.is_manual or nil,requests=rows}
     end
     return out
@@ -92,7 +97,9 @@ return function(api)
       assert(ok,'the game refused from_buffers: '..tostring(err))
     end
     if chest then pcall(function() buffers=chest.request_from_buffers end) end
-    local changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil
+    assert(a.active==nil or type(a.active)=='boolean','active must be true or false: switch the section on or off')
+    local changing=a.set~=nil or a.clear~=nil or a.clear_all~=nil or a.active~=nil
+    local touched
     if changing then
       local sec
       if a.section~=nil then
@@ -104,6 +111,8 @@ return function(api)
         assert(sec,'no manual logistic section could be added')
       end
       assert(sec.is_manual,'section '..sec.index..' is controlled by the game')
+      touched=sec
+      if a.active~=nil then sec.active=a.active end
       if a.clear_all then sec.filters={} end
       for _,name in ipairs(a.clear or {}) do
         local i,found=slot_of(sec,item_name(name),'normal')
@@ -119,7 +128,16 @@ return function(api)
         sec.set_slot(i,{value={type='item',name=name,quality=quality,comparator='='},min=min,max=r.max,import_from=r.from})
       end
     end
-    return {target=label,sections=list_sections(secs,a.platform~=nil),from_buffers=buffers}
+    local out={target=label,sections=list_sections(secs,a.platform~=nil or (chest and chest.type=='space-platform-hub')),from_buffers=buffers}
+    -- Requests set into a section that is off are not made: say so.
+    local off={}
+    for _,row in ipairs(out.sections) do if row.off and #row.requests>0 then off[#off+1]=row.index end end
+    if #off>0 then
+      out.note=string.format('section%s %s %s switched off: %s requests are not made (requests {section, active: true} switches one on)',
+        #off>1 and 's' or '',table.concat(off,', '),#off>1 and 'are' or 'is',#off>1 and 'their' or 'its')
+    end
+    out.changed_section=touched and touched.index or nil
+    return out
   end
   -- Platforms -----------------------------------------------------------------
   local function top_items(inv,limit)
@@ -349,9 +367,13 @@ return function(api)
           row.hub_trash=trash and top_items(trash,12) or nil
           local secs=hub.get_logistic_sections()
           if secs then
-            local req={}
-            for _,s in ipairs(list_sections(secs,true)) do for _,r in ipairs(s.requests) do req[#req+1]=r end end
+            local req,off={},{}
+            for _,s in ipairs(list_sections(secs,true)) do
+              for _,r in ipairs(s.requests) do if s.off then off[#off+1]=r else req[#req+1]=r end end
+            end
             row.requests=#req>0 and req or nil
+            -- In a section switched off: not requested.
+            row.requests_off=#off>0 and off or nil
           end
           row.leave_ok=pl.can_leave_current_location and pl.can_leave_current_location() or nil
           -- Hub health, turrets, turret ammo against the hub's, repair packs.
@@ -664,14 +686,15 @@ return function(api)
   M.schema={
     requests={target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
-      returns='target, sections [{index, group, controlled (set by the game, not editable), requests ["item min..max from planet"]}]; call with no set/clear to just read'},
-    platforms={platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, hub, hub_items, hub_slots (free of all), hub_trash, requests, leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
+      active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
+      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section, note (sections that are off but hold requests); call with no set/clear/active to just read'},
+    platforms={platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, hub, hub_items, hub_slots (free of all), hub_trash, requests, requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)'},
     drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',to='optional teammate name or list: told where it landed too, in their team block',
       note='the hub\'s drop slots, from remote view: a cargo pod takes the items to the planet below a stopped platform (the landing pad if any, else a temporary container on the ground)',returns='drop (its number), dropped, not_sent, to, pad, near, tell; where it lands comes in the team block (drop #N landed at (x,y) on PLANET: cargo-pod-container with ...), and the drops read lists recent drops'},
     land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any). A bot lands where it last stood on that planet, else at its spawn point, wearing the armor and guns it rode up with',returns='landing (and for a bot: at, pad)'},
-    launch={position='rocket silo {x,y} in a visible chunk',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it; switched on with cargo loaded by hand, the game moves that cargo to the silo\'s trash slots: cargo_to_trash, note, trash)',returns='launched, to, cargo',refused='overweight by N kg (a rocket lifts 1000 kg; the cargo listed by weight) before the game is asked; when the game refuses, what it may check'},
+    launch={position='rocket silo {x,y} in a visible chunk (any tile of it)',surface='optional planet name: the silo there by remote view, where our force sees the chunk (e.g. vulcanus from a platform above it); platform stays the destination',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it; switched on with cargo loaded by hand, the game moves that cargo to the silo\'s trash slots: cargo_to_trash, note, trash)',returns='launched, to, cargo; settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}: the silo\'s switches after the call',refused='overweight by N kg (a rocket lifts 1000 kg; the cargo listed by weight) before the game is asked; when the game refuses, what it may check'},
   }
   return M
 end

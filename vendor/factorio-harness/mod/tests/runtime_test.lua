@@ -471,6 +471,22 @@ local paused_build=call('build',{item='wooden-chest',position={x=8,y=0}})
 eq(paused_build.consumed,1); eq(paused_build.entity.position.x,8); eq(wood.count,1); eq(p.cursor_stack.valid_for_read,false)
 fails(function() call('build',{item='wooden-chest',position={x=9,y=0}}) end,'placement blocked')
 eq(wood.count,1)
+-- A rail planner's curve takes 3 rails, as the game charges it (2.0's items_to_place_this); with fewer held it is refused.
+do
+local saved_prototypes=prototypes
+prototypes={entity={['curved-rail-a']={name='curved-rail-a',type='curved-rail-a',items_to_place_this={{name='rail',count=3}},
+  collision_box={left_top={x=-0.7,y=-2.5},right_bottom={x=0.7,y=2.5}}}},item={}}
+local rail=stack('rail',4); rail.prototype={rails={{name='straight-rail'},{name='curved-rail-a'}}}
+local saved_main=main
+main={rail}; main.find_item_stack=function() return rail end
+main.get_item_count=function(f) return f.name=='rail' and rail.count or 0 end
+main.remove=function(f) eq(f.name,'rail'); rail.count=rail.count-f.count; return f.count end
+local r3=call('build',{item='rail',entity='curved-rail-a',position={x=1,y=0},direction='north'})
+eq(r3.consumed,3); eq(rail.count,1)
+fails(function() call('build',{item='rail',entity='curved-rail-a',position={x=5,y=0},direction='north'}) end,'curved-rail-a takes 3 rail; you hold 1')
+eq(rail.count,1)
+main=saved_main; prototypes=saved_prototypes
+end
 game.tick_paused=false; p.surface.can_place_entity=nil; p.surface.create_entity=nil
 wood.prototype.place_result.name=nil; wood.count=1
 p.build_from_cursor=function() p.cursor_stack.count=0; p.cursor_stack.valid_for_read=false end
@@ -2375,12 +2391,12 @@ end)()
   -- Out of reach: how far, the reach, and a free spot that reaches it; nothing walks.
   p.surface.find_non_colliding_position=function(_,pos) return {x=math.floor(pos.x)+0.5,y=math.floor(pos.y)+0.5} end
   fails(function() call('transfer',{position=far.position,item='iron-plate',count=1,direction='to_entity'}) end,
-    'entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from (11.5,0.5)')
+    'entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away (to its edge), reach 10; in reach from (10.5,0.5)')
   eq(call('status').active,false)
   -- Several targets, one failing: the tally names the moved total, the targets touched and the failure.
   local spread=call('transfer',{positions={req.position,big.position,far.position},item='iron-plate',count=5,direction='to_entity'})
   eq(spread.transferred,10)
-  eq(spread.tally,'moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from (11.5,0.5))')
+  eq(spread.tally,'moved 10 iron-plate; 2 of 3 targets touched; short: 1 failed (entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away (to its edge), reach 10; in reach from (10.5,0.5))')
   -- One target: no tally.
   eq(call('transfer',{position=req.position,item='iron-plate',count=1,direction='to_entity'}).tally,nil)
   -- The tally's other shorts.
