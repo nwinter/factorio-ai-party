@@ -642,11 +642,15 @@ return function(api)
   -- output full, low power, anything else not working.
   function M.machines(t, list, role, scan, packs)
     if #list == 0 then return nil end
-    local states, short, recipes, ranked = {}, {}, {}, {}
+    -- by_name: the machines counted, by name (Astra, 06:19: a line naming only the worst three read as "7 AM2" with an
+    -- electromagnetic plant among the makers; every crafter type counts: assemblers, furnaces, silos, and Space Age's
+    -- electromagnetic plants, foundries, cryogenic plants, biochambers, crushers and recyclers, which are of those types).
+    local states, short, recipes, ranked, by_name = {}, {}, {}, {}, {}
     for _, u in ipairs(list) do
       local e = u.e
       local status = api.status_name(e) or 'unknown'
       bump(states, status)
+      bump(by_name, e.name)
       bump(recipes, u.lab and 'labs' or u.recipe.name)
       if status ~= 'working' then
         local lacks = SHORT[status] and missing(e, u, packs) or {}
@@ -667,7 +671,7 @@ return function(api)
       parts[#parts+1] = text
     end
     if (states.working or 0) == 0 then table.insert(parts, 1, '0 working') end
-    local line = string.format('%d %s: %s', #list, role, table.concat(parts, ', '))
+    local line = string.format('%d %s (%s): %s', #list, role, short_list(by_name, 4), table.concat(parts, ', '))
     if role ~= 'labs' then line = line .. '; ' .. (role == 'users' and 'for ' or 'recipes ') .. short_list(recipes, 4) end
     local c = scan.area and scan.area.position
     table.sort(ranked, function(x, y)

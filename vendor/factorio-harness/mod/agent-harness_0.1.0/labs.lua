@@ -132,7 +132,7 @@ return function(api)
   -- inserter hands): where else it sits and why it does not reach the labs.
   -- One pass for all packs through supply's scan (supply.lua: its bounds).
   M.schema.science = {pack='optional item: a science pack (default: each pack the current research needs)', surface='optional surface name (default yours)',
-    returns='research and per pack one line and its numbers, for the whole surface, the same for everyone: made and used in the last 10 min (the game\'s statistics), makers (assemblers set to it: working and the other states; packs waiting in their output), held in chests, on belts and in labs (labs lacking it of those that need it), carried by agents, the largest chests with positions; reach: chests by kind, inserter hands, robots carrying it, the inserters taking from its makers and feeding the labs (by status, what the waiting ones\' sources hold), the logistic requesters for it per network (met, on the way, unmet with reasons), and the worst lab (position, what it lacks, its feeder\'s source, the nearest stock); chain: the pack\'s recipe tree from the step down, '
+    returns='research and per pack one line and its numbers, for the whole surface, the same for everyone: made and used in the last 10 min (the game\'s statistics), makers (crafters of any type set to it, Space Age ones too, by name: working and the other states; packs waiting in their output), held in chests, on belts and in labs (labs lacking it of those that need it), carried by agents, the largest chests with positions; reach: chests by kind, inserter hands, robots carrying it, the inserters taking from its makers and feeding the labs (by status, what the waiting ones\' sources hold), the logistic requesters for it per network (met, on the way, unmet with reasons), and the worst lab (position, what it lacks, its feeder\'s source, the nearest stock); chain: the pack\'s recipe tree from the step down, '
       .. 'following the ingredient most of a step\'s makers lack while most of them lack one and ending at the first step whose makers mostly do '
       .. 'not, each step with its makers and made and used per minute (10 min statistics) ("chemical-science-pack: 9 of 14 makers lack '
       .. 'advanced-circuit, made 12/min, used 30/min; advanced-circuit: ...; plastic-bar: 4 of 4 working, made 30/min, used 52/min"); '
@@ -188,14 +188,20 @@ return function(api)
     for _, name in ipairs(packs) do
       local t = scan.items[name]
       local made, used = flow(name, 'input'), flow(name, 'output')
-      local working, states = 0, {}
+      local working, states, by_name = 0, {}, {}
       for _, m in ipairs(t.makers) do
         local status = api.status_name(m.e) or 'unknown'
         if status == 'working' then working = working + 1 else states[status] = (states[status] or 0) + 1 end
+        by_name[m.e.name] = (by_name[m.e.name] or 0) + 1
       end
       local list = {}
       for status, n in pairs(states) do list[#list+1] = n .. ' ' .. status end
       table.sort(list)
+      -- The machines counted, by name (Astra, 06:19: electromagnetic plants and the other Space Age crafters count too).
+      local names = {}
+      for name, n in pairs(by_name) do names[#names+1] = {name=name, n=n} end
+      table.sort(names, function(x, y) if x.n ~= y.n then return x.n > y.n end return x.name < y.name end)
+      for i, x in ipairs(names) do names[i] = x.n .. ' ' .. x.name end
       local chests, rows = 0, {}
       for _, c in ipairs(t.chests) do
         if c.kind ~= 'pad' and c.kind ~= 'hub' and c.kind ~= 'vehicle' then chests = chests + c.n; rows[#rows+1] = c end
@@ -205,8 +211,8 @@ return function(api)
       for i = 1, math.min(3, #rows) do largest[i] = string.format('%s %s %d', at(rows[i].e.position), rows[i].e.name, rows[i].n) end
       local lacking = 0
       for _, u in ipairs(t.users) do if u.lab and u.has == 0 then lacking = lacking + 1 end end
-      local line = string.format('%s: made %d, used %d in 10 min; makers %d (%d working%s%s); chests %d, belts %d, labs %d',
-        short(name), made, used, #t.makers, working, #list > 0 and ', ' .. table.concat(list, ', ') or '',
+      local line = string.format('%s: made %d, used %d in 10 min; makers %d (%s%d working%s%s); chests %d, belts %d, labs %d',
+        short(name), made, used, #t.makers, #names > 0 and table.concat(names, ', ') .. '; ' or '', working, #list > 0 and ', ' .. table.concat(list, ', ') or '',
         t.outputs > 0 and '; ' .. t.outputs .. ' in their output' or '', chests, t.belts, t.labs)
       if needed[name] then line = line .. string.format(' (%d of %d labs have none)', lacking, labs)
       else line = line .. ' (the current research does not use it)' end

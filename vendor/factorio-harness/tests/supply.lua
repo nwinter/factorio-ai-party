@@ -239,11 +239,11 @@ any(r.networks,'  unmet (404,0) requester-chest 0/10: off by its circuit conditi
 any(r.networks,'1 requesters outside every logistic network')
 any(r.networks,'  unmet (100,100) requester-chest 0/5: not in a logistic network')
 -- Makers and users by status, with the missing ingredients and the worst three.
-eq(r.makers,'3 makers: 1 working, 1 full_output, 1 item_ingredient_shortage (1 missing electronic-circuit); recipes 3 advanced-circuit')
+eq(r.makers,'3 makers (3 assembling-machine-2): 1 working, 1 full_output, 1 item_ingredient_shortage (1 missing electronic-circuit); recipes 3 advanced-circuit')
 eq(r.makers_worst[1],'(4,0) assembling-machine-2 item_ingredient_shortage (missing electronic-circuit)')
 eq(r.makers_worst[2],'(8,0) assembling-machine-2 full_output')
 eq(#r.makers_worst,2)
-eq(r.users,'5 users: 1 working, 3 item_ingredient_shortage (3 missing advanced-circuit, 1 missing engine-unit), 1 no_power; for 3 processing-unit, 2 chemical-science-pack')
+eq(r.users,'5 users (3 assembling-machine-3, 2 assembling-machine-2): 1 working, 3 item_ingredient_shortage (3 missing advanced-circuit, 1 missing engine-unit), 1 no_power; for 3 processing-unit, 2 chemical-science-pack')
 eq(r.users_worst[1],'(28,0) assembling-machine-3 no_power; holds 1; fed from (28,3) requester-chest 4/10 (+6 coming) (on the way), inserter no_power; nearest advanced-circuit: requester-chest (28,3) 3 tiles')
 eq(r.users_worst[2],'(20,0) assembling-machine-3 item_ingredient_shortage (missing advanced-circuit); holds 0; fed from (20,3) requester-chest 0/10: all 3 held are reserved for other deliveries, inserter waiting_for_source_items; nearest advanced-circuit: requester-chest (24,3) 5 tiles')
 eq(r.users_worst[3],'(32,0) assembling-machine-2 item_ingredient_shortage (missing engine-unit, advanced-circuit); holds 0; fed from transport-belt (31,-2) holding 7, inserter waiting_for_source_items; nearest advanced-circuit: transport-belt (31,-2) 2 tiles')
@@ -253,7 +253,7 @@ has(r.counted,'9 crafters, ')
 has(r.counted,'2 of 2 belts, 7 inserters, 3 robots, 4 logistic networks')
 -- A user none of whose feeders takes from a place holding or asking for it.
 local w=supply_read(p,{item=AC,near={x=60,y=40},radius=5})
-eq(w.users,'1 users: 0 working, 1 item_ingredient_shortage (1 missing advanced-circuit); for 1 chemical-science-pack')
+eq(w.users,'1 users (1 assembling-machine-2): 0 working, 1 item_ingredient_shortage (1 missing advanced-circuit); for 1 chemical-science-pack')
 eq(w.users_worst[1],'(60,40) assembling-machine-2 item_ingredient_shortage (missing advanced-circuit); holds 0; none of its 1 feeding inserters takes from a place holding or requesting it (1 requester-chest); requester-chest (60,43): its section asking for it is off')
 eq(w.feeders,'1 inserters feed the users: 1 waiting_for_source_items (sources with none of it: 1 requester-chest)')
 -- near: only that area; the network covering it is read whole.
@@ -267,7 +267,7 @@ has(a.networks[1],'requesters 4: 1 met, 1 on the way, 2 unmet')
 has(a.networks[1],'in its requester chests 54')
 for _,line in ipairs(a.networks) do lacks(line,'network 12') end
 eq(a.makers,nil)
-has(a.users,'4 users: ')
+has(a.users,'4 users (')
 -- nearest first with an area: (20,3) before (32,3)
 eq(a.networks[2],'  unmet (20,3) requester-chest 0/10: all 3 held are reserved for other deliveries')
 -- The same reply wherever the asker stands.
@@ -301,4 +301,18 @@ supply_once(p,{item=AC,near={x=22,y=0},radius=12}); assert(finds>n,'another area
 n=finds; game.tick=game.tick+300
 eq(supply_once(p,{item=AC}).as_of,nil,'10 s later: read anew'); assert(finds>n)
 surface.find_entities_filtered=find
+-- Space Age crafters are makers and users by their type (Astra, 06:19: "makers omit electromagnetic plants"):
+-- electromagnetic plants, foundries, cryogenic plants, biochambers and crushers are assembling machines, recyclers
+-- furnaces; the line names every machine counted, the whole surface or near one.
+local EC_RECIPE={name=EC,products={{type='item',name=EC,amount=1}},ingredients={{type='item',name='iron-plate',amount=1},{type='item',name='copper-cable',amount=3}}}
+crafter(23,73,'electromagnetic-plant','item_ingredient_shortage',EC_RECIPE,{['iron-plate']=23},{})
+crafter(12,73,'electromagnetic-plant','working',EC_RECIPE,{['iron-plate']=5,['copper-cable']=9},{})
+crafter(11.5,65.5,'assembling-machine-2','item_ingredient_shortage',EC_RECIPE,{['copper-cable']=6},{})
+for i,name in ipairs({'foundry','cryogenic-plant','biochamber','crusher'}) do crafter(100+i*6,0,name,'working',EC_RECIPE,{},{}) end
+local rec=crafter(130,0,'recycler','working',EC_RECIPE,{},{}); rec.type='furnace'
+local whole=supply_read(p,{item=EC})
+eq(whole.makers,'8 makers (2 electromagnetic-plant, 1 assembling-machine-2, 1 biochamber, 1 crusher, ...): 6 working, 2 item_ingredient_shortage (1 missing copper-cable, 1 missing iron-plate); recipes 8 electronic-circuit')
+local near=supply_read(p,{item=EC,near={x=23,y=73},radius=40})
+has(near.makers,'3 makers (2 electromagnetic-plant, 1 assembling-machine-2)')
+any(near.makers_worst,'(23,73) electromagnetic-plant item_ingredient_shortage (missing copper-cable)')
 print('supply: ok')
