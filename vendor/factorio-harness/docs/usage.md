@@ -572,6 +572,19 @@ fh sleep 900 --until researched                       # ...or until the research
 - `launch {position, auto_requests: true}` on a silo whose rocket holds cargo loaded by hand: the game moves that cargo
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
+- A silo on another planet, by remote view as the silo GUI works there (Astra 01:41: the silo at (14.5,140.5) on
+  Vulcanus, from Sunward above it): `launch`, `configure` and `silo` take `surface` (a planet or surface name; `planet`
+  runs as `surface`) with `position` (any tile of the silo), and act where our force sees the chunk now (radar
+  coverage). Elsewhere they fail with `target must be in a visible chunk (remote view): (x,y) on vulcanus is not visible
+  to our force now`. `launch {surface, position, platform}`: `platform` stays the destination (a platform in orbit of
+  that planet).
+  - `configure {position, auto_requests, send_to_orbit_automatically}` on a rocket silo sets the GUI's two checkboxes:
+    automatic requests (`use_transitional_requests`; switched on with cargo loaded by hand, as `launch` above:
+    `cargo_to_trash`, `note`) and send to orbit automatically (`auto_launch` runs as that name). A silo takes no
+    recipe or filters.
+  - `configure` on a silo and every `launch` reply read the silo back: `settings {silo ("rocket-silo at (14.5,140.5) on
+    vulcanus"), auto_requests, send_to_orbit_automatically, requesting_for (the platform its automatic requests serve),
+    rocket (its state), parts}`.
 - `cargo {items: {name: count}}` (or `[{name, count, quality}]`, or `position` of a chest, rocket silo (its loaded
   cargo), landing pad, platform hub, wagon or vehicle in sight; `platform` for one on a platform) weighs a rocket cargo
   list before it is staged (cargo.lua; Sol rebuilt three kits into two after working the weights out offline). A
@@ -596,7 +609,7 @@ fh sleep 900 --until researched                       # ...or until the research
     `at_sources` what their belts and chests hold; `lacks` names ingredients the silo holds too few of for the next
     part; `feeders {inserters, idle, sources}` (inserters within 8 tiles dropping into the silo);
   - `cargo {kg, lift_kg, stacks, slots, items, over_kg}` (the rocket inventory weighed as `cargo` weighs it),
-    `trash`, `auto_requests` (the GUI checkbox), `platforms_above` (ours in orbit of this planet, a platform waiting
+    `trash`, `auto_requests` and `send_to_orbit_automatically` (the GUI checkboxes), `platforms_above` (ours in orbit of this planet, a platform waiting
     for its starter pack marked);
   - `last_launch {ago, tick, to, cargo, by}`: launches the game orders (`on_rocket_launch_ordered`: the cargo pod's
     contents and destination; automatic launches have no `by`) and launches an agent's `launch` call made (`by`).
