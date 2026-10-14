@@ -247,7 +247,7 @@ local poles={}
 for i=1,3 do poles[i]={valid=true,name='small-electric-pole',type='electric-pole',position={x=i*5,y=0},electric_network_id=4,electric_network_statistics=pstats} end
 force.players={nick}; game.surfaces={surface}
 surface.find_entities_filtered=function(f) return f.type=='electric-pole' and poles or {} end
-advance(3700)  -- past the 60 s the networks view is kept
+advance(3*3700)  -- past the 60 s the networks view is kept; the pole map, then the view, each spread over a minute (walk.lua)
 runtime.operator.shift_start()
 local sh=sol('status').team.shift
 assert(sh and sh.networks and sh.networks[1]:find('^nauvis electric #4 %(3 poles near %(10,0%)%): draw 9%.0 MW avg over'),sh and sh.networks and sh.networks[1])
