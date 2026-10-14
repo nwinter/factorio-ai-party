@@ -302,13 +302,16 @@ eq(rc.refused_now, nil, 'no all-or-nothing note for a signalled rail paste'); ha
 local alone = select(2, dryrun.check(rp, {kind='ghosts', entities={{index=1, name='rail-signal', position={x=5.5, y=-1.5}}}}))
 eq(alone[1].status, 'blocked', 'without planned rails the game refuses it')
 
--- Pole ghosts already ordered join too (review: a planned pole 7 tiles from a pole ghost 7 tiles from a built pole).
+-- Pole ghosts already ordered join too (review: a planned pole 7 tiles from a pole ghost 7 tiles from a built pole),
+-- said as a path that waits for them (Astra, shift10: power only once the ghosts stand).
 local chain_world = world(planet, {{name='small-electric-pole', type='electric-pole', position={x=-4.5, y=0.5}, electric_network_id=3},
   {name='entity-ghost', type='entity-ghost', ghost_name='small-electric-pole', position={x=2.5, y=0.5}}, me})
 local cp = {surface=chain_world, force=force, position={x=0, y=0}, build_distance=10, character=me,
   get_main_inventory=function() return {get_item_count=function() return 0 end} end}
 local co = dryrun.check(cp, {kind='ghosts', entities={{index=1, name='small-electric-pole', position={x=9.5, y=0.5}}}})
-eq(co.power.islands, nil); has(co.power.connected[1], 'planned pole #1 reaches the built network of')
+eq(co.power.islands, nil)
+eq(co.power.connected[1], 'planned pole #1 reaches a built network only through pole ghosts not built yet (small-electric-pole (2.5,0.5)): '
+  ..'no wire path to a built pole until they stand; nearest built pole small-electric-pole at (-4.5,0.5) is 14.0 tiles from (9.5,0.5) (wire reach 7.5)')
 
 -- Tile ghosts already ordered count as tiles to come: a furnace on the pond over landfill ghosts is placeable after
 -- them, and a platform ring closed by foundation ghosts encloses no hole they already fill.
@@ -609,4 +612,44 @@ eq(marks.tiles.refused, nil); eq(marks.tiles.marks, 'place_ghosts marks slipstac
 tree.marked = true
 eq(dryrun.tile_blockers(ww, force, 'landfill', 50, 50), nil)
 tree.marked = nil
+-- Astra, shift10 13:23: a roboport at (70,8) and a small pole at (69.5,10.5); the nearest built poles of network 2,
+-- (73.5,2.5) and (77.5,14.5), are 8.94 tiles away, past a small pole's wire reach of 7.5. Pole ghosts at (69.5,14.5)
+-- and (73.5,14.5) (on world n at 06:31, 4 tiles from the new pole and from (77.5,14.5)) bridged the gap in the dry run,
+-- which said "planned pole #2 reaches the built network of small-electric-pole (73.5,2.5)"; built, the roboport's
+-- network went no_power after its starting charge until Astra added poles at (67.5,9.5) and (69.5,5.5).
+do
+  prototypes.entity.roboport.electric_energy_source_prototype = {}
+  local function layout(extra)
+    local list = {{name='character', type='character', position={x=66.5, y=4.5}},
+      {name='small-electric-pole', type='electric-pole', position={x=73.5, y=2.5}, electric_network_id=2},
+      {name='small-electric-pole', type='electric-pole', position={x=77.5, y=14.5}, electric_network_id=2}}
+    for _, e in ipairs(extra or {}) do list[#list+1] = e end
+    return world(function() return 'grass-1' end, list)
+  end
+  local plan = {kind='build', entities={{index=1, name='roboport', position={x=70, y=8}, direction=0, item='roboport'},
+    {index=2, name='small-electric-pole', position={x=69.5, y=10.5}, direction=0, item='small-electric-pole'}}}
+  local function run(extra)
+    local w = layout(extra)
+    local me2 = {name='character', type='character', position={x=66.5, y=4.5}, prototype=prototypes.entity.character}
+    return dryrun.check({surface=w, force=force, position=me2.position, character=me2, build_distance=10,
+      get_main_inventory=function() return {get_item_count=function() return 10 end} end}, plan).power
+  end
+  local ghosts = {{name='entity-ghost', type='entity-ghost', ghost_name='small-electric-pole', position={x=69.5, y=14.5}},
+    {name='entity-ghost', type='entity-ghost', ghost_name='small-electric-pole', position={x=73.5, y=14.5}}}
+  -- With the ghosts: the path waits for them, and the roboport has no power until they stand.
+  local pw = run(ghosts)
+  eq(#pw.connected, 1); eq(pw.islands, nil)
+  eq(pw.connected[1], 'planned pole #2 reaches a built network only through pole ghosts not built yet (small-electric-pole (69.5,14.5), '
+    ..'small-electric-pole (73.5,14.5)): no wire path to a built pole until they stand; nearest built pole small-electric-pole at (73.5,2.5) '
+    ..'is 8.9 tiles from (69.5,10.5) (wire reach 7.5)')
+  eq(pw.unpowered[1].name, 'roboport'); eq(pw.unpowered[1].why, 'the poles over it reach a built network only through pole ghosts not built yet: no power until they stand')
+  -- Without them: an island, 8.9 tiles from the nearest built pole.
+  pw = run()
+  eq(pw.connected, nil)
+  eq(pw.islands[1], 'planned pole #2 at (69.5,10.5), powering 1 planned machine: no wire path to a built pole; nearest built pole small-electric-pole at (73.5,2.5) is 8.9 tiles from (69.5,10.5) (wire reach 7.5)')
+  -- Astra's fix, poles at (67.5,9.5) and (69.5,5.5): (69.5,5.5) is 5 tiles from (73.5,2.5), so it reaches network 2 now.
+  pw = run({{name='small-electric-pole', type='electric-pole', position={x=67.5, y=9.5}, electric_network_id=2},
+    {name='small-electric-pole', type='electric-pole', position={x=69.5, y=5.5}, electric_network_id=2}})
+  eq(pw.islands, nil); eq(pw.unpowered, nil); eq(pw.connected[1]:match('^planned pole #2 reaches the built network of small%-electric%-pole') ~= nil, true)
+end
 print('dryrun: ok')

@@ -1009,7 +1009,14 @@ fh sleep 900 --until researched                       # ...or until the research
     from (-40.5,22.5) (wire reach 7.5)`) and `unpowered` rows (no pole's supply area over the machine, or only pole
     ghosts with no wire path). Two poles join when they are within the shorter of their two wire reaches; built poles
     and pole ghosts within 40 tiles of the plan count, the ghosts joining what lies in their reach as planned poles
-    do. At most 10 `islands` and 20 `unpowered` rows (`more_islands`, `unpowered_count`).
+    do. A path to a built network that runs through pole ghosts waits for them, and says so (Astra, shift10: a small
+    pole 8.94 tiles from the nearest built pole, wire reach 7.5, read connected through two pole ghosts nobody had
+    built, and its roboport went no_power after the starting charge): `planned pole #2 reaches a built network only
+    through pole ghosts not built yet (small-electric-pole (69.5,14.5), small-electric-pole (73.5,14.5)): no wire path to
+    a built pole until they stand; nearest built pole small-electric-pole at (73.5,2.5) is 8.9 tiles from (69.5,10.5)
+    (wire reach 7.5)`, and a machine those poles cover is an `unpowered` row (`... only through pole ghosts not built
+    yet: no power until they stand`). At most 10 `islands` and 20 `unpowered` rows (`more_islands`,
+    `unpowered_count`).
   - `standing` (off a platform): `reach` (your build distance), `from_here` (`5 of 7 in reach from (11.5,-90)`),
     and `spots [{at, reaches: "#4-6"}]`, at most 8, nearest first from where you stand: free tiles (off every planned
     footprint, not on a belt, where a character fits) from which each entry out of reach is within reach; `no_spot`
