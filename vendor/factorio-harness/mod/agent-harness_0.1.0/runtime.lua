@@ -6891,6 +6891,7 @@ function M.on_event(event)
     -- A turret of ours that died: its ghost requests the ammo it held (turretammo.lua); a fault is counted.
     if e.type=='ammo-turret' or e.type=='artillery-turret' then
       local ok,err=pcall(M.turretammo.on_died,e)
+      if ok then ok,err=pcall(M.pushalerts.turret_died,e) end  -- rebuilt, it is named if it stays empty (pushalerts.lua)
       if not ok then s.turret_ammo_errors={count=((s.turret_ammo_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     end
     -- Friendly fire: a cause of the entity's own force, or, with the cause gone (a flame outliving its turret), the

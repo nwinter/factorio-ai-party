@@ -319,6 +319,15 @@ do
   a.rounds=0
   g=read(); g=read(); g=read()
   eq(g.rebuilt_empty,nil,'armed once: an empty turret like any other'); eq(g.no_ammo.count,2)
+  -- A turret that died and was rebuilt from its ghost has its old unit number again (2.0): the death marks it, so
+  -- rebuilt between two reads it is still named.
+  local c=ent('nauvis','gun-turret','ammo-turret',240,10,{unit_number=905,rounds=20,force=force})
+  g=read(); eq(st7.push_turrets.player.units[905].new,nil,'an armed turret like any other')
+  c.valid=false; R.turret_died(c)
+  local c2=ent('nauvis','gun-turret','ammo-turret',240,10,{unit_number=905})
+  g=read(); g=read(); g=read()
+  eq(g.rebuilt_empty.count,1); eq(g.rebuilt_empty.lost[1],'gun-turret (240,10) no ammo request')
+  c2.valid=false
   -- The background read (the banded walk) keeps the same memory.
   local st8={board={items={}}}
   local BG=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
@@ -340,6 +349,23 @@ do
   g=bgpass(); eq(g.rebuilt_empty,nil); eq(g.no_ammo.count,3)
   g=bgpass(); g=bgpass()
   eq(g.rebuilt_empty.count,1); eq(g.rebuilt_empty.lost[1],'gun-turret (230,10) no ammo request')
+  -- A read under way when the memory first exists (a deploy mid-read) saw part of the map before it: it marks nothing
+  -- built since; the next whole read does.
+  local st9={board={items={}}}
+  local B2=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st9 end,
+    agents=function() return {{index=1,name='astra'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return {key='nauvis',position={x=200,y=10}} end,
+    network_groups=function() return {} end}
+  game.tick=game.tick+1; B2.tick(game.tick)
+  assert(st9.push_jobs.player,'a read under way'); st9.push_jobs.player.tgen=nil; st9.push_turrets=nil
+  local n=0
+  repeat game.tick=game.tick+1; B2.tick(game.tick); n=n+1 until not st9.push_jobs.player or n>5000
+  eq(st9.push_turrets.player.ready,nil,'begun before its memory: not a whole read for it')
+  game.tick=game.tick+1800; n=0
+  repeat game.tick=game.tick+1; B2.tick(game.tick); n=n+1 until (not st9.push_jobs.player and n>1) or n>5000
+  eq(st9.push_turrets.player.ready,true)
   force.players={}; game.forces=nil; ents.nauvis={}
 end
 print('pushalerts: ok')

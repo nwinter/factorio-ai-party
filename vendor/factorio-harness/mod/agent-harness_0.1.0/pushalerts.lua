@@ -121,9 +121,10 @@ return function(api)
   end
   -- Turrets rebuilt empty (Astra, shift10: 15+ gun turrets rebuilt by robots with no ammo and destroyed again;
   -- operator 06:20 item 10). Each read remembers every ammo turret (storage push_turrets, per force, by unit number).
-  -- One first seen after a whole read was built since; while it has had no ammo since it was first seen, for
-  -- EMPTY_TICKS or more, it is in a rebuilt_empty group, named with its ammo request (instead of no_ammo). Once it
-  -- holds ammo it is like any other turret.
+  -- One first seen after a whole read was built since, and so is one that died (M.turret_died): rebuilt from its
+  -- ghost it has its old unit number again (2.0). While it has had no ammo since it was first seen, for EMPTY_TICKS
+  -- or more, it is in a rebuilt_empty group, named with its ammo request (instead of no_ammo). Once it holds ammo it
+  -- is like any other turret.
   local EMPTY_TICKS = 3600
   local function turret_memory(force)
     local s = api.state()
@@ -132,8 +133,9 @@ return function(api)
     if not mem then mem = {gen=0, units={}}; s.push_turrets[force.name] = mem end
     return mem
   end
-  -- After a whole read (complete: not cut by the read's budget): forget turrets it did not see; from now on a turret
-  -- not seen before was built since.
+  -- After a whole read (complete: not cut by the read's budget, and started with this memory: a read under way at a
+  -- deploy saw part of the map before it existed): forget turrets it did not see; from now on a turret not seen
+  -- before was built since.
   local function turrets_read(mem, complete)
     if not complete then return end
     for unit, v in pairs(mem.units) do if v.g ~= mem.gen then mem.units[unit] = nil end end
@@ -325,6 +327,7 @@ return function(api)
         s.push_jobs[force.name] = job
         local mem, tmem = inserter_memory(force), turret_memory(force)
         mem.gen, tmem.gen = mem.gen + 1, tmem.gen + 1
+        job.tgen = tmem.gen
       elseif job and walk.due(job, tick, SCAN_TICKS) then
         job.steps = job.steps + 1
         local stage = job.stages[job.i]
@@ -346,7 +349,8 @@ return function(api)
           end
         elseif stage.step == 'alerts' then
           job.i = job.i + 1; game_alerts(job.groups, force); forget_unseen(inserter_memory(force))
-          turrets_read(turret_memory(force), job.budget > 0)
+          local tmem = turret_memory(force)
+          turrets_read(tmem, job.budget > 0 and job.tgen == tmem.gen)
         elseif stage.step == 'networks' then job.i = job.i + 1; job.extra = network_groups(force)
         else
           s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra)}
@@ -355,6 +359,13 @@ return function(api)
         end
       end
     end
+  end
+  -- One of our turrets died (the runtime's on_entity_died): marked built since, for when its ghost is built again.
+  function M.turret_died(e)
+    local s = api.state()
+    local mem = s.push_turrets and s.push_turrets[e.force.name]
+    local unit = mem and e.unit_number
+    if unit then mem.units[unit] = {new=true, g=mem.gen} end
   end
   -- The last finished read; with the background job running it never reads
   -- in a reply, except a force's very first (and tests without the job).
