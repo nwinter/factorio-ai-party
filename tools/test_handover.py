@@ -8,7 +8,8 @@ docs/studies/2026-10-13-agent-minds.md fixes 8 and 12): python3 tools/test_hando
 2. carry: the new notes.md opens with "## Last shift, measured" (replacing the one before), keeps the notes, and caps
    them at 16 KB (the full text to notes-archive.md; Muse's was 134 KB).
 3. brief: at most 3 KB after a compaction: notes.md's Now, Claims and Agreements, open board items and the last tells
-   from the journal, the last 30 minutes measured; "AGENTS.md is still loaded" for Claude Code and Codex only.
+   from the journal, the open team projects fh filed from its replies (eng/projects), the last 30 minutes measured;
+   "AGENTS.md is still loaded" for Claude Code and Codex only.
 """
 import json, os, shutil, subprocess, sys, tempfile, time
 
@@ -139,6 +140,19 @@ def brief():
         assert "#297 Fulgora ship: 85 foundation (claimed)" in b and "astra, 2s ago: please feed the boilers" in b, b
         assert "## Your last 30 minutes, measured" in b and "moved nothing: transfer x1, feed x1" in b, b
         assert "yyyy" not in b  # the rest of notes.md stays in the file
+        assert "## Open team projects" not in b  # none filed yet
+        # open board projects fh filed from its replies (cli.ts .projects.json): this agent's own first, with their age
+        at = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() - 14 * 60))
+        lines = ["#15 robot mall: 0 of 1 step; owner grok (last request 3m00s ago); next 1. roboports",
+                 "#12 nuclear plant: 2 of 4 steps; owner haiku; next 3. reactor; handoff: " + "h" * 300,
+                 '+3 more: board {kind: "project"}']
+        open(os.path.join(ws, context.PROJECTS_FILE), "w").write(json.dumps({"at": at, "lines": lines}))
+        b = context.brief(ws, "Your context was just compacted.")
+        assert len(b) <= context.BRIEF_MAX, len(b)
+        part = b.split("## Open team projects (your fh replies, 14 min ago)\n", 1)[1].split("\n\n", 1)[0].split("\n")
+        assert part[0].startswith("- #12 nuclear plant: 2 of 4 steps; owner haiku; next 3. reactor") and part[0].endswith(" [...]"), part
+        assert part[1].startswith("- #15 robot mall") and part[2] == "- +3 more: ./fh board projects", part
+        assert "## Your last 30 minutes, measured" in b, b  # still fits
         open(os.path.join(ws, context.MARKER), "w").write("grok grok-4.7 154000\n")
         assert "AGENTS.md is still loaded" not in context.brief(ws, "x")  # Grok reads it as a file
         # the hooks print the brief, not the whole notes.md

@@ -60,8 +60,8 @@ already targets your character.
 
 - The board is the team's shared list in the game save: `./fh board` (add `--args '{"mine":true}'` or
   `'{"status":"active"}'`). Post with `./fh board post --args '{"kind":"request","title":"...","owner":"grok"}'`; kinds
-  are `task`, `request`, `claim` (with `"area":{"left_top":{x,y},"right_bottom":{x,y}}`) and `note`. A post may add
-  `"needs":{"iron-plate":200}` and a first `"note":"..."`.
+  are `task`, `request`, `claim` (with `"area":{"left_top":{x,y},"right_bottom":{x,y}}`), `note` and `project`. A post
+  may add `"needs":{"iron-plate":200}` and a first `"note":"..."`.
 - Name an owner in a request when you know who should do it. A request without an owner is shown to everyone until someone takes it; take one with
   `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`). A task or request whose owner has made no request for
@@ -70,6 +70,10 @@ already targets your character.
   shows it (`./fh board` shows it at the top); `./fh board plan goals "..."` replaces the goals; `./fh board plan
   doing "..."` sets your line; `./fh board plan for luna "..."` sets a teammate's line (shown as set by you); `""`
   clears. The stream's board widget shows it.
+- A `project` (`"goal"`, `"steps":["...","..."]`, `"areas"`) stays on the board across shifts. Anyone adds steps and
+  marks them done (`./fh board update --args '{"id":N,"step":"...","done":[2,3]}'`); the owner writes `goal` and
+  `handoff`, and anyone may once the owner has made no request for 30 minutes (and may then take it). `./fh board
+  projects` lists the open ones with progress.
 - `./fh research` shows the research queue: each technology's progress, who queued it, its packs, and when it should
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
@@ -125,7 +129,7 @@ already targets your character.
   more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them any time;
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
-  open board items).
+  open board items). `projects` lists the open projects, one line each with progress, next step and handoff.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `feed {"recipe": NAME,

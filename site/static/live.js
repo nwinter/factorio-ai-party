@@ -326,14 +326,29 @@
       var o = byName[c.agent] || {};
       return '<li>' + avatar(o.name ? o : { name: c.agent || c.owner }, 24) + '<span><b>' + esc(o.display_name || c.owner || '?') + '</b> ' + esc(c.title) + '</span></li>';
     }).join('');
+    // open projects (board kind project): owner, title and progress ("3 of 7 steps") with a bar
+    var projects = (board.projects || []).map(function (p) {
+      var o = byName[p.agent] || {}, pct = p.total ? Math.round(100 * p.done / p.total) : 0;
+      return '<li>' + avatar(o.name ? o : { name: p.agent || p.owner || '?' }, 24) + '<div><span><b>' + esc(p.title) + '</b> ' +
+        '<span class="fx-muted">' + esc(p.owner ? (o.display_name || p.owner) : 'no owner') + (p.status === 'blocked' ? ', blocked' : '') + '</span></span>' +
+        '<div class="project-progress"><div class="fx-progress fx-progress--health fx-progress--thin" role="progressbar" aria-valuenow="' + pct +
+        '" aria-valuemin="0" aria-valuemax="100" aria-label="' + esc(p.title) + ' progress" style="--fx-value:' + pct + '%"></div>' +
+        '<span class="small">' + esc(p.progress || '') + '</span></div></div></li>';
+    }).join('');
+    var moreProjects = (board.projects_total || 0) - (board.projects || []).length;
     var events = (board.events || []).slice(-8).reverse().map(function (e) {
       var o = byName[e.agent] || {};
-      return '<li><span class="fx-muted">' + esc(o.display_name || e.by || '?') + ' ' + esc(e.verb) + '</span> ' + esc(e.title) +
-        (e.kind ? ' <span class="fx-chip fx-chip--grey">' + esc(e.kind) + '</span>' : '') + '</li>';
+      var verb = e.verb === 'step' ? 'finished a step of' : e.verb;
+      return '<li><span class="fx-muted">' + esc(o.display_name || e.by || '?') + ' ' + esc(verb) + '</span> ' + esc(e.title) +
+        (e.kind ? ' <span class="fx-chip fx-chip--grey">' + esc(e.kind) + '</span>' : '') +
+        (e.verb === 'step' && e.step ? ' <span class="fx-muted">' + esc(e.step) + '</span>' : '') +
+        (e.kind === 'project' && e.progress ? ' <span class="fx-muted">(' + esc(e.progress) + ')</span>' : '') + '</li>';
     }).join('');
     var boardHtml = board.available === false ? '<p class="fx-muted">The board is not running in this world.</p>' :
       '<p class="board-counts"><span class="fx-chip fx-chip--orange">' + esc(board.in_progress || 0) + ' in progress</span> ' +
       '<span class="fx-chip fx-chip--grey">' + esc(board.open_unowned || 0) + ' open</span></p>' +
+      (projects ? '<h4>Projects</h4><ul class="board-projects">' + projects + '</ul>' +
+        (moreProjects > 0 ? '<p class="fx-muted small">+' + esc(moreProjects) + ' more</p>' : '') : '') +
       (claims ? '<h4>Who owns what</h4><ul class="board-claims">' + claims + '</ul>' : '') +
       (events ? '<h4>Recent</h4><ul class="board-events">' + events + '</ul>' : '');
 

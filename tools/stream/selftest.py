@@ -31,10 +31,11 @@ BOARD_EVENTS = [
 class FakeHarness:
     """Answers like the eng/bots runtime described in docs/BOTS-API.md."""
 
-    def __init__(self, board=False, reject_peek=False, reject_brief=False):
+    def __init__(self, board=False, reject_peek=False, reject_brief=False, no_projects=False):
         self.calls = []
         self.tick = 600_000
         self.board = board
+        self.no_projects = no_projects  # a runtime older than board kind project (eng/projects)
         self.reject_peek = reject_peek
         # a runtime older than peek is older than brief too
         self.reject_brief = reject_brief or reject_peek
@@ -88,6 +89,13 @@ class FakeHarness:
             assert self.board, "board_events sent to a runtime that does not list it"
             evs = [e for e in BOARD_EVENTS if e["seq"] > args.get("since_seq", 0)]
             return {"events": evs, "cursor": evs[-1]["seq"] if evs else args.get("since_seq", 0)}, self.tick
+        if action == "board" and args.get("kind") == "project":
+            if self.no_projects:
+                raise RuntimeError("kind must be task, request, claim, note or harness")
+            assert args.get("status") == "active", args
+            items = [{"id": 6, "kind": "project", "title": "Nuclear plant", "owner": "astra", "requested_by": "luna",
+                      "status": "doing", "progress": "3 of 7 steps", "next_steps": ["[ ] 4. turbines"], "updated_tick": 4}]
+            return {"items": items, "matched": 1, "open_unowned": 1}, self.tick
         if action == "board":
             items = [{"id": 2, "kind": "claim", "title": "West wall", "owner": "luna", "requested_by": "luna",
                       "status": "claimed", "updated_tick": 3}] if args.get("kind") == "claim" else [
@@ -311,6 +319,13 @@ def main():
     assert b["open_unowned"] == 1 and b["claims"][0]["agent"] == "luna" and b["in_progress"] == 1, b
     assert len(b["changelog"]) == 1 and b["changelog"][0]["version"] == "v4" and \
         b["changelog"][0]["request"] == "Save build orders", b["changelog"]
+    # open projects come from their own read (they outlive the newest 60 items), with their progress
+    assert b["projects"] == [{"id": 6, "title": "Nuclear plant", "owner": "astra", "agent": "astra", "status": "doing",
+                              "progress": "3 of 7 steps", "done": 3, "total": 7}] and b["projects_total"] == 1, b["projects"]
+    # a runtime older than projects refuses the kind: the rest of the board still comes
+    osrc = LiveSource("test", run, harness=FakeHarness(board=True, no_projects=True))
+    oobs = osrc.observe()
+    assert not oobs["errors"] and len(oobs["board"]["items"]) == 3, (oobs["errors"], oobs.get("board"))
 
     # losses from status.alerts.latest (runtime describe_incident lines)
     losses = LiveSource.loss_events({"latest": [

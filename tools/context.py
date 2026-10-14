@@ -17,8 +17,10 @@ re-injects notes.md after a marked compaction and, with --at N (Claude), warns o
 transcript is within reach of the compaction point so the agent updates notes.md first. pre-compact with
 --skip-late S --at N (Claude) blocks an automatic compaction in the last S seconds before DIR/deadline.txt.
 """
+import calendar
 import json
 import os
+import re
 import sys
 import time
 
@@ -271,6 +273,33 @@ def my_claims(lines, me, keep=3):
     return [f"#{i['id']} {i.get('title', '')[:90]} ({i.get('status')})" for i in open_[-keep:]]
 
 
+PROJECTS_FILE = ".projects.json"   # fh files the open board projects its replies carried here (cli.ts, next to journal.jsonl)
+
+
+def team_projects(d, me, keep=4, cap=200):
+    """The open board projects from fh's last replies that carried them (the shift block, board reads, project
+    updates), this agent's own first, and how long ago fh filed them: (lines, "14 min ago"), or ([], None)."""
+    try:
+        with open(os.path.join(d, PROJECTS_FILE)) as f:
+            saved = json.load(f)
+        lines = [l for l in saved.get("lines") or [] if isinstance(l, str) and l.strip()]
+    except (OSError, ValueError, AttributeError):
+        return [], None
+    rows = [l for l in lines if l.startswith("#")]
+    rows.sort(key=lambda l: f"; owner {me} " not in l and f"; owner {me};" not in l and not l.endswith(f"; owner {me}"))
+    out = [l if len(l) <= cap else l[:cap] + " [...]" for l in rows[:keep]]
+    more = len(rows) - len(out) + sum(int(m.group(1)) for m in (re.match(r"\+(\d+) more", l) for l in lines) if m)
+    if more > 0:
+        out.append(f"+{more} more: ./fh board projects")
+    try:
+        filed = calendar.timegm(time.strptime(str(saved.get("at"))[:19], "%Y-%m-%dT%H:%M:%S"))
+        age = max(0, int(time.time() - filed) // 60)
+        when = f"{age} min ago" if age < 120 else f"{age // 60} h ago"
+    except (ValueError, OverflowError):
+        when = "at an unknown time"
+    return out, when
+
+
 def brief(d, why):
     """After a compaction: at most BRIEF_MAX characters from notes.md (Now, claims, agreements), the agent's own
     claims and the last tells to it from its journal, and what its last 30 minutes measured (handover.py), instead of
@@ -297,6 +326,9 @@ def brief(d, why):
     claims = my_claims(lines, me)
     if claims:
         out += ["", "## Your open board items (your replies)"] + [f"- {c}" for c in claims]
+    projects, when = team_projects(d, me)
+    if projects:
+        out += ["", f"## Open team projects (your fh replies, {when})"] + [f"- {p}" for p in projects]
     tells = recent_tells(lines)
     if tells:
         out += ["", "## Last tells to you"] + [f"- {t}" for t in tells]

@@ -5124,8 +5124,8 @@ function M.dispatch_inner(request)
       -- A repeating plan's rounds with short steps, when they changed (scheduler.lua).
       local rounds=scheduler.round_news(p.index)
       if rounds then result.team=result.team or {}; result.team.queue=rounds end
-      -- The first reply of a shift: plan goals, research since the agent's last shift, researched and none built.
-      local ok,shift=pcall(M.research.shift_block,p,last_call,M.board.plan_for(M.board.who(p)))
+      -- The first reply of a shift: plan goals, open projects, research since the agent's last shift, researched and none built.
+      local ok,shift=pcall(M.research.shift_block,p,last_call,function() return M.board.plan_for(M.board.who(p)) end)
       if not ok then local s=state(); s.research_errors={count=((s.research_errors or {}).count or 0)+1,last=tostring(shift),tick=game.tick}
       elseif shift then
         -- The networks, one line each, next to researched_none_built (networks.lua).
