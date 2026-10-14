@@ -373,7 +373,22 @@ return function(api)
     st.survey_cache=cache
     st.survey_jobs=st.survey_jobs or {}
     st.survey_read=st.survey_read or {}
-    for key,entry in pairs(cache) do
+    local keys={}
+    for key in pairs(cache) do keys[#keys+1]=key end
+    table.sort(keys)
+    for _,key in ipairs(keys) do
+      -- A step that fails ends its job (noted in survey_errors); the survey is kept another CACHE_TICKS.
+      local ok,err=pcall(M.step,st,cache,key,tick)
+      if not ok then
+        st.survey_jobs[key]=nil
+        st.survey_errors={count=((st.survey_errors or {}).count or 0)+1,last=tostring(err),tick=tick}
+        if cache[key] then cache[key].tick=tick end
+      end
+    end
+  end
+  function M.step(st,cache,key,tick)
+    local entry=cache[key]
+    if entry then
       local job=st.survey_jobs[key]
       local read=st.survey_read[key]
       if not job and (not read or tick-read>=KEEP_TICKS) then

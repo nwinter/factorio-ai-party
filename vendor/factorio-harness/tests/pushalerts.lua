@@ -177,11 +177,14 @@ local function run(n) for _=1,n do game.tick=game.tick+1; finds={}; C.tick(game.
 run(1); eq(#finds,0,'the job starts'); assert(st5.push_jobs.player)
 local stages=#st5.push_jobs.player.stages
 eq(stages,2*22+3,'22 types on each of 2 planets, then alerts, networks, merge')
-for _=1,stages do
-  game.tick=game.tick+1; finds={}; C.tick(game.tick)
+local ticks=0
+repeat
+  game.tick=game.tick+1; finds={}; C.tick(game.tick); ticks=ticks+1
+  assert(#finds<=1,'at most one find a tick')
   for _,t in ipairs(finds) do eq(type(t),'string','one type per find') end
-end
+until not st5.push_jobs.player or ticks>500
 eq(st5.push_jobs.player,nil,'done'); eq(netcalls,1)
+eq(ticks,2*22*2+3,'each type: its find, then its slice; then alerts, networks, merge')
 local done=C.read(astra,{}).groups
 eq(#done,2); local kinds={}; for _,g in ipairs(done) do kinds[g.kind]=g.count end
 eq(kinds.no_fuel,3); eq(kinds.no_ammo,2)

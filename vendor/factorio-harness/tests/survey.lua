@@ -181,6 +181,19 @@ do
   eq(surveyed(later.warnings),surveyed(at_once.warnings),'the same summary')
   for name,line in pairs(at_once.machines) do eq(later.machines[name],line) end
   eq(later.factory.belt_ends,at_once.factory.belt_ends)
+  -- A step that fails ends its job, noted in survey_errors; the last survey is kept and the next job waits 10 s.
+  local bad={valid=true,type='ammo-turret',name='gun-turret',position={x=0,y=0},status=0,get_inventory=function() error('broken turret') end}
+  local plain=surface.find_entities_filtered
+  surface.find_entities_filtered=function(f)
+    local out=plain(f)
+    if f.type=='ammo-turret' then out[#out+1]=bad end
+    return out
+  end
+  game.tick=game.tick+600
+  local kept=storage.survey_cache['player/1']
+  for _=1,40 do game.tick=game.tick+1; S.tick(game.tick) end
+  eq(storage.survey_errors.count,1); assert(storage.survey_errors.last:find('broken turret',1,true),storage.survey_errors.last)
+  eq(storage.survey_jobs['player/1'],nil); eq(storage.survey_cache['player/1'],kept,'the last survey is kept')
   surface.find_entities_filtered=find
   game.forces=nil
 end

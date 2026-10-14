@@ -27,6 +27,7 @@ return function(api)
   local FUEL_SCAN = 300   -- chests and belt tiles read per alert (00:26 rule: bounded reads on the live world)
   local FUELS = {'coal', 'solid-fuel', 'wood', 'rocket-fuel', 'nuclear-fuel'}
   local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 3600, 12   -- the view: kept 60 s (task-statuscost)
+  local SLICE = 1500   -- machines read a tick by the background view
   local GENERATORS = {'generator', 'burner-generator', 'solar-panel', 'accumulator', 'fusion-generator', 'electric-energy-interface'}
   local MACHINES = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'inserter', 'beacon', 'radar', 'roboport', 'pump',
     'electric-turret', 'rocket-silo', 'agricultural-tower', 'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'offshore-pump'}
@@ -226,10 +227,15 @@ return function(api)
     end
     return {nets=nets, seg_net=seg_net, steam=steam}
   end
-  local function e_machines(ctx, f, surface)
+  local function machine_list(f, surface)
+    return try(function() return surface.find_entities_filtered{type=MACHINES, force=f, limit=MAX_SCAN} end) or {}
+  end
+  -- Machines from..to of a found list into the networks (the background view reads SLICE a tick).
+  local function e_machines_read(ctx, list, from, to)
     local nets = ctx.nets
     local low, none = defines.entity_status and defines.entity_status.low_power, defines.entity_status and defines.entity_status.no_power
-    for _, e in ipairs(try(function() return surface.find_entities_filtered{type=MACHINES, force=f, limit=MAX_SCAN} end) or {}) do
+    for i = from or 1, to or #list do
+      local e = list[i]
       local net = e.valid and nets[try(function() return e.electric_network_id end) or -1]
       if net then
         net.machines = net.machines + 1
@@ -237,6 +243,7 @@ return function(api)
       end
     end
   end
+  local function e_machines(ctx, f, surface) e_machines_read(ctx, machine_list(f, surface)) end
   local function e_boilers(ctx, f, surface)
     local seg_net, steam = ctx.seg_net, ctx.steam
     -- A boiler feeds the generators whose steam it shares (its output's fluid
@@ -509,6 +516,17 @@ return function(api)
     n.view_bg = true
     n.view_jobs = n.view_jobs or {}
     for _, f in ipairs(forces()) do
+      -- A step that fails ends its job (noted in view_errors); the view is kept another VIEW_TICKS.
+      local ok, err = pcall(M.view_step, n, f, tick)
+      if not ok then
+        n.view_jobs[f.name] = nil
+        n.view_errors = {count=((n.view_errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
+        if n.views[f.name] then n.views[f.name].tick = tick end
+      end
+    end
+  end
+  function M.view_step(n, f, tick)
+    do
       local job = n.view_jobs[f.name]
       local v = n.views[f.name]
       if not job and (not v or tick - v.tick >= VIEW_TICKS) then
@@ -521,6 +539,20 @@ return function(api)
       elseif job then
         local step = job.steps[job.i]
         job.i = job.i + 1
+        -- The machines: found in one tick, then read SLICE a tick (the step repeats until the list is read).
+        if step.step == 'machines' and job.ctx[step.surface] then
+          local ctx = job.ctx[step.surface]
+          local surface0
+          for _, s in ipairs(surfaces()) do if s.name == step.surface then surface0 = s end end
+          if surface0 and not job.list then job.list = machine_list(f, surface0); job.at = 1; job.i = job.i - 1
+          elseif surface0 then
+            local last = math.min(#job.list, job.at + SLICE - 1)
+            e_machines_read(ctx, job.list, job.at, last)
+            job.at = last + 1
+            if job.at <= #job.list then job.i = job.i - 1 else job.list, job.at = nil, nil end
+          end
+          step = {step='skip'}
+        end
         local surface
         for _, s in ipairs(surfaces()) do if s.name == step.surface then surface = s end end
         local row = surface and job.out[step.surface]
@@ -528,10 +560,13 @@ return function(api)
         if step.step == 'map' then fresh_map(n)
         elseif not surface and step.step ~= 'done' then  -- the surface is gone
         elseif step.step == 'begin' then job.ctx[step.surface] = e_begin(n, f, surface)
-        elseif step.step == 'machines' then e_machines(job.ctx[step.surface], f, surface)
+        elseif step.step == 'machines' then  -- (read above; no context: its begin step failed)
         elseif step.step == 'boilers' then
-          e_boilers(job.ctx[step.surface], f, surface)
-          row.electric = e_rows(job.ctx[step.surface], n, surface)
+          local ctx = job.ctx[step.surface]
+          if ctx then
+            e_boilers(ctx, f, surface)
+            row.electric = e_rows(ctx, n, surface)
+          end
           job.ctx[step.surface] = nil
         elseif step.step == 'logistic' then row.logistic = logistic(n, f, surface)
         elseif step.step == 'turrets' then row.turrets = turrets(f, surface)

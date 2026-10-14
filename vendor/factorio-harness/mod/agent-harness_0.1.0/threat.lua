@@ -291,7 +291,22 @@ return function(api)
     local st=api.state()
     st.chart_bg=true
     st.chart_jobs=st.chart_jobs or {}
-    for key,e in pairs(st.threat_shared or {}) do
+    local keys={}
+    for key in pairs(st.threat_shared or {}) do keys[#keys+1]=key end
+    table.sort(keys)
+    for _,key in ipairs(keys) do
+      -- A step that fails ends its sweep (noted in chart_errors); the chart is kept another CHART_TICKS.
+      local e=st.threat_shared[key]
+      local ok,err=pcall(M.sweep_step,st,key,e,tick)
+      if not ok then
+        st.chart_jobs[key]=nil
+        st.chart_errors={count=((st.chart_errors or {}).count or 0)+1,last=tostring(err),tick=tick}
+        if e.chart then e.chart.tick=tick end
+      end
+    end
+  end
+  function M.sweep_step(st,key,e,tick)
+    do
       local job=st.chart_jobs[key]
       local force=e.force and game.forces[e.force]
       local s=e.surface and game.get_surface(e.surface)

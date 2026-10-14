@@ -76,10 +76,14 @@ return function(api)
   -- all at once; the background job (M.tick) runs one stage per tick
   -- (task-statuscost, 01:15 on world n: pushalerts.lines up to 150 ms when a
   -- reply ran the whole read).
-  local function entities(groups, s, force, t, budget)
+  local function entity_list(s, force, t, budget)
+    return try(function() return s.find_entities_filtered{force=force, type=t, limit=budget} end) or {}
+  end
+  -- Entities from..to of a found list into the groups.
+  local function read_list(groups, s, list, from, to)
     local st = statuses()
-    local list = try(function() return s.find_entities_filtered{force=force, type=t, limit=budget} end) or {}
-    for _, e in ipairs(list) do
+    for i = from or 1, to or #list do
+      local e = list[i]
       if e.valid then
         local kind = st[e.status]
         if kind == 'no_power' and not try(function() return e.electric_network_id end) then kind = 'unconnected' end
@@ -93,8 +97,13 @@ return function(api)
         if kind then add(groups, kind, s.name, e, e.position, e.name, builder(e)) end
       end
     end
+  end
+  local function entities(groups, s, force, t, budget)
+    local list = entity_list(s, force, t, budget)
+    read_list(groups, s, list)
     return #list
   end
+  local SLICE = 1500   -- entities read a tick by the background job
   local function planets()
     local out = {}
     for _, s in pairs(game.surfaces) do
@@ -190,6 +199,17 @@ return function(api)
     s.push_jobs = s.push_jobs or {}
     s.push_bg = true
     for _, force in ipairs(forces()) do
+      -- A step that fails ends its job (noted in push_errors); the last read is kept another SCAN_TICKS.
+      local ok, err = pcall(M.step, s, force, tick)
+      if not ok then
+        s.push_jobs[force.name] = nil
+        s.push_errors = {count=((s.push_errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
+        if s.push_alerts[force.name] then s.push_alerts[force.name].tick = tick end
+      end
+    end
+  end
+  function M.step(s, force, tick)
+    do
       local job = s.push_jobs[force.name]
       local c = s.push_alerts[force.name]
       if not job and (not c or tick - c.tick >= SCAN_TICKS) then
@@ -204,13 +224,22 @@ return function(api)
         s.push_jobs[force.name] = job
       elseif job then
         local stage = job.stages[job.i]
-        job.i = job.i + 1
         if stage.type then
+          -- A type: found in one tick, then read SLICE a tick.
           local surface
           for _, x in ipairs(planets()) do if x.name == stage.surface then surface = x end end
-          if surface and job.budget > 0 then job.budget = job.budget - entities(job.groups, surface, force, stage.type, job.budget) end
-        elseif stage.step == 'alerts' then game_alerts(job.groups, force)
-        elseif stage.step == 'networks' then job.extra = network_groups(force)
+          if not surface or job.budget <= 0 then job.i = job.i + 1
+          elseif not job.list then
+            job.list = entity_list(surface, force, stage.type, job.budget); job.at = 1
+            job.budget = job.budget - #job.list
+          else
+            local last = math.min(#job.list, job.at + SLICE - 1)
+            read_list(job.groups, surface, job.list, job.at, last)
+            job.at = last + 1
+            if job.at > #job.list then job.list, job.at = nil, nil; job.i = job.i + 1 end
+          end
+        elseif stage.step == 'alerts' then job.i = job.i + 1; game_alerts(job.groups, force)
+        elseif stage.step == 'networks' then job.i = job.i + 1; job.extra = network_groups(force)
         else
           s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra)}
           s.push_jobs[force.name] = nil
