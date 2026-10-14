@@ -71,7 +71,7 @@ ent(fulgora,{name='fast-inserter',type='inserter',position={x=-70.5,y=86.5},drop
 ent(fulgora,{name='fast-inserter',type='inserter',position={x=-70.5,y=94.5},drop_target=fs,pickup_target=belt,status=40,held_stack={valid_for_read=false}})
 ent(fulgora,{name='inserter',type='inserter',position={x=-60.5,y=86.5},drop_target=chest,pickup_target=fs,status=1,held_stack={valid_for_read=false}})
 -- Nauvis: ready, 933 kg aboard, a platform above and one on its way.
-local ns=silo(nauvis,15.5,59.5,{rocket_parts=50,rocket_silo_status=7,status=36,crafting_progress=0,is_crafting=function() return false end,
+local ns=silo(nauvis,15.5,59.5,{rocket_parts=0,rocket_silo_status=7,status=36,crafting_progress=0,is_crafting=function() return false end,
   inv={[2]=inv({{'processing-unit',3}}),[11]=inv({{'processing-unit',100},{'space-platform-foundation',30}},20),[12]=inv({})}})
 force.platforms={{valid=true,name='Sunward',state=5,space_location={name='nauvis'}},{valid=true,name='Skylark',state=4},
   {valid=true,name='Nest',state=0,space_location={name='nauvis'}}}
@@ -96,7 +96,8 @@ eq(rf.in_silo,0); eq(rf.at_sources,0); eq(rf.short,34)
 eq(#f.lacks,1); eq(f.lacks[1],'rocket-fuel')
 eq(f.feeders.inserters,2,'the inserter taking out of the silo is no feeder'); eq(f.feeders.idle[1],'1 idle: source transport-belt (-71.5,94.5) holds no ingredient it takes')
 eq(f.cargo.kg,0); eq(f.cargo.slots,20); eq(f.cargo.lift_kg,1000); eq(f.auto_requests,false); eq(f.platforms_above,nil); eq(f.last_launch,nil)
-eq(f.line,'rocket-silo (-65.5,90.5) on fulgora: building rocket, parts 15/50; working (part 40%), 35 parts left, the rocket in 1m44s at this speed; '
+eq(f.rocket,'building the rocket: parts 15/50; no launch seen')
+eq(f.line,'rocket-silo (-65.5,90.5) on fulgora: building the rocket: parts 15/50; working (part 40%), 35 parts left, the rocket in 1m44s at this speed; '
   ..'for the parts left: processing-unit 32 in the silo, 101 at feeders (34 needed), low-density-structure 32 in the silo, 5 at feeders (34 needed), '
   ..'rocket-fuel 0 in the silo, 0 at feeders (34 needed); lacks rocket-fuel in the silo; short for this rocket: rocket-fuel 34; '
   ..'2 feeding inserters (1 idle: source transport-belt (-71.5,94.5) holds no ingredient it takes); no cargo loaded; automatic requests off; no launch seen')
@@ -108,11 +109,15 @@ eq(S.read(p,{}).silos[1].crafting.productivity,'+10%')
 fs.productivity_bonus=0
 
 -- 3. Nauvis by surface: ready, cargo against the lift, platforms above.
+-- (2.0: a built rocket has consumed its parts, so the silo reads 0/50 while it is ready.) Astra 10:50: said plainly,
+-- since teammates read 0/50 as launched or as a missing kit; nothing is "left" to make for it.
 local n=S.read(p,{surface='nauvis'}).silos[1]
-eq(n.parts,'50/50'); eq(n.rocket_ready,true); eq(n.crafting,nil); eq(n.lacks,nil)
+eq(n.parts,'0/50'); eq(n.rocket_ready,true); eq(n.crafting,nil); eq(n.lacks,nil)
+eq(n.rocket,'rocket built and ready: parts consumed (0/50), not launched; no launch seen')
 eq(n.cargo.kg,933.3); eq(n.cargo.stacks,2); eq(n.cargo.items,'processing-unit*100 space-platform-foundation*30'); eq(n.cargo.over_kg,nil)
 eq(n.platforms_above[1],'Nest (waiting for its starter pack)'); eq(n.platforms_above[2],'Sunward'); eq(#n.platforms_above,2)
-assert(n.line:find('rocket ready, parts 50/50; cargo 933.3/1000 kg, 2/20 slots: processing-unit*100 space-platform-foundation*30; automatic requests off; our platforms above: Nest (waiting for its starter pack), Sunward; no launch seen',1,true),n.line)
+assert(n.line:find('rocket-silo (15.5,59.5) on nauvis: rocket built and ready: parts consumed (0/50), not launched; cargo 933.3/1000 kg, 2/20 slots: processing-unit*100 space-platform-foundation*30; automatic requests off; our platforms above: Nest (waiting for its starter pack), Sunward; no launch seen',1,true),n.line)
+assert(not n.line:find('parts left',1,true),n.line)
 
 -- 4. A launch: the game's order event (cargo and destination), then the agent's call the same tick (who).
 local hub={valid=true,surface={platform={valid=true,name='Sunward'}}}
@@ -129,6 +134,16 @@ assert(n.line:find('last launch 12m05s ago to platform Sunward by sol, cargo pro
 S.on_launch_ordered({rocket_silo=ns,rocket={attached_cargo_pod={get_inventory=function() return inv({}) end,cargo_pod_destination={type=1}}}})
 n=S.read(p,{surface='nauvis'}).silos[1]
 eq(n.last_launch.to,'orbit'); eq(n.last_launch.by,nil); eq(n.last_launch.cargo,'empty'); eq(n.last_launch.ago,'0s')
+eq(n.rocket,'rocket built and ready: parts consumed (0/50), not launched; last launch 0s ago to orbit')
+-- Rising into place (parts consumed, not launched), launching (the parts are the next rocket's), and the read-back.
+ns.rocket_silo_status=1
+eq(S.read(p,{surface='nauvis'}).silos[1].rocket,'rocket built, rising into place (create rocket): parts consumed (0/50), not launched; last launch 0s ago to orbit')
+eq(S.read(p,{surface='nauvis'}).silos[1].rocket_ready,false)
+ns.rocket_silo_status=14; ns.rocket_parts=3
+eq(S.rocket(ns).rocket_now,'rocket launching (launch started); parts 3/50 are for the next rocket')
+local st=S.settings(ns)
+eq(st.parts,'3/50'); eq(st.rocket_ready,false); eq(st.state,'launch_started'); eq(st.rocket,S.rocket(ns).rocket)
+ns.rocket_silo_status=7; ns.rocket_parts=0
 
 -- 5. Overweight cargo; trash; automatic requests.
 ns.inv[11]=inv({{'space-platform-foundation',50},{'rocket-fuel',20}},20)

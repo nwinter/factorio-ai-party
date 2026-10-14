@@ -573,9 +573,13 @@ lists it (a failed read waits 30 s). tools/stream/loadout.py keeps the rows and 
 - otherwise nothing.
 
 Snapshot: each agent row has `loadout` (`{mode, ...}` or null) and the top level `loadouts` (every agent's full row,
-for push_live.py and the site). overlay.js `renderLoadouts` draws one strip inside the main camera's frame (lower
-left, above the bar; hidden while a segment card is up) and one along the inset's top (smaller), for the first agent
-each camera shows. Icons come from items.js, with a coloured swatch for items it does not draw. CSS: `.loadout.lo-main`
+for push_live.py and the site). overlay.js `renderLoadouts` draws one strip inside the main camera's frame (top left,
+below any alert banners, and below the camera label outside onecam; hidden while a segment card is up) and one along
+the inset's top (smaller), for the first agent each camera shows. Chat comes first (viewer Enginerd, 10:59: "The
+combat info box often overlays the chat messages"): the strips keep off the captions' band at the main camera's
+bottom, captions (`#voice`) stack above them (z-index 6 against 2), and a strip whose box still meets a caption on
+screen or the chat panel steps aside (`.lo-yield`, overlay.js `loadoutClear`, run on each render and whenever the
+captions change). Icons come from items.js, with a coloured swatch for items it does not draw. CSS: `.loadout.lo-main`
 and `.loadout.lo-inset`. It goes live with a serve.py restart (the overlay reloads on its static version).
 
 The site's agents page has a "Now" block per card (guns and ammo, armor and equipment, shield, health, vehicle,
