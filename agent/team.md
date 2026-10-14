@@ -33,7 +33,8 @@ already targets your character.
   `team: chat_remaining=K` repeats on every reply: run `./fh chat` again. Answer teammates promptly.
 - Output: a failure ends with an `error:` line (on stderr with `--format json`) and exits nonzero; a partial result (`short`, `awaiting_craft`, a
   refused craft) ends with a `warning:` line. `--wait` replies are brief (outcome, position, inventory change; add
-  `--full` for the whole status). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
+  `--full` for the whole status). With `--format json` stdout is one JSON document and no `OPERATOR:` line is printed
+  (operator messages are in `result.operator`). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
   or mention ends while the action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
   build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
@@ -92,8 +93,12 @@ already targets your character.
   (working, output full, no resource left) and what they put into.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
-  characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
-  reason, the machines that make and use it by status (the worst 3 with positions), and the inserters feeding them.
+  characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
+  its robots, every unmet requester with the reason, the machines that make and use it by status (the worst 3 with
+  positions), and the inserters feeding them.
+- `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with
+  its buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing:
+  hand-fed); the hand-fed and low ones first.
 - `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
   ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
@@ -131,7 +136,8 @@ already targets your character.
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
   as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that
-  source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
+  source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a boiler's feed chest under
+  20 of its fuel with nothing put into it for 5 minutes (boiler, chest, count, feeder), a logistic network with no
   idle logistic robot for 10 minutes, a science colour whose makers here have all stood still for 5+ minutes (with
   its chain's first short step), Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
@@ -143,7 +149,8 @@ already targets your character.
   `./fh call review` shows it any time. `science` is one line, at most every 5 minutes and only when it changed:
   the research, labs working N of M, the pack the most labs hold none of with made and used per minute and the
   first short step of its chain, the largest electric network's draw, capacity and headroom, and its boilers (how
-  many have fuel at their feeders; how many are under 20 minutes and not refilled, and the lowest).
+  many have fuel at their feeders; how many are under 20 minutes and not refilled, and the lowest; the feed chest
+  with the fewest minutes left at its fuel use over the last 10 minutes).
   Each is shown once, so a command that sends replies to a file you don't read loses them. A change to your board
   item, a plan line set for you, or a tell also ends your `sleep`.
 - Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished
@@ -153,8 +160,11 @@ already targets your character.
   logistic and construction robots total, idle, working, charging and waiting to charge, requests unfilled for 60 s or
   more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them any time;
   `./fh call boilers` lists each boiler by network, the stopped ones first: state, fuel, water, its feeder and what
-  the feeder takes from with the fuel there; the networks line names the lowest boiler (position, minutes, fuel,
-  feeder) and accumulators' stored MJ of their maximum; `./fh platform NAME` shows one space platform (hub free
+  the feeder takes from with the fuel there, and a feed chest's fuel use per minute over the last 10 minutes with the
+  minutes left at that rate; the networks line names the lowest boiler (position, minutes, fuel, feeder), the 2 feed
+  chests with the fewest minutes left (`feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min
+  left`) and accumulators' stored MJ of their maximum; a logistic network's line ends with the items it holds most of
+  and what its requesters ask (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`); `./fh platform NAME` shows one space platform (hub free
   slots, cargo, speed, next stop, ETA);
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
@@ -295,6 +305,8 @@ already targets your character.
   chests near the silo.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
+  `./fh wait --until "item_count coal below 20 at 10,39"` wakes when that chest's coal falls under 20 (also `>=`, `<`,
+  `above`; several `X,Y` are summed).
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
   patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.
