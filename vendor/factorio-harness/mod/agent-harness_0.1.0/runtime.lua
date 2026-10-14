@@ -7787,9 +7787,10 @@ dispatch_request=function(request)
   end
   local before=state().active[p.index]
   local result=handler(p,request.args or {})
-  -- The call that started a direct action that moves or builds, so a harness update can start it again (carry.lua).
+  -- The call that started a direct action, so a harness update can start it again (carry.lua: a move_to or drive; an
+  -- older runtime installed over this one, which carries fewer kinds, every other).
   local now=state().active[p.index]
-  if now and now~=before and not now.queued and not M.carry.CONTINUE[now.kind] then now.call={action=request.action,args=request.args or {},seated=M.seated_ok} end
+  if now and now~=before and not now.queued then now.call={action=request.action,args=request.args or {},seated=M.seated_ok} end
   return result
 end
 -- Choose the 8-way direction closest to the heading, but keep the previous
