@@ -1,4 +1,5 @@
 -- Run with lua tests/pushalerts.lua: the game's alerts and key warnings,
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path  -- (walk.lua)
 -- pushed to the agents they concern (pushalerts.lua). Viewer Enginerd,
 -- shift07 15:30: "The agents would be a lot more efficient if they'd react to
 -- the alerts in the UI, like reacting to unpowered buildings."
@@ -8,17 +9,24 @@ defines={entity_status={working=0,no_power=1,low_power=2,no_fuel=3},inventory={t
 storage={board={items={}}}
 local force={name='player',players={}}
 local ents={nauvis={},vulcanus={},['platform-1']={}}
-local finds={}
-local function surface(name,platform)
-  return {name=name,platform=platform,find_entities_filtered=function(f)
+local finds,wholes={},0
+local function surface(name,index,platform)
+  return {name=name,index=index,platform=platform,find_entities_filtered=function(f)
     eq(f.force,force); assert(f.type and f.limit,'by type, bounded')
     local types={}
     for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end
     finds[#finds+1]=f.type
-    local out={}; for _,e in ipairs(ents[name]) do if e.valid and types[e.type] then out[#out+1]=e end end; return out end}
+    if not f.area then wholes=wholes+1 end
+    local a=f.area
+    local out={}
+    for _,e in ipairs(ents[name]) do
+      local p=e.position
+      if e.valid and types[e.type] and (not a or (p.x>=a[1][1] and p.x<=a[2][1] and p.y>=a[1][2] and p.y<=a[2][2])) then out[#out+1]=e end
+    end
+    return out end}
 end
-local nauvis,vulcanus=surface('nauvis'),surface('vulcanus')
-game={tick=100000,surfaces={nauvis,vulcanus,surface('platform-1',{name='Sunward'})}}
+local nauvis,vulcanus=surface('nauvis',1),surface('vulcanus',2)
+game={tick=100000,surfaces={nauvis,vulcanus,surface('platform-1',3,{name='Sunward'})}}
 local function user(name) return name and {name=name} or nil end
 local function ent(s,name,type,x,y,f)
   local e={valid=true,name=name,type=type,position={x=x,y=y},status=0,electric_network_id=7}
@@ -159,8 +167,10 @@ eq(#B.claim_lines(luna),0,'the nearest agent has no claim there')
 eq(A.text({kind='no_ammo',n=3,names={['gun-turret']=3},center={x=1,y=2},surface='nauvis'},'nauvis',nil,true),'3 gun-turret out of ammo near (1,2)')
 
 -- 5. The background read (task-statuscost, 01:15 on world n: pushalerts.lines up to 150 ms when a reply ran the whole
--- read): one stage a tick (one entity type on one planet, the game's alerts, the network groups, the merge), its state
--- in storage; replies read the last finished one and never read the world themselves.
+-- read; operator 04:00: a whole-surface find a stage burst to 138 ms in a game second): a stage per planet walked a band
+-- of chunks a step (walk.lua) with every type in one find, then the game's alerts, the network groups, the merge; one
+-- step every few ticks (4 before any read, then spread over 80% of the 30 s by the last read's steps); its state in
+-- storage; replies read the last finished one and never read the world themselves.
 local st5={board={items={}}}
 local netcalls=0
 local C=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
@@ -176,17 +186,40 @@ force.players={{}}; game.forces={player=force}
 local function run(n) for _=1,n do game.tick=game.tick+1; finds={}; C.tick(game.tick); assert(#finds<=1,'at most one find a tick') end end
 run(1); eq(#finds,0,'the job starts'); assert(st5.push_jobs.player)
 local stages=#st5.push_jobs.player.stages
-eq(stages,2*22+3,'22 types on each of 2 planets, then alerts, networks, merge')
-local ticks=0
-repeat
-  game.tick=game.tick+1; finds={}; C.tick(game.tick); ticks=ticks+1
-  assert(#finds<=1,'at most one find a tick')
-  for _,t in ipairs(finds) do eq(type(t),'string','one type per find') end
-until not st5.push_jobs.player or ticks>500
+eq(stages,2+3,'each of 2 planets, then alerts, networks, merge')
+local function pass()
+  local ticks,steps=0,0
+  repeat
+    game.tick=game.tick+1; finds={}; C.tick(game.tick); ticks=ticks+1
+    assert(#finds<=1,'at most one find a tick')
+    for _,t in ipairs(finds) do eq(type(t),'table','every type in one find') end
+  until not st5.push_jobs.player or ticks>2000
+  return ticks
+end
+wholes=0
+local ticks=pass()
 eq(st5.push_jobs.player,nil,'done'); eq(netcalls,1)
-eq(ticks,2*22*2+3,'each type: its find, then its slice; then alerts, networks, merge')
+local steps=st5.push_steps.player
+eq(ticks,4*steps,'a step every 4 ticks before any read')
+eq(wholes,2,'no box known yet: one whole-surface find per planet')
 local done=C.read(astra,{}).groups
 eq(#done,2); local kinds={}; for _,g in ipairs(done) do kinds[g.kind]=g.count end
+eq(kinds.no_fuel,3); eq(kinds.no_ammo,2)
+-- The next read: bands of chunks only, its steps spread over 80% of the 30 s.
+game.tick=game.tick+1800; wholes=0
+run(1); local every=st5.push_jobs.player.every
+eq(every,math.floor(1800*0.8/steps))
+ticks=pass()
+eq(wholes,0,'bands only once the box is known')
+assert(ticks<=1800,'within the 30 s: '..ticks)
+-- (this read took more steps than the first, so past 80% of the 30 s it went on every 4 ticks; the next is paced by it)
+game.tick=game.tick+1800
+run(1); every=st5.push_jobs.player.every
+eq(every,math.floor(1800*0.8/st5.push_steps.player))
+ticks=pass()
+eq(ticks,every*st5.push_steps.player,'spread evenly')
+done=C.read(astra,{}).groups
+kinds={}; for _,g in ipairs(done) do kinds[g.kind]=g.count end
 eq(kinds.no_fuel,3); eq(kinds.no_ammo,2)
 -- A reply later than 30 s reads the last finished read and nothing else; the job reads anew in the background.
 game.tick=game.tick+5000; finds={}

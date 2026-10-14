@@ -1,4 +1,5 @@
 -- Run from repository root: lua tests/networks.lua
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path  -- (walk.lua)
 -- The base's networks, one line each (networks.lua; operator task-selfview: Nauvis at 29 game hours ran steam
 -- only, about 21 MW capacity and 10.8 MW drawn; 147 logistic robots, none idle; 0 laser turrets): electric draw over
 -- 5 minutes against capacity, boilers' fuel at that draw, logistic robots and unfilled requests, turrets and ammo;
@@ -203,21 +204,39 @@ for _,x in ipairs(N.alert_groups(force)) do assert(x.kind~='power_high','below 8
 ln.available_logistic_robots=5; run(30); storage.networks.views={}
 for _,x in ipairs(N.alert_groups(force)) do assert(x.kind~='robots_busy') end
 -- 3. The background view (task-statuscost, 01:15 on world n: networks.alert_groups 55 ms when one call rebuilt the
--- view): one step a tick, each step at most one entity find; a reply with a view reads that and finds nothing.
+-- view; operator 04:00: whole-surface finds a step burst in single game seconds): a step every few ticks, each at
+-- most one find, and after a surface's first walk (one whole-surface find: no box known yet) every find is a band
+-- of chunks; a reply with a view reads that and finds nothing.
 do
   local find=nauvis.find_entities_filtered
-  local per_tick=0
-  -- (whole-surface finds; the boilers' feeder look-ups are small finds of 4 tiles around each boiler)
-  nauvis.find_entities_filtered=function(f) if not f.position then per_tick=per_tick+1 end; return find(f) end
-  storage.networks.views={}; storage.networks.view_jobs={}
-  local worst=0
-  for _=1,40 do
-    game.tick=game.tick+1; per_tick=0; N.tick(game.tick)
-    if game.tick%300~=0 then worst=math.max(worst,per_tick) end
+  local per_tick,whole=0,0
+  -- (big finds; the boilers' feeder look-ups are small finds of 4 tiles around each boiler)
+  nauvis.find_entities_filtered=function(f)
+    if not f.position then per_tick=per_tick+1; if not f.area then whole=whole+1 end end
+    return find(f)
   end
-  assert(worst<=2,'at most the step and the ghost count a tick: '..worst)
+  local function build()
+    storage.networks.views={}; storage.networks.view_jobs={}
+    local worst,ticks=0,0
+    while not storage.networks.views.player and ticks<3600 do
+      game.tick=game.tick+1; ticks=ticks+1; per_tick=0; N.tick(game.tick)
+      if game.tick%300~=0 then worst=math.max(worst,per_tick) end
+    end
+    return worst,ticks
+  end
+  local worst,ticks=build()
+  assert(worst<=2,'at most the view step and the pole map step a tick: '..worst)
+  assert(ticks>20,'spread over ticks: '..ticks)
   local v=storage.networks.views.player
   assert(v and #v.surfaces==1 and #v.surfaces[1].electric==1,'the job made the view')
+  eq(v.surfaces[1].electric[1].machines,30); eq(#v.surfaces[1].electric[1].boilers,11)
+  eq(v.surfaces[1].turrets.by['gun-turret'],6)
+  -- The next pass: the box is known, every find is a band.
+  whole=0
+  worst=build()
+  eq(whole,0,'no whole-surface find once the box is known')
+  v=storage.networks.views.player
+  eq(v.surfaces[1].electric[1].machines,30); eq(#v.surfaces[1].electric[1].boilers,11)
   game.tick=game.tick+5000; per_tick=0
   N.lines(force,'nauvis',8); N.read({force=force},{})
   eq(per_tick,0,'a reply reads the last view')

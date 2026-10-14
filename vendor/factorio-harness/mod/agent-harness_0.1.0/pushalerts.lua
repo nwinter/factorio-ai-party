@@ -71,11 +71,11 @@ return function(api)
   local function builder(e)
     return try(function() local u = e.last_user; return u and u.name end)
   end
-  -- One read is these stages: each entity type on each planet surface, the
-  -- game's alert list, the network groups, then the merge. scan() runs them
-  -- all at once; the background job (M.tick) runs one stage per tick
-  -- (task-statuscost, 01:15 on world n: pushalerts.lines up to 150 ms when a
-  -- reply ran the whole read).
+  -- One read is these stages: the entities on each planet surface, the game's
+  -- alert list, the network groups, then the merge. scan() runs them all at
+  -- once; the background job (M.tick) walks each planet in bands (task-
+  -- statuscost, 01:15 on world n: pushalerts.lines up to 150 ms when a reply
+  -- ran the whole read; operator 04:00, see SLICE).
   local function entity_list(s, force, t, budget)
     return try(function() return s.find_entities_filtered{force=force, type=t, limit=budget} end) or {}
   end
@@ -103,7 +103,11 @@ return function(api)
     read_list(groups, s, list)
     return #list
   end
-  local SLICE = 1500   -- entities read a tick by the background job
+  -- The background job's step (operator 04:00: steps of a whole-surface find, then 1500 entities, burst to 138 ms in
+  -- a game second): one band of a planet (walk.lua) or SLICE of the entities it found, one step every few ticks so
+  -- a read spreads over its 30 s.
+  local SLICE = 150
+  local walk = api.walk or require('walk'){state=api.state}
   local function planets()
     local out = {}
     for _, s in pairs(game.surfaces) do
@@ -214,34 +218,38 @@ return function(api)
       local c = s.push_alerts[force.name]
       if not job and (not c or tick - c.tick >= SCAN_TICKS) then
         local stages = {}
-        for _, surface in ipairs(planets()) do
-          for _, t in ipairs(TYPES) do stages[#stages+1] = {surface=surface.name, type=t} end
-        end
+        for _, surface in ipairs(planets()) do stages[#stages+1] = {surface=surface.name} end
         stages[#stages+1] = {step='alerts'}
         stages[#stages+1] = {step='networks'}
         stages[#stages+1] = {step='merge'}
-        job = {start=tick, stages=stages, i=1, groups={}, budget=MAX_SCAN}
+        s.push_steps = s.push_steps or {}
+        job = {start=tick, stages=stages, i=1, groups={}, budget=MAX_SCAN, steps=0,
+          every=walk.every(s.push_steps[force.name], SCAN_TICKS)}
         s.push_jobs[force.name] = job
-      elseif job then
+      elseif job and walk.due(job, tick, SCAN_TICKS) then
+        job.steps = job.steps + 1
         local stage = job.stages[job.i]
-        if stage.type then
-          -- A type: found in one tick, then read SLICE a tick.
+        if stage.surface then
+          -- A planet: a band found in one step (walk.lua), then read SLICE a step.
           local surface
           for _, x in ipairs(planets()) do if x.name == stage.surface then surface = x end end
-          if not surface or job.budget <= 0 then job.i = job.i + 1
+          if not surface or job.budget <= 0 then job.i = job.i + 1; job.walk, job.list = nil, nil
           elseif not job.list then
-            job.list = entity_list(surface, force, stage.type, job.budget); job.at = 1
-            job.budget = job.budget - #job.list
+            job.walk = job.walk or walk.start(surface)
+            local list = walk.band(job.walk, surface, {force=force, type=TYPES, limit=job.budget})
+            if list then job.list, job.at = list, 1; job.budget = job.budget - #list
+            else job.walk = nil; job.i = job.i + 1 end
           else
             local last = math.min(#job.list, job.at + SLICE - 1)
             read_list(job.groups, surface, job.list, job.at, last)
             job.at = last + 1
-            if job.at > #job.list then job.list, job.at = nil, nil; job.i = job.i + 1 end
+            if job.at > #job.list then job.list, job.at = nil, nil end
           end
         elseif stage.step == 'alerts' then job.i = job.i + 1; game_alerts(job.groups, force)
         elseif stage.step == 'networks' then job.i = job.i + 1; job.extra = network_groups(force)
         else
           s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra)}
+          s.push_steps[force.name] = job.steps
           s.push_jobs[force.name] = nil
         end
       end
