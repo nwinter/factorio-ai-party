@@ -441,6 +441,36 @@ return function(api)
       not typed and string.format('; %d robots charging, %d waiting to charge', any_charging, any_waiting) or '')
     return v
   end
+  -- A logistic chest is in a logistic network only inside a roboport's
+  -- logistic area (Sonnet, shift10: 8 chests with 31k copper sat outside
+  -- roboport range for hours). 2.0.77 on a private server: the area is a
+  -- square, its edges in (25.00 tiles from a roboport in, 25.01 out), and an
+  -- unpowered roboport has one too. pos: the chest's position; planned:
+  -- {{x, y, r}} roboports planned in the same call. nil when a roboport (built,
+  -- a ghost, or planned) covers it; else the line, with the nearest roboport.
+  local COVER_SEARCH = 200
+  function M.coverage(surface, force, pos, planned)
+    local best, bd
+    local function near(x, y, r, label)
+      local dx, dy = math.abs(pos.x-x)-r, math.abs(pos.y-y)-r
+      if dx <= 0 and dy <= 0 then return true end
+      local d = (math.max(dx, 0)^2+math.max(dy, 0)^2)^0.5
+      if not bd or d < bd then best, bd = label, d end
+    end
+    for _, r in ipairs(planned or {}) do
+      if near(r.x, r.y, r.r, string.format('roboport (%g,%g), planned', r.x, r.y)) then return nil end
+    end
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{type='roboport', force=force, position=pos, radius=COVER_SEARCH} end) or {}) do
+      local r = try(function() return e.logistic_cell.logistic_radius end) or try(function() return e.prototype.logistic_radius end) or 0
+      if e.valid and near(e.position.x, e.position.y, r, string.format('%s (%g,%g)', e.name, e.position.x, e.position.y)) then return nil end
+    end
+    for _, g in ipairs(try(function() return surface.find_entities_filtered{ghost_type='roboport', force=force, position=pos, radius=COVER_SEARCH} end) or {}) do
+      local r = try(function() return g.ghost_prototype.logistic_radius end) or 0
+      if g.valid and near(g.position.x, g.position.y, r, string.format('roboport ghost (%g,%g)', g.position.x, g.position.y)) then return nil end
+    end
+    if not best then return string.format('outside logistic coverage: no roboport of ours within %d tiles', COVER_SEARCH) end
+    return string.format('outside logistic coverage: nearest %s, %g tiles from its area', best, math.floor(bd*10+0.5)/10)
+  end
   -- What inspect shows on a roboport or a logistic chest: its network (or that
   -- it has none) and, for a roboport, its own cell.
   function M.of_entity(e)

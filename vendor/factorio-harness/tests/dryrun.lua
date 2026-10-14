@@ -527,4 +527,44 @@ rme.surface = world(function() return 'grass-1' end, built_ring)
 for _, e in ipairs(built_ring) do if e.type == 'pipe' then e.bounding_box = {left_top={x=e.position.x-0.488, y=e.position.y-0.488}, right_bottom={x=e.position.x+0.488, y=e.position.y+0.488}} end end
 local shut = rdr.check(rme, {kind='build', entities={{index=1, name='pipe', position={x=60.5, y=50.5}, direction=0, item='pipe'}}})
 eq(shut.closes_in, nil); has(shut.closed_in, 'the character is closed in already where it stands (50.5,50.5): the area')
+-- Logistic chests no roboport covers (Sonnet, shift10) and entrances fed from the side (Sol, shift10).
+prototypes.entity['requester-chest'] = {name='requester-chest', type='logistic-container', tile_width=1, tile_height=1, collision_box=box(0.35),
+  collision_mask=BUILDING, items_to_place_this={{name='requester-chest', count=1}}}
+prototypes.entity.roboport = {name='roboport', type='roboport', tile_width=4, tile_height=4, collision_box=box(1.7), collision_mask=BUILDING,
+  logistic_radius=25, items_to_place_this={{name='roboport', count=1}}}
+prototypes.entity['underground-belt'] = {name='underground-belt', type='underground-belt', tile_width=1, tile_height=1, collision_box=box(0.4),
+  collision_mask=mask('object', 'transport_belt', 'water_tile'), max_underground_distance=5, items_to_place_this={{name='underground-belt', count=1}}}
+local capi = {}
+for k, v in pairs(api) do capi[k] = v end
+capi.targets = dofile('mod/agent-harness_0.1.0/targets.lua'){}
+capi.sidefeed = dofile('mod/agent-harness_0.1.0/sidefeed.lua'){try=function(fn) local ok, v = pcall(fn); if ok then return v end end}
+capi.coverage = function(_, _, pos, planned)
+  for _, r in ipairs(planned or {}) do if math.abs(pos.x-r.x) <= r.r and math.abs(pos.y-r.y) <= r.r then return nil end end
+  return 'outside logistic coverage: no roboport of ours within 200 tiles'
+end
+local cdr = dofile('mod/agent-harness_0.1.0/dryrun.lua')(capi)
+local cme = {name='character', type='character', position={x=0.5, y=80.5}, prototype=prototypes.entity.character}
+local built_ins = {name='inserter', type='inserter', position={x=1.5, y=90.5}, direction=4, drop_position={x=0.3, y=90.5}}
+local cw = world(function() return 'grass-1' end, {cme, built_ins})
+local cp = {surface=cw, force=force, position=cme.position, character=cme, build_distance=30,
+  get_main_inventory=function() return {get_item_count=function() return 100 end} end}
+local function entry(i, name, x, y, dir, t) return {index=i, name=name, position={x=x, y=y}, direction=dir or 0, item=name, ug_type=t} end
+local cov = cdr.check(cp, {kind='build', entities={entry(1, 'requester-chest', 5.5, 85.5)}})
+eq(cov.outside_logistic_coverage[1], '#1 requester-chest (5.5,85.5): outside logistic coverage: no roboport of ours within 200 tiles')
+eq(cdr.check(cp, {kind='build', entities={entry(1, 'roboport', 10, 90), entry(2, 'requester-chest', 5.5, 85.5)}}).outside_logistic_coverage, nil,
+  'the roboport planned with it covers it')
+-- An entrance flowing north at (6.5,84.5); an inserter east of it dropping west; a belt from the west.
+local side = cdr.check(cp, {kind='build', entities={entry(1, 'underground-belt', 6.5, 84.5, 0, 'input'), entry(2, 'inserter', 7.5, 84.5, 4),
+  entry(3, 'transport-belt', 5.5, 84.5, 4)}})
+eq(side.underground_side_feed[1], '#2 inserter (7.5,84.5) drops onto underground-belt (6.5,84.5), an entrance flowing north, from its east side: only its west (left) lane gets these items; its east (right) lane gets none from it')
+eq(side.underground_side_feed[2], '#3 transport-belt (5.5,84.5) side-loads underground-belt (6.5,84.5), an entrance flowing north, from its west side: only the belt\'s north (left) lane goes in; its south (right) lane stops at the entrance')
+-- An exit there: nothing. A build's undergrounds without type: the downstream one of a pair is the exit.
+eq(cdr.check(cp, {kind='build', entities={entry(1, 'underground-belt', 6.5, 84.5, 0, 'output'), entry(2, 'inserter', 7.5, 84.5, 4)}}).underground_side_feed, nil)
+local pair = cdr.check(cp, {kind='build', entities={entry(1, 'underground-belt', 6.5, 84.5, 0), entry(2, 'underground-belt', 6.5, 81.5, 0),
+  entry(3, 'inserter', 7.5, 81.5, 4), entry(4, 'inserter', 7.5, 84.5, 4)}})
+eq(#pair.underground_side_feed, 1); eq(pair.underground_side_feed[1]:match('^#4 inserter') ~= nil, true, 'only the entrance')
+-- A planned entrance beside a built inserter dropping onto its tile.
+local beside = cdr.check(cp, {kind='ghosts', entities={entry(1, 'underground-belt', 0.5, 90.5, 0)}})
+eq(beside.underground_side_feed[1], 'inserter (1.5,90.5) drops onto underground-belt (0.5,90.5), an entrance flowing north, from its east side: only its west (left) lane gets these items; its east (right) lane gets none from it',
+  'a ghost underground without type is an entrance')
 print('dryrun: ok')

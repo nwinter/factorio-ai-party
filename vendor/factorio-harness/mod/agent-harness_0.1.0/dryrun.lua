@@ -479,7 +479,7 @@ return function(api)
     end
     for _, e in ipairs(plan.entities or {}) do
       local proto = prototypes.entity[e.name or '']
-      local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item, requests=e.requests}
+      local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item, requests=e.requests, ug_type=e.ug_type}
       recs[#recs+1] = rec
       local reasons = {}
       if not proto then
@@ -1273,6 +1273,94 @@ return function(api)
       end
       out.inserters = #list > 0 and list or nil
       out.inserters_without_target = without > 0 and without or nil
+    end
+    local function idx(r) return r.copy and (r.copy..'.'..r.index) or r.index end
+    -- Logistic chests no roboport's logistic area covers, roboports planned in
+    -- this call counting (networks.lua; Sonnet, shift10).
+    if api.coverage and not on_platform then
+      local ports = {}
+      for _, r in ipairs(recs) do
+        if r.proto and r.pos and r.proto.type == 'roboport' and r.status ~= 'blocked' then
+          ports[#ports+1] = {x=r.pos.x, y=r.pos.y, r=try(function() return r.proto.logistic_radius end) or 0}
+        end
+      end
+      local lines = {}
+      for _, r in ipairs(recs) do
+        if r.proto and r.pos and r.proto.type == 'logistic-container' and r.status ~= 'blocked' and r.status ~= 'exists' and #lines < 16 then
+          local line = try(function() return api.coverage(s, force, r.pos, ports) end)
+          if line then lines[#lines+1] = string.format('#%s %s %s: %s', idx(r), r.name, at(r.pos), line) end
+        end
+      end
+      out.outside_logistic_coverage = #lines > 0 and lines or nil
+    end
+    -- Underground entrances fed from the side (sidefeed.lua; Sol, shift10): a
+    -- planned inserter dropping onto one, a planned belt running into one's
+    -- side, a planned entrance beside built inserters and belts. A planned
+    -- underground's end: its type, else as the call places it (a build: an
+    -- output when the nearest one of its kind upstream within reach is an
+    -- entrance; a ghost: an entrance).
+    if api.sidefeed and api.targets then
+      local STEP4 = {[0]={0, -1}, [4]={1, 0}, [8]={0, 1}, [12]={-1, 0}}
+      local lines, seen = {}, {}
+      local function add(l) if l and not seen[l] and #lines < 8 then seen[l] = true; lines[#lines+1] = l end end
+      local ugs = {}
+      for _, r in ipairs(recs) do
+        if r.proto and r.pos and r.proto.type == 'underground-belt' and r.status ~= 'blocked' then ugs[key(math.floor(r.pos.x), math.floor(r.pos.y))] = r end
+      end
+      local kinds = {}
+      local function kind_of(r, depth)
+        if r.ug_type == 'input' or r.ug_type == 'output' then return r.ug_type end
+        if kind ~= 'build' then return 'input' end
+        if kinds[r] then return kinds[r] end
+        local back = STEP4[(r.dir+8)%16]
+        local reach = try(function() return r.proto.max_underground_distance end) or 0
+        local found = 'input'
+        for k = 1, back and reach or 0 do
+          local x, y = math.floor(r.pos.x)+back[1]*k, math.floor(r.pos.y)+back[2]*k
+          local o = ugs[key(x, y)]
+          local up
+          if o and o.name == r.name and o.dir == r.dir then up = (depth or 0) < 8 and kind_of(o, (depth or 0)+1) or 'input'
+          elseif not o then
+            local e = try(function() return s.find_entities_filtered{position={x=x+0.5, y=y+0.5}, name=r.name, limit=1}[1] end)
+            if e and e.direction == r.dir then up = try(function() return e.belt_to_ground_type end) end
+          end
+          if up then found = up == 'input' and 'output' or 'input'; break end
+        end
+        kinds[r] = found
+        return found
+      end
+      local function ug_at(pos)
+        local r = ugs[key(math.floor(pos.x), math.floor(pos.y))]
+        if r then return {name=r.name, position=r.pos, direction=r.dir, kind=kind_of(r)} end
+        local e = try(function() return s.find_entities_filtered{position=pos, type='underground-belt', limit=1}[1] end)
+        if e then return {name=e.name, position=e.position, direction=e.direction, kind=try(function() return e.belt_to_ground_type end)} end
+      end
+      for _, r in ipairs(recs) do
+        local t = r.proto and r.pos and r.status ~= 'blocked' and r.proto.type
+        if t == 'inserter' then
+          local _, drop = api.targets.points(r.proto, r.pos, r.dir)
+          local ug = drop and ug_at(drop)
+          local line = ug and api.sidefeed.inserter(r.name, r.pos, drop, ug)
+          if line then add('#'..idx(r)..' '..line) end
+        elseif t == 'transport-belt' then
+          local st = STEP4[r.dir%16]
+          local ug = st and ug_at({x=math.floor(r.pos.x)+st[1]+0.5, y=math.floor(r.pos.y)+st[2]+0.5})
+          local line = ug and api.sidefeed.belt(r.name, r.pos, r.dir, ug)
+          if line then add('#'..idx(r)..' '..line) end
+        elseif t == 'underground-belt' and kind_of(r) == 'input' then
+          local ug = {name=r.name, position=r.pos, direction=r.dir, kind='input'}
+          local x, y = r.pos.x, r.pos.y
+          for _, i in ipairs(try(function() return s.find_entities_filtered{area={{x-3.5, y-3.5}, {x+3.5, y+3.5}}, type='inserter', force=force} end) or {}) do
+            local drop = try(function() return i.drop_position end)
+            if drop then add(api.sidefeed.inserter(i.name, i.position, drop, ug)) end
+          end
+          for _, d in pairs(STEP4) do
+            local b = try(function() return s.find_entities_filtered{position={x=x+d[1], y=y+d[2]}, type='transport-belt', limit=1}[1] end)
+            if b then add(api.sidefeed.belt(b.name, b.position, b.direction, ug)) end
+          end
+        end
+      end
+      out.underground_side_feed = #lines > 0 and lines or nil
     end
     local n = #recs
     local parts = {}

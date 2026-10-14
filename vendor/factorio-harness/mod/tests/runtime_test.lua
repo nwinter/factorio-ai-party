@@ -2585,4 +2585,65 @@ end)()
   eq(brief.last_drop.result.not_sent,'coal*50'); eq(brief.last_drop.result.dropped[1],'iron-plate*1000')
   st.drop_jobs=nil; st.last_drop=nil
 end)()
+;(function()
+  -- inspect over an area (Gemini, shift10): one compact row per chest or machine of ours in sight, reading order.
+  local find,at=p.surface.find_entities_filtered,p.position
+  local inv_defs={chest=defines.inventory.chest,assembling_machine_input=defines.inventory.assembling_machine_input,
+    assembling_machine_output=defines.inventory.assembling_machine_output}
+  defines.inventory.chest=defines.inventory.chest or 1; defines.inventory.assembling_machine_input=902; defines.inventory.assembling_machine_output=903
+  local function inv(list,size)
+    local t={valid=true}
+    t.get_contents=function() return list end
+    t.is_empty=function() return #list==0 end
+    t.count_empty_stacks=function() return size-#list end
+    t.get_bar=function() return size+1 end
+    setmetatable(t,{__len=function() return size end})
+    return t
+  end
+  local function chest(x,y,list) return {valid=true,name='iron-chest',type='container',position={x=x,y=y},force=p.force,
+    get_inventory=function(i) if i==defines.inventory.chest then return inv(list,32) end end} end
+  local a=chest(2.5,1.5,{{name='iron-plate',count=150,quality='normal'},{name='coal',count=20,quality='normal'}})
+  local b=chest(1.5,1.5,{})
+  local c={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=1.5,y=4.5},force=p.force,status=1,
+    get_recipe=function() return {name='electronic-circuit'} end,
+    get_inventory=function(i) if i==902 then return inv({{name='copper-cable',count=8,quality='normal'}},4) elseif i==903 then return inv({},1) end end}
+  local far=chest(60.5,1.5,{})
+  local list={a,b,c,far}
+  p.position={x=0,y=0}
+  p.surface.find_entities_filtered=function(f) if f.area and f.force then return list end return {} end
+  local r=call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}})
+  eq(r.count,3); eq(r.entities[1].position.x,1.5); eq(r.entities[2].position.x,2.5); eq(r.entities[3].name,'assembling-machine-2')
+  eq(r.entities[1].holds,'empty; 0 of 32 slots'); eq(r.entities[2].holds,'iron-plate*150 coal*20; 2 of 32 slots')
+  eq(r.entities[3].holds,'in: copper-cable*8'); eq(r.entities[3].recipe,'electronic-circuit'); eq(r.entities[1].status_name,nil,'a chest has none')
+  eq(r.not_in_sight,'1 more in the area out of sight (inspect sees 32 tiles from you, in visible chunks)')
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=200,y=10}}}) end,'at most 128x128')
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=9,y=9}},position={x=1,y=1}}) end,'give area, positions or position: one of them')
+  fails(function() call('inspect',{position={x=1.5,y=1.5},types={'container'}}) end,'types goes with area')
+  list={far}
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=64,y=10}}}) end,'no chest or machine of ours in sight with its centre in (0,0)-(64,10) (1 out of sight')
+  list={}
+  for i=1,65 do list[i]=chest(i%30+0.5,math.floor(i/30)+0.5,{}) end
+  fails(function() call('inspect',{area={left_top={x=0,y=0},right_bottom={x=31,y=3}}}) end,'65 entities in the area; at most 64')
+  p.surface.find_entities_filtered,p.position=find,at
+  for k,v in pairs(inv_defs) do defines.inventory[k]=v end
+end)()
+;(function()
+  -- Build and ghost replies: logistic chests outside every roboport's area (networks.lua), entrances fed from the side.
+  local coverage=runtime.networks.coverage
+  runtime.networks.coverage=function(_,_,pos) return pos.x>100 and 'outside logistic coverage: nearest roboport (0,0), 75 tiles from its area' or nil end
+  local s={find_entities_filtered=function(f)
+    if f.type=='underground-belt' then return {{valid=true,name='underground-belt',type='underground-belt',position={x=6.5,y=84.5},direction=0,belt_to_ground_type='input'}} end
+    return {}
+  end}
+  local far={valid=true,type='logistic-container',name='requester-chest',position={x=120.5,y=0.5},surface=s,force=p.force}
+  local near={valid=true,type='logistic-container',name='requester-chest',position={x=10.5,y=0.5},surface=s,force=p.force}
+  local ghost={valid=true,type='entity-ghost',ghost_type='logistic-container',ghost_name='buffer-chest',position={x=130.5,y=0.5},surface=s,force=p.force}
+  local ins={valid=true,type='inserter',name='inserter',position={x=7.5,y=84.5},drop_position={x=6.3,y=84.5},direction=4,surface=s,force=p.force}
+  local cover,side=runtime.build_notes(p,{far,near,ghost,ins})
+  eq(#cover,2); eq(cover[1],'requester-chest (120.5,0.5): outside logistic coverage: nearest roboport (0,0), 75 tiles from its area')
+  eq(cover[2]:match('^buffer%-chest %(130.5,0.5%): outside') ~= nil,true,'a ghost by its ghost name')
+  eq(#side,1); eq(side[1]:match('^inserter %(7.5,84.5%) drops onto underground%-belt %(6.5,84.5%), an entrance flowing north, from its east side') ~= nil,true)
+  eq(select(1,runtime.build_notes(p,{near})),nil); eq(select(2,runtime.build_notes(p,{near})),nil)
+  runtime.networks.coverage=coverage
+end)()
 print('runtime: '..assertions..' assertions passed')

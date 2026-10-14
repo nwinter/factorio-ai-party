@@ -175,7 +175,7 @@ already targets your character.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever
-  its `when` holds (any `wait_until` condition, plus `ghosts_waiting`, `damaged` and `fuel_below`); one order without
+  its `when` holds (any `wait_until` condition, plus `ghosts_waiting`, `damaged`, `fuel_below` and `platform_arrived`); one order without
   `when` is your default routine, run every `interval_ticks` while no trigger holds. Up to 6 orders of 32 steps. They
   run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
   action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
@@ -192,6 +192,10 @@ already targets your character.
   reach every placement, and what each planned inserter picks up from and drops into (`missing: no drop target`);
   `inspect` and build replies flag a built inserter with no pickup or drop target. `closes_in` names the entry that
   fills the last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
+  Dry runs and build replies also name logistic chests no roboport covers (`outside_logistic_coverage`) and inserters
+  or belts feeding an underground entrance from the side, with the lane that gets nothing (`underground_side_feed`).
+- `./fh call inspect --args '{"area":{"left_top":{"x":0,"y":0},"right_bottom":{"x":20,"y":10}}}'` lists every chest's
+  and machine's contents in the area (in sight, up to 64) as one table: `holds`, `requests`, `recipe`, `status_name`.
   `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
   "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
   `inspect` of a ghost shows the same.
@@ -214,6 +218,8 @@ already targets your character.
   `eta_min` (at the current speed) and `next_stop`.
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
+- `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
+  a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
   takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
