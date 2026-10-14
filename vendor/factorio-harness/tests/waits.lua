@@ -47,40 +47,52 @@ local Wt=dofile('mod/agent-harness_0.1.0/waits.lua'){state=function() return s e
 eq(Wt.handlers.sleep_check(p,{peek=true}).woke,nil)
 riding=false
 eq(W.handlers.sleep_check(p,{}).woke,'died')
--- A sleep right after a wake the agent read ends at once and repeats it (a
--- shell loop of sleeps ends): within 10 s, at most 3 times per wake.
+-- A tell or mention wakes once: the reply that woke the agent delivered it,
+-- so the next sleep runs (agent-minds study, fix 5: Luna's 32 repeats of
+-- tells already read).
 game.tick=5000; p.character={valid=true,health=250}
 s.mentions={[1]={list={},dropped=0}}
 W.handlers.sleep(p,{seconds=300})
 game.tick=5001; table.insert(s.mentions[1].list,{tick=5001,from='sol',text='@astra hi'})
 eq(W.handlers.sleep_check(p,{peek=true}).woke,'mentioned') -- a peek is not reading it
 game.tick=5002; eq(W.handlers.sleep_check(p,{}).woke,'mentioned')
-game.tick=5300
+game.tick=5300; r=W.handlers.sleep(p,{seconds=300}); eq(r['repeat'],nil); eq(r.sleeping_s,300)
+eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
+game.tick=5301; table.insert(s.mentions[1].list,{tick=5301,tell=3,from='operator',text='stood idle'})
+r=W.handlers.sleep_check(p,{}); eq(r.woke,'told'); eq(r.tell,'operator: stood idle')
+game.tick=5310; eq(W.handlers.sleep(p,{seconds=300})['repeat'],nil)
+-- Other wakes are repeated by a sleep right after the agent read them (a
+-- shell loop of sleeps ends): within 10 s, at most 3 times per wake.
+local function hurt(t) game.tick=t; p.character.health=p.character.health-10 end
+hurt(5400); eq(W.handlers.sleep_check(p,{}).woke,'damaged')
+game.tick=5640
 for _=1,3 do
-  r=W.handlers.sleep(p,{seconds=300}); eq(r['repeat'],true); eq(r.woke,'mentioned'); eq(r.mention,'sol: @astra hi'); eq(r.sleeping_s,0)
-  eq(r.while_asleep,'this sleep did not start: you woke (mentioned) 4 s ago; it ends at once and repeats that wake')
-  r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'mentioned'); eq(r['repeat'],true); eq(r.slept_s,0)
-  eq(W.handlers.sleep_check(p,{}).woke,'mentioned')
+  r=W.handlers.sleep(p,{seconds=300}); eq(r['repeat'],true); eq(r.woke,'damaged'); eq(r.sleeping_s,0)
+  eq(r.while_asleep,'this sleep did not start: you woke (damaged) 4 s ago; it ends at once and repeats that wake')
+  r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'damaged'); eq(r['repeat'],true); eq(r.slept_s,0)
+  eq(W.handlers.sleep_check(p,{}).woke,'damaged')
 end
 r=W.handlers.sleep(p,{seconds=300}); eq(r['repeat'],nil) -- the fourth runs
 eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
 -- A sleep given its own condition is never a repeat.
-game.tick=5310; table.insert(s.mentions[1].list,{tick=5310,from='sol',text='@astra cond'})
-eq(W.handlers.sleep_check(p,{}).woke,'mentioned')
+hurt(5310+400); eq(W.handlers.sleep_check(p,{}).woke,'damaged')
 local Wc=dofile('mod/agent-harness_0.1.0/waits.lua'){state=function() return s end,integer=integer,replace=function() end,
   advance=function() end,clock_mode=function() return 'realtime' end,validate_condition=function() end,condition=function() return false,'x 0' end}
 r=Wc.handlers.sleep(p,{seconds=300,condition={['until']='crafting_done'}}); eq(r['repeat'],nil); eq(r.condition,'crafting_done')
 -- Past 10 s it runs; a sleep that ran out (elapsed) is not repeated.
-game.tick=5400; table.insert(s.mentions[1].list,{tick=5400,from='sol',text='@astra again'})
-eq(W.handlers.sleep_check(p,{}).woke,'mentioned')
-game.tick=6001; eq(W.handlers.sleep(p,{seconds=1})['repeat'],nil)
-game.tick=6061; eq(W.handlers.sleep_check(p,{}).woke,'elapsed')
+hurt(5800); eq(W.handlers.sleep_check(p,{}).woke,'damaged')
+game.tick=6401; eq(W.handlers.sleep(p,{seconds=1})['repeat'],nil)
+game.tick=6461; eq(W.handlers.sleep_check(p,{}).woke,'elapsed')
 eq(W.handlers.sleep(p,{seconds=1})['repeat'],nil)
 -- In turns mode nothing is repeated (game time stands still between requests).
-game.tick=6070; table.insert(s.mentions[1].list,{tick=6070,from='sol',text='@astra turns'})
-eq(W.handlers.sleep_check(p,{}).woke,'mentioned')
+hurt(6470); eq(W.handlers.sleep_check(p,{}).woke,'damaged')
 mode='turns'; eq(W.handlers.sleep(p,{seconds=60})['repeat'],nil); mode='realtime'
 s.mentions=nil
+-- until=alert (fh wait --until alert): a new attack, enemy group or enemy base alert (threat.lua's alert_seq) wakes it.
+game.tick=7000; mode='realtime'; s.alert_seq=4
+r=W.handlers.sleep(p,{seconds=300,condition={['until']='alert'}}); eq(r.condition,'alert'); assert(r.wakes_on:find('a new alert',1,true))
+eq(W.handlers.sleep_check(p,{peek=true}).woke,nil)
+s.alert_seq=5; game.tick=7100; r=W.handlers.sleep_check(p,{peek=true}); eq(r.woke,'alert'); assert(r.alert:find('new attack',1,true))
 -- In turns mode the clock is asked to run for the sleep (advance caps at 36000).
 p.character={valid=true,health=250}; mode='turns'
 W.handlers.sleep(p,{seconds=900}); eq(advanced,36000)

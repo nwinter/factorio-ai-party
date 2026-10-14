@@ -113,6 +113,21 @@ def main():
         assert "Goal: g" in ctx and "event 38" in ctx and "event 29" in ctx and "event 28" not in ctx, ctx
         assert "[29 older Log lines left out" in ctx
 
+    with tempfile.TemporaryDirectory() as d:   # operator tells fh filed: shown once each, whatever the output filter
+        run("setup", "claude", "claude-sonnet-5.5", d)
+        post = lambda: run("hook", "post-tool", stdin=json.dumps({"cwd": d}))  # noqa: E731
+        assert post() == ""
+        with open(os.path.join(d, ".operator-tells.jsonl"), "a") as f:
+            f.write(json.dumps({"seq": 7, "text": "your character has stood idle for 12 min"}) + "\nnot json\n")
+        ctx = json.loads(post())["hookSpecificOutput"]["additionalContext"]
+        assert ctx.startswith("OPERATOR: your character has stood idle for 12 min\n(From the operator"), ctx
+        assert post() == "", "once"
+        with open(os.path.join(d, ".operator-tells.jsonl"), "a") as f:
+            f.write(json.dumps({"seq": 9, "text": "second"}) + "\n")
+        ctx = json.loads(post())["hookSpecificOutput"]["additionalContext"]
+        assert ctx.startswith("OPERATOR: second\n") and "12 min" not in ctx, ctx
+        assert "post-tool:operator" in log_events(d), log_events(d)
+
     with tempfile.TemporaryDirectory() as d:   # the repo-wide Grok hooks also see sessions outside agent workspaces
         run("hook", "post-compact", "--mark", stdin=json.dumps({"cwd": d}))
         assert os.listdir(d) == [], "hooks do nothing without the setup marker"

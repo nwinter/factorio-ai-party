@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFile, writeFile, cp, mkdir } from 'node:fs/promises';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -34,7 +35,10 @@ const help = `fh — Factorio agent CLI
   fh observe [--args '{"radius":24}']        Bounded local world state
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
   fh call walk --args '{"direction":"east","ticks":60}' --wait
-  fh wait                                   Block until the character's current action (and combat) ends
+  fh wait                                   Block until the character's current action (and combat) ends; a tell or mention ends the wait early
+  fh wait --until tell|alert|COND [--max S] One blocking wait, one line out: ends on a tell or mention, a new alert (alert),
+                                            a sleep condition (researched [TECH], item_count ITEM>=N, ...), or after S s (default 600, up to 900);
+                                            your action and queue keep going; the team block waits for your next reply
   fh sleep SECONDS [--until COND]           Wait up to 900 s (never past the deadline) while your action and queue keep going;
                                             wakes on damage, death, a mention, a tell, board news, your queue finishing or
                                             stalling, or COND: researched [TECH] | crafting_done | item_count ITEM>=N [at X,Y X,Y]
@@ -126,6 +130,26 @@ function parseUntil(text: string): Record<string, unknown> {
   }
   return condition;
 }
+/**
+ * `fh wait --until EVENT`: tell (a tell or mention; any wait ends on those), alert (a new attack, enemy group or
+ * enemy base alert), or a sleep condition as for `fh sleep --until` (researched, item_count, crafting_done, ...).
+ */
+function untilEvent(text: string | undefined): Record<string, unknown> | undefined {
+  const kind = (text ?? '').trim().split(/\s+/)[0];
+  if (!kind || kind === 'tell' || kind === 'tells' || kind === 'mention' || kind === 'told') return undefined;
+  if (kind === 'alert' || kind === 'alerts') return {until:'alert'};
+  return parseUntil(text!);
+}
+/** The one line `fh wait --until` prints: what woke it, after how long, and what it was. */
+function wakeLine(reply: Reply): string {
+  const r = reply.result ?? {};
+  const said = (value: unknown) => String(value).replace(/\s*\n\s*/g, ' ');
+  const detail = r.tell ?? r.mention ?? r.board ?? r.alert ?? r.queue
+    ?? (r.woke === 'condition' && r.saw !== undefined ? `saw ${typeof r.saw === 'string' ? r.saw : JSON.stringify(r.saw)}` : undefined)
+    ?? (r.woke === 'damaged' ? `health ${r.health}${r.by ? `, hit by ${r.by}` : ''}` : undefined) ?? r.note;
+  const more = ['told','mentioned','board','alert','damaged'].includes(r.woke) ? '; your next reply\'s team block has the rest' : '';
+  return `woke: ${r.woke ?? 'nothing'} after ${r.slept_s ?? 0} s${detail !== undefined ? ` (${said(detail)})` : ''}${more}`;
+}
 function deployingCommand(command: string): boolean { return command === 'deploy' || command === 'watch'; }
 function integer(value: string | undefined, fallback: number): number {
   const result = value === undefined ? fallback : Number(value);
@@ -141,9 +165,48 @@ function withDeadline(value: unknown): unknown {
   return {...value as Reply, result:{...result, clock:`${result.clock}; ${deadlineText(deadline)}`}};
 }
 let streaming = false;
+// Operator tells (agent-minds study, fix 1: of 15 shift07 nudges 5 never reached the model, its replies sent to a
+// file, /dev/null, `tail -c` or a wrapper keeping three keywords). Any reply may carry result.operator until the
+// agent's next game action or message; each is printed on stderr as soon as a reply carries it, first on stdout,
+// and filed for the workspace's post-tool hook (pog tools/context.py), which puts the unseen ones in the model's context.
+const operatorLines = new Map<number, string>();
+const operatorPrinted = new Set<number>();
+let operatorFile: string | undefined;
+function agoText(seconds: number): string {
+  return seconds >= 120 ? `${Math.floor(seconds/60)} min ago` : `${seconds} s ago`;
+}
+function noteOperator(reply: unknown) {
+  const lines = reply && typeof reply === 'object' ? (reply as Reply).result?.operator : undefined;
+  if (!Array.isArray(lines)) return;
+  for (const o of lines) {
+    if (typeof o?.seq !== 'number' || typeof o.text !== 'string' || operatorLines.has(o.seq)) continue;
+    const line = `OPERATOR: ${o.text} (sent ${agoText(Number(o.ago_s ?? 0))}; repeated on every reply until your next game action or message)`;
+    operatorLines.set(o.seq, line);
+    process.stderr.write(line + '\n');
+    if (operatorFile) {
+      try {
+        let seen = '';
+        try { seen = readFileSync(operatorFile, 'utf8'); } catch { /* first one */ }
+        if (!seen.includes(`"seq":${o.seq},`)) appendFileSync(operatorFile, JSON.stringify({seq:o.seq, text:o.text, at:new Date().toISOString()}) + '\n');
+      } catch (error) { process.stderr.write(`operator file: ${String(error)}\n`); }
+    }
+  }
+}
+// The OPERATOR: lines not yet on stdout, for the head of the next stdout write.
+function operatorHead(): string {
+  const out: string[] = [];
+  for (const [seq, line] of operatorLines) if (!operatorPrinted.has(seq)) { operatorPrinted.add(seq); out.push(line); }
+  return out.length ? out.join('\n') + '\n' : '';
+}
+function withoutOperator(value: unknown): unknown {
+  const result = value && typeof value === 'object' ? (value as Reply).result : undefined;
+  if (!result || typeof result !== 'object' || !('operator' in result)) return value;
+  const { operator: _, ...rest } = result as Record<string, unknown>;
+  return {...value as Reply, result:rest};
+}
 function output(value: unknown) {
   value = withDeadline(value);
-  process.stdout.write(outputFormat === 'compact' ? formatCompact(value) : JSON.stringify(value) + '\n');
+  process.stdout.write(outputFormat === 'compact' ? operatorHead() + formatCompact(withoutOperator(value)) : JSON.stringify(value) + '\n');
   // JSON stays one document on stdout; the error:/warning: line goes to stderr
   // so a reader of the terminal (or 2>&1 | tail -1) still sees it.
   if (outputFormat === 'json' && !streaming) {
@@ -193,7 +256,7 @@ async function main() {
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
     full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'},
-    'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'},
+    'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'}, max:{type:'string'},
   }});
   let command = positionals[0];
   if (!command || values.help || command === 'help') { process.stdout.write(help); return; }
@@ -452,6 +515,11 @@ async function main() {
     harness = deployer = new Harness(rcon, integer(values.player,connection?.player ?? 1), values.journal, bot);
     client = rcon;
   }
+  operatorFile = process.env.FH_OPERATOR_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.operator-tells.jsonl') : undefined);
+  {
+    const inner = harness;
+    harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); return reply; }};
+  }
   let stopping = false;
   const stop = () => { stopping = true; client.close(); };
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
@@ -475,7 +543,7 @@ async function main() {
     return {...status, ok:false, error:{code:'wait_timeout', message:`${action} still running after the wait timeout; it continues in game: poll status or wait again (--wait-timeout MS)`}};
   }
   // arrived_near: stopped beside a goal inside an entity, which is where callers want to be.
-  const successfulOutcomes = ['duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up'];
+  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
@@ -573,6 +641,7 @@ async function main() {
     if (bridged) return waitForBridgeAction(action);
     const started = Date.now();
     const done = await waitForActionEnd(action, untilTick, nowTick, started, nowTick);
+    if (done.result?.interrupted) return interruptedReply(done, started, before, action);
     // A timeout or a failed poll is reported as it is.
     if (done.error?.code === 'wait_timeout' || (!done.ok && done.error?.code !== 'action_interrupted' && done.error?.code !== 'timed_out')) return done;
     return compactWaits ? brief(done, started, before, action) : finalReply(done);
@@ -590,6 +659,9 @@ async function main() {
       const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel'].includes(action) ? ['gather','feed'] : ['transfer','build'].includes(action) ? ['feed']
         : action === 'vehicle' ? ['drive'] : [action];
       const stillRunning = active && (action === 'shoot' || kinds.includes(active.kind));
+      if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
+        return {...status, result:{...status.result, interrupted:{inbox:status.result!.inbox, active}}};
+      }
       if (!status.ok || !stillRunning) {
         const last = action === 'shoot' ? status.result?.last_combat : status.result?.last;
         // A result that ended before this action was accepted belongs to an
@@ -609,6 +681,23 @@ async function main() {
     if (stopping) throw new Error('Stopped waiting for action; inspect status. Game actions have a bounded tick duration.');
     // Still running is not a failure of the action, but it is not done either.
     return timedOut(action, await harness.request('status'), Date.now()-started);
+  }
+  // A tell or mention that arrived after `since` (a tick) ends any wait (agent-minds study, fix 5: agents moved to
+  // waits nobody could interrupt; the operator's typed message to Sonnet waited 33 minutes behind its waits). The
+  // action keeps going; direct waits end themselves (told|mentioned). Polls carry the newest one (status peek: inbox).
+  function told(status: Reply, since?: number): boolean {
+    const inbox = status.result?.inbox;
+    return since !== undefined && typeof inbox?.tick === 'number' && inbox.tick >= since;
+  }
+  async function interruptedReply(done: Reply, started: number, before: unknown, action: string): Promise<Reply> {
+    const {inbox, active} = done.result!.interrupted;
+    const base: Reply = {...done, result:{...done.result, last:undefined, interrupted:undefined, inbox:undefined}};
+    const shown = compactWaits ? await brief(base, started, before, action) : await finalReply(base);
+    const tick = shown.tick ?? done.tick;
+    const left = active?.until_tick !== undefined && tick !== undefined ? `, up to ${Math.max(0, Math.ceil((active.until_tick-tick)/60))} s more` : '';
+    return {...shown, ok:true, error:undefined, result:{...shown.result, last:undefined, outcome:inbox.woke, from:inbox.from, action:undefined,
+      still_running:`${active.kind}${left}`,
+      note:`a ${inbox.woke === 'told' ? 'tell' : 'mention'} from ${inbox.from} ended this wait (the team block has it); your ${active.kind} keeps going: fh wait waits for it again`}};
   }
   // A timed action that hit its own limit says so first (timed_out), with the
   // condition a wait_until was still waiting for.
@@ -634,17 +723,18 @@ async function main() {
   // stay unread) about once a second, then read it once more normally so the
   // reply carries the team block with whatever woke the agent. A sleep never
   // runs past the workspace deadline: it is cut to the time left and ends there.
-  async function sleep(seconds: number, condition?: Record<string,unknown>): Promise<Reply> {
+  async function sleep(seconds: number, condition?: Record<string,unknown>, quiet = false): Promise<Reply> {
     const left = deadline === undefined ? undefined : deadline-Date.now();
     if (left !== undefined && left <= 1000) {
       return {ok:true, result:{woke:'deadline', slept_s:0, note:`no sleep: ${deadlineText(deadline!)}`}};
     }
     const capped = left !== undefined && left < seconds*1000;
     if (capped) seconds = Math.max(1, Math.floor(left/1000));
-    const started = await harness.request('sleep',condition ? {seconds,condition} : {seconds});
+    // quiet (fh wait --until): peek requests leave the team block for the agent's next reply; one line out.
+    const started = await harness.request('sleep',{seconds, ...(condition ? {condition} : {}), ...(quiet ? {peek:true} : {})});
     if (!started.ok) return started;
     // What keeps going, at once (a shell that returns early, as Codex's, shows it before the wake).
-    if (outputFormat === 'compact' && typeof started.result?.while_asleep === 'string') process.stdout.write(`while_asleep: ${started.result.while_asleep}\n`);
+    if (!quiet && outputFormat === 'compact' && typeof started.result?.while_asleep === 'string') process.stdout.write(`${operatorHead()}while_asleep: ${started.result.while_asleep}\n`);
     let until = Date.now()+seconds*1250+10000;
     if (capped) until = Math.min(until, deadline!+1000);
     while (!stopping && Date.now()<until) {
@@ -653,7 +743,7 @@ async function main() {
       await delay(1000);
     }
     if (stopping) throw new Error('Stopped sleeping; the game keeps running.');
-    const final = mergeTeam(started, await harness.request('sleep_check',{}));
+    const final = quiet ? await harness.request('sleep_check',{peek:true}) : mergeTeam(started, await harness.request('sleep_check',{}));
     const woke = final.result?.woke;
     if (final.ok && capped && (!woke || woke === 'elapsed')) {
       return {...final, result:{...final.result, woke:'deadline', note:'this sleep was cut to end at the deadline'}};
@@ -667,6 +757,7 @@ async function main() {
     const started = Date.now();
     let first = await poll();
     if (!first.ok) return first;
+    const since = typeof first.tick === 'number' ? first.tick + 1 : undefined;
     const untilTick = first.result?.active?.until_tick ?? first.result?.combat?.until_tick;
     const deadline = started+waitBudget(untilTick,first.tick ?? first.result?.tick);
     let status = first;
@@ -683,6 +774,10 @@ async function main() {
       await delay(pollDelay(status, started));
       status = await poll();
       if (!status.ok) return status;
+      const active = status.result?.active;
+      if (active && told(status, since) && active.kind !== 'wait_ticks' && active.kind !== 'wait_until') {
+        return interruptedReply({...status, result:{...status.result, interrupted:{inbox:status.result!.inbox, active}}}, started, undefined, active.kind);
+      }
     }
     if (stopping) throw new Error('Stopped waiting; inspect status.');
     return timedOut(status.result?.active?.kind ?? 'the action', status, Date.now()-started);
@@ -799,6 +894,14 @@ async function main() {
       if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > 900) throw new Error('sleep requires SECONDS 1..900');
       const reply = await sleep(seconds, values.until === undefined ? undefined : parseUntil(values.until));
       output(reply);
+      if (!reply.ok) process.exitCode=1;
+    } else if (command === 'wait' && (values.until !== undefined || values.max !== undefined)) {
+      if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
+      const max = integer(values.max, 600);
+      if (max > 900) throw new Error('wait --max takes 1..900 seconds');
+      const reply = await sleep(max, untilEvent(values.until), true);
+      if (reply.ok && outputFormat === 'compact') process.stdout.write(operatorHead() + wakeLine(reply) + '\n');
+      else output(reply.ok ? {...reply, result:{...reply.result, line:wakeLine(reply)}} : reply);
       if (!reply.ok) process.exitCode=1;
     } else if (command === 'wait') {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');

@@ -613,6 +613,17 @@ return function(api)
     box.list[#box.list+1] = {tell=t.seq, tick=t.tick, from=t.from, text=t.text, how='tell', team=t.team}
     while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end
   end
+  -- The tick of the newest undelivered mention or tell (nil when none), for
+  -- waits that end when one arrives; then told|mentioned and who sent it. An
+  -- fyi tell (eng/minds-claims, tell --fyi) wakes nobody, so it ends no wait.
+  function M.inbox_tick(index)
+    local box = api.state().mentions and api.state().mentions[index]
+    for i = #(box and box.list or {}), 1, -1 do
+      local m = box.list[i]
+      if not m.fyi then return m.tick, m.tell and 'told' or 'mentioned', m.from end
+    end
+    return nil
+  end
   -- A (non-peek) chat read delivers the mentions it showed.
   function M.on_read(index, messages)
     local box = api.state().mentions and api.state().mentions[index]

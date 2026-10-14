@@ -314,6 +314,8 @@ return function(api)
       end
     end
   end
+  -- A direct wait while the queue runs would pause it (runtime.lua dispatch_request refuses it).
+  local PAUSE_QUEUE='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'
   M.schema={
     queue_status={returns='the whole history (up to 64 entries); the other queue calls return only the newest 3 and history_total'},
     queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional'},
@@ -321,11 +323,11 @@ return function(api)
     queue_edit={expected_revision='required from queue_status',index='1-based pending index',remove='count to remove',steps='replacement steps'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
-    wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)'},
+    wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)',pause_queue=PAUSE_QUEUE},
     wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|crafting_done|researched; a queue step, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw',
       position='area predicates: centre (default character)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items',fraction='health_*: 0..1',
       item='item_count',at_least='item_count',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories; default the character\'s inventory',technology='researched',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
-      checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)'},
+      checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE},
     step_options={label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)'},
     guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step',max=MAX_GUARDS}
   }

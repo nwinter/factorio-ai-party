@@ -133,4 +133,81 @@ eq(all.tells[#all.tells].from,'operator')
 grok('status'); advance(180); assert(report('grok').standing_s>=1)
 runtime.bots.lookup(runtime.bots.index_of('grok')).character.valid=false; advance(60)
 eq(report('grok').standing_s,0); eq(report('grok').alive,false)
+
+-- Agent-minds study fixes (eng/minds-waits).
+local si=runtime.bots.index_of('sol')
+local S=storage.agent_harness
+local sc=runtime.bots.lookup(si).character
+prototypes={item={coal={name='coal'}}}
+sol('status'); advance(60)
+-- Fix 2: one definition of idle. The clock line counts a wait as idle, named apart (shift07: Sonnet and Haiku read
+-- "character idle 0s of it (0%)" after every wait for an hour).
+sol('wait_ticks',{ticks=600}); advance(60*5)
+local clock=sol('status').clock
+assert(clock:find('+5s since your last request, character idle 5s of it (100%, 5s of that in wait_ticks)',1,true),clock)
+-- Fix 5: a tell or mention ends a direct wait (told|mentioned, with who); the wait reply's team block has it.
+astra('tell',{to='sol',text='coal please'}); advance(31)
+eq(S.active[si],nil,'the tell ended the wait'); eq(S.last[si].outcome,'told'); eq(S.last[si].why,'told by astra')
+sol('wait_until',{['until']='item_count',item='coal',at_least=5,timeout=3600}); advance(60)
+eq(S.active[si].kind,'wait_until')
+astra('say',{text='@sol where is the coal'}); advance(31)
+eq(S.last[si].outcome,'mentioned'); eq(S.last[si].why,'mentioned by astra')
+-- a pending tell from before the wait does not end it
+astra('tell',{to='sol',text='old news'}); sol('wait_ticks',{ticks=600}); advance(60*3)
+eq(S.active[si].kind,'wait_ticks'); sol('stop'); sol('status')
+-- a peek poll (fh --wait) learns that one arrived: inbox_tick
+eq(sol('status',{peek=true}).inbox,nil)
+astra('tell',{to='sol',text='more coal'})
+local ib=sol('status',{peek=true}).inbox; eq(ib.tick,tick); eq(ib.woke,'told'); eq(ib.from,'astra')
+-- an fyi tell (eng/minds-claims, tell --fyi) wakes nobody: it ends no wait
+table.insert(S.mentions[si].list,{tell=999,tick=tick+1,from='grok',text='fyi',how='tell',fyi=true}); advance(1)
+eq(sol('status',{peek=true}).inbox.tick,tick-1,'the fyi tell is skipped')
+sol('status')
+-- Fix 7: a direct wait refuses while the queue runs (Sonnet's "queue resume, wait_ticks 20000": 22 queued walks
+-- interrupted, 0 jobs done); pause_queue=true pauses it as before; a paused queue is no reason to refuse.
+local sq={pending={{action='move_to',args={position={x=9,y=9}}}},history={},revision=1,paused=false}
+S.queues[si]=sq
+fails(function() sol('wait_ticks',{ticks=600}) end,'wait_ticks would pause your queue (1 step): a direct wait stops the character')
+fails(function() sol('wait_until',{['until']='crafting_done'}) end,'Use fh sleep SECONDS')
+eq(sq.paused,false,'the refused wait left the queue running')
+sol('wait_ticks',{ticks=60,pause_queue=true}); eq(sq.paused,true); eq(S.active[si].kind,'wait_ticks')
+sol('stop'); sol('wait_until',{['until']='item_count',item='coal',at_least=0,pause_queue=true})  -- met at once; the condition takes no pause_queue
+sol('wait_ticks',{ticks=60}); sol('stop'); S.queues[si]=nil
+-- Fix 1: an operator tell rides on every reply (peeks, reads, waits) until the agent's next game action or message.
+op('tell',{to='sol',text='your character has stood idle for 12 min'})
+local o=sol('status',{peek=true}).operator
+eq(#o,1); eq(o[1].text,'your character has stood idle for 12 min'); eq(o[1].ago_s,0)
+eq(sol('status').operator[1].text,'your character has stood idle for 12 min','a read shows it again')
+eq(sol('sleep',{seconds=5}).operator[1].ago_s,0,'a sleep shows it again')
+eq(sol('sleep_check',{}).operator[1].ago_s,0)
+eq(sol('chat',{since=0}).operator[1].ago_s,0,'a chat read shows it again')
+eq(sol('wait_ticks',{ticks=60}).operator ~= nil,true,'a wait shows it again')
+eq(sol('say',{text='on it'}).operator[1].text,'your character has stood idle for 12 min','the message shows it, once more')
+eq(sol('status').operator,nil,'then it is gone')
+op('tell',{to='sol',text='second'}); eq(sol('stop').operator[1].text,'second'); eq(sol('status').operator,nil,'a game action ends it too')
+eq(astra('status').operator,nil,'only its own agent sees it')
+-- Fix 2: standing ends on a game action that changed something, on a move to a new spot, on 20 s of work summed
+-- over 2 minutes; not on reads, messages, waits or a game action that did nothing (Haiku's 35 empty feeds).
+advance(60*30); assert(report('sol').standing_s>=29)
+runtime.idle.request(si,'feed',{},{outcome='nothing_to_do',given=0}); advance(60)
+runtime.idle.request(si,'transfer',{},{transferred=0}); advance(60)
+assert(report('sol').standing_s>=31,'no effect, no end')
+runtime.idle.request(si,'transfer',{},{transferred=40}); advance(60)
+local row=report('sol'); assert(row.standing_s<=1,row.standing_s); eq(row.stand_ended.why,'transfer')
+advance(60*20)
+S.active[si]={kind='walk',direction=0,until_tick=tick+600}; advance(60*4)
+sc.position={x=sc.position.x+6,y=sc.position.y}; S.active[si]=nil; advance(60*2)
+row=report('sol'); assert(row.standing_s<=2,row.standing_s); eq(row.stand_ended.why,'moved')
+advance(60*20)
+S.active[si]={kind='walk',direction=0,until_tick=tick+600}; advance(60*4); S.active[si]=nil; advance(60)
+assert(report('sol').standing_s>=24,'a walk that went nowhere is no move')
+for _=1,4 do  -- 4 walks of 6 s in 2 minutes: 24 s of work
+  S.active[si]={kind='walk',direction=0,until_tick=tick+60*6}; advance(60*6); S.active[si]=nil; advance(60*10)
+end
+row=report('sol'); assert(row.standing_s<=11,row.standing_s); eq(row.stand_ended.why,'worked')
+-- What was counted, for the nudge's text: actions, reads, messages, sleeps and waits by kind, the shares of time.
+local c=row.counted
+eq(c.minutes,10); eq(c.actions,1); eq(c.no_effect,2); assert(c.reads>=1 and c.messages>=1,c.text)
+assert(c.text:find('^last 10 min: 1 game action %(and 2 with no effect%), %d+ reads?, %d+ messages?; working %d+%%, asleep %d+%% %(sleep 600 x1, sleep 5 x1%), waiting %d+%% %(wait_ticks x%d, wait_until x%d%), standing %d+%%$'),c.text)
+assert(c.busy_s>=24 and c.standing_s>0,c.text)
 print('idle: ok')

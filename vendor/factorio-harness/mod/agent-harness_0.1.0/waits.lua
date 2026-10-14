@@ -11,9 +11,10 @@ return function(api)
   local STILL_TICKS = 1800
   local MOVING = {walk=true, move_to=true, build_path=true, kite=true, collect=true, feed=true, rearm=true, refuel=true}
   M.schema = {
-    wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed; use --wait), or a queue step'},
-    sleep = {seconds='1..900', condition='optional wait_until condition {until=researched|item_count|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests)',
-      note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a message mentions you, a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|mentioned|told|board|queue_done|queue_stalled|condition|elapsed'},
+    wait_ticks = {ticks='1..54000 simulation ticks: the character stands idle that long (a direct timed action, outcome duration_elapsed, or told|mentioned when a tell or mention ends it early; use --wait), or a queue step', pause_queue='direct call only, boolean: true pauses your running queue for this wait; without it a direct wait refuses while your queue runs (fh sleep SECONDS waits and lets it run)'},
+    sleep = {seconds='1..900', condition='optional wait_until condition {until=researched|item_count|crafting_done|..., ...}: the sleep also ends when it holds (woke=condition, saw); researched without technology means the research running now; item_count may take positions (chests); {until=alert}: a new attack, enemy group or enemy base alert (woke=alert)',
+      peek='boolean: the reply leaves the team block for your next reply (fh wait --until)',
+      note='fh sleep SECONDS [--until ...]: waits while the game runs (in turns mode it advances the game); your current action and queue keep going, and the reply says first which (while_asleep). Returns early when your character takes damage or dies, a message mentions you, a teammate tells you something (tell), a board item of yours is assigned or changed by someone else, your running queue finishes or stalls (a step fails, or a walking step has not moved you for 30 s), or the condition holds; a dead bot sleeps until it respawns. sleep_check reports woke=damaged|died|respawned|mentioned|told|board|alert|queue_done|queue_stalled|condition|elapsed'},
     sleep_check = {peek='boolean: leave mentions unread (the CLI polls with peek, then reads once)', returns='woke (nil while sleeping), slept_s, health/lost when damaged, mention, tell, board, queue (what finished or stalled), saw (the condition), queue_steps (steps your queue finished during the sleep)'},
   }
   local function sleeps()
@@ -32,7 +33,8 @@ return function(api)
     local ticks = api.integer(a.ticks, nil, 1, MAX_TICKS, 'ticks (1..54000)')
     api.replace(p)
     local until_tick = game.tick + ticks
-    api.state().active[p.index] = {kind='wait_ticks', until_tick=until_tick}
+    -- A tell or mention ends it early (runtime.lua tick: outcome told|mentioned).
+    api.state().active[p.index] = {kind='wait_ticks', until_tick=until_tick, start_tick=game.tick}
     return {until_tick=until_tick}
   end
   -- What keeps going while the agent sleeps, in one line (the reply's first).
@@ -55,14 +57,18 @@ return function(api)
   end
   -- A sleep started right after a wake on an event (a shell loop of sleeps:
   -- shake5-6, Opus and Sonnet) ends at once and repeats that wake, so the
-  -- loop reaches its end and the agent reads the wake. Bounded: within
+  -- loop reaches its end and the agent reads the wake. A tell or mention
+  -- wakes once: the reply that woke it delivered it (agent-minds study, fix
+  -- 5: Luna's 32 repeats of tells already read, 10 in 34 s at 15:33, "a
+  -- harness wake-repeat issue"; each such agent moved to waits that tells
+  -- could not end). Bounded: within
   -- REPEAT_TICKS of the wake, at most REPEATS times per wake, never in turns
   -- mode (game time stands still between requests there); a sleep that ran
   -- out (elapsed) or ended in death is not repeated, nor is one given a
   -- condition. It cannot spin: every repeat needs a wake, and every wake a
   -- real event.
   local REPEAT_TICKS, REPEATS = 600, 3
-  local REPEAT = {mentioned=true, told=true, board=true, damaged=true, condition=true, queue_done=true, queue_stalled=true}
+  local REPEAT = {board=true, damaged=true, condition=true, queue_done=true, queue_stalled=true}
   local function repeat_of(p, seconds)
     local prev = sleeps()[p.index]
     local woke = prev and prev.out and prev.out.woke
@@ -84,9 +90,13 @@ return function(api)
     -- A sleep with its own condition says what it waits for: never a repeat.
     local again = a.condition == nil and repeat_of(p, seconds)
     if again then return again end
-    local condition
+    local condition, alert
     if a.condition ~= nil then
       assert(type(a.condition) == 'table', 'condition is a wait_until condition: {until=..., ...}')
+    end
+    -- until=alert (fh wait --until alert): a new attack, enemy group or enemy base alert for the team.
+    if a.condition ~= nil and a.condition['until'] == 'alert' then alert = true
+    elseif a.condition ~= nil then
       condition = {}
       for k, v in pairs(a.condition) do condition[k] = v end
       if condition['until'] == 'researched' and condition.technology == nil then
@@ -103,6 +113,7 @@ return function(api)
     record.board_seq = api.board_seq and api.board_seq() or nil
     local q = queue_of(p.index)
     if running(q) then record.queue = true end
+    if alert then record.alert_seq = api.state().alert_seq or 0 end
     local out = {}
     out.while_asleep = asleep_line(p, record, seconds)
     record.while_asleep = out.while_asleep
@@ -127,7 +138,8 @@ return function(api)
       out.wakes_on = 'respawn, a message mentioning you, a tell, a board item of yours'
     else
       out.wakes_on = 'damage, death, a message mentioning you, a tell, a board item of yours' ..
-        (record.queue and ', your queue finishing or stalling' or '') .. (condition and ', the condition' or '')
+        (record.queue and ', your queue finishing or stalling' or '') .. (condition and ', the condition' or '') .. (alert and ', a new alert' or '')
+      if alert then out.condition = 'alert' end
     end
     return out
   end
@@ -198,6 +210,10 @@ return function(api)
     -- A board item assigned to the sleeper or changed by someone else.
     local news = record.board_seq and api.board_news(p, record.board_seq)
     if news then out.board = news; return 'board' end
+    if record.alert_seq and (api.state().alert_seq or 0) > record.alert_seq then
+      out.alert = 'a new attack, enemy group or enemy base alert (your next reply\'s team alerts)'
+      return 'alert'
+    end
     if record.condition and c and c.valid then
       local ok, met, saw = pcall(api.condition, p, record.condition)
       if ok then out.saw = saw end

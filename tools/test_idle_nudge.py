@@ -101,6 +101,24 @@ def main():
     assert n.due(row("astra", 30, action="wait_ticks", queue={"state": "running", "steps": 7}), T0 + 900) is None
     assert n.due(row("astra", 30), T0 + 3600) == "after the deadline"
     sonnet_shift07()
+    # One definition of idle (agent-minds study, fix 2): a harness that reports what it counted is the only count (its
+    # standing ended on Grok's short walks: this process, polling once a minute, never sees them); the text says what
+    # was counted and what idle means.
+    k = N.Nudger(["grok"], start=T0)
+    counted = {"text": "last 10 min: 0 game actions (and 35 with no effect), 12 reads, 2 messages; working 0%, asleep "
+                       "79% (sleep 300 x2), waiting 0%, standing 21%", "actions": 0}
+    for i in range(12):
+        k.observe(row("grok", 0, counted=counted), T0 + 60 * i)
+    assert k.standing(row("grok", 0, counted=counted), T0 + 720) == 0, "the harness's standing, not this process's own"
+    assert k.standing(row("grok", 0), T0 + 720) >= 660, "an older harness: the longer one"
+    t = N.nudge_text(row("haiku", 12, counted=counted))
+    assert ("stood idle for 12 min (no action, no queue step). Counted, last 10 min: 0 game actions (and 35 with no "
+            "effect), 12 reads, 2 messages; working 0%, asleep 79% (sleep 300 x2), waiting 0%, standing 21% (a wait or "
+            "sleep is idle; a game action that changed something, a move to a new spot or 20 s of work in 2 minutes ends "
+            "idle). Queue: none.") in t, t
+    logged = []
+    N.Nudger(["haiku"], start=T0).step({"agents": [row("haiku", 12, counted=counted)]}, T0 + 600, send, logged.append)
+    assert logged[0]["counted"] == counted["text"], logged
     # a send that fails is logged and tried again at the next poll (not counted as a nudge)
     m = N.Nudger([], start=T0)
     bad = []

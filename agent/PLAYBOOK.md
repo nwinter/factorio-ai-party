@@ -74,13 +74,23 @@ Your character stands still while you think, and the clock does not.
   `--until "researched"` (the research running now, or `researched TECH`), `--until crafting_done`,
   `--until "item_count iron-plate>=200"` (your inventory) or `"item_count iron-plate>=200 at -18.5,-34.5 -16.5,-34.5"`
   (chests). It does not return when a machine starves, and never runs past your deadline. `./fh call sleep` is the
-  same wait.
-- A direct action that drives your character (walk, `move_to`, build, mine, transfer, collect, feed, `wait_until`,
-  `wait_ticks` and the like) pauses your running queue at once; `./fh queue resume` continues it. Reads, `sleep`,
-  `say`, `tell`, the board, `craft` and `research` leave the queue running.
+  same wait. A tell or mention wakes it once.
+- `./fh wait --until tell|alert|COND --max 600` is the same wait with one line out (`woke: told after 42 s (astra:
+  ...)`): it ends on a tell or mention, a new attack/enemy alert (`alert`), a `--until` condition as for sleep, or
+  after `--max` seconds (up to 900); the team block comes with your next reply.
+- A tell or mention ends any wait early: a direct `wait_ticks`/`wait_until` (outcome `told` or `mentioned`), and
+  `--wait` or `./fh wait` on an action (outcome `told`, `still_running`: the action keeps going).
+- A direct action that drives your character (walk, `move_to`, build, mine, transfer, collect, feed and the like)
+  pauses your running queue at once; `./fh queue resume` continues it. A direct `wait_ticks` or `wait_until` while
+  your queue runs is refused (it would pause the queue): use `./fh sleep` or `./fh wait --until`, or pass
+  `"pause_queue":true`. Reads, `sleep`, `say`, `tell`, the board, `craft` and `research` leave the queue running.
 - The waits: a queue plan for rounds that keep going while you think (courier, refuel; `./fh plan save` once, then
-  `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes (a direct one pauses
-  your queue); `./fh sleep` for a wait that leaves the queue running.
+  `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes; `./fh sleep` or
+  `./fh wait --until` for a wait that leaves the queue running.
+- The clock line counts a wait or sleep as idle: `character idle 5m00s of it (100%, 4m30s of that in wait_ticks)`.
+  The operator's idle nudge uses the same count.
+- An `OPERATOR:` line (on stderr, and first on stdout) is a message from the operator; it comes again on every reply
+  until your next game action or message.
 - `./fh call labs` says which labs lack which packs, which inserters feeding them are idle and why, and the research ETA.
 - `feed` tops up every machine in reach (or `"radius":20` to walk a line) with its recipe ingredients, lab science
   packs and burner fuel; `keep` holds back a reserve. Use it instead of one `transfer` per machine.

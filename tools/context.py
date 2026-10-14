@@ -225,6 +225,32 @@ def notes_block(d, why):
             "the summary that notes.md is missing, then check ./fh call status and ./fh call chat.\n\n" + notes)
 
 
+OPERATOR_FILE = ".operator-tells.jsonl"   # fh files each operator tell it sees here (cli.ts, next to journal.jsonl)
+
+
+def operator_unseen(d, state):
+    """The operator's tells fh filed since this hook last showed them, as context lines, or None (agent-minds study,
+    fix 1: Sonnet sent 69% of its fh calls to a file or /dev/null and read `tail -2`; Muse piped every call through
+    `tail -c`; Grok's wrapper kept three keywords: 5 of 15 shift07 nudges never reached the model)."""
+    try:
+        lines = open(os.path.join(d, OPERATOR_FILE)).read().splitlines()
+    except OSError:
+        return None
+    seen, new = state.get("operator_seq", 0), []
+    for line in lines:
+        try:
+            o = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(o.get("seq"), int) and o["seq"] > seen and o.get("text"):
+            new.append(o)
+    if not new:
+        return None
+    state["operator_seq"] = max(o["seq"] for o in new)
+    return ("\n".join(f"OPERATOR: {o['text']}" for o in new) +
+            "\n(From the operator, in your last fh reply; shown here once in case your output filter hid it.)")
+
+
 def hook(event, args):
     raw = sys.stdin.read()
     try:
@@ -286,6 +312,10 @@ def hook(event, args):
         if "hooks_seen" not in state:
             state["hooks_seen"] = time.strftime("%Y-%m-%d %H:%M:%S")   # shows the workspace hooks load (smoke tests)
             save()
+        operator = operator_unseen(d, state)
+        if operator:
+            save()
+            log(action="operator", seq=state["operator_seq"])
         if state.get("reinject"):
             state.pop("reinject")
             save()
@@ -309,6 +339,8 @@ def hook(event, args):
                            "summary keeps only your last few actions. Update notes.md now (Now, claims and "
                            "coordinates, agreements, open board items, lessons) and cut its Log to the last 10 lines, "
                            "then continue.")
+        if operator:
+            context = operator + ("\n\n" + context if context else "")
         if context:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": context}}))
 

@@ -8,6 +8,7 @@ return function(api)
   local M = {handlers={}, operator={}}
   local MAX_LOG, MAX_LEN, MAX_TO = 300, 500, 8
   local TEAM = {team=true, everyone=true, all=true}
+  local OPERATOR_KEEP = 3
   local function store()
     local s = api.state()
     s.tells = s.tells or {seq=0, log={}}
@@ -117,10 +118,34 @@ return function(api)
     while #s.log > MAX_LOG do table.remove(s.log, 1) end
     local index = {}
     for _, a2 in ipairs(api.agents()) do index[a2.name] = a2.index end
+    s.unseen = s.unseen or {}
     for _, name in ipairs(names) do
-      if index[name] then api.deliver(index[name], t) end
+      if index[name] then
+        api.deliver(index[name], t)
+        local list = s.unseen[index[name]] or {}
+        list[#list+1] = {seq=t.seq, tick=t.tick, text=text}
+        while #list > OPERATOR_KEEP do table.remove(list, 1) end
+        s.unseen[index[name]] = list
+      end
     end
     return {seq=t.seq, to=team and 'team' or names, cut=cut}
+  end
+  -- An operator tell rides on every reply to its agent (result.operator; fh
+  -- prints it as an OPERATOR: line on stderr and first on stdout) until the
+  -- agent's next game action or message (agent-minds study, fix 1: of 15
+  -- shift07 nudges 5 never reached the model, its replies sent to a file,
+  -- /dev/null, `tail -c` or a wrapper keeping three keywords). Waits, sleeps
+  -- and reads show it again; `consume` ends it after this reply.
+  function M.operator_lines(index, consume)
+    local s = store()
+    local list = s.unseen and s.unseen[index]
+    if not list or #list == 0 then return nil end
+    local out = {}
+    for _, u in ipairs(list) do
+      out[#out+1] = {seq=u.seq, ago_s=math.floor((game.tick - u.tick) / 60), text=u.text}
+    end
+    if consume then s.unseen[index] = nil end
+    return out
   end
 
   -- Requests to the operator (the people running the harness and stream):

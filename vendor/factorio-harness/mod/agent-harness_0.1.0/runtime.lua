@@ -211,6 +211,8 @@ local function finish(index, outcome)
     local last=s.last[index]
     last.condition=action.condition['until']; last.saw=action.saw; last.error=action.error
   end
+  -- A direct wait ended by a tell or mention says from whom (the reply's team block has it in full).
+  if action and action.told then s.last[index].why=action.told end
   if action and action.kind=='construct' then
     local last=s.last[index]
     last.built=action.built; last.mined=action.mined; last.remaining=construction.remaining(action)
@@ -4027,7 +4029,13 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
   has_body=function(index)
     local ok,p=pcall(M.lookup,index)
     return ok and p~=nil and p.valid and p.character~=nil and p.character.valid or false
-  end}
+  end,
+  position=function(index)
+    local ok,p=pcall(M.lookup,index)
+    if ok and p and p.valid and p.character and p.character.valid then return p.character.position end
+  end,
+  is_read=function(action) return M.is_read(action) end,
+  is_talk=function(action) return M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil end}
 -- Where teammates are (where.lua): status teammates, and the place of a
 -- sender or claim owner on another planet in tells, chat and the board.
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
@@ -4103,22 +4111,28 @@ function handlers.cameras() return M.cameras.list() end
 -- so `fh call wait_until --wait` works outside a queue (in turn mode the
 -- clock runs for it like any timed action).
 function handlers.wait_until(p,a)
+  if a.pause_queue~=nil then
+    local copy={}
+    for k,v in pairs(a) do if k~='pause_queue' then copy[k]=v end end
+    a=copy
+  end
   conditions.validate(a)
   local timeout=integer(a.timeout,3600,1,54000,'timeout (1..54000 ticks)')
   local condition={}
-  for k,v in pairs(a) do if k~='timeout' then condition[k]=v end end
+  for k,v in pairs(a) do if k~='timeout' and k~='pause_queue' then condition[k]=v end end
   -- Met already: done at once, like construct with nothing to do.
   local ok,met,saw=pcall(conditions.check,p,condition)
   assert(ok,met)
   if met then return {outcome='met',saw=saw,until_tick=game.tick} end
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
-  state().active[p.index]={kind='wait_until',condition=condition,saw=saw,until_tick=game.tick+timeout,next_check=game.tick+FEED_CHECK}
+  state().active[p.index]={kind='wait_until',condition=condition,saw=saw,until_tick=game.tick+timeout,next_check=game.tick+FEED_CHECK,start_tick=game.tick}
   return {until_tick=game.tick+timeout,condition=condition['until'],saw=saw}
 end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
 local reads={placements=true,defense=true,flamers=true,labs=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
+function M.is_read(action) return reads[action]==true end
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -4164,8 +4178,9 @@ function check_args(action,args)
 end
 M.check_args=check_args
 -- Game-time feedback on every reply: how long since this player's previous
--- request, and how much of it the character had nothing to do (no active
--- action and no running plan) or stood waiting for hand-crafted items.
+-- request, and how much of it the character was idle (idle.lua busy(), the
+-- nudge's own definition: no action and no running plan; a wait or sleep is
+-- idle, named apart) or stood waiting for hand-crafted items.
 -- Hand crafting runs alongside and is listed.
 -- A peeking request (fh --wait polls) reports without restarting the count,
 -- so the reply after a wait covers the whole wait; it still counts as seen.
@@ -4175,8 +4190,12 @@ local function clock_line(p,peek)
   local since=c and game.tick-c.call_tick or 0
   local idle=c and c.idle or 0
   local waited=c and c.craft_wait or 0
+  local in_waits=c and c.in_waits or 0
+  local kinds={}
+  for kind in pairs(c and c.wait_kinds or {}) do kinds[#kinds+1]=kind end
+  table.sort(kinds)
   if peek and c then c.seen_tick=game.tick
-  else clocks[p.index]={call_tick=game.tick,idle=0,craft_wait=0,peeked=peek or nil} end
+  else clocks[p.index]={call_tick=game.tick,idle=0,craft_wait=0,in_waits=0,peeked=peek or nil} end
   local function t(ticks)
     local sec=math.floor(ticks/60)
     if sec>=3600 then return string.format('%dh%02dm',math.floor(sec/3600),math.floor(sec/60)%60) end
@@ -4186,16 +4205,18 @@ local function clock_line(p,peek)
   local craft=p.character and crafting_left(p) or 0
   local function share(n) return since>0 and math.floor(100*n/since+0.5) or 0 end
   local waiting=waited>0 and string.format(', waiting on hand crafting %s of it (%d%%)',t(waited),share(waited)) or ''
-  return string.format('game %s; +%s since your last request, character idle %s of it (%d%%)%s; hand crafting %s queued',
-    t(game.tick),t(since),t(idle),share(idle),waiting,t(craft*60))
+  local slept=in_waits>0 and string.format(', %s of that in %s',t(in_waits),table.concat(kinds,'/')) or ''
+  return string.format('game %s; +%s since your last request, character idle %s of it (%d%%%s)%s; hand crafting %s queued',
+    t(game.tick),t(since),t(idle),share(idle),slept,waiting,t(craft*60))
 end
 local function idle_tick()
-  for index,c in pairs(state().clocks or {}) do
-    local q=state().queues and state().queues[index]
-    local planned=q and not q.paused and (q.current or #q.pending>0 or q.loop)
-    local now=state().active[index]
-    if not now and not planned then c.idle=c.idle+1
-    elseif now and now.awaiting_craft then c.craft_wait=(c.craft_wait or 0)+1 end
+  local s=state()
+  for index,c in pairs(s.clocks or {}) do
+    if not M.idle.busy(s,index) then
+      c.idle=c.idle+1
+      local kind=M.idle.waiting(s,index)
+      if kind then c.in_waits=(c.in_waits or 0)+1; c.wait_kinds=c.wait_kinds or {}; c.wait_kinds[kind]=true end
+    elseif s.active[index] and s.active[index].awaiting_craft then c.craft_wait=(c.craft_wait or 0)+1 end
   end
   -- When each character started standing (no action, no running queue, a body
   -- on the map), once a second, unlike the per-request idle count above
@@ -4246,6 +4267,19 @@ function M.dispatch(request)
     local before=p and p.valid and (state().clocks or {})[p.index]
     local last_call=before and not before.peeked and before.call_tick or nil
     if p and p.valid then result.clock=clock_line(p,peek) end
+    if p and p.valid and not M.is_director(p.index) then
+      -- Operator tells ride on every reply until a game action or message (tells.lua operator_lines).
+      local consume=not peek and not M.is_read(request.action) and not M.idle.WAITS[request.action] and request.action~='sleep_check'
+        and not ({chat=true,tells=true,board=true,board_events=true,queue_status=true,research_done=true,players=true,votes=true,requests=true})[request.action]
+      result.operator=M.tells.operator_lines(p.index,consume)
+      -- What the agent did, for the nudge's counts and the end of standing (idle.lua).
+      if not peek or request.action=='sleep' then pcall(M.idle.request,p.index,request.action,request.args,result) end
+      -- An fh --wait poll learns that a tell or mention arrived: it ends the wait (cli.ts).
+      if peek and request.action=='status' then
+        local t,woke,from=M.board.inbox_tick(p.index)
+        if t then result.inbox={tick=t,woke=woke,from=from} end
+      end
+    end
     -- Who works on which platform, for its alerts (platalerts.lua).
     if p and p.valid and not peek and type(request.args)=='table' then
       pcall(M.platalerts.note,p,request.action,request.args,result)
@@ -4353,6 +4387,17 @@ dispatch_request=function(request)
   end
   if not reads[request.action] and not passive[request.action] and not request.action:match('^queue_') then
     local q=state().queues and state().queues[p.index]
+    -- A direct wait would pause a running queue (agent-minds study, fix 7:
+    -- Sonnet's "queue resume, wait_ticks 20000" interrupted 22 queued walks,
+    -- 0 jobs done in 105 minutes); it refuses unless asked to pause it.
+    if (request.action=='wait_ticks' or request.action=='wait_until') and q and not q.paused and (q.current or #q.pending>0 or q.loop)
+      and (request.args or {}).pause_queue~=true then
+      local n=#q.pending+(q.current and 1 or 0)
+      passive_failed=game.tick  -- the refusal stops nothing (the bootstrap's failure cleanup)
+      error(string.format('%s would pause your queue (%d step%s%s): a direct wait stops the character, and its queue with it. '..
+        'Use fh sleep SECONDS [--until COND] or fh wait --until COND --max SECONDS: your queue keeps running and the wait ends when it finishes or stalls. '..
+        'To pause the queue for this wait, pass pause_queue=true',request.action,n,n==1 and '' or 's',q.loop and ', repeating' or ''),0)
+    end
     if q and not q.paused then M.stop_player(p.index) end
   end
   if passive[request.action] then
@@ -4528,6 +4573,13 @@ function M.tick_body(event)
     local ok,p=pcall(player,index,action.kind=='drive')
     if not ok then
       finish(index,'player_unavailable')
+    elseif (action.kind=='wait_ticks' or action.kind=='wait_until') and not action.queued and action.start_tick
+      and event.tick%30==0 and (M.board.inbox_tick(index) or -1)>=action.start_tick then
+      -- A tell or mention ends a direct wait (agent-minds study, fix 5: agents
+      -- moved to waits nobody could interrupt; Grok chose wait_until for that).
+      local _,kind,from=M.board.inbox_tick(index)
+      action.told=from and kind..' by '..from or kind
+      finish(index,kind)
     elseif event.tick>action.until_tick then
       finish(index,(action.kind=='move_to' or action.kind=='build_path' or action.kind=='construct' or action.kind=='kite' or action.kind=='feed' or action.kind=='gather' or action.kind=='wait_until' or action.kind=='drive' or action.area~=nil) and 'timed_out' or 'duration_elapsed')
     elseif action.kind=='wait_until' then

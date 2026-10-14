@@ -299,11 +299,15 @@ fh sleep 900 --until researched                       # ...or until the research
 ```
 
 - `wait_until --wait` takes its timeout from `--wait-timeout MS` (up to 900000, 15 minutes) unless `args.timeout` (ticks, up to 54000) is given; without either it is 3600 ticks. The condition is checked every 10 ticks. Not met in time: exit 1, `error.code` `timed_out`, with the condition and what it last saw.
-- `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one and pauses a running queue.
+- `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one.
+- A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
+- A tell or mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered one as `inbox {tick, woke, from}`.
+- `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
 - `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
   - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
   - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
-  - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (mentioned) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode.
+  - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`, `told`, `mentioned`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (damaged) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode. A tell or mention wakes once: the reply that woke the agent delivered it (shift07: Luna's 32 repeats of tells already read).
+  - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`).
   - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
 - A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works.
@@ -741,12 +745,23 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `standing_s` (how long its character has had a body on the map and nothing that moves or works it; kept once a
   second for agents that made a request). A wait is not work: `wait_ticks`, `wait_until`, `sleep`, a queue held behind
   a direct wait (a plan runs after a direct command ends), and a one-off queue wait all count as standing. A repeating
-  plan between its cycles counts as work. Work shorter than 20 s does not end standing (shift07: Sonnet's back-to-back
-  waits, with a few seconds of its plan between them, read as busy for 70 minutes).
+  plan between its cycles counts as work. Standing ends on a game action that changed something (a request that is
+  not a read, message, wait or stop, whose reply does not say it did nothing: `nothing_to_do`, `transferred: 0`,
+  `given: 0` and the like), on a move that ends 3 or more tiles from where it began, or on 20 s of work summed over
+  2 minutes (shift07: Sonnet's back-to-back waits, with a few seconds of its plan between them, read as busy for 70
+  minutes; Grok's and Muse's short walks and Gemini's transfers never counted under a 20 s-in-one-go rule). The clock
+  line on every reply uses the same definition (one `busy()`): `character idle 5m00s of it (100%, 4m30s of that in
+  wait_ticks)`.
   `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
-  `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board` and `last_request_s`. `tell {to,
-  text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells, waking a sleeper
-  (woke=told), never in the game chat.
+  `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board`, `last_request_s`, `stand_ended
+  {s_ago, why}` and `counted` (args `minutes`, default and at most 10): game actions, those with no effect, reads,
+  messages, sleeps and waits by kind, and seconds working, asleep, waiting and standing, with `text` ("last 10 min: 0
+  game actions (and 35 with no effect), 12 reads, 2 messages; working 0%, asleep 79% (sleep 300 x2), waiting 0%,
+  standing 21%"). `tell {to, text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells,
+  waking a sleeper (woke=told), never in the game chat. It also rides on every reply to that agent as
+  `operator [{seq, ago_s, text}]` (peeks, reads and waits included; the newest 3) until the agent's next game action
+  or message; fh prints each as an `OPERATOR:` line on stderr as soon as a reply carries it and first on stdout, and
+  files it in `.operator-tells.jsonl` beside `--journal` (or `FH_OPERATOR_FILE`) for a post-tool hook.
 - Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
   request against a full backlog); nothing runs per tick.
 

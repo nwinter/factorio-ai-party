@@ -10,9 +10,13 @@ never the game chat) to an agent whose character has stood --idle-min minutes or
 (dead or in a cargo pod is not standing). A wait is not work: wait_ticks, wait_until and sleep, and a queue held behind
 a direct wait (the plan runs only after it), count as standing (shift07: Sonnet waited 20000-30000 ticks back to back
 from 15:13 to 16:24 with its loop3 plan queued behind each wait, and was never nudged); work seen in one poll only (a
-few seconds between waits) does not end standing. Standing is the longer of the harness's count (idle.lua) and this
-process's own, so an older harness that counts waits as work is covered too. The tell holds facts only: how long, the
-wait, the queue and sleep state, what waits unread. At most once per --every-min minutes per agent, never in the first
+few seconds between waits) does not end standing. One definition of idle (agent-minds study, fix 2): a harness that
+reports `counted` (idle.lua: the clock line on every reply uses the same busy()) is the only count; standing ends on a
+game action that changed something, a move to a new spot, or 20 s of work summed over 2 minutes (shift07: 0 of 227
+short walks by Grok and Muse ended it under the old rule, so half the nudges were false and agents learned to dismiss
+them). Before such a harness, standing is the longer of the harness's count and this process's own, so an older
+harness that counts waits as work is covered too. The tell holds facts only: how long, the wait, the queue and sleep
+state, what was counted over the last 10 minutes and what idle means, what waits unread. At most once per --every-min minutes per agent, never in the first
 --grace-min minutes after this process starts (the shift start), and not after the run's deadline. Each nudge is a line
 in runs/RUN/nudges.jsonl (sent or not, and why not), with since_last_nudge: whether a reply delivered the last nudge's
 tell (its unread tells went to 0) and whether the agent made requests since. Delivered is not read: Sonnet writes its
@@ -74,8 +78,11 @@ def nudge_text(row, standing_s=None):
     else:
         doing = f"no action, no queue step{sleep}"
     standing = standing_s if standing_s is not None else row.get("standing_s")
+    counted = (row.get("counted") or {}).get("text")
+    counted = (f" Counted, {counted} (a wait or sleep is idle; a game action that changed something, a move to a new "
+               f"spot or 20 s of work in 2 minutes ends idle).") if counted else ""
     return (f"Operator (automatic, facts only): your character has stood idle for {minutes(standing)} min "
-            f"({doing}). Queue: {queue_text(row.get('queue'))}. Unread for you: " + ", ".join(unread) + ".")
+            f"({doing}).{counted} Queue: {queue_text(row.get('queue'))}. Unread for you: " + ", ".join(unread) + ".")
 
 
 class Nudger:
@@ -112,7 +119,10 @@ class Nudger:
                 s["requests"] = True
 
     def standing(self, row, now):
-        """The longer of the harness's count and this process's own."""
+        """The harness's count where it reports what it counted (one definition, idle.lua); before that, the longer of
+        the harness's count and this process's own."""
+        if row.get("counted"):
+            return row.get("standing_s") or 0
         own = now - self.idle_since[row["name"]] if row["name"] in self.idle_since else 0
         return max(row.get("standing_s") or 0, own)
 
@@ -147,7 +157,7 @@ class Nudger:
                      "unread": {k: row.get(k) or 0 for k in ("unread_chat", "unread_mentions", "unread_tells",
                                                              "unread_board")},
                      "last_request_min": minutes(row.get("last_request_s")) if row.get("last_request_s") is not None
-                     else None, "text": text}
+                     else None, "counted": (row.get("counted") or {}).get("text"), "text": text}
             if row["name"] in self.last:  # did a reply carry the last nudge, and has the agent asked anything since?
                 entry["since_last_nudge"] = dict(self.since.get(row["name"]) or {"tell_delivered": False,
                                                                                   "requests": False})
