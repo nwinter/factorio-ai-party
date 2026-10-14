@@ -1434,6 +1434,35 @@ Some actions work at a distance, the way a player can through remote view:
   gun does not reach it; `last_combat` adds `gun`, `ammo_used` (shells or magazines from that slot) and `guns` after.
   It also ends `left_vehicle` (out of the seat) or `out_of_ammo`. (shift09: Opus and Astra could not fire a tank,
   and a tank was lost attacking a nest at (294,-135).)
+  `last_combat.kills` counts the deaths its vehicle or gunner caused.
+- `vehicle {drive, combat: true}` (or a radius 1..36) keeps the guns on auto for the whole drive, at the nearest
+  enemy in range, as `shoot {auto: true}`, and stops them when the drive ends (Astra, operator 08:34: `shoot` runs
+  at most 600 ticks while a drive runs a minute or more, so agents renewed it in round trips).
+  - Seated as the gunner; the same gun choice and loading as `shoot`.
+  - The drive's `last` (and `--wait`) gives `shots` (rounds fired), `kills` and `kills_by_name` (`2 small-biter, 1
+    medium-biter`).
+  - A gun that runs dry first ends the guns (`last_combat.outcome: out_of_ammo`) while the drive goes on;
+    `last.combat_ended` says so.
+- Remote driving (operator 08:32, a viewer via Astra: to cut character deaths): `vehicle {drive: {x,y}, remote: true,
+  vehicle: unit_number | {x,y}}` drives one of our cars or tanks by remote view, as 2.0 lets a player. The character
+  stays where it is.
+  - It is the same drive (path, backing off, avoid_enemies, reverse). The reply says `remote: by remote view: tank
+    (-40,-150), unit_number 311799; your character stays at (240,-176)`, and `status.active.remote` where the
+    vehicle is.
+  - Refused as the game refuses:
+    - the vehicle in no chunk our force sees now (radar coverage or a character's sight; the refusal names the
+      nearest coverage);
+    - someone in its driver seat (`its driver seat holds sol's character`);
+    - another agent driving it remotely;
+    - not ours;
+    - a spidertron (`go_to`) or a train.
+  - While it drives, its driver seat counts as taken: `vehicle {enter}` there takes the passenger seat.
+  - The drive ends `out_of_coverage` when the vehicle leaves the chunks our force sees (checked every 30 ticks), and
+    `driver_seated` when someone gets into its driver seat. `last.remote` and `last.vehicle` follow.
+  - Its guns stay silent: `combat` with `remote`, and `shoot {vehicle}` for a vehicle you do not sit in, are refused.
+    On a private 2.0.77 copy of world n an empty tank moved under its own riding state, but its guns answer only a
+    gunner seated in it or a player driving it remotely (`shooting_state`: "Entity is not character"), and an agent's
+    character has no player.
 
 Items on the ground:
 
