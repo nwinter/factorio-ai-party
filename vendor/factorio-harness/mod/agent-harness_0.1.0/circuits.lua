@@ -68,7 +68,7 @@ return function(api)
       platform='platform name: on that platform (all of it in remote view)',
       surface='planet or surface name (remote view, visible chunks)',
       enable='"ice < 300" or {signal, comparator, value|signal2}; false: off',
-      logistic='a condition as enable, on the logistic network (connects it); false: off',
+      logistic='a condition as enable, on the logistic network (connects it); false: off. The game reads the network whose logistic area holds the entity\'s centre (circuit.logistic_reads names it and its count, or none: never met)',
       read='{switch: bool}: hand, contents, resources, speed, ammo, ... (read_X); train stop names',
       settings='{name: value}: any switch, mode, signal or condition by its readback name; inserters and loaders also filters (item names), filter_mode (whitelist|blacklist), use_filters, as configure sets them (reply filters: the line)',
       signals='constant combinator: [{signal, count}] (first section; [] clears)', on='constant combinator: on/off',
@@ -334,6 +334,44 @@ return function(api)
     end
     return out
   end
+  -- The logistic network a logistic condition reads: the game takes the one
+  -- whose logistic area holds the entity's centre, so a machine partly inside
+  -- an area reads none (Astra 10:27, world n: foundries at (29.5,-51.5) and
+  -- (36.5,-49.5) stayed off under "iron-plate < 3000" and "steel-plate < 1500"
+  -- while the inserter at (30.5,-48.5), inside roboport (44,-24)'s area, read
+  -- network 8). With its count of the condition's item; with none, the nearest
+  -- roboport's logistic area.
+  local function logistic_reads(e, c)
+    local pos = e.position
+    local net = try(function() return e.force.find_logistic_network_by_position(pos, e.surface) end)
+    local first = type(c) == 'table' and c.first_signal or nil
+    if net then
+      local text = 'network ' .. tostring(try(function() return net.network_id end) or '?') .. ' (its logistic area holds the centre)'
+      if type(first) == 'table' and first.name and (first.type == nil or first.type == 'item') then
+        local n = try(function() return net.get_item_count({name=first.name, quality=first.quality or 'normal'}) end)
+        if type(n) == 'number' then
+          text = text .. string.format(': %s %d', first.name, n) .. (n < 0 and ' (the count less what deliveries have reserved)' or '')
+        end
+      end
+      return text
+    end
+    local best, bd
+    local list = try(function() return e.surface.find_entities_filtered{type='roboport', force=e.force, position=pos, radius=80, limit=64} end)
+    for _, r in ipairs(list or {}) do
+      local lr = try(function() return r.logistic_cell.logistic_radius end)
+      if type(lr) == 'number' and lr > 0 then
+        local d = math.max(math.abs(pos.x - r.position.x) - lr, math.abs(pos.y - r.position.y) - lr)
+        if not bd or d < bd then best, bd = r, d end
+      end
+    end
+    local text = string.format('none: no logistic area holds its centre (%g,%g), so the condition reads no network and is not met', pos.x, pos.y)
+    if best then
+      local id = try(function() return best.logistic_cell.logistic_network.network_id end)
+      text = text .. string.format('; the nearest, roboport (%g,%g)%s, ends %g tile%s from it', best.position.x, best.position.y,
+        id and (' of network ' .. id) or '', bd, bd == 1 and '' or 's')
+    end
+    return text
+  end
   -- What the entity's circuit GUI shows now; nil without a control behavior
   -- (cb nil: the entity's own, never created by a read) or a wire.
   function M.read(e, cb)
@@ -356,6 +394,7 @@ return function(api)
         local c = try(function() return cb.logistic_condition end)
         out.logistic = condition_text(c) or 'blank'
         out.logistic_met = type(c) == 'table' and c.fulfilled or nil
+        out.logistic_reads = logistic_reads(e, c)
       else out.logistic = false end
       out.disabled = try(function() return cb.disabled end) or nil
     end

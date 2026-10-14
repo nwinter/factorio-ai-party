@@ -1052,7 +1052,7 @@ function handlers.describe()
   description.actions.cameras={returns='director cameras: player, follow, position, zoom'}
   -- inspect's circuit readback and another surface by remote view (circuits.lua).
   description.actions.inspect.surface='optional planet or surface name: inspect there by remote view (a visible chunk)'
-  description.actions.inspect.note=description.actions.inspect.note..'; circuit (an entity with circuit settings or wires): enable/logistic conditions as text with _met, disabled, '..
+  description.actions.inspect.note=description.actions.inspect.note..'; circuit (an entity with circuit settings or wires): enable/logistic conditions as text with _met, disabled, logistic_reads (the logistic network the condition reads, whose logistic area holds the entity\'s centre, with its count of the item; none: never met, and the nearest roboport area\'s distance), '..
     'settings and off (switches, modes, signals by the names circuit_set takes), a combinator\'s settings and output, wires per color (red, green, copper; '..
     'a combinator\'s red_input ... green_output, a power switch\'s copper_left/right) with each far end {entity, position, side}, networks {id, signals} (the signals on each now)'
   description.runtime_fault=state().runtime_fault or false

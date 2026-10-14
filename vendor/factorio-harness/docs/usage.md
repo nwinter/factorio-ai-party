@@ -179,7 +179,12 @@ fh call status
   after the change), `network`. It leaves a running action and queue alone.
 - `inspect` (and `circuit_set`) read back an entity's circuit side under `circuit`, for an entity with circuit settings
   or wires: `enable` and `logistic` as text (`"ice < 300"`, the same form `enable` takes) with `enable_met` and
-  `logistic_met` (whether the condition holds now) and `disabled` (the entity stopped by it); `settings` (switches that
+  `logistic_met` (whether the condition holds now) and `disabled` (the entity stopped by it); `logistic_reads`: the
+  logistic network the condition reads, the one whose logistic area holds the entity's centre, with its count of the
+  condition's item (`network 8 (its logistic area holds the centre): iron-plate -3 (the count less what deliveries have
+  reserved)`), or `none` when no logistic area holds the centre: then the condition is never met, even with most of a
+  machine inside an area, and the nearest roboport's area is named with how far it ends from the centre (Astra 10:27:
+  foundries at (29.5,-51.5) and (36.5,-49.5) stayed off while their inserter, 3 tiles south, read network 8); `settings` (switches that
   are on, modes, signals, conditions) and `off` (switches that are off); a constant combinator's `on`, `signals`
   (`name*count`), `sections`, `groups`; an arithmetic combinator's `arithmetic {first, operation, second, output, text}`,
   a decider's `decider {conditions, outputs}` as text, a selector's `selector`, and a combinator's `output` (the

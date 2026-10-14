@@ -151,8 +151,10 @@ local function thing(name,type_,x,cb,y,surf)
 end
 local NAMES={['iron-chest']=1,inserter=1,['constant-combinator']=1,['arithmetic-combinator']=1,['decider-combinator']=1,['train-stop']=1,locomotive=1,
   ['small-lamp']=1,['small-electric-pole']=1,['power-switch']=1,['space-platform-hub']=1,['fast-inserter']=1,thruster=1,gate=1}
+local roboports={}
 local function finder(list)
   return function(f)
+    if f.type=='roboport' then return roboports end
     local out={}
     -- As the engine: a name filter must be an entity prototype (live check: a stop's name passed as `name` failed).
     if f.name then assert(NAMES[f.name],'Unknown entity name: '..f.name) end
@@ -199,6 +201,24 @@ eq(r.circuit.enable,'iron-plate < 100')
 r=astra('circuit_set',{position={x=2,y=0},logistic={signal='water',comparator='>=',signal2='signal-A'}})
 eq(inserter_cb.connect_to_logistic_network,true); eq(inserter_cb.logistic_condition.first_signal.type,'fluid')
 eq(inserter_cb.logistic_condition.second_signal.type,'virtual'); eq(r.circuit.logistic,'water >= signal-A')
+-- The network a logistic condition reads: the one whose logistic area holds the entity's centre, with its count
+-- (Astra 10:27, world n: two foundries stayed off under "iron-plate < 3000" while their inserter 3 tiles south read
+-- network 8, whose iron count was -3 after reserved deliveries).
+do
+  local net8={network_id=8,get_item_count=function(it) eq(it.name,'iron-plate'); eq(it.quality,'normal'); return -3 end}
+  force.find_logistic_network_by_position=function(pos,surf) eq(surf,surface); if pos.y>=-8 then return net8 end end
+  local rr=astra('circuit_set',{position={x=2,y=0},logistic='iron-plate < 3000'})
+  eq(rr.circuit.logistic_reads,'network 8 (its logistic area holds the centre): iron-plate -3 (the count less what deliveries have reserved)')
+  local foundry_cb=cb_of('assembling_machine',{circuit_enable_disable=false,connect_to_logistic_network=false})
+  local foundry=thing('foundry','assembling-machine',12,foundry_cb,-9.5)
+  roboports[1]={position={x=20,y=16},logistic_cell={logistic_radius=25,logistic_network={network_id=8}}}
+  rr=astra('circuit_set',{position={x=12,y=-9.5},logistic='iron-plate < 3000'})
+  eq(foundry_cb.connect_to_logistic_network,true)
+  eq(rr.circuit.logistic_reads,'none: no logistic area holds its centre (12,-9.5), so the condition reads no network and is not met; the nearest, roboport (20,16) of network 8, ends 0.5 tiles from it')
+  rr=astra('circuit_set',{position={x=12,y=-9.5},logistic=false}); eq(rr.circuit.logistic,false); eq(rr.circuit.logistic_reads,nil)
+  foundry.valid=false; roboports[1]=nil; force.find_logistic_network_by_position=nil
+  astra('circuit_set',{position={x=2,y=0},logistic={signal='water',comparator='>=',signal2='signal-A'}})
+end
 -- The game writes >= back as ≥: read back in ASCII.
 inserter_cb.logistic_condition.comparator='≥'
 eq(astra('circuit_set',{position={x=2,y=0}}).circuit.logistic,'water >= signal-A')
