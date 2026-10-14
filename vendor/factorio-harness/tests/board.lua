@@ -115,7 +115,7 @@ fails(function() grok('board_update',{id=1,status='finished'}) end,'status must 
 -- A bad argument changes nothing, even with a valid owner beside it.
 fails(function() sol('board_update',{id=1,owner='astra',note=''}) end,'note is required')
 eq(grok('board',{id=1}).item.owner,'grok')
-fails(function() grok('board_update',{id=1}) end,'give status, owner, note or allow')
+fails(function() grok('board_update',{id=1}) end,'give status, owner, note, allow, title or needs')
 fails(function() grok('board_update',{id=4,owner='sol'}) end,'stays with its poster')
 -- The requester may reassign; the owner may release.
 r=sol('board_update',{id=1,owner='astra'}); eq(r.item.owner,'astra'); eq(r.changed[1],'assigned')
@@ -720,7 +720,7 @@ fails(function() sol('board_post',{kind='task',title='x',steps={'a'}}) end,'goal
 fails(function() grok('board_update',{id=t.id,done=1}) end,'done is for a project (#'..t.id..' is a task); status "done" finishes an item')
 fails(function() astra('board_update',{id=pj.id,done=true}) end,'done takes step numbers: a number or an array of them (status "done" finishes the project)')
 fails(function() astra('board_update',{id=pj.id,done=9}) end,'project #'..pj.id..' has no step 9; its steps: 1, 2, 3')
-fails(function() astra('board_update',{id=pj.id}) end,'give status, owner, note or allow; for a project also step, done, undone')
+fails(function() astra('board_update',{id=pj.id}) end,'give status, owner, note, allow, title or needs; for a project also step, done, undone')
 fails(function() astra('board_update',{id=pj.id,done={1,9}}) end,'has no step 9')
 eq(astra('board',{id=pj.id}).item.progress,'0 of 3 steps') -- a bad argument changes nothing
 -- anyone adds steps and marks them done; who did each shows
@@ -801,4 +801,32 @@ eq(#astra('board',{}).projects,9); eq(astra('board',{}).projects[9],'+22 more: b
 for k=1,300 do grok('board_post',{kind='task',title='filler '..k}) end
 assert(grok('board',{id=p2.id}).item)
 fails(function() grok('board',{id=pj.id}) end,'no board item #'..pj.id)
+-- Title and needs (Astra, shift10: a request's ask could not be corrected after posting):
+-- its poster, owner or the operator; anyone once the one responsible has made no request for 20 min.
+local rq=sol('board_post',{kind='request',title='need 100 green circuits',needs={['electronic-circuit']=100}})
+local rid=rq.item.id
+fails(function() grok('board_update',{id=rid,title='x'}) end,'only its poster (sol), its owner (none) or the operator changes the title and needs of #'..rid)
+r=sol('board_update',{id=rid,title='need 200 green circuits',needs={{name='electronic-circuit',count=200},{name='copper-cable',count=50}}})
+eq(r.item.title,'need 200 green circuits'); eq(r.item.needs[1].count,200); eq(r.changed[1],'title_changed'); eq(r.changed[2],'needs_changed')
+eq(r.item.history[1],"title changed by sol: 'need 100 green circuits' -> 'need 200 green circuits' (0s ago)")
+eq(r.item.history[2],'needs changed by sol: electronic-circuit*100 -> electronic-circuit*200, copper-cable*50 (0s ago)')
+fails(function() sol('board_update',{id=rid,title='  '}) end,'title is required')
+eq(sol('board',{id=rid}).item.title,'need 200 green circuits') -- a bad title changes nothing
+-- Taken by grok: grok edits; astra may not while grok is active, and may once grok is quiet for 20 min.
+grok('board_update',{id=rid,owner='grok'})
+grok('board_update',{id=rid,title='need 200 green circuits at (10,4)'})
+-- The poster is told, with the old title.
+assert(has(sol('status').team.board,'#'..rid..' (your request) title changed by grok: need 200 green circuits at (10,4) - was: need 200 green circuits'))
+fails(function() astra('board_update',{id=rid,needs=''}) end,'or anyone once grok has made no request for 20 min')
+jump(20*3600+60); sol('status'); astra('status')
+r=astra('board_update',{id=rid,needs=''})
+eq(r.item.needs,nil); eq(r.changed[1],'needs_changed')
+eq(r.item.history[4],'needs changed by astra: electronic-circuit*200, copper-cable*50 -> none (0s ago)')
+-- The owner is told, with the old value.
+assert(has(grok('status').team.board,'#'..rid..' (yours) needs changed by astra: need 200 green circuits at (10,4) - none (was electronic-circuit*200, copper-cable*50)'))
+-- The operator edits anything; the team plan is board_plan's.
+r=op('board_update',{id=rid,title='need 50 green circuits'}); eq(r.item.title,'need 50 green circuits')
+local plan_id
+for id,item in pairs(storage.agent_harness.board.items) do if item.kind=='plan' then plan_id=id end end
+if plan_id then fails(function() sol('board_update',{id=plan_id,title='x'}) end,'the team plan changes with board_plan') end
 print('board: ok')
