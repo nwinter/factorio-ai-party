@@ -148,7 +148,8 @@ already targets your character.
   `./fh call review` shows it any time. `science` is one line, at most every 5 minutes and only when it changed:
   the research, labs working N of M, the pack the most labs hold none of with made and used per minute and the
   first short step of its chain, the largest electric network's draw, capacity and headroom, and its boilers (how
-  many have fuel at their feeders; how many are under 20 minutes and not refilled, and the lowest).
+  many have fuel at their feeders; how many are under 20 minutes and not refilled, and the lowest; the feed chest
+  with the fewest minutes left at its fuel use over the last 10 minutes).
   Each is shown once, so a command that sends replies to a file you don't read loses them. A change to your board
   item, a plan line set for you, or a tell also ends your `sleep`.
 - Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished

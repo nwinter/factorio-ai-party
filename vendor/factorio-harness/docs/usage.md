@@ -1979,7 +1979,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   12 of 20 working; limiting chemical-science-pack: 8 of 20 labs have none, made 12/min, used 30/min; first short
   step plastic-bar: 4 of 4 working, made 30/min, used 52/min (chemical-science-pack > advanced-circuit >
   plastic-bar); power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); boilers 13: 11 with fuel at their
-  feeders, 2 under 20 min of their own fuel and not refilled, lowest 2 min`. The surface is the one with the most labs (labs on platforms are not
+  feeders, 2 under 20 min of their own fuel and not refilled, lowest 2 min; feed chest requester-chest (10,39) 50
+  coal, uses 15.0/min over 10 min, 3 min left`. The feed chest part (Haiku, 12:20) is the boilers' feed chest that
+  falls fastest toward empty at its rate over the last 10 min (as on the networks line), only while one falls; the
+  line is told again when its minutes left go under 20, 10 or 5. The surface is the one with the most labs (labs on platforms are not
   counted); the limiting pack is the one the most of its labs hold none of (`every lab holds every pack` when none);
   its made and used per minute are the force's 10 minute statistics, and the short step is where the `science`
   chain ends (the chain's path in brackets when it goes down). Power is that surface's largest electric network by

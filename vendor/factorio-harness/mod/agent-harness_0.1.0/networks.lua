@@ -854,8 +854,12 @@ return function(api)
       end
     end
     if not best then return nil end
+    -- The falling feed chest with the fewest minutes left (Haiku, 12:20), for status's science line.
+    local x = best.feed_rates and best.feed_rates[1]
+    local feed = x and x.minutes_left and {min=x.minutes_left, line=string.format('%s %s %s, %s', x.chest, at(x.position.x, x.position.y), x.held, x.rate)} or nil
     return {id=best.id, capacity_kw=best.capacity_kw, draw_kw=best.draw and best.draw.avg or nil, boilers=#best.boilers,
-      fed=best.fed, low=best.fuel_low and #best.fuel_low or 0, low_min=best.fuel_low and best.fuel_low[1] and best.fuel_low[1].min or nil}
+      fed=best.fed, low=best.fuel_low and #best.fuel_low or 0, low_min=best.fuel_low and best.fuel_low[1] and best.fuel_low[1].min or nil,
+      feed=feed}
   end
   -- The lines, the agent's surface first; at most `max` (the rest counted).
   function M.lines(f, here, max)

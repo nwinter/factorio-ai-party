@@ -141,6 +141,7 @@ eq(e.boilers,11,'the far boiler feeds nothing listed'); eq(e.fuel_min,31); eq(e.
 local pr=N.power_row(force,'nauvis')
 eq(pr.id,7); eq(pr.capacity_kw,22100); eq(pr.draw_kw,18500); eq(pr.boilers,11); eq(pr.fed,1); eq(pr.low,2); eq(math.floor(pr.low_min),4)
 eq(N.power_row(force,'vulcanus'),nil)
+eq(pr.feed,nil,'a feed chest not falling is not passed')
 local l=r.surfaces[1].logistic[1]; eq(l.unfilled,1)
 eq(l.holds[1].name,'iron-plate'); eq(l.holds[1].count,4200); eq(#l.holds,3)
 eq(l.requests[1].name,'iron-plate'); eq(l.requests[1].asked,400); eq(l.requests[1].short,300); eq(l.requests[2].short,0); eq(l.unfilled_items['iron-plate'],300); eq(l.ghosts,5); eq(l.logistic_idle,0)
@@ -431,6 +432,9 @@ do
   eq(fr.chest,'requester-chest'); eq(fr.count,50); eq(fr.per_min,-15); eq(fr.minutes_left,3)
   eq(fr.rate,'uses 15.0/min over 10 min, 3 min left')
   has(row.line,'feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min left')
+  -- status's science line gets the one with the fewest minutes left from power_row.
+  local pr4=N4.power_row(force,'n2')
+  eq(pr4.feed.min,3); eq(pr4.feed.line,'requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min left')
   -- The boilers read names each boiler's feed chest with its rate.
   local br=N4.boilers({force=force,surface=n2},{})
   local found

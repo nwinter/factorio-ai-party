@@ -107,6 +107,20 @@ run(18000); S.lines(p,h); finish()
 assert(crafter_finds>0,'the crafters walked for the idle check')
 eq(S.lines(p,h),'science on nauvis: research plastics-2 41%; labs 20 of 20 working; every lab holds every pack; '
   ..'power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); boilers 13: 13 with fuel at their feeders')
+-- 4b. A feed chest falling at its 10-minute rate (Haiku, 12:20): the one with the fewest minutes left on the boilers
+-- part; told again as it falls under 20, 10 and 5 min, not for each minute.
+power.feed={min=12,line='requester-chest (10,39) 50 coal, uses 4.0/min over 10 min, 12 min left'}
+run(18000); S.lines(p,h); finish()
+eq(S.lines(p,h),'science on nauvis: research plastics-2 41%; labs 20 of 20 working; every lab holds every pack; '
+  ..'power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); boilers 13: 13 with fuel at their feeders; '
+  ..'feed chest requester-chest (10,39) 50 coal, uses 4.0/min over 10 min, 12 min left')
+power.feed={min=11,line='requester-chest (10,39) 46 coal, uses 4.0/min over 10 min, 11 min left'}
+run(18000); S.lines(p,h); finish()
+eq(S.lines(p,h),nil,'the same band: not told again')
+power.feed={min=4,line='requester-chest (10,39) 16 coal, uses 4.0/min over 10 min, 4 min left'}
+run(18000); S.lines(p,h); finish()
+has(S.lines(p,h),'; feed chest requester-chest (10,39) 16 coal, uses 4.0/min over 10 min, 4 min left')
+power.feed=nil
 -- 5. A failing step drops the job and keeps the last line; the error is recorded.
 nauvis.find_entities_filtered=function() error('boom') end
 run(18000); S.lines(p,h); finish()
