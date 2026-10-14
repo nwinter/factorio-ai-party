@@ -215,6 +215,33 @@ for _,t in ipairs(ptiles) do eq(t.marked,false) end
 local undone_entities=H.cancel_deconstruction(pp,{area=parea})
 eq(undone_entities.changed,1); eq(chest.marked,false); eq(undone_entities.tiles,false)
 
+-- Our tile ghosts of the named tiles go, as a planner over them removes them
+-- (Grok, shift10 06:20: tiles ["landfill"] marked 0 where landfill was planned
+-- over water; only an unfiltered deconstruct removed the 41 ghosts).
+prototypes.tile.landfill={name='landfill',mineable_properties={minable=true}}
+local function tghost(name,x,y,force)
+  local g={valid=true,name='tile-ghost',type='tile-ghost',ghost_name=name,force=force or p.force,position={x=x,y=y}}
+  g.order_deconstruction=function(f,who) assert(f==p.force and who==p,'ghost removal names the force and the real player'); g.valid=false; return true end
+  return g
+end
+local tghosts={tghost('landfill',-2.5,2.5),tghost('landfill',-1.5,2.5),tghost('space-platform-foundation',0.5,2.5)}
+local find_entities=ps.find_entities_filtered
+ps.find_entities_filtered=function(f)
+  if f.type=='tile-ghost' then
+    assert(f.force==p.force and f.limit,'our tile ghosts, bounded')
+    local out={}; for _,g in ipairs(tghosts) do if g.valid then out[#out+1]=g end end; return out
+  end
+  return find_entities(f)
+end
+local lf=H.deconstruct(pp,{area=parea,tiles={'landfill'}})
+eq(lf.tile_ghosts_removed,2); eq(lf.tiles_marked,0); eq(tghosts[3].valid,true,'another tile\'s ghost stays')
+eq(H.cancel_deconstruction(pp,{area=parea,tiles={'landfill'}}).tile_ghosts_removed,nil,'cancelling leaves ghosts alone')
+-- tiles=true: the ghosts of every minable tile.
+local all=H.deconstruct(pp,{area=parea,tiles=true})
+eq(all.tile_ghosts_removed,1); eq(tghosts[3].valid,false)
+H.cancel_deconstruction(pp,{area=parea,tiles=true})
+ps.find_entities_filtered=find_entities
+
 -- The area is capped as for entities, and so is the tile count.
 fails(function() H.deconstruct(pp,{area={left_top={x=-200,y=-200},right_bottom={x=100,y=100}},tiles=true}) end,'at most 256')
 local bounded=ps.find_tiles_filtered

@@ -32,6 +32,7 @@ return function(api)
   local function dist(a, b) return ((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) ^ 0.5 end
   local function at(pos) return string.format('(%g,%g)', math.floor(pos.x * 10 + 0.5) / 10, math.floor(pos.y * 10 + 0.5) / 10) end
   M.at = at
+  local found_spot
   -- Half the character's box (0.2 for the vanilla character).
   function M.half(c)
     local b = try(function() return c.prototype.collision_box end)
@@ -229,6 +230,61 @@ return function(api)
     end
     return M.give_up(p, nav)
   end
+  -- A probe: one request from where the character stands toward the goal,
+  -- ending at the first point within radius of it. kind near: where it can
+  -- get to; room: a box with room to turn (padded by PAD) within build
+  -- reach; gap: its own box on the quarter-tile grid within build reach.
+  local function probe(p, nav, kind, radius, pad, res)
+    local c = p.character
+    local h = M.half(c) + (pad or 0)
+    nav.probe_id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=c.prototype.collision_mask, start=M.start_centre(p),
+      goal=nav.position, force=p.force, radius=radius, entity_to_ignore=c, can_open_gates=true,
+      pathfind_flags={prefer_straight_paths=true, no_break=res == nil, cache=false}, path_resolution_modifier=res}
+    api.paths()[nav.probe_id] = p.index
+    nav.probe_radius, nav.probe_kind = radius, kind
+    nav.path_state = 'probing'
+  end
+  local function build_reach(p) return try(function() return p.build_distance end) or 10 end
+  M.build_reach = build_reach
+  -- A spot the character reaches (a probe's end, or the nearest step of a
+  -- closed area) within build reach of the goal (Grok, shift10 06:20: four
+  -- walks failed toward a standing tile; the only tile in build reach of the
+  -- new engine lay in a 0.7-tile gap). One with room to turn is named as it
+  -- is; one in a gap is swapped for a spot with room joined to it within
+  -- build reach, else named with what hems it in (a walk stops before a gap
+  -- unless squeeze=true).
+  local function classify(p, nav, pos, room)
+    local c, R = p.character, build_reach(p)
+    local half = M.half(c)
+    local s = {pos={x=pos.x, y=pos.y}, goal={x=nav.position.x, y=nav.position.y}, reach=R}
+    if room or M.clear_at(p.surface, pos, half + PAD, c) then s.room = true
+    else
+      local r = M.region(p.surface, pos, half, {ignore=c, force=p.force, open_pad=PAD, window=12})
+      if r and r.open and dist(r.open, nav.position) <= R - 0.25 then s.pos = {x=r.open.x, y=r.open.y}; s.room = true
+      else
+        local g = M.in_gap(p.surface, pos, half, 0.25, c)
+        s.by = g and g.by or {}
+        s.width = (half + PAD) * 2
+      end
+    end
+    return s
+  end
+  found_spot = function(p, nav, pos, room)
+    local s = classify(p, nav, pos, room)
+    if not nav.reachable or dist(s.pos, nav.position) < dist(nav.reachable, nav.position) then nav.reachable = s.pos end
+    nav.spot = s
+    nav.path_state = 'unreachable'
+  end
+  -- After the near probe: its end when it has room within build reach, else
+  -- a probe for a box with room to turn within build reach, then the
+  -- character's own box on the quarter-tile grid.
+  function M.spot(p, nav)
+    local R, r = build_reach(p), nav.reachable
+    if r and dist(r, nav.position) <= R - 0.25 and M.clear_at(p.surface, r, M.half(p.character) + PAD, p.character) then
+      return found_spot(p, nav, r, true)
+    end
+    return probe(p, nav, 'room', R - 0.5, PAD, nil)
+  end
   -- No level found a route. Ungenerated ground: steer blind as before.
   -- Else: closed in (mapped now), or ask once with a wide radius where the
   -- character can get to near the goal; the walk then ends as unreachable.
@@ -262,25 +318,26 @@ return function(api)
       return
     end
     -- Not closed in: one wide request says where it can get to.
-    local c = p.character
-    local h = M.half(c)
-    local start = M.start_centre(p)
-    local radius = math.max(4, math.min(48, dist(here, pos) * 0.75))
-    nav.probe_id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=c.prototype.collision_mask, start=start, goal=pos,
-      force=p.force, radius=radius, entity_to_ignore=c, can_open_gates=true, pathfind_flags={prefer_straight_paths=true, no_break=true, cache=false}}
-    api.paths()[nav.probe_id] = p.index
-    nav.probe_radius = radius
-    nav.path_state = 'probing'
+    return probe(p, nav, 'near', math.max(4, math.min(48, dist(here, pos) * 0.75)), 0, nil)
   end
   function M.probed(p, nav, event)
     nav.probe_id = nil
+    local kind = nav.probe_kind or 'near'
+    nav.probe_kind = nil
     local last = event.path and event.path[#event.path]
-    nav.reachable = last and {x=last.position.x, y=last.position.y} or nil
-    if nav.reachable then
-      nav.why = string.format('no path for the character to %s on the tile, half- or quarter-tile grid', at(nav.position))
-    else
-      nav.why = string.format('no path for the character to %s, nor to anywhere within %d tiles of it', at(nav.position), math.floor(nav.probe_radius or 0))
+    local got = last and {x=last.position.x, y=last.position.y} or nil
+    if kind == 'near' then
+      nav.reachable = got
+      if got then
+        nav.why = string.format('no path for the character to %s on the tile, half- or quarter-tile grid', at(nav.position))
+      else
+        nav.why = string.format('no path for the character to %s, nor to anywhere within %d tiles of it', at(nav.position), math.floor(nav.probe_radius or 0))
+      end
+      return M.spot(p, nav)
     end
+    if got then return found_spot(p, nav, got, kind == 'room') end
+    if kind == 'room' then return probe(p, nav, 'gap', build_reach(p) - 0.5, 0, 2) end
+    nav.spot = {none=true, goal={x=nav.position.x, y=nav.position.y}, reach=build_reach(p)}
     nav.path_state = 'unreachable'
   end
 
@@ -619,6 +676,10 @@ return function(api)
       nav.why = (nav.why or '') .. string.format('; mining %s opens a way out to %s', table.concat(names, ' and '), at(dug.to))
     end
     nav.dig_from, nav.dig_area = nil, nil
+    -- Closed in: the nearest step of the area, when within build reach.
+    local r = nav.reachable
+    if r and dist(r, nav.position) <= build_reach(p) - 0.25 then return found_spot(p, nav, r, nil) end
+    nav.spot = {none=true, goal={x=nav.position.x, y=nav.position.y}, reach=build_reach(p), closed=true}
     nav.path_state = 'unreachable'
   end
   -- Room to turn where the character stands: a box padded by PAD fits.

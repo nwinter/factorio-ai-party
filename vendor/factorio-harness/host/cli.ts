@@ -40,11 +40,11 @@ const help = `fh — Factorio agent CLI
   fh wait                                   Block until the character's current action (and combat) ends; a tell or mention ends the wait early
                                             (exit 3: it still runs; --wait-through-tells keeps waiting)
   fh wait --until tell|alert|COND [--max S] One blocking wait, one line out: ends on a tell or mention, a new alert (alert),
-                                            a sleep condition (researched [TECH], item_count ITEM>=N, ...), or after S s (default 600, up to 900);
+                                            a sleep condition (researched [TECH], item_count ITEM>=N, rocket_ready X,Y, ...), or after S s (default 600, up to 900);
                                             your action and queue keep going; the team block waits for your next reply
   fh sleep SECONDS [--until COND]           Wait up to 900 s (never past the deadline) while your action and queue keep going;
                                             wakes on damage, death, a mention, a tell, board news, your queue finishing or
-                                            stalling, or COND: researched [TECH] | crafting_done | item_count ITEM>=N [at X,Y X,Y]
+                                            stalling, or COND: researched [TECH] | crafting_done | item_count ITEM>=N [at X,Y X,Y] | rocket_ready X,Y (a silo)
   fh view --out artifacts/map.png            Render a local schematic PNG, also works headless
   fh deploy [--file runtime.lua]             Validate and replace live Lua runtime
   fh watch [--file runtime.lua]              Deploy changed Lua; retain old code on invalid update
@@ -103,19 +103,25 @@ function object(value: unknown, label: string): Record<string, unknown> {
 }
 /**
  * `fh sleep --until`: a wait_until condition as JSON, or as words:
- * `researched [TECH]`, `crafting_done`, `item_count ITEM>=N|ITEM<N [at X,Y X,Y ...]`,
+ * `researched [TECH]`, `crafting_done`, `item_count ITEM>=N|ITEM<N [at X,Y X,Y ...]`, `rocket_ready X,Y` (the silo),
  * or any condition name followed by key=value pairs (`ammo_below count=5`).
  */
 function parseUntil(text: string): Record<string, unknown> {
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) return object(JSON.parse(trimmed),'--until');
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N [at X,Y X,Y], or a wait_until condition as JSON';
+  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N [at X,Y X,Y], rocket_ready X,Y, or a wait_until condition as JSON';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
   }
   if (kind === 'crafting_done' || kind === 'crafted') return {until:'crafting_done'};
+  // A silo's rocket built and ready to launch (Luna, shift10: the rocket is no item to count).
+  if (kind === 'rocket_ready') {
+    const xy = rest.filter(word => word !== 'at').join('').match(/^\(?(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)?$/);
+    if (!xy) throw new Error('--until rocket_ready takes the silo position: rocket_ready X,Y');
+    return {until:'rocket_ready', position:{x:Number(xy[1]), y:Number(xy[2])}};
+  }
   const value = (v: string): unknown => /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
   if ((kind === 'item_count' || kind === 'items') && /[<>]/.test(rest.join(' '))) {
     const match = rest.join(' ').match(/^([\w-]+)\s*(>=|<)\s*(\d+)(?:\s+(?:at|in)\s+(.+))?$/);

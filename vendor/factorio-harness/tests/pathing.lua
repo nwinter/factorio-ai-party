@@ -119,10 +119,41 @@ nav={position={x=40,y=5},tolerance=0.5}
 P.give_up(p,nav)
 eq(nav.path_state,'probing'); eq(asked[1].radius,27.75); eq(paths[51],7)
 P.on_finished(p,nav,{id=51,path=path{{3,5},{12,5}}})
-eq(nav.path_state,'unreachable'); eq(nav.reachable.x,12); eq(nav.why,'no path for the character to (40,5) on the tile, half- or quarter-tile grid')
+eq(nav.reachable.x,12); eq(nav.why,'no path for the character to (40,5) on the tile, half- or quarter-tile grid')
+-- Its end is 28 tiles off (Grok, shift10 06:20): a spot within build reach (10) is asked for, first a
+-- box with room to turn on the tile grid, then the character's own box on the quarter-tile grid.
+eq(nav.path_state,'probing'); eq(asked[2].radius,9.5); eq(asked[2].bounding_box[1][1],-0.35); eq(asked[2].path_resolution_modifier,nil)
+P.on_finished(p,nav,{id=52})
+eq(nav.path_state,'probing'); eq(asked[3].radius,9.5); eq(asked[3].bounding_box[1][1],-0.2); eq(asked[3].path_resolution_modifier,2)
+P.on_finished(p,nav,{id=53,path=path{{3,5},{31,5}}})
+eq(nav.path_state,'unreachable'); eq(nav.spot.pos.x,31); eq(nav.spot.room,true); eq(nav.spot.reach,10)
+eq(nav.reachable.x,31,'the spot is nearer than the first probe\'s end')
+-- In a gap 0.66 tiles wide (the character's 0.4 box fits, a 0.7 one with room to turn does not), room only out of build reach: named with what hems it in.
+boxes={{name='pipe',box={30,-6,30.67,16}},{name='offshore-pump',box={31.33,-6,32,16}}}
+asked={}
 nav={position={x=40,y=5},tolerance=0.5}
-P.give_up(p,nav); P.on_finished(p,nav,{id=52})
+P.give_up(p,nav); P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked,path=path{{3,5},{31,5}}})
+eq(nav.path_state,'unreachable'); eq(nav.spot.room,nil); eq(nav.spot.pos.x,31); eq(nav.spot.width,0.7)
+eq(nav.spot.by[1],'pipe (30.3,5)'); eq(nav.spot.by[2],'offshore-pump (31.7,5)')
+-- Room joined to the gap within build reach: that spot instead.
+boxes={{name='pipe',box={30,4,30.67,6}},{name='offshore-pump',box={31.33,4,32,6}}}
+asked={}
+nav={position={x=40,y=5},tolerance=0.5}
+P.give_up(p,nav); P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked,path=path{{3,5},{31,5}}})
+eq(nav.spot.room,true); assert(nav.spot.pos.y<4 or nav.spot.pos.y>6,'out of the gap: '..nav.spot.pos.y); assert(((nav.spot.pos.x-40)^2+(nav.spot.pos.y-5)^2)^0.5<=9.75)
+boxes={}
+-- The first probe's end within build reach and with room: named at once.
+asked={}
+nav={position={x=14,y=5},tolerance=0.5}
+P.give_up(p,nav); P.on_finished(p,nav,{id=50+#asked,path=path{{3,5},{8,5}}})
+eq(nav.path_state,'unreachable'); eq(#asked,1); eq(nav.spot.pos.x,8); eq(nav.spot.room,true)
+-- No path at all, nor to anywhere within build reach: none.
+asked={}
+nav={position={x=40,y=5},tolerance=0.5}
+P.give_up(p,nav); P.on_finished(p,nav,{id=50+#asked})
 eq(nav.reachable,nil); eq(nav.why,'no path for the character to (40,5), nor to anywhere within 27 tiles of it')
+P.on_finished(p,nav,{id=50+#asked}); P.on_finished(p,nav,{id=50+#asked})
+eq(nav.path_state,'unreachable'); eq(nav.spot.none,true); eq(nav.spot.goal.x,40)
 -- Ungenerated ground: blind steering as before.
 surface.is_chunk_generated=function() return false end
 nav={position={x=400,y=5},tolerance=0.5}

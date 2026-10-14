@@ -301,6 +301,18 @@ fh call status
   (the area it can reach, mapped at quarter-tile steps within 24 tiles), or `no path for the character to (x,y) ...`;
   `last.nearest_reachable` is the point nearest the target it can reach and `last.reachable_gap` how far that is from
   the target. A target on ungenerated ground is steered to directly (`last.steered: without a path: ungenerated`).
+- An `unreachable` walk also names a spot it can reach within build reach of the target (Grok, shift10 06:20: four
+  walks failed toward a standing tile by a new steam engine; the only tile in its build reach lay in a 0.7-tile gap).
+  - `last.build_spot` is the spot and `last.build_spot_note` the line: `(-22.5,40.5) is reachable and within build
+    reach of (-26,42): 3.8 tiles (build reach 10)`.
+  - Spots with room to turn come first: the nearest reachable point when it has room, else a path request for a 0.7
+    box within 9.5 tiles of the target, then one for the character's own box on the quarter-tile grid.
+  - A spot in a gap with no room to turn: a spot with room joined to it within build reach takes its place.
+    Otherwise `last.build_spot_squeeze: true` and the note adds `it lies in a gap narrower than 0.7 tiles (pipe
+    (-25.5,44.5), ...), and no reachable spot with room to turn was found within build reach: move_to
+    {position=(-25.3,43.5), squeeze=true} walks into it`.
+  - With none: `no spot the character can reach is within build reach (10 tiles) of (x,y)`. Closed in, the area's
+    nearest step counts when it is within build reach.
   `blocked` (stalls on the way) and `timed_out` also say why, with where it stopped. A walk never ends on a belt: arriving
   on one it steps to the nearest free tile without a belt within the arrival radius, else within 3 tiles
   (`last.off_belt: arrived on a transport-belt; stepped to (25.5,-28.5), the nearest free tile without a belt (none
@@ -341,6 +353,17 @@ fh call status
     passes medium-worm-turret (60,0) (range 30 + 4) at 0.0 tiles`. `--wait` exits 1 with it.
   - The worms and spawners are read per chunk while the walk waits for its path (at most 8 chunks a tick) and kept a
     minute, so a nest built or killed in the last minute may not count yet.
+- `move_to {position, via: [{x,y}, ...]}` walks 1..16 points in order before `position`, in one call (Opus, operator
+  06:26: worm detours took 5-6 chained move_tos each trip).
+  - Each leg is a walk of its own: pathfound, checked for enemies and gone around as a single `move_to`.
+  - A via point counts as reached within 1 tile (or `within` when larger), and only the last leg steps off a belt.
+  - `ticks` covers the whole walk; the reply says `via: 2, legs: 3`; `status` shows `active.leg: 2 of 3` and
+    `active.to`, the leg's goal.
+  - A leg that does not arrive ends the walk with its outcome, and `last.why` (and `build_spot`) describe that leg.
+  - `last.legs` lists each leg, `{to, outcome, s, why, avoided_enemies}`, then the legs `not walked`; `last.target`
+    is `position`.
+  - A queue step paused mid-walk (the agent's own action, a death) goes on from the first via point it had not
+    reached. `waypoints` is read as `via`.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first
@@ -556,11 +579,13 @@ fh sleep 900 --until researched                       # ...or until the research
 
 - `wait_until --wait` takes its timeout from `--wait-timeout MS` (up to 900000, 15 minutes) unless `args.timeout` (ticks, up to 54000) is given; without either it is 3600 ticks. The condition is checked every 10 ticks. Not met in time: exit 1, `error.code` `timed_out`, with the condition and what it last saw.
 - `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one.
+- `wait_until {until: "rocket_ready", position}` (Luna, shift10 06:20: an `item_count` wait for the item `rocket` stayed 0 at a silo whose rocket was ready; that item is ammunition) is met when the rocket silo on that tile (any tile of it) has its rocket built and ready to launch, the GUI's rocket state. `saw`: `rocket-silo (65.5,14.5): rocket_ready, parts 0/50, cargo agricultural-science-pack*45`; no silo of ours there fails the wait. It works as a queue step, a sleep condition and an order's `when` too.
+- `item_count` with `positions` on a rocket silo counts its rocket cargo (the game counts it with the silo's inventories), and `saw` adds the silo's line: `agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket_ready, parts 0/50, cargo agricultural-science-pack*45`.
 - A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
 - A tell or mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered one as `inbox {tick, woke, from}`.
 - `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
 - `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
-  - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
+  - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
   - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
   - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`, `told`, `mentioned`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (damaged) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode. A tell or mention wakes once: the reply that woke the agent delivered it (shift07: Luna's 32 repeats of tells already read). `fh sleep` and `fh wait --until` wait out such a repeat (Muse, shift08: "woke 4s ago" refusals burned turns): on a `repeat: true` reply the CLI waits the rest of the 10 s and starts the sleep again (at most 3 tries), and the final reply carries `waited_out: your previous sleep woke (board) 4 s before this one, and a sleep within 10 s of a wake repeats that wake; this sleep started after 7 s more`, with the team block the earlier replies carried. The runtime's own `sleep` reply is unchanged.
   - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`).
@@ -1188,6 +1213,10 @@ Some actions work at a distance, the way a player can through remote view:
   tiles under an entity that is not marked: robots take a tile once what stands on it is gone). With `tiles`, entities
   are marked only when `entity_names` or `entity_types` name them. `cancel_deconstruction {area, tiles}` clears tile
   marks (`tiles_cancelled`).
+- The same call removes our tile ghosts of those tiles, as a planner over them does: `tiles: ["landfill"]` takes away
+  landfill planned over water before robots build it (`tile_ghosts_removed`; Grok, shift10 06:20: it marked 0 there,
+  and only an unfiltered deconstruct removed the 41 ghosts). Built landfill is minable in 2.0 and is marked like any
+  tile. `cancel_deconstruction` leaves tile ghosts alone.
 - `deconstruct {area, items_on_ground: true}` marks every item stack on the ground in the area, as a planner over
   items on the ground does; construction robots carry marked stacks to storage chests. Other entities are marked
   only when `entity_names` or `entity_types` name them. The reply counts `item_stacks` (marked now) and
