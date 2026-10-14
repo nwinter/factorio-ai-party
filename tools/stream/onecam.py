@@ -115,6 +115,8 @@ ONECAM = {
     "onair_max": 240.0,     # after this, cut to the best other agent if it is at least rotate_ratio as interesting
     "ready_s": 1.5,         # a standby client this long on its new subject is framed (it jumps there) and may cut
     "inset_hold": 20.0,     # an inset stays up this long after its alert
+    "inset_min": 8.0,       # an alert's inset is not replaced by another alert's inside this (a death or agent may)
+    "inset_repeat": 120.0,  # an alert of a fight whose inset went up this recently is a repeat (no new inset)
     "onair_edge": 3.0,      # tiles: an alert inside the on-air frame (this far from its border) needs no cut or inset
     "loss_recut": 180.0,    # a loss within this long of the last loss cut is an inset, not a cut
     "resume_min": 30.0,     # back from an urgent shot, the story it interrupted holds at least this much longer
@@ -329,6 +331,8 @@ class OneCam(Director):
         self.battle = None     # a key battle held on air (watch_battle): {key, why, label, position, surface, ...}
         self.battles = []      # (t, key, why, label): key battles seen
         self.last_battle_end = -1e9
+        self.last_alert_cut = -1e9  # the last cut an alert made (the attack_spacing between alert cuts)
+        self.inset_keys = {}        # alert key -> when its inset went up (repeats of a fight drop)
         self.last_battle = None  # the battle that ended last (it resumes within battle_spacing)
         self.cues_seen = set()  # voice clip ids already judged
         self.cue_last = {}      # agent -> when its last cue was shown
@@ -416,13 +420,25 @@ class OneCam(Director):
 
     # -- alerts -----------------------------------------------------------------------------------------------
     def attack_target(self, snapshot, by_name, scores, now):
-        """Director.attack_target, spaced on any alert handled (a cut or an inset), not on cuts alone."""
+        """Director.attack_target without its spacing: every fresh alert comes through (a viewer, 18:19: "please show
+        all attacks in the pop up window"); on_alert spaces the cuts (attack_spacing after the last alert cut) and
+        drops only repeats of a fight already shown."""
         saved = self.last_attack_cut
-        self.last_attack_cut = self.last_alert
+        self.last_attack_cut = -1e9
         try:
             return super().attack_target(snapshot, by_name, scores, now)
         finally:
             self.last_attack_cut = saved
+
+    def inset_repeat(self, al, position, now):
+        """A fight the PIP showed lately: its alert key within inset_repeat s, or the spot the inset shows now."""
+        key = al.get("key")
+        if key and now - self.inset_keys.get(key, -1e9) < self.cfg["inset_repeat"]:
+            return True
+        ins = self.inset or {}
+        p = ins.get("position")
+        return bool(ins.get("why") == "alert" and p and position and
+                    (p.get("surface") or "nauvis") == (position.get("surface") or "nauvis") and dist(p, position) <= 40)
 
     def fight_zoom(self, extent):
         return round(max(0.4, super().fight_zoom(extent) * self.cfg["view_frac"]), 2)
@@ -441,8 +457,7 @@ class OneCam(Director):
 
     def on_alert(self, attack, by_name, scores, now):
         subject, position, al = attack
-        if al["kind"] == "attack" and not self.near_onair(subject, position, by_name):
-            return  # an attack with nothing lost yet, away from the story: its toast says it (losses inset or cut)
+        # (an attack with nothing lost yet, away from the story, gets the inset now: below)
         self.last_alert = now
         self.last_attack_alert = al
         if subject:
@@ -467,6 +482,8 @@ class OneCam(Director):
             big = False  # a group followed on its way: its own contact becomes the battle; the rest are insets
         if big and al["kind"] == "loss" and self.last_loss and now - self.last_loss["t"] < self.cfg["loss_recut"]:
             big = False  # viewers saw a loss a moment ago: an inset keeps the story on air
+        if big and al["kind"] != "death" and now - self.last_alert_cut < self.cfg["attack_spacing"]:
+            big = False  # an alert cut a moment ago: this one is an inset (deaths cut regardless)
         if self.mode == "trio" and not big and not self.near_onair(subject, position, by_name):
             return  # no inset over the tiles: its toast says it (a big one ends the trio in urgent())
         cur = self.state.get(self.onair)
@@ -484,33 +501,50 @@ class OneCam(Director):
             if al["kind"] == "loss" and position:
                 self.last_loss = {"t": now, "position": position}
             self.last_attack_cut = now  # serve.py: a segment gives way, replays.py looks at the alert
+            self.last_alert_cut = now
             self.last_attack_framed = {"t": now, "how": "follow" if subject else "position"} \
                 if (subject or al["kind"] != "death") else None
             return
-        if al["kind"] == "loss" and not subject and (minor_loss(al["text"]) or "friendly fire" in al["text"]):
-            # a few cheap pieces (a real loss inside loss_recut keeps its inset): the inset passes the threat score
-            # like a battle (Nick 14:50: insets of "empty fields"; 13:37-13:54
-            # were 1-3 pipes burned by our own flamers): friendly fire and a few pieces score low, a raid passes
-            score, parts = self.threats.score_fight(loss_pieces(al["text"]), al["text"], False, 0)
-            if "friendly fire" in al["text"]:
-                score, parts = round(score * 0.3, 3), dict(parts, friendly_fire=0.3)
-            if score < self.threats.cfg["floor"]:
-                self.log_threat({"t": round(now, 1), "threat": "loss inset", "key": al.get("key") or al["text"],
-                                 "score": score, "parts": parts, "decision": "skip",
-                                 "why": f"score {score} < floor {self.threats.cfg['floor']} (its toast only)"})
-                return
-        # an attack (or one cheap building lost) far from the story on air: a small inset for its length
+        # The PIP (a viewer, 18:19: "please show all attacks in the pop up window"): every real attack, enemies hitting
+        # our buildings or an agent, gets the inset unless something more important holds it; only friendly fire
+        # (13:37-13:54: 1-3 pipes burned by our own flamers) and repeats of a fight already shown drop. The threat
+        # score is logged for tuning, it no longer decides.
+        def skip(why, score=None, parts=None):
+            self.log_threat({"t": round(now, 1), "threat": f"{al['kind']} inset", "key": al.get("key") or al["text"],
+                             "score": score, "parts": parts or {}, "decision": "skip", "why": why})
+        score, parts = (self.threats.score_fight(loss_pieces(al["text"]), al["text"], False, 0)
+                        if al["kind"] == "loss" else (None, {}))
+        if "friendly fire" in al["text"]:
+            return skip("friendly fire (its toast only)", score, parts)
+        if al["kind"] != "death" and self.inset_repeat(al, position, now):
+            ins = self.inset or {}
+            if ins.get("why") == "alert":
+                ins["until"] = max(ins["until"], now + self.cfg["inset_hold"] / 2)  # still going: up a little longer
+            return skip("the same fight as an inset shown lately", score, parts)
+        ins = self.inset or {}
+        urgent_kind = al["kind"] == "death" or bool(subject)  # a death, an agent under attack
+        if ins.get("why") == "enemy" and not urgent_kind:
+            return skip("the PIP follows a big enemy coming in", score, parts)
+        if ins.get("why") == "alert" and now - ins.get("t", -1e9) < self.cfg["inset_min"] and \
+                (not urgent_kind or ins.get("urgent")):
+            return skip(f"another alert's inset is up ({int(now - ins['t'])} s)", score, parts)
         sb = [s for s in self.standbys() if not (self.pending and s["slot"] == self.pending["slot"])]
         if self.inset:
             slot = self.slot(self.inset["slot"])
         elif len(sb) >= 2 or (sb and not self.pending and len(self.slots) == 2):
             slot = sb[-1]
         else:
-            return  # no client free for it
+            return skip("no client free for an inset", score, parts)
         if self.inset and self.inset.get("why") == "attention":
             self.last_attn = now  # an alert takes the attention inset's client
         self.frame_on(slot, dict(target, until=now + self.cfg["inset_hold"]), f"inset: {al['text']}", scores, now)
-        self.inset = {"slot": slot["slot"], "until": now + self.cfg["inset_hold"]}
+        self.inset = {"slot": slot["slot"], "until": now + self.cfg["inset_hold"], "why": "alert", "t": now,
+                      "position": position or (by_name.get(subject) or {}).get("position"), "urgent": urgent_kind}
+        if al.get("key"):
+            self.inset_keys[al["key"]] = now
+        if score is not None:
+            self.log_threat({"t": round(now, 1), "threat": "loss inset", "key": al.get("key") or al["text"],
+                             "score": score, "parts": parts, "decision": "take", "why": "a real loss away from the story"})
 
     # -- main loop --------------------------------------------------------------------------------------------
     # -- standing still and the look-ahead -----------------------------------------------------------------------
