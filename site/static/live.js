@@ -371,7 +371,9 @@
     // game chat
     var gchat = chat.slice(-12).map(function (c) {
       var a = byName[c.agent] || { name: c.agent || c.from };
-      return '<li>' + avatar(a, 24) + '<span><b>' + esc(a.display_name || c.from) + '</b> ' + esc(c.text) + '</span></li>';
+      // a relayed viewer line says where the viewer wrote (Luna 13:54): "viewer Joonazan (YouTube)"
+      var src = c.source ? ' <span class="fx-muted small">(' + esc(c.source) + ')</span>' : '';
+      return '<li>' + avatar(a, 24) + '<span><b>' + esc(a.display_name || c.from) + '</b>' + src + ' ' + esc(c.text) + '</span></li>';
     }).join('');
 
     cards();

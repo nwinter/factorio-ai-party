@@ -125,4 +125,14 @@ local function dir(d) local _,args=fix('transfer',{position={x=1,y=1},item='iron
 eq(dir('to_machine'),'to_entity'); eq(dir('from_machine'),'to_player'); eq(dir('to_building'),'to_entity'); eq(dir('from_building'),'to_player')
 eq(dir('to_entity'),'to_entity')
 assert(astra('describe',{}).actions.transfer.direction:find('to_machine, to_building = to_entity',1,true))
+-- Item 12 (Luna 13:54): a relayed viewer line says where the viewer wrote, in chat and in the team block
+local posted=op('viewer_say',{name='Joonazan',text='@astra nice scan',source='youtube'})
+eq(posted.posted,true); eq(posted.source,'youtube')
+op('viewer_say',{name='Robak132',text='hello all',source='site'})
+op('viewer_say',{name='OldRelay',text='no source given'})
+local msgs=astra('chat',{since=0}).messages
+local by={}
+for _,m in ipairs(msgs) do by[m.from]=m end
+eq(by['viewer Joonazan'].source,'YouTube'); eq(by['viewer Robak132'].source,'site'); eq(by['viewer OldRelay'].source,nil)
+assert(by['viewer Joonazan'].seq<by['viewer Robak132'].seq,'one sequence')
 print('round1350d: ok')

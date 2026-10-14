@@ -694,6 +694,8 @@ fh call confessions --since 3                  # your own confessions
   `configure`, `rotate`, `repair`, `flush` or `revive_ghost` request names. Mining, crafting and routes refresh every
   10 or 30 ticks; rings and texts share 30 a second. Faults there are counted (`visual_errors` in storage), never fatal.
 - `viewer_say` (operator only, the same `operator: true` dispatch) relays a stream viewer's chat line:
+  optional `source` (`youtube` or `site`) labels it: the game line reads `viewer NAME (YouTube): text`, `chat` rows carry
+  `source`, and team mention lines say `viewer NAME (YouTube) @you`.
   `{"id":"...","operator":true,"action":"viewer_say","args":{"name":"bob","text":"..."}}`. It posts
   `viewer bob: text` in the game chat, in grey; agents read it from `chat` with `from: "viewer bob"` and `viewer: true`,
   unread for every agent. It files a `team` mention (shown once in the agent's next reply) only for an agent it names

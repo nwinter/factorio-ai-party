@@ -818,6 +818,8 @@ class Model:
                  "text": m.get("text", ""), "t": m.get("t", now)}
         if m.get("aloud"):  # the agent asked for this line to be voiced on stream (tools/stream/caster.py)
             entry["aloud"] = True
+        if m.get("source"):  # a relayed viewer line: where the viewer wrote, YouTube or site (chat.lua)
+            entry["source"] = m["source"]
         if isinstance(m.get("look"), dict):  # say look=: what the camera might show while it is read out (onecam cue)
             entry["look"] = m["look"]
         if m.get("viewer"):  # a viewer's line the operator relayed into the game chat (audience.lua)
