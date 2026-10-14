@@ -5842,7 +5842,7 @@ threat=threat_module{state=state,known=known,distance=distance,on_character_hit=
 survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
 M.supply=require('supply'){integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,
-  agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end}
+  agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,state=state}
 function handlers.supply(p,a) return M.supply.supply(p,a) end
 -- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
 M.trace=require('trace'){supply=M.supply,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return entity_status_names[e.status] end}

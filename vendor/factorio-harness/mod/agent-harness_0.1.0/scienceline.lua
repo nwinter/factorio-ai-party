@@ -16,7 +16,7 @@
 return function(api)
   local M = {}
   local PUSH_TICKS, INDEX_SLICE, MAX_LABS, MAX_CRAFTERS = 18000, 500, 1024, 2048
-  local CRAFTERS = {'assembling-machine', 'furnace', 'rocket-silo'}
+  local CRAFTERS, MINERS = {'assembling-machine', 'furnace', 'rocket-silo'}, {'mining-drill', 'offshore-pump'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()
     local s = api.state()
@@ -61,7 +61,7 @@ return function(api)
         end
         by_product[item] = out
       end
-      chain = surface and api.supply.chain({crafters=job.crafters, by_product=by_product}, f, surface, pack)
+      chain = surface and api.supply.chain({crafters=job.crafters, by_product=by_product, miners=job.miners}, f, surface, pack)
       local root = chain and chain.tree and chain.tree[1]
       local text = string.format('limiting %s: %d of %d labs have none', pack, lab.lack[pack], lab.n)
       if root then text = text .. string.format(', made %d/min, used %d/min', root.made_per_min, root.used_per_min) end
@@ -137,13 +137,18 @@ return function(api)
         job.step = short and 'crafters' or 'finish'
       end
     elseif job.step == 'crafters' then
+      -- The crafters one type a tick, then the miners (mining drills and pumpjacks, offshore pumps: the chain's makers
+      -- of ores and fluids, Grok 04:55) the same way.
       local surface = game.get_surface(job.surface)
-      local kind = CRAFTERS[job.ti]
-      if surface and kind and #job.crafters < MAX_CRAFTERS then
-        for _, e in ipairs(surface.find_entities_filtered{type=kind, force=f, limit=MAX_CRAFTERS - #job.crafters}) do job.crafters[#job.crafters+1] = e end
+      job.miners = job.miners or {}
+      local kind, list
+      if job.ti <= #CRAFTERS then kind, list = CRAFTERS[job.ti], job.crafters
+      else kind, list = MINERS[job.ti - #CRAFTERS], job.miners end
+      if surface and kind and #list < MAX_CRAFTERS then
+        for _, e in ipairs(surface.find_entities_filtered{type=kind, force=f, limit=MAX_CRAFTERS - #list}) do list[#list+1] = e end
       end
       job.ti = job.ti + 1
-      if job.ti > #CRAFTERS then job.step = 'index' end
+      if job.ti > #CRAFTERS + #MINERS then job.step = 'index' end
     elseif job.step == 'index' then
       local recipe_of = api.supply.helpers.recipe_of
       local last = math.min(job.idx + INDEX_SLICE - 1, #job.crafters)
