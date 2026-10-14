@@ -851,6 +851,53 @@ do
   fails(function() call('transfer',{position={x=3,y=0},item='solar-panel',inventory='rocket_silo_trash',direction='to_entity'}) end,'rocket_silo_trash is take-only (direction=to_player)')
   defines.inventory.rocket_silo_trash=nil; main=kept
 end
+-- Luna 12:20 (a 50/50/50 kit went into the rocket cargo instead of the recipe input): a silo's inventories by transfer
+-- name in inspect, with what each holds and one call each; parts and cargo are aliases; a rocket-part ingredient put
+-- into the cargo says where it went; a name the silo does not take lists those it does.
+do
+  local function listing(t)
+    t.get_contents=function() local out={}; for _,s in ipairs(t) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
+    t.is_empty=function() return #t.get_contents()==0 end
+    t.can_insert=function() return true end
+    return t
+  end
+  local kept_get,before=silo.get_inventory,main
+  local input,cargo=listing(inv(stack(nil,0),stack(nil,0))),listing(inv(stack(nil,0),stack(nil,0)))
+  silo.get_inventory=function(i) return ({[5]=input,[7]=cargo})[i] end
+  silo.get_recipe=function() return {name='rocket-part',ingredients={{type='item',name='processing-unit',amount=1},{type='item',name='rocket-fuel',amount=1}}} end
+  prototypes.item['processing-unit']=prototypes.item['processing-unit'] or {fuel_value=0}
+  main=inv(stack('processing-unit',50),stack('rocket-fuel',5),stack('space-platform-starter-pack',1))
+  local r=call('transfer',{position={x=3,y=0},item='processing-unit',count=50,direction='to_entity',inventory='parts'})
+  eq(r.transferred,50); eq(r.inventory,'assembling_machine_input'); eq(input[1].name,'processing-unit'); eq(r.cargo_note,nil)
+  r=call('transfer',{position={x=3,y=0},item='rocket-fuel',count=2,direction='to_entity',inventory='cargo'})
+  eq(r.transferred,2); eq(r.inventory,'rocket_silo_rocket'); eq(cargo[1].name,'rocket-fuel')
+  eq(r.cargo_note,'2 rocket-fuel went into rocket_silo_rocket (cargo), which goes up with the rocket; rocket-fuel is a rocket-part ingredient, and the rocket-part recipe takes its ingredients from assembling_machine_input (parts)')
+  -- the full name works as before and says the same; other cargo has no note
+  r=call('transfer',{position={x=3,y=0},item='rocket-fuel',count=1,direction='to_entity',inventory='rocket_silo_rocket'})
+  eq(r.inventory,nil,'echoed only for an alias or an inferred name'); assert(r.cargo_note:find('^1 rocket%-fuel went'),r.cargo_note)
+  r=call('transfer',{position={x=3,y=0},item='space-platform-starter-pack',count=1,direction='to_entity',inventory='cargo'})
+  eq(r.transferred,1); eq(r.cargo_note,nil)
+  -- taking back by alias
+  r=call('transfer',{position={x=3,y=0},item='rocket-fuel',direction='to_player',inventory='cargo'})
+  eq(r.transferred,3); eq(r.inventory,'rocket_silo_rocket')
+  -- a name the silo does not take
+  fails(function() call('transfer',{position={x=3,y=0},item='rocket-fuel',count=1,direction='to_entity',inventory='fuel'}) end,
+    'inventory is not applicable to this entity type: fuel; rocket-silo takes inventory ')
+  local ok,err=pcall(call,'transfer',{position={x=3,y=0},item='rocket-fuel',count=1,direction='to_entity',inventory='fuel'})
+  assert(not ok and tostring(err):find('assembling_machine_input',1,true) and tostring(err):find('cargo (= rocket_silo_rocket), parts (= assembling_machine_input)',1,true),tostring(err))
+  -- a parts or cargo alias on another entity is no name it has
+  fails(function() call('transfer',{position={x=3,y=0},item='rocket-fuel',count=1,direction='to_entity',inventory='parts_bin'}) end,'unsupported inventory name: parts_bin; rocket-silo takes inventory ')
+  -- inspect: the rows
+  local seen=call('inspect',{position={x=3,y=0}})
+  local rows=seen.silo_inventories
+  eq(rows[1].inventory,'assembling_machine_input'); eq(rows[1].alias,'parts'); eq(rows[1].holds,'processing-unit*50')
+  eq(rows[1].what,"the rocket-part recipe's ingredients (processing-unit, rocket-fuel): the silo crafts rocket parts from them")
+  eq(rows[1].example,[[fh call transfer --args '{"count":50,"direction":"to_entity","inventory":"assembling_machine_input","item":"processing-unit","position":{"x":3,"y":0}}']])
+  eq(rows[2].inventory,'rocket_silo_rocket'); eq(rows[2].alias,'cargo'); eq(rows[2].holds,'space-platform-starter-pack*1')
+  assert(rows[2].what:find("^the rocket's cargo: it goes up with the rocket at launch"),rows[2].what)
+  eq(rows[3],nil,'no trash inventory here')
+  silo.get_inventory,main,silo.get_recipe=kept_get,before,nil
+end
 -- A rocket lifts 1000 kg; the game takes more by script and then refuses the
 -- launch (shift04 07:17: 1060 kg aboard). Only what fits goes in; inspect
 -- shows the weight.
@@ -3677,5 +3724,30 @@ end)()
     [[launch takes the silo: position (or unit_number); e.g. fh call launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'; silos on ]])
   fails(function() call('launch',{platform='Sunward'}) end,[[: rocket-silo (65.5,14.5) rocket ready; rocket-silo (14.5,140.5) building_rocket, parts 12/50]])
   p.surface.find_entities_filtered=find
+end)()
+-- Gemini 12:20: Fulgora's sky on the networks read's Fulgora row (lightning.lua M.sky), and in status there with the
+-- bolts near the character.
+;(function()
+  local s=p.surface
+  local kept_read,kept_get,kept_planet=runtime.networks.read,game.get_surface,s.planet
+  local fields={'daytime','darkness','ticks_per_day','dusk','evening','morning','dawn','freeze_daytime','count_entities_filtered'}
+  local kept={}
+  for _,k in ipairs(fields) do kept[k]=s[k] end
+  s.planet={name='fulgora'}
+  s.daytime,s.darkness,s.ticks_per_day,s.dusk,s.evening,s.morning,s.dawn,s.freeze_daytime=0.5,0.85,10800,0.25,0.45,0.55,0.75,false
+  s.count_entities_filtered=function(f) eq(f.type,'lightning'); return 3 end
+  local other={name='nauvis-2',planet={name='nauvis'}}
+  game.get_surface=function(n) if n==s.name then return s end if n=='nauvis-2' then return other end end
+  runtime.networks.read=function() return {surfaces={{surface=s.name,electric={},logistic={}},{surface='nauvis-2',electric={},logistic={}}},as_of='0s ago'} end
+  local r=call('networks',{})
+  eq(r.surfaces[1].storm.state,'storm'); eq(r.surfaces[1].storm.phase,'full dark'); eq(r.surfaces[1].storm.dawn_in_s,45)
+  eq(r.surfaces[1].storm.bolts_near,nil,'the read is the surface\'s, no character'); eq(r.surfaces[2].storm,nil)
+  local st=call('status',{})
+  eq(st.storm.state,'storm'); eq(st.storm.bolts_near,3)
+  assert(st.storm.line:find('^fulgora sky: storm, full dark %(darkness 0%.85; lightning%); brightening in 9s, dawn %(clear%) in 45s; 3 lightning bolts within 64 tiles of you now'),st.storm.line)
+  s.planet=nil
+  eq(call('status',{}).storm,nil,'not on Fulgora')
+  runtime.networks.read,game.get_surface,s.planet=kept_read,kept_get,kept_planet
+  for _,k in ipairs(fields) do s[k]=kept[k] end
 end)()
 print('runtime: '..assertions..' assertions passed')

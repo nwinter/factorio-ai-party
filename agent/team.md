@@ -174,7 +174,9 @@ already targets your character.
   minutes left at that rate; the networks line names the lowest boiler (position, minutes, fuel, feeder), the 2 feed
   chests with the fewest minutes left (`feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min
   left`) and accumulators' stored MJ of their maximum; a logistic network's line ends with the items it holds most of
-  and what its requesters ask (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`); `./fh platform NAME` shows one space platform (hub free
+  and what its requesters ask (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`); on
+  Fulgora, `networks` and `status` carry `storm`: lightning in the dark, the phase, darkness and the seconds to dusk,
+  full dark, brightening and dawn; `./fh platform NAME` shows one space platform (hub free
   slots, cargo, speed, next stop, ETA);
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
@@ -320,7 +322,8 @@ already targets your character.
   last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
   `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
-  chests near the silo.
+  chests near the silo. A silo's transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part
+  ingredients) and `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each.
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
   and spoiled, the rockets sent to it; per leg what spoiled on the way) and `spoiling` (when its spoilable items spoil,
   against the arrival). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when

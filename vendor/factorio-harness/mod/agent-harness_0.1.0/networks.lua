@@ -1890,7 +1890,8 @@ return function(api)
         .. 'logistic_area and construction_area {x0, y0, x1, y1}, logistic_robots and construction_robots {total, idle, working, '
         .. 'charging, waiting}, logistic, logistic_idle, none_idle_s, construction, construction_idle, unfilled, unfilled_items, '
         .. 'ghosts, line}], turrets {by_name, '
-        .. 'ammo_used_1h, line}}]; none (a surface or platform named with none of these); as_of (kept 60 s); note (how each number is counted). Electric networks over 2 poles or with '
+        .. 'ammo_used_1h, line}, storm (Fulgora, read now: state storm while dark (lightning strikes in the dark, none in daylight; the API has no storm property), else clear; '
+        .. 'phase day|darkening|full dark|brightening, darkness, dusk_in_s, evening_in_s, morning_in_s, dawn_in_s, day_s, line)}]; none (a surface or platform named with none of these); as_of (kept 60 s); note (how each number is counted). Electric networks over 2 poles or with '
         .. 'a generator. Read only'},
   }
   return M

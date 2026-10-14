@@ -103,7 +103,7 @@ fh call status
   `told_during_wait` (`tell from astra at tick 5`) and carries the team block. `fh wait` takes it too. (Sol, shift09:
   a tell ended a wait with exit 0 and the next step ran while the action still ran.) A viewer's `@mention` ends a wait
   only with `--wake-on-viewers` (`fh sleep`, `fh wait` and `--wait` take it).
-- `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success; `unreachable` and `blocked` fail with `last.why` on the error line. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
+- `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success; `unreachable` and `blocked` fail with `last.why` on the error line. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise. The poll after that deadline counts like the others (Sol 12:20: `collect --wait --wait-timeout 60000` read STILL RUNNING at 62 s over a gather that had collected 10 of 10): an action that ended by then ends the wait by its outcome (exit 0, or 1 when it failed); only one still running there is `wait_timeout` (exit 3). `fh wait` does the same.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
 - `build_path {points, item, ticks, start_index, end_direction}` lays a belt line along axis-aligned tile-centred
@@ -1274,6 +1274,21 @@ fh sleep 900 --until researched                       # ...or until the research
   (`trash: "40 space-platform-foundation, 7 solar-panel (in rocket_silo_trash, ...)"`); `platforms` shows a silo's `trash`.
   `transfer {position, direction: "to_player"}` takes from non-empty trash slots first (all, or `item`), or name
   `inventory: "rocket_silo_trash"`; they are take-only.
+- A rocket silo's inventories by transfer name (Luna 12:20: a 50/50/50 kit went into the rocket cargo instead of the
+  recipe input):
+  - `assembling_machine_input` (alias `parts`): the rocket-part recipe's ingredients, which the silo crafts rocket
+    parts from: `fh call transfer --args '{"count":50,"direction":"to_entity","inventory":"parts","item":"low-density-structure","position":{"x":65.5,"y":14.5}}'`;
+  - `rocket_silo_rocket` (alias `cargo`): the rocket's cargo, which goes up with the rocket at launch (1000 kg lift):
+    `fh call transfer --args '{"count":10,"direction":"to_entity","inventory":"cargo","item":"space-platform-foundation","position":{"x":65.5,"y":14.5}}'`;
+  - `rocket_silo_trash`: take-only, as above.
+
+  `inspect` of a silo lists them as `silo_inventories [{inventory, alias, holds, what, example}]` (the example is a
+  transfer call for that silo). An alias works on a silo only; the reply's `inventory` names the inventory it stands
+  for. A rocket-part ingredient put into the cargo says so: `cargo_note: "50 processing-unit went into
+  rocket_silo_rocket (cargo), which goes up with the rocket; processing-unit is a rocket-part ingredient, and the
+  rocket-part recipe takes its ingredients from assembling_machine_input (parts)"`. An inventory name the entity does
+  not take is refused with the ones it does: `inventory is not applicable to this entity type: fuel; rocket-silo takes
+  inventory assembling_machine_input, ..., cargo (= rocket_silo_rocket), parts (= assembling_machine_input)`.
 - `launch {position, auto_requests: true}` on a silo whose rocket holds cargo loaded by hand: the game moves that cargo
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
@@ -2331,8 +2346,16 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the same numbers as fields; everything is kept 60 s (`as_of`), and the network alerts read the same view; the pole
   map is redone every 5 min in the background and by the view when older than 60 s; requests are looked at every 30 s.
   Accumulators show their stored energy against their maximum (`accumulators 2 at 50% (5.0 MJ of 10.0 MJ)`; read:
-  `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning). The API exposes no lightning storm schedule
-  (checked on 2.0.77: Fulgora's planet prototype has no lightning properties), so there is no storm countdown. The
+  `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning). The API exposes no storm state or schedule
+  (checked on 2.0.77, world n, 2026-10-14: LuaSurface, LuaPlanet and Fulgora's LuaSpaceLocationPrototype have no
+  lightning or storm key). Lightning strikes in the dark: one Fulgora day of samples (a 256x256 box, every 4 s) saw
+  bolts at darkness 0.06 to 0.85, in all but one sample at 0.48 and over, and none in daylight. So the networks read's
+  Fulgora row (read now, not kept 60 s) and `status` on Fulgora carry `storm` from the surface's day cycle (Gemini,
+  12:20): `state` (`storm` while dark, else `clear`), `phase` (`day`, `darkening`, `full dark`, `brightening`),
+  `darkness` (0 to 0.85 there), `dusk_in_s`, `evening_in_s`, `morning_in_s`, `dawn_in_s`, `day_s`, `line`; status adds
+  `bolts_near` (lightning within 64 tiles of you): `fulgora sky: storm, full dark (darkness 0.85; lightning);
+  brightening in 9s, dawn (clear) in 45s; 3 lightning bolts within 64 tiles of you now; a 3m00s day: dark from dusk to
+  dawn, 1m30s`, or `fulgora sky: day, clear (no lightning in daylight); dusk in 27s, full dark in 1m03s; ...`. The
   boilers part names the lowest boiler: the lowest of those under 20 min and not refilled, else the lowest of all,
   with its minutes, its fuel and its feeder (`lowest boiler (66,16): 4 min of coal; no inserter feeds it`; read:
   `lowest_boiler {position, min, fuel, feeder, feeder_has_fuel}`; Haiku, 07:55). Then the chests the boilers' feeders
