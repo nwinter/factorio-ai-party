@@ -424,6 +424,29 @@ fh call status
     passes medium-worm-turret (60,0) (range 30 + 4) at 0.0 tiles`. `--wait` exits 1 with it.
   - The worms and spawners are read per chunk while the walk waits for its path (at most 8 chunks a tick) and kept a
     minute, so a nest built or killed in the last minute may not count yet.
+- `move_to {target: {position: {x,y}} | {unit_number: N}, reach: "transfer" | "build" | tiles}` walks until the
+  character is within reach of that entity, and arrives there (Astra, operator 07:55: a walk to (-72,-88) ended
+  `unreachable` 3.5 tiles from its target, within transfer reach, and broke an `&&` chain).
+  - The entity: any tile of its footprint, on a chunk the map draws; `name` or `unit_number` picks one of several
+    there.
+  - `unit_number` alone works only for what the game finds by number: prototypes flagged `get-by-unit-number`
+    (vehicles and the like; on a copy of world n an iron chest's own number found nothing). For others the refusal
+    asks for `{position, unit_number}`.
+  - Reach is measured to the entity's box, as the engine measures it, with a quarter tile to spare:
+    - `transfer` (default): the engine's own test too, 10 tiles; for ore, trees and rocks 2.7.
+    - `build`: `build_distance`, 10.
+    - a number: tiles to the box, 0.5..64.
+  - The walk heads for the entity's centre and stops as soon as it is within reach: the nearest spot on its way. A
+    character already within reach arrives on the first tick, and the reply says `in_reach: true`.
+  - An end within reach that would have been `unreachable`, `blocked`, `arrived_near`, `timed_out` or `no_safe_route`
+    counts as `arrived`, with `last.reach_note: within its reach already when the walk ended unreachable`.
+  - When no path leads within reach, the give-up's spot within it (the build spot, else the nearest reachable point)
+    is walked to once, with `squeeze` when it lies in a gap: `last.reach_walk: no path led within reach of it (...);
+    walked toward (12,0.5), a spot within reach`.
+  - `last.reach` says how near it ended: `iron-chest (20.5,0.5): 9.6 tiles to its box (transfer reach 10)`; `fh
+    --wait` prints it.
+  - `within` does not apply with `target`. A plain `target: {x,y}` without `reach` is still `position`
+    (`corrected`).
 - `move_to {position, via: [{x,y}, ...]}` walks 1..16 points in order before `position`, in one call (Opus, operator
   06:26: worm detours took 5-6 chained move_tos each trip).
   - Each leg is a walk of its own: pathfound, checked for enemies and gone around as a single `move_to`.
@@ -1108,6 +1131,16 @@ fh sleep 900 --until researched                       # ...or until the research
   - `place_ghosts` (and the routes through it) lays the tile ghosts the game expects under an entity ghost on such
     tiles, before it: `tiles_laid {landfill: N}` and `tiles_note`. With no unlocked tile item for those tiles the entry
     fails: `placement blocked by tiles: wetland-blue-slime at (18.5,4.5) (needs landfill (not researched))`.
+  - `pipe_route` and pipe ghosts (Astra 08:19: `Unknown entity name: pipe(ghost)` with a ghost at an end and
+    `pumps: true`): a pipe ghost at `from` or `to` is joined as part of its line. `joins` names what it builds
+    (`{name: "pipe", ghost: true, ...}`); `pipe(ghost)` is only how messages show it. For `segment_extent` and pumps,
+    the joined line is every pipe-like ghost connected to it (pipe-to-ground pairs followed) and, where it meets
+    built pipe, that pipe's fluid segment. The walk stops once the span passes the 320-tile limit. With waypoints,
+    a dry run plans the legs in order: each later leg starts from what the leg before leaves on its waypoint (a
+    pipe, or a pipe-to-ground exit open one way) and keeps off that leg's tiles, as the real call does with the
+    ghosts it places. An end on a pipe or ghost with no free side says what takes each one: `from holds
+    pipe(ghost) but no tile at its connections is free of other connections: (3.5,-1.5) blocked or not charted;
+    (4.5,-0.5) blocked or not charted`. `belt_route` and `pole_route` already find ghosts by `ghost_name`.
   - `belt_route` and `pipe_route` take only tiles the piece stands on as they are (or that a tile ghost already
     covers). With no route, the error adds what the straight line crosses: `the straight line from (55.5,12.5) to
     (82.5,12.5) crosses 18 tiles a transport-belt cannot stand on: wetland-blue-slime (landfill makes them
@@ -1454,6 +1487,35 @@ Some actions work at a distance, the way a player can through remote view:
   gun does not reach it; `last_combat` adds `gun`, `ammo_used` (shells or magazines from that slot) and `guns` after.
   It also ends `left_vehicle` (out of the seat) or `out_of_ammo`. (shift09: Opus and Astra could not fire a tank,
   and a tank was lost attacking a nest at (294,-135).)
+  `last_combat.kills` counts the deaths its vehicle or gunner caused.
+- `vehicle {drive, combat: true}` (or a radius 1..36) keeps the guns on auto for the whole drive, at the nearest
+  enemy in range, as `shoot {auto: true}`, and stops them when the drive ends (Astra, operator 08:34: `shoot` runs
+  at most 600 ticks while a drive runs a minute or more, so agents renewed it in round trips).
+  - Seated as the gunner; the same gun choice and loading as `shoot`.
+  - The drive's `last` (and `--wait`) gives `shots` (rounds fired), `kills` and `kills_by_name` (`2 small-biter, 1
+    medium-biter`).
+  - A gun that runs dry first ends the guns (`last_combat.outcome: out_of_ammo`) while the drive goes on;
+    `last.combat_ended` says so.
+- Remote driving (operator 08:32, a viewer via Astra: to cut character deaths): `vehicle {drive: {x,y}, remote: true,
+  vehicle: unit_number | {x,y}}` drives one of our cars or tanks by remote view, as 2.0 lets a player. The character
+  stays where it is.
+  - It is the same drive (path, backing off, avoid_enemies, reverse). The reply says `remote: by remote view: tank
+    (-40,-150), unit_number 311799; your character stays at (240,-176)`, and `status.active.remote` where the
+    vehicle is.
+  - Refused as the game refuses:
+    - the vehicle in no chunk our force sees now (radar coverage or a character's sight; the refusal names the
+      nearest coverage);
+    - someone in its driver seat (`its driver seat holds sol's character`);
+    - another agent driving it remotely;
+    - not ours;
+    - a spidertron (`go_to`) or a train.
+  - While it drives, its driver seat counts as taken: `vehicle {enter}` there takes the passenger seat.
+  - The drive ends `out_of_coverage` when the vehicle leaves the chunks our force sees (checked every 30 ticks), and
+    `driver_seated` when someone gets into its driver seat. `last.remote` and `last.vehicle` follow.
+  - Its guns stay silent: `combat` with `remote`, and `shoot {vehicle}` for a vehicle you do not sit in, are refused.
+    On a private 2.0.77 copy of world n an empty tank moved under its own riding state, but its guns answer only a
+    gunner seated in it or a player driving it remotely (`shooting_state`: "Entity is not character"), and an agent's
+    character has no player.
 
 Items on the ground:
 
@@ -1594,7 +1656,14 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   reply of a shift lists the open projects (`team.shift.projects`, the same lines), and fh keeps the last such list and
   the project items its replies carried in `.projects.json` next to the journal (`FH_PROJECTS_FILE`), which the
   post-compaction brief shows (pog `tools/context.py`). The shift retro's `open board items` leaves projects out.
-- A claim overlapping another agent's active claim is posted with a warning. At most 300 items are kept (finished
+- A claim is on one surface (Sol 07:52: Astra's Nauvis claim #212 labelled Gleba furnaces at (62,22)): the poster's,
+  or `surface` (`board post {kind: "claim", area, surface: "gleba"}`); its owner moves it with `board update {id,
+  surface}`. A claim from before claims had a surface gets its owner's surface the first time it is read (else nauvis),
+  unless its area holds none of our buildings there and exactly one other planet's does.
+  Board items show it (`surface`). Positions on other surfaces are never in it: the overlap warning, `collect`'s
+  `claimed`, `stock`'s skips, alert routing, the owner's activity that keeps it fresh and the review's losses all
+  compare the surface too.
+- A claim overlapping another agent's active claim on its surface is posted with a warning. At most 300 items are kept (finished
   ones pruned first, then notes, then the oldest that is not an open project).
 - A claim whose owner is now somewhere other than you says so: `owner_away: "on Vulcanus"` on board items, the overlap
   warning (`overlaps claim #128 by sol (on Vulcanus): ...`), and the claim in `collect`'s `skipped_claims` and
@@ -1625,7 +1694,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   spawner; `no charted nest within 384 tiles`); an incident you were told about comes again as `attack #ID ... continues`
   with its totals only when it had new hits and at least 2 game minutes passed; `pollution reached nest (x,y), N
   spawners: N tiles DIR of base centre (spawn x,y), N tiles DIR of our nearest building`, once per nest per shift
-  (a new shift hears again of nests still reached); enemy groups gathering; buildings destroyed, one numbered incident
+  (a new shift hears again of nests still reached); enemy groups gathering; buildings destroyed (not what the game removes
+  on its own: an emptied cargo pod's container, the pod, items on the ground, corpses, ghosts, request proxies), one numbered incident
   per raid (losses on one surface within 32 tiles of each other, up to 192 tiles across): `losses #7 in (x,y)-(x,y)
   12 destroyed: 8 transport-belt, 4 inserter by 20 medium-biter, 1s ago`, told once, then its running total at most
   once a game minute while it grows (`losses #7 in ... continue: 40 destroyed (+28 since you were told): ...`);
@@ -1916,6 +1986,15 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   from {x,y}?, to {x,y}, to_name, times, items}` (100 kept per agent, the fewest dropped). The stream service reads it
   every 5 minutes into `runs/RUN/hauling.jsonl` (tools/stream/hauling.py); a shift's numbers are its last read less
   its first. Agents never see it.
+- Operator loadout (loadout.lua; Nick, 08:55): `loadout {names?, top?}` (read; top 1..32, default 8) gives per agent
+  `name, display_name, alive, surface, health {now, max}, vehicle, guns [{name, count, quality?} | false] and ammo
+  (by slot), selected_gun, armor {name, quality, equipment [{name, type, count}], shield {now, max}, battery_mj {now,
+  max}, grid {width, height}}, items` (the main inventory's largest stacks, `top` of them), `item_kinds, slots {free,
+  total}, crafting {queue [{recipe, count}] (up to 6, prerequisites left out), items, progress (the head's, 0..1)},
+  building {kind, done, total, missing}` (a build action running: build_path's cells, construct's built of built +
+  remaining), `shooting` (shoot or kite running), and `tick`. The agent's own inventories only, no surface scans; an
+  agent whose read fails is a row with `error`. The stream service reads it every 4 s (tools/stream/loadout.py picks
+  what the camera strips show) and the site's agents page shows it through the live API.
 - Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
   `standing_s` (how long its character has had a body on the map and nothing that moves or works it; kept once a
   second for agents that made a request). A wait is not work: `wait_ticks`, `wait_until`, `sleep`, a queue held behind

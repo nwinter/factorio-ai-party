@@ -34,7 +34,7 @@ already targets your character.
   `--full` for the whole status). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
   or mention ends while the action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
-  build in (`board post` with kind `claim` and the area): it shows teammates who works where, sends that area's
+  build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
   belts) on the board too. Keep one job you own; when you hand it over, take a new one in the same message.
 - Anywhere, a teammate's claim included, you may build, extend, connect power, belts and inserters, and take from
@@ -191,6 +191,9 @@ already targets your character.
   hatching within 5 minutes on your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`).
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`
   (or `"ammo":"explosive-cannon-shell"`, `"auto":true`), loading the slot from your inventory; `vehicle {drive}` goes on meanwhile.
+  `vehicle {"drive":{...},"combat":true}` keeps the guns on auto for the whole drive (`last.shots`, `last.kills`).
+- `vehicle {"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}` drives one of our cars or tanks in radar coverage by
+  remote view while your character stays put; its guns do not fire that way.
 - `vehicle {drive}` follows the engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes
   through units (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does.
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
@@ -198,6 +201,8 @@ already targets your character.
   `last.nearest_reachable`, plus `last.build_spot`: a spot you can reach within build reach of the target
   (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). `kite --wait` waits until the kite
   ends and reports its outcome, kills and ammo the same way.
+- `move_to --args '{"target":{"position":{"x":-75.5,"y":-86.5}},"reach":"transfer"}'` (reach `build` or tiles; a vehicle by
+  `{"unit_number":N}`) walks until you are within reach of that entity's box and arrives there (`last.reach`); in reach, at once.
 - `move_to --args '{"position":{"x":40,"y":5},"via":[{"x":10,"y":30},{"x":30,"y":30}]}'` walks the via points in order
   in one call, each leg pathfound and checked for enemies like a single `move_to`; `last.legs` gives each leg's outcome.
 - `move_to` keeps out of the range of the worms the map shows, plus 4 tiles; `"avoid_enemies":true` also keeps out of

@@ -17,6 +17,7 @@ import json, math, os, re, time
 from collections import deque
 
 import attention
+import loadout as loadouts_mod
 
 FIGHT_EPISODE_GAP = 45.0  # seconds without a report: the next report at the same key is a new fight
 ATTENTION_TTL = 120.0  # seconds: an attention point older than this is no longer where the agent is looking
@@ -429,6 +430,7 @@ class Model:
         self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
         self.big = {}  # id -> a demolisher near our buildings (big_enemies_live), as last read
         self.hauling = None  # hand hauling this shift (live.py observe_hauling): {rows, since, t}
+        self.loadouts = loadouts_mod.Loadouts()  # what each agent carries, wears and builds (live.py observe_loadout)
         self.fights = {}  # key -> fight still reported (attacked chunk, loss, agent in combat), for replays.py
         self.space_age = bool(run.get("space_age")) or "Space Age" in (run.get("subtitle") or "")
         self.last_obs_t = None
@@ -511,6 +513,9 @@ class Model:
             self._ingest_big(obs["big_enemies"], now)
         if obs.get("hauling") is not None:  # hand hauling this shift (live.py observe_hauling), for the segment card
             self.hauling = obs["hauling"]
+        if obs.get("loadout") is not None:  # guns, armor, items, crafting, building per agent (live.py observe_loadout)
+            team = self.run.get("agents") or {}
+            self.loadouts.ingest([r for r in obs["loadout"] if not team or r.get("name") in team], now)
         self.errors = obs.get("errors", {})
 
     def platform_view(self, name):
@@ -1507,6 +1512,12 @@ class Model:
             })
         res = self.research
         science = self.science(now)
+        fights = self.fights_snapshot(now)
+        # what each agent carries, wears and builds: one mode per agent (loadout.py), and the full rows for the site
+        shown = self.loadouts.snapshot(agents, fights, now)
+        for a in agents:
+            a["loadout"] = shown.get(a["name"])
+        loadouts = {n: dict(r, age_s=round(now - self.loadouts.seen_t.get(n, now), 1)) for n, r in self.loadouts.rows.items()}
         return {
             "now": now, "tick": self.tick, "tick_t": self.tick_t, "paused": self.paused, "game_time": fmt_game_time(self.tick / 60),
             "title": self.run.get("title"), "subtitle": self.run.get("subtitle"),
@@ -1525,10 +1536,11 @@ class Model:
             "science": science,
             "space": self.space_snapshot(science, now),
             "work": self.work_snapshot(now),
-            "fights": self.fights_snapshot(now),
+            "fights": fights,
             "incoming": self.incoming_snapshot(now),
             "big_enemies": self.big_snapshot(now),
             "hauling": self.hauling,
+            "loadouts": loadouts,
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
             "cameras": cameras or {},

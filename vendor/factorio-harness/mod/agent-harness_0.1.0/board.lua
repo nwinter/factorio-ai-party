@@ -363,6 +363,11 @@ return function(api)
   local function overlaps(a, b)
     return a.left_top.x < b.right_bottom.x and b.left_top.x < a.right_bottom.x and a.left_top.y < b.right_bottom.y and b.left_top.y < a.right_bottom.y
   end
+  -- A claim's surface argument: a surface name in this game (nauvis, gleba, platform-1, ...).
+  local function surface_arg(v)
+    assert(type(v) == 'string' and game.get_surface(v) ~= nil, 'surface must be a surface name (nauvis, vulcanus, gleba, fulgora, aquilo, or a platform\'s surface such as platform-1)')
+    return game.get_surface(v).name
+  end
   -- For reader `by`: a function owner -> 'on Vulcanus' when that agent is
   -- somewhere other than the reader (where.lua); nil for the operator.
   local function where_for(by)
@@ -440,7 +445,7 @@ return function(api)
       -- An open claim: when its owner last worked on it, stale (no notice needed), who it allows.
       owner_active=claim and ago(game.tick - api.claims.activity(i)) .. ' ago' or nil, stale=claim and api.claims.stale(i) or nil,
       allow=i.kind == 'claim' and i.allow or nil,
-      requested_by=i.requested_by, status=i.status, area=i.area,
+      requested_by=i.requested_by, status=i.status, area=i.area, surface=i.kind == 'claim' and api.claims.surface_of(i) or nil,
       needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal,
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
       history=full and history(i) or nil, created_tick=i.created_tick, updated_tick=i.updated_tick}
@@ -456,12 +461,14 @@ return function(api)
     return n, oldest
   end
 
-  local function post(by, a)
+  -- p: the poster (nil for the operator), whose surface a claim is on unless `surface` names one.
+  local function post(by, a, p)
     local kind = a.kind
     assert(type(kind) == 'string' and KINDS[kind], 'kind must be task, request, claim, note or project')
     assert(kind ~= 'harness', 'ask for a harness tool with harness_request')
     assert(kind ~= 'plan', 'the team plan is one item: edit it with board_plan {goals} or {doing}')
     assert(a.allow == nil or kind == 'claim', 'allow is for a claim: who may remove or rebuild in its area without telling its owner first')
+    assert(a.surface == nil or kind == 'claim', 'surface is for a claim (the surface its area is on)')
     assert(kind == 'project' or (a.goal == nil and a.steps == nil and a.areas == nil and a.handoff == nil),
       'goal, steps, areas and handoff are for kind project')
     expire()
@@ -471,6 +478,8 @@ return function(api)
       item.active_tick = game.tick
       local allow = allow_arg(a.allow)
       item.allow = allow and #allow > 0 and allow or nil
+      local here = p and pcall(function() return p.surface.name end) and p.surface.name or nil
+      item.surface = a.surface ~= nil and surface_arg(a.surface) or here or 'nauvis'
     elseif kind == 'project' then
       assert(#open_projects() < MAX_PROJECTS, string.format('the board holds at most %d open projects; one closes with status done or dropped', MAX_PROJECTS))
       item.areas = areas_arg(a.areas, a.area)
@@ -499,7 +508,8 @@ return function(api)
     if kind == 'claim' then
       local where = where_for(by)
       for _, other in pairs(store().items) do
-        if other.kind == 'claim' and ACTIVE[other.status] and other.owner ~= by and overlaps(other.area, item.area) then
+        if other.kind == 'claim' and ACTIVE[other.status] and other.owner ~= by and api.claims.surface_of(other) == item.surface
+            and overlaps(other.area, item.area) then
           local away = where and where(other.owner)
           warnings[#warnings+1] = string.format('overlaps claim #%d by %s%s: %s (%s)', other.id, other.owner, away and ' (' .. away .. ')' or '', other.title,
             api.claims.state_text(other, {name=by}))
@@ -525,13 +535,13 @@ return function(api)
     local item = store().items[a.id]
     assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
     local project = item.kind == 'project'
-    local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil or a.title ~= nil or a.needs ~= nil
+    local given = a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil or a.title ~= nil or a.needs ~= nil or a.surface ~= nil
     for _, k in ipairs(PROJECT_ARGS) do
       assert(project or a[k] == nil, k .. ' is for a project (#' .. item.id .. ' is a ' .. item.kind .. ')'
         .. (k == 'done' and '; status "done" finishes an item' or ''))
       given = given or a[k] ~= nil
     end
-    assert(given, 'give status, owner, note, allow, title or needs' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ''))
+    assert(given, 'give status, owner, note, allow, title, needs or (a claim) surface' .. (project and '; for a project also step, done, undone, remove_step, goal, handoff or areas' or ''))
     expire()
     -- Check every argument before changing anything.
     assert(a.status == nil or (type(a.status) == 'string' and STATUSES[a.status]), 'status must be open, claimed, doing, done, blocked or dropped')
@@ -565,6 +575,12 @@ return function(api)
       assert(item.kind == 'claim', 'allow is for a claim: who may remove or rebuild in its area without telling its owner first')
       assert(boss, string.format('only the owner (%s) can change who claim #%d allows', tostring(item.owner), item.id))
       allow = allow_arg(a.allow)
+    end
+    local surface
+    if a.surface ~= nil then
+      assert(item.kind == 'claim', 'surface is for a claim (the surface its area is on)')
+      assert(by == OPERATOR or by == item.owner, string.format('only the owner (%s) can change the surface of claim #%d', tostring(item.owner), item.id))
+      surface = surface_arg(a.surface)
     end
     -- A project: anyone adds steps and marks them done or undone; its owner
     -- (anyone when it has none, or its owner has made no request for 30 min)
@@ -626,6 +642,11 @@ return function(api)
       item.allow = #allow > 0 and allow or nil
       changes[#changes+1] = 'allow'
       text = text or (item.allow and 'allows ' .. table.concat(item.allow, ', ') or 'allows nobody')
+    end
+    if surface then
+      item.surface = surface
+      changes[#changes+1] = 'surface'
+      text = text or ('on ' .. surface)
     end
     -- The claim's owner working on it keeps it fresh (claims.lua).
     if item.kind == 'claim' and by == item.owner then api.claims.touch(item) end
@@ -963,6 +984,7 @@ return function(api)
     board_post = {kind='task|request|claim|note|project', title='1..120 characters (longer is cut)',
       owner='agent name or display name (task/request/project; a request without owner is shown to everyone until taken; a project may have none)',
       area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text, array of item names/{name,count}, or {item: count}',
+      surface='claim only: the surface its area is on (default yours; nauvis, gleba, platform-1, ...); positions on other surfaces are never in it',
       tags='up to 8 short strings', note='optional first note, 1..200 characters',
       allow='claim only: agents who may remove or rebuild in the area without telling you first (array or "luna,sol"), or "everyone"',
       goal='project only: what it is for, 1..600 characters', steps='project only: its checklist, an array of texts (1..160 characters each, at most 40)',
@@ -972,6 +994,7 @@ return function(api)
       owner='your name takes an open unowned item, or an active task/request whose owner has made no request for 20 min (a project: 30 min); another name reassigns (owner or requester only); "" releases it',
       note='1..200 characters, anyone may add (last 10 kept; 20 on a project)',
       allow='claim owner only: who may remove or rebuild in the area without telling you first (names or "everyone"; [] or "" clears it)',
+      surface='claim owner only: the surface its area is on',
       step='project: add steps, a text or an array of texts (anyone)', done='project: mark steps done by number, a number or an array (anyone; done_by is you)',
       undone='project: mark steps not done (anyone)', remove_step='project: remove steps by number (the agent who added one, or the owner)',
       goal='project: replace the goal ("" clears it)', handoff='project: replace the handoff text, 1..1000 characters ("" clears it)',
@@ -991,7 +1014,7 @@ return function(api)
   }
   -- Handlers take the acting agent's name, so the operator path can share them.
   M.handlers.board = function(p, a) return read(who(p), a) end
-  M.handlers.board_post = function(p, a) return post(who(p), a) end
+  M.handlers.board_post = function(p, a) return post(who(p), a, p) end
   M.handlers.board_update = function(p, a) return update(who(p), a) end
   M.handlers.board_events = function(_, a) return events(a) end
   M.handlers.harness_request = function(p, a) return harness_request(who(p), a) end

@@ -19,6 +19,7 @@ remote={interfaces={}}
 helpers={json_to_table=function(t) return t end}
 local force={name='player',chart=function() end,is_chunk_visible=function() return true end,is_chunk_charted=function() return true end,get_spawn_position=function() return {x=0,y=0} end}
 local surface={name='nauvis',index=1}
+local gleba={name='gleba',index=5}
 local units=0
 local function character(pos)
   local items={}
@@ -51,7 +52,7 @@ game={tick=0,players=players,forces={player=force,enemy={name='enemy',get_evolut
   get_evolution_factor_by_pollution=function() return 0 end,get_evolution_factor_by_killing_spawners=function() return 0 end}},
   -- As the engine: a bot's index is no player index.
   get_player=function(i) assert(type(i)=='string' or i<=65536,'Given player value is too big'); if type(i)=='string' then for _,p in ipairs(players) do if p.name==i then return p end end return nil end return players[i] end,
-  get_surface=function() return surface end,print=function() end,connected_players=players,
+  get_surface=function(n) if n=='gleba' then return gleba elseif n=='mars' then return nil end return surface end,print=function() end,connected_players=players,
   get_pollution_statistics=function() return {input_counts={},output_counts={},get_flow_count=function() return 0 end} end}
 local runtime=dofile('mod/agent-harness_0.1.0/runtime.lua')
 local function advance(n) for _=1,n do tick=tick+1; game.tick=tick; runtime.tick{tick=tick} end end
@@ -94,6 +95,7 @@ r=grok('board_post',{kind='claim',title='iron smelting',area={left_top={x=-60,y=
 eq(r.item.owner,'grok'); eq(r.item.status,'claimed'); eq(r.warnings,nil)
 r=sol('board_post',{kind='claim',title='copper',area={left_top={x=-45,y=-25},right_bottom={x=-30,y=-10}}})
 assert(has(r.warnings,'overlaps claim #4 by grok: iron smelting'))
+eq(r.item.surface,'nauvis','the poster\'s surface')
 r=sol('board_post',{kind='note',title='main bus runs north at x=0',tags={'layout'},needs={'iron-plate',{name='copper-cable',count=50}}})
 eq(r.item.owner,'sol'); eq(r.item.needs[2].count,50); eq(r.item.tags[1],'layout')
 
@@ -115,7 +117,7 @@ fails(function() grok('board_update',{id=1,status='finished'}) end,'status must 
 -- A bad argument changes nothing, even with a valid owner beside it.
 fails(function() sol('board_update',{id=1,owner='astra',note=''}) end,'note is required')
 eq(grok('board',{id=1}).item.owner,'grok')
-fails(function() grok('board_update',{id=1}) end,'give status, owner, note, allow, title or needs')
+fails(function() grok('board_update',{id=1}) end,'give status, owner, note, allow, title, needs or (a claim) surface')
 fails(function() grok('board_update',{id=4,owner='sol'}) end,'stays with its poster')
 -- The requester may reassign; the owner may release.
 r=sol('board_update',{id=1,owner='astra'}); eq(r.item.owner,'astra'); eq(r.changed[1],'assigned')
@@ -521,6 +523,13 @@ died('pipe',8000,8000,flamer_at,force); died('pipe',8001,8000,flamer_at,force)
 jump(60)
 eq(unnumbered(has(astra('status').team.alerts,'(8000,8000)')),
   'losses in (8000,8000)-(8001,8000) 2 destroyed: 2 pipe by friendly fire: 2 flamethrower-turret at (8010,8004), 1s ago')
+-- What the game removes on its own is no loss (Luna, 08:56: an emptied cargo pod's container vanished and was told as
+-- friendly fire from an unknown source): no incident, no line.
+runtime.on_event{name=11,tick=tick,entity={valid=true,name='cargo-pod-container',type='temporary-container',position={x=8500,y=8500},force=force},force=force}
+runtime.on_event{name=11,tick=tick,entity={valid=true,name='item-on-ground',type='item-entity',position={x=8501,y=8500},force=force},force=force}
+jump(60)
+for _,l in ipairs(astra('status').team.alerts or {}) do assert(not l:find('(8500,8500)',1,true),l) end
+for _,i in ipairs(astra('status').alerts.incidents or {}) do assert(i.box.x0~=8500,'no incident for the pod') end
 -- Another surface is named, and a platform by its name.
 runtime.on_event{name=11,tick=tick,entity={valid=true,name='stone-furnace',position={x=9000,y=9000},force=force,surface={name='vulcanus'}},cause=enemy_biter}
 runtime.on_event{name=11,tick=tick,entity={valid=true,name='gun-turret',position={x=9000,y=9000},force=force,surface={name='platform-3',platform={name='Starling'}}},cause=enemy_biter}
@@ -562,7 +571,7 @@ local stored=storage.agent_harness.board.items[legacy.id]
 stored.active_tick=nil; stored.updated_tick=tick-5*216000; stored.created_tick=stored.updated_tick
 jump(60)
 -- whatever reads it first (here collect's claim check, before any board read) starts its timers
-assert(runtime.claims.other({name='grok'},{x=30005,y=5}),'fresh from the deploy: it binds')
+assert(runtime.claims.other({name='grok',surface=surface},{x=30005,y=5}),'fresh from the deploy: it binds')
 eq(stored.active_tick,tick)
 local item=astra('board',{id=legacy.id}).item
 eq(item.status,'claimed'); eq(item.owner_active,'0s ago'); eq(item.stale,nil)
@@ -576,8 +585,8 @@ astra('board_update',{id=w.item.id,status='dropped'})
 jump(31*3600)
 item=astra('board',{id=c.id}).item
 eq(item.stale,true); eq(item.owner_active,'31m00s ago')
-assert(runtime.claims.find({name='grok'},{x=10001,y=10001}),'a stale claim is still found')
-eq(runtime.claims.other({name='grok'},{x=10001,y=10001}),nil) -- but binds nobody
+assert(runtime.claims.find({name='grok',surface=surface},{x=10001,y=10001}),'a stale claim is still found')
+eq(runtime.claims.other({name='grok',surface=surface},{x=10001,y=10001}),nil) -- but binds nobody
 assert(runtime.claims.label(c and storage.agent_harness.board.items[c.id],{name='grok'}):find('stale: no notice needed to remove or rebuild; closes 1h29m from now',1,true))
 -- Sol hears it in one batched line; its requests elsewhere keep nothing fresh; standing in the claim does, and so
 -- does acting on a position in it.
@@ -597,17 +606,17 @@ astra('board_update',{id=c.id,note='taking 50 plates from here'})
 eq(astra('board',{id=c.id}).item.stale,true)
 sol('board_update',{id=c.id,note='still mine'})
 eq(astra('board',{id=c.id}).item.stale,nil)
-assert(runtime.claims.other({name='grok'},{x=10001,y=10001}),'fresh again: it binds')
+assert(runtime.claims.other({name='grok',surface=surface},{x=10001,y=10001}),'fresh again: it binds')
 -- allow: the owner names who may remove or rebuild there without notice
 fails(function() astra('board_update',{id=c.id,allow='astra'}) end,'only the owner (sol) can change who claim #'..c.id..' allows')
 fails(function() astra('board_post',{kind='task',title='x',allow='sol'}) end,'allow is for a claim')
 local r=sol('board_update',{id=c.id,allow='Astra'})
 eq(r.item.allow[1],'astra'); eq(r.changed[1],'allow')
-eq(runtime.claims.other({name='astra'},{x=10001,y=10001}),nil)
-assert(runtime.claims.other({name='grok'},{x=10001,y=10001}))
+eq(runtime.claims.other({name='astra',surface=surface},{x=10001,y=10001}),nil)
+assert(runtime.claims.other({name='grok',surface=surface},{x=10001,y=10001}))
 assert(runtime.claims.label(storage.agent_harness.board.items[c.id],{name='astra'}):find('allows astra, you are allowed',1,true))
 r=sol('board_update',{id=c.id,allow='everyone'}); eq(r.item.allow[1],'everyone')
-eq(runtime.claims.other({name='grok'},{x=10001,y=10001}),nil)
+eq(runtime.claims.other({name='grok',surface=surface},{x=10001,y=10001}),nil)
 r=sol('board_update',{id=c.id,allow={}}); eq(r.item.allow,nil)
 local c2=grok('board_post',{kind='claim',title='oil',allow={'sol','nick','Sol'},area={left_top={x=20000,y=0},right_bottom={x=20010,y=10}}}).item
 eq(table.concat(c2.allow,','),'nick,sol')
@@ -623,7 +632,7 @@ eq(astra('board',{id=c.id}).item.status,'dropped')
 local expired
 for _,e in ipairs(op('board_events',{since_seq=seq0,limit=200}).events) do if e.id==c.id and e.change=='expired' then expired=e end end
 assert(expired and expired.by=='harness' and expired.text:find('^closed by the harness: no activity by its owner for 2h'),expired and expired.text)
-eq(runtime.claims.find({name='grok'},{x=10001,y=10001}),nil)
+eq(runtime.claims.find({name='grok',surface=surface},{x=10001,y=10001}),nil)
 -- Many claims closing at once: one line for their owner, never one per claim.
 astra('status'); jump(3*3600)
 local mine={}
@@ -720,7 +729,7 @@ fails(function() sol('board_post',{kind='task',title='x',steps={'a'}}) end,'goal
 fails(function() grok('board_update',{id=t.id,done=1}) end,'done is for a project (#'..t.id..' is a task); status "done" finishes an item')
 fails(function() astra('board_update',{id=pj.id,done=true}) end,'done takes step numbers: a number or an array of them (status "done" finishes the project)')
 fails(function() astra('board_update',{id=pj.id,done=9}) end,'project #'..pj.id..' has no step 9; its steps: 1, 2, 3')
-fails(function() astra('board_update',{id=pj.id}) end,'give status, owner, note, allow, title or needs; for a project also step, done, undone')
+fails(function() astra('board_update',{id=pj.id}) end,'give status, owner, note, allow, title, needs or (a claim) surface; for a project also step, done, undone')
 fails(function() astra('board_update',{id=pj.id,done={1,9}}) end,'has no step 9')
 eq(astra('board',{id=pj.id}).item.progress,'0 of 3 steps') -- a bad argument changes nothing
 -- anyone adds steps and marks them done; who did each shows
@@ -829,4 +838,57 @@ r=op('board_update',{id=rid,title='need 50 green circuits'}); eq(r.item.title,'n
 local plan_id
 for id,item in pairs(storage.agent_harness.board.items) do if item.kind=='plan' then plan_id=id end end
 if plan_id then fails(function() sol('board_update',{id=plan_id,title='x'}) end,'the team plan changes with board_plan') end
+-- A claim is on one surface (Sol 07:52: Astra's Nauvis claim #212 labelled Gleba furnaces at (62,22)): the poster's, or
+-- `surface`; overlaps count on that surface only; its owner moves it with board_update {surface}; one from before
+-- claims had a surface gets its owner's surface the first time it is read, else nauvis.
+do
+  local soc=storage.agent_harness.bots.by_name.sol.character
+  soc.surface=gleba
+  local g=sol('board_post',{kind='claim',title='gleba furnaces',area={left_top={x=50,y=10},right_bottom={x=70,y=30}}})
+  eq(g.item.surface,'gleba','posted on gleba'); eq(g.warnings,nil)
+  soc.surface=surface
+  local n=grok('board_post',{kind='claim',title='iron east',area={left_top={x=55,y=15},right_bottom={x=75,y=35}}})
+  eq(n.item.surface,'nauvis'); eq(n.warnings,nil,'the gleba claim is not in the way on nauvis')
+  local g2=grok('board_post',{kind='claim',title='gleba beds',area={left_top={x=55,y=15},right_bottom={x=60,y=20}},surface='gleba'})
+  eq(g2.item.surface,'gleba'); assert(has(g2.warnings,'overlaps claim #'..g.item.id..' by sol'),table.concat(g2.warnings or {},' | '))
+  fails(function() grok('board_post',{kind='claim',title='x',area={left_top={x=0,y=0},right_bottom={x=1,y=1}},surface='mars'}) end,'surface must be a surface name')
+  fails(function() grok('board_post',{kind='task',title='x',surface='gleba'}) end,'surface is for a claim')
+  fails(function() grok('board_update',{id=g.item.id,surface='nauvis'}) end,'only the owner (sol) can change the surface of claim #'..g.item.id)
+  local t=sol('board_post',{kind='task',title='weed the beds'})
+  fails(function() sol('board_update',{id=t.item.id,surface='nauvis'}) end,'surface is for a claim')
+  eq(sol('board_update',{id=g.item.id,surface='nauvis'}).item.surface,'nauvis')
+  eq(sol('board_update',{id=g.item.id,surface='gleba'}).item.surface,'gleba')
+  local item=storage.agent_harness.board.items[g.item.id]
+  item.surface=nil; soc.surface=gleba
+  eq(sol('board',{id=g.item.id}).item.surface,'gleba','an old claim: where its owner is')
+  soc.surface=surface; eq(item.surface,'gleba','set once')
+  -- The owner's work keeps a claim fresh on its surface only: at the same coordinates on nauvis it does not.
+  item.active_tick=tick-100
+  runtime.claims.worked({name='sol',surface=surface,character={valid=true,position={x=60,y=20},surface=surface}},{position={x=60,y=20}})
+  eq(item.active_tick,tick-100,'nauvis work does not keep a gleba claim')
+  runtime.claims.worked({name='sol',surface=gleba,character={valid=true,position={x=60,y=20},surface=gleba}},{})
+  eq(item.active_tick,tick)
+  eq(runtime.claims.other({name='grok',surface=surface},{x=60,y=20}),nil,'nor binds on nauvis')
+  eq(runtime.claims.other({name='grok',surface=gleba},{x=60,y=20}).id,g.item.id)
+  -- An old claim whose owner's surface holds none of our buildings in its area, while exactly one other planet's does
+  -- (world n 08:05: Luna on Gleba, her claim #111 built only on Nauvis): that planet.
+  game.surfaces={nauvis=surface,gleba=gleba}
+  local built={nauvis=true}
+  for _,sf in ipairs({surface,gleba}) do
+    sf.count_entities_filtered=function(f) eq(f.limit,1); eq(f.force,'player'); eq(f.area[1].x,50); return built[sf.name] and 1 or 0 end
+  end
+  item.surface=nil; soc.surface=gleba; item.title='furnace row'
+  eq(sol('board',{id=g.item.id}).item.surface,'nauvis','built only on nauvis')
+  built={nauvis=true,gleba=true}; item.surface=nil
+  eq(sol('board',{id=g.item.id}).item.surface,'gleba','built on both: where its owner is')
+  built={}; item.surface=nil
+  eq(sol('board',{id=g.item.id}).item.surface,'gleba','built on neither: where its owner is')
+  -- The one planet its title names comes first ("Gleba landing power", world n #364); two named: as above.
+  built={}; item.surface=nil; item.title='Nauvis lab expansion'
+  eq(sol('board',{id=g.item.id}).item.surface,'nauvis','named in the title')
+  item.surface=nil; item.title='Gleba to Nauvis seed belt'
+  eq(sol('board',{id=g.item.id}).item.surface,'gleba','two planets named: where its owner is')
+  surface.count_entities_filtered,gleba.count_entities_filtered,game.surfaces=nil,nil,nil
+  soc.surface=surface
+end
 print('board: ok')

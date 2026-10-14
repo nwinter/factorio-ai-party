@@ -87,7 +87,7 @@ surface.find_entities_filtered=function(f)
   return out
 end
 local function vehicle(name,type_,x,y)
-  local v={valid=true,name=name,type=type_,position={x=x,y=y},force=force,speed=0,orientation=0.25}
+  local v={valid=true,name=name,type=type_,position={x=x,y=y},force=force,speed=0,orientation=0.25,surface=surface}
   v.get_driver=function() return v.driver end
   v.get_passenger=function() return v.passenger end
   v.set_driver=function(c)
@@ -414,4 +414,77 @@ astra('vehicle',{exit=true}); sol('vehicle',{exit=true})
 fails(function() grok('shoot',{auto=true,ammo='cannon-shell'}) end,'gun and ammo pick a vehicle')
 -- The vehicle read lists its guns.
 eq(astra('vehicle',{position={x=6,y=0},enter=true}).vehicle.guns[1],'1 tank-cannon: 8 explosive-cannon-shell (range 30)')
+
+-- Drive with combat (Astra, operator 08:34: shoot runs at most 600 ticks while a drive runs a minute or more): the
+-- guns on auto for the whole drive, stopping with it; rounds fired and kills in last.
+prototypes.item['firearm-magazine'].magazine_size=10
+tank.selected_gun_index=2
+tank.ammo[2].name='firearm-magazine'; tank.ammo[2].count=20; tank.ammo[2].valid_for_read=true
+biter.valid=true
+r=astra('vehicle',{drive={x=6,y=-60},combat=true,ticks=5,pathfind=false})
+eq(r.combat.gun,'tank-machine-gun'); eq(r.combat.gun_slot,2)
+eq(astra('status').combat.auto,true); eq(astra('status').active.kind,'drive')
+advance(1); eq(a_body.selected,biter); eq(a_body.shooting_state.state,2)
+-- two magazines fired, the biter killed by the tank's gun; the drive's time runs out
+tank.ammo[2].count=18
+runtime.on_event{name=defines.events.on_entity_died,entity=biter,cause=tank}
+biter.valid=false
+advance(5)
+last=astra('status').last
+eq(last.kind,'drive'); eq(last.outcome,'timed_out'); eq(last.shots,20); eq(last.kills,1); eq(last.kills_by_name,'1 small-biter')
+advance(1); eq(astra('status').last_combat.outcome,'drive_ended'); eq(astra('status').last_combat.kills,1)
+eq(a_body.shooting_state.state,0)
+-- A gun out of ammo mid-drive: the drive goes on, its last still counts what was fired.
+r=astra('vehicle',{drive={x=6,y=-60},combat=true,ticks=5,pathfind=false})
+tank.ammo[2].clear(); main=inventory({{nil,0}}); own_ammo=inventory({{nil,0}})
+advance(1); eq(astra('status').last_combat.outcome,'out_of_ammo'); eq(astra('status').active.kind,'drive')
+advance(5); last=astra('status').last
+eq(last.shots,180); eq(last.kills,0); eq(last.combat_ended,'out_of_ammo')
+astra('vehicle',{exit=true})
+
+-- Remote driving (operator 08:32, a viewer via Astra: to cut character deaths): one of our cars or tanks in view,
+-- driven by remote view while the character stays where it is.
+local rcar=vehicle('car','car',30,0); rcar.unit_number=9001
+rcar.prototype={collision_box={left_top={x=-0.7,y=-1},right_bottom={x=0.7,y=1}},collision_mask={layers={car=true,player=true,train=true}}}
+game.get_entity_by_unit_number=function(n) for _,e in ipairs(world) do if e.valid and e.unit_number==n then return e end end end
+a_body.position={x=0,y=0}; s_body.position={x=29,y=0}
+r=astra('vehicle',{drive={x=60,y=0},remote=true,vehicle=9001,pathfind=false})
+eq(r.remote,'by remote view: car (30,0), unit_number 9001; your character stays at (0,0)')
+advance(1)
+eq(rcar.riding_state.acceleration,defines.riding.acceleration.accelerating); eq(a_body.position.x,0); eq(a_body.vehicle,nil)
+eq(astra('status').active.kind,'drive')
+-- Its driver seat is taken: another agent's remote drive is refused, and one getting in takes the passenger seat.
+fails(function() sol('vehicle',{drive={x=60,y=0},remote=true,vehicle=9001}) end,'car (30,0): astra drives it remotely')
+eq(sol('vehicle',{position={x=30,y=0},enter=true}).vehicle.seat,'passenger')
+sol('vehicle',{exit=true})
+-- Someone in the driver seat ends it, and so does leaving the chunks our force sees.
+rcar.driver=s_body; advance(1)
+last=astra('status').last
+eq(last.outcome,'driver_seated'); eq(last.remote,true); assert(last.vehicle:find('^car, unit_number 9001, at %('),last.vehicle)
+assert(last.why:find("sol's character got into its driver seat",1,true),last.why)
+eq(rcar.riding_state.acceleration,defines.riding.acceleration.braking)
+rcar.driver=nil
+astra('vehicle',{drive={x=60,y=0},remote=true,vehicle={x=30,y=0},pathfind=false})
+local seen_fn=force.is_chunk_visible
+force.is_chunk_visible=function() return false end
+advance(31)
+last=astra('status').last
+eq(last.outcome,'out_of_coverage'); assert(last.why:find('left the chunks our force sees',1,true),last.why)
+-- Refused, as the game refuses: out of view (naming the nearest coverage), a driver seated, not ours, not a car.
+fails(function() astra('vehicle',{drive={x=60,y=0},remote=true,vehicle=9001}) end,'car (30,0) is in no chunk our force sees now (radar coverage or a character\'s sight): remote driving needs it in view; no chunk within 256 tiles')
+force.is_chunk_visible=seen_fn
+rcar.driver=s_body
+fails(function() astra('vehicle',{drive={x=60,y=0},remote=true,vehicle=9001}) end,"car (30,0): its driver seat holds sol's character")
+rcar.driver=nil
+rcar.force={name='other'}
+fails(function() astra('vehicle',{drive={x=60,y=0},remote=true,vehicle=9001}) end,'car (30,0) is not ours')
+rcar.force=force
+spider.unit_number=9002
+fails(function() astra('vehicle',{drive={x=60,y=0},remote=true,vehicle=9002}) end,'remote drive is for a car or tank; a spidertron walks by itself')
+fails(function() astra('vehicle',{drive={x=60,y=0},remote=true,vehicle=12345}) end,'no vehicle has unit_number 12345')
+fails(function() astra('vehicle',{drive={x=60,y=0},remote=true}) end,'remote drive needs vehicle')
+fails(function() astra('vehicle',{remote=true,vehicle=9001}) end,'remote goes with drive')
+-- Its guns stay silent by remote view: the game fires them for a gunner seated in it or a player driving it remotely.
+fails(function() astra('vehicle',{drive={x=60,y=0},remote=true,vehicle=9001,combat=true}) end,'a remote drive cannot fire its guns')
+fails(function() astra('shoot',{auto=true,vehicle=9001}) end,'an agent fires a vehicle\'s guns only seated in it')
 print('vehicles: ok')

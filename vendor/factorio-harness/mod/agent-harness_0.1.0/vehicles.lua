@@ -18,6 +18,9 @@ return function(api)
       reverse='with drive: optional true: back there, rear first (to back out of a crowd or off an obstacle). Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding the key does; last.rammed counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it',
       avoid_enemies='with drive: as move_to (default: worms\' range + 4; true: worms and spawners + 8; a margin 0..32; false: no check)',
       go_to='{x,y}: a spidertron walks there by itself (the one at position, or the one you are in)',
+      remote='with drive: true: drive one of our cars or tanks by remote view while the character stays where it is, as 2.0 lets a player (operator 08:32: to cut character deaths). vehicle names it. Refused, as the game refuses, when it is in no chunk our force sees now (radar coverage or a character\'s sight; the refusal names the nearest coverage), when someone sits in its driver seat or another agent drives it remotely, and for a spidertron (go_to) or a train. The drive ends out_of_coverage when the vehicle leaves the chunks our force sees, and driver_seated when someone gets into its driver seat. Its guns stay silent: a vehicle\'s guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player',
+      vehicle='with remote: the car or tank, by unit_number or {x,y} (any tile of it)',
+      combat='with drive, seated as the gunner: true or a radius 1..36: the guns fire at the nearest enemy in range for the whole drive, as shoot auto does, and stop with it; last.shots (rounds fired), last.ammo_used, last.kills and kills_by_name (refused with remote)',
       ticks='with drive', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
   }
   local TYPES = {}
@@ -64,9 +67,78 @@ return function(api)
       guns=#guns > 0 and M.gun_lines(guns, sel) or nil}}
   end
   M.view = view
+  -- Remote driving (operator 08:32, a viewer via Astra: to cut character
+  -- deaths). On a private 2.0.77 copy of world n an empty tank moved under
+  -- its own riding_state, so the harness drives it as a remote driver's keys
+  -- would, the character standing where it is. Its guns do not fire there:
+  -- shooting_state is a character's ("Entity is not character"), and the
+  -- auto-targeting parameters are a spidertron's.
+  local function chunk_of(pos) return {x=math.floor(pos.x / 32), y=math.floor(pos.y / 32)} end
+  local function in_view(p, v)
+    local ok, r = pcall(function() return p.force.is_chunk_visible(v.surface, chunk_of(v.position)) end)
+    return ok and r == true
+  end
+  M.in_view = in_view
+  -- Who sits in a seat: an agent's or player's name, else the entity's.
+  local function who(x)
+    local ok, name = pcall(function()
+      if x.object_name == 'LuaPlayer' then return 'player ' .. x.name end
+      return api.owner and api.owner(x) and (api.owner(x) .. '\'s character') or x.name
+    end)
+    return ok and name or 'someone'
+  end
+  M.who = who
+  -- The walk's reads (paths, enemies) at the vehicle: its position and surface, the rest the agent's.
+  function M.at_vehicle(p, v)
+    return setmetatable({}, {__index=function(_, k)
+      if k == 'position' then return v.position elseif k == 'surface' then return v.surface end
+      return p[k]
+    end})
+  end
+  local NOT_REMOTE = {['spider-vehicle']='a spidertron walks by itself: vehicle {position, go_to}', locomotive='a train runs its schedule: train',
+    ['cargo-wagon']='a wagon goes with its train', ['fluid-wagon']='a wagon goes with its train', ['artillery-wagon']='a wagon goes with its train'}
+  -- The car or tank a remote drive takes, refused as the game refuses.
+  local function remote_vehicle(p, a)
+    local ref = a.vehicle
+    if ref == nil then error('remote drive needs vehicle: its unit_number or {x,y}', 0) end
+    local v
+    if type(ref) == 'number' then
+      local ok, e = pcall(function() return game.get_entity_by_unit_number(ref) end)
+      v = ok and e or nil
+      if not (v and v.valid and SEATED[v.type]) then error('no vehicle has unit_number ' .. tostring(ref), 0) end
+    else
+      local pos = api.position(ref.position or ref)
+      local bd
+      for _, e in pairs(p.surface.find_entities_filtered{position=pos, radius=2.5, type=TYPES}) do
+        if e.valid then
+          local d = api.distance(e.position, pos)
+          if not bd or d < bd then v, bd = e, d end
+        end
+      end
+      if not v then error(string.format('no vehicle at (%g,%g) (car or tank)', pos.x, pos.y), 0) end
+    end
+    local at = string.format('%s (%g,%g)', v.name, math.floor(v.position.x * 10 + 0.5) / 10, math.floor(v.position.y * 10 + 0.5) / 10)
+    if v.type ~= 'car' then error(at .. ': remote drive is for a car or tank; ' .. (NOT_REMOTE[v.type] or 'not a car'), 0) end
+    if v.force ~= p.force then error(at .. ' is not ours', 0) end
+    if not in_view(p, v) then
+      error(at .. ' is in no chunk our force sees now (radar coverage or a character\'s sight): remote driving needs it in view' ..
+        (api.coverage_note and api.coverage_note(p, v) or ''), 0)
+    end
+    local okd, driver = pcall(v.get_driver)
+    if okd and driver then error(string.format('%s: its driver seat holds %s', at, who(driver)), 0) end
+    local other = api.remote_driver and api.remote_driver(v, p.index)
+    if other then error(string.format('%s: %s drives it remotely', at, other), 0) end
+    return v
+  end
+  M.remote_vehicle = remote_vehicle
   function M.handlers.vehicle(p, a)
     local c = p.character
     assert(c and c.valid, 'a living character is required')
+    -- error(..., 0), not assert: Factorio's Lua 5.2 assert puts the source line in front of the reason.
+    local function refuse(ok, text) if not ok then error(text, 0) end end
+    refuse(a.remote == nil or type(a.remote) == 'boolean', 'remote must be true or false')
+    refuse(not a.remote or a.drive ~= nil, 'remote goes with drive (and vehicle)')
+    refuse(a.vehicle == nil or a.remote, 'vehicle names the car or tank of a remote drive (remote: true)')
     local n = (a.enter and 1 or 0) + (a.exit and 1 or 0) + (a.drive and 1 or 0) + (a.go_to and 1 or 0)
     assert(n <= 1, 'give one of enter, exit, drive, go_to')
     if a.enter then
@@ -76,6 +148,9 @@ return function(api)
       local d = api.distance(c.position, e.position)
       assert(d <= ENTER_REACH, string.format('%s is %.1f tiles away; get within %d tiles to get in', e.name, d, ENTER_REACH))
       local ok, driver = pcall(e.get_driver)
+      -- Driven by remote view: its driver seat is taken, as a remote driver's is in the game.
+      local remote = api.remote_driver and api.remote_driver(e, p.index)
+      if remote then ok, driver = true, remote end
       local seat
       if not (ok and driver) then
         e.set_driver(c); seat = 'driver'
@@ -122,22 +197,53 @@ return function(api)
       return out
     end
     if a.drive then
-      local v, seat = seat_of(c)
-      assert(v and v.type == 'car', 'drive is for a car or tank you are in (vehicle {position, enter: true} first)')
-      assert(seat == 'driver', 'only the driver drives')
+      local v, seat
+      if a.remote then
+        refuse(a.combat == nil or a.combat == false,
+          'combat with remote: a remote drive cannot fire its guns (a vehicle\'s guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player)')
+        v = remote_vehicle(p, a)
+      else
+        v, seat = seat_of(c)
+        assert(v and v.type == 'car', 'drive is for a car or tank you are in (vehicle {position, enter: true} first), or by remote view: remote=true, vehicle=unit_number or {x,y}')
+        assert(seat == 'driver', 'only the driver drives')
+      end
       local target = api.position(a.drive)
       local ticks = api.integer(a.ticks, 3600, 1, 36000, 'ticks')
       assert(a.pathfind == nil or type(a.pathfind) == 'boolean', 'pathfind must be true or false')
       assert(a.reverse == nil or type(a.reverse) == 'boolean', 'reverse must be true or false')
       local mode = api.avoid_mode(a.avoid_enemies)
-      local action = {kind='drive', target=target, until_tick=game.tick + ticks, last=c.position, still=0, vehicle=v, reverse=a.reverse or nil}
+      -- combat (Astra, operator 08:34: shoot runs at most 600 ticks while a drive runs a minute or more): the guns on
+      -- auto for the whole drive, as shoot auto; the checks first, so a refused combat starts no drive.
+      local caction, cout
+      if a.combat ~= nil and a.combat ~= false then
+        assert(a.combat == true or type(a.combat) == 'number', 'combat is true or a radius 1..36')
+        caction, cout = M.shoot(p, {auto=true, radius=a.combat ~= true and a.combat or nil}, ticks)
+      end
+      local action = {kind='drive', target=target, until_tick=game.tick + ticks, last=v.position, still=0, vehicle=v, reverse=a.reverse or nil,
+        remote=a.remote or nil}
       api.start(p, action)
       local out = {until_tick=action.until_tick, target=target, vehicle=v.name, distance=math.floor(api.distance(v.position, target)), pathfinding=a.pathfind ~= false,
         reverse=a.reverse or nil}
+      if a.remote then
+        out.remote = string.format('by remote view: %s (%g,%g), unit_number %d; your character stays at (%g,%g)', v.name,
+          math.floor(v.position.x * 10 + 0.5) / 10, math.floor(v.position.y * 10 + 0.5) / 10, v.unit_number, math.floor(c.position.x * 10 + 0.5) / 10,
+          math.floor(c.position.y * 10 + 0.5) / 10)
+        pcall(function()
+          local fuel = v.get_fuel_inventory and v.get_fuel_inventory()
+          local burning = v.burner and v.burner.currently_burning
+          if fuel and fuel.is_empty() and not burning then out.note = v.name .. ' has no fuel and will not move' end
+        end)
+      end
+      if caction then
+        caction.with_drive = true; caction.kills = 0; caction.vehicle_entity = v
+        caction.rounds_start = M.rounds(v, caction.slot)
+        api.start_combat(p, caction)
+        out.combat = {gun=cout.gun, gun_slot=cout.gun_slot, radius=caction.radius, equipped=cout.equipped}
+      end
       if a.pathfind ~= false then
-        local nav = {position=target, tolerance=3, vehicle=true}
+        local nav = {position=target, tolerance=3, vehicle=true, vehicle_entity=v}
         action.nav = nav
-        local foes = api.avoid_start(p, nav, mode)
+        local foes = api.avoid_start(a.remote and M.at_vehicle(p, v) or p, nav, mode)
         out.avoid_enemies = foes and api.avoid_describe(foes.mode) or nil
         M.request(p, nav)
       end
@@ -174,11 +280,11 @@ return function(api)
     return {(long * long + short * short) ^ 0.5 + 0.5, long, short}
   end
   function M.request(p, nav)
-    local v = p.character and p.character.vehicle
+    local v = nav.vehicle_entity or (p.character and p.character.vehicle)
     if not (v and v.valid) then nav.path_state = 'failed'; return end
     local levels = M.box_halves(v)
     local h = levels[math.min(#levels, (nav.path_level or 0) + 1)]
-    nav.path_id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=v.prototype.collision_mask, start=v.position,
+    nav.path_id = v.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=v.prototype.collision_mask, start=v.position,
       goal=nav.position, force=p.force, radius=nav.tolerance + 1, entity_to_ignore=v, can_open_gates=false,
       pathfind_flags={prefer_straight_paths=true, no_break=false, cache=false}}
     api.paths()[nav.path_id] = p.index
@@ -186,7 +292,7 @@ return function(api)
   end
   -- A found path, unless the enemy check holds it or goes around a nest (avoid.lua).
   function M.use(p, nav, path)
-    if api.accept and not api.accept(p, nav, path) then return end
+    if api.accept and not api.accept(nav.vehicle_entity and nav.vehicle_entity.valid and M.at_vehicle(p, nav.vehicle_entity) or p, nav, path) then return end
     nav.waypoints = path; nav.waypoint = 1; nav.path_state = 'found'
     local n = 0
     for i = 2, #path do n = n + api.distance(path[i-1].position, path[i].position) end
@@ -199,7 +305,7 @@ return function(api)
     if event.path then return M.use(p, nav, event.path) end
     if event.try_again_later then nav.path_state = 'busy'; return end
     if (nav.path_level or 0) < 2 then nav.path_level = (nav.path_level or 0) + 1; return M.request(p, nav) end
-    local v = p.character and p.character.vehicle
+    local v = nav.vehicle_entity or (p.character and p.character.vehicle)
     local long, short = 0, 0
     if v and v.valid then long, short = halves(v) end
     nav.path_state = 'unreachable'
@@ -300,9 +406,28 @@ return function(api)
   end
   function M.tick(p, action)
     local c = p.character
-    local v = c and c.valid and c.vehicle
-    if not (v and v.valid) then return 'interrupted' end
+    local v
+    if action.remote then v = action.vehicle else v = c and c.valid and c.vehicle end
+    if not (v and v.valid) then
+      if action.remote then action.why = 'the vehicle is gone' end
+      return action.remote and 'vehicle_gone' or 'interrupted'
+    end
     local R = defines.riding
+    -- A remote drive needs the vehicle in view and its driver seat free (vehicles.lua remote_vehicle).
+    if action.remote then
+      local okd, driver = pcall(v.get_driver)
+      if okd and driver then
+        v.riding_state = {acceleration=R.acceleration.braking, direction=R.direction.straight}
+        action.why = string.format('%s got into its driver seat at (%.1f,%.1f)', who(driver), v.position.x, v.position.y)
+        return 'driver_seated'
+      end
+      if game.tick % 30 == 0 and not in_view(p, v) then
+        v.riding_state = {acceleration=R.acceleration.braking, direction=R.direction.straight}
+        action.why = string.format('%s left the chunks our force sees at (%.1f,%.1f): remote driving needs it in view', v.name, v.position.x, v.position.y)
+        return 'out_of_coverage'
+      end
+    end
+    local view_p = action.remote and M.at_vehicle(p, v) or p
     local back = action.reverse
     -- The pedal: forward, or reverse when backing there; backing off an obstacle uses the other one.
     local GAS = back and R.acceleration.reversing or R.acceleration.accelerating
@@ -312,7 +437,7 @@ return function(api)
     local function ride(acc, dir) v.riding_state = {acceleration=acc, direction=dir} end
     local nav = action.nav
     if nav then
-      if nav.foes then api.avoid_tick(p, nav) end
+      if nav.foes then api.avoid_tick(view_p, nav) end
       local st = nav.path_state
       if st == 'busy' then
         nav.retry_tick = nav.retry_tick or game.tick + 20
@@ -341,7 +466,7 @@ return function(api)
     local d = api.distance(v.position, goal)
     if d <= 3 then
       -- A corner of the way around a nest: on to the next leg without stopping.
-      if nav and nav.leg and api.leg(p, nav) then return nil end
+      if nav and nav.leg and api.leg(view_p, nav) then return nil end
       ride(R.acceleration.braking, R.direction.straight)
       if math.abs(v.speed or 0) < 0.01 then
         ride(R.acceleration.nothing, R.direction.straight)
@@ -379,7 +504,7 @@ return function(api)
     action.still = action.still + 1
     -- Still: what it presses against, every 10 ticks. Units alone: push on.
     if action.still % 10 == 0 then
-      local units, solid, tiles = M.contact(v, p.surface, back, math.abs(diff) > 0.2)
+      local units, solid, tiles = M.contact(v, v.surface, back, math.abs(diff) > 0.2)
       if #units > 0 and #solid == 0 and tiles == 0 then
         action.ramming = game.tick; action.still = 0
         for _, u in ipairs(units) do M.rammed(action, u) end
@@ -397,13 +522,13 @@ return function(api)
     action.still = 0
     local side = back and 'behind' or 'in front'
     if not action.backed then
-      action.backed = {at={x=v.position.x, y=v.position.y}, front=M.in_front(v, p.surface, back), side=side}
+      action.backed = {at={x=v.position.x, y=v.position.y}, front=M.in_front(v, v.surface, back), side=side}
       action.backing = {until_tick=game.tick + 60, turn=diff > 0 and R.direction.right or R.direction.left}
       return nil
     end
     ride(R.acceleration.nothing, R.direction.straight)
     action.why = string.format('stuck at (%.1f,%.1f) again after backing off once from (%.1f,%.1f); %s: %s', v.position.x, v.position.y,
-      action.backed.at.x, action.backed.at.y, side, M.in_front(v, p.surface, back))
+      action.backed.at.x, action.backed.at.y, side, M.in_front(v, v.surface, back))
     return 'blocked'
   end
   -- Vehicle guns (2.0): a car, tank or spidertron fires its selected gun
@@ -414,6 +539,17 @@ return function(api)
   -- and the machine gun hit; shooting_enemies aims by itself). Opus and Astra
   -- (shift09 00:00): shoot refused in a tank, and a tank was lost at a nest.
   local AMMO_INV = {car='car_ammo', ['spider-vehicle']='spider_ammo'}
+  -- Rounds left in a gun slot: whole magazines and the one in use.
+  function M.rounds(v, slot)
+    local ok, n = pcall(function()
+      local inv = v.get_inventory(defines.inventory[AMMO_INV[v.type]])
+      local stack = inv and inv[slot]
+      if not (stack and stack.valid_for_read) then return 0 end
+      local mag = prototypes.item[stack.name].magazine_size or 1
+      return (stack.count - 1) * mag + (stack.ammo or mag)
+    end)
+    return ok and n or 0
+  end
   local function category(name)
     local ok, c = pcall(function() return prototypes.item[name].ammo_category end)
     if not ok or not c then return nil end
@@ -578,6 +714,7 @@ return function(api)
       if not note then return 'out_of_ammo' end
       action.reloads = (action.reloads or 0) + 1; action.equipped = note
       action.ammo_start = action.ammo_start + M.guns(v)[action.slot].count
+      if action.rounds_start then action.rounds_start = action.rounds_start + M.rounds(v, action.slot) end
     end
     if target then
       pcall(function() p.selected = target end)
@@ -596,11 +733,13 @@ return function(api)
     local gun = guns[action.slot]
     return gun and math.max(0, action.ammo_start - gun.count) or nil, gun_lines(guns, action.slot)
   end
-  function M.stop(p)
+  -- A remote drive's vehicle, with nobody in it, brakes to a stop (on a copy of world n one let go coasted 11 tiles).
+  function M.stop(p, v)
     local R = defines.riding
     pcall(function()
-      local v = p.character and p.character.vehicle
-      if v and v.valid then v.riding_state = {acceleration=R.acceleration.nothing, direction=R.direction.straight} end
+      local remote = v ~= nil
+      v = v or p.character and p.character.vehicle
+      if v and v.valid then v.riding_state = {acceleration=remote and R.acceleration.braking or R.acceleration.nothing, direction=R.direction.straight} end
     end)
   end
   return M

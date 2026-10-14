@@ -16,10 +16,26 @@ ap.add_argument("--every", type=float, default=5)
 a = ap.parse_args()
 target = ["--bot", a.bot] if a.bot else ["--player", a.player]
 seen = 0
-if os.path.exists(a.out):
-    for line in open(a.out):
-        try: seen = max(seen, json.loads(line)["seq"])
-        except Exception: pass
+# A new shift's file starts where the previous run's ended (runs/RUN/resumed-from names it): the game's log holds the
+# last 200 lines, which that run logged already (operator 08:56: shift11's file began with ten of shift10's lines).
+def last_seq(path):
+    n = 0
+    try:
+        for line in open(path):
+            try: n = max(n, json.loads(line)["seq"])
+            except Exception: pass
+    except OSError:
+        pass
+    return n
+seen = last_seq(a.out)
+if not seen:
+    run_dir = os.path.dirname(os.path.abspath(a.out))
+    try:
+        prev = open(os.path.join(run_dir, "resumed-from")).readline().strip()
+    except OSError:
+        prev = ""
+    if prev:
+        seen = last_seq(os.path.join(os.path.dirname(run_dir), prev, os.path.basename(a.out)))
 while True:
     try:
         out = subprocess.run([f"{ROOT}/bin/fh", "call", "chat", *target, "--format", "json", "--args",

@@ -250,6 +250,18 @@ return function(api)
   -- radius and a quarter tile (on a copy of world n a walk to a spot 9.8 tiles
   -- off stopped 10.2 from the goal, out of reach).
   local function spot_reach(R) return R - 0.75 end
+  -- A walk to an entity's reach (move_to target: nav.reach_r, nav.reach_box)
+  -- takes its spots within that reach of the entity's box; others within
+  -- build reach of the goal.
+  local function spot_R(p, nav) return nav.reach_r or build_reach(p) end
+  local function goal_dist(nav, q)
+    local b = nav.reach_box
+    if not b then return dist(q, nav.position) end
+    local dx = math.max(b[1] - q.x, 0, q.x - b[3])
+    local dy = math.max(b[2] - q.y, 0, q.y - b[4])
+    return (dx * dx + dy * dy) ^ 0.5
+  end
+  M.goal_dist = goal_dist
   -- A spot the character reaches (a probe's end, or the nearest step of a
   -- closed area) within build reach of the goal (Grok, shift10 06:20: four
   -- walks failed toward a standing tile; the only tile in build reach of the
@@ -258,13 +270,13 @@ return function(api)
   -- build reach, else named with what hems it in (a walk stops before a gap
   -- unless squeeze=true).
   local function classify(p, nav, pos, room)
-    local c, R = p.character, build_reach(p)
+    local c, R = p.character, spot_R(p, nav)
     local half = M.half(c)
-    local s = {pos={x=pos.x, y=pos.y}, goal={x=nav.position.x, y=nav.position.y}, reach=R}
+    local s = {pos={x=pos.x, y=pos.y}, goal={x=nav.position.x, y=nav.position.y}, reach=R, label=nav.reach_label}
     if room or M.clear_at(p.surface, pos, half + PAD, c) then s.room = true
     else
       local r = M.region(p.surface, pos, half, {ignore=c, force=p.force, open_pad=PAD, window=12})
-      if r and r.open and dist(r.open, nav.position) <= spot_reach(R) then s.pos = {x=r.open.x, y=r.open.y}; s.room = true
+      if r and r.open and goal_dist(nav, r.open) <= spot_reach(R) then s.pos = {x=r.open.x, y=r.open.y}; s.room = true
       else
         local g = M.in_gap(p.surface, pos, half, 0.25, c)
         s.by = g and g.by or {}
@@ -275,7 +287,7 @@ return function(api)
   end
   found_spot = function(p, nav, pos, room)
     local s = classify(p, nav, pos, room)
-    if not nav.reachable or dist(s.pos, nav.position) < dist(nav.reachable, nav.position) then nav.reachable = s.pos end
+    if not nav.reachable or goal_dist(nav, s.pos) < goal_dist(nav, nav.reachable) then nav.reachable = s.pos end
     nav.spot = s
     nav.path_state = 'unreachable'
   end
@@ -284,7 +296,7 @@ return function(api)
   -- the near probe's end (walked to first: via). A spot found so is walked
   -- to with squeeze=true (its trail).
   search_spot = function(p, nav)
-    local c, R = p.character, build_reach(p)
+    local c, R = p.character, spot_R(p, nav)
     local half = M.half(c)
     local goal = {x=nav.position.x, y=nav.position.y}
     local opts = {ignore=c, force=p.force}
@@ -295,7 +307,7 @@ return function(api)
       via = S and {x=nav.reachable.x, y=nav.reachable.y} or nil
     end
     if not S then
-      nav.spot = {none=true, goal=goal, reach=R}
+      nav.spot = {none=true, goal=goal, reach=R, label=nav.reach_label}
       nav.path_state = 'unreachable'
       return
     end
@@ -304,16 +316,16 @@ return function(api)
   end
   -- The search's result for the walk's build spot.
   local function searched_spot(p, nav, r, via)
-    local c, R = p.character, build_reach(p)
+    local c, R = p.character, spot_R(p, nav)
     local half = M.half(c)
     local goal = {x=nav.position.x, y=nav.position.y}
     if not r then
-      nav.spot = {none=true, goal=goal, reach=R}
+      nav.spot = {none=true, goal=goal, reach=R, label=nav.reach_label}
     else
-      local s = {pos=r.spot, goal=goal, reach=R, room=r.room or nil, searched=true, via=via, width=(half + PAD) * 2}
+      local s = {pos=r.spot, goal=goal, reach=R, label=nav.reach_label, room=r.room or nil, searched=true, via=via, width=(half + PAD) * 2}
       if not r.room then local g = M.in_gap(p.surface, r.spot, half, 0.25, c); s.by = g and g.by or {} end
       nav.spot = s
-      if not nav.reachable or dist(s.pos, goal) < dist(nav.reachable, goal) then nav.reachable = s.pos end
+      if not nav.reachable or goal_dist(nav, s.pos) < goal_dist(nav, nav.reachable) then nav.reachable = s.pos end
     end
     nav.path_state = 'unreachable'
   end
@@ -330,7 +342,7 @@ return function(api)
     end
     -- Nothing from where it stands: once more from the near probe's end.
     if not r and not job.via and nav.reachable and dist(nav.reachable, p.position) > 1 then
-      local S = M.search_begin(p.surface, nav.reachable, M.half(p.character), nav.position, spot_reach(build_reach(p)), {ignore=p.character, force=p.force})
+      local S = M.search_begin(p.surface, nav.reachable, M.half(p.character), nav.position, spot_reach(spot_R(p, nav)), {ignore=p.character, force=p.force})
       if S then nav.search = {S=S, mode='spot', via={x=nav.reachable.x, y=nav.reachable.y}}; return end
     end
     return searched_spot(p, nav, r or nil, job.via)
@@ -339,8 +351,8 @@ return function(api)
   -- a probe for a box with room to turn within build reach, then the
   -- character's own box on the quarter-tile grid.
   function M.spot(p, nav)
-    local R, r = build_reach(p), nav.reachable
-    if r and dist(r, nav.position) <= spot_reach(R) and M.clear_at(p.surface, r, M.half(p.character) + PAD, p.character) then
+    local R, r = spot_R(p, nav), nav.reachable
+    if r and goal_dist(nav, r) <= spot_reach(R) and M.clear_at(p.surface, r, M.half(p.character) + PAD, p.character) then
       return found_spot(p, nav, r, true)
     end
     return probe(p, nav, 'room', spot_reach(R) - 0.25, PAD, nil)
@@ -403,7 +415,7 @@ return function(api)
       return M.spot(p, nav)
     end
     if got then return found_spot(p, nav, got, kind == 'room') end
-    if kind == 'room' then return probe(p, nav, 'gap', spot_reach(build_reach(p)) - 0.25, 0, 2) end
+    if kind == 'room' then return probe(p, nav, 'gap', spot_reach(spot_R(p, nav)) - 0.25, 0, 2) end
     return search_spot(p, nav)
   end
 
@@ -855,8 +867,8 @@ return function(api)
     nav.dig_from, nav.dig_area = nil, nil
     -- Closed in: the nearest step of the area, when within build reach.
     local r = nav.reachable
-    if r and dist(r, nav.position) <= spot_reach(build_reach(p)) then return found_spot(p, nav, r, nil) end
-    nav.spot = {none=true, goal={x=nav.position.x, y=nav.position.y}, reach=build_reach(p), closed=true}
+    if r and goal_dist(nav, r) <= spot_reach(spot_R(p, nav)) then return found_spot(p, nav, r, nil) end
+    nav.spot = {none=true, goal={x=nav.position.x, y=nav.position.y}, reach=spot_R(p, nav), label=nav.reach_label, closed=true}
     nav.path_state = 'unreachable'
   end
   -- Room to turn where the character stands: a box padded by PAD fits.
@@ -966,8 +978,9 @@ return function(api)
     return M.belt_at(surface, centre) == nil
   end
   -- Arrived on a belt: the nearest free tile without one, to the character,
-  -- within the arrival radius of the target; else within 3 tiles of it.
-  function M.off_belt_spot(p, target, tolerance)
+  -- within the arrival radius of the target (or, given within, a tile within
+  -- reach of a walk's target entity); else within 3 tiles of it.
+  function M.off_belt_spot(p, target, tolerance, within)
     local here, half, surface = p.position, M.half(p.character), p.surface
     local cx, cy = math.floor(here.x), math.floor(here.y)
     -- Rings of tiles around the character, nearest first; a ring past the
@@ -981,14 +994,15 @@ return function(api)
             if math.max(math.abs(dx), math.abs(dy)) == r then
               local c = {x=cx + dx + 0.5, y=cy + dy + 0.5}
               local d = dist(c, here)
-              if (not bd or d < bd) and dist(c, target) <= limit and M.free_tile(surface, c, half, p.character) then best, bd = c, d end
+              if (not bd or d < bd) and (limit == math.huge or (within and within(c)) or (not within and dist(c, target) <= limit))
+                and M.free_tile(surface, c, half, p.character) then best, bd = c, d end
             end
           end
         end
       end
       return best
     end
-    local best = scan(math.min(10, math.ceil(tolerance) + 1), tolerance)
+    local best = scan(within and 4 or math.min(10, math.ceil(tolerance) + 1), tolerance)
     if best then return best, true end
     return scan(3, math.huge), false
   end

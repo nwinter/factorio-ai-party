@@ -43,7 +43,8 @@ surface={
   end,
   find_entities_filtered=function(f)
     local out={}
-    local function has(list,v) for _,n in ipairs(list) do if n==v then return true end end end
+    -- name and ghost_name: one name or a list, as the engine takes them
+    local function has(list,v) if type(list)=='string' then return list==v end for _,n in ipairs(list) do if n==v then return true end end end
     for _,e in ipairs(world) do
       local ghost=e.type=='entity-ghost'
       local ok=true
@@ -190,12 +191,56 @@ reset()
 place('pipe',3.5,-0.5,0,{ghost=true})
 r=P.plan(p,{from={x=0,y=0},to={x=6,y=0}})
 eq(plain(r,3,0),false)
-eq(P.plan(p,{from={x=3,y=-1},to={x=5,y=0}}).joins.from.name,'pipe(ghost)')
+-- A ghost end is joined by its ghost_name, flagged ghost (Astra 08:19: the label 'pipe(ghost)' went into a find:
+-- 'Unknown entity name: pipe(ghost)').
+local gj=P.plan(p,{from={x=3,y=-1},to={x=5,y=0}}).joins.from
+eq(gj.name,'pipe'); eq(gj.ghost,true)
 fails(function() P.plan(p,{from={x=0,y=0},to={x=0,y=0}}) end,'same tile')
 fails(function() P.plan(p,{from={x=0,y=0},to={x=300,y=0}}) end,'within 200')
 fails(function() P.plan(p,{from={x=0,y=0},to={x=5,y=0},pipe='transport-belt'}) end,'pipe entity')
 for _,xy in ipairs{{2,-1},{4,-1},{3,-2},{3,0}} do blocked[key(xy[1],xy[2])]=true end
 fails(function() P.plan(p,{from={x=3,y=-1},to={x=6,y=0}}) end,'holds pipe(ghost) but no tile')
+-- ... and says what takes each side.
+fails(function() P.plan(p,{from={x=3,y=-1},to={x=6,y=0}}) end,'free of other connections: (3.5,-1.5) blocked or not charted; (4.5,-0.5) blocked or not charted')
+
+-- The line a ghost end belongs to (pipe_route pumps): the connected ghosts, and a built pipe's whole segment.
+reset()
+for x=10,14 do place('pipe',x+0.5,0.5,0,{ghost=true}) end
+local built=place('pipe',9.5,0.5,0,{fluidbox={get_fluid_segment_extent_bounding_box=function() return {left_top={x=-40,y=0},right_bottom={x=10,y=1}} end}})
+r=P.plan(p,{from={x=14.5,y=0.5},to={x=14.5,y=6.5}})
+eq(r.joins.from.name,'pipe'); eq(r.joins.from.ghost,true)
+local lb=P.line_box(surface,mine,r.joins.from,320)
+eq(lb[1],-40); eq(lb[3],14); eq(lb[2],0)
+built.valid=false
+lb=P.line_box(surface,mine,r.joins.from,320)
+eq(lb[1],10); eq(lb[3],14)  -- the ghosts alone
+built.valid=true
+-- an underground ghost pair carries the line on; a pipe ghost elsewhere is not part of it
+-- (the entrance open west toward the line, its underground east; the exit open east)
+place('pipe-to-ground',15.5,0.5,12,{ghost=true}); place('pipe-to-ground',22.5,0.5,4,{ghost=true}); place('pipe',23.5,0.5,0,{ghost=true})
+place('pipe',30.5,5.5,0,{ghost=true})
+eq(P.line_box(surface,mine,r.joins.from,320)[3],23)
+-- a long ghost line: the walk stops once it passes the limit
+reset()
+for x=0,399 do place('pipe',x+0.5,0.5,0,{ghost=true}) end
+lb=P.line_box(surface,mine,{name='pipe',ghost=true,position={x=399.5,y=0.5}},320)
+assert(P.span(lb)>320 and P.span(lb)<400,'stopped past the limit: '..P.span(lb))
+eq(P.line_box(surface,mine,{name='pipe',ghost=true,position={x=1000.5,y=0.5}},320),nil)
+
+-- A dry run's later leg: the tiles of the leg before are taken, and it starts on what that leg leaves at the
+-- waypoint (Astra 08:19: the dry run went back over leg 1; the real call failed at the waypoint).
+reset()
+local free=P.plan(p,{from={x=6,y=0},to={x=-1,y=0},undergrounds=false})
+eq(free.route,'W8')
+local res={}
+for x=0,5 do res[key(x,0)]=true end
+local kept=P.plan(p,{from={x=6,y=0},to={x=-1,y=0},undergrounds=false,reserved=res,from_held={kind='pipe',name='pipe'}})
+for x=0,5 do eq(at(kept,x,0),nil) end
+eq(kept.tail.kind,'pipe')
+-- an exit opens one way: a waypoint reached by a hop east leaves east only
+for x=7,8 do blocked[key(x,0)]=true end
+fails(function() P.plan(p,{from={x=6,y=0},to={x=-1,y=0},reserved=res,from_held={kind='exit',dir=4,name='pipe-to-ground'}}) end,
+  'holds the pipe-to-ground the leg before ends with but no tile at its connections is free of other connections: (7.5,0.5) blocked or not charted')
 
 -- scan fields=fluids: per fluidbox contents and connections, with the
 -- entity joined at each. Built entities report through the engine.

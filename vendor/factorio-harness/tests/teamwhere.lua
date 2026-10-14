@@ -117,7 +117,7 @@ eq(luna('status').chat.latest:find('sol (on Vulcanus): ',1,true),1)
 
 -- Board claims: reads and the overlap warning say where an owner elsewhere is.
 local area={left_top={x=0,y=0},right_bottom={x=20,y=20}}
-local c1=sol('board_post',{kind='claim',title='brick furnaces',area=area}).item.id
+local c1=sol('board_post',{kind='claim',title='brick furnaces',area=area,surface='nauvis'}).item.id  -- (posted from Vulcanus, on Nauvis)
 local c2=luna('board_post',{kind='claim',title='iron smelting',area={left_top={x=30,y=0},right_bottom={x=40,y=10}}}).item.id
 r=astra('board_post',{kind='claim',title='walls',area={left_top={x=10,y=5},right_bottom={x=35,y=8}}})
 eq(r.warnings[1]..'|'..r.warnings[2],'overlaps claim #'..c1..' by sol (on Vulcanus): brick furnaces (posted 0s ago, owner active on it 0s ago, sol last request 0s ago)'
