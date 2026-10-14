@@ -77,3 +77,12 @@ test('nearest, craftable and power travel as read-only observe scopes', async ()
   assert.match(craftable,/"action":"observe".*"scope":"craftable"/);
   assert.match(power,/"action":"observe".*"scope":"power"/);
 });
+test('science and supply travel as read-only observe scopes (a loaded bootstrap caches unknown actions)', async () => {
+  const commands:string[]=[];
+  const h=new Harness({async command(value){commands.push(value);return `{"ok":true,"id":"read-${commands.length}","result":{}}`;}});
+  await h.request('science',{},'read-1');
+  await h.request('supply',{item:'advanced-circuit',near:{x:1,y:2}},'read-2');
+  const [science, supply] = commands as [string, string];
+  assert.match(science,/"action":"observe".*"scope":"science"/);
+  assert.match(supply,/"action":"observe".*"item":"advanced-circuit".*"scope":"supply"/);
+});

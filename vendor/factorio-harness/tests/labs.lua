@@ -15,7 +15,8 @@ local function belt(x,y,items)
   n=n+1
   return {valid=true,unit_number=n,name='transport-belt',type='transport-belt',position={x=x,y=y},
     get_max_transport_line_index=function() return 2 end,
-    get_transport_line=function(i) return {get_contents=function() return i==1 and items or {} end} end}
+    get_transport_line=function(i) return {get_contents=function() return i==1 and items or {} end} end,
+    get_item_count=function(name) local c=0 for _,v in ipairs(items) do if v.name==name then c=c+v.count end end return c end}
 end
 local red,green='automation-science-pack','logistic-science-pack'
 -- Group A: three adjacent labs; two lack green; a belt carries only red.
@@ -78,19 +79,24 @@ local makers={machine(20,0,1,green,0),machine(23,0,5,green,7),machine(26,0,1,red
 local chests={chest(40,0,{[green]=200}),chest(44,0,{[green]=12,[red]=3}),chest(48,0,{})}
 local gbelt=belt(20,-3,{{name=green,count=6}})
 surface.name='nauvis'
+-- science reads everything in one find (supply.lua): every entity of the listed types.
+local everything={}
+for _,list in ipairs({labs,{i1,i2,i3},makers,chests,{feed,gbelt}}) do for _,e in ipairs(list) do everything[#everything+1]=e end end
 surface.find_entities_filtered=function(f)
   if f.type=='lab' then return labs end
   if f.type=='inserter' then return {i1,i2,i3} end
-  if f.type=='assembling-machine' then return makers end
-  if type(f.type)=='table' and f.type[1]=='container' then return chests end
-  if type(f.type)=='table' and f.type[1]=='transport-belt' then return {feed,gbelt} end
-  return {}
+  local types={}
+  for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end
+  local out={}
+  for _,e in ipairs(everything) do if types[e.type] then out[#out+1]=e end end
+  return out
 end
 local carrier={valid=true,get_main_inventory=function() return {get_item_count=function(name) return name==green and 40 or 0 end} end}
-L=dofile('mod/agent-harness_0.1.0/labs.lua'){integer=function(v,d) return v or d end,center=function(p) return p.position end,
-  status_name=function(e) return names[e.status] end,
-  agents=function() return {{index=7,name='grok'},{index=8,name='luna'}} end,
+local team={agents=function() return {{index=7,name='grok'},{index=8,name='luna'}} end,
   lookup=function(i) return i==7 and {character=carrier} or {} end}
+local supply=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return names[e.status] end,agents=team.agents,lookup=team.lookup}
+L=dofile('mod/agent-harness_0.1.0/labs.lua'){integer=function(v,d) return v or d end,center=function(p) return p.position end,
+  status_name=function(e) return names[e.status] end,agents=team.agents,lookup=team.lookup,supply=supply}
 local s=L.science(p,{})
 eq(s.surface,'nauvis'); eq(s.research,'logistics 25%'); eq(#s.packs,2)
 local g=s.packs[2]
@@ -98,7 +104,18 @@ eq(g.pack,green); eq(g.made_10min,120); eq(g.used_10min,90); eq(g.makers,2); eq(
 eq(g.in_makers,7); eq(g.chests,212); eq(g.belts,6); eq(g.labs,2); eq(g.labs_lacking,3); eq(g.carried[1],'grok 40')
 eq(g.line,'logistic: made 120, used 90 in 10 min; makers 2 (1 working, 1 full_output; 7 in their output); chests 212, belts 6, labs 2 (3 of 4 labs have none); carried: grok 40; largest chests: (40,0) steel-chest 200, (44,0) steel-chest 12')
 eq(s.packs[1].line,'automation: made 0, used 0 in 10 min; makers 1 (1 working); chests 3, belts 12, labs 11 (1 of 4 labs have none); largest chests: (44,0) steel-chest 3')
-eq(s.counted,'4 labs, 4 assemblers, 3 chests, 2 of 2 belts')
+eq(s.counted,'4 crafters, 4 labs, 3 chests, 2 of 2 belts, 3 inserters, 0 robots, 0 logistic networks')
+-- reach: where else the pack sits and why it does not reach the labs.
+has(g.reach,'in other chests 212')
+has(g.reach,'no inserter takes from the 2 makers')
+has(g.reach,'3 inserters feed the labs: 1 working, 2 waiting_for_source_items (sources with none of it: 1 lab, 1 transport-belt); 1 labs have no inserter feeding them')
+has(g.reach,'worst lab (60,60) lab no_power; holds 0; no inserter feeds it; nearest logistic-science-pack: steel-chest (44,0) 62 tiles')
+-- the next worst labs lack it: fed from a belt or a lab holding none
+local needs={[red]=true,[green]=true}
+local scan=supply.scan(surface,force,{[green]=true},{packs=needs})
+local _,worst=supply.machines(scan.items[green],scan.items[green].users,'labs',scan,needs)
+eq(worst[2],'(3,0) lab missing_science_packs (missing logistic-science-pack); holds 0; none of its 1 feeding inserters takes from a place holding or requesting it (1 transport-belt); nearest logistic-science-pack: transport-belt (20,-3) 17 tiles')
+eq(worst[3],'(6,0) lab missing_science_packs (missing logistic-science-pack); holds 0; none of its 1 feeding inserters takes from a place holding or requesting it (1 lab); nearest logistic-science-pack: transport-belt (20,-3) 14 tiles')
 -- from somewhere else, the same reply
 local far={position={x=500,y=-500},surface=surface,force=force}
 eq(L.science(far,{}).packs[2].line,g.line)

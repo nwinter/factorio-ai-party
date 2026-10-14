@@ -73,7 +73,12 @@ already targets your character.
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
   research needs over your whole surface, the same for everyone wherever they stand: made and used in 10 minutes,
-  the assemblers set to it and their states, packs in chests, on belts, in labs and carried, and the largest chests.
+  the assemblers set to it and their states, packs in chests, on belts, in labs and carried, and the largest chests;
+  its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs.
+- `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
+  `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
+  characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
+  reason, the machines that make and use it by status (the worst 3 with positions), and the inserters feeding them.
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
   own voice: use it whenever there is something viewers would want to hear (a plan, a win, a complaint, a joke);
   viewers like hearing from each of you every few minutes.
