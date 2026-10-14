@@ -2086,8 +2086,16 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the same numbers as fields; everything is kept 60 s (`as_of`), and the network alerts read the same view; the pole
   map is redone every 5 min in the background and by the view when older than 60 s; requests are looked at every 30 s.
   Accumulators show their stored energy against their maximum (`accumulators 2 at 50% (5.0 MJ of 10.0 MJ)`; read:
-  `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning). The API exposes no lightning storm schedule
-  (checked on 2.0.77: Fulgora's planet prototype has no lightning properties), so there is no storm countdown. The
+  `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning). The API exposes no storm state or schedule
+  (checked on 2.0.77, world n, 2026-10-14: LuaSurface, LuaPlanet and Fulgora's LuaSpaceLocationPrototype have no
+  lightning or storm key). Lightning strikes in the dark: one Fulgora day of samples (a 256x256 box, every 4 s) saw
+  bolts at darkness 0.06 to 0.85, in all but one sample at 0.48 and over, and none in daylight. So the networks read's
+  Fulgora row (read now, not kept 60 s) and `status` on Fulgora carry `storm` from the surface's day cycle (Gemini,
+  12:20): `state` (`storm` while dark, else `clear`), `phase` (`day`, `darkening`, `full dark`, `brightening`),
+  `darkness` (0 to 0.85 there), `dusk_in_s`, `evening_in_s`, `morning_in_s`, `dawn_in_s`, `day_s`, `line`; status adds
+  `bolts_near` (lightning within 64 tiles of you): `fulgora sky: storm, full dark (darkness 0.85; lightning);
+  brightening in 9s, dawn (clear) in 45s; 3 lightning bolts within 64 tiles of you now; a 3m00s day: dark from dusk to
+  dawn, 1m30s`, or `fulgora sky: day, clear (no lightning in daylight); dusk in 27s, full dark in 1m03s; ...`. The
   boilers part names the lowest boiler: the lowest of those under 20 min and not refilled, else the lowest of all,
   with its minutes, its fuel and its feeder (`lowest boiler (66,16): 4 min of coal; no inserter feeds it`; read:
   `lowest_boiler {position, min, fuel, feeder, feeder_has_fuel}`; Haiku, 07:55).

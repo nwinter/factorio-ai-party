@@ -153,7 +153,8 @@ already targets your character.
   more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them any time;
   `./fh call boilers` lists each boiler by network, the stopped ones first: state, fuel, water, its feeder and what
   the feeder takes from with the fuel there; the networks line names the lowest boiler (position, minutes, fuel,
-  feeder) and accumulators' stored MJ of their maximum; `./fh platform NAME` shows one space platform (hub free
+  feeder) and accumulators' stored MJ of their maximum; on Fulgora, `networks` and `status` carry `storm`: lightning
+  in the dark, the phase, darkness and the seconds to dusk, full dark, brightening and dawn; `./fh platform NAME` shows one space platform (hub free
   slots, cargo, speed, next stop, ETA);
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,

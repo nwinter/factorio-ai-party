@@ -3526,4 +3526,29 @@ end)()
   fails(function() call('launch',{platform='Sunward'}) end,[[: rocket-silo (65.5,14.5) rocket ready; rocket-silo (14.5,140.5) building_rocket, parts 12/50]])
   p.surface.find_entities_filtered=find
 end)()
+-- Gemini 12:20: Fulgora's sky on the networks read's Fulgora row (lightning.lua M.sky), and in status there with the
+-- bolts near the character.
+;(function()
+  local s=p.surface
+  local kept_read,kept_get,kept_planet=runtime.networks.read,game.get_surface,s.planet
+  local fields={'daytime','darkness','ticks_per_day','dusk','evening','morning','dawn','freeze_daytime','count_entities_filtered'}
+  local kept={}
+  for _,k in ipairs(fields) do kept[k]=s[k] end
+  s.planet={name='fulgora'}
+  s.daytime,s.darkness,s.ticks_per_day,s.dusk,s.evening,s.morning,s.dawn,s.freeze_daytime=0.5,0.85,10800,0.25,0.45,0.55,0.75,false
+  s.count_entities_filtered=function(f) eq(f.type,'lightning'); return 3 end
+  local other={name='nauvis-2',planet={name='nauvis'}}
+  game.get_surface=function(n) if n==s.name then return s end if n=='nauvis-2' then return other end end
+  runtime.networks.read=function() return {surfaces={{surface=s.name,electric={},logistic={}},{surface='nauvis-2',electric={},logistic={}}},as_of='0s ago'} end
+  local r=call('networks',{})
+  eq(r.surfaces[1].storm.state,'storm'); eq(r.surfaces[1].storm.phase,'full dark'); eq(r.surfaces[1].storm.dawn_in_s,45)
+  eq(r.surfaces[1].storm.bolts_near,nil,'the read is the surface\'s, no character'); eq(r.surfaces[2].storm,nil)
+  local st=call('status',{})
+  eq(st.storm.state,'storm'); eq(st.storm.bolts_near,3)
+  assert(st.storm.line:find('^fulgora sky: storm, full dark %(darkness 0%.85; lightning%); brightening in 9s, dawn %(clear%) in 45s; 3 lightning bolts within 64 tiles of you now'),st.storm.line)
+  s.planet=nil
+  eq(call('status',{}).storm,nil,'not on Fulgora')
+  runtime.networks.read,game.get_surface,s.planet=kept_read,kept_get,kept_planet
+  for _,k in ipairs(fields) do s[k]=kept[k] end
+end)()
 print('runtime: '..assertions..' assertions passed')
