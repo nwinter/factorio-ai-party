@@ -84,7 +84,7 @@ Your character stands still while you think, and the clock does not.
   pauses your running queue at once; `./fh queue resume` continues it. A direct `wait_ticks` or `wait_until` while
   your queue runs is refused (it would pause the queue): use `./fh sleep` or `./fh wait --until`, or pass
   `"pause_queue":true`. Reads, `sleep`, `say`, `tell`, the board, `craft` and `research` leave the queue running.
-- The waits: a queue plan for rounds that keep going while you think (courier, refuel; `./fh plan save` once, then
+- The waits: a queue plan for rounds that keep going while you think (refuel, rearm; `./fh plan save` once, then
   `./fh plan run` to repeat it); `wait_until` for one condition, with a timeout of a few minutes; `./fh sleep` or
   `./fh wait --until` for a wait that leaves the queue running.
 - The clock line counts a wait or sleep as idle: `character idle 5m00s of it (100%, 4m30s of that in wait_ticks)`.
