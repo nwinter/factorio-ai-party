@@ -7548,7 +7548,11 @@ function M.dispatch_inner(request)
       elseif shift then
         -- The networks, one line each, next to researched_none_built (networks.lua).
         local okn,lines=pcall(M.networks.lines,p.force,p.surface and p.surface.name,8)
-        if okn and #lines>0 then shift.networks=lines end
+        if not okn then lines={} end
+        -- Drills out of ore per surface (pushalerts.lua; Nick 12:35).
+        local oko,ore=pcall(M.pushalerts.out_of_ore_line,p.force)
+        if oko and ore then lines[#lines+1]=ore end
+        if #lines>0 then shift.networks=lines end
         -- The previous shift for the team (selfview.lua retro).
         local okr,retro=pcall(M.selfview.retro,p)
         if okr and retro then shift.retro=retro end

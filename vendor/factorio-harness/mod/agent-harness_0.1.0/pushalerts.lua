@@ -46,9 +46,36 @@ return function(api)
   local function statuses()
     if not STATUS then
       local s = defines.entity_status or {}
-      STATUS = {[s.no_power or -1]='no_power', [s.low_power or -2]='low_power', [s.no_fuel or -3]='no_fuel'}
+      STATUS = {[s.no_power or -1]='no_power', [s.low_power or -2]='low_power', [s.no_fuel or -3]='no_fuel',
+        [s.no_minable_resources or -4]='out_of_ore'}
     end
     return STATUS
+  end
+  -- Drills out of ore (Nick 12:35): a drill whose patch under it is used up reads no_minable_resources and has no
+  -- mining target left, so each read remembers the ore every drill mines (storage push_drills, per force, by unit
+  -- number); one never seen mining takes the ore the drills still mining in its area mine. The groups are
+  -- out_of_ore.<ore> (out_of_ore.unknown when neither says), with the drills still mining that ore in the area and the
+  -- nearest patch of it none of our drills are on (the ores read's last survey of that surface; none: not said).
+  local function drill_memory(force)
+    local s = api.state()
+    s.push_drills = s.push_drills or {}
+    local mem = s.push_drills[force.name]
+    if not mem then mem = {}; s.push_drills[force.name] = mem end
+    return mem
+  end
+  -- A drill seen mining: its ore remembered, and counted in its cell (mining[surface|cx,cy][ore]).
+  local function drill_mining(e, surface, mining, dmem)
+    local t = try(function() return e.mining_target end)
+    local name = t and try(function() return t.name end)
+    if not name then return nil end
+    local unit = try(function() return e.unit_number end)
+    if unit and dmem then dmem[unit] = name end
+    if mining then
+      local key = surface .. '|' .. math.floor(e.position.x / CELL) .. ',' .. math.floor(e.position.y / CELL)
+      mining[key] = mining[key] or {}
+      mining[key][name] = (mining[key][name] or 0) + 1
+    end
+    return name
   end
   local function alert_names()
     local out = {}
@@ -177,7 +204,7 @@ return function(api)
     return try(function() return s.find_entities_filtered{force=force, type=t, limit=budget} end) or {}
   end
   -- Entities from..to of a found list into the groups (mem: the inserter memory; tmem: the turret memory).
-  local function read_list(groups, s, list, from, to, mem, tmem)
+  local function read_list(groups, s, list, from, to, mem, tmem, mining, dmem)
     local st = statuses()
     for i = from or 1, to or #list do
       local e = list[i]
@@ -186,6 +213,12 @@ return function(api)
         local kind = st[e.status]
         local detail
         if kind == 'no_power' and not try(function() return e.electric_network_id end) then kind = 'unconnected' end
+        if e.type == 'mining-drill' then
+          if kind == 'out_of_ore' then
+            local unit = try(function() return e.unit_number end)
+            kind = 'out_of_ore.' .. (unit and dmem and dmem[unit] or '?')
+          else drill_mining(e, s.name, mining, dmem) end
+        elseif kind == 'out_of_ore' then kind = nil end
         if e.type == 'ammo-turret' then
           local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
           local tk, td = turret_kind(e, inv and inv.get_item_count() == 0, tmem)
@@ -199,9 +232,9 @@ return function(api)
       end
     end
   end
-  local function entities(groups, s, force, t, budget, mem, tmem)
+  local function entities(groups, s, force, t, budget, mem, tmem, mining, dmem)
     local list = entity_list(s, force, t, budget)
-    read_list(groups, s, list, nil, nil, mem, tmem)
+    read_list(groups, s, list, nil, nil, mem, tmem, mining, dmem)
     return #list
   end
   -- The background job's step (operator 04:00: steps of a whole-surface find, then 1500 entities, burst to 138 ms in
@@ -242,7 +275,51 @@ return function(api)
       end
     end
   end
-  local function merge(groups, extra)
+  -- Drills out of ore whose ore no read saw take the ore the drills still mining in their cell and the 8 around mine
+  -- most; else out_of_ore.unknown.
+  local function name_unknown_ore(groups, mining)
+    local keys = {}
+    for key, g in pairs(groups) do if g.kind == 'out_of_ore.?' then keys[#keys+1] = key end end
+    table.sort(keys)
+    for _, key in ipairs(keys) do
+      local g = groups[key]
+      local surface, cx, cy = key:match('|(.-)|(-?%d+),(-?%d+)$')
+      cx, cy = tonumber(cx), tonumber(cy)
+      local by = {}
+      for dx = -1, 1 do for dy = -1, 1 do
+        for ore, n in pairs((mining or {})[surface .. '|' .. (cx + dx) .. ',' .. (cy + dy)] or {}) do by[ore] = (by[ore] or 0) + n end
+      end end
+      local best, bn = nil, 0
+      for ore, n in pairs(by) do if n > bn or (n == bn and best and ore < best) then best, bn = ore, n end end
+      local kind = 'out_of_ore.' .. (best or 'unknown')
+      local nk = kind .. '|' .. surface .. '|' .. cx .. ',' .. cy
+      groups[key] = nil
+      local h = groups[nk]
+      if not h then g.kind, g.key = kind, nk; groups[nk] = g
+      else
+        h.n, h.sx, h.sy = h.n + g.n, h.sx + g.sx, h.sy + g.sy
+        for n, v in pairs(g.names) do h.names[n] = (h.names[n] or 0) + v end
+        for n, v in pairs(g.by) do h.by[n] = (h.by[n] or 0) + v end
+        for _, pos in ipairs(g.at) do if #h.at < 4 then h.at[#h.at+1] = pos end end
+      end
+    end
+  end
+  -- The nearest patch of an ore that none of our drills are on, from the ores read's last survey of the surface.
+  local function untapped(force, surface, ore, center)
+    local s = game.surfaces[surface]
+    local entry = s and ((api.state().ores or {})[force .. '@' .. s.index])
+    local best, bd
+    for _, q in ipairs(entry and entry.patches or {}) do
+      if q.name == ore and (q.miners or 0) == 0 and q.centre then
+        local d = ((q.centre.x - center.x) ^ 2 + (q.centre.y - center.y) ^ 2) ^ 0.5
+        if not bd or d < bd then best, bd = q, d end
+      end
+    end
+    if not best then return nil end
+    return {x=math.floor(best.centre.x + 0.5), y=math.floor(best.centre.y + 0.5), d=math.floor(bd + 0.5), amount=best.yield or best.amount}
+  end
+  local function merge(groups, extra, mining, force)
+    name_unknown_ore(groups, mining)
     -- Cells of one kind on one surface that touch (8 neighbours) are one area:
     -- a turret line across a cell edge is one group. Its key is its first cell.
     local out, done = {}, {}
@@ -256,10 +333,20 @@ return function(api)
         local area = {key=key, kind=g.kind, surface=g.surface, n=0, names={}, sx=0, sy=0, at={}, by={}}
         local queue = {{tonumber(cx), tonumber(cy)}}
         done[key] = true
+        local ore = kind:match('^out_of_ore%.(.+)$')
+        -- Drills still mining that ore in the area's cells and the cells around them.
+        local near = ore and {}
+        if ore then area.ore, area.still = ore, 0 end
         while #queue > 0 do
           local c = table.remove(queue)
           local k = kind .. '|' .. surface .. '|' .. c[1] .. ',' .. c[2]
           local part = groups[k]
+          if near then
+            for dx = -1, 1 do for dy = -1, 1 do
+              local mk = surface .. '|' .. (c[1] + dx) .. ',' .. (c[2] + dy)
+              if not near[mk] then near[mk] = true; area.still = area.still + (((mining or {})[mk] or {})[ore] or 0) end
+            end end
+          end
           area.n, area.sx, area.sy = area.n + part.n, area.sx + part.sx, area.sy + part.sy
           for n, v in pairs(part.names) do area.names[n] = (area.names[n] or 0) + v end
           for n, v in pairs(part.by) do area.by[n] = (area.by[n] or 0) + v end
@@ -272,6 +359,7 @@ return function(api)
         end
         area.center = {x=math.floor(area.sx / area.n + 0.5), y=math.floor(area.sy / area.n + 0.5)}
         area.sx, area.sy = nil, nil
+        if ore and ore ~= 'unknown' and force then area.untapped = try(function() return untapped(force.name, surface, ore, area.center) end) end
         out[#out+1] = area
       end
     end
@@ -288,12 +376,13 @@ return function(api)
   local function scan(force)
     local groups, budget = {}, MAX_SCAN
     local mem, tmem = inserter_memory(force), turret_memory(force)
+    local mining, dmem = {}, drill_memory(force)
     mem.gen, tmem.gen = mem.gen + 1, tmem.gen + 1
-    for _, s in ipairs(planets()) do budget = budget - entities(groups, s, force, TYPES, budget, mem, tmem) end
+    for _, s in ipairs(planets()) do budget = budget - entities(groups, s, force, TYPES, budget, mem, tmem, mining, dmem) end
     forget_unseen(mem)
     turrets_read(tmem, budget > 0)
     game_alerts(groups, force)
-    return merge(groups, network_groups(force))
+    return merge(groups, network_groups(force), mining, force)
   end
   -- The background read, one stage per tick, its state in storage so every
   -- peer runs the same: started when the last read is SCAN_TICKS old.
@@ -329,7 +418,7 @@ return function(api)
         stages[#stages+1] = {step='networks'}
         stages[#stages+1] = {step='merge'}
         s.push_steps = s.push_steps or {}
-        job = {start=tick, stages=stages, i=1, groups={}, budget=MAX_SCAN, steps=0,
+        job = {start=tick, stages=stages, i=1, groups={}, mining={}, budget=MAX_SCAN, steps=0,
           every=walk.every(s.push_steps[force.name], SCAN_TICKS)}
         s.push_jobs[force.name] = job
         local mem, tmem = inserter_memory(force), turret_memory(force)
@@ -350,7 +439,7 @@ return function(api)
             else job.walk = nil; job.i = job.i + 1 end
           else
             local last = math.min(#job.list, job.at + SLICE - 1)
-            read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force))
+            read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force), job.mining, drill_memory(force))
             job.at = last + 1
             if job.at > #job.list then job.list, job.at = nil, nil end
           end
@@ -360,7 +449,7 @@ return function(api)
           turrets_read(tmem, job.budget > 0 and job.tgen == tmem.gen)
         elseif stage.step == 'networks' then job.i = job.i + 1; job.extra = network_groups(force)
         else
-          s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra)}
+          s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra, job.mining, force)}
           s.push_steps[force.name] = job.steps
           s.push_jobs[force.name] = nil
         end
@@ -442,6 +531,15 @@ return function(api)
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
     end
+    if g.ore then
+      -- '6 electric-mining-drill out of ore near (40,-60): iron-ore; 4 still mining there; nearest untapped iron-ore (180,-20) 145 tiles, about 1.2M ore'
+      local u = g.untapped
+      local amount = u and u.amount and (u.amount >= 1e6 and string.format('%.1fM', u.amount / 1e6) or u.amount >= 1e4 and string.format('%dk', math.floor(u.amount / 1e3 + 0.5)) or tostring(math.floor(u.amount)))
+      return string.format('%s out of ore near (%d,%d)%s%s: %s; %d still mining there%s', what(g), g.center.x, g.center.y,
+        g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
+        g.ore == 'unknown' and 'ore not seen' or g.ore, g.still or 0,
+        u and string.format('; nearest untapped %s (%d,%d) %d tiles, about %s ore', g.ore, u.x, u.y, u.d, amount) or '')
+    end
     if g.kind == 'rebuilt_empty' then
       -- '2 gun-turret rebuilt empty near (61,15): no ammo since built, 60+ s: gun-turret (60,14) requests 10 firearm-magazine; ...'
       return string.format('%s rebuilt empty near (%d,%d)%s%s: no ammo since built, 60+ s: %s%s%s', what(g), g.center.x, g.center.y,
@@ -491,6 +589,23 @@ return function(api)
     return lines
   end
 
+  -- Drills out of ore per surface (the shift start's networks block): 'drills out of ore: 14 (nauvis 12, vulcanus 2)';
+  -- nil when none.
+  function M.out_of_ore_line(force)
+    local c = current(force)
+    local by, total, order = {}, 0, {}
+    for _, g in ipairs(c.groups) do
+      if g.ore then
+        if not by[g.surface] then by[g.surface] = 0; order[#order+1] = g.surface end
+        by[g.surface] = by[g.surface] + g.n; total = total + g.n
+      end
+    end
+    if total == 0 then return nil end
+    table.sort(order, function(a, b) return by[a] > by[b] or (by[a] == by[b] and a < b) end)
+    local parts = {}
+    for _, s in ipairs(order) do parts[#parts+1] = s .. ' ' .. by[s] end
+    return string.format('drills out of ore: %d (%s)', total, table.concat(parts, ', '))
+  end
   -- Groups now in p's own board claims (selfview.lua review), worst first, without hints.
   function M.claim_lines(p)
     local c = current(p.force)
@@ -514,14 +629,14 @@ return function(api)
         for name, why in pairs(owners(g, who)) do to[#to+1] = name .. ' (' .. why .. ')' end
         table.sort(to)
         rows[#rows+1] = {kind=g.kind, surface=g.surface, count=g.n, center=g.center, names=g.names, at=g.at, lost=g.lost,
-          line=M.text(g, here), to=#to > 0 and to or nil}
+          ore=g.ore, still_mining=g.still, untapped=g.untapped, line=M.text(g, here), to=#to > 0 and to or nil}
       end
     end
     return {groups=rows, scanned=string.format('%ds ago', math.floor((game.tick - c.tick) / 60)),
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
-    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry; rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), robots_busy (no idle logistic robot for 10 min); science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
+    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry; out_of_ore (mining drills whose patch under them is used up, by ore: out_of_ore.iron-ore, ...; each with ore, still_mining (our drills still mining that ore in the area) and untapped (the nearest patch of it no drill of ours is on, from the ores read\'s last survey: x, y, d tiles, amount));rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), robots_busy (no idle logistic robot for 10 min); science_idle (a pack the research needs whose makers on the science surface all stood still at two science-line builds 5+ min apart, with their states and the chain\'s first short step); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M
