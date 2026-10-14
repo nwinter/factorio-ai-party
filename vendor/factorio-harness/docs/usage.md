@@ -235,6 +235,24 @@ fh call status
   trash within a second, while the platform is stopped it stays in the hub until it flies). The `platforms` row lists a hub's requests
   in sections that are off apart, as `requests_off`. (Astra, 02:00: Sunward's only section was off, so the Vulcanus
   silo sent nothing, while the readback showed neither the state nor the import planet.)
+- A platform hub's "Request missing construction materials" (the game keeps a `controlled` section of what the
+  platform's ghosts need) shows in every hub `requests` reply as `construction_requests: on` or `off`;
+  `requests {platform, construction_requests: true}` (or `false`) switches it as the hub GUI's checkbox does. 2.0.77's
+  API has no field for it, so the harness builds a one-entity hub blueprint carrying it over the hub and puts the
+  manual sections back after. Switched on, the section is filled from the ghosts already there the next tick, and
+  ghosts placed in that tick join it 17-18 ticks later. The hub requests the sum of its sections, so a manual section
+  asking for the same items adds to it: `construction_overlap` names them (`manual sections request these too, and the
+  hub requests the sum: crusher 3+3`).
+- A paste over a platform hub (Astra, shift12 19:16: her Starling hub blueprint, `read_contents` and no requests,
+  switched the setting off and the game's section of fast-inserter 19, space-platform-foundation 624 and crusher 3
+  vanished). On 2.0.77 a hub blueprint carries the setting (`request_missing_construction_materials`; absent is off),
+  and a paste gives the hub the blueprint's: the game then drops its section and keeps it off. The paste switches it
+  back on where it was on and says so in `requests_kept`: `space-platform-hub (0,0): requests kept (0 sections; the
+  paste had changed them and they were put back); construction requests kept on (the paste switched off Request
+  missing construction materials, which this blueprint's hub has off; switched back on, the game refills them from
+  the platform's ghosts within a second; before the paste: fast-inserter 19, space-platform-foundation 624, crusher
+  3)`. A blueprint whose hub has it on switches it on (`construction requests switched on by the blueprint's hub`).
+  The same paste gives the hub the blueprint's manual sections (one empty, switched off), which the paste puts back.
 - Trains: `train {position: stop, station, limit}` names a train stop and sets its train limit (`limit: false` clears it);
   `train {position: locomotive or wagon, schedule: [{station, wait: [{type, ticks?, compare?, condition?}]}], current,
   automatic}` sets the train's schedule (wait types as in the game: time, inactivity, full, empty, item_count,
@@ -1425,7 +1443,10 @@ fh sleep 900 --until researched                       # ...or until the research
   - `requests_kept` (a paste): for each entity with requests the blueprint lands on (a platform hub, requester and
     buffer chests, landing pads, spidertrons), `space-platform-hub (0,0): its requests stay (14 sections, 1 off)`, and
     when the blueprint carries requests of its own for it, `the blueprint's own requests (1 section) are not applied by
-    a paste`.
+    a paste`. A hub with construction requests on: `construction requests stay on`, and when the blueprint's hub has
+    the setting off, why and what they hold now (`construction requests stay on (this blueprint's hub has Request
+    missing construction materials off, which a paste switches off; the paste switches it back on): fast-inserter
+    19, ...`).
   - `items` the placeable entries and needed tiles use, `missing` against your inventory (for `build` plus the
     hand-craft queue; on a platform the hub), `missing_from`. A paste adds `paste {slot, label, origin_at, center_at,
     anchor}` (where the blueprint lands, computed as the game places it: its center at `position`, shifted onto the

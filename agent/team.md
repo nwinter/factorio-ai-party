@@ -198,7 +198,9 @@ already targets your character.
   appears (`"count"` stops early); `last.took`, `last.made` and `last.inserters_took` say who got what.
 - What you take over a personal request's max goes to your trash slots: `transfer`, `collect` and `pickup` say how much
   (`trash`); `"up_to": true` stops at the max, `"keep_max": true` refuses the take. A paste leaves the requests of a hub
-  or requester chest it lands on (`requests_kept`).
+  or requester chest it lands on (`requests_kept`), a hub's construction requests too.
+  `./fh call requests --args '{"platform":"Starling","construction_requests":true}'` switches the hub's Request missing
+  construction materials on.
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
 - Spoilage: `inspect`, `supply` and `stock` give the first stack to spoil and when; pentapod eggs say when they hatch

@@ -508,7 +508,9 @@ return function(api)
           for _,e in ipairs(entities) do if api.keep.TYPES[prototypes.entity[e.name].type] then spots[#spots+1]=e end end
           if #spots>0 then
             local where=locate(p,a,entities,pos,direction,box,c)
-            for i,e in ipairs(spots) do spots[i]={name=e.name,position=where(e),own=api.keep.bp_sections(e)} end
+            for i,e in ipairs(spots) do
+              spots[i]={name=e.name,position=where(e),own=api.keep.bp_sections(e),construction=e.request_missing_construction_materials==true}
+            end
             kept=api.keep.before(p.surface,spots)
           end
         end
@@ -690,6 +692,7 @@ return function(api)
         if a.flip_vertical then d=(24-d)%16 end
         list[i]={index=i,name=e.name,position={x=shift.x+x,y=shift.y+y},direction=(d+direction)%16,
           quality=type(e.quality)=='string' and e.quality or nil,requests=api.keep and api.keep.bp_sections(e) or nil,
+          construction=e.request_missing_construction_materials==true or nil,
           ug_type=type(e.type)=='string' and e.type or nil}
       end
       local tlist={}
