@@ -105,6 +105,13 @@
     return e;
   }
   function setText(e, text) { text = text == null ? "" : String(text); if (e.textContent !== text) e.textContent = text; }
+  // 12345678 -> "12.3M", 45600 -> "45.6K" (tokens.py short)
+  function shortNum(v) {
+    v = Number(v || 0);
+    for (const [d, u] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]])
+      if (v >= d) { const x = v / d; return (x < 100 ? x.toFixed(1) : x.toFixed(0)) + u; }
+    return String(Math.round(v));
+  }
   function graphemes(s) {
     if (window.Intl && Intl.Segmenter) return [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(s)].map((x) => x.segment);
     return Array.from(s);
@@ -236,7 +243,9 @@
         c.badge = el("div", "badge");
         c.harness = el("div", "harness");
         c.world = el("div", "world");
-        r1.append(c.name, c.badge, c.world, c.harness);
+        c.tok = el("div", "tok");  // tokens this shift (model.py, tokens.py)
+        c.tok.title = "tokens this shift";
+        r1.append(c.name, c.badge, c.world, c.harness, c.tok);
         c.model = el("div", "model");
         const doing = el("div", "doing");
         c.dot = el("span", "dot");
@@ -253,6 +262,7 @@
       fillAvatar(c.av, a);
       setText(c.name, a.display_name || a.name);
       setText(c.harness, a.harness || "");
+      setText(c.tok, a.tokens ? shortNum(a.tokens) + " tok" : "");
       // line two: model, then the agent's current job (a viewer, shift05: "displaying the current plan of each bot
       // instead of the motto"; model.py job: its team-plan line, else its notes.md "## Now"); without one the motto
       // from `profiles` (an agent that never called `profile` gets a quiet note instead), else the role
@@ -1155,6 +1165,16 @@
         t.append(el("div", "td", r.rank + ". " + r.agent), el("div", "td num", n(r.items)), el("div", "td num faint", n(r.calls)));
       body.append(t);
       if (f.minutes != null) body.append(el("div", "snote", "this shift · last " + f.minutes + " min"));
+    } else if (seg.type === "tokens") { // tokens each agent's model read and wrote this shift (segments.py build_tokens)
+      const t = el("div", "stable");
+      t.append(el("div", "th", "Agent"), el("div", "th num", "tokens"), el("div", "th num", "cached"),
+        el("div", "th num", "turns"), el("div", "th num", "per action"));
+      for (const r of f.rows || [])
+        t.append(el("div", "td", r.rank + ". " + r.agent), el("div", "td num", shortNum(r.tokens)),
+          el("div", "td num faint", r.cached_pct + "%"), el("div", "td num faint", Number(r.turns || 0).toLocaleString("en-US")),
+          el("div", "td num faint", r.per_action != null ? shortNum(r.per_action) : "–"));
+      body.append(t);
+      if (f.minutes != null) body.append(el("div", "snote", "this shift · last " + f.minutes + " min · team " + f.team_text));
     } else if (seg.type === "overview") {
       body.append(factRow("Agents in the world", f.agents_in_world + " of " + f.agents_total),
         factRow("Spread", "about " + f.spread_tiles + " tiles from the centre"),
@@ -1187,7 +1207,7 @@
       const title = el("div", "stitle");
       title.append(el("span", "tag", seg.type === "spotlight" ? "Spotlight" : seg.type === "overview" ? "Overview"
         : seg.type === "attack_replay" ? "Replay" : seg.type === "space" || seg.type === "space_moment" ? "Space Age"
-        : seg.type === "hauling" ? "Stats" : "Analysis"),
+        : seg.type === "hauling" || seg.type === "tokens" ? "Stats" : "Analysis"),
         el("span", "", seg.title));
       if (seg.type === "spotlight") {
         const ag = (s.agents || []).find((a) => a.name === (seg.facts || {}).name);

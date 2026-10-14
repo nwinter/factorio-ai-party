@@ -79,6 +79,17 @@ Every poll (default 3 s), over one persistent RCON connection, using the same
   plus the science packs (about 35 names; the Lua skips items the game does not know or never made, so a fresh map
   costs little).
 
+Token use per agent (`tools/stream/tokens.py`, operator 08:55, from Nick): a thread of its own (`TokenFeed`, started
+by serve.py beside the run's stream.json; `"tokens": false` in the run config turns it off) reads the agents' CLI
+session logs once a minute, never the game. A session belongs to an agent by its workspace, `runs/RUN/AGENT`: Claude
+Code's project folders (opus on its own Claude profile), Codex rollouts whose `session_meta` cwd is the workspace
+(forked subagents too), the workspace's own Grok home log, agy conversations whose opening names the run, Muse sessions
+with the workspace as cwd. The homes come from `ai-session routes`. Each file is read on from where the last read
+stopped, 4 MB at a time with a pause between chunks: a whole shift reads in about a second (shift10: 39 files,
+140 MB, 0.8 s), and each later poll costs about 10 ms. The poller hands the latest result to the model, which keeps
+it without the per-minute context series. It feeds the "tokens" card and each agent card's figure (`23.8M tok` after
+the harness label; in portrait at the right end of the name line). The same module counts ended shifts for the site.
+
 `harness.Harness.dispatch` refuses anything outside `READ_ACTIONS` (`status`, `profiles`, `chat`, `power`, `cameras`)
 and refuses `chat` without `peek`. The only non-read call is the operator `camera` remote function, sent through a
 guard that prints `{"ok":false,"stub":true}` when the harness lacks it, which is what happens until eng/bots lands.
@@ -256,6 +267,7 @@ page (the alert stays in the state for the casters). `model.research_news`, `sta
 | attack_replay | 15-40 | the OBS "replay" scene (see Replays); available while a fresh clip waits | program scene switch |
 | space | 15-30 | panel: planets reached, rockets, platforms (where or route, speed), space-age science made, who is off Nauvis; available once the Space panel shows | unchanged |
 | space_moment `{moment}` | 12-25 | a Space Age moment (below): full panel, or a lower card for a landing with an agent | a landing follows the agent (zoom 0.9) |
+| tokens | 10-16 | lower card "Tokens this shift": every agent with tokens counted, most first: tokens (input, cached ones included, plus output), the share read from cache, turns (model calls) and tokens per game action, and the team's total (`tokens.py` TokenFeed). The director starts it every 30 min (`tokens_every`), the first 15 min after the service starts (between the hauling cards), at a free slot, not within 60 s of a fight cut; unavailable while nothing is counted | unchanged |
 | hauling | 10-16 | lower card "Hand hauling this shift": the top 5 agents by items moved by hand, items and calls (harness `hauling`, read every 5 min by live.py into `runs/RUN/hauling.jsonl`; this shift = last read less the first). The director starts it every 30 min (`hauling_every`) at a free slot, not within 60 s of a fight cut; unavailable while nothing is counted | unchanged |
 
 Rules (the director has the last word): one segment start per 180 s whoever asks (`spacing`). When the director
