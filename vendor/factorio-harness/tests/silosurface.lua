@@ -136,8 +136,10 @@ fails(function() astra('launch',{surface='mars',position={x=14.5,y=140.5},orbit=
 r=astra('launch',{surface='vulcanus',position={x=14.5,y=140.5},auto_requests=true})
 eq(r.auto_requests,true); eq(r.settings.auto_requests,true)
 astra('launch',{surface='vulcanus',position={x=14.5,y=140.5},auto_requests=false})
+cargo[1]={'calcite',50}   -- (an empty rocket is refused unless allow_empty)
 r=astra('launch',{surface='vulcanus',position={x=14.5,y=140.5},platform='Sunward'})
 eq(r.launched,true); eq(r.to,'platform Sunward'); eq(launched.station,hub); eq(r.settings.silo,'rocket-silo at (14.5,140.5) on vulcanus')
+cargo[1]=nil
 fails(function() astra('launch',{surface='vulcanus',position={x=400.5,y=400.5},orbit=true}) end,'not visible to our force now')
 
 -- silo: the read there, with both switches.

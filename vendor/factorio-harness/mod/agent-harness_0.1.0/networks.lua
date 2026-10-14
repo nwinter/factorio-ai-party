@@ -213,6 +213,13 @@ return function(api)
     return string.format('%d kW', math.floor(kw + 0.5))
   end
   local function at(x, y) return string.format('(%d,%d)', math.floor(x + 0.5), math.floor(y + 0.5)) end
+  -- Joules as MJ (one decimal under 100 MJ), GJ from 1000 MJ.
+  local function mj(j)
+    local m = j / 1e6
+    if m >= 1000 then return string.format('%.1f GJ', m / 1000) end
+    if m >= 100 then return string.format('%d MJ', math.floor(m + 0.5)) end
+    return string.format('%.1f MJ', m)
+  end
   -- The draw over the window: average, now (last sample), and by producer name (averages).
   local function draw(n, id)
     local list = n.samples[id] or {}
@@ -325,6 +332,20 @@ return function(api)
   local function e_boilers(ctx, f, surface)
     for _, e in ipairs(try(function() return surface.find_entities_filtered{type='boiler', force=f, limit=MAX_SCAN} end) or {}) do e_boiler(ctx, e) end
   end
+  -- A burner's fuel by name: what it burns now, else its first fuel stack; nil when none.
+  local function burner_fuel(e)
+    local burner = try(function() return e.burner end)
+    if not burner then return nil end
+    local cur = try(function() return burner.currently_burning end)
+    local name = cur and (try(function() return type(cur.name) == 'string' and cur.name or cur.name.name end))
+    if name then return name end
+    local inv = try(function() return burner.inventory end)
+    for i = 1, inv and #inv or 0 do
+      local st = inv[i]
+      if st and st.valid_for_read then return st.name end
+    end
+    return nil
+  end
   local function e_rows(ctx, n, surface, f)
     local nets = ctx.nets
     local rows = {}
@@ -375,7 +396,7 @@ return function(api)
               local refilled = b.fed and not b.drop
               if b.min < FUEL_LOW and not refilled then under[#under+1] = b.e end
               if b.min < FUEL_STEPS[1] and not refilled then low[#low+1] = b end
-              if not net.lowest_min or b.min < net.lowest_min then net.lowest_min = b.min end
+              if not net.lowest_min or b.min < net.lowest_min then net.lowest_min = b.min; net.lowest_b = b end
             end
             for unit, hist in pairs(st.boiler_own) do
               local last = hist[#hist]
@@ -393,7 +414,9 @@ return function(api)
             mw(d.now), mw(net.capacity_kw), net.capacity_kw > 0 and string.format(' (%d%%)', math.floor(100 * d.avg / net.capacity_kw + 0.5)) or '')
         else parts[#parts+1] = string.format('capacity %s; no draw sample yet', mw(net.capacity_kw)) end
         if net.solar > 0 then parts[#parts+1] = string.format('solar %d panels, %s now, %s peak', net.solar, mw(solar_now), mw(net.solar_peak_kw)) end
-        if net.acc > 0 then parts[#parts+1] = string.format('accumulators %d at %d%%', net.acc, net.acc_buf > 0 and math.floor(100 * net.acc_j / net.acc_buf + 0.5) or 0) end
+        -- Stored energy against the maximum (Gemini, 07:55, Fulgora: lightning charges the accumulators).
+        if net.acc > 0 then parts[#parts+1] = string.format('accumulators %d at %d%% (%s of %s)', net.acc, net.acc_buf > 0 and math.floor(100 * net.acc_j / net.acc_buf + 0.5) or 0,
+          mj(net.acc_j), mj(net.acc_buf)) end
         parts[#parts+1] = string.format('machines %d: %d low power, %d no power', net.machines, net.low, net.none)
         if #net.boilers > 0 then
           parts[#parts+1] = string.format('boilers %d: their own fuel %s at this draw%s%s', #net.boilers,
@@ -401,6 +424,15 @@ return function(api)
             net.fed and string.format(', %d with fuel at their feeders', net.fed) or '',
             net.fuel_low and #net.fuel_low > 0 and string.format(', %d under %d min not refilled (lowest %d min)', #net.fuel_low, FUEL_STEPS[1],
               math.floor(net.fuel_low[1].min)) or '')
+          -- The lowest boiler named (Haiku, 07:55): where, its minutes of which fuel, and its feeder; the lowest of those
+          -- not refilled when there are any (the under-20-min count's), else the lowest of all.
+          if net.fuel_low and net.fuel_low[1] then net.lowest_b = net.fuel_low[1] end
+          local lb = net.lowest_b
+          if lb and lb.e.valid then
+            net.lowest_text = string.format('lowest boiler %s: %d min of %s; %s', at(lb.e.position.x, lb.e.position.y), math.floor(lb.min),
+              burner_fuel(lb.e) or 'no fuel', lb.feeder or 'no inserter feeds it')
+            parts[#parts+1] = net.lowest_text
+          end
         end
         net.line = table.remove(parts, 1) .. ': ' .. table.concat(parts, '; ')
         rows[#rows+1] = net
@@ -802,6 +834,12 @@ return function(api)
           x.boilers_under_10_min = r.fuel_under and #r.fuel_under or nil
           x.boilers_under_20_min = r.fuel_low and #r.fuel_low or nil
           x.lowest_boiler_min = r.lowest_min and math.floor(r.lowest_min) or nil
+          local lb = r.lowest_b
+          if lb and lb.e.valid then
+            x.lowest_boiler = {position={x=lb.e.position.x, y=lb.e.position.y}, min=math.floor(lb.min), fuel=burner_fuel(lb.e),
+              feeder=lb.feeder or 'no inserter feeds it', feeder_has_fuel=lb.fed}
+          end
+          if r.acc > 0 then x.acc_mj, x.acc_max_mj = math.floor(r.acc_j / 1e5 + 0.5) / 10, math.floor(r.acc_buf / 1e5 + 0.5) / 10 end
           row.electric[#row.electric+1] = x
         end
         for _, r in ipairs(s.logistic) do

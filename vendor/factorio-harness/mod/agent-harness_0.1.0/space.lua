@@ -457,6 +457,7 @@ return function(api)
   -- (item prototype weight; rocket_lift_weight 1000000 = 1000 kg). The game
   -- takes cargo past the lift by script and then refuses the launch.
   local function kg(g) return string.format('%g',math.floor(g/100+0.5)/10) end
+  local EMPTY_LOOK=32   -- tiles around a silo searched for science when a launch with no cargo is refused
   function M.rocket_load(silo)
     local inv=silo.get_inventory(defines.inventory.rocket_silo_rocket)
     local w,items=0,{}
@@ -566,6 +567,23 @@ return function(api)
     else
       assert(a.orbit==true,'give platform=<name>, or orbit=true to launch into orbit with no platform (cargo is lost unless it has launch products)')
       destination={type=defines.cargo_destination.orbit}; to='orbit'
+    end
+    -- An empty rocket spends its parts for nothing (Sol, 06:29: Luna launched empty at 36h46 while bio science sat in
+    -- a chest nearby): refused unless allow_empty is true or a rider is the payload; the refusal names the science
+    -- packs in chests within EMPTY_LOOK tiles of the silo.
+    assert(a.allow_empty==nil or type(a.allow_empty)=='boolean','allow_empty must be boolean')
+    if cargo==nil and not a.ride and a.allow_empty~=true then
+      local near={}
+      for _,c in ipairs(try(function() return silo.surface.find_entities_filtered{position=silo.position,radius=EMPTY_LOOK,type={'container','logistic-container'},force=silo.force,limit=64} end) or {}) do
+        local inv=c.valid and try(function() return c.get_inventory(defines.inventory.chest) end)
+        for _,s in ipairs(inv and try(function() return inv.get_contents() end) or {}) do
+          if try(function() return prototypes.item[s.name].type end)=='tool' and #near<6 then
+            near[#near+1]=string.format('%s (%g,%g) %s*%d',c.name,c.position.x,c.position.y,s.name,s.count)
+          end
+        end
+      end
+      error('launch refused: the rocket holds nothing, and launching spends its parts; load cargo with transfer {position, direction=to_entity, inventory=rocket_silo_rocket, item, count}, or allow_empty=true to launch it empty'
+        ..'; science in chests within '..EMPTY_LOOK..' tiles: '..(#near>0 and table.concat(near,', ') or 'none'),0)
     end
     if bot then
       -- The rocket flies with its own cargo pod; the bot rides it (bots.lua).
@@ -864,7 +882,7 @@ return function(api)
       dry_run='true: send nothing; the pod split (each pod\'s items, in the list\'s order), the hatches, and what the hub holds less of',
       note='the hub\'s drop slots, from remote view: cargo pods take the items to the planet below a stopped platform (the landing pad if any, else a temporary container on the ground)',returns='drop (the first pod\'s number), dropped, pods [{pod, drop, items, slots}] (full, or more than one), short (what stays in the hub), pods_waiting and until_tick (full: pods waiting for a hatch), to, pad, near, tell; where each pod lands comes in the team block (drop #N landed at (x,y) on PLANET: cargo-pod-container with ...), and the drops read lists recent drops'},
     land={note='from a platform stopped at a planet: drop to that planet in a cargo pod (to a landing pad if any). A bot lands where it last stood on that planet, else at its spawn point, wearing the armor and guns it rode up with',returns='landing (and for a bot: at, pad)'},
-    launch={position='rocket silo {x,y} in a visible chunk (any tile of it)',surface='optional planet name: the silo there by remote view, where our force sees the chunk (e.g. vulcanus from a platform above it); platform stays the destination',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it; switched on with cargo loaded by hand, the game moves that cargo to the silo\'s trash slots: cargo_to_trash, note, trash)',returns='launched, to, cargo; settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}: the silo\'s switches after the call',refused='overweight by N kg (a rocket lifts 1000 kg; the cargo listed by weight) before the game is asked; when the game refuses, what it may check'},
+    launch={position='rocket silo {x,y} in a visible chunk (any tile of it)',surface='optional planet name: the silo there by remote view, where our force sees the chunk (e.g. vulcanus from a platform above it); platform stays the destination',ride='true: the character boards the rocket (stand within reach of the silo) and arrives in the platform hub; needs platform; the rocket must hold no cargo and the character nothing but worn armor and guns (ship the rest as cargo first). Bots ride too: aboard they have no body and act by remote view (platforms, platform_schedule, requests, ghost tools with platform=, research, chat) until they land',platform='send the rocket cargo to this platform in orbit of this planet',orbit='true: launch with no platform (cargo lost unless it has launch products)',allow_empty='true: launch a rocket with no cargo; without it an empty rocket is refused (launching spends its parts), the refusal naming science packs in chests within 32 tiles of the silo',auto_requests='boolean: the silo GUI setting to fill and launch rockets on its own for platforms\' requests in orbit (alone: only sets it; switched on with cargo loaded by hand, the game moves that cargo to the silo\'s trash slots: cargo_to_trash, note, trash)',returns='launched, to, cargo; settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}: the silo\'s switches after the call',refused='overweight by N kg (a rocket lifts 1000 kg; the cargo listed by weight) before the game is asked; when the game refuses, what it may check'},
   }
   return M
 end

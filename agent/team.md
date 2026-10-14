@@ -125,7 +125,8 @@ already targets your character.
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
   as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that
   source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
-  idle logistic robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
+  idle logistic robot for 10 minutes, a science colour whose makers here have all stood still for 5+ minutes (with
+  its chain's first short step), Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
   your character's time by kind (the time before a request counts toward that request's kind), the hand hauls you
@@ -145,7 +146,9 @@ already targets your character.
   logistic and construction robots total, idle, working, charging and waiting to charge, requests unfilled for 60 s or
   more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them any time;
   `./fh call boilers` lists each boiler by network, the stopped ones first: state, fuel, water, its feeder and what
-  the feeder takes from with the fuel there;
+  the feeder takes from with the fuel there; the networks line names the lowest boiler (position, minutes, fuel,
+  feeder) and accumulators' stored MJ of their maximum; `./fh platform NAME` shows one space platform (hub free
+  slots, cargo, speed, next stop, ETA);
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items). `projects` lists the open projects, one line each with progress, next step and handoff.
@@ -153,7 +156,8 @@ already targets your character.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` walks into reach of targets out of reach first, then transfers (one call); `./fh call inventory` shows main,
-  ammo, armor and equipment, trash and cursor in one small reply (`status {"inventory": true}`: one line); `feed {"recipe": NAME,
+  ammo, armor and equipment, trash and cursor in one small reply (`status {"inventory": true}`: one line); `feed`
+  skips a burner whose fuel slots all hold another fuel (`other_fuel`), with no warning under `up_to`; `feed {"recipe": NAME,
   "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `feed` takes `item` or `items`;
   `inspect {"positions": [...]}` inspects up to 32 entities in one call; `collect {"radius": N}` without `item` takes
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
@@ -250,6 +254,8 @@ already targets your character.
   parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
   last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
+  `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
+  chests near the silo.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
