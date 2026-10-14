@@ -1449,7 +1449,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     feeding boiler lost its pickup target near (61,15): burner-inserter (60.5,14.5) read wooden-chest (41.5,13.5),
     puts into boiler (60,16.5)`; `1 inserter feeding furnace lost its drop target near (45,15): inserter (44.5,14.5)
     put into stone-furnace (44,16), reads iron-chest (41.5,13.5)`. Each read remembers every inserter's targets (the
-    same pickup and drop targets inspect's `io_warning` reads); one stays in its group, with what it read and fed then,
+    same pickup and drop targets inspect's `io_warning` reads; when the engine's is empty, what stands on the point, a
+    belt tile too, counts: the engine can take a while to link a replaced chest, Astra 07:26; the remembered target
+    is always the current one); one stays in its group, with what it read and fed then,
     until it has a target again or is removed. An inserter that never had a pickup target (it takes from the ground)
     is never in one. `game_alerts {kind:"lost_source"}` lists every fed kind.
   - The game's alerts, read from an agent player's alert panel: `no_material_for_construction`,

@@ -81,6 +81,13 @@ return function(api)
   -- A built inserter: the engine's targets. 'no pickup target' (it takes
   -- only what lies on the ground there), 'no drop target' (it puts its items
   -- on the ground there, or over empty space throws them away), or nil.
+  -- The built entity an inserter can use (a chest, machine, belt tile, ...) standing on a point, or nil.
+  function M.standing(surface, pos)
+    if not (surface and pos) then return nil end
+    for _, e in pairs(try(function() return surface.find_entities_filtered{position=pos} end) or {}) do
+      if e.valid and M.TYPES[e.type] then return e end
+    end
+  end
   -- A built inserter's targets, as entities (nil: none).
   function M.read(e)
     local pick = try(function() local t = e.pickup_target; return t and t.valid ~= false and t or nil end)
