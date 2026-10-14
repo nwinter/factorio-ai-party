@@ -212,7 +212,11 @@ return function(api)
       elseif p.can_reach_entity(t.entity) then
         local ok,out
         if action.op then ok,out=pcall(api.visit,p,action,t.entity)
-        else ok,out=pcall(api.take,p,t.entity,action.item,action.quality,math.min(10000,action.want-action.got),action.all and OUTPUT[t.entity.type] or nil) end
+        else
+          -- tally: what each take puts over the personal request max (trash.lua)
+          action.trash_tally=action.trash_tally or {}
+          ok,out=pcall(api.take,p,t.entity,action.item,action.quality,math.min(10000,action.want-action.got),action.all and OUTPUT[t.entity.type] or nil,action.trash_tally)
+        end
         action.index=action.index+1; action.nav=nil; action.visited=action.visited+1
         if ok then
           action.got=action.got+out.transferred

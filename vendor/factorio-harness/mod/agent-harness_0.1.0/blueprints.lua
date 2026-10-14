@@ -498,6 +498,19 @@ return function(api)
         end
         for _, tile in ipairs(tiles) do radius=math.max(radius,math.max(math.abs(tile.position.x-c.x),math.abs(tile.position.y-c.y))+2) end
         local box=area(p,{area={left_top={x=pos.x-radius,y=pos.y-radius},right_bottom={x=pos.x+radius,y=pos.y+radius}}})
+        -- The requests of entities the blueprint lands on (hub, requester
+        -- chests, landing pads): kept, reported after, put back if a paste
+        -- changed them while the blueprint carried none (keep.lua).
+        local kept
+        if api.keep then
+          local spots={}
+          for _,e in ipairs(entities) do if api.keep.TYPES[prototypes.entity[e.name].type] then spots[#spots+1]=e end end
+          if #spots>0 then
+            local where=locate(p,a,entities,pos,direction,box,c)
+            for i,e in ipairs(spots) do spots[i]={name=e.name,position=where(e),own=api.keep.bp_sections(e)} end
+            kept=api.keep.before(p.surface,spots)
+          end
+        end
         local function ghosts()
           return p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force}
         end
@@ -555,6 +568,7 @@ return function(api)
             if a.details then out.ghosts[#out.ghosts+1]={name=e.ghost_name,position=e.position,unit_number=e.unit_number,type=e.type} end
           end
         end
+        if kept and #kept>0 then out.requests_kept=api.keep.after(kept) end
         -- Inserter ghosts with nothing to take from or put into on their
         -- points (Astra's bypass inserter that reached no crusher; targets.lua).
         if api.targets then out.inserters_without_target,out.inserters_without_target_count=api.targets.check(inserters,16) end
@@ -664,7 +678,7 @@ return function(api)
         if a.flip_horizontal then d=(16-d)%16 end
         if a.flip_vertical then d=(24-d)%16 end
         list[i]={index=i,name=e.name,position={x=shift.x+x,y=shift.y+y},direction=(d+direction)%16,
-          quality=type(e.quality)=='string' and e.quality or nil}
+          quality=type(e.quality)=='string' and e.quality or nil,requests=api.keep and api.keep.bp_sections(e) or nil}
       end
       local tlist={}
       for i,t in ipairs(tiles or {}) do

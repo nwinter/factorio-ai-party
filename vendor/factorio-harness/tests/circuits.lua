@@ -397,7 +397,7 @@ local loco=thing('locomotive','locomotive',14,nil); loco.train=train
 r=astra('train',{position={x=14,y=0},schedule={{station='Iron pickup',wait={{type='full'}}},{station='Smelting drop',wait={{type='empty'},{type='time',ticks=600,compare='or'}}}},automatic=true})
 eq(train.manual_mode,false); eq(#train.schedule.records,2); eq(train.schedule.current,1)
 eq(train.schedule.records[2].wait_conditions[2].compare_type,'or'); eq(train.schedule.records[2].wait_conditions[2].ticks,600)
-eq(r.automatic,true); eq(r.schedule[1],'Iron pickup: full'); eq(r.schedule[2],'Smelting drop: empty, time 10s')
+eq(r.automatic,true); eq(r.schedule[1],'Iron pickup: full'); eq(r.schedule[2],'Smelting drop: empty or time 10s') -- and/or as the GUI shows them
 r=astra('train',{position={x=14,y=0},schedule={}}); eq(train.schedule,nil); eq(#r.schedule,0)
 fails(function() astra('train',{position={x=14,y=0},schedule={{station='X',wait={{type='forever'}}}}}) end,'type is time')
 fails(function() astra('train',{position={x=14,y=0},station='x'}) end,'station and limit are for a train stop')

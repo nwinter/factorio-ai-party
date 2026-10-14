@@ -571,4 +571,36 @@ game.tick=game.tick+40000
 pcall(runtime.dispatch,{action='sleep_check',args={peek=true},bot='sol'})
 electorate=runtime.dispatch{action='votes',args={},operator=true}.active
 eq(#electorate,1); eq(electorate[1],'sol')
+-- A bot's tile build fulfils a tile ghost of that tile, as a player's does: 2.0.77's set_tiles aborts on the ghost
+-- entity, so construct never laid the landfill ghost under a pole on Gleba wetland (Sol, shift09). Elsewhere the
+-- ghost is put back.
+do
+  local B=dofile('mod/agent-harness_0.1.0/bots.lua'){}
+  local tiles,ghosts,made={},{},{}
+  local function at(x,y) return math.floor(x)..','..math.floor(y) end
+  ghosts[at(5,5)]={valid=true,type='tile-ghost',ghost_name='landfill',position={x=5.5,y=5.5},force=force}
+  ghosts[at(5,5)].destroy=function() ghosts[at(5,5)].valid=false end
+  local wet={name='wetland-blue-slime',prototype={collision_mask={layers={water_tile=true}}}}
+  local s={get_tile=function(x,y) return tiles[at(x,y)] or wet end,
+    find_entities_filtered=function(f) local g=ghosts[at(f.position[1],f.position[2])]; return g and g.valid and {g} or {} end,
+    set_tiles=function(list) for _,t in ipairs(list) do
+      local g=ghosts[at(t.position[1],t.position[2])]
+      if g and g.valid then return end -- abort_on_collision: nothing is laid
+      tiles[at(t.position[1],t.position[2])]={name=t.name,prototype={collision_mask={layers={ground_tile=true}}}}
+    end end,
+    set_hidden_tile=function() end,
+    create_entity=function(a) made[#made+1]=a; return {valid=true} end}
+  local removed=0
+  local inv={get_item_count=function() return 5 end,remove=function(a) removed=removed+a.count end}
+  local bot={surface=s,get_main_inventory=function() return inv end}
+  local stack={prototype={place_as_tile_result={result={name='landfill',mineable_properties={minable=true}},condition={layers={ground_tile=true}}}}}
+  local r=B.place_tiles(bot,{item='landfill'},stack,{x=5.5,y=5.5},1)
+  eq(r.consumed,1); eq(tiles[at(5,5)].name,'landfill'); eq(ghosts[at(5,5)].valid,false); eq(#made,0); eq(removed,1)
+  -- refused for another reason: the ghost comes back
+  ghosts[at(7,5)]={valid=true,type='tile-ghost',ghost_name='landfill',position={x=7.5,y=5.5},force=force}
+  ghosts[at(7,5)].destroy=function() ghosts[at(7,5)].valid=false end
+  s.set_tiles=function() end
+  fails(function() B.place_tiles(bot,{item='landfill'},stack,{x=7.5,y=5.5},1) end,'no tile was placed')
+  eq(#made,1); eq(made[1].name,'tile-ghost'); eq(made[1].inner_name,'landfill'); eq(made[1].position.x,7.5)
+end
 print('bots: ok')

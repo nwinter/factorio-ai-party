@@ -62,6 +62,22 @@ r=space.requests(p,{platform='alpha',set={{item='iron-plate',min=100,from='nauvi
 eq(r.target,'platform alpha'); eq(r.sections[2].requests[1],'iron-plate 100..inf from nauvis'); eq(r.sections[1].controlled,true)
 fails(function() space.requests(p,{platform='beta'}) end,'no platform named beta; platforms: alpha')
 fails(function() space.requests(p,{section=1,platform='alpha',set={{item='coal',min=1}}}) end,'controlled by the game')
+-- An exact request keeps its planet in the readback (Astra, 02:00: `calcite=500` hid `from vulcanus`); a section that
+-- is off says so (off=true and a note: false drops out of the compact reply), and active switches it.
+r=space.requests(p,{platform='alpha',set={{item='coal',min=500,max=500,from='vulcanus'}}})
+eq(r.sections[2].requests[2],'coal=500 from vulcanus'); eq(r.changed_section,2); eq(r.sections[2].off,nil)
+hub_sections.get_section(2).active=false
+r=space.requests(p,{platform='alpha'})
+eq(r.sections[2].off,true); eq(r.note,'section 2 is switched off: its requests are not made (requests {section, active: true} switches one on)')
+r=space.requests(p,{platform='alpha',section=2,active=true})
+eq(r.sections[2].off,nil); eq(r.note,nil); eq(hub_sections.get_section(2).active,true)
+fails(function() space.requests(p,{platform='alpha',active='yes'}) end,'active must be true or false')
+-- The platforms row keeps the requests of a section that is off apart.
+hub_sections.get_section(2).active=false
+local offrow=space.platforms(p,{}).platforms[1]
+eq(offrow.requests,nil); eq(offrow.requests_off[1],'iron-plate 100..inf from nauvis'); eq(offrow.requests_off[2],'coal=500 from vulcanus')
+hub_sections.get_section(2).active=true
+eq(space.platforms(p,{}).platforms[1].requests_off,nil)
 -- A requester chest: its requests and its "request from buffer chests" switch.
 do
   local chest_sections=sections({})

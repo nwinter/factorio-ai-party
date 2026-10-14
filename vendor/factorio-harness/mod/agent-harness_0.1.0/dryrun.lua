@@ -13,11 +13,12 @@
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
   local M = {}
-  M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true}
+  M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true, rail_route=true}
   local MAX_ROWS, MAX_LISTED, HOLE_LIMIT, FLOOD_BUDGET, MAX_SPOTS = 30, 200, 1024, 20000, 8
   local MAX_INSERTERS = 64
   local DIRS = {{1,0},{-1,0},{0,1},{0,-1}}
-  local NAMES = {[0]='north', [4]='east', [8]='south', [12]='west'}
+  local NAMES = {[0]='north', 'northnortheast', 'northeast', 'eastnortheast', 'east', 'eastsoutheast', 'southeast', 'southsoutheast',
+    'south', 'southsouthwest', 'southwest', 'westsouthwest', 'west', 'westnorthwest', 'northwest', 'northnorthwest'}
   local RAILS = {['straight-rail']=true, ['half-diagonal-rail']=true, ['curved-rail-a']=true, ['curved-rail-b']=true,
     ['legacy-straight-rail']=true, ['legacy-curved-rail']=true, ['elevated-straight-rail']=true,
     ['elevated-half-diagonal-rail']=true, ['elevated-curved-rail-a']=true, ['elevated-curved-rail-b']=true, ['rail-ramp']=true}
@@ -53,9 +54,24 @@ return function(api)
     local function s(v, odd) return odd and math.floor(v)+0.5 or math.floor(v+0.5) end
     return {x=s(pos.x, w % 2 == 1), y=s(pos.y, h % 2 == 1)}
   end
+  -- A ground rail's footprint is a turned box (16 directions): the box
+  -- around it, and the turned box itself (rails.lua) for the finer checks.
   function M.footprint(proto, pos, dir)
+    local shape = RAILS[proto.type] and api.rail_box and api.rail_box(proto.name, pos, dir or 0)
+    if shape then return {left_top=shape.left_top, right_bottom=shape.right_bottom}, shape end
     local b = proto.collision_box or {left_top={x=-0.4, y=-0.4}, right_bottom={x=0.4, y=0.4}}
     return api.placewhy.box_at(b, pos, dir or 0)
+  end
+  -- Whether two planned footprints meet. Rails cross and join other rails
+  -- (the game's own check decides those); a rail and anything else meet
+  -- where the turned box does.
+  local function meets(a, b)
+    if a.shape and b.shape then
+      return a.name == b.name and math.abs(a.pos.x-b.pos.x) < 0.01 and math.abs(a.pos.y-b.pos.y) < 0.01 and a.dir % 8 == b.dir % 8
+    end
+    if a.shape then return api.rail_overlaps(a.shape, b.box.left_top.x, b.box.left_top.y, b.box.right_bottom.x, b.box.right_bottom.y) end
+    if b.shape then return api.rail_overlaps(b.shape, a.box.left_top.x, a.box.left_top.y, a.box.right_bottom.x, a.box.right_bottom.y) end
+    return overlap(a.box, b.box)
   end
   -- Compact runs of indexes: 1-4,7,9-10.
   local function runs(list)
@@ -138,6 +154,101 @@ return function(api)
     local v = best or (locked and locked..' (not researched)')
     remedy_cache[k] = v or false
     return v
+  end
+
+  -- The tiles under an entity at pos that it cannot stand on now (its
+  -- collision mask against each tile; a tile ghost already ordered there that
+  -- it can stand on counts as laid), each {x, y, tile, item}: item is the
+  -- tile item that makes it buildable, nil when none the force has unlocked
+  -- can. nil when there are none, or when the entity has tile rules of its own
+  -- (placewhy.tile_rules judges those). Sol, shift09 01:38: in 2.0.77 the
+  -- forced ghost check takes a pole ghost over Gleba wetland once the force
+  -- has the landfill recipe, as a player's forced placement lays landfill
+  -- ghosts under it; a script ghost got none, and nothing could build it.
+  function M.tile_fixes(surface, force, proto, pos, dir)
+    local rules = try(function() return proto.tile_buildability_rules end)
+    if type(rules) == 'table' and #rules > 0 then return nil end
+    local mask = layers(try(function() return proto.collision_mask end))
+    if not next(mask) then return nil end
+    remedy_cache = {}
+    local x0, y0, x1, y1 = span(M.footprint(proto, pos, dir))
+    local out
+    for x = x0, x1 do
+      for y = y0, y1 do
+        local t = try(function() return surface.get_tile(x, y) end)
+        local name = t and try(function() return t.name end)
+        local tl = name and try(function() return t.prototype.collision_mask.layers end) or {out_of_map=true}
+        if collide(mask, tl) then
+          local laid = false
+          for _, g in pairs(surface.find_entities_filtered{position={x+0.5, y+0.5}, radius=0.1, type='tile-ghost'}) do
+            local gl = try(function() return prototypes.tile[g.ghost_name].collision_mask.layers end)
+            if gl and not collide(mask, gl) then laid = true end
+          end
+          if not laid then
+            local fix = name and not tl.out_of_map and remedy(force, name, tl, mask) or nil
+            out = out or {}
+            out[#out+1] = {x=x+0.5, y=y+0.5, tile=name or 'out-of-map', item=fix and not fix:find(' ', 1, true) and fix or nil, locked=fix and fix:find(' ', 1, true) and fix or nil}
+          end
+        end
+      end
+    end
+    return out
+  end
+
+  -- For route planners (belts, pipes: one tile each): a function (x, y) ->
+  -- whether the entity stands on that tile as it is now, or on a tile ghost
+  -- ordered there; each tile kind's layers are read once. Call it only on a
+  -- tile the engine's ghost check took (its chunk is generated).
+  function M.stands_fn(surface, proto)
+    local mask = layers(try(function() return proto.collision_mask end))
+    if not next(mask) then return function() return true end end
+    local kinds = {}
+    return function(x, y)
+      local t = surface.get_tile(x, y)
+      local name = t.name
+      local c = kinds[name]
+      if c == nil then c = collide(mask, layers(t.prototype.collision_mask)); kinds[name] = c end
+      if not c then return true end
+      for _, g in pairs(surface.find_entities_filtered{position={x+0.5, y+0.5}, radius=0.1, type='tile-ghost'}) do
+        local gl = try(function() return prototypes.tile[g.ghost_name].collision_mask.layers end)
+        if gl and not collide(mask, gl) then return true end
+      end
+      return false
+    end
+  end
+  -- What the straight line between two points crosses that the entity cannot
+  -- stand on, for a route that found no way: 'the straight line ... crosses 14
+  -- tiles a transport-belt cannot stand on: wetland-blue-slime (landfill makes
+  -- them buildable)'; nil when it crosses none.
+  function M.line_tiles(surface, force, proto, from, to)
+    local mask = layers(try(function() return proto.collision_mask end))
+    if not next(mask) then return nil end
+    remedy_cache = {}
+    local dx, dy = to.x - from.x, to.y - from.y
+    local n = math.max(1, math.ceil(math.max(math.abs(dx), math.abs(dy)) * 2))
+    local seen, names, fixes, count = {}, {}, {}, 0
+    for i = 0, n do
+      local x, y = math.floor(from.x + dx * i / n), math.floor(from.y + dy * i / n)
+      local k = key(x, y)
+      if not seen[k] then
+        seen[k] = true
+        local t = try(function() return surface.get_tile(x, y) end)
+        local name = t and try(function() return t.name end)
+        local tl = name and try(function() return t.prototype.collision_mask.layers end)
+        if name and tl and collide(mask, tl) then
+          count = count + 1
+          if not names[name] then
+            names[name] = true; names[#names+1] = name
+            local fix = remedy(force, name, tl, mask)
+            if fix and not fixes[fix] then fixes[fix] = true; fixes[#fixes+1] = fix end
+          end
+        end
+      end
+    end
+    if count == 0 then return nil end
+    return string.format('the straight line from (%g,%g) to (%g,%g) crosses %d tile%s a %s cannot stand on: %s%s', from.x, from.y, to.x, to.y,
+      count, count == 1 and '' or 's', proto.name, table.concat(names, ', '),
+      #fixes > 0 and ' ('..table.concat(fixes, ' or ')..' makes them buildable)' or ' (no tile item makes them buildable)')
   end
 
   -- Entities that stand on or beside a rail: the game places them only where
@@ -275,7 +386,7 @@ return function(api)
     end
     for _, e in ipairs(plan.entities or {}) do
       local proto = prototypes.entity[e.name or '']
-      local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item}
+      local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item, requests=e.requests}
       recs[#recs+1] = rec
       local reasons = {}
       if not proto then
@@ -285,7 +396,7 @@ return function(api)
         rec.mask = layers(proto.collision_mask)
         rec.pos = M.snap(proto, e.position, rec.dir)
         if math.abs(rec.pos.x-e.position.x) > 0.01 or math.abs(rec.pos.y-e.position.y) > 0.01 then rec.asked = e.position end
-        rec.box = M.footprint(proto, rec.pos, rec.dir)
+        rec.box, rec.shape = M.footprint(proto, rec.pos, rec.dir)
         local mask = rec.mask
         local rail = RAILS[proto.type]
         local chunk = {x=math.floor(rec.pos.x/32), y=math.floor(rec.pos.y/32)}
@@ -298,21 +409,45 @@ return function(api)
           for x = x0, x1 do
             for y = y0, y1 do
               for _, o in ipairs(occupied[key(x, y)] or {}) do
-                if not hit and o ~= rec and not (rail and RAILS[o.proto.type]) and collide(mask, o.mask) and overlap(o.box, rec.box) then hit = o end
+                if not hit and o ~= rec and collide(mask, o.mask) then
+                  -- Rails cross and join rails; the same rail twice is one too many.
+                  if rail and RAILS[o.proto.type] then
+                    if rec.shape and o.shape and meets(o, rec) then hit = o end
+                  elseif meets(o, rec) then hit = o end
+                end
               end
             end
           end
           if hit then
             reasons[#reasons+1] = string.format('collides with planned #%s %s at %s', hit.copy and (hit.copy..'.'..hit.index) or tostring(hit.index), hit.name, at(hit.pos))
           end
-          -- What stands in the footprint now.
+          -- What stands in the footprint now. A rail: other rails cross or
+          -- join it (the game's check decides), characters walk over it, and
+          -- the rest counts where its turned box reaches.
           local blockers, marked, ghosts, same, mine = {}, {}, {}, nil, false
+          local shape = rec.shape
+          local function here(o)
+            if not shape then return true end
+            local b = o.bounding_box
+            if not b or (b.orientation and b.orientation ~= 0) then return true end
+            return api.rail_overlaps(shape, b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y)
+          end
+          local function same_dir(d)
+            if not shape then return true end
+            return (proto.type == 'curved-rail-a' or proto.type == 'curved-rail-b') and d == rec.dir or d % 8 == rec.dir % 8
+          end
           for _, o in pairs(s.find_entities_filtered{area=rec.box}) do
             if o.valid then
               local t = o.type
               if t == 'entity-ghost' then
-                if o.ghost_name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 then same = same or o
-                elseif overlap(o.bounding_box or rec.box, rec.box) then ghosts[#ghosts+1] = 'ghost '..o.ghost_name..' '..at(o.position) end
+                if o.ghost_name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = same or o
+                elseif shape and RAILS[o.ghost_type] then -- crossing or joining
+                elseif overlap(o.bounding_box or rec.box, rec.box) and here(o) then ghosts[#ghosts+1] = 'ghost '..o.ghost_name..' '..at(o.position) end
+              elseif rail and RAILS[t] then
+                -- Another rail crosses or joins it; the same rail there is the same.
+                if o.name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = o end
+              elseif shape and t == 'character' then -- a character on the track
+              elseif shape and not here(o) then -- outside the turned box
               elseif t == 'character' then
                 if character and o == character then mine = true
                 else
@@ -352,7 +487,7 @@ return function(api)
             for x = x0, x1 do
               for y = y0, y1 do
                 local t = tile_at(x, y)
-                if collide(mask, t.layers) then
+                if collide(mask, t.layers) and (not shape or api.rail_overlaps(shape, x, y, x+1, y+1)) then
                   if t.layers.out_of_map then tile_bad[#tile_bad+1] = tile_text(x, y)..' is outside the map'
                   else
                     local fix = remedy(force, t.name, t.layers, mask)
@@ -405,8 +540,11 @@ return function(api)
             for item, n in pairs(by) do parts[#parts+1] = n..' '..item end
             table.sort(parts)
             rec.status = 'needs_tiles'
+            -- place_ghosts lays the tile ghosts under it first (as a player's forced placement does); a paste
+            -- leaves the entity ghost alone there.
             rec.note = string.format('stands on %d %s tile%s: needs %s first%s', #tile_need, tile_need[1].tile, #tile_need == 1 and '' or 's', table.concat(parts, ', '),
-              engine == true and not manual and ' (its ghost goes there now; nothing builds it before that)' or '')
+              engine == true and not manual and (kind == 'ghosts' and ' (place_ghosts lays those tile ghosts under it first)'
+                or ' (its ghost goes there now; nothing builds it before that)') or '')
           elseif engine == true then rec.status = 'ok'
           elseif covered then
             rec.status = 'after_tiles'; rec.note = 'placeable once the tiles under it are laid'
@@ -898,6 +1036,13 @@ return function(api)
     for _, r in ipairs(recs) do
       if r.proto and r.status ~= 'blocked' and r.status ~= 'exists' then
         local it = r.item or try(function() return r.proto.items_to_place_this[1] end)
+        -- A build names its item: the count is the prototype's for that item
+        -- (a curved rail takes 3 rails).
+        if type(it) == 'string' then
+          for _, st in ipairs(try(function() return r.proto.items_to_place_this end) or {}) do
+            if st.name == it then it = st; break end
+          end
+        end
         if type(it) == 'table' then add(it.name, it.count or 1) else add(it, 1) end
       end
     end
@@ -948,6 +1093,18 @@ return function(api)
     end
     out.entities = #rows > 0 and rows or nil
     if nproblems > #rows and not plan.details then out.more_problems = nproblems-#rows end
+    -- A paste over an entity with requests (a hub, requester chests, landing
+    -- pads): its requests stay, and the blueprint's own are not applied (keep.lua).
+    if kind == 'paste' and api.keep then
+      local lines = {}
+      for _, r in ipairs(recs) do
+        if r.pos and #lines < 16 then
+          local line = try(function() return api.keep.plan(s, r.name, r.pos, r.requests) end)
+          if line then lines[#lines+1] = line end
+        end
+      end
+      out.requests_kept = #lines > 0 and lines or nil
+    end
     -- Each planned inserter: what stands on its pickup and drop points (built,
     -- planned in this call, or a ghost) and whether it has a target there
     -- (targets.lua; Astra's bypass inserter that reached no crusher).

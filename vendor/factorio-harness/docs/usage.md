@@ -77,7 +77,7 @@ fh call status
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
-- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
+- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
 - With `--wait`, the command exits 0 when the action ended successfully, 1 when it failed, and 3 when the wait ended
   while the action still runs: a tell or mention ended it (the reply's `still_running` and `note` say so), or the wait
   timed out (`wait_timeout`). So `fh call ACTION --wait && next` runs `next` only after the action is done.
@@ -165,11 +165,66 @@ fh call status
   circuit connector `{id, signals, more}`: the signals on that network now, largest first, at most 30. An entity whose
   circuit settings were never changed shows its wires and `settings_note`.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
+- `requests` shows each section's state: `off: true` for a section switched off (the GUI's checkbox; it requests
+  nothing, and the reply's `note` names it), and on a platform hub the planet each request imports from, exact
+  requests too (`calcite=500 from vulcanus`). `requests {platform, section: 1, active: true}` (or `false`) switches a
+  section on or off; `changed_section` says which section a call changed. The `platforms` row lists a hub's requests
+  in sections that are off apart, as `requests_off`. (Astra, 02:00: Sunward's only section was off, so the Vulcanus
+  silo sent nothing, while the readback showed neither the state nor the import planet.)
 - Trains: `train {position: stop, station, limit}` names a train stop and sets its train limit (`limit: false` clears it);
   `train {position: locomotive or wagon, schedule: [{station, wait: [{type, ticks?, compare?, condition?}]}], current,
   automatic}` sets the train's schedule (wait types as in the game: time, inactivity, full, empty, item_count,
-  fluid_count, circuit, passenger_present, ...) and automatic or manual mode. Rails, stops, locomotives and wagons are
-  built with `build` and `place_ghosts`; fuel goes in with `refuel` or `transfer`.
+  fluid_count, circuit, passenger_present, ...) and automatic or manual mode. Locomotives and wagons are built with
+  `build`; fuel goes in with `refuel` or `transfer`. The target is a stop or rolling stock in sight, or by remote view
+  in a visible chunk; at a position over a train, the train is the target (a rail is one only when named or alone, for
+  every action).
+  - Readback (every `train` call; `train {position}` alone is a read): `schedule` (one line per stop with its wait
+    conditions), `current`, `automatic`, `state` (`on_the_path`, `arrive_station`, `wait_station`, `arrive_signal`,
+    `wait_signal`, `no_path`, `destination_full`, `no_schedule`, `manual_control`, `manual_control_stop`), `why`,
+    `at_stop`, `heading_to {stop, position, tiles_left}`, `speed_kmh`, `carriages`, `cargo`, `fluids`, `fuel` (per
+    locomotive). `why` by state: `at stop Base (3,-5): waits for time 10s or item_count iron-ore > 100`; `stopped at
+    rail-signal (2.5,-20.5) (closed)`; `no path to any stop named Base (2: (3,-5) 1 train, limit 1; (50,-5) 0 trains,
+    no limit, no rail beside it)`, with `its locomotives all face its front, so it drives forward only` for such a
+    train; `every stop named Base is at its train limit (...)`; `no train stop is named X`; `stands still: no fuel in
+    its locomotives`. A stop's readback adds `rail` (the rail it is beside, or none).
+- Rails (2.0): `rail_route {from, to, via?, signals?, from_direction?, ghosts?, dry_run?, details?}` lays a line of the
+  rail planner's own pieces. 2.0 rails take 16 headings (north, northnortheast, northeast, ...); the pieces are
+  `straight-rail` (2 tiles, 1 rail; 2.8 tiles on a diagonal), `half-diagonal-rail` (4.5 tiles, 2 rails) and
+  `curved-rail-a` / `curved-rail-b` (about 5 tiles and 3 rails each, each turning 22.5 degrees: a 90 degree turn is four
+  curves, about 20 tiles). Rail ends sit on a 2-tile grid. The tables come from the game (2.0.77, rail planner
+  extensions); rail ramps and elevated rails are not planned.
+  - `from`: free ground, or within 2.5 tiles of an end of your rail or rail ghost: a free end continues that line, an
+    end where two rails meet branches off it. `to`: an end within 2 tiles of it, or an end of your rail or rail ghost
+    there, joined head on. `via`: 1..16 points passed in order; each leg is at most 500 tiles, the route at most 1024
+    pieces. `from_direction` fixes the first heading.
+  - The route keeps off water, cliffs, buildings, ghosts, other forces' entities and uncharted chunks, crosses rails
+    where the game allows it, and goes over trees and rocks (a ghost marks them for removal; `construct` mines them).
+    The search stays within 32 tiles of each leg's ends and stops after 6000 placement checks; a point no piece fits
+    at fails at once (`no rail route: to (150,350): blocked by deepwater`), and a route not found says the nearest end
+    reached and what blocks there (`blocked there by transport-belt (82.5,-96.5) and 6 more, ...`).
+  - It places ghosts, then builds the pieces in your build reach from your inventory; `ghosts: true` places ghosts
+    only. `construct` with no area builds the rest, as after `belt_route`.
+  - `signals: 30` (or `"every 30 tiles"`) puts rail signal ghosts at piece joints every 30 tiles on the right of trains
+    heading from the start to the end. The line then runs one way: trains heading the other way find no path through
+    the signals, and the game refuses train stops serving them on that line.
+  - Reply: `route` (headings with tiles: `N40 NNE220 N43`), `pieces` by kind, `length` (tiles), `items` (`rail`:
+    half-diagonals count 2, curves 3; `rail-signal`), `start` and `end` `{position, heading}`, `extends` / `joins` (the
+    rail end used), `legs`, `signals`, `over_trees_or_rocks`, `placed`, `built`, `not_built` (why, by count),
+    `failed`, `obstacles_marked`, `missing` (items short), `cost {placement_checks, expansions}`; `details: true` lists
+    every piece.
+  - `dry_run: true` plans and checks each piece as `place_ghosts` dry run does (what blocks, tiles needing landfill,
+    standing spots that reach every piece, items against what you hold); `rail_route` holds the plan. Its signals show
+    `after_rails`: the game takes a rail signal only beside a rail or rail ghost, so they are checked as placed.
+  - `build` with the rail item and `entity` places one piece; a curve takes 3 rails and a half-diagonal 2, as the game
+    charges them.
+- `train_stop {position, name, direction?, limit?, ghosts?}` puts a stop beside the nearest straight north-south or
+  east-west rail or rail ghost of yours within 6 tiles, on the right of the trains it serves: east of a north-south
+  rail for trains heading north, west for south; south of an east-west rail for trains heading east, north for west.
+  Without `direction` (the way trains stopping there travel) the side `position` is on decides. Diagonal rails take no
+  stop. It is built from your inventory when in reach, else a ghost (named; `ghosts: true` always a ghost; `construct`
+  builds it). Reply: `stop`, `position`, `direction`, `serves`, `side`, `rail {position, ghost}`, `built` or `ghost`,
+  `limit`. On a line signalled for one way only, a stop for the other way is refused and the refusal names the
+  signals.
 - Gleba farming (Sol, shift09 board #368): `inspect` on an agricultural tower adds `tower`: `state` in words
   (`working (planting or harvesting)`, `waiting for plants to grow`, `no seeds in its input`, `no free cell with soil
   for its seeds`, `output full`, `no power`), `seeds` and `output` (its two inventories), `area` (`48 cells of 3x3
@@ -224,6 +279,10 @@ fh call status
   to the retreat point, still firing at units in reach while ammunition lasts, and ends `retreated` there. Every kite
   end says why in `last.why` (`health 36% fell below min_health 40%; retreating to (-20,0)`, `out of ammunition`, `no
   enemies left within the scan radius`, `time up`), with `ammo_left`, `enemies_left` and `retreated_from`.
+  `kite --wait` waits for that end, as `move_to --wait` does (Sol, shift09: it returned at once while the fight went
+  on), and reports `outcome`, `why`, `kills`, `enemies_left`, `ammo_used`, `ammo_left` and `retreated_from`. `clear`
+  and the end of its `ticks` exit 0; `low_health`, `out_of_ammo` and `retreated` exit 1 with `Control ended:
+  low_health: health 38% fell below min_health 40%`.
 - Output is compact tables meant for reading. Use `--format json` for programs.
 
 ### Output shape, chat and time left
@@ -403,8 +462,8 @@ fh queue repeat --file plan.json
   neither does their failure: any call with `platform`, or with `surface` naming another surface than the
   character's; `configure` on an entity out of the character's reach; the planners and blueprint tools wherever they
   act (`place_ghosts`, `paste`, `blueprint_place`, `blueprint_capture`, `blueprint_save`, `blueprint_rename`, `copy`, `cut`, `deconstruct`,
-  `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`); `circuit_set`, `wire`, `requests`, `flush`,
-  `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
+  `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`, `rail_route`, `train_stop`); `circuit_set`, `wire`,
+  `requests`, `flush`, `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
   walking and inventory moves (`transfer`, `feed`, `collect`, ...) take over as before.
 - A hot runtime install (a harness update) carries running work over; the runtime that is installed puts back what the one it replaces stopped, on its first tick or request:
   - Waits keep running: `wait_until` and `wait_ticks`, direct or queued, keep their `until_tick` and condition, and so do `walk` and a `transfer`, `build` or `feed` waiting for a hand craft (`feed`). `status` shows them active with no interrupted `last`, so a pending `--wait` ends with the result as if there had been no update. `sleep` is not stopped at all.
@@ -440,14 +499,27 @@ fh sleep 900 --until researched                       # ...or until the research
 ## Messages and reads
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
-- An action on a target out of reach fails at once, without walking, with the distance, your reach and a free spot
-  within reach of it: `entity is out of reach: wooden-chest at (20,0) is 20.0 tiles away, reach 10; in reach from
-  (11.5,0.5)` (the spot is left out when none is free within 3 tiles of the line toward it).
+- Reach is the game's: the distance from the character to the entity's collision box (its edge, not its centre),
+  within 10 tiles (`reach_distance`) for buildings and within 2.7 (`resource_reach_distance`) for ore, trees and rocks
+  (read on the shift world: a tree 4.3 tiles from its edge was out of reach; a belt 10.25 from its centre, 9.7 from its
+  edge, in reach). An action on a target out of reach fails at once, without walking, with the distance to its edge,
+  the reach for it and a free spot on the line toward you from which it is in reach by that rule: `entity is out of
+  reach: tree-04 at (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees and rocks); in reach
+  from (-67.5,-115.5)` (the spot is left out when none is free). A mine that loses reach mid-way ends `out_of_reach`
+  with the same line in `last.error`.
+- `rotate {position}` is one 90-degree turn clockwise, as the R key (`reverse: true`: counter-clockwise); `rotate
+  {position, direction: "south"}` (or 0, 4, 8, 12) turns it until it faces that way, the shorter way round. The reply
+  has `before` and `after` (compass names; 2.0 directions are north 0, east 4, south 8, west 12, and replies leave out
+  a north facing), `turns`, and `note: it faces west already` when no turn was needed. An entity that cannot face that
+  way by rotating (an underground belt flips end and direction each turn) fails with where it ended.
 - `inspect` of a chest, logistic chest, cargo wagon, car or spider trunk, landing pad or hub shows `holds`, one line:
   the largest stacks first (`iron-plate*400 coal*120 ... +3 more`), slots used of the total, and the red-X limit
   (`; 7 of 48 slots (limited to 20)`). A requester or buffer chest adds `requests`: held/asked per item over its active
   sections (`iron-plate 40/100, coal 0/50`; `; a section set by circuit` when one is). Both are columns in the
   `inspect {positions}` table.
+- `inspect` of an assembler or furnace shows `output_fill`: each product in its output slots held of its stack size
+  with the %, and `full` when the machine has stopped for it (status `full_output`): `copper-cable 200/200 (100%),
+  full`, or `empty`. A column in the `inspect {positions}` table too.
 - An electric machine no pole reaches reads `status_name: unpowered` (whatever the engine's status, often
   `low_power`) with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole at (17,10), 7 tiles"`,
   in `inspect` and in build replies (`power`).
@@ -461,6 +533,16 @@ fh sleep 900 --until researched                       # ...or until the research
     when it fell short (on the final `warning:` line too). With `positions`, `asked` is count per entity, summed. A number
     keeps its old meaning: `up_to: N` tops the target up to N. `collect {..., "up_to": true}` adds the same `moved` and
     `short` (`asked: "all"` without count).
+  - Personal logistics (trash.lua; Astra, 01:53: two cargo hauls lost to auto-trash). The game moves what you hold over
+    a personal request's max (and, with "trash unrequested" on, any item you do not request) from your inventory to
+    your trash slots within a few ticks, logistic network or not. A `transfer` to you, `collect`, `pickup` and
+    `collect {radius}` that do that say so: `trash: ["400 iron-plate taken; your request max is 100: 300 go to
+    trash"]` (`; N more stay in your inventory (trash slots full)` when the trash slots are short); `pickup` and
+    `collect {radius}` say it in `last.trash`, counted at each take. `"up_to": true` on `transfer` or `collect` also stops
+    at that max: `left_at_max: "300 iron-plate (your request max 100) left in the source"` (without `item`, per item).
+    `"keep_max": true` refuses a take that would go over it, and nothing moves: `keep_max: nothing taken; 400
+    iron-plate would put you 300 over your request max (100)`. `status` adds a `trash` line while your trash slots hold
+    anything. Personal logistics switched off: none of this applies.
   - `feed {"recipe": "logistic-science-pack", "crafts": 10, "positions": [...]}` (or in reach, or `radius` for the
     walking tour) tops every machine set to that recipe up to each item ingredient's amount x crafts, from your
     inventory, in one call: `entities` rows with `loaded {item=count}` and `short {item=still missing}`; a named machine
@@ -478,6 +560,14 @@ fh sleep 900 --until researched                       # ...or until the research
     inventory full of ITEM`, `N full`, `N wanting more you hold none of`, `N failed (the first reason)`. `collect` with
     `radius` puts it in `last` (and the `--wait` reply) over places: `N not reached`, `N failed`, `N places not visited
     (OUTCOME)`. Compact output prints it after the action's own fields, before the team and clock lines.
+  - `feed`, `collect` and `transfer` take `area {left_top, right_bottom}` (up to 128x128) in place of `positions`: our
+    entities whose centre lies inside it, of the call's types, run as its positions (nearest first, each by its
+    unit_number; at most 64), and the reply says how many in `area_targets`. Types: `feed` as in reach (with `recipe`,
+    assemblers and furnaces; those on another recipe counted in `other_recipe`), `collect` machines (`chests: true` adds
+    chests), `transfer` chests, machines, labs, silos, boilers, drills, turrets, wagons, vehicles, landing pads,
+    roboports and agricultural towers, or `types` on any of the three. A target out of reach is a row with the reach
+    line. Not with `positions`, `position` or `radius`; an area with none of them fails with what it looked for.
+    `feed {"area": {...}, "recipe": "advanced-circuit", "crafts": 5}` loads every advanced circuit assembler in it.
   - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
     call, `entities` in order and `count`; an entry that fails is `{position, error}`.
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
@@ -695,6 +785,29 @@ fh sleep 900 --until researched                       # ...or until the research
   the game's paste does: `wires {in_blueprint, connected (already), added, end_not_placed, failed, ends_not_placed
   ["chest #3"]}` (Astra 18:51: Sunward's module-audit paste made 0 ghosts over one collision, and its entities placed
   one by one with `place_ghosts` lost their wires).
+- Tiles an entity cannot stand on (water, Gleba wetland, lava, a platform's empty space; its collision mask against
+  the tile's, as the dry run judges them). Sol, shift09 01:38: 5 of 16 `pole_route` poles on Gleba wetland failed in
+  `construct` with "placement blocked by ghost medium-electric-pole" at their own positions. In 2.0.77 the forced ghost
+  check takes a pole ghost over water or wetland once the force has the landfill recipe, because a player's forced
+  placement lays landfill ghosts under it; the harness's script ghost got none, and nothing could build it.
+  - `pole_route` takes a spot the pole stands on as the tiles are, shifting up to 2 tiles sideways, before one that
+    needs landfill. A pole with no dry spot gets the landfill tile ghost under it, and the reply says so:
+    `tiles_under {landfill: 1}`, `tiles_short` (what you hold too little of) and `tiles_note` (`1 pole with no dry spot
+    within 2 tiles stands on wetland-blue-slime: 1 landfill under it, laid as tile ghosts that construct builds
+    first`; the dry run says the real call lays them).
+  - `place_ghosts` (and the routes through it) lays the tile ghosts the game expects under an entity ghost on such
+    tiles, before it: `tiles_laid {landfill: N}` and `tiles_note`. With no unlocked tile item for those tiles the entry
+    fails: `placement blocked by tiles: wetland-blue-slime at (18.5,4.5) (needs landfill (not researched))`.
+  - `belt_route` and `pipe_route` take only tiles the piece stands on as they are (or that a tile ghost already
+    covers). With no route, the error adds what the straight line crosses: `the straight line from (55.5,12.5) to
+    (82.5,12.5) crosses 18 tiles a transport-belt cannot stand on: wetland-blue-slime (landfill makes them
+    buildable)`.
+  - `construct` lays a tile ghost before an entity ghost standing on it (the entity waits for it), and a bot's tile
+    build fulfils a tile ghost of that tile as a player's does (it aborted on the ghost before).
+  - A refused build or revive names the tile (`placement blocked by tiles: wetland-blue-slime (needs landfill, ...)`),
+    never the ghost of the same entity on the same centre that it revives, nor a tile ghost under it. Another
+    entity's ghost there is still named. A build over its own ghost with the character on the footprint steps aside
+    first, as on clear ground.
 - `dry_run: true` on `place_ghosts`, `paste` / `blueprint_place` (with `repeat`, `platform`, `anchor`, flips) and
   `build` (one entry or `builds`) places nothing and returns the check of what the call would place (dryrun.lua). It is
   a read: the running action and queue go on, and a failed dry run stops nothing; a queue step with `dry_run` gets the
@@ -741,6 +854,10 @@ fh sleep 900 --until researched                       # ...or until the research
     a later entry, a tile brush that lays nothing).
   - A dry run checks at most 1024 entities and 8192 tiles (repeat copies included) and refuses a larger plan before
     any check. Real engine, shift world: 7 entries on nauvis 9 ms, the platform case 14 ms.
+  - `requests_kept` (a paste): for each entity with requests the blueprint lands on (a platform hub, requester and
+    buffer chests, landing pads, spidertrons), `space-platform-hub (0,0): its requests stay (14 sections, 1 off)`, and
+    when the blueprint carries requests of its own for it, `the blueprint's own requests (1 section) are not applied by
+    a paste`.
   - `items` the placeable entries and needed tiles use, `missing` against your inventory (for `build` plus the
     hand-craft queue; on a platform the hub), `missing_from`. A paste adds `paste {slot, label, origin_at, center_at,
     anchor}` (where the blueprint lands, computed as the game places it: its center at `position`, shifted onto the
@@ -1121,16 +1238,24 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   - Per network (networks.lua), routed and limited the same way, with no hint: `power_high`, an electric network
     whose draw was at or above 85% of its capacity in every 5-second sample of the last 2 minutes (`electric #7 draw
     at or above 85% of capacity for 2 min: 20.0 MW of 22.1 MW now; 3 machines on low power`; worse is the next 5%
-    step: `(was 85%)`); `boiler_fuel`, boilers with under 20 minutes of fuel at the draw, told again when one drops
-    under 10 and under 5 or when more boilers drop under 20 (Haiku, shift09: 10 minutes left was too late to feed by
-    hand): `3 boilers under 20 min of fuel at this draw, 2 under 10, 2 under 5 near (43,18) (electric #7: 11 boilers,
-    lowest 4 min, 31 min for all); fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50;
-    belts: coal 16 on 2 tiles, nearest (31,13), (31,12); fed by inserters: 1 from wooden-chest (41,13); no inserter
-    feeds 2: (66,16), (4,22)` and `(was 3 under 20 min, lowest 17 min)` when told again. The fuel is what the boilers
-    burn or hold (when they hold none, the line names the fuels it looked for: coal, solid-fuel, wood, rocket-fuel,
-    nuclear-fuel); chests are the 3 nearest holding it (and a count of the rest), belts the tiles holding it with the
-    2 nearest (each read is capped at 300 chests and 300 belt tiles found within 64 tiles); an inserter feeds a boiler
-    when its drop target is that boiler, named by its pickup target;
+    step: `(was 85%)`); `boiler_fuel`, boilers whose supply is under 20 minutes at the draw and running down, told
+    again when one drops under 10 and under 5 or when more boilers drop under 20 (Haiku, shift09: 10 minutes left was
+    too late to feed by hand; 01:53: it fired for hours on 13 working boilers fed from a belt and a chest with 150+
+    coal): `3 boilers under 20 min of fuel at this draw, 1 under 10, 1 under 5 and running down near (43,18) (electric
+    #7: 11 boilers, 32 min for all with their feeders' sources); boiler (66,16) 2 min: no inserter feeds it; boiler
+    (4,22) 12 min: no inserter feeds it; boiler (60,16) 17 min: burner-inserter (60,14) from wooden-chest (41,13)
+    holding 400 coal; fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16
+    on 2 tiles, nearest (31,13), (31,12)` (the lowest 3, `+N more`) and `(was 3 under 20 min, lowest 17 min)` when
+    told again. A boiler's supply is its own fuel plus, for each source an inserter feeding it takes from (an
+    inserter within 4 tiles whose drop target is the boiler, by its pickup target), that source's stock shared among
+    the boilers it feeds: a chest or machine counts all it holds of the fuel, a boiler in a chain its fuel slot, a belt
+    its tile and up to 64 tiles upstream (boilers along one belt share it). Minutes are that supply at an even share
+    of the draw of the generators the boilers feed. Running down: less than 90% of the supply at the networks view's
+    last look (30 s before; a boiler's first look never counts), so a boiler kept supplied by a belt or a refilled
+    chest is not told, whatever its own fuel. The fuel is what the boilers burn or hold (when they hold none, the line
+    names the fuels it looked for: coal, solid-fuel, wood, rocket-fuel, nuclear-fuel); chests nearby are the 3 nearest
+    holding it (and a count of the rest), belts the tiles holding it with the 2 nearest (each read is capped at 300
+    chests and 300 belt tiles found within 64 tiles);
     `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
     #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
     power (satisfaction under 100%) shows as the `low power` groups above.
@@ -1181,7 +1306,7 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the agent's surface first, `+N more networks: fh call networks`), one line per network, numbers only:
   `nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%);
   solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11:
-  fuel 31 min at this draw, 3 under 20 min (lowest 4 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
+  fuel (theirs and their feeders' sources) 32 min at this draw, 3 under 20 min and running down (lowest 2 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
   (0,25)-(125,75), construction area (-30,-5)-(155,105); logistic robots 147: 0 idle, 142 working, 3 charging, 2
   waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; no idle logistic
   robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5`, `nauvis

@@ -146,11 +146,29 @@ return function(api)
     local function add(e,ghost) add_mine(action,e,ghost) end
     -- Tile ghosts (landfill, paths) are placed like tiles from the cursor;
     -- trees and rocks do not block them.
+    local tiles={}
     for _,e in pairs(p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force}) do
       if e.valid and api.known(p,e) then
         local obstacles=e.type=='tile-ghost' and {} or M.mark_obstacles(p,e)
         pending[#pending+1]={ghost=e,tries=0,stand_fails=0,obstacles=#obstacles>0 and obstacles or nil}
+        if e.type=='tile-ghost' then tiles[math.floor(e.position.x)..','..math.floor(e.position.y)]=pending[#pending] end
         for _,o in ipairs(obstacles) do add(o,e) end
+      end
+    end
+    -- An entity ghost over tile ghosts (landfill under a pole on wetland) waits
+    -- for them: the tiles go down first.
+    if next(tiles) then
+      for _,rec in ipairs(pending) do
+        local g=rec.ghost
+        if g.type=='entity-ghost' then
+          local b=M.box(g.ghost_prototype,g.position,g.direction)
+          for x=math.floor(b.left_top.x+0.01),math.ceil(b.right_bottom.x-0.01)-1 do
+            for y=math.floor(b.left_top.y+0.01),math.ceil(b.right_bottom.y-0.01)-1 do
+              local t=tiles[x..','..y]
+              if t then rec.under=rec.under or {}; rec.under[#rec.under+1]=t end
+            end
+          end
+        end
       end
     end
     -- Entities marked for deconstruction are mined by hand, as a player
@@ -218,6 +236,32 @@ return function(api)
     local lt,rb=footprint(g)
     return {left_top=lt,right_bottom=rb}
   end
+  -- A ghost turned off the axes (2.0 rails take 16 directions, curves sit at
+  -- their own angle): the engine's turned box, as a centre, half extents and
+  -- angle, with the box around it. nil for anything square to the axes.
+  local function turned_box(g)
+    local ok,b=pcall(function() return g.bounding_box end)
+    if not ok or not b or not b.orientation or b.orientation==0 or b.orientation==0.5 then return nil end
+    local t=b.orientation*2*math.pi
+    local c,sn=math.cos(t),math.sin(t)
+    local cx,cy=(b.left_top.x+b.right_bottom.x)/2,(b.left_top.y+b.right_bottom.y)/2
+    local hw,hl=(b.right_bottom.x-b.left_top.x)/2,(b.right_bottom.y-b.left_top.y)/2
+    local ex,ey=math.abs(c)*hw+math.abs(sn)*hl,math.abs(sn)*hw+math.abs(c)*hl
+    return {cx=cx,cy=cy,ux=c,uy=sn,vx=-sn,vy=c,hw=hw,hl=hl,left_top={x=cx-ex,y=cy-ey},right_bottom={x=cx+ex,y=cy+ey}}
+  end
+  -- Whether an entity's (square) box meets a turned box, by separating axes.
+  local function meets_turned(tb,e,margin)
+    local b=e.bounding_box
+    if not b then return true end
+    local bx,by=(b.left_top.x+b.right_bottom.x)/2,(b.left_top.y+b.right_bottom.y)/2
+    local bw,bh=(b.right_bottom.x-b.left_top.x)/2+margin,(b.right_bottom.y-b.left_top.y)/2+margin
+    for _,ax in ipairs({{1,0,nil},{0,1,nil},{tb.ux,tb.uy,tb.hw},{tb.vx,tb.vy,tb.hl}}) do
+      local nx,ny=ax[1],ax[2]
+      local reach=ax[3] or (nx==1 and (tb.right_bottom.x-tb.left_top.x)/2 or (tb.right_bottom.y-tb.left_top.y)/2)
+      if math.abs((bx-tb.cx)*nx+(by-tb.cy)*ny)>reach+bw*math.abs(nx)+bh*math.abs(ny) then return false end
+    end
+    return true
+  end
   -- Whether an entity's box reaches the given box (edges touching count).
   local function touches(e,box,margin)
     local b=e.bounding_box
@@ -236,9 +280,12 @@ return function(api)
     margin=margin or 0.01
     local found,marked={},0
     local box=placement_box(g)
+    -- A turned rail ghost: the trees and rocks its own turned box meets.
+    local turned=turned_box(g)
+    if turned then box={left_top=turned.left_top,right_bottom=turned.right_bottom} end
     local area={left_top={x=box.left_top.x-1.5,y=box.left_top.y-1.5},right_bottom={x=box.right_bottom.x+1.5,y=box.right_bottom.y+1.5}}
     for _,e in pairs(p.surface.find_entities_filtered{area=area,type=((script and script.active_mods['space-age']) and {'tree','plant','simple-entity'} or {'tree','simple-entity'}),force='neutral'}) do
-      if e.valid and e.minable and touches(e,box,margin) then
+      if e.valid and e.minable and touches(e,box,margin) and (not turned or meets_turned(turned,e,margin)) then
         -- The engine takes a LuaPlayer or nothing: a bot or map-view proxy
         -- here fails with "Invalid PlayerIdentification".
         if not e.to_be_deconstructed() and e.order_deconstruction(p.force,api.real(p)) then marked=marked+1 end
@@ -298,6 +345,8 @@ return function(api)
     for _,e in pairs(p.surface.find_entities_filtered{area=box}) do
       if e.valid then
         if e==c then mine=true
+        -- The ghost of this entity on this centre is what the build revives.
+        elseif e.type=='entity-ghost' and e.ghost_name==proto.name and math.abs(e.position.x-pos.x)<0.01 and math.abs(e.position.y-pos.y)<0.01 then
         elseif e.type~='resource' and e.type~='corpse' then return nil end
       end
     end
@@ -347,7 +396,12 @@ return function(api)
   local function finished(action)
     return (next(action.missing) or #action.failed>0) and 'incomplete' or 'constructed'
   end
-  local function drop(action,i) action.pending[i]=action.pending[#action.pending]; action.pending[#action.pending]=nil end
+  local function drop(action,i) action.pending[i].dropped=true; action.pending[i]=action.pending[#action.pending]; action.pending[#action.pending]=nil end
+  -- Tile ghosts under this entity ghost still to be laid by this construct.
+  local function awaits_tiles(rec)
+    for _,t in ipairs(rec.under or {}) do if not t.dropped and t.ghost.valid then return true end end
+    return false
+  end
   local function fail(action,rec,err)
     local g=rec.ghost
     action.failed[#action.failed+1]={name=g.valid and (rec.mine and g.name or g.ghost_name) or nil,position=rec.position or rec.ghost.position,error=err}
@@ -392,7 +446,7 @@ return function(api)
   local function drop_set(action,set)
     if next(set)==nil then return end
     local keep={}
-    for _,rec in ipairs(action.pending) do if not set[rec] then keep[#keep+1]=rec end end
+    for _,rec in ipairs(action.pending) do if not set[rec] then keep[#keep+1]=rec else rec.dropped=true end end
     action.pending=keep
   end
   local function stop(p) p.walking_state={walking=false,direction=0} end
@@ -439,7 +493,7 @@ return function(api)
       if not g.valid then action.gone=action.gone+1; drop(action,i)
       elseif rec.mine then
         if not action.mining and buildable(p,rec,here) then action.mining={rec=rec,done_tick=game.tick+api.hand_mining_ticks(p,g)} end
-      elseif buildable(p,rec,here) then
+      elseif buildable(p,rec,here) and not (rec.under and awaits_tiles(rec)) then
         if placed>=PER_TICK then waiting=true; break end
         local quality=g.quality and g.quality.name or 'normal'
         local item,wanted=cache.item(g,quality)

@@ -631,7 +631,7 @@ async function main() {
   }
   // arrived_near: stopped beside a goal inside an entity, which is where callers want to be.
   // target_destroyed: a shoot at an entity ended because it is gone.
-  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed'];
+  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed','clear'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
@@ -719,6 +719,9 @@ async function main() {
       // construct: what it did and what stopped it, blockers with coordinates (request #167); kite: why it stopped.
       ...(last?.kind === 'construct' ? {built: last.built, mined: last.mined, remaining: last.remaining || undefined,
         missing: last.missing, failed: last.failed, blockers: last.blockers} : {}),
+      // kite: what it killed, what is left, the ammunition, where it retreated from (kite.lua).
+      ...(last?.kind === 'kite' ? {kills: last.kills, enemies_left: last.enemies_left, ammo_used: last.ammo_used, ammo_left: last.ammo_left,
+        reloads: last.reloads, retreated_from: last.retreated_from} : {}),
       // move_to: where it can get to when it gave up, and how it ended off a belt (pathing.lua).
       ...(last?.kind === 'move_to' ? {nearest_reachable: last.nearest_reachable, reachable_gap: last.reachable_gap, off_belt: last.off_belt,
         path: last.path, steered: last.steered} : {}),
@@ -765,7 +768,8 @@ async function main() {
           return {...status, result:{...status.result, last:undefined,
             note:`${action} is not running and recorded no result of its own (the last result, ${last.kind} ${last.outcome} at tick ${last.tick}, predates it)`}};
         }
-        if (status.ok && last?.outcome && !successfulOutcomes.includes(last.outcome)) {
+        // A kite that ran its ticks out kited for as long as it was asked: done, as shoot's duration_elapsed is.
+        if (status.ok && last?.outcome && !successfulOutcomes.includes(last.outcome) && !(action === 'kite' && last.outcome === 'timed_out')) {
           return {...status,ok:false,error:endedError(action,last)};
         }
         return status;
@@ -959,8 +963,10 @@ async function main() {
       }
       throw error;
     }
+    // kite runs until no enemy is left in its radius, its health or ammo floor, or its ticks (Sol, shift09: kite --wait
+    // returned at once while the fight went on).
     const waits = bridged ? ['walk','mine','build'].includes(action)
-      : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
+      : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
         || (action === 'vehicle' && args.drive !== undefined);
     if (wait && reply.ok && waits) {
