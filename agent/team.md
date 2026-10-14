@@ -284,12 +284,18 @@ already targets your character.
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
   reads back the conditions, settings, each wire's far end and the signals on each network now. A logistic condition
   reads the network whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met).
-- Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub, water-cane or stromatolite stands:
-  a dry run names them (`blocked by slipstack tree at (x,y): mine it first`); `place_ghosts` marks them for removal
-  first (`tile_obstacles_marked`) and `construct` mines them before it lays the landfill.
+- Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub or stromatolite stands (marked or
+  not, for a tile laid by hand): a dry run and a failed build name them (`blocked by slipstack tree at (x,y): mine it
+  first`); `place_ghosts` marks them for removal first (`tile_obstacles_marked`) and `construct` mines them before it
+  lays the landfill. Water-cane and fish do not block a tile: the new tile takes them away (`removed`). Landfill goes on
+  water and wetland only (`landfill cannot go on oil-ocean-deep (foundation can; not researched)`).
 - `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'` lists up to 10 (`limit`
   up to 50) positions where it fits now, nearest first, by the game's build check (`blocked`: positions something
-  stands in). `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
+  stands in); `"separate":true` lists spots that do not overlap each other, `"powered":true` only spots in one of our
+  poles' supply areas. `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
+- `build`, `place_ghosts` and `placements` take a direction as the number inspect prints (0, 4, 8, 12) or a compass
+  name. `map` and `grid` tell `walkable water` (`,` on the grid: shallow water, wetland, Fulgora's oil ocean, deep too)
+  from water a character cannot cross (`~`).
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
