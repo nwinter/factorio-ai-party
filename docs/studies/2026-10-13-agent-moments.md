@@ -4,6 +4,8 @@ Scope: shift05 (06:53 to 10:56 PDT), shift06 (11:00 to 15:04 PDT) and shift07 (1
 
 Sources: each agent's session log (private reasoning and working text), its tells and notes.md, set against what it said in chat.jsonl and what caster.log voiced. Viewer handles are left out. The operator's messages are only mentioned where an agent answered in public.
 
+**What leaves this document (operator, 2026-10-13):** the hosts' story memo and the /chat/ highlights use only what viewers already saw: lines spoken on stream, chat, and confessions the agents chose to post. Thoughts, working text, private tells between agents, notes and shift summaries stay here. `python3 site/moments.py` keeps a quote only when its kind says voiced, chat or confession, drops a moment with none (or where an agent of the moment said nothing public), takes the time from the kept quotes, replaces a title that quotes unseen words, and leaves out the context lines. It writes site/content/moments.json, which /chat/ (site/highlights.py) and the memo (tools/stream/hoststory.py) read; both skip any other quote too. Of the 40 moments below, 18 are public in that sense.
+
 How to read the tags:
 - **Seen:** *private* means only in the session log, a private tell or notes.md; *chat* means it went to chat or a confession but was not voiced; *voiced* means caster.log shows it went out as a `[voice:...]` line.
 - **Fits:** *memo* = the hosts' story memo (context the hosts should know), */chat/* = the companion page of spoken lines and confessions, *clip* = a highlight clip.
