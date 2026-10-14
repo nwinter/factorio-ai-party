@@ -703,4 +703,102 @@ assert(astra('describe').actions.science.pack)
 fails(function() astra('silo',{}) end,'no rocket silo of ours on')
 fails(function() astra('silo',{radius=5}) end,'unknown argument radius for silo')
 assert(astra('describe').actions.silo.position and astra('describe').actions.silo.surface)
+
+-- Projects (operator 00:50): long jobs that outlive a context and a shift: a goal, steps anyone adds and marks done
+-- (who did each), areas, notes and the owner's handoff; the plain listing and the shift block show a line each.
+jump(3600); astra('status'); sol('status'); grok('status')
+local pj=sol('board_post',{kind='project',title='nuclear plant',goal='uranium power for the main bus',
+  steps={'mine uranium','centrifuges','reactor and exchangers'},area={left_top={x=100,y=100},right_bottom={x=160,y=140}}}).item
+eq(pj.kind,'project'); eq(pj.status,'open'); eq(pj.owner,nil); eq(pj.progress,'0 of 3 steps'); eq(pj.goal,'uranium power for the main bus')
+eq(pj.steps[1],'[ ] 1. mine uranium'); eq(#pj.steps,3); eq(pj.areas[1].left_top.x,100); eq(pj.area,nil); eq(pj.goal_edited,'by sol, 0s ago')
+-- everyone else hears of it once, as news
+assert(has(astra('status').team.board,'#'..pj.id..' new project by sol: nuclear plant (no owner; 0 of 3 steps)'))
+eq(has((sol('status').team or {}).board,'new project'),nil)
+eq(has((astra('status').team or {}).board,'new project'),nil)
+-- a project's arguments are for projects; done takes the numbers of its steps
+fails(function() sol('board_post',{kind='task',title='x',steps={'a'}}) end,'goal, steps, areas and handoff are for kind project')
+fails(function() grok('board_update',{id=t.id,done=1}) end,'done is for a project (#'..t.id..' is a task); status "done" finishes an item')
+fails(function() astra('board_update',{id=pj.id,done=true}) end,'done takes step numbers: a number or an array of them (status "done" finishes the project)')
+fails(function() astra('board_update',{id=pj.id,done=9}) end,'project #'..pj.id..' has no step 9; its steps: 1, 2, 3')
+fails(function() astra('board_update',{id=pj.id}) end,'give status, owner, note or allow; for a project also step, done, undone')
+fails(function() astra('board_update',{id=pj.id,done={1,9}}) end,'has no step 9')
+eq(astra('board',{id=pj.id}).item.progress,'0 of 3 steps') -- a bad argument changes nothing
+-- anyone adds steps and marks them done; who did each shows
+jump(60)
+r=astra('board_update',{id=pj.id,done=1,step={'turbines','pumps to the exchangers'}})
+eq(r.item.progress,'1 of 5 steps'); eq(r.item.steps[1],'[x] 1. mine uranium (done by astra, 0s ago)'); eq(r.item.steps[5],'[ ] 5. pumps to the exchangers')
+eq(r.changed[1],'step_added'); eq(r.changed[2],'step_done')
+local last=op('board_events',{since_seq=op('board_events',{limit=1}).latest-1}).events[1]
+eq(last.change,'step_done'); eq(last.text,'1. mine uranium'); eq(last.progress,'1 of 5 steps'); eq(last.steps_done,1); eq(last.steps_total,5)
+-- the poster hears step changes as news; they wake nobody
+local heard=sol('status').team.board
+assert(has(heard,'#'..pj.id..' (your project) step done by astra: nuclear plant - 1. mine uranium (1 of 5 steps)'),table.concat(heard or {},' | '))
+assert(has(heard,'#'..pj.id..' (your project) step added by astra: nuclear plant - 4. turbines; 5. pumps to the exchangers (1 of 5 steps)'))
+sol('sleep',{seconds=30}); grok('board_update',{id=pj.id,done={2}}); advance(5)
+eq(sol('sleep_check',{peek=true}).woke,nil)
+jump(1800); sol('status')
+r=grok('board_update',{id=pj.id,undone=2,note='centrifuges lack power'})
+eq(r.item.progress,'1 of 5 steps'); eq(r.item.notes[#r.item.notes].text,'centrifuges lack power'); eq(r.changed[1],'step_undone')
+-- board with an id and a project change is board_update
+eq(grok('board',{id=pj.id,done=2}).item.progress,'2 of 5 steps')
+eq(grok('board',{id=pj.id,undone=2}).item.progress,'1 of 5 steps')
+-- a project keeps its last 20 notes
+for k=1,22 do grok('board_update',{id=pj.id,note='n'..k}) end
+eq(#grok('board',{id=pj.id}).item.notes,20)
+-- anyone takes an open unowned project; its goal, handoff and areas are then the owner's
+r=sol('board_update',{id=pj.id,owner='sol'}); eq(r.item.owner,'sol'); eq(r.item.status,'claimed')
+r=sol('board_update',{id=pj.id,handoff='uranium mined at (120,110); centrifuges placed, no power yet'})
+eq(r.item.handoff_edited,'by sol, 0s ago'); eq(r.changed[1],'handoff')
+fails(function() astra('board_update',{id=pj.id,goal='x'}) end,
+  'only the owner edits the goal, handoff and areas of #'..pj.id..' until its owner has made no request for 30 min; #'..pj.id..' is owned by sol (last request 0s ago)')
+fails(function() astra('board_update',{id=pj.id,areas={}}) end,'only the owner edits the goal, handoff and areas')
+-- a step another agent added: only that agent or the owner removes it
+fails(function() grok('board_update',{id=pj.id,remove_step=4}) end,'step 4 of #'..pj.id..' was added by astra: only astra or the owner removes it until')
+r=astra('board_update',{id=pj.id,remove_step=4,done=4})
+eq(r.item.progress,'1 of 4 steps'); eq(r.item.steps[4],'[ ] 5. pumps to the exchangers') -- numbers stay with their steps
+eq(#r.changed,1) -- a step removed in the same update is not marked
+-- 30 min without a request by its owner: anyone edits the goal, handoff and areas and may take it (20 min is not enough)
+jump(20*3600)
+fails(function() astra('board_update',{id=pj.id,goal='x'}) end,'until its owner has made no request for 30 min; #'..pj.id..' is owned by sol (last request 20m00s ago)')
+fails(function() astra('board_update',{id=pj.id,owner='astra'}) end,'only its owner or requester can reassign it (anyone can take an open unowned item, or one whose owner has made no request for 30 min)')
+jump(10*3600)
+r=astra('board_update',{id=pj.id,goal='power for the bus and the rail yard',areas={{left_top={x=100,y=100},right_bottom={x=180,y=150}},{left_top={x=0,y=0},right_bottom={x=5,y=5}}}})
+eq(r.item.goal,'power for the bus and the rail yard'); eq(r.item.goal_edited,'by astra, 0s ago'); eq(#r.item.areas,2); eq(r.item.owner,'sol')
+heard=sol('status').team.board
+assert(has(heard,'#'..pj.id..' (your project) goal by astra: nuclear plant - power for the bus and the rail yard (1 of 4 steps)'),table.concat(heard or {},' | '))
+assert(has(heard,'#'..pj.id..' (your project) areas by astra: nuclear plant - 2 areas (1 of 4 steps)'))
+jump(30*3600)
+r=astra('board_update',{id=pj.id,owner='astra'}); eq(r.item.owner,'astra'); eq(r.changed[1],'taken')
+assert(r.item.notes[#r.item.notes].text:find('taken from sol (last request 30m00s ago)',1,true),r.item.notes[#r.item.notes].text)
+-- the plain listing: a line per open project, the reader's own first; the rows leave them out
+local p2=grok('board_post',{kind='project',title='robot mall',owner='grok',steps='roboports'}).item
+eq(p2.status,'claimed'); eq(p2.progress,'0 of 1 step')
+r=astra('board',{})
+eq(r.projects[1],'#'..pj.id..' nuclear plant: 1 of 4 steps; owner astra (last request 0s ago); next 2. centrifuges; handoff: uranium mined at (120,110); centrifuges placed, no power yet')
+eq(r.projects[2],'#'..p2.id..' robot mall: 0 of 1 step; owner grok (last request 0s ago); next 1. roboports')
+for _,row in ipairs(r.items) do assert(row.kind~='project',row.title) end
+r=sol('board',{})
+assert(r.projects[1]:find('^#'..p2.id..' robot mall'),r.projects[1]) -- the newest first for a reader who owns none
+-- a project row: progress, the next 3 steps not done, the goal and handoff cut to 160
+r=astra('board',{kind='project'})
+eq(#r.items,2); eq(r.items[1].id,p2.id); eq(r.items[2].next_steps[1],'[ ] 2. centrifuges'); eq(r.items[2].steps,nil); eq(r.items[2].owner_state,'last request 0s ago')
+-- the operator's listing has the rows
+local found
+for _,row in ipairs(op('board',{limit=100}).items) do if row.id==pj.id then found=row end end
+eq(found.progress,'1 of 4 steps')
+-- the first reply of a shift lists the open projects
+runtime.operator.shift_start()
+local sh=astra('status').team.shift
+eq(sh.projects[1],'#'..pj.id..' nuclear plant: 1 of 4 steps; owner astra (last request 0s ago); next 2. centrifuges; handoff: uranium mined at (120,110); centrifuges placed, no power yet')
+eq(#sh.projects,2)
+-- a finished project leaves the lines; the board keeps at most 30 open projects
+r=astra('board_update',{id=pj.id,status='done',note='4 reactors running'})
+eq(#astra('board',{}).projects,1)
+for k=1,29 do grok('board_post',{kind='project',title='p'..k}) end
+fails(function() grok('board_post',{kind='project',title='one more'}) end,'the board holds at most 30 open projects')
+eq(#astra('board',{}).projects,9); eq(astra('board',{}).projects[9],'+22 more: board {kind: "project"}')
+-- open projects outlast the cap: 300 tasks later p2 is still there, the finished one is not
+for k=1,300 do grok('board_post',{kind='task',title='filler '..k}) end
+assert(grok('board',{id=p2.id}).item)
+fails(function() grok('board',{id=pj.id}) end,'no board item #'..pj.id)
 print('board: ok')

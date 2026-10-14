@@ -1816,8 +1816,10 @@ do
   local turret=prototypes.entity['gun-turret']
   local plain_turret={}
   for k,v in pairs(turret) do plain_turret[k]=v end
-  turret.tile_width=2; turret.tile_height=2; turret.collision_mask={layers={object=true}}
+  turret.name='gun-turret'; turret.tile_width=2; turret.tile_height=2; turret.collision_mask={layers={object=true}}
   turret.collision_box={left_top={x=-0.7,y=-0.7},right_bottom={x=0.7,y=0.7}}
+  local turret_item=prototypes.item['gun-turret']
+  prototypes.item['gun-turret']={name='gun-turret',place_result=turret}
   ghosts={}
   call('walk',{direction='east',ticks=100})
   local dry=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}},{name='gun-turret',position={x=40,y=0}}},dry_run=true})
@@ -1828,6 +1830,18 @@ do
   eq(shifted.checked,4); eq(shifted.entities[1].index,'4.1'); eq(#ghosts,0)
   fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}},facing='east',dry_run=true}) end,'unknown argument facing for place_ghosts')
   fails(function() call('build',{item='gun-turret',position={x=3,y=0},dry_run='true'}) end,'dry_run must be true or false')
+  -- A build dry run names the entry the batch stops at.
+  local ghost_engine=p.surface.can_place_entity
+  defines.build_check_type.manual=0
+  p.surface.can_place_entity=function(a) eq(a.build_check_type,0); eq(a.forced,nil); return true end
+  local px,py=math.floor(p.position.x),math.floor(p.position.y)
+  local far=call('build',{builds={{item='gun-turret',position={x=px+2,y=py}},{item='gun-turret',position={x=px+30,y=py}}},dry_run=true})
+  eq(far.action,'build'); assert(far.build_note:find('entry #2 (out of reach: ',1,true),far.build_note)
+  p.surface.can_place_entity=ghost_engine
+  -- A plan past the bounds is refused before any check.
+  local twenty={}
+  for i=1,20 do twenty[i]={name='gun-turret',position={x=10+2*i,y=0}} end
+  fails(function() call('place_ghosts',{entities=twenty,['repeat']={count=64,dx=0,dy=2},dry_run=true}) end,'a dry run checks at most 1024 entities')
   eq(call('status').active.kind,'walk','a failed dry run stops nothing')
   -- A paste dry run checks where the blueprint lands (blueprints.lua plan, stubbed here); with an entry
   -- the game refuses now, a normal paste places nothing at all.
@@ -1836,12 +1850,18 @@ do
     return {entities={{index=1,name='gun-turret',position={x=a.position.x,y=0},direction=0},{index=2,name='gun-turret',position={x=40,y=0},direction=0}},
       tiles={},slot='bp',mode='normal',origin_at={x=a.position.x,y=0},center_at={x=a.position.x,y=0}}
   end
+  local ghost_check=p.surface.can_place_entity
+  -- A normal paste asks the engine without forced (it marks nothing).
+  p.surface.can_place_entity=function(a) eq(a.build_check_type,2); eq(a.forced,nil); return a.position.x~=40 end
   local pd=call('paste',{position={x=10,y=0},dry_run=true})
   eq(pd.action,'paste'); eq(pd.paste.slot,'bp'); eq(#ghosts,0); eq(pd.summary,'1 placeable, 1 blocked (of 2)')
   assert(pd.paste_note:find('all or nothing: with 1 entry the game refuses there now',1,true),pd.paste_note)
   local rp=call('paste',{position={x=10,y=0},['repeat']={count=2,dx=4},dry_run=true})
   eq(rp.checked,4); eq(rp.entities[#rp.entities].index,'2.2'); assert(rp.entities[#rp.entities].why:find('collides with planned #1.2',1,true))
   eq(call('paste',{position={x=10,y=0},dryrun=true}).action,'paste','dryrun is dry_run')
+  p.surface.can_place_entity=function(a) eq(a.build_check_type,2); eq(a.forced,true); return a.position.x~=40 end
+  eq(call('paste',{position={x=10,y=0},mode='forced',dry_run=true}).summary,'1 placeable, 1 blocked (of 2)','forced asks with forced')
+  p.surface.can_place_entity=ghost_check
   runtime.paste_plan=real_plan
   call('stop',{})
   call('queue_submit',{steps={{action='place_ghosts',args={entities={{name='gun-turret',position={x=10,y=0}}},dry_run=true}}}})
@@ -1864,6 +1884,7 @@ do
   fails(function() call('ports',{name='chemical-plant',position={x=10,y=0},recipe='no-such'}) end,'unknown recipe no-such')
   p.surface.get_tile=get_tile
   prototypes.entity['gun-turret']=plain_turret
+  prototypes.item['gun-turret']=turret_item
 end
 -- pole_route lays pole ghosts from A to B within wire reach, shifting a
 -- blocked spot sideways, reusing a pole already on the line, and counting
@@ -1956,6 +1977,8 @@ local belt={valid=true,name='transport-belt',type='transport-belt',position={x=2
 local ins={valid=true,name='inserter',type='inserter',position={x=2.5,y=0.5},force=p.force,direction=0,health=150,max_health=150,
   pickup_position={x=2.5,y=-0.5},drop_position={x=2.5,y=1.7},get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
 ins.surface={find_entities_filtered=function(f) return f.position.y==1.7 and {belt} or {} end}
+-- The engine's targets: the belt it drops onto; nothing at its pickup point.
+ins.drop_target=belt
 local pump={valid=true,name='offshore-pump',type='offshore-pump',position={x=10.5,y=0.5},force=p.force,direction=4,health=150,max_health=150,
   get_inventory=function() return nil end,get_fluid_contents=function() return {water=0} end}
 local joined={valid=true,name='pipe',position={x=9.5,y=0.5}}
@@ -1968,7 +1991,8 @@ p.surface.find_entities_filtered=function(f)
   return {}
 end
 local seen=call('inspect',{position=ins.position})
-eq(seen.pickup.y,-0.5); eq(seen.drop.y,1.5); eq(seen.io,'2.5,-0.5 -> 2.5,1.7 transport-belt')
+eq(seen.pickup.y,-0.5); eq(seen.drop.y,1.5); eq(seen.io,'2.5,-0.5 (no pickup target) -> 2.5,1.7 transport-belt')
+eq(seen.io_warning,'no pickup target'); eq(seen.drop_target,'transport-belt (2.5,1.5)'); eq(seen.pickup_target,nil)
 local fc=call('inspect',{position=pump.position}).fluid_connections
 eq(#fc,1); eq(fc[1].flow,'output'); eq(fc[1].at.x,10.5); eq(fc[1].joins.x,9.5); eq(fc[1].joins.y,0.5); eq(fc[1].direction,'west'); eq(fc[1].connected_to,'pipe'); eq(fc[1].fluid,'water')
 eq(call('inspect',{position=ins.position}).fluid_connections,nil)
@@ -2077,7 +2101,7 @@ eq(call('status').active.kind,'wait_ticks'); eq(call('status').last.outcome,'rep
 advance(6); eq(call('status').active,false); eq(call('status').last.outcome,'duration_elapsed')
 -- inspect is a read: anything in sight, no reach needed; in_reach says so.
 p.can_reach_entity=function() return false end
-local far=call('inspect',{position=ins.position}); eq(far.in_reach,false); eq(far.io,'2.5,-0.5 -> 2.5,1.7 transport-belt')
+local far=call('inspect',{position=ins.position}); eq(far.in_reach,false); eq(far.io,'2.5,-0.5 (no pickup target) -> 2.5,1.7 transport-belt')
 fails(function() call('rotate',{position=ins.position}) end,'out of reach')
 p.can_reach_entity=function() return true end
 -- build short of an item the hand-craft queue is making waits for it, then builds.
@@ -2142,6 +2166,21 @@ for _,action in ipairs({'paste','blueprint_place'}) do
   eq(pcall(runtime.check_args,action,{position={x=0,y=0},mode='forced'}),true)
   eq(pcall(runtime.check_args,action,{anchor='hub',mode='forced'}),true)
   eq(pcall(runtime.check_args,action,{position={x=0,y=0},forced=true}),false)
+  -- A team library entry by name, placed by its saved anchor (blueprints.lua).
+  eq(pcall(runtime.check_args,action,{name='smelter-row',position={x=0,y=0},anchor='saved',dry_run=true}),true)
+end
+-- The team blueprint library (operator 00:50): its actions' arguments, and the operator read through dispatch.
+eq(pcall(runtime.check_args,'blueprint_save',{name='row',area={left_top={x=0,y=0},right_bottom={x=4,y=4}},description='d',anchor={x=1,y=1},tiles=true}),true)
+eq(pcall(runtime.check_args,'blueprint_save',{name='row',positions={{x=1,y=1}}}),true)
+eq(pcall(runtime.check_args,'blueprint_save',{name='row',blueprint='0eNq...'}),false)
+eq(pcall(runtime.check_args,'blueprint_rename',{name='row',new_name='row2'}),true)
+eq(pcall(runtime.check_args,'blueprint_list',{name='row'}),true)
+eq(pcall(runtime.check_args,'blueprint_delete',{name='row'}),true)
+eq(pcall(runtime.check_args,'blueprint_export',{name='row',layout=true}),true)
+do
+  local lib=runtime.dispatch{action='blueprint_library',args={},operator=true}
+  eq(type(lib.revision),'number'); eq(type(lib.entries),'table')
+  eq(call('describe').actions.blueprint_save.name~=nil,true)
 end
 -- cargo (cargo.lua): a list or what a chest holds, weighed against a rocket's lift and slots; a read.
 -- (A function of its own: this chunk is near Lua's 200 locals.)
@@ -2171,6 +2210,47 @@ end
   fails(function() call('cargo',{position={x=1.5,y=0.5}}) end,'holds nothing in chest')
   p.surface.find_entities_filtered=find
   prototypes.item,prototypes.utility_constants,prototypes.quality,prototypes.entity['rocket-silo']=items,uc,quality,silo
+end)()
+-- ores (ores.lua): every resource patch on the charted map through dispatch, a read that leaves the walk running;
+-- its aliases; surface= names another planet (no distance from the caller there).
+;(function()
+  local find,entities,platforms,get_surface,at=p.surface.find_entities_filtered,prototypes.entity,p.force.platforms,game.get_surface,p.position
+  local chunks,surfaces,forces,charted,count=p.surface.get_chunks,game.surfaces,game.forces,p.force.is_chunk_charted,p.surface.count_entities_filtered
+  p.position={x=0,y=0}
+  prototypes.entity=setmetatable({['iron-ore']={type='resource',mineable_properties={products={{type='item',name='iron-ore'}}}}},{__index=entities})
+  local function ore(x,y,amount) return {valid=true,name='iron-ore',type='resource',position={x=x+0.5,y=y+0.5},amount=amount} end
+  local function one_chunk(x,y) return function() local done=false; return function() if not done then done=true; return {x=x,y=y} end end end end
+  p.surface.find_entities_filtered=function(f) if f.type=='resource' then return {ore(10,-5,500),ore(11,-5,500)} end return {} end
+  p.surface.get_chunks=one_chunk(0,-1)
+  p.surface.count_entities_filtered=function(f) return #p.surface.find_entities_filtered(f) end
+  local vulcanus={name='vulcanus',index=2,get_chunks=one_chunk(-1,-1),find_entities_filtered=function(f) if f.type=='resource' then return {ore(-5,-5,700)} end return {} end}
+  vulcanus.count_entities_filtered=function(f) return #vulcanus.find_entities_filtered(f) end
+  game.surfaces=setmetatable({nauvis=p.surface,vulcanus=vulcanus},{__index=function(_,k) return ({p.surface,vulcanus})[k] end})
+  game.forces=setmetatable({player=p.force},{__index=forces})
+  -- The caller's chunk is always charted (a character charts around itself).
+  p.force.is_chunk_charted=function(s,c) if s==vulcanus then return c.x==0 and c.y==0 or c.x==-1 and c.y==-1 end return c.x==0 and (c.y==-1 or c.y==0) end
+  storage.agent_harness.ores,storage.agent_harness.ores_busy=nil,nil
+  call('walk',{direction='east',ticks=600})
+  local r=call('ores',{})
+  eq(r.count,1); eq(r.patches[1].tiles,2); eq(r.patches[1].amount,1000); eq(r.patches[1].distance,11); eq(r.patches[1].direction,'E')
+  assert(r.survey:find('^2 charted chunks read; the last pass began'),r.survey)
+  eq(call('status').active.kind,'walk'); call('stop',{})
+  -- Two charted chunks: the first call's own budget read them all, so the harness tick has nothing to do.
+  eq(storage.agent_harness.ores_busy,nil); eq(call('ores',{}).count,1)
+  local named=call('ores',{name='iron-ore',limit=5})
+  assert(named.corrected and named.corrected:find('name is resource',1,true),tostring(named.corrected)); eq(named.count,1)
+  fails(function() call('ores',{resource='iron-plate'}) end,'iron-plate is not a resource; resources: iron-ore')
+  fails(function() call('ores',{radius=5}) end,'unknown argument radius for ores')
+  p.force.platforms={}
+  game.get_surface=function(name) if name=='vulcanus' then return vulcanus end end
+  local v=call('ores',{surface='vulcanus'})
+  eq(v.surface,'vulcanus'); eq(v.patches[1].amount,700); eq(v.patches[1].distance,nil); eq(v.from,nil)
+  eq(call('ores',{surface='vulcanus',position={x=-5,y=0}}).patches[1].distance,4)
+  fails(function() call('ores',{surface='aquilo'}) end,'no surface named aquilo; planets and surfaces: nauvis, vulcanus')
+  advance(2); eq(storage.agent_harness.ores_busy,nil)
+  p.surface.find_entities_filtered,prototypes.entity,p.force.platforms,game.get_surface,p.position=find,entities,platforms,get_surface,at
+  p.surface.get_chunks,game.surfaces,game.forces,p.force.is_chunk_charted,p.surface.count_entities_filtered=chunks,surfaces,forces,charted,count
+  storage.agent_harness.ores,storage.agent_harness.ores_busy=nil,nil
 end)()
 -- Replies (00:20 round): transfer's direction named any way on a requester, car trunk or wagon (Haiku); an out of
 -- reach target's distance, reach and a spot that reaches it (Haiku); inspect's holds and requests lines (Muse); and
@@ -2249,5 +2329,43 @@ end)()
     'moved 5 coal; 1 of 3 targets touched; short: your inventory full of coal, 1 full, 1 wanting more you hold none of')
   p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.surface.find_non_colliding_position=find,getmain,reach,free
   p.position,p.reach_distance=at,dist
+end)()
+;(function()
+  -- place_ghosts lists an inserter ghost with nothing on its pickup or drop point (targets.lua); inspect of
+  -- that ghost reads the same; one with a chest on both points is not listed.
+  local can,create,find,entities,tile=p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered,prototypes.entity,p.surface.get_tile
+  local charted,at=p.force.is_chunk_charted,p.position
+  prototypes.entity={inserter={type='inserter',items_to_place_this={{name='inserter',count=1}},inserter_pickup_position={0,-1},inserter_drop_position={0,1.2}}}
+  p.force.is_chunk_charted=function() return true end
+  p.position={x=0,y=0}
+  local made,chests={},{}
+  local function chest(x,y) chests[#chests+1]={valid=true,name='iron-chest',type='container',position={x=x,y=y}} end
+  chest(6.5,-0.5); chest(6.5,1.5)
+  p.surface.can_place_entity=function() return true end
+  p.surface.create_entity=function(a)
+    local g={valid=true,name='entity-ghost',type='entity-ghost',ghost_type='inserter',ghost_name=a.inner_name,ghost_prototype=prototypes.entity[a.inner_name],
+      position={x=a.position.x,y=a.position.y},direction=a.direction or 0,surface=p.surface,force=p.force,
+      get_fluid_contents=function() return {} end,get_inventory=function() return nil end}
+    made[#made+1]=g
+    return g
+  end
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    if f.position then
+      for _,e in ipairs(chests) do if math.abs(e.position.x-f.position.x)<=0.35 and math.abs(e.position.y-f.position.y)<=0.35 then out[#out+1]=e end end
+      for _,g in ipairs(made) do if f.position.x==g.position.x and f.position.y==g.position.y then out[#out+1]=g end end
+    end
+    return out
+  end
+  p.surface.get_tile=function() return {name='grass-1',valid=true} end
+  local r=call('place_ghosts',{entities={{name='inserter',position={x=2.5,y=0.5}},{name='inserter',position={x=6.5,y=0.5}}}})
+  eq(r.placed,2); eq(#r.inserters_without_target,1); eq(r.inserters_without_target[1].position.x,2.5)
+  eq(r.inserters_without_target[1].missing,'no pickup target, no drop target'); eq(r.inserters_without_target[1].drop,'none: the ground at (2.5,1.5)')
+  local seen=call('inspect',{position={x=2.5,y=0.5}})
+  eq(seen.io_warning,'no pickup target, no drop target'); eq(seen.pickup_target,'none: the ground at (2.5,-0.5)')
+  local good=call('inspect',{position={x=6.5,y=0.5}})
+  eq(good.io_warning,nil); eq(good.pickup_target,'iron-chest (6.5,-0.5)'); eq(good.drop_target,'iron-chest (6.5,1.5)')
+  p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered,prototypes.entity,p.surface.get_tile=can,create,find,entities,tile
+  p.force.is_chunk_charted,p.position=charted,at
 end)()
 print('runtime: '..assertions..' assertions passed')

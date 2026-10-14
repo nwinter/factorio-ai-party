@@ -189,7 +189,11 @@ local S=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) ret
   integer=function(v,d,lo,hi,name) v=v==nil and d or v; assert(type(v)=='number' and v>=lo and v<=hi,name..' out of range'); return v end,
   agents=function() return agents end,lookup=function(i) return {character=bodies[i]} end}
 local p={surface=surface,force=force,position={x=0,y=0}}
-local r=S.supply(p,{item=AC})
+-- Each read below may change the fake world first: the clock moves past the 10 s a reply is reused (supply.lua reuse).
+game.tick=game.tick or 0
+local supply_once=S.supply
+local function supply_read(pl,a) game.tick=game.tick+600; return supply_once(pl,a) end
+local r=supply_read(p,{item=AC})
 eq(r.item,AC); eq(r.surface,'nauvis')
 eq(r.flow,'made 300, used 120 in the last 10 min on nauvis')
 -- Where it sits: every kind of place, the team's characters on this surface only.
@@ -211,7 +215,7 @@ any(r.networks,'  unmet (32,3) requester-chest 0/10: free stock and idle robots'
 do
   local saved=N11.get_supply_counts
   N11.get_supply_counts=function() return {['active-provider']=0,['passive-provider']=-2,storage=0,buffer=20} end
-  any(S.supply(p,{item=AC}).networks,'  unmet (20,3) requester-chest 0/10: the 1 held is reserved for other deliveries')
+  any(supply_read(p,{item=AC}).networks,'  unmet (20,3) requester-chest 0/10: the 1 held is reserved for other deliveries')
   N11.get_supply_counts=saved
 end
 -- the landing pad's request is filled from orbit: not a robot requester
@@ -248,12 +252,12 @@ eq(r.takers,'2 inserters take from the makers: 1 working, 1 waiting_for_space_in
 has(r.counted,'9 crafters, ')
 has(r.counted,'2 of 2 belts, 7 inserters, 3 robots, 4 logistic networks')
 -- A user none of whose feeders takes from a place holding or asking for it.
-local w=S.supply(p,{item=AC,near={x=60,y=40},radius=5})
+local w=supply_read(p,{item=AC,near={x=60,y=40},radius=5})
 eq(w.users,'1 users: 0 working, 1 item_ingredient_shortage (1 missing advanced-circuit); for 1 chemical-science-pack')
 eq(w.users_worst[1],'(60,40) assembling-machine-2 item_ingredient_shortage (missing advanced-circuit); holds 0; none of its 1 feeding inserters takes from a place holding or requesting it (1 requester-chest); requester-chest (60,43): its section asking for it is off')
 eq(w.feeders,'1 inserters feed the users: 1 waiting_for_source_items (sources with none of it: 1 requester-chest)')
 -- near: only that area; the network covering it is read whole.
-local a=S.supply(p,{item=AC,near={x=22,y=0},radius=12})
+local a=supply_read(p,{item=AC,near={x=22,y=0},radius=12})
 eq(a.area,'(22,0) radius 12')
 eq(a.where,'26: belts 7, requester chests 14, users\' inputs 5')
 eq(#a.networks>=1,true)
@@ -268,16 +272,33 @@ has(a.users,'4 users: ')
 eq(a.networks[2],'  unmet (20,3) requester-chest 0/10: all 3 held are reserved for other deliveries')
 -- The same reply wherever the asker stands.
 local far={surface=surface,force=force,position={x=900,y=900}}
-eq(S.supply(far,{item=AC}).users_worst[2],r.users_worst[2])
+eq(supply_read(far,{item=AC}).users_worst[2],r.users_worst[2])
 -- Another surface by name; nothing there.
-local v=S.supply(p,{item=AC,surface='vulcanus'})
+local v=supply_read(p,{item=AC,surface='vulcanus'})
 eq(v.where,'28: platform hubs 25, characters 3 (luna 3)'); eq(v.networks,nil); eq(v.users,nil)
 bodies[2]=nil
 hubinv=inv({})
-eq(S.supply(p,{item=AC,surface='vulcanus'}).where,'none on vulcanus')
+eq(supply_read(p,{item=AC,surface='vulcanus'}).where,'none on vulcanus')
 -- Checks.
 local ok,err=pcall(S.supply,p,{item='advanced-circuitt'}); assert(not ok and tostring(err):find('item must be an item name',1,true),err)
 ok,err=pcall(S.supply,p,{item=AC,radius=10}); assert(not ok and tostring(err):find('radius needs near',1,true),err)
 ok,err=pcall(S.supply,p,{item=AC,surface='mars'}); assert(not ok and tostring(err):find('no surface mars',1,true),err)
 assert(S.schema.supply.near and S.schema.supply.radius and S.schema.supply.item and S.schema.supply.surface and S.schema.supply.returns)
+-- task-statuscost: the same read within 10 s is the same reply with as_of, and scans nothing; a later one, another item
+-- or another area reads anew.
+game.tick=game.tick+600
+local finds=0
+local find=surface.find_entities_filtered
+surface.find_entities_filtered=function(f) finds=finds+1; return find(f) end
+local first=supply_once(p,{item=AC})
+local n=finds
+game.tick=game.tick+300
+local again=supply_once(p,{item=AC})
+eq(finds,n,'no scan for the same read'); eq(again.as_of,'5s ago (the same read within 10 s is reused)')
+eq(first.as_of,nil); eq(again.where,first.where); eq(again.makers,first.makers); eq(again.counted,first.counted)
+again.team={'x'}; eq(supply_once(p,{item=AC}).team,nil,'a reply added to does not change the kept one')
+supply_once(p,{item=AC,near={x=22,y=0},radius=12}); assert(finds>n,'another area reads anew')
+n=finds; game.tick=game.tick+300
+eq(supply_once(p,{item=AC}).as_of,nil,'10 s later: read anew'); assert(finds>n)
+surface.find_entities_filtered=find
 print('supply: ok')

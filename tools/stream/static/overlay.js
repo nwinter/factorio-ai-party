@@ -40,8 +40,9 @@
   const ALERT_ICON = { attack: "⚔️", loss: "🔥", death: "💀", power: "⚡", research: "🔬", info: "ℹ️", space: "🚀", arrival: "🛰️" };
   // board event verbs as a viewer reads them ("Astra took: ...")
   const VERB = { posted: "posted", taken: "took", assigned: "assigned", released: "released", started: "started",
-    done: "finished", blocked: "is blocked on", dropped: "dropped", reopened: "reopened" };
-  const KIND = { request: "request", task: "task", claim: "claim", harness: "tool", note: "note" };
+    done: "finished", blocked: "is blocked on", dropped: "dropped", reopened: "reopened", step: "finished a step of" };
+  const KIND = { request: "request", task: "task", claim: "claim", harness: "tool", note: "note", project: "project" };
+  const PROJ_S = 9; // the board shows for 18 s at a time (rotateWidgets): its bottom row gives claims and projects half each
 
   // ---------- colour handling: agents pick any colour; keep everything readable on the dark panels ----------
   function parseHex(c) {
@@ -638,6 +639,16 @@
     if (ag) return [ag, avatar(ag, "xxs")];
     return [null, el("span", "tool", "⚙")];
   }
+  // A project's progress: a short bar and "3/7" (board kind project; model.projects_snapshot, a project event's own)
+  function projProgress(done, total) {
+    const box = el("span", "prog");
+    if (total == null) return box;
+    const bar = el("span", "bar"), i = el("i");
+    i.style.width = (total ? Math.round(100 * done / total) : 0) + "%";
+    bar.append(i);
+    box.append(bar, el("span", "n", total ? done + "/" + total : "no steps"));
+    return box;
+  }
   function renderBoard(s) {
     const b = s.board || {};
     const panel = $("board");
@@ -687,6 +698,8 @@
           title += " → " + (owner ? owner.display_name : e.owner);
         }
         n.append(el("span", "title", title));
+        // a project's progress after this change (the event's own: rows are built once)
+        if (e.kind === "project" && e.steps_total != null) n.append(projProgress(e.steps_done, e.steps_total));
         n._when = el("span", "when");
         n.append(n._when);
         log.appendChild(n);
@@ -732,24 +745,41 @@
     if (!events.length && !cl.length && !plan && !empty) log.appendChild(el("div", "empty", "Nothing on the board yet"));
     else if ((events.length || cl.length || plan) && empty) empty.remove();
 
+    // The bottom row: the claims, or the open projects with their progress; with both, they take turns (PROJ_S each)
     const box = $("board-claims");
-    const claims = b.claims || [];
-    const csig = claims.map((c) => c.id + (c.agent || c.owner) + c.title).join("|") + "|" + b.claims_total
-      + "|" + claims.map((c) => { const a = s.agents.find((x) => x.name === c.agent); return a ? a.color + a.glyph : ""; }).join("");
+    const claims = b.claims || [], projects = b.projects || [];
+    const showProj = projects.length > 0 && (!claims.length || Math.floor(s.now / PROJ_S) % 2 === 0);
+    const face = (c) => { const a = s.agents.find((x) => x.name === c.agent); return a ? a.color + a.glyph : ""; };
+    const csig = showProj
+      ? "p|" + projects.map((p) => p.id + (p.agent || p.owner || "") + p.title + p.done + "/" + p.total + face(p)).join("|") + "|" + b.projects_total
+      : "c|" + claims.map((c) => c.id + (c.agent || c.owner) + c.title).join("|") + "|" + b.claims_total + "|" + claims.map(face).join("");
     if (box.dataset.sig !== csig) {
       box.dataset.sig = csig;
       box.textContent = "";
-      box.append(el("span", "lbl", "Claims"));
-      if (!claims.length) box.append(el("span", "more", "none yet"));
-      const shown = claims.slice(0, 3);
-      for (const c of shown) {
-        const chip = el("span", "claim");
-        const [, av] = boardAvatar(s, c.agent);
-        chip.append(av, el("span", "", clean(c.title)));
-        box.append(chip);
+      if (showProj) {
+        box.append(el("span", "lbl", projects.length === 1 ? "Project" : "Projects"));
+        const shown = projects.slice(0, 2);
+        for (const p of shown) {
+          const chip = el("span", "claim proj");
+          const [, av] = p.agent ? boardAvatar(s, p.agent) : [null, el("span", "tool", "🏗")];
+          chip.append(av, el("span", "", clean(p.title)), projProgress(p.done, p.total));
+          box.append(chip);
+        }
+        const more = (b.projects_total || projects.length) - shown.length;
+        if (more > 0) box.append(el("span", "more", "+" + more));
+      } else {
+        box.append(el("span", "lbl", "Claims"));
+        if (!claims.length) box.append(el("span", "more", "none yet"));
+        const shown = claims.slice(0, 3);
+        for (const c of shown) {
+          const chip = el("span", "claim");
+          const [, av] = boardAvatar(s, c.agent);
+          chip.append(av, el("span", "", clean(c.title)));
+          box.append(chip);
+        }
+        const more = (b.claims_total || claims.length) - shown.length;
+        if (more > 0) box.append(el("span", "more", "+" + more));
       }
-      const more = (b.claims_total || claims.length) - shown.length;
-      if (more > 0) box.append(el("span", "more", "+" + more));
     }
   }
 

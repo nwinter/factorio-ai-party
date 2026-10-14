@@ -125,7 +125,7 @@ global.fetch = (url, opts) => {
 };
 require(process.argv[2]);
 setTimeout(() => process.stdout.write(JSON.stringify({ dash: kids['#dash'].innerHTML, made, sets,
-  agents: (kids['#cb-agents'] || {}).innerHTML, cams: (kids['#map-cams'] || {}).innerHTML,
+  agents: (kids['#cb-agents'] || {}).innerHTML, cams: (kids['#map-cams'] || {}).innerHTML, board: (kids['#cb-board'] || {}).innerHTML,
   watching: { text: kids['#watching'].textContent, hidden: kids['#watching'].hidden }, posts }), () => process.exit(0)), 300);
 """
 
@@ -268,6 +268,11 @@ def map_tests():
         assert got["base"]["rows"] and got["core"]["cell"] == 1 and len(got["turrets"]) == 3 and got["nests"] == [[90, 10, "s"]]
         assert [a["name"] for a in got["agents"]] == [a["name"] for a in map_state(True)["agents"]] and "cams" in got
         assert "agent-live" in lv["agents"]
+        # the board card: open projects with their progress, and a project step with the step it did (eng/projects)
+        bd = lv["board"]
+        assert '<h4>Projects</h4><ul class="board-projects">' in bd and "<b>Nuclear power plant</b>" in bd, bd
+        assert 'aria-valuenow="50"' in bd and "3 of 6 steps" in bd and "no owner" in bd and "--fx-value:25%" in bd, bd
+        assert "finished a step of</span> Nuclear power plant" in bd and "3. Reactor and heat exchangers" in bd, bd
         # watchers: the sample shows its YouTube reading; no heartbeat without an API
         assert lv["watching"] == {"text": "Watching: 41 YouTube", "hidden": False} and lv["posts"] == [], (lv["watching"], lv["posts"])
 

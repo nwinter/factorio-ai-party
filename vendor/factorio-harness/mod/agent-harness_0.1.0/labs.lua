@@ -154,6 +154,14 @@ return function(api)
       packs = {a.pack}
     end
     assert(#packs > 0, 'no research is running: name a pack (science {pack=logistic-science-pack})')
+    -- The same read within 10 s is the same reply, with as_of (supply.lua reuse; task-statuscost).
+    if api.supply.reuse then
+      local key = string.format('science|%s|%s|%s|%s', tostring(surface.index or surface.name), force.name, table.concat(packs, ','), tech and tech.name or '')
+      return api.supply.reuse(key, function() return M.science_fresh(surface, force, tech, needed, packs) end)
+    end
+    return M.science_fresh(surface, force, tech, needed, packs)
+  end
+  function M.science_fresh(surface, force, tech, needed, packs)
     local names = {}
     for _, name in ipairs(packs) do names[name] = true end
     local scan = api.supply.scan(surface, force, names, {packs=needed})

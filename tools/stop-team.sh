@@ -15,6 +15,8 @@ python3 tools/pog.py --world "$world" pause || true
 # Console commands that were not harness requests (the mod's console log): operator tools are labelled, anything
 # else is listed as UNKNOWN to read by hand. Saved in the run for the study.
 python3 tools/console_audit.py --world "$world" --out "$rundir/console-audit.json" || true
+# The team blueprint library's last copy in the run (runs/RUN/blueprints/; the watch stopped with the helpers).
+python3 tools/bplibrary.py --world "$world" --run-dir "$rundir" once || true
 # POG_BROKER=1 runs: what the RCON broker forwarded and refused (it stopped with the helpers above).
 [ -f "$rundir/broker.log" ] && { sleep 1; python3 tools/fh_broker.py summary "$rundir/broker.log" || true; }
 python3 tools/pog.py --world "$world" save

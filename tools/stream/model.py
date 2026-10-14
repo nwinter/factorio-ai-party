@@ -10,8 +10,8 @@ An observation is a dict:
   flows: {item: [per-2-minute counts, oldest first]} (optional, refreshed slowly)
   power: {machines, starved}                       (optional)
   events: [{kind: attack|loss|death|info, agent?, text, key?, ttl?, position?}] (optional)
-  board_events: [{seq, tick, by, id, change, title, kind?}] (optional; docs/BOARD-API.md)
-  board: {items: [...], open_unowned} (optional, refreshed slowly; docs/BOARD-API.md)
+  board_events: [{seq, tick, by, id, change, title, kind?, progress?, steps_done?, steps_total?}] (optional; docs/BOARD-API.md)
+  board: {items: [...], open_unowned, plan} (optional, refreshed slowly; docs/BOARD-API.md; project items carry progress)
 """
 import json, math, os, re, time
 from collections import deque
@@ -64,12 +64,17 @@ BOARD_STATUS = {"posted": "open", "taken": "claimed", "assigned": "claimed", "st
 
 
 def board_verb(change):
-    """A board event's `change` -> posted | taken | started | done | blocked | dropped | reopened | note | updated.
-    The contract leaves `change` loose, so accept "posted", "status:done", "owner:astra", {"status": "done"}, ..."""
+    """A board event's `change` -> posted | taken | started | done | blocked | dropped | reopened | note | step |
+    updated. The contract leaves `change` loose, so accept "posted", "status:done", "owner:astra", {"status": "done"},
+    ...; a project's step_done is a step (its other step_* changes, goal, handoff and areas are updates)."""
     if isinstance(change, dict):
         change = ("status:" + str(change["status"]) if change.get("status") else "owner" if change.get("owner")
                   else "note" if change.get("note") else "")
     c = str(change or "").lower()
+    if c.startswith("step_"):
+        return "step" if c == "step_done" else "updated"
+    if c in ("goal", "handoff", "areas"):
+        return "updated"
     for verb, words in (("posted", ("post", "creat", "new")), ("done", ("done", "complet", "finish")),
                         ("blocked", ("block",)), ("dropped", ("drop", "cancel")), ("started", ("doing", "start")),
                         ("assigned", ("assign",)), ("released", ("release",)),
@@ -77,6 +82,20 @@ def board_verb(change):
         if any(w in c for w in words):
             return verb
     return "updated"
+
+
+PROGRESS_RE = re.compile(r"^(\d+) of (\d+) steps?$")
+
+
+def project_steps(progress, done=None, total=None):
+    """A project's steps done and in all, from an event's numbers or its progress text ("3 of 7 steps", "no steps
+    yet": 0, 0); None, None when neither says."""
+    if isinstance(done, int) and isinstance(total, int):
+        return done, total
+    m = PROGRESS_RE.match(str(progress or ""))
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    return (0, 0) if progress == "no steps yet" else (None, None)
 
 
 def clean_text(s):
@@ -376,6 +395,7 @@ class Model:
         self.alerts = deque(maxlen=30)
         self.alert_keys = {}
         self.tick = 0
+        self.tick_t = None  # when self.tick was read (ingest)
         self.paused = False
         self.research = {"current": None, "progress": None, "done": set(), "recent": deque(maxlen=6)}
         self.done_at = {}    # technology -> when this stream saw it finish (unused_unlocks)
@@ -422,7 +442,8 @@ class Model:
     def ingest(self, obs, now=None):
         now = now or time.time()
         self.last_obs_t = now
-        self.tick = obs.get("tick", self.tick)
+        if obs.get("tick") is not None:  # replays.py maps a loss's game tick to wall time with (tick_t, tick)
+            self.tick, self.tick_t = obs["tick"], now
         self.paused = bool(obs.get("paused"))
         game_sec = obs.get("game_seconds", self.tick / 60)
         team = self.run.get("agents") or {}
@@ -607,7 +628,7 @@ class Model:
         return dict({k: v for k, v in a.items() if k != "t"}, text=attention.text(a, here, landmarks),
                     age_s=round(now - a["t"], 1), dist=None if d is None else round(d, 1), far=far)
 
-    def _fight(self, key, kind, position, now, text, agent=None, loss=False):
+    def _fight(self, key, kind, position, now, text, agent=None, loss=False, tick=None):
         """A fight still being reported (live.py re-reports an attacked chunk every poll while its last hit is under 30
         game seconds old, a loss for ~2 minutes, an agent's combat flag while it lasts): `last` is when it was last
         seen, so replays.py can wait until it has been quiet before airing anything about it."""
@@ -622,12 +643,15 @@ class Model:
         f.update(last=now, position={k: position[k] for k in ("x", "y", "surface", "extent") if k in position})
         if loss:
             f["losses"].append(now)  # when a loss alert first came in: the moment something was destroyed (+ poll lag)
+            # the incident's last_tick (live.py), or None: the game tick of that moment, beside each entry of losses
+            f.setdefault("loss_ticks", []).append(tick)
             f["text"] = text
         for k in [k for k, v in self.fights.items() if now - v["last"] > 300]:
             del self.fights[k]
 
     def fights_snapshot(self, now):
-        return [dict(f, losses=list(f["losses"])) for f in self.fights.values() if now - f["last"] < 240]
+        return [dict(f, losses=list(f["losses"]), loss_ticks=list(f.get("loss_ticks") or []))
+                for f in self.fights.values() if now - f["last"] < 240]
 
     def work_snapshot(self, now):
         return [dict(w, age_s=round(now - w["t"], 1)) for w in self.work if now - w["t"] < 60]
@@ -888,6 +912,8 @@ class Model:
                 elif verb in ("reopened", "released"):
                     it["owner"] = None
             it["updated_tick"] = e.get("tick")
+            if e.get("progress") is not None:  # a project's events carry its progress after the change
+                it["progress"] = e.get("progress")
             if board["open_unowned"] is not None and kind == "request":
                 board["open_unowned"] = None  # recount from items until the next `board` read
         if verb in ("note", "updated") or (kind == "harness" and verb not in ("posted", "done")):
@@ -903,9 +929,14 @@ class Model:
         entry = {"seq": e.get("seq"), "tick": e.get("tick"), "by": e.get("by"), "agent": agent, "id": e.get("id"),
                  "verb": verb, "title": clean_text(title), "kind": kind,
                  "owner": it.get("owner"), "owner_agent": self._who(it.get("owner")), "t": e.get("t", now)}
+        if kind == "project":  # its progress after this change ("3 of 7 steps"), and the step a step event did
+            done, total = project_steps(e.get("progress"), e.get("steps_done"), e.get("steps_total"))
+            entry.update(progress=e.get("progress"), steps_done=done, steps_total=total)
+            if verb == "step":
+                entry["step"] = clean_text(str(e.get("text") or ""))
         board["events"].append(entry)
         if agent and recent:
-            self.agents[agent].bump({"done": 1.5, "posted": 1.0, "taken": 1.0}.get(verb, 0.5), now)
+            self.agents[agent].bump({"done": 1.5, "posted": 1.0, "taken": 1.0, "step": 1.0}.get(verb, 0.5), now)
             self.agents[agent].last_activity_t = now
         if kind == "harness" and verb == "done":
             self._changelog(entry["title"], e.get("tick"), entry["t"])
@@ -960,6 +991,7 @@ class Model:
             unowned = sum(1 for it in items if it.get("kind") == "request" and it.get("status") == "open"
                           and not it.get("owner"))
         doing = sum(1 for it in items if it.get("kind") in ("task", "request") and it.get("status") in ("claimed", "doing"))
+        projects = self.projects_snapshot()
         return {
             "available": b["available"],
             "events": list(b["events"])[-8:],
@@ -970,7 +1002,23 @@ class Model:
             "claims_total": len(claims),
             "changelog": list(b["changelog"])[-2:],
             "plan": self.plan_snapshot(),
+            "projects": projects[:4],
+            "projects_total": len(projects),
         }
+
+    def projects_snapshot(self):
+        """Open projects (board kind project) for the board widget and the site, the latest changed first: title,
+        owner, progress ("3 of 7 steps") and its numbers for a bar."""
+        rows = [it for it in self.board["items"].values()
+                if it.get("kind") == "project" and it.get("status") in ("open", "claimed", "doing", "blocked")]
+        rows.sort(key=lambda it: -(it.get("updated_tick") or 0))
+        out = []
+        for it in rows:
+            done, total = project_steps(it.get("progress"))
+            out.append({"id": it.get("id"), "title": clean_text(it.get("title") or ""), "owner": it.get("owner"),
+                        "agent": self._who(it.get("owner")), "status": it.get("status"),
+                        "progress": it.get("progress") or "", "done": done, "total": total})
+        return out
 
     def plan_snapshot(self):
         """The team plan for the board widget: goals, each agent's line (agent name matched to its card), last edit."""
@@ -1000,7 +1048,7 @@ class Model:
         fresh = e.get("key") not in self.alert_keys or now - self.alert_keys[e["key"]] >= e.get("ttl", 60)
         if p and e["kind"] in ("attack", "loss"):
             self._fight(e.get("key") or f"{e['kind']}:{p['x']},{p['y']}", e["kind"], p, now, e["text"],
-                        loss=e["kind"] == "loss" and fresh)
+                        loss=e["kind"] == "loss" and fresh, tick=e.get("tick"))
         if p and fresh:  # a fight somewhere: pull cameras toward agents near it
             for other in self.agents.values():
                 if other.position and math.hypot(other.position["x"] - p["x"], other.position["y"] - p["y"]) <= 60:
@@ -1457,7 +1505,7 @@ class Model:
         res = self.research
         science = self.science(now)
         return {
-            "now": now, "tick": self.tick, "paused": self.paused, "game_time": fmt_game_time(self.tick / 60),
+            "now": now, "tick": self.tick, "tick_t": self.tick_t, "paused": self.paused, "game_time": fmt_game_time(self.tick / 60),
             "title": self.run.get("title"), "subtitle": self.run.get("subtitle"),
             # this shift's start and end and when the next is expected (start-team.sh), for the site's offline state
             "shift": self.run.get("shift"),

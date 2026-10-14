@@ -60,8 +60,8 @@ already targets your character.
 
 - The board is the team's shared list in the game save: `./fh board` (add `--args '{"mine":true}'` or
   `'{"status":"active"}'`). Post with `./fh board post --args '{"kind":"request","title":"...","owner":"grok"}'`; kinds
-  are `task`, `request`, `claim` (with `"area":{"left_top":{x,y},"right_bottom":{x,y}}`) and `note`. A post may add
-  `"needs":{"iron-plate":200}` and a first `"note":"..."`.
+  are `task`, `request`, `claim` (with `"area":{"left_top":{x,y},"right_bottom":{x,y}}`), `note` and `project`. A post
+  may add `"needs":{"iron-plate":200}` and a first `"note":"..."`.
 - Name an owner in a request when you know who should do it. A request without an owner is shown to everyone until someone takes it; take one with
   `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`). A task or request whose owner has made no request for
@@ -70,6 +70,10 @@ already targets your character.
   shows it (`./fh board` shows it at the top); `./fh board plan goals "..."` replaces the goals; `./fh board plan
   doing "..."` sets your line; `./fh board plan for luna "..."` sets a teammate's line (shown as set by you); `""`
   clears. The stream's board widget shows it.
+- A `project` (`"goal"`, `"steps":["...","..."]`, `"areas"`) stays on the board across shifts. Anyone adds steps and
+  marks them done (`./fh board update --args '{"id":N,"step":"...","done":[2,3]}'`); the owner writes `goal` and
+  `handoff`, and anyone may once the owner has made no request for 30 minutes (and may then take it). `./fh board
+  projects` lists the open ones with progress.
 - `./fh research` shows the research queue: each technology's progress, who queued it, its packs, and when it should
   finish at the current lab throughput (or which pack it waits for). `./fh research done` lists what finished lately
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
@@ -129,7 +133,7 @@ already targets your character.
   more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them any time;
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
-  open board items).
+  open board items). `projects` lists the open projects, one line each with progress, next step and handoff.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `feed {"recipe": NAME,
@@ -163,14 +167,24 @@ already targets your character.
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
-  reach every placement. `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},
-  "direction":"north","recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid
-  the recipe puts there; `inspect` of a ghost shows the same.
+  reach every placement, and what each planned inserter picks up from and drops into (`missing: no drop target`);
+  `inspect` and build replies flag a built inserter with no pickup or drop target.
+  `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
+  "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
+  `inspect` of a ghost shows the same.
+- The team blueprint library, kept in the save across shifts: `blueprint_save {name, area | positions, description,
+  anchor}` stores what the team built; `blueprint_list` lists entries (author, size, counts, last used);
+  `blueprint_place {name, position, direction, dry_run}` pastes one; `blueprint_rename` and `blueprint_delete {name}`:
+  its author any time, anyone after 24 game hours unused.
 - `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'` (or a chest, silo or pad `position`) weighs a
   rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
   and one split into rockets that keeps each within both. `./fh call silo` (or a `position`) shows a silo's rocket
   parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
-  last launch.
+  last launch. `launch`, `silo` and `configure` (`auto_requests`, `send_to_orbit_automatically` on a silo) take
+  `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
+- `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
+  patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
+  enemy spawners and worms within 50 tiles, and how many of our drills are on it.
 - Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
   standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,
