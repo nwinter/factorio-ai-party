@@ -165,6 +165,7 @@ local function finish(index, outcome)
   if action and not action.queued and M.selfview then pcall(M.selfview.ended,index,action.kind,outcome,action.error) end
   if action and action.blocked_item then s.last[index].blocked_item=action.blocked_item end
   if action and action.kind=='mine' and action.mined then s.last[index].mined=action.mined end
+  if action and action.kind=='mine' and action.instead then s.last[index].instead=action.instead.line end
   if action and action.kind=='pickup' then
     s.last[index].picked=action.picked
     -- An area pickup: what is still on the ground there, and stacks it walked away from.
@@ -282,7 +283,7 @@ local function finish(index, outcome)
         noun='places'}..(left>0 and string.format('; %d places not visited (%s)',left,outcome) or '')
     end
     if action.op then
-      last.op=action.op; last.got=nil; last.given=action.got; last.errors=action.errors; last.items=action.items
+      last.op=action.op; last.got=nil; last.given=action.got; last.errors=action.errors; last.items=action.items; last.entities=action.rows
       last.left=math.max(0,#action.targets-action.index+1)>0 and #action.targets-action.index+1 or nil
     end
   end
@@ -718,7 +719,7 @@ function handlers.describe()
       construct={area='optional {left_top,right_bottom} <=256x256; default: ghosts from the last paste',ticks='1..216000 (default 36000)',note='builds every ghost in reach from inventory and hand-mines every entity marked for deconstruction (timed like mine; contents to inventory, stops with inventory_full), then walks to the free stand point (never on a footprint) covering the most remaining ghosts near the nearest one; blocked ghosts retry once after moving; trees/rocks under ghosts are marked and mined first; ghosts whose item is in the hand-crafting queue are awaited (status awaiting_craft), not missing; status reports built/mined/remaining/missing/failed and blockers (trees/rocks in the way of a ghost, marked and mined first, also when a build bumps into one: name, position, ghost, at, cleared); outcomes: constructed (everything done) | incomplete (ghosts left for missing items or failures; a plan step fails) | nothing_to_do (a success, completes at once) | inventory_full | timed_out'},
       move_to={position='{x,y}, within 512 tiles',ticks='1..36000, default 3600',tolerance='0.25..10, default 0.5 (alias within)',pathfind='default true: the engine pathfinder: a padded box on the tile grid (with a twin request avoiding belts, kept when at most 6 tiles or a quarter longer), then the character\'s own box from the nearest free tile centre, on the half-tile grid, and on the quarter-tile grid with a wider goal; when none finds a route the walk ends at once as unreachable (a target on ungenerated ground is steered to directly); a stall, back-and-forth, or no progress toward the next waypoint for 90 ticks (e.g. a belt carrying the character back) sidesteps, every 3rd stall replans wider, blocked after 15 stalls; false steers directly',note='never ends on a belt: arriving on one it steps to the nearest free tile without a belt within the arrival radius (else within 3 tiles)',combat='optional true or a radius 1..32 (default 20): fire at enemies in range while walking, as shoot auto does (needs ammunition), until the walk ends; status/last_combat report it (outcome move_ended, ammo_used)',status='last reports why (unreachable: closed in, with the area and what closes it in, or no path; blocked; timed_out), nearest_reachable and reachable_gap (its distance to the target), off_belt, path (off belts), steered (without a path), replans, stalls, no_progress, paths_failed',outcomes='arrived | arrived_near (stuck within tolerance+1.5, e.g. goal inside an entity) | unreachable (no route for the character: why, nearest_reachable) | blocked | timed_out'},
       pickup={ticks='1..600 (default 30); over an area 1..36000 (default 3600)',area='optional {left_top,right_bottom} up to 64x64: pick up every item stack on the ground in it',position='optional centre of the square for radius (default you)',radius='optional 1..32 (default 8): the square around position, instead of area',items='optional 1..16 item names: only stacks of these',note='takes items on the ground within your pickup distance (stand on or next to them; refused when none is in reach); outcomes picked_up | duration_elapsed | inventory_full | nothing_in_reach, last.picked {item: count}. Over an area (area, position/radius or items): one stack every 6 ticks, walking to the nearest stack left in the area; refused when it holds none; returns item_stacks and items; outcomes picked_up (none left) | inventory_full | blocked (stacks it could not walk to: last.skipped; it stops after 8) | timed_out; last.picked, last.left (stacks still in the area)'},repair={position='{x,y}',ticks='1..600',item='repair-pack by default',platform='refused: the game repairs platform entities itself, one at a time, with repair packs from the hub; platforms {platform} and inspect of the hub list damaged and repair_packs'},
-      mine={position='{x,y}', ticks='1..600', name='optional', outcomes='target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
+      mine={position='{x,y}', ticks='1..600', name='optional', radius='1..32 (default 8): a resource tile at position that is mined out (the resource named, or the one an earlier mine at that position took): the tile of the same resource within radius of it, one in reach first, is mined instead; the reply\'s instead (and last.instead) names it', outcomes='target_mined | duration_elapsed (ore: last reports mined) | inventory_full (blocked_item) | not_minable (a stump, remnant or corpse; last.error) | target_lost | out_of_reach'},
       stock={item='item name; omit for every item held, largest first (items, more)',radius='1..1024 around position (default 128)',position='optional centre (default character)',limit='1..32 places (default 8); without item 1..64 items (default 16)',quality='default normal',
         returns='with item: total held in our machine outputs (assemblers, furnaces), chests and landing pads; by_entity; places nearest first {name,position,count,distance}; made_by (crafters set to a recipe making it); held (your inventory); summary line'},
       craft={force='boolean: hand-craft even when nearby stock covers it',short='when fewer started than asked: the raw ingredients missing for the rest (e.g. "wood short 18 (held 2)"), with stock lines for them',stock='when our machines/chests within 64 tiles hold the product: a stock line per item; a craft of >=3 s of hand time that stock covers is refused (errors) unless force=true',returns='started; hand_s (character crafting seconds for these), queue_s (whole hand queue), assemblers (our machines already set to each recipe); blocks (when the hand queue is >=30s); no_assembler (per recipe no machine runs: the best unlocked assembler and its time for the same batch)',recipe='name',count='1..1000',recipes='optional batch: array of {recipe,count}; each attempted, started/errors keyed by recipe'},craftable={recipes='optional name or array; default every hand recipe startable now (count>0)'},
@@ -735,10 +736,11 @@ function handlers.describe()
       inspect={position='{x,y}',positions='optional 1..32 positions: one inspect each in one call, results in order (an entry that fails has position and error)',platform='optional platform name: inspect on that space platform (platform coordinates, hub at 0,0; the whole platform is in sight)',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach; holds (a chest, logistic chest, wagon, car or spider trunk, landing pad, hub): one line, the largest stacks first as name*count, then slots used of the total and the red-X limit; requests (requester, buffer): item held/asked per request, summed over active sections; output_fill (assembler, furnace): each product in the output held of its stack size and %, and full when the machine stopped for it (status full_output), e.g. copper-cable 200/200 (100%), full; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too; trash: what the game put in a silo\'s, landing pad\'s or hub\'s trash slots; rocket_weight (a silo): cargo held/lift kg; modules {inventory_index (the inventory a blueprint module request names), slots, contents}; filters, filter_mode, use_filters (inserters, loaders); an asteroid collector: filters (chunk names), filter_slots (the game\'s count; 0 until a filter is set), arm (chunks its arms hold), its output under inventories.asteroid_collector_output; held (an inserter\'s hand), pickup_target, drop_target, io_warning (\'no pickup target\', \'no drop target\': the engine\'s targets; also in io and observe rows; build and rotate replies read what stands on the points, as the engine sets targets a tick later; a builds batch lists inserters_without_target after all its entries; an inserter ghost: what stands on its points); marked_for_deconstruction, marked_for_upgrade; ghosts_here (ghosts on the footprint, with their filters); on a platform: hub_slots, repair_packs and damaged (most damaged first, up to 10; damaged_count past that) on the hub, repair (how a damaged entity there gets repaired), and construction_blocked (hub full, ghosts whose items the hub lacks); spoiling: spoilable stacks in its inventories, stalest first, with the time left; an agricultural tower: tower {state, seeds, output, area, cells (growing, grown, free with soil for which seeds, blocked by what, no soil), plantable_now, planted_10min, plants (time until grown), harvest_made_10min}'}, rotate={direction='optional compass name (north, east, south, west; 2.0 numbers 0, 4, 8, 12 too): turn until it faces this way, one 90-degree turn at a time as the R key does',returns='rotated, before, after (compass names; 2.0 directions: north 0, east 4, south 8, west 12), turns (how many 90-degree turns it took), entity; one call without direction is one 90-degree turn clockwise, reverse=true counter-clockwise',position='{x,y}',reverse='boolean'},
       configure={surface='optional planet name: act there by remote view, where our force sees the chunk',auto_requests='rocket silo: boolean, the GUI\'s automatic requests (fill and launch for platforms\' requests in orbit; switched on with cargo loaded by hand, that cargo goes to the trash slots: cargo_to_trash, note)',send_to_orbit_automatically='rocket silo: boolean, the GUI\'s send to orbit automatically; a silo reply reads back settings {silo, auto_requests, send_to_orbit_automatically, requesting_for, rocket, parts}',position='{x,y}; out of reach works through remote view in any visible chunk (recipe changes then need an empty, idle machine)',platform='optional platform name: configure on that space platform through remote view (platform coordinates, hub at 0,0)',recipe='enabled recipe',quality='optional recipe quality (normal, uncommon, rare, epic, legendary; the machine needs the quality unlocked)',filters='or: item names for a filtering inserter/loader, or asteroid chunk names (metallic-asteroid-chunk, ...) for an asteroid collector ([] clears; up to the entity\'s filter slot count; a collector\'s count reads 0 until a filter is set, so there each slot is tried and only the game\'s refusal fails it; the reply reads the filters back, not_set for a name that did not stick)',filter_mode='whitelist|blacklist (inserters; asteroid collectors have no filter mode in the game)',force='boolean: allow destroying held fluids',returns='returned/spilled {item=count}: contents and interrupted-craft ingredients go to inventory like a player recipe change'},
       transfer={position='{x,y}',positions='optional array of 1..64 {x,y}: same transfer per entity; per-entity rows plus total',area='or {left_top, right_bottom} up to 128x128: our entities of types (default chests, machines, labs, silos, boilers, drills, turrets, wagons, vehicles, landing pads, roboports, agricultural towers) with their centre inside, as positions (at most 64; area_targets counts them)',types='with area: entity types to take (1..16)',inventory='chest|fuel|furnace_source|furnace_result|assembling_machine_input|assembling_machine_output|lab_input|rocket_silo_rocket (silo cargo)|rocket_silo_trash|cargo_landing_pad_main|hub_main|asteroid_collector_output|... (*_trash: take-only, what the game moved out); inferred when omitted (to_player takes from non-empty trash slots first; fuel items->burner fuel, else the first inventory accepting the item, e.g. silo ingredients then rocket cargo; to_player->output or inventory holding item)',item='name; omit with to_player to take everything',quality='default normal',count='1..10000 per entity (default: to_entity 1, or total; to_player all of the item; unlimited when item omitted)',total='optional cap across positions, filled in order; echoed',returns='transferred; tally with 2+ positions: one line, moved per item, targets touched of the total, short (full, holding none, failed with the first reason); a target out of reach fails at once, without walking: entity is out of reach: NAME at (x,y) is D tiles away, reach R; in reach from (x,y) (a free spot); inventory_full|entity_full {requested,got,blocked_item} when space ran out; to_entity gives from the main inventory, then (ammo) the gun ammo slots; holding none fails; short of items the hand-craft queue will deliver, it waits for them (awaiting_craft, outcome fed | failed | timed_out); into rocket_silo_rocket only what fits under the rocket\'s 1000 kg lift (rocket_weight held/lift kg; weight_limited {requested,fits,note} when fewer fit; fails when none fits)',direction='to_entity|to_player (from_player, give, put, insert, to_chest, to_container = to_entity; from_entity, take, from_chest, from_container = to_player; to_entity=true, from_entity=true, or to_entity={x,y} / from_entity={x,y} as the target, noted in corrected); any container: chests, logistic chests, car and spider trunks, cargo wagons, landing pads, hubs; inferred when omitted (echoed as direction): no item -> to_player; an item only the character holds or is hand-crafting -> to_entity; one only the targets hold -> to_player; both or neither -> error',keep='optional source reserve count',keep_max='true (to_player): refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken; up_to=true stops at that max instead (left_at_max); every take over it says so in trash',up_to='a number: the target total cap (tops the target up to it); true: move what there is, min(count, held or in the source, room), never failing on a short or empty source: moved, short {asked, moved, reason: none_held|source_short|target_full}; as a queue step it never pauses the plan for that'},
-      feed={area='or {left_top, right_bottom} up to 128x128: our machines of types (default as in reach; with recipe assemblers and furnaces) with their centre inside, as positions (at most 64; those on another recipe are counted in other_recipe; area_targets counts them)',note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel; each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items)',
+      feed={area='or {left_top, right_bottom} up to 128x128: our machines of types (default as in reach; with recipe assemblers and furnaces) with their centre inside, as positions (at most 64; those on another recipe are counted in other_recipe; area_targets counts them)',note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s; a furnace with no recipe yet the items or item named that it smelts), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel when its fuel slots are empty (or with fuel=true, fuel=NAME, or a fuel named in items); each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items, entities)',
+        returns='transferred, items, entities: per machine fed {position, name, gave, fuel (its fuel slots after: "coal 10" or "empty")}, with positions or area also each one that got nothing (got nothing); unchanged (count); held; nothing_moved: why nothing was given (what you carry and the machines hold, burners left alone because they hold fuel, furnaces with no recipe yet)',
         radius='1..256: walk a nearest-first route through every machine in radius that wants something you hold',ticks='with radius: 1..36000 (default 3600)',
         positions='optional 1..64 positions instead of everything in reach',items='optional 1..16 item names: give only these',item='optional one item name: give only it (with items, it is added to them)',
-        count='1..1000 target per ingredient/science pack per machine (default 20)',fuel='fuel item for burners (default coal); false skips fuel',fuel_count='1..1000 fuel target per burner (default 10)',
+        count='1..1000 target per ingredient/science pack per machine (default 20)',fuel='fuel item for burners: given to every burner below fuel_count; true: the same with the fuel it holds when you carry it, else coal (chemical burners); omitted: only burners with empty fuel slots get fuel; false skips fuel',fuel_count='1..1000 fuel target per burner (default 10)',
         keep='reserve of each item kept in inventory (default 0)',types='optional entity type filter (default assembling-machine, furnace, lab, boiler, burner-generator, mining-drill, inserter)',quality='default normal',
         recipe='optional recipe name: every machine set to it (positions, in reach, or radius) gets each item ingredient for crafts crafts (topped up to ingredient amount x crafts); machines set to another recipe are listed apart',crafts='with recipe: 1..1000 (default 1)',
         up_to='true: a short or empty inventory never fails the call or, as a queue step, pauses the plan (a tour\'s out_of_items counts as done)',
@@ -748,7 +750,7 @@ function handlers.describe()
       collect={up_to='true: an empty source or a full inventory never fails the call or, as a queue step, pauses the plan (nothing_collected and inventory_full count as done); moved, short {asked, moved, reason}; it also stops at your personal request max for an item (left_at_max says what stayed in the source)',keep_max='true: refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken. Without it, a take over that max (or of an unrequested item while unrequested items go to trash) says so in the reply\'s trash lines: how many the game moves to your trash slots',types='entity types (default furnace, assembling-machine: machine outputs only)',chests='boolean: also empty plain chests (container, logistic-container) in reach or radius; off by default because chests are usually feed stock you placed (result notes chests_skipped / left_in_chests)',item='optional: only this item',positions='optional 1..64 positions instead of everything in reach (named chests are always taken from)',area='or {left_top, right_bottom} up to 128x128: our entities of types (default machines; chests=true adds chests) with their centre inside, as positions (at most 64; area_targets counts them)',
         radius='1..256: with item, walk to our machine outputs/chests holding it (as stock lists), nearest-neighbour route, taking it until count; without item, to every assembler and furnace output in it holding anything, taking all of it (output slots only, never inputs or fuel; chests need item; last reports items); a timed action',count='with radius: stop after this many (default all)',want='optional, with item: hold this many; takes only the difference (nothing when you already have it); not with count',ticks='with radius: 1..36000 (default 3600)',
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited, and tally with 2+ places: moved per item, places touched of the total, short (not reached, failed, not visited); in reach or with positions, 2+ targets: tally as transfer\'s'},
-      research={technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput measured over the last 5 minutes, waits_for a pack nobody made in 10 minutes; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
+      research={technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput of the last minute (2 minutes, then the last 5, when the last minute had no research progress; throughput says which), waits_for a pack nobody made in 10 minutes; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
       blueprint_import={blueprint='export string',slot='default clipboard'},blueprint_export={slot='default clipboard',name='or a team library entry (blueprint_save)',layout='true returns normalized relative layout and material costs instead of export string'},
       blueprint_list={name='optional team library entry: that entry in full (all entity counts, description, anchor, captured area)',returns='slots (your own); library: the team\'s entries {name, author, entities, tiles, footprint WxH tiles, counts (largest 4), saved, last_used (ago, by whom) or never, uses, surface, anchor, description}; library_limit'},
       blueprint_delete={slot='name',name='or a team library entry: its author any time, anyone after 24 game hours unused'},
@@ -1805,8 +1807,61 @@ local function hand_mining_ticks(p,e)
   local speed=c.prototype.mining_speed*(1+(c.character_mining_speed_modifier or 0)+(p.force.manual_mining_speed_modifier or 0))
   return math.max(1,math.ceil(e.prototype.mineable_properties.mining_time*60/speed))
 end
+-- A mined-out resource tile (Grok 03:20: a repeating mine step stalled its loop three times on one stone patch):
+-- the resource this position held (name=, or remembered from an earlier mine there) is looked up within radius
+-- (default 8) of it, a tile in reach first, else the nearest to the character. Positions remembered per agent.
+-- A block: its helpers take no top-level local slots (tests/locals.lua).
+do
+local MINE_MEMORY=64
+local function mine_key(pos) return string.format('%g,%g',pos.x,pos.y) end
+local function remember_mined(p,pos,e)
+  local s=state()
+  s.mined_at=s.mined_at or {}
+  local m=s.mined_at[p.index] or {order={},name={}}
+  s.mined_at[p.index]=m
+  local key=mine_key(pos)
+  if m.name[key]==nil then
+    m.order[#m.order+1]=key
+    if #m.order>MINE_MEMORY then m.name[table.remove(m.order,1)]=nil end
+  end
+  m.name[key]=e.name
+end
+local function next_tile(p,a,pos)
+  local m=(state().mined_at or {})[p.index]
+  local name=a.name or (m and m.name[mine_key(pos)])
+  local proto=name and prototypes.entity[name]
+  if not (proto and proto.type=='resource') then return nil end
+  local radius=integer(a.radius,8,1,32,'radius')
+  local best,best_reach,best_d
+  for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=radius,name=name,type='resource'}) do
+    if e.valid and visible(p,e.position) then
+      local reach=p.can_reach_entity(e)
+      local d=distance(p.position,e.position)
+      if not best or (reach and not best_reach) or (reach==best_reach and d<best_d) then best,best_reach,best_d=e,reach,d end
+    end
+  end
+  return best,name,radius
+end
 function handlers.mine(p,a)
-  local e=entity(p,a); friendly(p,e)
+  local found,e=pcall(entity,p,a)
+  local instead
+  if not found then
+    if not tostring(e):match('^entity not found at') then error(e,0) end
+    local pos=position(a.position)
+    local tile,name,radius=next_tile(p,a,pos)
+    if not tile then
+      if name then error(string.format('%s at (%g,%g) is mined out and no %s is left within %d tiles of it',name,pos.x,pos.y,name,radius),0) end
+      error(e,0)
+    end
+    local gone=string.format('%s at (%g,%g) is mined out',name,pos.x,pos.y)
+    if not p.can_reach_entity(tile) then
+      error(string.format('%s; the nearest %s within %d tiles is out of reach: %s',gone,name,radius,M.out_of_reach(p,tile)),0)
+    end
+    instead={mined_out={x=pos.x,y=pos.y},name=name,position=tile.position,
+      line=string.format('%s; mining %s at (%g,%g), %.1f tiles from it',gone,name,tile.position.x,tile.position.y,distance(pos,tile.position))}
+    e=tile
+  end
+  friendly(p,e)
   assert(e.minable,'entity is not mineable')
   -- Space Age: some ores are not hand-mineable (tungsten-ore is hard-solid,
   -- big mining drills only). Ore is taken through mine_entity, which would
@@ -1830,6 +1885,9 @@ function handlers.mine(p,a)
     action.cycle=hand_mining_ticks(p,e)
     action.next_mine=game.tick+action.cycle
     action.mined=0
+    -- The step's position names this resource from now on, also once its tile is gone.
+    remember_mined(p,position(a.position),e)
+    if instead then remember_mined(p,e.position,e) end
   else
     -- Buildings, trees, rocks and corpses need the entity selected, and the
     -- connected client's cursor hover overwrites selection every tick (the
@@ -1839,9 +1897,11 @@ function handlers.mine(p,a)
     -- A shorter duration could only ever expire unfinished.
     action.until_tick=math.max(action.until_tick,action.done_tick)
   end
+  action.instead=instead
   state().active[p.index]=action
-  -- LuaEntity cannot be serialized to JSON; only tick is returned.
-  return {until_tick=action.until_tick}
+  -- LuaEntity cannot be serialized to JSON; only tick is returned (and the tile taken for a mined-out one).
+  return {until_tick=action.until_tick,instead=instead}
+end
 end
 -- Items on the ground within the character's pickup distance. shake5: a bot's
 -- pickup returned ok and the plate stayed (a bot's character does not pick up
@@ -3411,6 +3471,65 @@ function feeding.recipe_of(e)
     return type(name)=='table' and name.name or name
   end
 end
+-- What a burner's fuel slots hold: {name=count}, or nil when empty (or no burner).
+function feeding.fuel_in(e)
+  local inv=fuel_inventory(e)
+  if not inv then return nil end
+  local out
+  for i=1,#inv do
+    local s=inv[i]
+    if s and s.valid_for_read then out=out or {}; out[s.name]=(out[s.name] or 0)+s.count end
+  end
+  return out
+end
+-- A burner's fuel slots as one line ("coal 10", "solid-fuel 3, wood 2", "empty"); nil for a machine with no burner.
+function feeding.fuel_line(e)
+  if not fuel_inventory(e) then return nil end
+  local held_,names=feeding.fuel_in(e) or {},{}
+  for name in pairs(held_) do names[#names+1]=name end
+  table.sort(names)
+  for i,name in ipairs(names) do names[i]=name..' '..held_[name] end
+  return #names>0 and table.concat(names,', ') or 'empty'
+end
+-- The fuel item for a burner: fuel=NAME; a fuel it burns named in items; what its slots hold, when carried; else
+-- coal for chemical burners, or what it burns (a biochamber: nutrients; farm.lua). Second value: named in items.
+function feeding.fuel_for(p,e,a)
+  if type(a.fuel)=='string' then return a.fuel end
+  for _,name in ipairs(a.items or {}) do
+    if (prototypes.item[name].fuel_value or 0)>0 and M.farm.accepts_fuel(e,name) then return name,true end
+  end
+  for name in pairs(feeding.fuel_in(e) or {}) do
+    if held(p,name,a.quality)>0 then return name end
+  end
+  return M.farm.default_fuel(e,function(n) return held(p,n,a.quality) end)
+end
+-- A burner gets fuel when asked (fuel=NAME, fuel=true, or a fuel named in items) or when its fuel slots are empty
+-- (Gemini 03:20: furnaces burning solid fuel refused an ore feed over "you carry 0 coal").
+function feeding.fuel_want(p,e,a)
+  if a.fuel==false or not fuel_inventory(e) or not pcall(inventory,e,'fuel') then return nil end
+  local fuel,named=feeding.fuel_for(p,e,a)
+  if not (fuel and M.farm.accepts_fuel(e,fuel)) then return nil end
+  if a.fuel==nil and not named and feeding.fuel_in(e) then return nil,true end
+  return {item=fuel,inventory='fuel',count=a.fuel_count}
+end
+-- Whether a furnace smelts item (a recipe of its crafting categories takes it), by furnace name; prototypes only.
+feeding.smelts_cache={}
+function feeding.smelts(e,item)
+  local key=e.name..'\0'..item
+  local smelts_cache=feeding.smelts_cache
+  if smelts_cache[key]==nil then
+    local ok,cats=pcall(function() return e.prototype.crafting_categories end)
+    local found=false
+    for _,r in pairs(ok and cats and prototypes.recipe or {}) do
+      if cats[r.category] then
+        for _,ing in ipairs(r.ingredients or {}) do if ing.type=='item' and ing.name==item then found=true; break end end
+      end
+      if found then break end
+    end
+    smelts_cache[key]=found
+  end
+  return smelts_cache[key]
+end
 function feeding.wants(p,e,a)
   local out={}
   -- recipe: that recipe's item ingredients for `crafts` crafts, only in machines set to it (the second value names
@@ -3425,9 +3544,8 @@ function feeding.wants(p,e,a)
     end
     return out
   end
-  -- Without fuel=, the fuel the burner takes: coal for chemical burners, else what it burns (a biochamber: nutrients; farm.lua).
-  local fuel=a.fuel~=false and (a.fuel or (fuel_inventory(e) and M.farm.default_fuel(e,function(n) return held(p,n,a.quality) end)) or 'coal')
-  if fuel and fuel_inventory(e) and pcall(inventory,e,'fuel') and M.farm.accepts_fuel(e,fuel) then out[#out+1]={item=fuel,inventory='fuel',count=a.fuel_count} end
+  local fuel=feeding.fuel_want(p,e,a)
+  if fuel then out[#out+1]=fuel end
   local recipe
   if e.type=='assembling-machine' or e.type=='furnace' then
     local ok,r=pcall(e.get_recipe); recipe=ok and r or nil
@@ -3439,6 +3557,12 @@ function feeding.wants(p,e,a)
     end
     for _,ing in ipairs(recipe and recipe.ingredients or {}) do
       if ing.type=='item' then out[#out+1]={item=ing.name,inventory=e.type=='furnace' and 'furnace_source' or 'assembling_machine_input',count=a.count} end
+    end
+    -- A furnace that never smelted has no recipe yet: it takes the named items it smelts, as a player puts them in.
+    if not recipe and e.type=='furnace' then
+      for _,name in ipairs(a.items or {}) do
+        if feeding.smelts(e,name) then out[#out+1]={item=name,inventory='furnace_source',count=a.count} end
+      end
     end
   elseif e.type=='lab' then
     local ok,names=pcall(function() return e.prototype.lab_inputs end)
@@ -3499,6 +3623,8 @@ end
 function feeding.why(p,es,a)
   local keep=integer(a.keep,0,0,100000,'keep')
   local by,order={},{}
+  -- Burners left alone because they hold fuel, and furnaces with no recipe yet.
+  local fueled,fuels,unset={n=0},{},0
   for _,e in ipairs(es) do
     for _,w in ipairs(feeding.wants(p,e,a)) do
       local ok,inv=pcall(inventory,e,w.inventory)
@@ -3507,8 +3633,48 @@ function feeding.why(p,es,a)
       if not b then b={n=0,lo=math.huge,hi=0,count=w.count}; by[w.item]=b; order[#order+1]=w.item end
       b.n=b.n+1; b.lo=math.min(b.lo,c); b.hi=math.max(b.hi,c)
     end
+    local _,has=feeding.fuel_want(p,e,a)
+    if has then
+      fueled.n=fueled.n+1
+      for name,c in pairs(feeding.fuel_in(e) or {}) do
+        local f=fuels[name]
+        if not f then f={lo=c,hi=c}; fuels[name]=f; fuels[#fuels+1]=name end
+        f.lo=math.min(f.lo,c); f.hi=math.max(f.hi,c)
+      end
+    end
+    if e.type=='furnace' and not feeding.recipe_of(e) then unset=unset+1 end
   end
-  if #order==0 then return string.format('none of the %d machines wants an item (no recipe set, or not a machine feed fills)',#es) end
+  local notes={}
+  -- Only fuel named: what goes into the furnaces' source slots is not asked about.
+  local source=not a.items
+  for _,name in ipairs(a.items or {}) do source=source or (prototypes.item[name].fuel_value or 0)<=0 end
+  if unset>0 and source then
+    -- What the character carries that those furnaces smelt (main inventory).
+    local can={}
+    local okc,contents=pcall(function() return p.get_main_inventory().get_contents() end)
+    for _,st in ipairs(okc and contents or {}) do
+      for _,e in ipairs(es) do
+        if e.type=='furnace' and not feeding.recipe_of(e) and feeding.smelts(e,st.name) then can[#can+1]=st.name..' '..st.count; break end
+      end
+      if #can>=4 then break end
+    end
+    notes[#notes+1]=string.format('%d furnace%s with no recipe yet (nothing smelted there) take%s only items named in items or item%s',unset,unset==1 and '' or 's',unset==1 and 's' or '',
+      #can>0 and ('; you carry '..table.concat(can,', ')..' that they smelt') or '')
+  end
+  if fueled.n>0 then
+    table.sort(fuels)
+    local holds={}
+    for i,name in ipairs(fuels) do
+      local f=fuels[name]
+      holds[i]=name..' '..(f.lo==f.hi and f.lo or f.lo..'-'..f.hi)
+    end
+    notes[#notes+1]=string.format('%d burner%s hold%s fuel (%s): fuel is added to a burner with none, or with fuel=true or fuel=NAME',
+      fueled.n,fueled.n==1 and '' or 's',fueled.n==1 and 's' or '',table.concat(holds,', '))
+  end
+  if #order==0 then
+    local base=string.format('none of the %d machines wants an item (no recipe set, or not a machine feed fills)',#es)
+    return #notes>0 and base..'; '..table.concat(notes,'; ') or base
+  end
   local parts={}
   for i,item in ipairs(order) do
     if i>4 then parts[#parts+1]='+'..(#order-4)..' more'; break end
@@ -3520,6 +3686,7 @@ function feeding.why(p,es,a)
       parts[#parts+1]=string.format('%d machine%s hold %s %s, at count %d already',b.n,b.n==1 and '' or 's',hold,item,b.count)
     end
   end
+  for _,note in ipairs(notes) do parts[#parts+1]=note end
   return table.concat(parts,'; ')
 end
 -- Hand-feeds machines from inventory: recipe ingredients, science packs and
@@ -3536,7 +3703,7 @@ function handlers.feed(p,a)
   end
   assert(a.items==nil or (type(a.items)=='table' and #a.items>=1 and #a.items<=16),'items requires 1..16 item names')
   for _,name in ipairs(a.items or {}) do assert(prototypes.item[name],'unknown item '..tostring(name)) end
-  assert(a.fuel==nil or a.fuel==false or (type(a.fuel)=='string' and prototypes.item[a.fuel] and (prototypes.item[a.fuel].fuel_value or 0)>0),'fuel must be a fuel item or false')
+  assert(a.fuel==nil or type(a.fuel)=='boolean' or (type(a.fuel)=='string' and prototypes.item[a.fuel] and (prototypes.item[a.fuel].fuel_value or 0)>0),'fuel must be a fuel item, true or false')
   a.count=integer(a.count,20,1,1000,'count'); a.fuel_count=integer(a.fuel_count,10,1,1000,'fuel_count')
   assert(a.types==nil or (type(a.types)=='table' and #a.types>=1 and #a.types<=16),'types requires 1..16 entity types')
   assert(a.up_to==nil or a.up_to==true,'up_to must be true (a short inventory never fails the step)')
@@ -3582,10 +3749,14 @@ function handlers.feed(p,a)
         for item,c in pairs(gave) do items[item]=(items[item] or 0)+c end
         total=total+n
       elseif n>0 then
-        rows[#rows+1]={position=e.position,name=e.name,gave=gave}
+        rows[#rows+1]={position=e.position,name=e.name,gave=gave,fuel=feeding.fuel_line(e)}
         for item,c in pairs(gave) do items[item]=(items[item] or 0)+c end
         total=total+n
-      else unchanged=unchanged+1 end
+      else
+        unchanged=unchanged+1
+        -- Named machines (positions, area) each get a row, also when they got nothing (Haiku: one boiler call).
+        if a.positions then rows[#rows+1]={position=e.position,name=e.name,got='nothing',fuel=feeding.fuel_line(e)} end
+      end
     end
   end
   local left={}
@@ -5752,7 +5923,8 @@ local function waypoint_goal(p,action,goal)
 end
 kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions}
 threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event) M.board.on_character_hit(event) end}
-survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end}
+survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end,
+  research_rate=function(force_name) return M.research.rate(force_name) end}
 -- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
 M.supply=require('supply'){integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end}
@@ -5803,6 +5975,9 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
       -- remaining machines want is left above the reserve.
       local gave,n=feeding.one(p,e,action.feed)
       for item,c in pairs(gave) do action.items=action.items or {}; action.items[item]=(action.items[item] or 0)+c end
+      -- Each stop: what the machine got and its fuel after (last.entities).
+      action.rows=action.rows or {}
+      action.rows[#action.rows+1]={position=e.position,name=e.name,gave=next(gave) and gave or nil,got=n==0 and 'nothing' or nil,fuel=feeding.fuel_line(e)}
       local more=false
       for i=action.index+1,#action.targets do
         local t=action.targets[i]

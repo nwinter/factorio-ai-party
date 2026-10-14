@@ -950,12 +950,19 @@ p.surface.find_entities_filtered=function() return {lab,f1,f2} end
 main=inv(stack('coal',3),stack('iron-ore',30),stack('automation-science-pack',12))
 eq(f1.slots[2][1].count,5)
 local fed=call('feed',{count=20,keep=2})
-eq(fed.transferred,31); eq(fed.items['iron-ore'],20); eq(fed.items['automation-science-pack'],10); eq(fed.items.coal,1)
-eq(f1.slots[3][1].count,20); eq(f1.slots[2][1].count,6); eq(f2.slots[2][1].count,5); eq(lab_slots[1].count,10)
-eq(fed.held['iron-ore'],10); eq(fed.held.coal,2); eq(#fed.entities,2); eq(fed.entities[1].name,'stone-furnace'); eq(fed.entities[2].gave['automation-science-pack'],10)
+-- Burners that hold fuel get none unless asked (Gemini 03:20): the furnaces keep their 5 coal.
+eq(fed.transferred,30); eq(fed.items['iron-ore'],20); eq(fed.items['automation-science-pack'],10); eq(fed.items.coal,nil)
+eq(f1.slots[3][1].count,20); eq(f1.slots[2][1].count,5); eq(f2.slots[2][1].count,5); eq(lab_slots[1].count,10)
+eq(fed.held['iron-ore'],10); eq(fed.held.coal,nil); eq(#fed.entities,2); eq(fed.entities[1].name,'stone-furnace'); eq(fed.entities[2].gave['automation-science-pack'],10)
+eq(fed.entities[1].fuel,'coal 5'); eq(fed.entities[2].fuel,nil)
 eq(fed.unchanged,1)
+-- fuel=true tops every burner up to fuel_count (from what is held above keep).
+local topped=call('feed',{fuel=true,keep=2})
+eq(topped.items.coal,1); eq(f1.slots[2][1].count,6); eq(topped.entities[1].fuel,'coal 6')
+main[1].count=3
 local nothing=call('feed',{items={'copper-plate'}})
 eq(nothing.transferred,0); assert(nothing.nothing_moved:find('nothing given: none of the 3 machines wants an item',1,true),nothing.nothing_moved)
+assert(nothing.nothing_moved:find('2 burners hold fuel (coal 5-6): fuel is added to a burner with none, or with fuel=true or fuel=NAME',1,true),nothing.nothing_moved)
 -- item: one name, as transfer takes it (Grok); count is the target each machine holds.
 local one=call('feed',{item='iron-ore',count=25})
 eq(one.transferred,5); eq(one.items['iron-ore'],5); eq(one.items.coal,nil); eq(f1.slots[3][1].count,25); eq(one.held['iron-ore'],5)
@@ -978,6 +985,70 @@ eq(tour.places,1); eq(call('status').active.kind,'gather'); advance(1)
 local toured=call('status').last
 eq(toured.outcome,'topped_up'); eq(toured.op,'feed'); eq(toured.given,5); eq(toured.items['iron-ore'],5); eq(f1.slots[3][1].count,5)
 eq(call('feed',{radius=20,items={'iron-ore'}}).places,0); advance(1); eq(call('status').last.outcome,'nothing_to_do')
+-- Round 03:20. Fakes: furnaces at (3,0) and (4,0), boilers at (1..3,3); a point finds what stands there.
+local function boiler(x,count)
+  local fuel=inv(stack('coal',count))
+  local b={valid=true,name='boiler',type='boiler',position={x=x,y=3},force=p.force,unit_number=900+x,fuel=fuel}
+  b.get_inventory=function(i) return i==defines.inventory.fuel and fuel or nil end
+  b.get_fuel_inventory=function() return fuel end
+  return b
+end
+local b1,b2,b3=boiler(1,2),boiler(2,0),boiler(3,10)
+local function typed(f,e)
+  if type(f.type)=='table' then for _,t in ipairs(f.type) do if t==e.type then return true end end return false end
+  return f.type==nil or f.type==e.type
+end
+p.surface.find_entities_filtered=function(f)
+  local out={}
+  for _,e in ipairs({f1,f2,b1,b2,b3}) do
+    if typed(f,e) and (not (f.position and (f.radius or 0)<1) or (e.position.x==f.position.x and e.position.y==f.position.y)) then out[#out+1]=e end
+  end
+  return out
+end
+-- Gemini (shift09 10:20): furnaces burning solid fuel, no coal carried: the ore goes in without fuel ("you carry 0 coal"
+-- before); the row names what its fuel slots hold.
+prototypes.item['solid-fuel']={fuel_value=12000000}; prototypes.item['iron-plate']={}
+local fs=f1.slots[2][1]; fs.name,fs.count,fs.valid_for_read='solid-fuel',3,true
+main=inv(stack('iron-ore',30),stack(nil,0),stack(nil,0))
+local ore=call('feed',{positions={{x=3,y=0}}})
+eq(ore.items['iron-ore'],15); eq(ore.items.coal,nil); eq(ore.entities[1].fuel,'solid-fuel 3'); eq(ore.nothing_moved,nil); eq(fs.count,3)
+-- A furnace that never smelted (no recipe yet) takes nothing unnamed; the reply says so, with what it would smelt.
+prototypes.recipe={['steel-plate']={name='steel-plate',category='smelting',ingredients={{type='item',name='iron-plate',amount=5}}}}
+f2.prototype={crafting_categories={smelting=true}}
+main=inv(stack('iron-plate',40),stack(nil,0),stack(nil,0))
+main.get_contents=function() return {{name='iron-plate',count=40,quality='normal'}} end
+local unnamed=call('feed',{positions={{x=4,y=0}}})
+eq(unnamed.transferred,0); eq(unnamed.entities[1].got,'nothing'); eq(unnamed.entities[1].fuel,'coal 5')
+eq(unnamed.nothing_moved,'nothing given: none of the 1 machines wants an item (no recipe set, or not a machine feed fills); '
+  ..'1 furnace with no recipe yet (nothing smelted there) takes only items named in items or item; you carry iron-plate 40 that they smelt; '
+  ..'1 burner holds fuel (coal 5): fuel is added to a burner with none, or with fuel=true or fuel=NAME')
+-- Named, it goes into the source slot as a player puts it there.
+local named=call('feed',{positions={{x=4,y=0}},item='iron-plate'})
+eq(named.items['iron-plate'],20); eq(f2.slots[3][1].name,'iron-plate'); eq(f2.slots[3][1].count,20)
+-- A burner with empty fuel slots gets fuel unasked.
+local f2s=f2.slots[2][1]; f2s.count,f2s.valid_for_read=0,false
+main=inv(stack('coal',5),stack(nil,0),stack(nil,0))
+local empty=call('feed',{positions={{x=4,y=0}}})
+eq(empty.items.coal,5); eq(empty.entities[1].fuel,'coal 5')
+-- Haiku 03:20: one call tops up every boiler in an area from the inventory; each boiler has a row (what it got, its
+-- fuel after); fuel=true tops up the ones that hold some too.
+main=inv(stack('coal',50),stack(nil,0),stack(nil,0))
+local area={left_top={x=0,y=2},right_bottom={x=4,y=4}}
+local boilers=call('feed',{area=area,types={'boiler'}})
+eq(boilers.area_targets,3); eq(boilers.items.coal,10); eq(b2.fuel[1].count,10); eq(b1.fuel[1].count,2)
+eq(#boilers.entities,3); eq(boilers.entities[1].got,'nothing'); eq(boilers.entities[1].fuel,'coal 2')
+eq(boilers.entities[2].gave.coal,10); eq(boilers.entities[3].fuel,'coal 10')
+local topped_all=call('feed',{area=area,types={'boiler'},fuel=true})
+eq(topped_all.items.coal,8); eq(b1.fuel[1].count,10)
+eq(topped_all.entities[1].gave.coal,8); eq(topped_all.entities[1].fuel,'coal 10'); eq(topped_all.entities[2].got,'nothing'); eq(topped_all.entities[3].got,'nothing')
+-- The same as a walking tour (radius): last names each stop.
+b1.fuel[1].count=4; b3.fuel[1].count=7
+call('feed',{radius=20,types={'boiler'},fuel=true}); advance(1)
+local tour_last=call('status').last
+eq(tour_last.op,'feed'); eq(tour_last.given,9); eq(#tour_last.entities,2)
+eq(tour_last.entities[1].gave.coal,6); eq(tour_last.entities[1].fuel,'coal 10'); eq(tour_last.entities[2].gave.coal,3)
+fails(function() call('feed',{fuel=1}) end,'fuel must be a fuel item, true or false')
+prototypes.recipe=nil; f2.prototype=nil
 f1.get_recipe=nil
 end
 p.surface.find_entities_filtered=function(f) eq(f.force,p.force); return {f2,f1} end
