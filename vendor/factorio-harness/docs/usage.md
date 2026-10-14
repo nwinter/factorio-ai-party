@@ -71,6 +71,13 @@ fh call status
   `long-handed-inserter at (10.5,0.5) takes: filters, filter_mode (alias mode), use_filters; and position, name,
   unit_number, platform, surface`; for `circuit_set`, its arguments and settings. `configure` `mode` is
   `filter_mode` and `filter` is `filters`. `scan` `fields` also takes one string (`"status|hp"` or `"status,hp"`).
+- A type the game does not know gives no error in the engine, only nothing found (Astra, shift12 15:10: `scan` with
+  type `electric-mining-drill` came back empty, and nine drills looked lost). `scan`, `nearest`, observe's
+  `entity_types` and `inspect`'s area `types` refuse it with what it names instead: `unknown entity type
+  electric-mining-drill: it is an entity name (its type is mining-drill): name electric-mining-drill, or type
+  mining-drill`; an item: `rail: it is an item, which places straight-rail (type straight-rail)`; else the types like
+  it (`drill`: `types like it: mining-drill`; `inserters`: `inserter`). `refuel`, `feed` and `rearm` take an entity name
+  in `types` as a name (`types_note`).
 - `transfer`, `collect`, `feed`, `inspect`, `rearm` and `refuel` run `position` and `positions` as one list and say so
   in `corrected`: one `{x,y}` given as `positions`, a list given as `position`, a `position` where only `positions` is
   taken (`collect`, `feed`, `rearm`, `refuel`), or both at once (`position` first). A plain `position` where it is
@@ -456,6 +463,29 @@ fh call status
   `circuit_set`) circuit settings, as the entity would (Astra 12:20: a 75-ghost Starling layout); the reply says
   `ghost` and its name. `name` may be what the ghost builds (`fast-inserter`); a tile ghost under it (platform
   foundation) never takes its place as the target.
+- `configure {position | positions, modules, by?}` sets a machine's module slots in one call (Astra and Gemini, shift12
+  15:10: Sunward's module swaps took three blueprint round trips, Fulgora's upgrades four): `modules` lists module
+  names one a slot (`["speed-module-2","speed-module-2"]`, or `{name, count, quality}`); the slots past the list end up
+  empty; `[]` or `false` empties them. Assemblers, furnaces, drills, labs, beacons and silos, built or ghost; with
+  `recipe` the recipe changes first; `positions` sets 1..64 alike (`machines` rows, `configured`, `failed`).
+  - In reach (by hand): the old modules go to your inventory (`returned`), the new ones come from it; short of them, it
+    is refused with what is missing and nothing changes (`speed-module-2: 2 needed, you hold 0; by="robots" requests
+    them instead`).
+  - Out of reach, by remote view, with `surface` or `platform`, or `by: "robots"`: an item request on the machine, as
+    remote view's ghost cursor makes, `requested` and `removing` slot by slot. On a private copy of world n
+    construction robots swapped two modules in about 8 s; on Starling and Sunward the platform hub did it (`by: hub`),
+    the removed ones going into the hub. The reply's `note` names who brings them: the logistic network whose
+    construction area covers the machine, what it holds of each (`none comes for quality-module until it holds it`),
+    its idle construction robots and free storage slots (a removed module waits in its robot for one), or that no
+    construction area covers it.
+  - A ghost: its module requests (`by: ghost`), which the robots that build it bring; its other requests stay.
+  - A module the machine or its recipe does not take is refused: `productivity-module does not go in
+    assembling-machine-2 (79.5,0.5) making electric-furnace: its recipe electric-furnace allows no productivity`. The
+    rule (checked against the engine in 5892 machine, recipe and module cases on 2.0.77): a module category the
+    machine or recipe lists is required, and each effect the module improves (speed, productivity, quality up;
+    consumption, pollution down) must be allowed by both; what it worsens does not count, so a speed module goes under
+    a recipe that allows no quality.
+  - `inspect` reads them back: `modules {slots, contents, requested, removing}` (a ghost: `slots`, `requested`).
 - `configure {position, priority_targets, ignore_unprioritised}` sets a turret's priority list and its Ignore
   unprioritised targets checkbox, as the turret GUI does (Astra, shift12 15:02: Sunward's rocket turrets on big
   metallic, carbonic and oxide asteroids only, to save rockets). `priority_targets` is entity names in priority order
@@ -2297,6 +2327,18 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
     #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
     power (satisfaction under 100%) shows as the `low power` groups above.
+    `accumulators_draining` (Gemini, shift12 15:10: Fulgora's daylight lull between storms): a network's accumulators
+    empty within 10 minutes at their net flow of the last 30 s, against what they hold now (read from them when the
+    scan runs), told again under 5 and under 2 minutes: `electric #301 near (-55,85): its 173 accumulators at 59% (511
+    MJ of 865 MJ) fall 14.6 MW net over the last 30 s: empty in about 35s at that rate; Fulgora: day, no lightning;
+    next storm (dusk) in 12s`. On Fulgora the line ends with the sky's timing (`storm` above). A Fulgora day is 3
+    minutes, 90 s of storm and 90 s of daylight, so minutes of average would net the storm's charge against the lull;
+    the 30 s window follows the lull. The group stays 10 minutes after the network last fell under 10 minutes, at the
+    worst step it reached, so a storm between lulls is not news every Fulgora day; meanwhile its line says so: `its
+    173 accumulators were 35s from empty 30s ago (falling 14.6 MW net); now at 12% (104 MJ of 865 MJ), rising 62 kW
+    net; Fulgora: storm (darkening); dawn (clear) in 1m12s`. Empty: `its 9 accumulators are empty (0.0 MJ of 45.0 MJ;
+    1.5 MW net flowed out over the last 30 s)`, and later `ran empty 1m00s ago; now at 61% ...`. On a private copy of
+    world n network 301 fell like that every Fulgora day.
     Robot delays (Nick 12:35; worse is more waiting): `construction_wait`, ghosts in a network's construction area
     waiting 5+ min since a view first saw them while their items are in the network and they lie inside a
     roboport's construction area (`ghosts waiting on robots: 75 in network 3 near (25,50), oldest 22 min, 1
@@ -2415,7 +2457,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the same numbers as fields; everything is kept 60 s (`as_of`), and the network alerts read the same view; the pole
   map is redone every 5 min in the background and by the view when older than 60 s; requests are looked at every 30 s.
   Accumulators show their stored energy against their maximum (`accumulators 2 at 50% (5.0 MJ of 10.0 MJ)`; read:
-  `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning). The API exposes no storm state or schedule
+  `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning), read from them when the line is made, and their
+  net flow over the last 30 s: `, falling 14.6 MW net over the last 30 s: empty in about 35s at that rate` or `, rising
+  10.7 MW net` (the game counts accumulators as producers while they discharge and consumers while they charge). The API exposes no storm state or schedule
   (checked on 2.0.77, world n, 2026-10-14: LuaSurface, LuaPlanet and Fulgora's LuaSpaceLocationPrototype have no
   lightning or storm key). Lightning strikes in the dark: one Fulgora day of samples (a 256x256 box, every 4 s) saw
   bolts at darkness 0.06 to 0.85, in all but one sample at 0.48 and over, and none in daylight. So the networks read's

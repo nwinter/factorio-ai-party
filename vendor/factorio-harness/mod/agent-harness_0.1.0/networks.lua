@@ -10,11 +10,12 @@
 --   requests unfilled for 60 s or more; ghosts in its construction area;
 -- - turrets by name, and ammo used on the surface in the last hour.
 -- In the first reply of a shift (team.shift.networks) and the networks read;
--- three push alert kinds (pushalerts.lua): power_high (draw at 85% of
+-- push alert kinds (pushalerts.lua): power_high (draw at 85% of
 -- capacity or more for 2 minutes), robots_busy (no idle logistic robot for 10
--- minutes) and boiler_fuel (boilers under 20 minutes of their own fuel at the
+-- minutes), boiler_fuel (boilers under 20 minutes of their own fuel at the
 -- draw that no feeder can bring more to, told
--- again at 10 and 5, with the fuel in chests and on belts nearby and what feeds them).
+-- again at 10 and 5, with the fuel in chests and on belts nearby and what feeds them),
+-- accumulators_draining (accumulators empty within 10 minutes at their net flow; ACC_LOOK) and others below.
 -- Draw comes from the network's statistics, sampled every 5 s (the 5-second
 -- average, J per tick as handlers.power reads it): the game's own windows are
 -- 5 s, 1 min and 10 min.
@@ -44,12 +45,27 @@ return function(api)
   -- Entities read a step by the background view and pole map, and boilers whose feeders are read a step (operator
   -- 04:00: 1500 a tick, and every boiler's feeders and belts in one tick, burst in single game seconds).
   local SLICE, BOILER_SLICE = 150, 2
+  -- Accumulators running down (Gemini, shift12 15:10: Fulgora's daylight lull between storms): the net flow out of a
+  -- network's accumulators over the last ACC_LOOK ticks (a Fulgora day is 3 min: 90 s of storm, 90 s of daylight, so
+  -- minutes of average would net the storm's charge against the lull's drain) against what they hold now, told under
+  -- ACC_WARN seconds (again at 5 and 2 min); a network told keeps its group ACC_HOLD ticks after it last fell under
+  -- ACC_WARN, at the worst step it reached, so a storm between lulls is not news every Fulgora day. Their energy is
+  -- read when the alert scan runs (up to ACC_READ accumulators a network; the view's sum is gathered over a minute).
+  local ACC_LOOK, ACC_MIN_SAMPLES, ACC_WARN, ACC_HOLD, ACC_READ = 1800, 4, 600, 36000, 1000
   local walk = api.walk or require('walk'){state=api.state}
   local GENERATORS = {'generator', 'burner-generator', 'solar-panel', 'accumulator', 'fusion-generator', 'electric-energy-interface'}
   local MACHINES = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'inserter', 'beacon', 'radar', 'roboport', 'pump',
     'electric-turret', 'rocket-silo', 'agricultural-tower', 'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'offshore-pump'}
   local TURRETS = {'ammo-turret', 'electric-turret', 'fluid-turret', 'artillery-turret'}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  local ACC_NAMES
+  local function acc_names()
+    if not ACC_NAMES then
+      ACC_NAMES = {}
+      for name, proto in pairs(prototypes.entity or {}) do if proto.type == 'accumulator' then ACC_NAMES[name] = true end end
+    end
+    return ACC_NAMES
+  end
   local function store()
     local s = api.state()
     s.networks = s.networks or {map={}, samples={}, busy={}, unfilled={}, views={}}
@@ -130,13 +146,22 @@ return function(api)
       local stats = m.pole.valid and try(function() return m.pole.electric_network_statistics end)
       if stats then
         local by, kw = {}, 0
+        local accs, acc = acc_names(), 0
         for name in pairs(try(function() return stats.output_counts end) or {}) do
           local v = try(function() return stats.get_flow_count{name=name, category='output', precision_index=defines.flow_precision_index.five_seconds} end)
-          if v and v > 0 then by[name] = v * 60 / 1000; kw = kw + by[name] end
+          if v and v > 0 then
+            by[name] = v * 60 / 1000; kw = kw + by[name]
+            if accs[name] then acc = acc + by[name] end
+          end
+        end
+        -- (accumulators are counted as producers while they discharge and as consumers while they charge)
+        for name in pairs(accs) do
+          local v = try(function() return stats.get_flow_count{name=name, category='input', precision_index=defines.flow_precision_index.five_seconds} end)
+          if v and v > 0 then acc = acc - v * 60 / 1000 end
         end
         local list = n.samples[id] or {}
         n.samples[id] = list
-        list[#list+1] = {tick=game.tick, kw=kw, by=by}
+        list[#list+1] = {tick=game.tick, kw=kw, by=by, acc=acc}
         while list[1] and list[1].tick <= game.tick - WINDOW do table.remove(list, 1) end
       end
     end
@@ -278,6 +303,37 @@ return function(api)
     if m >= 100 then return string.format('%d MJ', math.floor(m + 0.5)) end
     return string.format('%.1f MJ', m)
   end
+  -- '17s', '4m50s'.
+  local function span(sec)
+    sec = math.max(0, math.floor(sec + 0.5))
+    return sec >= 60 and string.format('%dm%02ds', math.floor(sec / 60), sec % 60) or sec .. 's'
+  end
+  -- The accumulators' net flow out of a network (kW; below 0: they charge), averaged over the samples of the last
+  -- ACC_LOOK ticks; nil with fewer than ACC_MIN_SAMPLES of them.
+  local function acc_flow(n, id)
+    local list = n.samples[id] or {}
+    local sum, k = 0, 0
+    for i = #list, 1, -1 do
+      local x = list[i]
+      if x.tick <= game.tick - ACC_LOOK then break end
+      if x.acc then sum, k = sum + x.acc, k + 1 end
+    end
+    if k < ACC_MIN_SAMPLES then return nil end
+    return sum / k
+  end
+  -- What a network row's accumulators hold now (J), read from them (scaled up when the row keeps fewer than it has);
+  -- the view's sum when it kept none.
+  local function acc_stored(r)
+    local list = r.accs
+    if not list or #list == 0 then return r.acc_j end
+    local j, k = 0, 0
+    for _, e in ipairs(list) do
+      if e.valid then j, k = j + (try(function() return e.energy end) or 0), k + 1 end
+    end
+    if k == 0 then return r.acc_j end
+    return k < r.acc and j * r.acc / k or j
+  end
+  M.acc_flow, M.acc_stored = acc_flow, acc_stored
   -- The draw over the window: average, now (last sample), and by producer name (averages).
   local function draw(n, id)
     local list = n.samples[id] or {}
@@ -400,6 +456,8 @@ return function(api)
         net.acc = net.acc + 1
         net.acc_j = net.acc_j + (try(function() return e.energy end) or 0)
         net.acc_buf = net.acc_buf + (try(function() return e.electric_buffer_size end) or 0)
+        net.accs = net.accs or {}
+        if #net.accs < ACC_READ then net.accs[#net.accs+1] = e end
       elseif e.type ~= 'electric-energy-interface' then
         net.cap_kw = net.cap_kw + max_output(e) * 60 / 1000
         if e.type == 'generator' then
@@ -545,9 +603,18 @@ return function(api)
           parts[#parts+1] = net.solar > 0 and string.format('solar %d panels, %s now, %s at this solar power (%s)', net.solar, mw(solar_now), mw(net.solar_peak_kw), sun.text)
             or string.format('no solar panels (%s)', sun.text)
         elseif net.solar > 0 then parts[#parts+1] = string.format('solar %d panels, %s now, %s peak', net.solar, mw(solar_now), mw(net.solar_peak_kw)) end
-        -- Stored energy against the maximum (Gemini, 07:55, Fulgora: lightning charges the accumulators).
-        if net.acc > 0 then parts[#parts+1] = string.format('accumulators %d at %d%% (%s of %s)', net.acc, net.acc_buf > 0 and math.floor(100 * net.acc_j / net.acc_buf + 0.5) or 0,
-          mj(net.acc_j), mj(net.acc_buf)) end
+        -- Stored energy against the maximum (Gemini, 07:55, Fulgora: lightning charges the accumulators), read now,
+        -- and its trend over the last ACC_LOOK ticks: the time to empty at that rate (Gemini, 15:10).
+        if net.acc > 0 then
+          net.acc_j = acc_stored(net) or net.acc_j
+          local flow = acc_flow(n, net.id)
+          local trend = ''
+          if flow and flow > 1 then
+            trend = string.format(', falling %s net over the last %d s: empty in about %s at that rate', mw(flow), ACC_LOOK / 60, span(net.acc_j / (flow * 1000)))
+          elseif flow and flow < -1 then trend = string.format(', rising %s net over the last %d s', mw(-flow), ACC_LOOK / 60) end
+          parts[#parts+1] = string.format('accumulators %d at %d%% (%s of %s)%s', net.acc, net.acc_buf > 0 and math.floor(100 * net.acc_j / net.acc_buf + 0.5) or 0,
+            mj(net.acc_j), mj(net.acc_buf), trend)
+        end
         parts[#parts+1] = string.format('machines %d: %d low power, %d no power', net.machines, net.low, net.none)
         if #net.boilers > 0 then
           parts[#parts+1] = string.format('boilers %d: their own fuel %s at this draw%s%s', #net.boilers,
@@ -1623,12 +1690,62 @@ return function(api)
     return g
   end
   -- Push alert groups (pushalerts.lua scan): plain data, worst first there.
+  -- Fulgora's sky for an accumulator line (lightning.lua M.sky, round1220a): the next storm in daylight, else dawn.
+  local function sky_text(name)
+    local surface = try(function() return game.get_surface(name) end)
+    local sky = surface and api.sky and try(function() return api.sky(surface) end)
+    if not (sky and sky.dusk_in_s) then return '' end
+    if sky.phase == 'day' then return string.format('; Fulgora: day, no lightning; next storm (dusk) in %s', span(sky.dusk_in_s)) end
+    return string.format('; Fulgora: storm (%s); dawn (clear) in %s', sky.phase, span(sky.dawn_in_s))
+  end
+  -- Accumulators that empty within ACC_WARN seconds at their net flow of the last ACC_LOOK ticks (one group a
+  -- network, kept ACC_HOLD ticks after, at the worst step: under 10, 5, 2 minutes).
+  local function acc_group(n, s, r)
+    n.acc_watch = n.acc_watch or {}
+    local w = n.acc_watch[r.id]
+    local flow = acc_flow(n, r.id)
+    local stored = acc_stored(r) or 0
+    local t = flow and flow > 1 and stored / (flow * 1000) or nil
+    local empty = (r.acc_buf > 0 and stored <= 0.005 * r.acc_buf) or (t ~= nil and t < 1)
+    if t and t < ACC_WARN then
+      w = w or {since=game.tick, rank=0}
+      w.last, w.t, w.flow = game.tick, t, flow
+      if empty then w.empty = game.tick end
+      local step = t < 120 and 3 or t < 300 and 2 or 1
+      if step > w.rank then w.rank = step end
+      n.acc_watch[r.id] = w
+    end
+    if not w or game.tick - w.last > ACC_HOLD then return nil end
+    local center = {x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)}
+    local pct = r.acc_buf > 0 and math.floor(100 * stored / r.acc_buf + 0.5) or 0
+    local line
+    if w.last == game.tick and empty then
+      line = string.format('electric #%d near %s: its %d accumulators are empty (%s of %s; %s net flowed out over the last %d s)',
+        r.id, at(center.x, center.y), r.acc, mj(stored), mj(r.acc_buf), mw(flow), ACC_LOOK / 60)
+    elseif w.last == game.tick then
+      line = string.format('electric #%d near %s: its %d accumulators at %d%% (%s of %s) fall %s net over the last %d s: empty in about %s at that rate',
+        r.id, at(center.x, center.y), r.acc, pct, mj(stored), mj(r.acc_buf), mw(flow), ACC_LOOK / 60, span(t))
+    else
+      local was = w.empty and string.format('ran empty %s ago', span((game.tick - w.empty) / 60))
+        or string.format('were %s from empty %s ago (falling %s net)', span(w.t), span((game.tick - w.last) / 60), mw(w.flow))
+      line = string.format('electric #%d near %s: its %d accumulators %s; now at %d%% (%s of %s)%s',
+        r.id, at(center.x, center.y), r.acc, was, pct, mj(stored), mj(r.acc_buf),
+        flow and flow < -1 and string.format(', rising %s net', mw(-flow)) or flow and flow > 1 and string.format(', falling %s net', mw(flow)) or '')
+    end
+    return {key='accumulators_draining|' .. s.name .. '|' .. r.id, kind='accumulators_draining', surface=s.name,
+      n=100 - math.floor(math.min(w.t, ACC_WARN) / 6), rank=w.rank, names={accumulator=r.acc}, by={}, at={}, center=center,
+      now_text=w.empty and w.last == game.tick and 'empty' or span(w.t) .. ' from empty', line=line .. sky_text(s.name)}
+  end
   function M.alert_groups(f)
     local v = view(f)
     local n = store()
     local out = {}
     for _, s in ipairs(v.surfaces) do
       for _, r in ipairs(s.electric) do
+        if r.acc and r.acc > 0 and r.center then
+          local g = acc_group(n, s, r)
+          if g then out[#out+1] = g end
+        end
         local list = n.samples[r.id] or {}
         local held, first = true, nil
         for i = #list, 1, -1 do
@@ -1690,6 +1807,7 @@ return function(api)
         end
       end
     end
+    for id, w in pairs(n.acc_watch or {}) do if game.tick - w.last > ACC_HOLD then n.acc_watch[id] = nil end end
     return out
   end
   -- boilers (Haiku, 06:20: "a 'boilers' read that lists each boiler's position, state and fuel (and its feeder), so

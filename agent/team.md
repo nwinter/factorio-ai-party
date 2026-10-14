@@ -317,6 +317,9 @@ already targets your character.
   `scan` rows (`filters: whitelist: iron-plate`, `off`, `set by circuit`); `configure {position, filters, filter_mode
   | mode, use_filters}` and `circuit_set {settings: {filters, filter_mode}}` set them. An unknown argument's refusal
   names the closest valid name, and on `configure` and `circuit_set` what that entity takes.
+- Modules: `configure {position | positions, modules: ["speed-module-2","speed-module-2"], by?}` sets a machine's module
+  slots (past the list: empty); in reach by hand (old ones to your inventory), else (remote, `surface`, `platform`, or
+  `by: "robots"`) an item request robots or the platform hub carry out; on a ghost its requests. `inspect` reads them back.
 - Turret targeting: `configure {position | positions, platform?, priority_targets: ["big-metallic-asteroid", ...],
   ignore_unprioritised: true}` sets a turret's (or ghost's) priority list as its GUI does; inspect reads it back;
   blueprints keep it.

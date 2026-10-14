@@ -1894,6 +1894,8 @@ local near=call('observe',{scope='nearest',name='rock-big',radius=64,limit=2})
 eq(near.total,3); eq(#near.entities,2); eq(near.entities[1].position.x,1); eq(near.entities[1].distance,1.4)
 eq(near.entities[2].distance,5); eq(near.entities[1].name,nil)
 p.surface.find_entities_filtered=function() return {rock(2,0,'rock-huge')} end
+-- (a type is checked against the prototypes' types first: Astra, shift12 15:10)
+prototypes.entity['test-rock']={name='test-rock',type='simple-entity'}
 eq(call('observe',{scope='nearest',type='simple-entity'}).entities[1].name,'rock-huge')
 fails(function() call('observe',{scope='nearest'}) end,'name or type')
 -- A name that is not a prototype lists the matching ones (shake4: "Unknown
@@ -2038,11 +2040,26 @@ eq(worm.hp,'90/100'); eq(worm.range,30)
 table.remove(world)
 eq(scan.ore.legend.C,'copper-ore'); eq(scan.ore.legend.I,'iron-ore'); eq(scan.ore.rows[1].y,1)
 eq(scan.ore.rows[1].runs,'C:42..43 I:45..45')
+prototypes.entity['test-spawner']={name='test-spawner',type='unit-spawner'}; prototypes.entity['test-boiler']={name='test-boiler',type='boiler'}
 local grid=call('observe',{scope='scan',area={left_top={x=42,y=0},right_bottom={x=48,y=7}},type='unit-spawner',ore='grid'})
 eq(grid.total,1); eq(grid.ore.origin.x,42); eq(grid.ore.rows[2].row,'CC.I~.'); eq(grid.ore.rows[6].row,'.##...')
 eq(grid.ore.totals[1].amount,150)
 eq(call('observe',{scope='scan',position={x=44,y=4},radius=3}).entities[1].name,'spitter-spawner')
 fails(function() call('observe',{scope='scan',fields={'bogus'}}) end,'unknown field')
+-- Astra, shift12 15:10: type electric-mining-drill (an entity name) scanned empty, and nine drills looked lost. A type
+-- the game does not know is refused with what it names instead, or the types like it (scan, nearest, inspect area).
+;(function()
+  prototypes.entity['electric-mining-drill']={name='electric-mining-drill',type='mining-drill'}
+  local area={left_top={x=42,y=0},right_bottom={x=48,y=7}}
+  fails(function() call('observe',{scope='scan',area=area,type='electric-mining-drill'}) end,
+    'unknown entity type electric-mining-drill: it is an entity name (its type is mining-drill): name electric-mining-drill, or type mining-drill')
+  fails(function() call('observe',{scope='scan',area=area,type='drill'}) end,'unknown entity type drill; types like it: mining-drill')
+  fails(function() call('observe',{scope='nearest',type={'boiler','spawners'}}) end,'unknown entity type spawners; types like it: unit-spawner')
+  fails(function() call('observe',{scope='scan',area=area,type='gizmo'}) end,'unknown entity type gizmo; types are names such as assembling-machine')
+  eq(call('observe',{scope='scan',area=area,type='mining-drill'}).total,0,'a known type with nothing there: an empty result')
+  fails(function() call('inspect',{area=area,types={'electric-mining-drill'}}) end,'unknown entity type electric-mining-drill: it is an entity name')
+  prototypes.entity['electric-mining-drill']=nil
+end)()
 -- positions picks just the entities on those tiles; views reject arguments they would ignore.
 local picked=call('observe',{scope='scan',positions={{x=40.5,y=2.5},{x=42.5,y=1.5},{x=40.5,y=2.5}},type='boiler'})
 eq(picked.total,1); eq(picked.entities[1].name,'boiler')
