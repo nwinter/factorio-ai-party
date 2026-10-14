@@ -59,10 +59,10 @@ return function(api)
     local forces=M.hostile_forces(p)
     local out={units={},worms={},spawners={}}
     if #forces==0 then return out end
-    for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=math.max(radius,40),force=forces,type={'unit','turret','unit-spawner'},limit=256}) do
+    for _,e in pairs(p.surface.find_entities_filtered{position=pos,radius=math.max(radius,40),force=forces,type={'unit','spider-unit','segmented-unit','turret','unit-spawner'},limit=256}) do
       if e.valid and api.known(p,e) then
         local d=api.distance(pos,e.position)
-        if e.type=='unit' and d<=radius and api.visible(p,e.position) then out.units[#out.units+1]={entity=e,distance=d}
+        if (e.type=='unit' or e.type=='spider-unit' or e.type=='segmented-unit') and d<=radius and api.visible(p,e.position) then out.units[#out.units+1]={entity=e,distance=d}
         elseif e.type=='turret' and d<=worm_range(e)+2 then out.worms[#out.worms+1]={entity=e,distance=d}
         elseif e.type=='unit-spawner' and d<=radius then out.spawners[#out.spawners+1]={entity=e,distance=d} end
       end

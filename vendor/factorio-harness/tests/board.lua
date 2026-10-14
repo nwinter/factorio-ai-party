@@ -699,4 +699,8 @@ fails(function() astra('science',{pack='nope-pack'}) end,'pack must be an item n
 fails(function() astra('observe',{scope='science',pack='nope-pack'}) end,'pack must be an item name')
 fails(function() astra('science',{packs='x'}) end,'unknown argument packs for science')
 assert(astra('describe').actions.science.pack)
+-- silo (silo.lua) is a read reached as an action, with its arguments checked
+fails(function() astra('silo',{}) end,'no rocket silo of ours on')
+fails(function() astra('silo',{radius=5}) end,'unknown argument radius for silo')
+assert(astra('describe').actions.silo.position and astra('describe').actions.silo.surface)
 print('board: ok')

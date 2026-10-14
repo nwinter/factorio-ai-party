@@ -100,7 +100,7 @@ return function(api)
     if #forces==0 then return end
     local du,ds,seen=math.huge,math.huge,0
     for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=action.radius,force=forces,
-        type={'unit','unit-spawner','turret'},limit=256}) do
+        type={'unit','spider-unit','segmented-unit','unit-spawner','turret'},limit=256}) do
       if e.valid and api.visible(p,e.position) then
         seen=seen+1
         local d=api.distance(p.position,e.position)

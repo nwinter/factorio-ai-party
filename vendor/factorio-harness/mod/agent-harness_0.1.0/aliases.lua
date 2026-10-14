@@ -34,6 +34,10 @@ return function(api)
   local SINGLE = {prefix=true}
   -- Actions whose positions is a list of targets of the same move or read.
   local LISTS = {transfer=true, collect=true, feed=true, inspect=true, rearm=true, refuel=true}
+  -- transfer direction names for the same two moves.
+  local DIRECTION = {from_entity='to_player', from_player='to_entity', to_chest='to_entity', from_chest='to_player',
+    to_container='to_entity', from_container='to_player', to_character='to_player', from_character='to_entity',
+    give='to_entity', put='to_entity', insert='to_entity', take='to_player'}
   local function encode(v)
     local t = type(v)
     if t == 'string' then return '"' .. v:gsub('[%c"\\]', function(c) return string.format('\\u%04x', c:byte()) end) .. '"' end
@@ -82,10 +86,22 @@ return function(api)
       action = 'board_post'
       if out.text ~= nil and out.note == nil then out.note, out.text = out.text, nil end
     end
-    -- transfer {to_player=true} / {to_entity=true}: the direction.
-    if action == 'transfer' and out.direction == nil then
-      for _, d in ipairs{'to_player', 'to_entity'} do
-        if out[d] == true then out[d] = nil; out.direction = d; notes[#notes+1] = d .. '=true is direction="' .. d .. '"' end
+    -- transfer {to_player=true} / {to_entity=true}, from_entity / from_player, or the target given as one of them
+    -- ({to_entity={x,y}}, Haiku shift09): the direction, and the position. A direction named the other way round
+    -- (from_entity, to_chest ...) is its to_entity/to_player name.
+    if action == 'transfer' then
+      if type(out.direction) == 'string' and DIRECTION[out.direction] then
+        notes[#notes+1] = 'direction ' .. out.direction .. ' is ' .. DIRECTION[out.direction]
+        out.direction = DIRECTION[out.direction]
+      end
+      for _, d in ipairs{'to_player', 'to_entity', 'from_entity', 'from_player'} do
+        local v, real = out[d], DIRECTION[d] or d
+        local where = is_pos(v) and 'position' or is_list(v) and 'positions' or nil
+        if (v == true or (where and out[where] == nil)) and (out.direction == nil or out.direction == real) then
+          out[d] = nil; out.direction = real
+          if where then out[where] = v end
+          notes[#notes+1] = d .. (where and '={x,y}' or '=true') .. ' is direction="' .. real .. '"' .. (where and ' ' .. where .. '=...' or '')
+        end
       end
     end
     -- circuit is circuit_set's old name.

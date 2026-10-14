@@ -24,6 +24,8 @@ local function stack(data)
   function methods.get_inventory() return s._data.inventory end
   function methods.create_blueprint(args)
     captured=captured+1
+    -- _G.capture_world (the library tests): the world's entities in the area, numbered, with their wires.
+    if _G.capture_world then s._data.entities,_G.mapping=_G.capture_world(args.area); return _G.mapping end
     s._data.entities={{name='chest',position={x=(args.area.left_top.x+args.area.right_bottom.x)/2,y=(args.area.left_top.y+args.area.right_bottom.y)/2}}}
     return s._data.mapping or _G.mapping or {}
   end
@@ -441,7 +443,7 @@ H.paste(pp4,{slot='offhub',direction='east'}); eq(asked.x,0); eq(math.abs(asked.
 game.create_inventory=make
 fails(function() H.paste(p,{slot='offhub',position={x=0,y=0},anchor='hub'}) end,'anchor hub works on a platform')
 fails(function() H.paste(pp4,{slot='ferry-module-audit-north',anchor='hub'}) end,'holds no space%-platform%-hub')
-fails(function() H.paste(pp4,{slot='offhub',anchor='middle'}) end,'anchor must be hub or center')
+fails(function() H.paste(pp4,{slot='offhub',anchor='middle'}) end,'anchor must be hub, center or saved')
 fails(function() H.paste(p,{slot='offhub'}) end,'position is required')
 -- A paste dry run's plan (H.plan): where each blueprint entity and tile would land; nothing is placed. The
 -- center is the middle of the box around every entity's tiles and every tile, here (0,0.5); the layout shifts by
@@ -466,4 +468,96 @@ eq(pl.entities[1].position.x,11.5); eq(pl.entities[2].position.x,7.5); eq(pl.ent
 local hp=H.plan(pp4,{slot='offhub'})
 eq(hp.anchor.by,'hub'); eq(hp.entities[1].position.x,0); eq(hp.entities[1].position.y,0); eq(hp.entities[2].position.x,10.5)
 fails(function() H.plan(p,{slot='plan'}) end,'position is required')
+
+-- The team library (operator 00:50): blueprint_save captures our entities by area or positions into a named entry in
+-- storage; blueprint_list lists it; blueprint_place, paste and plan take name; delete and rename: the author any time,
+-- anyone after 24 game hours unused; the operator read gives the strings changed since a revision.
+do
+  game.tick=1000
+  local world={}
+  for i,x in ipairs({1.5,3.5,5.5}) do
+    world[i]={valid=true,name='chest',unit_number=10+i,position={x=x,y=1.5},force=p.force,
+      bounding_box={left_top={x=x-0.5,y=1},right_bottom={x=x+0.5,y=2}}}
+  end
+  -- Chests 1-2 and 2-3 joined by a red wire.
+  _G.capture_world=function(area)
+    local list,map={},{}
+    for _,e in ipairs(world) do
+      if e.position.x>area.left_top.x and e.position.x<area.right_bottom.x then
+        list[#list+1]={entity_number=#list+1,name=e.name,position={x=e.position.x,y=e.position.y}}; map[#list]=e
+      end
+    end
+    for i,b in ipairs(list) do
+      if list[i+1] then b.wires={{i,1,i+1,1}} end
+    end
+    return list,map
+  end
+  local L=dofile('mod/agent-harness_0.1.0/blueprints.lua'){
+    position=function(v) assert(type(v)=='table' and type(v.x)=='number' and type(v.y)=='number'); return v end,
+    own_platform=function() return false end, real=function(pl) return pl end,
+    placewhy=dofile('mod/agent-harness_0.1.0/placewhy.lua'){filters=function() return {filters={}} end},
+    blocked=function() return 'blocked' end,
+    who=function(pl) return pl.name end,
+    entity=function(_,args)
+      for _,e in ipairs(world) do if e.position.x==args.position.x and e.position.y==args.position.y then return e end end
+      error('entity not found',0)
+    end}
+  p.name='sol'
+  local luna={index=2,name='luna',force=p.force,surface=p.surface,position=p.position}
+  local area={left_top={x=0,y=0},right_bottom={x=8,y=4}}
+  local s=L.blueprint_save(p,{name='chest-row',area=area,description='three chests,\n wired',anchor={x=1.5,y=1.5}})
+  eq(s.name,'chest-row'); eq(s.author,'sol'); eq(s.entities,3); eq(s.footprint,'5x1'); eq(s.counts,'chest*3'); eq(s.anchor,true)
+  eq(s.last_used,'never'); eq(s.replaced,nil)
+  local lib=storage.agent_harness.bplibrary
+  eq(lib.entries['chest-row'].description,'three chests, wired')
+  eq(lib.entries['chest-row'].anchor.x,-2.5); eq(lib.entries['chest-row'].anchor.y,-0.5)
+  -- By positions: only those entities, renumbered, with the wires between them.
+  local pair=L.blueprint_save(luna,{name='pair',positions={{x=3.5,y=1.5},{x=5.5,y=1.5}}})
+  eq(pair.entities,2); eq(pair.author,'luna')
+  local saved=sources[lib.entries.pair.string].entities
+  eq(saved[1].entity_number,1); eq(saved[2].entity_number,2); eq(saved[1].wires[1][1],1); eq(saved[1].wires[1][3],2); eq(saved[2].wires,nil)
+  local ends=L.blueprint_save(luna,{name='ends',positions={{x=1.5,y=1.5},{x=5.5,y=1.5}}})
+  eq(ends.entities,2); eq(sources[lib.entries.ends.string].entities[1].wires,nil)
+  -- The list: the team's entries beside your own slots.
+  local list=L.blueprint_list(p,{})
+  eq(#list.library,3); eq(list.library[1].name,'chest-row'); eq(list.library[2].name,'ends'); eq(list.library_limit,64)
+  eq(list.library[1].description,'three chests, wired'); assert(list.slots,'slots are listed too')
+  eq(L.blueprint_list(p,{name='chest-row'}).anchor.x,-2.5)
+  -- Placed by name: the saved anchor lands at position; the use is recorded.
+  game.tick=2000
+  local placed=L.blueprint_place(p,{name='chest-row',position={x=10.5,y=10.5}})
+  eq(placed.name,'chest-row'); eq(placed.slot,nil); eq(placed.anchor.by,'saved')
+  eq(p.last_build.position.x,12.5); eq(p.last_build.position.y,10.5)
+  eq(lib.entries['chest-row'].uses,1); eq(lib.entries['chest-row'].last_user,'sol')
+  local planned=L.plan(p,{name='chest-row',position={x=10.5,y=10.5}})
+  eq(planned.name,'chest-row'); eq(planned.anchor.anchor_landed.x,10.5); eq(planned.anchor.anchor_landed.y,10.5); eq(planned.anchor.aligned,true)
+  eq(L.plan(p,{name='chest-row',position={x=10.5,y=10.5},anchor='center'}).anchor,nil)
+  fails(function() L.plan(p,{name='pair',position={x=0,y=0},anchor='saved'}) end,'saved with an anchor')
+  fails(function() L.plan(p,{name='chest-row',position={x=0,y=0},flip_horizontal=true}) end,'flips do not go with the saved anchor')
+  fails(function() L.blueprint_place(p,{name='nope',position={x=0,y=0}}) end,'no library entry nope; entries: chest%-row, ends, pair')
+  fails(function() L.blueprint_place(p,{name='pair',slot='x',position={x=0,y=0}}) end,'give name')
+  -- Another agent changes an entry only after 24 game hours unused.
+  fails(function() L.blueprint_delete(luna,{name='chest-row'}) end,"chest%-row is sol's entry; another agent may delete it after 24 game hours unused %(last used 0m ago%)")
+  fails(function() L.blueprint_save(p,{name='pair',area=area}) end,"pair is luna's entry; another agent may replace it")
+  fails(function() L.blueprint_rename(p,{name='ends',new_name='e2'}) end,'may rename it')
+  eq(L.blueprint_rename(luna,{name='ends',new_name='end-pair'}).was,'ends'); eq(lib.entries.ends,nil); eq(lib.entries['end-pair'].name,'end-pair')
+  fails(function() L.blueprint_rename(luna,{name='end-pair',new_name='pair'}) end,'has an entry pair already')
+  eq(L.blueprint_save(p,{name='chest-row',area=area}).replaced,'sol')
+  game.tick=2000+24*60*60*60
+  eq(L.blueprint_delete(p,{name='pair'}).deleted,true); eq(lib.entries.pair,nil)
+  -- The operator read: every entry, and the strings changed since a revision.
+  local r=L.operator.blueprint_library({})
+  eq(#r.entries,2); assert(r.entries[1].string and r.entries[2].string,'all strings')
+  eq(r.revision,lib.revision)
+  local later=L.operator.blueprint_library({since=r.revision})
+  eq(later.entries[1].string,nil); eq(later.entries[1].name,'chest-row')
+  -- Refusals: a bad name, both or neither of area and positions, an anchor outside, the limit.
+  fails(function() L.blueprint_save(p,{name='bad name',area=area}) end,'name must be')
+  fails(function() L.blueprint_save(p,{name='x',area=area,positions={{x=1.5,y=1.5}}}) end,'give area or positions')
+  fails(function() L.blueprint_save(p,{name='x'}) end,'give area or positions')
+  fails(function() L.blueprint_save(p,{name='x',area=area,anchor={x=20,y=1}}) end,'anchor must lie in the saved area')
+  for i=1,62 do L.blueprint_save(p,{name='e'..i,area=area}) end
+  fails(function() L.blueprint_save(p,{name='e63',area=area}) end,'holds 64 entries')
+  _G.capture_world=nil; p.name=nil
+end
 print('blueprint policy tests passed')

@@ -31,7 +31,8 @@ already targets your character.
   `team: chat_remaining=K` repeats on every reply: run `./fh chat` again. Answer teammates promptly.
 - Output: a failure ends with an `error:` line (on stderr with `--format json`) and exits nonzero; a partial result (`short`, `awaiting_craft`, a
   refused craft) ends with a `warning:` line. `--wait` replies are brief (outcome, position, inventory change; add
-  `--full` for the whole status). The `clock:` line ends with the time left until your deadline.
+  `--full` for the whole status). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
+  or mention ends while the action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
   build in (`board post` with kind `claim` and the area): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
@@ -74,11 +75,18 @@ already targets your character.
   and what each unlocked. `./fh call science` (or `--args '{"pack":"logistic-science-pack"}'`) counts each pack the
   research needs over your whole surface, the same for everyone wherever they stand: made and used in 10 minutes,
   the assemblers set to it and their states, packs in chests, on belts, in labs and carried, and the largest chests;
-  its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs.
+  its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs; its
+  `chain` line walks the pack's recipe tree down, each step with its makers and made and used per minute, following
+  the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
+  4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
   reason, the machines that make and use it by status (the worst 3 with positions), and the inserters feeding them.
+- `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
+  ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
+  tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
+  they end and what blocks them; `{"item":"chemical-science-pack"}` follows every route from its makers to the labs.
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
   own voice: use it whenever there is something viewers would want to hear (a plan, a win, a complaint, a joke);
   viewers like hearing from each of you every few minutes.
@@ -97,9 +105,11 @@ already targets your character.
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
   (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
-  or more of its capacity for 2 minutes, boilers under 10 minutes of fuel, a logistic network with no idle logistic
-  robot for 10 minutes; at most one digest every 2.5 minutes, new or worse only; `./fh call game_alerts` lists them
-  all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
+  or more of its capacity for 2 minutes, boilers under 20 minutes of fuel (again under 10 and 5; with the fuel in
+  chests and on belts within 64 tiles and the inserters feeding them, or that none does), a logistic network with no
+  idle logistic robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
+  drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
+  `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
   your character's time by kind (the time before a request counts toward that request's kind), the hand hauls you
   repeated 5 or more times, what failed (by reason, top 3), alerts still open in your claims, and losses near where
   your character was (`review (last 2h): 412 actions: ...; time: 48% walking, 21% item moves, 9% building, 22%
@@ -123,7 +133,14 @@ already targets your character.
   `inspect {"positions": [...]}` inspects up to 32 entities in one call; `collect {"radius": N}` without `item` takes
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
   in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
-  line in the team block when a round's short steps differ from the round before.
+  line in the team block when a round's short steps differ from the round before. `transfer` takes `to_entity` or
+  `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
+  reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
+  `collect` over several targets ends with a `tally` line.
+- Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
+  seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
+- In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`
+  (or `"ammo":"explosive-cannon-shell"`, `"auto":true`), loading the slot from your inventory; `vehicle {drive}` goes on meanwhile.
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
   `last.nearest_reachable`.
@@ -145,9 +162,15 @@ already targets your character.
   reach every placement. `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},
   "direction":"north","recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid
   the recipe puts there; `inspect` of a ghost shows the same.
+- The team blueprint library, kept in the save across shifts: `blueprint_save {name, area | positions, description,
+  anchor}` stores what the team built; `blueprint_list` lists entries (author, size, counts, last used);
+  `blueprint_place {name, position, direction, dry_run}` pastes one; `blueprint_rename` and `blueprint_delete {name}`:
+  its author any time, anyone after 24 game hours unused.
 - `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'` (or a chest, silo or pad `position`) weighs a
   rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
-  and one split into rockets that keeps each within both.
+  and one split into rockets that keeps each within both. `./fh call silo` (or a `position`) shows a silo's rocket
+  parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
+  last launch.
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
   patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.

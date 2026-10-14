@@ -12,16 +12,21 @@
 -- In the first reply of a shift (team.shift.networks) and the networks read;
 -- three push alert kinds (pushalerts.lua): power_high (draw at 85% of
 -- capacity or more for 2 minutes), robots_busy (no idle logistic robot for 10
--- minutes) and boiler_fuel (boilers under 10 minutes of fuel at the draw).
+-- minutes) and boiler_fuel (boilers under 20 minutes of fuel at the draw, told
+-- again at 10 and 5, with the fuel in chests and on belts nearby and what feeds them).
 -- Draw comes from the network's statistics, sampled every 5 s (the 5-second
 -- average, J per tick as handlers.power reads it): the game's own windows are
 -- 5 s, 1 min and 10 min.
 return function(api)
   local M = {}
-  local SAMPLE, MAP_TICKS, WINDOW = 300, 1800, 18000
+  local SAMPLE, MAP_TICKS, WATCH_TICKS, WINDOW = 300, 18000, 1800, 18000
   local HIGH, HIGH_TICKS = 0.85, 7200
   local BUSY_TICKS, FUEL_LOW, UNFILLED_TICKS = 36000, 10, 3600
-  local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 1800, 12
+  -- boiler_fuel steps (Haiku, shift09: 10 minutes left was too late to feed by hand): told at 20, again at 10 and 5.
+  local FUEL_STEPS, FUEL_RADIUS = {20, 10, 5}, 64
+  local FUEL_SCAN = 300   -- chests and belt tiles read per alert (00:26 rule: bounded reads on the live world)
+  local FUELS = {'coal', 'solid-fuel', 'wood', 'rocket-fuel', 'nuclear-fuel'}
+  local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 3600, 12   -- the view: kept 60 s (task-statuscost)
   local GENERATORS = {'generator', 'burner-generator', 'solar-panel', 'accumulator', 'fusion-generator', 'electric-energy-interface'}
   local MACHINES = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'inserter', 'beacon', 'radar', 'roboport', 'pump',
     'electric-turret', 'rocket-silo', 'agricultural-tower', 'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'offshore-pump'}
@@ -131,10 +136,14 @@ return function(api)
     end
     n.busy, n.unfilled = busy, unfilled
   end
+  -- task-statuscost: the requests are looked at every 30 s (unfilled for 60 s,
+  -- no idle robot for 10 min); the poles are mapped again every 5 min in the
+  -- background, and by the view when its map is older than the view's age.
   function M.tick(tick)
     if tick % SAMPLE ~= 0 then return end
     local n = store()
-    if not n.map_tick or tick - n.map_tick >= MAP_TICKS then map_poles(n); watch_logistics(n) end
+    if not n.map_tick or tick - n.map_tick >= MAP_TICKS then map_poles(n) end
+    if not n.watch_tick or tick - n.watch_tick >= WATCH_TICKS then watch_logistics(n); n.watch_tick = tick end
     sample(n)
   end
 
@@ -247,14 +256,21 @@ return function(api)
           local fed_kw, names = 0, {}
           for _, b in ipairs(net.boilers) do names[b.gen] = true end
           for name in pairs(names) do fed_kw = fed_kw + (d.by[name] or 0) end
-          local j, under = 0, {}
+          local j, under, low = 0, {}, {}
           for _, b in ipairs(net.boilers) do j = j + b.j end
           if fed_kw > 0 then
             net.fuel_min = j / (fed_kw * 1000) / 60
             local each = fed_kw * 1000 / #net.boilers
-            for _, b in ipairs(net.boilers) do if b.j / each / 60 < FUEL_LOW then under[#under+1] = b.e end end
+            for _, b in ipairs(net.boilers) do
+              b.min = b.j / each / 60
+              if b.min < FUEL_LOW then under[#under+1] = b.e end
+              if b.min < FUEL_STEPS[1] then low[#low+1] = b end
+              if not net.lowest_min or b.min < net.lowest_min then net.lowest_min = b.min end
+            end
           end
           net.fuel_under = under
+          table.sort(low, function(a, b) return a.min < b.min end)
+          net.fuel_low = low
         end
         local parts = {string.format('%s electric #%d (%d poles near %s)', surface.name, net.id, net.poles, at(net.center.x, net.center.y))}
         if d then
@@ -267,7 +283,8 @@ return function(api)
         if #net.boilers > 0 then
           parts[#parts+1] = string.format('boilers %d: fuel %s at this draw%s', #net.boilers,
             net.fuel_min and string.format('%d min', math.floor(net.fuel_min)) or 'n/a (no draw)',
-            net.fuel_under and #net.fuel_under > 0 and string.format(', %d under %d min', #net.fuel_under, FUEL_LOW) or '')
+            net.fuel_low and #net.fuel_low > 0 and string.format(', %d under %d min (lowest %d min)', #net.fuel_low, FUEL_STEPS[1],
+              math.floor(net.lowest_min)) or '')
         end
         net.line = table.remove(parts, 1) .. ': ' .. table.concat(parts, '; ')
         rows[#rows+1] = net
@@ -400,13 +417,14 @@ return function(api)
       end
     end
     if #rows == 0 then return rows end
-    local ghosts = try(function() return surface.find_entities_filtered{type='entity-ghost', force=f, limit=MAX_GHOSTS} end) or {}
-    for _, g in ipairs(ghosts) do
-      local nets = try(function() return surface.find_logistic_networks_by_construction_area(g.position, f) end) or {}
-      local seen = {}
-      for _, ln in ipairs(nets) do
-        local r = by_id[try(function() return ln.network_id end) or -1]
-        if r and not seen[r.id] then seen[r.id] = true; r.ghosts = r.ghosts + 1 end
+    -- Ghosts: one bounded count per network over its construction area's bounding box (00:26 rule: a lookup per
+    -- ghost, up to 4000, was the costliest part of this view).
+    for _, r in ipairs(rows) do
+      local b = r.view.construction_area
+      if b then
+        r.ghosts = try(function()
+          return surface.count_entities_filtered{area={{b.x0, b.y0}, {b.x1, b.y1}}, type='entity-ghost', force=f, limit=MAX_GHOSTS}
+        end) or 0
       end
     end
     for _, r in ipairs(rows) do
@@ -415,7 +433,7 @@ return function(api)
         surface.name, r.id, r.view.text,
         r.busy_since and game.tick - r.busy_since >= 600 and string.format('; no idle logistic robot for %d min', math.floor((game.tick - r.busy_since) / 3600)) or '',
         r.unfilled, kinds > 0 and ' (' .. items .. (kinds > 3 and ', ...' or '') .. ' missing)' or '',
-        r.ghosts, #ghosts >= MAX_GHOSTS and ' (counted the first ' .. MAX_GHOSTS .. ' ghosts)' or '')
+        r.ghosts, r.ghosts >= MAX_GHOSTS and ' (counted up to ' .. MAX_GHOSTS .. ')' or '')
     end
     table.sort(rows, function(a, b) return a.roboports > b.roboports or (a.roboports == b.roboports and a.id < b.id) end)
     return rows
@@ -441,12 +459,13 @@ return function(api)
     return {by=by, used=used, line=string.format('%s turrets: %s; ammo used in the last hour: %s', surface.name, t ~= '' and t or 'none', u ~= '' and u or 'none')}
   end
 
-  -- Everything for one force, kept 30 s so every peer and reply sees the same.
+  -- Everything for one force, kept 60 s so every peer and reply sees the same.
   local function view(f)
     local n = store()
     local v = n.views[f.name]
     if v and game.tick - v.tick < VIEW_TICKS then return v end
-    if not n.map_tick then map_poles(n); watch_logistics(n); sample(n) end
+    if not n.map_tick then map_poles(n); watch_logistics(n); n.watch_tick = game.tick; sample(n)
+    elseif game.tick - n.map_tick >= VIEW_TICKS then map_poles(n); sample(n) end
     v = {tick=game.tick, surfaces={}}
     for _, surface in ipairs(surfaces()) do
       local e, l, t = electric(n, f, surface), logistic(n, f, surface), turrets(f, surface)
@@ -494,6 +513,8 @@ return function(api)
           x.boilers = #r.boilers > 0 and #r.boilers or nil
           x.fuel_min = r.fuel_min and math.floor(r.fuel_min) or nil
           x.boilers_under_10_min = r.fuel_under and #r.fuel_under or nil
+          x.boilers_under_20_min = r.fuel_low and #r.fuel_low or nil
+          x.lowest_boiler_min = r.lowest_min and math.floor(r.lowest_min) or nil
           row.electric[#row.electric+1] = x
         end
         for _, r in ipairs(s.logistic) do
@@ -517,6 +538,138 @@ return function(api)
         .. 'robots: idle are stationed in a roboport, charging and waiting to charge are at a roboport, working are the rest (out on a job or flying)'}
   end
 
+  -- boiler_fuel: the fuel its boilers burn (burning now or in the fuel slots;
+  -- the usual fuels when they hold none), where that fuel sits nearby
+  -- (chests and belts within FUEL_RADIUS tiles), and what feeds each low
+  -- boiler now (inserters dropping into it and what they take from).
+  local function name_of(v)
+    if type(v) == 'string' then return v end
+    if type(v) == 'table' or type(v) == 'userdata' then
+      local n = try(function() return v.name end)
+      if type(n) == 'string' then return n end
+      return n and try(function() return n.name end)
+    end
+  end
+  local function fuels_of(boilers)
+    local seen, out = {}, {}
+    local function add(n) if n and not seen[n] then seen[n] = true; out[#out+1] = n end end
+    for _, b in ipairs(boilers) do
+      local burner = b.e.valid and try(function() return b.e.burner end)
+      if burner then
+        add(name_of(try(function() return burner.currently_burning end)))
+        local inv = try(function() return burner.inventory end)
+        for i = 1, inv and #inv or 0 do
+          local st = inv[i]
+          if st and st.valid_for_read then add(st.name) end
+        end
+      end
+    end
+    return out, #out == 0
+  end
+  local function same(a, b)
+    if not (a and b) then return false end
+    local ua, ub = try(function() return a.unit_number end), try(function() return b.unit_number end)
+    if ua and ub then return ua == ub end
+    return a == b
+  end
+  function M.fuel_sources(surface, f, center, names)
+    local chests, belts = {}, {tiles=0, by={}, near={}}
+    local function dist(p) return (p.x - center.x) ^ 2 + (p.y - center.y) ^ 2 end
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{type={'container', 'logistic-container'}, force=f, position=center, radius=FUEL_RADIUS, limit=FUEL_SCAN} end) or {}) do
+      local inv = e.valid and try(function() return e.get_inventory(defines.inventory.chest) end)
+      if inv then
+        local parts = {}
+        for _, name in ipairs(names) do
+          local n = try(function() return inv.get_item_count(name) end) or 0
+          if n > 0 then parts[#parts+1] = name .. ' ' .. n end
+        end
+        if #parts > 0 then chests[#chests+1] = {text=string.format('%s %s %s', e.name, at(e.position.x, e.position.y), table.concat(parts, ', ')), d=dist(e.position)} end
+      end
+    end
+    table.sort(chests, function(a, b) return a.d < b.d end)
+    local tiles = {}
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{type={'transport-belt', 'underground-belt', 'splitter'}, force=f, position=center, radius=FUEL_RADIUS, limit=FUEL_SCAN} end) or {}) do
+      local held = 0
+      for i = 1, e.valid and (try(function() return e.get_max_transport_line_index() end) or 0) or 0 do
+        local line = try(function() return e.get_transport_line(i) end)
+        for _, name in ipairs(names) do
+          local n = line and try(function() return line.get_item_count(name) end) or 0
+          if n > 0 then belts.by[name] = (belts.by[name] or 0) + n; held = held + n end
+        end
+      end
+      if held > 0 then belts.tiles = belts.tiles + 1; tiles[#tiles+1] = {p=e.position, d=dist(e.position)} end
+    end
+    table.sort(tiles, function(a, b) return a.d < b.d end)
+    for i = 1, math.min(2, #tiles) do belts.near[i] = at(tiles[i].p.x, tiles[i].p.y) end
+    return chests, belts
+  end
+  function M.fuel_feeders(surface, f, boilers)
+    local from, bare = {}, {}
+    for _, b in ipairs(boilers) do
+      local e = b.e
+      local fed = false
+      if e.valid then
+        for _, ins in ipairs(try(function() return surface.find_entities_filtered{type='inserter', force=f, position=e.position, radius=4} end) or {}) do
+          if ins.valid and same(try(function() return ins.drop_target end), e) then
+            fed = true
+            local src = try(function() return ins.pickup_target end)
+            local key = src and src.valid and string.format('%s %s', src.name, at(src.position.x, src.position.y)) or 'no pickup target'
+            from[key] = (from[key] or 0) + 1
+          end
+        end
+        if not fed then bare[#bare+1] = at(e.position.x, e.position.y) end
+      end
+    end
+    return from, bare
+  end
+  function M.fuel_group(s, r, f)
+    local low = r.fuel_low
+    local surface
+    for _, x in ipairs(surfaces()) do if x.name == s.name then surface = x end end
+    local g = {key='boiler_fuel|' .. s.name .. '|' .. r.id, kind='boiler_fuel', surface=s.name, n=#low, names={boiler=#low}, by={}, at={}}
+    local sx, sy, counts = 0, 0, {0, 0, 0}
+    for _, b in ipairs(low) do
+      local e = b.e
+      if e.valid then
+        sx, sy = sx + e.position.x, sy + e.position.y
+        if #g.at < 4 then g.at[#g.at+1] = {x=e.position.x, y=e.position.y} end
+        local u = try(function() return e.last_user and e.last_user.name end)
+        if u then g.by[u] = (g.by[u] or 0) + 1 end
+      end
+      for k, step in ipairs(FUEL_STEPS) do if b.min < step then counts[k] = counts[k] + 1 end end
+    end
+    g.center = {x=math.floor(sx / #low + 0.5), y=math.floor(sy / #low + 0.5)}
+    local level = counts[3] > 0 and 3 or counts[2] > 0 and 2 or 1
+    -- Worse: a lower step reached, or more boilers under 20 minutes.
+    g.rank = level * 10000 + counts[1]
+    local steps = {string.format('%d boiler%s under %d min of fuel at this draw', counts[1], counts[1] == 1 and '' or 's', FUEL_STEPS[1])}
+    for k = 2, 3 do if counts[k] > 0 then steps[#steps+1] = string.format('%d under %d', counts[k], FUEL_STEPS[k]) end end
+    g.now_text = table.concat(steps, ', ') .. string.format(', lowest %d min', math.floor(low[1].min))
+    local names, guessed = fuels_of(r.boilers)
+    if guessed then names = FUELS end
+    local chests, belts = {}, {tiles=0, by={}, near={}}
+    if surface and f then chests, belts = M.fuel_sources(surface, f, g.center, names) end
+    local src = {}
+    for i = 1, math.min(3, #chests) do src[i] = chests[i].text end
+    local held = {}
+    for _, name in ipairs(names) do if belts.by[name] then held[#held+1] = name .. ' ' .. belts.by[name] end end
+    local fuel_text = string.format('fuel within %d tiles%s: %s%s', FUEL_RADIUS, guessed and ' (the boilers hold none; looked for ' .. table.concat(FUELS, ', ') .. ')' or '',
+      #src > 0 and table.concat(src, ', ') .. (#chests > 3 and string.format(' (+%d chests)', #chests - 3) or '') or 'no chest',
+      belts.tiles > 0 and string.format('; belts: %s on %d tiles, nearest %s', table.concat(held, ', '), belts.tiles, table.concat(belts.near, ', ')) or '; no belt')
+    local from, bare = {}, {}
+    if surface and f then from, bare = M.fuel_feeders(surface, f, low) end
+    local fed = {}
+    for key, n in pairs(from) do fed[#fed+1] = {key=key, n=n} end
+    table.sort(fed, function(a, b) return a.n > b.n or (a.n == b.n and a.key < b.key) end)
+    local fed_parts = {}
+    for i = 1, math.min(3, #fed) do fed_parts[i] = string.format('%d from %s', fed[i].n, fed[i].key) end
+    local feed_text = (#fed > 0 and 'fed by inserters: ' .. table.concat(fed_parts, ', ') .. (#fed > 3 and ', ...' or '') or 'no inserter feeds them')
+      .. (#fed > 0 and #bare > 0 and string.format('; no inserter feeds %d: %s%s', #bare, table.concat(bare, ', ', 1, math.min(3, #bare)), #bare > 3 and ', ...' or '') or '')
+    g.line = string.format('%s near %s (electric #%d: %d boiler%s, lowest %d min, %s); %s; %s', table.concat(steps, ', '),
+      at(g.center.x, g.center.y), r.id, #r.boilers, #r.boilers == 1 and '' or 's', math.floor(low[1].min),
+      r.fuel_min and string.format('%d min for all', math.floor(r.fuel_min)) or 'no draw', fuel_text, feed_text)
+    return g
+  end
   -- Push alert groups (pushalerts.lua scan): plain data, worst first there.
   function M.alert_groups(f)
     local v = view(f)
@@ -540,23 +693,8 @@ return function(api)
             line=string.format('electric #%d draw at or above %d%% of capacity for 2 min: %s of %s now; %d machines on low power',
               r.id, math.floor(HIGH * 100), mw(r.draw.now), mw(r.capacity_kw), r.low)}
         end
-        if r.fuel_under and #r.fuel_under > 0 then
-          local g = {key='boiler_fuel|' .. s.name .. '|' .. r.id, kind='boiler_fuel', surface=s.name, n=#r.fuel_under, names={}, by={}, at={}}
-          local sx, sy = 0, 0
-          for _, e in ipairs(r.fuel_under) do
-            if e.valid then
-              sx, sy = sx + e.position.x, sy + e.position.y
-              if #g.at < 4 then g.at[#g.at+1] = {x=e.position.x, y=e.position.y} end
-              local u = try(function() return e.last_user and e.last_user.name end)
-              if u then g.by[u] = (g.by[u] or 0) + 1 end
-            end
-          end
-          g.names.boiler = g.n
-          g.center = {x=math.floor(sx / g.n + 0.5), y=math.floor(sy / g.n + 0.5)}
-          g.line = string.format('%d boilers under %d min of fuel at this draw near %s (electric #%d, %d boilers, %s)', g.n, FUEL_LOW,
-            at(g.center.x, g.center.y), r.id, #r.boilers, r.fuel_min and string.format('%d min for all', math.floor(r.fuel_min)) or 'no draw')
-          out[#out+1] = g
-        end
+        local g = r.fuel_low and #r.fuel_low > 0 and M.fuel_group(s, r, f)
+        if g then out[#out+1] = g end
       end
       for _, r in ipairs(s.logistic) do
         if r.busy_since and game.tick - r.busy_since >= BUSY_TICKS and r.center then
@@ -572,11 +710,11 @@ return function(api)
   M.schema = {
     networks = {surface='optional surface name',
       returns='surfaces [{surface, electric [{id, poles, center, draw_kw {avg, now, over_s}, capacity_kw, generators_kw, solar, solar_peak_kw, '
-        .. 'acc, machines, low, none, boilers, fuel_min, boilers_under_10_min, line}], logistic [{id, roboports, personal, center, '
+        .. 'acc, machines, low, none, boilers, fuel_min, boilers_under_20_min, boilers_under_10_min, lowest_boiler_min, line}], logistic [{id, roboports, personal, center, '
         .. 'logistic_area and construction_area {x0, y0, x1, y1}, logistic_robots and construction_robots {total, idle, working, '
         .. 'charging, waiting}, logistic, logistic_idle, none_idle_s, construction, construction_idle, unfilled, unfilled_items, '
         .. 'ghosts, line}], turrets {by_name, '
-        .. 'ammo_used_1h, line}}]; as_of (kept 30 s); note (how each number is counted). Electric networks over 2 poles or with '
+        .. 'ammo_used_1h, line}}]; as_of (kept 60 s); note (how each number is counted). Electric networks over 2 poles or with '
         .. 'a generator. Read only'},
   }
   return M

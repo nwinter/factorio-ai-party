@@ -38,6 +38,7 @@ const help = `fh — Factorio agent CLI
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
   fh call walk --args '{"direction":"east","ticks":60}' --wait
   fh wait                                   Block until the character's current action (and combat) ends; a tell or mention ends the wait early
+                                            (exit 3: it still runs; --wait-through-tells keeps waiting)
   fh wait --until tell|alert|COND [--max S] One blocking wait, one line out: ends on a tell or mention, a new alert (alert),
                                             a sleep condition (researched [TECH], item_count ITEM>=N, ...), or after S s (default 600, up to 900);
                                             your action and queue keep going; the team block waits for your next reply
@@ -50,6 +51,7 @@ const help = `fh — Factorio agent CLI
   fh blueprint import --file blueprint.txt   Import blueprint/book into a named slot
   fh blueprint export --out blueprint.txt    Export stored blueprint/book
   fh blueprint list|inspect|capture|place|copy|cut|paste --args JSON
+  fh blueprint save|rename|delete --args JSON The team library: save {name, area|positions}, place {name, position}
   fh queue submit --file plan.json           Queue in-game execution; optional --args for mode
   fh queue status|edit|cancel|resume          Inspect/revise pending work; cancel controls immediately
   fh board [--args '{"mine":true}']          Team board (tasks, requests, claims, notes), newest first
@@ -80,6 +82,8 @@ Options: --player N (default 1), --bot NAME (a bot instead of a player; FH_BOT),
          --session NAME (default: auto-use default session), --bridge-socket PATH (bridge without a session),
          --socket PATH (an RCON broker's socket instead of RCON: harness requests only, no password; FH_SOCKET),
          --wait, --wait-timeout MS (default: until the action's own end tick, at least 30000), --journal PATH, --args-file PATH
+         --wait-through-tells (a tell or mention does not end the wait; told_during_wait lists them at the end)
+         Exit codes: 0 done, 1 failed, 3 the wait ended while the action still runs (a tell or mention, or the wait timeout)
          --full (after --wait: the whole status instead of outcome, position and inventory change)
          --since SEQ (chat, board events), --limit N, --deadline-file PATH (FH_DEADLINE_FILE: time left on the clock line)
          --format json|compact (default compact; stream always uses JSONL)
@@ -217,6 +221,15 @@ function writePaged(text: string) {
   try { if (rest) writeFileSync(moreFile(), rest); }
   catch (error) { process.stderr.write(`fh more: could not keep the rest (${String(error)}); FH_PAGE_BYTES=0 prints everything\n`); }
 }
+/** Exit status: 0 done, 1 failed, 3 the wait ended while the action still runs (a tell or mention ended it, or
+ * the wait timed out): `fh call X --wait && next` must not run next then (Sol, shift09). */
+export const STILL_RUNNING_EXIT = 3;
+function exitCode(reply: Reply): number {
+  // JSON --wait replies carry the wait's end under completion.
+  const ends = [reply.result, reply.result?.completion];
+  if (ends.some(r => r && typeof r === 'object' && r.still_running !== undefined && r.still_running !== false)) return STILL_RUNNING_EXIT;
+  return reply.ok ? 0 : 1;
+}
 function output(value: unknown) {
   value = withDeadline(value);
   if (outputFormat === 'compact') writePaged(operatorHead() + formatCompact(withoutOperator(value)));
@@ -265,7 +278,7 @@ async function main() {
     format:{type:'string'}, help: { type:'boolean', short:'h' }, args:{type:'string'}, 'args-file':{type:'string'}, player:{type:'string'}, bot:{type:'string'},
     host:{type:'string'}, port:{type:'string'}, timeout:{type:'string'}, id:{type:'string'},
     file:{type:'string'}, out:{type:'string'}, mods:{type:'string'}, journal:{type:'string'},
-    wait:{type:'boolean'}, 'wait-timeout':{type:'string'},
+    wait:{type:'boolean'}, 'wait-timeout':{type:'string'}, 'wait-through-tells':{type:'boolean'},
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
@@ -325,7 +338,8 @@ async function main() {
   }
   if (command === 'blueprint') {
     const operation = positionals[1] ?? 'list';
-    if (!['import','export','inspect','list','delete','capture','place','copy','cut','paste'].includes(operation)) throw new Error('Unknown blueprint operation');
+    // save and rename: the team library (blueprint_save, blueprint_rename).
+    if (!['import','export','inspect','list','delete','capture','place','copy','cut','paste','save','rename'].includes(operation)) throw new Error('Unknown blueprint operation');
     const args = object(JSON.parse(values.args ?? '{}'),'args');
     if (operation === 'import') {
       if (!values.file) throw new Error('blueprint import requires --file blueprint.txt');
@@ -572,7 +586,8 @@ async function main() {
     return {...status, ok:false, error:{code:'wait_timeout', message:`${action} still running after the wait timeout; it continues in game: poll status or wait again (--wait-timeout MS)`}};
   }
   // arrived_near: stopped beside a goal inside an entity, which is where callers want to be.
-  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up'];
+  // target_destroyed: a shoot at an entity ended because it is gone.
+  const successfulOutcomes = ['told','mentioned','duration_elapsed','target_mined','repair_completed','arrived','arrived_near','path_built','collected','topped_up','nothing_to_do','constructed','fed','met','picked_up','target_destroyed'];
   // How long to wait: an explicit --wait-timeout, else until the action's own
   // end tick (at 60 ticks/s plus a margin), never less than 30 s nor more than 15 min.
   // ownEnd: the action's end tick already reflects --wait-timeout (wait_until), so
@@ -664,6 +679,8 @@ async function main() {
       ...(last?.kind === 'move_to' ? {nearest_reachable: last.nearest_reachable, reachable_gap: last.reachable_gap, off_belt: last.off_belt,
         path: last.path, steered: last.steered} : {}),
       why: last?.why, note: status.result?.note,
+      // collect over a radius: moved per item, places touched, what fell short.
+      tally: last?.tally,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
     };
     for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];
@@ -675,8 +692,8 @@ async function main() {
     const done = await waitForActionEnd(action, untilTick, nowTick, started, nowTick);
     if (done.result?.interrupted) return interruptedReply(done, started, before, action);
     // A timeout or a failed poll is reported as it is.
-    if (done.error?.code === 'wait_timeout' || (!done.ok && done.error?.code !== 'action_interrupted' && done.error?.code !== 'timed_out')) return done;
-    return compactWaits ? brief(done, started, before, action) : finalReply(done);
+    if (done.error?.code === 'wait_timeout' || (!done.ok && done.error?.code !== 'action_interrupted' && done.error?.code !== 'timed_out')) return withTells(done);
+    return withTells(compactWaits ? await brief(done, started, before, action) : await finalReply(done));
   }
   async function waitForActionEnd(action: string, untilTick: number | undefined, nowTick: number | undefined, started: number, acceptedTick?: number): Promise<Reply> {
     const deadline = started+waitBudget(untilTick,nowTick,action === 'wait_until');
@@ -692,7 +709,8 @@ async function main() {
         : action === 'vehicle' ? ['drive'] : [action];
       const stillRunning = active && (action === 'shoot' || kinds.includes(active.kind));
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
-        return {...status, result:{...status.result, interrupted:{inbox:status.result!.inbox, active}}};
+        if (!throughTells) return {...status, result:{...status.result, interrupted:{inbox:status.result!.inbox, active}}};
+        noteTell(status);
       }
       if (!status.ok || !stillRunning) {
         const last = action === 'shoot' ? status.result?.last_combat : status.result?.last;
@@ -720,6 +738,18 @@ async function main() {
   function told(status: Reply, since?: number): boolean {
     const inbox = status.result?.inbox;
     return since !== undefined && typeof inbox?.tick === 'number' && inbox.tick >= since;
+  }
+  // --wait-through-tells: the wait goes on; each tell or mention seen is listed when it ends
+  // (Sol, shift09: `fh ... --wait && next` ran the next step while the action still ran).
+  const throughTells = values['wait-through-tells'] === true;
+  const toldDuring: string[] = [];
+  function noteTell(status: Reply) {
+    const inbox = status.result?.inbox;
+    const line = `${inbox?.woke === 'mentioned' ? 'mention' : 'tell'} from ${inbox?.from ?? '?'} at tick ${inbox?.tick}`;
+    if (!toldDuring.includes(line)) toldDuring.push(line);
+  }
+  function withTells(reply: Reply): Reply {
+    return toldDuring.length && reply.result && typeof reply.result === 'object' ? {...reply, result:{...reply.result, told_during_wait:[...toldDuring]}} : reply;
   }
   async function interruptedReply(done: Reply, started: number, before: unknown, action: string): Promise<Reply> {
     const {inbox, active} = done.result!.interrupted;
@@ -839,17 +869,18 @@ async function main() {
         const last = status.result?.last;
         const ok = !last?.outcome || successfulOutcomes.includes(last.outcome);
         const ended = {...status, ok, ...(ok ? {} : {error:endedError(last.kind ?? 'the action',last)})};
-        if (compactWaits) return brief(ended, started);
+        if (compactWaits) return withTells(await brief(ended, started));
         const full = await finalReply(ended);
-        return {...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
-          team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}};
+        return withTells({...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
+          team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}});
       }
       await delay(pollDelay(status, started));
       status = await poll();
       if (!status.ok) return status;
       const active = status.result?.active;
       if (active && told(status, since) && active.kind !== 'wait_ticks' && active.kind !== 'wait_until') {
-        return interruptedReply({...status, result:{...status.result, interrupted:{inbox:status.result!.inbox, active}}}, started, undefined, active.kind);
+        if (!throughTells) return interruptedReply({...status, result:{...status.result, interrupted:{inbox:status.result!.inbox, active}}}, started, undefined, active.kind);
+        noteTell(status);
       }
     }
     if (stopping) throw new Error('Stopped waiting; inspect status.');
@@ -950,7 +981,7 @@ async function main() {
         if (stopping) break;
         const reply = await execute(step.action,step.args,step.id,true);
         output({step:index,...reply});
-        if (!reply.ok) {process.exitCode=1; break;}
+        if (exitCode(reply)) {process.exitCode=exitCode(reply); break;}
       }
     } else if (command === 'view') {
       if (!values.out) throw new Error('view requires --out path.png');
@@ -981,7 +1012,7 @@ async function main() {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
       const reply = await waitForIdle();
       output(reply);
-      if (!reply.ok) process.exitCode=1;
+      process.exitCode=exitCode(reply);
     } else if (command === 'doctor' && bridged) {
       const bridge = await execute('bridge_status',{});
       const player = bridge.ok && bridge.result?.in_game ? await execute('observe',{}) : undefined;
@@ -1015,7 +1046,7 @@ async function main() {
         await writeFile(values.out,reply.result.blueprint+'\n');
         output({...reply,result:{...reply.result,blueprint:undefined,path:resolve(values.out)}});
       } else output(reply);
-      if (!reply.ok) process.exitCode=1;
+      process.exitCode=exitCode(reply);
     }
   } finally {
     client.close();

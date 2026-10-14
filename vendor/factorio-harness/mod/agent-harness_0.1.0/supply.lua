@@ -125,6 +125,26 @@ return function(api)
   -- {position, radius} limits the entity scans (network totals stay whole);
   -- opts.packs (name -> true) are the packs the current research needs: labs
   -- use them.
+  -- Replies reused for REUSE_TICKS (task-statuscost: one supply read was one
+  -- whole-surface find, 45 ms on shift08's nauvis; science reads every pack
+  -- the same way): the finished reply (plain data, no entities), keyed by
+  -- what was asked, with as_of. Module state on purpose (as profile.lua): it
+  -- never touches game state, and a peer without it reads anew.
+  local REUSE_TICKS, replies = 600, {}
+  function M.reuse(key, fn)
+    for k, c in pairs(replies) do if game.tick - c.tick >= REUSE_TICKS or c.tick > game.tick then replies[k] = nil end end
+    local hit = replies[key]
+    if hit then
+      local out = {}
+      for k, v in pairs(hit.out) do out[k] = v end
+      out.as_of = string.format('%ds ago (the same read within %d s is reused)', math.floor((game.tick - hit.tick) / 60), REUSE_TICKS / 60)
+      return out
+    end
+    local out = fn()
+    replies[key] = {tick=game.tick, out=out}
+    return out
+  end
+  function M.forget() replies = {} end
   function M.scan(surface, force, names, opts)
     opts = opts or {}
     local area, packs = opts.area, opts.packs or {}
@@ -442,8 +462,9 @@ return function(api)
       end
     end
     for _, t in pairs(T) do M.classify(t) end
-    return {items=T, networks=networks, counted=counted, area=area}
+    return {items=T, networks=networks, counted=counted, area=area, crafters=crafters}
   end
+
 
   -- Each requester's state: met, on_the_way (incoming covers it), or unmet
   -- with the reason (from the network's stock and robots).
@@ -774,12 +795,107 @@ return function(api)
     if worst and worst[1] then parts[#parts+1] = 'worst lab ' .. worst[1] end
     return #parts > 0 and table.concat(parts, '; ') or nil
   end
+  -- science's chain (Sonnet, shift09: "I spend most cycles diagnosing that by
+  -- hand"): a pack's recipe tree down to what no crafter makes (ores, crude
+  -- oil, water), each step with made and used per minute (the force's 10
+  -- minute statistics) and its makers by state, naming what the short ones
+  -- lack. The line follows the ingredient most of a step's makers lack while
+  -- most of them lack one, and ends at the first step whose makers mostly do
+  -- not. Built from the scan's crafters: no other find.
+  local CHAIN_NODES, CHAIN_DEPTH = 40, 10
+  function M.chain(scan, force, surface, pack)
+    local by_product = scan.by_product
+    if not by_product then
+      by_product = {}
+      for _, e in ipairs(scan.crafters or {}) do
+        if e.valid then
+          local recipe = recipe_of(e)
+          for _, prod in ipairs(recipe and recipe.products or {}) do
+            local list = by_product[prod.name] or {}
+            by_product[prod.name] = list
+            list[#list+1] = {e=e, recipe=recipe}
+          end
+        end
+      end
+      scan.by_product = by_product
+    end
+    local items = try(function() return force.get_item_production_statistics(surface) end)
+    local fluids = try(function() return force.get_fluid_production_statistics(surface) end)
+    local function per_min(name, category)
+      local stats = prototypes.fluid and prototypes.fluid[name] and fluids or items
+      local n = stats and try(function()
+        return stats.get_flow_count{name=name, category=category, precision_index=defines.flow_precision_index.ten_minutes, count=true}
+      end)
+      return n and math.floor(n / 10 + 0.5) or 0
+    end
+    local nodes, seen = {}, {}
+    local function visit(name, depth)
+      if seen[name] or #nodes >= CHAIN_NODES or depth > CHAIN_DEPTH then return end
+      seen[name] = true
+      local makers = by_product[name] or {}
+      local node = {item=name, depth=depth, made=per_min(name, 'input'), used=per_min(name, 'output'), makers=#makers, working=0, states={}, lack={}}
+      nodes[#nodes+1] = node
+      local children, child_seen = {}, {}
+      for _, m in ipairs(makers) do
+        local status = api.status_name(m.e) or 'unknown'
+        if status == 'working' then node.working = node.working + 1 else bump(node.states, status) end
+        if SHORT[status] then
+          for _, ing in ipairs(missing(m.e, m, nil)) do bump(node.lack, ing) end
+        end
+        for _, ing in ipairs(m.recipe.ingredients or {}) do
+          if not child_seen[ing.name] then child_seen[ing.name] = true; children[#children+1] = ing.name end
+        end
+      end
+      node.children = children
+      for _, child in ipairs(children) do visit(child, depth + 1) end
+    end
+    visit(pack, 0)
+    local by_item = {}
+    for _, n in ipairs(nodes) do by_item[n.item] = n end
+    local function states_text(n)
+      local parts = {}
+      for s, k in pairs(n.states) do parts[#parts+1] = {s=s, k=k} end
+      table.sort(parts, function(x, y) if x.k ~= y.k then return x.k > y.k end return x.s < y.s end)
+      local out = {}
+      for i, p in ipairs(parts) do out[i] = p.k .. ' ' .. p.s end
+      return table.concat(out, ', ')
+    end
+    -- One step's words: its makers and what most of them lack, then made and used.
+    local function step(n)
+      local top, top_n
+      for ing, k in pairs(n.lack) do if not top_n or k > top_n or (k == top_n and ing < top) then top, top_n = ing, k end end
+      local text
+      if n.makers == 0 then text = string.format('%s: no assembler, furnace or silo makes it', n.item)
+      elseif top and top_n * 2 > n.makers then text = string.format('%s: %d of %d makers lack %s', n.item, top_n, n.makers, top)
+      else
+        local other = states_text(n)
+        text = string.format('%s: %d of %d working%s', n.item, n.working, n.makers, other ~= '' and ' (' .. other .. ')' or '')
+      end
+      return text .. string.format(', made %d/min, used %d/min', n.made, n.used), top and top_n * 2 > n.makers and top or nil
+    end
+    local parts, at_item, walked = {}, pack, {}
+    while at_item and by_item[at_item] and not walked[at_item] do
+      walked[at_item] = true
+      local text, next_item = step(by_item[at_item])
+      parts[#parts+1] = text
+      at_item = next_item
+    end
+    local rows = {}
+    for _, n in ipairs(nodes) do
+      rows[#rows+1] = {item=n.item, depth=n.depth, made_per_min=n.made, used_per_min=n.used, makers=n.makers, working=n.working,
+        states=next(n.states) and n.states or nil, lacking=next(n.lack) and n.lack or nil}
+    end
+    return {line='chain: ' .. table.concat(parts, '; '), tree=rows, cut=#nodes >= CHAIN_NODES or nil}
+  end
   local function packs_of(force)
     local tech, packs = force.current_research, {}
     for _, ing in ipairs(tech and tech.research_unit_ingredients or {}) do packs[ing.name] = true end
     return packs
   end
   M.packs_of = packs_of
+  -- For trace.lua: the same inventory reads.
+  M.helpers = {inventory=inventory, count=count, input_of=input_of, output_of=output_of, recipe_of=recipe_of, kind_of=kind_of,
+    main=function(e) return inventory(e, MAIN[e.type] or 'chest') end}
 
   M.schema = {supply = {item='item name', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole',
     radius='with near: 1..512 tiles (default 64)',
@@ -798,6 +914,11 @@ return function(api)
     if a.near ~= nil then area = {position=api.position(a.near), radius=api.integer(a.radius, 64, 1, 512, 'radius')}
     else assert(a.radius == nil, 'radius needs near {x,y}') end
     local force = p.force
+    local key = string.format('supply|%s|%s|%s|%s', tostring(surface.index or surface.name), force.name, item,
+      area and string.format('%g,%g,%g', area.position.x, area.position.y, area.radius) or '')
+    return M.reuse(key, function() return M.supply_fresh(surface, force, item, area) end)
+  end
+  function M.supply_fresh(surface, force, item, area)
     local packs = packs_of(force)
     local scan = M.scan(surface, force, {[item]=true}, {area=area, packs=packs})
     local t = scan.items[item]

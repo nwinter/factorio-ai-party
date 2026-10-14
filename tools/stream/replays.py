@@ -7,23 +7,35 @@ watch (shake10: the main camera showed a fight live, then the replay aired that 
   - never during the fight: a clip about a fight waits until that fight (model.py `fights`) has been quiet 20 s
     (`quiet_s`); a death clip waits while any fight within 40 tiles goes on;
   - a fight the main camera showed live gets no replay of it (main covered most of the window, `main_frac`);
-  - a loss (something destroyed): a clip of the stretch in which the program showed that spot, around the moment of
-    loss (from `loss_before` before it to `loss_watch` after, at most `loss_len`, at least `loss_min_s`), aired after
-    the fight ends, even if the main camera watched it live. "Showed" is geometry: the spot inside the frame of the
-    camera on air (cams["main"]["frame"], director.in_frame: the client's view at its zoom, after the on-air crop;
-    in a trio the big tile; never the inset or a small tile, since the replay is the whole program), sampled every tick; never while a replay is on air (the program is the replay then). shift01: a loss 20
-    tiles from Sol counted as shown; the program had Sol in the base and the fight was 35 tiles north, off frame.
-    Several losses of one fight within one clip's stretch get one clip;
+  - a loss (something destroyed) or a death: aired only if it was on air when it happened, and the clip is that
+    moment. The moment is the event's wall time: a loss's game tick (the incident's last_tick) through the (tick_t,
+    tick) samples of the snapshots, else the alert's time less `loss_lag` (a death: the tick of the loss of its
+    character, else the alert less `death_lag`). On air: the spot (a dead agent: its character, followed or inside the
+    frame) inside the frame of the camera on air for at least `onair_min_s` of the `onair_before` s before the moment
+    ("shown" is geometry: cams["main"]["frame"], director.in_frame, the client's view at its zoom after the on-air
+    crop; in a trio the big tile; never the inset or a small tile, since the replay is the whole program; not the
+    first `cut_settle` s after a cut), sampled every tick into the timeline `frames`; never while a replay is on air
+    (the program is the replay then). Otherwise no replay, logged "not on air at the time". The clip runs from
+    `clip_before` s before the moment to `clip_after` s after it, saved once that is over, aired after the fight
+    ends. shift09 00:40: Sol died on Gleba on air; the loss alert of his character was clipped from the urgent cut 4 s
+    later (the longest stretch of footage of the spot: all aftermath) and aired as a second replay (viewer awoo3391:
+    "the one we just saw didnt actually capture the death at all"). shift01: a loss 20 tiles from Sol counted as
+    shown; the program had Sol in the base and the fight was 35 tiles north, off frame. Several losses of one fight
+    within one clip's stretch get one clip;
+  - one replay per moment: a loss key (the incident) has one clip; a re-report of the same loss (the alert comes back
+    after its 90 s ttl, with the same tick) is no new moment; a later moment of the same incident replaces the clip
+    still waiting only if it was on air longer, and never once one aired. A death and the loss of that agent's
+    character (only characters lost, within `same_near` tiles and `same_s` s) are one moment: the death's clip;
   - a fight only a side camera showed: that camera's stretch of it (at least `side_min_s`, at most `fight_show`) is
     saved while it is in the buffer and aired after the fight ends. No camera on it: no replay;
-  - death: if the main camera showed that agent in the 10 s before, save 5 s after and replay 11 s before to 4 s after.
+  - death: as a loss, the dead agent's character being the spot.
 
 The clip plays as an `attack_replay` segment (segments.py), so the casters see it and talk over it: on "live" the
 program scene switches to the "replay" scene (the clip, muted, under a REPLAY banner page; the stream overlay rides
 along off-canvas so the casters' voices keep playing), and when the segment ends or is cut the program goes back to
 "stream". A watchdog returns to "stream" whenever "replay" is on air without a replay playing.
 """
-import itertools, json, threading, time, traceback
+import itertools, json, re, threading, time, traceback
 from collections import deque
 
 from director import in_frame
@@ -43,19 +55,17 @@ DEFAULTS = {
     "side_near": 12.0,             # the same for a side camera (closer view)
     "quiet_s": 20.0,               # a fight is over once it has not been reported for this long
     "fight_near": 40.0,            # a death clip waits while a fight this close goes on
-    "loss_before": 6.0,            # a loss clip: the program's footage of the spot from 6 s before the loss
-    "loss_after": 4.0,             # (to 4 s after when it was on air all along: loss_len in all)
-    "loss_watch": 15.0,            # ... or later, up to this long after it (a cut to the fight: its footage starts then)
-    "loss_len": 10.0,              # at most this long
-    "loss_min_s": 4.0,             # less footage of the spot than this: no clip
+    "onair_before": 15.0,          # a loss or death airs only if its spot was on air in the 15 s before it ...
+    "onair_min_s": 3.0,            # ... for at least this long
+    "clip_before": 8.0,            # its clip: from this long before the moment ...
+    "clip_after": 3.0,             # ... to this long after it
     "loss_merge": 30.0,            # tiles: a loss this close to one already clipped, inside its stretch, adds no clip
     "frame_edge": 2.0,             # tiles: a spot this close to a frame's border does not count as shown
-    "loss_lag": 2.0,               # a loss alert arrives about this long after the loss (status poll)
+    "loss_lag": 2.0,               # a loss alert arrives about this long after the loss (status poll), without a tick
+    "death_lag": 1.0,              # a death is seen at the status poll after it, without its character loss's tick
+    "same_s": 20.0,                # a death and its character's loss this close in time ...
+    "same_near": 40.0,             # ... and place (tiles) are one moment
     "fight_max_age": 300.0,        # a clip waiting for its fight to end is dropped after this long
-    "death_before": 11.0,          # replay window around a death
-    "death_after": 4.0,
-    "death_save_after": 5.0,
-    "seen_window": 10.0,           # a death replays only if main showed that agent this recently
     "spacing": 120.0,              # at most one replay this often
     "max_age": 120.0,              # a clip not played within this long is dropped
     "stats_every": 30.0,
@@ -112,6 +122,9 @@ class Replays:
         self.frames = deque(maxlen=90)     # (t, {slot: camera row}, {name: agent}): what the program showed, per tick
         self.loss_wait = []                # losses judged once their window is over (judge_losses)
         self.loss_clips = deque(maxlen=8)  # (show_from, show_to, position) of the loss clips queued
+        self.ticks = deque(maxlen=240)     # (wall time, game tick) as the snapshots read them: a tick's wall time
+        self.moments = deque(maxlen=32)    # losses and deaths with a clip: one replay per moment (module doc)
+        self.mids = itertools.count(1)
         self.status = {"enabled": True, "connected": False, "buffer_active": None, "error": None, "stats": None,
                        "replays": 0, "last": None, "program": None}
         self.prev_stats = None
@@ -171,6 +184,8 @@ class Replays:
     def tick(self, snap, cams, now):
         main = (cams or {}).get("main") or {}
         self.main_seen.append((now, list(main.get("agents") or [])))
+        if isinstance(snap.get("tick"), (int, float)) and (not self.ticks or snap["tick"] != self.ticks[-1][1]):
+            self.ticks.append((snap.get("tick_t") or now, snap["tick"]))
         self.fights = {f["key"]: f for f in snap.get("fights") or []}
         if not self.playing:  # while a replay is on air the program is the replay, not the cameras
             by_name = {a["name"]: {k: a.get(k) for k in ("position", "surface")} for a in snap.get("agents") or []}
@@ -221,12 +236,14 @@ class Replays:
             if side_on:
                 c["side"].append(now)
             # a loss: judged once its window is over, on what the program showed of the spot (judge_losses)
-            for lt in f.get("losses") or []:
+            ticks = f.get("loss_ticks") or []
+            for i, lt in enumerate(f.get("losses") or []):
                 if lt in c["losses_done"]:
                     continue
                 c["losses_done"].add(lt)
-                self.loss_wait.append({"key": key, "t_loss": lt - self.cfg["loss_lag"], "text": f.get("text"),
-                                       "position": f.get("position"), "fight": key if f.get("kind") != "loss" else None})
+                self.loss_wait.append({"key": key, "t_alert": lt, "tick": ticks[i] if i < len(ticks) else None,
+                                       "text": f.get("text"), "position": f.get("position"),
+                                       "fight": key if f.get("kind") != "loss" else None})
             # a side camera's run on the fight: a clip of it when the run ends (or reaches fight_show)
             if c["side_done"] or f.get("kind") == "loss":
                 continue  # a loss is not a fight to replay at length: its moment has its own clip above
@@ -443,47 +460,160 @@ class Replays:
                    for until, q, ext in list(self.battle_areas) +
                    ([(now + 1, self.battle["info"]["position"], self.battle["info"].get("extent") or 0)] if self.battle else []))
 
-    def footage(self, w, lo, hi, gap=2.5):
-        """The longest stretch in [lo, hi] in which the main view (the camera on air; in a trio the big tile) showed
-        w's spot -> (start, end) or None. Only the main view: a replay plays the whole program recording, so footage
-        in which the spot was only in the 408x230 inset (or a small trio tile) airs as the agent on air doing
-        something else (15:44 on shift01: '3 lost near (36, -76)' replayed from inset-only footage)."""
-        shown = [t for t, rows, by_name in self.frames
-                 if lo <= t <= hi and self.shows("main", rows.get("main") or {}, w, by_name)]
-        runs = []
-        for t in shown:
-            if runs and t - runs[-1][1] <= gap:
-                runs[-1][1] = t
+    # ---- the on-air timeline and the moment of an event --------------------------------------------------------
+    def wall_of(self, tick):
+        """A game tick's wall time from the (wall time, tick) samples, 60 ticks a second between them; None without."""
+        if not self.ticks or not isinstance(tick, (int, float)):
+            return None
+        after = next((i for i, (_, k) in enumerate(self.ticks) if k >= tick), None)
+        if after is None:
+            t, k = self.ticks[-1]
+            return t + (tick - k) / 60.0
+        t1, k1 = self.ticks[after]
+        if after == 0 or k1 == tick:
+            return t1 - (k1 - tick) / 60.0
+        t0, k0 = self.ticks[after - 1]
+        return t0 + (t1 - t0) * (tick - k0) / (k1 - k0)
+
+    def loss_time(self, w):
+        """-> (wall time of a loss, how): its tick when that maps to a time up to 5 minutes before its alert (an old
+        incident re-reported keeps its tick), else the alert less loss_lag."""
+        t = self.wall_of(w.get("tick"))
+        if t is not None and w["t_alert"] - 300 <= t <= w["t_alert"] + 1:
+            return t, "tick"
+        return w["t_alert"] - self.cfg["loss_lag"], "alert"
+
+    def spot_shown(self, cam, spot, by_name):
+        """Does this camera row show the spot: {"agent": name} (followed, or its character inside the frame), or a
+        position (shows)."""
+        if not spot.get("agent"):
+            return self.shows("main", cam, spot, by_name)
+        name, fr = spot["agent"], cam.get("frame")
+        if fr and fr.get("follow") == name:
+            return True
+        if fr:
+            a = by_name.get(name) or {}
+            point = dict(a["position"], surface=a.get("surface") or "nauvis") if a.get("position") else spot.get("position")
+            return in_frame(fr, point, by_name, self.cfg["frame_edge"])
+        return name in (cam.get("agents") or [])  # a row without a frame (older directors): it follows the agent
+
+    def onair_s(self, spot, lo, hi):
+        """-> (seconds the main view showed the spot in [lo, hi], seconds only a small view did): the timeline's
+        samples, the first cut_settle s after a cut not counted (the program still shows the camera before)."""
+        times, main_n, small_n = [], 0, 0
+        for t, rows, by_name in self.frames:
+            if not lo <= t <= hi:
+                continue
+            times.append(t)
+            main = rows.get("main") or {}
+            if t - (main.get("since") or 0) >= self.cfg["cut_settle"] and self.spot_shown(main, spot, by_name):
+                main_n += 1
+            elif any(self.spot_shown(r, spot, by_name) for k, r in rows.items() if k != "main"):
+                small_n += 1
+        gaps = sorted(b - a for a, b in zip(times, times[1:]) if b > a)
+        dt = min(self.cfg["battle_gap"], gaps[len(gaps) // 2]) if gaps else 1.0
+        return main_n * dt, small_n * dt
+
+    def not_on_air(self, seen, small):
+        return (f"not on air at the time ({seen:.0f} s of the {self.cfg['onair_before']:g} s before it"
+                + (f"; {small:.0f} s only in the inset or a small tile" if small else "") + ")")
+
+    # ---- one replay per moment ---------------------------------------------------------------------------------
+    @staticmethod
+    def characters_only(text):
+        """'1 lost on Gleba near (264, 25): 1 character (by small wriggler pentapod prematures)' -> True."""
+        what = (text or "").split(": ", 1)[1] if ": " in (text or "") else ""
+        what = what.split(" (by ", 1)[0]
+        parts = [x.strip() for x in what.split(",") if x.strip()]
+        return bool(parts) and all(re.fullmatch(r"\d+ characters?", x) for x in parts)
+
+    def same_place(self, m, t, position):
+        p, q = position or {}, m.get("position") or {}
+        if p.get("x") is None or q.get("x") is None or (p.get("surface") or "nauvis") != (q.get("surface") or "nauvis"):
+            return False
+        return abs(m["t"] - t) <= self.cfg["same_s"] and \
+            ((p["x"] - q["x"]) ** 2 + (p["y"] - q["y"]) ** 2) ** 0.5 <= self.cfg["same_near"]
+
+    def drop_ref(self, mid):
+        """Take a moment's clip out of the queues (pending or saved, not on air)."""
+        with self.lock:
+            if self.pending and self.pending.get("mid") == mid:
+                self.pending = self.more_pending.popleft() if self.more_pending else None
+            self.more_pending = deque((x for x in self.more_pending if x.get("mid") != mid), maxlen=4)
+            if self.clip and self.clip.get("mid") == mid:
+                self.clip = self.more_clips.popleft() if self.more_clips else None
+            self.more_clips = deque((x for x in self.more_clips if x.get("mid") != mid), maxlen=4)
+
+    def moment(self, kind, key, t, position, seen, label, agent=None):
+        """Register a loss or death about to get a clip -> its id, or None (logged) when it is one already clipped:
+        the same loss again, a moment already aired, or one whose waiting clip was on air as long or longer."""
+        char = kind == "loss" and self.characters_only(label)
+        for m in self.moments:
+            if m["state"] == "dropped":
+                continue
+            same_key = m["key"] == key
+            death_pair = (char and m["kind"] == "death") or (kind == "death" and m.get("char"))
+            if not (same_key or (death_pair and self.same_place(m, t, position))):
+                continue
+            if same_key and abs(m["t"] - t) < 1.0:
+                self.log(f"[replays] skipped {kind}: the same moment reported again ({label})")
+                return None
+            if m["state"] == "aired":
+                self.log(f"[replays] skipped {kind}: a replay of {m['label']} already aired ({label})")
+                return None
+            if kind == "death" and m["kind"] == "loss":
+                why = "the death's replay replaces its character loss's"
+            elif m["kind"] == "death":
+                self.log(f"[replays] skipped {kind}: the death replay of {m['label']} covers it ({label})")
+                return None
+            elif seen > m["seen"] + 0.5:
+                why = f"on air {seen:.0f} s before it, the waiting clip {m['seen']:.0f} s"
             else:
-                runs.append([t, t])
-        return tuple(max(runs, key=lambda r: r[1] - r[0])) if runs else None
+                self.log(f"[replays] skipped {kind}: the waiting clip of the same loss was on air as long or longer "
+                         f"({m['seen']:.0f} s vs {seen:.0f} s) ({label})")
+                return None
+            m["state"] = "dropped"
+            self.drop_ref(m["mid"])
+            self.log(f"[replays] replaced the waiting clip of {m['label']}: {why}")
+        mid = f"m{next(self.mids)}"
+        self.moments.append({"mid": mid, "kind": kind, "key": key, "t": t, "position": position, "seen": seen,
+                             "label": label, "agent": agent, "char": char, "state": "pending"})
+        return mid
 
     def judge_losses(self, now):
-        """A loss gets a clip of the program's own footage of its spot, starting where that footage starts."""
+        """A loss gets a clip of its moment if its spot was on air just before it (module doc)."""
         cfg = self.cfg
-        for w in [w for w in self.loss_wait if now >= w["t_loss"] + cfg["loss_watch"]]:
+        for w in list(self.loss_wait):
+            t, how = self.loss_time(w)
+            if now < t + cfg["clip_after"] + 1:
+                continue
             self.loss_wait.remove(w)
             label, p = w["text"] or "Loss", w["position"] or {}
             if self.in_battle_area(p, now):
                 self.log(f"[replays] skipped loss: part of the key battle's replay ({label})")
                 continue
-            run = self.footage(w, w["t_loss"] - cfg["loss_before"], w["t_loss"] + cfg["loss_watch"])
-            if not run or run[1] - run[0] < cfg["loss_min_s"]:
-                self.log(f"[replays] skipped loss: the program showed its spot "
-                         f"{'%.0f s' % (run[1] - run[0]) if run else 'never'} ({label})")
+            start, end = t - cfg["clip_before"], t + cfg["clip_after"]
+            if now - start > cfg["buffer_s"] - 2:  # (an old incident re-reported: its tick is minutes back)
+                self.log(f"[replays] skipped loss: its moment has left the replay buffer ({label})")
                 continue
-            start = run[0]
-            end = min(run[1], start + cfg["loss_len"])
+            seen, small = self.onair_s({"key": w["key"], "position": p}, t - cfg["onair_before"], t)
+            if seen < cfg["onair_min_s"]:
+                self.log(f"[replays] skipped loss: {self.not_on_air(seen, small)} ({label})")
+                continue
             dup = next((c for c in self.loss_clips if start < c[1] and c[2] and p and
                         ((c[2]["x"] - p["x"]) ** 2 + (c[2]["y"] - p["y"]) ** 2) ** 0.5 <= cfg["loss_merge"]), None)
             if dup:
                 self.log(f"[replays] skipped loss: inside the clip of the same fight already queued ({label})")
                 continue
+            mid = self.moment("loss", w["key"], t, p, seen, label)
+            if not mid:
+                continue
             self.loss_clips.append((start, end, p))
             # waits on the attacks around it (position), not on the loss alert, which stays up ~2 minutes
             self.queue_pending({"kind": "loss", "label": label, "fight": w["fight"], "agent": None, "agent_name": None,
-                                "position": w["position"], "save_at": now,
-                                "show_from": start, "show_to": end})
+                                "position": w["position"], "save_at": now, "show_from": start, "show_to": end,
+                                "mid": mid, "moment": f"{time.strftime('%H:%M:%S', time.localtime(t))} ({how}), "
+                                                      f"{seen:.0f} s on air before it"})
 
     def queue_pending(self, p):
         with self.lock:
@@ -492,7 +622,7 @@ class Replays:
             else:
                 self.more_pending.append(p)
         self.log(f"[replays] pending {p['kind']}: {p['label']} (airs once the fight has been quiet "
-                 f"{self.cfg['quiet_s']:g} s)")
+                 f"{self.cfg['quiet_s']:g} s{'; moment ' + p['moment'] if p.get('moment') else ''})")
 
     def on_attack_cut(self, alert, snap, now, framed=None):
         """The director just cut main to a fight, base attack, loss or death. framed: director.last_attack_framed,
@@ -507,20 +637,60 @@ class Replays:
             # (watch_fights), aired once it is over.
             return
         name = alert.get("agent")
-        seen = any(name in agents for t, agents in self.main_seen if now - t <= self.cfg["seen_window"])
-        if not name or not seen:
-            return  # it died off camera: there is nothing in the buffer worth showing
+        if not name:
+            return
+        cfg = self.cfg
+        t, how = self.death_time(name, snap, alert.get("t") or now)
+        seen, small = self.onair_s({"agent": name}, t - cfg["onair_before"], t)
+        if seen < cfg["onair_min_s"]:
+            self.log(f"[replays] skipped death: {self.not_on_air(seen, small)} ({alert['text']})")
+            return
         ag = next((a for a in snap.get("agents") or [] if a["name"] == name), {})
+        pos = self.last_position(name, t) or (dict(ag["position"], surface=ag.get("surface") or "nauvis")
+                                              if ag.get("position") else None)
+        mid = self.moment("death", f"death:{name}:{int(t)}", t, pos, seen, alert["text"], agent=name)
+        if not mid:
+            return
         with self.lock:
-            p = {"kind": "death", "label": alert["text"], "agent": name, "position": ag.get("position"),
-                 "agent_name": ag.get("display_name") or name, "save_at": now + self.cfg["death_save_after"],
-                 "show_from": now - self.cfg["death_before"], "show_to": now + self.cfg["death_after"]}
+            p = {"kind": "death", "label": alert["text"], "agent": name, "position": pos,
+                 "agent_name": ag.get("display_name") or name, "save_at": max(now, t + cfg["clip_after"] + 1),
+                 "show_from": t - cfg["clip_before"], "show_to": t + cfg["clip_after"], "mid": mid,
+                 "moment": f"{time.strftime('%H:%M:%S', time.localtime(t))} ({how}), {seen:.0f} s on air before it"}
             if self.pending:
                 self.more_pending.append(p)  # saved after the one already pending (a death, a loss, a side clip)
-                self.log(f"[replays] pending death (after {self.pending['label']}): {p['label']}")
+                self.log(f"[replays] pending death (after {self.pending['label']}): {p['label']}; moment {p['moment']}")
                 return
             self.pending = p
-        self.log(f"[replays] pending death: {p['label']}")
+        self.log(f"[replays] pending death: {p['label']}; moment {p['moment']}")
+
+    def last_position(self, name, t):
+        """Where an agent's character stood at the last sample up to t (a dead agent's row may already be its
+        respawn)."""
+        for ft, _, by_name in reversed(self.frames):
+            a = by_name.get(name) or {}
+            if ft <= t and a.get("position"):
+                return dict(a["position"], surface=a.get("surface") or "nauvis")
+        return None
+
+    def death_time(self, name, snap, t_alert):
+        """-> (wall time of a death, how): the tick of the loss of a character where the agent last stood (the
+        harness reports the death as an incident too), else the alert less death_lag."""
+        here = self.last_position(name, t_alert)
+        best = None
+        for f in snap.get("fights") or []:
+            if f.get("kind") != "loss" or not self.characters_only(f.get("text")) or not here:
+                continue
+            q = f.get("position") or {}
+            if (q.get("surface") or "nauvis") != here["surface"] or q.get("x") is None or \
+                    ((q["x"] - here["x"]) ** 2 + (q["y"] - here["y"]) ** 2) ** 0.5 > self.cfg["same_near"]:
+                continue
+            for tick in f.get("loss_ticks") or []:
+                t = self.wall_of(tick)
+                if t is not None and t_alert - 60 <= t <= t_alert + 1 and (best is None or t > best):
+                    best = t
+        if best is not None:
+            return best, "tick"
+        return t_alert - self.cfg["death_lag"], "alert"
 
     # ---- worker ------------------------------------------------------------------------------------------------
     def run(self):
@@ -652,6 +822,9 @@ class Replays:
                 return
             self.play(c)
             self.playing = c["id"]
+            for m in self.moments:  # one replay per moment: none of this one again
+                if c.get("mid") and m["mid"] == c["mid"]:
+                    m["state"] = "aired"
             self.last_replay = now
             self.next_clip()
             self.status["last"] = {"id": c["id"], "label": c["label"], "t": now, "path": c["path"]}

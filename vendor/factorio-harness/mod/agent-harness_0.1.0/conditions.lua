@@ -36,7 +36,8 @@ return function(api)
       local n=enemies(p,c,ENEMY_STRUCTURES); return n==0,n..' enemy structures'
     end,
     no_enemies=function(p,c)
-      local n=enemies(p,c,{'unit-spawner','turret','unit'}); return n==0,n..' enemies'
+      -- spider-unit: Gleba's strafer and stomper pentapods; segmented-unit: Vulcanus' demolishers.
+      local n=enemies(p,c,{'unit-spawner','turret','unit','spider-unit','segmented-unit'}); return n==0,n..' enemies'
     end,
     turrets_idle=function(p,c)
       local busy=0

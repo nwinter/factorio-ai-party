@@ -150,4 +150,9 @@ local me=runtime.lookup(runtime.bots.index_of('astra'))
 eq(runtime.remote(me,'configure',{surface='vulcanus'}),true); eq(runtime.remote(me,'configure',{surface='nauvis'}),false)
 eq(runtime.remote(me,'configure',{position=near.position}),false); eq(runtime.remote(me,'configure',{position=far.position}),true)
 eq(runtime.remote(me,'transfer',{position=far.position}),false)
+-- trace is a read, on a platform too (trace.lua through the platform= wrapper).
+eq(runtime.keeps('trace'),true)
+local paused=queue().paused
+r=astra('trace',{platform='Sunward',position={x=-2.5,y=-4.5},forward=true})
+eq(r.entity,'fast-inserter'); eq(r.note,'no inserter takes from it'); eq(queue().paused,paused)
 print('remotepassive: ok')

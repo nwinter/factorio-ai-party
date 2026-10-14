@@ -105,7 +105,7 @@ for _,name in ipairs{'on_script_path_request_finished','on_entity_died','on_unit
     'on_console_chat','on_built_entity','on_player_mined_entity','on_robot_mined_entity','on_marked_for_deconstruction',
     'on_marked_for_upgrade','on_cancelled_deconstruction','on_cancelled_upgrade','on_gui_opened','on_gui_closed',
     'on_player_fast_transferred','on_player_main_inventory_changed','on_player_joined_game','on_player_left_game',
-    'on_research_finished','on_research_queued'} do
+    'on_research_finished','on_research_queued','on_rocket_launch_ordered'} do
   if defines.events[name] then forwarded[#forwarded+1]=defines.events[name] end
 end
 script.on_event(forwarded, function(event)
