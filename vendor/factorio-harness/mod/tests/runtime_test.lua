@@ -1065,6 +1065,37 @@ call('feed',{radius=20,types={'boiler'},fuel=true}); advance(1)
 local tour_last=call('status').last
 eq(tour_last.op,'feed'); eq(tour_last.given,9); eq(#tour_last.entities,2)
 eq(tour_last.entities[1].gave.coal,6); eq(tour_last.entities[1].fuel,'coal 10'); eq(tour_last.entities[2].gave.coal,3)
+-- Haiku, 07:55: feed with up_to skips a boiler whose fuel slot holds the other fuel, without the whole call warning;
+-- it was counted as "at count already" (shift10: "4 machines hold 0-29 coal, at count 10 already").
+do
+  local s2=b2.fuel[1]
+  local kept_b1,kept_b3,kept_main=b1.fuel[1].count,b3.fuel[1].count,main
+  local kept_s2={s2.name,s2.count,s2.valid_for_read}
+  s2.name,s2.count,s2.valid_for_read='solid-fuel',4,true
+  b1.fuel[1].count,b3.fuel[1].count=10,10
+  main=inv(stack('coal',40),stack(nil,0),stack(nil,0))
+  local only=call('feed',{positions={{x=2,y=3}},item='coal',up_to=true})
+  eq(only.transferred,0); eq(only.nothing_moved,nil); eq(only.entities[1].other_fuel,true); eq(only.entities[1].fuel,'solid-fuel 4')
+  eq(only.other_fuel,'1 burner holds another fuel in every fuel slot (solid-fuel 4): no slot for coal')
+  -- without up_to it is said as the reason nothing moved
+  eq(call('feed',{positions={{x=2,y=3}},item='coal'}).nothing_moved,'nothing given: 1 burner holds another fuel in every fuel slot (solid-fuel 4): no slot for coal')
+  -- beside full ones: the full ones are the warning, the other fuel apart
+  local full=call('feed',{positions={{x=1,y=3},{x=2,y=3},{x=3,y=3}},item='coal',up_to=true})
+  eq(full.nothing_moved,'nothing given: 2 machines hold 10 coal, at count 10 already; 1 burner holds another fuel in every fuel slot (solid-fuel 4): no slot for coal')
+  -- one that wants coal gets it; the other-fuel one is skipped, no warning
+  b1.fuel[1].count=4
+  local mixed=call('feed',{positions={{x=1,y=3},{x=2,y=3}},item='coal',up_to=true})
+  eq(mixed.transferred,6); eq(mixed.nothing_moved,nil); eq(mixed.other_fuel,'1 burner holds another fuel in every fuel slot (solid-fuel 4): no slot for coal')
+  eq(s2.name,'solid-fuel'); eq(s2.count,4)
+  -- a walking tour leaves it out: only b1 (at 4 again) is visited
+  b1.fuel[1].count=4
+  local tour=call('feed',{radius=20,types={'boiler'},item='coal',up_to=true})
+  eq(tour.places,1); eq(tour.nothing_moved,nil); eq(tour.other_fuel,'1 burner holds another fuel in every fuel slot (solid-fuel 4): no slot for coal')
+  advance(1)
+  eq(call('status').last.given,6)
+  s2.name,s2.count,s2.valid_for_read=kept_s2[1],kept_s2[2],kept_s2[3]
+  b1.fuel[1].count,b3.fuel[1].count,main=kept_b1,kept_b3,kept_main
+end
 -- transfer {walk=true} (Haiku, 06:20: solid fuel into a boiler out of reach, in one call): the call walks into reach
 -- first (a tour, as feed and collect), then transfers; all in reach, it transfers at once.
 do

@@ -305,6 +305,17 @@ test('tell takes recipients then text like say; tells reads with --since',async(
     ['tell',{to:'luna,sol',text:"it's in the mall chest"}],['tell',{to:'team',text:'north belt is down'}],['tells',{since:2}],
     ['tell',{to:'sol',text:'call form'}],['tell',{to:'sol',text:'json form'}]]);
 });
+test('fh platform NAME reads one platform (the platforms read); without a name, all',async()=>{
+  const seen:any[]=[];
+  await engine(request=>{seen.push(request);return {ok:true,result:{platforms:[]}};},async port=>{
+    await cli(port,['platform','Sunward','--bot','gemini']);
+    await cli(port,['platform','Deep','Blue','--bot','gemini']);
+    await cli(port,['platform','--bot','gemini']);
+  });
+  // (platforms goes over the wire as observe {scope: platforms}, as fh call platforms does)
+  assert.deepEqual(seen.map(r=>[r.action,r.args]),[['observe',{platform:'Sunward',scope:'platforms'}],
+    ['observe',{platform:'Deep Blue',scope:'platforms'}],['observe',{scope:'platforms'}]]);
+});
 test('vote, votes, players and restore take words; fh call accepts the same words',async()=>{
   const seen:any[]=[];
   await engine(request=>{seen.push(request);return {ok:true,result:{id:1}};},async port=>{
