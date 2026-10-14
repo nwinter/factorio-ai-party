@@ -148,6 +148,8 @@ eq(r.before,'east'); eq(r.after,'north'); eq(r.turns,1)
 -- Grok's run (08:51:51): north to south took two calls; with direction it is one, two turns.
 r=grok('rotate',{position={x=2.5,y=0.5},direction='south'})
 eq(r.before,'north'); eq(r.after,'south'); eq(r.turns,2); eq(belt.direction,8)
+-- The reply's entity says where the belt moves items now (beltflow.lua; Grok, shift11: south is +y).
+eq(r.entity.belt,'moves items south to (2.5,1.5) (no belt takes them there: they stop at its end); no belt feeds it')
 -- The shorter way round: south to east is one turn counter-clockwise.
 r=grok('rotate',{position={x=2.5,y=0.5},direction='east'})
 eq(r.after,'east'); eq(r.turns,1)

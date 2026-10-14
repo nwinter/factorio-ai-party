@@ -99,7 +99,8 @@ already targets your character.
   transport-belt (12,5) carrying iron-plate on the left lane: your iron-ore mixes in`); `{"item":"chemical-science-pack"}` follows every route from its makers to the labs.
 - `./fh call belt_route --args '{"from":{"x":0,"y":0},"to":{"x":600,"y":40},"return":true}'` lays a belt line as ghosts (via points, legs up to
   1000 tiles, over trees and wild plants it marks, water only with `"landfill":true`; `return` adds the line back beside it,
-  crossing under it where its side is blocked).
+  crossing under it where its side is blocked). Belts, undergrounds and splitters say where items go in `belt` (inspect,
+  observe rows, build replies; `last_belt` for a batch): `moves items south to (-22.5,-28.5); fed from (-22.5,-30.5)`.
 - `./fh call rail_route --args '{"from":{"x":0,"y":0},"to":{"x":0,"y":-200}}'` lays 2.0 rails (16 headings; straight,
   half-diagonal and two curve pieces, a curve 3 rails) around water, cliffs and buildings as ghosts and builds those in
   reach (`"signals":30` adds one-way signals); `train_stop {position, name}` puts a stop on the side of a straight rail
@@ -173,8 +174,9 @@ already targets your character.
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
   in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
   line in the team block when a round's short steps differ from the round before; steps with `up_to: true` or
-  `"on_short": "skip"` are left out of it. `transfer` takes `to_entity` or
-  `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
+  `"on_short": "skip"` are left out of it. `transfer` is `{position, direction: "to_entity"|"to_player", item, count,
+  inventory?}` on any container (`./fh help transfer` shows calls that work; an argument refusal ends with one built
+  from your call, `launch`'s with the silos there); out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
   `collect` over several targets ends with a `tally` line; one where every target failed fails with the first reason
   (a tour: outcome `failed`, `last.first_error`). Item moves (`transfer`, `collect`, `feed`, `pickup`,
@@ -232,7 +234,8 @@ already targets your character.
   (`tile_ghosts_removed`), and marks built landfill.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
-  "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever
+  "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[{"action":"rearm","args":{"radius":20}}]}'`
+  runs its queue steps whenever
   its `when` holds (any `wait_until` condition, plus `ghosts_waiting`, `damaged`, `fuel_below` and `platform_arrived`); one order without
   `when` is your default routine, run every `interval_ticks` while no trigger holds. Up to 6 orders of 32 steps. They
   run only while your character is free (no action, your queue empty), 20 s after your own last action; your own

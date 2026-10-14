@@ -129,7 +129,15 @@ export function finalLine(value: unknown): string | undefined {
  * `fh help ACTION`: one action's arguments from describe, about 1 KB (agents grepped describe.json 52-75 times a
  * shift). Each argument's text is cut to a line; an unknown name lists the actions it resembles.
  */
-export function actionHelp(describe: unknown, action: string, max = 1100): string {
+/** An object with its keys sorted, as the runtime writes calls (aliases.lua encode). */
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (!record(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(value).sort()) out[key] = sortKeys(value[key]);
+  return out;
+}
+export function actionHelp(describe: unknown, action: string, max = 1400): string {
   const actions = record(describe) && record(describe.actions) ? describe.actions : {};
   const schema = actions[action];
   if (!record(schema)) {
@@ -138,9 +146,12 @@ export function actionHelp(describe: unknown, action: string, max = 1100): strin
     return `unknown action ${action}${near.length ? '; did you mean: ' + near.slice(0, 8).join(', ') : ''} (${names.length} actions: fh help ACTION)\n`;
   }
   const cut = (s: string, n: number) => s.length > n ? s.slice(0, n - 3).trimEnd() + '...' : s;
-  const doc = new Set(['returns', 'note', 'reports', 'outcomes', 'usage']);
+  const doc = new Set(['returns', 'note', 'reports', 'outcomes', 'usage', 'examples']);
   const args = Object.keys(schema).filter(k => !doc.has(k)).sort((a, b) => (a === 'position' ? -1 : b === 'position' ? 1 : a.localeCompare(b)));
   const lines = [`${action}: fh call ${action} --args '{...}'`];
+  // Calls that work as written (the runtime's examples; Luna, shift11: fh help launch / transfer), first, whole.
+  const examples = Array.isArray(schema.examples) ? schema.examples : [];
+  for (const example of examples) lines.push(`example: fh call ${action} --args '${JSON.stringify(sortKeys(example))}'`);
   for (const key of args) lines.push(`  ${key}: ${cut(String(schema[key]), 150)}`);
   for (const key of ['returns', 'note', 'outcomes']) if (typeof schema[key] === 'string') lines.push(`${key}: ${cut(schema[key] as string, 220)}`);
   let out = '';

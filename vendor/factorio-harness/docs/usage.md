@@ -54,7 +54,12 @@ fh call status
 ```
 
 - Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments; `fh help ACTION`
-  (or `fh call ACTION --help`) prints one action's in about 1 KB.
+  (or `fh call ACTION --help`) prints one action's in about 1 KB, led by calls that work as written (`example: fh call
+  launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`; transfer has a give, a take and a pick;
+  describe's `examples`). An argument refusal ends with one: for transfer built from the call itself (`; for this
+  call:` and the call), else the action's own (`; e.g. fh call technologies --args '{"prefix":"automation"}'`); a number out of range says its range and the value (`radius out of range: a whole
+  number 1..128, got 500`). Refusals no longer start with the runtime's line (`agent-harness/runtime:31061: `). Every example, in describe, this file and agent/team.md, is checked against the argument
+  check by the runtime test.
 - Common wrong argument names run as meant, and the reply's `corrected` (also on the final `warning:` line) shows the
   call as it ran: `craft` `item` is `recipe`, `move_to` `target` is `position`, `scan` `names`/`types`/`range` are
   `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` is `builds`, `board_post` `text` is
@@ -72,12 +77,21 @@ fh call status
   taken stays as it is; with `radius` neither is touched. Queue steps (`queue_submit`, `queue_repeat`, `queue_edit`)
   are corrected the same way, and the reply lists each in `corrected` (`step 1: collect {...} (position is positions
   (a list))`).
-- `transfer` takes its direction under other names, noted in `corrected`: `from_player`, `give`, `put`, `insert`,
-  `to_chest`, `to_container` are `to_entity`; `from_entity`, `take`, `from_chest`, `from_container` are `to_player`;
-  `to_entity: true` / `from_entity: true` (also beside the same `direction`); and the target given as one of them,
-  `{"to_entity": {"x": 8.5, "y": 37.5}, "item": "coal"}` or `{"from_entity": [{x,y}, ...]}`, is the direction and
-  `position` / `positions`. Queue steps too. A flag against the given direction still fails. Both directions work on
-  any container: chests, logistic chests, car and spider trunks, cargo wagons, landing pads and hubs.
+- `transfer` is `{position, direction: "to_entity"|"to_player", item, count, inventory?}` at one entity
+  (`fh call transfer --args '{"count":50,"direction":"to_entity","inventory":"rocket_silo_rocket","item":"rocket-fuel",
+  "position":{"x":15.5,"y":59.5}}'`), or `{pick, positions, item or items, to}` to take at the first listed place that
+  holds it and give it at `to`. Other names run as meant, noted in `corrected` (Luna, Muse, shift11: 8 refusals in one
+  rocket load): `from_player`, `give`, `put`, `insert`, `to_chest`, `to_container` are `to_entity`; `from_entity`,
+  `take`, `from_chest`, `from_container` are `to_player`; `to_entity: true` / `from_entity: true` (also beside the same
+  `direction`); the target given as one of them (`{"to_entity": {"x": 8.5, "y": 37.5}, "item": "coal"}`,
+  `{"from_entity": [{x,y}, ...]}`), or as `to` / `from` without `pick`, is the direction and `position` / `positions`;
+  `to_entity`, `from_entity`, `to` or `from` at the same place as `position` is that direction; `amount` is `count`.
+  Queue steps too. A flag against the given direction still fails. `to` on another tile of the entity at `position` (a
+  silo is 9x9) gives there, noted in `corrected`. A place to take from and one to give to (`from_entity` and
+  `to_entity`, or `position` with `to` on another entity) is a move between two entities: refused, with the pick form
+  for it, the count kept (`fh call transfer --args '{"count":1000,"item":"agricultural-science-pack","pick":"first_with_stock","positions":[{"x":52.5,"y":45.5}],"to":{"x":65.5,"y":14.5}}'`); `items` without `pick` is
+  refused with one item's call (transfer moves one item a call). Both directions work on any container: chests,
+  logistic chests, car and spider trunks, cargo wagons, landing pads and hubs.
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
@@ -110,6 +124,15 @@ fh call status
   collision mask), a partner that is still a ghost, one in reach the game did not pair, the nearest end on its axis
   when it does not match, or none in reach. `place_ghosts` adds `underground_warnings` for a span that crosses such
   tiles (once per span).
+- A belt, underground belt or splitter says where it moves items in `belt` (Grok, shift11: a belt facing south was read
+  as feeding the tile at lower y; south is +y), in `inspect`, observe entity rows, and `build` and `rotate` replies:
+  `moves items south to (-22.5,-28.5); fed from (-22.5,-30.5)`. It is read from the game's belt connections: a curve's
+  input is its side (`moves items east to (1001.5,1022.5); fed from (1000.5,1021.5)`), a straight belt fed from a side
+  too says `side-loaded from (x,y)`, `no belt feeds it`, `(no belt takes them there: they stop at its end)`, `(onto the
+  side of transport-belt facing east)`; an underground entrance `moves items south underground to (x,y)` (its exit),
+  an exit `fed underground from (x,y)`; a splitter names both lanes. A ghost reads the belts and belt ghosts around it.
+  A `builds` batch, `place_ghosts` and `belt_route` reply with `last_belt`, the same for the last belt they placed:
+  `transport-belt (1001.5,1010.5): moves items east to (1002.5,1010.5) ...`.
 - `inventory` (read, `fh call inventory`; Gemini, 06:20: held items without a full observe) is one small reply of
   short item lines (`name*count`, `name@quality*count`, or `empty`): `inventory` (main), `free` (`free=62/100`),
   `guns`, `ammo`, `armor`, `equipment` (in the armor's grid), `trash` (trash slots, when any), `cursor` (the stack in
@@ -931,6 +954,13 @@ fh sleep 900 --until researched                       # ...or until the research
   before, so a steady loop says it once. A step with `up_to: true` or `on_short: "skip"` is left out of the line (its
   short was allowed for); `queue_status` history still marks it `short: true`. `on_fail: "skip"` does not count as
   allowing a short.
+- `inspect` of an assembler or furnace whose recipe lacks an ingredient for one craft while another is stacked (5 crafts
+  or more; Grok, shift11: an electromagnetic plant on electronic-circuit held 135 iron plates and no copper cable)
+  says so in `input_imbalance` (`iron-plate 135 in input, copper-cable 0: item_ingredient_shortage on copper-cable`)
+  and lists its `feeders`, the inserters dropping into it, those whose source holds the missing ingredient first:
+  `fast-inserter (20.5,73.5) from iron-chest (19.5,73.5): copper-cable 40 there`, `...: its filter keeps
+  copper-cable out`, led by `no copper-cable for its 3 feeders: none at their sources, or a filter keeps it out` when
+  none can bring it (a fluid ingredient: `comes through its pipes`; `feeders_count` past 8).
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
@@ -1147,6 +1177,11 @@ fh sleep 900 --until researched                       # ...or until the research
     inserters (1 idle: ...); no cargo loaded; automatic requests off; no launch seen`.
 
   `rockets_launched` is the force's count.
+- `launch` without `position` (or `unit_number`) names the silos there, a ready rocket first, and the call (Luna,
+  shift11: `launch {platform}` failed twice as `position requires x and y`): `launch takes the silo: position (or
+  unit_number); e.g. fh call launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'; silos on gleba:
+  rocket-silo (65.5,14.5) rocket ready; rocket-silo (14.5,140.5) building_rocket, parts 12/50`. `requests` `set`
+  entries are `{item, min, max?, quality?, from?}`; one written `{name, count}` is refused with it rewritten.
 - `launch {position, platform}` sends the cargo to the platform's hub (a platform waiting for its starter pack gets it
   as its starter pack). A rocket lifts 1000 kg (item prototype weights; the game takes more by script, then refuses
   the launch): `transfer` into `rocket_silo_rocket` gives only what fits (`weight_limited {requested, fits, note}`)
@@ -1508,9 +1543,17 @@ fh sleep 900 --until researched                       # ...or until the research
   over the wells, each well's as the game shows it), `distance` and `direction` from you to the nearest tile (on
   another surface only with `position`), `from_building` and `building` (our nearest building, one kept per 8x8 cell,
   and its distance to the patch's nearest tile), `spawners`, `worms` and `nearest_nest` within 50 tiles (on charted
-  chunks, as the map draws them), `miners` (our mining drills on it: the patch their mining target is on, else one
-  under their mining area) and `chart_edge` (ore reaches the edge of the charted map, so the patch may go on past
-  it). Also `count`, `more`, `resources` (patches and the total per resource on the surface) and `survey`. Cost: what
+  chunks, as the map draws them), `chart_edge` (ore reaches the edge of the charted map, so the patch may go on past
+  it), and, read live in the call (Sonnet, shift11: 26 Vulcanus coal drills said `no_minable_resources`, the patch
+  was taken for depleted while it held 659k coal around them, and a call 13 minutes later still showed the 26 drills
+  he had removed): `miners` (our mining drills on it now: their mining area overlaps the patch and they mine it or
+  nothing), `drills` (them by status: `12 working, 10 no_minable_resources`), `depleted_drills` (the ones with
+  `no_minable_resources` checked against the ore under their mining area: `no coal left under 26 of the 26 drills
+  with no_minable_resources (mined out there); the patch holds 659,125 coal in 1,724 tiles (read now)`, or `coal
+  still under (69.5,-89.5) 4 tiles 1,240`), and `read`: `now` when the chunks under the row were read again in this
+  call (the rows nearest first, within 6000 entity reads; up to 64 drills checked), else how long ago they were read.
+  Also `count`, `more`, `resources` (patches and the total per resource on the surface) and `survey`. `nearest` rows of
+  ore tiles carry `amount`, what is left in each now. Cost: what
   each chunk holds is kept with the tick it was read. The first call on a surface reads the chunks around you (about
   2 ms) and the harness tick reads the rest outward, a few chunks a tick (median 1.5 ms a tick; world n's nauvis takes
   about 60 ticks), so later calls show every patch; a call 5 min after a pass began starts the next. A dense ore chunk

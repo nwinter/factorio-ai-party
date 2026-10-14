@@ -146,6 +146,11 @@ return function(api)
       assert(a.set==nil or (type(a.set)=='table' and #a.set<=100),'set requires an array of {item,min,max?,quality?,from?}')
       for _,r in ipairs(a.set or {}) do
         assert(type(r)=='table','each request is {item,min,max?,quality?,from?}')
+        -- {name, count} (Luna, shift11: "unknown item: nil", 4 times): the entry as it is written.
+        if r.item==nil and (r.name~=nil or r.count~=nil) then
+          error(string.format('each set entry is {item, min, max?, quality?, from?}: {"item":"%s","min":%s} for {name, count}',
+            tostring(r.name or 'ITEM'),tostring(r.count or r.min or 0)),0)
+        end
         local name,quality=item_name(r.item),r.quality or 'normal'
         local min=api.integer(r.min,0,0,1000000000,'min')
         assert(r.max==nil or (type(r.max)=='number' and r.max>=min),'max must be at least min')

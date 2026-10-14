@@ -4,6 +4,7 @@
 -- drills, our nearest building, the caller's distances, the call's budget and
 -- the background reads, refresh and newly charted chunks.
 local function eq(a, b, m) assert(a == b, (m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
+defines = {entity_status={working=1, no_minable_resources=2, no_power=3}}
 package.path = 'mod/agent-harness_0.1.0/?.lua;'..package.path
 local function resource(fluid, normal)
   return {type='resource', infinite_resource=fluid or nil, normal_resource_amount=normal,
@@ -38,10 +39,13 @@ function surface.find_entities_filtered(f)
   finds = finds+1
   local out = {}
   local types
-  if type(f.type) == 'table' then types = {}; for _, t in ipairs(f.type) do types[t] = true end end
+  if type(f.type) == 'table' then types = {}; for _, t in ipairs(f.type) do types[t] = true end
+  elseif f.type then types = {[f.type]=true} end
   local force = type(f.force) == 'table' and f.force.name or f.force
   for _, e in ipairs(f.type == 'resource' and res or ents) do
-    if touches(e, f.area) and (not force or e.force.name == force) and (not types or types[e.type]) then out[#out+1] = e end
+    if touches(e, f.area) and (not force or e.force.name == force) and (not types or types[e.type]) and (not f.name or e.name == f.name) then
+      out[#out+1] = e
+    end
   end
   return out
 end
@@ -95,6 +99,8 @@ ents[#ents+1] = ent{name='stone-furnace', type='furnace', position={x=-60, y=-40
 -- The first call reads the charted chunks nearest the caller within the
 -- call's budget and queues the rest; the harness tick reads them.
 ores.CALL_BUDGET, ores.TICK_BUDGET = 20, 30
+local live = ores.LIVE_BUDGET
+ores.LIVE_BUDGET = 0  -- the survey's own passes first (the rows read live: below)
 local me = {surface=surface, force=force, position={x=0, y=0}}
 local first = ores.handlers.ores(me, {})
 assert(first.survey:find('^reading the charted map: %d+ chunks? read so far, nearest first'), first.survey)
@@ -148,7 +154,7 @@ ores.DENSE, ores.BAND = 256, 8
 -- Later calls in the window read nothing; distances are the caller's own.
 local before = finds
 local again = ores.handlers.ores({surface=surface, force=force, position={x=100, y=0}}, {resource='iron-ore'})
-eq(finds, before, 'no reads'); eq(#again.patches, 2); eq(again.patches[1].tiles, 4, 'from (100,0) B is nearer'); eq(again.patches[1].distance, 38)
+eq(finds, before+#again.patches, 'no survey reads; one live find of the drills per row'); eq(#again.patches, 2); eq(again.patches[1].tiles, 4, 'from (100,0) B is nearer'); eq(again.patches[1].distance, 38)
 
 -- A call REFRESH_TICKS after a pass began starts the next: ore mined
 -- meanwhile and newly charted chunks show once it is read.
@@ -196,6 +202,59 @@ local after = ores.handlers.ores(me, {})
 assert(after.survey_error and after.survey_error:find('engine says no', 1, true), tostring(after.survey_error))
 while storage.ores_busy do ores.tick() end
 eq(ores.handlers.ores(me, {}).survey_error, nil)
+
+-- The rows read live (Sonnet, shift11 16:16: 26 drills on Vulcanus coal said no_minable_resources and he took the
+-- patch for depleted while it held 659k coal around them; at 16:29 the read still showed 26 miners after he removed
+-- them). A 12x12 iron block with a drill in its middle, read by a pass first.
+ores.LIVE_BUDGET = live
+for x = 100, 111 do for y = 16, 27 do ore('iron-ore', x, y, 100) end end
+local mid = ent{name='electric-mining-drill', type='mining-drill', position={x=105.5, y=21.5}, half=1.4,
+  status=defines.entity_status.working}
+ents[#ents+1] = mid
+storage.ores, storage.ores_busy = nil, nil
+ores.handlers.ores(me, {})
+while storage.ores_busy do ores.tick() end
+game.tick = game.tick+3600  -- a minute on: the survey's own pass is not due
+-- Since: the 25 tiles under it (its area: 103..107 x 19..23) mined out, and it says no_minable_resources; the ore
+-- around it stays. The idle drill beside B says no_minable_resources too, standing on B's ore.
+local kept = {}
+for _, r in ipairs(res) do
+  local x, y = math.floor(r.position.x), math.floor(r.position.y)
+  if not (x >= 103 and x <= 107 and y >= 19 and y <= 23) then kept[#kept+1] = r end
+end
+res = kept
+mid.status = defines.entity_status.no_minable_resources
+local b_drill = ents[7]
+b_drill.status = defines.entity_status.no_minable_resources
+local here = {surface=surface, force=force, position={x=105, y=21}}
+local now = ores.handlers.ores(here, {resource='iron-ore'})
+local ring, rb = now.patches[1], now.patches[2]
+eq(ring.read, 'now'); eq(ring.tiles, 119, 'read now: the 25 mined tiles gone'); eq(ring.amount, 11900); eq(ring.box, '(100,16)-(112,28)')
+eq(ring.miners, 1); eq(ring.drills, '1 no_minable_resources')
+eq(ring.depleted_drills, 'no iron-ore left under 1 of the 1 drills with no_minable_resources (mined out there); the patch holds 11,900 iron-ore in 119 tiles (read now)')
+eq(rb.depleted_drills, 'iron-ore still under (59,3) 4 tiles 4,000; the patch holds 4,000 iron-ore in 4 tiles (read now)')
+mid.status = defines.entity_status.working
+eq(ores.handlers.ores(here, {resource='iron-ore'}).patches[1].drills, '1 working')
+-- A drill removed: gone from its row at once.
+table.remove(ents, 7)
+local gone = ores.handlers.ores(here, {resource='iron-ore'})
+eq(gone.patches[2].miners, 0); eq(gone.patches[2].drills, nil); eq(gone.patches[2].depleted_drills, nil)
+-- Past the budget a row keeps the survey's numbers and says when they were read.
+game.tick = game.tick+600
+ores.LIVE_BUDGET = 1
+res[#res+1] = ent{name='iron-ore', type='resource', position={x=60.5, y=2.5}, amount=500, half=0.4}
+local over = ores.handlers.ores(here, {resource='iron-ore'})
+eq(over.patches[2].read, '10 s ago'); eq(over.patches[2].amount, 4000, 'not read again')
+ores.LIVE_BUDGET = live
+-- Read again with nothing mined since: fresh, and no rebuild of the patches for it.
+table.remove(res)  -- (the tile added above)
+ores.handlers.ores(here, {resource='iron-ore'})
+game.tick = game.tick+600
+local build, builds = ores.build, 0
+ores.build = function(...) builds = builds+1; return build(...) end
+local idle = ores.handlers.ores(here, {resource='iron-ore'})
+ores.build = build
+eq(idle.patches[1].read, 'now'); eq(builds, 0, 'unchanged chunks: no rebuild')
 
 -- A fluid that runs out (lithium brine): wells and the amount left, no yield.
 local brine = ores.build({{cells={{name='lithium-brine', cx=0, cy=0, n=2, amount=90000, sx=3, sy=3, l=1, t=1, r=3, b=2}}}})
