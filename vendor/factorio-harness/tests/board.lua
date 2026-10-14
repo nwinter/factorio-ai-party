@@ -561,6 +561,9 @@ local legacy=sol('board_post',{kind='claim',title='old mall',area={left_top={x=3
 local stored=storage.agent_harness.board.items[legacy.id]
 stored.active_tick=nil; stored.updated_tick=tick-5*216000; stored.created_tick=stored.updated_tick
 jump(60)
+-- whatever reads it first (here collect's claim check, before any board read) starts its timers
+assert(runtime.claims.other({name='grok'},{x=30005,y=5}),'fresh from the deploy: it binds')
+eq(stored.active_tick,tick)
 local item=astra('board',{id=legacy.id}).item
 eq(item.status,'claimed'); eq(item.owner_active,'0s ago'); eq(item.stale,nil)
 local home=body('sol').position
@@ -576,8 +579,10 @@ eq(item.stale,true); eq(item.owner_active,'31m00s ago')
 assert(runtime.claims.find({name='grok'},{x=10001,y=10001}),'a stale claim is still found')
 eq(runtime.claims.other({name='grok'},{x=10001,y=10001}),nil) -- but binds nobody
 assert(runtime.claims.label(c and storage.agent_harness.board.items[c.id],{name='grok'}):find('stale: no permission needed; closes 1h29m from now',1,true))
--- Sol's requests elsewhere keep nothing fresh; standing in the claim does, and so does acting on a position in it.
-sol('status')
+-- Sol hears it in one batched line; its requests elsewhere keep nothing fresh; standing in the claim does, and so
+-- does acting on a position in it.
+local digest=has(sol('status').team.board,'your claims: stale after 30 min without your activity')
+assert(digest and digest:find('#'..c.id..' north smelting',1,true),digest)
 eq(astra('board',{id=c.id}).item.stale,true)
 body('sol').position={x=10005,y=10005}
 sol('status')
@@ -610,12 +615,45 @@ fails(function() grok('board_post',{kind='claim',title='oil',allow={'sol','nobod
 -- 2 h with no activity by its owner: the harness closes it, and its owner hears so.
 local seq0=op('board_events',{since_seq=0,limit=1}).latest
 jump(120*3600)
-sol('status')
+local lines=sol('status').team.board
+digest=has(lines,'your claims: closed after 2h without your activity: ')
+assert(digest and digest:find('#'..c.id..' north smelting',1,true),table.concat(lines or {},' | '))
+eq(has(lines,'expired'),nil)
 eq(astra('board',{id=c.id}).item.status,'dropped')
 local expired
 for _,e in ipairs(op('board_events',{since_seq=seq0,limit=200}).events) do if e.id==c.id and e.change=='expired' then expired=e end end
 assert(expired and expired.by=='harness' and expired.text:find('^closed by the harness: no activity by its owner for 2h'),expired and expired.text)
 eq(runtime.claims.find({name='grok'},{x=10001,y=10001}),nil)
+-- Many claims closing at once: one line for their owner, never one per claim.
+astra('status'); jump(3*3600)
+local mine={}
+for k=1,8 do
+  mine[k]=astra('board_post',{kind='claim',title='lot '..k,area={left_top={x=40000+20*k,y=0},right_bottom={x=40010+20*k,y=10}}}).item.id
+end
+jump(120*3600)
+lines=astra('status').team.board or {}
+local claim_lines=0
+for _,l in ipairs(lines) do if l:find('claim',1,true) then claim_lines=claim_lines+1 end end
+eq(claim_lines,1)
+digest=has(lines,'your claims: closed after 2h without your activity: #'..mine[1]..' lot 1, #'..mine[2]..' lot 2')
+assert(digest and digest:find(', +2 more',1,true),table.concat(lines,' | '))
+-- Stale marks a minute apart: the second waits for the next line, at most one every 3 min.
+local a1=astra('board_post',{kind='claim',title='east',area={left_top={x=50000,y=0},right_bottom={x=50010,y=10}}}).item.id
+jump(60)
+local a2=astra('board_post',{kind='claim',title='west',area={left_top={x=50100,y=0},right_bottom={x=50110,y=10}}}).item.id
+jump(30*3600-60)
+digest=has(astra('status').team.board,'your claims: stale')
+assert(digest and digest:find('#'..a1..' east',1,true) and not digest:find('west',1,true),digest)
+jump(61)
+eq(has((astra('status').team or {}).board,'your claims'),nil)
+jump(2*3600)
+eq(has((astra('status').team or {}).board,'your claims'),nil)
+jump(3600)
+digest=has(astra('status').team.board,'your claims: stale')
+assert(digest and digest:find('#'..a2..' west',1,true) and not digest:find('east',1,true),digest)
+-- told once per stretch: no more lines while they stay stale
+jump(10*3600)
+eq(has((astra('status').team or {}).board,'your claims'),nil)
 
 -- A task whose owner has made no request for 20 min can be taken by anyone (shift07: #284 power held two shifts).
 local t=grok('board_post',{kind='task',title='power line',owner='grok'}).item

@@ -41,7 +41,8 @@ already targets your character.
   note what you did on the claim.
 - A claim stays fresh while its owner works on it: posting or updating it, or the owner's own requests made standing
   in it or acting on a position in it. After 30 minutes without that it is `stale` on the board and in `claimed`
-  warnings: anyone may work there without asking. After 2 hours the harness closes it (the owner hears so). An
+  warnings: anyone may work there without asking. After 2 hours the harness closes it. Its owner gets one
+  `your claims:` line for those that went stale or closed, at most every 3 minutes. An
   `"allow":["muse"]` (or `"everyone"`) on your claim, in `board post` or `board update`, lets those teammates work
   there without asking; `claimed` warnings show it.
 - Hand items over through a chest: put them in, then post or update the board item with what and where.

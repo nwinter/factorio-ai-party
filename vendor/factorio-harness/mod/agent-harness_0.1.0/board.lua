@@ -168,27 +168,74 @@ return function(api)
     end
   end
   -- Claims with no activity by their owner for claims.EXPIRE close (dropped,
-  -- a harness note, an `expired` event the owner hears). Run before board
-  -- reads, writes and each reply's team block, at most once a second.
+  -- a harness note, an `expired` event for the stream and board_events). A
+  -- claim going stale or closing is told to its owner in one batched line
+  -- (claims_digest), never a line per claim. Run before board reads, writes
+  -- and each reply's team block, at most once a second.
+  local DIGEST = 3 * 3600
+  local function claim_news(owner)
+    local b = store()
+    b.claim_news = b.claim_news or {}
+    b.claim_news[owner] = b.claim_news[owner] or {closed={}, stale={}}
+    return b.claim_news[owner]
+  end
   local function expire()
     local b = store()
     if b.expire_tick and game.tick - b.expire_tick < 60 then return end
     b.expire_tick = game.tick
     local ids = {}
     for id, i in pairs(b.items) do
-      -- A claim from before activity was kept counts from its first sweep, so a deploy closes nothing at once.
-      if i.kind == 'claim' and ACTIVE[i.status] and not i.active_tick then i.active_tick = game.tick end
-      if i.kind == 'claim' and ACTIVE[i.status] and game.tick - api.claims.activity(i) >= api.claims.EXPIRE then ids[#ids+1] = id end
+      if i.kind == 'claim' and ACTIVE[i.status] then ids[#ids+1] = id end
     end
     table.sort(ids)
     for _, id in ipairs(ids) do
       local i = b.items[id]
-      local text = 'closed by the harness: no activity by its owner for ' .. ago(game.tick - api.claims.activity(i))
-      i.status, i.updated_tick = 'dropped', game.tick
-      i.notes[#i.notes+1] = {tick=game.tick, by='harness', text=text}
-      while #i.notes > MAX_NOTES do table.remove(i.notes, 1) end
-      event('harness', i, 'expired', text)
+      local last = api.claims.activity(i)
+      local idle = game.tick - last
+      local told = i.owner and i.owner ~= OPERATOR
+      if idle >= api.claims.EXPIRE then
+        local text = 'closed by the harness: no activity by its owner for ' .. ago(idle)
+        i.status, i.updated_tick = 'dropped', game.tick
+        i.notes[#i.notes+1] = {tick=game.tick, by='harness', text=text}
+        while #i.notes > MAX_NOTES do table.remove(i.notes, 1) end
+        event('harness', i, 'expired', text)
+        if told then local n = claim_news(i.owner); n.closed[#n.closed+1] = {id=i.id, title=i.title} end
+      elseif idle >= api.claims.STALE and i.stale_told ~= last then
+        -- Once per stretch without activity: work on it again and a later stale mark is told again.
+        i.stale_told = last
+        if told then local n = claim_news(i.owner); n.stale[#n.stale+1] = i.id end
+      end
     end
+  end
+  -- The owner's one line for claims that went stale or closed since the last
+  -- one, at most every DIGEST; stale ones the owner has since worked on (or
+  -- that closed) are left out.
+  local function claims_digest(me, h)
+    local b = store()
+    local n = b.claim_news and b.claim_news[me]
+    if not n or (h.claims_told and game.tick - h.claims_told < DIGEST) then return nil end
+    local function names(list)
+      local out = {}
+      for k, x in ipairs(list) do
+        if k > 6 then out[#out+1] = '+' .. (#list - 6) .. ' more'; break end
+        out[#out+1] = '#' .. x.id .. ' ' .. x.title
+      end
+      return table.concat(out, ', ')
+    end
+    local stale = {}
+    for _, id in ipairs(n.stale) do
+      local i = b.items[id]
+      if i and i.kind == 'claim' and ACTIVE[i.status] and api.claims.stale(i) then stale[#stale+1] = {id=i.id, title=i.title} end
+    end
+    b.claim_news[me] = nil
+    if #n.closed == 0 and #stale == 0 then return nil end
+    h.claims_told = game.tick
+    local parts = {}
+    if #n.closed > 0 then parts[#parts+1] = 'closed after 2h without your activity: ' .. names(n.closed) end
+    if #stale > 0 then
+      parts[#parts+1] = 'stale after 30 min without your activity (teammates may work there without asking; work in it or update it to keep it, or it closes 2h after your last activity): ' .. names(stale)
+    end
+    return 'your claims: ' .. table.concat(parts, '; ')
   end
   local function area_arg(a)
     if a == nil then return nil end
@@ -797,6 +844,7 @@ return function(api)
     if e.by == me then return nil end
     local tail = e.text and ' - ' .. e.text or ''
     if e.kind == 'research' then return nil end  -- research.lua gives each agent its own research lines
+    if e.change == 'expired' then return nil end  -- told in the owner's batched claims line (claims_digest)
     if e.kind == 'plan' then
       -- Everyone hears of a plan edit once; a line written for me is mine.
       return string.format('team plan edited by %s: %s (board_plan shows it)', e.by, e.text or ''), e.owner ~= me
@@ -866,6 +914,8 @@ return function(api)
       if #lines < MAX_BOARD_LINES then lines[#lines+1] = line else extra = extra + 1 end
     end
     if extra > 0 then lines[#lines+1] = string.format('+%d more: board mine=true', extra) end
+    local digest = claims_digest(me, h)
+    if digest then lines[#lines+1] = digest end
     -- Unowned requests: nudge once each time another one passes 2 minutes.
     -- The scan is shared by all agents for a second (kept in storage, so
     -- every peer computes the same hints); any board change redoes it.

@@ -20,7 +20,12 @@ return function(api)
     if sec >= 60 then return string.format('%dm%02ds', math.floor(sec / 60), sec % 60) end
     return sec .. 's'
   end
-  function M.activity(i) return i.active_tick or i.updated_tick or i.created_tick or 0 end
+  -- A claim from before activity was kept gets its timers started the first
+  -- time anything reads it (the deploy): a fresh 30 min and 2 h.
+  function M.activity(i)
+    if not i.active_tick and i.kind == 'claim' and ACTIVE[i.status] then i.active_tick = game.tick end
+    return i.active_tick or i.updated_tick or i.created_tick or 0
+  end
   function M.stale(i) return game.tick - M.activity(i) >= M.STALE end
   function M.allows(i, name)
     for _, n in ipairs(i.allow or {}) do if n == name or n == 'everyone' then return true end end

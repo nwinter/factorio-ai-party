@@ -9,8 +9,9 @@ control.lua change, so `fh deploy` and a CLI build ship it.
 |---|---|
 | Activity | the owner posts or updates it (`board_update` by the owner), or makes a request of their own standing in it or acting on a position (`args.position`) in it |
 | Stale | 30 min without activity: `stale: true` on the board; stock (`collect` with radius) no longer skips it; `claimed` warnings say "stale: no permission needed; closes 1h29m from now unless its owner works on it" |
-| Closed | 2 h without activity: status `dropped`, note "closed by the harness: no activity by its owner for 2h00m", event `expired` by `harness` (the owner hears it; the stream skips it as bookkeeping) |
-| Claims from before the deploy | their 30 min and 2 h count from the first sweep after the deploy |
+| Closed | 2 h without activity: status `dropped`, note "closed by the harness: no activity by its owner for 2h00m", event `expired` by `harness` (in `board_events`; no agent line of its own; the stream skips it as bookkeeping) |
+| Owner's line | stale marks and closures are batched: one `team.board` line per owner, at most every 3 min: `your claims: closed after 2h without your activity: #12 lot 1, #13 lot 2, +2 more; stale after 30 min without your activity (...): #20 east`. A stale mark is told once per stretch without activity; one the owner worked on again before the line is left out. It wakes nobody |
+| Claims from before the deploy | their timers start the first time anything reads them after the deploy (board, a reply, collect's claim check): a fresh 30 min and 2 h |
 | `allow` | `board_post` or `board_update` (owner only): names or `everyone`; `[]` or `""` clears. Allowed agents are not kept out by stock, and the label says "you are allowed" |
 | Labels | `collect`'s `claimed`, stock's `skipped_claims`, overlap warnings: `#17 power (claim by opus; posted 25h00m ago, owner active on it 3h10m ago, opus last request 40m00s ago, allows muse; stale: ...)` |
 | Board view | an open claim has `owner_active`, `stale`, `allow` |
