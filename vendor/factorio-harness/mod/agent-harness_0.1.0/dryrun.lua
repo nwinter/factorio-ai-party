@@ -195,7 +195,56 @@ return function(api)
     return out
   end
 
-  -- For route planners (belts, pipes: one tile each): a function (x, y) ->
+  -- What stands in the way of a tile on tile (x, y) (Sol, shift10: a
+  -- slipstack on Gleba wetland kept the landfill ghost from three belt tiles;
+  -- mined, landfill and belts went in). 2.0.77 on a private server: Gleba's
+  -- slipstack, cuttlepop, hairyclubnub, water-cane and the iron and copper
+  -- stromatolites have ground_tile in their collision mask, so landfill (a
+  -- ground_tile) collides with them, plain or forced; marked for
+  -- deconstruction they are passed over. The engine's tile ghost check
+  -- decides; the entities on the tile whose mask meets the tile's are named:
+  -- {entity, obstacle (a minable tree or rock), text}. nil when the engine
+  -- takes the tile there (or no such tile); an empty list when it refuses
+  -- with nothing in the way (its tile rules).
+  local function at1(pos) return string.format('(%g,%g)', math.floor(pos.x*10+0.5)/10, math.floor(pos.y*10+0.5)/10) end
+  function M.tile_blockers(surface, force, tile, x, y)
+    local tp = prototypes.tile[tile or '']
+    if not tp then return nil end
+    local ok = try(function()
+      return surface.can_place_entity{name='tile-ghost', inner_name=tile, position={x=x+0.5, y=y+0.5}, force=force,
+        build_check_type=defines.build_check_type.manual_ghost}
+    end)
+    if ok ~= false then return nil end
+    local tl = layers(tp.collision_mask)
+    local out = {}
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{area={{x, y}, {x+1, y+1}}, limit=16} end) or {}) do
+      if e.valid and not IGNORED[e.type] and e.type ~= 'character' and collide(layers(try(function() return e.prototype.collision_mask end)), tl)
+        and not try(function() return e.to_be_deconstructed() end) then
+        local neutral = e.force == nil or e.force.name == 'neutral'
+        local obstacle = OBSTACLE[e.type] and e.minable and neutral or false
+        local kind = e.type == 'tree' and ' tree' or e.type == 'simple-entity' and ' rock' or e.type == 'plant' and ' plant' or ''
+        local text
+        if obstacle then text = string.format('%s%s at %s: mine it first', e.name, kind, at1(e.position))
+        elseif e.type == 'cliff' then text = string.format('%s at %s: cliff explosives clear it', e.name, at1(e.position))
+        else text = string.format('%s at %s', e.name, at1(e.position)) end
+        out[#out+1] = {entity=e, obstacle=obstacle, text=text}
+      end
+    end
+    return out
+  end
+  -- The lines for a list of tiles' blockers, each entity once.
+  function M.blocker_texts(lists)
+    local seen, texts = {}, {}
+    for _, list in ipairs(lists) do
+      for _, b in ipairs(list) do
+        local k = b.entity.valid and b.entity.unit_number or b.text
+        if not seen[k] then seen[k] = true; texts[#texts+1] = b.text end
+      end
+    end
+    return texts
+  end
+
+  -- For route planners (belts, pipes: one tile each): a function (x, y) ->  -- For route planners (belts, pipes: one tile each): a function (x, y) ->
   -- whether the entity stands on that tile as it is now, or on a tile ghost
   -- ordered there; each tile kind's layers are read once. Call it only on a
   -- tile the engine's ghost check took (its chunk is generated).
@@ -430,10 +479,41 @@ return function(api)
         end
       end
     end
+    -- Entities on the planned tiles whose collision mask meets the tile's
+    -- (one query over the tiles' box): those tiles get the engine's check.
+    local in_way
+    local function tile_in_way(x, y)
+      if not in_way then
+        in_way = {}
+        local tx0, ty0, tx1, ty1, masks = nil, nil, nil, nil, {}
+        for _, t in ipairs(plan.tiles or {}) do
+          local tx, ty = math.floor(t.position.x), math.floor(t.position.y)
+          tx0, ty0 = math.min(tx0 or tx, tx), math.min(ty0 or ty, ty)
+          tx1, ty1 = math.max(tx1 or tx, tx), math.max(ty1 or ty, ty)
+          local tp = prototypes.tile[t.name]
+          if tp and not masks[t.name] then masks[t.name] = layers(tp.collision_mask) end
+        end
+        if tx0 then
+          for _, e in ipairs(try(function() return s.find_entities_filtered{area={{tx0, ty0}, {tx1+1, ty1+1}}, limit=8192} end) or {}) do
+            local em = e.valid and not IGNORED[e.type] and e.type ~= 'character' and layers(try(function() return e.prototype.collision_mask end))
+            local hits = false
+            for _, m in pairs(masks) do if em and collide(em, m) then hits = true end end
+            if hits then
+              local b = e.bounding_box
+              for bx = math.floor(b.left_top.x), math.ceil(b.right_bottom.x)-1 do
+                for by = math.floor(b.left_top.y), math.ceil(b.right_bottom.y)-1 do in_way[key(bx, by)] = true end
+              end
+            end
+          end
+        end
+      end
+      return in_way[key(x, y)]
+    end
+    local tile_marked = {}
     -- Planned tiles: each must go on what is there now. A build entry whose
     -- brush lays no tile at all fails (build_tile).
     local tile_rows, tiles_planned, tiles_already, tiles_refused = {}, 0, 0, 0
-    local brush = {} -- build entry index -> {laid, total}
+    local brush = {} -- build entry index -> {laid, total, why (the first tile's refusal)}
     for _, t in ipairs(plan.tiles or {}) do
       local x, y = math.floor(t.position.x), math.floor(t.position.y)
       local proto = prototypes.tile[t.name]
@@ -445,7 +525,19 @@ return function(api)
       elseif here.name == t.name or (pending[k] and pending[k].name == t.name) then tiles_already = tiles_already + 1
       else
         local item = t.item or try(function() return proto.items_to_place_this[1].name end)
-        if item and not M.placeable_on(item, here.name) then why = string.format('%s cannot go on %s', item, here.name) end
+        if item and not M.placeable_on(item, here.name) then why = string.format('%s cannot go on %s', item, here.name)
+        elseif tile_in_way(x, y) then
+          -- Trees and rocks there: place_ghosts marks them first; else they block.
+          local b = M.tile_blockers(s, force, t.name, x, y)
+          if b then
+            local all = #b > 0
+            for _, one in ipairs(b) do if not one.obstacle then all = false end end
+            if all and kind == 'ghosts' then
+              for _, one in ipairs(b) do tile_marked[one.entity.name..' '..at1(one.entity.position)] = true end
+            elseif #b > 0 then why = 'blocked by '..table.concat(M.blocker_texts({b}), ', ')
+            else why = 'the game refuses it there now' end
+          end
+        end
       end
       if why then
         tiles_refused = tiles_refused + 1
@@ -459,6 +551,7 @@ return function(api)
         brush[t.index] = b
         b.total = b.total + 1
         if laid then b.laid = b.laid + 1 end
+        b.why = b.why or why
       end
     end
 
@@ -590,6 +683,34 @@ return function(api)
                 end
               end
             end
+          end
+          -- What stands where the tiles it needs go (tile_blockers): place_ghosts
+          -- marks trees and rocks there first, as the game's ghost placement does;
+          -- anything else, or another call, is blocked by them.
+          if #tile_need > 0 then
+            local lists, refused = {}, {}
+            for _, n in ipairs(tile_need) do
+              local tile = try(function() return prototypes.item[n.item].place_as_tile_result.result.name end)
+              local b = tile and M.tile_blockers(s, force, tile, n.x, n.y)
+              if b then
+                local all = #b > 0
+                for _, one in ipairs(b) do if not one.obstacle then all = false end end
+                if all and kind == 'ghosts' then
+                  for _, one in ipairs(b) do
+                    local text = one.entity.name..' '..at(one.entity.position)
+                    local dup = false
+                    for _, m in ipairs(marked) do if m == text then dup = true end end
+                    if not dup and #marked < 4 then marked[#marked+1] = text end
+                  end
+                elseif #b > 0 then lists[#lists+1] = b
+                else refused[#refused+1] = n.item..' at '..tile_text(n.x, n.y) end
+              end
+            end
+            if #lists > 0 then
+              local texts = M.blocker_texts(lists)
+              reasons[#reasons+1] = 'blocked by '..table.concat(texts, ', ', 1, math.min(3, #texts))..' (where its '..tile_need[1].item..' goes)'
+            end
+            if #refused > 0 then reasons[#reasons+1] = 'the game refuses '..table.concat(refused, ', ', 1, math.min(3, #refused))..' there now' end
           end
           -- The engine's own check, as the real call makes it. It decides
           -- whatever stands there now (an upgrade over a machine of the same
@@ -749,6 +870,13 @@ return function(api)
       local by = {}
       for _, n in ipairs(need_list) do by[n.item] = (by[n.item] or 0) + 1 end
       local t = {needed=next(by) and by or nil, under_entities=#need_list-holes > 0 and #need_list-holes or nil,
+        marks=next(tile_marked) and (function()
+          local list = {}
+          for text in pairs(tile_marked) do list[#list+1] = text end
+          table.sort(list)
+          return 'place_ghosts marks '..table.concat(list, ', ', 1, math.min(4, #list))..(#list > 4 and string.format(' and %d more', #list-4) or '')
+            ..' for removal first, where its tile ghosts go (construct mines trees and rocks)'
+        end)() or nil,
         holes=holes > 0 and holes or nil, planned=tiles_planned > 0 and tiles_planned or nil,
         already=tiles_already > 0 and tiles_already or nil, refused=tiles_refused > 0 and tiles_refused or nil,
         refused_rows=#tile_rows > 0 and tile_rows or nil}
@@ -1162,7 +1290,7 @@ return function(api)
         elseif r.late then fail(r.index, string.format('its tiles come from entry #%d', r.late)) end
       end
       for index, b in pairs(brush) do
-        if b.laid == 0 then fail(index, 'no tile of its brush can be laid there') end
+        if b.laid == 0 then fail(index, 'no tile of its brush can be laid there'..(b.why and ': '..b.why or '')) end
       end
       if first then counts.fail_first, counts.fail_why = first, why end
     end

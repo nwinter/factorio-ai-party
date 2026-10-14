@@ -2690,4 +2690,33 @@ end)()
   fails(function() call('inspect',{position={x=3.5,y=0.5}}) end,'no chunk within 256 tiles of it is in radar coverage or a character\'s sight')
   p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible=find,at,vis
 end)()
+;(function()
+  -- place_ghosts with a tile ghost where a Gleba tree stands (Sol, shift10: a slipstack kept landfill out): the tree
+  -- is marked for deconstruction first, as the game's ghost placement marks it, and the reply says so.
+  local find,can,create=p.surface.find_entities_filtered,p.surface.can_place_entity,p.surface.create_entity
+  local tiles,items=prototypes.tile,prototypes.item
+  prototypes.tile=prototypes.tile or {}; prototypes.item=prototypes.item or {}
+  local saved_tile,saved_item=prototypes.tile.landfill,prototypes.item.landfill
+  prototypes.tile.landfill={name='landfill',collision_mask={layers={ground_tile=true}}}
+  prototypes.item.landfill=nil
+  local tree={valid=true,name='slipstack',type='tree',minable=true,force={name='neutral'},position={x=10.06,y=10.06},
+    prototype={collision_mask={layers={object=true,ground_tile=true}}}}
+  tree.to_be_deconstructed=function() return tree.marked==true end
+  tree.order_deconstruction=function() tree.marked=true; return true end
+  tree.cancel_deconstruction=function() tree.marked=nil; return true end
+  p.surface.find_entities_filtered=function(f) if f.area then return {tree} end return {} end
+  p.surface.can_place_entity=function(a) if a.name=='tile-ghost' then return tree.marked==true end return can(a) end
+  local made={}
+  p.surface.create_entity=function(a) if a.name=='tile-ghost' then local g={valid=true,type='tile-ghost',ghost_name=a.inner_name,position=a.position}; made[#made+1]=g; return g end return create(a) end
+  local r=call('place_ghosts',{entities={{name='landfill',position={x=10.5,y=10.5}}}})
+  eq(r.placed,1); eq(tree.marked,true); eq(#made,1); eq(r.obstacles_marked,1)
+  eq(r.tile_obstacles_marked,'marked for deconstruction where tile ghosts go: slipstack (10.1,10.1); construct mines them before it lays the tiles')
+  -- Something else there (not a minable tree or rock): refused, named, and nothing marked.
+  tree.marked=nil; tree.minable=false
+  r=call('place_ghosts',{entities={{name='landfill',position={x=10.5,y=10.5}}}})
+  eq(r.placed,0); eq(r.failed[1].error,'tile placement blocked by slipstack at (10.1,10.1)'); eq(tree.marked,nil)
+  p.surface.find_entities_filtered,p.surface.can_place_entity,p.surface.create_entity=find,can,create
+  prototypes.tile.landfill,prototypes.item.landfill=saved_tile,saved_item
+  prototypes.tile,prototypes.item=tiles,items
+end)()
 print('runtime: '..assertions..' assertions passed')

@@ -145,11 +145,11 @@ return function(api)
     local action={kind='construct',pending=pending,built=0,mined=0,gone=0,missing={},failed={},seen={}}
     local function add(e,ghost) add_mine(action,e,ghost) end
     -- Tile ghosts (landfill, paths) are placed like tiles from the cursor;
-    -- trees and rocks do not block them.
+    -- the trees and rocks a tile collides with go first (M.tile_obstacles).
     local tiles={}
     for _,e in pairs(p.surface.find_entities_filtered{area=box,type={'entity-ghost','tile-ghost'},force=p.force}) do
       if e.valid and api.known(p,e) then
-        local obstacles=e.type=='tile-ghost' and {} or M.mark_obstacles(p,e)
+        local obstacles=e.type=='tile-ghost' and M.tile_obstacles(p,e) or M.mark_obstacles(p,e)
         pending[#pending+1]={ghost=e,tries=0,stand_fails=0,obstacles=#obstacles>0 and obstacles or nil}
         if e.type=='tile-ghost' then tiles[math.floor(e.position.x)..','..math.floor(e.position.y)]=pending[#pending] end
         for _,o in ipairs(obstacles) do add(o,e) end
@@ -293,6 +293,32 @@ return function(api)
       end
     end
     return found,marked
+  end
+  -- Trees and rocks a tile ghost cannot go under (Sol, shift10: a slipstack on
+  -- Gleba wetland kept landfill out). 2.0.77: Gleba's slipstack, cuttlepop,
+  -- hairyclubnub, water-cane and the stromatolites have ground_tile in their
+  -- collision mask, so landfill (a ground_tile) collides with them; Nauvis
+  -- trees do not, and tiles go in under them. Those on the tile are marked for
+  -- deconstruction, as the game marks them for a player's tile ghost, and the
+  -- tile waits until they are mined.
+  function M.tile_obstacles(p,g)
+    local ok,tl=pcall(function() return g.ghost_prototype.collision_mask.layers end)
+    if not ok or not tl then return {} end
+    local x,y=math.floor(g.position.x),math.floor(g.position.y)
+    local box={left_top={x=x,y=y},right_bottom={x=x+1,y=y+1}}
+    local found={}
+    for _,e in pairs(p.surface.find_entities_filtered{area={{x-1.5,y-1.5},{x+2.5,y+2.5}},type={'tree','plant','simple-entity'},force='neutral'}) do
+      if e.valid and e.minable and touches(e,box,-0.01) then
+        local okm,el=pcall(function() return e.prototype.collision_mask.layers end)
+        local hits=false
+        for layer in pairs(okm and el or {}) do if tl[layer] then hits=true end end
+        if hits then
+          if not e.to_be_deconstructed() then e.order_deconstruction(p.force,api.real and api.real(p) or nil) end
+          if e.to_be_deconstructed() then found[#found+1]=e end
+        end
+      end
+    end
+    return found
   end
   -- The area an entity of this prototype covers at pos, turned for east/west.
   function M.box(proto,pos,direction)
@@ -516,7 +542,7 @@ return function(api)
             -- A tree or rock the build could not get past: mark and mine that
             -- one, then build again (no try spent on it).
             local fresh=0
-            for _,o in ipairs(not tile and M.mark_obstacles(p,g,0.3) or {}) do
+            for _,o in ipairs(tile and M.tile_obstacles(p,g) or M.mark_obstacles(p,g,0.3)) do
               if add_mine(action,o,g) then
                 fresh=fresh+1
                 rec.obstacles=rec.obstacles or {}

@@ -939,6 +939,20 @@ fh sleep 900 --until researched                       # ...or until the research
     buildable)`.
   - `construct` lays a tile ghost before an entity ghost standing on it (the entity waits for it), and a bot's tile
     build fulfils a tile ghost of that tile as a player's does (it aborted on the ghost before).
+  - Trees and rocks a tile collides with (Sol, shift10: a slipstack on Gleba wetland kept landfill from three belt
+    tiles; mined, landfill and belts went in). On a private 2.0.77 server Gleba's slipstack, cuttlepop, hairyclubnub,
+    water-cane and the iron and copper stromatolites have `ground_tile` in their collision mask, as landfill has, so
+    the game refuses a landfill tile (or its ghost) where one of them stands, plain or forced; marked for
+    deconstruction, the tile ghost goes in. Nauvis trees and rocks lack `ground_tile`. So:
+    - `place_ghosts` marks those trees and rocks for deconstruction before it lays a tile ghost there (a tile entry,
+      a `tiles` area, or the landfill under an entity ghost), as the game's ghost placement does, and says so:
+      `obstacles_marked` and `tile_obstacles_marked: "marked for deconstruction where tile ghosts go: cuttlepop
+      (-170.6,-223.2); construct mines them before it lays the tiles"`. Anything else there refuses the ghost,
+      named: `tile placement blocked by ...`.
+    - `construct` mines the trees and rocks a tile ghost's tile collides with before it lays the tile, then builds
+      what stands on it (on the private copy: a cuttlepop mined, 2 landfill and 2 belts built in one run).
+    - A hand-laid tile (`build` with landfill) names what stops it: `no tile was placed: blocked by cuttlepop tree at
+      (-256.5,-199.7): mine it first` (`not_placed` when only some of a brush went down).
   - A refused build or revive names the tile (`placement blocked by tiles: wetland-blue-slime (needs landfill, ...)`),
     never the ghost of the same entity on the same centre that it revives, nor a tile ghost under it. Another
     entity's ghost there is still named. A build over its own ghost with the character on the footprint steps aside
@@ -966,7 +980,11 @@ fh sleep 900 --until researched                       # ...or until the research
     tree-01 ...`). Rails may cross rails.
   - `tiles`: `needed {item: n}` (the unlocked tile item that makes each tile buildable for that entity: landfill on
     water, foundation on lava, space-platform-foundation on empty space), `under_entities`, `positions` (up to 200
-    tile centres, then `more`), and the plan's own tiles: `planned`, `already`, `refused` with `refused_rows`. On a
+    tile centres, then `more`), and the plan's own tiles: `planned`, `already`, `refused` with `refused_rows`. Each
+    needed or planned tile gets the game's own tile ghost check, and what stands there is named, by kind of call: a
+    hand build reads `blocked by slipstack tree at (-180.9,-84.9): mine it first (where its landfill goes)` (a rock:
+    `rock`, a cliff: `cliff explosives clear it`), while `place_ghosts` marks trees and rocks first, so its dry run
+    reads `place_ghosts marks slipstack (-180.94,-84.94) for removal` on the entry and `marks` under `tiles`. On a
     platform the engine takes an entity ghost over empty space, which nothing builds until foundation is there: such
     entries read `needs_tiles` all the same. New foundation (planned or needed) is flood-filled: empty tiles it would
     enclose (regions up to 1024 tiles; larger ones count as open space) are added as `holes`, since the game builds no

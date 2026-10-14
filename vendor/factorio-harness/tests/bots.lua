@@ -644,5 +644,10 @@ do
   s.set_tiles=function() end
   fails(function() B.place_tiles(bot,{item='landfill'},stack,{x=7.5,y=5.5},1) end,'no tile was placed')
   eq(#made,1); eq(made[1].name,'tile-ghost'); eq(made[1].inner_name,'landfill'); eq(made[1].position.x,7.5)
+  -- A tree on the tile (Sol, shift10: a slipstack on Gleba wetland): the refusal names it (dryrun.lua tile_blockers).
+  local B2=dofile('mod/agent-harness_0.1.0/bots.lua'){tile_blockers=function(_,_,tile,x,y)
+    eq(tile,'landfill'); return x==9 and {{text='slipstack tree at (9.4,5.6): mine it first',obstacle=true}} or nil end}
+  bot.force=force
+  fails(function() B2.place_tiles(bot,{item='landfill'},stack,{x=9.5,y=5.5},1) end,'no tile was placed: blocked by slipstack tree at (9.4,5.6): mine it first')
 end
 print('bots: ok')

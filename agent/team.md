@@ -203,6 +203,9 @@ already targets your character.
   sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
   reads back the conditions, settings, each wire's far end and the signals on each network now.
+- Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub, water-cane or stromatolite stands:
+  a dry run names them (`blocked by slipstack tree at (x,y): mine it first`); `place_ghosts` marks them for removal
+  first (`tile_obstacles_marked`) and `construct` mines them before it lays the landfill.
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that

@@ -105,6 +105,19 @@ local function world(tiles, entities, opts)
   -- The engine's check: entities whose masks meet, and the tiles (a ghost on
   -- a platform goes over empty space, as the shift world's engine allowed).
   s.can_place_entity = function(a)
+    -- A tile ghost: refused where an entity not marked for deconstruction
+    -- meets the tile and its mask meets the tile's (2.0.77: Gleba's slipstack
+    -- has ground_tile; landfill is one).
+    if a.name == 'tile-ghost' then
+      local tl = prototypes.tile[a.inner_name].collision_mask.layers
+      local x, y = math.floor(a.position.x), math.floor(a.position.y)
+      for _, e in ipairs(entities) do
+        if e.type ~= 'entity-ghost' and not (e.marked) and meets(e.bounding_box, {left_top={x=x, y=y}, right_bottom={x=x+1, y=y+1}}) then
+          for k in pairs(e.prototype.collision_mask.layers) do if tl[k] then return false end end
+        end
+      end
+      return true
+    end
     local proto = prototypes.entity[a.name]
     local b = placewhy.box_at(proto.collision_box or box(0.4), a.position, a.direction or 0)
     for _, e in ipairs(entities) do
@@ -322,7 +335,7 @@ eq(bc.fail_first, 2); eq(bc.fail_why, 'target already contains this entity')
 local _, _, bc2 = dryrun.check(p, {kind='build', entities={{index=1, name='small-electric-pole', position={x=30.5, y=0.5}, item='small-electric-pole'}}})
 eq(bc2.fail_first, 1); has(bc2.fail_why, 'out of reach: 30.5 tiles from you, reach 10')
 local _, _, bc3 = dryrun.check(p, {kind='build', entities={}, tiles={{index=1, name='landfill', item='landfill', position={x=0.5, y=5.5}}}})
-eq(bc3.fail_first, 1); eq(bc3.fail_why, 'no tile of its brush can be laid there')
+eq(bc3.fail_first, 1); eq(bc3.fail_why, 'no tile of its brush can be laid there: landfill cannot go on grass-1', 'the first tile says why')
 
 -- Bounded work (review: 2048 entries over water took 9 s in standing spots): every entry out of reach over a lake,
 -- no free spot near any, standing gives up after a bounded number of looks.
@@ -527,4 +540,33 @@ rme.surface = world(function() return 'grass-1' end, built_ring)
 for _, e in ipairs(built_ring) do if e.type == 'pipe' then e.bounding_box = {left_top={x=e.position.x-0.488, y=e.position.y-0.488}, right_bottom={x=e.position.x+0.488, y=e.position.y+0.488}} end end
 local shut = rdr.check(rme, {kind='build', entities={{index=1, name='pipe', position={x=60.5, y=50.5}, direction=0, item='pipe'}}})
 eq(shut.closes_in, nil); has(shut.closed_in, 'the character is closed in already where it stands (50.5,50.5): the area')
+-- Tiles blocked by what stands on them (Sol, shift10: a slipstack on Gleba wetland kept landfill from three belt
+-- tiles; mined, they went in). A slipstack on water here: its mask has ground_tile, as landfill's does.
+prototypes.entity.slipstack = {name='slipstack', type='tree', collision_box={left_top={x=-1.2, y=-1.2}, right_bottom={x=1.2, y=1.2}},
+  collision_mask=mask('object', 'player', 'ground_tile', 'is_object')}
+prototypes.tile.landfill.collision_mask = mask('ground_tile')
+local tree = {name='slipstack', type='tree', position={x=50.06, y=50.06}, minable=true, force={name='neutral'}}
+tree.to_be_deconstructed = function() return tree.marked == true end
+local wme = {name='character', type='character', position={x=46.5, y=46.5}, prototype=prototypes.entity.character}
+local ww = world(function(x, y) return (x >= 48 and x <= 52 and y >= 48 and y <= 52) and 'water' or 'grass-1' end, {wme, tree})
+local wp = {surface=ww, force=force, position=wme.position, character=wme, build_distance=30,
+  get_main_inventory=function() return {get_item_count=function() return 100 end} end}
+local b1 = dryrun.tile_blockers(ww, force, 'landfill', 50, 50)
+eq(#b1, 1); eq(b1[1].obstacle, true); eq(b1[1].text, 'slipstack tree at (50.1,50.1): mine it first')
+eq(dryrun.tile_blockers(ww, force, 'landfill', 52, 52), nil, 'off the tree: the engine takes it')
+-- A hand build: the landfill its belt needs is blocked by the tree.
+local hand = dryrun.check(wp, {kind='build', entities={{index=1, name='transport-belt', position={x=50.5, y=50.5}, direction=0, item='transport-belt'}}})
+eq(hand.entities[1].status, 'blocked'); has(hand.entities[1].why, 'blocked by slipstack tree at (50.1,50.1): mine it first (where its landfill goes)')
+-- place_ghosts marks the tree first: the entry needs tiles, and the note says it marks it.
+local gh = dryrun.check(wp, {kind='ghosts', entities={{index=1, name='transport-belt', position={x=50.5, y=50.5}, direction=0}}})
+eq(gh.entities[1].status, 'needs_tiles'); has(gh.entities[1].why, 'place_ghosts marks slipstack (50.06,50.06) for removal (construct')
+-- Explicit landfill tiles: a hand build's brush is refused naming the tree; place_ghosts marks it.
+local brush = dryrun.check(wp, {kind='build', entities={}, tiles={{index=1, name='landfill', item='landfill', position={x=50.5, y=50.5}}}})
+eq(brush.tiles.refused_rows[1], '(50.5,50.5) landfill: blocked by slipstack tree at (50.1,50.1): mine it first')
+local marks = dryrun.check(wp, {kind='ghosts', entities={}, tiles={{index=1, name='landfill', position={x=50.5, y=50.5}}}})
+eq(marks.tiles.refused, nil); eq(marks.tiles.marks, 'place_ghosts marks slipstack (50.1,50.1) for removal first, where its tile ghosts go (construct mines trees and rocks)')
+-- Marked already: nothing in the way.
+tree.marked = true
+eq(dryrun.tile_blockers(ww, force, 'landfill', 50, 50), nil)
+tree.marked = nil
 print('dryrun: ok')

@@ -53,6 +53,8 @@ M.belt=require('belt')()
 -- Waits, queues and actions carried over a hot install (carry.lua: notes them while this loads).
 M.carry=require('carry'){state=state,restart=function(index,call) return M.restart_call(index,call) end}
 M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
+  -- What stands where a tile does not go (dryrun.lua tile_blockers): a hand-laid tile's refusal names it.
+  tile_blockers=function(surface,force,tile,x,y) return M.dryrun and M.dryrun.tile_blockers(surface,force,tile,x,y) end,
   profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)); M.nametags.refresh(b) end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
   controlled=function(index) return state().controlled and state().controlled[index]~=nil end}
@@ -4637,19 +4639,58 @@ local function tile_named(name)
   if result then return result.result.name end
   if prototypes.tile[name] and not prototypes.entity[name] then return name end
 end
+-- A tile ghost goes where the engine's check takes it. Trees and rocks in
+-- its way (Sol, shift10: a slipstack on Gleba wetland kept landfill from
+-- three belt tiles; dryrun.lua tile_blockers) are marked for deconstruction
+-- first, as the game's ghost placement marks them: marked, the engine takes
+-- the tile ghost (2.0.77), and construct mines them before it lays the tile.
+-- Anything else in the way refuses it, named. Returns the ghost and what it
+-- marked.
 local function place_tile_ghost(p,tile,pos)
   assert(charted(p,pos),'position is not charted')
+  local x,y=math.floor(pos.x),math.floor(pos.y)
+  local marked={}
+  local blockers=M.dryrun.tile_blockers(p.surface,p.force,tile,x,y)
+  if blockers then
+    local others={}
+    for _,b in ipairs(blockers) do if not b.obstacle then others[#others+1]=b end end
+    if #others>0 then error('tile placement blocked by '..table.concat(M.dryrun.blocker_texts({others}),', '),0) end
+    assert(#blockers>0,'tile placement blocked: the game refuses '..tile..' there now')
+    for _,b in ipairs(blockers) do
+      if b.entity.valid and b.entity.order_deconstruction(p.force,real(p)) then marked[#marked+1]=b.entity end
+    end
+  end
   local args={name='tile-ghost',inner_name=tile,position=pos,force=p.force}
-  assert(p.surface.can_place_entity{name='tile-ghost',inner_name=tile,position=pos,force=p.force,build_check_type=defines.build_check_type.manual_ghost},'tile placement blocked')
+  local ok=p.surface.can_place_entity{name='tile-ghost',inner_name=tile,position=pos,force=p.force,build_check_type=defines.build_check_type.manual_ghost}
   args.player=real(p); args.raise_built=true
-  local ghost=p.surface.create_entity(args)
-  assert(ghost,'tile placement blocked')
-  return ghost
+  local ghost=ok and p.surface.create_entity(args)
+  if not ghost then
+    for _,e in ipairs(marked) do if e.valid then pcall(e.cancel_deconstruction,p.force,real(p)) end end
+    error('tile placement blocked',0)
+  end
+  return ghost,marked
+end
+-- The reply's line for trees and rocks marked where tile ghosts go.
+function M.tile_marks_line(list)
+  if #list==0 then return nil end
+  local parts,seen={},{}
+  for _,e in ipairs(list) do
+    if e.valid then
+      local text=string.format('%s (%g,%g)',e.name,math.floor(e.position.x*10+0.5)/10,math.floor(e.position.y*10+0.5)/10)
+      if not seen[text] then seen[text]=true; parts[#parts+1]=text end
+    end
+  end
+  if #parts==0 then return nil end
+  return 'marked for deconstruction where tile ghosts go: '..table.concat(parts,', ',1,math.min(8,#parts))..(#parts>8 and string.format(' and %d more',#parts-8) or '')
+    ..'; construct mines them before it lays the tiles'
 end
 local function place_ghost(p,spec)
   assert(type(spec)=='table','entry must be {name,position,direction?,type?}')
   local tile=not prototypes.entity[spec.name or ''] and tile_named(spec.name)
-  if tile then return place_tile_ghost(p,tile,position(spec.position)),0 end
+  if tile then
+    local ghost,tile_marked=place_tile_ghost(p,tile,position(spec.position))
+    return ghost,0,nil,nil,tile_marked
+  end
   local proto=type(spec.name)=='string' and prototypes.entity[spec.name]
   assert(proto and proto.items_to_place_this and #proto.items_to_place_this>0,'not a placeable entity: '..tostring(spec.name))
   local pos=position(spec.position)
@@ -4668,36 +4709,52 @@ local function place_ghost(p,spec)
   -- takes them once the force has landfill, because a player's forced
   -- placement lays the tile ghosts under the entity; so do we, before it.
   -- With no tile item for them the ghost would never be built: refused.
+  -- Trees and rocks where those tiles go are marked first (place_tile_ghost);
+  -- anything else there refuses the ghost, named.
   local fixes=M.dryrun.tile_fixes(p.surface,p.force,proto,pos,direction)
   for _,f in ipairs(fixes or {}) do
     local result=f.item and prototypes.item[f.item] and prototypes.item[f.item].place_as_tile_result
     f.result=result and result.result.name
-    if not (f.result and p.surface.can_place_entity{name='tile-ghost',inner_name=f.result,position={x=f.x,y=f.y},force=p.force,
-        build_check_type=defines.build_check_type.manual_ghost}) then
+    local blockers=f.result and M.dryrun.tile_blockers(p.surface,p.force,f.result,math.floor(f.x),math.floor(f.y))
+    local others={}
+    for _,b in ipairs(blockers or {}) do if not b.obstacle then others[#others+1]=b end end
+    if not f.result or #others>0 or (blockers and #blockers==0) then
       error(string.format('placement blocked by tiles: %s at (%g,%g)%s',f.tile,f.x,f.y,
-        f.locked and ' (needs '..f.locked..')' or f.result and ' (the game refuses '..f.item..' there)' or ' (no tile item makes it buildable)'),0)
+        f.locked and ' (needs '..f.locked..')' or #others>0 and ': its '..f.item..' is blocked by '..table.concat(M.dryrun.blocker_texts({others}),', ')
+        or f.result and ' (the game refuses '..f.item..' there)' or ' (no tile item makes it buildable)'),0)
     end
   end
-  local laid,tiles={},{}
+  local laid,tiles,tile_marked={},{},{}
   for _,f in ipairs(fixes or {}) do
-    tiles[#tiles+1]=place_tile_ghost(p,f.result,{x=f.x,y=f.y})
+    local ok,t,m=pcall(place_tile_ghost,p,f.result,{x=f.x,y=f.y})
+    if not ok then
+      for _,g in ipairs(tiles) do if g.valid then g.destroy() end end
+      for _,e in ipairs(tile_marked) do if e.valid then pcall(e.cancel_deconstruction,p.force,real(p)) end end
+      error(string.format('placement blocked by tiles: %s at (%g,%g): %s',f.tile,f.x,f.y,reason(t)),0)
+    end
+    tiles[#tiles+1]=t
+    for _,e in ipairs(m or {}) do tile_marked[#tile_marked+1]=e end
     laid[f.item]=(laid[f.item] or 0)+1
   end
   local ghost=p.surface.create_entity{name='entity-ghost',inner_name=spec.name,position=pos,direction=direction,force=p.force,player=real(p),raise_built=true,type=spec.type}
   if not ghost then
     for _,t in ipairs(tiles) do if t.valid then t.destroy() end end
+    for _,e in ipairs(tile_marked) do if e.valid then pcall(e.cancel_deconstruction,p.force,real(p)) end end
     error('placement blocked',0)
   end
   local _,marked=construction.mark_obstacles(p,ghost)
-  return ghost,marked,fixes and laid or nil,fixes and fixes[1].tile or nil
+  return ghost,marked,fixes and laid or nil,fixes and fixes[1].tile or nil,tile_marked
 end
 local function place_ghost_list(p,list)
   local placed,failed,bounds,marked=0,{},nil,0
   local unders,inserters={},{}
   local tiles_laid,laid_under,laid_on=nil,0,nil
+  local tile_marked={}
   for i,spec in ipairs(list) do
     local ok,err=pcall(function()
-      local ghost,n,laid,on=place_ghost(p,spec)
+      local ghost,n,laid,on,tm=place_ghost(p,spec)
+      for _,e in ipairs(tm or {}) do tile_marked[#tile_marked+1]=e end
+      marked=marked+#(tm or {})
       if laid then
         tiles_laid=tiles_laid or {}
         for item,count in pairs(laid) do tiles_laid[item]=(tiles_laid[item] or 0)+count end
@@ -4750,7 +4807,7 @@ local function place_ghost_list(p,list)
   end
   return {placed=placed,failed=#failed>0 and failed or nil,bounds=bounds,obstacles_marked=marked>0 and marked or nil,
     underground_warnings=#warnings>0 and warnings or nil,inserters_without_target=loose,inserters_without_target_count=nloose,
-    tiles_laid=tiles_laid,tiles_note=tile_note}
+    tiles_laid=tiles_laid,tiles_note=tile_note,tile_obstacles_marked=M.tile_marks_line(tile_marked)}
 end
 -- A filled rectangle of tile ghosts (landfill, foundation, paths); tiles the
 -- game refuses there (landfill on land, a tile already present) are counted.
@@ -4761,14 +4818,19 @@ local function place_tile_area(p,t)
   local x0,y0,x1,y1=math.floor(lt.x),math.floor(lt.y),math.ceil(rb.x)-1,math.ceil(rb.y)-1
   assert(x1>=x0 and y1>=y0 and (x1-x0+1)*(y1-y0+1)<=4096,'tiles area must be 1..4096 tiles')
   local placed,refused,existing,bounds=0,0,0,nil
+  local tile_marked,why={},nil
   for x=x0,x1 do for y=y0,y1 do
     local pos={x=x+0.5,y=y+0.5}
     local ok=false
     local there=p.surface.find_entities_filtered{position=pos,radius=0.1,type='tile-ghost',force=p.force,limit=1}[1]
     if there and there.ghost_name==tile then existing=existing+1; ok=true
     else
-      ok=pcall(place_tile_ghost,p,tile,pos)
-      if ok then placed=placed+1 end
+      local res,m
+      ok,res,m=pcall(place_tile_ghost,p,tile,pos)
+      if ok then
+        placed=placed+1
+        for _,e in ipairs(m or {}) do tile_marked[#tile_marked+1]=e end
+      elseif not why and type(res)=='string' and res:find('blocked by',1,true) then why=reason(res) end
     end
     if ok then
       bounds=bounds or {left=x+0.5,top=y+0.5,right=x+0.5,bottom=y+0.5}
@@ -4776,7 +4838,9 @@ local function place_tile_area(p,t)
       bounds.right=math.max(bounds.right,x+0.5); bounds.bottom=math.max(bounds.bottom,y+0.5)
     else refused=refused+1 end
   end end
-  return {tile=tile,tiles_placed=placed,tiles_existing=existing>0 and existing or nil,tiles_refused=refused>0 and refused or nil,bounds=bounds}
+  return {tile=tile,tiles_placed=placed,tiles_existing=existing>0 and existing or nil,tiles_refused=refused>0 and refused or nil,bounds=bounds,
+    tiles_refused_why=refused>0 and why or nil,tile_obstacles_marked=M.tile_marks_line(tile_marked),
+    obstacles_marked=#tile_marked>0 and #tile_marked or nil}
 end
 function handlers.place_ghosts(p,a)
   assert(a.entities~=nil or a.tiles~=nil,'place_ghosts requires entities and/or tiles')
@@ -4787,7 +4851,11 @@ function handlers.place_ghosts(p,a)
   end
   if a.tiles~=nil then
     local t=place_tile_area(p,a.tiles)
-    for k,v in pairs(t) do if k~='bounds' then out[k]=v end end
+    for k,v in pairs(t) do
+      if k=='obstacles_marked' then out[k]=(out[k] or 0)+v
+      elseif k=='tile_obstacles_marked' and out[k] then out[k]=out[k]..'; '..v
+      elseif k~='bounds' then out[k]=v end
+    end
     local b,c=out.bounds,t.bounds
     if c then
       out.bounds=b and {left=math.min(b.left,c.left),top=math.min(b.top,c.top),right=math.max(b.right,c.right),bottom=math.max(b.bottom,c.bottom)} or c

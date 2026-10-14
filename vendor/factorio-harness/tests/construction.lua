@@ -380,4 +380,23 @@ do
   eq(run_timed(site),'incomplete'); eq(site.missing.landfill,1); eq(site.missing['medium-electric-pole'],nil); eq(#tries,2)
   assert(site.failed[1] and site.failed[1].error:find('placement blocked by tiles: wetland-blue-slime',1,true),site.failed[1] and site.failed[1].error)
 end
+-- A tile ghost and the trees and rocks its tile collides with (Sol, shift10: Gleba's slipstack has ground_tile in
+-- its mask, as landfill does; a Nauvis tree has not): marked and returned, so construct mines them first.
+do
+  local marked={}
+  local function tree(name,x,y,layers)
+    local t={valid=true,name=name,type='tree',minable=true,position={x=x,y=y},
+      bounding_box={left_top={x=x-0.8,y=y-0.8},right_bottom={x=x+0.8,y=y+0.8}},prototype={collision_mask={layers=layers}}}
+    t.to_be_deconstructed=function() return marked[t]==true end
+    t.order_deconstruction=function() marked[t]=true; return true end
+    return t
+  end
+  local slip=tree('slipstack',10.2,10.2,{object=true,ground_tile=true})
+  local oak=tree('tree-01',11.5,10.5,{object=true,water_tile=true})
+  local far=tree('slipstack',20.5,20.5,{ground_tile=true})
+  local q={surface={find_entities_filtered=function() return {slip,oak,far} end},force={}}
+  local g={position={x=10.5,y=10.5},ghost_prototype={collision_mask={layers={ground_tile=true}}}}
+  local found=C.tile_obstacles(q,g)
+  eq(#found,1); eq(found[1],slip); eq(marked[slip],true); eq(marked[oak],nil,'its mask lets landfill in'); eq(marked[far],nil,'not on the tile')
+end
 print('continuous construction tests passed')
