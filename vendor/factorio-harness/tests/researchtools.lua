@@ -94,6 +94,8 @@ local map={
   holder('lab','lab',33,0,{}),
   holder('assembling-machine','assembling-machine-2',20,0,{['automation-science-pack']=2}),
   holder('logistic-container','passive-provider-chest',-50,0,{['military-science-pack']=12}),
+  -- A landed cargo pod's container (operator 09:04: a stopped platform's trash on Gleba, no landing pad).
+  holder('temporary-container','cargo-pod-container',-10.5,-5.5,{['iron-plate']=16}),
   belt(3),belt(4),
   {valid=true,type='inserter',name='inserter',force=force,position={x=1,y=1},held_stack={valid_for_read=true,name='automation-science-pack',count=1}},
 }
@@ -203,6 +205,10 @@ for k=2,#w.places do assert(w.places[k].distance>=w.places[k-1].distance) end
 w=astra('where_is',{item='automation-science-pack',limit=2}); eq(#w.places,2); eq(w.more,3)
 eq(astra('where_is',{item='military-science-pack'}).places[1].entity,'passive-provider-chest')
 local plates=astra('where_is',{item='iron-plate',surface='nauvis'}); eq(plates.by_kind.chest,5) -- (the bots' kits hold more)
+eq(plates.by_kind.pod,16)
+local pod
+for _,pl in ipairs(plates.places) do if pl.kind=='pod' then pod=pl end end
+eq(pod.entity,'cargo-pod-container'); eq(pod.count,16); eq(pod.position.x,-10.5)
 fails(function() astra('where_is',{item='unobtainium'}) end,'unknown item unobtainium')
 fails(function() astra('where_is',{}) end,'item is required')
 fails(function() astra('where_is',{item='iron-plate',surface='vulcanus'}) end,'unknown surface vulcanus')

@@ -17,7 +17,9 @@ return function(api)
   local MAX_MACHINES, MAX_LABS, MAX_CHESTS, MAX_BELTS, MAX_INSERTERS, MAX_ROBOTS, MAX_FOUND = 2048, 1024, 5000, 10000, 8192, 4096, 40000
   local MAX_SPOTS, TOP_CHESTS, TOP_UNMET, WORST = 4096, 5, 5, 3
   local CRAFTERS = {'assembling-machine', 'furnace', 'rocket-silo'}
-  local CHESTS = {'container', 'logistic-container', 'cargo-landing-pad', 'space-platform-hub', 'cargo-wagon', 'car', 'spider-vehicle'}
+  -- (temporary-container: a landed cargo pod's container, e.g. a stopped platform's hub trash on a planet with no
+  -- landing pad: operator 09:04, Sunward's 50 processing units on Gleba)
+  local CHESTS = {'container', 'logistic-container', 'temporary-container', 'cargo-landing-pad', 'space-platform-hub', 'cargo-wagon', 'car', 'spider-vehicle'}
   local BELTS = {'transport-belt', 'underground-belt', 'splitter', 'loader', 'loader-1x1', 'linked-belt'}
   local ROBOTS = {'logistic-robot', 'construction-robot'}
   local BELT = {}
@@ -30,15 +32,15 @@ return function(api)
   for group, types in pairs({crafters=CRAFTERS, labs={'lab'}, chests=CHESTS, belts=BELTS, inserters={'inserter'}, robots=ROBOTS, miners=MINERS}) do
     for _, t in ipairs(types) do GROUP[t] = group end
   end
-  local MAIN = {container='chest', ['logistic-container']='chest', ['cargo-landing-pad']='cargo_landing_pad_main', ['space-platform-hub']='hub_main',
+  local MAIN = {container='chest', ['logistic-container']='chest', ['temporary-container']='chest', ['cargo-landing-pad']='cargo_landing_pad_main', ['space-platform-hub']='hub_main',
     ['cargo-wagon']='cargo_wagon', car='car_trunk', ['spider-vehicle']='spider_trunk'}
   -- Requests filled by rockets and cargo pods, not by robots.
   local ORBIT = {['cargo-landing-pad']=true, ['space-platform-hub']=true}
   local SHORT = {item_ingredient_shortage=true, no_ingredients=true, fluid_ingredient_shortage=true, no_input_fluid=true, missing_science_packs=true}
   local FULL = {full_output=true, waiting_for_space_in_destination=true, not_enough_space_in_output=true}
   local KIND_LABEL = {['active-provider']='active-provider chests', ['passive-provider']='passive-provider chests', storage='storage chests',
-    buffer='buffer chests', requester='requester chests', chest='other chests', pad='landing pads', hub='platform hubs', vehicle='vehicles'}
-  local KIND_ORDER = {'requester', 'passive-provider', 'active-provider', 'storage', 'buffer', 'chest', 'pad', 'hub', 'vehicle'}
+    buffer='buffer chests', requester='requester chests', chest='other chests', pad='landing pads', pod='landed cargo pods', hub='platform hubs', vehicle='vehicles'}
+  local KIND_ORDER = {'requester', 'passive-provider', 'active-provider', 'storage', 'buffer', 'chest', 'pad', 'pod', 'hub', 'vehicle'}
   local function at(pos) return string.format('(%g,%g)', pos.x, pos.y) end
   local function try(fn, ...) local ok, v = pcall(fn, ...); if ok then return v end end
   -- No closure per call: these run for every belt, chest and inserter.
@@ -57,6 +59,7 @@ return function(api)
   local function kind_of(e)
     if e.type == 'container' then return 'chest' end
     if e.type == 'cargo-landing-pad' then return 'pad' end
+    if e.type == 'temporary-container' then return 'pod' end
     if e.type == 'space-platform-hub' then return 'hub' end
     if e.type ~= 'logistic-container' then return 'vehicle' end
     local kind = KIND[e.name]
