@@ -777,6 +777,8 @@ async function main() {
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
+      // retreat (operator 12:27): why it went back, from where, the health then and now, where to.
+      retreated: last?.retreated,
       // collect over a radius: moved per item, places touched, what fell short.
       tally: last?.tally,
       // build_path: belts placed, where it stopped, and the trees and rocks it mined in its way (round1050f).
