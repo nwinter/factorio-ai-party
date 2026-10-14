@@ -10,10 +10,11 @@
 -- (or everyone) who need no notice while it is fresh.
 -- A claim is on one surface (Sol 07:52: Astra's Nauvis claim #212 labelled
 -- Gleba furnaces at (62,22)): the poster's when posted (or `surface`); one
--- posted before claims had one gets its owner's surface the first time it is
--- read (else nauvis), unless its area holds none of our buildings there and
--- exactly one other planet's does (world n, 08:05: Luna on Gleba, her claim
--- #111 built only on Nauvis). Positions on other surfaces are never in it.
+-- posted before claims had one, the first time it is read: the one planet its
+-- title names ("Gleba landing power"), else its owner's surface (else nauvis)
+-- unless its area holds none of our buildings there and exactly one other
+-- planet's does (world n, 08:05: Luna on Gleba, her claim #111 built only on
+-- Nauvis). Positions on other surfaces are never in it.
 return function(api)
   local M = {}
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
@@ -37,11 +38,20 @@ return function(api)
   -- Claim i's surface name (set here, once, for a claim from before claims had one).
   function M.surface_of(i)
     if not i.surface then
+      local planets = api.planets and api.planets() or {}
+      local title, named = type(i.title) == 'string' and i.title:lower() or '', nil
+      for _, name in ipairs(planets) do
+        if title:find(name, 1, true) then
+          if named then named = false; break end
+          named = name
+        end
+      end
+      if named then i.surface = named; return named end
       local s = api.owner_surface and api.owner_surface(i.owner)
       s = type(s) == 'string' and s or 'nauvis'
       if i.area and api.built_on and not api.built_on(s, i.area) then
         local only
-        for _, name in ipairs(api.planets and api.planets() or {}) do
+        for _, name in ipairs(planets) do
           if name ~= s and api.built_on(name, i.area) then
             if only then only = false; break end
             only = name

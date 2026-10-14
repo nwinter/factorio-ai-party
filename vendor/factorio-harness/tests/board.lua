@@ -870,12 +870,17 @@ do
   for _,sf in ipairs({surface,gleba}) do
     sf.count_entities_filtered=function(f) eq(f.limit,1); eq(f.force,'player'); eq(f.area[1].x,50); return built[sf.name] and 1 or 0 end
   end
-  item.surface=nil; soc.surface=gleba
+  item.surface=nil; soc.surface=gleba; item.title='furnace row'
   eq(sol('board',{id=g.item.id}).item.surface,'nauvis','built only on nauvis')
   built={nauvis=true,gleba=true}; item.surface=nil
   eq(sol('board',{id=g.item.id}).item.surface,'gleba','built on both: where its owner is')
   built={}; item.surface=nil
   eq(sol('board',{id=g.item.id}).item.surface,'gleba','built on neither: where its owner is')
+  -- The one planet its title names comes first ("Gleba landing power", world n #364); two named: as above.
+  built={}; item.surface=nil; item.title='Nauvis lab expansion'
+  eq(sol('board',{id=g.item.id}).item.surface,'nauvis','named in the title')
+  item.surface=nil; item.title='Gleba to Nauvis seed belt'
+  eq(sol('board',{id=g.item.id}).item.surface,'gleba','two planets named: where its owner is')
   surface.count_entities_filtered,gleba.count_entities_filtered,game.surfaces=nil,nil,nil
   soc.surface=surface
 end
