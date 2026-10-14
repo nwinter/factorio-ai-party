@@ -95,7 +95,7 @@ fh call status
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
-- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, with `transfer` or `collect` when they walk (`walk`, `pick`), and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
+- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given (`rearm` also with `area` or `surface`), with `transfer` or `collect` when they walk (`walk`, `pick`), and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
 - With `--wait`, the command exits 0 when the action ended successfully, 1 when it failed, and 3 when the wait ended
   while the action still runs: a tell or mention ended it (the reply's `still_running` and `note` say so), or the wait
   timed out (`wait_timeout`). So `fh call ACTION --wait && next` runs `next` only after the action is done.
@@ -382,6 +382,13 @@ fh call status
   `transfer` puts seeds into the tower's input (`agricultural_tower_input`) and takes its harvest from the output
   (`agricultural_tower_output`), with or without the inventory named; `collect` takes towers' output as it does
   assemblers'; `feed` tops a tower up with the seed kinds it holds, else every kind you carry.
+- `rearm` with `radius`, `area` or `surface: true` (your whole surface) walks one tour through every turret there that
+  takes the ammo and holds under `below` rounds of any ammo (items in its ammo slots; default `count`), topping each
+  up to `count` (Opus, shift12 13:50). Turrets within 24 tiles of each other are one cluster, as the `turrets` read
+  groups fronts; the nearest cluster comes first from where you stand, then the nearest from where the last ended,
+  nearest first inside one. The reply lists `clusters` (`2 turrets around (22,1), 20 tiles from you, holding 0-3
+  rounds`), `places` (up to 128 a call; `skipped` the rest), `below`, `count`, and `other_ammo` (turrets there that take
+  other ammo, such as rocket turrets). Timed like the radius tour (`ticks`, default 3600; `--wait` waits).
 - Burner fuel by category: `feed` without `fuel` gives a burner the fuel it burns (coal for chemical burners; a
   biochamber burns nutrients, so it gets nutrients); `refuel` skips burners of another category in a radius and refuses
   one named by position (`biochamber at (-20.5,-20.5) burns nutrients fuel, not coal (chemical)`).
@@ -391,6 +398,16 @@ fh call status
   you carry that, else as above; `fuel: "solid-fuel"` with that item; a fuel named in `items`/`item` counts as asking;
   `fuel: false` gives none. A `feed` that gave nothing names the burners left alone: `2 burners hold fuel (solid-fuel
   3-5): fuel is added to a burner with none, or with fuel=true or fuel=NAME`.
+- A `feed` that names what it gives (`item`, `items`, or a fuel as `fuel: "coal"`) gives only those (Grok, shift12
+  13:50: a feed of coal into furnaces put in the copper ore it held first). A walking tour that leaves nothing more to
+  give ends `out_of_items` only when the machines left want what you hold none of, else `topped_up`.
+- `refuel`, `feed` and `rearm` with a `radius` (or `rearm` with an `area`) that finds nothing to do say why and where
+  the nearest one is (Grok, shift12 13:50: a refuel 48 tiles from furnaces out of fuel placed 0 and said nothing):
+  `nothing: the 3 burners in radius 48 that burn coal hold 10 coal or more` and `nearest_outside: nearest burner
+  below 10 coal outside it: stone-furnace at (30,0), 52 tiles from you` (within 512 tiles; `no ... within 512 tiles of
+  you`), also in `last.why` for `--wait`. `types` takes entity types; an entity name there (`stone-furnace`, whose type
+  is `furnace`) is taken as a name and `types_note` says so; a name that is a type too (`inserter`, `lab`, `boiler`)
+  stays a type.
 - A burner whose fuel slots all hold another fuel (a boiler burning solid fuel, fed coal: a slot takes one item kind)
   is skipped (Haiku, 07:55): its row says `other_fuel: true` and the reply `other_fuel: "1 burner holds another fuel in
   every fuel slot (solid-fuel 4): no slot for coal"`, which is no warning; walking tours (`radius`) leave it out. It
@@ -1230,6 +1247,13 @@ fh sleep 900 --until researched                       # ...or until the research
   - `dry_run: true` sends nothing and shows the split: `pods` (`pod 1 (10 slots): stone-brick*500 ...`),
     `pod_slots`, `hatches`, `sends` (what a call with and without `full` sends) and `short` (items the hub holds
     less of).
+  - The landing pad's room for what would go (pod 1, or every pod with `full`; Astra, shift12 13:50: 773
+    electromagnetic science packs spilled once, and 43 asteroid chunks had taken 43 slots), in the dry run and,
+    read before anything is sent, in a real drop's reply: `pad_room`: `landing pad (9,9): 4 of 8 slots free (taken:
+    carbonic-asteroid-chunk 3 slots (3), iron-plate 1 slot (50)); this drop needs 10 new slots: iron-plate*550 would
+    not fit and land on the ground around the pad`, or `...: it fits, 4 free after`. Each item fills part stacks of
+    its own first, then free slots; slots past the pad's red-X limit do not count. `pad_free` (slots) and `spill`
+    (items) come apart. A planet with no landing pad of ours says the pods land as cargo pod containers.
 - A `drop` returns its number (`drop: N`). Its pod is followed down, because pods land after the call returns and often
   10-20 tiles from the spot they were aimed at (shift06 14:55: aimed near (14,134), landed at (0,129)). The sender,
   and the teammates named in `to` (a name or a list), hear about it in their team block, at most 4 drop lines per

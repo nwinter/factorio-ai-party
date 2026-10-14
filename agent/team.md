@@ -100,6 +100,8 @@ already targets your character.
 - `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with
   its buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing:
   hand-fed); the hand-fed and low ones first.
+- `./fh call rearm --args '{"surface":true,"below":5}'` (or `"area"`, `"radius"`) tops up every turret under 5 rounds
+  in one walking tour, nearest cluster first. refuel, feed and rearm that find nothing name the nearest one outside.
 - `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
   ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
@@ -345,7 +347,8 @@ already targets your character.
   power where it is and its panels' output, accumulators, machines on low power); `power` takes `platform` too, and
   `inspect` on a machine, solar panel or accumulator shows its maximum under `electricity`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
-  takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
+  takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first and the landing pad's room
+  (`pad_room`: free slots, what takes the rest, `spill`: what would land on the ground).
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods, to
   the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it).
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.

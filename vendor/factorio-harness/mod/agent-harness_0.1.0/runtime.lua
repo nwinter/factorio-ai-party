@@ -464,6 +464,14 @@ local function finish(index, outcome)
         noun='places'}..(left>0 and string.format('; %d places not visited (%s)',left,outcome) or '')
     end
     if action.op then
+      -- A tour that found nothing to do: why, and the nearest one outside its radius (M.tour_note).
+      if action.nothing then
+        last.nothing=action.nothing; last.nearest_outside=action.nearest_outside; last.types_note=action.types_note
+        local parts={action.nothing}
+        if action.nearest_outside then parts[#parts+1]=action.nearest_outside end
+        if action.types_note then parts[#parts+1]=action.types_note end
+        last.why=last.why or table.concat(parts,'; ')
+      end
       last.op=action.op; last.got=nil; last.given=action.got; last.errors=action.errors; last.items=action.items; last.entities=action.rows
       last.left=math.max(0,#action.targets-action.index+1)>0 and #action.targets-action.index+1 or nil
     end
@@ -1159,15 +1167,15 @@ function handlers.describe()
       feed={area='or {left_top, right_bottom} up to 128x128: our machines of types (default as in reach; with recipe assemblers and furnaces) with their centre inside, as positions (at most 64; those on another recipe are counted in other_recipe; area_targets counts them)',note='hand-feeds machines from inventory, nothing taken out: an assembler/furnace gets its recipe\'s item ingredients (an idle furnace its last recipe\'s; a furnace with no recipe yet the items or item named that it smelts), a lab its science packs, a burner (furnace, drill, boiler, burner inserter) fuel when its fuel slots are empty (or with fuel=true, fuel=NAME, or a fuel named in items); each item up to count per machine, keeping keep in inventory. In reach by default; positions or radius (a walking tour, timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, items, entities)',
         returns='moved (alias transferred), inv (the inventory line after), items, entities: per machine fed {position, name, gave, fuel (its fuel slots after: "coal 10" or "empty")}, with positions or area also each one that got nothing (got nothing); unchanged (count); held; nothing_moved: why nothing was given (what you carry and the machines hold, burners left alone because they hold fuel, furnaces with no recipe yet)',
         walk='true with positions: when any is out of reach, one timed tour walks a nearest-first route through them and feeds each (as radius); returns places, out_of_reach, legs (each stop with walk tiles and in_reach), until_tick; last.entities a row per stop; all in reach: the feed at once',
-        radius='1..256: walk a nearest-first route through every machine in radius that wants something you hold',ticks='with radius: 1..36000 (default 3600)',
+        radius='1..256: walk a nearest-first route through every machine in radius that wants something you hold; none: nothing and nearest_outside (the nearest such machine outside the radius, within 512 tiles), also in last.why; items named (item, items) or a fuel named (fuel=NAME) are all it gives: only those; a tour stop that leaves nothing more to give ends out_of_items only when the rest want what you hold none of, else topped_up',ticks='with radius: 1..36000 (default 3600)',
         positions='optional 1..64 positions instead of everything in reach',items='optional 1..16 item names: give only these',item='optional one item name: give only it (with items, it is added to them)',
         count='1..1000 target per ingredient/science pack per machine (default 20)',fuel='fuel item for burners: given to every burner below fuel_count; true: the same with the fuel it holds when you carry it, else coal (chemical burners); omitted: only burners with empty fuel slots get fuel; false skips fuel',fuel_count='1..1000 fuel target per burner (default 10)',
         keep='reserve of each item kept in inventory (default 0)',types='optional entity type filter (default assembling-machine, furnace, lab, boiler, burner-generator, mining-drill, inserter)',quality='default normal',
         recipe='optional recipe name: every machine set to it (positions, in reach, or radius) gets each item ingredient for crafts crafts (topped up to ingredient amount x crafts); machines set to another recipe are listed apart',crafts='with recipe: 1..1000 (default 1)',
         up_to='true: a short or empty inventory never fails the call or, as a queue step, pauses the plan (a tour\'s out_of_items counts as done)',
         returns='moved (alias transferred), inv (the inventory line after), items {name=count}, entities (position, name, gave; with recipe: loaded, short {item=missing}), unchanged, held (what is left of each item given)'},
-      rearm={radius='1..256: walk a nearest-first route through every turret in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left)',ticks='with radius: 1..36000 (default 3600)',ammo='ammo item (default firearm-magazine)',count='1..1000 target per turret (default 10)',positions='optional 1..64 positions instead of every turret in reach',types='default {ammo-turret}; artillery-turret allowed',note='gives from the main inventory, then the gun ammo slots (crafted ammo lands there); fails when none is held and turrets want more; waits for ammo in the hand-craft queue (awaiting_craft; outcome fed | failed | timed_out)'},
-      refuel={radius='1..256: walk a nearest-first route through every burner in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left)',ticks='with radius: 1..36000 (default 3600)',fuel='fuel item (default coal)',count='1..1000 target per entity (default 10)',positions='optional 1..64 positions instead of every burner in reach',types='optional entity type filter',note='fails when no fuel is held and burners want more; waits for fuel in the hand-craft queue (awaiting_craft)'},
+      rearm={radius='1..256: a walking tour (timed: outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left) through every turret in radius that takes the ammo and holds under below rounds (any ammo, counted in items), topping each up to count; turrets within 24 tiles of each other are one cluster (as the turrets read groups fronts), the nearest cluster first from where you stand, then from where the last one ends, nearest first inside one (clusters: one line each); up to 128 turrets a call (skipped: the rest)',area='or {left_top, right_bottom}: the same tour over every such turret in it, any size',surface='or true (or your surface\'s name): the same over your whole surface',below='optional 1..1000 rounds: turrets holding fewer get topped up to count (at least below); default count',ticks='with radius, area or surface: 1..36000 (default 3600)',ammo='ammo item (default firearm-magazine)',count='1..1000 target per turret (default 10)',positions='optional 1..64 positions instead of every turret in reach',types='default {ammo-turret}; artillery-turret allowed; an entity name is taken as a name (types_note)',returns='with radius, area or surface: places, clusters (one line each, nearest first: turrets, around (x,y), tiles from you or from the cluster before, rounds they hold), below, count, other_ammo (turrets there that take other ammo); when no turret needs it: nothing, nearest_outside (the nearest such turret outside radius or area, within 512 tiles), also in last.why',note='gives from the main inventory, then the gun ammo slots (crafted ammo lands there); fails when none is held and turrets want more; waits for ammo in the hand-craft queue (awaiting_craft; outcome fed | failed | timed_out)'},
+      refuel={radius='1..256: walk a nearest-first route through every burner in radius below count and top it up (a timed action; outcomes topped_up | nothing_to_do | out_of_items | timed_out; last reports given, visited, left); none below count in it: nothing (how many there hold enough) and nearest_outside (the nearest burner below count outside the radius, within 512 tiles), also in last.why',ticks='with radius: 1..36000 (default 3600)',fuel='fuel item (default coal)',count='1..1000 target per entity (default 10)',positions='optional 1..64 positions instead of every burner in reach',types='optional entity types (furnace, boiler, mining-drill, ...); an entity name is taken as a name (types_note)',note='fails when no fuel is held and burners want more; waits for fuel in the hand-craft queue (awaiting_craft)'},
       collect={wait_ticks='1..36000 with position: stand at that assembler or furnace (walking into reach first) and take each product from its output the tick it is there, as a player standing there does, until the ticks run out or count is taken (item: only that one); a timed action: outcomes collected | nothing_collected | inventory_full | unreached; last.took, last.made (counted in its output each tick: what arrived), last.inserters_took (what inserters picking from it took into their hands), last.left_otherwise (spoiled, or another player took it), last.crafts, last.chance (products a craft makes only by chance), last.why (when it took none: none made, with the chance; inserters took them; left otherwise; out of reach), last.waited_s; reach is the engine\'s, as transfer\'s (to its edge)',
         keep_taking='true (3600 ticks) or ticks: the same as wait_ticks',
         up_to='true: an empty source or a full inventory never fails the call or, as a queue step, pauses the plan (nothing_collected and inventory_full count as done); moved, short {asked, moved, reason}; it also stops at your personal request max for an item (left_at_max says what stayed in the source)',keep_max='true: refuse a take that would put you over your personal request max (the game moves what is over it to your trash slots); nothing is taken. Without it, a take over that max (or of an unrequested item while unrequested items go to trash) says so in the reply\'s trash lines: how many the game moves to your trash slots',types='entity types (default furnace, assembling-machine: machine outputs only)',chests='boolean: also empty plain chests (container, logistic-container) in reach or radius; off by default because chests are usually feed stock you placed (result notes chests_skipped / left_in_chests)',item='optional: only this item',positions='optional 1..64 positions instead of everything in reach (named chests are always taken from)',area='or {left_top, right_bottom} up to 128x128: our entities of types (default machines; chests=true adds chests) with their centre inside, as positions (at most 64; area_targets counts them)',
@@ -4553,19 +4561,140 @@ local function reachable(p,a,wanted)
 end
 -- With a radius, rearm/refuel walk a nearest-first route through every
 -- matching entity in it that is below the target, topping each up.
+-- types takes entity types; an entity name there is taken as a name (Grok, shift12: refuel types stone-furnace found
+-- nothing: its type is furnace). Entries that are both (inserter, lab, boiler) stay types. Every entity of ours matching
+-- base (position and radius, or area) of those kinds, and a note naming the names taken.
+M.kind_is_type={}
+function M.find_kinds(p,base,kinds)
+  local q={}
+  for k,v in pairs(base) do q[k]=v end
+  q.force=p.force
+  if kinds==nil then return p.surface.find_entities_filtered(q),nil end
+  if type(kinds)=='string' then kinds={kinds} end
+  local types,names,noted={},{},{}
+  for _,k in ipairs(kinds) do
+    local is_type=M.kind_is_type[k]
+    if is_type==nil then
+      -- A LuaCustomTable in the game: pairs, not next.
+      local ok,any=pcall(function() for _ in pairs(prototypes.get_entity_filtered{{filter='type',type=k}}) do return true end return false end)
+      is_type=not ok or any or not prototypes.entity[k]
+      M.kind_is_type[k]=is_type
+    end
+    if is_type then types[#types+1]=k
+    else names[#names+1]=k; noted[#noted+1]=string.format('%s is an entity name (its type: %s)',k,prototypes.entity[k].type) end
+  end
+  local out,seen={},{}
+  local function add(list)
+    for _,e in pairs(list) do
+      local key=e.unit_number or e
+      if not seen[key] then seen[key]=true; out[#out+1]=e end
+    end
+  end
+  if #types>0 then q.type=types; add(p.surface.find_entities_filtered(q)); q.type=nil end
+  if #names>0 then q.name=names; add(p.surface.find_entities_filtered(q)) end
+  return out,#noted>0 and ('types takes entity types: '..table.concat(noted,', ')..'; taken as a name') or nil
+end
+-- Nothing in the radius or area (Grok, shift12 13:50: a refuel 48 tiles from furnaces out of fuel placed 0 and said
+-- nothing): the nearest one outside it that would have been a target, within 512 tiles of the character.
+local NEAREST_OUT=512
+function M.nearest_outside(p,kinds,inside,match,what)
+  local list=M.find_kinds(p,{position=p.position,radius=NEAREST_OUT},kinds)
+  local rows={}
+  for _,e in ipairs(list) do
+    if e.valid and not inside(e) then rows[#rows+1]={e=e,d=distance(p.position,e.position)} end
+  end
+  table.sort(rows,function(x,y) return x.d<y.d end)
+  for _,r in ipairs(rows) do
+    local ok,yes=pcall(match,r.e)
+    if ok and yes then
+      return string.format('nearest %s outside it: %s at (%g,%g), %.0f tiles from you',what,r.e.name,r.e.position.x,r.e.position.y,r.d)
+    end
+  end
+  return string.format('no %s within %d tiles of you',what,NEAREST_OUT)
+end
+-- A tour that found nothing keeps what its reply said for its last (finish; fh --wait shows last.why).
+function M.tour_note(p,out)
+  local action=state().active[p.index]
+  if action and action.kind=='gather' then
+    action.nothing=out.nothing; action.nearest_outside=out.nearest_outside; action.types_note=out.types_note
+  end
+end
+-- Every turret of ours that takes ammo and holds under `below` rounds of any ammo (items in its ammo slots), in a
+-- radius, an area or on the whole surface (Opus, shift12 13:50: one call for every gun turret under N rounds). Grouped
+-- into clusters as the turrets read groups fronts (defense.lua fronts_of); the nearest cluster first from where the
+-- character stands, then from where the last ended; inside one, nearest first. Returns the turrets in that order, a
+-- line per cluster, how many there take other ammo, and the search used (for nearest_outside).
+function M.rearm_clusters(p,a,ammo,below)
+  local base
+  if a.radius~=nil then base={position=p.position,radius=integer(a.radius,32,1,256,'radius')}
+  elseif a.area~=nil then
+    assert(type(a.area)=='table','area must be {left_top={x,y}, right_bottom={x,y}}')
+    local lt,rb=a.area.left_top or a.area[1],a.area.right_bottom or a.area[2]
+    assert(type(lt)=='table' and type(rb)=='table','area must be {left_top={x,y}, right_bottom={x,y}}')
+    lt,rb=position(lt),position(rb)
+    assert(lt.x<rb.x and lt.y<rb.y,'area must have left_top above and left of right_bottom')
+    base={area={lt,rb}}
+  else base={} end
+  base.limit=4096
+  local list,note=M.find_kinds(p,base,a.types or {'ammo-turret'})
+  local rows,other=({}),0
+  local function takes(e)
+    local t=ammo_inventory[e.type] and M.turretammo.takes(e.prototype)
+    for _,n in ipairs(t and t.items or {}) do if n==ammo then return true end end
+    return false
+  end
+  local function rounds(e)
+    local inv=e.get_inventory(defines.inventory[ammo_inventory[e.type]])
+    return inv and inv.get_item_count() or 0
+  end
+  for _,e in ipairs(list) do
+    if e.valid and ammo_inventory[e.type] then
+      if not takes(e) then other=other+1
+      else
+        local have=rounds(e)
+        if have<below then rows[#rows+1]={entity=e,position=e.position,have=have} end
+      end
+    end
+  end
+  local left={}
+  for i,g in ipairs(M.defense.fronts_of(rows)) do left[i]=g end
+  local order,lines,at=({}),{},p.position
+  while #left>0 do
+    local bi,bd
+    for i,g in ipairs(left) do
+      for _,r in ipairs(g) do local d=distance(at,r.position); if not bd or d<bd then bi,bd=i,d end end
+    end
+    local members={}
+    for i,r in ipairs(table.remove(left,bi)) do members[i]=r end
+    local n,lo,hi,sx,sy=#members,math.huge,0,0,0
+    for _,r in ipairs(members) do lo=math.min(lo,r.have); hi=math.max(hi,r.have); sx=sx+r.position.x; sy=sy+r.position.y end
+    lines[#lines+1]=string.format('%d turret%s around (%d,%d), %.0f tiles %s, holding %s round%s',n,n==1 and '' or 's',
+      math.floor(sx/n+0.5),math.floor(sy/n+0.5),bd,#lines==0 and 'from you' or 'on from the cluster before',
+      lo==hi and tostring(lo) or lo..'-'..hi,(lo==hi and hi==1) and '' or 's')
+    while #members>0 do
+      local mi,md=1,math.huge
+      for i,r in ipairs(members) do local d=distance(at,r.position); if d<md then mi,md=i,d end end
+      local r=table.remove(members,mi)
+      order[#order+1]=r.entity; at=r.position
+    end
+  end
+  return order,lines,other,note,base,takes,rounds
+end
 local function below_target(p,a,radius,wanted,inv_of,item,count)
-  local out={}
-  for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=radius,force=p.force,type=a.types}) do
+  local out,found={},0
+  local list,note=M.find_kinds(p,{position=p.position,radius=radius},a.types)
+  for _,e in pairs(list) do
     if e.valid and wanted(e) then
+      found=found+1
       local inv=inv_of(e)
       if inv and inv.get_item_count{name=item,quality=a.quality or 'normal'}<count then out[#out+1]=e end
     end
   end
-  return out
+  return out,found,note
 end
-local function start_tour(p,a,op,item,count,targets)
-  assert(held(p,item,a.quality)+crafting_count(p,item)>0,string.format('no %s in inventory%s; %d entities in radius want more',item,op=='rearm' and ' or ammo slots' or '',#targets))
-  local action,out=stock.start_tour(p,op,targets,integer(a.ticks,3600,1,36000,'ticks'),{item=item,quality=a.quality,count=count})
+local function start_tour(p,a,op,item,count,targets,ordered)
+  assert(#targets==0 or held(p,item,a.quality)+crafting_count(p,item)>0,string.format('no %s in inventory%s; %d entities in radius want more',item,op=='rearm' and ' or ammo slots' or '',#targets))
+  local action,out=stock.start_tour(p,op,targets,integer(a.ticks,3600,1,36000,'ticks'),{item=item,quality=a.quality,count=count,ordered=ordered})
   if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
   state().active[p.index]=action
   out.until_tick=action.until_tick; out.held=held(p,item,a.quality)
@@ -4578,8 +4707,22 @@ function handlers.refuel(p,a)
   local count=integer(a.count,10,1,1000,'count')
   if a.radius~=nil then
     assert(a.positions==nil,'give radius or positions, not both')
-    local targets=below_target(p,a,integer(a.radius,32,1,256,'radius'),function(e) return fuel_inventory(e)~=nil and pcall(inventory,e,'fuel') and M.farm.accepts_fuel(e,fuel) end,fuel_inventory,fuel,count)
-    return start_tour(p,a,'refuel',fuel,count,targets)
+    local radius=integer(a.radius,32,1,256,'radius')
+    local function wanted(e) return fuel_inventory(e)~=nil and pcall(inventory,e,'fuel') and M.farm.accepts_fuel(e,fuel) end
+    local targets,found,note=below_target(p,a,radius,wanted,fuel_inventory,fuel,count)
+    local out=start_tour(p,a,'refuel',fuel,count,targets)
+    out.types_note=note
+    if #targets==0 then
+      -- Nothing below count in it: how many there hold enough, and the nearest one outside it that is below.
+      out.nothing=found>0 and string.format('the %d burner%s in radius %d that burn %s hold %d %s or more',found,found==1 and '' or 's',radius,fuel,count,fuel)
+        or string.format('no burner%s in radius %d burns %s',a.types and ' of those types' or '',radius,fuel)
+      out.nearest_outside=M.nearest_outside(p,a.types,function(e) return distance(p.position,e.position)<=radius end,function(e)
+        local inv=wanted(e) and fuel_inventory(e)
+        return inv and inv.get_item_count{name=fuel,quality=a.quality or 'normal'}<count
+      end,string.format('burner below %d %s',count,fuel))
+      M.tour_note(p,out)
+    end
+    return out
   end
   assert(a.ticks==nil,'ticks applies with radius')
   local targets=reachable(p,a,function(e) return fuel_inventory(e)~=nil and pcall(inventory,e,'fuel') and M.farm.accepts_fuel(e,fuel) end)
@@ -4604,12 +4747,32 @@ function handlers.rearm(p,a)
   local ammo=a.ammo or 'firearm-magazine'
   assert(type(ammo)=='string' and prototypes.item[ammo] and prototypes.item[ammo].type=='ammo','ammo must be an ammo item')
   local count=integer(a.count,10,1,1000,'count')
-  if a.radius~=nil then
-    assert(a.positions==nil,'give radius or positions, not both')
-    local types=a.types or {'ammo-turret'}
-    local targets=below_target(p,{types=types,quality=a.quality},integer(a.radius,32,1,256,'radius'),function(e) return ammo_inventory[e.type]~=nil end,
-      function(e) return e.get_inventory(defines.inventory[ammo_inventory[e.type]]) end,ammo,count)
-    return start_tour(p,a,'rearm',ammo,count,targets)
+  if a.radius~=nil or a.area~=nil or a.surface~=nil then
+    assert(a.positions==nil,'give radius, area or surface, or positions')
+    assert((a.radius~=nil and 1 or 0)+(a.area~=nil and 1 or 0)+(a.surface~=nil and 1 or 0)==1,'give one of radius, area or surface')
+    assert(a.surface==nil or a.surface==true or a.surface==p.surface.name,
+      'surface: true (or your surface\'s name) rearms every turret on your surface; a rearm walks, so only your own')
+    -- below: the turrets holding fewer rounds than this get topped up to count (at least below); default count.
+    local below=a.below~=nil and integer(a.below,nil,1,1000,'below') or count
+    local target=math.max(count,below)
+    local order,lines,other,note,base,takes,rounds=M.rearm_clusters(p,a,ammo,below)
+    local out=start_tour(p,a,'rearm',ammo,target,order,true)
+    out.below=below; out.count=target; out.types_note=note
+    out.clusters=#lines>0 and {} or nil
+    for i=1,math.min(8,#lines) do out.clusters[i]=lines[i] end
+    out.clusters_more=#lines>8 and #lines-8 or nil
+    out.other_ammo=other>0 and string.format('%d turret%s there take%s other ammo than %s',other,other==1 and '' or 's',other==1 and 's' or '',ammo) or nil
+    if #order==0 then
+      out.nothing=string.format('no turret there that takes %s holds under %d round%s',ammo,below,below==1 and '' or 's')
+      if a.surface==nil then
+        local inside=base.radius and function(e) return distance(p.position,e.position)<=base.radius end
+          or function(e) local q,b=e.position,base.area; return q.x>=b[1].x and q.x<=b[2].x and q.y>=b[1].y and q.y<=b[2].y end
+        out.nearest_outside=M.nearest_outside(p,a.types or {'ammo-turret'},inside,function(e) return takes(e) and rounds(e)<below end,
+          string.format('turret under %d %s',below,ammo))
+      end
+      M.tour_note(p,out)
+    end
+    return out
   end
   assert(a.ticks==nil,'ticks applies with radius')
   local args={direction='to_entity',item=ammo,count=count,up_to=count,quality=a.quality,positions=a.positions,types=a.types or {'ammo-turret'},fail_short=true}
@@ -4888,9 +5051,13 @@ function feeding.wants(p,e,a)
     table.sort(kinds)
     for _,name in ipairs(kinds) do out[#out+1]={item=name,inventory='agricultural_tower_input',count=a.count} end
   end
-  if a.items then
-    local keep,only={},{}
-    for _,name in ipairs(a.items) do only[name]=true end
+  -- Items named (item, items) or a fuel named (fuel=NAME): only those go in (Grok, shift12 13:50: a feed of coal into
+  -- furnaces put in the copper ore it held, then ended out_of_items before any coal moved).
+  local only
+  for _,name in ipairs(a.items or {}) do only=only or {}; only[name]=true end
+  if type(a.fuel)=='string' and not a.recipe then only=only or {}; only[a.fuel]=true end
+  if only then
+    local keep={}
     for _,w in ipairs(out) do if only[w.item] then keep[#keep+1]=w end end
     out=keep
   end
@@ -4918,6 +5085,17 @@ function feeding.one(p,e,a)
     end
   end
   return gave,total,short,other,blocked
+end
+-- A machine below the target count on a want the character holds none of beyond the reserve.
+function feeding.short_of(p,e,a)
+  local keep=integer(a.keep,0,0,100000,'keep')
+  for _,w in ipairs(feeding.wants(p,e,a)) do
+    if held(p,w.item,a.quality)<=keep and not (w.inventory=='fuel' and feeding.blocked_fuel(e,w.item)) then
+      local ok,inv=pcall(inventory,e,w.inventory)
+      if ok and inv.get_item_count{name=w.item,quality=a.quality or 'normal'}<w.count then return true end
+    end
+  end
+  return false
 end
 -- A machine that wants something the character holds beyond the reserve and
 -- is below the target count for it.
@@ -5041,7 +5219,9 @@ function handlers.feed(p,a)
   if a.radius~=nil then
     assert(a.positions==nil,'give radius or positions, not both')
     local targets,found={},{}
-    for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=integer(a.radius,32,1,256,'radius'),force=p.force,type=types}) do
+    local radius=integer(a.radius,32,1,256,'radius')
+    local list,types_note=M.find_kinds(p,{position=p.position,radius=radius},types)
+    for _,e in pairs(list) do
       if e.valid then found[#found+1]=e; if feeding.hungry(p,e,a) then targets[#targets+1]=e end end
     end
     local action,out=stock.start_tour(p,'feed',targets,integer(a.ticks,3600,1,36000,'ticks'),{feed=a})
@@ -5064,6 +5244,13 @@ function handlers.feed(p,a)
     if #targets==0 and not (a.up_to==true and blocked.n>0 and blocked.n==#found) then
       local ok,why=pcall(feeding.why,p,found,a)
       out.nothing_moved=ok and ('nothing to feed: '..why) or nil
+    end
+    out.types_note=types_note
+    if #targets==0 then
+      out.nothing=string.format('nothing in radius %d wants what you hold (%d machine%s of those kinds there)',radius,#found,#found==1 and '' or 's')
+      out.nearest_outside=M.nearest_outside(p,types,function(e) return distance(p.position,e.position)<=radius end,function(e) return feeding.hungry(p,e,a) end,
+        'machine that wants what you hold')
+      M.tour_note(p,out)
     end
     return out
   end
@@ -8314,12 +8501,19 @@ stock=stock_module{distance=distance,integer=integer,position=position,claims=M.
       -- Each stop: what the machine got and its fuel after (last.entities).
       action.rows=action.rows or {}
       action.rows[#action.rows+1]={position=e.position,name=e.name,gave=next(gave) and gave or nil,got=n==0 and 'nothing' or nil,fuel=feeding.fuel_line(e)}
-      local more=false
+      local more,short=false,false
       for i=action.index+1,#action.targets do
         local t=action.targets[i]
         if t.entity and t.entity.valid and feeding.hungry(p,t.entity,action.feed) then more=true; break end
       end
-      return {transferred=n,stop=(not more and action.targets[action.index+1]) and 'out_of_items' or nil}
+      -- Nothing more to give: out of what the rest want, or the rest hold enough already (topped_up).
+      if not more then
+        for i=action.index+1,#action.targets do
+          local t=action.targets[i]
+          if t.entity and t.entity.valid and feeding.short_of(p,t.entity,action.feed) then short=true; break end
+        end
+      end
+      return {transferred=n,stop=(not more and action.targets[action.index+1]) and (short and 'out_of_items' or 'topped_up') or nil}
     end
     if action.op=='transfer' then
       -- transfer {walk=true}: the call's own transfer at each place (M.transfer_walk); a row per place. A courier
