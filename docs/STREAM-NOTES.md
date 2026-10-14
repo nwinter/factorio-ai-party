@@ -586,6 +586,95 @@ The site's agents page has a "Now" block per card (guns and ammo, armor and equi
 largest stacks, free slots, crafting, building), filled by site.js from the live API every 30 s and hidden when no
 shift is on. push_live.py publishes `agents[].loadout`.
 
+### Each battle fact on its planet (2026-10-14, eng/planetmix)
+
+Viewer Joonazan, 13:38: "There are no biters on Gleba. There are also other announcements that sound like they are
+mixing planets." In 11:10-14:10, 11 host lines put a fight on the wrong planet or joined two planets' facts (the list is
+in report-planetmix.md): Sol's guard read as an attack on Gleba (10, eng/attackflag), Nauvis's turrets joined to it (3:
+the battle tally and a folded "also happening" covered every planet), biters or spitters "on Gleba" (5), and the
+analyst's "the team is on Nauvis, where there are no stomper nests" (1: its status is one planet's, unlabelled).
+
+- live.py: an attacked area off Nauvis says its planet ("Base under attack on Gleba near (176, 48): gun turret").
+- model.py: alerts carry `surface` (an agent's attack, fight and death: the agent's; an area or a loss: its own).
+- caster.py: events keep it; a battle fact (attack, loss, death, fight) gets `planet` and `enemies_there` (none while
+  Nauvis is the only planet in play); the battle tally is kept per surface (take_tally); a beat folds only urgent events
+  of its own surface; the show notes say each battle fact's planet is the one to say, never joined with another
+  planet's, and who attacks where (Nauvis biters, spitters, worms; Gleba pentapods, no biters; Vulcanus demolishers;
+  Fulgora none); attack numbers count hits by enemies, not biters. check_line (wrong_enemy) refuses an enemy named
+  where it does not live ("biters do not live on Gleba") and a planet a battle fact does not give; saying an enemy is
+  absent ("Fulgora has no biters") passes.
+- The analyst: its status block and `game_status` say which planet they cover; `game_status {agent}` reads another
+  planet as an agent there; `game_agents` lists who is where; the agents in its prompt carry their planet; its rule
+  names each planet's attackers.
+- Tests: tools/stream/test_planetmix.py; caster_selftest's numbers_mean check says enemies.
+
+### Under attack only when hit (2026-10-14, eng/attackflag)
+
+Viewer Joonazan, 13:36: "I'm pretty sure biters are not hitting anyone on Gleba. What's going on with all the
+incorrect attack reports?" Any running shoot made the agent "under attack": Sol's standing order "guard" (shoot auto
+by the egg breeders on Gleba, nothing in range) gave 7 insets and fight records between 12:52 and 13:41, Astra's
+`move_to combat` walks on Nauvis 3 more; none of them had a hit on a character.
+
+- The runtime's status `combat` now says what the shoot does (target in range, `fired_tick`, `kills_10s`) and status
+  `hurt` the last hit by another force on the character or its vehicle (usage.md). live.py passes both on.
+- model.py `combat_state`: `hurt` (a hit in the last 15 game seconds): "Sol is under attack by a small biter", the
+  attack alert (the director's urgent rules, the hosts' attack event), fight `attack:sol`; `fighting` (a target in
+  range, a shot in the last 10 s, a kill): "Sol is fighting a small wriggler pentapod", a fight `fight:sol` of kind
+  `fight` and an alert of kind `fight` (a toast, an info event for the hosts, no urgent cut), the card "fighting";
+  `guard` (a shoot with nothing to shoot at): nothing, the card "on guard", the action `guard` (no fight kind for the
+  director, weight 0.3). A runtime without the new fields: a shoot at a position fights, an auto shoot guards; the
+  mock's `combat: true` is a hit. Snapshot agents carry `combat_state` and `combat_info`.
+- Incoming groups: "aimed at an agent" counts only agents on the group's surface (Sol on Gleba at (46, 51) counted
+  for any Nauvis group heading near that spot, inside the base). A demolisher's label matches its owner by position on its own surface.
+- The last hour (12:43-13:43) replayed: 10 agent "under attack" insets, 0 remain; 26 area hits (turrets, belts) and
+  8 losses stay; all 41 attacked areas the team's status replies listed were on Nauvis. The hour before: 3 agent
+  insets, 1 remains (Astra in the 12:10 tank fight). Tests: tools/stream/test_attackflag.py,
+  vendor/factorio-harness/tests/attackflag.lua.
+
+### Pollution and spore clouds (2026-10-14, eng/spores)
+
+Viewer Joonazan, 13:00: "can you show a shot of Gleba's spore cloud?"
+
+- Data: the harness's background chart sweep (threat.lua, about once a game minute on each surface an agent is on)
+  already reads every charted chunk's pollution, spores on Gleba; it keeps the polluted ones (`{cx, cy, amount}`, up
+  to 6000 a surface) with the surface's pollutant and its map colour. The operator read `clouds {surface?}` hands
+  them over with the nests the cloud reached (the `pollution_reached_nest` news). live.py reads it every 60 s once
+  `describe` lists it; model.py carries snapshot `clouds`: per surface with a cloud `{surface, label ("Spores on
+  Gleba"), pollutant, color {r, g, b, a, css}, cells [[cx, cy, amount]], chunks, max, total, tick, reached [{x, y}],
+  age_s}` (tools/stream/clouds.py). The colours are the game's: pollution dark red, spores olive (world n's
+  `prototypes.airborne_pollutant`).
+- Cloud shot (onecam.py): a map camera on that surface framed on every polluted chunk and the nests it reached
+  (clouds.shot, the zoom rounded down to what director.apply sends), labelled "Spores on Gleba", for `cloud_hold`
+  (20 s). The operator calls it:
+
+      curl -X POST localhost:8788/cloud -d '{"surface": "gleba", "seconds": 30, "by": "nick"}'
+
+  (no surface: the spores, else the biggest cloud; seconds 5..120). It waits out a segment, a key battle or a followed
+  group (up to `cloud_late`, 10 min); an operator follow refuses it (409, DELETE /follow first). A surface with no
+  cloud read yet: 400 with the clouds there are. On its own the director shows a cloud when it reaches nests it had not
+  reached before (the reached nests at the service's start are old news), at most every `cloud_every` (30 min), with
+  the base map's guards (no fight, no held shot, inset, trio or segment, `map_gap` after a cut).
+- A cloud shot is no base map: snapshot `onair.map` stays None (mapframes.py takes terrain frames only of the base
+  map, and the hosts' "here's the whole base" stays for it); `onair.cloud` is `{surface, label, why}` and the hosts
+  get `on_screen_cloud` (label, chunks, max per chunk, nests reached).
+- Overlay: every map shot's camera row carries `map_view {position, surface, zoom (the one sent), size}`;
+  overlay.js `renderCloud` draws that surface's cells on a canvas in the hole (1 tile = hole height / 1080 x 32 x zoom
+  px, the client's centre crop) in the game's hue, alpha 0.45 to 0.85 by log(amount) against the cloud's max, under a
+  dark diagonal hatch, with the cloud's outer edge drawn dark (5 px) and in the hue at full strength (2 px: olive to
+  yellow, dark red to red), the reached nests ringed. The first on-air shot (13:59) had the plain olive cells, lost on
+  Gleba's yellow-green ground. The key is in the camera's label (in onecam the bar along the bottom: "Spores on Gleba
+  [swatch] up to 29.2 spores per chunk · 32 chunks · 1 nest reached"; a key of its own overlapped the bar).
+  The base map gets Nauvis's pollution the same way. Factorio's own map pollution layer (the camera player's map view
+  settings) stays as it was; not checked on the camera clients whether it is on.
+- Site: push_live.py publishes `clouds` (the 6000 most polluted cells over all surfaces); mapview.js has a
+  Pollution (Spores) layer drawn under the buildings, the chunk's amount on hover or tap ("Spores 14.7 in chunk
+  (-7, -5), tiles -224..-193, -160..-129"), a key, and a surface switch (Nauvis | Spores on Gleba) when another surface
+  has a cloud: that view has only the cloud, the nests it reached and the agents there, the others listed in the
+  corner.
+- Mock: MockSource.cloud_rows (Nauvis around the demo base, growing and reaching a nest; Gleba with one reached nest),
+  also in site/live/state.example.json for `?demo`. Tests: tools/stream/test_clouds.py, site/test_live.py (map),
+  vendor/factorio-harness/tests/threat.lua.
+
 ## Unused cameras
 
 With fewer agents than cameras (or when the director pairs two agents on one), cam2 or cam3 would show an empty or

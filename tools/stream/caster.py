@@ -153,7 +153,11 @@ SHOW_SPACE = (" This run plays the Space Age expansion, where a rocket launch is
               "follow, and the expansion's goal is reaching the edge of the solar system. Only the planets in planets_reached "
               "have been visited; the others are future goals, with nothing of the team's there. A two-hour run is mostly the "
               "start on Nauvis, the home planet: oil, plastics and blue science are its big milestones. Many Space Age "
-              "technologies unlock by a trigger, such as mining calcite or building an asteroid collector.")
+              "technologies unlock by a trigger, such as mining calcite or building an asteroid collector. Once the team "
+              "is on several planets, each battle fact (an attack, a loss, a death, a battle tally) says its planet in "
+              "`planet`: say that planet for it and no other, and never join facts from two planets into one story. "
+              "Enemies by planet: Nauvis has biters, spitters and worms; Gleba has pentapods (wrigglers, strafers, "
+              "stompers) and no biters; Vulcanus has demolishers; Fulgora has no enemies.")
 
 
 def is_space_age(s):
@@ -171,6 +175,21 @@ def show_for(s):
 
 
 PLANETS = ("Vulcanus", "Fulgora", "Gleba", "Aquilo")
+# Who attacks where (viewer Joonazan, 13:38: "There are no biters on Gleba"). Words a line may use for a planet's enemies,
+# by planet; the word's home planets otherwise. Nests, spawners, worms of Gleba are "nests" too: those words stay free.
+ENEMY_HOME = {"biter": {"Nauvis"}, "spitter": {"Nauvis"}, "pentapod": {"Gleba"}, "wriggler": {"Gleba"},
+              "strafer": {"Gleba"}, "stomper": {"Gleba"}, "demolisher": {"Vulcanus"}}
+ENEMY_WORDS = {"Nauvis": "biters, spitters and worms", "Gleba": "pentapods (wrigglers, strafers, stompers), no biters",
+               "Vulcanus": "demolishers", "Fulgora": "none", "Aquilo": "none"}
+ENEMY_RE = re.compile(r"\b(" + "|".join(ENEMY_HOME) + r")s?\b", re.I)
+BATTLE_KINDS = ("attack", "loss", "death", "fight")
+
+
+def planet_label(surface):
+    """'gleba' -> 'Gleba'; a platform's surface or none -> None."""
+    s = str(surface or "").strip()
+    name = s[:1].upper() + s[1:].lower()
+    return name if name in ("Nauvis",) + PLANETS else None
 
 
 def planet_facts(s):
@@ -182,6 +201,10 @@ def planet_facts(s):
     reached = [p for p in sp.get("planets") or [] if p] or ["Nauvis"]
     if "Nauvis" not in reached:
         reached = ["Nauvis"] + reached
+    if sp.get("active") is False and reached == ["Nauvis"]:
+        # Nick 12:35 (item 4): while Nauvis is the only planet in play the facts name no planet, as the stream cards and
+        # the agents' replies don't; wrong_place still cuts a line that puts the team on another planet.
+        return {"space_in_play": False}
     ahead = [p for p in PLANETS if p not in reached]
     f = {"planets_reached": reached}
     if ahead:
@@ -356,6 +379,8 @@ class Differ:
             if not first:
                 ev.append({"kind": a["kind"] if a["kind"] in PRIORITY else "info", "text": a.get("text"),
                            "agent": a.get("agent"), **({"facts": a["facts"]} if a.get("facts") else {}),
+                           # where it happened (model.py alerts): the battle facts' planet and the per-planet tally
+                           **({"surface": a["surface"]} if a.get("surface") else {}),
                            # an attack's fight and place, for hoststory.AttackGate
                            **({"alert_key": a.get("key"), "position": a.get("position")} if a["kind"] == "attack" else {})})
         for m in s.get("chat") or []:
@@ -900,7 +925,7 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
     if e["kind"] == "attack" and re.search(r"\d", f.get("text", "")):  # eng/stream2's banners carry no count now
         # "Base under attack: transport belt hit 7 times". shake3's "the biters are damaging: character (3 of them)"
         # aired as "nine biters chew their boots" and "fourteen turrets"
-        f["numbers_mean"] = "how many times biters hit the team's own buildings or engineers"
+        f["numbers_mean"] = "how many times enemies hit the team's own buildings or engineers"
     if e["kind"] == "loss":
         # shake4 03:15:39, Rook: "One engineer down, buildings eaten" for "1 lost: 1 engineer"
         lost = re.findall(r"(\d+) ([a-z][a-z -]*?)\s*(?=,|\(|$)", f.get("text", "").split(":", 1)[-1].lower())
@@ -908,6 +933,11 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["numbers_mean"] = ("engineers killed (an engineer respawns); no building was lost" if lost and len(people) == len(
             {k.strip() for _, k in lost}) else "the team's buildings destroyed and engineers killed" if people else
             "the team's buildings destroyed") + "; the run goes on"
+    planet = planet_label(e.get("surface"))
+    if e["kind"] in BATTLE_KINDS and planet and (s.get("space") or {}).get("active") is not False:
+        # each battle fact says its planet, and who attacks there (13:38: biters "on Gleba", Nauvis turrets joined to Sol)
+        f["planet"] = planet
+        f["enemies_there"] = ENEMY_WORDS.get(planet)
     if e.get("also"):
         f["also_happening"] = [spoken(x) for x in e["also"] if x]
     for k in ("text",):  # alerts name agents by id ("sonnet died"); say their display names
@@ -953,6 +983,13 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["on_screen_map"] = {"where": "the whole picture" if shows_map == "on air" else "one small tile",
                               "note": "viewers see the whole base on Factorio's map now (the core and its outposts): "
                                       "a moment to say what is where, e.g. 'here's the whole base'"}
+    cloud = (s.get("onair") or {}).get("cloud")  # onecam.py: a pollution or spore cloud on Factorio's map, on air
+    if cloud:
+        row = next((c for c in s.get("clouds") or [] if c.get("surface") == cloud.get("surface")), {})
+        f["on_screen_cloud"] = {"shown_as": cloud.get("label"), "why": cloud.get("why"), "chunks": row.get("chunks"),
+                                "max_per_chunk": row.get("max"), "nests_reached": len(row.get("reached") or []),
+                                "note": "viewers see this surface's pollution (spores on Gleba) on Factorio's map now: "
+                                        "each coloured square is a 32-tile chunk, darker where there is more"}
     plat = (s.get("onair") or {}).get("platform")  # onecam.py: a space platform on air (a visit, a departure, work)
     if plat:
         f["on_screen_platform"] = {
@@ -1030,7 +1067,7 @@ EXCHANGE_RULES = (
     "turns reading facts. Sound the way the notes on how the hosts sound describe. Use ONLY the facts given for anything about this game; never invent names, numbers, "
     "places, items or outcomes (general Factorio knowledge from the show notes is fine). You may round numbers. Refer "
     "to agents by the names given, with the pronouns in their facts (they when none are given), never 'a man'. "
-    "Numbers in an attack count hits: how many times biters struck the team's own buildings or engineers. Numbers "
+    "Numbers in an attack count hits: how many times enemies struck the team's own buildings or engineers. Numbers "
     "in a loss count the team's buildings destroyed and engineers killed, as numbers_mean says. Researching a "
     "technology unlocks it; it does not mean anything has been built or made yet. 'Character' and 'engineer' mean one of the team's engineers. "
     "An agent working out the next step is writing its next commands, not idle: never call it frozen, still, "
@@ -1226,7 +1263,7 @@ def check_line(line, facts, names, recent):
     if re.search(r"[Ѐ-ӿ֐-ۿ฀-๿　-鿿가-힯＀-￯]", line):
         return "not English"
     why = off_roster(line, blob + " " + (SHOW + SHOW_SPACE).lower(), names) or wrong_pronoun(low, facts) or \
-        wrong_deadline(low, facts) or wrong_place(low, facts) or style_fault(line, blob)
+        wrong_deadline(low, facts) or wrong_place(low, facts) or wrong_enemy(low, facts) or style_fault(line, blob)
     if why:
         return why
     for num in re.findall(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", line):  # "3,600" is one number
@@ -1345,6 +1382,8 @@ def wrong_place(low, facts):
         if f"shake{num}" not in json.dumps(facts).lower():
             return f"run name not in facts: {m.group(0)}"
     reached = facts.get("planets_reached")
+    if not reached and facts.get("space_in_play") is False:
+        reached = ["Nauvis"]   # (the facts name no planet while Nauvis is the only one in play)
     if reached:
         # shake11: "Fulgora discovery sits at eighteen percent" is the research Planet discovery Fulgora, which the
         # facts name; the reached/not-reached lists themselves do not count
@@ -1353,6 +1392,30 @@ def wrong_place(low, facts):
             if p.lower() in low and p not in reached and p.lower() not in named \
                     and not FUTURE.search(low.replace("’", "'")):
                 return f"planet not reached: {p}"
+    return None
+
+
+def wrong_enemy(low, facts):
+    """An enemy named where it does not live, or a planet a battle fact does not give (viewer Joonazan, 13:38: "There
+    are no biters on Gleba"; 13:25-13:54, "Biters have found Sol on Gleba" four times). The line's planet: the one it
+    names, else the event's (`planet`). A battle event (one with `planet`) may name only planets the facts name."""
+    ev_planet = facts.get("planet")
+    named = [p for p in ("Nauvis",) + PLANETS if re.search(r"\b" + p.lower() + r"\b", low)]
+    if ev_planet and named:
+        others = known_text({k: v for k, v in facts.items() if k not in ("planets_reached", "planets_not_reached_yet",
+                                                                          "background", "story", "earlier_on_air")})
+        for p in named:
+            if p != ev_planet and p.lower() not in others and not FUTURE.search(low.replace("’", "'")):
+                return f"planet not in this event's facts: {p} (it is on {ev_planet})"
+    where = named if named else [ev_planet] if ev_planet else []
+    if not where:
+        return None
+    for m in ENEMY_RE.finditer(low):
+        if re.search(r"\b(?:no|not|never|without|zero|isn't|aren't|has no|have no)\b[^.!?]{0,20}$", low[:m.start()]):
+            continue  # "Fulgora has no biters", "not biters, pentapods": saying who is not there is right
+        home = ENEMY_HOME[m.group(1).lower()]
+        if not any(p in home for p in where):
+            return f"{m.group(1).lower()}s do not live on {', '.join(where)}"
     return None
 
 
@@ -2179,11 +2242,14 @@ class Caster:
             # an overrun base sends an attack, a loss or a death every few seconds; on the live world each got its
             # own beat and the cast became a loop. Fold the pending urgent events into this one; headlines keep
             # their own beat (shift04 05:15: a platform's end went into an attack's "also happening").
-            more = [e for e in self.events if e["prio"] >= URGENT and e["kind"] not in HEADLINE_KINDS]
+            # Only events on the same surface fold in (11:15:47: "Sol is under attack on Gleba. A laser turret is
+            # taking the hits" had Nauvis's laser turret in also_happening); another planet's wait for their own beat.
+            where = best.get("surface") or "nauvis"
+            more = [e for e in self.events if e["prio"] >= URGENT and e["kind"] not in HEADLINE_KINDS
+                    and (e.get("surface") or "nauvis") == where]
             if more:
                 best = dict(best, also=[e.get("text") or e["kind"] for e in more][-6:])
-                self.events = deque([e for e in self.events if e["prio"] < URGENT or e["kind"] in HEADLINE_KINDS],
-                                    maxlen=60)
+                self.events = deque([e for e in self.events if not any(e is m for m in more)], maxlen=60)
             return best
         # a burst of the same kind is one story: drop its siblings
         self.events = deque([e for e in self.events if e["kind"] != best["kind"]], maxlen=60)
@@ -2388,10 +2454,7 @@ class Caster:
             n = max(n, 3)  # "previously on" takes two or three lines
         if e["kind"] in ("attack", "loss"):  # a death is a headline: it neither carries nor resets the battle tally
             self.last_attack_t = now
-            tally = getattr(self, "battle_tally", None)
-            if tally and tally["reports"]:  # what happened since the last battle beat, said once
-                e = dict(e, since_last_report=dict(tally, lost=dict(tally["lost"])))
-            self.battle_tally = {"reports": 0, "attacks": 0, "lost": {}}
+            e = self.take_tally(e)
         self.say_exchange(e, s, first, n)
         # attack replays: the director queues each saved clip itself (eng/stream2), so the hosts only talk over them
         if e["kind"] == "research":
@@ -2411,16 +2474,24 @@ class Caster:
             return dict(e, t=now)
         return "quiet"
 
+    def take_tally(self, e):
+        """What happened since the last battle beat on the same planet, said once with this beat: one tally per
+        surface (12:57, "Sol is under attack on Gleba. The team just lost four gun turrets": the turrets were Nauvis's)."""
+        tally = self.__dict__.setdefault("battle_tallies", {}).pop(e.get("surface") or "nauvis", None)
+        if tally and tally["reports"]:
+            return dict(e, since_last_report=dict(tally, lost=dict(tally["lost"])))
+        return e
+
     def tally_battle(self, e):
-        """Count a battle beat that was not spoken, for the next one to sum up."""
-        tally = getattr(self, "battle_tally", None) or {"reports": 0, "attacks": 0, "lost": {}}
+        """Count a battle beat that was not spoken, for the next one on the same surface to sum up."""
+        tallies = self.__dict__.setdefault("battle_tallies", {})
+        tally = tallies.setdefault(e.get("surface") or "nauvis", {"reports": 0, "attacks": 0, "lost": {}})
         tally["reports"] += 1
         if e["kind"] == "attack":
             tally["attacks"] += 1
         for n, name in re.findall(r"(\d+) ([a-z][a-z -]*?)(?:,|\(|$)", (e.get("text") or "").split(":", 1)[-1]):
             name = name.strip()
             tally["lost"][name] = tally["lost"].get(name, 0) + int(n)
-        self.battle_tally = tally
 
     def say_exchange(self, e, s, first, n):
         t_start = time.time()

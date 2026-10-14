@@ -129,7 +129,7 @@ class AudioHub:
                     "clips": len(self.order)}
 
 
-def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None):
+def make_handler(hub, decisions, audio=None, segments=None, replays=None, analyst=None, follow=None, director=None):
     audio = audio or AudioHub()
     segments = segments or Segments()
     analyst = analyst or AnalystBoard()
@@ -217,6 +217,11 @@ def make_handler(hub, decisions, audio=None, segments=None, replays=None, analys
                 return self.send(200, json.dumps(analyst.mark_used(body.get("id"))).encode(), "application/json")
             if path == "/analyst/answer":  # a viewer question the analyst answered, for the hosts (snapshot analyst.answers)
                 return self.send(200, json.dumps(analyst.answer(body)).encode(), "application/json")
+            if path == "/cloud":  # the operator puts a pollution or spore cloud on air (onecam.py cloud shot)
+                if not hasattr(director, "request_cloud"):
+                    return self.send(409, b'{"error": "cloud needs the onecam director"}', "application/json")
+                code, reply = director.request_cloud(body.get("surface"), body.get("seconds"), body.get("by"))
+                return self.send(code, json.dumps(reply).encode(), "application/json")
             if path == "/follow":  # the operator pins the camera on air on one agent (follow.py)
                 if not follow:
                     return self.send(409, b'{"error": "follow needs the onecam director"}', "application/json")
@@ -523,7 +528,8 @@ def main():
     threading.Thread(target=ticker, daemon=True).start()
     try:
         server = ThreadingHTTPServer((a.host, a.port), make_handler(hub, decisions, segments=segments, replays=replays,
-                                                                    analyst=analyst, follow=follow, audio=audio))
+                                                                    analyst=analyst, follow=follow, audio=audio,
+                                                                    director=director))
     except OSError as e:
         sys.exit(f"cannot listen on {a.host}:{a.port}: {e}. Pick another --port and point the reverse tunnel at it: "
                  f"ssh -N -R 8787:127.0.0.1:PORT pogwin")

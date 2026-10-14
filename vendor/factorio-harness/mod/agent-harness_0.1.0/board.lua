@@ -830,6 +830,25 @@ return function(api)
     for _, l in ipairs(i and i.lines or {}) do if l.agent == name then mine = l.text end end
     return {goals=i and i.goals, mine=mine, projects=projects}
   end
+  -- The look-ahead block (lookahead.lua): agent `name`'s plan line with the tick it was set, the goals, and the
+  -- items it owns that are open, newest first.
+  function M.lookahead_view(name)
+    local i = plan_item()
+    local mine
+    for _, l in ipairs(i and i.lines or {}) do if l.agent == name then mine = l end end
+    local open = {}
+    for _, x in pairs(store().items) do
+      if x.owner == name and ACTIVE[x.status] and x.kind ~= 'plan' then open[#open+1] = x end
+    end
+    table.sort(open, function(x, y) return x.updated_tick > y.updated_tick or (x.updated_tick == y.updated_tick and x.id > y.id) end)
+    local items = {}
+    for k, x in ipairs(open) do
+      if k > 6 then items[#items+1] = string.format('+%d more', #open - 6); break end
+      items[#items+1] = string.format('#%d %s (%s %s)', x.id, clip(x.title or '', 60), x.kind, x.status)
+    end
+    return {line=mine and mine.text, line_tick=mine and mine.tick, line_by=mine and mine.by ~= name and mine.by or nil,
+      goals=i and i.goals, items=items}
+  end
   local function plan_edit(by, a)
     assert(a.agent == nil or a.doing ~= nil, 'agent goes with doing: board_plan {agent, doing}')
     if a.goals == nil and a.doing == nil then
@@ -1090,7 +1109,8 @@ return function(api)
     return nil
   end
   -- A viewer's line (chat.lua, relayed by the stream service) files a
-  -- mention, which wakes a sleeper, only for an agent it names with @.
+  -- mention only for an agent it names with @; it wakes a sleeper only one
+  -- that asked (inbox_tick viewers).
   function M.on_viewer(m)
     local text = m.text:lower()
     for _, a in ipairs(agents()) do
@@ -1126,11 +1146,23 @@ return function(api)
   -- The tick of the newest undelivered mention or tell (nil when none), for
   -- waits that end when one arrives; then told|mentioned and who sent it. An
   -- fyi tell (eng/minds-claims, tell --fyi) wakes nobody, so it ends no wait.
-  function M.inbox_tick(index)
+  -- A viewer's @mention (on_viewer) waits for the next reply too and wakes nobody unless asked (viewers: the call's
+  -- wake_on_viewers, fh --wake-on-viewers; Sonnet and Opus, shift12 13:50: viewers' @mentions ended a sleep, a wait
+  -- and a move_to --wait every minute or so).
+  function M.inbox_tick(index, viewers)
     local box = api.state().mentions and api.state().mentions[index]
     for i = #(box and box.list or {}), 1, -1 do
       local m = box.list[i]
-      if not m.fyi then return m.tick, m.tell and 'told' or 'mentioned', m.from end
+      if not m.fyi and (viewers or not m.viewer) then return m.tick, m.tell and 'told' or 'mentioned', m.from end
+    end
+    return nil
+  end
+  -- The newest viewer's @mention waiting for the next reply (an fh --wait with --wake-on-viewers ends on it).
+  function M.viewer_tick(index)
+    local box = api.state().mentions and api.state().mentions[index]
+    for i = #(box and box.list or {}), 1, -1 do
+      local m = box.list[i]
+      if m.viewer then return m.tick, 'mentioned', m.from end
     end
     return nil
   end
@@ -1143,6 +1175,14 @@ return function(api)
     local keep = {}
     for _, m in ipairs(box.list) do if m.tell or not shown[m.seq] then keep[#keep+1] = m end end
     box.list = keep
+  end
+  -- What the last team block delivered per agent (mentions and tells as filed), read once by the dispatch for a
+  -- sleep's replies (missed.lua); never kept past the request that built it.
+  local delivered = {}
+  function M.delivered(index)
+    local d = delivered[index]
+    delivered[index] = nil
+    return d
   end
   -- Every pending mention and tell, oldest first; never cut by the other
   -- parts' caps. Tells (logistics sent to this agent) are listed apart.
@@ -1167,6 +1207,7 @@ return function(api)
         lines[#lines+1] = string.format('%s%s, %s ago: %s', from(m), tag, ago(game.tick - m.tick), m.text)
       end
     end
+    delivered[p.index] = box.list
     box.list, box.dropped = {}, 0
     return #lines > 0 and lines or nil, #tells > 0 and tells or nil
   end

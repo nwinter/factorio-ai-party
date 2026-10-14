@@ -58,7 +58,8 @@ local names={'astra','sol','luna','opus','kai','grok','mira'}
 for _,n in ipairs(names) do runtime.operator.bot_create(n) end
 astra('profile',{display_name='Astra',glyph='A',color='#9977ff'})
 sol('profile',{display_name='Sol',glyph='S',color='#ffcb45'})
-luna('profile',{display_name='Luna',glyph='L',color='#77aaff'})
+luna('profile',{display_name='Luna',glyph='L',color='#77aaff',pronouns='she/her'})
+as('grok')('profile',{pronouns='they'})
 local function bot(n) return runtime.bots.record(runtime.bots.index_of(n)) end
 local function put(n,surface,x,y) local c=bot(n).character; c.surface=surface; c.position={x=x,y=y}; bot(n).surface=surface.name end
 put('astra',nauvis,0,0); put('luna',nauvis,60,-80); put('opus',nauvis,0,25); put('mira',nauvis,-30,0); put('sol',vulcanus,3,3)
@@ -133,4 +134,18 @@ local astra_p=runtime.lookup(runtime.bots.index_of('astra'))
 local function starts(s,prefix) assert(s:sub(1,#prefix)==prefix,s..' does not start with '..prefix) end
 starts(runtime.claims.label({id=c1,title='brick furnaces',owner='sol'},astra_p),'#'..c1..' brick furnaces (claim by sol, on Vulcanus; posted ')
 starts(runtime.claims.label({id=c2,title='iron smelting',owner='luna'},astra_p),'#'..c2..' iron smelting (claim by luna; posted ')
+
+-- The shift start's teammates line (Nick 12:20, operator 13:05): display names, pronouns when set, and where while the
+-- team is on more than one planet, platform or pod; humans left out (nick is attached here: a teammate).
+eq(runtime.where.shift_line(astra_p),'teammates: grok (they) in a cargo pod to Vulcanus; kai on platform Peregrine; Luna (she/her) on Nauvis; '
+  ..'mira on Nauvis; nick on Nauvis; opus on Nauvis; Sol on Vulcanus')
+-- Everyone on Nauvis: no places.
+put('sol',nauvis,3,3)
+kai.travel=nil; kai.surface='nauvis'
+grok.travel=nil; grok.surface='nauvis'
+runtime.dispatch{action='detach',args={},player=1}
+eq(runtime.where.shift_line(astra_p),'teammates: grok (they); kai; Luna (she/her); mira; opus; Sol')
+-- In the shift block of a first reply of a shift.
+runtime.operator.shift_start()
+eq(luna('status').team.shift.teammates,'teammates: Astra; grok (they); kai; mira; opus; Sol')
 print('teamwhere: ok')

@@ -279,7 +279,8 @@ check("loss banner: kills by small biters, no kill count", le and le[0]["text"].
       and "21 small" not in le[0]["text"], str(le))
 af = caster.facts_for({"kind": "attack", "text": "Base under attack near (-48, 16): character x9", "t": now, "prio": 9}, {})
 check("attack facts: hits on the team's engineers, no 'biters are damaging'", af["text"] ==
-      "Base under attack: engineer hit 9 times" and "times biters hit" in af["numbers_mean"] and "damaging" not in json.dumps(af), str(af))
+      # (enemies, not biters: Gleba's are pentapods; eng/planetmix)
+      "Base under attack: engineer hit 9 times" and "times enemies hit" in af["numbers_mean"] and "damaging" not in json.dumps(af), str(af))
 lf = caster.facts_for({"kind": "loss", "text": "21 lost near (1, 2): 9 transport belt (by 21 small biter)", "t": now,
                        "prio": 8}, {})
 check("old loss text: '(by 21 small biter)' becomes '(by small biters)'", lf["text"].endswith("(by small biters)"), lf["text"])
@@ -637,8 +638,13 @@ sa_snap = {"space": {"space_age": True, "active": False, "planets": ["Nauvis"]}}
 check("show notes: a base-game snapshot's space block is not Space Age", caster.show_for(base_snap) == caster.SHOW
       and caster.show_for(sa_snap) != caster.SHOW and caster.planet_facts(base_snap) == {})
 pf = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"}, sa_snap)
-check("planets: Nauvis reached, the four others ahead", pf.get("planets_reached") == ["Nauvis"] and
-      pf.get("planets_not_reached_yet") == ["Vulcanus", "Fulgora", "Gleba", "Aquilo"], str(pf))
+# Nick 12:35 (item 4): while Nauvis is the only planet in play the facts name no planet
+check("planets: none named while space is not in play", pf.get("space_in_play") is False and "planets_reached" not in pf
+      and "planets_not_reached_yet" not in pf and "Nauvis" not in json.dumps(pf), str(pf))
+pa = caster.facts_for({"kind": "lull", "t": now, "prio": 1, "angle": "explain"},
+                      {"space": {"space_age": True, "active": True, "planets": ["Nauvis"]}})
+check("planets: Nauvis reached, the four others ahead, once space is in play", pa.get("planets_reached") == ["Nauvis"] and
+      pa.get("planets_not_reached_yet") == ["Vulcanus", "Fulgora", "Gleba", "Aquilo"], str(pa))
 check("planets: a line about a planet nobody reached is cut; a future goal is fine", caster.check_line(
     "Thirty packs a minute won't rebuild Vulcanus.", pf, [], []) == "planet not reached: Vulcanus" and caster.check_line(
     "Vulcanus is the next big goal.", pf, [], []) is None)

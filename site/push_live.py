@@ -68,6 +68,26 @@ def public_fights(fights, now):
     return out[-12:]
 
 
+CLOUD_KEYS = ("surface", "label", "pollutant", "chunks", "max", "total", "age_s")
+CLOUD_CELLS = 6000  # cells across all surfaces (about 14 bytes each; the state is at most 256 KB), most polluted kept
+
+
+def public_clouds(rows):
+    """The map's pollution and spore layer (tools/stream/clouds.py): per surface its label, colour, the chunks
+    [[cx, cy, amount]] and the nests it reached; past CLOUD_CELLS cells in all, the least polluted are left out."""
+    rows = [r for r in rows or [] if isinstance(r, dict) and isinstance(r.get("cells"), list) and r["cells"]]
+    keep = sorted(((c[2], i, j) for i, r in enumerate(rows) for j, c in enumerate(r["cells"])), reverse=True)[:CLOUD_CELLS]
+    keep = {(i, j) for _, i, j in keep}
+    out = []
+    for i, r in enumerate(rows):
+        col = r.get("color") or {}
+        cells = [c for j, c in enumerate(r["cells"]) if (i, j) in keep]
+        out.append(dict({k: r[k] for k in CLOUD_KEYS if r.get(k) is not None}, cells=cells,
+                        color={k: col[k] for k in "rgba" if isinstance(col.get(k), (int, float))},
+                        reached=[{"x": n.get("x"), "y": n.get("y")} for n in r.get("reached") or []][:20]))
+    return out
+
+
 def public_state(s):
     out = {k: s[k] for k in TOP_KEYS if k in s}
     out["agents"] = [{k: a[k] for k in AGENT_KEYS if k in a} for a in s.get("agents", [])]
@@ -91,6 +111,8 @@ def public_state(s):
         out["space"] = space
     if s.get("fights"):
         out["fights"] = public_fights(s["fights"], s.get("now") or time.time())
+    if s.get("clouds"):
+        out["clouds"] = public_clouds(s["clouds"])
     # The broadcast the stream service's YouTube chat bridge follows, so the live page embeds the current one.
     yt = ((s.get("viewers_status") or {}).get("youtube") or {})
     if re.fullmatch(r"[\w-]{11}", str(yt.get("video") or "")):

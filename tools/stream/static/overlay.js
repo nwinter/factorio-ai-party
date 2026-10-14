@@ -863,6 +863,7 @@
       const label = frame.querySelector(".cam-label");
       const cam = (s.cameras || {})[slot];
       if (slot === "inset") frame.classList.toggle("on", !!cam); // up only while the director has an inset
+      const cloudKey = renderCloud(frame, cam && cam.map ? cam : null, s);
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
       if (slot !== "main" && slot !== "inset" && !(onecam && curMode !== "trio")) renderFill(frame, s, !agents.length && !(cam && cam.attack));
       const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "")
@@ -871,10 +872,19 @@
       label.classList.toggle("attack", !!(cam && cam.attack) && !death);
       label.classList.toggle("death", death);
       if (cam && cam.map) { // Factorio's own map of the whole base (onecam.py base map; cameras.lua map camera)
-        if (label.dataset.sig !== "map") {
-          label.dataset.sig = "map";
+        // the cloud's key inside the label (in onecam the bar along the bottom: a key of its own overlapped it, 13:59)
+        const msig = "map|" + cam.map + "|" + (cloudKey ? cloudKey.text + cloudKey.rgb : "");
+        if (label.dataset.sig !== msig) {
+          label.dataset.sig = msig;
           label.textContent = "";
           label.append(el("span", "ico", "🗺️"), el("span", "", cam.map));
+          if (cloudKey) {
+            const key = el("span", "cloud-key"), sw = el("i", "sw");
+            sw.style.background = `linear-gradient(90deg, rgba(${cloudKey.rgb}, 0.45), rgba(${cloudKey.rgb}, 0.85))`;
+            sw.style.borderColor = `rgb(${cloudKey.bright})`;
+            key.append(sw, el("span", "", cloudKey.text));
+            label.append(key);
+          }
         }
         label.classList.remove("attack", "death");
         frame.style.borderColor = "";
@@ -1057,6 +1067,81 @@
   // A side camera nobody is on (fewer agents than cameras, or the director paired them) would show an empty or stale
   // capture: after 4 s unused the hole gets an opaque desk card (the analyst's read, else research), gone on reuse.
   const PACE = { ahead: "ahead", "on pace": "onpace", behind: "behind" };
+  // The pollution or spore cloud over a map shot (onecam.py cloud shot and base map; clouds.py): each charted chunk in
+  // the pollutant's map colour, stronger where there is more, under a dark diagonal hatch, and the cloud's edge drawn
+  // dark with a bright line of the same hue inside it (the first shot, 13:59: the game's olive was lost on Gleba's
+  // yellow-green ground); the nests it reached ringed. The camera client renders 1080 px of height at the shot's zoom
+  // (1 tile = 32 * zoom px) and the hole shows its centre, scaled to the hole's height. Returns the key for the
+  // camera's label ({rgb, a, text}), or null.
+  function renderCloud(frame, cam, s) {
+    const view = cam && cam.map_view;
+    const pos = view && view.position;
+    const cloud = view && pos && (s.clouds || []).find((c) => c.surface === view.surface);
+    let cv = frame.querySelector("canvas.cam-cloud");
+    if (!cloud || !(cloud.cells || []).length || !(view.zoom > 0)) {
+      if (cv) cv.classList.remove("on");
+      return null;
+    }
+    if (!cv) {
+      cv = document.createElement("canvas");
+      cv.className = "cam-cloud";
+      frame.insertBefore(cv, frame.firstChild);
+    }
+    const col = cloud.color || {}, rgbs = [col.r, col.g, col.b].map((v) => Math.round(255 * (v || 0)));
+    const rgb = rgbs.join(", "), top = Math.max(1, ...rgbs);
+    const bright = rgbs.map((v) => Math.round(v * 255 / top)).join(", "); // the hue at full strength: olive -> yellow
+    const W = frame.clientWidth, H = frame.clientHeight;
+    const sig = [W, H, pos.x, pos.y, view.zoom, cloud.tick, cloud.chunks, cloud.max].join("|");
+    if (cv.dataset.sig !== sig) {
+      cv.dataset.sig = sig;
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext("2d"), k = H / 1080 * 32 * view.zoom, side = 32 * k;
+      const lmax = Math.log1p(cloud.max || 1);
+      const at = new Set(cloud.cells.map(([cx, cy]) => cx + "," + cy));
+      const px = (cx) => W / 2 + (cx * 32 - pos.x) * k, py = (cy) => H / 2 + (cy * 32 - pos.y) * k;
+      const shown = cloud.cells.filter(([cx, cy]) => px(cx) <= W && py(cy) <= H && px(cx) + side >= 0 && py(cy) + side >= 0);
+      ctx.clearRect(0, 0, W, H);
+      for (const [cx, cy, amt] of shown) {
+        ctx.fillStyle = `rgba(${rgb}, ${(0.45 + 0.4 * Math.log1p(amt) / lmax).toFixed(3)})`;
+        ctx.fillRect(px(cx), py(cy), side + 0.5, side + 0.5); // a hair wider: no seams between neighbours
+      }
+      if (side >= 8) { // a dark diagonal hatch over the cells: the cloud reads as a layer on any ground
+        ctx.save();
+        ctx.beginPath();
+        for (const [cx, cy] of shown) ctx.rect(px(cx), py(cy), side + 0.5, side + 0.5);
+        ctx.clip();
+        ctx.strokeStyle = "rgba(0, 0, 0, 0.35)"; ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let d = -H; d < W; d += 11) { ctx.moveTo(d, H); ctx.lineTo(d + H, 0); }
+        ctx.stroke();
+        ctx.restore();
+      }
+      // the edge: each side of a cell with no cell beyond it, dark and wide, then the bright hue on top
+      ctx.beginPath();
+      for (const [cx, cy] of shown) {
+        const x = px(cx), y = py(cy);
+        if (!at.has(cx + "," + (cy - 1))) { ctx.moveTo(x, y); ctx.lineTo(x + side, y); }
+        if (!at.has(cx + "," + (cy + 1))) { ctx.moveTo(x, y + side); ctx.lineTo(x + side, y + side); }
+        if (!at.has((cx - 1) + "," + cy)) { ctx.moveTo(x, y); ctx.lineTo(x, y + side); }
+        if (!at.has((cx + 1) + "," + cy)) { ctx.moveTo(x + side, y); ctx.lineTo(x + side, y + side); }
+      }
+      ctx.lineCap = "square";
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.85)"; ctx.lineWidth = 5; ctx.stroke();
+      ctx.strokeStyle = `rgb(${bright})`; ctx.lineWidth = 2; ctx.stroke();
+      for (const n of cloud.reached || []) {
+        const x = W / 2 + (n.x - pos.x) * k, y = H / 2 + (n.y - pos.y) * k;
+        ctx.strokeStyle = "#000"; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = "#ff5a44"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+    cv.classList.add("on");
+    const name = cloud.pollutant === "spores" ? "spores" : "pollution";
+    const n = (cloud.reached || []).length;
+    return { rgb, bright, text: `up to ${fmtAmount(cloud.max)} ${name} per chunk · ${cloud.chunks} chunk${cloud.chunks === 1 ? "" : "s"}`
+      + (n ? ` · ${n} nest${n === 1 ? "" : "s"} reached` : "") };
+  }
+  function fmtAmount(v) { return v >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10); }
+
   function renderFill(frame, s, unused) {
     let fill = frame.querySelector(".cam-fill");
     if (!fill) { fill = el("div", "cam-fill"); frame.prepend(fill); }

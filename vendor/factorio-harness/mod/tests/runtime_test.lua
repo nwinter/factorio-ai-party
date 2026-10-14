@@ -465,6 +465,55 @@ end
 wood.count=1; eq(call('build',{item='wooden-chest',position={x=7,y=0}}).consumed,1); eq(spare.count+wood.count,4)
 main[2]=nil
 p.build_from_cursor=build_single; p.can_build_from_cursor=function() return true end; wood.count=2; placed=single_placed
+-- build with recipe (Sonnet, shift12 13:50: one call, as configure after): checked before anything is placed, set once
+-- it stands; a recipe the machine does not make, one not available, or a machine that takes none: refused, nothing
+-- built. A batch gives the call's recipe to its entries that place an assembling machine. And an inserter's reply says
+-- in words which side it picks up from and drops to.
+;(function()
+  local saved_place,saved_recipes,saved_find=wood.prototype.place_result,p.force.recipes,p.surface.find_entities_filtered
+  local machine={type='assembling-machine',name='assembling-machine-1',crafting_categories={crafting=true,['advanced-crafting']=true}}
+  wood.prototype.place_result=machine
+  p.force.recipes={['iron-gear-wheel']={name='iron-gear-wheel',enabled=true,category='crafting'},sulfur={name='sulfur',enabled=true,category='chemistry'},
+    locked={name='locked',enabled=false,category='crafting'}}
+  local made={}
+  local now
+  p.surface.find_entities_filtered=function() return now and {now} or {} end
+  p.build_from_cursor=function(args)
+    p.cursor_stack.count=p.cursor_stack.count-1
+    local m={valid=true,name=machine.name,type=machine.type,position={x=args.position.x+.5,y=.5},force=p.force,prototype=machine}
+    m.set_recipe=function(r) m.recipe=r; return {} end
+    m.get_recipe=function() return m.recipe and {name=m.recipe} or nil end
+    made[#made+1]=m; now=m
+  end
+  wood.count=4
+  local r=call('build',{item='wooden-chest',position={x=4,y=0},recipe='iron-gear-wheel'})
+  eq(r.recipe,'iron-gear-wheel'); eq(made[1].recipe,'iron-gear-wheel'); eq(wood.count,3)
+  fails(function() call('build',{item='wooden-chest',position={x=6,y=0},recipe='sulfur'}) end,
+    'recipe sulfur (category chemistry) is not one assembling-machine-1 makes (its categories: advanced-crafting, crafting)')
+  fails(function() call('build',{item='wooden-chest',position={x=6,y=0},recipe='locked'}) end,'recipe locked is unavailable')
+  eq(#made,1,'nothing built for a refused recipe'); eq(wood.count,3)
+  local saved_prototypes=prototypes
+  prototypes={item={['wooden-chest']={place_result=machine}},entity={}}
+  r=call('build',{item='wooden-chest',recipe='iron-gear-wheel',builds={{position={x=6,y=0}},{position={x=8,y=0}}}})
+  eq(made[2].recipe,'iron-gear-wheel'); eq(made[3].recipe,'iron-gear-wheel')
+  prototypes=saved_prototypes
+  wood.prototype.place_result={type='furnace',name='stone-furnace'}
+  fails(function() call('build',{item='wooden-chest',position={x=6,y=0},recipe='iron-gear-wheel'}) end,
+    'recipe: stone-furnace (type furnace) takes no recipe; only assembling machines (assemblers, foundries, chemical plants and the like) do')
+  -- An inserter facing east picks up from the east and drops to the west, in words (the engine's points).
+  local arm={type='inserter',name='inserter'}
+  wood.prototype.place_result=arm
+  p.build_from_cursor=function(args)
+    p.cursor_stack.count=p.cursor_stack.count-1
+    now={valid=true,name='inserter',type='inserter',position={x=args.position.x+.5,y=.5},direction=4,force=p.force,prototype=arm,
+      pickup_position={x=args.position.x+1.5,y=.5},drop_position={x=args.position.x-.5,y=.7}}
+  end
+  wood.count=2
+  r=call('build',{item='wooden-chest',position={x=10,y=0},direction='east'})
+  eq(r.entity.inserter,'direction east: picks up from its east side at (11.5,0.5), drops to its west side at (9.5,0.5) (items move west)')
+  wood.prototype.place_result,p.force.recipes,p.surface.find_entities_filtered=saved_place,saved_recipes,saved_find
+  p.build_from_cursor=build_single; wood.count=2; placed=single_placed
+end)()
 -- Building on the same entity must not invoke native rotation/no-op placement.
 wood.prototype.place_result.name='wooden-chest'
 fails(function()call('build',{item='wooden-chest',position={x=2.5,y=.5},direction='east'})end,'target already contains')
@@ -2042,6 +2091,26 @@ eq(#pw.networks,3); eq(pw.networks[1].id,1); eq(pw.networks[1].poles,3); eq(pw.n
 eq(pw.networks[1].production_kw,300); eq(pw.networks[1].consumption_kw,75); eq(pw.networks[1].producers[1].name,'steam-engine')
 eq(#pw.unpowered,2); eq(pw.unpowered[2].status,'unconnected'); eq(pw.unpowered_total,nil)
 eq(#call('observe',{scope='power',area={left_top={x=-1,y=-5},right_bottom={x=40,y=5}},limit=1}).unpowered,1)
+-- On a platform by name or index (Astra, 13:10): its surface, 64 tiles round its hub unless an area is given.
+do
+  local kept=p.force.platforms
+  p.force.platforms={{valid=true,name='Starling',index=3,surface=p.surface,hub={valid=true,position={x=0,y=0}}}}
+  for _,which in ipairs({'Starling',3}) do
+    local pp=call('observe',{scope='power',platform=which})
+    eq(pp.platform,'Starling'); eq(#pp.networks,3); eq(#pp.unpowered,2)
+  end
+  fails(function() call('observe',{scope='power',platform='Nope'}) end,'no platform named Nope')
+  -- A network with no pole in the area (Astra, 14:05: Starling's 475): listed from its machines, without figures.
+  local n=#world
+  machine(6,475,defines.entity_status.low_power); machine(8,475,defines.entity_status.working)
+  local pp=call('observe',{scope='power',platform='Starling'})
+  local lone
+  for _,x in ipairs(pp.networks) do if x.id==475 then lone=x end end
+  assert(lone,'network 475 listed'); eq(lone.poles,0); eq(lone.entities,2); eq(lone.unpowered,1)
+  eq(lone.note,'no pole of ours in the area: the game gives a network\'s statistics through its poles')
+  while #world>n do table.remove(world) end
+  p.force.platforms=kept
+end
 -- A pole the engine left unconnected (its own network) joins every network in reach: no orphans.
 p.build_from_cursor=function(args)
   p.cursor_stack.count=p.cursor_stack.count-1; p.cursor_stack.valid_for_read=p.cursor_stack.count>0
@@ -2182,6 +2251,25 @@ do
   fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=4}}},ammo='iron-plate'}) end,'not an ammo item: iron-plate')
   local bad=call('place_ghosts',{entities={{name='gun-turret',position={x=14,y=4},ammo='iron-plate'},{name='gun-turret',position={x=16,y=4}}}})
   eq(bad.placed,1); assert(bad.failed[1].error:find('not an ammo item',1,true),bad.failed[1].error)
+  -- An assembling machine ghost takes its recipe in the same call (checked first: a refused one places nothing).
+  local am={name='assembling-machine-2',type='assembling-machine',items_to_place_this={{name='assembling-machine-2',count=1}},crafting_categories={crafting=true}}
+  prototypes.entity['assembling-machine-2']=am
+  local saved_recipes=p.force.recipes
+  p.force.recipes={['iron-gear-wheel']={name='iron-gear-wheel',enabled=true,category='crafting'},sulfur={name='sulfur',enabled=true,category='chemistry'}}
+  p.surface.create_entity=function(a)
+    local g={valid=true,type='entity-ghost',ghost_type=prototypes.entity[a.inner_name].type,ghost_name=a.inner_name,ghost_prototype=prototypes.entity[a.inner_name],
+      position=a.position,surface=p.surface,force=p.force,insert_plan={}}
+    g.set_recipe=function(r) g.recipe=r; return {} end
+    g.get_recipe=function() return g.recipe and {name=g.recipe} or nil end
+    made[#made+1]=g; return g
+  end
+  local before=#made
+  r=call('place_ghosts',{entities={{name='assembling-machine-2',position={x=20.5,y=4.5},recipe='iron-gear-wheel'},
+    {name='assembling-machine-2',position={x=24.5,y=4.5},recipe='sulfur'},{name='gun-turret',position={x=28,y=4},recipe='iron-gear-wheel'}}})
+  eq(r.placed,1); eq(r.recipes['iron-gear-wheel'],1); eq(made[before+1].recipe,'iron-gear-wheel'); eq(#made,before+1)
+  eq(r.failed[1].error,'recipe sulfur (category chemistry) is not one assembling-machine-2 makes (its categories: crafting)')
+  eq(r.failed[2].error,'recipe: gun-turret (type ammo-turret) takes no recipe; only assembling machines (assemblers, foundries, chemical plants and the like) do')
+  p.force.recipes=saved_recipes
   prototypes.entity,prototypes.item,prototypes.get_item_filtered=entity_protos,item_protos,filtered
   p.surface.can_place_entity,p.surface.create_entity,p.surface.find_logistic_network_by_position=can,create,net
 end
@@ -2212,6 +2300,49 @@ end
   eq(r.placed,2,r.failed and r.failed[1].error); eq(r.last_belt,'transport-belt (20.5,5.5): moves items south to (20.5,6.5); fed from (20.5,4.5)')
   prototypes.entity=entity_protos
   p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered=can,create,find
+end)()
+;(function()
+  -- place_ghosts, its dry run and scan on another planet by remote view (Astra 12:33: laying out a Vulcanus chain while
+  -- Sonnet builds there by hand; in 2.0 a player places ghosts on another planet from the map).
+  local entity_protos,get_surface,platforms,charted=prototypes.entity,game.get_surface,p.force.platforms,p.force.is_chunk_charted
+  local belt={name='transport-belt',type='transport-belt',items_to_place_this={{name='transport-belt',count=1}},
+    collision_box={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}},collision_mask={layers={item=true,object=true}},
+    tile_width=1,tile_height=1}
+  prototypes.entity={['transport-belt']=belt}
+  local made,standing={},{}
+  local vulcanus={name='vulcanus',index=3,valid=true}
+  vulcanus.get_tile=function(x,y) return {name='volcanic-ash-light',position={x=x,y=y},prototype={collision_mask={layers={ground_tile=true}}},
+    collides_with=function() return false end} end
+  vulcanus.find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs(standing) do if not f.type or f.type==e.type or (type(f.type)=='table') then out[#out+1]=e end end
+    return out
+  end
+  vulcanus.count_entities_filtered=function(f) return #vulcanus.find_entities_filtered(f) end
+  vulcanus.can_place_entity=function() return true end
+  vulcanus.create_entity=function(a)
+    local g={valid=true,name='entity-ghost',type='entity-ghost',ghost_type='transport-belt',ghost_name=a.inner_name,ghost_prototype=belt,
+      position=a.position,direction=a.direction,surface=vulcanus,force=p.force}
+    made[#made+1]=g; return g
+  end
+  game.get_surface=function(name) if name=='vulcanus' then return vulcanus end end
+  p.force.platforms={}
+  p.force.is_chunk_charted=function(sf,c) if sf==vulcanus then return c.x==0 and c.y==0 end return charted(sf,c) end
+  local r=call('place_ghosts',{surface='vulcanus',entities={{name='transport-belt',position={x=5.5,y=5.5},direction='east'}}})
+  eq(r.placed,1); eq(#made,1); eq(made[1].surface,vulcanus); eq(made[1].position.x,5.5)
+  r=call('place_ghosts',{surface='vulcanus',entities={{name='transport-belt',position={x=50.5,y=5.5}}}})
+  eq(r.placed,0); eq(r.failed[1].error,'position is not charted','charted chunks of that planet')
+  -- The dry run checks there and places nothing.
+  local dry=call('place_ghosts',{surface='vulcanus',dry_run=true,entities={{name='transport-belt',position={x=6.5,y=5.5},direction='east'}}})
+  eq(dry.dry_run,true); eq(#made,1,'nothing placed')
+  fails(function() call('place_ghosts',{surface='vulcanus',platform='Sunward',entities={{name='transport-belt',position={x=6.5,y=5.5}}}}) end,
+    'give platform or surface, not both')
+  -- scan there: centred on a place there.
+  standing[1]={valid=true,name='transport-belt',type='transport-belt',position={x=5.5,y=5.5},direction=4,force=p.force,surface=vulcanus}
+  local sc=call('scan',{surface='vulcanus',position={x=5,y=5},radius=4})
+  eq(sc.entities[1].name,'transport-belt')
+  fails(function() call('scan',{surface='vulcanus'}) end,'scan with surface needs position, area or positions there')
+  prototypes.entity,game.get_surface,p.force.platforms,p.force.is_chunk_charted=entity_protos,get_surface,platforms,charted
 end)()
 -- A ghost goes over trees and rocks and marks them, though the engine's check
 -- refuses them (shake3: "placement blocked by tree-08" from place_ghosts),
@@ -2289,6 +2420,18 @@ do
   eq(call('status').active.kind,'walk','a dry run leaves the walk going')
   local shifted=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}},['repeat']={count=4,dx=10},dry_run=true})
   eq(shifted.checked,4); eq(shifted.entities[1].index,'4.1'); eq(#ghosts,0)
+  -- A recipe with an entry: the dry run makes the real call's check (Sonnet, shift12 13:50).
+  ;(function()
+    local saved_am,saved_recipes=prototypes.entity['assembling-machine-2'],p.force.recipes
+    prototypes.entity['assembling-machine-2']={name='assembling-machine-2',type='assembling-machine',tile_width=3,tile_height=3,collision_mask={layers={object=true}},
+      collision_box={left_top={x=-1.2,y=-1.2},right_bottom={x=1.2,y=1.2}},items_to_place_this={{name='assembling-machine-2',count=1}},crafting_categories={crafting=true}}
+    p.force.recipes={['iron-gear-wheel']={name='iron-gear-wheel',enabled=true,category='crafting'},sulfur={name='sulfur',enabled=true,category='chemistry'}}
+    local dr=call('place_ghosts',{entities={{name='assembling-machine-2',position={x=10.5,y=0.5},recipe='iron-gear-wheel'},
+      {name='assembling-machine-2',position={x=14.5,y=0.5},recipe='sulfur'}},dry_run=true})
+    eq(dr.recipes['iron-gear-wheel'],1); eq(#ghosts,0); assert(dr.summary:find('; 1 refused for the recipe',1,true),dr.summary)
+    eq(dr.recipes_refused[1],'entry 2 assembling-machine-2: recipe sulfur (category chemistry) is not one assembling-machine-2 makes (its categories: crafting)')
+    prototypes.entity['assembling-machine-2'],p.force.recipes=saved_am,saved_recipes
+  end)()
   fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}},facing='east',dry_run=true}) end,'unknown argument facing for place_ghosts')
   fails(function() call('build',{item='gun-turret',position={x=3,y=0},dry_run='true'}) end,'dry_run must be true or false')
   -- A build dry run names the entry the batch stops at.
@@ -2706,6 +2849,18 @@ eq(call('status').active.kind,'feed')
 p.crafting_queue={}; advance(10)
 -- The rerun build fails here (the fake inventory never received the lab).
 eq(call('status').last.outcome,'failed')
+-- A batch short of two items the queue makes waits for both (Sol, shift12 13:50: it waited for the first only,
+-- placed 3 entries and failed on the next, still crafting).
+p.force.recipes.inserter={products={{name='inserter',amount=1}},energy=0.5}
+p.crafting_queue={{recipe='lab',count=2},{recipe='inserter',count=1}}
+pending=call('build',{builds={{item='lab',position={x=1,y=0}},{item='inserter',position={x=4,y=0}},{item='lab',position={x=6,y=0}}}})
+eq(pending.awaiting_craft.item,'lab'); eq(#pending.awaiting_craft.items,2)
+eq(pending.awaiting_craft.items[1].need,2); eq(pending.awaiting_craft.items[2].item,'inserter'); eq(pending.awaiting_craft.items[2].crafting,1)
+-- The labs are done, the inserter still crafts: it keeps waiting.
+p.crafting_queue={{recipe='inserter',count=1}}; advance(10)
+eq(call('status').active.kind,'feed')
+p.crafting_queue={}; advance(10)
+eq(call('status').active,false); eq(call('status').last.outcome,'failed')
 -- Corpses: transfer takes their items (never mine_entity), and an emptied corpse goes.
 defines.inventory.character_corpse=9
 local loot=stack('iron-plate',20)
