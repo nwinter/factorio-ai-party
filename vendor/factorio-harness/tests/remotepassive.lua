@@ -148,8 +148,10 @@ end
 for _,name in ipairs({'configure','build','transfer','move_to','mine','rotate','construct','feed'}) do eq(runtime.keeps(name),false,name) end
 eq(runtime.keeps('configure',{platform='Sunward'}),true)
 local me=runtime.lookup(runtime.bots.index_of('astra'))
-eq(runtime.remote(me,'configure',{surface='vulcanus'}),true); eq(runtime.remote(me,'configure',{surface='nauvis'}),false)
+eq(runtime.remote(me,'configure',{surface='vulcanus'}),true)
 eq(runtime.remote(me,'configure',{position=near.position}),false); eq(runtime.remote(me,'configure',{position=far.position}),true)
+-- surface naming the character's own surface is the same as none (Astra 11:01: a refused configure with surface=nauvis paused her queue).
+eq(runtime.remote(me,'configure',{surface='nauvis',position=near.position}),false); eq(runtime.remote(me,'configure',{surface='nauvis',position=far.position}),true)
 eq(runtime.remote(me,'transfer',{position=far.position}),false)
 -- trace is a read, on a platform too (trace.lua through the platform= wrapper).
 eq(runtime.keeps('trace'),true)

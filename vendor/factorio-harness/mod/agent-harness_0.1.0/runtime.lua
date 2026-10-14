@@ -2606,7 +2606,7 @@ local function craft_shortfall(p,name,count,notes)
   table.sort(out)
   return #out>0 and table.concat(out,', ') or nil
 end
-local function begin_craft(p,recipe,count,force,notes,shorts)
+local function begin_craft(p,recipe,count,force,notes,shorts,fromq)
   assert(type(recipe)=='string' and p.force.recipes[recipe] and p.force.recipes[recipe].enabled,'recipe is unavailable')
   -- Say why a machine-only recipe fails (shake3: Grok's engine-unit read
   -- "not hand-craftable now" with force and the ingredients held).
@@ -2616,7 +2616,52 @@ local function begin_craft(p,recipe,count,force,notes,shorts)
   end
   count=integer(count,1,1,1000,'count')
   craft_stock(p,recipe,count,force,notes)
+  -- An ingredient still in the hand-craft queue (its own entries, not another
+  -- craft's) is not counted by the game, which crafts it again from raw
+  -- (Astra 11:01: 75 electronic circuits queued, then laser turrets made 20
+  -- more). Up to the shortfall those queued crafts are cancelled first: their
+  -- ingredients come back and the game crafts them again as this craft's own,
+  -- none extra; any it does not use go back in the queue.
+  local cancelled={}
+  local inv=p.get_main_inventory()
+  local function prereq(name)
+    local n=0
+    for _,entry in ipairs(p.crafting_queue or {}) do if entry.recipe==name and entry.prerequisite then n=n+entry.count end end
+    return n
+  end
+  for _,ing in ipairs(r.ingredients or {}) do
+    local short=ing.type=='item' and ing.amount*count-(inv and inv.get_item_count{name=ing.name,quality='normal'} or 0) or 0
+    -- (the hand recipe named as the item, as hand_recipe finds it)
+    local sub=short>0 and hand_recipe(p,ing.name)
+    local name=ing.name
+    local per=0
+    for _,pr in ipairs(sub and sub.products or {}) do if pr.name==ing.name then per=pr.amount or pr.amount_max or 1 end end
+    if per>0 then
+      local queue=p.crafting_queue or {}
+      local queued=0
+      for _,entry in ipairs(queue) do if entry.recipe==name and not entry.prerequisite then queued=queued+entry.count end end
+      local left=math.min(math.ceil(short/per),queued)
+      local crafts=left
+      for i=#queue,1,-1 do
+        local entry=queue[i]
+        if left>0 and entry.recipe==name and not entry.prerequisite then
+          local n=math.min(left,entry.count)
+          if pcall(function() p.cancel_crafting{index=entry.index or i,count=n} end) then left=left-n end
+        end
+      end
+      if crafts-left>0 then cancelled[#cancelled+1]={recipe=name,item=ing.name,crafts=crafts-left,per=per,queued=queued*per,before=prereq(name)} end
+    end
+  end
   local started=p.begin_crafting{recipe=recipe,count=count}
+  for _,c in ipairs(cancelled) do
+    local used=math.min(c.crafts,prereq(c.recipe)-c.before)
+    local back=c.crafts-used
+    if back>0 then pcall(function() p.begin_crafting{recipe=c.recipe,count=back} end) end
+    if fromq then
+      fromq[c.item]=string.format('%d of the %d queued go into %s (the game crafts them again as its ingredients: none extra)%s',
+        used*c.per,c.queued,recipe,back>0 and string.format('; %d not used, queued again as before',back*c.per) or '')
+    end
+  end
   if started<count and shorts then shorts[recipe]=craft_shortfall(p,recipe,count-started,notes) or 'not hand-craftable now' end
   for _,product in ipairs(p.force.recipes[recipe].products or {}) do
     if product.type=='item' then survey.log_hand('crafted',product.name,started*(product.amount or product.amount_max or 1)) end
@@ -2677,23 +2722,26 @@ end
 function handlers.craft(p,a)
   local notes,shorts={},{}
   if not a.recipes then
-    local started=begin_craft(p,a.recipe,a.count,a.force,notes,shorts)
+    local fromq={}
+    local started=begin_craft(p,a.recipe,a.count,a.force,notes,shorts,fromq)
     local hand_s,queue_s,assemblers=craft_cost(p,{[a.recipe]=started})
-    return craft_facts(p,{started=started,short=shorts[a.recipe],stock=next(notes) and notes or nil,hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},{[a.recipe]=started})
+    return craft_facts(p,{started=started,short=shorts[a.recipe],stock=next(notes) and notes or nil,from_queue=next(fromq) and fromq or nil,
+      hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},{[a.recipe]=started})
   end
   assert(type(a.recipes)=='table' and #a.recipes>=1 and #a.recipes<=32,'recipes requires 1..32 {recipe,count} entries')
   -- Every entry is attempted: a shortfall in one should not hide what the
   -- others queued. Repeated recipes accumulate.
-  local started,errors={},{}
+  local started,errors,fromq={},{},{}
   for _,entry in ipairs(a.recipes) do
     local name=type(entry)=='table' and entry.recipe
-    local ok,result=pcall(begin_craft,p,name,type(entry)=='table' and entry.count,a.force or type(entry)=='table' and entry.force,notes,shorts)
+    local ok,result=pcall(begin_craft,p,name,type(entry)=='table' and entry.count,a.force or type(entry)=='table' and entry.force,notes,shorts,fromq)
     local key=tostring(name)
     if ok then started[key]=(started[key] or 0)+result
     else errors[key]=reason(result) end
   end
   local hand_s,queue_s,assemblers=craft_cost(p,started)
-  return craft_facts(p,{started=started,errors=next(errors) and errors or nil,short=next(shorts) and shorts or nil,stock=next(notes) and notes or nil,hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},started)
+  return craft_facts(p,{started=started,errors=next(errors) and errors or nil,short=next(shorts) and shorts or nil,stock=next(notes) and notes or nil,
+    from_queue=next(fromq) and fromq or nil,hand_s=hand_s,queue_s=queue_s,assemblers=assemblers},started)
 end
 -- Hand-craftable counts from current inventory, including intermediates.
 function handlers.craftable(p,a)
@@ -3673,7 +3721,12 @@ local function holds_items(e)
   end
   return (e.crafting_progress or 0)>0
 end
-function handlers.configure(p,a)
+do
+-- configure's target (in reach, else by remote view) and the checks that
+-- refuse a recipe change, before anything changes: the dispatch runs them
+-- first too, so a refused configure stops nothing (Astra 11:01, twice: a
+-- configure with surface=nauvis, her own surface, failed and paused her queue).
+local function configure_target(p,a)
   local near,e=pcall(entity,p,a)
   if not near then
     local ok,far=pcall(remote_entity,p,a)
@@ -3682,6 +3735,26 @@ function handlers.configure(p,a)
     e=far
   end
   friendly(p,e)
+  return near,e
+end
+local function configure_check(p,a,e,near)
+  if e.type=='rocket-silo' or a.filters~=nil or (a.recipe==nil and (a.filter_mode~=nil or a.use_filters~=nil)) then return end
+  assert(e.type=='assembling-machine','only assembling machines support recipe configuration')
+  local recipe=type(a.recipe)=='string' and p.force.recipes[a.recipe]
+  assert(recipe and recipe.enabled,'recipe is unavailable')
+  assert(e.prototype.crafting_categories[recipe.category],'recipe incompatible with machine')
+  local current,current_quality=e.get_recipe()
+  if current and current.name==recipe.name and (a.quality or 'normal')==((current_quality and current_quality.name) or 'normal') then return end
+  if not a.force then
+    for i=1,#e.fluidbox do assert(not e.fluidbox[i],'machine holds fluid that a recipe change destroys; pass force=true') end
+  end
+  assert(near or not holds_items(e),string.format('remote recipe change: the machine at (%g,%g) holds items or is mid-craft, which only come back to a character in reach; walk there (%s) or empty it first',
+    e.position.x,e.position.y,from_character(p,e.position)))
+end
+M.preflight=M.preflight or {}
+M.preflight.configure=function(p,a) local near,e=configure_target(p,a); configure_check(p,a,e,near) end
+function handlers.configure(p,a)
+  local near,e=configure_target(p,a)
   -- A rocket silo's GUI checkboxes, in reach or by remote view on any planet (Astra 01:41: a silo on Vulcanus with
   -- automatic requests off held up a ferry): automatic requests and send to orbit automatically, read back after.
   if e.type=='rocket-silo' then
@@ -3698,18 +3771,11 @@ function handlers.configure(p,a)
     return out
   end
   if a.filters~=nil or (a.recipe==nil and (a.filter_mode~=nil or a.use_filters~=nil)) then return configure_filters(e,a) end
-  assert(e.type=='assembling-machine','only assembling machines support recipe configuration')
-  local recipe=type(a.recipe)=='string' and p.force.recipes[a.recipe]
-  assert(recipe and recipe.enabled,'recipe is unavailable')
-  assert(e.prototype.crafting_categories[recipe.category],'recipe incompatible with machine')
+  configure_check(p,a,e,near)
+  local recipe=p.force.recipes[a.recipe]
   local current,current_quality=e.get_recipe()
   local same_quality=(a.quality or 'normal')==((current_quality and current_quality.name) or 'normal')
   if current and current.name==recipe.name and same_quality then return {recipe=recipe.name,quality=a.quality,unchanged=true} end
-  if not a.force then
-    for i=1,#e.fluidbox do assert(not e.fluidbox[i],'machine holds fluid that a recipe change destroys; pass force=true') end
-  end
-  assert(near or not holds_items(e),string.format('remote recipe change: the machine at (%g,%g) holds items or is mid-craft, which only come back to a character in reach; walk there (%s) or empty it first',
-    e.position.x,e.position.y,from_character(p,e.position)))
   local returned,spilled={},{}
   -- A machine slot is inserted as the stack itself so item data (spoilage) travels.
   local function give(stack,slot)
@@ -3738,6 +3804,7 @@ function handlers.configure(p,a)
   current=e.get_recipe()
   assert(current and current.name==recipe.name,'recipe incompatible with machine')
   return {recipe=current.name,quality=a.quality,remote=not near or nil,returned=next(returned) and returned or nil,spilled=next(spilled) and spilled or nil}
+end
 end
 -- Omitted inventories are inferred the way a player's click is: fuel into the
 -- burner, smeltables into the furnace, and results back out of it.
@@ -6779,8 +6846,11 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
   end}
 -- Platform health alerts in team.alerts (platalerts.lua): hits, turret ammo,
 -- repair packs, hub health, to the platform's creator, workers and riders.
+-- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
+M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end}
 M.platalerts=require('platalerts'){state=state,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
-  lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end}
+  lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
+  thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
 -- and attached agents are not humans.
 M.players=require('players'){state=state,
@@ -7306,7 +7376,8 @@ function M.remote(p,action,args)
       local s=p.surface
       return args.surface==s.name or (s.platform~=nil and s.platform.name==args.surface)
     end)
-    return not (ok and here)
+    -- (the character's own surface is the same as none: configure out of reach is remote view)
+    if not (ok and here) then return true end
   end
   if action=='configure' then return not pcall(entity,p,args) end
   return false
@@ -7388,6 +7459,11 @@ dispatch_request=function(request)
   end
   -- Passive, or acting on another surface or by remote view (M.remote): the action and queue go on.
   local quiet=passive[request.action] or M.remote(p,request.action,request.args)
+  -- A call refused by its own checks stops nothing: they run before the queue stops (M.preflight).
+  if not reads[request.action] and not quiet and M.preflight and M.preflight[request.action] then
+    local ok,err=pcall(M.preflight[request.action],p,request.args or {})
+    if not ok then passive_failed=game.tick; error(err,0) end
+  end
   if not reads[request.action] and not quiet and not request.action:match('^queue_') then
     local q=state().queues and state().queues[p.index]
     -- A direct wait would pause a running queue (agent-minds study, fix 7:
@@ -7489,6 +7565,7 @@ function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+  state=state,thrust=function(pl) return M.thrust.read(pl) end,
   rocket=function(e) return M.silo.rocket(e) end,
   -- A full drop's pods waiting for a hatch: a channel of their own, as shoot's is, so the
   -- character's action and queue go on (drop is passive); M.drop_jobs_tick sends them.
@@ -7804,6 +7881,7 @@ function M.tick_body(event)
   if state().turret_deaths then pcall(M.turretammo.tick,event.tick) end  -- ammo requests on the ghosts of turrets that died
   M.ores.tick()  -- queued chunks of an ore survey, a few a tick (never raises)
   if event.tick%600==0 then pcall(M.avoid.prune) end  -- enemy chunk records older than a minute (avoid.lua)
+  if event.tick%60==0 and space then pcall(space.watch_stops,event.tick) end  -- when each platform stopped (space.lua stops)
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do
     local ok,err=pcall(M.spoil.tick,event.tick)

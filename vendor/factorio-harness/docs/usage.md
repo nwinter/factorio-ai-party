@@ -675,7 +675,10 @@ fh queue repeat --file plan.json
 - A direct call that moves or acts as the character pauses the queue. Reads, the board, chat, `say`, `tell`, `confess`, `operator`, `craft`/`cancel_craft`, research, votes, `sleep` and the queue calls don't, and when one of them fails (a `placements` out of sight, a `board_update` with an unknown argument) the running action and the queue go on as well. `sleep` leaves the queue running, and so does its end.
 - Calls that act on another surface or by remote view don't pause it either, nor stop a running standing order, and
   neither does their failure: any call with `platform`, or with `surface` naming another surface than the
-  character's; `configure` on an entity out of the character's reach; the planners and blueprint tools wherever they
+  character's (`surface` naming the character's own surface is the same as none); `configure` on an entity out of the
+  character's reach. A `configure` in reach that its checks refuse (no such entity, recipe unavailable or not taken by
+  the machine, fluid inside without `force`) changes nothing either (Astra 11:01: two refused calls paused her queue);
+  the planners and blueprint tools wherever they
   act (`place_ghosts`, `paste`, `blueprint_place`, `blueprint_capture`, `blueprint_save`, `blueprint_rename`, `copy`, `cut`, `deconstruct`,
   `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`, `rail_route`, `train_stop`); `circuit_set`, `wire`,
   `requests`, `flush`, `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
@@ -866,7 +869,10 @@ fh sleep 900 --until researched                       # ...or until the research
   - The same on every other path that moves items into or out of your inventory (operator 08:01): `mine` (timed:
     `last.moved` is how many more of its products you hold when it ends), `craft` (`moved: 0`, `timed: crafts land in
     your inventory as each finishes (hand queue Ns); wait_until crafting_done waits for them`, and the line with the
-    products), `cancel_craft` (`moved` and `returned`: the recipe's ingredients that came back), and `configure` when
+    products; `from_queue` when an ingredient is still in the hand-craft queue: the game counts only what you hold and
+    would craft it again from raw, so up to the shortfall its queued crafts are cancelled first and the game crafts them
+    again as this craft's own, none extra: `electronic-circuit: 20 of the 75 queued go into laser-turret (...)`; ones the
+    game does not use go back in the queue (Astra 11:01: 75 circuits queued, then laser turrets made 20 more)), `cancel_craft` (`moved` and `returned`: the recipe's ingredients that came back), and `configure` when
     a recipe change returns a machine's items (`moved` is what `returned` sums). Queue steps and standing orders (they
     run in the queue) carry `moved` and `inv` in their history entries: a step done at once as its direct reply, a
     timed one from its `last` when it ends, a step that failed at once the line only.
@@ -995,6 +1001,14 @@ fh sleep 900 --until researched                       # ...or until the research
   `leg_left_km` and `eta_min` (minutes to the end of the leg at the current speed; none at speed 0 or below, as when
   paused and drifting back). `at` keeps the connection's own order and its percent from the first end
   (`nauvis->vulcanus 25%`).
+- `stops` on every `platforms` row (operator 10:53, Gemini): each stop of the schedule with its wait conditions in
+  order (`and`/`or` as the GUI joins them), the stop it waits at (`waiting here`) or flies to (`flying to it`) and the
+  one after (`next`); at the stop where it waits, how far each condition is: `time 30s: 18s left`, `inactivity 10s: 2s
+  without activity, 8s left`, `item_count calcite >= 500: the hub holds 120, 380 to go` (or `(met)`), and for request
+  conditions `1 of 2 requests unmet (iron-plate 40/100)`. Arrivals are watched once a second; a stop under way before
+  the harness first looked says `waited at least Ns`. The maximum time reads `the maximum (about 414 days)`.
+- With `platform` set, `thrust_inputs`: a line per thruster input under half full, with the chain behind it, as the
+  slow-flight alert gives it (below).
 - `platform_schedule {platform, paused: true}` says what pausing does: on a route (`note: paused on the route: the
   platform stays among the route's asteroids and drifts back the way it came ...; it reaches no orbit until
   unpaused`), in orbit (`paused in orbit: the platform stays where it is, among that orbit's asteroids`).
@@ -2010,7 +2024,16 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the 5 before` (10 or more and at least twice the earlier rate plus 5), `...: 1 of 2 gun-turrets empty, 1 low (under
   10 rounds); turrets hold 4 rounds, the hub firearm-magazine 920` (the ammo flow: rounds loaded in the turrets
   against the ammo waiting in the hub), `...: no repair packs in the hub (...)` (while it was hit in the last 10
-  minutes or the hub is damaged), `... hub health 900/1000, down 100 in 40s`. A condition that lasts comes again after
+  minutes or the hub is damaged), `... hub health 900/1000, down 100 in 40s`, and when it flies under 5 km/s on a route
+  on two reads 10 s apart (operator 10:53, Astra), which thrusters lack which input and the chain behind it: `platform
+  Sunward (surface platform-1) flies at -10 km/s (under 5; backwards along its leg) on nauvis->gleba: thruster-fuel:
+  thruster (0,11.5) 30%; pump (-3,9.5): off by its circuit condition signal-B = 1 (signal-B 9 on its wires);
+  chemical-plant (-6.5,1.5) thruster-fuel: short of an item ingredient (holds carbon 0, water 20); hub carbon 169;
+  crusher (-11,1.5) carbonic-asteroid-crushing: short of an item ingredient (holds carbonic-asteroid-chunk 0); hub
+  carbonic-asteroid-chunk 0; 4 asteroid collectors` (each input under half full: the thrusters, the pumps and tanks on
+  the pipes up from them, the machines making the fluid and why they stop, quoting a circuit or logistic condition with
+  its signal now, and for an ingredient one lacks, the machines making it, to the hub's asteroid chunks; with no tank
+  under half, the lowest tanks). With no thrust a platform drifts back at 10 km/s. A condition that lasts comes again after
   5 game minutes, sooner when it gets worse. Hits on a platform are no longer `attack #` incidents; `status` alerts
   carry them as `platform_hits` rows `{platform, surface, hits, damage, entities, by, last_tick}`. Turrets and the hub
   are read at most every 10 s per platform.
