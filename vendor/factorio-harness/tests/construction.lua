@@ -482,9 +482,14 @@ do
   local slip=tree('slipstack',10.2,10.2,{object=true,ground_tile=true})
   local oak=tree('tree-01',11.5,10.5,{object=true,water_tile=true})
   local far=tree('slipstack',20.5,20.5,{ground_tile=true})
-  local q={surface={find_entities_filtered=function() return {slip,oak,far} end},force={}}
+  -- Sol, shift12 12:55: a water-cane has ground_tile too, but the tile takes it away (2.0.77: not
+  -- protected_from_tile_building), so construct leaves it standing and the hand-laid tile removes it.
+  local cane=tree('water-cane',10.8,10.9,{ground_tile=true,is_object=true})
+  cane.prototype.protected_from_tile_building=false
+  local q={surface={find_entities_filtered=function() return {slip,oak,far,cane} end},force={}}
   local g={position={x=10.5,y=10.5},ghost_prototype={collision_mask={layers={ground_tile=true}}}}
   local found=C.tile_obstacles(q,g)
   eq(#found,1); eq(found[1],slip); eq(marked[slip],true); eq(marked[oak],nil,'its mask lets landfill in'); eq(marked[far],nil,'not on the tile')
+  eq(marked[cane],nil,'the tile takes the cane away')
 end
 print('continuous construction tests passed')

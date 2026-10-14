@@ -7,7 +7,8 @@ return function(api)
   -- Factorio 2.0 remote view can place ghosts and order deconstruction on any
   -- charted chunk; robots still have to fly there and use real items.
   local MAX_AREA, MAX_AREA_ENTITIES = 256, 16384
-  local directions = {north=0,east=4,south=8,west=12}
+  -- A compass name or the number inspect prints (friction1300).
+  local directions = {north=0,east=4,south=8,west=12,[0]=0,[4]=4,[8]=8,[12]=12}
   local real = api.real or function(p) return p end
 
   local function permission(p, action)
@@ -443,7 +444,7 @@ return function(api)
     assert(a.anchor==nil or a.anchor=='hub' or a.anchor=='center' or a.anchor=='saved','anchor must be hub, center or saved')
     -- With the hub anchor, position is where the blueprint's hub goes (default: the platform's hub).
     local pos=a.position~=nil and api.position(a.position) or nil
-    local direction=directions[a.direction or 'north']; assert(direction, 'blueprint direction must be north, east, south, or west')
+    local direction=directions[a.direction or 'north']; assert(direction, 'blueprint direction must be north, east, south, or west (or 0, 4, 8, 12)')
     local mode=a.mode or 'normal'
     assert(MODES[mode],'paste mode must be normal, forced or superforced')
     local build_mode=defines.build_mode[mode]
@@ -645,7 +646,7 @@ return function(api)
       'flips are not supported when pasting on a platform or as a bot')
     assert(a.anchor==nil or a.anchor=='hub' or a.anchor=='center' or a.anchor=='saved','anchor must be hub, center or saved')
     local pos=a.position~=nil and api.position(a.position) or nil
-    local direction=directions[a.direction or 'north']; assert(direction, 'blueprint direction must be north, east, south, or west')
+    local direction=directions[a.direction or 'north']; assert(direction, 'blueprint direction must be north, east, south, or west (or 0, 4, 8, 12)')
     local mode=a.mode or 'normal'
     assert(MODES[mode],'paste mode must be normal, forced or superforced')
     return load(p,a,function(root)

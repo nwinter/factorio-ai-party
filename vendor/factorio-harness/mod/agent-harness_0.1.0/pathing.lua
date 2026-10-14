@@ -392,7 +392,7 @@ return function(api)
       -- with the flood it took 11 ms on a private copy of world n; apart, the
       -- flood 3.9 ms, the search 2.3 ms.
       nav.dig_from = {x=here.x, y=here.y}
-      nav.dig_area = {region.x0 - 6, region.y0 - 6, region.x1 + 6, region.y1 + 6}
+      nav.dig_area = {region.x0 - 16, region.y0 - 16, region.x1 + 16, region.y1 + 16}
       nav.path_state = 'digging'
       return
     end
@@ -775,94 +775,147 @@ return function(api)
     return {region=now, gaps=gaps}
   end
 
-  -- Closed in: the fewest entities to mine for a way out. A search over
-  -- quarter-tile steps where a step blocked only by what the character can
-  -- mine (our entities, trees, rocks: not cliffs, tiles or others' entities)
-  -- costs one, until a step with room to turn that it reached through such a
-  -- step (outside the closed area). opts.area {x0, y0, x1, y1}: the window
-  -- searched (default 24 tiles round start). Returns {mine={{name, position}}, to} or nil.
-  local DIG_CAP, DIG_MAX = 12000, 3
+  -- Closed in: the entities to mine for a way out (friction2: Gemini, shift12 19:51, followed seven hints one entity
+  -- at a time, two poles, four accumulators and a recycler, each opening only a larger closed pocket; the search then
+  -- counted quarter-tile steps, so a pole's small box looked cheapest). A search over the tiles round the closed
+  -- area: a tile is free when the character's box, padded to turn, fits at its centre; stepping onto a tile costs the
+  -- entities there that the tile before did not hold, by kind (DIG_WEIGHT: chests, accumulators, walls, solar panels,
+  -- trees and rocks 1; belts, pipes and inserters 2; poles, machines and the rest 3); cliffs, tiles and others'
+  -- entities never. It ends on a free tile at the window's edge (open ground, past every closed pocket on the way) or
+  -- on the goal's tile (opts.goal), whichever costs less. opts.area {x0, y0, x1, y1}: the window (default 24 tiles
+  -- round start; at most DIG_SIDE tiles a side). On a copy of world n's Fulgora island a search took 2 to 8 ms at 32
+  -- tiles a side, against 1.3 to 3.3 ms for the old one, which stopped at the first pocket. Returns {mine={{name,
+  -- position}}, to, cost, goal (true when it ends at the goal)}, or nil when no way out costs DIG_COST or less.
+  local DIG_WEIGHT = {container=1, ['logistic-container']=1, ['linked-container']=1, accumulator=1, wall=1, gate=1,
+    ['solar-panel']=1, lamp=1, tree=1, plant=1, ['simple-entity']=1, ['simple-entity-with-owner']=1,
+    ['transport-belt']=2, ['underground-belt']=2, splitter=2, ['lane-splitter']=2, loader=2, ['loader-1x1']=2,
+    inserter=2, pipe=2, ['pipe-to-ground']=2, pump=2}
+  local DIG_COST, DIG_SIDE = 16, 64
+  M.DIG_WEIGHT = DIG_WEIGHT
   function M.dig(surface, start, half, opts)
     opts = opts or {}
     local w = opts.area or {start.x - WINDOW, start.y - WINDOW, start.x + WINDOW, start.y + WINDOW}
-    local hit, all, classify = grid(boxes_in(surface, {{w[1], w[2]}, {w[3], w[4]}}, opts.ignore), half + PAD)
-    local inside = opts.inside or {}
+    local tx0, ty0 = math.floor(math.max(w[1], start.x - DIG_SIDE / 2)), math.floor(math.max(w[2], start.y - DIG_SIDE / 2))
+    local tx1, ty1 = math.ceil(math.min(w[3], start.x + DIG_SIDE / 2)) - 1, math.ceil(math.min(w[4], start.y + DIG_SIDE / 2)) - 1
+    local boxes = boxes_in(surface, {{tx0, ty0}, {tx1 + 1, ty1 + 1}}, opts.ignore)
+    local h = half + PAD
     local force = opts.force
-    -- Read once per box (b[7]).
-    local function minable(b)
-      if b[7] == nil then
-        local e = b[6]
-        local ok, yes = pcall(function()
-          if not (e and e.valid) or not e.minable or e.type == 'cliff' then return false end
-          return e.force == force or e.force.name == 'neutral'
-        end)
-        b[7] = ok and yes or false
+    -- What stands on each tile (its centre, the padded box): entities the character may mine, by index (one index, or
+    -- a list of them); stop: anything else. Whether a kind is minable, and its weight, read once per name.
+    local on, stop, ents, weight, kinds = {}, {}, {}, {}, {}
+    for _, b in ipairs(boxes) do
+      local e = b[6]
+      local ei
+      if e then
+        local kind = kinds[b[5]]
+        if kind == nil then
+          local ok, t, m = pcall(function() return e.type, e.minable end)
+          kind = ok and m and t ~= 'cliff' and (DIG_WEIGHT[t] or 3) or false
+          kinds[b[5]] = kind
+        end
+        if kind then
+          local ok, ours = pcall(function() local f = e.force; return f == force or f.name == 'neutral' end)
+          if ok and ours then ents[#ents+1] = e; ei = #ents; weight[ei] = kind end
+        end
       end
-      return b[7]
+      for tx = math.max(tx0, math.floor(b[1] - 0.5 - h) + 1), math.min(tx1, math.ceil(b[3] - 0.5 + h) - 1) do
+        local base = tx * 65536
+        for ty = math.max(ty0, math.floor(b[2] - 0.5 - h) + 1), math.min(ty1, math.ceil(b[4] - 0.5 + h) - 1) do
+          local k = base + ty
+          if ei then
+            local l = on[k]
+            if l == nil then on[k] = ei elseif type(l) == 'number' then on[k] = {l, ei} else l[#l+1] = ei end
+          else stop[k] = true end
+        end
+      end
     end
-    -- Cost to step on: 0 free, 1 blocked only by what can be mined, nil never.
-    local function cost(x, y) return classify(x, y, half, minable) end
-    local si, sj = math.floor(start.x / STEP + 0.5), math.floor(start.y / STEP + 0.5)
-    local best, from, buckets = {[cell(si, sj)]=0}, {}, {[0]={{si, sj}}}
-    local done, target, level, seen_n = {}, nil, 0, 0
-    while level <= DIG_MAX * 40 and not target do
-      local list = buckets[level]
-      local idx = 1
+    -- Tiles by number (i * 65536 + j; the four neighbours are k +- 65536 and k +- 1), the queue a list of numbers per
+    -- cost: no table made per step (a table per step made this 15 to 30 ms on a copy of world n's Fulgora island).
+    local sx, sy = math.floor(start.x), math.floor(start.y)
+    local gk = opts.goal and cell(math.floor(opts.goal.x), math.floor(opts.goal.y)) or nil
+    local sk = cell(sx, sy)
+    local best, done, from, buckets = {[sk]=0}, {}, {}, {[0]={sk}}
+    local target, level = nil, 0
+    local DK = {65536, -65536, 1, -1}
+    while level <= DIG_COST and not target do
+      local list, idx = buckets[level], 1
       while list and idx <= #list do
-        local c = list[idx]; idx = idx + 1
-        local k = cell(c[1], c[2])
+        local k = list[idx]; idx = idx + 1
         if not done[k] and best[k] == level then
           done[k] = true
-          seen_n = seen_n + 1
-          local x, y = c[1] * STEP, c[2] * STEP
-          if level > 0 and not inside[k] and not hit(x, y, half + PAD) then target = c; break end
-          if seen_n > DIG_CAP then break end
-          for _, o in ipairs(NEIGHBOURS) do
-            local ni, nj = c[1] + o[1], c[2] + o[2]
-            local nx, ny = ni * STEP, nj * STEP
-            local nk = cell(ni, nj)
-            if not done[nk] and (best[nk] == nil or best[nk] > level) and nx > w[1] + 0.5 and nx < w[3] - 0.5 and ny > w[2] + 0.5 and ny < w[4] - 0.5 then
-              local step = cost(nx, ny)
-              if step and (best[nk] == nil or level + step < best[nk]) then
-                best[nk] = level + step; from[nk] = c
-                buckets[level + step] = buckets[level + step] or {}
-                local b = buckets[level + step]; b[#b+1] = {ni, nj}
+          local i = math.floor((k + 32768) / 65536)
+          local j = k - i * 65536
+          local here = on[k]
+          if level > 0 and not here and not stop[k] and (k == gk or i <= tx0 or j <= ty0 or i >= tx1 or j >= ty1) then target = k; break end
+          -- (the start tile counts as stood on nothing: the character is beside what its tile holds)
+          if k == sk then here = nil end
+          for n = 1, 4 do
+            local d = DK[n]
+            local ni, nj = i, j
+            if d == 65536 then ni = i + 1 elseif d == -65536 then ni = i - 1 elseif d == 1 then nj = j + 1 else nj = j - 1 end
+            if ni >= tx0 and ni <= tx1 and nj >= ty0 and nj <= ty1 then
+              local nk = k + d
+              if not done[nk] and not stop[nk] then
+                local nl = level
+                local there = on[nk]
+                if there then
+                  if type(there) == 'number' then
+                    -- one entity there: free when the tile before holds it too
+                    local stood = here == there
+                    if not stood and type(here) == 'table' then for _, ej in ipairs(here) do if ej == there then stood = true; break end end end
+                    if not stood then nl = nl + weight[there] end
+                  else
+                    for _, ei in ipairs(there) do
+                      local stood = here == ei
+                      if not stood and type(here) == 'table' then for _, ej in ipairs(here) do if ej == ei then stood = true; break end end end
+                      if not stood then nl = nl + weight[ei] end
+                    end
+                  end
+                end
+                local was = best[nk]
+                if nl <= DIG_COST and (was == nil or nl < was) then
+                  best[nk] = nl; from[nk] = k
+                  local b = buckets[nl]; if not b then b = {}; buckets[nl] = b end
+                  b[#b+1] = nk
+                end
               end
             end
           end
         end
       end
-      if seen_n > DIG_CAP then break end
       if not target then level = level + 1 end
     end
     if not target then return nil end
     -- The entities on the way, in order from the character.
     local steps, c = {}, target
-    while c do steps[#steps+1] = c; c = from[cell(c[1], c[2])] end
+    while c do steps[#steps+1] = c; c = from[c] end
     local mine, have = {}, {}
-    for k = #steps, 1, -1 do
-      local s = steps[k]
-      for _, b in ipairs(all(s[1] * STEP, s[2] * STEP, half) or {}) do
-        local e = b[6]
-        if e and e.valid and not have[e] then
-          have[e] = true
+    -- (not the start tile's own: the character stands beside what it holds, and crossing it was paid on the next tile)
+    for k = #steps - 1, 1, -1 do
+      local l = on[steps[k]]
+      for _, ei in ipairs(type(l) == 'number' and {l} or l or {}) do
+        local e = ents[ei]
+        if not have[ei] and e.valid then
+          have[ei] = true
           mine[#mine+1] = {name=e.name, position={x=e.position.x, y=e.position.y}}
         end
       end
     end
-    if #mine == 0 or #mine > DIG_MAX then return nil end
-    return {mine=mine, to={x=target[1] * STEP, y=target[2] * STEP}}
+    if #mine == 0 then return nil end
+    local ti = math.floor((target + 32768) / 65536)
+    return {mine=mine, to={x=ti + 0.5, y=target - ti * 65536 + 0.5}, cost=level, goal=target == gk or nil}
   end
 
   -- The tick after a closed-in give-up: the way out by mining, then unreachable.
   function M.dig_step(p, nav)
     local from = nav.dig_from or p.position
-    local dug = M.dig(p.surface, from, M.half(p.character), {ignore=p.character, force=p.force, area=nav.dig_area})
+    local dug = M.dig(p.surface, from, M.half(p.character), {ignore=p.character, force=p.force, area=nav.dig_area, goal=nav.position})
     if dug then
       nav.dig = dug
       local names = {}
       for i, e in ipairs(dug.mine) do names[i] = e.name .. ' ' .. at(e.position) end
-      nav.why = (nav.why or '') .. string.format('; mining %s opens a way out to %s', table.concat(names, ' and '), at(dug.to))
+      nav.why = (nav.why or '') .. string.format('; mining %s opens a way %s at %s', table.concat(names, ' and '),
+        dug.goal and 'to the goal' or 'out to open ground', at(dug.to))
     end
     nav.dig_from, nav.dig_area = nil, nil
     -- Closed in: the nearest step of the area, when within build reach.

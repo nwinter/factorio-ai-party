@@ -100,6 +100,8 @@ already targets your character.
 - `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with
   its buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing:
   hand-fed); the hand-fed and low ones first.
+- `./fh call rearm --args '{"surface":true,"below":5}'` (or `"area"`, `"radius"`) tops up every turret under 5 rounds
+  in one walking tour, nearest cluster first. refuel, feed and rearm that find nothing name the nearest one outside.
 - `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
   ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
@@ -172,7 +174,9 @@ already targets your character.
   minutes left at that rate; the networks line names the lowest boiler (position, minutes, fuel, feeder), the 2 feed
   chests with the fewest minutes left (`feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min
   left`) and accumulators' stored MJ of their maximum; a logistic network's line ends with the items it holds most of
-  and what its requesters ask (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`); `./fh platform NAME` shows one space platform (hub free
+  and what its requesters ask (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`); on
+  Fulgora, `networks` and `status` carry `storm`: lightning in the dark, the phase, darkness and the seconds to dusk,
+  full dark, brightening and dawn; `./fh platform NAME` shows one space platform (hub free
   slots, cargo, speed, next stop, ETA);
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
@@ -183,8 +187,9 @@ already targets your character.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
   instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
   true}` (and `feed` or `collect {positions, "walk": true}`) walks into reach of targets out of reach first, then transfers (one
-  call; `legs` lists the route); `transfer {item, "from": "nearest"}` (`radius` to walk) takes from the nearest chest
-  holding the item and says which; `transfer`/`collect {positions,
+  call; `legs` lists the route); `transfer {item, "from": "nearest"}` (`radius` up to 256 to walk) takes from the nearest chest
+  holding the item and says which, a `count` it lacks from the next ones, requester and buffer chests last; `transfer
+  {from: {x,y}, to: {x,y}, item, count}` takes at one place and gives at the other in one call; `transfer`/`collect {positions,
   item | items, pick: "first_with_stock" | "most_stock"}` takes at one listed place that holds the item now (empty
   ones are `skipped`, not short; none: nothing walked), and `to` (`{x,y}` or `{item: {x,y}}`) carries it on to that
   item's destination in the same call; `./fh call inventory` shows main,
@@ -246,17 +251,24 @@ already targets your character.
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
   `last.nearest_reachable`, plus `last.build_spot`: a spot you can reach within build reach of the target
-  (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). `kite --wait` waits until the kite
-  ends and reports its outcome, kills and ammo the same way.
+  (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). A position nothing leads to (inside a
+  machine, a silo, a landing pad) is walked near instead: it ends `arrived_near` at that build spot (`last.near_walk`;
+  `"near":false` ends `unreachable` there). `kite --wait` waits until the kite ends and reports its outcome, kills and
+  ammo the same way.
 - `move_to --args '{"target":{"position":{"x":-75.5,"y":-86.5}},"reach":"transfer"}'` (reach `build` or tiles; a vehicle by
-  `{"unit_number":N}`) walks until you are within reach of that entity's box and arrives there (`last.reach`); in reach, at once.
+  `{"unit_number":N}`) walks until you are within reach of that entity and arrives there (`last.reach`; build reach is
+  to its centre, as `build` measures it); in reach, at once. `{"position":{x,y},"reach":"build"}` does the same for a point.
 - `move_to --args '{"position":{"x":40,"y":5},"via":[{"x":10,"y":30},{"x":30,"y":30}]}'` walks the via points in order
   in one call, each leg pathfound and checked for enemies like a single `move_to`; `last.legs` gives each leg's outcome.
 - `move_to` keeps out of the range of the worms the map shows, plus 4 tiles; `"avoid_enemies":true` also keeps out of
   spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
   A goal inside such a range is refused, naming the worm and the nearest safe spot toward it; `"unsafe_goal":true` goes anyway.
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
-  walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`.
+  walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`
+  names everything to mine to open ground (chests, accumulators, walls, trees and rocks before poles and machines). A
+  `build` batch that fails part way, and a real `place_ghosts`, say on the `warning:` line when what they place closes
+  you in. `circuit_set` says `stays disabled` there when one of the entity's conditions is not met after the call;
+  `requests` `set` takes a map `{item: min}` too.
 - Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,
   `{name, count}` or false; default 10 of what the logistic network there holds most of); so do the ghosts of turrets that died.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under
@@ -280,12 +292,18 @@ already targets your character.
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
   reads back the conditions, settings, each wire's far end and the signals on each network now. A logistic condition
   reads the network whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met).
-- Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub, water-cane or stromatolite stands:
-  a dry run names them (`blocked by slipstack tree at (x,y): mine it first`); `place_ghosts` marks them for removal
-  first (`tile_obstacles_marked`) and `construct` mines them before it lays the landfill.
+- Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub or stromatolite stands (marked or
+  not, for a tile laid by hand): a dry run and a failed build name them (`blocked by slipstack tree at (x,y): mine it
+  first`); `place_ghosts` marks them for removal first (`tile_obstacles_marked`) and `construct` mines them before it
+  lays the landfill. Water-cane and fish do not block a tile: the new tile takes them away (`removed`). Landfill goes on
+  water and wetland only (`landfill cannot go on oil-ocean-deep (foundation can; not researched)`).
 - `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'` lists up to 10 (`limit`
   up to 50) positions where it fits now, nearest first, by the game's build check (`blocked`: positions something
-  stands in). `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
+  stands in); `"separate":true` lists spots that do not overlap each other, `"powered":true` only spots in one of our
+  poles' supply areas. `build_path` mines the trees and rocks in its way by hand as it goes (`last.cleared`, `cleared_names`).
+- `build`, `place_ghosts` and `placements` take a direction as the number inspect prints (0, 4, 8, 12) or a compass
+  name. `map` and `grid` tell `walkable water` (`,` on the grid: shallow water, wetland, Fulgora's oil ocean, deep too)
+  from water a character cannot cross (`~`).
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
@@ -307,6 +325,9 @@ already targets your character.
   `scan` rows (`filters: whitelist: iron-plate`, `off`, `set by circuit`); `configure {position, filters, filter_mode
   | mode, use_filters}` and `circuit_set {settings: {filters, filter_mode}}` set them. An unknown argument's refusal
   names the closest valid name, and on `configure` and `circuit_set` what that entity takes.
+- Turret targeting: `configure {position | positions, platform?, priority_targets: ["big-metallic-asteroid", ...],
+  ignore_unprioritised: true}` sets a turret's (or ghost's) priority list as its GUI does; inspect reads it back;
+  blueprints keep it.
 - The team blueprint library, kept in the save across shifts: `blueprint_save {name, area | positions, description,
   anchor}` stores what the team built; `blueprint_list` lists entries (author, size, counts, last used);
   `blueprint_place {name, position, direction, dry_run}` pastes one; `blueprint_rename` and `blueprint_delete {name}`:
@@ -318,7 +339,8 @@ already targets your character.
   last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
   `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
-  chests near the silo.
+  chests near the silo. A silo's transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part
+  ingredients) and `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each.
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
   and spoiled, the rockets sent to it; per leg what spoiled on the way) and `spoiling` (when its spoilable items spoil,
   against the arrival). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
@@ -345,7 +367,8 @@ already targets your character.
   power where it is and its panels' output, accumulators, machines on low power); `power` takes `platform` too, and
   `inspect` on a machine, solar panel or accumulator shows its maximum under `electricity`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
-  takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
+  takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first and the landing pad's room
+  (`pad_room`: free slots, what takes the rest, `spill`: what would land on the ground).
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods, to
   the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it).
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
@@ -376,3 +399,6 @@ already targets your character.
   agents build them with real items. The reply counts ghosts placed, spots already rebuilt and spots now taken.
 - Chat lines from `players` say when a human player joins or leaves, and when one removes, or marks for
   deconstruction or upgrade, 20 or more of the team's entities within 5 minutes (with the last position).
+- When the game runs slow, sleeps and `--wait` keep waiting while it advances (`slow_game: 18 ticks/s, 30% of normal`,
+  also on the clock line) and end `paused` when it stops. `game_unreachable` means nothing was sent; after a server
+  restart from a save, one reply says `rolled_back` and lists in `redo` what you changed since, which is gone.

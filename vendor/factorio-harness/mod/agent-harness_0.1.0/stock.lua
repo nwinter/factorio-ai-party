@@ -416,8 +416,14 @@ return function(api)
   function M.start_tour(p,op,entities,ticks,fields)
     local places={}
     for i,e in ipairs(entities) do places[i]={entity=e,position=e.position} end
-    local action={kind='gather',op=op,got=0,visited=0,want=math.huge,targets=route(p.position,places,MAX_TOUR),index=1,until_tick=game.tick+ticks}
-    for k,v in pairs(fields or {}) do action[k]=v end
+    -- ordered: the caller's walking order (rearm's clusters, nearest first), never re-routed.
+    local targets
+    if fields and fields.ordered then
+      targets={}
+      for i=1,math.min(#places,MAX_TOUR) do targets[i]=places[i] end
+    else targets=route(p.position,places,MAX_TOUR) end
+    local action={kind='gather',op=op,got=0,visited=0,want=math.huge,targets=targets,index=1,until_tick=game.tick+ticks}
+    for k,v in pairs(fields or {}) do if k~='ordered' then action[k]=v end end
     return action,{op=op,item=action.item,places=#action.targets,skipped=#entities>MAX_TOUR and #entities-MAX_TOUR or nil}
   end
   -- A courier's legs (runtime.lua M.pick_source): its places in the given order, never re-routed; a place without
@@ -449,6 +455,8 @@ return function(api)
     if action.wait then return M.wait_tick(p,action) end
     while true do
       if action.got>=action.want then return 'collected' end
+      -- transfer {walk} filling a count over several chests (from: "nearest"): done once it is taken.
+      if action.fill and action.got>=action.fill then return 'transferred' end
       local t=action.targets[action.index]
       if not t then return done(action) end
       if t.find and not t.entity and api.near(p,t.position) then

@@ -6,7 +6,8 @@ import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createHash, randomUUID } from 'node:crypto';
-import { RconClient, RconOutcomeUnknown } from './rcon.js';
+import { RconClient, RconOutcomeUnknown, RconUnavailable } from './rcon.js';
+import { loadPace, savePace, seeTick, seeDown, slowNote, rolledBack, Pacer, overtime, slowGame, speedText, STALL_MS, type PaceState } from './pace.js';
 import { Harness, type Reply } from './harness.js';
 import { renderMap } from './view.js';
 import { parseLook } from './look.js';
@@ -38,7 +39,8 @@ const help = `fh — Factorio agent CLI
   fh observe [--args '{"radius":24}']        Bounded local world state
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
   fh call walk --args '{"direction":"east","ticks":60}' --wait
-  fh wait                                   Block until the character's current action (and combat) ends; a tell or a teammate's mention ends the wait early
+  fh wait [--max S]                         Block until the character's current action (and combat) ends, at most S s (at once when
+                                            idle; --until idle is the same); a tell or a teammate's mention ends the wait early
                                             (exit 3: it still runs; --wait-through-tells keeps waiting)
   fh wait --until tell|alert|COND [--max S] One blocking wait, one line out: ends on a tell or a teammate's mention, a new alert (alert),
                                             a sleep condition (researched [TECH], item_count ITEM>=N, rocket_ready X,Y, ...), or after S s (default 600, up to 900);
@@ -268,6 +270,59 @@ function noteProjects(reply: unknown) {
     writeFileSync(projectsFile, JSON.stringify({at:new Date().toISOString(), lines}) + '\n');
   } catch (error) { process.stderr.write(`projects file: ${String(error)}\n`); }
 }
+// The game's pace (pace.ts; world n 13:41: a crash, a restart from the 13:35 autosave, then 7-10 ticks/s): FH_PACE_FILE
+// (default .fh-pace.json next to the journal) keeps the last tick, the speed between calls and an outage in course.
+// A rollback and the end of an outage are said once, on the reply that sees them (paceNotes, put first by output).
+let paceFile: string | undefined;
+let journalPath: string | undefined;
+let paceState: PaceState | undefined;
+const paceNotes: Record<string, unknown> = {};
+function pace(): PaceState { return paceState ??= loadPace(paceFile); }
+// A reply to an --id retry may come from the game's or the broker's record with its old tick: no rollback, no speed.
+let retriedId: string | undefined;
+function notePace(reply: unknown) {
+  const tick = reply && typeof reply === 'object' ? (reply as Reply).tick : undefined;
+  if (typeof tick !== 'number' || !paceFile) return;
+  if (retriedId !== undefined && (reply as Reply).id === retriedId) return;
+  const now = Date.now();
+  const seen = seeTick(pace(), tick, now);
+  savePace(paceFile, pace());
+  if (seen.outage) paceNotes.outage = seen.outage;
+  if (seen.rollback) {
+    const back = rolledBack(journalPath, seen.rollback.to, now);
+    paceNotes.rolled_back = `the game rolled back from tick ${seen.rollback.from} to tick ${seen.rollback.to} or earlier (the server restarted from a save): `
+      + `what you did after ${back.lastAt ?? 'that tick'} is gone; `
+      + (back.redo.length ? `redo lists what your journal shows you changed after it (${back.redo.length + back.more} calls), oldest first` : 'your journal shows no change of yours after it');
+    if (back.redo.length) paceNotes.redo = back.more ? [...back.redo, `+${back.more} more (your journal: ${journalPath})`] : back.redo;
+  }
+}
+// A call that could not reach the game: since when (pace.ts), and whether the request went out.
+function transportError(error: unknown): {code: string, message: string, recovery?: string} | undefined {
+  const text = error instanceof Error ? error.message : String(error);
+  if (error instanceof RconUnavailable) {
+    const since = paceFile ? seeDown(pace(), Date.now(), text) : 'game unreachable';
+    savePace(paceFile, pace());
+    return {code:'game_unreachable', message:`${since}: ${text}; the request was not sent (nothing was done)`};
+  }
+  if (error instanceof RconOutcomeUnknown || error instanceof BridgeOutcomeUnknown) {
+    const since = paceFile ? seeDown(pace(), Date.now(), text) : undefined;
+    savePace(paceFile, pace());
+    return {code:'outcome_unknown', message:`${since ? since + ': ' : ''}${text}`,
+      recovery:'Inspect status/state. Retry only the same action, args, player and ID (--id) while the dedup cache retains it: the game answers an ID it applied from its record and runs one it never got.'};
+  }
+  return undefined;
+}
+function withPace(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value;
+  const reply = value as Reply;
+  const notes = Object.keys(paceNotes).length ? {...paceNotes} : undefined;
+  for (const key of Object.keys(paceNotes)) delete paceNotes[key];
+  const result = reply.result && typeof reply.result === 'object' ? reply.result as Record<string, unknown> : undefined;
+  const slow = paceFile ? slowNote(pace(), Date.now()) : undefined;
+  if (!notes && !(slow && typeof result?.clock === 'string')) return value;
+  const clock = slow && typeof result?.clock === 'string' ? `${result.clock}; ${slow}` : result?.clock;
+  return {...reply, result:{...(notes ?? {}), ...(result ?? {}), ...(clock !== undefined ? {clock} : {})}};
+}
 // The look-ahead block (Nick 12:35; when: lookahead.ts), shown once in a reply as `lookahead`. FH_LOOKAHEAD_FILE
 // (default .lookahead.json next to the journal) keeps when the workspace's first call came and when it was last shown.
 let lookaheadFile: string | undefined;
@@ -310,7 +365,7 @@ function exitCode(reply: Reply): number {
   return reply.ok ? 0 : 1;
 }
 function output(value: unknown) {
-  value = withDeadline(value);
+  value = withPace(withDeadline(value));
   if (outputFormat === 'compact') writePaged(operatorHead() + formatCompact(withoutOperator(value)));
   else process.stdout.write(JSON.stringify(value) + '\n');
   // JSON stays one document on stdout; the error:/warning: line goes to stderr
@@ -653,12 +708,15 @@ async function main() {
     client = rcon;
   }
   operatorFile = process.env.FH_OPERATOR_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.operator-tells.jsonl') : undefined);
+  paceFile = process.env.FH_PACE_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-pace.json') : undefined);
+  journalPath = values.journal ? resolve(values.journal) : undefined;
+  retriedId = values.id;
   projectsFile = process.env.FH_PROJECTS_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.projects.json') : undefined);
   lookaheadFile = process.env.FH_LOOKAHEAD_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.lookahead.json') : undefined);
   lookaheadName = bot ?? (values.journal ? dirname(resolve(values.journal)).split('/').pop() ?? '' : '');
   {
     const inner = harness;
-    harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); return reply; }};
+    harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); notePace(reply); return reply; }};
   }
   // The look-ahead block on a reply when it is due (LOOKAHEAD_MS); the first call of a workspace starts its clock. Read
   // with peek, so the extra request leaves the agent's team news for its own replies.
@@ -716,15 +774,30 @@ async function main() {
   }
   // A timed-out wait must not look like a finished action: no completion
   // snapshot, a still_running block, and an error that says what to do.
-  function timedOut(action: string, status: Reply, waitedMs: number): Reply {
+  function timedOut(action: string, status: Reply, waitedMs: number, pacer?: Pacer, ending?: string): Reply {
     const active = status.result?.active;
     const tick = status.tick ?? status.result?.tick;
     const left = active?.until_tick !== undefined && tick !== undefined ? Math.max(0,active.until_tick-tick) : undefined;
     const leftText = left !== undefined ? ` (up to ${Math.ceil(left/60)} s more, until tick ${active.until_tick})` : '';
+    const slow = pacer ? slowGame(pacer) : undefined;
+    // Why it gave up: the game stopped (no tick for STALL_MS), or it ran slow past 3 x the time + 60 s.
+    const why = ending === 'paused' ? ` (no game tick passed for ${Math.round(STALL_MS/1000)} s: the game is paused or stopped)`
+      : slow && ending === 'cap' ? ` (slow_game: ${slow}; a wait goes on while the game advances, up to 3 x its game time + 60 s)`
+      : slow ? ` (slow_game: ${slow})` : '';
     return {...status, ok:false,
-      result:{timed_out:true, still_running:active ?? status.result?.combat ?? true, waited_ms:waitedMs, last:status.result?.last},
-      error:{code:'wait_timeout', message:`${action} is STILL RUNNING: the wait gave up after ${Math.round(waitedMs/1000)} s but the action has not finished${leftText}. `+
+      result:{timed_out:true, still_running:active ?? status.result?.combat ?? true, waited_ms:waitedMs, last:status.result?.last, ...(slow ? {slow_game:slow} : {})},
+      error:{code:'wait_timeout', message:`${action} is STILL RUNNING: the wait gave up after ${Math.round(waitedMs/1000)} s${why} but the action has not finished${leftText}. `+
         `A new character action would interrupt it. Keep waiting with 'fh wait', or check 'fh call status' (active) before doing anything else.`}};
+  }
+  // A computed wait budget's ceiling while the game runs slow: 3 x the game time it covers + 60 s (the budget is that
+  // time x 1.25 + 5 s), at most 45 min. An explicit --wait-timeout stays as given.
+  function slowCap(started: number, budget: number): number {
+    return started+Math.min(2700000, Math.max(budget, Math.round((budget-5000)/1.25*3)+60000));
+  }
+  let lastPacer: Pacer | undefined;
+  function withSlow(reply: Reply): Reply {
+    const slow = lastPacer ? slowGame(lastPacer) : undefined;
+    return slow && reply.result && typeof reply.result === 'object' ? {...reply, result:{...reply.result, slow_game:slow}} : reply;
   }
   // Poll once a second, every 2 s once the wait passes 10 s; when the action's
   // own end tick is nearer, just after it (at least 100 ms).
@@ -842,13 +915,27 @@ async function main() {
     if (done.result?.interrupted) return interruptedReply(done, started, before, action);
     // A timeout or a failed poll is reported as it is.
     if (done.error?.code === 'wait_timeout' || (!done.ok && done.error?.code !== 'action_interrupted' && done.error?.code !== 'timed_out')) return withTells(done);
-    return withTells(compactWaits ? await brief(done, started, before, action) : await finalReply(done));
+    return withSlow(withTells(compactWaits ? await brief(done, started, before, action) : await finalReply(done)));
   }
   async function waitForActionEnd(action: string, untilTick: number | undefined, nowTick: number | undefined, started: number, acceptedTick?: number): Promise<Reply> {
-    const deadline = started+waitBudget(untilTick,nowTick,action === 'wait_until');
+    const budget = waitBudget(untilTick,nowTick,action === 'wait_until');
+    const deadline = started+budget;
+    const explicit = values['wait-timeout'] !== undefined && action !== 'wait_until';
+    // (an explicit --wait-timeout: the cap is the deadline; the overtime check still names a stopped game)
+    const cap = explicit ? deadline : slowCap(started, budget);
+    const pacer = lastPacer = new Pacer();
+    pacer.see(nowTick, started);
     let staleLooks = 0;
-    while (!stopping && Date.now()<deadline) {
+    let ending: ReturnType<typeof overtime> = 'go';
+    // The poll after the deadline is judged like the others: an action that ended since the previous poll ends the
+    // wait by its outcome (Sol 12:20: collect --wait --wait-timeout 60000 read STILL RUNNING at 62 s over a gather
+    // collected 10 of 10 at 54.2 s game time; the timeout's own status read already showed it ended). The overtime
+    // rule (pace.ts) says when that last look comes: past the deadline a slow game that still advances keeps the wait.
+    while (!stopping) {
+      ending = overtime(pacer, deadline, cap);
+      const lastLook = ending !== 'go';
       const status = await poll();
+      pacer.see(status.tick);
       const active = action === 'shoot' ? status.result?.combat : action === 'drop' ? status.result?.drop_pending : status.result?.active;
       // active may report shooting when movement has already finished. A
       // transfer/refuel/rearm short of items waits for the hand-craft queue as
@@ -867,7 +954,7 @@ async function main() {
         // A result that ended before this action was accepted belongs to an
         // earlier action: look again briefly, then report none rather than it.
         if (status.ok && action !== 'shoot' && acceptedTick !== undefined && typeof last?.tick === 'number' && last.tick < acceptedTick) {
-          if (++staleLooks <= 3) { await delay(250); continue; }
+          if (++staleLooks <= 3 && !lastLook) { await delay(250); continue; }
           return {...status, result:{...status.result, last:undefined,
             note:`${action} is not running and recorded no result of its own (the last result, ${last.kind} ${last.outcome} at tick ${last.tick}, predates it)`}};
         }
@@ -877,11 +964,12 @@ async function main() {
         }
         return status;
       }
+      if (lastLook) break;
       await delay(pollDelay(status, started));
     }
     if (stopping) throw new Error('Stopped waiting for action; inspect status. Game actions have a bounded tick duration.');
     // Still running is not a failure of the action, but it is not done either.
-    return timedOut(action, await harness.request('status'), Date.now()-started);
+    return timedOut(action, await harness.request('status'), Date.now()-started, pacer, explicit && ending === 'cap' ? 'end' : ending);
   }
   // A tell or mention that arrived after `since` (a tick) ends any wait (agent-minds study, fix 5: agents moved to
   // waits nobody could interrupt; the operator's typed message to Sonnet waited 33 minutes behind its waits). The
@@ -997,15 +1085,26 @@ async function main() {
     if (started.result?.repeat === true) waitedOut = undefined;
     // What keeps going, at once (a shell that returns early, as Codex's, shows it before the wake).
     if (!quiet && outputFormat === 'compact' && typeof started.result?.while_asleep === 'string') process.stdout.write(`${operatorHead()}while_asleep: ${started.result.while_asleep}\n`);
-    let until = Date.now()+seconds*1250+10000;
-    if (capped) until = Math.min(until, deadline!+1000);
+    // The sleep's real-time end: its game time at 60 ticks/s plus a margin; past it, it goes on while the game still
+    // advances but runs slow (Luna, Astra, Sol, 13:41: 12 game s in 85 real s ended timed_out), up to 3 x SECONDS +
+    // 60 s, and ends paused once no tick passed for STALL_MS.
+    const begun = Date.now();
+    let until = begun+seconds*1250+10000;
+    let cap = begun+(seconds*3+60)*1000;
+    if (capped) { until = Math.min(until, deadline!+1000); cap = Math.min(cap, deadline!+1000); }
     // One sleep per agent: a newer sleep (another fh sleep while this one ran: shift08 20:07, Sol's Codex shell
     // returned at 30 s and it slept again, so this call polled the new sleep and gave up as timed_out) replaces this
     // one's record. Its end tick tells them apart; this call then ends without reading the other's wake.
     const mine = started.result?.until_tick;
-    const begun = Date.now();
-    while (!stopping && Date.now()<until) {
+    const pacer = new Pacer();
+    pacer.see(started.tick, begun);
+    const firstTick = started.tick;
+    let ending: ReturnType<typeof overtime> = 'go';
+    while (!stopping) {
+      ending = overtime(pacer, until, cap);
+      if (ending !== 'go') break;
       const check = await harness.request('sleep_check',{peek:true});
+      pacer.see(check.tick);
       const theirs = check.result?.until_tick;
       if (check.ok && typeof mine === 'number' && typeof theirs === 'number' && theirs !== mine) {
         return {...check, ok:true, result:{woke:'replaced', waited_s:Math.round((Date.now()-begun)/1000), until_tick:mine,
@@ -1016,36 +1115,60 @@ async function main() {
     }
     if (stopping) throw new Error('Stopped sleeping; the game keeps running.');
     const final = quiet ? await harness.request('sleep_check',{peek:true}) : mergeTeam(started, await harness.request('sleep_check',{}));
+    pacer.see(final.tick);
     const woke = final.result?.woke;
+    const slow = slowGame(pacer);
     if (final.ok && capped && (!woke || woke === 'elapsed')) {
-      return {...final, result:{...final.result, woke:'deadline', note:'this sleep was cut to end at the deadline'}};
+      return {...final, result:{...final.result, woke:'deadline', note:'this sleep was cut to end at the deadline', ...(slow ? {slow_game:slow} : {})}};
     }
-    if (final.ok && !woke) return {...final, ok:false, error:{code:'timed_out',message:`sleep timed_out: the game advanced less than ${seconds} s in ${Math.round(seconds*1.25+10)} s of real time (paused or slow server)`}};
+    if (final.ok && !woke) {
+      const real = Math.round((Date.now()-begun)/1000);
+      const ran = typeof firstTick === 'number' && typeof final.tick === 'number' ? Math.max(0, Math.round((final.tick-firstTick)/60)) : undefined;
+      const advanced = ran !== undefined ? `the game advanced ${ran} of the ${seconds} s asked in ${real} s of real time` : `the game advanced less than ${seconds} s in ${real} s of real time`;
+      if (ending === 'paused') return {...final, ok:false, error:{code:'paused',message:`sleep ended: no game tick passed for ${Math.round(STALL_MS/1000)} s (the game is paused or stopped); ${advanced}`}};
+      return {...final, ok:false, ...(slow ? {result:{...final.result, slow_game:slow}} : {}),
+        error:{code:'timed_out',message:`sleep timed_out: ${advanced}${slow ? ` (slow_game: ${slow})` : ''}; it waits up to 3 x SECONDS + 60 s while the game advances`}};
+    }
     if (final.ok && woke === 'died') return {...final, ok:false, error:{code:'died',message:'your character died while sleeping'}};
     const shown = waitedOut !== undefined && final.result ? {...final, result:{...final.result, waited_out:waitedOut}} : final;
-    return full ? {...shown, result:{...shown.result, full:true}} : shown;
+    const said = slow && shown.result ? {...shown, result:{...shown.result, slow_game:slow}} : shown;
+    return full ? {...said, result:{...said.result, full:true}} : said;
   }
   // fh wait: block until whatever the character is doing (and any combat) ends.
-  async function waitForIdle(): Promise<Reply> {
+  // capMs: fh wait --max S (or --until idle): at most that long (friction1300: Grok and Haiku took `fh wait --max 150`
+  // for a wait on the walk; it slept the whole 150 s, the walk done after 46).
+  async function waitForIdle(capMs?: number): Promise<Reply> {
     const started = Date.now();
     let first = await poll();
     if (!first.ok) return first;
     const since = typeof first.tick === 'number' ? first.tick + 1 : undefined;
     const untilTick = first.result?.active?.until_tick ?? first.result?.combat?.until_tick;
-    const deadline = started+waitBudget(untilTick,first.tick ?? first.result?.tick);
+    const budget = capMs ?? waitBudget(untilTick,first.tick ?? first.result?.tick);
+    const deadline = started+budget;
+    // --wait-timeout, or fh wait --max S: the end as given, with no slow-game overtime.
+    const explicit = values['wait-timeout'] !== undefined || capMs !== undefined;
+    const cap = explicit ? deadline : slowCap(started, budget);
+    const pacer = lastPacer = new Pacer();
+    pacer.see(first.tick, started);
     let status = first;
-    while (!stopping && Date.now()<deadline) {
+    let ending: ReturnType<typeof overtime> = 'go';
+    // The poll after the deadline still counts: idle there ends the wait as idle (as in waitForActionEnd); the
+    // overtime rule (pace.ts) says when the deadline has come.
+    while (!stopping) {
       if (!status.result?.active && !status.result?.combat) {
         const last = status.result?.last;
         const ok = !last?.outcome || successfulOutcomes.includes(last.outcome);
         const ended = {...status, ok, ...(ok ? {} : {error:endedError(last.kind ?? 'the action',last)})};
-        if (compactWaits) return withTells(await brief(ended, started));
+        if (compactWaits) return withSlow(withTells(await brief(ended, started)));
         const full = await finalReply(ended);
-        return withTells({...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
-          team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}});
+        return withSlow(withTells({...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
+          team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}}));
       }
+      ending = overtime(pacer, deadline, cap);
+      if (ending !== 'go') break;
       await delay(pollDelay(status, started));
       status = await poll();
+      pacer.see(status.tick);
       if (!status.ok) return status;
       const active = status.result?.active;
       if (active && told(status, since) && active.kind !== 'wait_ticks' && active.kind !== 'wait_until') {
@@ -1054,7 +1177,7 @@ async function main() {
       }
     }
     if (stopping) throw new Error('Stopped waiting; inspect status.');
-    return timedOut(status.result?.active?.kind ?? 'the action', status, Date.now()-started);
+    return timedOut(status.result?.active?.kind ?? 'the action', status, Date.now()-started, pacer, explicit && ending === 'cap' ? 'end' : ending);
   }
   async function execute(action: string, args: Record<string,unknown>, id?: string, wait = false, onAccepted?: (reply: Reply) => void): Promise<Reply> {
     const requestId = id ?? randomUUID();
@@ -1091,15 +1214,16 @@ async function main() {
       }
     }
     catch (error) {
-      if (error instanceof RconOutcomeUnknown || error instanceof BridgeOutcomeUnknown) {
-        return {id:requestId, ok:false, error:{code:'outcome_unknown', message:error.message, recovery:'Inspect status/state. Retry only the same action, args, player and ID while the dedup cache retains it.'}};
-      }
+      const failed = transportError(error);
+      if (failed) return {id:requestId, ok:false, error:failed};
       throw error;
     }
     // kite runs until no enemy is left in its radius, its health or ammo floor, or its ticks (Sol, shift09: kite --wait
     // returned at once while the fight went on).
     const waits = bridged ? ['walk','mine','build'].includes(action)
       : ['walk','move_to','build_path','construct','mine','shoot','pickup','repair','wait_until','wait_ticks','kite'].includes(action) || (['collect','rearm','refuel','feed'].includes(action) && args.radius !== undefined)
+        // rearm over an area or the whole surface: the same tour (Opus, shift12 13:50).
+        || (action === 'rearm' && (args.area !== undefined || args.surface !== undefined) && reply.result?.until_tick !== undefined)
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
         // build stepping off its own footprint, then placing the rest (Sol 11:18: --wait returned at "built 1 of 5")
         || (action === 'build' && reply.result?.stepping_aside !== undefined)
@@ -1194,6 +1318,19 @@ async function main() {
       const reply = await sleep(seconds, values.until === undefined ? undefined : parseUntil(values.until));
       output(reply);
       if (!reply.ok) process.exitCode=1;
+    } else if (command === 'wait' && (values.until === undefined || /^\s*idle\s*$/.test(values.until)) && values.max !== undefined) {
+      // fh wait --max S, fh wait --until idle --max S: the action (and combat) to end, at most S s; at once when idle.
+      if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
+      const max = integer(values.max, 600);
+      if (max > 900) throw new Error('wait --max takes 1..900 seconds');
+      const reply = await waitForIdle(max*1000);
+      output(reply);
+      process.exitCode=exitCode(reply);
+    } else if (command === 'wait' && values.until !== undefined && /^\s*idle\s*$/.test(values.until)) {
+      if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
+      const reply = await waitForIdle();
+      output(reply);
+      process.exitCode=exitCode(reply);
     } else if (command === 'wait' && (values.until !== undefined || values.max !== undefined)) {
       if (bridged) throw new Error('wait needs the harness mod (not a bridge session)');
       const max = integer(values.max, 600);
@@ -1252,6 +1389,6 @@ async function main() {
   }
 }
 main().catch(error => {
-  output({ok:false,error:{code:error instanceof RconOutcomeUnknown || error instanceof BridgeOutcomeUnknown ? 'outcome_unknown' : 'client_error',message:error instanceof Error ? error.message : String(error)}});
+  output({ok:false,error:transportError(error) ?? {code:'client_error',message:error instanceof Error ? error.message : String(error)}});
   process.exitCode=1;
 });

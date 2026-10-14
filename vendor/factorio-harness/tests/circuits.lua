@@ -219,6 +219,34 @@ do
   foundry.valid=false; roboports[1]=nil; force.find_logistic_network_by_position=nil
   astra('circuit_set',{position={x=2,y=0},logistic={signal='water',comparator='>=',signal2='signal-A'}})
 end
+-- After a write, a condition that is not met keeps the entity off (friction2: Opus set "production-science-pack < 1000"
+-- on an inserter whose logistic condition "< 100" read 101, told Astra it ran, and it stayed off 10.8 min): stays_disabled
+-- names it, with what it reads, and whether this call set it. On 2.0.77 a condition's fulfilled is current the tick it is
+-- written while the behavior's disabled lags a tick, so disabled comes from the conditions.
+do
+  local net8={network_id=8,get_item_count=function() return 101 end}
+  force.find_logistic_network_by_position=function() return net8 end
+  astra('circuit_set',{position={x=2,y=0},logistic='iron-plate < 100'})
+  inserter_cb.logistic_condition.fulfilled=false
+  inserter_cb.disabled=false
+  local rr=astra('circuit_set',{position={x=2,y=0},enable='iron-plate < 1000'})
+  eq(rr.circuit.disabled,true)
+  eq(rr.stays_disabled,'inserter (2,0): its logistic condition iron-plate < 100 is not met (network 8 (its logistic area holds the centre): iron-plate 101) (not set by this call)')
+  -- the circuit condition, read on its wires
+  inserter.get_signal=function(sig,red,green) eq(sig.name,'iron-plate'); return 1500 end
+  inserter_cb.circuit_condition.fulfilled=false
+  inserter_cb.logistic_condition.fulfilled=true
+  rr=astra('circuit_set',{position={x=2,y=0},logistic='iron-plate < 1000'})
+  eq(rr.stays_disabled,'inserter (2,0): its circuit condition iron-plate < 1000 is not met (iron-plate reads 1500 on its wires) (not set by this call)')
+  -- both met, or not known: no note
+  inserter_cb.circuit_condition.fulfilled=true
+  inserter_cb.disabled=true
+  rr=astra('circuit_set',{position={x=2,y=0},logistic='iron-plate < 1000'})
+  eq(rr.stays_disabled,nil); eq(rr.circuit.disabled,nil)
+  inserter.get_signal=nil; force.find_logistic_network_by_position=nil
+  inserter_cb.disabled=nil
+  astra('circuit_set',{position={x=2,y=0},logistic={signal='water',comparator='>=',signal2='signal-A'}})
+end
 -- The game writes >= back as ≥: read back in ASCII.
 inserter_cb.logistic_condition.comparator='≥'
 eq(astra('circuit_set',{position={x=2,y=0}}).circuit.logistic,'water >= signal-A')

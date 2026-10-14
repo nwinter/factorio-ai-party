@@ -218,14 +218,42 @@ test('fh wait --until EVENT --max S: one sleep, peek reads only, one line out',a
     assert.equal(stdout,"woke: told after 4 s (astra: coal please); your next reply's team block has the rest\n");
     await cli(port,['wait','--until','alert'],'compact');
     await cli(port,['wait','--until','item_count coal>=5','--max','120'],'compact');
-    const json=JSON.parse((await cli(port,['wait','--max','60'])).stdout);
+    const json=JSON.parse((await cli(port,['wait','--until','tell','--max','60'])).stdout);
     assert.equal(json.result.line,"woke: told after 4 s (astra: coal please); your next reply's team block has the rest");
-    await assert.rejects(cli(port,['wait','--max','901']),(error:any)=>/1\.\.900/.test(error.stdout));
+    await assert.rejects(cli(port,['wait','--until','tell','--max','901']),(error:any)=>/1\.\.900/.test(error.stdout));
   });
   const sleeps=seen.filter(r=>r.action==='sleep');
   assert.deepEqual(sleeps.map(r=>[r.args.seconds,r.args.condition,r.args.peek]),[
     [30,undefined,true],[600,{until:'alert'},true],[120,{until:'item_count',item:'coal',at_least:5},true],[60,undefined,true]]);
   const reads=seen.filter(isCheck); assert(reads.length>0 && reads.every(r=>r.args.peek===true),'the team block waits for the next reply');
+});
+test('fh wait --max S waits for the action to end, at most S s; at once when idle; --until idle the same',async()=>{
+  // friction1300 (Grok, Haiku): `fh wait --max 150` slept the whole 150 s while the walk had ended after 46.
+  const seen:any[]=[];let polls=0;
+  await engine(request=>{
+    seen.push(request); polls++;
+    return {ok:true,tick:polls*10,result:polls<3?{active:{kind:'move_to',until_tick:3600}}:{active:false,combat:false,last:{kind:'move_to',outcome:'arrived'}}};
+  },async port=>{
+    const started=Date.now();
+    const reply=JSON.parse((await cli(port,['wait','--max','150'])).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.idle,true); assert.equal(reply.result.last.outcome,'arrived');
+    assert(Date.now()-started<20000,'it returned when the walk ended, not after 150 s');
+    assert.equal(seen.filter(r=>r.action==='sleep').length,0,'no sleep');
+    polls=10;
+    const idle=JSON.parse((await cli(port,['wait','--until','idle','--max','5'])).stdout);
+    assert.equal(idle.result.idle,true);
+  });
+  await engine(()=>({ok:true,tick:5,result:{active:{kind:'mine',until_tick:99999}}}),async port=>{
+    const started=Date.now();
+    await assert.rejects(cli(port,['wait','--max','1']),(error:any)=>{
+      assert.equal(error.code,3);
+      const reply=JSON.parse(error.stdout);
+      assert.equal(reply.error.code,'wait_timeout'); assert.equal(reply.result.still_running.kind,'mine');
+      return true;
+    });
+    assert(Date.now()-started<15000,'it gave up after about 1 s');
+    await assert.rejects(cli(port,['wait','--max','901']),(error:any)=>/1\.\.900/.test(error.stdout));
+  });
 });
 test('a sleep replaced by a newer one ends (woke replaced) without reading the other sleep\'s wake',async()=>{
   // shift08 20:07: Sol's Codex shell returned at 30 s, it slept again; the first call polled the new sleep and
@@ -356,6 +384,39 @@ test('build --wait follows a step-aside through the rest of the batch and exits 
   },async port=>{
     const reply=JSON.parse((await cli(port,['call','build','--args','{"item":"stone-furnace","position":{"x":1,"y":1}}','--wait'])).stdout);
     assert.equal(reply.ok,true); assert.equal(reply.result.built,1); assert.equal(statusPolls,0);
+  });
+});
+// Sol 12:20: collect --wait --wait-timeout 60000 read STILL RUNNING at 62 s over a gather that had ended collected
+// (got 10 of 10) at 54.2 s game time: the poll after the deadline showed it ended and was not judged. That poll now
+// ends the wait by the outcome; fh wait likewise. An action still running there still times out (exit 3).
+test('--wait and fh wait judge the poll after the deadline: an action that ended there ends the wait by its outcome',async()=>{
+  let began=0, endsAfter=1600, outcome='collected';
+  const accepted=9079299, ended=9082549;
+  await engine(request=>{
+    if(request.action==='collect'){began=Date.now();return {ok:true,tick:accepted,result:{until_tick:9086499,got:0,want:10}};}
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:44,y:28},inventory:[]}}};
+    if(Date.now()-began<endsAfter)return {ok:true,tick:accepted+60,result:{active:{kind:'gather',until_tick:9086499,got:9}}};
+    return {ok:true,tick:ended+18,result:{active:false,last:{kind:'gather',outcome,got:10,want:10,tick:ended}}};
+  },async port=>{
+    const args=['call','collect','--args','{"position":{"x":44.5,"y":26.5},"item":"nutrients","count":10,"wait_ticks":3600}','--wait','--wait-timeout','1500'];
+    const reply=JSON.parse((await cli(port,args)).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.completion.last.outcome,'collected'); assert.equal(reply.result.completion.last.got,10);
+    assert.equal(reply.result.timed_out,undefined);
+    // ended badly at the deadline: exit 1 with its outcome
+    outcome='nothing_collected';
+    const failed:any=await cli(port,args).then(()=>assert.fail('exit 1 expected'),(error:any)=>error);
+    assert.equal(failed.code,1); assert.match(failed.stdout,/Control ended: nothing_collected/);
+    // fh wait: idle at the poll after the deadline is idle
+    outcome='collected'; began=Date.now();
+    const waited=JSON.parse((await cli(port,['wait','--wait-timeout','1500'])).stdout);
+    assert.equal(waited.ok,true); assert.equal(waited.result.last.outcome,'collected');
+    // still running at the poll after the deadline: STILL RUNNING, exit 3
+    endsAfter=60000;
+    const still:any=await cli(port,args).then(()=>assert.fail('exit 3 expected'),(error:any)=>error);
+    assert.equal(still.code,3); assert.match(still.stdout,/STILL RUNNING/);
+    began=Date.now();
+    const stillIdle:any=await cli(port,['wait','--wait-timeout','1500']).then(()=>assert.fail('exit 3 expected'),(error:any)=>error);
+    assert.equal(stillIdle.code,3); assert.equal(JSON.parse(stillIdle.stdout).result.still_running.kind,'gather');
   });
 });
 // Viewers' @mentions (Sonnet and Opus, shift12 13:50: they ended a sleep, a wait and a move_to --wait every minute or

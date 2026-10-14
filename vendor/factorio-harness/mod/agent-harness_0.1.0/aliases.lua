@@ -119,6 +119,23 @@ return function(api)
           end
         end
       end
+      -- A take at one place and a give at another, without pick (friction2: Grok's from_entity and to_entity three
+      -- times, refused as unknown arguments; Luna's position and to): the pick courier, as the refusal spelled it out.
+      if out.pick == nil and (out.item ~= nil or out.items ~= nil) then
+        local src
+        for _, k in ipairs{'from', 'from_entity', 'position', 'positions'} do
+          if src == nil and (is_pos(out[k]) or is_list(out[k])) then src = k end
+        end
+        local dst = is_pos(out.to) and 'to' or is_pos(out.to_entity) and 'to_entity' or nil
+        local d = out.direction
+        if src and dst and (d == nil or d == 'to_player' or DIRECTION[d] == 'to_player') then
+          out.positions = is_pos(out[src]) and {out[src]} or out[src]
+          out.to = xy(out[dst])
+          for _, k in ipairs{'from', 'from_entity', 'position', 'to_entity', 'direction'} do out[k] = nil end
+          out.pick = 'first_with_stock'
+          notes[#notes+1] = src .. ' and ' .. dst .. ' without pick: a take there and a give at ' .. dst .. ' (pick="first_with_stock")'
+        end
+      end
       -- from {x,y} is the position (from: "nearest" is transfer's own: the nearest chest holding the item), a take
       -- from there; to as the one target, without pick (pick takes to: where what it took is given), the position and
       -- a give. A from and a to: the take is at from, and to the refusal's pick form gives at (the handler shows it).
@@ -147,6 +164,30 @@ return function(api)
           if where then out[where] = v end
           notes[#notes+1] = d .. (where and '={x,y}' or '=true') .. ' is direction="' .. real .. '"' .. (where and ' ' .. where .. '=...' or '')
         end
+      end
+    end
+    -- requests set as a map (friction2: Muse's {"low-density-structure": 100} set nothing and the reply said
+    -- changed_section 1, so the silo requester stayed at min 4 for 11.7 min; Astra's eight-item map, the same): the
+    -- list, one entry per item in name order, {item, min} for a count, the item's fields for an object.
+    if action == 'requests' and type(out.set) == 'table' and #out.set == 0 and next(out.set) ~= nil then
+      local names, list, ok = {}, {}, true
+      for k, v in pairs(out.set) do
+        if type(k) ~= 'string' or not (type(v) == 'number' or (type(v) == 'table' and v.item == nil and #v == 0)) then ok = false end
+        names[#names+1] = tostring(k)
+      end
+      if ok then
+        table.sort(names)
+        for _, k in ipairs(names) do
+          local v, e = out.set[k], {item=k}
+          if type(v) == 'number' then e.min = v
+          else
+            for kk, vv in pairs(v) do e[kk] = vv end
+            if e.min == nil and e.count ~= nil then e.min, e.count = e.count, nil end
+          end
+          list[#list+1] = e
+        end
+        out.set = list
+        notes[#notes+1] = 'set as a map {item: min} is the list [{item, min}]'
       end
     end
     -- circuit is circuit_set's old name.

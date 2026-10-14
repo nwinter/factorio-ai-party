@@ -216,16 +216,36 @@ return function(api)
 
   -- What stands in the way of a tile on tile (x, y) (Sol, shift10: a
   -- slipstack on Gleba wetland kept the landfill ghost from three belt tiles;
-  -- mined, landfill and belts went in). 2.0.77 on a private server: Gleba's
-  -- slipstack, cuttlepop, hairyclubnub, water-cane and the iron and copper
-  -- stromatolites have ground_tile in their collision mask, so landfill (a
-  -- ground_tile) collides with them, plain or forced; marked for
-  -- deconstruction they are passed over. The engine's tile ghost check
-  -- decides; the entities on the tile whose mask meets the tile's are named:
+  -- mined, landfill and belts went in). 2.0.77 on a private copy of world n
+  -- (Sol, shift12 12:55): a tile item's tile checks for entities whose mask
+  -- meets its own and whose prototype is protected_from_tile_building.
+  -- Gleba's slipstack, cuttlepop, hairyclubnub, iron and copper stromatolites
+  -- and egg rafts have ground_tile, as landfill has, and are protected; so are
+  -- trees, rocks, cliffs and buildings. Water-cane and fish have ground_tile
+  -- but are not protected: the tile ghost check takes landfill over them, and
+  -- robots laid it over an unmarked water-cane, which was gone. Marked for
+  -- deconstruction, protected ones are passed over by the ghost check. The
+  -- engine's tile ghost check decides (an edge that only touches counted on
+  -- three sides of four); the protected entities on the tile are named:
   -- {entity, obstacle (a minable tree or rock), text}. nil when the engine
   -- takes the tile there (or no such tile); an empty list when it refuses
   -- with nothing in the way (its tile rules).
   local function at1(pos) return string.format('(%g,%g)', math.floor(pos.x*10+0.5)/10, math.floor(pos.y*10+0.5)/10) end
+  local function protected(e) return try(function() return e.prototype.protected_from_tile_building end) ~= false end
+  local function blocker(e, force)
+    local neutral = e.force == nil or e.force.name == 'neutral'
+    local obstacle = OBSTACLE[e.type] and e.minable and neutral or false
+    local kind = e.type == 'tree' and ' tree' or e.type == 'simple-entity' and ' rock' or e.type == 'plant' and ' plant' or ''
+    local marked = try(function() return e.to_be_deconstructed() end) and ', marked for deconstruction' or ''
+    local text
+    if obstacle then text = string.format('%s%s at %s%s: mine it first', e.name, kind, at1(e.position), marked)
+    elseif e.type == 'cliff' then text = string.format('%s at %s: cliff explosives clear it', e.name, at1(e.position))
+    else
+      local whose = not neutral and e.force ~= force and ' of force '..e.force.name or ''
+      text = string.format('%s%s at %s%s', e.name, whose, at1(e.position), marked)
+    end
+    return {entity=e, obstacle=obstacle, text=text}
+  end
   function M.tile_blockers(surface, force, tile, x, y)
     local tp = prototypes.tile[tile or '']
     if not tp then return nil end
@@ -237,19 +257,85 @@ return function(api)
     local tl = layers(tp.collision_mask)
     local out = {}
     for _, e in ipairs(try(function() return surface.find_entities_filtered{area={{x, y}, {x+1, y+1}}, limit=16} end) or {}) do
-      if e.valid and not IGNORED[e.type] and e.type ~= 'character' and collide(layers(try(function() return e.prototype.collision_mask end)), tl)
+      if e.valid and not IGNORED[e.type] and e.type ~= 'character' and protected(e)
+        and collide(layers(try(function() return e.prototype.collision_mask end)), tl)
         and not try(function() return e.to_be_deconstructed() end) then
-        local neutral = e.force == nil or e.force.name == 'neutral'
-        local obstacle = OBSTACLE[e.type] and e.minable and neutral or false
-        local kind = e.type == 'tree' and ' tree' or e.type == 'simple-entity' and ' rock' or e.type == 'plant' and ' plant' or ''
-        local text
-        if obstacle then text = string.format('%s%s at %s: mine it first', e.name, kind, at1(e.position))
-        elseif e.type == 'cliff' then text = string.format('%s at %s: cliff explosives clear it', e.name, at1(e.position))
-        else text = string.format('%s at %s', e.name, at1(e.position)) end
-        out[#out+1] = {entity=e, obstacle=obstacle, text=text}
+        out[#out+1] = blocker(e, force)
       end
     end
     return out
+  end
+  -- Other tile items that go on a tile no building stands on (water, lava,
+  -- empty space), for a refusal: ' (foundation can)'.
+  local function others_text(force, name, hl, item)
+    if not (hl.water_tile or hl.empty_space) then return '' end
+    local can, locked = {}, {}
+    for _, t in ipairs(items_for_tiles()) do
+      if t.item ~= item and placeable_on(t, name, hl) then
+        local r = force and try(function() return force.recipes[t.item] end)
+        if not r or r.enabled then can[#can+1] = t.item else locked[#locked+1] = t.item end
+      end
+    end
+    if #can > 0 then return ' ('..table.concat(can, ', ', 1, math.min(2, #can))..' can)' end
+    if #locked > 0 then return ' ('..locked[1]..' can; not researched)' end
+    return ' (no tile item can)'
+  end
+  -- A tile laid by hand on tile (x, y), item by item (bots.lua place_tiles,
+  -- and a hand build's dry run). First the item's tile rules (tile_condition,
+  -- condition, invert: landfill goes on water and wetland, never on lava or
+  -- an oil ocean). Then what stands there, as for a ghost (tile_blockers),
+  -- except that a protected entity blocks marked or not (2.0.77: set_tiles
+  -- refused landfill under a marked hairyclubnub) and that the unprotected
+  -- ones (water-cane, fish) go with the new tile, as under robots' tiles. A
+  -- tile ghost on the tile fails the engine's check (one ghost a tile), so
+  -- there the boxes decide alone. Returns {already=true}, {why, blockers} or
+  -- {removes = the entities the tile takes away}.
+  function M.hand_tile(surface, force, item, x, y)
+    local ti
+    for _, t in ipairs(items_for_tiles()) do if t.item == item then ti = t; break end end
+    if not ti then return {why=tostring(item)..' places no tile'} end
+    local here = try(function() return surface.get_tile(x, y) end)
+    local name = here and try(function() return here.name end)
+    if not name then return {why='outside the map'} end
+    if name == ti.result then return {already=true} end
+    local hl = try(function() return here.prototype.collision_mask.layers end) or {}
+    if not placeable_on(ti, name, hl) then return {why=item..' cannot go on '..name..others_text(force, name, hl, item)} end
+    local ghost = (try(function()
+      return surface.count_entities_filtered{area={{x+0.1, y+0.1}, {x+0.9, y+0.9}}, type='tile-ghost', limit=1}
+    end) or 0) > 0
+    local engine
+    if not ghost then
+      engine = try(function()
+        return surface.can_place_entity{name='tile-ghost', inner_name=ti.result, position={x=x+0.5, y=y+0.5}, force=force,
+          build_check_type=defines.build_check_type.manual}
+      end)
+    end
+    local boxes = engine == nil
+    local blockers, removes = {}, {}
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{area={{x, y}, {x+1, y+1}}, limit=32} end) or {}) do
+      if e.valid and not IGNORED[e.type] and e.type ~= 'character' and collide(layers(try(function() return e.prototype.collision_mask end)), ti.layers) then
+        if not protected(e) then removes[#removes+1] = e
+        elseif engine == false or boxes or try(function() return e.to_be_deconstructed() end) then blockers[#blockers+1] = blocker(e, force) end
+      end
+    end
+    if engine == false or #blockers > 0 then
+      return {why=#blockers > 0 and 'blocked by '..table.concat(M.blocker_texts({blockers}), ', ') or 'the game refuses '..ti.result..' there now',
+        blockers=blockers}
+    end
+    return {removes=removes}
+  end
+  -- What a hand-laid tile takes away, for the reply: 'water-cane (68.8,45.9)'.
+  function M.removes_text(list, limit)
+    local seen, parts = {}, {}
+    for _, e in ipairs(list) do
+      if e.valid then
+        local text = e.name..' '..at1(e.position)
+        if not seen[text] then seen[text] = true; parts[#parts+1] = text end
+      end
+    end
+    if #parts == 0 then return nil end
+    limit = limit or 4
+    return table.concat(parts, ', ', 1, math.min(limit, #parts))..(#parts > limit and string.format(' and %d more', #parts-limit) or '')
   end
   -- The lines for a list of tiles' blockers, each entity once.
   function M.blocker_texts(lists)
@@ -536,9 +622,10 @@ return function(api)
             local hits = false
             for _, m in pairs(masks) do if em and collide(em, m) then hits = true end end
             if hits then
+              -- (the tiles its box meets or touches: the engine counts an edge that only touches on some sides)
               local b = e.bounding_box
-              for bx = math.floor(b.left_top.x), math.ceil(b.right_bottom.x)-1 do
-                for by = math.floor(b.left_top.y), math.ceil(b.right_bottom.y)-1 do in_way[key(bx, by)] = true end
+              for bx = math.ceil(b.left_top.x)-1, math.floor(b.right_bottom.x) do
+                for by = math.ceil(b.left_top.y)-1, math.floor(b.right_bottom.y) do in_way[key(bx, by)] = true end
               end
             end
           end
@@ -547,6 +634,14 @@ return function(api)
       return in_way[key(x, y)]
     end
     local tile_marked = {}
+    -- What hand-laid tiles take away (hand_tile: water-cane, fish), named once.
+    local tile_removes, removes_seen = {}, {}
+    local function took(list)
+      for _, e in ipairs(list or {}) do
+        local k = e.valid and e.name..at1(e.position)
+        if k and not removes_seen[k] then removes_seen[k] = true; tile_removes[#tile_removes+1] = e end
+      end
+    end
     -- Planned tiles: each must go on what is there now. A build entry whose
     -- brush lays no tile at all fails (build_tile).
     local tile_rows, tiles_planned, tiles_already, tiles_refused = {}, 0, 0, 0
@@ -562,7 +657,11 @@ return function(api)
       elseif here.name == t.name or (pending[k] and pending[k].name == t.name) then tiles_already = tiles_already + 1
       else
         local item = t.item or try(function() return proto.items_to_place_this[1].name end)
-        if item and not M.placeable_on(item, here.name) then why = string.format('%s cannot go on %s', item, here.name)
+        if item and not M.placeable_on(item, here.name) then why = string.format('%s cannot go on %s', item, here.name)..others_text(force, here.name, here.layers, item)
+        elseif manual and item and tile_in_way(x, y) then
+          -- A hand build: protected entities block it, marked or not; it takes the others away.
+          local v = M.hand_tile(s, force, item, x, y)
+          if v.why then why = v.why else took(v.removes) end
         elseif tile_in_way(x, y) then
           -- Trees and rocks there: place_ghosts marks them first; else they block.
           local b = M.tile_blockers(s, force, t.name, x, y)
@@ -652,6 +751,7 @@ return function(api)
           -- join it (the game's check decides), characters walk over it, and
           -- the rest counts where its turned box reaches.
           local blockers, marked, ghosts, same, mine = {}, {}, {}, nil, false
+          local soft = {} -- (a hand build: water-cane and fish in the way, which landfill laid there takes away)
           local under_cliffs = {}
           local shape = rec.shape
           local function here(o)
@@ -692,6 +792,7 @@ return function(api)
                     local own = o.force == force and o.minable
                     if (obstacle and marks_obstacles) or (own and marks_own) then
                       if #marked < 4 then marked[#marked+1] = o.name..' '..at(o.position) end
+                    elseif manual and not protected(o) then soft[#soft+1] = o
                     elseif #blockers < 4 or t == 'cliff' then
                       if t == 'cliff' then under_cliffs[#under_cliffs+1] = o end
                       local name = o.name
@@ -729,12 +830,25 @@ return function(api)
           end
           -- What stands where the tiles it needs go (tile_blockers): place_ghosts
           -- marks trees and rocks there first, as the game's ghost placement does;
-          -- anything else, or another call, is blocked by them.
+          -- anything else, or another call, is blocked by them. A hand build
+          -- lays the tiles by hand first (hand_tile: marked or not, protected
+          -- ones block; the tile takes water-cane and fish away).
+          local tiles_take
           if #tile_need > 0 then
             local lists, refused = {}, {}
             for _, n in ipairs(tile_need) do
               local tile = try(function() return prototypes.item[n.item].place_as_tile_result.result.name end)
-              local b = tile and M.tile_blockers(s, force, tile, n.x, n.y)
+              local b
+              if manual and tile then
+                local v = M.hand_tile(s, force, n.item, n.x, n.y)
+                if v.blockers and #v.blockers > 0 then b = v.blockers
+                elseif v.why then b = {}
+                else
+                  for _, r in ipairs(v.removes or {}) do tiles_take = tiles_take or {}; tiles_take[#tiles_take+1] = r end
+                end
+              else
+                b = tile and M.tile_blockers(s, force, tile, n.x, n.y)
+              end
               if b then
                 local all = #b > 0
                 for _, one in ipairs(b) do if not one.obstacle then all = false end end
@@ -754,6 +868,16 @@ return function(api)
               reasons[#reasons+1] = 'blocked by '..table.concat(texts, ', ', 1, math.min(3, #texts))..' (where its '..tile_need[1].item..' goes)'
             end
             if #refused > 0 then reasons[#reasons+1] = 'the game refuses '..table.concat(refused, ', ', 1, math.min(3, #refused))..' there now' end
+          end
+          -- Water-cane and fish in its footprint on a tile it needs landfill on go with that landfill, laid first.
+          if #soft > 0 then
+            local needs = {}
+            for _, n in ipairs(tile_need) do needs[key(n.x, n.y)] = true end
+            for _, o in ipairs(soft) do
+              if needs[key(math.floor(o.position.x), math.floor(o.position.y))] then
+                tiles_take = tiles_take or {}; tiles_take[#tiles_take+1] = o
+              elseif #blockers < 4 then blockers[#blockers+1] = o.name..' '..at(o.position) end
+            end
           end
           -- The engine's own check, as the real call makes it. It decides
           -- whatever stands there now (an upgrade over a machine of the same
@@ -809,6 +933,10 @@ return function(api)
             rec.note = string.format('stands on %d %s tile%s: needs %s first%s', #tile_need, tile_need[1].tile, #tile_need == 1 and '' or 's', table.concat(parts, ', '),
               engine == true and not manual and (kind == 'ghosts' and ' (place_ghosts lays those tile ghosts under it first)'
                 or ' (its ghost goes there now; nothing builds it before that)') or '')
+            if tiles_take then
+              took(tiles_take)
+              rec.note = rec.note..'; the '..tile_need[1].item..' removes '..M.removes_text(tiles_take)
+            end
           elseif engine == true then rec.status = 'ok'
           elseif covered then
             rec.status = 'after_tiles'; rec.note = 'placeable once the tiles under it are laid'
@@ -929,7 +1057,9 @@ return function(api)
         end)() or nil,
         holes=holes > 0 and holes or nil, planned=tiles_planned > 0 and tiles_planned or nil,
         already=tiles_already > 0 and tiles_already or nil, refused=tiles_refused > 0 and tiles_refused or nil,
-        refused_rows=#tile_rows > 0 and tile_rows or nil}
+        refused_rows=#tile_rows > 0 and tile_rows or nil,
+        removes=#tile_removes > 0 and 'laid by hand, the tiles remove '..M.removes_text(tile_removes, 8)
+          ..' (water-cane and fish do not block a tile; a new tile takes them away)' or nil}
       if #need_list > 0 then
         table.sort(need_list, function(a, b) if a.y ~= b.y then return a.y < b.y end return a.x < b.x end)
         t.positions = {}

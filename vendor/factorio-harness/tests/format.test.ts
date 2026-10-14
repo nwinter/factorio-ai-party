@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatCompact, actionHelp, paginate } from '../host/format.js';
+import { formatCompact, actionHelp, paginate, finalLine } from '../host/format.js';
 
 test('fh help ACTION: one action in about 1 KB; an unknown name lists the actions it resembles', () => {
   const describe = {actions:{craft:{recipe:'recipe name', count:'1..1000 (default 1)', returns:'queued, '+'x'.repeat(400), note:'n'},
@@ -36,6 +36,18 @@ test('corrected calls, empty moves and repeats reach the final warning line', ()
   const out = formatCompact({ok:true,id:'x',result:{transferred:0,corrected:'craft {"recipe":"pipe"} (item is recipe)',
     nothing_moved:'chest at (1,1) holds no pipe',repeated:'transfer 3 times in 7 min with nothing moved'}});
   assert.match(out, /\nwarning: corrected: .*; nothing moved: chest at \(1,1\) holds no pipe; repeated: transfer 3 times/);
+});
+test('circuit_set: an entity a condition keeps off ends on the warning line (friction2: Opus)', () => {
+  const reply = {ok:true,id:'x',result:{entity:'inserter',circuit:{enable:'production-science-pack < 1000',enable_met:true,disabled:true},
+    stays_disabled:'inserter (75.5,-1.5): its logistic condition production-science-pack < 100 is not met (network 8: production-science-pack 101) (not set by this call)'}};
+  assert.match(formatCompact(reply), /\nwarning: stays disabled: inserter \(75\.5,-1\.5\): its logistic condition production-science-pack < 100 is not met .*\n$/);
+  assert.equal(finalLine(reply)?.startsWith('warning: stays disabled: inserter (75.5,-1.5)'), true);
+});
+test('a build or ghosts that close the character in end on the warning line (friction2: Gemini)', () => {
+  const built = {ok:true,id:'x',result:{built:2,closed_in:'the character is closed in now where it stands (-57,71.5): the last gap out was where accumulator (-60,71) now stands'}};
+  assert.match(formatCompact(built), /\nwarning: closed in: the character is closed in now where it stands \(-57,71\.5\)/);
+  const ghosts = {ok:true,id:'x',result:{placed:8,closes_in:'once built, these ghosts close the character in where it stands (30.5,108.5)'}};
+  assert.equal(finalLine(ghosts), 'warning: closes in: once built, these ghosts close the character in where it stands (30.5,108.5)');
 });
 
 test('failures keep the error and request ID, with hostile strings escaped in tables', () => {

@@ -335,7 +335,30 @@ nav={position={x=20,y=2},tolerance=0.5}
 P.give_up(penned,nav)
 eq(nav.path_state,'digging'); has(nav.why,'closed in: ') -- the dig runs the next tick
 P.dig_step(penned,nav)
-eq(nav.path_state,'unreachable'); has(nav.why,'; mining pipe ('); has(nav.why,') opens a way out to ('); eq(nav.dig.mine[1].name,'pipe'); eq(nav.region.seen,nil); eq(nav.dig_area,nil)
+eq(nav.path_state,'unreachable'); has(nav.why,'; mining pipe ('); has(nav.why,') opens a way out to open ground at ('); eq(nav.dig.mine[1].name,'pipe'); eq(nav.region.seen,nil); eq(nav.dig_area,nil)
+-- friction2 (Gemini, shift12 19:51: seven hints of one entity each, every one opening only a larger closed pocket): a
+-- pocket inside a pocket is mined out of in one answer, to open ground (the window's edge), the two rings at once.
+local rings={{0,0,4,0.8,'pipe','pipe'},{0,3.2,4,4,'pipe','pipe'},{0,0.8,0.8,3.2,'pipe','pipe'},{3.2,0.8,4,3.2,'pipe','pipe'},
+  {-4,-4,8,-3.2,'accumulator','accumulator'},{-4,7.2,8,8,'accumulator','accumulator'},{-4,-3.2,-3.2,7.2,'accumulator','accumulator'},{7.2,-3.2,8,7.2,'accumulator','accumulator'}}
+local rs=box_surface(rings)
+dug=P.dig(rs,{x=2,y=2},0.2,{force='ours'})
+assert(dug and #dug.mine==2,'two to mine: '..(dug and #dug.mine or 'none'))
+eq(dug.mine[1].name,'pipe'); eq(dug.mine[2].name,'accumulator'); eq(dug.cost,3); eq(dug.goal,nil)
+assert(math.abs(dug.to.x-2)>=20 or math.abs(dug.to.y-2)>=20,'ends at the edge: '..dug.to.x..','..dug.to.y)
+-- with the goal between the rings: the inner ring only, and it says so
+dug=P.dig(rs,{x=2,y=2},0.2,{force='ours',goal={x=-1.5,y=2.5}})
+eq(#dug.mine,1); eq(dug.mine[1].name,'pipe'); eq(dug.goal,true); eq(dug.to.x,-1.5); eq(dug.to.y,2.5)
+-- by kind: two chests (1 each) before a pole (3); cliffs never
+local walls={{-1,0,6,0.8,'cliff-a','cliff'},{-1,3.2,6,4,'cliff-b','cliff'},{0,0.8,0.8,3.2,'small-electric-pole','electric-pole'},
+  {3.2,0.8,4,3.2,'wooden-chest','container'},{4,0.8,4.8,3.2,'wooden-chest','container'}}
+dug=P.dig(box_surface(walls),{x=2,y=2},0.2,{force='ours'})
+eq(#dug.mine,2); eq(dug.mine[1].name,'wooden-chest'); eq(dug.mine[1].position.x,3.6); eq(dug.mine[2].position.x,4.4); eq(dug.cost,2)
+-- the give-up's reply names them all (dig_step)
+local ringed={index=9,position={x=2,y=2},surface=rs,force='ours',character=sol.character}
+rs.is_chunk_generated=function() return true end
+nav={position={x=30,y=2},tolerance=0.5}
+P.give_up(ringed,nav); P.dig_step(ringed,nav)
+has(nav.why,'; mining pipe ('); has(nav.why,') and accumulator ('); has(nav.why,') opens a way out to open ground at (')
 -- Cliffs all round: no way out by mining.
 local cliffs={{0,0,4,0.8,'cliff','cliff'},{0,3.2,4,4,'cliff','cliff'},{0,0.8,0.8,3.2,'cliff','cliff'},{3.2,0.8,4,3.2,'cliff','cliff'}}
 local cs=box_surface(cliffs)

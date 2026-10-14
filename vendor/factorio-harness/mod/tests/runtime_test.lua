@@ -129,7 +129,8 @@ eq(call('status').last.outcome,'arrived')
 -- Pathfinding: wait for the engine path and its belt-free twin, follow
 -- waypoints, replan when stuck; failures climb the ladder (pathing.lua).
 p.position={x=0,y=0}
-eq(call('move_to',{position={x=10,y=10}}).pathfinding,true)
+-- (near=false: the walk ends unreachable where nothing leads, naming the spot; without it the walk goes there, below)
+eq(call('move_to',{position={x=10,y=10},near=false}).pathfinding,true)
 local request=path_requests[#path_requests-1]
 eq(request.goal.x,10); eq(request.entity_to_ignore,p.character); eq(request.bounding_box[1][1],-0.35)
 do
@@ -175,6 +176,25 @@ do
   -- Its end is within build reach and has room to turn: named as a build spot (Grok, shift10 06:20).
   eq(gave.build_spot.x,6); eq(gave.build_spot_note,'(6,6) is reachable and within build reach of (10,10): 5.7 tiles (build reach 10)'); eq(gave.build_spot_squeeze,nil)
 end
+-- friction2 (Gemini's (-50,75) five times, each followed by a move_to to the spot the reply named; Haiku stood in reach
+-- already and the exit stopped its && chain): by default the walk goes on to that spot once and ends arrived_near there.
+p.position={x=0,y=4.8}
+call('move_to',{position={x=10,y=10}})
+runtime.on_event{name=10,id=#path_requests-1,path=nil}; runtime.on_event{name=10,id=#path_requests,path=nil}
+for _=1,3 do runtime.on_event{name=10,id=#path_requests,path=nil} end
+advance(1)
+runtime.on_event{name=10,id=#path_requests,path={{position={x=0,y=4.8}},{position={x=6,y=6}}}}
+advance(1)
+eq(call('status').active.kind,'move_to')
+runtime.on_event{name=10,id=#path_requests-1,path={{position={x=0,y=4.8}},{position={x=6,y=6}}}}
+runtime.on_event{name=10,id=#path_requests,path={{position={x=0,y=4.8}},{position={x=6,y=6}}}}
+p.position={x=6,y=6}; advance(2)
+do
+  local near=call('status').last
+  eq(near.outcome,'arrived_near'); eq(near.target.x,10); eq(near.build_spot,nil)
+  eq(near.near_walk,'no path led to (10,10) (no path for the character to (10,10) on the tile, half- or quarter-tile grid); walked to (6,6) instead, ended 5.7 tiles from it, a spot within build reach of it the give-up found')
+end
+fails(function() call('move_to',{position={x=10,y=10},near='yes'}) end,'near must be true or false')
 -- A target on ungenerated ground: the pathfinder knows none of it, so steer directly as before.
 p.surface.is_chunk_generated=function() return false end
 call('move_to',{position={x=10,y=10}})
@@ -449,6 +469,49 @@ wood.count=5
 fails(function() call('build',{item='wooden-chest',builds={{position={x=4,y=0}},{position={x=6,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}}) end,
   'build 3/4 failed after 2 built: placement blocked')
 eq(wood.count,3); eq(p.cursor_stack.valid_for_read,false)
+-- The entries built before a failing one stay: the refusal says what they closed (friction2: Gemini's 19:25 batch failed
+-- after 2 built, and those 2 had closed the last gap out with no word of it; the dry runs had named them).
+;(function()
+  local closed_by=runtime.pathing.closed_by
+  runtime.pathing.closed_by=function(_,_,_,list)
+    eq(#list,2)
+    return {region={closed=true,tiles=6,x0=3,y0=-1,x1=7,y1=1,by={'wooden-chest'}},gaps={list[2]}}
+  end
+  wood.count=5
+  fails(function() call('build',{item='wooden-chest',builds={{position={x=4,y=0}},{position={x=6,y=0}},{position={x=8,y=0}}}}) end,
+    '; the character is closed in now where it stands (0,0): the last gap out was where wooden-chest (6.5,0.5) now stands; the area (3,-1)-(7,1)')
+  runtime.pathing.closed_by=closed_by
+  wood.count=3
+end)()
+-- Real place_ghosts: ghosts that, once built, close the character in where it stands, as the dry run says it of a plan
+-- (friction2: Gemini's dry runs named the last gap out, the real calls said nothing). Walls and pipes stretch toward their
+-- neighbours once built (the dry run's joined pieces); a gate opens for the character; ghosts 16+ tiles off are left out.
+;(function()
+  local closes_in,joined=runtime.pathing.closes_in,runtime.dryrun.joined_pieces
+  local seen
+  runtime.pathing.closes_in=function(_,start,half,boxes)
+    seen=boxes; eq(start.x,p.position.x); eq(half,0.2)
+    return {region={closed=true,tiles=2,x0=0,y0=0,x1=1,y1=1,by={'stone-wall'}},gaps={boxes[1]},around={boxes[1],boxes[2]}}
+  end
+  runtime.dryrun.joined_pieces=function(_,_,recs) eq(#recs,2); return {{0,0,1,1,'stone-wall',recs[1],ids={recs[1],recs[2]}}} end
+  local function ghost(name,type_,x,y)
+    return {valid=true,type='entity-ghost',ghost_type=type_,ghost_name=name,direction=0,position={x=x,y=y},
+      bounding_box={left_top={x=x-0.29,y=y-0.29},right_bottom={x=x+0.29,y=y+0.29}},
+      ghost_prototype={type=type_,collision_mask={layers={player=true,object=true}}}}
+  end
+  local here=p.position
+  local note=runtime.ghosts_close_in(p,{ghost('stone-wall','wall',here.x+1,here.y),ghost('stone-wall','wall',here.x-1,here.y),
+    ghost('gate','gate',here.x,here.y+1),ghost('stone-wall','wall',here.x+40,here.y)})
+  eq(#seen,3,'two wall ghosts and one joined piece')
+  eq(note,string.format('once built, these ghosts close the character in where it stands (%g,%g): the last gap out is where stone-wall ghost (%g,%g) stands; '..
+    'the area (0,0)-(1,1) (about 2 tiles) has no gap the character (0.4 tiles wide) fits through; around it: stone-wall',here.x,here.y,here.x+1,here.y))
+  runtime.pathing.closes_in=function() return nil end
+  eq(runtime.ghosts_close_in(p,{ghost('stone-wall','wall',here.x+1,here.y)}),nil)
+  runtime.pathing.closes_in=function() return {already=true,region={}} end
+  eq(runtime.ghosts_close_in(p,{ghost('stone-wall','wall',here.x+1,here.y)}),nil,'closed in already: not this call')
+  eq(runtime.ghosts_close_in(p,{}),nil)
+  runtime.pathing.closes_in,runtime.dryrun.joined_pieces=closes_in,joined
+end)()
 -- skip_failed lists the blocked entry and builds the rest (shake3: Grok, Astra).
 wood.count=5
 local skipped=call('build',{item='wooden-chest',skip_failed=true,builds={{position={x=4,y=0}},{position={x=8,y=0}},{position={x=9,y=0}}}})
@@ -851,6 +914,53 @@ do
   fails(function() call('transfer',{position={x=3,y=0},item='solar-panel',inventory='rocket_silo_trash',direction='to_entity'}) end,'rocket_silo_trash is take-only (direction=to_player)')
   defines.inventory.rocket_silo_trash=nil; main=kept
 end
+-- Luna 12:20 (a 50/50/50 kit went into the rocket cargo instead of the recipe input): a silo's inventories by transfer
+-- name in inspect, with what each holds and one call each; parts and cargo are aliases; a rocket-part ingredient put
+-- into the cargo says where it went; a name the silo does not take lists those it does.
+do
+  local function listing(t)
+    t.get_contents=function() local out={}; for _,s in ipairs(t) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
+    t.is_empty=function() return #t.get_contents()==0 end
+    t.can_insert=function() return true end
+    return t
+  end
+  local kept_get,before=silo.get_inventory,main
+  local input,cargo=listing(inv(stack(nil,0),stack(nil,0))),listing(inv(stack(nil,0),stack(nil,0)))
+  silo.get_inventory=function(i) return ({[5]=input,[7]=cargo})[i] end
+  silo.get_recipe=function() return {name='rocket-part',ingredients={{type='item',name='processing-unit',amount=1},{type='item',name='rocket-fuel',amount=1}}} end
+  prototypes.item['processing-unit']=prototypes.item['processing-unit'] or {fuel_value=0}
+  main=inv(stack('processing-unit',50),stack('rocket-fuel',5),stack('space-platform-starter-pack',1))
+  local r=call('transfer',{position={x=3,y=0},item='processing-unit',count=50,direction='to_entity',inventory='parts'})
+  eq(r.transferred,50); eq(r.inventory,'assembling_machine_input'); eq(input[1].name,'processing-unit'); eq(r.cargo_note,nil)
+  r=call('transfer',{position={x=3,y=0},item='rocket-fuel',count=2,direction='to_entity',inventory='cargo'})
+  eq(r.transferred,2); eq(r.inventory,'rocket_silo_rocket'); eq(cargo[1].name,'rocket-fuel')
+  eq(r.cargo_note,'2 rocket-fuel went into rocket_silo_rocket (cargo), which goes up with the rocket; rocket-fuel is a rocket-part ingredient, and the rocket-part recipe takes its ingredients from assembling_machine_input (parts)')
+  -- the full name works as before and says the same; other cargo has no note
+  r=call('transfer',{position={x=3,y=0},item='rocket-fuel',count=1,direction='to_entity',inventory='rocket_silo_rocket'})
+  eq(r.inventory,nil,'echoed only for an alias or an inferred name'); assert(r.cargo_note:find('^1 rocket%-fuel went'),r.cargo_note)
+  r=call('transfer',{position={x=3,y=0},item='space-platform-starter-pack',count=1,direction='to_entity',inventory='cargo'})
+  eq(r.transferred,1); eq(r.cargo_note,nil)
+  -- taking back by alias
+  r=call('transfer',{position={x=3,y=0},item='rocket-fuel',direction='to_player',inventory='cargo'})
+  eq(r.transferred,3); eq(r.inventory,'rocket_silo_rocket')
+  -- a name the silo does not take
+  fails(function() call('transfer',{position={x=3,y=0},item='rocket-fuel',count=1,direction='to_entity',inventory='fuel'}) end,
+    'inventory is not applicable to this entity type: fuel; rocket-silo takes inventory ')
+  local ok,err=pcall(call,'transfer',{position={x=3,y=0},item='rocket-fuel',count=1,direction='to_entity',inventory='fuel'})
+  assert(not ok and tostring(err):find('assembling_machine_input',1,true) and tostring(err):find('cargo (= rocket_silo_rocket), parts (= assembling_machine_input)',1,true),tostring(err))
+  -- a parts or cargo alias on another entity is no name it has
+  fails(function() call('transfer',{position={x=3,y=0},item='rocket-fuel',count=1,direction='to_entity',inventory='parts_bin'}) end,'unsupported inventory name: parts_bin; rocket-silo takes inventory ')
+  -- inspect: the rows
+  local seen=call('inspect',{position={x=3,y=0}})
+  local rows=seen.silo_inventories
+  eq(rows[1].inventory,'assembling_machine_input'); eq(rows[1].alias,'parts'); eq(rows[1].holds,'processing-unit*50')
+  eq(rows[1].what,"the rocket-part recipe's ingredients (processing-unit, rocket-fuel): the silo crafts rocket parts from them")
+  eq(rows[1].example,[[fh call transfer --args '{"count":50,"direction":"to_entity","inventory":"assembling_machine_input","item":"processing-unit","position":{"x":3,"y":0}}']])
+  eq(rows[2].inventory,'rocket_silo_rocket'); eq(rows[2].alias,'cargo'); eq(rows[2].holds,'space-platform-starter-pack*1')
+  assert(rows[2].what:find("^the rocket's cargo: it goes up with the rocket at launch"),rows[2].what)
+  eq(rows[3],nil,'no trash inventory here')
+  silo.get_inventory,main,silo.get_recipe=kept_get,before,nil
+end
 -- A rocket lifts 1000 kg; the game takes more by script and then refuses the
 -- launch (shift04 07:17: 1060 kg aboard). Only what fits goes in; inspect
 -- shows the weight.
@@ -947,6 +1057,69 @@ plate_stack.name,plate_stack.count,plate_stack.valid_for_read='iron-plate',4,tru
 fails(function() call('configure',{position=am.position,recipe='iron-gear-wheel'}) end,'remote recipe change: the machine at (3,0) holds items')
 p.can_reach_entity=function() return true end
 eq(call('configure',{position=am.position,recipe='iron-gear-wheel'}).remote,nil)
+-- A turret's priority targets and Ignore unprioritised targets (Astra, shift12 15:02: Sunward's rocket turrets on big
+-- asteroids only), built and ghost. The fake keeps slots as 2.0.77 does: a set past the end appends; a cleared slot
+-- leaves a gap that get_priority_target reads as nil and priority_targets skips; trailing gaps shrink the list.
+do
+  local saved_find,saved_entity,saved_filtered=p.surface.find_entities_filtered,prototypes.entity,prototypes.get_entity_filtered
+  local enemies={['big-metallic-asteroid']={type='asteroid'},['big-carbonic-asteroid']={type='asteroid'},['big-oxide-asteroid']={type='asteroid'},
+    ['medium-biter']={type='unit'}}
+  prototypes.entity=setmetatable({},{__index=function(_,k) return enemies[k] or (saved_entity and saved_entity[k]) end})
+  prototypes.get_entity_filtered=function(f) local out={}; for name,e in pairs(enemies) do if e.type==f[1].type then out[name]=e end end; return out end
+  local function turret(name,type_,pos,ghost)
+    local slots,n={},0
+    local t={valid=true,name=ghost and 'entity-ghost' or name,type=ghost and 'entity-ghost' or type_,ghost_name=ghost and name or nil,
+      ghost_type=ghost and type_ or nil,position=pos,force=p.force,ignore_unprioritised_targets=false,health=100,max_health=100,
+      get_fluid_contents=function() return {} end}
+    t.get_priority_target=function(i) if i<1 or i>n then error('Index out of bounds.') end; return slots[i] and {name=slots[i]} or nil end
+    t.set_priority_target=function(i,nm)
+      if nm==nil then
+        if i<=n then slots[i]=nil; while n>0 and slots[n]==nil do n=n-1 end end
+        return
+      end
+      if i>n then n=n+1; slots[n]=nm else slots[i]=nm end
+    end
+    t.length=function() return n end
+    return setmetatable(t,{__index=function(_,k)
+      if k=='priority_targets' then local l={}; for i=1,n do if slots[i] then l[#l+1]={name=slots[i]} end end; return l end
+    end})
+  end
+  local rocket=turret('rocket-turret','ammo-turret',{x=6,y=0})
+  local ghost=turret('gun-turret','ammo-turret',{x=9,y=0},true)
+  local box={valid=true,name='iron-chest',type='container',position={x=12,y=0},force=p.force}
+  local at={[6]=rocket,[9]=ghost,[12]=box}
+  p.surface.find_entities_filtered=function(f) local x=f.position and math.floor(f.position.x+0.5); return x and at[x] and {at[x]} or {} end
+  local r=call('configure',{position={x=6,y=0},priority_targets={'big-metallic-asteroid','big-carbonic-asteroid','big-oxide-asteroid'},ignore_unprioritised=true})
+  eq(#r.priority_targets,3); eq(r.priority_targets[3],'big-oxide-asteroid'); eq(r.ignore_unprioritised,true); eq(rocket.ignore_unprioritised_targets,true)
+  eq(r.targeting,'priority targets: big-metallic-asteroid, big-carbonic-asteroid, big-oxide-asteroid (in this order); ignore unprioritised targets: on')
+  -- A gap left by the game's own clearing: the list is written whole from slot 1.
+  rocket.set_priority_target(2,nil); eq(rocket.length(),3)
+  r=call('configure',{position={x=6,y=0},priority_targets={'big-oxide-asteroid'}})
+  eq(rocket.length(),1); eq(r.priority_targets[1],'big-oxide-asteroid'); eq(r.ignore_unprioritised,true,'left as it was')
+  r=call('configure',{position={x=6,y=0},priority_targets={},ignore_unprioritised=false})
+  eq(rocket.length(),0); eq(#r.priority_targets,0); eq(r.targeting,'priority targets: none; ignore unprioritised targets: off')
+  eq(#call('configure',{position={x=6,y=0},priority_targets=false}).priority_targets,0)
+  -- A ghost takes them as its turret would.
+  r=call('configure',{position={x=9,y=0},priority_targets={'medium-biter'},ignore_unprioritised=true})
+  eq(r.ghost,true); eq(r.name,'gun-turret'); eq(r.priority_targets[1],'medium-biter'); eq(ghost.ignore_unprioritised_targets,true)
+  -- inspect reads them back.
+  local seen=call('inspect',{position={x=9,y=0}})
+  eq(seen.priority_targets[1],'medium-biter'); eq(seen.ignore_unprioritised,true)
+  eq(seen.targeting,'priority targets: medium-biter (in this order); ignore unprioritised targets: on')
+  -- An unknown name, something else than a turret, and a recipe beside them are refused, nothing changed.
+  fails(function() call('configure',{position={x=9,y=0},priority_targets={'big-asteroid'}}) end,
+    'unknown entity big-asteroid in priority_targets; names like it: big-carbonic-asteroid, big-metallic-asteroid, big-oxide-asteroid')
+  eq(ghost.length(),1)
+  fails(function() call('configure',{position={x=12,y=0},priority_targets={'medium-biter'}}) end,'iron-chest (type container) has no priority targets')
+  fails(function() call('configure',{position={x=6,y=0},priority_targets={'medium-biter'},recipe='iron-gear-wheel'}) end,'go alone')
+  fails(function() call('configure',{position={x=6,y=0},ignore_unprioritised='yes'}) end,'ignore_unprioritised must be true or false')
+  -- Several at once: a row per turret, the one that fails with its error.
+  r=call('configure',{positions={{x=6,y=0},{x=9,y=0},{x=12,y=0}},priority_targets={'big-metallic-asteroid'},ignore_unprioritised=true})
+  eq(r.configured,2); eq(r.failed,1); eq(r.turrets[1].priority_targets[1],'big-metallic-asteroid'); eq(r.turrets[2].ghost,true)
+  assert(r.turrets[3].error:find('has no priority targets',1,true),r.turrets[3].error)
+  fails(function() call('configure',{positions={{x=6,y=0}},recipe='iron-gear-wheel'}) end,'positions goes with priority_targets')
+  p.surface.find_entities_filtered,prototypes.entity,prototypes.get_entity_filtered=saved_find,saved_entity,saved_filtered
+end
 -- A refused configure stops nothing (Astra 11:01, twice: configure with surface=nauvis, her own surface, failed and
 -- paused her queue): its target and checks run before the queue would stop; surface naming the character's own surface
 -- is the same as none (out of reach: remote view, the queue goes on).
@@ -3518,6 +3691,26 @@ end)()
   p.position={x=18.3,y=0.5}; advance(1); eq(call('status').active.kind,'move_to') -- 1.85 to its box
   p.position={x=18.5,y=0.5}; advance(1); eq(call('status').last.outcome,'arrived'); eq(call('status').last.reach,'iron-chest (20.5,0.5): 1.6 tiles to its box (reach 2)')
   r=call('move_to',{target={position={x=20.5,y=0.5}},reach='build',pathfind=false}); eq(r.reach,'build reach 10'); call('stop',{})
+  -- Build reach to the centre, as build measures the position it builds at (friction2, Sol 14:43: arrived 9.7 tiles from
+  -- a chest's edge, and the build there failed at 10.1 from its centre): 9.65 to the box is not yet within it.
+  p.position={x=0,y=0}
+  call('move_to',{target={position={x=20.5,y=0.5}},reach='build',pathfind=false})
+  advance(1); p.position={x=10.5,y=0.5}; advance(1); eq(call('status').active.kind,'move_to')
+  p.position={x=10.8,y=0.5}; advance(1)
+  eq(call('status').last.outcome,'arrived'); eq(call('status').last.reach,'iron-chest (20.5,0.5): 9.7 tiles to its centre (build reach 10)')
+  -- A point's reach (move_to {position, reach}; Sol 18:56: target needs an entity, to stand in build reach of an empty
+  -- spot): within reach of the point less a quarter tile.
+  p.position={x=0,y=0}
+  r=call('move_to',{position={x=30,y=0.5},reach=3,pathfind=false}); eq(r.reach,'reach 3')
+  advance(1); p.position={x=27,y=0.5}; advance(1); eq(call('status').active.kind,'move_to')
+  p.position={x=27.3,y=0.5}; advance(1)
+  last=call('status').last
+  eq(last.outcome,'arrived'); eq(last.reach,'(30,0.5): 2.7 tiles (reach 3)'); eq(last.target.x,30)
+  p.position={x=0,y=0}
+  r=call('move_to',{position={x=30,y=0.5},reach='build',pathfind=false}); eq(r.reach,'build reach 10'); eq(r.in_reach,false); call('stop',{})
+  p.position={x=25,y=0.5}
+  r=call('move_to',{position={x=30,y=0.5},reach='build',pathfind=false}); eq(r.in_reach,true)
+  advance(1); eq(call('status').last.outcome,'arrived')
   -- A walk that ends another way while within reach counts as arrived (the engine refusing reach on the walk's own ticks).
   p.position={x=10.5,y=0.5}; engine_reach=false
   call('move_to',{target={unit_number=777},pathfind=false,ticks=2})
@@ -3527,8 +3720,9 @@ end)()
   eq(last.outcome,'arrived'); eq(last.reach_note,'within its reach already when the walk ended timed_out')
   -- Refused: both position and target, reach alone, within with target, a bad reach, nothing there, no such unit.
   fails(function() call('move_to',{position={x=1,y=1},target={unit_number=777}}) end,'give position or target, not both')
-  fails(function() call('move_to',{position={x=1,y=1},reach=3}) end,'reach goes with target')
-  fails(function() call('move_to',{target={unit_number=777},within=2}) end,'with target, reach says how near')
+  fails(function() call('move_to',{reach=3}) end,'reach goes with target (an entity: {position={x,y}} or {unit_number=N}) or position (a point)')
+  fails(function() call('move_to',{target={unit_number=777},within=2}) end,'with reach, reach says how near')
+  fails(function() call('move_to',{position={x=1,y=1},reach='hand'}) end,'reach is build, transfer or a number of tiles 0.5..64 (to the point)')
   fails(function() call('move_to',{target={unit_number=777},reach='hand'}) end,'reach is build, transfer or a number of tiles')
   fails(function() call('move_to',{target={position={x=40.5,y=0.5}}}) end,'entity not found at (40.5,0.5)')
   fails(function() call('move_to',{target={unit_number=5}}) end,'the game finds no entity by unit_number 5 alone (only vehicles and the like); give its position too: target={position={x,y},unit_number=5}')
@@ -3645,11 +3839,10 @@ end)()
 end)()
 ;(function()
   -- Argument refusals name the form that works, with the caller's own values (Muse, Luna, shift11; operator 11:02).
-  -- Two places, to take from and to give to: the pick form.
+  -- Two places, to take from and to give to (friction2: Grok's from_entity and to_entity, refused as unknown arguments
+  -- three times): the call runs as the pick courier and says so (here the item is unknown to the fake game).
   fails(function() call('transfer',{from_entity={x=52.5,y=45.5},to_entity={x=65.5,y=14.5},item='agricultural-science-pack',count=1000}) end,
-    [[for transfer; valid: ]])
-  fails(function() call('transfer',{from_entity={x=52.5,y=45.5},to_entity={x=65.5,y=14.5},item='agricultural-science-pack',count=1000}) end,
-    [[; for this call: fh call transfer --args '{"count":1000,"item":"agricultural-science-pack","pick":"first_with_stock","positions":[{"x":52.5,"y":45.5}],"to":{"x":65.5,"y":14.5}}']])
+    [=[[ran as transfer {"count":1000,"item":"agricultural-science-pack","pick":"first_with_stock","positions":[{"x":52.5,"y":45.5}],"to":{"x":65.5,"y":14.5}}: from_entity and to_entity without pick: a take there and a give at to_entity (pick="first_with_stock")]]=])
   -- to on another entity than position's (Muse 17:18:55 named the silo twice; on its own tiles the call runs as a
   -- give there): a move between the two, which pick makes.
   fails(function() call('transfer',{position={x=15.5,y=59.5},item='rocket-fuel',count=50,direction='to_entity',to={x=30.5,y=60.5},inventory='rocket_silo_rocket'}) end,
@@ -3677,5 +3870,30 @@ end)()
     [[launch takes the silo: position (or unit_number); e.g. fh call launch --args '{"platform":"Sunward","position":{"x":65.5,"y":14.5}}'; silos on ]])
   fails(function() call('launch',{platform='Sunward'}) end,[[: rocket-silo (65.5,14.5) rocket ready; rocket-silo (14.5,140.5) building_rocket, parts 12/50]])
   p.surface.find_entities_filtered=find
+end)()
+-- Gemini 12:20: Fulgora's sky on the networks read's Fulgora row (lightning.lua M.sky), and in status there with the
+-- bolts near the character.
+;(function()
+  local s=p.surface
+  local kept_read,kept_get,kept_planet=runtime.networks.read,game.get_surface,s.planet
+  local fields={'daytime','darkness','ticks_per_day','dusk','evening','morning','dawn','freeze_daytime','count_entities_filtered'}
+  local kept={}
+  for _,k in ipairs(fields) do kept[k]=s[k] end
+  s.planet={name='fulgora'}
+  s.daytime,s.darkness,s.ticks_per_day,s.dusk,s.evening,s.morning,s.dawn,s.freeze_daytime=0.5,0.85,10800,0.25,0.45,0.55,0.75,false
+  s.count_entities_filtered=function(f) eq(f.type,'lightning'); return 3 end
+  local other={name='nauvis-2',planet={name='nauvis'}}
+  game.get_surface=function(n) if n==s.name then return s end if n=='nauvis-2' then return other end end
+  runtime.networks.read=function() return {surfaces={{surface=s.name,electric={},logistic={}},{surface='nauvis-2',electric={},logistic={}}},as_of='0s ago'} end
+  local r=call('networks',{})
+  eq(r.surfaces[1].storm.state,'storm'); eq(r.surfaces[1].storm.phase,'full dark'); eq(r.surfaces[1].storm.dawn_in_s,45)
+  eq(r.surfaces[1].storm.bolts_near,nil,'the read is the surface\'s, no character'); eq(r.surfaces[2].storm,nil)
+  local st=call('status',{})
+  eq(st.storm.state,'storm'); eq(st.storm.bolts_near,3)
+  assert(st.storm.line:find('^fulgora sky: storm, full dark %(darkness 0%.85; lightning%); brightening in 9s, dawn %(clear%) in 45s; 3 lightning bolts within 64 tiles of you now'),st.storm.line)
+  s.planet=nil
+  eq(call('status',{}).storm,nil,'not on Fulgora')
+  runtime.networks.read,game.get_surface,s.planet=kept_read,kept_get,kept_planet
+  for _,k in ipairs(fields) do s[k]=kept[k] end
 end)()
 print('runtime: '..assertions..' assertions passed')
