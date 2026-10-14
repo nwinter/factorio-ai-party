@@ -10,8 +10,16 @@ storage={board={items={}}}
 local force={name='player',players={}}
 local ents={nauvis={},vulcanus={},['platform-1']={}}
 local finds,wholes={},0
+local standing={}   -- what stands on a point (targets.standing): entities by position, any type
 local function surface(name,index,platform)
   return {name=name,index=index,platform=platform,find_entities_filtered=function(f)
+    if f.position and not f.type then
+      local out={}
+      for _,e in ipairs(standing) do
+        if e.valid and math.abs(e.position.x-f.position.x)<=0.5 and math.abs(e.position.y-f.position.y)<=0.5 then out[#out+1]=e end
+      end
+      return out
+    end
     eq(f.force,force); assert(f.type and f.limit,'by type, bounded')
     local types={}
     for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end
@@ -284,6 +292,29 @@ do
   b.valid=false
   g=lost(read())
   eq(g['lost_target.furnace'],nil); eq(st6.push_inserters.player.units[702],nil)
+  -- A chest upgraded in place (Astra, 07:26: a wooden chest fast-replaced by a requester; the inserter, holding cable,
+  -- worked from it while the engine's pickup target was still empty): what stands on the pickup point is its target
+  -- and the one remembered from now on; not lost.
+  local wood=thing('wooden-chest','container',-68.5,-0.5)
+  local asm=thing('assembling-machine-2','assembling-machine',-68.5,-3.5)
+  local f=inserter('fast-inserter',-68.5,-1.5,wood,asm)
+  f.pickup_position={x=-68.5,y=-0.5}; f.drop_position={x=-68.5,y=-2.5}
+  read()
+  eq(st6.push_inserters.player.units[f.unit_number].p,'wooden-chest (-68.5,-0.5)')
+  wood.valid=false; f.pickup_target=nil
+  local req=thing('requester-chest','logistic-container',-68.5,-0.5)
+  standing[#standing+1]=req
+  g=lost(read())
+  eq(g['lost_source.assembler'],nil,'the requester on its pickup point is its source')
+  eq(st6.push_inserters.player.units[f.unit_number].p,'requester-chest (-68.5,-0.5)','the remembered source is the new chest')
+  -- The engine links it later: still the requester, still not lost.
+  f.pickup_target=req
+  g=lost(read())
+  eq(g['lost_source.assembler'],nil)
+  -- Nothing on the point (the requester mined too): lost, reading the requester.
+  req.valid=false; f.pickup_target=nil
+  g=lost(read())
+  eq(g['lost_source.assembler'].lost[1],'fast-inserter (-68.5,-1.5) read requester-chest (-68.5,-0.5), puts into assembling-machine-2 (-68.5,-3.5)')
   ents.nauvis={}
 end
 -- 7. Turrets rebuilt empty (Astra, shift10: 15+ gun turrets rebuilt by robots with no ammo and destroyed again): a

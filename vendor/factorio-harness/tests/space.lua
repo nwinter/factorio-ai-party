@@ -169,13 +169,22 @@ fails(function() space.platform_schedule(p,{platform='alpha',stops={{station='mo
 fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,'rocket is not ready: building_rocket')
 silo.rocket_silo_status=9
 fails(function() space.launch(p,{position={x=20.5,y=20.5}}) end,'orbit=true')
-local l=space.launch(p,{position={x=20.5,y=20.5},platform='alpha'})
+-- An empty rocket (Sol, 06:29: Luna launched empty while bio science sat in a chest nearby): refused unless
+-- allow_empty, naming the science in chests within 32 tiles.
+prototypes.item['agricultural-science-pack']={type='tool'}; prototypes.item['iron-plate']={type='item'}
+local bio={valid=true,name='wooden-chest',position={x=30.5,y=22.5},get_inventory=function() return {get_contents=function()
+  return {{name='iron-plate',count=50},{name='agricultural-science-pack',count=120}} end} end}
+silo.surface={find_entities_filtered=function(f) assert(f.radius==32 and f.limit,'bounded'); return {bio} end}
+fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha'}) end,
+  'launch refused: the rocket holds nothing, and launching spends its parts; load cargo with transfer {position, direction=to_entity, inventory=rocket_silo_rocket, item, count}, or allow_empty=true to launch it empty; science in chests within 32 tiles: wooden-chest (30.5,22.5) agricultural-science-pack*120')
+fails(function() space.launch(p,{position={x=20.5,y=20.5},platform='alpha',allow_empty='yes'}) end,'allow_empty must be boolean')
+local l=space.launch(p,{position={x=20.5,y=20.5},platform='alpha',allow_empty=true})
 -- Cargo goes to the hub as a station (a surface destination on a platform
 -- makes the game refuse: shift04 07:17, Peregrine paused in orbit).
 eq(l.to,'platform alpha'); eq(launched.type,2); eq(launched.station,platform.hub); eq(launched.surface,nil); eq(l.cargo,'empty')
 -- A new platform waiting for its starter pack: the space_platform destination.
 platform.state=0
-space.launch(p,{position={x=20.5,y=20.5},platform='alpha'})
+space.launch(p,{position={x=20.5,y=20.5},platform='alpha',allow_empty=true})
 eq(launched.type,4); eq(launched.space_platform,platform)
 platform.state=7
 -- Over the rocket's lift (shift04 07:17: Sol's 1060 kg): refused before the

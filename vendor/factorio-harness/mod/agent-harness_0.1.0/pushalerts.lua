@@ -95,6 +95,11 @@ return function(api)
     local targets = api.targets
     if not (unit and targets) then return end
     local pick, drop = targets.read(e)
+    -- The engine's target can stay empty a while after its chest is replaced (Astra, 07:26: a wooden chest upgraded to
+    -- a requester; the inserter, holding cable, worked from it): what stands on the point counts as the target, and
+    -- the remembered one is the current one, whichever entity that is now.
+    if not pick then pick = targets.standing(s, try(function() return e.pickup_position end)) end
+    if not drop then drop = targets.standing(s, try(function() return e.drop_position end)) end
     local old = mem.units[unit]
     local now = {g=mem.gen, p=pick and targets.name_at(pick) or nil, d=drop and targets.name_at(drop) or nil, dt=drop and drop.type or nil}
     if old then
