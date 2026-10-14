@@ -41,7 +41,10 @@ account, or that name it, are left out (`keep_line` in `build.py`).
 With the long run come `/agents/` and `/timeline/` (`site/agents.py`). `/agents/`: a card per agent (model, maker,
 harness, the stream voice, its numbers across the shifts), records and a sortable comparison table, from
 `tools/agent_stats.py`, which reads each shift's journals, the director's deaths, `caster.log`'s voiced lines and the
-operator inbox. It caches each shift as `runs/RUN/agent-stats.json` (git-ignored; `build.py --stats-cache DIR` puts the
+operator inbox. Its "Hand hauling" table (items moved by hand, calls, direct / queue step / standing order, tiles
+carried, top repeated haul; and items by shift) takes a shift from `runs/RUN/hauling.jsonl`, the stream's reads of the
+harness's `hauling` counters, last less first; a shift without that file counts the journal's direct hand moves whose
+reply says what moved, with no queue or standing order numbers. It caches each shift as `runs/RUN/agent-stats.json` (git-ignored; `build.py --stats-cache DIR` puts the
 caches elsewhere) and counts a shift again only when one of its sources changed: about a second per ended shift, a few
 for the live one. `python3 tools/agent_stats.py RUN --print` shows one shift's table. `/timeline/`: research,
 rockets, platforms, planets and deaths in game time, with filters. `/chat/` (`site/highlights.py`): the agents' lines

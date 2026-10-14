@@ -1535,6 +1535,18 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   (searched every 10 s, followed by reference in between) with our nearest building or character within 500 tiles:
   `id, name, surface, position, speed (tiles/s), closing, nearest {x,y,name}, nearest_distance, eta_s, character
   {x,y,player}, character_distance`.
+- Operator hand hauling (hauling.lua; viewer Joonazan, 05:00): `hauling {top?}` (read; top 0..50, default 10) gives
+  per agent since the save began `name, items, calls, direct_items, direct_calls, queue_items, queue_calls,
+  order_items, order_calls, carry_tiles, since_tick, hauls` and `tick`. Counted: every hand transfer that moved items
+  (transfer either way, collect, feed, refuel, rearm) and every pickup from the ground; a call counts once, on its
+  first move, as direct (the agent's request), queue (a step of its queue) or order (a standing order's step); a
+  timed action (a walking collect, a feed waiting for a craft, a pickup) counts as the call that started it.
+  `carry_tiles`: per item, the straight line from where it was last taken or put to where it is put (a put of several
+  items adds its longest leg; legs on one surface up to 400 tiles). `hauls`: puts grouped by item, the 10-tile cells
+  it was taken from (none when not taken from an entity or the ground) and put to, most first: `{item, surface,
+  from {x,y}?, to {x,y}, to_name, times, items}` (100 kept per agent, the fewest dropped). The stream service reads it
+  every 5 minutes into `runs/RUN/hauling.jsonl` (tools/stream/hauling.py); a shift's numbers are its last read less
+  its first. Agents never see it.
 - Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
   `standing_s` (how long its character has had a body on the map and nothing that moves or works it; kept once a
   second for agents that made a request). A wait is not work: `wait_ticks`, `wait_until`, `sleep`, a queue held behind

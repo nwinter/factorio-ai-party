@@ -169,6 +169,14 @@ local function finish(index, outcome)
   if action and action.kind=='mine' and action.mined then s.last[index].mined=action.mined end
   if action and action.kind=='pickup' then
     s.last[index].picked=action.picked
+    -- Hand hauling (hauling.lua): what the pickup took, at the character, as its own call.
+    if action.picked and M.hauling then
+      local stacks={}
+      for name,n in pairs(action.picked) do stacks[#stacks+1]={name=name,count=n} end
+      table.sort(stacks,function(x,y) return x.name<y.name end)
+      local pl=M.lookup(index)
+      if pl and pl.valid then pcall(M.hauling.moved,index,'to_player',pl.position,pl.surface.name,stacks,nil,action) end
+    end
     -- An area pickup: what is still on the ground there, and stacks it walked away from.
     if action.area then
       local ok,left=pcall(M.ground.left,body(M.lookup(index)),action)
@@ -714,7 +722,7 @@ local request_path,navigate,check_args
 function handlers.describe()
   local description = {protocol=1, version='0.1.0', max_action_ticks=MAX_TICKS, deduplication_window=256, deduplication_bytes=8*1024*1024,
     -- operator-only reads this runtime answers (dispatch with operator=true; callers check here before asking)
-    operator_reads={'attack_groups_live','big_enemies_live'},
+    operator_reads={'attack_groups_live','big_enemies_live','hauling'},
     target='position:{x,y} (or [x,y]): the entity\'s centre as scan lists it, or any tile of its footprint; optional name and unit_number; targets require local visibility and character reach (inspect: sight only); a miss names the nearest entities',map_view='the user may stay in map view: actions drive the character entity, reach and visibility come from its position',
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
@@ -3173,6 +3181,7 @@ local function transfer_one(p,a,pos,e)
     pcall(M.visuals.moved,p,e.position,e.surface,table.concat(parts,' '))
     -- Takes and puts by hand, for the agent's repeated hauls (selfview.lua).
     pcall(M.selfview.moved,p,a.direction,e,stacks)
+    pcall(M.hauling.moved,p.index,a.direction,e.position,e.surface and e.surface.name,stacks,e.name)
   end
   local out={transferred=moved,items=not a.item and stacks or nil,inventory=inferred,none_held=short and a.item or nil,target_has=short and count(target) or nil,
     at_up_to=a.item and a.up_to~=nil and a.direction=='to_entity' and count(target)>=a.up_to or nil}
@@ -5143,6 +5152,8 @@ scheduler=scheduler_module{
   direct_action=function(p) local action=state().active[p.index]; return action and not action.queued and action.kind or nil end,
   reason=reason,
   on_step=function(index,action) M.selfview.request(index,action,true) end,
+  step_begin=function(index,step) M.hauling.begin(index,step.order and 'order' or 'queue') end,
+  step_done=function(index) M.hauling.done(index) end,
   on_fail=function(index,action,reason) M.selfview.failed(index,action,reason) end,
   completion=function(p,action)
     local last=action=='shoot' and state().last_combat or action=='drop' and state().last_drop or timed[action] and state().last
@@ -5274,6 +5285,11 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
 -- The agent's own play (selfview.lua): team.review every 2 game hours and the
 -- review read (actions and time by kind, repeated hand hauls, failures, open
 -- alerts in its claims, losses near its work); team.shift.retro at shift start.
+-- Hand hauling per agent, for the stream and the site (hauling.lua; viewer Joonazan, 05:00).
+M.hauling=require('hauling'){state=state,
+  name=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and M.board.who(p) or tostring(index) end,
+  active=function(index) return state().active and state().active[index] end,
+  order_step=function(index) local q=(state().queues or {})[index]; return q and q.current and q.current.order end}
 M.selfview=require('selfview'){state=state,is_read=function(action) return M.is_read(action) end,
   talk=function(action) return M.idle.TALK[action]~=nil or M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil end,
   waiting=function(s,index) return M.idle.waiting(s,index) end,
@@ -5546,6 +5562,7 @@ local dispatch_request
 -- raised again unchanged (control.lua reads it as before).
 function M.dispatch(request)
   local ok,result=pcall(M.dispatch_inner,request)
+  if type(request)=='table' and type(request.player)=='number' and request.operator~=true then pcall(M.hauling.done,request.player) end
   if not ok then pcall(M.selfview.dispatch_failed,request,result); error(result,0) end
   return result
 end
@@ -5556,7 +5573,7 @@ function M.dispatch_inner(request)
   if request.operator==true then
     local ok,result=pcall(function()
       assert(request.player==nil and request.bot==nil,'an operator request names no player or bot')
-      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action]
+      local relay=M.audience.operator[request.action] or M.tells.operator[request.action] or M.players.operator[request.action] or M.votes.operator[request.action] or M.idle.operator[request.action] or M.hauling.operator[request.action]
         or M.highlights.operator[request.action] or threat.operator[request.action] or M.orders.operator[request.action] or M.bplibrary_operator[request.action]
       if relay then return relay(request.args or {}) end
       M.check_args(request.action,request.args)
@@ -5571,6 +5588,8 @@ function M.dispatch_inner(request)
     assert(request.player==nil,'a request may name a player or a bot, not both')
     request.player=M.bots.index_of(request.bot)
   end
+  -- Items this request moves by hand are a direct call's (hauling.lua).
+  if type(request.player)=='number' then M.hauling.begin(request.player,'direct') end
   -- Wrong argument names the harness knows (craft item, move_to target, ...)
   -- run as the call meant; the reply says the call as it ran (corrected).
   local corrected

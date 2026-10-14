@@ -6,7 +6,8 @@
   research by the queue's queued_by and finished by the score log; rockets; chat, marked aloud, viewer replies (an
   @mention of a teammate is none); tells, confessions; deaths from the director (two lines, one death; past
   midnight); lines voiced and the voice; operator requests (a viewer's line is none); the cache is reused and
-  recounted when a journal grows;
+  recounted when a journal grows; hand hauling from the journal's direct moves (items, calls, carry legs, top
+  repeated haul; a walking collect's reply holds no count) or, where the stream kept them, the game's counters;
 - the site: cards, records (most built in a shift, longest survival), the comparison table, nav entries, the timeline
   with its filters; no log text on the pages; check.py passes.
 """
@@ -61,6 +62,22 @@ def make(root):
     j.call("2026-10-13T06:02:10Z", "build", {"item": "gun-turret"}, ok=False)
     j.call("2026-10-13T06:02:20Z", "pole_route", {}, result={"placed": 5})
     j.call("2026-10-13T06:02:30Z", "pipe_route", {}, result={"placed": 9, "dry_run": True})
+    # hand hauling, direct: a take, a put 30 tiles on, a feed of two furnaces 4 and 8 tiles past it, a walking collect
+    # (its reply holds no count), a take from one machine, a put 31 tiles away
+    j.call("2026-10-13T06:02:35Z", "observe", {}, result={"player": {"surface": "nauvis"}})
+    j.call("2026-10-13T06:02:36Z", "transfer", {"position": {"x": 10, "y": 0}, "item": "iron-plate", "direction": "to_player"},
+           result={"transferred": 50})
+    j.call("2026-10-13T06:02:37Z", "transfer", {"position": {"x": 40, "y": 0}, "item": "iron-plate"},
+           result={"transferred": 40, "direction": "to_entity"})
+    j.call("2026-10-13T06:02:38Z", "feed", {"positions": [{"x": 40, "y": 4}, {"x": 40, "y": 8}]},
+           result={"transferred": 10, "items": {"iron-plate": 10}, "entities": [
+               {"position": {"x": 40, "y": 4}, "gave": {"iron-plate": 5}}, {"position": {"x": 40, "y": 8}, "gave": {"iron-plate": 5}}]})
+    j.call("2026-10-13T06:02:39Z", "collect", {"radius": 20}, result={"stock": 30, "places": 2, "until_tick": 99})
+    j.call("2026-10-13T06:02:40Z", "collect", {"positions": [{"x": 10, "y": 0}]},
+           result={"transferred": 7, "items": [{"name": "iron-plate", "count": 7}],
+                   "entities": [{"position": {"x": 10, "y": 0}, "transferred": 7}]})
+    j.call("2026-10-13T06:02:41Z", "transfer", {"position": {"x": 41, "y": 1}, "item": "iron-plate", "direction": "to_entity"},
+           result={"transferred": 7})
     hist = [{"id": "job-1", "action": "build", "ok": True, "result": {"built": 3}},
             {"id": "job-2", "action": "mine", "ok": True, "result": {"completion": {"kind": "mine"}}}]
     j.call("2026-10-13T06:03:00Z", "queue_submit", {"steps": []}, result={"history": hist})
@@ -104,7 +121,19 @@ def make(root):
               rockets=4, platforms=["Kite"], planets=("nauvis", "vulcanus"))]) + "\n")
     m = Journal()
     m.call("2026-10-13T09:00:00Z", "build", {}, result={"built": 7})
+    m.call("2026-10-13T09:00:05Z", "transfer", {"position": {"x": 1, "y": 1}, "item": "coal", "direction": "to_entity"},
+           result={"transferred": 9999})  # the game's counters below win over the journal
     (b / "opus" / "journal.jsonl").write_text(m.text())
+    # the stream's reads of the game's hand hauling counters (tools/stream/hauling.py): the shift is last less first
+    def haul_row(t, items, calls, direct, queue, order, carry, hauls):
+        return {"t": t, "tick": 1, "agents": [{"name": "opus", "items": items, "calls": calls, "direct_items": direct,
+                                               "direct_calls": calls // 2, "queue_items": queue, "queue_calls": 8,
+                                               "order_items": order, "order_calls": 2, "carry_tiles": carry,
+                                               "hauls": hauls}, {"name": "nick", "items": 5, "calls": 1}]}
+    coal = {"item": "coal", "surface": "nauvis", "from": {"x": 9, "y": 38}, "to": {"x": 0, "y": 42}, "to_name": "boiler"}
+    (b / "hauling.jsonl").write_text(
+        json.dumps(haul_row(1, 100, 10, 100, 0, 0, 40, [dict(coal, times=2, items=20)])) + "\n"
+        + json.dumps(haul_row(2, 400, 30, 250, 120, 30, 540, [dict(coal, times=14, items=140)])) + "\n")
     (b / "stream-service.log").write_text("")
     # basemap snapshots (tools/stream/basemap_log.py): two in shift 1, one in shift 2, and a file that is none
     for d_, tick, rows in ((a, 36000, ["A."]), (a, 72000, ["AS"]), (b, 400000, ["ASM", "E.."])):
@@ -132,7 +161,18 @@ def main():
         make(root)
         c = agent_stats.compute(root / "sa", ["Opus", "Sol"])
         o, s = c["agents"]["opus"], c["agents"]["sol"]
-        assert (o["requests"], o["reads"], o["talk"], o["actions"]) == (17, 2, 5, 10), o
+        assert (o["requests"], o["reads"], o["talk"], o["actions"]) == (24, 3, 5, 16), o
+        # hand hauling from the journal: direct moves whose reply says what moved; carry 30 + 4 + 4 + 31
+        assert (o["haul_items"], o["haul_calls"], o["haul_direct_items"], o["haul_carry"]) == (114, 5, 114, 69), o
+        assert o["haul_queue_items"] is None and o["haul_order_items"] is None and o["haul_from"] == "journal", o
+        assert o["haul_top"] == {"item": "iron-plate", "surface": "nauvis", "times": 4, "items": 57,
+                                 "from": {"x": 10, "y": 0}, "to": {"x": 40, "y": 0}}, o["haul_top"]
+        assert s["haul_items"] == 0 and s["haul_top"] is None, s
+        # from the game's counters (shift 2): queue and standing order steps too; the journal's direct move ignored
+        g = agent_stats.compute(root / "sb", ["Opus"])["agents"]["opus"]
+        assert (g["haul_items"], g["haul_calls"], g["haul_direct_items"], g["haul_queue_items"], g["haul_order_items"],
+                g["haul_carry"], g["haul_from"]) == (300, 20, 150, 120, 30, 500, "game"), g
+        assert g["haul_top"]["item"] == "coal" and g["haul_top"]["times"] == 12 and g["haul_top"]["items"] == 120, g
         assert o["failed"] == 1 and o["built"] == 2 + 5 + 3 and o["mined"] == 1, o
         assert o["walked"] == 50 and o["moves"] == 3, o  # 0,0 to 30,40; the 2970-tile hop left out
         assert (o["research"], o["research_done"], s["research"], s["research_done"]) == (2, 1, 1, 1), (o, s)
@@ -185,6 +225,20 @@ def main():
         # Opus: since its 00:10 death (tick 255600) to the end of shift 2 (tick 763200); Sol played shift 1 only (1h30m)
         assert '<span class="r-value">2h20m</span>' in surv and "Opus" in surv and "still alive" in surv, surv
         assert 'table class="compare"' in page and "data-v=" in page
+        # hand hauling: the run by agent (shift 1's journal, shift 2's game counters), items by shift, the note
+        hl = page.split('<h2 id="hauling">Hand hauling</h2>')[1].split('<h2 ')[0]
+        assert "Queue and standing order steps counted in shift 2; other shifts count direct moves only." in hl, hl
+        orow = hl.split('href="#opus"')[1].split("</tr>")[0]
+        for want in ('data-v="414">414<', 'data-v="25">25<', 'data-v="264">264<', 'data-v="120">120<',
+                     'data-v="30">30<', 'data-v="569">569<', "coal ×12: (9, 38) → (0, 42), Nauvis", "shift 2"):
+            assert want in orow, (want, orow)
+        srow = hl.split('class="compare hauling"')[1].split('href="#sol"')[1].split("</tr>")[0]
+        assert '<td data-v="">–' in srow and "data-v=\"0\">0<" in srow, srow  # no queue counts on its shift: a dash
+        by_shift = hl.split('id="hauling-shifts"')[1]
+        assert 'title="5 calls">114<' in by_shift and 'title="20 calls">300<' in by_shift, by_shift
+        hrec = page.split("Most items hauled by hand in a shift</span>")[1].split("</li>")[0]
+        assert '<span class="r-value">300</span>' in hrec and "shift 2" in hrec, hrec
+        assert "Tiles carried" in page.split('id="notes"')[1]
         # by maker, per agent-shift: Anthropic is Opus on two shifts (10 and 7 built), OpenAI is Sol on one
         mk = page.split('<h2 id="makers">')[1].split("</table>")[0]
         anth = mk.split('<th scope="row">Anthropic</th>')[1].split("</tr>")[0]

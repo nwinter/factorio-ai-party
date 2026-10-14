@@ -12,6 +12,7 @@ casters say matches the screen. The page renders a segment from its facts only.
 import itertools, math, re, threading, time
 from collections import deque
 
+import hauling
 from model import SCIENCE, platform_shot
 
 STARTING_S = 2.5   # page fade-in; the caster writes its exchange now and speaks on "live"
@@ -35,6 +36,9 @@ TYPES = {
     "space": {"title": "Space Age progress", "params": {}, "seconds": [10, 18]},
     "space_moment": {"title": "Space Age moment", "params": {"moment": "moment id (default: the newest not yet shown)"},
                      "seconds": [12, 25]},
+    # Items each agent moved by hand this shift (operator 05:00, viewer Joonazan); the director shows it every
+    # hauling_every, ranked, numbers only.
+    "hauling": {"title": "Hand hauling this shift", "params": {}, "seconds": [10, 16]},
 }
 LULL_ORDER = ["production", "spotlight", "research", "space", "overview", "recap"]
 MOMENT_FRESH_S = 150.0
@@ -65,7 +69,7 @@ def human(item):
 
 class Segments:
     def __init__(self, spacing=180.0, lull_after=360.0, urgent_quiet=20.0, overview_zoom=0.2, spotlight_zoom=0.9,
-                 recap_every=1200.0, replay_spacing=90.0, cheap_quiet=180.0):
+                 recap_every=1200.0, replay_spacing=90.0, cheap_quiet=180.0, hauling_every=1800.0):
         self.spacing = spacing            # seconds between segment starts, whoever asks
         # Replays skip `spacing` (replays.py), so they have their own: one start per replay_spacing (shake12: three in
         # 41 s). A single cheap building's loss airs only when no segment has started for cheap_quiet and no fight cut
@@ -86,6 +90,9 @@ class Segments:
         # An overdue recap (this long past due) goes next: other requests are refused until it starts. In shake4 the
         # recap waited for an empty slot and replays kept taking it: one gap was 30 minutes.
         self.recap_late = 600.0
+        # The hand hauling card: due this long after the last one (or the service start), at the next free slot.
+        self.hauling_every = hauling_every
+        self.last_hauling = time.time()
         self.urgent_quiet = urgent_quiet  # no segment within this long of an attack cut on the main camera
         self.overview_zoom = overview_zoom
         self.spotlight_zoom = spotlight_zoom
@@ -124,6 +131,8 @@ class Segments:
             return "no Space Age progress yet"
         if kind == "space_moment" and not self.moments(snap):
             return "no Space Age moment yet"
+        if kind == "hauling" and not ((snap.get("hauling") or {}).get("rows")):
+            return "no hand hauling counted this shift yet"
         return None
 
     def moments(self, snap, fresh_only=False, now=None):
@@ -230,6 +239,8 @@ class Segments:
             self.queue = seg
             if kind == "recap":
                 self.last_recap = now
+            if kind == "hauling":
+                self.last_hauling = now
             return 200, {k: seg[k] for k in ("id", "state", "seconds", "title", "facts")} | {"eta": STARTING_S}
 
     # ---- the clock (called once a second with the latest snapshot) ---------------------------------------------
@@ -274,6 +285,11 @@ class Segments:
               and now - self.last_start >= self.spacing and self.urgent_since(snap, now) >= 60):
             minutes = max(5, min(30, round((now - self.last_recap) / 60)))
             self.request({"type": "recap", "params": {"minutes": minutes}, "by": "director", "reason": "recap due"}, now)
+        elif (self.cur is None and self.queue is None and now - self.last_hauling >= self.hauling_every
+              and now - self.last_start >= self.spacing and self.urgent_since(snap, now) >= 60):
+            code, _ = self.request({"type": "hauling", "by": "director", "reason": "hauling due"}, now)
+            if code != 200 and self.why_unavailable("hauling", snap, now):
+                self.last_hauling = now  # nothing counted yet: the next one is due in hauling_every
         elif self.cur is None and self.queue is None and now - self.last_end >= self.lull_after:
             self.lull(snap, now)
         return self.public()
@@ -394,6 +410,24 @@ class Segments:
                  "recent": [x["label"] for x in (r.get("recent") or [])[:4]]}
         title = f"Research: {r['label']}" + (f" {pct}%" if pct is not None else "") if r.get("label") else "Research"
         return title, facts, None
+
+    HAULING_ROWS = 5
+
+    def build_hauling(self, params, snap, now):
+        """Items each agent moved by hand this shift, most first (live.py observe_hauling): items, calls, the share run
+        by queues and standing orders, tiles carried."""
+        h = snap.get("hauling") or {}
+        names = {a["name"]: a.get("display_name") or a["name"] for a in snap.get("agents") or [] if a.get("name")}
+        rows = []
+        for i, r in enumerate((h.get("rows") or [])[:self.HAULING_ROWS], 1):
+            planned = (r.get("queue_items") or 0) + (r.get("order_items") or 0)
+            rows.append({"rank": i, "agent": names.get(r["name"], r["name"]), "items": r["items"], "calls": r["calls"],
+                         "queued_pct": round(100 * planned / r["items"]) if r["items"] else 0,
+                         "tiles_carried": r.get("carry_tiles") or 0})
+        minutes = round((h["t"] - h["since"]) / 60) if h.get("t") and h.get("since") else None
+        facts = {"rows": rows, "minutes": minutes,
+                 "line": hauling.card_line(h.get("rows") or [], self.HAULING_ROWS, lambda n: names.get(n, n))}
+        return "Hand hauling this shift", facts, None
 
     def build_space(self, params, snap, now):
         sp = snap.get("space") or {}

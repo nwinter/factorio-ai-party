@@ -1147,6 +1147,14 @@
       if (f.agent) body.append(factRow("Who", f.agent));
       if (f.planets_reached) body.append(factRow("Planets reached", f.planets_reached));
       body.append(factRow("Game time", f.game_time));
+    } else if (seg.type === "hauling") { // items moved by hand this shift, most first (segments.py build_hauling)
+      const t = el("div", "stable");
+      t.append(el("div", "th", "Hand hauling"), el("div", "th num", "items"), el("div", "th num", "calls"));
+      const n = (v) => Number(v || 0).toLocaleString("en-US");
+      for (const r of f.rows || [])
+        t.append(el("div", "td", r.rank + ". " + r.agent), el("div", "td num", n(r.items)), el("div", "td num faint", n(r.calls)));
+      body.append(t);
+      if (f.minutes != null) body.append(el("div", "snote", "this shift · last " + f.minutes + " min"));
     } else if (seg.type === "overview") {
       body.append(factRow("Agents in the world", f.agents_in_world + " of " + f.agents_total),
         factRow("Spread", "about " + f.spread_tiles + " tiles from the centre"),
@@ -1178,7 +1186,8 @@
       const panel = el("div", "spanel");
       const title = el("div", "stitle");
       title.append(el("span", "tag", seg.type === "spotlight" ? "Spotlight" : seg.type === "overview" ? "Overview"
-        : seg.type === "attack_replay" ? "Replay" : seg.type === "space" || seg.type === "space_moment" ? "Space Age" : "Analysis"),
+        : seg.type === "attack_replay" ? "Replay" : seg.type === "space" || seg.type === "space_moment" ? "Space Age"
+        : seg.type === "hauling" ? "Stats" : "Analysis"),
         el("span", "", seg.title));
       if (seg.type === "spotlight") {
         const ag = (s.agents || []).find((a) => a.name === (seg.facts || {}).name);
