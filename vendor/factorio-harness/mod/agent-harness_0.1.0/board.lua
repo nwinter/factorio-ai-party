@@ -233,7 +233,7 @@ return function(api)
     local parts = {}
     if #n.closed > 0 then parts[#parts+1] = 'closed after 2h without your activity: ' .. names(n.closed) end
     if #stale > 0 then
-      parts[#parts+1] = 'stale after 30 min without your activity (teammates may work there without asking; work in it or update it to keep it, or it closes 2h after your last activity): ' .. names(stale)
+      parts[#parts+1] = 'stale after 30 min without your activity (teammates may remove or rebuild there without telling you first; work in it or update it to keep it, or it closes 2h after your last activity): ' .. names(stale)
     end
     return 'your claims: ' .. table.concat(parts, '; ')
   end
@@ -290,7 +290,7 @@ return function(api)
     if not full and #notes > 2 then notes = {notes[#notes-1], notes[#notes]} end
     local claim = i.kind == 'claim' and ACTIVE[i.status]
     return {id=i.id, kind=i.kind, title=i.title, owner=i.owner, owner_away=i.kind == 'claim' and where and where(i.owner) or nil,
-      -- An open claim: when its owner last worked on it, stale (no permission needed), who it allows.
+      -- An open claim: when its owner last worked on it, stale (no notice needed), who it allows.
       owner_active=claim and ago(game.tick - api.claims.activity(i)) .. ' ago' or nil, stale=claim and api.claims.stale(i) or nil,
       allow=i.kind == 'claim' and i.allow or nil,
       requested_by=i.requested_by, status=i.status, area=i.area,
@@ -314,7 +314,7 @@ return function(api)
     assert(type(kind) == 'string' and KINDS[kind], 'kind must be task, request, claim or note')
     assert(kind ~= 'harness', 'ask for a harness tool with harness_request')
     assert(kind ~= 'plan', 'the team plan is one item: edit it with board_plan {goals} or {doing}')
-    assert(a.allow == nil or kind == 'claim', 'allow is for a claim: who may work in its area without asking')
+    assert(a.allow == nil or kind == 'claim', 'allow is for a claim: who may remove or rebuild in its area without telling its owner first')
     expire()
     local item = {kind=kind, title=required_text(a.title, 'title', TITLE), requested_by=by, area=area_arg(a.area),
       needs=needs_arg(a.needs), tags=tags_arg(a.tags), notes={}, created_tick=game.tick, updated_tick=game.tick}
@@ -373,13 +373,13 @@ return function(api)
     assert(item.kind ~= 'plan' or (a.status == nil and a.owner == nil), 'the team plan changes with board_plan {goals} or {doing}; notes are fine')
     local allow
     if a.allow ~= nil then
-      assert(item.kind == 'claim', 'allow is for a claim: who may work in its area without asking')
+      assert(item.kind == 'claim', 'allow is for a claim: who may remove or rebuild in its area without telling its owner first')
       assert(boss, string.format('only the owner (%s) can change who claim #%d allows', tostring(item.owner), item.id))
       allow = allow_arg(a.allow)
     end
     if a.owner ~= nil then
       assert(item.kind ~= 'claim' and item.kind ~= 'note' and item.kind ~= 'harness', 'a ' .. item.kind .. ' stays with its poster'
-        .. (item.kind == 'claim' and '; a stale claim needs no permission, and one with no activity for 2h closes by itself' or ''))
+        .. (item.kind == 'claim' and '; a stale claim needs no notice, and one with no activity for 2h closes by itself' or ''))
       if a.owner == '' or a.owner == false then
         assert(boss, 'only the owner or requester can release an item')
         if item.owner then item.owner = nil; item.status = 'open'; changes[#changes+1] = 'released' end
@@ -677,7 +677,7 @@ return function(api)
     board = {full='boolean: the plain listing in full (by default it is about 3 KB: the newest items with their last note, the plan\'s goals and your line, and more: how many were left out)',
       mine='boolean: items I own or requested', status='active|open|claimed|doing|done|blocked|dropped or an array of them',
       kind='task|request|claim|note|harness|plan', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
-      id='one item in full (all notes)', returns='plan (the team plan: goals, doing lines, last edit), items, matched, open_unowned (open task/request items nobody owns); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (anyone may work there without asking) and allow (who may work there); after 2 h with no such activity the harness closes it (dropped)'},
+      id='one item in full (all notes)', returns='plan (the team plan: goals, doing lines, last edit), items, matched, open_unowned (open task/request items nobody owns); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (anyone may remove or rebuild there without notice) and allow (who may do that while it is fresh); after 2 h with no such activity the harness closes it (dropped)'},
     board_plan = {goals='the team goals, 1..600 characters, replace the current ones ("" clears them)',
       doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
       returns='the team plan: goals, doing (one line per agent, "(set by NAME)" when someone else wrote it), edited; with no arguments it only reads'},
@@ -685,12 +685,12 @@ return function(api)
       owner='agent name or display name (task/request; a request without owner is shown to everyone until taken)',
       area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text, array of item names/{name,count}, or {item: count}',
       tags='up to 8 short strings', note='optional first note, 1..200 characters',
-      allow='claim only: agents who may work in the area without asking (array or "luna,sol"), or "everyone"',
+      allow='claim only: agents who may remove or rebuild in the area without telling you first (array or "luna,sol"), or "everyone"',
       returns='the item; warnings for overlapping claims (with where the owner is when not with you: claim #128 by sol (on Vulcanus), its age, owner activity and state, stale) or an unowned request'},
     board_update = {id='item number', status='open|claimed|doing|done|blocked|dropped (owner or requester only)',
       owner='your name takes an open unowned item, or an active task/request whose owner has made no request for 20 min; another name reassigns (owner or requester only); "" releases it',
       note='1..200 characters, anyone may add (last 10 kept)',
-      allow='claim owner only: who may work in the area without asking (names or "everyone"; [] or "" clears it)'},
+      allow='claim owner only: who may remove or rebuild in the area without telling you first (names or "everyone"; [] or "" clears it)'},
     board_events = {since_seq='return events after this sequence number (default 0)', limit='1..200 (default 100), oldest first',
       returns='events {seq,tick,by,id,change,title,kind,owner,requested_by,status,text} and cursor (pass it back as since_seq)'},
     harness_request = {title='1..120 characters', problem='what you tried and what went wrong (1..1000)', proposal='optional: the tool or change you want',

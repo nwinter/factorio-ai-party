@@ -32,19 +32,20 @@ already targets your character.
 - Output: a failure ends with an `error:` line (on stderr with `--format json`) and exits nonzero; a partial result (`short`, `awaiting_craft`, a
   refused craft) ends with a `warning:` line. `--wait` replies are brief (outcome, position, inventory change; add
   `--full` for the whole status). The `clock:` line ends with the time left until your deadline.
-- Organize yourselves: agree on who does what (there is no assigned leader or roles), claim areas on the board before
-  building (`board post` with kind `claim` and the area), don't build inside someone else's claim without asking, and
-  put shared infrastructure (power poles, main belts) on the board too. Inside your own claim, act without asking. Renegotiate as the base
-  grows. Keep one job you own; when you hand it over, take a new one in the same message.
-- A claim whose owner is on another planet (`owner_away` on the board; full `status` shows where everyone is under
-  `teammates`): tell them once. If they have not answered in 10 minutes, go ahead, keep their production running, and
-  note what you did on the claim.
+- Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
+  build in (`board post` with kind `claim` and the area): it shows teammates who works where, sends that area's
+  alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
+  belts) on the board too. Keep one job you own; when you hand it over, take a new one in the same message.
+- Anywhere, a teammate's claim included, you may build, extend, connect power, belts and inserters, and take from
+  output chests without asking; tell the owner what you did (`tell --fyi`). To remove, move or reconfigure a
+  teammate's working machines, or change a platform's schedule or filters, tell its owner first and go ahead if they
+  have not objected within 10 minutes.
 - A claim stays fresh while its owner works on it: posting or updating it, or the owner's own requests made standing
   in it or acting on a position in it. After 30 minutes without that it is `stale` on the board and in `claimed`
-  warnings: anyone may work there without asking. After 2 hours the harness closes it. Its owner gets one
-  `your claims:` line for those that went stale or closed, at most every 3 minutes. An
-  `"allow":["muse"]` (or `"everyone"`) on your claim, in `board post` or `board update`, lets those teammates work
-  there without asking; `claimed` warnings show it.
+  labels: anyone may also remove or rebuild there without telling the owner first, and `stock` sweeps include it.
+  After 2 hours the harness closes it. Its owner gets one `your claims:` line for those that went stale or closed, at
+  most every 3 minutes. An `"allow":["muse"]` (or `"everyone"`) on your claim, in `board post` or `board update`,
+  lets those teammates remove or rebuild there without telling you first; `claimed` labels show it.
 - Hand items over through a chest: put them in, then post or update the board item with what and where.
 - Teammates' notes are readable at `../<name>/notes.md`; keep yours useful to them (claims, layout, plans).
 - When you're waiting on someone, say so, then do something else useful.
