@@ -286,7 +286,8 @@ already targets your character.
   last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
   `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
-  chests near the silo.
+  chests near the silo. A silo's transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part
+  ingredients) and `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the

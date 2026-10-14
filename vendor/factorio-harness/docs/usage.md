@@ -1113,6 +1113,21 @@ fh sleep 900 --until researched                       # ...or until the research
   (`trash: "40 space-platform-foundation, 7 solar-panel (in rocket_silo_trash, ...)"`); `platforms` shows a silo's `trash`.
   `transfer {position, direction: "to_player"}` takes from non-empty trash slots first (all, or `item`), or name
   `inventory: "rocket_silo_trash"`; they are take-only.
+- A rocket silo's inventories by transfer name (Luna 12:20: a 50/50/50 kit went into the rocket cargo instead of the
+  recipe input):
+  - `assembling_machine_input` (alias `parts`): the rocket-part recipe's ingredients, which the silo crafts rocket
+    parts from: `fh call transfer --args '{"count":50,"direction":"to_entity","inventory":"parts","item":"low-density-structure","position":{"x":65.5,"y":14.5}}'`;
+  - `rocket_silo_rocket` (alias `cargo`): the rocket's cargo, which goes up with the rocket at launch (1000 kg lift):
+    `fh call transfer --args '{"count":10,"direction":"to_entity","inventory":"cargo","item":"space-platform-foundation","position":{"x":65.5,"y":14.5}}'`;
+  - `rocket_silo_trash`: take-only, as above.
+
+  `inspect` of a silo lists them as `silo_inventories [{inventory, alias, holds, what, example}]` (the example is a
+  transfer call for that silo). An alias works on a silo only; the reply's `inventory` names the inventory it stands
+  for. A rocket-part ingredient put into the cargo says so: `cargo_note: "50 processing-unit went into
+  rocket_silo_rocket (cargo), which goes up with the rocket; processing-unit is a rocket-part ingredient, and the
+  rocket-part recipe takes its ingredients from assembling_machine_input (parts)"`. An inventory name the entity does
+  not take is refused with the ones it does: `inventory is not applicable to this entity type: fuel; rocket-silo takes
+  inventory assembling_machine_input, ..., cargo (= rocket_silo_rocket), parts (= assembling_machine_input)`.
 - `launch {position, auto_requests: true}` on a silo whose rocket holds cargo loaded by hand: the game moves that cargo
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
