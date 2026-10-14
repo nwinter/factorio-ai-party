@@ -165,6 +165,12 @@ fh call status
   circuit connector `{id, signals, more}`: the signals on that network now, largest first, at most 30. An entity whose
   circuit settings were never changed shows its wires and `settings_note`.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
+- `requests` shows each section's state: `off: true` for a section switched off (the GUI's checkbox; it requests
+  nothing, and the reply's `note` names it), and on a platform hub the planet each request imports from, exact
+  requests too (`calcite=500 from vulcanus`). `requests {platform, section: 1, active: true}` (or `false`) switches a
+  section on or off; `changed_section` says which section a call changed. The `platforms` row lists a hub's requests
+  in sections that are off apart, as `requests_off`. (Astra, 02:00: Sunward's only section was off, so the Vulcanus
+  silo sent nothing, while the readback showed neither the state nor the import planet.)
 - Trains: `train {position: stop, station, limit}` names a train stop and sets its train limit (`limit: false` clears it);
   `train {position: locomotive or wagon, schedule: [{station, wait: [{type, ticks?, compare?, condition?}]}], current,
   automatic}` sets the train's schedule (wait types as in the game: time, inactivity, full, empty, item_count,
