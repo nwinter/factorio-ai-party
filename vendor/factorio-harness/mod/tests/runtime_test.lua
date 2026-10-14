@@ -1277,6 +1277,14 @@ function H.read()
   return t
 end
 H[0]=H.read()
+-- A hauling hook that throws fails no request (every hook runs under pcall).
+do
+  local begin,done=runtime.hauling.begin,runtime.hauling.done
+  runtime.hauling.begin=function() error('hauling broke') end
+  runtime.hauling.done=function() error('hauling broke') end
+  eq(type(call('status')),'table')
+  runtime.hauling.begin,runtime.hauling.done=begin,done
+end
 local trip=call('collect',{item='iron-gear-wheel',radius=20,count=25})
 eq(trip.stock,30); eq(trip.places,1); eq(call('status').active.kind,'gather')
 advance(1)

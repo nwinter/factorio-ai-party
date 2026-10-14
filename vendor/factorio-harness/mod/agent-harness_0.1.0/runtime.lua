@@ -5589,7 +5589,7 @@ function M.dispatch_inner(request)
     request.player=M.bots.index_of(request.bot)
   end
   -- Items this request moves by hand are a direct call's (hauling.lua).
-  if type(request.player)=='number' then M.hauling.begin(request.player,'direct') end
+  if type(request.player)=='number' then pcall(M.hauling.begin,request.player,'direct') end
   -- Wrong argument names the harness knows (craft item, move_to target, ...)
   -- run as the call meant; the reply says the call as it ran (corrected).
   local corrected
