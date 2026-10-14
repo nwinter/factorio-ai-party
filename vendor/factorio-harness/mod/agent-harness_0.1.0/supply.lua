@@ -24,8 +24,10 @@ return function(api)
   for _, t in ipairs(BELTS) do BELT[t] = true end
   -- One find for every kind: each whole-surface find sweeps all chunks (on
   -- shift08's nauvis six finds took 45 ms, one 19 ms).
-  local GROUP, CAP = {}, {crafters=MAX_MACHINES, labs=MAX_LABS, chests=MAX_CHESTS, belts=MAX_BELTS, inserters=MAX_INSERTERS, robots=MAX_ROBOTS}
-  for group, types in pairs({crafters=CRAFTERS, labs={'lab'}, chests=CHESTS, belts=BELTS, inserters={'inserter'}, robots=ROBOTS}) do
+  -- Miners (mining drills, pumpjacks, offshore pumps) make what the chain finds no recipe for (Grok, 04:55).
+  local MINERS = {'mining-drill', 'offshore-pump'}
+  local GROUP, CAP = {}, {crafters=MAX_MACHINES, labs=MAX_LABS, chests=MAX_CHESTS, belts=MAX_BELTS, inserters=MAX_INSERTERS, robots=MAX_ROBOTS, miners=MAX_MACHINES}
+  for group, types in pairs({crafters=CRAFTERS, labs={'lab'}, chests=CHESTS, belts=BELTS, inserters={'inserter'}, robots=ROBOTS, miners=MINERS}) do
     for _, t in ipairs(types) do GROUP[t] = group end
   end
   local MAIN = {container='chest', ['logistic-container']='chest', ['cargo-landing-pad']='cargo_landing_pad_main', ['space-platform-hub']='hub_main',
@@ -188,10 +190,10 @@ return function(api)
     local any_pack = false
     for name in pairs(names) do if packs[name] or (prototypes.item[name] and try(function() return prototypes.item[name].type end) == 'tool') then any_pack = true end end
     local types = {}
-    for t, group in pairs(GROUP) do if (group ~= 'labs' or any_pack) and (group ~= 'robots' or not area) then types[#types+1] = t end end
+    for t, group in pairs(GROUP) do if (group ~= 'labs' and group ~= 'miners' or any_pack) and (group ~= 'robots' or not area) then types[#types+1] = t end end
     table.sort(types)
     local found = surface.find_entities_filtered(filter{type=types, limit=MAX_FOUND})
-    local lists, seen = {crafters={}, labs={}, chests={}, belts={}, inserters={}, robots={}}, {}
+    local lists, seen = {crafters={}, labs={}, chests={}, belts={}, inserters={}, robots={}, miners={}}, {}
     for _, e in ipairs(found) do
       local group = GROUP[e.type]
       local list = group and lists[group]
@@ -487,7 +489,7 @@ return function(api)
       end
     end
     for _, t in pairs(T) do M.classify(t) end
-    return {items=T, networks=networks, counted=counted, area=area, crafters=crafters}
+    return {items=T, networks=networks, counted=counted, area=area, crafters=crafters, miners=lists.miners}
   end
 
 
@@ -827,7 +829,39 @@ return function(api)
   -- lack. The line follows the ingredient most of a step's makers lack while
   -- most of them lack one, and ends at the first step whose makers mostly do
   -- not. Built from the scan's crafters: no other find.
-  local CHAIN_NODES, CHAIN_DEPTH = 40, 10
+  local CHAIN_NODES, CHAIN_DEPTH, MINER_MEMO = 40, 10, 8192
+  -- What a miner makes (Grok, 04:55: the chain said stone has no assembler; mining drills make it): a mining drill or
+  -- pumpjack, its mining target's products and the fluid that resource needs (sulfuric acid for uranium); an offshore
+  -- pump, the fluid it pumps. A drill whose resource ran out has no target: what it mined last is kept in storage
+  -- (chain_miners, by unit number, when the harness passes its state).
+  local function miner_products(e)
+    local names, fluid = {}, nil
+    if e.type == 'offshore-pump' then
+      local name = try(function() local f = e.fluidbox[1]; return f and f.name end)
+        or try(function() local f = e.fluidbox.get_filter(1); return f and f.name end)
+        or try(function() return e.prototype.fluid.name end)
+      if name then names[1] = name end
+    else
+      local res = try(function() return e.mining_target end)
+      local props = res and try(function() return res.prototype.mineable_properties end)
+      for _, p in ipairs(props and props.products or {}) do names[#names+1] = p.name end
+      fluid = props and props.required_fluid
+    end
+    local st = api.state and api.state()
+    local unit = st and try(function() return e.unit_number end)
+    if unit then
+      st.chain_miners = st.chain_miners or {n=0, by={}}
+      local memo = st.chain_miners
+      if #names > 0 then
+        if not memo.by[unit] then memo.n = memo.n + 1 end
+        if memo.n > MINER_MEMO then memo.by, memo.n = {}, 1 end
+        memo.by[unit] = {names=names, fluid=fluid}
+      elseif memo.by[unit] then names, fluid = memo.by[unit].names, memo.by[unit].fluid end
+    end
+    return names, fluid
+  end
+  local MINER_STATE = {working='working', waiting_for_space_in_destination='output full', full_output='output full',
+    no_minable_resources='no resource left'}
   function M.chain(scan, force, surface, pack)
     local by_product = scan.by_product
     if not by_product then
@@ -844,6 +878,19 @@ return function(api)
       end
       scan.by_product = by_product
     end
+    if scan.miners and not scan.miners_in then
+      scan.miners_in = true
+      for _, e in ipairs(scan.miners) do
+        if e.valid then
+          local names, fluid = miner_products(e)
+          for _, name in ipairs(names) do
+            local list = by_product[name] or {}
+            by_product[name] = list
+            list[#list+1] = {e=e, miner=true, fluid=fluid}
+          end
+        end
+      end
+    end
     local items = try(function() return force.get_item_production_statistics(surface) end)
     local fluids = try(function() return force.get_fluid_production_statistics(surface) end)
     local function per_min(name, category)
@@ -858,17 +905,32 @@ return function(api)
       if seen[name] or #nodes >= CHAIN_NODES or depth > CHAIN_DEPTH then return end
       seen[name] = true
       local makers = by_product[name] or {}
-      local node = {item=name, depth=depth, made=per_min(name, 'input'), used=per_min(name, 'output'), makers=#makers, working=0, states={}, lack={}}
+      local node = {item=name, depth=depth, made=per_min(name, 'input'), used=per_min(name, 'output'), makers=#makers, working=0, states={}, lack={},
+        miners=0, miner_names={}, miner_states={}, outputs={}}
       nodes[#nodes+1] = node
       local children, child_seen = {}, {}
       for _, m in ipairs(makers) do
         local status = api.status_name(m.e) or 'unknown'
         if status == 'working' then node.working = node.working + 1 else bump(node.states, status) end
-        if SHORT[status] then
-          for _, ing in ipairs(missing(m.e, m, nil)) do bump(node.lack, ing) end
-        end
-        for _, ing in ipairs(m.recipe.ingredients or {}) do
-          if not child_seen[ing.name] then child_seen[ing.name] = true; children[#children+1] = ing.name end
+        if m.miner then
+          -- A miner: its name, its state in words, what it puts into (a chest, a belt; nothing for a pump's pipe).
+          node.miners = node.miners + 1
+          bump(node.miner_names, m.e.name)
+          bump(node.miner_states, MINER_STATE[status] or status)
+          if m.e.type == 'mining-drill' and not (prototypes.fluid and prototypes.fluid[name]) then
+            bump(node.outputs, try(function() local t = m.e.drop_target; return t and t.name end) or 'the ground')
+          end
+          if m.fluid then
+            if status == 'missing_required_fluid' then bump(node.lack, m.fluid) end
+            if not child_seen[m.fluid] then child_seen[m.fluid] = true; children[#children+1] = m.fluid end
+          end
+        else
+          if SHORT[status] then
+            for _, ing in ipairs(missing(m.e, m, nil)) do bump(node.lack, ing) end
+          end
+          for _, ing in ipairs(m.recipe.ingredients or {}) do
+            if not child_seen[ing.name] then child_seen[ing.name] = true; children[#children+1] = ing.name end
+          end
         end
       end
       node.children = children
@@ -885,13 +947,29 @@ return function(api)
       for i, p in ipairs(parts) do out[i] = p.k .. ' ' .. p.s end
       return table.concat(out, ', ')
     end
+    -- Counts as 'k name' text, the largest first.
+    local function tally(map)
+      local parts = {}
+      for s, k in pairs(map) do parts[#parts+1] = {s=s, k=k} end
+      table.sort(parts, function(x, y) if x.k ~= y.k then return x.k > y.k end return x.s < y.s end)
+      local out = {}
+      for i, p in ipairs(parts) do out[i] = p.k .. ' ' .. p.s end
+      return table.concat(out, ', ')
+    end
     -- One step's words: its makers and what most of them lack, then made and used.
     local function step(n)
       local top, top_n
       for ing, k in pairs(n.lack) do if not top_n or k > top_n or (k == top_n and ing < top) then top, top_n = ing, k end end
       local text
-      if n.makers == 0 then text = string.format('%s: no assembler, furnace or silo makes it', n.item)
+      if n.makers == 0 then text = string.format('%s: no assembler, furnace, silo, mining drill or pump makes it', n.item)
       elseif top and top_n * 2 > n.makers then text = string.format('%s: %d of %d makers lack %s', n.item, top_n, n.makers, top)
+      elseif n.miners > 0 then
+        -- 'stone: 8 electric-mining-drill (6 working, 2 output full) into 5 transport-belt, 3 wooden-chest'
+        local out = tally(n.outputs)
+        text = string.format('%s: %s (%s)%s', n.item, tally(n.miner_names), tally(n.miner_states), out ~= '' and ' into ' .. out or '')
+        if n.makers > n.miners then
+          text = text .. string.format('; %d other makers', n.makers - n.miners)
+        end
       else
         local other = states_text(n)
         text = string.format('%s: %d of %d working%s', n.item, n.working, n.makers, other ~= '' and ' (' .. other .. ')' or '')
@@ -909,7 +987,9 @@ return function(api)
     local rows = {}
     for _, n in ipairs(nodes) do
       rows[#rows+1] = {item=n.item, depth=n.depth, made_per_min=n.made, used_per_min=n.used, makers=n.makers, working=n.working,
-        states=next(n.states) and n.states or nil, lacking=next(n.lack) and n.lack or nil}
+        states=next(n.states) and n.states or nil, lacking=next(n.lack) and n.lack or nil,
+        miners=n.miners > 0 and n.miners or nil, miner_states=next(n.miner_states) and n.miner_states or nil,
+        outputs=next(n.outputs) and n.outputs or nil}
     end
     -- path: the items the line walked; last: its last step (where the shortage starts).
     return {line='chain: ' .. table.concat(parts, '; '), tree=rows, cut=#nodes >= CHAIN_NODES or nil, path=path, last=parts[#parts]}

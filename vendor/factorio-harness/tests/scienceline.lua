@@ -64,7 +64,7 @@ local function run(t) for _=1,t do game.tick=game.tick+1; S.tick(game.tick) end 
 -- 1. The first ask starts the job; one find a tick (3 surfaces less the platform, then 3 crafter types).
 eq(S.lines(p,h),nil,'nothing built yet')
 run(10)
-eq(finds,5,'2 lab finds, 3 crafter finds'); eq(storage.science_jobs,nil,'the job finished')
+eq(finds,7,'2 lab finds, 3 crafter finds, 2 miner finds (mining drills, offshore pumps)'); eq(storage.science_jobs,nil,'the job finished')
 eq(asked,'nauvis','power on the surface with the most labs')
 local line=S.lines(p,h)
 eq(line,'science on nauvis: research plastics-2 41%; labs 12 of 20 working; limiting chemical-science-pack: 8 of 20 labs have none, '
