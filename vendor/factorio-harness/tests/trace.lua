@@ -107,6 +107,9 @@ local function lookup(p,a)
   for _,e in ipairs(world) do
     if e.valid and e.type~='inserter' and e.type~='transport-belt' and math.abs(e.position.x-a.position.x)<0.6 and math.abs(e.position.y-a.position.y)<0.6 then return e end
   end
+  for _,e in ipairs(world) do  -- a belt tile only when nothing else is there
+    if e.valid and e.type=='transport-belt' and math.abs(e.position.x-a.position.x)<0.6 and math.abs(e.position.y-a.position.y)<0.6 then return e end
+  end
   error('entity not found at ('..a.position.x..','..a.position.y..')',0)
 end
 local supply=require('supply'){status_name=function(e) return e.status end,position=function(v) return v end,integer=function(v,d) return v or d end}
@@ -191,6 +194,43 @@ local lone=crafter(40.5,40.5,'assembling-machine-1',wall,{},{})
 r=trace.trace(p,{position={x=40.5,y=40.5},forward=true})
 eq(r.note,'no inserter takes from it'); eq(r.routes,nil)
 lone.valid=false
+
+-- 2b. Opus (06:26): ore fed into a plate bus. A forward trace from a belt tile follows its lanes and names where
+-- other items join: the bus it is side-loaded onto (your ore mixes in), and, from the bus, the belt side-loading ore
+-- onto it; a splitter's other input.
+do
+  local O1=belt(20.5,38.5,{{'iron-ore'},{'iron-ore'}},'o'); O1.direction=8
+  local O2=belt(20.5,39.5,{{'iron-ore'},{'iron-ore'}},'o'); O2.direction=8
+  local P0=belt(19.5,40.5,{{'iron-plate','iron-plate'},{}},'bus')
+  local P1=belt(20.5,40.5,{{'iron-plate','iron-ore'},{}},'bus')
+  local P2=belt(21.5,40.5,{{'iron-plate','iron-ore'},{}},'bus')
+  for _,b in ipairs({P0,P1,P2}) do b.belt_shape='straight' end
+  link(O1,O2); link(O2,P1); link(P0,P1); link(P1,P2)
+  P1.belt_neighbours.inputs={P0,O2}; P2.belt_neighbours.inputs={P1}; O2.belt_neighbours.inputs={O1}
+  for k=1,2 do O2.lines[k].output_lines={P1.lines[1]} end
+  r=trace.trace(p,{position={x=20.5,y=38.5},forward=true})
+  eq(r.belt,'transport-belt'); eq(r.lanes,'left lane 1 iron-ore, right lane 1 iron-ore'); eq(#r.routes,2)
+  eq(r.routes[1].merges[1],'joins transport-belt (20.5,40.5) carrying iron-plate on the left lane: your iron-ore mixes in')
+  eq(#r.merges,1,'named once'); has(r.routes[2].stop,'joins route 1 at transport-belt (20.5,40.5) left lane')
+  has(r.routes[1].path,'transport-belt (20.5,40.5) to (21.5,40.5) left lane')
+  -- From the bus: the ore belt side-loads onto its left lane; the right lane carries nothing, so it is not walked.
+  r=trace.trace(p,{position={x=19.5,y=40.5},forward=true})
+  eq(#r.routes,1); eq(r.merges[1],'transport-belt (20.5,39.5) side-loads iron-ore onto transport-belt (20.5,40.5) left lane, which carried iron-plate')
+  -- A belt side-loading onto the other lane, or carrying what the lane carries already, is not named.
+  P0.lines[2].items={'iron-ore'}
+  r=trace.trace(p,{position={x=19.5,y=40.5},forward=true})
+  eq(#r.routes,2); eq(#r.merges,1,'the side-load lands on the left lane only')
+  P0.lines[1].items={'iron-ore'}; P1.lines[1].items={'iron-ore'}; P2.lines[1].items={'iron-ore'}
+  r=trace.trace(p,{position={x=19.5,y=40.5},forward=true}); eq(r.merges,nil,'ore onto ore')
+  -- A splitter's other input carrying something else.
+  local A1=belt(30.5,40.5,{{'iron-ore'},{}},'sa')
+  local S=belt(31.5,40.5,{{},{}},'sa','splitter','splitter')
+  local X=belt(30.5,41.5,{{'copper-plate'},{}},'sx')
+  link(A1,S); link(X,S); S.belt_neighbours.inputs={A1,X}
+  r=trace.trace(p,{position={x=30.5,y=40.5},forward=true})
+  eq(r.merges[1],'splitter (31.5,40.5) also takes transport-belt (30.5,41.5) carrying copper-plate; this lane carried iron-ore')
+  for _,e in ipairs({O1,O2,P0,P1,P2,A1,S,X}) do e.valid=false end
+end
 
 -- 3. Luna: chemical packs from their maker through a splitter whose filter sends them right, to a lab; a requester
 -- chest on the way asks for nothing; a far lab no route reaches.

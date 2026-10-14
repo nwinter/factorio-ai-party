@@ -1222,6 +1222,16 @@ fh sleep 900 --until researched                       # ...or until the research
     `joins route N at ...`, `goes out of sight at (x,y)` where radar coverage ends, the cap) and `nobody_takes` (items
     the lane carries that no inserter on it takes). An inserter dropping onto nothing says `onto the ground` (on a
     platform over empty space `overboard`).
+  - `{"position":{x,y},"forward":true}` on a belt tile (Opus, 06:26: ore fed into a plate bus): `belt`, `lanes` (what
+    each lane holds on that tile) and `routes` from that tile, one per lane carrying something now (both when both are
+    empty), walked as above.
+  - Every forward walk names where other items join a lane it follows, in the route's `merges` and once each in the
+    reply's `merges`: the belt the lane is side-loaded onto (`joins transport-belt (12,5) carrying iron-plate on the
+    left lane: your iron-ore mixes in`); a belt side-loading onto the lane (`transport-belt (20,39) side-loads iron-ore
+    onto transport-belt (20,40) left lane, which carried iron-plate`); a splitter's other input (`splitter (31,40)
+    also takes transport-belt (30,41) carrying copper-plate; this lane carried iron-ore`). Only items the lane did not
+    carry up to there count; a side-load onto the other lane is not this lane's. A belt run in `path` ends where the
+    lane goes onto another belt from the side.
   - `{"item":"chemical-science-pack"}` (optional `"surface"`, `"near":{x,y}` with `"radius"` 1..512, default 64:
     makers and labs in that circle): `makers` (how many make it and their states; the nearest 48 traced), `direct`
     (a maker's inserter straight into a lab, machine or chest; a logistic chest says robots carry it on), `routes` from

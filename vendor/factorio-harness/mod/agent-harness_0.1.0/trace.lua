@@ -13,6 +13,12 @@
 --   end (a chest, the hub, another machine, a belt end), with what each lane
 --   carries and where it stops: a full lane whose front item nobody on it
 --   takes, an inserter holding an item it cannot drop, a full target.
+-- trace {position, forward} on a belt tile: that belt's lanes followed the
+--   same way from there (Opus, 06:26: ore fed into a plate bus, 20 minutes of
+--   cleanup).
+-- Every walk names where other items join a lane it follows: the belt it
+--   joins (side-loaded onto) carrying items it did not carry, a belt
+--   side-loading other items onto it, a splitter's other input.
 -- trace {item}: the same walk from every machine making the item to the labs,
 --   machines and chests that take it (on through a chest's own inserters),
 --   and for each lab short of it the route that reaches it or the nearest
@@ -329,7 +335,8 @@ return function(api)
     end
     return best or 1
   end
-  -- Where lane k of belt e goes next: the same internal line on a neighbour, else the lines it feeds.
+  -- Where lane k of belt e goes next: the same internal line on a neighbour, else the lines it feeds (onto: a
+  -- side-load or a splitter's output, where a belt run ends).
   local function next_lanes(e, k)
     local line = try(function() return e.get_transport_line(k) end)
     if not line then return {} end
@@ -350,7 +357,7 @@ return function(api)
       local owner = o.owner
       if owner and owner.valid then
         for j = 1, try(function() return owner.get_max_transport_line_index() end) or 0 do
-          if owner.get_transport_line(j) == o then out[#out+1] = {e=owner, k=j}; break end
+          if owner.get_transport_line(j) == o then out[#out+1] = {e=owner, k=j, onto=true}; break end
         end
       end
     end
@@ -384,6 +391,75 @@ return function(api)
     end
     return best
   end
+  -- Where other items join a route's lane k at belt e, come from last (Opus, 06:26: ore side-loaded into a plate
+  -- bus). An input of e other than last is: a belt side-loading onto e (perpendicular, onto lane k: the lane nearest
+  -- it), the other input of a splitter, or, when the route came onto e from the side, the belt it joined (e's own
+  -- straight input). Each is named once a route, with the items it brings that the route did not carry up to here.
+  local MAX_MERGES = 6
+  local function lane_near(e, pos)
+    local best, bd
+    for j = 1, math.min(2, try(function() return e.get_max_transport_line_index() end) or 0) do
+      local line = try(function() return e.get_transport_line(j) end)
+      local mid = line and try(function() return line.get_line_item_position(line.line_length / 2) end)
+      if mid then
+        local d = dist2(mid, pos)
+        if not bd or d < bd then best, bd = j, d end
+      end
+    end
+    return best
+  end
+  local function items_on(e, only)
+    local m = {}
+    for j = 1, math.min(2, try(function() return e.get_max_transport_line_index() end) or 0) do
+      if not only or only == j then
+        for _, c in ipairs(try(function() return e.get_transport_line(j).get_contents() end) or {}) do m[c.name] = (m[c.name] or 0) + c.count end
+      end
+    end
+    return m
+  end
+  local function names(m, without)
+    local list = {}
+    for n, c in pairs(m) do if not (without and without[n]) then list[#list+1] = {n=n, c=c} end end
+    table.sort(list, function(x, y) if x.c ~= y.c then return x.c > y.c end return x.n < y.n end)
+    local out = {}
+    for i = 1, math.min(3, #list) do out[i] = list[i].n end
+    return table.concat(out, ', ') .. (#list > 3 and ', ...' or ''), #list
+  end
+  local function merges_at(route, e, k, last)
+    local bn = try(function() return e.belt_neighbours end)
+    for _, b in ipairs(bn and bn.inputs or {}) do
+      if b ~= last and b.valid and not route.merged[b.unit_number] and #route.merges < MAX_MERGES then
+        local kind
+        if e.type == 'splitter' then kind = 'splitter'
+        elseif e.type == 'transport-belt' or e.type == 'underground-belt' then
+          if b.direction == e.direction then
+            if last and last.direction ~= e.direction and try(function() return e.belt_shape end) ~= 'left'
+              and try(function() return e.belt_shape end) ~= 'right' then kind = 'joined' end
+          elseif e.type == 'underground-belt' or try(function() return e.belt_shape end) == 'straight' then
+            if lane_near(e, b.position) == k then kind = 'side' end
+          end
+        end
+        if kind then
+          local m = kind == 'joined' and items_on(b, k) or items_on(b)
+          if kind == 'joined' then for n, c in pairs(items_on(e, k)) do m[n] = (m[n] or 0) + c end end
+          local theirs, nt = names(m, route.mine)
+          if nt > 0 then
+            route.merged[b.unit_number] = true
+            local ours, no = names(route.mine)
+            local was = no > 0 and ours or 'nothing up to here'
+            if kind == 'joined' then
+              route.merges[#route.merges+1] = no > 0 and string.format('joins %s carrying %s on the %s lane: your %s mixes in', place(e), theirs, side(k), ours)
+                or string.format('joins %s carrying %s on the %s lane (this lane carried nothing up to here)', place(e), theirs, side(k))
+            elseif kind == 'side' then
+              route.merges[#route.merges+1] = string.format('%s side-loads %s onto %s %s lane, which carried %s', place(b), theirs, place(e), side(k), was)
+            else
+              route.merges[#route.merges+1] = string.format('%s also takes %s carrying %s; this lane carried %s', place(e), place(b), theirs, was)
+            end
+          end
+        end
+      end
+    end
+  end
   -- Walks the routes from the starts ({e (belt), k (lane), from, hops}); with item, only the inserters that
   -- can take it count, a splitter filter picks the side, and chests reached are passed on (reached).
   local function walk(starts, idx_of, p, item, budget, pk)
@@ -393,10 +469,10 @@ return function(api)
     while #queue > 0 and #routes < MAX_ROUTES do
       local s = table.remove(queue, 1)
       local n = #routes + 1
-      local route = {n=n, from=s.from, path={}, carries={}, takers={}, takes={}, any_taker=false, seen={}, tiles={}}
+      local route = {n=n, from=s.from, path={}, carries={}, takers={}, takes={}, any_taker=false, seen={}, tiles={}, mine={}, merges={}, merged={}}
       routes[n] = route
       local e, k = s.e, s.k
-      local run, run_from, run_side, run_name, last
+      local run, run_from, run_side, run_name, last, onto
       local function close(pos)
         if run then
           route.path[#route.path+1] = run == 1 and string.format('%s %s %s lane', run_name, at(run_from), run_side)
@@ -420,8 +496,12 @@ return function(api)
         visited[key] = n
         budget.tiles = budget.tiles + 1
         if #route.tiles < 400 then route.tiles[#route.tiles+1] = e end
-        for _, c in ipairs(try(function() return e.get_transport_line(k).get_contents() end) or {}) do route.carries[c.name] = (route.carries[c.name] or 0) + c.count end
-        if run and run_name == e.name and run_side == side(k) and e.type == 'transport-belt' then run = run + 1
+        if last and last ~= e then merges_at(route, e, k, last) end
+        for _, c in ipairs(try(function() return e.get_transport_line(k).get_contents() end) or {}) do
+          route.carries[c.name] = (route.carries[c.name] or 0) + c.count
+          route.mine[c.name] = (route.mine[c.name] or 0) + c.count
+        end
+        if run and run_name == e.name and run_side == side(k) and e.type == 'transport-belt' and not onto then run = run + 1
         else
           close(last and last.position or e.position)
           if e.type == 'transport-belt' then run, run_from, run_side, run_name = 1, e.position, side(k), e.name
@@ -499,7 +579,7 @@ return function(api)
           break
         end
         for x = 2, #nexts do queue[#queue+1] = {e=nexts[x].e, k=nexts[x].k, from='branch at ' .. place(e) .. ' ' .. side(k) .. ' lane', hops=s.hops} end
-        e, k = nexts[1].e, nexts[1].k
+        e, k, onto = nexts[1].e, nexts[1].k, nexts[1].onto
       end
       route.end_at = last
     end
@@ -521,14 +601,45 @@ return function(api)
       if route.any_taker and not route.takes['*'] and not route.takes[route.front] then stop = stop .. ', which no inserter on this route takes' end
     end
     return {route=route.n, from=route.from, path=table.concat(route.path, ' -> '), carries=#parts > 0 and table.concat(parts, ', ') or 'nothing now',
-      takers=#route.takers > 0 and route.takers or nil, stop=stop,
+      merges=#route.merges > 0 and route.merges or nil, takers=#route.takers > 0 and route.takers or nil, stop=stop,
       nobody_takes=route.any_taker and #nobody > 0 and table.concat(nobody, ', ') or nil}
   end
   local function new_budget(seen) return {tiles=0, visited={}, routes={}, reached={}, boxes={}, queued=0, seen=seen} end
 
+  -- The merges of all routes, once each.
+  local function all_merges(routes)
+    local out, seen = {}, {}
+    for _, r in ipairs(routes) do
+      for _, m in ipairs(r.merges or {}) do if not seen[m] then seen[m] = true; out[#out+1] = m end end
+    end
+    return #out > 0 and out or nil
+  end
+  -- trace {position, forward} on a belt tile: its lanes from there (those carrying something now, else both).
+  local function from_belt(p, e)
+    local idx_of, areas = cells(p.surface, p.force)
+    local l = lanes_of(e)
+    local out = {belt=e.name, position=e.position, lanes=string.format('left lane %s, right lane %s', lane_text(l.left), lane_text(l.right))}
+    local starts = {}
+    for k = 1, 2 do
+      if next(l[side(k)]) then starts[#starts+1] = {e=e, k=k, from=place(e) .. ' ' .. side(k) .. ' lane', hops=0} end
+    end
+    if #starts == 0 then
+      for k = 1, 2 do starts[#starts+1] = {e=e, k=k, from=place(e) .. ' ' .. side(k) .. ' lane', hops=0} end
+    end
+    local budget = new_budget(sight(p, p.surface))
+    walk(starts, idx_of, p, nil, budget, packs(p))
+    out.routes = {}
+    for n, route in ipairs(budget.routes) do out.routes[n] = route_view(route) end
+    out.merges = all_merges(out.routes)
+    out.cost = string.format('%d belt tiles, %d routes, %d inserter areas%s', budget.tiles, #budget.routes, areas(),
+      budget.queued > 0 and string.format(' (%d more routes not walked: cap %d)', budget.queued, MAX_ROUTES) or '')
+    return out
+  end
+
   -- trace {position, forward}: from a machine's output to where its items end up.
   function M.forward(p, a)
     local e = target(p, a)
+    if BELT[e.type] then return from_belt(p, e) end
     local idx_of, areas = cells(p.surface, p.force)
     local here = index(p.surface, p.force, {position=e.position, radius=radius_of(e) + REACH})
     local out = {entity=e.name, position=e.position, status=status(e), takers={}}
@@ -565,6 +676,7 @@ return function(api)
     out.routes = {}
     for n, route in ipairs(budget.routes) do out.routes[n] = route_view(route) end
     if #out.routes == 0 then out.routes = nil end
+    out.merges = out.routes and all_merges(out.routes) or nil
     out.cost = string.format('%d belt tiles, %d routes, %d inserter areas%s', budget.tiles, #budget.routes, areas() + 1,
       budget.queued > 0 and string.format(' (%d more routes not walked: cap %d)', budget.queued, MAX_ROUTES) or '')
     return out
@@ -741,14 +853,14 @@ return function(api)
     return M.back(p, a)
   end
 
-  M.schema = {trace = {position='{x,y} of a machine or lab in sight (platform= for one on a platform)',
+  M.schema = {trace = {position='{x,y} of a machine or lab in sight (platform= for one on a platform); with forward also a belt tile',
     all='boolean: every ingredient, not only those it lacks for its next craft',
-    forward='boolean: follow its output instead: the inserters taking from it and the belts they load, lane by lane, to where they end',
+    forward='boolean: follow its output instead: the inserters taking from it and the belts they load, lane by lane, to where they end; on a belt tile, that belt\'s lanes from there (those carrying something now, else both); every walk names where other items join its lanes (merges)',
     item='an item instead of position: the routes from every machine making it to the labs, machines and chests taking it',
     surface='with item: a surface name (default yours)',
     near='with item: optional {x,y}: makers and labs in this area only (cheaper than the whole surface)', radius='with near: 1..512 tiles (default 64)',
     platform='optional platform name: trace on that platform (platform coordinates, hub at 0,0)',
-    returns='position: per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, and the nearest container within 10 tiles holding it that no inserter reads; feeders. forward: takers; routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},
+    returns='position: per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, and the nearest container within 10 tiles holding it that no inserter reads; feeders. forward: takers (a belt tile: belt, lanes); merges (every route\'s, once); routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, merges (where other items join the lane: the belt it joins carrying them, a belt side-loading them onto it, a splitter\'s other input; each with what the lane carried up to there), takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},
   }
   return M
 end
