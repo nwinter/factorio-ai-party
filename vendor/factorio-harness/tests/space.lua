@@ -454,6 +454,38 @@ eq(dry.hatches,'3 output hatches: up to 3 pods leave at once, each hatch sends i
 assert(dry.sends:find('full: true sends all 2 pods',1,true),dry.sends); eq(dry.short,nil)
 eq(hub_inv.get_item_count{name='iron-plate'},1200,'a dry run sends nothing')
 eq(space.drop(p,{platform='alpha',items={{item='coal',count=600}},dry_run=true}).short[1],'coal: the hub holds 500 of 600')
+-- The landing pad's room for what would go (Astra, shift12 13:50: 773 electromagnetic science packs spilled once; 43
+-- asteroid chunks had taken 43 slots): its free slots, what takes the others, the new slots the drop needs, the spill.
+do
+  defines.inventory.cargo_landing_pad_main=31
+  prototypes.item['carbonic-asteroid-chunk']={stack_size=1}
+  local function padslot(name,count) return {valid_for_read=name~=nil,name=name,count=count or 0,quality={name='normal'}} end
+  local pad_slots={padslot('carbonic-asteroid-chunk',1),padslot('carbonic-asteroid-chunk',1),padslot('carbonic-asteroid-chunk',1),padslot('iron-plate',50),
+    padslot(),padslot(),padslot(),padslot()}
+  local bar
+  local pad_inv=setmetatable({supports_bar=function() return true end,get_bar=function() return bar or #pad_slots+1 end},
+    {__index=function(_,i) return pad_slots[i] end,__len=function() return #pad_slots end})
+  local pad={valid=true,position={x=9,y=9},get_inventory=function(i) eq(i,31); return pad_inv end}
+  local pads=vulcanus_surface.pads
+  vulcanus_surface.pads={pad}
+  -- Pod 1, iron-plate*1000: 50 into the part stack there, 950 need 10 new slots; 4 are free: 400 fit, 550 spill.
+  local room=space.drop(p,{platform='alpha',items=kit,dry_run=true})
+  eq(room.pad_free,4); eq(room.spill,550)
+  eq(room.pad_room,'landing pad (9,9): 4 of 8 slots free (taken: carbonic-asteroid-chunk 3 slots (3), iron-plate 1 slot (50)); '..
+    'this drop needs 10 new slots: iron-plate*550 would not fit and land on the ground around the pad')
+  -- full: both pods, iron-plate*1200 and coal*300.
+  room=space.drop(p,{platform='alpha',items=kit,dry_run=true,full=true})
+  eq(room.spill,1050); assert(room.pad_room:find('needs 18 new slots: iron-plate*750 coal*300 would not fit',1,true),room.pad_room)
+  -- What fits says so; slots past the red-X limit do not count.
+  room=space.drop(p,{platform='alpha',items={{item='iron-plate',count=40}},dry_run=true})
+  eq(room.spill,nil); assert(room.pad_room:find('this drop needs 0 new slots: it fits, 4 free after',1,true),room.pad_room)
+  bar=6
+  room=space.drop(p,{platform='alpha',items={{item='coal',count=150}},dry_run=true})
+  eq(room.pad_free,1); eq(room.spill,100); assert(room.pad_room:find('1 of 5 slots free',1,true),room.pad_room)
+  vulcanus_surface.pads={}
+  eq(space.drop(p,{platform='alpha',items={{item='coal',count=1}},dry_run=true}).pad_room,'no landing pad of ours on vulcanus: the pods land as cargo pod containers')
+  vulcanus_surface.pads=pads
+end
 -- Without full: the first pod goes, and the reply says what stays in the hub.
 d=space.drop(p,{platform='alpha',items=kit})
 eq(#d.dropped,1); eq(d.dropped[1],'iron-plate*1000'); eq(d.pods,nil)
