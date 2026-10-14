@@ -95,7 +95,9 @@ test('wait_ticks, a build awaiting a hand craft, and a transfer or collect that 
     ['build','feed','{"item":"lab","position":{"x":1,"y":1}}',{awaiting_craft:{item:'lab',held:0,need:1,crafting:1},until_tick:900}],
     // Luna 07:57: a courier step runs as a tour (kind gather); --wait returned at once before.
     ['transfer','gather','{"positions":[{"x":1,"y":1}],"item":"yumako-seed","pick":"first_with_stock","to":{"x":9,"y":9}}',{op:'transfer',places:2,until_tick:900}],
-    ['collect','gather','{"positions":[{"x":1,"y":1}],"item":"yumako-seed","pick":"most_stock"}',{op:'transfer',places:1,until_tick:900}]] as const) {
+    ['collect','gather','{"positions":[{"x":1,"y":1}],"item":"yumako-seed","pick":"most_stock"}',{op:'transfer',places:1,until_tick:900}],
+    // Muse 12:20: collect with walk runs as the same tour.
+    ['collect','gather','{"positions":[{"x":1,"y":1}],"item":"iron-plate","walk":true}',{op:'transfer',places:1,until_tick:900}]] as const) {
     let polls=0;
     await engine(request=>{
       if(request.action===action)return {ok:true,result:accepted};

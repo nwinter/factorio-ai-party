@@ -591,7 +591,8 @@ return function(api)
     end
     for _, e in ipairs(plan.entities or {}) do
       local proto = prototypes.entity[e.name or '']
-      local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item, requests=e.requests, ug_type=e.ug_type}
+      local rec = {index=e.index, copy=e.copy, name=e.name, dir=e.direction or 0, quality=e.quality, item=e.item, requests=e.requests, ug_type=e.ug_type,
+        construction=e.construction}
       recs[#recs+1] = rec
       local reasons = {}
       if not proto then
@@ -1427,7 +1428,7 @@ return function(api)
       local lines = {}
       for _, r in ipairs(recs) do
         if r.pos and #lines < 16 then
-          local line = try(function() return api.keep.plan(s, r.name, r.pos, r.requests) end)
+          local line = try(function() return api.keep.plan(s, r.name, r.pos, r.requests, r.construction) end)
           if line then lines[#lines+1] = line end
         end
       end
