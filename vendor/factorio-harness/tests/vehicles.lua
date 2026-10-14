@@ -187,4 +187,121 @@ car.position={x=3,y=0} -- (the fake character does not ride along; the game move
 sol('vehicle',{position=car.position,enter=true}); astra('vehicle',{position=car.position,enter=true})
 fails(function() astra('vehicle',{drive={x=1,y=1}}) end,'only the driver drives')
 fails(function() grok('vehicle',{drive={x=1,y=1}}) end,'drive is for a car or tank you are in')
+-- Vehicle guns (shift09 00:00, Opus and Astra: shoot refused in a tank, a
+-- tank lost at a nest): the gunner fires the vehicle's selected gun from its
+-- ammo slots, aimed at the entity it selects; drive goes on meanwhile.
+astra('vehicle',{exit=true}); sol('vehicle',{exit=true})
+defines.shooting.shooting_selected=2
+defines.inventory.car_ammo=3; defines.inventory.spider_ammo=3; defines.inventory.character_ammo=4
+prototypes={item={['cannon-shell']={type='ammo',ammo_category={name='cannon-shell'}},['explosive-cannon-shell']={type='ammo',ammo_category={name='cannon-shell'}},
+  ['firearm-magazine']={type='ammo',ammo_category={name='bullet'}},['flamethrower-ammo']={type='ammo',ammo_category={name='flamethrower'}},['iron-plate']={type='item'}},entity={}}
+local function stack(name,count)
+  local st={quality={name='normal'}}
+  local function set(n,c) st.name=n; st.count=c; st.valid_for_read=n~=nil and c>0 end
+  set(name,count or 0)
+  st.clear=function() set(nil,0) end
+  st.transfer_stack=function(src)
+    if st.valid_for_read and st.name~=src.name then return false end
+    set(src.name,(st.valid_for_read and st.count or 0)+src.count); src.clear(); return true
+  end
+  return st
+end
+local function inventory(list)
+  local inv={}
+  for i,x in ipairs(list) do inv[i]=stack(x[1],x[2]) end
+  local mt={__len=function() return #list end}
+  inv.get_contents=function() local out={} for i=1,#list do local st=inv[i] if st.valid_for_read then out[#out+1]={name=st.name,count=st.count,quality='normal'} end end return out end
+  inv.find_item_stack=function(name) for i=1,#list do if inv[i].valid_for_read and inv[i].name==name then return inv[i] end end end
+  inv.insert=function(it) for i=1,#list do local st=inv[i] if not st.valid_for_read or st.name==it.name then st.name=it.name; st.count=(st.valid_for_read and st.count or 0)+it.count; st.valid_for_read=true; return it.count end end return 0 end
+  inv.get_item_count=function(n) local c=0 for i=1,#list do if inv[i].valid_for_read and (not n or inv[i].name==n) then c=c+inv[i].count end end return c end
+  return setmetatable(inv,mt)
+end
+local GUNS={{name='tank-cannon',attack_parameters={ammo_categories={'cannon-shell'},range=30}},{name='tank-machine-gun',attack_parameters={ammo_categories={'bullet'},range=20}},
+  {name='tank-flamethrower',attack_parameters={ammo_categories={'flamethrower'},range=9}}}
+local tank=vehicle('tank','car',6,0)
+tank.prototype={indexed_guns=GUNS}
+tank.ammo=inventory({{'cannon-shell',10},{'firearm-magazine',20},{nil,0}})
+tank.get_inventory=function(id) return id==3 and tank.ammo or nil end
+tank.selected_gun_index=1; tank.driver_is_gunner=false
+local enemy_force={name='enemy'}
+force.get_friend=function() return false end; force.get_cease_fire=function() return false end
+game.forces.enemy.get_friend=function() return false end
+local wall={valid=true,name='stone-wall',type='wall',position={x=6.5,y=-20.5},force=enemy_force,health=350}
+world[#world+1]=wall
+-- find by area/radius too (the target at a position, the auto scan)
+local find=surface.find_entities_filtered
+surface.find_entities_filtered=function(f)
+  if f.radius and f.position then
+    local out={}
+    for _,e in ipairs(world) do
+      local d=((e.position.x-f.position.x)^2+(e.position.y-f.position.y)^2)^0.5
+      local okf=true
+      if f.force then okf=false; for _,x in ipairs(type(f.force)=='table' and f.force[1] and f.force or {f.force}) do if e.force==x or (type(x)=='table' and e.force and x.name==e.force.name) then okf=true end end end
+      local okt=true
+      if f.type then okt=false; for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do if e.type==t then okt=true end end end
+      if e.valid and d<=f.radius and okf and okt then out[#out+1]=e end
+    end
+    return out
+  end
+  return find(f)
+end
+a_body.position={x=5,y=0}
+a_body.items['explosive-cannon-shell']=nil
+local main=inventory({{'explosive-cannon-shell',8},{nil,0},{nil,0}})
+a_body.get_main_inventory=function() return main end
+local own_ammo=inventory({{'firearm-magazine',30}})
+a_body.get_inventory=function(id) return id==4 and own_ammo or nil end
+astra('vehicle',{position={x=6,y=0},enter=true})
+-- The machine gun at the wall: slot 2, its ammo, the target and the guns in the reply.
+r=astra('shoot',{position={x=6.5,y=-20.5},gun='tank-machine-gun',ticks=60})
+eq(r.vehicle,'tank'); eq(r.seat,'driver'); eq(r.gun,'tank-machine-gun'); eq(r.gun_slot,2); eq(r.range,20); eq(tank.selected_gun_index,2)
+eq(r.guns[2],'2 tank-machine-gun: 20 firearm-magazine (range 20) selected'); eq(r.guns[3],'3 tank-flamethrower: no ammo (range 9)')
+eq(r.target,'stone-wall at (6.5,-20.5), 20.5 tiles from the tank')
+eq(r.out_of_range,'tank-machine-gun reaches 20 tiles; the target is 20.5 away')
+advance(1)
+eq(a_body.selected,wall); eq(a_body.shooting_state.state,2); eq(a_body.shooting_state.position.y,-20.5)
+eq(astra('status').combat.gun,'tank-machine-gun')
+tank.ammo[2].count=17
+wall.valid=false; advance(1)
+local lc=astra('status').last_combat
+eq(lc.outcome,'target_destroyed'); eq(lc.ammo_used,3); eq(lc.gun,'tank-machine-gun'); eq(lc.guns[2],'2 tank-machine-gun: 17 firearm-magazine (range 20) selected')
+eq(a_body.shooting_state.state,0); eq(a_body.selected,nil)
+-- ammo= picks the cannon and swaps its shells for the kind asked, from the inventory.
+wall.valid=true
+r=astra('shoot',{position={x=6.5,y=-20.5},ammo='explosive-cannon-shell',ticks=60})
+eq(r.gun_slot,1); eq(r.equipped,'loaded 10 cannon-shell back to your inventory; 8 explosive-cannon-shell from your inventory to gun slot 1')
+eq(tank.ammo[1].name,'explosive-cannon-shell'); eq(main.get_item_count('cannon-shell'),10)
+-- An empty slot is loaded from the character's own ammo slots when the inventory has none.
+tank.ammo[2].clear()
+r=astra('shoot',{position={x=6.5,y=-20.5},gun_slot=2,ticks=60})
+eq(r.equipped,'loaded 30 firearm-magazine from your ammo slots to gun slot 2'); eq(own_ammo.get_item_count(),0)
+-- Nothing for the flamethrower anywhere.
+fails(function() astra('shoot',{position={x=6.5,y=-20.5},gun='tank-flamethrower'}) end,'no ammunition for tank-flamethrower (gun slot 3: flamethrower) in tank or in your inventory')
+fails(function() astra('shoot',{position={x=6.5,y=-20.5},gun='tank-rocket'}) end,'no gun tank-rocket on this vehicle (guns: tank-cannon, tank-machine-gun, tank-flamethrower)')
+fails(function() astra('shoot',{position={x=6.5,y=-20.5},ammo='iron-plate'}) end,'fits none of this vehicle')
+fails(function() astra('shoot',{position={x=12,y=12}}) end,'nothing at (12,12) to aim at')
+-- auto: the nearest enemy in the gun's range, selected each scan.
+local biter={valid=true,name='small-biter',type='unit',position={x=6,y=-10},force=game.forces.enemy,health=15}
+world[#world+1]=biter
+r=astra('shoot',{auto=true,gun='tank-machine-gun',ticks=120})
+advance(1); eq(a_body.selected,biter); eq(a_body.shooting_state.state,2)
+-- Driving while firing: the drive is the action, the gun the combat channel.
+car.valid=false
+local rode=astra('vehicle',{drive={x=6,y=-30}}); eq(rode.vehicle,'tank')
+eq(astra('status').active.kind,'drive'); eq(astra('status').combat.auto,true)
+advance(1); eq(a_body.shooting_state.state,2)
+-- Out of the seat: the shot ends.
+astra('vehicle',{exit=true}); advance(1)
+eq(astra('status').last_combat.outcome,'left_vehicle')
+-- The passenger works the guns only when driver_is_gunner is off; on foot gun/ammo are refused.
+tank.driver_is_gunner=true
+astra('vehicle',{position={x=6,y=0},enter=true}); sol('vehicle',{position={x=6,y=0},enter=true})
+fails(function() sol('shoot',{auto=true}) end,'the driver works the guns of tank (driver_is_gunner true)')
+tank.driver_is_gunner=false
+eq(sol('shoot',{auto=true,ticks=10}).seat,'passenger')
+fails(function() astra('shoot',{auto=true}) end,'the passenger works the guns of tank (driver_is_gunner false)')
+astra('vehicle',{exit=true}); sol('vehicle',{exit=true})
+fails(function() grok('shoot',{auto=true,ammo='cannon-shell'}) end,'gun and ammo pick a vehicle')
+-- The vehicle read lists its guns.
+eq(astra('vehicle',{position={x=6,y=0},enter=true}).vehicle.guns[1],'1 tank-cannon: 8 explosive-cannon-shell (range 30)')
 print('vehicles: ok')

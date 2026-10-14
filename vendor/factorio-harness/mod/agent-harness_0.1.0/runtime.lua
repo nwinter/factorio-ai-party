@@ -296,14 +296,17 @@ local function stop_combat(index,outcome)
   local p=body(M.lookup(index))
   local combat=state().combat and state().combat[index]
   local used
+  local guns
   if p and p.valid and p.character and p.character.valid then
     p.shooting_state={state=defines.shooting.not_shooting,position=p.position}
-    -- Whole magazines (or shells) gone from the ammo slots since the start.
-    if combat and combat.ammo_start then used=math.max(0,combat.ammo_start-kite.ammo_count(p)) end
+    -- Whole magazines (or shells) gone from the ammo slots since the start; a vehicle's from its gun's slot.
+    if combat and combat.vehicle then used,guns=M.vehicles.combat_end(p,combat)
+    elseif combat and combat.ammo_start then used=math.max(0,combat.ammo_start-kite.ammo_count(p)) end
   end
   if state().combat then state().combat[index]=nil end
   state().last_combat=state().last_combat or {}
-  state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped}
+  state().last_combat[index]={outcome=outcome,tick=game.tick,ammo_used=used,reloads=combat and combat.reloads,equipped=combat and combat.equipped,
+    vehicle=combat and combat.vehicle,gun=combat and combat.gun,guns=guns}
 end
 -- The tick a read or passive action raised: the bootstrap's failure handler
 -- calls stop_player right after, which must leave the action and queue alone.
@@ -625,8 +628,11 @@ function handlers.describe()
     actions={
       attach={allow_cheat_mode='boolean; TESTING ONLY default false'},detach={},
       equipment={operation='insert|remove',item='owned equipment item for insert',position='{x,y} grid cell; optional for insert',quality='default normal'},revive_ghost={position='{x,y}',name='optional entity-ghost'},
-      shoot={position='{x,y} or auto=true',ticks='1..600',radius='1..32',gun_slot='1..3',
-        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots)'},equip={slot='gun|ammo|armor',item='owned item name',index='default 1'},
+      shoot={position='{x,y} or auto=true',ticks='1..600',radius='1..32 (in a vehicle 1..36, default its gun\'s range)',gun_slot='1..3 (in a vehicle: 1..its guns)',
+        gun='in a vehicle: a gun name (tank-cannon, tank-machine-gun, tank-flamethrower, vehicle-machine-gun, spidertron-rocket-launcher-1..4)',
+        ammo='in a vehicle: an ammo name (cannon-shell, explosive-cannon-shell, firearm-magazine, flamethrower-ammo, rocket, ...): the gun that takes it, its slot loaded from your inventory when empty or holding another kind',
+        note='seated in a car, tank or spidertron as its gunner (the driver, unless driver_is_gunner is off and a passenger sits in) it fires the vehicle\'s selected gun from the vehicle\'s ammo slots; the turret turns toward the target as a player\'s cursor turns it; position= aims at the entity there (not our own), auto=true at the nearest enemy in radius; vehicle {drive} goes on while it fires; reply: vehicle, seat, gun, gun_slot, range, guns (each slot with its ammo), target, out_of_range',
+        outcomes='fires real ammo from the ammo slots; empty slots are first filled from carried ammo (and a carried gun into an empty gun slot), said in equipped, and refilled the same way when they run dry mid-fight (last_combat reloads); fails when none is carried; status last_combat: duration_elapsed | out_of_ammo | interrupted, with ammo_used (whole magazines gone from the slots); in a vehicle also target_destroyed | left_vehicle, with gun and guns (what each slot holds after)'},equip={slot='gun|ammo|armor',item='owned item name',index='default 1'},
       describe={}, inventory={returns='the character inventory: inventory (main), guns, ammo, armor, free (slots), crafting (hand queue), warnings (nearly full, hoarding); the same as observe player and status inv'},
       map={position='optional charted centre (default player)',radius='32..1024 tiles of charted map (default 256)',limit='1..256 regions (default 48)',resources='default true',water='default true',enemies='default true',trees='default false; per-chunk counts',rocks='default false; per-chunk counts',min_count='minimum trees/rocks per chunk (default 1)'}, observe={position='optional charted centre (default player); fogged chunks omit units',radius='1..32 (default 16)', limit='1..512 (default 128)', tiles='boolean (default false)',entity_types='optional array of entity types',entity_names='optional array of names',exclude_resources='boolean',resources='summary (default; connected visible tiles, bounds may include gaps)|tiles|none',group='boolean: entity name->{count,nearest} instead of rows',equipment='boolean: per-equipment rows (default name->count)',returns='player, entities, resource_patches, ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the radius by item (rows for them only with entity_types/entity_names)'},
       status={since='alerts after this tick (default last 5 minutes; losses are also pushed once on any reply in team.alerts)',threats='boolean: rescan now and list every enemy base (default: cached for 10 s, summary lines)',machines='boolean: rescan now and list positions of non-working machines',
@@ -3723,6 +3729,15 @@ function handlers.equipment(p,a)
 end
 function handlers.shoot(p,a)
   local ticks=integer(a.ticks,60,1,MAX_TICKS,'ticks')
+  -- Seated: the vehicle's gun (vehicles.lua), aimed at an entity the gunner selects.
+  if p.character and p.character.valid and p.character.vehicle then
+    local action,out,target=M.vehicles.shoot(p,a,ticks)
+    state().combat=state().combat or {}
+    combat_targets()[p.index]=target and {fixed=target} or nil
+    state().combat[p.index]=action
+    return out
+  end
+  assert(a.gun==nil and a.ammo==nil,'gun and ammo pick a vehicle\'s gun (seated in a car, tank or spidertron); on foot gun_slot picks 1..3')
   local pos=a.position and position(a.position)
   assert(a.auto==true or pos,'specify position or auto=true')
   if pos then assert(visible(p,pos),'firing position must be locally visible') end
@@ -5040,7 +5055,7 @@ function M.remote(p,action,args)
 end
 dispatch_request=function(request)
   local handler=handlers[request.action]; assert(handler,'unsupported action; call describe')
-  M.seated_ok=(reads[request.action] or passive[request.action] or M.away(request.args) or request.action=='vehicle') and true or nil
+  M.seated_ok=(reads[request.action] or passive[request.action] or M.away(request.args) or request.action=='vehicle' or request.action=='shoot') and true or nil
   check_args(request.action,request.args)
   if request.action=='describe' or request.action=='profiles' or request.action=='cameras' then return handler() end
   if M.bots.is_index(request.player) and (request.action=='attach' or request.action=='detach') then
@@ -5304,6 +5319,28 @@ local function blocked_product(p,action)
     if not p.can_insert{name=name} then return name end
   end
 end
+-- The nearest visible enemy within the shot's radius, rescanned every 6
+-- ticks (cached per agent): auto shoot on foot and in a vehicle.
+function M.combat_scan(p,action,index,tick)
+  local cached=combat_targets()[index]
+  if not cached or tick>=(cached.next_scan or 0) then
+    local enemies={}
+    for _,force in pairs(game.forces) do
+      if force~=p.force and force.name~='neutral' and not p.force.get_friend(force) and not p.force.get_cease_fire(force) then enemies[#enemies+1]=force end
+    end
+    local best=action.radius+1
+    cached={next_scan=tick+6}
+    if #enemies>0 then
+      for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=action.radius,force=enemies,limit=256,type={'unit','unit-spawner','turret','ammo-turret','electric-turret','character'}}) do
+        local d=distance(p.position,e.position)
+        if e.valid and visible(p,e.position) and d<best then best=d; cached.entity=e end
+      end
+    end
+    combat_targets()[index]=cached
+  end
+  local e=cached.entity
+  if e and e.valid and distance(p.position,e.position)<=action.radius and visible(p,e.position) then return e end
+end
 -- Operator measurement (profile_ticks): the harness tick's own cost, timed
 -- with LuaProfiler and written to the log. Module state on purpose: it never
 -- touches game state, and profiler readings differ between machines anyway.
@@ -5453,30 +5490,23 @@ function M.tick_body(event)
     if ok and state().active[index]==action then watch(p,action) end
   end
   for index,action in pairs(state().combat or {}) do
-    local ok,p=pcall(player,index)
+    -- Vehicle fire runs seated (vehicles.lua); the rest needs the character on foot.
+    local ok,p=pcall(player,index,action.vehicle~=nil)
     if not ok or event.tick>action.until_tick then stop_combat(index,ok and (action.end_outcome or 'duration_elapsed') or 'player_unavailable')
+    elseif action.vehicle then
+      local aim=combat_targets()[index]
+      local fixed=aim and aim.fixed
+      if fixed and not fixed.valid then stop_combat(index,'target_destroyed')
+      else
+        local outcome=M.vehicles.combat_tick(p,action,fixed or (action.auto and M.combat_scan(p,action,index,event.tick)) or nil)
+        if outcome then stop_combat(index,outcome) end
+      end
     elseif action.ammo_start and kite.ammo_count(p)==0 and not kite.reload(p,action) then stop_combat(index,'out_of_ammo')
     else
       local target=action.position
       if action.auto then
-        local cached=combat_targets()[index]
-        if not cached or event.tick>=cached.next_scan then
-          local enemies={}
-          for _,force in pairs(game.forces) do
-            if force~=p.force and force.name~='neutral' and not p.force.get_friend(force) and not p.force.get_cease_fire(force) then enemies[#enemies+1]=force end
-          end
-          local best=action.radius+1
-          cached={next_scan=event.tick+6}
-          if #enemies>0 then
-            for _,e in pairs(p.surface.find_entities_filtered{position=p.position,radius=action.radius,force=enemies,limit=256,type={'unit','unit-spawner','turret','ammo-turret','electric-turret','character'}}) do
-              local d=distance(p.position,e.position)
-              if e.valid and visible(p,e.position) and d<best then best=d; cached.entity=e end
-            end
-          end
-          combat_targets()[index]=cached
-        end
-        local e=cached.entity
-        if e and e.valid and distance(p.position,e.position)<=action.radius and visible(p,e.position) then target=e.position end
+        local e=M.combat_scan(p,action,index,event.tick)
+        if e then target=e.position end
       end
       p.shooting_state={state=target and defines.shooting.shooting_enemies or defines.shooting.not_shooting,position=target or p.position}
     end
