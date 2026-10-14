@@ -57,6 +57,9 @@ return function(api)
   function M.check_idle(job, f, surface, scan)
     local was = idle_store(f)
     local now = {}
+    -- Only a pack the labs lack (Astra, 12:02: automation's makers stood still with 2534 in chests and 101 in labs,
+    -- while all 43 labs lacked agricultural science): a colour whose labs all hold some is not stopped for research.
+    local lab = job.labs[job.surface] or {n=0, lack={}}
     for _, pack in ipairs(surface and job.packs or {}) do
       local makers = scan.by_product[pack] or {}
       local working, states, by, sx, sy = 0, {}, {}, 0, 0
@@ -67,7 +70,7 @@ return function(api)
         if u then by[u] = (by[u] or 0) + 1 end
         sx, sy = sx + m.e.position.x, sy + m.e.position.y
       end
-      if #makers > 0 and working == 0 then
+      if #makers > 0 and working == 0 and (lab.lack[pack] or 0) > 0 then
         local chain = api.supply.chain(scan, f, surface, pack)
         local list = {}
         for st, n in pairs(states) do list[#list+1] = {st=st, n=n} end
@@ -76,7 +79,8 @@ return function(api)
         local path = chain and chain.path or {}
         now[pack] = {since=was[pack] and was[pack].since or job.start, surface=surface.name, makers=#makers, states=table.concat(list, ', '),
           root=path[#path] or pack, last=chain and chain.last or nil, path=#path > 1 and table.concat(path, ' > ') or nil,
-          by=by, center={x=math.floor(sx / #makers + 0.5), y=math.floor(sy / #makers + 0.5)}, seen=job.start}
+          by=by, center={x=math.floor(sx / #makers + 0.5), y=math.floor(sy / #makers + 0.5)}, seen=job.start,
+          labs_lacking=lab.lack[pack], labs=lab.n}
       end
     end
     api.state().science_idle[f.name] = now
@@ -88,7 +92,8 @@ return function(api)
       if v.seen - v.since >= PUSH_TICKS then
         out[#out+1] = {key='science_idle|' .. v.surface .. '|' .. pack .. '|' .. v.root, kind='science_idle', surface=v.surface, n=1,
           names={[pack]=v.makers}, by=v.by, at={}, center=v.center,
-          line=string.format('no %s maker working for %d+ min (%d makers: %s)%s', pack, math.floor((v.seen - v.since) / 3600), v.makers, v.states,
+          line=string.format('no %s maker working for %d+ min (%d makers: %s)%s%s', pack, math.floor((v.seen - v.since) / 3600), v.makers, v.states,
+            v.labs and string.format('; %d of %d labs have none', v.labs_lacking or 0, v.labs) or '',
             v.last and '; first short step ' .. v.last .. (v.path and ' (' .. v.path .. ')' or '') or '')}
       end
     end
@@ -235,6 +240,11 @@ return function(api)
       local text, key = compose(job, f)
       local s = store()
       s[job.force] = {tick=game.tick, text=text, key=key}
+      -- The labs' state for the research-stalled alert (research.lua): which packs how many labs hold none of.
+      local lab = job.labs[job.surface] or {n=0, working=0, lack={}}
+      local st = api.state()
+      st.science_labs = st.science_labs or {}
+      st.science_labs[job.force] = {tick=game.tick, surface=job.surface, n=lab.n, working=lab.working, lack=lab.lack, tech=job.tech}
       return true
     end
   end

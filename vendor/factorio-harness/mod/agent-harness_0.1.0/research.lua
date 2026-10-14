@@ -565,17 +565,28 @@ return function(api)
   -- last 10 minutes, with no progress; once per STALL_REPEAT per force (shift
   -- 4-5: status said "waits for production-science-pack" 66 times in 108 minutes,
   -- in a field nobody read).
-  local STALL_TICKS, STALL_REPEAT, MAX_ALERTS = 36000, 108000, 20
+  local STALL_TICKS, STALL_REPEAT, MAX_ALERTS, LAB_TICKS = 36000, 108000, 20, 36000
   function M.stall_check(s, force)
     s.research_stall = s.research_stall or {}
     local st = s.research_stall[force.name]
     local head = (force.research_queue or {})[1] or force.current_research
-    local lack = {}
+    local lack, made = {}, {}
+    -- The labs first (Astra, 12:02: automation was named for none made in 10 min while 2534 sat in chests and 101 in
+    -- labs, and all 43 labs lacked agricultural science): with the science line's lab state of the last LAB_TICKS
+    -- (scienceline.lua: per pack, how many labs hold none), a pack is missing only when labs hold none of it, the
+    -- most-lacked first; none made in 10 min is said of it, not chosen by.
+    local labs = (s.science_labs or {})[force.name]
+    local by_labs = labs and (labs.n or 0) > 0 and game.tick - labs.tick <= LAB_TICKS
     if head then
       local names = {}
       for _, ing in ipairs(head.research_unit_ingredients or {}) do names[#names+1] = ing.name end
-      local made = packs_made(force, names)
-      for _, n in ipairs(names) do if (made[n] or 0) <= 0 then lack[#lack+1] = n end end
+      made = packs_made(force, names)
+      if by_labs then
+        for _, n in ipairs(names) do if (labs.lack[n] or 0) > 0 then lack[#lack+1] = n end end
+        table.sort(lack, function(x, y) if labs.lack[x] ~= labs.lack[y] then return labs.lack[x] > labs.lack[y] end return x < y end)
+      else
+        for _, n in ipairs(names) do if (made[n] or 0) <= 0 then lack[#lack+1] = n end end
+      end
     end
     local progress = head and force.current_research and force.current_research.name == head.name and force.research_progress or 0
     if #lack == 0 then
@@ -591,8 +602,27 @@ return function(api)
     s.research_alerts = s.research_alerts or {seq=0, list={}}
     local al = s.research_alerts
     al.seq = al.seq + 1
-    local text = string.format('research stalled: %s heads the queue and has waited %s for %s, which nobody made in the last 10 minutes, with no progress; the labs idle on it. research {remove=%q} or {move=%q, to=N} reorders; research_options lists what the factory can research now',
-      head.name, ago(game.tick - st.since), table.concat(lack, ', '), head.name, head.name)
+    local text
+    if by_labs then
+      -- Each pack the labs lack: how many hold none, made in 10 min, and what the logistic networks there hold.
+      local okn, nets = pcall(function() return force.logistic_networks[labs.surface] end)
+      nets = okn and nets or {}
+      local parts = {}
+      for _, n in ipairs(lack) do
+        local stock = 0
+        for _, ln in ipairs(nets) do
+          local ok, c = pcall(function() return ln.get_item_count(n) end)
+          if ok and type(c) == 'number' then stock = stock + c end
+        end
+        parts[#parts+1] = string.format('%s (%d of %d labs on %s have none; %d made in the last 10 min; %d in logistic networks there)',
+          n, labs.lack[n], labs.n, labs.surface, math.floor(made[n] or 0), stock)
+      end
+      text = string.format('research stalled: %s heads the queue and has made no progress for %s; its labs lack %s. research {remove=%q} or {move=%q, to=N} reorders; research_options lists what the factory can research now',
+        head.name, ago(game.tick - st.since), table.concat(parts, ', '), head.name, head.name)
+    else
+      text = string.format('research stalled: %s heads the queue and has waited %s for %s, which nobody made in the last 10 minutes, with no progress; the labs idle on it. research {remove=%q} or {move=%q, to=N} reorders; research_options lists what the factory can research now',
+        head.name, ago(game.tick - st.since), table.concat(lack, ', '), head.name, head.name)
+    end
     al.list[#al.list+1] = {seq=al.seq, tick=game.tick, force=force.name, name=head.name, text=text}
     while #al.list > MAX_ALERTS do table.remove(al.list, 1) end
     return text

@@ -824,6 +824,12 @@ fh sleep 900 --until researched                       # ...or until the research
     retries): when any listed machine is out of reach, one timed tour (`ticks` default 3600) walks a nearest-first
     route through them and feeds each as a `radius` tour does; the reply has `places`, `out_of_reach`, `legs` and
     `until_tick`, `last.entities` a row per stop, `--wait` follows it. All in reach: the feed at once.
+  - `collect {positions, walk: true}` likewise (Muse 12:20): the places out of reach are walked to, nearest first,
+    and each is collected from as in reach (the same take: machine outputs, named chests; `item`, `count`, `up_to`,
+    `keep_max` as without walk). One timed call (`ticks` default 3600) with `places`, `out_of_reach`, `legs`,
+    `until_tick`; `last` has `got`, `moved`, `items` and `entities` (a row per place); outcomes `collected`,
+    `nothing_collected`, `inventory_full`, `unreached`, `failed`, `timed_out`; `--wait` follows it. All in reach:
+    the collect at once.
   - `transfer {item, from: "nearest"}` (Haiku 10:50: an ammo chest held pipes and no magazines, which cost a walk)
     takes from the nearest of our chests (container, logistic and linked chests) in reach that holds the item now,
     as the map shows them; `radius` (1..64) looks that far and walks there (a timed call, as `walk`). `from_nearest`
@@ -1903,8 +1909,13 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   when another open unowned request passes 2 game minutes), `research` (each technology your force finished since your
   previous reply, once: `research done: NAME, unlocks: a, b, c (<age> ago)`; a first reply looks back 10 game
   minutes; at most 4 lines and `+N more finished: research_done`; first, to every agent once, `research stalled: NAME
-  heads the queue and has waited <time> for PACK, which nobody made in the last 10 minutes, with no progress ...` when
-  the head of the queue has waited 10 minutes that way, at most once per 30 minutes), `alerts` (your character being hit; attacks, one
+  heads the queue and has made no progress for <time>; its labs lack agricultural-science-pack (43 of 43 labs on nauvis
+  have none; 0 made in the last 10 min; 12 in logistic networks there) ...` when the head of the queue has made no
+  progress for 10 minutes, at most once per 30 minutes. The packs named are those the labs hold none of (the science
+  line's lab state of the last 10 minutes), the most-lacked first; a pack every lab holds is never named, whatever was
+  made (Astra, 12:02: automation was named for none made with 2534 in chests and 101 in labs while all 43 labs lacked
+  agricultural science), and with every pack in every lab there is no such line. With no lab state yet the packs are
+  those nobody made in the last 10 minutes (`has waited <time> for PACK, which nobody made ...`)), `alerts` (your character being hit; attacks, one
   line per incident (a 32-tile cell of one surface, ended by a quiet minute; on another surface than yours the line
   says so: `attack #ID on vulcanus at (x,y): ...`, and `status` alert rows carry `surface`): `attack #ID at (x,y): <attackers>; likely from nest (x,y)
   N tiles DIR; <entities hit> hit N times, D damage, first <age> ago, last <age> ago`, where attackers are a visible
@@ -2016,9 +2027,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     power (satisfaction under 100%) shows as the `low power` groups above.
   - A science colour stopped (scienceline.lua, Opus 07:55), routed and limited the same way: `science_idle`, a pack the
     current research needs whose makers on the science surface (the one with the most labs; it has some) all stood
-    still at a `team.science` build and still at a later one 5 minutes or more on, with their states and the chain's
-    first short step: `no chemical-science-pack maker working for 5+ min (14 makers: 14 item_ingredient_shortage);
-    first short step copper-ore: 6 electric-mining-drill (6 no resource left) into 6 transport-belt, made 0/min, used 40/min
+    still at a `team.science` build and still at a later one 5 minutes or more on, while labs there hold none of it
+    (Astra, 12:02: stopped makers of a pack every lab holds are no stopped colour), with their states, how many labs
+    have none and the chain's first short step: `no chemical-science-pack maker working for 5+ min (14 makers: 14
+    item_ingredient_shortage); 20 of 20 labs have none; first short step copper-ore: 6 electric-mining-drill (6 no resource left) into 6 transport-belt, made 0/min, used 40/min
     (chemical-science-pack > advanced-circuit > copper-cable > copper-plate > copper-ore)`. One group per pack and
     root step, so it is told once, and again when the root changes; it is gone at the first build where a maker
     works. A pack made only on another planet is never one. The science line's builds now walk the crafters every

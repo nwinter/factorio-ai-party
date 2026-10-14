@@ -333,7 +333,8 @@ return function(api)
     end
     -- transfer {walk=true}: what moved, or nothing to take, or nothing the targets wanted
     if action.op=='transfer' then
-      if action.got>0 then return 'transferred' end
+      -- collect {walk=true} names its outcome as a collect does.
+      if action.got>0 then return action.collect and 'collected' or 'transferred' end
       if (action.unreached or 0)>0 and action.visited==0 then return 'unreached' end
       return action.transfer.direction=='to_player' and 'nothing_collected' or 'nothing_to_do'
     end
