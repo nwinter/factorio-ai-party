@@ -563,10 +563,11 @@ fh sleep 900 --until researched                       # ...or until the research
   character's sight), as the game's map shows it, and the reply says `by: remote view` (Astra, operator 04:57: inspect
   worked only within 32 tiles; `surface=` naming the character's own surface added nothing then). `surface=` another
   surface reads its visible chunks and says `by: remote view` too. The cargo weigh read (`cargo {position}`) does the
-  same (`from.by`). Out of sight and of every chunk our force sees, the refusal names the
-  nearest radar coverage: `target at (3.5,0.5) ((3.5,0.5) is 196.5 tiles from the character at (200.0,0.0)) is in no
-  chunk our force sees now (radar coverage or a character's sight); the nearest radar coverage is chunk (96,0)-(127,31),
-  93 tiles away`; actions keep the 32-tile sight rule, and their refusals name the nearest coverage too.
+  same (`from.by`). Out of sight and of every chunk our force sees, the refusal names the nearest radar coverage:
+  `target at (3.5,0.5) ((3.5,0.5) is 196.5 tiles from the character at (200.0,0.0)) is in no chunk our force sees now
+  (radar coverage or a character's sight); the nearest radar coverage (or a character's sight) is chunk
+  (96,0)-(127,31), 93 tiles away`; actions keep the 32-tile sight rule, and name the nearest coverage when the target
+  is out of it.
 - Reach is the game's: the distance from the character to the entity's collision box (its edge, not its centre),
   within 10 tiles (`reach_distance`) for buildings and within 2.7 (`resource_reach_distance`) for ore, trees and rocks
   (read on the shift world: a tree 4.3 tiles from its edge was out of reach; a belt 10.25 from its centre, 9.7 from its

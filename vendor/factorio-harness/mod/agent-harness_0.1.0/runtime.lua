@@ -444,15 +444,16 @@ function M.nearest_coverage(p,pos)
         end
       end
     end
-    if not best then return 'no chunk within 256 tiles of it is in radar coverage' end
+    if not best then return 'no chunk within 256 tiles of it is in radar coverage or a character\'s sight' end
     local d=math.max(1,math.floor(bd+0.5))
-    return string.format('the nearest radar coverage is chunk (%d,%d)-(%d,%d), %d %s away',best[1],best[2],best[1]+31,best[2]+31,d,d==1 and 'tile' or 'tiles')
+    return string.format('the nearest radar coverage (or a character\'s sight) is chunk (%d,%d)-(%d,%d), %d %s away',best[1],best[2],best[1]+31,best[2]+31,d,d==1 and 'tile' or 'tiles')
   end)
   return ok and text or nil
 end
 local function assert_visible(p,pos,what)
   if visible(p,pos) then return end
-  local near=M.nearest_coverage(p,pos)
+  -- Out of sight in a chunk our force sees: no coverage to name.
+  local near=not (own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos))) and M.nearest_coverage(p,pos) or nil
   if type(p)=='table' and rawget(p,'__remote') then
     error(string.format('%s at (%g,%g) on %s is not in a visible chunk (remote view needs radar coverage there)%s',what,pos.x,pos.y,p.surface.name,near and '; '..near or ''),2)
   end
@@ -470,7 +471,7 @@ function M.read_sight(p,pos,what)
   if own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)) then return 'remote view' end
   local near=M.nearest_coverage(p,pos)
   error(string.format('%s at (%g,%g) (%s) is in no chunk our force sees now (radar coverage or a character\'s sight)%s',what,pos.x,pos.y,
-    from_character(p,pos),near and '; '..near or ''),2)
+    from_character(p,pos),near and '; '..near or ''),0)
 end
 local function charted(p,pos) return own_platform(p) or p.force.is_chunk_charted(p.surface,chunk_of(pos)) end
 -- Read views may be centred anywhere on the charted map, so scripts can look
