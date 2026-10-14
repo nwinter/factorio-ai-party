@@ -279,7 +279,8 @@ check("loss banner: kills by small biters, no kill count", le and le[0]["text"].
       and "21 small" not in le[0]["text"], str(le))
 af = caster.facts_for({"kind": "attack", "text": "Base under attack near (-48, 16): character x9", "t": now, "prio": 9}, {})
 check("attack facts: hits on the team's engineers, no 'biters are damaging'", af["text"] ==
-      "Base under attack: engineer hit 9 times" and "times biters hit" in af["numbers_mean"] and "damaging" not in json.dumps(af), str(af))
+      # (enemies, not biters: Gleba's are pentapods; eng/planetmix)
+      "Base under attack: engineer hit 9 times" and "times enemies hit" in af["numbers_mean"] and "damaging" not in json.dumps(af), str(af))
 lf = caster.facts_for({"kind": "loss", "text": "21 lost near (1, 2): 9 transport belt (by 21 small biter)", "t": now,
                        "prio": 8}, {})
 check("old loss text: '(by 21 small biter)' becomes '(by small biters)'", lf["text"].endswith("(by small biters)"), lf["text"])
