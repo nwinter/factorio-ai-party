@@ -166,11 +166,18 @@ already targets your character.
   reach every placement. `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},
   "direction":"north","recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid
   the recipe puts there; `inspect` of a ghost shows the same.
+- The team blueprint library, kept in the save across shifts: `blueprint_save {name, area | positions, description,
+  anchor}` stores what the team built; `blueprint_list` lists entries (author, size, counts, last used);
+  `blueprint_place {name, position, direction, dry_run}` pastes one; `blueprint_rename` and `blueprint_delete {name}`:
+  its author any time, anyone after 24 game hours unused.
 - `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'` (or a chest, silo or pad `position`) weighs a
   rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
   and one split into rockets that keeps each within both. `./fh call silo` (or a `position`) shows a silo's rocket
   parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
   last launch.
+- `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
+  patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
+  enemy spawners and worms within 50 tiles, and how many of our drills are on it.
 - Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
   standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,

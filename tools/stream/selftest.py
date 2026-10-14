@@ -627,7 +627,8 @@ def main():
     rpl.follow_segment(t7 + 18)
     assert fobs.program == "replay" and rpl.playing, fobs.calls[-4:]
     cursor = [d for r, d in fobs.calls if r == "SetMediaInputCursor"][-1]["mediaCursor"]
-    assert 45000 - 16500 <= cursor <= 45000 - 15500, cursor  # 11 s before the death, clip saved 5 s after it
+    # the death at the alert less death_lag (t7 + 9; no character loss tick here); 8 s before it, saved at t7 + 15
+    assert cursor == 45000 - 14000, cursor
     seg7.step(s7, t7 + 40)  # past its 15 s
     rpl.follow_segment(t7 + 40)
     assert fobs.program == "stream" and not rpl.playing

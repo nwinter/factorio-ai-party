@@ -125,6 +125,26 @@ return function(api)
   -- {position, radius} limits the entity scans (network totals stay whole);
   -- opts.packs (name -> true) are the packs the current research needs: labs
   -- use them.
+  -- Replies reused for REUSE_TICKS (task-statuscost: one supply read was one
+  -- whole-surface find, 45 ms on shift08's nauvis; science reads every pack
+  -- the same way): the finished reply (plain data, no entities), keyed by
+  -- what was asked, with as_of. Module state on purpose (as profile.lua): it
+  -- never touches game state, and a peer without it reads anew.
+  local REUSE_TICKS, replies = 600, {}
+  function M.reuse(key, fn)
+    for k, c in pairs(replies) do if game.tick - c.tick >= REUSE_TICKS or c.tick > game.tick then replies[k] = nil end end
+    local hit = replies[key]
+    if hit then
+      local out = {}
+      for k, v in pairs(hit.out) do out[k] = v end
+      out.as_of = string.format('%ds ago (the same read within %d s is reused)', math.floor((game.tick - hit.tick) / 60), REUSE_TICKS / 60)
+      return out
+    end
+    local out = fn()
+    replies[key] = {tick=game.tick, out=out}
+    return out
+  end
+  function M.forget() replies = {} end
   function M.scan(surface, force, names, opts)
     opts = opts or {}
     local area, packs = opts.area, opts.packs or {}
@@ -894,6 +914,11 @@ return function(api)
     if a.near ~= nil then area = {position=api.position(a.near), radius=api.integer(a.radius, 64, 1, 512, 'radius')}
     else assert(a.radius == nil, 'radius needs near {x,y}') end
     local force = p.force
+    local key = string.format('supply|%s|%s|%s|%s', tostring(surface.index or surface.name), force.name, item,
+      area and string.format('%g,%g,%g', area.position.x, area.position.y, area.radius) or '')
+    return M.reuse(key, function() return M.supply_fresh(surface, force, item, area) end)
+  end
+  function M.supply_fresh(surface, force, item, area)
     local packs = packs_of(force)
     local scan = M.scan(surface, force, {[item]=true}, {area=area, packs=packs})
     local t = scan.items[item]

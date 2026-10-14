@@ -51,6 +51,7 @@ const help = `fh — Factorio agent CLI
   fh blueprint import --file blueprint.txt   Import blueprint/book into a named slot
   fh blueprint export --out blueprint.txt    Export stored blueprint/book
   fh blueprint list|inspect|capture|place|copy|cut|paste --args JSON
+  fh blueprint save|rename|delete --args JSON The team library: save {name, area|positions}, place {name, position}
   fh queue submit --file plan.json           Queue in-game execution; optional --args for mode
   fh queue status|edit|cancel|resume          Inspect/revise pending work; cancel controls immediately
   fh board [--args '{"mine":true}']          Team board (tasks, requests, claims, notes, projects), newest first
@@ -374,7 +375,8 @@ async function main() {
   }
   if (command === 'blueprint') {
     const operation = positionals[1] ?? 'list';
-    if (!['import','export','inspect','list','delete','capture','place','copy','cut','paste'].includes(operation)) throw new Error('Unknown blueprint operation');
+    // save and rename: the team library (blueprint_save, blueprint_rename).
+    if (!['import','export','inspect','list','delete','capture','place','copy','cut','paste','save','rename'].includes(operation)) throw new Error('Unknown blueprint operation');
     const args = object(JSON.parse(values.args ?? '{}'),'args');
     if (operation === 'import') {
       if (!values.file) throw new Error('blueprint import requires --file blueprint.txt');

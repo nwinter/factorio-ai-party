@@ -272,6 +272,11 @@ if [ "${POG_PLAYERS:-0}" = 1 ]; then
   echo $! >> "$rundir/stream-service.pid"
   helpers+=("players:$!:$rundir/players.log")
 fi
+# The team blueprint library (blueprint_save; it lives in the save and goes on with the world): a copy of each entry in
+# runs/RUN/blueprints/ (NAME.txt, index.json), one storage-only operator read a minute (tools/bplibrary.py).
+nohup python3 tools/bplibrary.py --world "$world" --run-dir "$rundir" watch --interval 60 >"$rundir/bplibrary.log" 2>&1 &
+echo $! >> "$rundir/stream-service.pid"
+helpers+=("bplibrary:$!:$rundir/bplibrary.log")
 # Analyst: talking points for the casters every 90 s, read-only (docs/ANALYST-NOTES.md); POG_ANALYST=0 turns it off.
 if [ "${POG_ANALYST:-1}" != 0 ]; then
   # Its own Claude route, like the agents' (tools/launch-agent.sh), not whatever session started the run.

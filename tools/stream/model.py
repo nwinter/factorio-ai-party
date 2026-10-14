@@ -395,6 +395,7 @@ class Model:
         self.alerts = deque(maxlen=30)
         self.alert_keys = {}
         self.tick = 0
+        self.tick_t = None  # when self.tick was read (ingest)
         self.paused = False
         self.research = {"current": None, "progress": None, "done": set(), "recent": deque(maxlen=6)}
         self.done_at = {}    # technology -> when this stream saw it finish (unused_unlocks)
@@ -441,7 +442,8 @@ class Model:
     def ingest(self, obs, now=None):
         now = now or time.time()
         self.last_obs_t = now
-        self.tick = obs.get("tick", self.tick)
+        if obs.get("tick") is not None:  # replays.py maps a loss's game tick to wall time with (tick_t, tick)
+            self.tick, self.tick_t = obs["tick"], now
         self.paused = bool(obs.get("paused"))
         game_sec = obs.get("game_seconds", self.tick / 60)
         team = self.run.get("agents") or {}
@@ -626,7 +628,7 @@ class Model:
         return dict({k: v for k, v in a.items() if k != "t"}, text=attention.text(a, here, landmarks),
                     age_s=round(now - a["t"], 1), dist=None if d is None else round(d, 1), far=far)
 
-    def _fight(self, key, kind, position, now, text, agent=None, loss=False):
+    def _fight(self, key, kind, position, now, text, agent=None, loss=False, tick=None):
         """A fight still being reported (live.py re-reports an attacked chunk every poll while its last hit is under 30
         game seconds old, a loss for ~2 minutes, an agent's combat flag while it lasts): `last` is when it was last
         seen, so replays.py can wait until it has been quiet before airing anything about it."""
@@ -641,12 +643,15 @@ class Model:
         f.update(last=now, position={k: position[k] for k in ("x", "y", "surface", "extent") if k in position})
         if loss:
             f["losses"].append(now)  # when a loss alert first came in: the moment something was destroyed (+ poll lag)
+            # the incident's last_tick (live.py), or None: the game tick of that moment, beside each entry of losses
+            f.setdefault("loss_ticks", []).append(tick)
             f["text"] = text
         for k in [k for k, v in self.fights.items() if now - v["last"] > 300]:
             del self.fights[k]
 
     def fights_snapshot(self, now):
-        return [dict(f, losses=list(f["losses"])) for f in self.fights.values() if now - f["last"] < 240]
+        return [dict(f, losses=list(f["losses"]), loss_ticks=list(f.get("loss_ticks") or []))
+                for f in self.fights.values() if now - f["last"] < 240]
 
     def work_snapshot(self, now):
         return [dict(w, age_s=round(now - w["t"], 1)) for w in self.work if now - w["t"] < 60]
@@ -1043,7 +1048,7 @@ class Model:
         fresh = e.get("key") not in self.alert_keys or now - self.alert_keys[e["key"]] >= e.get("ttl", 60)
         if p and e["kind"] in ("attack", "loss"):
             self._fight(e.get("key") or f"{e['kind']}:{p['x']},{p['y']}", e["kind"], p, now, e["text"],
-                        loss=e["kind"] == "loss" and fresh)
+                        loss=e["kind"] == "loss" and fresh, tick=e.get("tick"))
         if p and fresh:  # a fight somewhere: pull cameras toward agents near it
             for other in self.agents.values():
                 if other.position and math.hypot(other.position["x"] - p["x"], other.position["y"] - p["y"]) <= 60:
@@ -1500,7 +1505,7 @@ class Model:
         res = self.research
         science = self.science(now)
         return {
-            "now": now, "tick": self.tick, "paused": self.paused, "game_time": fmt_game_time(self.tick / 60),
+            "now": now, "tick": self.tick, "tick_t": self.tick_t, "paused": self.paused, "game_time": fmt_game_time(self.tick / 60),
             "title": self.run.get("title"), "subtitle": self.run.get("subtitle"),
             # this shift's start and end and when the next is expected (start-team.sh), for the site's offline state
             "shift": self.run.get("shift"),

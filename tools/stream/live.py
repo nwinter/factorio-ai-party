@@ -488,7 +488,7 @@ class LiveSource:
                 errors["board"] = str(e)
 
     @staticmethod
-    def loss_event(x, y, x2, y2, total, names, by, surface=None, platform=None, ident=None):
+    def loss_event(x, y, x2, y2, total, names, by, surface=None, platform=None, ident=None, tick=None):
         """One loss banner: where the camera frames it (the loss rectangle's centre and size, a single point 16
         tiles) on the incident's surface; a platform's surface goes to its platform (model.platform_of)."""
         what = ", ".join(n.strip().replace("-", " ") for n in (names or "").split(",")[:2])
@@ -501,6 +501,8 @@ class LiveSource:
                "extent": max(16.0, abs(x2 - float(x)), abs(y2 - float(y))), "surface": surface}
         key = f"loss:{surface}:#{ident}" if ident is not None else f"loss:{x},{y}" if surface == "nauvis" else f"loss:{surface}:{x},{y}"
         ev = {"kind": "loss", "text": text, "key": key, "ttl": 90, "position": pos}
+        if isinstance(tick, (int, float)):
+            ev["tick"] = tick  # the incident's last_tick: when it happened (replays.py times its clip from it)
         if platform:
             ev["platform"] = platform
         return ev
@@ -521,7 +523,8 @@ class LiveSource:
                 if tick is not None and isinstance(r.get("last_tick"), (int, float)) and tick - r["last_tick"] >= LOSS_RECENT_TICKS:
                     continue  # the alert window is 5 game minutes; only show losses from the last minute or so
                 out.append(LiveSource.loss_event(b["x0"], b["y0"], b["x1"], b["y1"], r.get("total") or 0, r.get("names"),
-                                                 r.get("by"), r.get("surface"), r.get("platform"), r.get("id")))
+                                                 r.get("by"), r.get("surface"), r.get("platform"), r.get("id"),
+                                                 r.get("last_tick")))
             return out
         for line in (alerts.get("latest") or [])[:3]:
             m = LOSS_RE.match(line or "")
