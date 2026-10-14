@@ -239,7 +239,8 @@ already targets your character.
 - Circuits: `./fh call circuit_set --args '{"platform":"NAME","position":{"x":-2.5,"y":-4.5},"enable":"ice < 300"}'`
   sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
-  reads back the conditions, settings, each wire's far end and the signals on each network now.
+  reads back the conditions, settings, each wire's far end and the signals on each network now. A logistic condition
+  reads the network whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met).
 - Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub, water-cane or stromatolite stands:
   a dry run names them (`blocked by slipstack tree at (x,y): mine it first`); `place_ghosts` marks them for removal
   first (`tile_obstacles_marked`) and `construct` mines them before it lays the landfill.
