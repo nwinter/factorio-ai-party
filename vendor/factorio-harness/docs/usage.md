@@ -1229,9 +1229,13 @@ fh sleep 900 --until researched                       # ...or until the research
     reply's `merges`: the belt the lane is side-loaded onto (`joins transport-belt (12,5) carrying iron-plate on the
     left lane: your iron-ore mixes in`); a belt side-loading onto the lane (`transport-belt (20,39) side-loads iron-ore
     onto transport-belt (20,40) left lane, which carried iron-plate`); a splitter's other input (`splitter (31,40)
-    also takes transport-belt (30,41) carrying copper-plate; this lane carried iron-ore`). Only items the lane did not
-    carry up to there count; a side-load onto the other lane is not this lane's. A belt run in `path` ends where the
-    lane goes onto another belt from the side.
+    also takes transport-belt (30,41) carrying copper-plate; this lane carried iron-ore`); an inserter putting other
+    items onto the lane, with what it holds, else what its pickup target holds (`inserter (21,39) puts coal onto
+    transport-belt (21,40) left lane (from iron-chest (21,38)), which carried iron-plate`). Only items the lane did not
+    carry up to there count, read on each input and up to 16 belts behind it, and for a belt the lane joined also
+    further along its lane, since items move; a side-load or an inserter onto the other lane is not this lane's, and
+    a lane that carried nothing yet names no inserter. A belt run in `path` ends where the lane goes onto another belt
+    from the side.
   - `{"item":"chemical-science-pack"}` (optional `"surface"`, `"near":{x,y}` with `"radius"` 1..512, default 64:
     makers and labs in that circle): `makers` (how many make it and their states; the nearest 48 traced), `direct`
     (a maker's inserter straight into a lab, machine or chest; a logistic chest says robots carry it on), `routes` from

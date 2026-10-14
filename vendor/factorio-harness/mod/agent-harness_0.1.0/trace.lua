@@ -18,7 +18,8 @@
 --   cleanup).
 -- Every walk names where other items join a lane it follows: the belt it
 --   joins (side-loaded onto) carrying items it did not carry, a belt
---   side-loading other items onto it, a splitter's other input.
+--   side-loading other items onto it, a splitter's other input, an inserter
+--   putting other items onto it.
 -- trace {item}: the same walk from every machine making the item to the labs,
 --   machines and chests that take it (on through a chest's own inserters),
 --   and for each lab short of it the route that reaches it or the nearest
@@ -395,7 +396,10 @@ return function(api)
   -- bus). An input of e other than last is: a belt side-loading onto e (perpendicular, onto lane k: the lane nearest
   -- it), the other input of a splitter, or, when the route came onto e from the side, the belt it joined (e's own
   -- straight input). Each is named once a route, with the items it brings that the route did not carry up to here.
-  local MAX_MERGES = 6
+  -- Items move, so what an input brings is read on it and up to UPSTREAM belts behind it; a belt the route joined
+  -- also by what its lane carries after the join, up to the next merge. An inserter putting things onto the lane
+  -- is named too, with what it holds, else what its pickup target holds.
+  local MAX_MERGES, UPSTREAM = 6, 16
   local function lane_near(e, pos)
     local best, bd
     for j = 1, math.min(2, try(function() return e.get_max_transport_line_index() end) or 0) do
@@ -414,6 +418,20 @@ return function(api)
       if not only or only == j then
         for _, c in ipairs(try(function() return e.get_transport_line(j).get_contents() end) or {}) do m[c.name] = (m[c.name] or 0) + c.count end
       end
+    end
+    return m
+  end
+  -- Items on lane only (or both) of b and up to UPSTREAM belts behind it: its straight input, or its one input on a curve.
+  local function upstream_items(b, only)
+    local m, e, n = {}, b, 0
+    while e and e.valid and n < UPSTREAM do
+      for name, c in pairs(items_on(e, only)) do m[name] = (m[name] or 0) + c end
+      n = n + 1
+      local bn = try(function() return e.belt_neighbours end)
+      local ins, nxt = bn and bn.inputs or {}, nil
+      for _, x in ipairs(ins) do if x.direction == e.direction then nxt = x end end
+      if not nxt and #ins == 1 and e.type == 'transport-belt' then nxt = ins[1] end
+      e = nxt
     end
     return m
   end
@@ -439,24 +457,77 @@ return function(api)
             if lane_near(e, b.position) == k then kind = 'side' end
           end
         end
-        if kind then
-          local m = kind == 'joined' and items_on(b, k) or items_on(b)
-          if kind == 'joined' then for n, c in pairs(items_on(e, k)) do m[n] = (m[n] or 0) + c end end
+        if kind == 'joined' then
+          -- Named when the route ends (join_done): what the joined lane brings, behind the join and after it.
+          route.merged[b.unit_number] = true
+          route.join_open = nil
+          local mine = {}
+          for n in pairs(route.mine) do mine[n] = true end
+          local others = {}
+          for n, c in pairs(upstream_items(b, k)) do if not mine[n] then others[n] = (others[n] or 0) + c end end
+          route.merges[#route.merges+1] = false
+          route.join_open = {at=#route.merges, e=e, k=k, mine=mine, others=others}
+        elseif kind then
+          route.join_open = nil
+          local m = upstream_items(b)
           local theirs, nt = names(m, route.mine)
           if nt > 0 then
             route.merged[b.unit_number] = true
             local ours, no = names(route.mine)
             local was = no > 0 and ours or 'nothing up to here'
-            if kind == 'joined' then
-              route.merges[#route.merges+1] = no > 0 and string.format('joins %s carrying %s on the %s lane: your %s mixes in', place(e), theirs, side(k), ours)
-                or string.format('joins %s carrying %s on the %s lane (this lane carried nothing up to here)', place(e), theirs, side(k))
-            elseif kind == 'side' then
+            if kind == 'side' then
               route.merges[#route.merges+1] = string.format('%s side-loads %s onto %s %s lane, which carried %s', place(b), theirs, place(e), side(k), was)
             else
               route.merges[#route.merges+1] = string.format('%s also takes %s carrying %s; this lane carried %s', place(e), place(b), theirs, was)
             end
           end
         end
+      end
+    end
+  end
+  -- Inserters dropping onto lane k of belt e: each named once a route when what it puts there (its hand, else what
+  -- its pickup target holds) is not what the lane carried up to here (a lane that carried nothing yet names none:
+  -- the start of a machine's output lane is its own inserter).
+  local function droppers_at(route, e, k, idx)
+    for _, row in ipairs(idx.by_drop[e.unit_number] or {}) do
+      local i = row.e
+      if i.valid and not route.merged[i.unit_number] and #route.merges < MAX_MERGES and drop_lane(e, i) == k then
+        local m = {}
+        local name, n = hand(i)
+        local src = row.pick
+        if name then m[name] = n
+        elseif src and src.valid then
+          if BELT[src.type] then m = items_on(src)
+          else
+            local inv = CRAFTER[src.type] and output_of(src) or src.type ~= 'lab' and main(src) or nil
+            for _, c in ipairs(inv and try(function() return inv.get_contents() end) or {}) do m[c.name] = (m[c.name] or 0) + c.count end
+          end
+        end
+        local theirs, nt = names(m, route.mine)
+        if nt > 0 and next(route.mine) then
+          route.merged[i.unit_number] = true
+          route.join_open = nil
+          route.merges[#route.merges+1] = string.format('%s %s puts %s onto %s %s lane%s, which carried %s', i.name, at(i.position), theirs, place(e),
+            side(k), (not name and src and src.valid) and ' (from ' .. place(src) .. ')' or '', (names(route.mine)))
+        end
+      end
+    end
+  end
+  -- The join message, once the route has walked the joined lane (or the next merge closed it); none when the joined
+  -- lane brought nothing the route did not carry.
+  local function join_done(route)
+    for i = #route.merges, 1, -1 do
+      local m = route.merges[i]
+      if m == false then
+        local j = route.joins and route.joins[i]
+        local theirs, nt = j and names(j.others) or '', j and select(2, names(j.others)) or 0
+        if nt > 0 then
+          local list = {}
+          for n in pairs(j.mine) do list[n] = 1 end
+          local ours, no = names(list)
+          route.merges[i] = no > 0 and string.format('joins %s carrying %s on the %s lane: your %s mixes in', place(j.e), theirs, side(j.k), ours)
+            or string.format('joins %s carrying %s on the %s lane (this lane carried nothing up to here)', place(j.e), theirs, side(j.k))
+        else table.remove(route.merges, i) end
       end
     end
   end
@@ -496,12 +567,18 @@ return function(api)
         visited[key] = n
         budget.tiles = budget.tiles + 1
         if #route.tiles < 400 then route.tiles[#route.tiles+1] = e end
-        if last and last ~= e then merges_at(route, e, k, last) end
+        if last and last ~= e then
+          merges_at(route, e, k, last)
+          if route.join_open then route.joins = route.joins or {}; route.joins[route.join_open.at] = route.join_open end
+        end
+        if last then droppers_at(route, e, k, idx_of(e)) end
         for _, c in ipairs(try(function() return e.get_transport_line(k).get_contents() end) or {}) do
           route.carries[c.name] = (route.carries[c.name] or 0) + c.count
           route.mine[c.name] = (route.mine[c.name] or 0) + c.count
+          local j = route.join_open
+          if j and not j.mine[c.name] then j.others[c.name] = (j.others[c.name] or 0) + c.count end
         end
-        if run and run_name == e.name and run_side == side(k) and e.type == 'transport-belt' and not onto then run = run + 1
+        if run and run_name == e.name and run_side == side(k) and e.type == 'transport-belt' and not (onto and last and last.direction ~= e.direction) then run = run + 1
         else
           close(last and last.position or e.position)
           if e.type == 'transport-belt' then run, run_from, run_side, run_name = 1, e.position, side(k), e.name
@@ -582,6 +659,7 @@ return function(api)
         e, k, onto = nexts[1].e, nexts[1].k, nexts[1].onto
       end
       route.end_at = last
+      join_done(route)
     end
     budget.queued = #queue
   end
@@ -860,7 +938,7 @@ return function(api)
     surface='with item: a surface name (default yours)',
     near='with item: optional {x,y}: makers and labs in this area only (cheaper than the whole surface)', radius='with near: 1..512 tiles (default 64)',
     platform='optional platform name: trace on that platform (platform coordinates, hub at 0,0)',
-    returns='position: per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, and the nearest container within 10 tiles holding it that no inserter reads; feeders. forward: takers (a belt tile: belt, lanes); merges (every route\'s, once); routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, merges (where other items join the lane: the belt it joins carrying them, a belt side-loading them onto it, a splitter\'s other input; each with what the lane carried up to there), takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},
+    returns='position: per ingredient it lacks (has/needs) each feeding inserter (status, filter, held), its pickup target (a chest, a machine\'s output, a belt tile with each lane) and what that holds, and the nearest container within 10 tiles holding it that no inserter reads; feeders. forward: takers (a belt tile: belt, lanes); merges (every route\'s, once); routes [{from, path (belt runs, undergrounds, splitters with filters, as flown), carries, merges (where other items join the lane: the belt it joins carrying them, a belt side-loading them onto it, a splitter\'s other input, an inserter putting them onto it; each with what the lane carried up to there), takers (status, filter, held, into), stop (belt end with each lane and full, the front item, joins another route, the cap), nobody_takes}]. item: makers, routes, direct, reaches, labs_short and labs (each short lab: the route reaching it, else its own inserters and what they read, and the nearest route tile). cost'},
   }
   return M
 end

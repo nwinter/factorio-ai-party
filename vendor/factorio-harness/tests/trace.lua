@@ -213,9 +213,21 @@ do
   eq(r.routes[1].merges[1],'joins transport-belt (20.5,40.5) carrying iron-plate on the left lane: your iron-ore mixes in')
   eq(#r.merges,1,'named once'); has(r.routes[2].stop,'joins route 1 at transport-belt (20.5,40.5) left lane')
   has(r.routes[1].path,'transport-belt (20.5,40.5) to (21.5,40.5) left lane')
+  -- Items move: with the bus empty at the join and behind it, the plates further along its lane still name it.
+  P0.lines[1].items={}; P1.lines[1].items={'iron-ore'}; P2.lines[1].items={'iron-plate','iron-ore'}
+  r=trace.trace(p,{position={x=20.5,y=38.5},forward=true})
+  eq(r.merges[1],'joins transport-belt (20.5,40.5) carrying iron-plate on the left lane: your iron-ore mixes in')
+  P0.lines[1].items={'iron-plate','iron-plate'}; P1.lines[1].items={'iron-plate','iron-ore'}
   -- From the bus: the ore belt side-loads onto its left lane; the right lane carries nothing, so it is not walked.
   r=trace.trace(p,{position={x=19.5,y=40.5},forward=true})
   eq(#r.routes,1); eq(r.merges[1],'transport-belt (20.5,39.5) side-loads iron-ore onto transport-belt (20.5,40.5) left lane, which carried iron-plate')
+  -- An inserter putting coal from a chest onto the bus lane is named; one holding plates (what the lane carries) is not.
+  local coalbox=chest(21.5,38.5,{coal=50})
+  local ci=inserter(21.5,39.5,'inserter',coalbox,P2,{drop={x=21.5,y=40.25}})
+  local pi=inserter(22.5,39.5,'inserter',nil,P2,{drop={x=21.5,y=40.25},held={'iron-plate',1}})
+  r=trace.trace(p,{position={x=19.5,y=40.5},forward=true})
+  eq(#r.merges,2); eq(r.merges[2],'inserter (21.5,39.5) puts coal onto transport-belt (21.5,40.5) left lane (from iron-chest (21.5,38.5)), which carried iron-plate, iron-ore')
+  ci.valid=false; pi.valid=false; coalbox.valid=false
   -- A belt side-loading onto the other lane, or carrying what the lane carries already, is not named.
   P0.lines[2].items={'iron-ore'}
   r=trace.trace(p,{position={x=19.5,y=40.5},forward=true})
