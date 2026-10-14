@@ -1032,8 +1032,9 @@ return function(api)
   end
   -- Arrived on a belt: the nearest free tile without one, to the character,
   -- within the arrival radius of the target (or, given within, a tile within
-  -- reach of a walk's target entity); else within 3 tiles of it.
-  function M.off_belt_spot(p, target, tolerance, within)
+  -- reach of a walk's target entity); else within 3 tiles of it. avoid: a tile
+  -- it must not be either (runtime.lua: one under a rail).
+  function M.off_belt_spot(p, target, tolerance, within, avoid)
     local here, half, surface = p.position, M.half(p.character), p.surface
     local cx, cy = math.floor(here.x), math.floor(here.y)
     -- Rings of tiles around the character, nearest first; a ring past the
@@ -1048,7 +1049,7 @@ return function(api)
               local c = {x=cx + dx + 0.5, y=cy + dy + 0.5}
               local d = dist(c, here)
               if (not bd or d < bd) and (limit == math.huge or (within and within(c)) or (not within and dist(c, target) <= limit))
-                and M.free_tile(surface, c, half, p.character) then best, bd = c, d end
+                and M.free_tile(surface, c, half, p.character) and not (avoid and avoid(c)) then best, bd = c, d end
             end
           end
         end

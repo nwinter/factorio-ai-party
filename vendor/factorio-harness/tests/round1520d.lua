@@ -195,10 +195,15 @@ has(last('opus').train_waits[1],'waited ')
 has(last('opus').train_waits[1],'s at (0.0,0.0) for a train (locomotive at (-30,3), 108 km/h) to pass the rails ahead at (0.0,3.0)')
 eq(last('opus').on_rails,nil)
 trains[1]=nil
--- A walk that ends on rails says so.
+-- A move_to never ends on a ground rail: arriving on one it steps to the nearest free tile without one, as off a belt.
 opus('move_to',{position={x=0,y=3},pathfind=false})
 body('opus').position={x=0.2,y=3}; advance(1)
-eq(last('opus').outcome,'arrived'); eq(last('opus').on_rails,'you stand on straight-rail (0,3)')
+local walk=storage.agent_harness.active[index('opus')]
+-- The nearest tile whose box, 0.35 wider, meets no rail (the walk stops within 0.3 of it).
+eq(walk.step_off.x,0.5); eq(walk.step_off.y,4.5)
+body('opus').position={x=0.5,y=4.5}; advance(1)
+eq(last('opus').outcome,'arrived'); eq(last('opus').on_rails,nil)
+eq(last('opus').off_belt,'arrived on a straight-rail; stepped to (0.5,4.5), the nearest free tile without a belt or rail (none within the arrival radius)')
 
 -- 3. recover: a bot's corpse is noted where it died, by the tick it died; recover walks to it and takes everything.
 -- Read after it went, a corpse fails as the engine's does (the server run: "LuaEntity API call when LuaEntity was invalid").
@@ -313,4 +318,11 @@ g2.position={x=0,y=27}; advance(1)
 eq(last('grok').outcome,'collected'); eq(k5.valid,false)
 has(last('grok').train_waits[1],'s at (0.0,0.0) for a train (locomotive at (-30,3), 108 km/h) to pass the rails ahead at (0.0,3.0)')
 trains[1]=nil
+-- A tour that ends in reach on a rail says so (last.on_rails).
+local k6=corpse(0,10,{stone=1},tick-10)
+b.corpses={{surface='nauvis',position={x=0,y=10},tick=tick-10}}
+g2.position={x=0.1,y=3}
+grok('recover',{avoid_enemies=false}); advance(1)
+eq(last('grok').outcome,'collected'); eq(k6.valid,false)
+eq(last('grok').on_rails,'you stand on straight-rail (0,3)')
 print('round1520d: ok')

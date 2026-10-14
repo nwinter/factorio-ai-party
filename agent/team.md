@@ -248,7 +248,7 @@ already targets your character.
   hit under it, the action ends `retreated` and you walk back (guns on auto) or the vehicle is driven back at once
   (`last.retreated`: why, from, health). `./fh call retreat_guard --args '{"to":{"x":260,"y":-60},"health_below":0.5}'`
   sets it for every one of them until `{"clear":true}`.
-- `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
+- `move_to` never ends on a belt or a rail (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
   `last.nearest_reachable`, plus `last.build_spot`: a spot you can reach within build reach of the target
   (`build_spot_note`; in a gap, `build_spot_squeeze` and the `"squeeze":true` call). A position nothing leads to (inside a

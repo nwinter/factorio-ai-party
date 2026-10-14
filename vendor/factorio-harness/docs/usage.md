@@ -531,7 +531,7 @@ fh call status
   `blocked` (stalls on the way) and `timed_out` also say why, with where it stopped. A walk never ends on a belt: arriving
   on one it steps to the nearest free tile without a belt within the arrival radius, else within 3 tiles
   (`last.off_belt: arrived on a transport-belt; stepped to (25.5,-28.5), the nearest free tile without a belt (none
-  within the arrival radius)`). With `--wait`, the error line carries `last.why`. (shift08, world n: Haiku's pocket south
+  within the arrival radius)`). Nor on a ground rail (see Trains below). With `--wait`, the error line carries `last.why`. (shift08, world n: Haiku's pocket south
   of the boiler row at (8..12,42) was closed for the character's box; the old fallback planned with a 0.3-tile box that
   gets out, and the walk pushed at 0.22-tile gaps until 15 stalls.)
 - Narrow gaps (Sol, shift09 03:12 on Gleba: the walk to (55,21) ended in the 0.6-tile gap between two assembling
@@ -606,8 +606,12 @@ fh call status
     each wait (up to 4; `--wait` shows them): `waited 2.0 s at (197.4,-156.5) for a train (...) to pass the rails
     ahead at (197.0,-151.0)`.
   - The time waiting counts against the walk's `ticks`, and does not count as a stall.
-  - A walk that ends on a ground rail says so in `last.on_rails`: `you stand on straight-rail (197,-151)`. The check
-    runs while walking only: a character standing still, or walking along a track, is not moved off it.
+  - A `move_to` never ends on a ground rail, as on a belt (on the copy a character left standing on the track was killed
+    by the next train): arriving on one it steps to the nearest free tile whose box, 0.35 tiles wider, meets no rail
+    and no belt (`last.off_belt: arrived on a half-diagonal-rail; stepped to (197.5,-149.5), the nearest free tile
+    without a belt or rail (none within the arrival radius)`).
+  - Other walks that end on one (a tour stops where its target comes in reach) say so in `last.on_rails`: `you stand on
+    half-diagonal-rail (193,-149)`. Nothing moves a character standing still, and one walking along a track walks on.
 - `move_to {target: {position: {x,y}} | {unit_number: N}, reach: "transfer" | "build" | tiles}` walks until the
   character is within reach of that entity, and arrives there (Astra, operator 07:55: a walk to (-72,-88) ended
   `unreachable` 3.5 tiles from its target, within transfer reach, and broke an `&&` chain).
