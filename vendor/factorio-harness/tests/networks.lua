@@ -18,6 +18,13 @@ local function add(e) e.valid=true; e.force=e.force or force; list[#list+1]=e; r
 local nauvis={name='nauvis',index=1,solar_power_multiplier=1,get_property=function() return 100 end}
 local function matches(e,f)
   if f.force and e.force~=f.force then return false end
+  -- Orders (the construction backlog): marked entities, and ghosts inside the area asked.
+  if f.to_be_deconstructed and not e.decon then return false end
+  if f.to_be_upgraded and not e.upgrade then return false end
+  if f.area and (f.type=='entity-ghost' or f.to_be_deconstructed or f.to_be_upgraded) then
+    local p,a=e.position,f.area
+    if not (p.x>=a[1][1] and p.x<=a[2][1] and p.y>=a[1][2] and p.y<=a[2][2]) then return false end
+  end
   if f.type then
     local types=type(f.type)=='table' and f.type or {f.type}
     local ok=false
@@ -122,7 +129,7 @@ eq(lines[1],'nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 
 -- (lb1 holds 100 coal, 4 min, but its inserter's chest holds 400: not low; lb2 and the one by the engine have no feeder)
 eq(lines[2],'nauvis logistic #3: 4 roboports (+1 personal), logistic area (0,25)-(125,75), construction area (-30,-5)-(155,105); '
   ..'logistic robots 147: 0 idle, 142 working, 3 charging, 2 waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; '
-  ..'no idle logistic robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5')
+  ..'no idle logistic robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); construction backlog: 5 ghosts, 0 to deconstruct, 0 to upgrade; 0 waited 5+ min, oldest 4 min')
 eq(lines[3],'nauvis turrets: gun-turret 6; ammo used in the last hour: firearm-magazine 1200')
 -- The read: the same numbers as fields.
 local r=N.read({force=force},{})

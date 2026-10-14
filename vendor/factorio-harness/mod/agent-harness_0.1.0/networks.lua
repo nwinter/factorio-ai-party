@@ -582,8 +582,190 @@ return function(api)
     end
     return out
   end
-  local function logistic(n, f, surface)
+  -- Robot delays (Nick 12:35: world n had 1 construction robot against 325 logistic robots while Astra's 75-entity
+  -- layout waited as ghosts). Construction backlog: the ghosts, deconstruction and upgrade orders in a network's
+  -- construction area (its bounding box; at most MAX_GHOSTS), each remembered with the tick a view first saw it
+  -- (n.orders per force, kept while seen), so the wait is from then; the cause of the oldest waits (up to CAUSE_LOOK):
+  -- outside every roboport's construction area, no construction robots, items missing in this network (and where
+  -- another network holds them), all robots busy (jobs per robot), else not seen. Deliveries: requests unfilled for
+  -- 5+ min while providers or storage hold the item free (the engine's supply counts, net of pickups robots have
+  -- reserved), with what the robots are doing.
+  local ORDER_WAIT, CAUSE_LOOK = 18000, 16
+  local function order_key(e)
+    local u = try(function() return e.unit_number end)
+    return u and tostring(u) or (e.name .. '@' .. e.position.x .. ',' .. e.position.y)
+  end
+  local function order_item(e, kind)
+    local proto = kind == 'ghost' and try(function() return e.ghost_prototype end)
+      or kind == 'upgrade' and try(function() return e.get_upgrade_target() end) or nil
+    local items = proto and try(function() return proto.items_to_place_this end)
+    local first = items and items[1]
+    return first and (type(first) == 'string' and first or first.name) or nil
+  end
+  local function plural(n, word) return n .. ' ' .. word .. (n == 1 and '' or 's') end
+  -- The finds of one network's orders: {kind, filter}; the background view makes one a step.
+  local function order_finds(f, b)
+    local area = {{b.x0, b.y0}, {b.x1, b.y1}}
+    return {{kind='ghost', q={area=area, type='entity-ghost', force=f, limit=MAX_GHOSTS}},
+      {kind='deconstruct', q={area=area, to_be_deconstructed=true, limit=MAX_GHOSTS}},
+      {kind='upgrade', q={area=area, to_be_upgraded=true, force=f, limit=MAX_GHOSTS}}}
+  end
+  -- found: {ghost=list, deconstruct=list, upgrade=list} from those finds (nil: made here).
+  local function backlog(n, ln, f, surface, b, v, others, found)
+    if not found then
+      found = {}
+      for _, x in ipairs(order_finds(f, b)) do found[x.kind] = try(function() return surface.find_entities_filtered(x.q) end) or {} end
+    end
+    local seen, next_seen = n.orders[f.name] or {}, n.orders_next[f.name]
+    local list, counts = {}, {ghost=0, deconstruct=0, upgrade=0}
+    local function take(kind, found)
+      for _, e in ipairs(found or {}) do
+        if e.valid and #list < MAX_GHOSTS then
+          local k = order_key(e)
+          local first = seen[k] or game.tick
+          next_seen[k] = first
+          counts[kind] = counts[kind] + 1
+          list[#list+1] = {e=e, kind=kind, first=first}
+        end
+      end
+    end
+    take('ghost', found.ghost); take('deconstruct', found.deconstruct); take('upgrade', found.upgrade)
+    table.sort(list, function(x, y) return x.first < y.first end)
+    local waited, waited_ghosts = 0, 0
+    for _, o in ipairs(list) do
+      if game.tick - o.first >= ORDER_WAIT then waited = waited + 1; if o.kind == 'ghost' then waited_ghosts = waited_ghosts + 1 end end
+    end
+    local R = v.construction
+    local out = {ghosts=counts.ghost, deconstruct=counts.deconstruct, upgrade=counts.upgrade, total=#list, waited=waited,
+      waited_ghosts=waited_ghosts, oldest_min=#list > 0 and math.floor((game.tick - list[1].first) / 3600) or nil,
+      robots=R.total, idle=R.idle, capped=#list >= MAX_GHOSTS or nil}
+    if waited == 0 then return out end
+    local look = {}
+    for i = 1, math.min(CAUSE_LOOK, waited) do look[i] = list[i] end
+    local cells = try(function() return ln.cells end) or {}
+    local inside = 0
+    for _, o in ipairs(look) do
+      for _, c in ipairs(cells) do
+        if try(function() return c.is_in_construction_range(o.e.position) end) then inside = inside + 1; break end
+      end
+    end
+    local missing, missing_set, present = {}, {}, 0
+    for _, o in ipairs(look) do
+      local item = o.kind ~= 'deconstruct' and o.e.valid and order_item(o.e, o.kind)
+      if item then
+        if (try(function() return ln.get_item_count(item) end) or 0) > 0 then present = present + 1
+        elseif not missing_set[item] then missing_set[item] = true; missing[#missing+1] = item end
+      end
+    end
+    -- (the items present: every item the oldest orders need is in the network, and they lie in its construction area)
+    out.items_present = #missing == 0 and present > 0 and inside > 0
+    if inside == 0 then out.cause = 'outside every roboport construction area'
+    elseif R.total == 0 then out.cause = 'no construction robots'
+    elseif #missing > 0 then
+      local parts = {}
+      for i = 1, math.min(4, #missing) do
+        local item, where = missing[i], 'in no other network'
+        for _, o in ipairs(others) do
+          if o.id ~= v.id and (try(function() return o.ln.get_item_count(item) end) or 0) > 0 then
+            where = string.format('held in network #%d near (%d,%d)%s', o.id, o.x, o.y, o.surface ~= surface.name and ' on ' .. o.surface or '')
+            break
+          end
+        end
+        parts[#parts+1] = item .. ' (' .. where .. ')'
+      end
+      out.cause = 'items missing in this network: ' .. table.concat(parts, ', ')
+    elseif R.idle == 0 then
+      out.cause = string.format('all %s busy (%d jobs per robot)', plural(R.total, 'construction robot'), math.ceil(#list / math.max(1, R.total)))
+    else
+      out.cause = string.format('not seen: %d idle construction robots and the items in the network', R.idle)
+    end
+    return out
+  end
+  local function backlog_text(k)
+    if not k or k.total == 0 then return 'construction backlog: none' end
+    return string.format('construction backlog: %s, %d to deconstruct, %d to upgrade%s; %d waited 5+ min, oldest %d min%s',
+      plural(k.ghosts, 'ghost'), k.deconstruct, k.upgrade, k.capped and ' (counted up to ' .. MAX_GHOSTS .. ')' or '', k.waited,
+      k.oldest_min or 0, k.cause and '; cause: ' .. k.cause or '')
+  end
+  local DELIVERY_WAIT = 18000
+  local function deliveries(n, ln, v, short)
+    local stuck, items = 0, {}
+    for _, x in ipairs(short) do
+      local since = n.unfilled[x.key]
+      if since and game.tick - since >= DELIVERY_WAIT then
+        local s = try(function() return ln.get_supply_counts(x.name) end) or {}
+        local free = math.max(0, (s['active-provider'] or 0) + (s['passive-provider'] or 0)) + math.max(0, s.storage or 0)
+        if free > 0 then stuck = stuck + 1; items[x.name] = free end
+      end
+    end
+    if stuck == 0 then return nil end
+    local L, causes = v.logistic, {}
+    local waiting, ports, charging = 0, 0, 0
+    for _, c in ipairs(try(function() return ln.cells end) or {}) do
+      local w = try(function() return c.to_charge_robot_count end) or 0
+      charging = charging + (try(function() return c.charging_robot_count end) or 0)
+      if w > 0 then waiting, ports = waiting + w, ports + 1 end
+    end
+    -- (charging and waiting robots by kind where the cells list them, else every robot at the roboports)
+    if L.charging then charging, waiting = L.charging, L.waiting end
+    local carrying = math.max(0, L.total - L.idle - charging - waiting)
+    if L.total == 0 then causes[#causes+1] = 'no logistic robots'
+    elseif L.idle == 0 then causes[#causes+1] = 'no idle logistic robots' end
+    if waiting > 0 then causes[#causes+1] = string.format('%s waiting to charge at %s', plural(waiting, 'robot'), plural(ports, 'roboport')) end
+    if L.total > 0 and L.idle == 0 and carrying > 0 then causes[#causes+1] = string.format('%d carrying for other requests', carrying) end
+    if L.total > 0 and L.idle > 0 then causes[#causes+1] = string.format('%d idle logistic robots', L.idle) end
+    local list, kinds = top_items(items, 3)
+    return {stuck=stuck, items=items, cause=table.concat(causes, '; '),
+      text=string.format('deliveries waiting 5+ min with the item free in the network: %d (%s free%s); %s', stuck, list, kinds > 3 and ', ...' or '',
+        table.concat(causes, '; '))}
+  end
+  -- Every network of the force, for where a missing item is held.
+  local function other_networks(f)
+    local others = {}
+    for _, s in ipairs(surfaces()) do
+      for _, ln in ipairs(logistic_networks(f, s)) do
+        local id = try(function() return ln.network_id end)
+        local c = try(function() local cell = ln.cells[1]; return cell and cell.owner and cell.owner.position end)
+        if id then others[#others+1] = {id=id, ln=ln, surface=s.name, x=c and math.floor(c.x + 0.5) or 0, y=c and math.floor(c.y + 0.5) or 0} end
+      end
+    end
+    return others
+  end
+  local function logistic_line(surface, r)
+    local items, kinds = top_items(r.items, 3)
+    r.line = string.format('%s logistic #%d: %s%s; requests unfilled 60+ s: %d%s; %s%s',
+      surface.name, r.id, r.view.text,
+      r.busy_since and game.tick - r.busy_since >= 600 and string.format('; no idle logistic robot for %d min', math.floor((game.tick - r.busy_since) / 3600)) or '',
+      r.unfilled, kinds > 0 and ' (' .. items .. (kinds > 3 and ', ...' or '') .. ' missing)' or '',
+      backlog_text(r.backlog), r.deliveries and '; ' .. r.deliveries.text or '')
+  end
+  local function orders_store(n, f)
+    n.orders = n.orders or {}
+    n.orders_next = n.orders_next or {}
+    n.orders_next[f.name] = n.orders_next[f.name] or {}
+  end
+  -- The backlog of rows the background view deferred (their finds made one a step): found_by[id][kind] = list.
+  local function finish_orders(n, f, surface, rows, found_by)
+    orders_store(n, f)
+    local others = other_networks(f)
+    for _, r in ipairs(rows) do
+      if r.orders_area then
+        local ln
+        for _, o in ipairs(others) do if o.id == r.id then ln = o.ln end end
+        if ln then
+          r.backlog = backlog(n, ln, f, surface, r.orders_area, r.view, others, found_by[r.id] or {})
+          r.ghosts = r.backlog.ghosts
+        end
+        r.orders_area = nil
+        logistic_line(surface, r)
+      end
+    end
+  end
+  M.order_finds = order_finds
+  local function logistic(n, f, surface, defer)
     local rows, by_id = {}, {}
+    orders_store(n, f)
+    local others = not defer and other_networks(f) or nil
     for _, ln in ipairs(logistic_networks(f, surface)) do
       local id = try(function() return ln.network_id end)
       if id then
@@ -591,35 +773,34 @@ return function(api)
         local r = {id=id, roboports=v.roboports, personal=v.personal, center=v.center, view=v,
           logistic=v.logistic.total, logistic_idle=v.logistic.idle, construction=v.construction.total, construction_idle=v.construction.idle,
           ghosts=0, unfilled=0, items={}}
-        for _, x in ipairs(shortfalls(ln)) do
+        local short = shortfalls(ln)
+        for _, x in ipairs(short) do
           local since = n.unfilled[x.key]
           if since and game.tick - since >= UNFILLED_TICKS then r.unfilled = r.unfilled + 1; r.items[x.name] = (r.items[x.name] or 0) + x.missing end
         end
         r.busy_since = n.busy[id]
+        local b = v.construction_area
+        if b and defer then r.orders_area = b
+        elseif b then
+          r.backlog = backlog(n, ln, f, surface, b, v, others)
+          r.ghosts = r.backlog.ghosts
+        end
+        r.deliveries = deliveries(n, ln, v, short)
         rows[#rows+1] = r; by_id[id] = r
       end
     end
     if #rows == 0 then return rows end
-    -- Ghosts: one bounded count per network over its construction area's bounding box (00:26 rule: a lookup per
-    -- ghost, up to 4000, was the costliest part of this view).
-    for _, r in ipairs(rows) do
-      local b = r.view.construction_area
-      if b then
-        r.ghosts = try(function()
-          return surface.count_entities_filtered{area={{b.x0, b.y0}, {b.x1, b.y1}}, type='entity-ghost', force=f, limit=MAX_GHOSTS}
-        end) or 0
-      end
-    end
-    for _, r in ipairs(rows) do
-      local items, kinds = top_items(r.items, 3)
-      r.line = string.format('%s logistic #%d: %s%s; requests unfilled 60+ s: %d%s; ghosts in its construction area: %d%s',
-        surface.name, r.id, r.view.text,
-        r.busy_since and game.tick - r.busy_since >= 600 and string.format('; no idle logistic robot for %d min', math.floor((game.tick - r.busy_since) / 3600)) or '',
-        r.unfilled, kinds > 0 and ' (' .. items .. (kinds > 3 and ', ...' or '') .. ' missing)' or '',
-        r.ghosts, r.ghosts >= MAX_GHOSTS and ' (counted up to ' .. MAX_GHOSTS .. ')' or '')
-    end
+    for _, r in ipairs(rows) do logistic_line(surface, r) end
     table.sort(rows, function(a, b) return a.roboports > b.roboports or (a.roboports == b.roboports and a.id < b.id) end)
     return rows
+  end
+  -- A view that has read every network: the orders it saw are the ones remembered (gone ones are dropped).
+  local function orders_seen(n, f)
+    if n.orders_next and n.orders_next[f.name] then
+      n.orders = n.orders or {}
+      n.orders[f.name] = n.orders_next[f.name]
+      n.orders_next[f.name] = nil
+    end
   end
 
   -- The turrets by name (by: counted already by the background view) and ammo used in the last hour.
@@ -663,6 +844,7 @@ return function(api)
       local e, l, t = electric(n, f, surface), logistic(n, f, surface), turrets(f, surface)
       if #e > 0 or #l > 0 or t then v.surfaces[#v.surfaces+1] = {name=surface.name, electric=e, logistic=l, turrets=t} end
     end
+    orders_seen(n, f)
     n.views[f.name] = v
     return v
   end
@@ -712,7 +894,7 @@ return function(api)
       if not n.map_tick then fresh_map(n) end
       local steps = {}
       for _, s in ipairs(surfaces()) do
-        for _, step in ipairs({'walk', 'boilers', 'supply', 'rows', 'logistic', 'turrets'}) do steps[#steps+1] = {step=step, surface=s.name} end
+        for _, step in ipairs({'walk', 'boilers', 'supply', 'rows', 'logistic', 'orders', 'turrets'}) do steps[#steps+1] = {step=step, surface=s.name} end
       end
       steps[#steps+1] = {step='done'}
       n.view_steps = n.view_steps or {}
@@ -731,6 +913,7 @@ return function(api)
           v2.surfaces[#v2.surfaces+1] = r
         end
       end
+      orders_seen(n, f)
       n.views[f.name] = v2
       n.view_steps[f.name] = job.n
       n.view_jobs[f.name] = nil
@@ -757,9 +940,30 @@ return function(api)
       return
     end
     job.i = job.i + 1
+    -- The construction backlog's finds, one a step (ghosts, deconstruction, upgrades of each network), then each
+    -- network's backlog from them.
+    if step.step == 'orders' then
+      local q = job.orders
+      if not q then
+        q = {list={}, i=1, found={}}
+        for _, r in ipairs(row.logistic or {}) do
+          if r.orders_area then for _, x in ipairs(order_finds(f, r.orders_area)) do q.list[#q.list+1] = {id=r.id, kind=x.kind, q=x.q} end end
+        end
+        job.orders = q
+      end
+      local x = q.list[q.i]
+      if x then
+        q.found[x.id] = q.found[x.id] or {}
+        q.found[x.id][x.kind] = try(function() return surface.find_entities_filtered(x.q) end) or {}
+        q.i = q.i + 1
+      end
+      if q.i <= #q.list then job.i = job.i - 1   -- (the step repeats until every find is made)
+      else finish_orders(n, f, surface, row.logistic or {}, q.found); job.orders = nil end
+      return
+    end
     if not ctx then
       if step.step == 'turrets' then row.turrets = turrets(f, surface, {}) end
-      if step.step == 'logistic' then row.logistic = logistic(n, f, surface) end
+      if step.step == 'logistic' then row.logistic = logistic(n, f, surface, true) end
     elseif step.step == 'boilers' then
       for _, e in ipairs(ctx.boiler_list) do e_boiler(ctx, e) end
       ctx.boiler_list = nil
@@ -775,7 +979,7 @@ return function(api)
       if ctx.supply_at <= #ctx.supply then job.i = job.i - 1   -- (the step repeats until every boiler is read)
       else ctx.supplied, ctx.supply, ctx.walked = true, nil, nil end
     elseif step.step == 'rows' then row.electric = e_rows(ctx, n, surface, f)
-    elseif step.step == 'logistic' then row.logistic = logistic(n, f, surface)
+    elseif step.step == 'logistic' then row.logistic = logistic(n, f, surface, true)
     elseif step.step == 'turrets' then row.turrets = turrets(f, surface, ctx.turrets); job.ctx[step.surface] = nil end
   end
   -- Plain rows (no entities) for the read.
@@ -850,6 +1054,9 @@ return function(api)
           x.logistic_area, x.construction_area = r.view.logistic_area, r.view.construction_area
           x.logistic_robots, x.construction_robots = r.view.logistic, r.view.construction
           x.charging, x.waiting = r.view.charging, r.view.waiting
+          -- Robot delays (Nick 12:35): the construction backlog and deliveries stuck with the item free.
+          x.backlog = r.backlog
+          x.deliveries = r.deliveries and {stuck=r.deliveries.stuck, free=r.deliveries.items, cause=r.deliveries.cause} or nil
           row.logistic[#row.logistic+1] = x
         end
         out[#out+1] = row
@@ -1117,6 +1324,25 @@ return function(api)
         if g then out[#out+1] = g end
       end
       for _, r in ipairs(s.logistic) do
+        local center = r.center and {x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)}
+        -- Ghosts waiting 5+ min on robots with their items in the network (Nick 12:35).
+        local k = r.backlog
+        if k and center and (k.waited_ghosts or 0) > 0 and k.items_present then
+          local state = k.robots == 0 and 'none' or k.idle == 0 and 'busy' or k.idle .. ' idle'
+          out[#out+1] = {key='construction_wait|' .. s.name .. '|' .. r.id, kind='construction_wait', surface=s.name, n=k.waited_ghosts,
+            names={}, by={}, at={}, center=center,
+            line=string.format('ghosts waiting on robots: %d in network %d near (%d,%d), oldest %d min, %s (%s); the items are in the network',
+              k.waited_ghosts, r.id, center.x, center.y, k.oldest_min or 0, plural(k.robots, 'construction robot'), state)}
+        end
+        -- Requests unfilled 5+ min while the item is free in the network, and what the robots are doing.
+        local d = r.deliveries
+        if d and center then
+          local list, kinds = top_items(d.items, 3)
+          out[#out+1] = {key='deliveries_wait|' .. s.name .. '|' .. r.id, kind='deliveries_wait', surface=s.name, n=d.stuck,
+            names={}, by={}, at={}, center=center,
+            line=string.format('deliveries waiting on robots: %s unfilled 5+ min in network %d near (%d,%d) while providers or storage hold the item free (%s%s): %s',
+              plural(d.stuck, 'request'), r.id, center.x, center.y, list, kinds > 3 and ', ...' or '', d.cause)}
+        end
         if r.busy_since and game.tick - r.busy_since >= BUSY_TICKS and r.center then
           out[#out+1] = {key='robots_busy|' .. s.name .. '|' .. r.id, kind='robots_busy', surface=s.name, n=1, names={}, by={}, at={},
             center={x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)},
