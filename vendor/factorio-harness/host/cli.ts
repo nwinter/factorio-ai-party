@@ -722,9 +722,14 @@ async function main() {
       // kite: what it killed, what is left, the ammunition, where it retreated from (kite.lua).
       ...(last?.kind === 'kite' ? {kills: last.kills, enemies_left: last.enemies_left, ammo_used: last.ammo_used, ammo_left: last.ammo_left,
         reloads: last.reloads, retreated_from: last.retreated_from} : {}),
-      // move_to: where it can get to when it gave up, and how it ended off a belt (pathing.lua).
+      // move_to: where it can get to when it gave up, and how it ended off a belt (pathing.lua); a gap it
+      // stopped before, a squeeze it walked out of, what to mine when closed in; enemies gone around (avoid.lua).
       ...(last?.kind === 'move_to' ? {nearest_reachable: last.nearest_reachable, reachable_gap: last.reachable_gap, off_belt: last.off_belt,
-        path: last.path, steered: last.steered} : {}),
+        path: last.path, steered: last.steered, pocket: last.pocket, escaped: last.escaped, mine_to_get_out: last.mine_to_get_out} : {}),
+      // vehicle drive: the path it followed and a back-up (vehicles.lua).
+      ...(last?.kind === 'drive' ? {path_length: last.path_length, backed_up: last.backed_up} : {}),
+      ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
+        enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
       // collect over a radius: moved per item, places touched, what fell short.
       tally: last?.tally,

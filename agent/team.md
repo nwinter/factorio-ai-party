@@ -156,9 +156,15 @@ already targets your character.
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`
   (or `"ammo":"explosive-cannon-shell"`, `"auto":true`), loading the slot from your inventory; `vehicle {drive}` goes on meanwhile.
+- `vehicle {drive}` follows the engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes
+  through units (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does.
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
   `last.nearest_reachable`. `kite --wait` waits until the kite ends and reports its outcome, kills and ammo the same way.
+- `move_to` keeps out of the range of the worms the map shows, plus 4 tiles; `"avoid_enemies":true` also keeps out of
+  spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
+- A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
+  walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under
   it (`tiles_under`, `tiles_note`); `place_ghosts` lays the landfill ghost under an entity ghost there; `construct`
   builds the landfill first, and a build refused there names the tile.

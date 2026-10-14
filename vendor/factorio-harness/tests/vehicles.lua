@@ -169,7 +169,7 @@ local blocked=false
 local function drive_ticks(n) for _=1,n do if not blocked then physics() end; advance(1) end end
 car.position={x=3,y=0}; car.orientation=0.25; car.speed=0
 astra('vehicle',{position={x=3,y=0},enter=true})
-r=astra('vehicle',{drive={x=60,y=20}}); eq(r.vehicle,'car'); eq(r.distance,60)
+r=astra('vehicle',{drive={x=60,y=20},pathfind=false}); eq(r.vehicle,'car'); eq(r.distance,60); eq(r.pathfinding,false)
 eq(astra('status').active.kind,'drive')
 drive_ticks(1500)
 local last=astra('status').last
@@ -178,9 +178,116 @@ assert(math.abs(car.position.x-60)<4 and math.abs(car.position.y-20)<4,car.posit
 eq(car.riding_state.acceleration,defines.riding.acceleration.nothing)
 -- A car that does not move (a wall): blocked after 3 seconds.
 blocked=true
-astra('vehicle',{drive={x=0,y=0}})
+astra('vehicle',{drive={x=0,y=0},pathfind=false})
 drive_ticks(200)
 eq(astra('status').last.outcome,'blocked')
+-- The engine's path for the car's box (Opus, shift09 03:20: a tank driven
+-- straight at its target got stuck on cliffs): it waits for the path, then
+-- steers along it, around what the straight line would hit.
+blocked=false
+car.prototype={collision_box={left_top={x=-0.7,y=-1},right_bottom={x=0.7,y=1}},collision_mask={layers={car=true,player=true,train=true}}}
+local asked={}
+surface.request_path=function(a) asked[#asked+1]=a; return 900+#asked end
+car.position={x=60,y=20}; car.orientation=0.25; car.speed=0
+r=astra('vehicle',{drive={x=100,y=20}})
+eq(r.pathfinding,true); eq(r.avoid_enemies,'worms (range + 4)')
+eq(#asked,1); eq(asked[1].bounding_box[2][1],1); eq(asked[1].collision_mask.layers.car,true); eq(asked[1].entity_to_ignore,car); eq(asked[1].radius,4)
+drive_ticks(30); eq(car.position.x,60) -- no path yet: it waits
+runtime.on_event{name=10,id=901,path={{position={x=60,y=20}},{position={x=70,y=5}},{position={x=90,y=5}},{position={x=100,y=20}}}}
+local lowest=20
+for _=1,1500 do physics(); advance(1); lowest=math.min(lowest,car.position.y); if not astra('status').active then break end end
+last=astra('status').last
+eq(last.outcome,'arrived'); eq(last.path_length,56)
+assert(lowest<9,'went along the path north of the straight line: lowest y '..lowest)
+assert(math.abs(car.position.x-100)<4 and math.abs(car.position.y-20)<4,car.position.x..','..car.position.y)
+-- Stuck on the way: backs up once with a fresh path, then ends blocked naming what is in front.
+asked={}
+r=astra('vehicle',{drive={x=140,y=20}})
+runtime.on_event{name=10,id=901,path={{position={x=100,y=20}},{position={x=140,y=20}}}}
+blocked=true
+drive_ticks(95)
+eq(car.riding_state.acceleration,defines.riding.acceleration.reversing) -- backing up
+drive_ticks(60)
+eq(#asked,2) -- a new path from where it stopped
+runtime.on_event{name=10,id=902,path={{position={x=100,y=20}},{position={x=140,y=20}}}}
+drive_ticks(100)
+last=astra('status').last
+eq(last.outcome,'blocked')
+assert(last.why:find('again after backing off once',1,true) and last.why:find('in front: nothing that collides',1,true),last.why)
+assert(last.backed_up:find('backed off and asked for a new path',1,true),last.backed_up)
+-- No path for the car's length, nor its width: unreachable, saying so.
+blocked=false; asked={}
+astra('vehicle',{drive={x=100,y=90}})
+runtime.on_event{name=10,id=901}
+eq(#asked,2); eq(asked[2].bounding_box[2][1],0.7)
+runtime.on_event{name=10,id=902}
+drive_ticks(1)
+last=astra('status').last
+eq(last.outcome,'unreachable'); eq(last.why,'no path for the car (1.4 by 2.0 tiles) to (100,90)')
+fails(function() astra('vehicle',{drive={x=1,y=1},pathfind='yes'}) end,'pathfind must be true or false')
+fails(function() astra('vehicle',{drive={x=1,y=1},reverse=1}) end,'reverse must be true or false')
+-- Units are no block (Astra, shift10 04:10: a drive into an attack group ended
+-- blocked and left the tank surrounded): pressed against biters only, the
+-- throttle stays down and the drive goes on; they count as rammed.
+local area_finds={}
+local plain_find=surface.find_entities_filtered
+surface.find_entities_filtered=function(f) if f.area then return area_finds end return plain_find(f) end
+local biter={valid=true,name='medium-biter',type='unit',unit_number=7001,position={x=0,y=0},prototype={collision_mask={layers={player=true}}}}
+car.position={x=100,y=90}; car.orientation=0.25; car.speed=0
+asked={}
+astra('vehicle',{drive={x=140,y=90}})
+runtime.on_event{name=10,id=901,path={{position={x=100,y=90}},{position={x=140,y=90}}}}
+blocked=true; area_finds={biter}
+drive_ticks(200)
+eq(astra('status').active.kind,'drive') -- no back-up, not blocked
+eq(car.riding_state.acceleration,defines.riding.acceleration.accelerating)
+eq(#asked,1)
+-- A unit hit by the car (its impact damage) counts too, once each.
+runtime.on_event{name=12,entity={valid=true,name='small-biter',type='unit',unit_number=7002,position={x=1,y=1}},cause=car,final_damage_amount=30}
+runtime.on_event{name=12,entity={valid=true,name='small-biter',type='unit',unit_number=7002,position={x=1,y=1}},cause=car,final_damage_amount=30}
+blocked=false; area_finds={}
+drive_ticks(600)
+last=astra('status').last
+eq(last.outcome,'arrived'); eq(last.rammed,2)
+-- A wall is: backed off once, then blocked.
+local wall={valid=true,name='stone-wall',type='wall',position={x=0,y=0},prototype={collision_mask={layers={player=true,object=true}}}}
+asked={}
+astra('vehicle',{drive={x=180,y=90}})
+runtime.on_event{name=10,id=901,path={{position={x=140,y=90}},{position={x=180,y=90}}}}
+blocked=true; area_finds={wall}
+drive_ticks(95)
+eq(car.riding_state.acceleration,defines.riding.acceleration.reversing)
+drive_ticks(60)
+runtime.on_event{name=10,id=902,path={{position={x=140,y=90}},{position={x=180,y=90}}}}
+drive_ticks(100)
+last=astra('status').last
+eq(last.outcome,'blocked'); eq(last.rammed,nil)
+-- reverse: rear first, the reverse pedal; backing off an obstacle uses the forward one.
+blocked=false; area_finds={}
+local function physics_r()
+  local rs=car.riding_state
+  if not rs then return end
+  if rs.direction==defines.riding.direction.right then car.orientation=(car.orientation+0.01)%1
+  elseif rs.direction==defines.riding.direction.left then car.orientation=(car.orientation-0.01)%1 end
+  if rs.acceleration==defines.riding.acceleration.accelerating then car.speed=math.min(0.4,car.speed+0.01)
+  elseif rs.acceleration==defines.riding.acceleration.reversing then car.speed=math.max(-0.2,car.speed-0.01)
+  elseif rs.acceleration==defines.riding.acceleration.braking then car.speed=car.speed>0 and math.max(0,car.speed-0.05) or math.min(0,car.speed+0.05)
+  else car.speed=car.speed*0.99 end
+  local a=car.orientation*2*math.pi
+  car.position={x=car.position.x+math.sin(a)*car.speed,y=car.position.y-math.cos(a)*car.speed}
+end
+car.position={x=140,y=90}; car.orientation=0.25; car.speed=0 -- facing east
+asked={}
+r=astra('vehicle',{drive={x=110,y=90},reverse=true}) -- behind it
+eq(r.reverse,true)
+runtime.on_event{name=10,id=901,path={{position={x=140,y=90}},{position={x=110,y=90}}}}
+local turned_most=0
+for _=1,900 do physics_r(); advance(1); turned_most=math.max(turned_most,math.abs(((car.orientation-0.25)+0.5)%1-0.5)); if not astra('status').active then break end end
+last=astra('status').last
+eq(last.outcome,'arrived'); eq(last.reverse,true)
+assert(turned_most<0.05,'backed straight there without turning round: '..turned_most)
+assert(math.abs(car.position.x-110)<4,car.position.x)
+surface.find_entities_filtered=plain_find
 -- Only the driver drives; drive needs a car.
 astra('vehicle',{exit=true})
 car.position={x=3,y=0} -- (the fake character does not ride along; the game moves it with the car)
@@ -219,7 +326,7 @@ end
 local GUNS={{name='tank-cannon',attack_parameters={ammo_categories={'cannon-shell'},range=30}},{name='tank-machine-gun',attack_parameters={ammo_categories={'bullet'},range=20}},
   {name='tank-flamethrower',attack_parameters={ammo_categories={'flamethrower'},range=9}}}
 local tank=vehicle('tank','car',6,0)
-tank.prototype={indexed_guns=GUNS}
+tank.prototype={indexed_guns=GUNS,collision_box={left_top={x=-0.9,y=-1.3},right_bottom={x=0.9,y=1.3}},collision_mask={layers={car=true,player=true,train=true}}}
 tank.ammo=inventory({{'cannon-shell',10},{'firearm-magazine',20},{nil,0}})
 tank.get_inventory=function(id) return id==3 and tank.ammo or nil end
 tank.selected_gun_index=1; tank.driver_is_gunner=false

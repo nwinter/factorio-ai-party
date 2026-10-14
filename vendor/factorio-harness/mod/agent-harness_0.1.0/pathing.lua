@@ -19,6 +19,7 @@ return function(api)
   local BELTS = {'transport-belt', 'underground-belt', 'splitter', 'lane-splitter', 'loader', 'loader-1x1', 'linked-belt'}
   local BASE_BELTS = {'transport-belt', 'underground-belt', 'splitter'}
   local PAD, GRACE_TICKS = 0.15, 30
+  M.PAD = PAD
   -- The ladder: box padding, grid (path_resolution_modifier: 1 half tiles,
   -- 2 quarter tiles), start from the nearest free tile centre, extra goal radius.
   M.LEVELS = {
@@ -53,12 +54,95 @@ return function(api)
     for i = 2, #(path or {}) do n = n + dist(path[i-1].position, path[i].position) end
     return n
   end
+  -- The boxes the character collides with in an area: entities, then tiles,
+  -- as {x0, y0, x1, y1, name, entity}.
+  local function boxes_in(surface, area, ignore)
+    local boxes = {}
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask='player'} end) or {}) do
+      if e.valid and e ~= ignore and e.type ~= 'character' then
+        local b = e.bounding_box
+        boxes[#boxes+1] = {b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y, e.name, e}
+      end
+    end
+    for _, t in ipairs(try(function() return surface.find_tiles_filtered{area=area, collision_mask='player'} end) or {}) do
+      boxes[#boxes+1] = {t.position.x, t.position.y, t.position.x + 1, t.position.y + 1, t.name}
+    end
+    return boxes
+  end
+  M.boxes_in = boxes_in
+  local function overlaps(b, x, y, h) return x + h > b[1] and x - h < b[3] and y + h > b[2] and y - h < b[4] end
+  local function hits(boxes, x, y, h)
+    for _, b in ipairs(boxes) do if overlaps(b, x, y, h) then return b end end
+  end
+  -- Boxes by 2-tile bucket, each in every bucket its reach touches. hit(x, y, h):
+  -- the first box a box of half size h (at most reach) at (x, y) overlaps; all(x, y, h): every one.
+  local function grid(boxes, reach)
+    local bucket = {}
+    for _, b in ipairs(boxes) do
+      for bx = math.floor((b[1] - reach) / 2), math.floor((b[3] + reach) / 2) do
+        for by = math.floor((b[2] - reach) / 2), math.floor((b[4] + reach) / 2) do
+          local k = bx * 65536 + by
+          local list = bucket[k]
+          if not list then list = {}; bucket[k] = list end
+          list[#list+1] = b
+        end
+      end
+    end
+    local function hit(x, y, h)
+      for _, b in ipairs(bucket[math.floor(x / 2) * 65536 + math.floor(y / 2)] or {}) do if overlaps(b, x, y, h) then return b end end
+    end
+    local function all(x, y, h)
+      local out
+      for _, b in ipairs(bucket[math.floor(x / 2) * 65536 + math.floor(y / 2)] or {}) do
+        if overlaps(b, x, y, h) then out = out or {}; out[#out+1] = b end
+      end
+      return out
+    end
+    -- 0 when nothing overlaps, 1 when everything that does passes ok(b), nil otherwise (no table made).
+    local function cost(x, y, h, ok)
+      local n = 0
+      for _, b in ipairs(bucket[math.floor(x / 2) * 65536 + math.floor(y / 2)] or {}) do
+        if overlaps(b, x, y, h) then
+          if not ok(b) then return nil end
+          n = 1
+        end
+      end
+      return n
+    end
+    return hit, all, cost
+  end
+  -- A straight line from a to b the box (half size h) sweeps without touching anything.
+  local function clear_line(hit, a, b, h, step)
+    local n = math.max(1, math.ceil(dist(a, b) / (step or 0.1)))
+    for k = 1, n do
+      local t = k / n
+      if hit(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, h) then return false end
+    end
+    return true
+  end
+  local function line_area(a, b, h)
+    return {{math.min(a.x, b.x) - h - 0.5, math.min(a.y, b.y) - h - 0.5}, {math.max(a.x, b.x) + h + 0.5, math.max(a.y, b.y) + h + 0.5}}
+  end
+  -- The nearest free tile centre, when the character gets there in a straight
+  -- line; else where it stands. (Sol, shift09 03:13: squeezed under a pipe row,
+  -- the nearest free centre lay past the pipes, and every path from there
+  -- stalled at them.)
+  function M.start_centre(p)
+    local c = p.character
+    local here = p.position
+    local centre = try(function() return p.surface.find_non_colliding_position(c.name, here, 3, 0.5, true) end)
+    if not centre or dist(centre, here) < 0.05 then return centre or here end
+    local h = M.half(c)
+    local boxes = boxes_in(p.surface, line_area(here, centre, h), c)
+    if clear_line(function(x, y, hh) return hits(boxes, x, y, hh) end, here, centre, h) then return centre end
+    return here
+  end
   -- One request; its id is noted so the result finds the walk.
   local function ask(p, nav, level, mask)
     local c = p.character
     local L = M.LEVELS[level + 1]
     local start = p.position
-    if L.centre then start = try(function() return p.surface.find_non_colliding_position(c.name, p.position, 3, 0.5, true) end) or p.position end
+    if L.centre then start = M.start_centre(p) end
     local h = M.half(c) + L.pad
     local id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=mask or c.prototype.collision_mask, start=start,
       goal=nav.position, force=p.force, radius=nav.tolerance + 1 + (nav.replans or 0) + (L.wide or 0), entity_to_ignore=c, can_open_gates=true,
@@ -76,7 +160,7 @@ return function(api)
     nav.path_id = ask(p, nav, level)
     nav.avoid_id, nav.found, nav.avoided = nil, nil, nil
     if M.LEVELS[level + 1].avoid then nav.avoid_id = ask(p, nav, level, off_belts(p.character.prototype.collision_mask)); nav.found = {} end
-    nav.path_state = 'pending'; nav.waypoints = nil; nav.waypoint = nil; nav.sidestep = nil; nav.asked_tick = game.tick
+    nav.path_state = 'pending'; nav.waypoints = nil; nav.waypoint = nil; nav.sidestep = nil; nav.asked_tick = game.tick; nav.approach = nil
   end
   -- A belt path is replaced by the off-belt one when that is at most 6 tiles
   -- or a quarter longer.
@@ -89,11 +173,14 @@ return function(api)
     if avoid then return avoid, true end
     return normal, false
   end
-  local function use(nav, path, avoided)
+  -- A found path, unless the enemy check holds it, goes around a nest or ends the walk (avoid.lua).
+  local function use(p, nav, path, avoided)
+    if api.accept and not api.accept(p, nav, path, avoided) then return end
     nav.waypoints = path; nav.waypoint = 1; nav.path_state = 'found'; nav.avoided = avoided or nil
     nav.path_length = math.floor(M.length(path) + 0.5)
     nav.found = nil
   end
+  M.use = function(p, nav, path, avoided) return use(p, nav, path, avoided) end
   -- A path ending no nearer the goal than it started (the start already
   -- inside a wide goal radius) is no route, unless it ends near the goal.
   function M.useless(nav, path)
@@ -117,12 +204,12 @@ return function(api)
       if nav.found.normal == nil or nav.found.avoid == nil then return end
       local f = nav.found
       local path, avoided = M.prefer(f.normal or nil, f.avoid or nil)
-      if path then return use(nav, path, avoided) end
+      if path then return use(p, nav, path, avoided) end
       if f.busy then nav.found = nil; nav.path_state = 'busy'; return end
       nav.found = nil
       return M.climb(p, nav)
     end
-    if got then return use(nav, got) end
+    if got then return use(p, nav, got) end
     if event.try_again_later then nav.path_state = 'busy'; return end
     return M.climb(p, nav)
   end
@@ -131,7 +218,7 @@ return function(api)
     local f = nav.found
     if not f or game.tick - (nav.asked_tick or game.tick) < GRACE_TICKS then return end
     local path, avoided = M.prefer(f.normal or nil, f.avoid or nil)
-    if path then return use(nav, path, avoided) end
+    if path then return use(p, nav, path, avoided) end
     if f.normal == false then nav.found = nil; return M.climb(p, nav) end
   end
   function M.climb(p, nav)
@@ -151,6 +238,8 @@ return function(api)
     if try(function() return p.surface.is_chunk_generated(chunk) end) == false then
       nav.path_state = 'failed'; nav.blind = 'ungenerated'; return
     end
+    -- Squeezed into a gap the pathfinder does not route through: walk out first.
+    if M.escape(p, nav) then return end
     local here = p.position
     local region = M.region(p.surface, here, M.half(p.character), {ignore=p.character, goal=pos})
     nav.region = region
@@ -163,13 +252,19 @@ return function(api)
       nav.why = string.format('closed in: the character (%.1f tiles wide) fits through no gap out of the area %s-%s (about %d tiles)%s',
         M.half(p.character) * 2, at({x=region.x0, y=region.y0}), at({x=region.x1, y=region.y1}), region.tiles,
         #region.by > 0 and ('; around it: ' .. table.concat(region.by, ', ')) or '')
-      nav.path_state = 'unreachable'
+      -- The way out by mining (the fewest of our entities, trees or rocks in
+      -- the way) is searched next tick, around the closed area: in one tick
+      -- with the flood it took 11 ms on a private copy of world n; apart, the
+      -- flood 3.9 ms, the search 2.3 ms.
+      nav.dig_from = {x=here.x, y=here.y}
+      nav.dig_area = {region.x0 - 6, region.y0 - 6, region.x1 + 6, region.y1 + 6}
+      nav.path_state = 'digging'
       return
     end
     -- Not closed in: one wide request says where it can get to.
     local c = p.character
     local h = M.half(c)
-    local start = try(function() return p.surface.find_non_colliding_position(c.name, here, 3, 0.5, true) end) or here
+    local start = M.start_centre(p)
     local radius = math.max(4, math.min(48, dist(here, pos) * 0.75))
     nav.probe_id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=c.prototype.collision_mask, start=start, goal=pos,
       force=p.force, radius=radius, entity_to_ignore=c, can_open_gates=true, pathfind_flags={prefer_straight_paths=true, no_break=true, cache=false}}
@@ -193,74 +288,77 @@ return function(api)
   -- steps with its own box, belts walkable), within 24 tiles and 6000 steps.
   -- Closed: the steps ran out of room before the window edge or the cap;
   -- then the nearest step to goal, the area and what blocked the edge.
+  -- opts.open_pad: stop at the nearest step where a box padded by it fits
+  -- (room to turn), with the trail there (open, trail); opts.keep_seen: the
+  -- steps flooded (seen), for dig.
   local WINDOW, CAP, STEP = 24, 6000, 0.25
+  M.WINDOW, M.STEP = WINDOW, STEP
+  local function cell(i, j) return i * 65536 + j end
+  local NEIGHBOURS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}}
+  -- The start step: where it stands, else a neighbouring step it fits on.
+  local function first_step(hit, start, half)
+    local si, sj = math.floor(start.x / STEP + 0.5), math.floor(start.y / STEP + 0.5)
+    for _, d in ipairs({{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, -1}, {1, -1}, {-1, 1}}) do
+      if not hit((si + d[1]) * STEP, (sj + d[2]) * STEP, half) then return si + d[1], sj + d[2] end
+    end
+  end
+  -- Corners of a trail joined where the box sweeps the straight line between them.
+  local function smooth(points, hit, h)
+    local out, i = {points[1]}, 1
+    while i < #points do
+      local j = math.min(#points, i + 24)
+      while j > i + 1 and not clear_line(hit, points[i], points[j], h, 0.05) do j = j - 1 end
+      out[#out+1] = points[j]; i = j
+    end
+    return out
+  end
   function M.region(surface, start, half, opts)
     opts = opts or {}
+    local pad = opts.open_pad
     local area = {{start.x - WINDOW, start.y - WINDOW}, {start.x + WINDOW, start.y + WINDOW}}
-    local boxes = {}
-    for _, e in ipairs(try(function() return surface.find_entities_filtered{area=area, collision_mask='player'} end) or {}) do
-      if e.valid and e ~= opts.ignore and e.type ~= 'character' then
-        local b = e.bounding_box
-        boxes[#boxes+1] = {b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y, e.name}
-      end
-    end
-    for _, t in ipairs(try(function() return surface.find_tiles_filtered{area=area, collision_mask='player'} end) or {}) do
-      boxes[#boxes+1] = {t.position.x, t.position.y, t.position.x + 1, t.position.y + 1, t.name}
-    end
-    -- Boxes by 2-tile bucket, each in every bucket its reach touches.
-    local bucket = {}
-    local function key(x, y) return math.floor(x / 2) * 65536 + math.floor(y / 2) end
-    for _, b in ipairs(boxes) do
-      for bx = math.floor((b[1] - half) / 2), math.floor((b[3] + half) / 2) do
-        for by = math.floor((b[2] - half) / 2), math.floor((b[4] + half) / 2) do
-          local k = bx * 65536 + by
-          local list = bucket[k]
-          if not list then list = {}; bucket[k] = list end
-          list[#list+1] = b
-        end
-      end
-    end
+    local hit = grid(boxes_in(surface, area, opts.ignore), half + (pad or 0))
     local blockers = {}
-    local function hit(x, y)
-      for _, b in ipairs(bucket[key(x, y)] or {}) do
-        if x + half > b[1] and x - half < b[3] and y + half > b[2] and y - half < b[4] then return b end
-      end
-    end
-    local function cell(i, j) return i * 65536 + j end
-    local si, sj = math.floor(start.x / STEP + 0.5), math.floor(start.y / STEP + 0.5)
-    local found
-    for _, d in ipairs({{0, 0}, {1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {-1, -1}, {1, -1}, {-1, 1}}) do
-      if not hit((si + d[1]) * STEP, (sj + d[2]) * STEP) then si, sj = si + d[1], sj + d[2]; found = true; break end
-    end
-    if not found then return {closed=true, tiles=0, x0=start.x, y0=start.y, x1=start.x, y1=start.y, by={}, nearest={x=start.x, y=start.y}, stuck=true} end
+    local si, sj = first_step(hit, start, half)
+    if not si then return {closed=true, tiles=0, x0=start.x, y0=start.y, x1=start.x, y1=start.y, by={}, nearest={x=start.x, y=start.y}, stuck=true} end
     local seen, queue, head = {[cell(si, sj)]=true}, {{si, sj}}, 1
+    local from = pad and {} or nil
     local x0, y0, x1, y1 = si, sj, si, sj
     local goal, best, bd = opts.goal, nil, nil
-    local edge = false
+    local edge, open = false, nil
     while head <= #queue do
       local c = queue[head]; head = head + 1
       local i, j = c[1], c[2]
+      if pad and not hit(i * STEP, j * STEP, half + pad) then open = c; break end
       if goal then
         local d = (i * STEP - goal.x) ^ 2 + (j * STEP - goal.y) ^ 2
         if not bd or d < bd then best, bd = c, d end
       end
-      for _, n in ipairs({{i + 1, j}, {i - 1, j}, {i, j + 1}, {i, j - 1}}) do
+      for _, o in ipairs(NEIGHBOURS) do
+        local n = {i + o[1], j + o[2]}
         local k = cell(n[1], n[2])
         if not seen[k] then
           seen[k] = true
           local x, y = n[1] * STEP, n[2] * STEP
           if math.abs(x - start.x) >= WINDOW - 1 or math.abs(y - start.y) >= WINDOW - 1 then edge = true
           else
-            local b = hit(x, y)
+            local b = hit(x, y, half)
             if b then blockers[b[5]] = (blockers[b[5]] or 0) + 1
             else
               queue[#queue+1] = n
+              if from then from[k] = c end
               x0, y0, x1, y1 = math.min(x0, n[1]), math.min(y0, n[2]), math.max(x1, n[1]), math.max(y1, n[2])
             end
           end
         end
       end
       if edge or #queue > CAP then break end
+    end
+    if open then
+      local trail, c = {}, open
+      while c do trail[#trail+1] = {x=c[1] * STEP, y=c[2] * STEP}; c = from[cell(c[1], c[2])] end
+      local ordered = {}
+      for k = #trail, 1, -1 do ordered[#ordered+1] = trail[k] end
+      return {open={x=open[1] * STEP, y=open[2] * STEP}, trail=smooth(ordered, hit, half + 0.01), steps=#trail - 1}
     end
     local closed = not edge and #queue <= CAP
     local by = {}
@@ -269,7 +367,168 @@ return function(api)
     local names = {}
     for i = 1, math.min(6, #by) do names[i] = by[i].name end
     return {closed=closed, tiles=math.floor(#queue * STEP * STEP + 0.5), x0=x0 * STEP, y0=y0 * STEP, x1=x1 * STEP, y1=y1 * STEP,
-      by=names, nearest=best and {x=best[1] * STEP, y=best[2] * STEP} or nil}
+      by=names, nearest=best and {x=best[1] * STEP, y=best[2] * STEP} or nil, seen=opts.keep_seen and seen or nil}
+  end
+
+  -- Closed in: the fewest entities to mine for a way out. A search over
+  -- quarter-tile steps where a step blocked only by what the character can
+  -- mine (our entities, trees, rocks: not cliffs, tiles or others' entities)
+  -- costs one, until a step with room to turn that it reached through such a
+  -- step (outside the closed area). opts.area {x0, y0, x1, y1}: the window
+  -- searched (default 24 tiles round start). Returns {mine={{name, position}}, to} or nil.
+  local DIG_CAP, DIG_MAX = 12000, 3
+  function M.dig(surface, start, half, opts)
+    opts = opts or {}
+    local w = opts.area or {start.x - WINDOW, start.y - WINDOW, start.x + WINDOW, start.y + WINDOW}
+    local hit, all, classify = grid(boxes_in(surface, {{w[1], w[2]}, {w[3], w[4]}}, opts.ignore), half + PAD)
+    local inside = opts.inside or {}
+    local force = opts.force
+    -- Read once per box (b[7]).
+    local function minable(b)
+      if b[7] == nil then
+        local e = b[6]
+        local ok, yes = pcall(function()
+          if not (e and e.valid) or not e.minable or e.type == 'cliff' then return false end
+          return e.force == force or e.force.name == 'neutral'
+        end)
+        b[7] = ok and yes or false
+      end
+      return b[7]
+    end
+    -- Cost to step on: 0 free, 1 blocked only by what can be mined, nil never.
+    local function cost(x, y) return classify(x, y, half, minable) end
+    local si, sj = math.floor(start.x / STEP + 0.5), math.floor(start.y / STEP + 0.5)
+    local best, from, buckets = {[cell(si, sj)]=0}, {}, {[0]={{si, sj}}}
+    local done, target, level, seen_n = {}, nil, 0, 0
+    while level <= DIG_MAX * 40 and not target do
+      local list = buckets[level]
+      local idx = 1
+      while list and idx <= #list do
+        local c = list[idx]; idx = idx + 1
+        local k = cell(c[1], c[2])
+        if not done[k] and best[k] == level then
+          done[k] = true
+          seen_n = seen_n + 1
+          local x, y = c[1] * STEP, c[2] * STEP
+          if level > 0 and not inside[k] and not hit(x, y, half + PAD) then target = c; break end
+          if seen_n > DIG_CAP then break end
+          for _, o in ipairs(NEIGHBOURS) do
+            local ni, nj = c[1] + o[1], c[2] + o[2]
+            local nx, ny = ni * STEP, nj * STEP
+            local nk = cell(ni, nj)
+            if not done[nk] and (best[nk] == nil or best[nk] > level) and nx > w[1] + 0.5 and nx < w[3] - 0.5 and ny > w[2] + 0.5 and ny < w[4] - 0.5 then
+              local step = cost(nx, ny)
+              if step and (best[nk] == nil or level + step < best[nk]) then
+                best[nk] = level + step; from[nk] = c
+                buckets[level + step] = buckets[level + step] or {}
+                local b = buckets[level + step]; b[#b+1] = {ni, nj}
+              end
+            end
+          end
+        end
+      end
+      if seen_n > DIG_CAP then break end
+      if not target then level = level + 1 end
+    end
+    if not target then return nil end
+    -- The entities on the way, in order from the character.
+    local steps, c = {}, target
+    while c do steps[#steps+1] = c; c = from[cell(c[1], c[2])] end
+    local mine, have = {}, {}
+    for k = #steps, 1, -1 do
+      local s = steps[k]
+      for _, b in ipairs(all(s[1] * STEP, s[2] * STEP, half) or {}) do
+        local e = b[6]
+        if e and e.valid and not have[e] then
+          have[e] = true
+          mine[#mine+1] = {name=e.name, position={x=e.position.x, y=e.position.y}}
+        end
+      end
+    end
+    if #mine == 0 or #mine > DIG_MAX then return nil end
+    return {mine=mine, to={x=target[1] * STEP, y=target[2] * STEP}}
+  end
+
+  -- The tick after a closed-in give-up: the way out by mining, then unreachable.
+  function M.dig_step(p, nav)
+    local from = nav.dig_from or p.position
+    local dug = M.dig(p.surface, from, M.half(p.character), {ignore=p.character, force=p.force, area=nav.dig_area})
+    if dug then
+      nav.dig = dug
+      local names = {}
+      for i, e in ipairs(dug.mine) do names[i] = e.name .. ' ' .. at(e.position) end
+      nav.why = (nav.why or '') .. string.format('; mining %s opens a way out to %s', table.concat(names, ' and '), at(dug.to))
+    end
+    nav.dig_from, nav.dig_area = nil, nil
+    nav.path_state = 'unreachable'
+  end
+  -- Room to turn where the character stands: a box padded by PAD fits.
+  function M.clear_at(surface, pos, h, ignore)
+    return hits(boxes_in(surface, {{pos.x - h - 0.5, pos.y - h - 0.5}, {pos.x + h + 0.5, pos.y + h + 0.5}}, ignore), pos.x, pos.y, h) == nil
+  end
+  -- Squeezed in where the pathfinder found no route (Sol, shift09 03:13: in
+  -- the 0.6-tile gap between two assembling machines and under a pipe row,
+  -- every path request failed and the walk stalled): walk the flood's trail
+  -- to the nearest spot with room to turn, then ask again. Up to three times,
+  -- each wanting more room. Returns true when an escape walk starts.
+  M.ESCAPE_PADS = {PAD, 0.35, 0.6}
+  function M.escape(p, nav)
+    local n = (nav.escapes or 0) + 1
+    if n > #M.ESCAPE_PADS then return false end
+    local c = p.character
+    local half = M.half(c)
+    local here = p.position
+    if n == 1 and M.clear_at(p.surface, here, half + PAD, c) then return false end
+    local r = M.region(p.surface, here, half, {ignore=c, open_pad=M.ESCAPE_PADS[n]})
+    if not r.open or (r.steps == 0 and dist(here, r.open) < 0.05) then return false end
+    nav.escapes = n
+    nav.escape = {from={x=here.x, y=here.y}, to=r.open}
+    nav.escape_first = nav.escape_first or nav.escape.from
+    local wps = {}
+    for i, q in ipairs(r.trail) do wps[i] = {position=q} end
+    nav.waypoints = wps; nav.waypoint = 1; nav.reach = 0.12
+    nav.path_state = 'escape'; nav.found = nil; nav.sidestep = nil; nav.stalled = 0; nav.progress_tick = nil
+    return true
+  end
+  -- The escape trail walked: ask for the route again from here.
+  function M.escaped(p, nav)
+    nav.reach = nil; nav.path_level = 0
+    nav.escaped_to = nav.escape and nav.escape.to or nil
+    nav.escape = nil
+    M.request(p, nav)
+  end
+
+  -- A goal in a gap the pathfinder did not route into: within the arrival
+  -- radius (+ a quarter tile) of it the character's own box fits somewhere,
+  -- a box with room to turn (padded by PAD) nowhere. Returns the step of the
+  -- gap nearest the goal and what hems it in, else nil (room there, or solid:
+  -- a goal inside an entity, walked up to as before).
+  function M.in_gap(surface, goal, half, tol, ignore)
+    local R = tol + STEP
+    local h = half + PAD
+    local boxes = boxes_in(surface, {{goal.x - R - h - 0.5, goal.y - R - h - 0.5}, {goal.x + R + h + 0.5, goal.y + R + h + 0.5}}, ignore)
+    if #boxes == 0 then return nil end
+    local best, bd
+    for i = math.floor((goal.x - R) / STEP), math.ceil((goal.x + R) / STEP) do
+      for j = math.floor((goal.y - R) / STEP), math.ceil((goal.y + R) / STEP) do
+        local x, y = i * STEP, j * STEP
+        local d = ((x - goal.x) ^ 2 + (y - goal.y) ^ 2) ^ 0.5
+        if d <= R and not hits(boxes, x, y, half) then
+          if not hits(boxes, x, y, h) then return nil end
+          if not bd or d < bd then best, bd = {x=x, y=y}, d end
+        end
+      end
+    end
+    if not best then return nil end
+    local by, have = {}, {}
+    for _, b in ipairs(boxes) do
+      if overlaps(b, best.x, best.y, h + 0.25) and #by < 4 then
+        local pos = b[6] and b[6].valid and b[6].position or {x=(b[1] + b[3]) / 2, y=(b[2] + b[4]) / 2}
+        local text = b[5] .. ' ' .. at(pos)
+        if not have[text] then have[text] = true; by[#by+1] = text end
+      end
+    end
+    return {x=best.x, y=best.y, by=by}
   end
 
   -- Belts under a position (the tile it is on).

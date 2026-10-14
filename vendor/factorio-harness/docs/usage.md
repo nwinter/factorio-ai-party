@@ -269,6 +269,40 @@ fh call status
   within the arrival radius)`). With `--wait`, the error line carries `last.why`. (shift08, world n: Haiku's pocket south
   of the boiler row at (8..12,42) was closed for the character's box; the old fallback planned with a 0.3-tile box that
   gets out, and the walk pushed at 0.22-tile gaps until 15 stalls.)
+- Narrow gaps (Sol, shift09 03:12 on Gleba: the walk to (55,21) ended in the 0.6-tile gap between two assembling
+  machines under a pipe row, no path request led out of it, and he mined his own pipes to get out, twice):
+  - Where the path ends short of the target, the rest is walked straight only when a box with room to turn (0.7
+    tiles) fits within the arrival radius of the target. When only the character's own box fits there, the walk ends
+    `arrived_near` where the path ended, with `last.pocket`: `(55,21) lies in a gap narrower than 0.7 tiles (pipe
+    (55.5,20.5), pipe (54.5,20.5), assembling-machine-2 (53.5,22.5), assembling-machine-2 (56.5,22.5)) that no path
+    led into; stopped at (51.5,24.4), 4.8 tiles from it (squeeze=true walks in)`. `squeeze: true` walks in anyway.
+  - Squeezed in where no level finds a route (no room to turn where it stands), the walk first follows the gaps to the
+    nearest spot with room to turn (a flood over quarter-tile steps with the character's own box), then asks for its
+    route again; up to three times, each wanting more room: `last.escaped: no path led out of the gap at (54.2,21):
+    walked out to (55,24.3) first`.
+  - The second level starts from the nearest free tile centre only when the character gets there in a straight line
+    (beside a pipe row it lay past the pipes, and every path from there stalled at them).
+  - Closed in (no way out for the character's box), `last.why` and `last.mine_to_get_out` name the fewest of our
+    entities, trees or rocks whose mining opens a way out: `...; mining pipe (-27.5,69.5) opens a way out to
+    (-26.7,69.5)`.
+- Enemies on the way (Opus, shift09 03:20: the pathfinder walked him 30 tiles from a nest, and big biters killed him; on
+  a copy of world n the engine's path from (-110,447) to (62,40) passes 31 tiles from a biter spawner): a path found
+  for `move_to` is checked against the enemy worms and spawners the map shows (on charted chunks).
+  - By default worms only, each with its range + 4 tiles (small 25, medium 30, big 38, behemoth 48).
+    `avoid_enemies: true` adds spawners, with their units' sight (30 tiles on Nauvis, 40 on Gleba), and makes the
+    margin 8; a number 0..32 is that margin; `false` turns the check off. The reply says what is checked
+    (`avoid_enemies: worms (range + 4)`).
+  - Structures within 32 tiles of each other are one nest. A path through a reach (its deepest pass counts) is walked
+    as legs around it: corners of an octagon around each worm's or spawner's reach, the shortest way along them, each
+    leg the engine's path, checked again (up to 4 detours). `last.avoided_enemies` names each nest gone around (`2
+    big-worm-turret, 3 biter-spawner, 3 medium-worm-turret, 2 small-worm-turret around (-12,359)`).
+  - A nest whose reach holds the start or the target is not avoided: `last.enemies_at_start_or_goal` names it.
+  - With no way round, a path that crosses only the margin (outside the weapon's own range) is walked and named in
+    `last.passed_within_margin` (`medium-worm-turret (60,170): 33.7 tiles (range 30)`). One that crosses a range ends
+    the walk `no_safe_route`, with `last.why`: `no way to (100,0) around 4 medium-worm-turret around (100,0): the path
+    passes medium-worm-turret (60,0) (range 30 + 4) at 0.0 tiles`. `--wait` exits 1 with it.
+  - The worms and spawners are read per chunk while the walk waits for its path (at most 8 chunks a tick) and kept a
+    minute, so a nest built or killed in the last minute may not count yet.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first
@@ -1033,8 +1067,22 @@ Some actions work at a distance, the way a player can through remote view:
 
 - Vehicles: `vehicle {position, enter: true}` gets in (the driver's seat if free, else a car's or spidertron's
   passenger seat; a locomotive or wagon, whose train runs its schedule as usual), within 10 tiles; `vehicle {exit:
-  true}` gets out; `vehicle {drive: {x,y}}` drives the car or tank you drive there (a timed action steering as a
-  player's keys do: outcomes `arrived`, `blocked` after 3 s without progress, `timed_out`; `--wait` waits for it);
+  true}` gets out; `vehicle {drive: {x,y}}` drives the car or tank you drive there, a timed action steering as a
+  player's keys do (Opus, shift09 03:20: a tank driven straight at its target got stuck on cliffs and was killed;
+  Astra, shift10 04:10: a drive into an attack group ended blocked and left the tank surrounded):
+  - It follows the engine's path for the vehicle's box (a square as wide as the vehicle is long, else as wide as it
+    is wide), around cliffs, water, trees and buildings, aiming a few tiles ahead on the path. `last.path_length`.
+  - Neither moving nor turning for 1.5 s against something solid, it backs off 1 s with the wheel turned toward the
+    path and asks for a path again, once (`last.backed_up: stuck at (30.0,123.7) (in front: cliff (30,126.5)):
+    backed off and asked for a new path`); stuck again it ends `blocked`, `last.why` naming what is in front.
+  - Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding
+    the key does; `last.rammed` counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it.
+  - `reverse: true` backs there, rear first (out of a crowd, off an obstacle), the same way.
+  - `avoid_enemies` works as for `move_to`. `pathfind: false` steers straight at the target (`blocked` after 3 s
+    without progress).
+  - Outcomes `arrived`, `blocked`, `unreachable` (no path for the vehicle's length nor its width, `last.why`),
+    `no_safe_route`, `timed_out`; `--wait` waits for it and shows `path_length`, `backed_up`, `rammed` and the enemy
+    fields.
   `vehicle {position, go_to: {x,y}}` sends a spidertron walking by itself (from outside, or the one you ride; one
   with an empty fuel slot does not walk, and the reply says so: fuel goes in with `transfer`);
   `vehicle {}` says where you sit and, for a vehicle with guns, `guns`: each slot's gun, its ammo and count, range,

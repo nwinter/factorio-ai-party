@@ -1,0 +1,489 @@
+-- avoid: walks and drives that keep clear of the enemy worms and spawners the
+-- map shows. Opus (shift09 03:20): "my third death was the pathfinder walking
+-- me 30 tiles from a nest"; on a private copy of world n the engine's path
+-- from (-110,447) to (62,40) passes 31 tiles from a biter spawner at (81,154)
+-- and 41 from big worms (range 38). The engine pathfinder takes no area to
+-- avoid, so a found path is checked: each worm and spawner on charted chunks
+-- near it is a disc (a worm's attack range, a spawner's units' sight, plus a
+-- margin), structures within 32 tiles of each other are one nest (for its
+-- name and the start/goal rule), and a path through a disc becomes legs
+-- around it: corners of octagons around the discs, the shortest way along
+-- them (a visibility graph), each leg walked with the engine's path and
+-- checked again.
+-- Default (avoid_enemies not given): worms only, range + 4. avoid_enemies:
+-- true (or a margin in tiles): spawners too, with range or sight + 8 (or the
+-- margin). false: no check. A disc holding the start or the goal is not
+-- avoided (the walk goes there): it is named.
+-- Cost: the worms and spawners are read per chunk (charted chunks: what the
+-- map draws) and kept a minute; at most CHUNKS_PER_TICK chunks a tick, while
+-- the walk waits for its path.
+return function(api)
+  local M = {}
+  M.WORM_PAD, M.PAD, M.TTL, M.CHUNKS_PER_TICK, M.MAX_DETOURS, M.NEST = 4, 8, 3600, 8, 4, 32
+  M.SIDES = 8
+  local function dist(a, b) return ((a.x - b.x) ^ 2 + (a.y - b.y) ^ 2) ^ 0.5 end
+  local function at(pos) return string.format('(%g,%g)', math.floor(pos.x + 0.5), math.floor(pos.y + 0.5)) end
+  local function try(fn) local ok, v = pcall(fn); if ok then return v end end
+  -- Distance from a point to the segment a-b.
+  local function seg_dist(a, b, q)
+    local dx, dy = b.x - a.x, b.y - a.y
+    local L = dx * dx + dy * dy
+    local t = L > 0 and ((q.x - a.x) * dx + (q.y - a.y) * dy) / L or 0
+    t = math.max(0, math.min(1, t))
+    return ((a.x + t * dx - q.x) ^ 2 + (a.y + t * dy - q.y) ^ 2) ^ 0.5
+  end
+  M.seg_dist = seg_dist
+
+  -- What avoid_enemies asks for: nil (default: worms, +4), false (nothing),
+  -- true (worms and spawners, +8), a number (worms and spawners, + it).
+  function M.mode(v)
+    if v == false then return nil end
+    if v == nil then return {pad=M.WORM_PAD} end
+    if v == true then return {spawners=true, pad=M.PAD} end
+    assert(type(v) == 'number' and v >= 0 and v <= 32, 'avoid_enemies must be true, false or a margin 0..32 tiles')
+    return {spawners=true, pad=v}
+  end
+  function M.describe(mode)
+    if not mode then return nil end
+    return mode.spawners and string.format('worms (range + %g) and spawners (their units\' sight + %g)', mode.pad, mode.pad)
+      or string.format('worms (range + %g)', mode.pad)
+  end
+
+  -- A worm's attack range; a spawner's reach: the farthest sight among the units it makes.
+  local reach_of = {}
+  function M.reach(name, spawner)
+    local r = reach_of[name]
+    if r then return r end
+    local proto = try(function() return prototypes.entity[name] end)
+    if spawner then
+      r = 0
+      for _, u in pairs(try(function() return proto.result_units end) or {}) do
+        local up = try(function() return prototypes.entity[u.unit or u[1]] end)
+        r = math.max(r, try(function() return up.vision_distance end) or 0)
+      end
+      if r == 0 then r = 30 end
+    else
+      r = try(function() return proto.turret_range or proto.attack_parameters.range end) or 30
+    end
+    reach_of[name] = r
+    return r
+  end
+  -- The farthest a disc can reach: big worms 48, Gleba spawners 40 in 2.0.
+  local function max_reach(mode) return 48 + mode.pad end
+
+  -- Hostile forces: neither ours, neutral, friends nor at cease-fire.
+  local function hostile(force)
+    local out = {}
+    for _, f in pairs(game.forces) do
+      if f ~= force and f.name ~= 'neutral' and not try(function() return force.get_friend(f) or force.get_cease_fire(f) end) then out[#out+1] = f.name end
+    end
+    return out
+  end
+  local function ckey(cx, cy) return (cx + 524288) * 1048576 + (cy + 524288) end
+  local function cache(surface)
+    local st = api.state()
+    st.enemy_chunks = st.enemy_chunks or {}
+    local c = st.enemy_chunks[surface.index]
+    if not c then c = {}; st.enemy_chunks[surface.index] = c end
+    return c
+  end
+  -- One chunk's worms and spawners: those drawn on a charted chunk.
+  function M.read_chunk(surface, force, cx, cy)
+    local rec = {t=game.tick}
+    if not api.charted(force, surface, {x=cx, y=cy}) then rec.uncharted = true; return rec end
+    local forces = hostile(force)
+    if #forces == 0 then return rec end
+    local named = {}
+    for _, n in ipairs(forces) do named[n] = true end
+    local x0, y0 = cx * 32, cy * 32
+    for _, e in pairs(surface.find_entities_filtered{area={{x0, y0}, {x0 + 32, y0 + 32}}, type={'turret', 'unit-spawner'}, force=forces} or {}) do
+      local pos = e.position
+      if (e.type == 'turret' or e.type == 'unit-spawner') and e.force and named[e.force.name]
+        and pos.x >= x0 and pos.x < x0 + 32 and pos.y >= y0 and pos.y < y0 + 32 then
+        rec.list = rec.list or {}
+        rec.list[#rec.list+1] = {x=pos.x, y=pos.y, name=e.name, spawner=e.type == 'unit-spawner' or nil}
+      end
+    end
+    return rec
+  end
+  -- Chunks within reach of a line through the points, nearest the first point
+  -- first: the line in stretches of 16 tiles (an engine path has a point every
+  -- tile or two), each stretch's box widened by R.
+  function M.chunks_near(points, R)
+    local seen, list = {}, {}
+    local function add(x0, y0, x1, y1)
+      for cx = math.floor((x0 - R) / 32), math.floor((x1 + R) / 32) do
+        for cy = math.floor((y0 - R) / 32), math.floor((y1 + R) / 32) do
+          local k = ckey(cx, cy)
+          if not seen[k] then seen[k] = true; list[#list+1] = {cx, cy, k} end
+        end
+      end
+    end
+    local x0, y0, x1, y1, run, prev
+    local function take(q)
+      if not x0 then x0, y0, x1, y1, run = q.x, q.y, q.x, q.y, 0
+      else
+        run = run + dist(prev, q)
+        x0, y0, x1, y1 = math.min(x0, q.x), math.min(y0, q.y), math.max(x1, q.x), math.max(y1, q.y)
+        if run >= 16 then add(x0, y0, x1, y1); x0, y0, x1, y1, run = q.x, q.y, q.x, q.y, 0 end
+      end
+      prev = q
+    end
+    for i, q in ipairs(points) do
+      if prev and i > 1 then
+        local a = points[i - 1]
+        local n = math.floor(dist(a, q) / 16)
+        for k = 1, n do take({x=a.x + (q.x - a.x) * k / (n + 1), y=a.y + (q.y - a.y) * k / (n + 1)}) end
+      end
+      take(q)
+    end
+    if x0 then add(x0, y0, x1, y1) end
+    return list
+  end
+  -- The chunks of a list not read in the last TTL ticks.
+  function M.missing(surface, chunks)
+    local c = cache(surface)
+    local out = {}
+    for _, ch in ipairs(chunks) do
+      local rec = c[ch[3]]
+      if not rec or game.tick - rec.t > M.TTL then out[#out+1] = ch end
+    end
+    return out
+  end
+  -- Read up to budget chunks of a pending list; true when none is left.
+  function M.scan(surface, force, pending, budget)
+    local c = cache(surface)
+    local n = 0
+    while #pending > 0 and n < budget do
+      local ch = table.remove(pending, 1)
+      local rec = c[ch[3]]
+      if not rec or game.tick - rec.t > M.TTL then
+        c[ch[3]] = M.read_chunk(surface, force, ch[1], ch[2]); n = n + 1
+      end
+    end
+    return #pending == 0
+  end
+  -- Old records go: at most one sweep of the cache per TTL.
+  function M.prune()
+    local st = api.state()
+    if not st.enemy_chunks or game.tick - (st.enemy_pruned or 0) < M.TTL then return end
+    st.enemy_pruned = game.tick
+    for _, c in pairs(st.enemy_chunks) do
+      for k, rec in pairs(c) do if game.tick - rec.t > M.TTL then c[k] = nil end end
+    end
+  end
+
+  -- The discs of the read chunks, one nest (structures within NEST tiles of
+  -- each other) one disc: its centre the middle of their box, its radius
+  -- reaching past every member's own disc.
+  function M.blobs(surface, chunks, mode)
+    local c = cache(surface)
+    local discs, done = {}, {}
+    for _, ch in ipairs(chunks) do
+      local rec = not done[ch[3]] and c[ch[3]]
+      done[ch[3]] = true
+      for _, e in ipairs(rec and rec.list or {}) do
+        if mode.spawners or not e.spawner then
+          local range = M.reach(e.name, e.spawner)
+          discs[#discs+1] = {x=e.x, y=e.y, r=range + mode.pad, range=range, name=e.name, spawner=e.spawner}
+        end
+      end
+    end
+    -- Single-link groups.
+    local group, blobs = {}, {}
+    for i, d in ipairs(discs) do
+      if not group[i] then
+        local b = {members={d}}
+        blobs[#blobs+1] = b; group[i] = b
+        local k = 1
+        while k <= #b.members do
+          local m = b.members[k]
+          for j, o in ipairs(discs) do
+            if not group[j] and dist(m, o) <= M.NEST then group[j] = b; b.members[#b.members+1] = o end
+          end
+          k = k + 1
+        end
+      end
+    end
+    for _, b in ipairs(blobs) do
+      local x0, y0, x1, y1 = math.huge, math.huge, -math.huge, -math.huge
+      for _, m in ipairs(b.members) do x0, y0, x1, y1 = math.min(x0, m.x), math.min(y0, m.y), math.max(x1, m.x), math.max(y1, m.y) end
+      b.x, b.y = (x0 + x1) / 2, (y0 + y1) / 2
+      local r = 0
+      for _, m in ipairs(b.members) do r = math.max(r, dist(b, m) + m.r) end
+      b.r = r
+    end
+    return blobs
+  end
+  -- "3 big-worm-turret, 2 biter-spawner around (83,163)".
+  function M.name(b)
+    local counts, names = {}, {}
+    for _, m in ipairs(b.members) do
+      if not counts[m.name] then names[#names+1] = m.name end
+      counts[m.name] = (counts[m.name] or 0) + 1
+    end
+    table.sort(names)
+    local parts = {}
+    for i, n in ipairs(names) do parts[i] = counts[n] .. ' ' .. n end
+    return table.concat(parts, ', ') .. ' around ' .. at(b)
+  end
+  -- Whether the polyline passes through a member's reach (the blob is only
+  -- the outline): the deepest pass (nearest to the weapon's own range) over
+  -- the whole line, its blob, member and distance.
+  function M.crossing(points, blobs, skip)
+    local best, bb, bm, bd
+    for i = 1, #points - 1 do
+      local a, b = points[i], points[i + 1]
+      for bi, bl in ipairs(blobs) do
+        if not skip[bi] and seg_dist(a, b, bl) < bl.r then
+          for _, m in ipairs(bl.members) do
+            local d = seg_dist(a, b, m)
+            if d < m.r and (not best or d - m.range < best) then best, bb, bm, bd = d - m.range, bi, m, d end
+          end
+        end
+      end
+    end
+    return bb, bm, bd
+  end
+
+  -- The shortest way from a to b clear of every worm's and spawner's own disc
+  -- (a nest's outline would hold goals that lie between its members' reach):
+  -- the corners of a SIDES-gon around each disc (its sides stay outside the
+  -- disc, plus a tile) that lie in no other disc, A* along straight lines clear
+  -- of every disc. Blobs in skip are left out. Returns the corners to walk
+  -- through (b last), {} when a-b is clear, nil when there is no way.
+  local function clear(a, b, discs)
+    for _, o in ipairs(discs) do
+      if seg_dist(a, b, o) < o.r - 0.01 then return false end
+    end
+    return true
+  end
+  function M.detour(a, b, blobs, skip)
+    local discs = {}
+    for bi, bl in ipairs(blobs) do
+      if not skip[bi] then for _, m in ipairs(bl.members) do discs[#discs+1] = m end end
+    end
+    if clear(a, b, discs) then return {} end
+    local nodes = {}
+    for di, o in ipairs(discs) do
+      local rr = o.r / math.cos(math.pi / M.SIDES) + 1
+      for k = 0, M.SIDES - 1 do
+        local ang = 2 * math.pi * k / M.SIDES
+        local q = {x=o.x + rr * math.cos(ang), y=o.y + rr * math.sin(ang)}
+        local free = true
+        for dj, w in ipairs(discs) do if dj ~= di and dist(q, w) < w.r then free = false; break end end
+        if free then nodes[#nodes+1] = q end
+      end
+    end
+    nodes[#nodes+1] = b
+    local goal = #nodes
+    local g, came, closed, open = {[0]=0}, {}, {}, {[0]=true}
+    local function pt(i) return i == 0 and a or nodes[i] end
+    while true do
+      local cur, best
+      for i in pairs(open) do
+        local f = g[i] + dist(pt(i), b)
+        if not best or f < best then cur, best = i, f end
+      end
+      if not cur then return nil end
+      if cur == goal then break end
+      open[cur] = nil; closed[cur] = true
+      for j = 1, #nodes do
+        if not closed[j] and j ~= cur then
+          local ng = g[cur] + dist(pt(cur), nodes[j])
+          if (not g[j] or ng < g[j]) and clear(pt(cur), nodes[j], discs) then g[j] = ng; came[j] = cur; open[j] = true end
+        end
+      end
+    end
+    local out, i = {}, goal
+    while i and i ~= 0 do table.insert(out, 1, {x=nodes[i].x, y=nodes[i].y}); i = came[i] end
+    return out
+  end
+
+  -- A walk's or drive's setup: mode, the final goal, and the chunks along
+  -- the straight line to read while the path is asked for.
+  function M.start(p, nav, mode)
+    local surface = p.surface
+    if not mode or surface.platform ~= nil then return nil end
+    local f = {mode=mode, goal={x=nav.position.x, y=nav.position.y}, origin={x=p.position.x, y=p.position.y}, tolerance=nav.tolerance, detours=0, skips=0}
+    f.pending = M.missing(surface, M.chunks_near({p.position, f.goal}, max_reach(mode)))
+    nav.foes = f
+    return f
+  end
+  -- Each tick while the path is asked for: read some chunks.
+  function M.tick(p, nav)
+    local f = nav.foes
+    if not f then return end
+    if f.pending and #f.pending > 0 then M.scan(p.surface, p.force, f.pending, M.CHUNKS_PER_TICK) end
+    if nav.path_state == 'scanning' and #(f.pending or {}) == 0 then
+      local held = f.held
+      f.held = nil
+      if held then api.adopt(p, nav, held.path, held.avoided) end
+    end
+  end
+  local function blob_key(bl) return math.floor(bl.x) .. ',' .. math.floor(bl.y) end
+  -- The discs as seen from here. A nest with here in a weapon's reach, or
+  -- the goal within its reach and margin, is not avoided (the walk leaves it
+  -- or goes there), and is named when that is where the walk began or goes.
+  -- Here inside a margin only: that disc shrinks to just short of here (the
+  -- way on may come no nearer).
+  local function member_key(m) return m.name .. '@' .. math.floor(m.x) .. ',' .. math.floor(m.y) end
+  local function fit(blobs, here, final, f)
+    local skip = {}
+    for bi, bl in ipairs(blobs) do
+      for _, m in ipairs(bl.members) do
+        local dh = dist(m, here)
+        if dh < m.range or dist(m, final) < m.r then
+          skip[bi] = true
+          if dist(m, f.origin or here) < m.r or dist(m, final) < m.r then
+            f.at_ends = f.at_ends or {}
+            local name = M.name(bl)
+            local seen = false
+            for _, t in ipairs(f.at_ends) do if t == name then seen = true end end
+            if not seen then f.at_ends[#f.at_ends+1] = name end
+          end
+          break
+        end
+      end
+      if not skip[bi] then
+        -- Discs grown for this walk (a path that kept bending into them), then
+        -- shrunk to just short of here; the outline follows.
+        local r = 0
+        for _, m in ipairs(bl.members) do
+          local g = f.grow and f.grow[member_key(m)]
+          if g and g > m.r then m.r = g end
+          local dh = dist(m, here)
+          if dh < m.r then m.r = dh - 0.5 end
+          r = math.max(r, dist(bl, m) + m.r)
+        end
+        bl.r = r
+      end
+    end
+    return skip
+  end
+  -- A path found for a walk or drive: true to take it. Otherwise it waits for
+  -- chunks (scanning), goes around a nest (the first leg asked for), or ends
+  -- (unsafe: no way round).
+  function M.accept(p, nav, path, avoided)
+    local f = nav.foes
+    if not f then return true end
+    local surface = p.surface
+    local here = {x=p.position.x, y=p.position.y}
+    local pts = {here}
+    for _, w in ipairs(path) do pts[#pts+1] = w.position end
+    local final = f.goal
+    local R = max_reach(f.mode)
+    local near = M.chunks_near(pts, R)
+    local need = M.missing(surface, near)
+    if #need > 0 then
+      for _, ch in ipairs(need) do f.pending[#f.pending+1] = ch end
+      f.held = {path=path, avoided=avoided}
+      nav.path_state = 'scanning'; nav.found = nil
+      return false
+    end
+    -- No worm or spawner recorded near the path: nothing to check (most walks).
+    local c, any = cache(surface), false
+    for _, ch in ipairs(near) do local rec = c[ch[3]]; if rec and rec.list then any = true; break end end
+    if not any then return true end
+    local blobs = M.blobs(surface, near, f.mode)
+    local skip = fit(blobs, here, final, f)
+    local bi, m, d = M.crossing(pts, blobs, skip)
+    if not bi then return true end
+    -- Through a nest's reach: plan with every read chunk near the path and near the straight way to the goal.
+    local around = M.chunks_near({here, final}, R)
+    for _, ch in ipairs(near) do around[#around+1] = ch end
+    blobs = M.blobs(surface, around, f.mode)
+    skip, bi = fit(blobs, here, final, f), nil
+    for bj, b in ipairs(blobs) do
+      for _, mm in ipairs(b.members) do
+        if mm.x == m.x and mm.y == m.y and mm.name == m.name then bi = bj end
+      end
+    end
+    local bl = blobs[bi] or {x=m.x, y=m.y, r=m.r, members={m}}
+    if not blobs[bi] then blobs[#blobs+1] = bl end
+    f.crossed = string.format('%s %s (%s %g + %g) at %.1f tiles', m.name, at(m), m.spawner and 'sight' or 'range', m.range, f.mode.pad, d)
+    nav.found = nil
+    if f.detours >= M.MAX_DETOURS then
+      nav.path_state = 'unsafe'
+      f.why = string.format('every path found passes within reach of %s; %d detours tried', f.crossed, f.detours)
+      return false
+    end
+    f.detours = f.detours + 1
+    -- A second time through the same nest: its discs grow by 8 for the plan.
+    f.grow = f.grow or {}
+    local key = blob_key(bl)
+    if f.planned and f.planned[key] then
+      for _, mm in ipairs(bl.members) do mm.r = math.min(mm.r + 8, dist(mm, here) - 0.5); f.grow[member_key(mm)] = mm.r end
+    end
+    local vias = M.detour(here, final, blobs, skip)
+    -- The straight line is clear and the engine's path bends into the reach
+    -- (water or cliffs in the way): the disc it entered grows past the line,
+    -- so the way round has corners that hold the path off it.
+    if vias and #vias == 0 then
+      local r = math.min(seg_dist(here, final, m) + 6, dist(m, here) - 1, dist(m, final) - 1)
+      if r > m.r then m.r = r; f.grow[member_key(m)] = r end
+      vias = M.detour(here, final, blobs, skip)
+    end
+    -- No way round, but the path stays out of the weapon's own reach (only
+    -- the margin is crossed): walked, and said.
+    if (not vias or #vias == 0) and d >= m.range then
+      f.passed = f.passed or {}
+      local k = m.name .. at(m)
+      local old = f.passed[k]
+      if not old or d < old.d then f.passed[k] = {d=d, text=string.format('%s %s: %.1f tiles (%s %g)', m.name, at(m), d, m.spawner and 'sight' or 'range', m.range)} end
+      return true
+    end
+    if not vias or #vias == 0 then
+      nav.path_state = 'unsafe'
+      f.why = string.format('no way to %s around %s: the path passes %s', at(final), M.name(bl), f.crossed)
+      return false
+    end
+    f.planned = f.planned or {}
+    f.avoided = f.avoided or {}
+    for bj, o in ipairs(blobs) do
+      if not skip[bj] and (bj == bi or not clear(here, final, {o}, {})) then
+        local k = blob_key(o)
+        if not f.planned[k] then f.planned[k] = true; f.avoided[#f.avoided+1] = M.name(o) end
+      end
+    end
+    f.vias = vias
+    api.leg(p, nav)
+    return false
+  end
+  -- The next leg: the next corner (3 tiles is near enough) or the goal.
+  function M.next_leg(p, nav)
+    local f = nav.foes
+    local v = f and f.vias and table.remove(f.vias, 1)
+    if not v then return false end
+    local last = #f.vias == 0
+    nav.position = v
+    nav.tolerance = last and f.tolerance or 3
+    nav.leg = not last or nil
+    f.legs = (f.legs or 0) + 1
+    return true
+  end
+  -- A leg ended with outcome: true when the walk goes on (the next leg asked for).
+  function M.leg_done(p, nav, outcome)
+    local f = nav.foes
+    if not (f and nav.leg) then return false end
+    if outcome == 'arrived' or outcome == 'arrived_near' then return api.leg(p, nav) end
+    -- A corner it cannot get to (water, cliffs): on to the next one.
+    if outcome == 'unreachable' and f.skips < 3 then f.skips = f.skips + 1; return api.leg(p, nav) end
+    return false
+  end
+  -- The facts for last: what was gone around, what lies at the start or goal.
+  function M.report(last, nav)
+    local f = nav.foes
+    if not f then return end
+    if f.avoided and #f.avoided > 0 then last.avoided_enemies = f.avoided end
+    if f.at_ends and #f.at_ends > 0 then last.enemies_at_start_or_goal = f.at_ends end
+    if f.passed then
+      local list = {}
+      for _, v in pairs(f.passed) do list[#list+1] = v.text end
+      table.sort(list)
+      last.passed_within_margin = list
+    end
+    if f.why then last.why = f.why end
+  end
+  return M
+end
