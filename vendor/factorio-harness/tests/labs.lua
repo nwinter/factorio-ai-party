@@ -97,7 +97,11 @@ local team={agents=function() return {{index=7,name='grok'},{index=8,name='luna'
 local supply=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return names[e.status] end,agents=team.agents,lookup=team.lookup}
 L=dofile('mod/agent-harness_0.1.0/labs.lua'){integer=function(v,d) return v or d end,center=function(p) return p.position end,
   status_name=function(e) return names[e.status] end,agents=team.agents,lookup=team.lookup,supply=supply}
-local s=L.science(p,{})
+-- Each read below changes the fake world first: the clock moves past the 10 s a reply is reused (supply.lua reuse).
+game=game or {tick=0}
+local science_once=L.science
+local function science(pl,a) game.tick=game.tick+600; return science_once(pl,a) end
+local s=science(p,{})
 eq(s.surface,'nauvis'); eq(s.research,'logistics 25%'); eq(#s.packs,2)
 local g=s.packs[2]
 eq(g.pack,green); eq(g.made_10min,120); eq(g.used_10min,90); eq(g.makers,2); eq(g.makers_working,1); eq(g.makers_states[1],'1 full_output')
@@ -118,17 +122,17 @@ eq(worst[2],'(3,0) lab missing_science_packs (missing logistic-science-pack); ho
 eq(worst[3],'(6,0) lab missing_science_packs (missing logistic-science-pack); holds 0; none of its 1 feeding inserters takes from a place holding or requesting it (1 lab); nearest logistic-science-pack: transport-belt (20,-3) 14 tiles')
 -- from somewhere else, the same reply
 local far={position={x=500,y=-500},surface=surface,force=force}
-eq(L.science(far,{}).packs[2].line,g.line)
+eq(science(far,{}).packs[2].line,g.line)
 -- one pack named; a pack the research does not use; checks
-local u=L.science(p,{pack='utility-science-pack'})
+local u=science(p,{pack='utility-science-pack'})
 eq(#u.packs,1); has(u.packs[1].line,'utility: made 0, used 0 in 10 min; makers 0 (0 working); chests 0, belts 0, labs 0 (the current research does not use it)')
-local ok,err=pcall(L.science,p,{pack='iron-plat'}); assert(not ok and tostring(err):find('pack must be an item name',1,true),err)
+local ok,err=pcall(science,p,{pack='iron-plat'}); assert(not ok and tostring(err):find('pack must be an item name',1,true),err)
 force.current_research=nil
-ok,err=pcall(L.science,p,{}); assert(not ok and tostring(err):find('no research is running: name a pack',1,true),err)
-eq(L.science(p,{pack=green}).research,'none')
+ok,err=pcall(science,p,{}); assert(not ok and tostring(err):find('no research is running: name a pack',1,true),err)
+eq(science(p,{pack=green}).research,'none')
 force.current_research=tech
 -- The science reply carries each pack's chain too (here: its makers' recipe has no ingredients).
-eq(L.science(p,{}).packs[2].chain,'chain: logistic-science-pack: 1 of 2 working (1 full_output), made 12/min, used 9/min')
+eq(science(p,{}).packs[2].chain,'chain: logistic-science-pack: 1 of 2 working (1 full_output), made 12/min, used 9/min')
 
 -- chain (Sonnet, shift09: "I spend most cycles diagnosing that by hand"): the pack's recipe tree from the scan's
 -- crafters, made and used per minute at each step, following what most makers lack down to the first step whose
