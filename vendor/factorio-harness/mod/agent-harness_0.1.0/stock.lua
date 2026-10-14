@@ -220,6 +220,12 @@ return function(api)
     return action,{op=op,item=action.item,places=#action.targets,skipped=#entities>MAX_TOUR and #entities-MAX_TOUR or nil}
   end
   local function done(action)
+    -- transfer {walk=true}: what moved, or nothing to take, or nothing the targets wanted
+    if action.op=='transfer' then
+      if action.got>0 then return 'transferred' end
+      if (action.unreached or 0)>0 and action.visited==0 then return 'unreached' end
+      return action.transfer.direction=='to_player' and 'nothing_collected' or 'nothing_to_do'
+    end
     if action.op then return action.visited>0 and 'topped_up' or 'nothing_to_do' end
     return action.got>0 and 'collected' or 'nothing_collected'
   end

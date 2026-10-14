@@ -144,12 +144,16 @@ already targets your character.
   low power, boilers and their fuel in minutes), per logistic network (its id, roboports and the areas they cover,
   logistic and construction robots total, idle, working, charging and waiting to charge, requests unfilled for 60 s or
   more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them any time;
+  `./fh call boilers` lists each boiler by network, the stopped ones first: state, fuel, water, its feeder and what
+  the feeder takes from with the fuel there;
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items). `projects` lists the open projects, one line each with progress, next step and handoff.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
-  instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `feed {"recipe": NAME,
+  instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `transfer {"walk":
+  true}` walks into reach of targets out of reach first, then transfers (one call); `./fh call inventory` shows main,
+  ammo, armor and equipment, trash and cursor in one small reply (`status {"inventory": true}`: one line); `feed {"recipe": NAME,
   "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `feed` takes `item` or `items`;
   `inspect {"positions": [...]}` inspects up to 32 entities in one call; `collect {"radius": N}` without `item` takes
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable

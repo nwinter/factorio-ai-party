@@ -410,4 +410,40 @@ do
   ports[2]={valid=true,type='entity-ghost',name='entity-ghost',position={x=160,y=160},ghost_prototype={logistic_radius=25}}
   eq(N.coverage(cs,force,{x=146.5,y=160.5}),nil)
 end
+
+-- 5. boilers (Haiku, 06:20: "lists each boiler's position, state and fuel (and its feeder), so the no_fuel one is
+-- named"): every boiler, grouped by the electric network its steam feeds, the not-working first; each with its state,
+-- fuel, water and steam, and its feeder with what it takes from. Luna's two are out of fuel (lb1's inserter takes from
+-- the chest with 400 coal), the one by the engine has its steam output full, the far one has no water.
+defines.entity_status.no_fuel, defines.entity_status.full_output, defines.entity_status.no_input_fluid = 3, 4, 5
+for _, e in ipairs(list) do if e.type == 'boiler' then e.status = 0 end end
+lb1.status, lb2.status, nearb.status = 3, 3, 4
+local far
+for _, e in ipairs(list) do if e.type == 'boiler' and e.position.x == 400 then far = e; e.status = 5 end end
+lb2.fluidbox[1] = {name='water', amount=200}; lb2.fluidbox.get_capacity = function() return 200 end
+lb2.fluidbox[2] = {name='steam', amount=12.4}
+lb1.burner.inventory.get_contents = function() return {{name='coal', quality='normal', count=lb1.burner.inventory[1].count}} end
+local you = {force=force, surface=nauvis}
+local bo = N.boilers(you, {})
+eq(bo.surface, 'nauvis'); eq(bo.boilers, 12); eq(bo.not_working, 4); eq(#bo.networks, 2)
+local g7, gnone = bo.networks[1], bo.networks[2]
+eq(g7.network, 7); eq(g7.total, 11); eq(g7.not_working, 3)
+eq(g7.line, 'electric #7: 11 boilers: 1 output full, 2 no fuel, 8 working')
+-- the not-working first (by position), then up to 4 working; the rest counted
+eq(g7.boilers[1].position.x, 4); eq(g7.boilers[1].state, 'output full'); eq(g7.boilers[1].status, 'full_output'); eq(g7.boilers[1].working, false)
+eq(g7.boilers[1].feeder, 'no inserter feeds it'); eq(g7.boilers[1].feeder_has_fuel, false); eq(g7.boilers[1].burning, 'coal')
+local b1, b2 = g7.boilers[2], g7.boilers[3]
+eq(b1.position.x, 60); eq(b1.state, 'no fuel'); eq(b1.fuel, 'coal*20')
+eq(b1.feeder, 'burner-inserter (60,14) from wooden-chest (41,13) holding 400 coal'); eq(b1.feeder_has_fuel, true)
+eq(b2.position.x, 66); eq(b2.state, 'no fuel'); eq(b2.water, 'water 200/200'); eq(b2.steam, 'steam 12/200')
+eq(g7.boilers[4].state, 'working'); eq(g7.boilers[4].position.x, 6); eq(#g7.boilers, 7); eq(g7.more, 4)
+eq(gnone.network, nil); eq(gnone.line, 'no electric network found: 1 boiler: 1 no water'); eq(gnone.boilers[1].state, 'no water')
+eq(gnone.boilers[1].water, 'empty')
+-- all working: networks by size; another surface by name
+for _, e in ipairs(list) do if e.type == 'boiler' then e.status = 0 end end
+bo = N.boilers(you, {surface='nauvis'})
+eq(bo.not_working, 0); eq(bo.networks[1].network, 7); eq(bo.networks[1].not_working, nil); eq(#bo.networks[1].boilers, 11)
+assert(not pcall(N.boilers, you, {surface='vulcanus'}))
+eq(N.schema.boilers.surface, 'optional surface name (default yours)')
+far.status = 5
 print('networks: ok')

@@ -1089,7 +1089,133 @@ return function(api)
     end
     return out
   end
+  -- boilers (Haiku, 06:20: "a 'boilers' read that lists each boiler's position, state and fuel (and its feeder), so
+  -- the no_fuel one is named. I hit this every 3-4 min"): every boiler on a surface as its GUI and a look at it show,
+  -- grouped by the electric network its steam feeds (as the networks read maps them: the generators on its steam's
+  -- fluid segment, else the nearest within NEAR_BOILER tiles), the networks with boilers not working first and
+  -- within each those boilers first. Feeders as boiler_fuel reads them (M.boiler_supply).
+  local BOILERS_MAX = 64
+  local STATE = {working='working', no_fuel='no fuel', full_output='output full', no_input_fluid='no water',
+    low_input_fluid='low water', low_temperature='low temperature', disabled_by_control_behavior='disabled by circuit',
+    disabled_by_script='disabled', marked_for_deconstruction='marked for deconstruction'}
+  local function status_name(e)
+    local st = try(function() return e.status end)
+    for k, v in pairs(defines.entity_status or {}) do if v == st then return k end end
+    return nil
+  end
+  local function stacks(inv)
+    local parts = {}
+    for _, s in ipairs(inv and (try(function() return inv.get_contents() end) or {}) or {}) do
+      parts[#parts+1] = s.name .. (s.quality and s.quality ~= 'normal' and '@' .. s.quality or '') .. '*' .. s.count
+    end
+    return #parts > 0 and table.concat(parts, ' ') or 'empty'
+  end
+  local function fluid_text(e, i)
+    local box = try(function() return e.fluidbox[i] end)
+    if not box then return 'empty' end
+    local cap = try(function() return e.fluidbox.get_capacity(i) end)
+    return string.format('%s %d%s', box.name, math.floor(box.amount + 0.5), cap and '/' .. math.floor(cap + 0.5) or '')
+  end
+  function M.boilers(p, a)
+    assert(a.surface == nil or type(a.surface) == 'string', 'surface must be a surface name')
+    local surface = p.surface
+    if a.surface then
+      surface = nil
+      for _, s in ipairs(surfaces()) do if s.name == a.surface then surface = s end end
+      assert(surface, 'unknown surface ' .. a.surface)
+    end
+    local f = p.force
+    local ctx = e_begin(store(), f, surface)
+    local found = try(function() return surface.find_entities_filtered{type='boiler', force=f, limit=MAX_SCAN} end) or {}
+    local rows, walked = {}, {}
+    for _, e in ipairs(found) do
+      if e.valid then
+        local status = status_name(e)
+        local burner = try(function() return e.burner end)
+        local sid = segment(e, try(function() return #e.fluidbox end) or 2)
+        local to = sid and ctx.seg_net[sid]
+        if not to then
+          local best = NEAR_BOILER * NEAR_BOILER
+          for _, g in ipairs(ctx.steam) do
+            local d = (g.x - e.position.x) ^ 2 + (g.y - e.position.y) ^ 2
+            if d <= best then best, to = d, g end
+          end
+        end
+        local burning = burner and name_of(try(function() return burner.currently_burning end))
+        rows[#rows+1] = {position={x=e.position.x, y=e.position.y}, name=e.name, status=status,
+          state=STATE[status or ''] or (status and status:gsub('_', ' ')) or 'unknown', working=status == 'working',
+          fuel=burner and stacks(try(function() return burner.inventory end)) or nil, burning=burning,
+          water=fluid_text(e, 1), steam=fluid_text(e, try(function() return #e.fluidbox end) or 2),
+          network=to and to.id or nil, _e=burner and e or nil}
+      end
+    end
+    local groups, by = {}, {}
+    for _, r in ipairs(rows) do
+      local key = r.network or -1
+      local g = by[key]
+      if not g then g = {network=r.network, boilers={}, not_working=0}; by[key] = g; groups[#groups+1] = g end
+      g.boilers[#g.boilers+1] = r
+      if not r.working then g.not_working = g.not_working + 1 end
+    end
+    local shown = 0
+    for _, g in ipairs(groups) do
+      table.sort(g.boilers, function(x, y)
+        if x.working ~= y.working then return not x.working end
+        if x.position.x ~= y.position.x then return x.position.x < y.position.x end
+        return x.position.y < y.position.y
+      end)
+      g.total = #g.boilers
+      local counts = {}
+      for _, r in ipairs(g.boilers) do counts[r.state] = (counts[r.state] or 0) + 1 end
+      local parts = {}
+      for state, n in pairs(counts) do parts[#parts+1] = n .. ' ' .. state end
+      table.sort(parts)
+      g.line = string.format('%s: %d boiler%s: %s', g.network and 'electric #' .. g.network or 'no electric network found',
+        g.total, g.total == 1 and '' or 's', table.concat(parts, ', '))
+    end
+    table.sort(groups, function(x, y)
+      if (x.not_working > 0) ~= (y.not_working > 0) then return x.not_working > 0 end
+      if x.total ~= y.total then return x.total > y.total end
+      return (x.network or math.huge) < (y.network or math.huge)
+    end)
+    -- At most BOILERS_MAX rows, the not-working ones first across groups.
+    local left = BOILERS_MAX
+    for _, g in ipairs(groups) do
+      local keep = {}
+      for _, r in ipairs(g.boilers) do
+        if left > 0 and (not r.working or g.not_working == 0 or #keep < g.not_working + 4) then
+          keep[#keep+1] = r; left = left - 1
+        end
+      end
+      g.more = #g.boilers > #keep and #g.boilers - #keep or nil
+      g.boilers = keep
+      shown = shown + #keep
+      -- Feeders only for the rows shown (an inserter find and a belt walk each: bounded, 00:26 rule).
+      for _, r in ipairs(keep) do
+        if r._e then
+          local b = {e=r._e}
+          M.boiler_supply({b}, surface, f, walked)
+          r.feeder, r.feeder_has_fuel = b.feeder, b.fed
+        end
+        r._e = nil
+      end
+      g.not_working = g.not_working > 0 and g.not_working or nil
+    end
+    local not_working = 0
+    for _, r in ipairs(rows) do
+      r._e = nil
+      if not r.working then not_working = not_working + 1 end
+    end
+    return {surface=surface.name, boilers=#rows, not_working=not_working, networks=groups,
+      note=#rows == 0 and 'no boiler of ours on ' .. surface.name or nil}
+  end
   M.schema = {
+    boilers = {surface='optional surface name (default yours)',
+      returns='boilers (count), not_working, networks [{network (electric network id its steam feeds, or none found), line, total, not_working, '
+        .. 'boilers [{position, name, state (working, no fuel, output full, no water, low water, ...), status (the game\'s name), working, '
+        .. 'fuel (its fuel slots, e.g. coal*5), burning, water and steam (amount/capacity), feeder (the inserter dropping into it and '
+        .. 'what it takes from, with the fuel there, or no inserter feeds it), feeder_has_fuel}], more}], networks with a boiler not '
+        .. 'working first, and those boilers first in each; at most 64 rows (more: rows left out, all working). Read only'},
     networks = {surface='optional surface name',
       returns='surfaces [{surface, electric [{id, poles, center, draw_kw {avg, now, over_s}, capacity_kw, generators_kw, solar, solar_peak_kw, '
         .. 'acc, machines, low, none, boilers, fuel_min, boilers_fed, boilers_under_20_min, boilers_under_10_min, lowest_boiler_min, line}], logistic [{id, roboports, personal, center, '
