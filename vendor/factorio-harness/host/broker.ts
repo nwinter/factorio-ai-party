@@ -1,7 +1,9 @@
 /** Transport through an RCON broker (pog tools/fh_broker.py): the broker holds the RCON password and listens on
  * one Unix socket per bot; it forwards only harness requests for that bot. The wire format is JSON lines:
  * {"command": "<the RCON command>"} in, {"ok": true, "text": "<the RCON reply>"} or
- * {"ok": false, "error": "...", "refused"?: true, "unknown"?: true} out, one exchange at a time.
+ * {"ok": false, "error": "...", "refused"?: true, "unknown"?: true, "unavailable"?: true} out, one exchange at a time.
+ * unavailable (the RCON connection or login failed: nothing was sent) and any other failure without a flag become
+ * RconUnavailable, which the CLI reports as game_unreachable with since when (pace.ts).
  */
 import { createConnection, type Socket } from 'node:net';
 import { RconOutcomeUnknown, RconUnavailable, RconError } from './rcon.js';

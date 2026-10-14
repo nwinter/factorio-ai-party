@@ -142,7 +142,7 @@ def handler():
         r = json.loads(f.readline())
         assert r["ok"] is ok and (ok or "haiku's user" in r["error"]), (uid, r)
         ours.close()
-    # A wrong password: the reply says the outcome is unknown, and the broker keeps serving.
+    # A wrong password: nothing was sent (the login failed), and the broker keeps serving.
     bad = fb.Broker(fake.port, "wrong", log)
     ours, theirs = socket.socketpair()
     threading.Thread(target=bad.handler("haiku"), args=(theirs, "pair", None), daemon=True).start()
@@ -150,7 +150,7 @@ def handler():
     f.write(json.dumps({"command": request({"id": "h4", "action": "status", "bot": "haiku"})}) + "\n")
     f.flush()
     r = json.loads(f.readline())
-    assert not r["ok"] and r["unknown"] and "auth" in r["error"], r
+    assert not r["ok"] and r["unavailable"] and "auth" in r["error"] and "this request was not sent" in r["error"], r
     ours.close()
     # A socket path past macOS's 104-byte limit is refused with a reason, before any bind.
     try:
@@ -160,6 +160,128 @@ def handler():
         assert "longer than the 103 bytes" in str(e), e
     shutil.rmtree(tmp)
     print("broker handler: ok")
+
+
+class TickingRcon(FakeRcon):
+    """A game whose tick moves 60 a dispatch, which answers an id it applied from its record (as control.lua's cache:
+    the old reply, the old tick), and drops the connection on `lose_before` (nothing applied) or `lose_after`
+    (applied, then the connection drops before the answer), once per id."""
+
+    def __init__(self, password):
+        super().__init__(password)
+        self.tick, self.cache, self.lost = 1000, {}, set()
+
+    def serve(self, conn):
+        def send(rid, kind, body):
+            data = body.encode()
+            conn.sendall(struct.pack("<iii", len(data) + 10, rid, kind) + data + b"\0\0")
+        try:
+            while True:
+                head = conn.recv(4, socket.MSG_WAITALL)
+                if len(head) < 4:
+                    return
+                payload = conn.recv(struct.unpack("<i", head)[0], socket.MSG_WAITALL)
+                rid, kind = struct.unpack("<ii", payload[:8])
+                body = payload[8:-2].decode()
+                if kind == 3:
+                    send(rid, 0, "")
+                    send(rid if body == self.password else -1, 2, "")
+                    continue
+                req = json.loads(fb.HARNESS.fullmatch(body).group(2))
+                self.received.append(req)
+                self.tick += 60
+                if req["id"] in self.cache:
+                    send(rid, 0, self.cache[req["id"]])
+                    continue
+                if req["action"] == "lose_before" and req["id"] not in self.lost:
+                    self.lost.add(req["id"])
+                    conn.close()
+                    return
+                reply = json.dumps({"id": req["id"], "ok": True, "tick": self.tick, "result": {"action": req["action"]}})
+                if req["action"] != "status":
+                    self.cache[req["id"]] = reply
+                if req["action"] == "lose_after" and req["id"] not in self.lost:
+                    self.lost.add(req["id"])
+                    conn.close()
+                    return
+                send(rid, 0, reply)
+        except OSError:
+            return
+
+
+def retries():
+    """Luna, shift12 13:41: exact-ID retries during the outage read outcome_unknown. Now: a failed connection says
+    nothing was sent and since when; an id answered before comes from the broker's record (and says when the game
+    has rolled back past it); an id whose answer was lost says, when the game answers, whether it was applied then."""
+    game = TickingRcon("s3cret")
+    game.start()
+    tmp = tempfile.mkdtemp()
+    broker = fb.Broker(game.port, "s3cret", os.path.join(tmp, "broker.log"))
+
+    def connect():
+        ours, theirs = socket.socketpair()
+        threading.Thread(target=broker.handler("haiku"), args=(theirs, "pair", None), daemon=True).start()
+        f = ours.makefile("rw")
+
+        def send(rid, action):
+            f.write(json.dumps({"command": request({"id": rid, "action": action, "bot": "haiku"})}) + "\n")
+            f.flush()
+            return json.loads(f.readline())
+        return send
+
+    send = connect()
+    r = send("b1", "build")
+    first = json.loads(r["text"])
+    assert r["ok"] and first["tick"] == 1060, r
+    # The same id again: from the record, not sent.
+    sent = len(game.received)
+    r = send("b1", "build")
+    note = json.loads(r["text"])["result"]["broker"]
+    assert len(game.received) == sent and note.startswith("answered from the broker's record: request b1 was answered at ") \
+        and note.endswith("(tick 1060); it was not sent again"), note
+    # The game rolls back past it: said.
+    broker.last_tick = 1060 - 18000
+    note = json.loads(send("b1", "build")["text"])["result"]["broker"]
+    assert "the game has since rolled back to tick -16940, before that answer" in note, note
+    broker.last_tick = None
+    # Applied, then the connection dropped: unknown; the retry says it was applied then (the game's own record).
+    r = send("b2", "lose_after")
+    assert not r["ok"] and r["unknown"], r
+    send = connect()
+    r = send("b2", "lose_after")
+    note = json.loads(r["text"])["result"]["broker"]
+    assert r["ok"] and "an earlier send of request b2 at " in note and "it was applied then and not again now" in note, note
+    assert game.received[-2]["action"] == "status" and game.received[-2]["args"] == {"peek": True, "brief": True}, game.received[-2]
+    # Dropped before it was applied: the retry says the game had no record of it and ran it now.
+    r = send("b3", "lose_before")
+    assert not r["ok"] and r["unknown"], r
+    send = connect()
+    r = send("b3", "lose_before")
+    note = json.loads(r["text"])["result"]["broker"]
+    assert r["ok"] and "the game had no record of it (never applied, or applied and then rolled back): it ran now" in note, note
+    # The game is gone: nothing sent, since when; a retry of an id whose answer was lost says it is not known yet.
+    closed = socket.socket()
+    closed.bind(("127.0.0.1", 0))
+    port = closed.getsockname()[1]
+    closed.close()
+    broker.port = port
+    send = connect()   # (a handler keeps its RCON connection; a new client connection opens a new one)
+    r = send("b4", "build")
+    assert not r["ok"] and r["unavailable"] and r["error"].startswith("game unreachable since ") \
+        and "this request was not sent" in r["error"], r
+    broker.remember("haiku", "b5", state="sent", at=time.time())
+    r = send("b5", "build")
+    assert "request b5 was sent at " in r["error"] and "whether it was applied is not known until the game answers" in r["error"], r
+    assert broker.down_since is not None
+    broker.port = game.port
+    r = send("b6", "build")
+    assert r["ok"] and broker.down_since is None, r
+    # The record keeps the last MAX_IDS ids per bot.
+    for i in range(fb.MAX_IDS + 5):
+        broker.remember("haiku", f"x{i}", state="sent", at=0)
+    assert len(broker.ids["haiku"]) == fb.MAX_IDS and broker.seen("haiku", "x0") is None
+    shutil.rmtree(tmp)
+    print("broker retries: ok")
 
 
 def end_to_end():
@@ -335,5 +457,6 @@ if __name__ == "__main__":
     new_run()
     claude_settings()
     handler()
+    retries()
     probe()
     end_to_end()

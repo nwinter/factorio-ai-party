@@ -95,7 +95,7 @@ fh call status
 - A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
   `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
   `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
-- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, with `transfer` or `collect` when they walk (`walk`, `pick`), and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
+- Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `kite`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given (`rearm` also with `area` or `surface`), with `transfer` or `collect` when they walk (`walk`, `pick`), and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
 - With `--wait`, the command exits 0 when the action ended successfully, 1 when it failed, and 3 when the wait ended
   while the action still runs: a tell or mention ended it (the reply's `still_running` and `note` say so), or the wait
   timed out (`wait_timeout`). So `fh call ACTION --wait && next` runs `next` only after the action is done.
@@ -103,7 +103,7 @@ fh call status
   `told_during_wait` (`tell from astra at tick 5`) and carries the team block. `fh wait` takes it too. (Sol, shift09:
   a tell ended a wait with exit 0 and the next step ran while the action still ran.) A viewer's `@mention` ends a wait
   only with `--wake-on-viewers` (`fh sleep`, `fh wait` and `--wait` take it).
-- `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success; `unreachable` and `blocked` fail with `last.why` on the error line. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
+- `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success; `unreachable` and `blocked` fail with `last.why` on the error line. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise. The poll after that deadline counts like the others (Sol 12:20: `collect --wait --wait-timeout 60000` read STILL RUNNING at 62 s over a gather that had collected 10 of 10): an action that ended by then ends the wait by its outcome (exit 0, or 1 when it failed); only one still running there is `wait_timeout` (exit 3). `fh wait` does the same.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
 - Ctrl-C does not stop an action the game already accepted. `fh call stop` does.
 - `build_path {points, item, ticks, start_index, end_direction}` lays a belt line along axis-aligned tile-centred
@@ -382,6 +382,13 @@ fh call status
   `transfer` puts seeds into the tower's input (`agricultural_tower_input`) and takes its harvest from the output
   (`agricultural_tower_output`), with or without the inventory named; `collect` takes towers' output as it does
   assemblers'; `feed` tops a tower up with the seed kinds it holds, else every kind you carry.
+- `rearm` with `radius`, `area` or `surface: true` (your whole surface) walks one tour through every turret there that
+  takes the ammo and holds under `below` rounds of any ammo (items in its ammo slots; default `count`), topping each
+  up to `count` (Opus, shift12 13:50). Turrets within 24 tiles of each other are one cluster, as the `turrets` read
+  groups fronts; the nearest cluster comes first from where you stand, then the nearest from where the last ended,
+  nearest first inside one. The reply lists `clusters` (`2 turrets around (22,1), 20 tiles from you, holding 0-3
+  rounds`), `places` (up to 128 a call; `skipped` the rest), `below`, `count`, and `other_ammo` (turrets there that take
+  other ammo, such as rocket turrets). Timed like the radius tour (`ticks`, default 3600; `--wait` waits).
 - Burner fuel by category: `feed` without `fuel` gives a burner the fuel it burns (coal for chemical burners; a
   biochamber burns nutrients, so it gets nutrients); `refuel` skips burners of another category in a radius and refuses
   one named by position (`biochamber at (-20.5,-20.5) burns nutrients fuel, not coal (chemical)`).
@@ -391,6 +398,16 @@ fh call status
   you carry that, else as above; `fuel: "solid-fuel"` with that item; a fuel named in `items`/`item` counts as asking;
   `fuel: false` gives none. A `feed` that gave nothing names the burners left alone: `2 burners hold fuel (solid-fuel
   3-5): fuel is added to a burner with none, or with fuel=true or fuel=NAME`.
+- A `feed` that names what it gives (`item`, `items`, or a fuel as `fuel: "coal"`) gives only those (Grok, shift12
+  13:50: a feed of coal into furnaces put in the copper ore it held first). A walking tour that leaves nothing more to
+  give ends `out_of_items` only when the machines left want what you hold none of, else `topped_up`.
+- `refuel`, `feed` and `rearm` with a `radius` (or `rearm` with an `area`) that finds nothing to do say why and where
+  the nearest one is (Grok, shift12 13:50: a refuel 48 tiles from furnaces out of fuel placed 0 and said nothing):
+  `nothing: the 3 burners in radius 48 that burn coal hold 10 coal or more` and `nearest_outside: nearest burner
+  below 10 coal outside it: stone-furnace at (30,0), 52 tiles from you` (within 512 tiles; `no ... within 512 tiles of
+  you`), also in `last.why` for `--wait`. `types` takes entity types; an entity name there (`stone-furnace`, whose type
+  is `furnace`) is taken as a name and `types_note` says so; a name that is a type too (`inserter`, `lab`, `boiler`)
+  stays a type.
 - A burner whose fuel slots all hold another fuel (a boiler burning solid fuel, fed coal: a slot takes one item kind)
   is skipped (Haiku, 07:55): its row says `other_fuel: true` and the reply `other_fuel: "1 burner holds another fuel in
   every fuel slot (solid-fuel 4): no slot for coal"`, which is no warning; walking tours (`radius`) leave it out. It
@@ -825,7 +842,7 @@ fh sleep 900 --until researched                       # ...or until the research
 - A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
 - A tell or a teammate's mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell, nor a viewer's `@mention` unless the wait was started with `wake_on_viewers: true`. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered tell or teammate's mention as `inbox {tick, woke, from}` and the newest viewer's `@mention` as `inbox_viewer` (the CLI ends a wait on it only with `--wake-on-viewers`).
 - `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
-- `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a teammate's chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`; a viewer's `@mention` only with `--wake-on-viewers`, else it waits for the next reply), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
+- `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a teammate's chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`; a viewer's `@mention` only with `--wake-on-viewers`, else it waits for the next reply), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second. Past 1.25 x SECONDS + 10 s of real time it goes on while the game still advances below 55 ticks/s (Luna, Astra, Sol, 13:41: after the crash world n ran at 7-10 ticks/s and 12 game s took 85 real s), up to 3 x SECONDS + 60 s, and then exits 1 with `timed_out` (`the game advanced 12 of the 60 s asked in 240 s of real time (slow_game: 3 ticks/s, 5% of normal)`); when no game tick passed for 20 s it exits 1 with `paused` (`no game tick passed for 20 s (the game is paused or stopped)`). A sleep that ran in a slow game carries `slow_game: 18 ticks/s, 30% of normal`. The same holds for `--wait` on actions and `fh wait`: a computed wait budget (the action's ticks at 60/s x 1.25 + 5 s) goes on while a slow game advances, up to 3 x those ticks' time + 60 s (45 min at most), names `slow_game` in its reply, and a `wait_timeout` says whether the game stopped or ran slow; an explicit `--wait-timeout MS` stays as given.
   - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory; also `>`, `<=` and the words `below`, `under`, `above`, `at_least`), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64; a level fallen under at one chest, Haiku 12:20: `item_count coal below 20 at 10,39`, then one feed), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), `platform_arrived PLATFORM [PLANET]`, any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
   - `platform_arrived {platform, location?}` (a `wait_until` condition, so also `fh wait --until`, queue steps, guards and a standing order's `when`; Gemini, shift10: rocket launches wait on a platform's arrival): met while the platform is stopped at a space location, at `location` (a planet) when given, else at any stop; `saw` is `Sunward at gleba` or `Sunward flying nauvis->gleba 25%`. On a private 2.0.77 server a platform leaving a stop is on its route within 4 ticks, and one arriving reads at the planet from that tick (the game's speed value still falls for a few seconds); `fh wait --until "platform_arrived Sunward gleba"` woke when Sunward reached Gleba. An unknown platform fails the wait.
   - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
@@ -1230,6 +1247,13 @@ fh sleep 900 --until researched                       # ...or until the research
   - `dry_run: true` sends nothing and shows the split: `pods` (`pod 1 (10 slots): stone-brick*500 ...`),
     `pod_slots`, `hatches`, `sends` (what a call with and without `full` sends) and `short` (items the hub holds
     less of).
+  - The landing pad's room for what would go (pod 1, or every pod with `full`; Astra, shift12 13:50: 773
+    electromagnetic science packs spilled once, and 43 asteroid chunks had taken 43 slots), in the dry run and,
+    read before anything is sent, in a real drop's reply: `pad_room`: `landing pad (9,9): 4 of 8 slots free (taken:
+    carbonic-asteroid-chunk 3 slots (3), iron-plate 1 slot (50)); this drop needs 10 new slots: iron-plate*550 would
+    not fit and land on the ground around the pad`, or `...: it fits, 4 free after`. Each item fills part stacks of
+    its own first, then free slots; slots past the pad's red-X limit do not count. `pad_free` (slots) and `spill`
+    (items) come apart. A planet with no landing pad of ours says the pods land as cargo pod containers.
 - A `drop` returns its number (`drop: N`). Its pod is followed down, because pods land after the call returns and often
   10-20 tiles from the spot they were aimed at (shift06 14:55: aimed near (14,134), landed at (0,129)). The sender,
   and the teammates named in `to` (a name or a list), hear about it in their team block, at most 4 drop lines per
@@ -1250,6 +1274,21 @@ fh sleep 900 --until researched                       # ...or until the research
   (`trash: "40 space-platform-foundation, 7 solar-panel (in rocket_silo_trash, ...)"`); `platforms` shows a silo's `trash`.
   `transfer {position, direction: "to_player"}` takes from non-empty trash slots first (all, or `item`), or name
   `inventory: "rocket_silo_trash"`; they are take-only.
+- A rocket silo's inventories by transfer name (Luna 12:20: a 50/50/50 kit went into the rocket cargo instead of the
+  recipe input):
+  - `assembling_machine_input` (alias `parts`): the rocket-part recipe's ingredients, which the silo crafts rocket
+    parts from: `fh call transfer --args '{"count":50,"direction":"to_entity","inventory":"parts","item":"low-density-structure","position":{"x":65.5,"y":14.5}}'`;
+  - `rocket_silo_rocket` (alias `cargo`): the rocket's cargo, which goes up with the rocket at launch (1000 kg lift):
+    `fh call transfer --args '{"count":10,"direction":"to_entity","inventory":"cargo","item":"space-platform-foundation","position":{"x":65.5,"y":14.5}}'`;
+  - `rocket_silo_trash`: take-only, as above.
+
+  `inspect` of a silo lists them as `silo_inventories [{inventory, alias, holds, what, example}]` (the example is a
+  transfer call for that silo). An alias works on a silo only; the reply's `inventory` names the inventory it stands
+  for. A rocket-part ingredient put into the cargo says so: `cargo_note: "50 processing-unit went into
+  rocket_silo_rocket (cargo), which goes up with the rocket; processing-unit is a rocket-part ingredient, and the
+  rocket-part recipe takes its ingredients from assembling_machine_input (parts)"`. An inventory name the entity does
+  not take is refused with the ones it does: `inventory is not applicable to this entity type: fuel; rocket-silo takes
+  inventory assembling_machine_input, ..., cargo (= rocket_silo_rocket), parts (= assembling_machine_input)`.
 - `launch {position, auto_requests: true}` on a silo whose rocket holds cargo loaded by hand: the game moves that cargo
   into the silo's trash slots, where it never launches. The reply has `cargo_to_trash` (what was aboard), `trash` and a
   `note` with the transfer that takes it back.
@@ -1792,7 +1831,11 @@ fh sleep 900 --until researched                       # ...or until the research
 
 ## Retries
 
-- A dropped connection reports `outcome_unknown`. The CLI never replays the action automatically.
+- A dropped connection reports `outcome_unknown`: the request went out and no answer came. The CLI never replays the action automatically.
+- A call that could not reach the game (RCON or the broker refused the connection, or the login failed) reports `game_unreachable`: `game unreachable since 13:41:05 (2m10s): ...; the request was not sent (nothing was done)`. The first reply after the outage carries `outage: the game was unreachable from 13:41:05 to about 13:52:40 (11m35s; the last failed call at 13:52:31: ...)`, once.
+- Through the RCON broker (pog tools/fh_broker.py), a retried `--id` is answered from the broker's record when the game answered it before (`result.broker: answered from the broker's record: request X was answered at 13:40:02 (tick 9204100); it was not sent again`, adding when the game has since rolled back past that tick). One whose answer was lost (`outcome_unknown`) is sent again after a read of the game's tick, and the answer says which: `the game answered it from its own record (...): it was applied then and not again now`, or `the game had no record of it (never applied, or applied and then rolled back): it ran now`. While the game is unreachable such a retry says nothing was sent and that whether the first send was applied is not known yet (Luna, 13:41: every exact-ID retry read outcome_unknown).
+- A rollback (the server restarted from an earlier save): the first reply whose tick is more than 600 under the last one this workspace saw carries, first, `rolled_back: the game rolled back from tick 9205000 to tick 9187000 or earlier (the server restarted from a save): what you did after 13:35 is gone; redo lists what your journal shows you changed after it (4 calls), oldest first` and `redo` (`13:37:12 build {"name":"assembling-machine-2",...}`; builds, ghosts, crafts, transfers, configures, request edits and the like whose reply came with a tick above the new one; at most 20, then `+N more`). Shown once; a reply to an `--id` retry (which may come from a record with its old tick) counts for neither. The workspace keeps the last tick, the speed and an outage in course in `.fh-pace.json` beside the journal (`FH_PACE_FILE`).
+- The `clock:` line names the game speed when it was under 55 ticks/s between two of this workspace's replies 5 s to 10 min apart in the last 3 minutes: `...; game speed 18 ticks/s, 30% of normal`.
 - Pass `--id ID` on a call to make retries safe. Repeating the same call with the same ID returns the cached result instead of running it again. The game keeps the last 256 results.
 - Bridge sessions don't cache results, so a retry there runs the action again.
 - Some actions, such as transfers, can partly succeed. Check the counts in the reply.
@@ -2327,8 +2370,16 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the same numbers as fields; everything is kept 60 s (`as_of`), and the network alerts read the same view; the pole
   map is redone every 5 min in the background and by the view when older than 60 s; requests are looked at every 30 s.
   Accumulators show their stored energy against their maximum (`accumulators 2 at 50% (5.0 MJ of 10.0 MJ)`; read:
-  `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning). The API exposes no lightning storm schedule
-  (checked on 2.0.77: Fulgora's planet prototype has no lightning properties), so there is no storm countdown. The
+  `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning). The API exposes no storm state or schedule
+  (checked on 2.0.77, world n, 2026-10-14: LuaSurface, LuaPlanet and Fulgora's LuaSpaceLocationPrototype have no
+  lightning or storm key). Lightning strikes in the dark: one Fulgora day of samples (a 256x256 box, every 4 s) saw
+  bolts at darkness 0.06 to 0.85, in all but one sample at 0.48 and over, and none in daylight. So the networks read's
+  Fulgora row (read now, not kept 60 s) and `status` on Fulgora carry `storm` from the surface's day cycle (Gemini,
+  12:20): `state` (`storm` while dark, else `clear`), `phase` (`day`, `darkening`, `full dark`, `brightening`),
+  `darkness` (0 to 0.85 there), `dusk_in_s`, `evening_in_s`, `morning_in_s`, `dawn_in_s`, `day_s`, `line`; status adds
+  `bolts_near` (lightning within 64 tiles of you): `fulgora sky: storm, full dark (darkness 0.85; lightning);
+  brightening in 9s, dawn (clear) in 45s; 3 lightning bolts within 64 tiles of you now; a 3m00s day: dark from dusk to
+  dawn, 1m30s`, or `fulgora sky: day, clear (no lightning in daylight); dusk in 27s, full dark in 1m03s; ...`. The
   boilers part names the lowest boiler: the lowest of those under 20 min and not refilled, else the lowest of all,
   with its minutes, its fuel and its feeder (`lowest boiler (66,16): 4 min of coal; no inserter feeds it`; read:
   `lowest_boiler {position, min, fuel, feeder, feeder_has_fuel}`; Haiku, 07:55). Then the chests the boilers' feeders

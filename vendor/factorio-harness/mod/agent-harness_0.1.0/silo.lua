@@ -130,6 +130,41 @@ return function(api)
       last_launch=last and {ago=ago(game.tick - last.tick), tick=last.tick, to=last.to, cargo=last.cargo, by=last.by} or nil}
   end
 
+  -- The silo's inventories by their transfer names (Luna 12:20: a 50/50/50 kit went into the rocket cargo instead of
+  -- the recipe input): what each holds, what it is for, and one transfer call for it. parts and cargo are aliases
+  -- transfer takes for a silo (runtime.lua M.INVENTORY_ALIASES).
+  M.ALIASES = {parts='assembling_machine_input', cargo='rocket_silo_rocket'}
+  function M.ingredients(e)
+    local recipe = try(function() return e.get_recipe() end)
+    local names = {}
+    for _, ing in ipairs(recipe and recipe.ingredients or {}) do if ing.type == 'item' then names[#names+1] = ing.name end end
+    return names, recipe and recipe.name or 'rocket-part'
+  end
+  function M.inventories(e, encode)
+    local pos = {x=e.position.x, y=e.position.y}
+    local names, recipe = M.ingredients(e)
+    local function call(args) return "fh call transfer --args '" .. encode(args) .. "'" end
+    local function held(inv) return items_text(contents(inv), 8) or 'empty' end
+    local rows = {}
+    rows[1] = {inventory='assembling_machine_input', alias='parts', holds=held(input_inventory(e)),
+      what=string.format("the %s recipe's ingredients (%s): the silo crafts rocket parts from them", recipe,
+        #names > 0 and table.concat(names, ', ') or 'none'),
+      example=call{position=pos, direction='to_entity', item=names[1] or 'low-density-structure', count=50, inventory='assembling_machine_input'}}
+    local rocket_inv = defines.inventory.rocket_silo_rocket and try(function() return e.get_inventory(defines.inventory.rocket_silo_rocket) end)
+    local lift = api.cargo.limits(e)
+    local loaded = contents(rocket_inv)
+    rows[2] = {inventory='rocket_silo_rocket', alias='cargo', holds=rocket_inv and held(rocket_inv) or 'no rocket to load yet',
+      what=string.format("the rocket's cargo: it goes up with the rocket at launch (lift %g kg); not used for parts", api.cargo.kg(lift)),
+      example=call{position=pos, direction='to_entity', item=loaded[1] and loaded[1].name or 'space-platform-foundation', count=10, inventory='rocket_silo_rocket'}}
+    local trash = defines.inventory.rocket_silo_trash and try(function() return e.get_inventory(defines.inventory.rocket_silo_trash) end)
+    if trash then
+      rows[3] = {inventory='rocket_silo_trash', holds=held(trash),
+        what='trash slots: items the game moved out of the rocket (cargo loaded by hand while automatic requests are on); take-only',
+        example=call{position=pos, direction='to_player', inventory='rocket_silo_trash'}}
+    end
+    return rows
+  end
+
   -- The read --------------------------------------------------------------------
   local function feeders(e, recipe_items)
     local box = {left_top={x=e.position.x - FEED_REACH, y=e.position.y - FEED_REACH}, right_bottom={x=e.position.x + FEED_REACH, y=e.position.y + FEED_REACH}}
