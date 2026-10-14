@@ -15,6 +15,10 @@ return function(api)
   local STATUSES = {open=true, claimed=true, doing=true, done=true, blocked=true, dropped=true}
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
   local OPERATOR = 'operator'
+  -- A task or request whose owner has made no request of their own for QUIET
+  -- can be taken by anyone (shift07: #284 power held "doing" for two shifts).
+  local QUIET = 20 * 3600
+  local MAX_ALLOW = 8
 
   local function store()
     local s = api.state()
@@ -87,6 +91,52 @@ return function(api)
     table.sort(names)
     error('unknown agent ' .. name .. '; agents: ' .. table.concat(names, ', '), 0)
   end
+  -- Ticks since agent `name`'s own last request (a peek is not one; nil: none
+  -- yet), and its index (nil: not an agent here).
+  local function since_request(name)
+    for _, a in ipairs(agents()) do
+      if a.name == name then
+        local c = api.state().clocks and api.state().clocks[a.index]
+        return c and game.tick - c.call_tick or nil, a.index
+      end
+    end
+  end
+  -- An agent as teammates see it: 'asleep 12m', 'last request 3m00s ago',
+  -- 'no request yet'; nil for the operator or a name that is no agent.
+  function M.owner_state(name)
+    if name == OPERATOR then return nil end
+    local since, index = since_request(name)
+    if not index then return nil end
+    local sl = api.state().sleeps and api.state().sleeps[index]
+    if sl and sl.until_tick and sl.until_tick > game.tick and sl.start_tick then return 'asleep ' .. ago(game.tick - sl.start_tick) end
+    return since and 'last request ' .. ago(since) .. ' ago' or 'no request yet'
+  end
+  local function quiet(name)
+    if name == OPERATOR then return false end
+    local since = since_request(name)
+    return not since or since >= QUIET
+  end
+  -- `allow` on a claim: names (array, or one string split on commas and
+  -- spaces) or everyone/team/all; empty clears it.
+  local function allow_arg(v)
+    if v == nil then return nil end
+    local list = {}
+    if type(v) == 'string' then for word in v:gmatch('[^,%s]+') do list[#list+1] = word end
+    else
+      assert(type(v) == 'table', 'allow is agent names (array or "luna,sol"), or "everyone"; [] or "" clears it')
+      for _, word in ipairs(v) do assert(type(word) == 'string', 'allow takes agent names'); list[#list+1] = word end
+    end
+    local out, seen = {}, {}
+    for _, word in ipairs(list) do
+      local w = word:lower():gsub('^@', '')
+      local name = (w == 'everyone' or w == 'team' or w == 'all') and 'everyone' or resolve(word)
+      if not seen[name] then seen[name] = true; out[#out+1] = name end
+    end
+    assert(#out <= MAX_ALLOW, 'allow takes at most ' .. MAX_ALLOW .. ' names; use "everyone"')
+    if seen.everyone then out = {'everyone'} end
+    table.sort(out)
+    return out
+  end
 
   -- extra: prev_owner (an owner who lost the item in this change) and
   -- overlaps (owner -> their claim id, for a claim posted over theirs).
@@ -116,6 +166,76 @@ return function(api)
       b.count = b.count - 1
       b.aged = nil
     end
+  end
+  -- Claims with no activity by their owner for claims.EXPIRE close (dropped,
+  -- a harness note, an `expired` event for the stream and board_events). A
+  -- claim going stale or closing is told to its owner in one batched line
+  -- (claims_digest), never a line per claim. Run before board reads, writes
+  -- and each reply's team block, at most once a second.
+  local DIGEST = 3 * 3600
+  local function claim_news(owner)
+    local b = store()
+    b.claim_news = b.claim_news or {}
+    b.claim_news[owner] = b.claim_news[owner] or {closed={}, stale={}}
+    return b.claim_news[owner]
+  end
+  local function expire()
+    local b = store()
+    if b.expire_tick and game.tick - b.expire_tick < 60 then return end
+    b.expire_tick = game.tick
+    local ids = {}
+    for id, i in pairs(b.items) do
+      if i.kind == 'claim' and ACTIVE[i.status] then ids[#ids+1] = id end
+    end
+    table.sort(ids)
+    for _, id in ipairs(ids) do
+      local i = b.items[id]
+      local last = api.claims.activity(i)
+      local idle = game.tick - last
+      local told = i.owner and i.owner ~= OPERATOR
+      if idle >= api.claims.EXPIRE then
+        local text = 'closed by the harness: no activity by its owner for ' .. ago(idle)
+        i.status, i.updated_tick = 'dropped', game.tick
+        i.notes[#i.notes+1] = {tick=game.tick, by='harness', text=text}
+        while #i.notes > MAX_NOTES do table.remove(i.notes, 1) end
+        event('harness', i, 'expired', text)
+        if told then local n = claim_news(i.owner); n.closed[#n.closed+1] = {id=i.id, title=i.title} end
+      elseif idle >= api.claims.STALE and i.stale_told ~= last then
+        -- Once per stretch without activity: work on it again and a later stale mark is told again.
+        i.stale_told = last
+        if told then local n = claim_news(i.owner); n.stale[#n.stale+1] = i.id end
+      end
+    end
+  end
+  -- The owner's one line for claims that went stale or closed since the last
+  -- one, at most every DIGEST; stale ones the owner has since worked on (or
+  -- that closed) are left out.
+  local function claims_digest(me, h)
+    local b = store()
+    local n = b.claim_news and b.claim_news[me]
+    if not n or (h.claims_told and game.tick - h.claims_told < DIGEST) then return nil end
+    local function names(list)
+      local out = {}
+      for k, x in ipairs(list) do
+        if k > 6 then out[#out+1] = '+' .. (#list - 6) .. ' more'; break end
+        out[#out+1] = '#' .. x.id .. ' ' .. x.title
+      end
+      return table.concat(out, ', ')
+    end
+    local stale = {}
+    for _, id in ipairs(n.stale) do
+      local i = b.items[id]
+      if i and i.kind == 'claim' and ACTIVE[i.status] and api.claims.stale(i) then stale[#stale+1] = {id=i.id, title=i.title} end
+    end
+    b.claim_news[me] = nil
+    if #n.closed == 0 and #stale == 0 then return nil end
+    h.claims_told = game.tick
+    local parts = {}
+    if #n.closed > 0 then parts[#parts+1] = 'closed after 2h without your activity: ' .. names(n.closed) end
+    if #stale > 0 then
+      parts[#parts+1] = 'stale after 30 min without your activity (teammates may work there without asking; work in it or update it to keep it, or it closes 2h after your last activity): ' .. names(stale)
+    end
+    return 'your claims: ' .. table.concat(parts, '; ')
   end
   local function area_arg(a)
     if a == nil then return nil end
@@ -168,7 +288,11 @@ return function(api)
   local function view(i, full, where)
     local notes = i.notes
     if not full and #notes > 2 then notes = {notes[#notes-1], notes[#notes]} end
+    local claim = i.kind == 'claim' and ACTIVE[i.status]
     return {id=i.id, kind=i.kind, title=i.title, owner=i.owner, owner_away=i.kind == 'claim' and where and where(i.owner) or nil,
+      -- An open claim: when its owner last worked on it, stale (no permission needed), who it allows.
+      owner_active=claim and ago(game.tick - api.claims.activity(i)) .. ' ago' or nil, stale=claim and api.claims.stale(i) or nil,
+      allow=i.kind == 'claim' and i.allow or nil,
       requested_by=i.requested_by, status=i.status, area=i.area,
       needs=i.needs, tags=i.tags, problem=i.problem, proposal=i.proposal,
       notes=#notes > 0 and notes or nil, note_count=not full and #i.notes > 2 and #i.notes or nil,
@@ -190,8 +314,15 @@ return function(api)
     assert(type(kind) == 'string' and KINDS[kind], 'kind must be task, request, claim or note')
     assert(kind ~= 'harness', 'ask for a harness tool with harness_request')
     assert(kind ~= 'plan', 'the team plan is one item: edit it with board_plan {goals} or {doing}')
+    assert(a.allow == nil or kind == 'claim', 'allow is for a claim: who may work in its area without asking')
+    expire()
     local item = {kind=kind, title=required_text(a.title, 'title', TITLE), requested_by=by, area=area_arg(a.area),
       needs=needs_arg(a.needs), tags=tags_arg(a.tags), notes={}, created_tick=game.tick, updated_tick=game.tick}
+    if kind == 'claim' then
+      item.active_tick = game.tick
+      local allow = allow_arg(a.allow)
+      item.allow = allow and #allow > 0 and allow or nil
+    end
     -- A first note (shake4: agents carried update's note over to posts).
     if a.note ~= nil then item.notes[1] = {tick=game.tick, by=by, text=required_text(a.note, 'note', NOTE)} end
     local warnings, over = {}, nil
@@ -209,7 +340,8 @@ return function(api)
       for _, other in pairs(store().items) do
         if other.kind == 'claim' and ACTIVE[other.status] and other.owner ~= by and overlaps(other.area, item.area) then
           local away = where and where(other.owner)
-          warnings[#warnings+1] = string.format('overlaps claim #%d by %s%s: %s', other.id, other.owner, away and ' (' .. away .. ')' or '', other.title)
+          warnings[#warnings+1] = string.format('overlaps claim #%d by %s%s: %s (%s)', other.id, other.owner, away and ' (' .. away .. ')' or '', other.title,
+            api.claims.state_text(other, {name=by}))
           over = over or {}
           over[other.owner] = over[other.owner] or other.id
         end
@@ -231,24 +363,41 @@ return function(api)
     assert(type(a.id) == 'number', 'id is required (a board item number)')
     local item = store().items[a.id]
     assert(item, 'no board item #' .. tostring(a.id) .. ' (pruned or never posted)')
-    assert(a.status ~= nil or a.owner ~= nil or a.note ~= nil, 'give status, owner or note')
+    assert(a.status ~= nil or a.owner ~= nil or a.note ~= nil or a.allow ~= nil, 'give status, owner, note or allow')
+    expire()
     -- Check every argument before changing anything.
     assert(a.status == nil or (type(a.status) == 'string' and STATUSES[a.status]), 'status must be open, claimed, doing, done, blocked or dropped')
     local text = a.note ~= nil and required_text(a.note, 'note', NOTE) or nil
     local boss = by == OPERATOR or by == item.owner or by == item.requested_by
     local changes, was = {}, item.owner
     assert(item.kind ~= 'plan' or (a.status == nil and a.owner == nil), 'the team plan changes with board_plan {goals} or {doing}; notes are fine')
+    local allow
+    if a.allow ~= nil then
+      assert(item.kind == 'claim', 'allow is for a claim: who may work in its area without asking')
+      assert(boss, string.format('only the owner (%s) can change who claim #%d allows', tostring(item.owner), item.id))
+      allow = allow_arg(a.allow)
+    end
     if a.owner ~= nil then
-      assert(item.kind ~= 'claim' and item.kind ~= 'note' and item.kind ~= 'harness', 'a ' .. item.kind .. ' stays with its poster')
+      assert(item.kind ~= 'claim' and item.kind ~= 'note' and item.kind ~= 'harness', 'a ' .. item.kind .. ' stays with its poster'
+        .. (item.kind == 'claim' and '; a stale claim needs no permission, and one with no activity for 2h closes by itself' or ''))
       if a.owner == '' or a.owner == false then
         assert(boss, 'only the owner or requester can release an item')
         if item.owner then item.owner = nil; item.status = 'open'; changes[#changes+1] = 'released' end
       else
         local owner = resolve(a.owner)
         local taking = owner == by and not item.owner and item.status == 'open'
-        assert(boss or taking, string.format('#%d is %s; only its owner or requester can reassign it (anyone can take an open unowned item)',
-          item.id, item.owner and 'owned by ' .. item.owner or item.status))
+        -- An owner quiet for 20 min loses an active item to whoever takes it.
+        local from_quiet = owner == by and item.owner and item.owner ~= by and ACTIVE[item.status] and quiet(item.owner)
+        if not (boss or taking or from_quiet) then
+          local st = item.owner and M.owner_state(item.owner)
+          error(string.format('#%d is %s%s; only its owner or requester can reassign it (anyone can take an open unowned item, or one whose owner has made no request for 20 min)',
+            item.id, item.owner and 'owned by ' .. item.owner or item.status, st and ' (' .. st .. ')' or ''), 0)
+        end
         if owner ~= item.owner then
+          if from_quiet then
+            local st = M.owner_state(item.owner)
+            text = text or clip('taken from ' .. item.owner .. ' (' .. (st or 'quiet') .. ')', NOTE)
+          end
           item.owner = owner
           if item.status == 'open' then item.status = 'claimed' end
           changes[#changes+1] = owner == by and 'taken' or 'assigned'
@@ -256,6 +405,13 @@ return function(api)
         end
       end
     end
+    if allow then
+      item.allow = #allow > 0 and allow or nil
+      changes[#changes+1] = 'allow'
+      text = text or (item.allow and 'allows ' .. table.concat(item.allow, ', ') or 'allows nobody')
+    end
+    -- The claim's owner working on it keeps it fresh (claims.lua).
+    if item.kind == 'claim' and by == item.owner then api.claims.touch(item) end
     if a.status ~= nil then
       assert(boss, string.format('only the owner (%s) or requester (%s) can change the status of #%d; add a note instead',
         tostring(item.owner or 'none'), tostring(item.requested_by), item.id))
@@ -276,7 +432,18 @@ return function(api)
     return {item=view(item, true, where_for(by)), changed=#changes > 0 and changes or nil}
   end
 
+  -- About how many bytes a value takes as JSON (brief listings stay near 3 KB).
+  local BRIEF_BYTES = 3000
+  local function size(v)
+    local t = type(v)
+    if t == 'string' then return #v + 3 end
+    if t ~= 'table' then return 6 end
+    local n = 2
+    for k, x in pairs(v) do n = n + size(k) + size(x) + 1 end
+    return n
+  end
   local function read(by, a)
+    expire()
     local b = store()
     if a.id ~= nil then
       local item = b.items[a.id]
@@ -306,9 +473,36 @@ return function(api)
     end
     table.sort(list, function(x, y) return x.updated_tick > y.updated_tick or (x.updated_tick == y.updated_tick and x.id > y.id) end)
     local out, where = {}, where_for(by)
-    for n = 1, math.min(limit, #list) do out[n] = view(list[n], false, where) end
     local unowned = open_unowned()
     local plan = (a.kind == nil or a.kind == 'plan') and a.mine ~= true and M.plan_view() or nil
+    -- An agent's plain listing (no filter, no limit): about 3 KB, newest
+    -- first, each item with its last note; the plan's goals and the reader's
+    -- own line (agent-minds study: the median board read was 18 KB, and Codex
+    -- drops the middle of long output). full=true, a limit or a filter list
+    -- them as before.
+    local brief = by ~= OPERATOR and a.full ~= true and a.limit == nil and a.kind == nil and a.mine == nil and a.status == nil and a.since_tick == nil
+    if brief then
+      local used = 0
+      if plan then
+        local doing = {}
+        for i, l in ipairs(plan.doing or {}) do doing[i] = clip(l, 100) end
+        plan = {id=plan.id, goals=plan.goals, doing=#doing > 0 and doing or nil, edited=plan.edited,
+          more='board_plan shows the plan in full'}
+        used = size(plan)
+      end
+      for n = 1, math.min(limit, #list) do
+        local row = view(list[n], false, where)
+        if row.notes and #row.notes > 1 then row.note_count = row.note_count or #list[n].notes; row.notes = {row.notes[#row.notes]} end
+        row.created_tick = nil
+        local s = size(row)
+        if n > 1 and used + s > BRIEF_BYTES then break end
+        out[n] = row; used = used + s
+      end
+      local more = #list - #out
+      return {plan=plan, items=out, matched=#list, open_unowned=unowned, tick=game.tick,
+        more=more > 0 and string.format('%d more: board {full=true}, or narrow with kind, mine, status, since_tick; {id} shows one item in full', more) or nil}
+    end
+    for n = 1, math.min(limit, #list) do out[n] = view(list[n], false, where) end
     return {plan=plan, items=out, matched=#list, open_unowned=unowned, tick=game.tick}
   end
 
@@ -480,19 +674,23 @@ return function(api)
   end
 
   M.schema = {
-    board = {mine='boolean: items I own or requested', status='active|open|claimed|doing|done|blocked|dropped or an array of them',
+    board = {full='boolean: the plain listing in full (by default it is about 3 KB: the newest items with their last note, the plan\'s goals and your line, and more: how many were left out)',
+      mine='boolean: items I own or requested', status='active|open|claimed|doing|done|blocked|dropped or an array of them',
       kind='task|request|claim|note|harness|plan', since_tick='items updated after this tick', limit='1..100 (default 30), newest first',
-      id='one item in full (all notes)', returns='plan (the team plan: goals, doing lines, last edit), items, matched, open_unowned (open task/request items nobody owns); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus")'},
+      id='one item in full (all notes)', returns='plan (the team plan: goals, doing lines, last edit), items, matched, open_unowned (open task/request items nobody owns); a claim whose owner is now somewhere other than you has owner_away ("on Vulcanus"); an open claim has owner_active (when its owner last posted, updated it, or made a request standing in it or acting on a position in it), stale=true after 30 min of that (anyone may work there without asking) and allow (who may work there); after 2 h with no such activity the harness closes it (dropped)'},
     board_plan = {goals='the team goals, 1..600 characters, replace the current ones ("" clears them)',
       doing='one line of what an agent is on, 1..160 characters ("" removes the line)', agent='whose line doing sets (default you)',
       returns='the team plan: goals, doing (one line per agent, "(set by NAME)" when someone else wrote it), edited; with no arguments it only reads'},
     board_post = {kind='task|request|claim|note', title='1..120 characters (longer is cut)',
       owner='agent name or display name (task/request; a request without owner is shown to everyone until taken)',
       area='{left_top={x,y}, right_bottom={x,y}}: required for a claim (owner is you)', needs='text, array of item names/{name,count}, or {item: count}',
-      tags='up to 8 short strings', note='optional first note, 1..200 characters', returns='the item; warnings for overlapping claims (with where the owner is when not with you: claim #128 by sol (on Vulcanus)) or an unowned request'},
+      tags='up to 8 short strings', note='optional first note, 1..200 characters',
+      allow='claim only: agents who may work in the area without asking (array or "luna,sol"), or "everyone"',
+      returns='the item; warnings for overlapping claims (with where the owner is when not with you: claim #128 by sol (on Vulcanus), its age, owner activity and state, stale) or an unowned request'},
     board_update = {id='item number', status='open|claimed|doing|done|blocked|dropped (owner or requester only)',
-      owner='your name takes an open unowned item; another name reassigns (owner or requester only); "" releases it',
-      note='1..200 characters, anyone may add (last 10 kept)'},
+      owner='your name takes an open unowned item, or an active task/request whose owner has made no request for 20 min; another name reassigns (owner or requester only); "" releases it',
+      note='1..200 characters, anyone may add (last 10 kept)',
+      allow='claim owner only: who may work in the area without asking (names or "everyone"; [] or "" clears it)'},
     board_events = {since_seq='return events after this sequence number (default 0)', limit='1..200 (default 100), oldest first',
       returns='events {seq,tick,by,id,change,title,kind,owner,requested_by,status,text} and cursor (pass it back as since_seq)'},
     harness_request = {title='1..120 characters', problem='what you tried and what went wrong (1..1000)', proposal='optional: the tool or change you want',
@@ -501,7 +699,7 @@ return function(api)
       note='optional description', delete='true removes the saved plan', returns='name, steps, bytes'},
     plan_run = {name='saved plan name', mode='append|replace pending (default append)', start='default true', returns='as queue_submit'},
     plans = {name='optional: show one plan in full', returns='your saved plans (at most 50): name, steps, note, runs'},
-    mention_counts = {returns='per agent: unread_mentions (not yet shown in a reply or chat read), at_mentions (@name or @everyone), oldest_tick, latest, last_request_tick (supervisors: wake idle mentioned agents)'},
+    mention_counts = {returns='per agent: unread_mentions (not yet shown in a reply or chat read), at_mentions (@name or @everyone), oldest_tick, latest, fyi (fyi tells waiting, left out of the other counts: no reason to wake), last_request_tick (supervisors: wake idle mentioned agents)'},
   }
   -- Handlers take the acting agent's name, so the operator path can share them.
   M.handlers.board = function(p, a) return read(who(p), a) end
@@ -610,7 +808,8 @@ return function(api)
   -- counts for supervisors like a mention; chat reads never deliver it.
   function M.deliver(index, t)
     local box = inbox(index)
-    box.list[#box.list+1] = {tell=t.seq, tick=t.tick, from=t.from, text=t.text, how='tell', team=t.team}
+    -- An fyi tell (tells.lua) waits for the next reply: it wakes nobody (waits.lua) and supervisors don't count it.
+    box.list[#box.list+1] = {tell=t.seq, tick=t.tick, from=t.from, text=t.text, how='tell', team=t.team, fyi=t.fyi}
     while #box.list > MAX_PENDING do table.remove(box.list, 1); box.dropped = box.dropped + 1 end
   end
   -- A (non-peek) chat read delivers the mentions it showed.
@@ -640,7 +839,7 @@ return function(api)
     end
     for _, m in ipairs(box.list) do
       if m.tell then
-        tells[#tells+1] = string.format('%s%s, %s ago: %s', from(m), m.team and ' to team' or '', ago(game.tick - m.tick), m.text)
+        tells[#tells+1] = string.format('%s%s%s, %s ago: %s', from(m), m.team and ' to team' or '', m.fyi and ' (fyi)' or '', ago(game.tick - m.tick), m.text)
       else
         local tag = m.how == '@' and ' @you' or m.how == '@everyone' and ' @everyone' or ''
         lines[#lines+1] = string.format('%s%s, %s ago: %s', from(m), tag, ago(game.tick - m.tick), m.text)
@@ -656,16 +855,20 @@ return function(api)
     for _, a in ipairs(agents()) do
       local box = s.mentions and s.mentions[a.index]
       local list = box and box.list or {}
-      local direct, tells = 0, 0
+      -- fyi tells wait for the next reply and are no reason to wake anyone: counted apart.
+      local direct, tells, fyi, first, last = 0, 0, 0, nil, nil
       for _, m in ipairs(list) do
-        if m.how ~= 'name' then direct = direct + 1 end
-        if m.tell then tells = tells + 1 end
+        if m.fyi then fyi = fyi + 1
+        else
+          if m.how ~= 'name' then direct = direct + 1 end
+          if m.tell then tells = tells + 1 end
+          first, last = first or m, m
+        end
       end
-      local last = list[#list]
       local clock = s.clocks and s.clocks[a.index]
-      out[#out+1] = {name=a.name, display_name=a.display_name, unread_mentions=#list + (box and box.dropped or 0), at_mentions=direct,
-        tells=tells > 0 and tells or nil, unread_board=M.unread_board(a),
-        oldest_tick=list[1] and list[1].tick or nil, latest=last and clip(last.from .. ': ' .. last.text, 160) or nil,
+      out[#out+1] = {name=a.name, display_name=a.display_name, unread_mentions=#list - fyi + (box and box.dropped or 0), at_mentions=direct,
+        tells=tells > 0 and tells or nil, fyi=fyi > 0 and fyi or nil, unread_board=M.unread_board(a),
+        oldest_tick=first and first.tick or nil, latest=last and clip(last.from .. ': ' .. last.text, 160) or nil,
         last_request_tick=clock and math.max(clock.call_tick, clock.seen_tick or 0) or nil}
     end
     return {agents=out, tick=game.tick}
@@ -679,6 +882,7 @@ return function(api)
     if e.by == me then return nil end
     local tail = e.text and ' - ' .. e.text or ''
     if e.kind == 'research' then return nil end  -- research.lua gives each agent its own research lines
+    if e.change == 'expired' then return nil end  -- told in the owner's batched claims line (claims_digest)
     if e.kind == 'plan' then
       -- Everyone hears of a plan edit once; a line written for me is mine.
       return string.format('team plan edited by %s: %s (board_plan shows it)', e.by, e.text or ''), e.owner ~= me
@@ -730,6 +934,7 @@ return function(api)
     return n > 0 and n or nil
   end
   local function board_lines(p, h)
+    expire()
     local b = store()
     local me, lines, extra = who(p), {}, 0
     local from = h.board or 0
@@ -747,6 +952,8 @@ return function(api)
       if #lines < MAX_BOARD_LINES then lines[#lines+1] = line else extra = extra + 1 end
     end
     if extra > 0 then lines[#lines+1] = string.format('+%d more: board mine=true', extra) end
+    local digest = claims_digest(me, h)
+    if digest then lines[#lines+1] = digest end
     -- Unowned requests: nudge once each time another one passes 2 minutes.
     -- The scan is shared by all agents for a second (kept in storage, so
     -- every peer computes the same hints); any board change redoes it.

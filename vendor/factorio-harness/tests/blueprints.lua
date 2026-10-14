@@ -313,4 +313,134 @@ local d=W.settings_diff(am,{name='assembling-machine-2',recipe='copper-cable',it
 eq(d.differs[1],'modules speed-module*1, blueprint speed-module*2'); assert(d.fix:find('transfer',1,true),d.fix)
 eq(W.settings_diff(am,{recipe='copper-cable'}),nil,'the same settings: nothing to say')
 eq(W.tile_rules(s2,prototypes.entity.chest,{x=0,y=0},0),nil)
+
+-- Forced paste (Astra 18:51: a Sunward paste made 0 ghosts when one entity collided; place_ghosts one by one lost
+-- the blueprint's wires). The mode goes to the engine as a player's shift-paste (ctrl+shift: superforced).
+defines.build_mode={normal=0,forced=1,superforced=2}
+p.build_from_cursor=function(args) built=built+1; p.last_build=args end
+H.paste(p,{position={x=4,y=0},mode='forced'}); eq(p.last_build.build_mode,1)
+H.paste(p,{position={x=4,y=0},mode='superforced'}); eq(p.last_build.build_mode,2)
+H.paste(p,{position={x=4,y=0}}); eq(p.last_build.build_mode,0,'normal by default')
+fails(function() H.paste(p,{position={x=4,y=0},mode='shift'}) end,'paste mode must be normal, forced or superforced')
+-- On a platform: three wired chests, the third where a rock stands. The engine places ghosts where they fit, marks
+-- the rock, and connects one of the two wires between the placed ghosts; the harness connects the other and counts
+-- the wire to the unplaced chest apart.
+local w3,links={},{}
+local function connector(e,id)
+  local c={owner=e,id=id}
+  c.is_connected_to=function(o) return links[e.unit_number..':'..id..'-'..o.owner.unit_number..':'..o.id]==true end
+  c.connect_to=function(o,reach)
+    eq(reach,false,'no reach check, as a paste')
+    links[e.unit_number..':'..id..'-'..o.owner.unit_number..':'..o.id]=true
+    links[o.owner.unit_number..':'..o.id..'-'..e.unit_number..':'..id]=true
+    return true
+  end
+  return c
+end
+local function wghost(name,x,y)
+  unit=unit+1
+  local e={valid=true,name='entity-ghost',type='entity-ghost',ghost_name=name,position={x=x,y=y},force=p.force,unit_number=unit}
+  local cs={}
+  e.get_wire_connector=function(id,make) assert(make==true); cs[id]=cs[id] or connector(e,id); return cs[id] end
+  w3[#w3+1]=e
+  return e
+end
+local rock={valid=true,name='big-rock',type='simple-entity',position={x=22.5,y=0.5},force={name='neutral'},marked=false}
+local old_rock={valid=true,name='huge-rock',type='simple-entity',position={x=24.5,y=3.5},force={name='neutral'},marked=true}
+w3[#w3+1]=rock; w3[#w3+1]=old_rock
+local s3={platform={force=p.force}}
+s3.get_tile=function() return {name='space-platform-foundation',prototype=prototypes.tile['space-platform-foundation']} end
+s3.find_entities_filtered=function(f)
+  local types=type(f.type)=='table' and f.type or f.type and {f.type}
+  local out={}
+  for _,e in ipairs(w3) do
+    local ok=e.valid and e.position.x>=f.area.left_top.x and e.position.x<=f.area.right_bottom.x
+      and e.position.y>=f.area.left_top.y and e.position.y<=f.area.right_bottom.y
+    if ok and f.force then ok=e.force==f.force end
+    if ok and f.to_be_deconstructed~=nil then ok=e.marked==f.to_be_deconstructed end
+    if ok and types then ok=false; for _,t in ipairs(types) do if e.type==t then ok=true end end end
+    if ok then out[#out+1]=e end
+  end
+  return out
+end
+s3.can_place_entity=function(a) return not (a.position.x==22.5 and a.position.y==0.5) end
+sources.audit={kind='blueprint',entities={
+  {entity_number=1,name='chest',position={x=-2.5,y=0.5},wires={{1,1,2,1},{1,2,2,2}}},
+  {entity_number=2,name='chest',position={x=0.5,y=0.5},wires={{2,1,1,1},{2,2,1,2},{2,1,3,1}}},
+  {entity_number=3,name='chest',position={x=2.5,y=0.5},wires={{3,1,2,1}}}}}
+H.blueprint_import(p,{blueprint='audit',slot='ferry-module-audit-north'})
+local seen_mode
+local forced_build=function(args)
+  seen_mode=args.build_mode; eq(args.surface,s3)
+  local g1,g2=wghost('chest',17.5,0.5),wghost('chest',20.5,0.5)
+  g1.get_wire_connector(2,true).connect_to(g2.get_wire_connector(2,true),false)  -- the engine's own wire
+  rock.marked=true
+end
+game.create_inventory=function() local inv=make(); rawset(inv[1],'build_blueprint',forced_build); return inv end
+local pp3=setmetatable({__platform='Sunward',__player=p},{__index=function(_,k)
+  if k=='surface' then return s3 elseif k=='position' then return {x=0,y=0} end return p[k] end})
+local r3=H.paste(pp3,{slot='ferry-module-audit-north',position={x=20,y=0},mode='forced'})
+game.create_inventory=make
+eq(seen_mode,1,'build_blueprint gets the mode on a platform'); eq(r3.mode,'forced')
+eq(r3.count,2); eq(r3.not_placed_count,1); eq(r3.not_placed[1].reason,'placement blocked by big-rock (22.5,0.5)')
+eq(r3.marked_for_deconstruction,1,'the rock this paste marked, not the one marked before'); eq(r3.marked_by_name['big-rock'],1)
+eq(r3.wires.in_blueprint,3); eq(r3.wires.added,1); eq(r3.wires.connected,1); eq(r3.wires.end_not_placed,1); eq(r3.wires.failed,0)
+eq(r3.wires.ends_not_placed[1],'chest #3')
+assert(w3[3].get_wire_connector(1,true).is_connected_to(w3[4].get_wire_connector(1,true)),'the red wire between the ghosts')
+-- A paste with no wires reports none; a normal paste reports no marks.
+eq(r2.wires,nil); eq(r2.marked_for_deconstruction,nil); eq(r2.mode,nil)
+
+-- Hub anchoring (Astra 18:55: a 33-entity paste placed 0, a 22-entity one landed at another offset). The game puts
+-- the blueprint's center at the paste position; this blueprint's hub is off its center: the hub's 8x8 at x -4..4,
+-- a chest out to x 11, so the center is (3.5,0). Pasted with position (0,0) its hub lands at (-3.5,0) and collides
+-- with the platform's hub: nothing. Anchored, the paste goes to (3.5,0) and the hub lands on the platform's hub.
+prototypes.entity['space-platform-hub']={name='space-platform-hub',tile_width=8,tile_height=8,
+  selection_box={left_top={x=-4,y=-4},right_bottom={x=4,y=4}}}
+local w4={}
+local phub={valid=true,name='space-platform-hub',type='space-platform-hub',position={x=0,y=0},force=p.force,unit_number=900}
+w4[1]=phub
+local s4={platform={force=p.force,hub=phub}}
+s4.get_tile=s3.get_tile
+s4.find_entities_filtered=function(f)
+  local out={}
+  for _,e in ipairs(w4) do
+    local ok=e.valid and e.position.x>=f.area.left_top.x and e.position.x<=f.area.right_bottom.x
+      and e.position.y>=f.area.left_top.y and e.position.y<=f.area.right_bottom.y
+    if ok and f.type then ok=false; for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do if e.type==t then ok=true end end end
+    if ok and f.to_be_deconstructed~=nil then ok=false end
+    if ok then out[#out+1]=e end
+  end
+  return out
+end
+s4.can_place_entity=function() return true end
+sources.offhub={kind='blueprint',entities={{entity_number=1,name='space-platform-hub',position={x=0,y=0}},
+  {entity_number=2,name='chest',position={x=10.5,y=0.5}}}}
+H.blueprint_import(p,{blueprint='offhub',slot='offhub'})
+local asked
+local hub_build=function(args)
+  asked=args.position
+  local hx=args.position.x+(0-3.5)
+  if math.abs(hx)>0.01 or math.abs(args.position.y)>0.01 then return end  -- the hub collides: all or nothing
+  unit=unit+1
+  w4[#w4+1]={valid=true,name='entity-ghost',type='entity-ghost',ghost_name='chest',position={x=args.position.x+7,y=0.5},force=p.force,unit_number=unit}
+end
+game.create_inventory=function() local inv=make(); rawset(inv[1],'build_blueprint',hub_build); return inv end
+local pp4=setmetatable({__platform='Sunward',__player=p},{__index=function(_,k)
+  if k=='surface' then return s4 elseif k=='position' then return {x=0,y=0} end return p[k] end})
+local off=H.paste(pp4,{slot='offhub',position={x=0,y=0},anchor='center'})
+eq(asked.x,0); eq(off.count,0,'the old way: the hub collides, nothing placed'); eq(off.anchor,nil)
+local r4=H.paste(pp4,{slot='offhub'})
+eq(asked.x,3.5); eq(asked.y,0); eq(r4.count,1); eq(w4[#w4].position.x,10.5)
+eq(r4.anchor.by,'hub'); eq(r4.anchor.aligned,true); eq(r4.anchor.hub.x,0); eq(r4.anchor.hub_landed.x,0)
+eq(r4.anchor.paste_position.x,3.5); eq(r4.origin_at.x,0); eq(r4.center_at.x,3.5); eq(r4.center_at.y,0)
+eq(r4.existing_entities,1,'the platform\'s hub stands where the blueprint\'s goes'); eq(r4.not_placed_count,0)
+-- position names where the blueprint's hub goes (hub at 0,0 is what agents pass)
+local r5=H.paste(pp4,{slot='offhub',position={x=0,y=0}}); eq(asked.x,3.5); eq(r5.anchor.aligned,true)
+-- turned east, the hub's offset from the center turns too
+H.paste(pp4,{slot='offhub',direction='east'}); eq(asked.x,0); eq(math.abs(asked.y),3.5)
+game.create_inventory=make
+fails(function() H.paste(p,{slot='offhub',position={x=0,y=0},anchor='hub'}) end,'anchor hub works on a platform')
+fails(function() H.paste(pp4,{slot='ferry-module-audit-north',anchor='hub'}) end,'holds no space%-platform%-hub')
+fails(function() H.paste(pp4,{slot='offhub',anchor='middle'}) end,'anchor must be hub or center')
+fails(function() H.paste(p,{slot='offhub'}) end,'position is required')
 print('blueprint policy tests passed')

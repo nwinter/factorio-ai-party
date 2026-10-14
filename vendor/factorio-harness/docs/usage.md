@@ -53,7 +53,18 @@ fh call walk --args '{"direction":"east","ticks":60}' --wait
 fh call status
 ```
 
-- Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments.
+- Arguments go in `--args JSON` or `--args-file F`. `fh describe` lists every action's arguments; `fh help ACTION`
+  (or `fh call ACTION --help`) prints one action's in about 1 KB.
+- Common wrong argument names run as meant, and the reply's `corrected` (also on the final `warning:` line) shows the
+  call as it ran: `craft` `item` is `recipe`, `move_to` `target` is `position`, `scan` `names`/`types`/`range` are
+  `name`/`type`/`radius`, `chat`/`tells` `count` is `limit`, `build` `placements` is `builds`, `board_post` `text` is
+  `title`, `recipes`/`technologies` `search`/`name` are `prefix`, `transfer` `to_player: true` is `direction`, and a
+  `board` call with an `id` and a `note`, `owner` or `status` is `board_update`. A valid argument is never renamed; a
+  corrected call that still fails says `[ran as ...]`; any other unknown argument fails with the valid list. `scan`
+  `fields` also takes one string (`"status|hp"` or `"status,hp"`).
+- A compact reply over about 10 KB prints its first 8 KB, a line `[N more lines, K KB: ./fh more]` and its final
+  `error:`/`warning:` line; `fh more` prints the next page (kept in `.fh-more.txt` in the working directory, or
+  `FH_MORE_FILE`). `FH_PAGE_BYTES` sets the page size (0 prints everything); `--format json` is never paged.
 - Timed actions return as soon as the game accepts them. `--wait` blocks until the action finishes. It works with `walk`, `move_to`, `mine`, `build_path`, `construct`, `shoot`, `pickup`, `repair`, `wait_until` and `wait_ticks`, with `collect`, `rearm`, `refuel` or `feed` when a `radius` is given, and with `transfer`, `rearm`, `refuel` or `build` while they wait for a hand craft (`awaiting_craft`).
 - With `--wait`, the command exits nonzero unless the action ended successfully, or when the wait times out. `move_to` ending `arrived_near` (stopped beside a goal inside an entity) is a success. An action that hit its own limit fails with `error.code` `timed_out`. The wait lasts until the action's own end tick (at least 30 s, at most 15 min) unless `--wait-timeout MS` says otherwise.
 - A timed-out wait is not a finished action. The reply has `error.code` `wait_timeout`, `timed_out: true` and `still_running` (the action's kind and end tick) and no `completion`. The action keeps running in game; a new character action would interrupt it. `fh wait` blocks until the character is idle again and reports the last outcome.
@@ -61,6 +72,13 @@ fh call status
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
   (`standing on a transport-belt facing east: it carries you; step off to stay put`); the game moves a character
   standing on a belt. `status.on_belt` shows the same for as long as it stands on one.
+- An underground belt or pipe-to-ground in `build` and `inspect` replies shows `paired_with` or `unpaired`; an unpaired
+  one adds `unpaired_why`, read along its reach toward where its partner would be: tiles it cannot pass under
+  (`it cannot pass under lava-hot at (-217,73), ...; the output at (-216.5,77.5) is on the far side`: lava and empty
+  space, the tiles the pipe router also keeps undergrounds from; the runtime API does not expose an underground's own
+  collision mask), a partner that is still a ghost, one in reach the game did not pair, the nearest end on its axis
+  when it does not match, or none in reach. `place_ghosts` adds `underground_warnings` for a span that crosses such
+  tiles (once per span).
 - Full `status` (not `brief`) has `teammates`, one line on where every other agent is (compact output prints it right
   after `clock:`): agents elsewhere first, grouped by planet, platform or cargo pod, then the ones on your surface,
   nearest first, with distance and compass direction:
@@ -304,6 +322,16 @@ fh sleep 900 --until researched                       # ...or until the research
 ## Messages and reads
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
+- An electric machine no pole reaches reads `status_name: unpowered` (whatever the engine's status, often
+  `low_power`) with `power: "unpowered: no pole reaches it; nearest pole medium-electric-pole at (17,10), 7 tiles"`,
+  in `inspect` and in build replies (`power`).
+- A `transfer`, `collect` or `feed` that moved nothing says why in `nothing_moved` (also on the final `warning:`
+  line): what the target holds (`wooden-chest at (3.5,3.5) holds no iron-plate in chest; it holds copper-plate*15`),
+  `already holds N (up_to M)`, what you keep, or for `feed` per wanted item what you carry and the machines hold
+  (`you carry 0 coal; 2 machines hold 5-6`). The third identical empty move in 7 minutes adds `repeated`.
+- Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
+  `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
+  results), `last_failure`; `queue_status` shows every step in full.
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
@@ -398,7 +426,25 @@ fh sleep 900 --until researched                       # ...or until the research
     modules differ from the blueprint, each `{name, position, ghost?, differs, fix}`, where `fix` is the `configure`
     call that sets them (modules: `transfer`);
   - `reason`, a one-line summary.
-  A paste never changes what was already there.
+  A normal paste never changes what was already there.
+- `paste {mode}` picks the player's paste: `normal` (default) is all or nothing, as a plain paste: one colliding
+  entity and the game places no ghost at all. `forced` is a shift-paste: ghosts where they fit, trees, rocks and the
+  like in the way marked for deconstruction (`marked_for_deconstruction`, `marked_by_name`: only what this paste
+  marked), the rest in `not_placed` with reasons as above. `superforced` (ctrl+shift-paste) also marks our own
+  entities in the way. On a platform (`platform=NAME`) and for bots the mode goes to `build_blueprint`.
+- The game puts a blueprint's center (the middle of the box around its entities and tiles) at the paste `position`.
+  On a platform (`platform=NAME`) a blueprint that holds a `space-platform-hub` is placed by its hub instead
+  (`anchor: "hub"`, the default there): `position` is where its hub goes, by default the platform's hub, so a
+  blueprint whose hub is off its center no longer lands shifted with its hub on the platform's (Astra 18:55: a
+  33-entity Sunward paste placed nothing, a 22-entity one landed at another offset). `anchor: "center"` keeps the
+  center at `position`. The reply says `anchor {by, hub, paste_position, hub_landed, aligned}`, and whenever the
+  paste is checked (short, wired or anchored) `origin_at` and `center_at`: where the blueprint's 0,0 and its center
+  landed.
+- After any paste of a blueprint with wires, each of its circuit and copper wires whose two ends stand where the
+  layout puts them (a new ghost, or a matching entity or ghost from before) is checked and connected if missing, as
+  the game's paste does: `wires {in_blueprint, connected (already), added, end_not_placed, failed, ends_not_placed
+  ["chest #3"]}` (Astra 18:51: Sunward's module-audit paste made 0 ghosts over one collision, and its entities placed
+  one by one with `place_ghosts` lost their wires).
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
   within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists
@@ -579,7 +625,9 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   roster. Anyone may take an open unowned item or add a note; only the owner or requester changes status, reassigns or
   releases (`owner: ""`). Titles are cut at 120 bytes and notes at 200 instead of failing; the last 10 notes are kept.
 - `board` returns `plan` (below), `items` (list rows carry the last 2 notes and `note_count`; `id` gives one item in
-  full), `matched` and `open_unowned`. `status:"active"` means open, claimed, doing or blocked.
+  full), `matched` and `open_unowned`. `status:"active"` means open, claimed, doing or blocked. An agent's plain
+  `board` read (no filter, no limit) is about 3 KB: the newest items with their last note (`note_count`), the plan's
+  goals and lines cut to 100 characters, and `more` with how many were left out; `full: true` lists as before.
 - The team plan: one item of kind `plan`, edited with `board_plan {goals?, doing?, agent?}`: `goals` (up to 600
   characters) replaces the goals, `doing` (up to 160) sets one agent's line, yours unless `agent` names another; `""`
   clears either. Anyone edits any part. With no arguments it reads. Replies and `board` reads give `plan {id, goals,
@@ -697,7 +745,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
   fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`), and `away` for recipients on
   another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}`
-  returns the tells you sent or received `{seq,tick,from,away?,to,team?,text}`; the operator path returns every tell, which
+  returns the tells you sent or received `{seq,tick,from,away?,to,team?,text}`, by default those since your last
+  `tells` read (the last 10 on a first read; `since: 0` lists them all); the operator path returns every tell, which
   the stream shows on its logistics ticker (`-> Sol: text`, never voiced). CLI: `fh tell luna "text"`,
   `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells --since N`.
 - `operator {text}` (1..500 characters, one line; longer is cut and the reply carries `cut {length, kept}`) files a
@@ -731,8 +780,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   `id, name, surface, position, speed (tiles/s), closing, nearest {x,y,name}, nearest_distance, eta_s, character
   {x,y,player}, character_distance`.
 - Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
-  `standing_s` (how long its character has had no action, no running queue and a body on the map; kept once a second
-  for agents that made a request; an fh sleep with nothing running counts as standing, a timed action does not),
+  `standing_s` (how long its character has had a body on the map and nothing that moves or works it; kept once a
+  second for agents that made a request). A wait is not work: `wait_ticks`, `wait_until`, `sleep`, a queue held behind
+  a direct wait (a plan runs after a direct command ends), and a one-off queue wait all count as standing. A repeating
+  plan between its cycles counts as work. Work shorter than 20 s does not end standing (shift07: Sonnet's back-to-back
+  waits, with a few seconds of its plan between them, read as busy for 70 minutes).
   `alive`, `action`, `action_until_s`, `queue {state: none|empty|paused|running, steps}`, `sleeping_s`, `sleep_left_s`,
   `unread_chat`, `unread_mentions` (tells included), `unread_tells`, `unread_board` and `last_request_s`. `tell {to,
   text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells, waking a sleeper

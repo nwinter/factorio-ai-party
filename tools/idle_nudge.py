@@ -6,13 +6,18 @@
 shift05: Sonnet's character stood still most of the shift (a short plan, then long sleeps) and it discarded its fh
 replies, so it missed the team's messages. Every --poll seconds this reads the harness's operator `idle_report`
 (idle.lua, read only) and sends one operator tell (tells.lua: the next reply's team tells, and a wake from sleep;
-never the game chat) to an agent whose character has stood --idle-min minutes or more: no action, no running queue
-step, a body on the map (dead or in a cargo pod is not standing). A timed action the agent chose (wait_ticks,
-wait_until) is an action, so it is never nudged; an fh sleep with nothing running is standing. A standing order
-running for the agent (orders.lua: the report's `orders.running`) is work, so never nudged. The tell holds facts
-only: how long, the queue and sleep state, the standing orders set, what waits unread. At most once per --every-min minutes per agent, never in
-the first --grace-min minutes after this process starts (the shift start), and not after the run's deadline. Each
-nudge is a line in runs/RUN/nudges.jsonl (sent or not, and why not).
+never the game chat) to an agent whose character has stood --idle-min minutes or more: nothing that moves or works it, a body on the map
+(dead or in a cargo pod is not standing). A wait is not work: wait_ticks, wait_until and sleep, and a queue held behind
+a direct wait (the plan runs only after it), count as standing (shift07: Sonnet waited 20000-30000 ticks back to back
+from 15:13 to 16:24 with its loop3 plan queued behind each wait, and was never nudged); work seen in one poll only (a
+few seconds between waits) does not end standing. Standing is the longer of the harness's count (idle.lua) and this
+process's own, so an older harness that counts waits as work is covered too. A standing order running for the agent
+(orders.lua: the report's `orders.running`) is work, so never nudged. The tell holds facts only: how long, the
+wait, the queue and sleep state, the standing orders set, what waits unread. At most once per --every-min minutes per
+agent, never in the first --grace-min minutes after this process starts (the shift start), and not after the run's
+deadline. Each nudge is a line in runs/RUN/nudges.jsonl (sent or not, and why not), with since_last_nudge: whether a
+reply delivered the last nudge's tell (its unread tells went to 0) and whether the agent made requests since.
+Delivered is not read: Sonnet writes its replies to a file and reads the last 2 lines.
 """
 import argparse, datetime, json, os, sys, time
 
@@ -48,7 +53,19 @@ def orders_text(o):
     return f" Standing orders: {n} set, {state}."
 
 
-def nudge_text(row):
+WAITS = ("wait_ticks", "wait_until", "sleep")  # not work (idle.lua WAITS)
+
+
+def working(row):
+    """Something moves or works the character now: an action that is not a wait, or a queue that can run (a queue
+    is held behind a direct wait)."""
+    act = row.get("action")
+    if act:
+        return act not in WAITS
+    return (row.get("queue") or {}).get("state") == "running"
+
+
+def nudge_text(row, standing_s=None):
     """The tell: facts only, no advice."""
     sleep = f", sleeping {minutes(row['sleeping_s'])} min" if row.get("sleeping_s") else ""
     def count(n, what):
@@ -58,31 +75,97 @@ def nudge_text(row):
               count(row.get("unread_tells") or 0, "tell")]
     if row.get("unread_board"):
         unread.append(count(row["unread_board"], "board line"))
-    return (f"Operator (automatic, facts only): your character has stood idle for {minutes(row['standing_s'])} min "
-            f"(no action, no queue step{sleep}). Queue: {queue_text(row.get('queue'))}.{orders_text(row.get('orders'))} "
+    act = row.get("action")
+    if act in WAITS:
+        q = row.get("queue") or {}
+        held = (f", your queue's {q['steps']} steps start only after it" if q.get("state") == "running" and q.get("steps")
+                else "")
+        doing = f"in {act}{held}{sleep}"
+    else:
+        doing = f"no action, no queue step{sleep}"
+    standing = standing_s if standing_s is not None else row.get("standing_s")
+    return (f"Operator (automatic, facts only): your character has stood idle for {minutes(standing)} min "
+            f"({doing}). Queue: {queue_text(row.get('queue'))}.{orders_text(row.get('orders'))} "
             "Unread for you: " + ", ".join(unread) + ".")
 
 
 class Nudger:
     """The rules, apart from RCON (tests drive it with a fake report and a fake send)."""
 
-    def __init__(self, members=None, idle_min=10, every_min=20, grace_min=5, start=None, deadline=None):
+    def __init__(self, members=None, idle_min=10, every_min=20, grace_min=5, start=None, deadline=None, run_dir=None):
         self.members = set(members or [])
+        self.run_dir = run_dir
         self.idle_s, self.every_s, self.grace_s = idle_min * 60, every_min * 60, grace_min * 60
         self.start = start if start is not None else time.time()
         self.deadline = deadline
         self.last = {}  # agent -> time of its last nudge
+        self.idle_since = {}  # agent -> since when this process has seen it standing (waits are standing)
+        self.busy_polls = {}  # agent -> polls in a row it was seen working (one alone does not end standing)
+        self.since = {}  # agent -> since its last nudge: {tell_delivered, requests}
+
+    def observe(self, row, now):
+        """This poll's view of an agent: its own standing count, and what happened since its last nudge."""
+        name = row["name"]
+        if not row.get("alive", True):
+            self.idle_since.pop(name, None)
+            self.busy_polls.pop(name, None)
+        elif working(row) or (row.get("orders") or {}).get("running"):
+            self.busy_polls[name] = self.busy_polls.get(name, 0) + 1
+            if self.busy_polls[name] >= 2:
+                self.idle_since.pop(name, None)
+        else:
+            self.busy_polls[name] = 0
+            self.idle_since.setdefault(name, now - (row.get("standing_s") or 0))
+        if name in self.last:
+            s = self.since.setdefault(name, {"tell_delivered": False, "requests": False})
+            if not (row.get("unread_tells") or 0):
+                s["tell_delivered"] = True
+            if row.get("last_request_s") is not None and now - row["last_request_s"] > self.last[name]:
+                s["requests"] = True
+
+    QUEUE_WORK = ('"action":"queue_submit"', '"action":"queue_repeat"', '"action":"queue_resume"', '"action":"plan_run"')
+
+    def queue_work(self, name, now):
+        """Did the agent start queued work within the idle window (journal requests)? A queue of short jobs can finish
+        between two polls, so the polls see an empty queue while the character works (shift07 19:08, Sol: 30+ queue
+        jobs in 10 min, nudged as idle). Until the harness's own standing count sees queue steps (eng/minds-waits)."""
+        if not self.run_dir:
+            return False
+        path = os.path.join(self.run_dir, name, "journal.jsonl")
+        try:
+            with open(path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                f.seek(max(0, f.tell() - 400000))
+                lines = f.read().decode("utf-8", "replace").splitlines()
+        except OSError:
+            return False
+        for line in reversed(lines):
+            if '"event":"request"' not in line or not any(k in line for k in self.QUEUE_WORK):
+                continue
+            try:
+                at = datetime.datetime.fromisoformat(json.loads(line)["at"].replace("Z", "+00:00")).timestamp()
+            except Exception:
+                continue
+            return now - at < min(300, self.idle_s)  # a plan started 8 min ago and long finished is not work now
+        return False
+
+    def standing(self, row, now):
+        """The longer of the harness's count and this process's own."""
+        own = now - self.idle_since[row["name"]] if row["name"] in self.idle_since else 0
+        return max(row.get("standing_s") or 0, own)
 
     def due(self, row, now):
         """None when this agent gets a nudge now, else why not (only for agents standing long enough)."""
         if self.members and row["name"] not in self.members:
             return "not on the team"
-        if (row.get("standing_s") or 0) < self.idle_s or not row.get("alive", True):
+        if self.standing(row, now) < self.idle_s or not row.get("alive", True):
             return "active"
-        if row.get("action"):
+        if working(row):
             return "in an action"
         if (row.get("orders") or {}).get("running"):
             return "running a standing order"
+        if self.queue_work(row["name"], now):
+            return "queued work in its journal"
         if now - self.start < self.grace_s:
             return "first minutes of the shift"
         if self.deadline and now >= self.deadline:
@@ -95,20 +178,26 @@ class Nudger:
         """One poll: nudge every agent that is due; write a log row for each nudge sent (or that failed to send)."""
         out = []
         for row in report.get("agents") or []:
+            self.observe(row, now)
             if self.due(row, now) is not None:
                 continue
-            text = nudge_text(row)
+            standing = self.standing(row, now)
+            text = nudge_text(row, standing)
             entry = {"t": datetime.datetime.fromtimestamp(now).astimezone().isoformat(timespec="seconds"),
-                     "agent": row["name"], "standing_min": minutes(row.get("standing_s")),
+                     "agent": row["name"], "standing_min": minutes(standing), "action": row.get("action"),
                      "queue": queue_text(row.get("queue")), "sleeping_min": minutes(row.get("sleeping_s")) or None,
                      "unread": {k: row.get(k) or 0 for k in ("unread_chat", "unread_mentions", "unread_tells",
                                                              "unread_board")},
                      "last_request_min": minutes(row.get("last_request_s")) if row.get("last_request_s") is not None
                      else None, "text": text}
+            if row["name"] in self.last:  # did a reply carry the last nudge, and has the agent asked anything since?
+                entry["since_last_nudge"] = dict(self.since.get(row["name"]) or {"tell_delivered": False,
+                                                                                  "requests": False})
             try:
                 res = send(row["name"], text)
                 entry.update(sent=True, tell_seq=(res or {}).get("seq"))
                 self.last[row["name"]] = now
+                self.since[row["name"]] = {"tell_delivered": False, "requests": False}
             except Exception as e:
                 entry.update(sent=False, error=f"{type(e).__name__}: {e}"[:200])
             write(entry)
@@ -180,7 +269,7 @@ def main():
     ap.add_argument("--once", action="store_true", help="one poll (with --grace-min 0 to check the rules now)")
     a = ap.parse_args()
     h = Harness(a.world, a.port)
-    n = Nudger(team_members(a.run), a.idle_min, a.every_min, a.grace_min, deadline=run_deadline(a.run))
+    n = Nudger(team_members(a.run), a.idle_min, a.every_min, a.grace_min, deadline=run_deadline(a.run), run_dir=a.run)
     path = os.path.join(a.run, "nudges.jsonl")
 
     def send(name, text):
@@ -193,7 +282,11 @@ def main():
             entry["dry_run"] = True
         with open(path, "a") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-        log(f"nudge {entry['agent']}: {'sent' if entry.get('sent') else entry.get('error')} ({entry['standing_min']} min)")
+        since = entry.get("since_last_nudge")
+        log(f"nudge {entry['agent']}: {'sent' if entry.get('sent') else entry.get('error')} ({entry['standing_min']} min"
+            + (f", {entry['action']}" if entry.get("action") else "")
+            + (f"; since the last nudge: tell {'delivered' if since['tell_delivered'] else 'not delivered'}, "
+               f"{'requests' if since['requests'] else 'no requests'}" if since else "") + ")")
 
     log(f"idle nudges for {a.run}: {len(n.members) or 'all'} agents, idle {a.idle_min} min, every {a.every_min} min, "
         f"grace {a.grace_min} min, deadline {time.strftime('%H:%M', time.localtime(n.deadline)) if n.deadline else '?'}"

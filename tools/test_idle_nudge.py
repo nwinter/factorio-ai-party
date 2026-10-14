@@ -19,6 +19,50 @@ def row(name, standing_min, **kw):
     return r
 
 
+def sonnet_shift07():
+    """Sonnet, shift07 15:13-16:24 (its journal: tools/idle_nudge_sonnet_shift07.json): plan_run loop3, queue_resume,
+    then a direct wait_ticks of 20000 or 30000 ticks, again and again; each wait held the plan back, which ran a few
+    seconds between waits. The nudge started 15:13:50 and logged nothing in 70 minutes (viewer Joonazan 16:24: "Sonnet
+    hasn't done anything except wait"). Replayed through idle_report rows as the shift07 harness gave them (waits
+    were work there: standing 0, the queue "running"), one poll a minute as the nudge runs."""
+    import datetime as dt
+    data = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "idle_nudge_sonnet_shift07.json")))
+    ev = [(dt.datetime.fromisoformat(e["at"].replace("Z", "+00:00")).timestamp(), e) for e in data["events"]]
+    start = dt.datetime.fromisoformat("2026-10-13T22:13:50+00:00").timestamp()
+    end = dt.datetime.fromisoformat("2026-10-13T23:24:30+00:00").timestamp()
+    n = N.Nudger(["sonnet"], start=start)
+    sent, logged = [], []
+    last_request, unread = start, 0
+
+    def send(name, text):
+        sent.append(text)
+        return {"seq": len(sent)}
+    t = start
+    while t <= end:
+        act, queued = None, False
+        for at, e in ev:
+            if at > t:
+                break
+            if "active" in e:
+                act = e["active"]
+            if e.get("request") == "plan_run":
+                queued = True
+            if e.get("request") in ("wait_ticks", "queue_resume") and at > last_request:
+                last_request = at
+                unread = 0  # a reply carries the team block, tells included
+        r = row("sonnet", 0, action=act, queue={"state": "running", "steps": 7} if queued else {"state": "none"},
+                unread_tells=unread, last_request_s=t - last_request)
+        for e in n.step({"agents": [r]}, t, send, logged.append):
+            unread += 1
+        t += 60
+    times = [dt.datetime.fromisoformat(e["t"]).astimezone(dt.timezone.utc).strftime("%H:%M") for e in logged]
+    assert times == ["22:23", "22:43", "23:03", "23:23"], times  # 15:23, 15:43, 16:03, 16:23 PDT: 10 min in, then 20
+    assert logged[0]["action"] == "wait_ticks" and "in wait_ticks, your queue's 7 steps start only after it" in sent[0], \
+        sent[0]
+    # its replies carried each tell (it kept making requests): delivered, though it reads 2 lines of each reply
+    assert all(e["since_last_nudge"] == {"tell_delivered": True, "requests": True} for e in logged[1:]), logged
+
+
 def main():
     sent, rows = [], []
     send = lambda name, text: sent.append((name, text)) or {"seq": len(sent)}  # noqa: E731
@@ -27,23 +71,34 @@ def main():
     # shift05's Sonnet: 25 minutes standing between sleeps, 7 unread chat lines, 2 mentions, a tell, a paused queue
     sonnet = row("sonnet", 25, sleeping_s=600, queue={"state": "paused", "steps": 3}, unread_chat=7,
                  unread_mentions=3, unread_tells=1)
-    report = {"agents": [sonnet, row("astra", 3), row("luna", 12, action="wait_until"), row("nick", 40)]}
+    report = {"agents": [sonnet, row("astra", 0, action="mine"), row("luna", 12, action="wait_until"), row("nick", 40)]}
     assert n.step(report, T0 + 120, send, rows.append) == [] and not sent, "not in the first 5 minutes of the shift"
     out = n.step(report, T0 + 400, send, rows.append)
-    assert [e["agent"] for e in out] == ["sonnet"], out  # astra 3 min, luna in a timed action, nick not on the team
-    assert sent[0][1] == ("Operator (automatic, facts only): your character has stood idle for 25 min (no action, no "
+    # astra mining; luna in a wait (not work: shift07), nick not on the team. The same report twice: this process's
+    # own count has gone on 280 s since it first saw them (25 + 4.7 min)
+    assert [e["agent"] for e in out] == ["sonnet", "luna"], out
+    assert sent[0][1] == ("Operator (automatic, facts only): your character has stood idle for 30 min (no action, no "
                           "queue step, sleeping 10 min). Queue: paused with 3 steps. Unread for you: 7 chat messages, "
                           "2 mentions, 1 tell."), sent[0][1]
+    assert sent[1][1].startswith("Operator (automatic, facts only): your character has stood idle for 17 min (in "
+                                 "wait_until). Queue: none."), sent[1][1]
     e = rows[0]
-    assert e["sent"] and e["tell_seq"] == 1 and e["standing_min"] == 25 and e["queue"] == "paused with 3 steps" \
-        and e["sleeping_min"] == 10 and e["unread"]["unread_chat"] == 7, e
+    assert e["sent"] and e["tell_seq"] == 1 and e["standing_min"] == 30 and e["queue"] == "paused with 3 steps" \
+        and e["sleeping_min"] == 10 and e["unread"]["unread_chat"] == 7 and "since_last_nudge" not in e, e
     # at most once per 20 minutes per agent, then again
     assert n.step(report, T0 + 400 + 19 * 60, send, rows.append) == []
-    assert [x["agent"] for x in n.step(report, T0 + 400 + 20 * 60, send, rows.append)] == ["sonnet"]
-    # 10 minutes is the line; a dead character, an action or a running queue is not idle
+    again = n.step(report, T0 + 400 + 20 * 60, send, rows.append)
+    assert [x["agent"] for x in again] == ["sonnet", "luna"]
+    # since the last nudge: Sonnet's tell still unread (its replies went to a file), Luna's delivered
+    assert again[0]["since_last_nudge"] == {"tell_delivered": False, "requests": True}, again[0]
+    assert again[1]["since_last_nudge"] == {"tell_delivered": True, "requests": True}, again[1]
+    # 10 minutes is the line; a dead character, work or a running queue is not idle; a wait is
     assert n.due(row("astra", 9.9), T0 + 900) == "active" and n.due(row("astra", 10), T0 + 900) is None
     assert n.due(row("astra", 30, alive=False), T0 + 900) == "active"
-    assert n.due(row("astra", 30, action="wait_ticks"), T0 + 900) == "in an action"
+    assert n.due(row("astra", 30, action="wait_ticks"), T0 + 900) is None
+    assert n.due(row("astra", 30, action="mine"), T0 + 900) == "in an action"
+    assert n.due(row("astra", 30, queue={"state": "running", "steps": 2}), T0 + 900) == "in an action"
+    assert n.due(row("astra", 30, action="wait_ticks", queue={"state": "running", "steps": 7}), T0 + 900) is None
     assert n.due(row("astra", 30), T0 + 3600) == "after the deadline"
     # a standing order running for the agent is work (orders.lua; the report's orders.running), never a nudge
     assert n.due(row("astra", 30, orders={"set": 2, "running": "restock-ammo"}), T0 + 900) == "running a standing order"
@@ -54,6 +109,13 @@ def main():
     t = N.nudge_text(row("astra", 12, orders={"set": 1, "paused": True, "operator_paused": True}))
     assert "Standing orders: 1 set, paused by the operator." in t, t
     assert "Standing orders" not in N.nudge_text(row("astra", 12))
+    # an order that ran a while does not leave this process's own count standing when it ends
+    o = N.Nudger([], start=T0)
+    o.observe(row("astra", 0, orders={"set": 1, "running": "restock-ammo"}), T0 + 600)
+    o.observe(row("astra", 0, orders={"set": 1, "running": "restock-ammo"}), T0 + 610)
+    o.observe(row("astra", 0, orders={"set": 1}), T0 + 1800)
+    assert o.standing(row("astra", 0), T0 + 1800) == 0, o.idle_since
+    sonnet_shift07()
     # a send that fails is logged and tried again at the next poll (not counted as a nudge)
     m = N.Nudger([], start=T0)
     bad = []

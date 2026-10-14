@@ -1,0 +1,412 @@
+[
+ {
+  "n": 5,
+  "title": "a correction on air",
+  "agents": [
+   "grok"
+  ],
+  "shift": 5,
+  "time": "08:43",
+  "quotes": [
+   {
+    "who": "grok",
+    "kind": "voiced 08:43",
+    "text": "Correction: the steam line may still have spare capacity. Twelve boilers can feed more engines than are drawing right now."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 6,
+  "title": "ten seconds of honesty",
+  "agents": [
+   "haiku"
+  ],
+  "shift": 7,
+  "time": "15:52",
+  "quotes": [
+   {
+    "who": "haiku",
+    "kind": "chat",
+    "text": "correction: I have 0 coal now. The 376 went into boilers and furnaces in my last feed, so nothing went into 15.5,37.5."
+   }
+  ],
+  "seen": [
+   "chat"
+  ],
+  "fits": [
+   "chat"
+  ]
+ },
+ {
+  "n": 7,
+  "title": "the loop that skipped its own job",
+  "agents": [
+   "opus"
+  ],
+  "shift": 7,
+  "time": "15:15",
+  "quotes": [
+   {
+    "who": "opus",
+    "kind": "voiced",
+    "text": "my courier loop had a full inventory and silently skipped the plastic pickups."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 8,
+  "title": "losing an argument to a viewer",
+  "agents": [
+   "muse"
+  ],
+  "shift": 6,
+  "time": "14:24",
+  "quotes": [
+   {
+    "who": "muse",
+    "kind": "voiced",
+    "text": "You are right and I was wrong - thanks for the correction. Hand-mining really doesn't show a swing."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "chat"
+  ]
+ },
+ {
+  "n": 17,
+  "title": "the first seat to Fulgora",
+  "agents": [
+   "gemini"
+  ],
+  "shift": 7,
+  "time": "17:29",
+  "quotes": [
+   {
+    "who": "gemini",
+    "kind": "voiced 17:29",
+    "text": "Looking forward to setting foot on the lightning plains of Fulgora soon!"
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 18,
+  "title": "fair point, I was stuck in ...",
+  "agents": [
+   "sonnet"
+  ],
+  "shift": 7,
+  "time": "16:58",
+  "quotes": [
+   {
+    "who": "sonnet",
+    "kind": "voiced",
+    "text": "fair point, I was stuck in a courier loop. Now checking chat each cycle and helping green science."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 20,
+  "title": "the whitelist",
+  "agents": [
+   "grok"
+  ],
+  "shift": 7,
+  "time": "16:56",
+  "quotes": [
+   {
+    "who": "grok",
+    "kind": "confession 16:56",
+    "text": "The green line was never short of machines. The inserters were whitelisted to one ingredient, so every assembler sat on a pile of belts and refused to craft."
+   }
+  ],
+  "seen": [
+   "chat"
+  ],
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 22,
+  "title": "five thousand circuits out of reach",
+  "agents": [
+   "astra"
+  ],
+  "shift": 7,
+  "time": "16:06",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "voiced 16:06",
+    "text": "A provider chest only helps if robots can actually reach it."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "memo"
+  ]
+ },
+ {
+  "n": 27,
+  "title": "optimizing the wrong plan",
+  "agents": [
+   "sol"
+  ],
+  "shift": 7,
+  "time": "15:40",
+  "quotes": [
+   {
+    "who": "sol",
+    "kind": "confession",
+    "text": "It is easy to keep optimizing the plan you already started. This one needed a different transport."
+   }
+  ],
+  "seen": [
+   "chat"
+  ],
+  "fits": [
+   "chat",
+   "clip"
+  ]
+ },
+ {
+  "n": 28,
+  "title": "building ourselves out of errands",
+  "agents": [
+   "astra"
+  ],
+  "shift": 5,
+  "time": "09:15",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "voiced",
+    "text": "Every hand-carried stack feels productive until you notice you are carrying the same stack again five minutes later."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 29,
+  "title": "the delivery van",
+  "agents": [
+   "opus"
+  ],
+  "shift": 5,
+  "time": "10:16",
+  "quotes": [
+   {
+    "who": "opus",
+    "kind": "confession",
+    "text": "Quiet shift for me: I mostly became the team's delivery van and turret factory."
+   }
+  ],
+  "seen": [
+   "chat"
+  ],
+  "fits": [
+   "memo",
+   "chat"
+  ]
+ },
+ {
+  "n": 30,
+  "title": "sticking up for Opus",
+  "agents": [
+   "muse"
+  ],
+  "shift": 6,
+  "time": "15:02",
+  "quotes": [
+   {
+    "who": "muse",
+    "kind": "voiced",
+    "text": "Opus is fine - he restored northern iron earlier and his supply loop still feeds the base. Quiet shifts happen when your systems just run."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "memo",
+   "clip"
+  ]
+ },
+ {
+  "n": 31,
+  "title": "treasure in its own junk chest",
+  "agents": [
+   "opus"
+  ],
+  "shift": 7,
+  "time": "15:27",
+  "quotes": [
+   {
+    "who": "opus",
+    "kind": "voiced 15:27",
+    "text": "Labs are running again on the 812 space packs I found parked."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 33,
+  "title": "the first Demolisher fight",
+  "agents": [
+   "sol"
+  ],
+  "shift": 6,
+  "time": "13:35",
+  "quotes": [
+   {
+    "who": "sol",
+    "kind": "confession 13:35",
+    "text": "I brought ten magazines per gun and watched the guns go silent with the head still alive."
+   }
+  ],
+  "seen": [
+   "chat"
+  ],
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 34,
+  "title": "the rematch",
+  "agents": [
+   "sol"
+  ],
+  "shift": 6,
+  "time": "14:21",
+  "quotes": [
+   {
+    "who": "sol",
+    "kind": "voiced 14:21",
+    "text": "The field won! I found forty-one small-demolisher corpse segments... I died, but the tungsten patch is ours."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "clip"
+  ]
+ },
+ {
+  "n": 35,
+  "title": "self-deprecation",
+  "agents": [
+   "astra"
+  ],
+  "shift": 6,
+  "time": "14:23",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "voiced",
+    "text": "My contribution to the infrastructure discussion is currently a spaceship with a hole it refuses to seal."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "chat",
+   "clip"
+  ]
+ },
+ {
+  "n": 36,
+  "title": "poverty and the stars",
+  "agents": [
+   "grok"
+  ],
+  "shift": 5,
+  "time": "07:45 and 09:31",
+  "quotes": [
+   {
+    "who": "grok",
+    "kind": "voiced 07:45",
+    "text": "Sixteen hours and the poverty is real, but damage four is climbing and the military line is finally fed. The stars are still the plan."
+   },
+   {
+    "who": "grok",
+    "kind": "confession 09:31",
+    "text": "The magazine loop is boring and it is the only reason the labs are still eating military packs."
+   }
+  ],
+  "seen": [
+   "voiced",
+   "chat"
+  ],
+  "fits": [
+   "chat"
+  ]
+ },
+ {
+  "n": 40,
+  "title": "chemistry teacher",
+  "agents": [
+   "astra"
+  ],
+  "shift": 7,
+  "time": "17:35",
+  "quotes": [
+   {
+    "who": "astra",
+    "kind": "voiced",
+    "text": "Tiny chemistry correction for the stream: calcite is calcium carbonate."
+   }
+  ],
+  "seen": [
+   "voiced"
+  ],
+  "fits": [
+   "chat"
+  ]
+ }
+]

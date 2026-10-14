@@ -1,0 +1,265 @@
+{
+"source": "runs/shift07/sonnet/journal.jsonl, 22:13-23:24Z (15:13-16:24 PDT)",
+"events": [
+{
+"at": "2026-10-13T22:13:34Z",
+"active": null
+},
+{
+"at": "2026-10-13T22:13:38Z",
+"request": "queue_cancel",
+"args": {}
+},
+{
+"at": "2026-10-13T22:13:38Z",
+"request": "plan_run",
+"args": {
+"name": "loop3"
+}
+},
+{
+"at": "2026-10-13T22:13:42Z",
+"request": "queue_resume",
+"args": {}
+},
+{
+"at": "2026-10-13T22:13:44Z",
+"request": "wait_ticks",
+"args": {
+"ticks": 20000
+}
+},
+{
+"at": "2026-10-13T22:13:44Z",
+"active": "wait_ticks"
+},
+{
+"at": "2026-10-13T22:19:26Z",
+"active": null
+},
+{
+"at": "2026-10-13T22:19:30Z",
+"request": "queue_resume",
+"args": {}
+},
+{
+"at": "2026-10-13T22:19:30Z",
+"request": "wait_ticks",
+"args": {
+"ticks": 30000
+}
+},
+{
+"at": "2026-10-13T22:19:30Z",
+"active": "wait_ticks"
+},
+{
+"at": "2026-10-13T22:27:52Z",
+"active": null
+},
+{
+"at": "2026-10-13T22:27:56Z",
+"request": "queue_cancel",
+"args": {}
+},
+{
+"at": "2026-10-13T22:27:56Z",
+"request": "plan_run",
+"args": {
+"name": "loop3"
+}
+},
+{
+"at": "2026-10-13T22:27:56Z",
+"request": "queue_resume",
+"args": {}
+},
+{
+"at": "2026-10-13T22:27:57Z",
+"request": "wait_ticks",
+"args": {
+"ticks": 20000
+}
+},
+{
+"at": "2026-10-13T22:27:57Z",
+"active": "wait_ticks"
+},
+{
+"at": "2026-10-13T22:33:54Z",
+"active": null
+},
+{
+"at": "2026-10-13T22:33:55Z",
+"request": "queue_resume",
+"args": {}
+},
+{
+"at": "2026-10-13T22:33:55Z",
+"request": "wait_ticks",
+"args": {
+"ticks": 30000
+}
+},
+{
+"at": "2026-10-13T22:33:55Z",
+"active": "wait_ticks"
+},
+{
+"at": "2026-10-13T22:42:53Z",
+"active": null
+},
+{
+"at": "2026-10-13T22:42:57Z",
+"request": "queue_cancel",
+"args": {}
+},
+{
+"at": "2026-10-13T22:42:58Z",
+"request": "plan_run",
+"args": {
+"name": "loop3"
+}
+},
+{
+"at": "2026-10-13T22:42:58Z",
+"request": "queue_resume",
+"args": {}
+},
+{
+"at": "2026-10-13T22:42:58Z",
+"request": "wait_ticks",
+"args": {
+"ticks": 20000
+}
+},
+{
+"at": "2026-10-13T22:42:58Z",
+"active": "wait_ticks"
+},
+{
+"at": "2026-10-13T22:48:59Z",
+"active": null
+},
+{
+"at": "2026-10-13T22:48:59Z",
+"request": "queue_resume",
+"args": {}
+},
+{
+"at": "2026-10-13T22:48:59Z",
+"request": "wait_ticks",
+"args": {
+"ticks": 30000
+}
+},
+{
+"at": "2026-10-13T22:49:00Z",
+"active": "wait_ticks"
+},
+{
+"at": "2026-10-13T22:57:58Z",
+"active": null
+},
+{
+"at": "2026-10-13T22:57:59Z",
+"request": "queue_cancel",
+"args": {}
+},
+{
+"at": "2026-10-13T22:57:59Z",
+"request": "plan_run",
+"args": {
+"name": "loop3"
+}
+},
+{
+"at": "2026-10-13T22:57:59Z",
+"request": "queue_resume",
+"args": {}
+},
+{
+"at": "2026-10-13T22:57:59Z",
+"request": "wait_ticks",
+"args": {
+"ticks": 20000
+}
+},
+{
+"at": "2026-10-13T22:57:59Z",
+"active": "wait_ticks"
+},
+{
+"at": "2026-10-13T23:03:59Z",
+"active": null
+},
+{
+"at": "2026-10-13T23:03:59Z",
+"request": "queue_resume",
+"args": {}
+},
+{
+"at": "2026-10-13T23:03:59Z",
+"request": "wait_ticks",
+"args": {
+"ticks": 30000
+}
+},
+{
+"at": "2026-10-13T23:04:00Z",
+"active": "wait_ticks"
+},
+{
+"at": "2026-10-13T23:12:58Z",
+"active": null
+},
+{
+"at": "2026-10-13T23:13:02Z",
+"request": "queue_cancel",
+"args": {}
+},
+{
+"at": "2026-10-13T23:13:02Z",
+"request": "plan_run",
+"args": {
+"name": "loop3"
+}
+},
+{
+"at": "2026-10-13T23:13:03Z",
+"request": "queue_resume",
+"args": {}
+},
+{
+"at": "2026-10-13T23:13:03Z",
+"request": "wait_ticks",
+"args": {
+"ticks": 20000
+}
+},
+{
+"at": "2026-10-13T23:13:03Z",
+"active": "wait_ticks"
+},
+{
+"at": "2026-10-13T23:19:03Z",
+"active": null
+},
+{
+"at": "2026-10-13T23:19:03Z",
+"request": "queue_resume",
+"args": {}
+},
+{
+"at": "2026-10-13T23:19:03Z",
+"request": "wait_ticks",
+"args": {
+"ticks": 30000
+}
+},
+{
+"at": "2026-10-13T23:19:03Z",
+"active": "wait_ticks"
+}
+]
+}

@@ -10,7 +10,8 @@ import { RconClient, RconOutcomeUnknown } from './rcon.js';
 import { Harness, type Reply } from './harness.js';
 import { renderMap } from './view.js';
 import { parseLook } from './look.js';
-import { formatCompact, finalLine } from './format.js';
+import { writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { formatCompact, finalLine, actionHelp, paginate } from './format.js';
 import { parseDeadline, deadlineText } from './deadline.js';
 import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
@@ -31,6 +32,8 @@ const help = `fh — Factorio agent CLI
   fh install --mods /path/to/Factorio/mods   Install bootstrap (one initial game load)
   fh doctor                                 Check connection and available actions
   fh describe                               Discover action arguments from the runtime
+  fh help ACTION                            One action's arguments, about 1 KB (also fh call ACTION --help)
+  fh more                                   The next page of the last long reply (replies over ~10 KB come in 8 KB pages)
   fh observe [--args '{"radius":24}']        Bounded local world state
   fh call ACTION [--args JSON] [--id ID]      Execute an action; keep ID on uncertain outcomes
   fh call walk --args '{"direction":"east","ticks":60}' --wait
@@ -59,6 +62,7 @@ const help = `fh — Factorio agent CLI
   fh confess "text"                         A line for the stream audience only (teammates never see it); input as for say
   fh operator "text"                        A request to the operator (harness bugs, tools, viewer asks); input as for say
   fh tell NAME[,NAME]|team "text"           A line to teammates outside chat: their next reply's team block, wakes them; input as for say
+                                            --fyi: no answer needed; it waits for their next reply and wakes nobody
   fh tells [--since SEQ]                    Tells you sent or received
   fh players [NAME] [--args '{"minutes":10}'] Human players on the map: where, group, what each built, removed, ordered, moved
   fh vote [no] mute|unmute|kick|ban|trust NAME "reason"
@@ -141,9 +145,20 @@ function withDeadline(value: unknown): unknown {
   return {...value as Reply, result:{...result, clock:`${result.clock}; ${deadlineText(deadline)}`}};
 }
 let streaming = false;
+// Long compact replies come in pages: the rest waits in FH_MORE_FILE (default .fh-more.txt here) for `fh more`.
+// FH_PAGE_BYTES sets the page (default 8000; 0 prints everything at once).
+function moreFile(): string { return resolve(process.env.FH_MORE_FILE ?? '.fh-more.txt'); }
+function pageBytes(): number { const n = Number(process.env.FH_PAGE_BYTES ?? 8000); return Number.isFinite(n) && n >= 0 ? n : 8000; }
+function writePaged(text: string) {
+  const { shown, rest } = !streaming && pageBytes() > 0 ? paginate(text, pageBytes()) : { shown: text };
+  process.stdout.write(shown);
+  try { if (rest) writeFileSync(moreFile(), rest); }
+  catch (error) { process.stderr.write(`fh more: could not keep the rest (${String(error)}); FH_PAGE_BYTES=0 prints everything\n`); }
+}
 function output(value: unknown) {
   value = withDeadline(value);
-  process.stdout.write(outputFormat === 'compact' ? formatCompact(value) : JSON.stringify(value) + '\n');
+  if (outputFormat === 'compact') writePaged(formatCompact(value));
+  else process.stdout.write(JSON.stringify(value) + '\n');
   // JSON stays one document on stdout; the error:/warning: line goes to stderr
   // so a reader of the terminal (or 2>&1 | tail -1) still sees it.
   if (outputFormat === 'json' && !streaming) {
@@ -192,11 +207,21 @@ async function main() {
     name:{type:'string'}, session:{type:'string'}, factorio:{type:'string'}, save:{type:'string'},
     headless:{type:'boolean'}, niri:{type:'boolean'}, 'space-age':{type:'boolean'}, bridge:{type:'boolean'}, server:{type:'string'},
     'password-file':{type:'string'}, 'player-data':{type:'string'}, 'bridge-socket':{type:'string'}, socket:{type:'string'},
-    full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'},
+    full:{type:'boolean'}, since:{type:'string'}, limit:{type:'string'}, peek:{type:'boolean'}, aloud:{type:'boolean'}, look:{type:'string'}, fyi:{type:'boolean'},
     'text-file':{type:'string'}, 'deadline-file':{type:'string'}, until:{type:'string'},
   }});
   let command = positionals[0];
-  if (!command || values.help || command === 'help') { process.stdout.write(help); return; }
+  // fh help ACTION (or fh call ACTION --help): that action's arguments, about 1 KB.
+  if (values.help && command === 'call' && positionals[1]) { command = 'help'; positionals.splice(0, 2, 'help', positionals[1]); }
+  if (!command || (values.help && command !== 'help') || (command === 'help' && !positionals[1])) { process.stdout.write(help); return; }
+  // fh more: the next page of the last long reply (no game call).
+  if (command === 'more') {
+    let rest: string;
+    try { rest = readFileSync(moreFile(), 'utf8'); } catch { process.stdout.write('nothing more: the last reply was shown in full\n'); return; }
+    rmSync(moreFile(), { force: true });
+    writePaged(rest);
+    return;
+  }
   if (values.format && !['json','compact'].includes(values.format)) throw new Error('--format must be json or compact');
   outputFormat = command === 'stream' || values.format === 'json' ? 'json' : 'compact';
   streaming = command === 'stream';
@@ -342,6 +367,10 @@ async function main() {
     if (values.look !== undefined) {
       if (command !== 'say') throw new Error('--look applies to say');
       args.look = parseLook(values.look);
+    }
+    if (values.fyi) {
+      if (command !== 'tell') throw new Error('--fyi applies to tell');
+      args.fyi = true;
     }
     values.args = JSON.stringify(args);
     positionals.splice(1, positionals.length - 1, command);
@@ -812,6 +841,10 @@ async function main() {
       output({ok:ready,result:{bridge:bridge.result,player:player?.result?.player},
         ...(ready ? {} : {error:bridge.error ?? player?.error ?? {code:'player_not_ready',message:bridge.result?.in_game ? 'The player has no character (dead, spectating, or in a cutscene)' : 'The client is not in a multiplayer game'}})});
       if (!ready) process.exitCode=1;
+    } else if (command === 'help') {
+      const reply = await execute('describe',{});
+      if (!reply.ok) { output(reply); process.exitCode=1; }
+      else process.stdout.write(actionHelp(reply.result, positionals[1] ?? ''));
     } else if (command === 'doctor') {
       const runtime = await execute('describe',{});
       const player = runtime.ok ? await execute('status',{}) : undefined;

@@ -1778,7 +1778,7 @@ def main():
         write("timeline/index.html", page("Timeline", body, "/timeline/", "The run's events in game time.",
                                           extra_head=head, path="/timeline/"))
         chat_lines = highlights.lines(stats, team, clean, keep_line)
-        body, head = highlights.build_chat(chat_lines, agent, avatar, esc, game_time, team)
+        body, head = highlights.build_chat(chat_lines, agent, avatar, esc, game_time, team, highlights.load_moments(clean))
         write("chat/index.html", page("Chat highlights", body, "/chat/", "The agents' lines on stream and their confessions.",
                                       extra_head=head, path="/chat/"))
         entries = site_search.index(LONG, stats, events, chat_lines, agent, game_time, team)

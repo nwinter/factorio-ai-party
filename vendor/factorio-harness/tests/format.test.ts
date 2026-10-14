@@ -1,6 +1,36 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatCompact } from '../host/format.js';
+import { formatCompact, actionHelp, paginate } from '../host/format.js';
+
+test('fh help ACTION: one action in about 1 KB; an unknown name lists the actions it resembles', () => {
+  const describe = {actions:{craft:{recipe:'recipe name', count:'1..1000 (default 1)', returns:'queued, '+'x'.repeat(400), note:'n'},
+    craftable:{recipes:'x'}, move_to:{position:'{x,y}', tolerance:'0.25..10', ticks:'1..36000'.repeat(40)}}};
+  const craft = actionHelp(describe, 'craft');
+  assert.match(craft, /^craft: fh call craft --args '\{\.\.\.\}'\n  count: 1\.\.1000 \(default 1\)\n  recipe: recipe name\nreturns: queued, x+\.\.\.\nnote: n\n$/);
+  assert.ok(Buffer.byteLength(craft) <= 1100);
+  const move = actionHelp(describe, 'move_to');
+  assert.match(move, /^move_to: .*\n  position: \{x,y\}\n/);
+  const ticks = move.split('\n').find(l => l.startsWith('  ticks: ')) ?? '';
+  assert.ok(ticks.endsWith('...') && ticks.length <= 160, ticks);
+  assert.equal(actionHelp(describe, 'craftt'), 'unknown action craftt; did you mean: craft (3 actions: fh help ACTION)\n');
+  assert.ok(Buffer.byteLength(actionHelp(describe, 'craft', 200)) <= 260);
+});
+test('long compact replies come in pages; the final error:/warning: line stays last', () => {
+  assert.deepEqual(paginate('short\n'), {shown:'short\n'});
+  const lines = Array.from({length:600}, (_, i) => `row ${i}: ${'z'.repeat(40)}`);
+  const { shown, rest } = paginate(lines.join('\n') + '\nwarning: not done: 3\n');
+  assert.ok(Buffer.byteLength(shown) < 8400, String(Buffer.byteLength(shown)));
+  assert.match(shown, /^row 0: /);
+  assert.match(shown, /\n\[\d+ more lines, \d+ KB: \.\/fh more\]\nwarning: not done: 3\n$/);
+  assert.ok(rest && rest.endsWith('row 599: ' + 'z'.repeat(40) + '\nwarning: not done: 3\n'));
+  const firstRest = rest!.split('\n')[0] ?? '';
+  assert.ok(shown.includes('\n' + (lines[lines.indexOf(firstRest) - 1] ?? 'missing') + '\n'), 'pages meet at a line');
+});
+test('corrected calls, empty moves and repeats reach the final warning line', () => {
+  const out = formatCompact({ok:true,id:'x',result:{transferred:0,corrected:'craft {"recipe":"pipe"} (item is recipe)',
+    nothing_moved:'chest at (1,1) holds no pipe',repeated:'transfer 3 times in 7 min with nothing moved'}});
+  assert.match(out, /\nwarning: corrected: .*; nothing moved: chest at \(1,1\) holds no pipe; repeated: transfer 3 times/);
+});
 
 test('failures keep the error and request ID, with hostile strings escaped in tables', () => {
   const output = formatCompact({ok:false,id:'retry-id',error:{code:'action_failed',message:'bad thing'},truncated:true,entities:[
