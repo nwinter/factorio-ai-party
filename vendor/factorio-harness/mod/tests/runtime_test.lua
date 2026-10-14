@@ -2273,6 +2273,33 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   eq(call('inspect',{position={x=24.5,y=0.5},name='logistic-robot'}).name,'logistic-robot')
   world={robot}
   eq(call('inspect',{position={x=24.5,y=0.5}}).name,'logistic-robot')
+  -- Every call that resolves a position takes the building under a robot, by remote view too (Astra 07:05: requests
+  -- at (12.5,12.5) took a logistic robot, "has no logistic requests"). The robot sits on the point itself, first in
+  -- the list: the nearest-first remote pick took it.
+  local requester={valid=true,name='requester-chest',type='logistic-container',position={x=24.5,y=0.5},half=0.5,force=p.force,unit_number=78,
+    get_inventory=function() return nil end,get_fluid_contents=function() return {} end,
+    get_logistic_sections=function() return {sections={},sections_count=0} end}
+  robot.position={x=24.5,y=0.5}
+  robot.get_item_count=function() return 40 end
+  requester.get_item_count=function() return 3 end
+  world={robot,requester}
+  local req=call('requests',{position={x=24.5,y=0.5}})
+  assert(tostring(req.target):find('^requester%-chest at %(24.5,0.5%)'),tostring(req.target))
+  -- Out of reach, by remote view: the same.
+  p.can_reach_entity=function() return false end
+  req=call('requests',{position={x=24.5,y=0.5}})
+  assert(tostring(req.target):find('^requester%-chest'),tostring(req.target))
+  -- circuit_set and configure resolve the chest, in reach and by remote view (their refusals name it).
+  fails(function() call('circuit_set',{position={x=24.5,y=0.5},read={contents=true}}) end,'requester-chest')
+  p.can_reach_entity=function() return true end
+  fails(function() call('circuit_set',{position={x=24.5,y=0.5},read={contents=true}}) end,'requester-chest')
+  -- wait_until item_count over the tile counts the chest, not the robot's cargo.
+  prototypes.item=prototypes.item or {}; prototypes.item.coal=prototypes.item.coal or {fuel_value=4000000}
+  local w=call('wait_until',{['until']='item_count',item='coal',positions={{x=24.5,y=0.5}},at_least=3,timeout=60})
+  eq(w.saw,'coal 3 in 1 entities')
+  -- Named, the robot is still the target.
+  eq(call('inspect',{position={x=24.5,y=0.5},name='logistic-robot'}).name,'logistic-robot')
+  robot.position={x=24.55,y=0.45}
   -- A drill's drop tile and what it drops into (sapilot board #4).
   local drill={valid=true,name='burner-mining-drill',type='mining-drill',position={x=30,y=0},half=1,force=p.force,direction=0,
     drop_position={x=29.7,y=-1.3},drop_target=chest,get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
