@@ -5,7 +5,8 @@ return function(api)
   -- Outcomes of timed actions that count as the step succeeding.
   local SUCCESS={duration_elapsed=true,target_mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true}
   -- construct's 'incomplete' (ghosts left for lack of items, or failures) is a failure.
-  local forbidden = {attach=true, detach=true, recipes=true, technologies=true, inspect=true, blueprint_export=true, blueprint_list=true, stop=true, describe=true, status=true, observe=true, screenshot=true, map=true, nearest=true, craftable=true, scan=true, power=true, grid=true, rates=true, bottleneck=true, stock=true, platforms=true}
+  local forbidden = {attach=true, detach=true, recipes=true, technologies=true, inspect=true, blueprint_export=true, blueprint_list=true, stop=true, describe=true, status=true, observe=true, screenshot=true, map=true, nearest=true, craftable=true, scan=true, power=true, grid=true, rates=true, bottleneck=true, stock=true, platforms=true,
+    order_set=true, order_remove=true, orders=true, orders_pause=true, orders_resume=true}
   local function queue(index)
     local s=api.state()
     s.queues=s.queues or {}
@@ -97,6 +98,7 @@ return function(api)
       for i=#q.history-recent+1,#q.history do history[#history+1]=q.history[i] end
     end
     return {revision=q.revision,paused=q.paused,pending=q.pending,active=q.current or false,history=history,
+      order=q.order and {name=q.order.name,reason=q.order.reason,steps=q.order.total} or nil,
       history_total=history~=q.history and #q.history or nil,
       waiting=q.current and q.current.action=='wait_until' and {condition=q.current.args,saw=q.current.saw,until_tick=q.current.until_tick} or nil,
       guards=q.guards and #q.guards>0 and q.guards or nil,last_failure=failure,after_direct=q.after_direct,
@@ -104,7 +106,7 @@ return function(api)
       limits={pending=MAX_PENDING,history=MAX_HISTORY,instant_per_tick=MAX_INSTANT,argument_bytes=MAX_BYTES}}
   end
   local function record(q,step,ok,result)
-    q.history[#q.history+1]={id=step.id,action=step.action,label=step.label,ok=ok,result=result,started_tick=step.started_tick,finished_tick=game.tick}
+    q.history[#q.history+1]={id=step.id,action=step.action,label=step.label,ok=ok,result=result,started_tick=step.started_tick,finished_tick=game.tick,order=step.order}
     if #q.history>MAX_HISTORY then table.remove(q.history,1) end
     q.revision=q.revision+1
   end
@@ -128,6 +130,13 @@ return function(api)
     if label and jump(q,label) then api.stop(p); return end
     if label then q.history[#q.history].result.goto_error='label not pending: '..label end
     q.paused=true; api.stop(p)
+    -- A standing order's run ends here (orders.lua counts the failure); its
+    -- remaining steps are dropped, so the queue is free again.
+    if q.order then
+      local why=type(result)=='table' and (result.reason or result.outcome) or result
+      q.order_result={name=q.order.name,outcome='failed',reason=step.action..': '..tostring(why),tick=game.tick}
+      q.order=nil; q.pending={}; q.revision=q.revision+1
+    end
   end
   local function check_guards(q,p)
     for i,g in ipairs(q.guards or {}) do
@@ -162,6 +171,55 @@ return function(api)
       if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail}) end
     end
     q.paused=true; q.revision=q.revision+1
+    -- A standing order stopped by anything else (the agent's own request, a
+    -- ride, a death) keeps its remaining steps for later (orders.lua) and
+    -- leaves the queue empty for the agent.
+    if q.order then
+      q.order_result={name=q.order.name,outcome='interrupted',remaining=copy_steps(q.pending),tick=game.tick}
+      q.order=nil; q.pending={}
+    end
+  end
+  -- Standing orders (orders.lua) run in the agent's own queue while it is
+  -- free: no step running or pending and no repeating plan.
+  function M.free(index)
+    local q=(api.state().queues or {})[index]
+    return not q or (not q.current and #q.pending==0 and not q.loop)
+  end
+  function M.run_order(index,name,items,reason)
+    local q=queue(index)
+    assert(M.free(index),'the queue is busy')
+    items=copy_steps(items); assign(q,items)
+    for _,step in ipairs(items) do step.order=name end
+    q.pending=items; q.paused=false
+    q.order={name=name,reason=reason,total=#items,started_tick=game.tick}
+    q.revision=q.revision+1
+  end
+  -- The running order: name, reason, its step number and count.
+  function M.order(index)
+    local q=(api.state().queues or {})[index]
+    if not (q and q.order) then return nil end
+    local o=q.order
+    return {name=o.name,reason=o.reason,total=o.total,started_tick=o.started_tick,step=math.max(1,math.min(o.total,o.total-#q.pending))}
+  end
+  -- Ends the running order at once (removed, over its time): outcome and reason for orders.lua.
+  function M.cancel_order(index,outcome,why)
+    local q=(api.state().queues or {})[index]
+    if not (q and q.order) then return end
+    local name=q.order.name
+    if q.current then record(q,q.current,false,{reason=why}); q.current=nil end
+    api.stop_index(index)
+    q.order=nil; q.pending={}; q.paused=true; q.revision=q.revision+1
+    q.order_result={name=name,outcome=outcome,reason=why,tick=game.tick}
+  end
+  function M.order_result(index)
+    local q=(api.state().queues or {})[index]
+    local r=q and q.order_result
+    if r then q.order_result=nil end
+    return r
+  end
+  -- The agent's own queue calls come first: a running order steps aside.
+  local function preempt(p,q)
+    if q.order then api.stop(p); M.pause(p.index) end
   end
   -- A repeating plan resting between cycles runs nothing, so a runtime
   -- replacement leaves it scheduled instead of pausing the loop.
@@ -172,19 +230,21 @@ return function(api)
     end
   end
   function M.handlers.queue_status(p) return snapshot(queue(p.index)) end
-  -- Checks a plan as queue_submit would (saved plans); returns its byte size.
+  -- Checks a plan as queue_submit would (saved plans, standing orders);
+  -- returns its byte size and the checked steps.
   function M.validate(a)
     local items=steps(a)
     assert(#items<=MAX_PENDING,'queue capacity exceeded')
     guards(a)
     local size=total(items)
     assert(size<=MAX_BYTES,'queue argument byte budget exceeded')
-    return size
+    return size,items
   end
   function M.handlers.queue_submit(p,a)
     local q=queue(p.index); revision(q,a)
     local items=steps(a)
     local new_guards=guards(a)
+    preempt(p,q)
     assert(a.mode==nil or a.mode=='append' or a.mode=='replace','mode must be append or replace')
     assert((a.mode=='replace' and 0 or #q.pending)+#items<=MAX_PENDING,'queue capacity exceeded')
     assert((a.mode=='replace' and 0 or total(q.pending))+total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
@@ -206,6 +266,7 @@ return function(api)
     assert(total(items)<=MAX_BYTES,'queue argument byte budget exceeded')
     local interval=a.interval_ticks or 1800
     assert(type(interval)=='number' and interval==math.floor(interval) and interval>=60 and interval<=36000,'interval_ticks must be 60..36000')
+    preempt(p,q)
     api.stop(p)
     M.pause(p.index)
     q.loop=copy_steps(items); q.interval=interval; q.next_cycle_tick=nil; q.cycle=1
@@ -216,6 +277,7 @@ return function(api)
     local q=queue(p.index)
     assert(a.expected_revision~=nil,'queue_edit requires expected_revision')
     revision(q,a)
+    assert(not q.order,'a standing order ('..(q.order and q.order.name or '')..') is running in the queue: queue_cancel stops it, then edit your own steps')
     local index=a.index
     assert(type(index)=='number' and index==math.floor(index) and index>=1 and index<=#q.pending+1,'index outside pending queue (1-based)')
     local remove=a.remove or 0
@@ -233,6 +295,7 @@ return function(api)
   end
   function M.handlers.queue_cancel(p,a)
     local q=queue(p.index); revision(q,a)
+    preempt(p,q)
     api.stop(p)
     M.pause(p.index)
     if a.clear~=false then q.pending={}; q.loop=nil; q.next_cycle_tick=nil; q.guards={} end
@@ -250,7 +313,8 @@ return function(api)
         if not valid then
           api.stop_index(index); M.pause(index)
         else
-          if q.guards and #q.guards>0 and game.tick%CHECK_TICKS==0 then check_guards(q,p) end
+          -- The agent's guards watch its own plans, not a standing order's run.
+          if q.guards and #q.guards>0 and not q.order and game.tick%CHECK_TICKS==0 then check_guards(q,p) end
           if q.current and q.current.action=='wait_until' then
             local step=q.current
             if game.tick>=step.next_check then
@@ -310,6 +374,10 @@ return function(api)
               else record(q,step,true,result) end
             end
           end
+          if q.order and not q.paused and not q.current and #q.pending==0 then
+            q.order_result={name=q.order.name,outcome='done',tick=game.tick}
+            q.order=nil; q.revision=q.revision+1
+          end
         end
       end
     end
@@ -322,9 +390,9 @@ return function(api)
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},
     queue_resume={expected_revision='optional'},
     wait_ticks={ticks='1..54000 simulation ticks: a queue step, or a direct timed action (fh call wait_ticks --wait)'},
-    wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|crafting_done|researched; a queue step, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw',
-      position='area predicates: centre (default character)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items',fraction='health_*: 0..1',
-      item='item_count',at_least='item_count',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories; default the character\'s inventory',technology='researched',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
+    wait_until={['until']='no_enemy_structures|no_enemies|turrets_idle|ammo_below|health_below|health_above|item_count|crafting_done|researched|ghosts_waiting|damaged|fuel_below; a queue step, a standing order\'s when, or a direct timed action (fh call wait_until --wait): outcomes met | timed_out | failed; status/last show saw',
+      position='area predicates: centre (default character)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...)',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage)',
+      item='item_count',at_least='item_count; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories; default the character\'s inventory',technology='researched',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)'},
     step_options={label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)'},
     guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step',max=MAX_GUARDS}

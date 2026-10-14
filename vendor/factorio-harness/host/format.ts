@@ -173,15 +173,20 @@ export function paginate(text: string, page = 8000, slack = 2000): { shown: stri
   const shown = body.slice(0, n).join('\n') + '\n' + `[${restLines.length} more lines, ${kb} KB: ./fh more]\n` + (last ? last + '\n' : '');
   return { shown, rest };
 }
-/** Full status's teammates line goes right after the clock line. */
+/** Full status's teammates line and the standing orders line go right after the clock line. */
 function byClock(body: Json): Json {
-  if (typeof body.teammates !== 'string' || typeof body.clock !== 'string') return body;
-  const { teammates, ...rest } = body;
+  if (typeof body.clock !== 'string' || (typeof body.teammates !== 'string' && typeof body.orders !== 'string')) return body;
+  const { teammates, orders, ...rest } = body;
   const out: Json = {};
   for (const [key, entry] of Object.entries(rest)) {
     out[key] = entry;
-    if (key === 'clock') out.teammates = teammates;
+    if (key === 'clock') {
+      if (typeof orders === 'string') out.orders = orders;
+      if (typeof teammates === 'string') out.teammates = teammates;
+    }
   }
+  if (orders !== undefined && typeof orders !== 'string') out.orders = orders;
+  if (teammates !== undefined && typeof teammates !== 'string') out.teammates = teammates;
   return out;
 }
 /** One line, whatever the value. */

@@ -593,7 +593,7 @@ async function main() {
       ...(last?.kind === 'construct' ? {built: last.built, mined: last.mined, remaining: last.remaining || undefined,
         missing: last.missing, failed: last.failed, blockers: last.blockers} : {}),
       why: last?.why, note: status.result?.note,
-      team: carrier.result?.team, clock: carrier.result?.clock, chat: carrier.result?.chat,
+      team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
     };
     for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];
     return {...status, tick:carrier.tick ?? status.tick, result};
@@ -707,7 +707,7 @@ async function main() {
         if (compactWaits) return brief(ended, started);
         const full = await finalReply(ended);
         return {...full, result:{idle:true, last, last_combat:status.result?.last_combat, waited_ms:Date.now()-started,
-          team:full.result?.team, clock:full.result?.clock, chat:full.result?.chat}};
+          team:full.result?.team, clock:full.result?.clock, orders:full.result?.orders, chat:full.result?.chat}};
       }
       await delay(pollDelay(status, started));
       status = await poll();

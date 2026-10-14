@@ -21,7 +21,8 @@ return function(api)
   -- minutes, never nudged), nor a queue held behind a direct wait (a plan
   -- runs after a direct command ends: Sonnet's loop3 moved ~10 ticks between
   -- its waits, then its next wait interrupted it). Work shorter than BRIEF
-  -- does not end standing.
+  -- does not end standing. A standing order running is work at once, its
+  -- waits included (orders.lua).
   local WAITS = {wait_ticks=true, wait_until=true, sleep=true}
   local BRIEF = 20 * 60
   M.WAITS = WAITS
@@ -31,6 +32,7 @@ return function(api)
     if act and not waiting then return true end
     local q = s.queues and s.queues[index]
     if not q or q.paused or waiting then return false end
+    if q.order then return true, true end  -- a standing order running (orders.lua), its waits included
     local step = q.current
     if step then return not WAITS[step.action] or q.loop ~= nil end  -- a repeating plan's own wait is the plan
     return q.loop ~= nil or #q.pending > 0
@@ -40,10 +42,11 @@ return function(api)
     local s = api.state()
     s.stand, s.busy = s.stand or {}, s.busy or {}
     for index in pairs(s.clocks or {}) do
+      local working, order = busy(s, index)
       if not api.has_body(index) then s.stand[index], s.busy[index] = nil, nil
-      elseif busy(s, index) then
+      elseif working then
         s.busy[index] = s.busy[index] or game.tick
-        if game.tick - s.busy[index] >= BRIEF then s.stand[index] = nil end
+        if order or game.tick - s.busy[index] >= BRIEF then s.stand[index] = nil end
       else
         s.busy[index] = nil
         if not s.stand[index] then s.stand[index] = game.tick end
@@ -72,6 +75,8 @@ return function(api)
         sleep_left_s=sleeping and math.floor((sl.until_tick - game.tick) / 60) or nil,
         unread_chat=unread.unread or 0, unread_mentions=c.unread_mentions or 0, unread_tells=c.tells or 0,
         unread_board=c.unread_board or 0,
+        -- Standing orders (orders.lua): {set, running, reason, paused}; a running order is a running queue, so not standing.
+        orders=api.orders and api.orders(ag.index) or nil,
         last_request_s=clock and math.floor((game.tick - math.max(clock.call_tick, clock.seen_tick or 0)) / 60) or nil}
     end
     return {agents=out, tick=game.tick}

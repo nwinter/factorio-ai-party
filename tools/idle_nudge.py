@@ -11,12 +11,13 @@ never the game chat) to an agent whose character has stood --idle-min minutes or
 a direct wait (the plan runs only after it), count as standing (shift07: Sonnet waited 20000-30000 ticks back to back
 from 15:13 to 16:24 with its loop3 plan queued behind each wait, and was never nudged); work seen in one poll only (a
 few seconds between waits) does not end standing. Standing is the longer of the harness's count (idle.lua) and this
-process's own, so an older harness that counts waits as work is covered too. The tell holds facts only: how long, the
-wait, the queue and sleep state, what waits unread. At most once per --every-min minutes per agent, never in the first
---grace-min minutes after this process starts (the shift start), and not after the run's deadline. Each nudge is a line
-in runs/RUN/nudges.jsonl (sent or not, and why not), with since_last_nudge: whether a reply delivered the last nudge's
-tell (its unread tells went to 0) and whether the agent made requests since. Delivered is not read: Sonnet writes its
-replies to a file and reads the last 2 lines.
+process's own, so an older harness that counts waits as work is covered too. A standing order running for the agent
+(orders.lua: the report's `orders.running`) is work, so never nudged. The tell holds facts only: how long, the
+wait, the queue and sleep state, the standing orders set, what waits unread. At most once per --every-min minutes per
+agent, never in the first --grace-min minutes after this process starts (the shift start), and not after the run's
+deadline. Each nudge is a line in runs/RUN/nudges.jsonl (sent or not, and why not), with since_last_nudge: whether a
+reply delivered the last nudge's tell (its unread tells went to 0) and whether the agent made requests since.
+Delivered is not read: Sonnet writes its replies to a file and reads the last 2 lines.
 """
 import argparse, datetime, json, os, sys, time
 
@@ -41,6 +42,15 @@ def queue_text(q):
     if q.get("state") == "running":
         return "running"
     return "empty" if q.get("state") == "empty" else "none"
+
+
+def orders_text(o):
+    """The report's standing orders (orders.lua report: {set, running, paused, operator_paused}), or '' with none set."""
+    if not o or not o.get("set"):
+        return ""
+    n = o["set"]
+    state = "paused by the operator" if o.get("operator_paused") else "paused" if o.get("paused") else "none running"
+    return f" Standing orders: {n} set, {state}."
 
 
 WAITS = ("wait_ticks", "wait_until", "sleep")  # not work (idle.lua WAITS)
@@ -75,7 +85,8 @@ def nudge_text(row, standing_s=None):
         doing = f"no action, no queue step{sleep}"
     standing = standing_s if standing_s is not None else row.get("standing_s")
     return (f"Operator (automatic, facts only): your character has stood idle for {minutes(standing)} min "
-            f"({doing}). Queue: {queue_text(row.get('queue'))}. Unread for you: " + ", ".join(unread) + ".")
+            f"({doing}). Queue: {queue_text(row.get('queue'))}.{orders_text(row.get('orders'))} "
+            "Unread for you: " + ", ".join(unread) + ".")
 
 
 class Nudger:
@@ -98,7 +109,7 @@ class Nudger:
         if not row.get("alive", True):
             self.idle_since.pop(name, None)
             self.busy_polls.pop(name, None)
-        elif working(row):
+        elif working(row) or (row.get("orders") or {}).get("running"):
             self.busy_polls[name] = self.busy_polls.get(name, 0) + 1
             if self.busy_polls[name] >= 2:
                 self.idle_since.pop(name, None)
@@ -151,6 +162,8 @@ class Nudger:
             return "active"
         if working(row):
             return "in an action"
+        if (row.get("orders") or {}).get("running"):
+            return "running a standing order"
         if self.queue_work(row["name"], now):
             return "queued work in its journal"
         if now - self.start < self.grace_s:

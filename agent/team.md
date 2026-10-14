@@ -98,6 +98,14 @@ already targets your character.
   since your last request before the shift, and `researched_none_built`: researched technologies whose buildings the
   team has none of.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
+- Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, courier runs
+  between chests, repairs, ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
+  "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever
+  its `when` holds (any `wait_until` condition, plus `ghosts_waiting`, `damaged` and `fuel_below`); one order without
+  `when` is your default routine, run every `interval_ticks` while no trigger holds. Up to 6 orders of 32 steps. They
+  run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
+  action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
+  runs and why. `./fh call orders` lists them; `order_remove`, `orders_pause`, `orders_resume`.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 
