@@ -136,7 +136,9 @@ test('the CLI: the clock names a slow game, a rollback is said once with redo, a
     await writeFile(join(dir, '.fh-pace.json'), JSON.stringify(pace));
     tick += 100;
     let out = JSON.parse((await cli(port, ['call', 'status', '--journal', journal])).stdout);
-    assert.equal(out.result.clock, 'game 27h46m; game speed 10 ticks/s, 17% of normal');
+    // (100 ticks over the 10 s set back plus the real time between the calls: 10 a second or a little under)
+    const m = /^game 27h46m; game speed (\d+) ticks\/s, (\d+)% of normal$/.exec(out.result.clock);
+    assert(m && Number(m[1]) >= 5 && Number(m[1]) <= 10, out.result.clock);
     // The game goes back 5 minutes: said once, with the build after that tick to redo.
     tick = 100100 - 18000;
     out = JSON.parse((await cli(port, ['call', 'status', '--journal', journal])).stdout);

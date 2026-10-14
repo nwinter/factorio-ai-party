@@ -172,7 +172,7 @@ def live_and_model():
     src.observe_groups(obs, {})
     assert obs["big_enemies"][0]["name"] == "small-demolisher"
     m = Model({"agents": {"sol": {"display_name": "Sol"}}})
-    m.ingest({"agents": [{"name": "sol", "position": {"x": -240, "y": 70}}], "big_enemies": obs["big_enemies"]}, now=10)
+    m.ingest({"agents": [{"name": "sol", "position": {"x": -240, "y": 70}, "surface": V}], "big_enemies": obs["big_enemies"]}, now=10)
     big = m.snapshot(11)["big_enemies"]
     assert big[0]["label"] == "Small demolisher · 300 tiles from Sol's gun turrets", big
     print("live and model: ok")

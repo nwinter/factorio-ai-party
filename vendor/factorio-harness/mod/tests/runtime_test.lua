@@ -2042,6 +2042,17 @@ eq(#pw.networks,3); eq(pw.networks[1].id,1); eq(pw.networks[1].poles,3); eq(pw.n
 eq(pw.networks[1].production_kw,300); eq(pw.networks[1].consumption_kw,75); eq(pw.networks[1].producers[1].name,'steam-engine')
 eq(#pw.unpowered,2); eq(pw.unpowered[2].status,'unconnected'); eq(pw.unpowered_total,nil)
 eq(#call('observe',{scope='power',area={left_top={x=-1,y=-5},right_bottom={x=40,y=5}},limit=1}).unpowered,1)
+-- On a platform by name or index (Astra, 13:10): its surface, 64 tiles round its hub unless an area is given.
+do
+  local kept=p.force.platforms
+  p.force.platforms={{valid=true,name='Starling',index=3,surface=p.surface,hub={valid=true,position={x=0,y=0}}}}
+  for _,which in ipairs({'Starling',3}) do
+    local pp=call('observe',{scope='power',platform=which})
+    eq(pp.platform,'Starling'); eq(#pp.networks,3); eq(#pp.unpowered,2)
+  end
+  fails(function() call('observe',{scope='power',platform='Nope'}) end,'no platform named Nope')
+  p.force.platforms=kept
+end
 -- A pole the engine left unconnected (its own network) joins every network in reach: no orphans.
 p.build_from_cursor=function(args)
   p.cursor_stack.count=p.cursor_stack.count-1; p.cursor_stack.valid_for_read=p.cursor_stack.count>0
@@ -2212,6 +2223,49 @@ end
   eq(r.placed,2,r.failed and r.failed[1].error); eq(r.last_belt,'transport-belt (20.5,5.5): moves items south to (20.5,6.5); fed from (20.5,4.5)')
   prototypes.entity=entity_protos
   p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered=can,create,find
+end)()
+;(function()
+  -- place_ghosts, its dry run and scan on another planet by remote view (Astra 12:33: laying out a Vulcanus chain while
+  -- Sonnet builds there by hand; in 2.0 a player places ghosts on another planet from the map).
+  local entity_protos,get_surface,platforms,charted=prototypes.entity,game.get_surface,p.force.platforms,p.force.is_chunk_charted
+  local belt={name='transport-belt',type='transport-belt',items_to_place_this={{name='transport-belt',count=1}},
+    collision_box={left_top={x=-0.4,y=-0.4},right_bottom={x=0.4,y=0.4}},collision_mask={layers={item=true,object=true}},
+    tile_width=1,tile_height=1}
+  prototypes.entity={['transport-belt']=belt}
+  local made,standing={},{}
+  local vulcanus={name='vulcanus',index=3,valid=true}
+  vulcanus.get_tile=function(x,y) return {name='volcanic-ash-light',position={x=x,y=y},prototype={collision_mask={layers={ground_tile=true}}},
+    collides_with=function() return false end} end
+  vulcanus.find_entities_filtered=function(f)
+    local out={}
+    for _,e in ipairs(standing) do if not f.type or f.type==e.type or (type(f.type)=='table') then out[#out+1]=e end end
+    return out
+  end
+  vulcanus.count_entities_filtered=function(f) return #vulcanus.find_entities_filtered(f) end
+  vulcanus.can_place_entity=function() return true end
+  vulcanus.create_entity=function(a)
+    local g={valid=true,name='entity-ghost',type='entity-ghost',ghost_type='transport-belt',ghost_name=a.inner_name,ghost_prototype=belt,
+      position=a.position,direction=a.direction,surface=vulcanus,force=p.force}
+    made[#made+1]=g; return g
+  end
+  game.get_surface=function(name) if name=='vulcanus' then return vulcanus end end
+  p.force.platforms={}
+  p.force.is_chunk_charted=function(sf,c) if sf==vulcanus then return c.x==0 and c.y==0 end return charted(sf,c) end
+  local r=call('place_ghosts',{surface='vulcanus',entities={{name='transport-belt',position={x=5.5,y=5.5},direction='east'}}})
+  eq(r.placed,1); eq(#made,1); eq(made[1].surface,vulcanus); eq(made[1].position.x,5.5)
+  r=call('place_ghosts',{surface='vulcanus',entities={{name='transport-belt',position={x=50.5,y=5.5}}}})
+  eq(r.placed,0); eq(r.failed[1].error,'position is not charted','charted chunks of that planet')
+  -- The dry run checks there and places nothing.
+  local dry=call('place_ghosts',{surface='vulcanus',dry_run=true,entities={{name='transport-belt',position={x=6.5,y=5.5},direction='east'}}})
+  eq(dry.dry_run,true); eq(#made,1,'nothing placed')
+  fails(function() call('place_ghosts',{surface='vulcanus',platform='Sunward',entities={{name='transport-belt',position={x=6.5,y=5.5}}}}) end,
+    'give platform or surface, not both')
+  -- scan there: centred on a place there.
+  standing[1]={valid=true,name='transport-belt',type='transport-belt',position={x=5.5,y=5.5},direction=4,force=p.force,surface=vulcanus}
+  local sc=call('scan',{surface='vulcanus',position={x=5,y=5},radius=4})
+  eq(sc.entities[1].name,'transport-belt')
+  fails(function() call('scan',{surface='vulcanus'}) end,'scan with surface needs position, area or positions there')
+  prototypes.entity,game.get_surface,p.force.platforms,p.force.is_chunk_charted=entity_protos,get_surface,platforms,charted
 end)()
 -- A ghost goes over trees and rocks and marks them, though the engine's check
 -- refuses them (shake3: "placement blocked by tree-08" from place_ghosts),

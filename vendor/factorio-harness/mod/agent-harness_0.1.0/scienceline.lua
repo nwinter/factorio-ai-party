@@ -160,6 +160,12 @@ return function(api)
             key[#key+1] = m < 5 and 3 or m < 10 and 2 or 1
           end
         end
+        -- The feed chest running out first at its rate over 10 min (Haiku, 12:20); told again under 20, 10 and 5 min.
+        if power.feed then
+          b = b .. '; feed chest ' .. power.feed.line
+          local m = power.feed.min
+          key[#key+1] = 'feed' .. (m < 5 and 3 or m < 10 and 2 or m < 20 and 1 or 0)
+        end
         text = text .. '; ' .. b
       end
       parts[#parts+1] = text

@@ -29,7 +29,7 @@ local function chunks()
   local i=0
   return function() i=i+1; return list[i] end
 end
-local surface={index=1,get_total_pollution=function() return 1234.4 end,get_pollution=function(pos) return polluted(pos) end,get_chunks=chunks,
+local surface={index=1,name='nauvis',get_total_pollution=function() return 1234.4 end,get_pollution=function(pos) return polluted(pos) end,get_chunks=chunks,
   find_entities_filtered=function(f)
     if f.type=='unit-spawner' then scans=scans+1; return spawners end
     if f.type=='radar' then return {{},{}} end
@@ -56,6 +56,22 @@ eq(s.enemies.nearest,'base (85,11) 2 spawners, 45 tiles E of our structures, see
 -- Chart coverage, and the cloud only within the chart plus where it leaves it.
 eq(s.chart.charted_chunks,30); eq(s.chart.visible_chunks,12); eq(s.chart.radars,2); eq(s.chart.extent,'x -32..287 y -32..63')
 eq(s.pollution.cloud_chunks,4); eq(s.pollution.cloud_extent,'x -32..95 y 0..31'); eq(s.pollution.cloud_beyond_chart,'W')
+-- The cloud layer for the stream map (viewer Joonazan, operator 13:02): the operator read clouds carries every charted
+-- polluted chunk with its amount, the pollutant and its map colour, and the nests reached; the status chart does not.
+do
+  surface.pollutant_type={name='pollution',chart_color={r=0.55,g=0.27,b=0.09,a=0.6}}
+  local get,sc=game.get_surface,scans
+  game.get_surface=function(i) return i==1 and surface or nil end
+  eq(s.chart.cells,nil,'no cells in a status reply')
+  T.summary(p,true)  -- (a fresh chart, with the pollutant now)
+  local c=T.operator.clouds({}).clouds
+  eq(#c,1); eq(c[1].surface,'nauvis'); eq(c[1].chunks,4); eq(c[1].max,50); eq(c[1].total,200)
+  eq(c[1].cells[1][1],-1); eq(c[1].cells[1][2],0); eq(c[1].cells[1][3],50)
+  eq(c[1].pollutant.name,'pollution'); eq(c[1].pollutant.color.r,0.55)
+  eq(c[1].reached[1].position.x,85)
+  eq(#T.operator.clouds({surface='gleba'}).clouds,0)
+  game.get_surface=get; scans=sc
+end
 -- Cached for 600 ticks; threats=true rescans and lists every base.
 game.tick=1500; T.summary(p); eq(scans,1)
 local detail=T.summary(p,true); eq(scans,2); eq(#detail.enemies.list,2); eq(detail.enemies.list[2].cloud_gap,4)

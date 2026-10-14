@@ -69,6 +69,21 @@ return function()
     return runs <= 1
   end
   local function at(x, y) return string.format('(%g,%g)', x + 0.5, y + 0.5) end
+  -- Whether a tile ghost stands on (x,y): the ghosts read are known, any other tile is looked up once (Astra,
+  -- shift12 12:41: Starling had 624 tile ghosts, only the 64 read counted, and a ghost past them under a belt ghost
+  -- was taken for a hole).
+  local function ghost_at(s, x, y, ghosted)
+    local k = key(x, y)
+    local v = ghosted[k]
+    if v == nil then
+      local ok, n = pcall(function()
+        return s.count_entities_filtered{area={{x + 0.1, y + 0.1}, {x + 0.9, y + 0.9}}, type='tile-ghost', limit=1}
+      end)
+      v = ok and n > 0
+      ghosted[k] = v
+    end
+    return v
+  end
   -- A ghost's quality name (normal when unreadable).
   function M.quality_of(g)
     local ok, q = pcall(function() return g.quality end)
@@ -94,7 +109,7 @@ return function()
         local beside = false
         for _, d in ipairs(DIRS) do
           local nx, ny = x + d[1], y + d[2]
-          if not is_empty(s, nx, ny, cache) or ghosted[key(nx, ny)] then beside = true end
+          if not is_empty(s, nx, ny, cache) or ghost_at(s, nx, ny, ghosted) then beside = true end
         end
         if not beside then reason = 'no foundation or tile ghost beside it (the foundation must stay one connected area)' end
         if not reason and hub and hub.valid and y + 0.5 < hub.position.y - 200 then reason = 'more than 200 tiles north of the hub' end
@@ -117,7 +132,7 @@ return function()
               local region = enclosed(s, nx, ny, x, y, cache, budget)
               for _, c in ipairs(region or {}) do
                 done[key(c[1], c[2])] = true
-                if not ghosted[key(c[1], c[2])] then hole[#hole+1] = c end
+                if not ghost_at(s, c[1], c[2], ghosted) then hole[#hole+1] = c end
               end
             end
           end

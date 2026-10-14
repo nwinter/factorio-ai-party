@@ -61,9 +61,11 @@ test('an operator tell prints an OPERATOR: line on stderr and first on stdout, a
     }
     const filed=(await readFile(join(dir,'.operator-tells.jsonl'),'utf8')).trim().split('\n').map(l=>JSON.parse(l));
     assert.equal(filed.length,1,'filed once across calls'); assert.equal(filed[0].seq,7); assert.equal(filed[0].text,OPERATOR.text);
-    // JSON keeps the field (programs read it); stderr still has the line.
+    // JSON keeps the field (programs read it) and nothing else is printed, so `--format json 2>&1` parses whole
+    // (Muse, shift12, read every data call that way and cut the OPERATOR line off by hand).
     const {stdout,stderr}=await cli(port,['call','status']);
-    assert.deepEqual(JSON.parse(stdout).result.operator,[OPERATOR]); assert.match(stderr,/OPERATOR:/);
+    assert.deepEqual(JSON.parse(stdout).result.operator,[OPERATOR]); assert.equal(stderr,'');
+    assert.deepEqual(JSON.parse(stderr+stdout).result.operator,[OPERATOR]);
   });
 });
 test('open projects from the shift block, board reads and project items are filed for the post-compaction brief',async()=>{

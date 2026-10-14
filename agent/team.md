@@ -33,7 +33,8 @@ already targets your character.
   `team: chat_remaining=K` repeats on every reply: run `./fh chat` again. Answer teammates promptly.
 - Output: a failure ends with an `error:` line (on stderr with `--format json`) and exits nonzero; a partial result (`short`, `awaiting_craft`, a
   refused craft) ends with a `warning:` line. `--wait` replies are brief (outcome, position, inventory change; add
-  `--full` for the whole status). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
+  `--full` for the whole status). With `--format json` stdout is one JSON document and no `OPERATOR:` line is printed
+  (operator messages are in `result.operator`). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
   or mention ends while the action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
   build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
@@ -92,8 +93,12 @@ already targets your character.
   (working, output full, no resource left) and what they put into.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
-  characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
-  reason, the machines that make and use it by status (the worst 3 with positions), and the inserters feeding them.
+  characters), each logistic network's stock of it (free and reserved, and which requesters the reserved stock is for),
+  its robots, every unmet requester with the reason, the machines that make and use it by status (the worst 3 with
+  positions), and the inserters feeding them.
+- `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with
+  its buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing:
+  hand-fed); the hand-fed and low ones first.
 - `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
   ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
@@ -130,30 +135,43 @@ already targets your character.
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
   as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that
-  source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
+  source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a boiler's feed chest under
+  20 of its fuel with nothing put into it for 5 minutes (boiler, chest, count, feeder), a logistic network with no
   idle logistic robot for 10 minutes, a science colour whose makers here have all stood still for 5+ minutes (with
   its chain's first short step), Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
-  drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
+  drawing power, full accumulators in an attractor network, mining drills out of ore (the ore, drills still mining
+  there, the nearest untapped patch), ghosts waiting 5+ min on robots with their items in the network, requests unfilled
+  5+ min with the item free in the network (and what the robots are doing); at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
   your character's time by kind (the time before a request counts toward that request's kind), the hand hauls you
   repeated 5 or more times, what failed (by reason, top 3), alerts still open in your claims, and losses near where
   your character was (`review (last 2h): 412 actions: ...; time: 48% walking, 21% item moves, 9% building, 22%
   waits`, `repeated hauls: iron-plate (13,40) -> wooden-chest (89,-3) x38, ...`, `failed: 31 (...)`, ...);
-  `./fh call review` shows it any time. `science` is one line, at most every 5 minutes and only when it changed:
+  `./fh call review` shows it any time. About every 45 minutes a reply carries `lookahead` once: your plan line and
+  how long since it changed, your open board items, the team goals, the research running and next, network stock
+  falling to zero within 2 hours, and the time left in the shift (`./fh call lookahead` shows it any time).
+  `science` is one line, at most every 5 minutes and only when it changed:
   the research, labs working N of M, the pack the most labs hold none of with made and used per minute and the
   first short step of its chain, the largest electric network's draw, capacity and headroom, and its boilers (how
-  many have fuel at their feeders; how many are under 20 minutes and not refilled, and the lowest).
+  many have fuel at their feeders; how many are under 20 minutes and not refilled, and the lowest; the feed chest
+  with the fewest minutes left at its fuel use over the last 10 minutes).
   Each is shown once, so a command that sends replies to a file you don't read loses them. A change to your board
   item, a plan line set for you, or a tell also ends your `sleep`.
-- Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished
+- Your first reply of a shift carries `team: shift` once: `teammates` (each teammate's name, pronouns when they set
+  them, and where while the team is on more than one planet), the team plan's goals and your line, the research finished
   since your last request before the shift, `researched_none_built`: researched technologies whose buildings the
   team has none of, and `networks`: one line per electric network (draw over 5 minutes against capacity, machines on
   low power, boilers and their fuel in minutes), per logistic network (its id, roboports and the areas they cover,
   logistic and construction robots total, idle, working, charging and waiting to charge, requests unfilled for 60 s or
-  more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them any time;
+  more, its construction backlog: ghosts, deconstruction and upgrade orders, those waiting 5+ min and the oldest, and
+  the cause; deliveries stuck with the item free) and the turrets with ammo used in the last hour, and `drills out of
+  ore` per surface (`./fh call networks` shows them any time;
   `./fh call boilers` lists each boiler by network, the stopped ones first: state, fuel, water, its feeder and what
-  the feeder takes from with the fuel there; the networks line names the lowest boiler (position, minutes, fuel,
-  feeder) and accumulators' stored MJ of their maximum; `./fh platform NAME` shows one space platform (hub free
+  the feeder takes from with the fuel there, and a feed chest's fuel use per minute over the last 10 minutes with the
+  minutes left at that rate; the networks line names the lowest boiler (position, minutes, fuel, feeder), the 2 feed
+  chests with the fewest minutes left (`feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min
+  left`) and accumulators' stored MJ of their maximum; a logistic network's line ends with the items it holds most of
+  and what its requesters ask (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`); `./fh platform NAME` shows one space platform (hub free
   slots, cargo, speed, next stop, ETA);
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
@@ -195,7 +213,9 @@ already targets your character.
   `repair` on an undamaged entity is ok with `unchanged: "not damaged"`; `repair` takes `positions` or `area` and
   reports `repaired` and `already_full`.
 - `collect {"position":{"x":10.5,"y":3.5},"wait_ticks":1800}` stands at that machine and takes each product the tick it
-  appears (`"count"` stops early); `last.took`, `last.made` and `last.inserters_took` say who got what.
+  appears (`"count"` stops early); `last.took`, `last.made` and `last.inserters_took` (counted) say who got what, and
+  `last.why` why it took none. A tell or board line shown in a sleep reply that your next sleep followed within 5 s
+  comes again in `team.missed_while_asleep`. `place_ghosts` and `scan` take `"surface": "vulcanus"` (remote view).
 - What you take over a personal request's max goes to your trash slots: `transfer`, `collect` and `pickup` say how much
   (`trash`); `"up_to": true` stops at the max, `"keep_max": true` refuses the take. A paste leaves the requests of a hub
   or requester chest it lands on (`requests_kept`), a hub's construction requests too.
@@ -218,6 +238,10 @@ already targets your character.
   It keeps its turning room clear of our buildings and brakes before any of ours (`last.spared`). With no room near the
   target it stops on open ground short of it (`last.stopped_short`). `"dry_run":true` previews the path and names ours
   it would touch (`last.preview`).
+- `"retreat":{"to":{"x":260,"y":-60},"health_below":0.5,"shield_below":0.2}` on `move_to`, `shoot`, `kite` or `vehicle {drive}`:
+  hit under it, the action ends `retreated` and you walk back (guns on auto) or the vehicle is driven back at once
+  (`last.retreated`: why, from, health). `./fh call retreat_guard --args '{"to":{"x":260,"y":-60},"health_below":0.5}'`
+  sets it for every one of them until `{"clear":true}`.
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
   `last.nearest_reachable`, plus `last.build_spot`: a spot you can reach within build reach of the target
@@ -248,8 +272,8 @@ already targets your character.
   run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
   action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
   runs and why. `./fh call orders` lists them; `order_remove`, `orders_pause`, `orders_resume`.
-- A harness update keeps your waits, queue, repeating plan and standing orders running (`team: harness_updated`: `harness
-  updated at tick T (your wait/queue carried over)`); a step or action that moves or builds starts again by itself (`resumed`).
+- A harness update keeps waits, timed collects, tours, mining, building, repairs, queues and orders running with their end
+  tick and progress (`team: harness_updated`: `... (your collect carried over)`); a move_to or drive restarts (`resumed`).
 - Circuits: `./fh call circuit_set --args '{"platform":"NAME","position":{"x":-2.5,"y":-4.5},"enable":"ice < 300"}'`
   sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
@@ -292,8 +316,14 @@ already targets your character.
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
   `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
   chests near the silo.
+- `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
+  and spoiled, the rockets sent to it; per leg what spoiled on the way) and `spoiling` (when its spoilable items spoil,
+  against the arrival). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
+  `from` is not given.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
+  `./fh wait --until "item_count coal below 20 at 10,39"` wakes when that chest's coal falls under 20 (also `>=`, `<`,
+  `above`; several `X,Y` are summed).
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
   patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.
@@ -308,6 +338,9 @@ already targets your character.
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
+- `./fh call networks --args '{"platform":"Starling"}'` gives a platform's electric network line (capacity, draw, solar
+  power where it is and its panels' output, accumulators, machines on low power); `power` takes `platform` too, and
+  `inspect` on a machine, solar panel or accumulator shows its maximum under `electricity`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
   takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods, to

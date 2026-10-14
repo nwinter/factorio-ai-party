@@ -102,9 +102,12 @@ return function(api)
     -- silo's rocket state and cargo follow in saw).
     item_count=function(p,c)
       local n,where=0,''
-      if c.positions then
+      -- One position counts as positions={position} (Haiku, 12:20: item_count coal below 20 at a chest; a lone position
+      -- was ignored and the character's inventory counted).
+      local positions=c.positions or (c.position and {c.position})
+      if positions then
         local seen,silos=0,{}
-        for _,raw in ipairs(c.positions) do
+        for _,raw in ipairs(positions) do
           for _,e in pairs(p.surface.find_entities_filtered{position=api.position(raw),radius=0.3,force=p.force}) do
             -- A silo's rocket stands on its centre and holds nothing of its own (the silo counts the cargo); a robot
             -- flying over a chest is not the chest (runtime.lua M.target_rank, Astra 07:05).
@@ -166,6 +169,10 @@ return function(api)
       local pl
       for _,each in pairs(p.force.platforms) do if each.valid and each.name==c.platform then pl=each end end
       if not pl then error('no platform of ours named '..tostring(c.platform),0) end
+      -- freight.lua's rule, the platforms row's too (Luna, shift12 12:47: a wait met while the row showed the platform
+      -- in flight): stopped at a location and not on its path; a leg in the way it is flown.
+      local w=api.platform_where and api.platform_where(pl)
+      if w then return w.stopped==true and (c.location==nil or w.at==c.location),c.platform..' '..w.text end
       local loc=pl.space_location and pl.space_location.name
       local conn=pl.space_connection
       local where=loc and ('at '..loc) or conn and string.format('flying %s->%s %d%%',conn.from.name,conn.to.name,math.floor((pl.distance or 0)*100+0.5)) or 'nowhere'

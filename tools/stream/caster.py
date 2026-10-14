@@ -182,6 +182,10 @@ def planet_facts(s):
     reached = [p for p in sp.get("planets") or [] if p] or ["Nauvis"]
     if "Nauvis" not in reached:
         reached = ["Nauvis"] + reached
+    if sp.get("active") is False and reached == ["Nauvis"]:
+        # Nick 12:35 (item 4): while Nauvis is the only planet in play the facts name no planet, as the stream cards and
+        # the agents' replies don't; wrong_place still cuts a line that puts the team on another planet.
+        return {"space_in_play": False}
     ahead = [p for p in PLANETS if p not in reached]
     f = {"planets_reached": reached}
     if ahead:
@@ -953,6 +957,13 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["on_screen_map"] = {"where": "the whole picture" if shows_map == "on air" else "one small tile",
                               "note": "viewers see the whole base on Factorio's map now (the core and its outposts): "
                                       "a moment to say what is where, e.g. 'here's the whole base'"}
+    cloud = (s.get("onair") or {}).get("cloud")  # onecam.py: a pollution or spore cloud on Factorio's map, on air
+    if cloud:
+        row = next((c for c in s.get("clouds") or [] if c.get("surface") == cloud.get("surface")), {})
+        f["on_screen_cloud"] = {"shown_as": cloud.get("label"), "why": cloud.get("why"), "chunks": row.get("chunks"),
+                                "max_per_chunk": row.get("max"), "nests_reached": len(row.get("reached") or []),
+                                "note": "viewers see this surface's pollution (spores on Gleba) on Factorio's map now: "
+                                        "each coloured square is a 32-tile chunk, darker where there is more"}
     plat = (s.get("onair") or {}).get("platform")  # onecam.py: a space platform on air (a visit, a departure, work)
     if plat:
         f["on_screen_platform"] = {
@@ -1345,6 +1356,8 @@ def wrong_place(low, facts):
         if f"shake{num}" not in json.dumps(facts).lower():
             return f"run name not in facts: {m.group(0)}"
     reached = facts.get("planets_reached")
+    if not reached and facts.get("space_in_play") is False:
+        reached = ["Nauvis"]   # (the facts name no planet while Nauvis is the only one in play)
     if reached:
         # shake11: "Fulgora discovery sits at eighteen percent" is the research Planet discovery Fulgora, which the
         # facts name; the reached/not-reached lists themselves do not count

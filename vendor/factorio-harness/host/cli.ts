@@ -13,7 +13,8 @@ import { renderMap } from './view.js';
 import { parseLook } from './look.js';
 import { writeFileSync, readFileSync, rmSync, appendFileSync } from 'node:fs';
 import { formatCompact, finalLine, actionHelp, paginate } from './format.js';
-import { parseDeadline, deadlineText } from './deadline.js';
+import { parseDeadline, deadlineText, timeLeftText } from './deadline.js';
+import { lookaheadDue } from './lookahead.js';
 import { bundleRuntime } from './bundle.js';
 import { startSession, stopSession, sessionConnection, connectSession, type SessionConnection } from './session.js';
 import { BridgeClient, BridgeOutcomeUnknown } from './bridge.js';
@@ -123,7 +124,7 @@ function parseUntil(text: string): Record<string, unknown> {
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) return object(JSON.parse(trimmed),'--until');
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], or a wait_until condition as JSON';
+  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], or a wait_until condition as JSON';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
@@ -140,10 +141,15 @@ function parseUntil(text: string): Record<string, unknown> {
     return rest[1] ? {until:'platform_arrived', platform:rest[0], location:rest[1]} : {until:'platform_arrived', platform:rest[0]};
   }
   const value = (v: string): unknown => /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
-  if ((kind === 'item_count' || kind === 'items') && /[<>]/.test(rest.join(' '))) {
-    const match = rest.join(' ').match(/^([\w-]+)\s*(>=|<)\s*(\d+)(?:\s+(?:at|in)\s+(.+))?$/);
+  // A level reached or fallen under (Haiku, 12:20: wait until a chest's coal is below 20, then feed): ITEM>=N, ITEM>N,
+  // ITEM<N, ITEM<=N, or the words below/under/above/at_least: `item_count coal below 20 at 10,39`.
+  if ((kind === 'item_count' || kind === 'items') && /[<>]|\s(below|under|above|at_least)\s/.test(' ' + rest.join(' ') + ' ')) {
+    const match = rest.join(' ').match(/^([\w-]+)\s*(>=|<=|<|>|\s+below\s+|\s+under\s+|\s+above\s+|\s+at_least\s+)\s*(\d+)(?:\s+(?:at|in)\s+(.+))?$/);
     if (!match) throw new Error(usage);
-    const condition: Record<string, unknown> = {until:'item_count', item:match[1], [match[2] === '>=' ? 'at_least' : 'below']:Number(match[3])};
+    const op = (match[2] ?? '').trim(), n = Number(match[3]);
+    const [field, level] = op === '>=' || op === 'at_least' ? ['at_least', n] : op === '>' || op === 'above' ? ['at_least', n + 1]
+      : op === '<=' ? ['below', n + 1] : ['below', n];
+    const condition: Record<string, unknown> = {until:'item_count', item:match[1], [field]:level};
     if (match[4]) {
       condition.positions = match[4].split(/[\s;]+/).filter(Boolean).map(pair => {
         const xy = pair.match(/^\(?(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)?$/);
@@ -199,8 +205,8 @@ function withDeadline(value: unknown): unknown {
 let streaming = false;
 // Operator tells (agent-minds study, fix 1: of 15 shift07 nudges 5 never reached the model, its replies sent to a
 // file, /dev/null, `tail -c` or a wrapper keeping three keywords). Any reply may carry result.operator until the
-// agent's next game action or message; each is printed on stderr as soon as a reply carries it, first on stdout,
-// and filed for the workspace's post-tool hook (pog tools/context.py), which puts the unseen ones in the model's context.
+// agent's next game action or message; in compact output each is printed on stderr as soon as a reply carries it and
+// first on stdout (JSON keeps it in result.operator), and filed for the workspace's post-tool hook (pog tools/context.py), which puts the unseen ones in the model's context.
 const operatorLines = new Map<number, string>();
 const operatorPrinted = new Set<number>();
 let operatorFile: string | undefined;
@@ -214,7 +220,9 @@ function noteOperator(reply: unknown) {
     if (typeof o?.seq !== 'number' || typeof o.text !== 'string' || operatorLines.has(o.seq)) continue;
     const line = `OPERATOR: ${o.text} (sent ${agoText(Number(o.ago_s ?? 0))}; repeated on every reply until your next game action or message)`;
     operatorLines.set(o.seq, line);
-    process.stderr.write(line + '\n');
+    // JSON keeps the tell in result.operator and leaves stderr without it: scripts read `--format json 2>&1`
+    // (Muse, shift12: an OPERATOR line ahead of the document on every data call until the next game action).
+    if (outputFormat !== 'json') process.stderr.write(line + '\n');
     if (operatorFile) {
       try {
         let seen = '';
@@ -309,6 +317,16 @@ function withPace(value: unknown): unknown {
   if (!notes && !(slow && typeof result?.clock === 'string')) return value;
   const clock = slow && typeof result?.clock === 'string' ? `${result.clock}; ${slow}` : result?.clock;
   return {...reply, result:{...(notes ?? {}), ...(result ?? {}), ...(clock !== undefined ? {clock} : {})}};
+}
+// The look-ahead block (Nick 12:35; when: lookahead.ts), shown once in a reply as `lookahead`. FH_LOOKAHEAD_FILE
+// (default .lookahead.json next to the journal) keeps when the workspace's first call came and when it was last shown.
+let lookaheadFile: string | undefined;
+let lookaheadName = '';
+function lookaheadLines(result: Record<string, unknown>): string[] {
+  const lines = Array.isArray(result.lines) ? result.lines.filter((l): l is string => typeof l === 'string') : [];
+  if (deadline !== undefined) lines.push(timeLeftText(deadline));
+  if (typeof result.sentence === 'string') lines.push(result.sentence);
+  return lines;
 }
 // The OPERATOR: lines not yet on stdout, for the head of the next stdout write.
 function operatorHead(): string {
@@ -688,9 +706,29 @@ async function main() {
   paceFile = process.env.FH_PACE_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.fh-pace.json') : undefined);
   journalPath = values.journal ? resolve(values.journal) : undefined;
   projectsFile = process.env.FH_PROJECTS_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.projects.json') : undefined);
+  lookaheadFile = process.env.FH_LOOKAHEAD_FILE || (values.journal ? resolve(dirname(resolve(values.journal)), '.lookahead.json') : undefined);
+  lookaheadName = bot ?? (values.journal ? dirname(resolve(values.journal)).split('/').pop() ?? '' : '');
   {
     const inner = harness;
     harness = {request: async (...a: Parameters<Harness['request']>) => { const reply = await inner.request(...a); noteOperator(reply); noteProjects(reply); notePace(reply); return reply; }};
+  }
+  // The look-ahead block on a reply when it is due (LOOKAHEAD_MS); the first call of a workspace starts its clock. Read
+  // with peek, so the extra request leaves the agent's team news for its own replies.
+  async function addLookahead(reply: Reply, action: string, args: Record<string, unknown>) {
+    if (!lookaheadFile || !reply.ok || !reply.result || typeof reply.result !== 'object') return;
+    if (args?.peek === true || ['describe','sleep_check','profiles','cameras','lookahead'].includes(action)) return;
+    const now = Date.now();
+    let state: {started: number; last?: number} | undefined;
+    try { state = JSON.parse(readFileSync(lookaheadFile, 'utf8')); } catch { /* the workspace's first call */ }
+    if (!state || typeof state.started !== 'number') {
+      try { writeFileSync(lookaheadFile, JSON.stringify({started:now}) + '\n'); } catch (error) { process.stderr.write(`lookahead file: ${String(error)}\n`); }
+      return;
+    }
+    if (now < lookaheadDue(state, lookaheadName)) return;
+    const block = await harness.request('lookahead', {peek:true});
+    if (!block.ok || !block.result) return;
+    reply.result = {...reply.result, lookahead:lookaheadLines(block.result)};
+    try { writeFileSync(lookaheadFile, JSON.stringify({...state, last:now}) + '\n'); } catch (error) { process.stderr.write(`lookahead file: ${String(error)}\n`); }
   }
   let stopping = false;
   const stop = () => { stopping = true; client.close(); };
@@ -845,6 +883,8 @@ async function main() {
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
+      // retreat (operator 12:27): why it went back, from where, the health then and now, where to.
+      retreated: last?.retreated,
       // collect over a radius: moved per item, places touched, what fell short.
       tally: last?.tally,
       // build_path: belts placed, where it stopped, and the trees and rocks it mined in its way (round1050f).
@@ -852,7 +892,7 @@ async function main() {
         next_position: last.outcome === 'path_built' ? undefined : last.next_position, cleared: last.cleared, cleared_names: last.cleared_names} : {}),
       // collect waiting at a machine (collectwait): what it took against what the machine made and its inserters took.
       ...(last?.kind === 'gather' && last?.took !== undefined ? {took: last.took, made: last.made, inserters_took: last.inserters_took,
-        crafts: last.crafts, waited_s: last.waited_s} : {}),
+        crafts: last.crafts, waited_s: last.waited_s, counted_from: last.counted_from} : {}),
       // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
       moved: last?.moved, inv: last?.inv,
       // A courier (transfer or collect with pick and to): where it took from, what it took and what arrived.
@@ -1274,6 +1314,9 @@ async function main() {
         outputFormat === 'compact' ? accepted => output({...accepted, waiting:`until completion (poll status if interrupted)`,
           // The completion carries the clock line.
           ...(compactWaits && accepted.result ? {result:{...accepted.result, clock:undefined}} : {})}) : undefined);
+      // The look-ahead: fh call lookahead with the time left in the shift; on any other reply when it is due.
+      if (action === 'lookahead' && reply.ok && reply.result) reply.result = {lines:lookaheadLines(reply.result)};
+      else await addLookahead(reply, action, args);
       if (reply.ok && action === 'blueprint_export' && !args.layout && values.out) {
         await mkdir(dirname(resolve(values.out)),{recursive:true});
         await writeFile(values.out,reply.result.blueprint+'\n');

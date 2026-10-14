@@ -15,6 +15,7 @@ from model import SPARK_ITEMS, notes_job
 from work import WorkFeed
 
 PLAN_KEYS = ("kind", "until_tick", "total", "next_index", "placed", "built", "remaining", "bounds", "to", "stuck_s")
+COMBAT_KEYS = ("auto", "position", "radius", "until_tick", "target", "fired_tick", "kills_10s", "hurt", "vehicle")
 AWAY_TILES = 48.0  # work this far from the body's position (same surface) is "away": the body's camera misses it
 
 ATTACK_RECENT_TICKS = 60 * 30  # an attacked area counts as "now" for 30 game seconds
@@ -91,6 +92,11 @@ class LiveSource:
         self.has_loadout = False
         self.next_loadout = 0
         self.loadout_every = 4.0
+        # pollution and spores per charted chunk on each surface an agent is on (threat.lua `clouds`; viewer Joonazan,
+        # 13:00): the harness sweeps it about once a game minute, so a read a minute
+        self.has_clouds = False
+        self.next_clouds = 0
+        self.clouds_every = 60.0
         self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
         # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
         self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
@@ -272,7 +278,11 @@ class LiveSource:
                 a.setdefault("position", st.get("position"))
                 a["connected"] = st.get("connected", True) if a["kind"] == "player" else True
                 a["last"] = st.get("last")
-                a["combat"] = bool(st.get("combat"))
+                # what the shoot does now and the last hit (status combat and hurt): model.combat_state tells under
+                # attack from fighting from a guard with nothing in range (viewer Joonazan, 13:36)
+                c = st.get("combat")
+                a["combat"] = {k: c[k] for k in COMBAT_KEYS if k in c} if isinstance(c, dict) else bool(c)
+                a["hurt"] = st.get("hurt")
                 # a standing order running in the agent's queue (orders.lua): {name, reason, step, steps}, or None
                 a["auto"] = st.get("order") or None
                 # the director's look-ahead (onecam.py): the action running now as status reports it (kind, until_tick,
@@ -407,6 +417,7 @@ class LiveSource:
             self.has_big = "big_enemies_live" in (res.get("operator_reads") or [])
             self.has_hauling = "hauling" in (res.get("operator_reads") or [])
             self.has_loadout = "loadout" in (res.get("operator_reads") or [])
+            self.has_clouds = "clouds" in (res.get("operator_reads") or [])
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -474,16 +485,33 @@ class LiveSource:
         if isinstance(res.get("agents"), list):
             obs["loadout"] = res["agents"]
 
+    def observe_clouds(self, obs, errors):
+        """Pollution and spores per charted chunk (operator read `clouds`), every clouds_every seconds: obs["clouds"]
+        is the read's rows, one per surface."""
+        now = time.time()
+        if not getattr(self, "has_clouds", False) or now < self.next_clouds:
+            return
+        try:
+            res, _ = self.h.operator_read("clouds", {})
+        except Exception as e:
+            errors["clouds"] = str(e)
+            self.next_clouds = now + 120.0
+            return
+        self.next_clouds = now + self.clouds_every
+        if isinstance(res.get("clouds"), list):
+            obs["clouds"] = res["clouds"]
+
     def observe_board(self, obs, errors):
         if self.caps is None or not self.caps.get("harness"):
             return
         if not self.has_board or not getattr(self, "has_groups", True) or not getattr(self, "has_hauling", True) \
-                or not getattr(self, "has_loadout", True):
+                or not getattr(self, "has_loadout", True) or not getattr(self, "has_clouds", True):
             if time.time() >= self.next_board_probe:
                 self.board_probe()
         self.observe_groups(obs, errors)
         self.observe_hauling(obs, errors)
         self.observe_loadout(obs, errors)
+        self.observe_clouds(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})

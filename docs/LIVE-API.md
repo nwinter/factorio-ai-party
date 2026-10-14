@@ -118,8 +118,8 @@ browser sends no preflight. The Worker keeps ids in memory only (a restart count
 shows `Watching: 41 YouTube · 3 site` beside the Live badge, each part only when known, nothing while offline.
 
 The map is `static/mapview.js` (the run page's time-lapse uses it too): one canvas with pan (drag), zoom (wheel,
-pinch, + and −), Reset, Full screen, layers to toggle (terrain, ore, buildings, turret range, nests, agents, attention,
-fights; turret range starts off; the choice is kept per browser), and a click or tap on an agent to centre on it and
+pinch, + and −), Reset, Full screen, layers to toggle (terrain, ore, pollution, buildings, turret range, nests, agents,
+attention, fights; turret range starts off; the choice is kept per browser), and a click or tap on an agent to centre on it and
 follow it; hover or tap names a mark. `basemap.turrets` draws the turret-range layer (the union of every turret's reach)
 and `basemap.terrain` the terrain layer: each frame's image stretched over its tile edges (`x0`, `y0` the image's top
 left, `x1`, `y1` its bottom right), older frames first, under everything else; `src` must be a site path or an https URL.
@@ -143,6 +143,14 @@ pumpjacks), `A` assembly (assemblers, the silo), `S` smelting, `M` mining (drill
 `c` copper ore, `k` coal, `s` stone, `o` crude oil, `u` uranium ore, `x` anything else. The page draws it faintly
 under the buildings. With a base, the page frames the base and pins an agent more than a base-width away to the
 map's edge (dashed, its distance in the tooltip).
+
+`clouds` (viewer Joonazan, 2026-10-14: Gleba's spore cloud) is the pollution, or spores on Gleba, per 32-tile chunk on
+each surface an agent is on, read about once a minute: `[{surface, label ("Spores on Gleba"), pollutant (pollution or
+spores), color {r, g, b, a} (the game's map colour, 0..1), cells [[cx, cy, amount]], chunks, max, total, age_s,
+reached [{x, y}]}]`; chunk (cx, cy) covers tiles `cx*32` to `cx*32+31`. At most 6000 cells over all surfaces, the
+most polluted kept (about 14 bytes a cell). The map draws the shown surface's cells in that colour under the
+buildings (the Pollution or Spores layer), the amount on hover, the nests it reached ringed; a surface switch shows
+another surface's cloud alone (only the cloud, its nests and the agents there). Absent before the first read.
 
 Field meanings are `serve.py`'s (see `docs/STREAM-NOTES.md`); dropped on purpose: `source`, `poll_ok`, `poll_error`,
 `errors`, per-agent `seen`, `interest` and `voice`, and camera zoom/player indices. To show something new on the

@@ -236,7 +236,8 @@
   function mapData(s) {
     var bm = s.basemap || {};
     return { base: bm, core: bm.core, ore: bm.ore, ground: bm.terrain_grid, nests: bm.nests, turrets: bm.turrets, terrain: bm.terrain,
-      agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {} };
+      agents: s.agents || [], fights: s.fights || [], pins: s.alerts || [], cams: s.cameras || {},
+      clouds: s.clouds || [] };  // pollution and spores per chunk (tools/stream/clouds.py), a layer and a surface switch
   }
 
   // What each camera shows (state.cameras: who it follows, or the fight / work / segment shot it holds), so a viewer
