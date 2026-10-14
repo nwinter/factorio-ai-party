@@ -559,6 +559,18 @@ function M.passing(e)
   local ok,selectable=pcall(function() return e.prototype.selectable_in_game end)
   return ok and selectable==false
 end
+-- How a candidate at a position ranks as the target, as a player's cursor picks; the one rule for every call that
+-- resolves a position, in reach and by remote view (Astra 07:05: requests by remote view took a logistic robot over
+-- a requester chest): 1 a building (or anything named or given by unit_number), 2 a ghost, 3 rails under a train,
+-- 4 ore or an item on the ground, 5 a passing entity (a flying robot, a unit, a projectile, anything unselectable).
+function M.target_rank(e,args)
+  local named=args.name or args.unit_number
+  if (e.type=='resource' or e.type=='item-entity') and not args.name then return 4 end
+  if e.type=='entity-ghost' and not args.name then return 2 end
+  if not named and M.passing(e) then return 5 end
+  if not named and M.UNDER[e.type] then return 3 end
+  return 1
+end
 local function entity(p,args,read_only)
   local pos = position(args.position)
   -- A read sees by remote view too (read_sight); an action needs the character's sight.
@@ -569,8 +581,10 @@ local function entity(p,args,read_only)
   -- (resource: the fallback, ore or an item on the ground).
   -- A ghost on a building (a paste replacing it) yields to the building
   -- unless named, as the cursor picks the building; inspect lists the ghost.
-  local found, resource, ghost, drifter, rail
-  local named = args.name or args.unit_number
+  -- An item lying on a chest's tile is not the target either (shake3: Grok's
+  -- "ambiguous target" until the item was picked up). M.target_rank orders them.
+  local found
+  local others = {}
   local function wanted(e)
     -- A silo's rocket and its cargo pod sit on the silo; they are never the
     -- intended target unless named.
@@ -579,12 +593,8 @@ local function entity(p,args,read_only)
   end
   for _, e in pairs(candidates) do
     if wanted(e) then
-      -- An item lying on a chest's tile is not the target either (shake3:
-      -- Grok's "ambiguous target" until the item was picked up).
-      if (e.type == 'resource' or e.type == 'item-entity') and not args.name then resource = resource or e
-      elseif e.type == 'entity-ghost' and not args.name then ghost = ghost or e
-      elseif not named and M.passing(e) then drifter = drifter or e
-      elseif not named and M.UNDER[e.type] then rail = rail or e
+      local rank = M.target_rank(e, args)
+      if rank > 1 then others[rank] = others[rank] or e
       else
         if found then
           error(string.format('ambiguous target: %s and %s at (%g,%g); specify name or unit_number', found.name, e.name, pos.x, pos.y), 0)
@@ -597,20 +607,18 @@ local function entity(p,args,read_only)
   -- (shake3: Gemini's inspect missed buildings off their centre). Ore at the
   -- point stays the target of an action (mine there means the ore, never the
   -- drill over it); a read takes the building.
-  if not found and (read_only or not resource) then
+  if not found and (read_only or not others[4]) then
     local cover
     for _, e in pairs(p.surface.find_entities_filtered{position=pos, name=args.name}) do
-      if wanted(e) and e.type == 'entity-ghost' and not args.name then ghost = ghost or e
-      elseif wanted(e) and not named and M.passing(e) then drifter = drifter or e
-      elseif wanted(e) and not named and M.UNDER[e.type] then rail = rail or e
-      elseif wanted(e) and e.type ~= 'resource' and e.type ~= 'item-entity' then
+      local rank = wanted(e) and M.target_rank(e, args)
+      if rank == 1 and e.type ~= 'resource' and e.type ~= 'item-entity' then
         if cover and cover ~= e then cover = nil; break end
         cover = e
-      end
+      elseif rank and rank ~= 4 and rank ~= 1 then others[rank] = others[rank] or e end
     end
     found = cover
   end
-  found = found or ghost or rail or resource or drifter
+  found = found or others[2] or others[3] or others[4] or others[5]
   if not found then
     -- Say what is close instead (shake3: 23 of Gemini's inspect misses were a
     -- tile or so from a pole, inserter or belt, or empty).
@@ -687,18 +695,19 @@ local function remote_entity(p,a)
   local pos=position(a.position)
   assert(own_platform(p) or p.force.is_chunk_visible(p.surface,chunk_of(pos)),
     string.format('target must be in a visible chunk (remote view): (%g,%g) on %s is not visible to our force now (radar coverage there)',pos.x,pos.y,p.surface.name))
-  local found,best
+  -- The best rank (M.target_rank: a building before a flying robot over it), then the nearest.
+  local found,best,rank
   local function pick(list)
     for _,e in pairs(list) do
       if e.valid and e.type~='entity-ghost' and e.type~='character' and (a.name or not attached[e.type]) and (not a.unit_number or e.unit_number==a.unit_number) then
-        local d=distance(e.position,pos)
-        if not best or d<best then found,best=e,d end
+        local r,d=M.target_rank(e,a),distance(e.position,pos)
+        if not found or r<rank or (r==rank and d<best) then found,best,rank=e,d,r end
       end
     end
   end
   pick(p.surface.find_entities_filtered{position=pos,radius=0.5,name=a.name,force=p.force})
   -- Any tile of a building's footprint picks it, as the cursor does in remote view (a silo is 9x9).
-  if not found then pick(p.surface.find_entities_filtered{position=pos,name=a.name,force=p.force}) end
+  if not found or rank>1 then pick(p.surface.find_entities_filtered{position=pos,name=a.name,force=p.force}) end
   assert(found,string.format('no entity of ours at (%g,%g) on %s',pos.x,pos.y,p.surface.name))
   return found
 end
@@ -5832,7 +5841,7 @@ end
 local timed={walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true}
 -- The active action kind a step's handler starts, where it differs from its name.
 local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true},build={feed=true},collect={gather=true},feed={gather=true}}
-local conditions=conditions_module{known=known,position=position}
+local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end}
 scheduler=scheduler_module{
   state=state,player=player,handlers=handlers,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) return check_args(action,args) end,validate_condition=function(c) return conditions.validate(c) end,
