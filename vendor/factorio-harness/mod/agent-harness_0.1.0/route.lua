@@ -19,16 +19,22 @@ return function(api)
   local LETTER={[0]='N',[4]='E',[8]='S',[12]='W'}
   local BELT_TYPES={'transport-belt','underground-belt','splitter','loader','loader-1x1','lane-splitter','linked-belt'}
   local MARGIN,MAX_LEG,MAX_POINTS=24,1000,16
-  M.BUDGET={checks=6000,expansions=8000,total_checks=10000,total_expansions=13000}
-  local RETURN_STEP,RETURN_NEAR,LEG_CAP=12,6,{600,1500}
+  M.BUDGET={checks=8000,expansions=8000,total_checks=12000,total_expansions=13000}
+  -- Belts and undergrounds one call lays, the return line's included.
+  local MAX_ENTITIES=2048
+  local RETURN_STEP,RETURN_NEAR,LEG_CAP,RETURN_SLACK,RETURN_SHORT=12,6,{600,1500},2,24
   -- A leg still searching after POCKET_AFTER expansions checks whether its
   -- goal is closed in (up to POCKET tiles around it).
   local POCKET_AFTER,POCKET=1000,600
+  local LOOP=32
   -- Costs in belt tiles: turns are slightly dearer than straights, an
   -- underground pair wins only where it saves real detours, a tree or plant
   -- to clear costs a little, a tile to landfill more; the return line pays to
   -- leave the side of the first; WEIGHT trades the shortest line for speed.
-  M.TUNE={turn=0.5,underground=6,clear=1.5,fill=4,away=1,weight=1.5}
+  -- (A 690-tile Gleba line on a test server: weight 1.5 took 8759 placement
+  -- checks and 5728 expansions; weight 2 with underground 9 took 6136 and
+  -- 2546 for as many undergrounds.)
+  M.TUNE={turn=0.5,underground=9,clear=1.5,fill=4,away=1,weight=2}
   local UNDER={lava_tile=true,empty_space=true}  -- tiles an underground cannot pass under (underpass.lua)
   local function opposite(d) return (d+8)%16 end
   local function cw(d) return (d+4)%16 end
@@ -327,11 +333,32 @@ return function(api)
     -- an underground pair entered there with its exit hop tiles on (walk_back
     -- lays them out).
     local node
+    -- A line never crosses itself: a move's tiles may not be on the last LOOP
+    -- tiles of the path to this node (a search state is a tile and a heading,
+    -- so a loop back onto a tile looks new: world n copy 09:29, a return line
+    -- left an underground exit at (60,36) heading west and came back round to
+    -- enter one there heading north).
+    local function on_path(n,x,y)
+      local i=0
+      while n and i<LOOP do
+        if n.x==x and n.y==y then return true end
+        if n.hop and n.x-STEP[n.din][1]==x and n.y-STEP[n.din][2]==y then return true end
+        n=n.parent; i=i+1
+      end
+      return false
+    end
     local function reached(x,y)
       local k=key(x,y)*16+1
       return best[k] or best[k+1] or best[k+5] or best[k+9] or best[k+13]
     end
     local pocket_at=goal.accept and -1 or budget.expansions+POCKET_AFTER
+    -- An accepted node ends the leg; a last one gets the last belt.
+    local fallback,fallback_at
+    local function finish(nd)
+      if not goal.last then return nd end
+      local d=nd.din>=0 and nd.din or 4
+      return {parent=nd,place={{kind='belt',x=nd.x,y=nd.y,direction=d}},din=d,incoming=nd.din}
+    end
     local cap_at=cap and budget.expansions+cap or math.huge
     local function relax(x,y,din,g,hop,is_goal)
       if is_goal then heap.push(open,{goal=true,parent=node,din=din,hop=hop,g=g,f=g}); return end
@@ -348,16 +375,28 @@ return function(api)
       if not best[sk] or node.g<=best[sk] then
         best[sk]=-1 -- closed
         budget.expansions=budget.expansions+1
-        if budget.expansions>ctx.limit.expansions or budget.checks>ctx.limit.checks then ctx.nearest=nearest; return nil,'budget' end
-        if budget.expansions>cap_at then ctx.nearest=nearest; return nil,'cap' end
+        if budget.expansions>ctx.limit.expansions or budget.checks>ctx.limit.checks then
+          if fallback then return finish(fallback) end
+          ctx.nearest=nearest; return nil,'budget'
+        end
+        if budget.expansions>cap_at then
+          if fallback then return finish(fallback) end
+          ctx.nearest=nearest; return nil,'cap'
+        end
         if budget.expansions==pocket_at then
           ctx.closed=closed_in(ctx,tx,ty,reached)
           if ctx.closed then ctx.nearest=nearest; return nil,'closed' end
         end
         local hn=h(node.x,node.y,-1)
-        if not nearest or hn<nearest.h then nearest={x=node.x,y=node.y,h=hn} end
+        if not nearest or hn<nearest.h then nearest={x=node.x,y=node.y,h=hn,node=node} end
+        if fallback and budget.expansions>=fallback_at then return finish(fallback) end
         if goal.accept then
-          if not node.start and goal.accept(node) then return node end
+          if not node.start and goal.accept(node) then
+            -- (with prefer: the goal tile itself if the search reaches it within
+            -- prefer more expansions, else the first tile accepted)
+            if not goal.prefer or (node.x==tx and node.y==ty) then return finish(node) end
+            if not fallback then fallback,fallback_at=node,budget.expansions+goal.prefer end
+          end
         elseif not target and node.x==tx and node.y==ty and not node.start then
           if goal.last then
             local d=ctx.to_direction or (node.din>=0 and node.din or 4)
@@ -376,7 +415,7 @@ return function(api)
               if allowed[d] then relax(nx,ny,d,g,nil,true) end
             else
               local v=kind(nx,ny)
-              if v then relax(nx,ny,d,g+cost(v,nx,ny)) end
+              if v and not on_path(node,nx,ny) then relax(nx,ny,d,g+cost(v,nx,ny)) end
               ahead_free=v=='free'
             end
             -- An underground pair: entered straight, exit k tiles on. Never
@@ -387,7 +426,7 @@ return function(api)
                 if target and ex==tx and ey==ty then break end
                 if not hop_clear(ctx,node.x,node.y,d,k) then break end
                 local ve=not (not target and ex==tx and ey==ty) and kind(ex,ey)
-                if ve and not (pair_alone(ctx,node.x,node.y,d,'input') and pair_alone(ctx,ex,ey,d,'output')) then ve=false end
+                if ve and (on_path(node,ex,ey) or not (pair_alone(ctx,node.x,node.y,d,'input') and pair_alone(ctx,ex,ey,d,'output'))) then ve=false end
                 if ve then
                   local ox,oy=ex+sx,ey+sy
                   local gg=node.g+k+1+TUNE.underground+cost(ve,ex,ey)
@@ -395,7 +434,7 @@ return function(api)
                     if allowed[d] then relax(ox,oy,d,gg,k,true) end
                   else
                     local vo=kind(ox,oy)
-                    if vo then relax(ox,oy,d,gg+cost(vo,ox,oy),k) end
+                    if vo and not on_path(node,ox,oy) then relax(ox,oy,d,gg+cost(vo,ox,oy),k) end
                   end
                 end
               end
@@ -404,6 +443,7 @@ return function(api)
         end
       end
     end
+    if fallback then return finish(fallback) end
     ctx.nearest=nearest
     return nil,'none'
   end
@@ -491,6 +531,13 @@ return function(api)
         last_word=nil
       end
     end
+    -- One entity a tile (a loop longer than LOOP would put two there).
+    local used={}
+    for _,st in ipairs(steps) do
+      local k=key(st.x,st.y)
+      if used[k] then error('the route would cross itself at '..fmt(st.x,st.y)..'; route it in legs by via points',0) end
+      used[k]=true
+    end
     -- A hop over one of the route's own undergrounds on its axis would pair wrongly.
     for i,st in ipairs(steps) do
       if st.kind=='input' then
@@ -575,14 +622,31 @@ return function(api)
     end
 
     local function window(ax,ay,bx,by) return {left=math.min(ax,bx)-MARGIN,top=math.min(ay,by)-MARGIN,right=math.max(ax,bx)+MARGIN,bottom=math.max(ay,by)+MARGIN} end
-    t.box=window(fx,fy,fx,fy)
-    if not t.kind(fx,fy,true) then
-      error(t.is_charted(fx,fy) and 'the start tile is blocked'..(a.landfill and '' or ' (water or wetland: landfill=true lays tile ghosts under the belts)') or 'the start tile is not charted',0)
+    -- Why an end or via tile takes no belt: what holds it, or its tile.
+    local function blocked_text(x,y)
+      if not t.is_charted(x,y) then return 'not charted' end
+      local k=key(x,y)
+      if s.at[k] then return 'taken by our '..belt_name(s.at[k]) end
+      if s.feeds[k] then return 'fed by another belt' end
+      local ok,tl=pcall(function() return p.surface.get_tile(x,y) end)
+      local name=ok and tl and tl.name
+      local ti=name and api.tile_info and api.tile_info(p.force,belt,name,{})
+      if ti and ti.collides then
+        return name..(a.landfill and (ti.item and '' or ' (no tile item makes it buildable)') or ' (landfill=true lays tile ghosts under the belts)')
+      end
+      local okf,list=pcall(function() return p.surface.find_entities_filtered{area={{x,y},{x+1,y+1}},limit=8} end)
+      local names={}
+      for _,e in ipairs(okf and list or {}) do
+        if e.valid and e.type~='character' and e.type~='resource' and e.type~='item-entity' then names[#names+1]=e.name end
+      end
+      return 'blocked'..(#names>0 and ' by '..table.concat(names,', ') or '')
     end
+    t.box=window(fx,fy,fx,fy)
+    if not t.kind(fx,fy,true) then error('the start tile '..fmt(fx,fy)..' is '..blocked_text(fx,fy),0) end
     if not target then
       assert(fx~=tx or fy~=ty,'from and to are the same tile')
       t.box=window(tx,ty,tx,ty)
-      assert(t.kind(tx,ty),'to is blocked, not charted, or fed by another belt')
+      if not t.kind(tx,ty) then error('to '..fmt(tx,ty)..' is '..blocked_text(tx,ty),0) end
     else
       -- The last belt stands on a neighbour of `to`; say which if none can.
       t.box=window(tx,ty,tx,ty)
@@ -600,7 +664,7 @@ return function(api)
       local v=points[i]
       t.box=window(v.x,v.y,v.x,v.y)
       if not t.kind(v.x,v.y) then
-        error(string.format('via point %d %s is %s',i-1,fmt(v.x,v.y),t.is_charted(v.x,v.y) and 'blocked or fed by another belt' or 'not charted'),0)
+        error(string.format('via point %d %s is %s',i-1,fmt(v.x,v.y),blocked_text(v.x,v.y)),0)
       end
     end
 
@@ -646,6 +710,7 @@ return function(api)
       ctx.goal_din=node.din
     end
     local main=describe(steps,belt,underground,t)
+    assert(main.tiles<=MAX_ENTITIES,string.format('the line needs %d belts and undergrounds; one call lays at most %d (split it into parts by from and to)',main.tiles,MAX_ENTITIES))
     local items={[belt.name]=main.belts}
     if main.undergrounds>0 then items[underground.name]=main.undergrounds*2 end
     for item,n in pairs(main.fill) do items[item]=(items[item] or 0)+n end
@@ -721,20 +786,49 @@ return function(api)
       for k in pairs(t.taken) do taken0[k]=true end
       local planned0={}
       for k,v in pairs(ctx.planned_under) do planned0[k]=v end
-      ctx.limit={checks=M.BUDGET.total_checks,expansions=M.BUDGET.total_expansions}
       local sides=a.return_side and {a.return_side} or {'right','left'}
+      -- A side whose tiles beside both ends are free goes first.
+      if #sides==2 then
+        t.box=wide
+        local function exact(side)
+          local turn=side=='right' and cw or ccw
+          return t.kind(endx+STEP[turn(last_dir)][1],endy+STEP[turn(last_dir)][2]) and t.kind(beginx+STEP[turn(first_dir)][1],beginy+STEP[turn(first_dir)][2])
+        end
+        if not exact('right') and exact('left') then sides={'left','right'} end
+      end
       local tried={}
-      local found
-      for _,side in ipairs(sides) do
+      local found,partial
+      for si,side in ipairs(sides) do
+        -- What is left of the budget, shared by the sides still to try.
+        local share=#sides-si+1
+        ctx.limit={checks=budget.checks+math.floor((M.BUDGET.total_checks-budget.checks)/share),
+          expansions=budget.expansions+math.floor((M.BUDGET.total_expansions-budget.expansions)/share)}
         local turn=side=='right' and cw or ccw
         local sx,sy=endx+STEP[turn(last_dir)][1],endy+STEP[turn(last_dir)][2]
         local gx,gy=beginx+STEP[turn(first_dir)][1],beginy+STEP[turn(first_dir)][2]
         local why
         t.box=wide
-        if not t.kind(sx,sy) then why=string.format('its first tile %s is blocked or taken',fmt(sx,sy))
-        elseif not t.kind(gx,gy) then why=string.format('its last tile %s is blocked or taken',fmt(gx,gy))
+        -- Its ends: the tile beside the line's end, else the free tile nearest
+        -- it within RETURN_SLACK (a pole or chest beside the first belt in a
+        -- built-up base); it may end on any free tile that near its last tile.
+        -- (on this side of the line: n is the side, (ax,ay) the line's tile)
+        local function near_free(x,y,ax,ay,n)
+          if t.kind(x,y) then return x,y end
+          local bx,by,bd
+          for dx=-RETURN_SLACK,RETURN_SLACK do for dy=-RETURN_SLACK,RETURN_SLACK do
+            local cx,cy=x+dx,y+dy
+            local dd=math.abs(dx)+math.abs(dy)
+            if (not bd or dd<bd) and (cx-ax)*n[1]+(cy-ay)*n[2]>=1 and t.kind(cx,cy) then bx,by,bd=cx,cy,dd end
+          end end
+          return bx,by
+        end
+        local ssx,ssy=near_free(sx,sy,endx,endy,STEP[turn(last_dir)])
+        local egx,egy=near_free(gx,gy,beginx,beginy,STEP[turn(first_dir)])
+        if not ssx then why=string.format('its first tile %s and the tiles within %d of it are blocked or taken',fmt(sx,sy),RETURN_SLACK)
+        elseif not egx then why=string.format('its last tile %s and the tiles within %d of it are blocked or taken',fmt(gx,gy),RETURN_SLACK)
         elseif sx==gx and sy==gy then why='the line is too short for a return line'
         else
+          sx,sy=ssx,ssy
           local r,index,band=row(turn)
           local function off_row(x,y) return index[key(x,y)] and 0 or M.TUNE.away end
           -- A stop: a tile of the row from j on (or the one beside it further
@@ -754,17 +848,23 @@ return function(api)
             end}
           end
           local done,parts,cur,ri=false,{},{x=sx,y=sy,din=-1,g=0},1
+          local en=STEP[turn(first_dir)]
+          local the_end={x=egx,y=egy,last=true,prefer=300,accept=function(nd)
+            return math.max(math.abs(nd.x-gx),math.abs(nd.y-gy))<=RETURN_SLACK and (nd.x-beginx)*en[1]+(nd.y-beginy)*en[2]>=1
+          end}
           local node,w=nil,nil
+          local aim  -- (the goal of the last search)
           ctx.to_direction=nil
           while true do
             local j=ri+RETURN_STEP
-            local last={x=gx,y=gy,last=true}
+            local last=the_end
             local tries=j<#r and {{j,RETURN_NEAR,LEG_CAP[1]},{j,MARGIN,LEG_CAP[2]},{j+2*RETURN_STEP,MARGIN,LEG_CAP[2]}}
               or {{#r,RETURN_NEAR,LEG_CAP[1]},{#r,MARGIN,LEG_CAP[2]}}
             local goal
             node=nil
             for _,tr in ipairs(tries) do
               goal=tr[1]<#r and stop(tr[1]) or last
+              aim=goal
               node,w=leg(ctx,{cur},goal,near(cur.x,cur.y,goal.x,goal.y,tr[2]),off_row,tr[3])
               if node or w=='budget' then break end
             end
@@ -780,22 +880,35 @@ return function(api)
             -- over the window; failing that, the whole line in one search.
             local back=table.remove(parts)
             if back then untake(ctx,back.steps,taken0,planned0); cur=back.cur end
-            node,w=leg(ctx,{cur},{x=gx,y=gy,last=true},wide,nil)
+            aim=the_end
+            node,w=leg(ctx,{cur},the_end,wide,nil)
             if node then parts[#parts+1]={steps=walk_back(node)}; done=true
             elseif w~='budget' and #parts>0 then
               for _,pt in ipairs(parts) do untake(ctx,pt.steps,taken0,planned0) end
               parts={}
-              node,w=leg(ctx,{{x=sx,y=sy,din=-1,g=0}},{x=gx,y=gy,last=true},wide,nil)
+              node,w=leg(ctx,{{x=sx,y=sy,din=-1,g=0}},the_end,wide,nil)
               if node then parts[1]={steps=walk_back(node)}; done=true end
             end
+          end
+          -- Short of its end (a built-up base around the first belt): the line up
+          -- to the nearest tile a search for its end reached, when that is near.
+          local short
+          local c=ctx.nearest
+          if not done and aim==the_end and c and c.node and not c.node.start and c.h<=RETURN_SHORT then
+            local nd=c.node
+            local d=nd.din>=0 and nd.din or 4
+            node={parent=nd,place={{kind='belt',x=nd.x,y=nd.y,direction=d}},din=d,incoming=nd.din}
+            parts[#parts+1]={steps=walk_back(node)}
+            short={tiles=c.h,of={x=gx+0.5,y=gy+0.5}}
+            done=true
           end
           local rsteps={}
           for _,pt in ipairs(parts) do for _,st in ipairs(pt.steps) do rsteps[#rsteps+1]=st end end
           if not done then
             node=nil
-            why=w=='budget' and 'the search budget ran out'
-              or w=='closed' and closed_text('its last tile '..fmt(gx,gy),ctx.closed)
-              or 'no way through'
+            local c=ctx.nearest
+            why=(w=='budget' and 'the search budget ran out' or 'no way through')
+              ..(c and string.format(' (the nearest tile reached is %s, %d tiles from its last tile %s)',fmt(c.x,c.y),c.h,fmt(gx,gy)) or '')
           end
           if node then
             -- Its last belt must not feed the first line or another belt: it turns away if it would.
@@ -830,25 +943,34 @@ return function(api)
               for dx=-1,1 do for dy=-1,1 do if taken0[key(st.x+dx,st.y+dy)] then by=true end end end
               if not by then apart=apart+1 end
             end
-            found={steps=rsteps,side=side,from={x=sx+0.5,y=sy+0.5},to={x=gx+0.5,y=gy+0.5},crossings=crossings,apart=apart}
+            found={steps=rsteps,side=side,from={x=sx+0.5,y=sy+0.5},to={x=lst.x+0.5,y=lst.y+0.5},crossings=crossings,apart=apart,short=short}
           end
         end
-        if found then break end
+        if found and not found.short then break end
+        -- (a line short of its end waits for the other side's)
+        if found then
+          if not partial or found.short.tiles<partial.short.tiles then partial=found end
+          found=nil
+          why='it ends short of its last tile'
+        end
         tried[#tried+1]=side..': '..why
         -- (the next side starts from the first line alone)
         for k in pairs(t.taken) do if not taken0[k] then t.taken[k]=nil end end
         for k in pairs(ctx.planned_under) do if not planned0[k] then ctx.planned_under[k]=nil end end
         ctx.clear_to,ctx.alone={},{}
       end
+      found=found or partial
       if not found then error('no return line: '..table.concat(tried,'; '),0) end
       local r=describe(found.steps,belt,underground,t,'return')
       out['return']={route=r.route,tiles=r.tiles,belts=r.belts,undergrounds=r.undergrounds,side=found.side,from=found.from,to=found.to,
         crossings=found.crossings>0 and found.crossings or nil,apart=found.apart>0 and found.apart or nil,
+        short_of=found.short and string.format('it ends at %s, %d tiles from its last tile %s (no way nearer within the budget)',fmt(found.to.x-0.5,found.to.y-0.5),found.short.tiles,fmt(found.short.of.x-0.5,found.short.of.y-0.5)) or nil,
         over_trees_or_plants=r.clear>0 and r.clear or nil,landfill=next(r.fill) and r.fill or nil}
       items[belt.name]=items[belt.name]+r.belts
       if r.undergrounds>0 then items[underground.name]=(items[underground.name] or 0)+r.undergrounds*2 end
       for item,n in pairs(r.fill) do items[item]=(items[item] or 0)+n end
       for _,e in ipairs(r.entities) do out.entities[#out.entities+1]=e end
+      assert(#out.entities<=MAX_ENTITIES,string.format('the line and its return line need %d belts and undergrounds; one call lays at most %d (split it into parts by from and to)',#out.entities,MAX_ENTITIES))
     end
     out.cost={placement_checks=budget.checks,expansions=budget.expansions}
     return out

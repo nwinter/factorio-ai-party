@@ -88,6 +88,9 @@ reset()
 belt(0,0,4)
 r=R.plan(p,{from={x=0,y=0},to={x=4,y=0}})
 eq(r.extends.x,0.5); eq(r.route,'E4'); eq(at(r,0,0),nil); eq(at(r,1,0).direction,'east')
+-- ... unless one of our belts already stands there: the error says so.
+belt(1,0,8)
+fails(function() R.plan(p,{from={x=0,y=0},to={x=4,y=0}}) end,'the start tile (1.5,0.5) is taken by our transport-belt')
 reset()
 -- Only charted ground is used; bad inputs are refused.
 uncharted=1
@@ -135,6 +138,13 @@ do
   r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0}})
   eq(r.landfill,nil); assert(r.undergrounds>=1,r.route)
   water={}
+  -- An end on water says so (and how landfill helps).
+  water[key(30,0)]=true
+  fails(function() R2.plan(q,{from={x=30,y=0},to={x=40,y=0}}) end,'the start tile (30.5,0.5) is water (landfill=true lays tile ghosts under the belts)')
+  fails(function() R2.plan(q,{from={x=20,y=0},to={x=30,y=0}}) end,'to (30.5,0.5) is water (landfill=true lays tile ghosts under the belts)')
+  water={}
+  -- One call lays at most 2048 belts and undergrounds.
+  fails(function() R2.plan(q,{from={x=0,y=0},to={x=1000,y=1050},via={{x=1000,y=0},{x=1000,y=500}}}) end,'the line needs 2051 belts and undergrounds; one call lays at most 2048')
   for x=5,9 do for y=-40,40 do water[key(x,y)]=true end end
   fails(function() R2.plan(q,{from={x=0,y=0},to={x=20,y=0}}) end,'tiles there: grass-1, water')
   r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0},landfill=true,undergrounds=false})
@@ -161,7 +171,30 @@ do
   -- The right side blocked at the start: the left side.
   blocked[key(20,1)]=true
   r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0},['return']=true}); eq(r['return'].side,'left'); eq(r['return'].from.y,-0.5)
-  fails(function() R2.plan(q,{from={x=0,y=0},to={x=20,y=0},['return']=true,return_side='right'}) end,'no return line: right: its first tile (20.5,1.5) is blocked or taken')
+  -- Asked for the right side, it starts on the free tile nearest the blocked one (within 2).
+  r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0},['return']=true,return_side='right'}); eq(r['return'].side,'right'); eq(r['return'].from.x,19.5); eq(r['return'].from.y,1.5)
+  for x=18,22 do for y=1,3 do blocked[key(x,y)]=true end end
+  fails(function() R2.plan(q,{from={x=0,y=0},to={x=20,y=0},['return']=true,return_side='right'}) end,'no return line: right: its first tile (20.5,1.5) and the tiles within 2 of it are blocked or taken')
+  blocked={}
+  -- Its last tile walled in beside the first belt: it ends on a free tile within 2 of it.
+  for _,c in ipairs({{-1,1},{-1,2},{0,2},{1,2},{1,1}}) do blocked[key(c[1],c[2])]=true end
+  r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0},['return']=true,return_side='right'})
+  local lastr
+  for _,e in ipairs(r.entities) do if e.line=='return' then lastr=e end end
+  assert(math.abs(lastr.position.x-0.5)<=2 and math.abs(lastr.position.y-1.5)<=2,'ends within 2 of (0.5,1.5)')
+  eq(r['return'].to.x,lastr.position.x); eq(r['return'].to.y,lastr.position.y)
+  blocked={}
+  -- Its end walled in for good (thicker than a hop): the line ends at the nearest tile reached, short_of says so.
+  for x=-10,10 do for y=-12,12 do
+    if not ((y==0 and x>=0) or (x>=-2 and x<=2 and y>=1 and y<=3)) then blocked[key(x,y)]=true end
+  end end
+  r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0},['return']=true,return_side='right'})
+  assert(r['return'].short_of and r['return'].short_of:find('tiles from its last tile (0.5,1.5) (no way nearer within the budget)',1,true),r['return'].short_of)
+  tiles_={}
+  for _,e in ipairs(r.entities) do
+    local k=key(e.position.x,e.position.y)
+    assert(not tiles_[k],'two entities on '..k); tiles_[k]=true
+  end
   blocked={}
   -- A turning line: the return line follows it round (it stays beside it).
   r=R2.plan(q,{from={x=0,y=0},to={x=10,y=10},to_direction='south',['return']=true})
