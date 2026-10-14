@@ -92,18 +92,61 @@ fh call status
   uses a capsule on yourself (the heal). Capsules of other kinds (cliff explosives, remotes) are refused. Reply: `kind`
   (throw|self), `projectile`, `distance`, `range`, `cooldown_ticks`, `left`, `healed`. It is an instant action that
   stops what the character was doing, as `shoot` does.
-- Circuit network: `wire {from, to, color: "red"|"green"}` lays a circuit wire between two entities in reach (on a
-  combinator, `from_side`/`to_side` pick input or output; default output to input); `disconnect: true` removes it.
-  Without `color`, `wire` is the copper wire between poles. `circuit {position, ...}` sets what the entity's circuit
-  GUI holds: `enable: {signal, comparator, value | signal2}` (the entity works only while the condition holds; `false`
-  turns it off), `logistic: {...}` (the same, read from the logistic network; connects it), a constant combinator's
-  `signals: [{signal, count}]` and `on`, an arithmetic combinator's `arithmetic: {first, operation, constant | second,
-  output}`, a decider's `decider: {first, comparator, constant | second, output, copy_input}`. Signals are item, fluid
-  or virtual signal names (`iron-plate`, `water`, `signal-A`). `read: {switch: true}` sets read switches: an inserter's
-  `hand`, a belt's `contents`, a drill's `resources`, a train stop's `send_to_train`, `read_from_train`,
-  `read_stopped_train`, `read_trains_count`, `set_trains_limit`. The reply reads back what the game holds. It leaves a
-  running queue alone. `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests"
-  switch.
+- Circuit network (2.0's rules: a wire or a circuit GUI is in reach of the character, or by remote view on our own
+  entities in a visible chunk, all of our own platforms; `by` in the reply says `reach` or `remote view`).
+  `circuit_set {position, ...}` changes what the entity's circuit GUI holds; `circuit` is its old name (a direct call
+  runs as `circuit_set` and says so in `corrected`). `platform: "Sunward"` acts on that platform (platform coordinates,
+  hub at 0,0); `surface: "vulcanus"` (a planet, a platform's name or its surface name) on another surface by remote view.
+  - `enable: "ice < 300"` (spaces around `<` `>` `=` `>=` `<=` `!=`; the right side a number or a signal), or
+    `{signal, comparator, value | signal2}`: the entity works only while it holds (inserters, belts, pumps, lamps,
+    drills, train stops, turrets, machines, power switches); `false` turns it off. `logistic` takes the same on the
+    logistic network the entity is in (connects it); `false` disconnects.
+  - `read: {switch: true}` by short name: an inserter's `hand`, a belt's `contents`, a drill's `resources`, a train
+    stop's `send_to_train`, `read_from_train`, `read_stopped_train`, `read_trains_count`, `set_trains_limit`, or NAME for
+    the entity's `read_NAME` or `circuit_read_NAME` (a hub's `contents`, `speed`, `moving_from`, `moving_to`,
+    `damage_taken`; a chest's or tank's `contents`; a turret's `ammo`; a machine's `contents`, `working`, `ingredients`).
+  - `settings: {name: value}` sets any switch, mode, signal or condition of the GUI by the name the readback lists under
+    `settings` and `off`: `send_to_platform: true` (a hub), `circuit_hand_read_mode: "hold"|"pulse"`,
+    `read_contents_mode: "hold"|"pulse"|"entire_belt_hold"`, `resource_read_mode: "this_miner"|"entire_patch"`,
+    `speed_signal: "signal-S"`, a gate's `open_gate` with `circuit_condition`, a rail signal's `close_signal`, a
+    splitter's `input_left_condition`, ... A name the entity lacks is refused with the list of its settings.
+  - A constant combinator: `signals: [{signal, count}]` (up to 20, replacing its first section; `[]` clears) and `on`.
+    An arithmetic combinator: `arithmetic: {first, operation, second, output}` (first and second a signal or a number;
+    `+ - * / % ^ << >> AND OR XOR`; `first_networks`/`second_networks` `red`|`green`|`both`). A decider:
+    `decider: {first, comparator, constant | second, output, copy_input}` (one condition; the input count or 1) or
+    `{conditions: ["signal-A > 5", {signal, comparator, value | signal2, compare: "and"|"or", first_networks}],
+    outputs: ["iron-plate", {signal, copy_input, constant}]}` (a string output copies the input count). A selector:
+    `selector: {operation: select|count|random|stack-size|rocket-capacity|quality-filter|quality-transfer, ...}` with
+    the game's fields (`select_max`, `index_signal`, `index_constant`, `count_signal`, `random_update_interval`, ...).
+  - Signals are item, fluid and virtual signal names (`iron-plate`, `water`, `signal-A`, `signal-each`), other kinds as
+    `recipe:NAME`, `entity:NAME`, `space-location:NAME`, `asteroid-chunk:NAME`, `quality:NAME`, a quality as
+    `iron-plate@rare`, or `{type, name, quality}`; the readback writes them the same way.
+  - Every argument is checked before anything changes; the game's own refusal names the part and what applied before
+    it. An entity the game gives no circuit connection (a thruster) is refused with that reason, as is an
+    argument its GUI does not have (`enable` on a hub or a constant combinator: the reply lists its settings).
+  - It leaves a running action and queue alone. The reply is `entity`, `position`, `by`, `read` (switches set) and
+    `circuit`, the readback below.
+- `wire {from, to, color: "red"|"green"}` connects a circuit wire between two entities; without `color`, a copper wire
+  between poles or a pole and a power switch's side (`from_side`/`to_side`: `left`|`right`). On a combinator,
+  `from_side`/`to_side` pick `input` or `output` (default output to input; a combinator's output to its own input is a
+  wire too). `disconnect: true` removes it. `platform`/`surface` as for `circuit_set`. The wire must span the distance:
+  the refusal says how far apart the ends are and how far the wire reaches; an end without a circuit connection, out
+  of reach and not in a visible chunk, or the game's refusal (a pole's copper wire limit) is refused with that reason.
+  The reply: `color`, `connected` (`already` when it was there) or `disconnected` (copper: `split` when the two poles
+  are on different networks after), `by`, `from` and `to` `{entity, position, side, wires}` (that connector's far ends
+  after the change), `network`. It leaves a running action and queue alone.
+- `inspect` (and `circuit_set`) read back an entity's circuit side under `circuit`, for an entity with circuit settings
+  or wires: `enable` and `logistic` as text (`"ice < 300"`, the same form `enable` takes) with `enable_met` and
+  `logistic_met` (whether the condition holds now) and `disabled` (the entity stopped by it); `settings` (switches that
+  are on, modes, signals, conditions) and `off` (switches that are off); a constant combinator's `on`, `signals`
+  (`name*count`), `sections`, `groups`; an arithmetic combinator's `arithmetic {first, operation, second, output, text}`,
+  a decider's `decider {conditions, outputs}` as text, a selector's `selector`, and a combinator's `output` (the
+  signals it sends); `wires` per connector (`red`, `green`, `copper`; a combinator's `red_input`, `red_output`,
+  `green_input`, `green_output`; a power switch's `copper_left`, `copper_right`) with each far end
+  `{entity, position, side, ghost}` (wires the game does not draw, such as radar links, are left out); `networks` per
+  circuit connector `{id, signals, more}`: the signals on that network now, largest first, at most 30. An entity whose
+  circuit settings were never changed shows its wires and `settings_note`.
+- `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
 - Trains: `train {position: stop, station, limit}` names a train stop and sets its train limit (`limit: false` clears it);
   `train {position: locomotive or wagon, schedule: [{station, wait: [{type, ticks?, compare?, condition?}]}], current,
   automatic}` sets the train's schedule (wait types as in the game: time, inactivity, full, empty, item_count,
@@ -295,6 +338,10 @@ fh queue repeat --file plan.json
 - `"wait":false` lets a step overlap the next one, for example shooting while walking.
 - `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
+- A step that runs short (outcome `out_of_items`, `nothing_collected` or `inventory_full`, or a transfer's `no ITEM in
+  inventory`) is done, not failed, with `"on_short": "skip"` on the step or `"up_to": true` in a `transfer`, `collect`
+  or `feed` step's args: its history entry has `ok: true` and `short: true`, and the plan goes on. Other failures
+  (out of reach, an unknown entity, a timed-out tour) still follow `on_fail`.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
 - A direct call that moves or acts as the character pauses the queue. Reads, the board, chat, `say`, `tell`, `confess`, `operator`, `craft`/`cancel_craft`, research, votes, `sleep` and the queue calls don't, and when one of them fails (a `placements` out of sight, a `board_update` with an unknown argument) the running action and the queue go on as well. `sleep` leaves the queue running, and so does its end.
 - A harness update (a hot runtime install, or a restart with a changed mod) keeps a running queue going: a `wait_until` or `wait_ticks` step keeps its own clock, and a step toward a goal (`move_to`, `construct`, `build_path`, `mine`, `repair`, `kite`, `rearm`, `refuel`, `collect`) starts again. Any other step that was running is interrupted and leaves the queue paused (`fh queue resume` continues with the next step). A direct action is interrupted. Each agent whose work was cut gets `team.harness_updated` lines in its next reply.
@@ -333,6 +380,19 @@ fh sleep 900 --until researched                       # ...or until the research
   line): what the target holds (`wooden-chest at (3.5,3.5) holds no iron-plate in chest; it holds copper-plate*15`),
   `already holds N (up_to M)`, what you keep, or for `feed` per wanted item what you carry and the machines hold
   (`you carry 0 coal; 2 machines hold 5-6`). The third identical empty move in 7 minutes adds `repeated`.
+- Couriers:
+  - `transfer {..., "up_to": true}` moves min(count, what the source holds, room) and never fails on a short or empty
+    source: `moved`, and `short {asked, moved, reason}` (`none_held`, `source_short`, `source_empty`, `target_full`)
+    when it fell short (on the final `warning:` line too). With `positions`, `asked` is count per entity, summed. A number
+    keeps its old meaning: `up_to: N` tops the target up to N. `collect {..., "up_to": true}` adds the same `moved` and
+    `short` (`asked: "all"` without count).
+  - `feed {"recipe": "logistic-science-pack", "crafts": 10, "positions": [...]}` (or in reach, or `radius` for the
+    walking tour) tops every machine set to that recipe up to each item ingredient's amount x crafts, from your
+    inventory, in one call: `entities` rows with `loaded {item=count}` and `short {item=still missing}`; a named machine
+    set to another recipe is a row with `recipe` (what it runs, or `none`), and in reach they are counted in
+    `other_recipe`. `crafts` 1..1000 (default 1); not with `items`.
+  - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
+    call, `entities` in order and `count`; an entry that fails is `{position, error}`.
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
   `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
   results), `last_failure`; `queue_status` shows every step in full.

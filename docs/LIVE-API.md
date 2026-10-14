@@ -59,8 +59,11 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
   "schema": 1,
   "received": 1791695551.9,     // when the Worker got the last push (Unix seconds); null if never
   "age_s": 4,                   // seconds since then; the page treats more than 60 as "not live"
+  "site_watching": 3,           // live pages open on the site (POST /v1/here in the last 150 s; at most 4 per address)
   "state": {                    // the pushed snapshot, or null
     "schema": 1, "now": 1791695551.8, "tick": 144720, "paused": false, "game_time": "0h40m",
+    "watching": {"youtube": 41, "t": 1791695520},  // YouTube's "watching now" and when it was read; absent when
+        // unknown or older than 3 min (viewers.py poll_watching, once a minute)
     "title": "Nine AIs, one factory", "subtitle": "...",
     "agents": [{"name": "astra", "display_name": "Astra", "color": "#7c5cff", "glyph": "✦", "motto": "...",
                 "avatar": {"base": "robot"}, "model": "GPT-6 Astra", "harness": "Codex", "role": "...",
@@ -97,6 +100,11 @@ with `Authorization: Bearer <PUBLISH_TOKEN>`. The token comes from `$POG_LIVE_TO
   }
 }
 ```
+
+`POST /v1/here` (public, from the site's origins or without an Origin) takes `{"id": "<16-32 hex digits>"}`: the live
+page makes one random id per page load (never stored) and posts it on load and once a minute, as `text/plain` so the
+browser sends no preflight. The Worker keeps ids in memory only (a restart counts again within a minute). The page
+shows `Watching: 41 YouTube · 3 site` beside the Live badge, each part only when known, nothing while offline.
 
 The map is `static/mapview.js` (the run page's time-lapse uses it too): one canvas with pan (drag), zoom (wheel,
 pinch, + and −), Reset, Full screen, layers to toggle (terrain, ore, buildings, turret range, nests, agents, attention,

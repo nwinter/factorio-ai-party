@@ -69,6 +69,14 @@ return function(api)
     return table.concat(parts, ',')
   end
   M.runs = runs
+  -- The tiles a hand-placed tile item covers: the size x size brush around
+  -- the position, as a build lays it (bots.lua place_tiles).
+  function M.brush(pos, size)
+    local x0, y0 = math.floor(pos.x-(size-1)/2), math.floor(pos.y-(size-1)/2)
+    local list = {}
+    for dx = 0, size-1 do for dy = 0, size-1 do list[#list+1] = {x=x0+dx+0.5, y=y0+dy+0.5} end end
+    return list
+  end
 
   -- Tile items and the tiles each can be placed on (the game's own rule:
   -- a tile_condition list when given, then the collision condition, which

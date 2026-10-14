@@ -213,7 +213,7 @@ return function(api)
   -- cargo pod down from the hub; the body is made again where that pod comes
   -- down, wearing the same armor and guns. Same payload and the game's own
   -- ascent and descent time as a player's trip.
-  M.ABOARD_NOTE = 'platforms, platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet), ghost tools and grid/scan with platform=, research, recipes/technologies, chat and board, then land'
+  M.ABOARD_NOTE = 'platforms, platform_schedule, platform_create, requests (platform= or position=), drop (hub items down to the planet), ghost tools, grid/scan, inspect, circuit_set and wire with platform=, research, recipes/technologies, chat and board, then land'
   -- A ride never ends sooner than MIN_*: should the engine replace a pod
   -- entity on its way (unverified), the ride still takes its time.
   local ASCENT_TICKS, MAX_TRAVEL_TICKS, LAUNCH_WAIT, MIN_ASCENT, MIN_DESCENT = 2400, 18000, 300, 1200, 600
@@ -382,6 +382,8 @@ return function(api)
     profile=true, clock=true, advance=true, sleep=true, sleep_check=true, wait_ticks=true, queue_status=true, queue_cancel=true,
     blueprint_import=true, blueprint_list=true, blueprint_export=true, blueprint_delete=true, cameras=true, profiles=true, ports=true}
   local ON_PLATFORM = {place_ghosts=true, deconstruct=true, cancel_deconstruction=true, paste=true, blueprint_place=true, grid=true, scan=true}
+  -- Remote view of a platform or a planet by name (platform= or surface=).
+  local REMOTE = {inspect=true, circuit_set=true, circuit=true, wire=true}
   local VIEWS = {platforms=true, sleep_check=true}
   function M.check_action(index, action, args)
     local b = bots().by_index[index]
@@ -395,6 +397,7 @@ return function(api)
     -- A dry run is checked as the call it tries (dryrun.lua).
     if action == 'dry_run' and type(args.args) == 'table' then return M.check_action(index, args.action, args.args) end
     if ON_PLATFORM[action] and args.platform ~= nil then return end
+    if REMOTE[action] and (args.platform ~= nil or args.surface ~= nil) then return end
     if action == 'requests' and (args.platform ~= nil or args.position ~= nil) then return end
     if action == 'observe' and VIEWS[args.scope] then return end
     error(no_body(b), 0)

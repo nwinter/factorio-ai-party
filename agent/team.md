@@ -99,6 +99,10 @@ already targets your character.
   since your last request before the shift, and `researched_none_built`: researched technologies whose buildings the
   team has none of.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
+- Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
+  instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `feed {"recipe": NAME,
+  "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `inspect {"positions": [...]}`
+  inspects up to 32 entities in one call.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever
@@ -107,6 +111,10 @@ already targets your character.
   run only while your character is free (no action, your queue empty), 20 s after your own last action; your own
   action or queue call stops a running order at once and it resumes after. Every reply's `orders:` line says which
   runs and why. `./fh call orders` lists them; `order_remove`, `orders_pause`, `orders_resume`.
+- Circuits: `./fh call circuit_set --args '{"platform":"NAME","position":{"x":-2.5,"y":-4.5},"enable":"ice < 300"}'`
+  sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
+  in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
+  reads back the conditions, settings, each wire's far end and the signals on each network now.
 - `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that

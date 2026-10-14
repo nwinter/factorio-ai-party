@@ -197,9 +197,13 @@ STAFF = r"operator|admin|administrator|moderator|mod|developer|dev|devs|streamer
 
 # A line to the stream's operator or owner (Nick, 2026-10-13: shift05 07:57 Joonazan's "Operator, can you explain why
 # some models are just waiting ticks? ..." went to Haiku as "@haiku Operator, ..."): "Operator, ...", "operator: ...",
-# "hey operator ...", "Nick, ...", or "@operator" / "@NickWinter" / "@Nick" anywhere.
+# "hey operator ...", "Nick, ...", or "@operator" / "@NickWinter" / "@Nick" anywhere. A line opening with "operator"
+# and a request without a comma is one too (shift07: "operator view gemini for a couple of mins" reached nobody), unless
+# the next word talks about it ("operator is", "operator agent").
 OPERATOR = re.compile(r"^\W*((hey|hi|hello|yo|dear|ok|okay)\s+)?(the\s+|mr\.?\s+)?(operator|nick\s?winter|nick)\b(?!['’])"
                       r"\s*([,:!?;—–-]|$|\s+(can|could|would|why|what|how|please|pls)\b)"
+                      r"|^\W*operator\s+(?!(is|isn'?t|was|wasn'?t|has|had|seems|said|did|does|agent|agents|bot|bots|"
+                      r"of|and|or)\b)[a-z]"
                       r"|(^|[^\w@])@(operator|nick\s?winter|nick)\b", re.I)
 
 
@@ -1063,6 +1067,10 @@ class Feed:
             v, reasons = self.filt.check(m, now)
             if reasons:
                 self.verdict(v, reasons)
+                if reasons == ["impersonation:text"] and not m.get("staff") and to_operator(v["text"]):
+                    # "Operator: please give the agents ..." is kept off the stream (it reads as an order in the
+                    # operator's name) and still reaches the operator
+                    self.to_inbox(v, dropped=reasons[0])
             else:
                 v["author"] = m["author"]
                 passed.append(v)
@@ -1116,13 +1124,15 @@ class Feed:
             for kind, ident in dels:
                 self.delete(kind, ident)
 
-    def to_inbox(self, v):
+    def to_inbox(self, v, dropped=None):
         """runs/RUN/operator-inbox.jsonl (operator_inbox.py; the operator's watch reads it): {t, agent: "viewer NAME",
-        text, viewer: true}, no seq (the agents' requests resume by theirs)."""
+        text, viewer: true}, no seq (the agents' requests resume by theirs); `dropped`: kept off the stream, and why."""
         if not self.inbox:
             return
         row = {"t": round(v.get("t") or time.time(), 1), "agent": f"viewer {v['name']}", "text": v["text"], "viewer": True,
                "source": v.get("source")}
+        if dropped:
+            row["dropped"] = dropped
         try:
             with open(self.inbox, "a") as f:
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")

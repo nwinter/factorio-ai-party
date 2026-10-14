@@ -5,6 +5,7 @@
 //   GET  /v1/chat?after=SEQ   viewer chat messages after SEQ (public)
 //   POST /v1/chat             post a message {name, text} (no accounts; rate limited per client)
 //   POST /v1/mod              hide/unhide/ban/unban/open/close (Authorization: Bearer PUBLISH_TOKEN)
+//   POST /v1/here             {id}: an open live page, once a minute; GET /v1/state counts them as site_watching
 //
 // Everything is unlisted: every response carries X-Robots-Tag noindex and /robots.txt disallows all.
 // Client addresses are never stored: rate limits and bans key on a salted hash.
@@ -19,6 +20,10 @@ const CHAT = {
   keep: 2000,           // messages kept
   pageMax: 100,
 };
+// Site viewers: each open live page posts a random id (made per page load, never stored) once a minute. A page seen in
+// the last `windowS` counts; at most `perClient` pages per client address, so one script can't inflate it. Kept in
+// memory only: a restart of the object starts the count again within a minute.
+const HERE = { windowS: 150, perClient: 4, maxIds: 20000 };
 const RESERVED = ["astra", "sol", "luna", "opus", "sonnet", "haiku", "grok", "gemini", "muse", "fable", "operator",
   "mod", "moderator", "admin", "caster", "system", "server", "player of games", "pog"];
 
@@ -88,7 +93,7 @@ export default {
 
     // Browsers may only post chat from the site's own origins; scripts (no Origin header) are rate limited the same.
     const origin = req.headers.get("Origin");
-    if (req.method === "POST" && path === "/v1/chat" && origin && !originAllowed(origin, env)) {
+    if (req.method === "POST" && (path === "/v1/chat" || path === "/v1/here") && origin && !originAllowed(origin, env)) {
       await req.arrayBuffer();
       return json({ error: "origin not allowed" }, 403);
     }
@@ -142,6 +147,7 @@ export class Live {
     this.recent = new Map(); // who -> [ms timestamps]
     this.global = [];
     this.lastText = new Map(); // who -> {text, at}
+    this.here = new Map(); // page id -> {at, who}
     ctx.blockConcurrencyWhile(async () => {
       this.sql.exec(`CREATE TABLE IF NOT EXISTS chat (seq INTEGER PRIMARY KEY AUTOINCREMENT, t REAL NOT NULL,
         name TEXT NOT NULL, text TEXT NOT NULL, who TEXT NOT NULL, hidden INTEGER NOT NULL DEFAULT 0)`);
@@ -182,6 +188,7 @@ export class Live {
         case "GET /v1/chat": return this.getChat(url);
         case "POST /v1/chat": return await this.postChat(req, text);
         case "POST /v1/mod": return this.mod(req, text);
+        case "POST /v1/here": return await this.postHere(req, text);
         default: return json({ error: "not found" }, 404);
       }
     } catch (e) {
@@ -196,7 +203,30 @@ export class Live {
       received: this.received || null,
       age_s: this.received ? Math.round(now - this.received) : null,
       state: this.state ? JSON.parse(this.state) : null,
+      site_watching: this.siteWatching(),
     });
+  }
+
+  // Live pages open on the site now (HERE).
+  siteWatching() {
+    const now = Date.now(), per = new Map();
+    for (const [id, h] of this.here) {
+      if (now - h.at > HERE.windowS * 1000) { this.here.delete(id); continue; }
+      per.set(h.who, Math.min(HERE.perClient, (per.get(h.who) || 0) + 1));
+    }
+    let n = 0;
+    for (const c of per.values()) n += c;
+    return n;
+  }
+
+  async postHere(req, text) {
+    if (text.length > 256) return json({ error: "too large" }, 413);
+    const id = String(JSON.parse(text || "{}").id || "");
+    if (!/^[0-9a-f]{16,32}$/.test(id)) return json({ error: "id must be 16-32 hex digits" }, 400);
+    if (this.here.size >= HERE.maxIds && !this.here.has(id)) this.siteWatching();
+    if (this.here.size >= HERE.maxIds && !this.here.has(id)) return json({ ok: false }, 503);
+    this.here.set(id, { at: Date.now(), who: await this.who(req) });
+    return json({ ok: true });
   }
 
   postState(req, text) {
