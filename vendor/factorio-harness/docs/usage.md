@@ -699,8 +699,8 @@ fh sleep 900 --until researched                       # ...or until the research
 
 - `wait_until --wait` takes its timeout from `--wait-timeout MS` (up to 900000, 15 minutes) unless `args.timeout` (ticks, up to 54000) is given; without either it is 3600 ticks. The condition is checked every 10 ticks. Not met in time: exit 1, `error.code` `timed_out`, with the condition and what it last saw.
 - `wait_ticks {ticks: 1..54000}` holds the character idle (outcome `duration_elapsed`); like any character action it replaces the current one.
-- `wait_until {until: "rocket_ready", position}` (Luna, shift10 06:20: an `item_count` wait for the item `rocket` stayed 0 at a silo whose rocket was ready; that item is ammunition) is met when the rocket silo on that tile (any tile of it) has its rocket built and ready to launch, the GUI's rocket state. `saw`: `rocket-silo (65.5,14.5): rocket_ready, parts 0/50, cargo agricultural-science-pack*45`; no silo of ours there fails the wait. It works as a queue step, a sleep condition and an order's `when` too.
-- `item_count` with `positions` on a rocket silo counts its rocket cargo (the game counts it with the silo's inventories), and `saw` adds the silo's line: `agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket_ready, parts 0/50, cargo agricultural-science-pack*45`.
+- `wait_until {until: "rocket_ready", position}` (Luna, shift10 06:20: an `item_count` wait for the item `rocket` stayed 0 at a silo whose rocket was ready; that item is ammunition) is met when the rocket silo on that tile (any tile of it) has its rocket built and ready to launch, the GUI's rocket state. `saw`: `rocket-silo (65.5,14.5): rocket built and ready: parts consumed (0/50), not launched, cargo agricultural-science-pack*45`; no silo of ours there fails the wait. It works as a queue step, a sleep condition and an order's `when` too.
+- `item_count` with `positions` on a rocket silo counts its rocket cargo (the game counts it with the silo's inventories), and `saw` adds the silo's line: `agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket built and ready: parts consumed (0/50), not launched, cargo agricultural-science-pack*45`.
 - A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
 - A tell or mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered one as `inbox {tick, woke, from}`.
 - `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
@@ -782,7 +782,22 @@ fh sleep 900 --until researched                       # ...or until the research
     `nothing_collected` (nothing to take), `inventory_full`, `unreached` (no place reached) or `timed_out`. All targets
     in reach: the plain transfer at once. Giving with none held (and none in the hand-craft queue) is refused before
     walking; with `up_to: true` it is a short (`none_held`). Not with `total`. As a queue step it runs until the tour
-    ends; `transferred` counts as done.
+    ends; `transferred` counts as done. The reply's `legs` lists the route (Opus 10:50): each stop in the order it
+    walks them with `position`, `name`, `walk` (tiles from the stop before, or from you) and `in_reach` (now); the
+    first 16, `legs_more` past them.
+  - `feed {positions, walk: true}` does the same for a feed (Opus 10:50: reach errors at 10.x tiles cost many
+    retries): when any listed machine is out of reach, one timed tour (`ticks` default 3600) walks a nearest-first
+    route through them and feeds each as a `radius` tour does; the reply has `places`, `out_of_reach`, `legs` and
+    `until_tick`, `last.entities` a row per stop, `--wait` follows it. All in reach: the feed at once.
+  - `transfer {item, from: "nearest"}` (Haiku 10:50: an ammo chest held pipes and no magazines, which cost a walk)
+    takes from the nearest of our chests (container, logistic and linked chests) in reach that holds the item now,
+    as the map shows them; `radius` (1..64) looks that far and walks there (a timed call, as `walk`). `from_nearest`
+    says which: `wooden-chest at (56.5,34.5), 7.0 tiles from you, holds 200 firearm-magazine (2 chests checked, 1
+    holding it)`. None: refused, naming the nearest within 32 tiles (`radius=24 walks there`); with `up_to: true`,
+    moved 0 and a short. `from: {x,y}` is still the position.
+  - A take from a named chest that holds none of the item says where the nearest chest holding it is, in
+    `nothing_moved`: `...; the nearest holding firearm-magazine: wooden-chest at (56.5,34.5), 7.0 tiles from you,
+    holds 180 (transfer from: "nearest")`.
   - `transfer` or `collect {positions, item | items, pick, to}` (Luna 07:57: a repeating seed courier walked 300+ tile
     laps from empty seed chests):
     - `pick: "first_with_stock"` reads every listed place as `inspect` does (in sight, or by remote view where our
@@ -1078,7 +1093,14 @@ fh sleep 900 --until researched                       # ...or until the research
   on the surface (yours, or `surface`; up to 16). Per silo:
   - `parts` (`15/50`, against the 2.0 `rocket_parts_required`), `state` (the rocket's: `building_rocket`,
     `rocket_ready`, ...), `status` (the entity's: `working`, `item_ingredient_shortage`, `no_power`, ...),
-    `rocket_ready`;
+    `rocket_ready`, and `rocket` in words (Astra 10:50: a ready rocket's 0/50 was read as launched or as a missing
+    kit): `rocket built and ready: parts consumed (0/50), not launched; last launch 4m10s ago to platform Sunward`
+    (the 2.0 silo consumes the parts when the rocket is built), `rocket built, rising into place (rocket rising): parts
+    consumed (0/50), not launched`, `rocket launching (rocket flying); parts 3/50 are for the next rocket`, or
+    `building the rocket: parts 15/50`, then the last launch or `no launch seen`. The line starts with it; a built
+    rocket has no parts left. `inspect` of a silo (compact too), the `platforms` silo rows and the read-back of
+    configure and launch (`settings`) carry `parts`, `rocket_ready` and `rocket` side by side (inspect adds
+    `last_launch`);
   - `crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s}`, where `rocket_eta_s` is the rest of
     the rocket at the silo's crafting speed while it works;
   - `ingredients [{name, per_part, in_silo, in_hands, at_sources, needed, short}]` for the parts left
@@ -1128,7 +1150,13 @@ fh sleep 900 --until researched                       # ...or until the research
   and what the new entity does not hold, the build is refused and nothing moves (`cannot replace steel-chest (7.5,0.5):
   your inventory has no room for 400 copper-plate, 1 steel-chest (2 free slots, 5 needed); nothing moved`). The slot
   the placed item frees counts. A machine's contents and modules come to your inventory; its recipe goes on the new
-  one (`recipe_kept`).
+  one (`recipe_kept`). Its settings go on the new one as the game's fast replace keeps them (Sol 10:50: inserter ->
+  fast inserter lost filters, wires and circuit settings): item filters with their mode and use filters, the
+  inserter stack size override, a splitter's filter and priorities, every circuit and copper wire, the circuit
+  settings (enable and logistic conditions, and each setting `circuit_set` names for that kind), a chest's limit and
+  logistic request sections. `replaced.kept` lists them (`filters whitelist: coal`, `1 of 1 wires`, `circuit settings
+  (circuit_condition, circuit_enable_disable, circuit_read_hand_contents)`); `replaced.not_kept` names any the new
+  entity refused.
 - Turret ghosts request ammo (Astra, shift10: 15+ gun turrets rebuilt empty and destroyed again; turretammo.lua). A
   turret ghost from `place_ghosts`, `paste` or `blueprint_place` gets a 2.0 item request (insert plan) for ammo in its
   ammo slots, so the construction robots that build it bring the ammo from the logistic network too.

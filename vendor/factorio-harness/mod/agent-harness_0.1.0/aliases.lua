@@ -102,6 +102,11 @@ return function(api)
     -- ({to_entity={x,y}}, Haiku shift09): the direction, and the position. A direction named the other way round
     -- (from_entity, to_chest ...) is its to_entity/to_player name.
     if action == 'transfer' then
+      -- from {x,y} is the position (from: "nearest" is transfer's own: the nearest chest holding the item).
+      if (is_pos(out.from) or is_list(out.from)) and out.position == nil and out.positions == nil then
+        out.position, out.from = out.from, nil
+        notes[#notes+1] = 'from is position'
+      end
       if type(out.direction) == 'string' and DIRECTION[out.direction] then
         notes[#notes+1] = 'direction ' .. out.direction .. ' is ' .. DIRECTION[out.direction]
         out.direction = DIRECTION[out.direction]

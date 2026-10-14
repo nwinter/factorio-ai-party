@@ -135,6 +135,15 @@ def overlay():
         assert needle in js, needle
     css = open(os.path.join(HERE, "static", "overlay.css")).read()
     assert ".loadout.lo-main" in css and ".loadout.lo-inset" in css
+    # chat first (viewer Enginerd, 10:59): the main strip sits at the top, away from the captions' band at the bottom;
+    # captions stack above the strips; a strip meeting a caption or the chat panel steps aside
+    main_rule = css.split(".loadout.lo-main {")[1].split("}")[0]
+    assert "top: calc(16px + var(--alerts-clear, 0px))" in main_rule and "bottom" not in main_rule, main_rule
+    assert "#voice { z-index: 6; }" in css and ".loadout.lo-yield { opacity: 0; visibility: hidden; }" in css
+    assert ".loadout { position: absolute; z-index: 2;" in css
+    for needle in ("function loadoutClear()", '#voice .cap.on', '["chat", "chat-pins", "chat-ticker"]', 'classList.add("lo-yield")',
+                   "loadoutClear();", "watchLoadoutClear();", "new MutationObserver(loadoutClear)"):
+        assert needle in js, needle
     subprocess.run(["node", "--check", os.path.join(HERE, "static", "overlay.js")], check=True)
 
 
@@ -155,7 +164,18 @@ def site():
     subprocess.run(["node", "--check", os.path.join(ROOT, "site", "static", "site.js")], check=True)
 
 
+def mock_rows():
+    """serve.py --mock emits loadout rows (previews show the strips): a fighter shoots, every other agent crafts."""
+    import mock
+    src = mock.MockSource({"agents": {"astra": {}, "sol": {}}})
+    rows = src.loadout_rows(time.time())
+    assert [r["name"] for r in rows] == ["astra", "sol"] and rows[1]["crafting"]["items"] == 25 and rows[0]["crafting"] is None
+    src.agents["astra"]["combat_until"] = time.time() + 10
+    assert src.loadout_rows(time.time())[0]["shooting"] is True
+
+
 def main():
+    mock_rows()
     modes()
     model_rows()
     live_reads()

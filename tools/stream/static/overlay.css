@@ -670,11 +670,18 @@ body.onecam #cam-inset .cam-label { left: 0; bottom: 0; height: 26px; box-sizing
   padding: 0 10px 0 3px; border-radius: 0; background: transparent; box-shadow: none; z-index: 1; transform: none; }
 #cam-inset .cam-label .avatar { width: 22px !important; height: 22px !important; }
 
-/* Loadout strips (overlay.js renderLoadouts; Nick 08:55): inside the main camera's lower left, above its bar, and
-   along the inset's top; one mode at a time (combat, building, carrying). */
-.loadout { position: absolute; z-index: 3; padding: 8px 12px; min-width: 220px; max-width: 420px; box-sizing: border-box;
-  display: flex; flex-direction: column; gap: 6px; font-size: 16px; color: var(--head); pointer-events: none; }
-.loadout.lo-main { left: 16px; bottom: calc(var(--bar-h, 0px) + 16px); }
+/* Loadout strips (overlay.js renderLoadouts; Nick 08:55): inside the main camera's top left, below any alert
+   banners, and along the inset's top; one mode at a time (combat, building, carrying). Chat comes first (viewer
+   Enginerd, 10:59: "the combat info box often overlays the chat messages"): the strips sit away from the captions'
+   band at the main camera's bottom, captions stack above them, and a strip that would still meet a caption or the
+   chat panel steps aside (.lo-yield, overlay.js loadoutClear). */
+.loadout { position: absolute; z-index: 2; padding: 8px 12px; min-width: 220px; max-width: 420px; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 6px; font-size: 16px; color: var(--head); pointer-events: none;
+  transition: opacity 200ms ease; }
+.loadout.lo-main { left: 16px; top: calc(16px + var(--alerts-clear, 0px)); max-height: 40%; overflow: hidden; }
+body:not(.onecam) .loadout.lo-main { top: calc(70px + var(--alerts-clear, 0px)); } /* under the camera label (top left there) */
+.loadout.lo-yield { opacity: 0; visibility: hidden; }
+#voice { z-index: 6; }
 .loadout.lo-inset { left: 6px; top: 6px; min-width: 0; max-width: calc(100% - 12px); padding: 5px 8px; gap: 4px; font-size: 13px; }
 .loadout .lo-head { display: flex; gap: 10px; align-items: baseline; font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
   text-transform: uppercase; color: var(--accent); }

@@ -97,8 +97,40 @@ return function(api)
     M.record(silo, {cargo=cargo or 'empty', to=destination_text(pod and try(function() return pod.cargo_pod_destination end)), by=by})
   end
 
-  -- The read --------------------------------------------------------------------
+  -- The rocket in words (Astra 10:50: teammates read a ready rocket's 0/50 parts, and a rising one, as launched or as
+  -- a missing kit three times): built and ready, or rising into place, with its parts consumed and not launched;
+  -- launching; or building, parts X/Y. Then the last launch. {rocket_ready, parts, rocket (all of it), rocket_now,
+  -- last (the last-launch part)}.
   local silo_states
+  local RISING = {create_rocket=true, lights_blinking_open=true, doors_opening=true, doors_opened=true, rocket_rising=true,
+    arms_advance=true}
+  local LAUNCHING = {launch_starting=true, launch_started=true, engine_starting=true, arms_retract=true, rocket_flying=true,
+    lights_blinking_close=true, doors_closing=true}
+  function M.rocket(e)
+    silo_states = silo_states or invert(defines.rocket_silo_status)
+    local st = try(function() return e.rocket_silo_status end)
+    local state = silo_states[st] or tostring(st)
+    local ready = st ~= nil and st == defines.rocket_silo_status.rocket_ready
+    local parts = try(function() return e.rocket_parts end) or 0
+    local required = try(function() return e.prototype.rocket_parts_required end) or 0
+    local now
+    if ready then
+      now = string.format('rocket built and ready: parts consumed (%d/%d), not launched', parts, required)
+    elseif RISING[state] then
+      now = string.format('rocket built, rising into place (%s): parts consumed (%d/%d), not launched', (state:gsub('_', ' ')), parts, required)
+    elseif LAUNCHING[state] then
+      now = string.format('rocket launching (%s); parts %d/%d are for the next rocket', (state:gsub('_', ' ')), parts, required)
+    else
+      now = string.format('building the rocket: parts %d/%d', parts, required)
+    end
+    local last = records()[try(function() return e.unit_number end) or -1]
+    local last_text = last and string.format('last launch %s ago%s', ago(game.tick - last.tick), last.to and ' to ' .. last.to or '')
+      or 'no launch seen'
+    return {rocket_ready=ready, parts=parts .. '/' .. required, rocket=now .. '; ' .. last_text, rocket_now=now, last=last_text,
+      last_launch=last and {ago=ago(game.tick - last.tick), tick=last.tick, to=last.to, cargo=last.cargo, by=last.by} or nil}
+  end
+
+  -- The read --------------------------------------------------------------------
   local function feeders(e, recipe_items)
     local box = {left_top={x=e.position.x - FEED_REACH, y=e.position.y - FEED_REACH}, right_bottom={x=e.position.x + FEED_REACH, y=e.position.y + FEED_REACH}}
     local list = try(function() return e.surface.find_entities_filtered{area=box, type='inserter', force=e.force, limit=MAX_FEEDERS} end) or {}
@@ -143,17 +175,20 @@ return function(api)
   end
   function M.view(e, force)
     silo_states = silo_states or invert(defines.rocket_silo_status)
+    -- (the per-part crafting below counts parts left only while the rocket is still being built)
     local proto = e.prototype
     local required = try(function() return proto.rocket_parts_required end) or 0
     local parts = try(function() return e.rocket_parts end) or 0
     local state = silo_states[e.rocket_silo_status] or tostring(e.rocket_silo_status)
     local ready = e.rocket_silo_status == defines.rocket_silo_status.rocket_ready
     local status = api.status_name(e) or 'unknown'
-    local row = {name=e.name, position=e.position, surface=e.surface.name, parts=parts .. '/' .. required, state=state, status=status,
-      rocket_ready=ready}
-    local left = math.max(0, required - parts)
+    local rk = M.rocket(e)
+    local row = {name=e.name, position=e.position, surface=e.surface.name, parts=parts .. '/' .. required, rocket_ready=ready,
+      rocket=rk.rocket, state=state, status=status}
+    -- A built rocket's parts are consumed: none are left to make for it.
+    local left = (ready or RISING[state]) and 0 or math.max(0, required - parts)
     local words = {}
-    words[#words+1] = string.format('%s %s on %s: %s, parts %d/%d', e.name, at(e.position), e.surface.name, state:gsub('_', ' '), parts, required)
+    words[#words+1] = string.format('%s %s on %s: %s', e.name, at(e.position), e.surface.name, rk.rocket_now)
     -- Crafting: the part in progress, and the rest of the rocket at this speed.
     local recipe = try(function() return e.get_recipe() end)
     local prod = 1 + (try(function() return e.productivity_bonus end) or 0)
@@ -171,8 +206,8 @@ return function(api)
       else
         words[#words+1] = string.format('%s, %d parts left', status:gsub('_', ' '), left)
       end
-    elseif not ready then
-      words[#words+1] = status:gsub('_', ' ')
+    elseif not ready and not RISING[state] then
+      words[#words+1] = (status:gsub('_', ' '))
     end
     -- Ingredients for the parts left: in the silo, in feeders' hands, at their sources.
     if recipe then
@@ -247,12 +282,12 @@ return function(api)
   -- The silo GUI's switches as they stand, with where the silo is (configure and launch read them back after a change).
   function M.settings(e)
     local target = try(function() local t = e.transitional_request_target; return t and t.valid and t.name or nil end)
-    local parts = try(function() return e.rocket_parts .. '/' .. e.prototype.rocket_parts_required end)
+    local rk = M.rocket(e)
     return {silo = string.format('%s at (%g,%g) on %s', e.name, e.position.x, e.position.y, e.surface.name),
       auto_requests = try(function() return e.use_transitional_requests end) and true or false,
       send_to_orbit_automatically = try(function() return e.send_to_orbit_automatically end) and true or false,
-      requesting_for = target, parts = parts,
-      rocket = try(function() silo_states = silo_states or invert(defines.rocket_silo_status); return silo_states[e.rocket_silo_status] end)}
+      requesting_for = target, parts = rk.parts, rocket_ready = rk.rocket_ready, rocket = rk.rocket,
+      state = try(function() return silo_states[e.rocket_silo_status] end)}
   end
   function M.read(p, a)
     local surface = p.surface
@@ -279,7 +314,7 @@ return function(api)
       note=#silos >= MAX_SILOS and 'the first ' .. MAX_SILOS .. ' silos' or nil}
   end
   M.schema = {silo = {position='optional {x,y}: the silo nearest it (default every silo on the surface)', surface='optional surface name (default yours)',
-    returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required), state (the silo\'s rocket state), status, rocket_ready, '
+    returns='silos [{name, position, surface, parts (X/required, the 2.0 rocket_parts_required), rocket_ready, rocket ("rocket built and ready: parts consumed (0/50), not launched; last launch 4m10s ago to platform X": a built rocket has consumed its parts; rising into place; launching, parts for the next; or building, parts X/Y), state (the silo\'s rocket state), status, '
       .. 'crafting {part_progress, parts_left, part_s, productivity, rocket_eta_s (at this speed, while working)}, ingredients [{name, per_part, in_silo, in_hands '
       .. '(feeding inserters\' hands), at_sources (what their belts and chests hold), needed (for the parts left), short}], lacks (ingredients the silo holds too few '
       .. 'of for the next part), feeders {inserters, idle, sources}, cargo {kg, lift_kg, stacks, slots, items, over_kg}, trash, auto_requests and send_to_orbit_automatically (the GUI checkboxes; configure sets them), '
