@@ -247,4 +247,40 @@ eq(big[1].closing,false); eq(big[1].eta_s,nil)
 demo.valid=false; game.tick=300300
 eq(#T.operator.big_enemies_live({}).enemies,0)
 game.tick=300900; T.operator.big_enemies_live({}); eq(searches,2)
+
+-- task-statuscost (01:15 on world n: threat.summary 110 ms, threat.watch up to 123 ms): a base's nearest building and
+-- cloud gap are kept per surface and base chunk for every agent; at most 2 fresh searches per call, the rest '?' until
+-- a later call.
+do
+  local st2,rings={},0
+  local far={}
+  for i=1,5 do far[i]={valid=true,type='unit-spawner',force=enemy,position={x=100*i,y=200}} end
+  local surf={index=7,get_pollution=function() return 0 end,get_total_pollution=function() return 0 end,get_chunks=function() return function() end end,
+    find_entities_filtered=function(f)
+      if f.type=='unit-spawner' then return far end
+      if f.type=='radar' then return {} end
+      rings=rings+1
+      local out={}
+      for _,e in ipairs(ours) do if distance(e.position,f.position)<=f.radius then out[#out+1]=e end end
+      return out
+    end,
+    get_closest=function(pos,list) table.sort(list,function(a,b) return distance(a.position,pos)<distance(b.position,pos) end); return list[1] end}
+  local T2=dofile('mod/agent-harness_0.1.0/threat.lua'){state=function() return st2 end,distance=distance,known=function() return true end}
+  local a1={index=1,surface=surf,position={x=300,y=0},force=mine}
+  local a2={index=2,surface=surf,position={x=310,y=0},force=mine}
+  game.tick=400000
+  local function known_distances(r) local n=0 for _,b in ipairs(r.enemies.list) do if b.distance then n=n+1 end end return n end
+  local r1=T2.summary(a1,true)
+  eq(#r1.enemies.list,5); eq(known_distances(r1),2,'two searched this call')
+  assert(r1.enemies.list[5].distance_pending,'the rest wait for a later call')
+  local after_first=rings
+  eq(known_distances(T2.summary(a1,true)),4); eq(known_distances(T2.summary(a1,true)),5)
+  local all=rings
+  eq(known_distances(T2.summary(a2,true)),5,'another agent reads what was found'); eq(rings,all,'no ring search for it')
+  assert(after_first>0)
+  game.tick=400000+18000
+  local before=rings
+  eq(known_distances(T2.summary(a2,true)),5,'5 min later: the kept ones still shown')
+  assert(rings>before and rings-before<=8,'and two searched again (up to 4 rings each)')
+end
 print('threat tests passed')

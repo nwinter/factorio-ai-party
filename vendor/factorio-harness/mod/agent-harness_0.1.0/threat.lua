@@ -5,6 +5,7 @@
 return function(api)
   local M={}
   local CACHE_TICKS,CHART_TICKS,MAX_BASE_RANGE,CLOUD_SEARCH,EVOLUTION_WINDOW,MAX_NEWS=600,3600,512,8,18000,16
+  local NEAR_TICKS,CLOUD_TICKS,FORGET_TICKS,FRESH=18000,3600,108000,2  -- per base: 5 min, 1 min, forgotten after 30 min; searches per call
   local function round(v,digits)
     if not digits then return math.floor(v+0.5) end
     local m=10^digits; return math.floor(v*m+0.5)/m
@@ -96,35 +97,66 @@ return function(api)
         end
       end
     end
+    -- What a base's position alone decides (our nearest building, the cloud's
+    -- gap) is kept per surface and base chunk for every agent: NEAR_TICKS and
+    -- CLOUD_TICKS. At most FRESH searches per call (task-statuscost, 01:15 on
+    -- world n: the ring searches made threat.summary 110 ms and threat.watch
+    -- up to 123 ms); a base not searched yet has no distance ('?') and comes
+    -- in a later call.
+    local st=api.state()
+    st.base_info=st.base_info or {}
+    local info=st.base_info[s.index]
+    if not info then info={}; st.base_info[s.index]=info end
+    local fresh_left=FRESH
+    for key,v in pairs(info) do if game.tick-v.tick>=FORGET_TICKS then info[key]=nil end end
     for _,b in ipairs(out) do
       b.position={x=round(b.sx/b.spawners),y=round(b.sy/b.spawners)}
       b.first,b.sx,b.sy,b.chunks=nil,nil,nil,nil
       b.absorbing=round(b.absorbing)
       b.reached=M.reached(b.polluted_tick)
-      -- Nearest of our buildings, searched in widening rings.
-      for _,r in ipairs{64,128,256,MAX_BASE_RANGE} do
-        local ours={}
-        for _,e in pairs(s.find_entities_filtered{position=b.position,radius=r,force=p.force,limit=256}) do
-          if e.valid and not NOT_BUILDING[e.type] then ours[#ours+1]=e end
+      local key=math.floor(b.position.x/32)..','..math.floor(b.position.y/32)
+      local kept=info[key]
+      if kept and game.tick-kept.tick<NEAR_TICKS then
+        b.distance,b.direction=kept.distance,kept.direction
+      elseif fresh_left>0 then
+        fresh_left=fresh_left-1
+        kept={tick=game.tick}
+        -- Nearest of our buildings, searched in widening rings.
+        for _,r in ipairs{64,128,256,MAX_BASE_RANGE} do
+          local ours={}
+          for _,e in pairs(s.find_entities_filtered{position=b.position,radius=r,force=p.force,limit=256}) do
+            if e.valid and not NOT_BUILDING[e.type] then ours[#ours+1]=e end
+          end
+          local near=#ours>0 and s.get_closest(b.position,ours)
+          if near then
+            kept.distance=round(api.distance(b.position,near.position)); kept.direction=compass(near.position,b.position); break
+          end
         end
-        local near=#ours>0 and s.get_closest(b.position,ours)
-        if near then
-          b.distance=round(api.distance(b.position,near.position)); b.direction=compass(near.position,b.position); break
-        end
-      end
+        info[key]=kept
+        b.distance,b.direction=kept.distance,kept.direction
+      elseif kept then b.distance,b.direction=kept.distance,kept.direction  -- older than NEAR_TICKS: searched again in a later call
+      else b.distance_pending=true end
       if not b.reached then
-        -- Chunks between the base and the nearest polluted chunk.
-        local cx,cy=math.floor(b.position.x/32),math.floor(b.position.y/32)
-        for r=1,CLOUD_SEARCH do
-          for dx=-r,r do
-            for dy=-r,r do
-              if not b.cloud_gap and math.max(math.abs(dx),math.abs(dy))==r then
-                local c=chunk_centre(cx+dx,cy+dy)
-                if p.force.is_chunk_charted(s,{x=cx+dx,y=cy+dy}) and s.get_pollution(c)>0 then b.cloud_gap=r; b.cloud_direction=compass(b.position,c) end
+        if kept and kept.cloud_tick and game.tick-kept.cloud_tick<CLOUD_TICKS then
+          b.cloud_gap,b.cloud_direction=kept.cloud_gap,kept.cloud_direction
+        elseif kept and kept.tick==game.tick or fresh_left>0 then
+          if not (kept and kept.tick==game.tick) then fresh_left=fresh_left-1 end
+          -- Chunks between the base and the nearest polluted chunk.
+          local cx,cy=math.floor(b.position.x/32),math.floor(b.position.y/32)
+          for r=1,CLOUD_SEARCH do
+            for dx=-r,r do
+              for dy=-r,r do
+                if not b.cloud_gap and math.max(math.abs(dx),math.abs(dy))==r then
+                  local c=chunk_centre(cx+dx,cy+dy)
+                  if p.force.is_chunk_charted(s,{x=cx+dx,y=cy+dy}) and s.get_pollution(c)>0 then b.cloud_gap=r; b.cloud_direction=compass(b.position,c) end
+                end
               end
             end
+            if b.cloud_gap then break end
           end
-          if b.cloud_gap then break end
+          kept=info[key] or {tick=game.tick}
+          info[key]=kept
+          kept.cloud_tick,kept.cloud_gap,kept.cloud_direction=game.tick,b.cloud_gap,b.cloud_direction
         end
       end
     end
