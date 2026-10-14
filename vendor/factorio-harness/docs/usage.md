@@ -164,6 +164,27 @@ fh call status
   automatic}` sets the train's schedule (wait types as in the game: time, inactivity, full, empty, item_count,
   fluid_count, circuit, passenger_present, ...) and automatic or manual mode. Rails, stops, locomotives and wagons are
   built with `build` and `place_ghosts`; fuel goes in with `refuel` or `transfer`.
+- Gleba farming (Sol, shift09 board #368): `inspect` on an agricultural tower adds `tower`: `state` in words
+  (`working (planting or harvesting)`, `waiting for plants to grow`, `no seeds in its input`, `no free cell with soil
+  for its seeds`, `output full`, `no power`), `seeds` and `output` (its two inventories), `area` (`48 cells of 3x3
+  tiles within 3 cells: (-10,-10)-(11,11)`), `cells` (`10 growing (next grown in 1m46s); 0 grown; free with soil for:
+  10 jellynut-seed, 9 yumako-seed; blocked: 1 character; no soil for any seed: 14 wetland-dead-skin, ...`), `plantable_now`
+  (free cells with soil for the seeds it holds), `planted_10min` (from the plants' growth times), `plants` (up to 6:
+  each plant, its position and `grown in 4m10s` or `grown, waiting for harvest`) and `harvest_made_10min` (what the
+  force harvested on that surface, every tower). Soil is each plant's own tile list (yumako on yumako soils, jellynut
+  on jellynut soils, tree seeds on grass and dirt); the game's placement check alone does not tell them apart.
+  `transfer` puts seeds into the tower's input (`agricultural_tower_input`) and takes its harvest from the output
+  (`agricultural_tower_output`), with or without the inventory named; `collect` takes towers' output as it does
+  assemblers'; `feed` tops a tower up with the seed kinds it holds, else every kind you carry.
+- Burner fuel by category: `feed` without `fuel` gives a burner the fuel it burns (coal for chemical burners; a
+  biochamber burns nutrients, so it gets nutrients); `refuel` skips burners of another category in a radius and refuses
+  one named by position (`biochamber at (-20.5,-20.5) burns nutrients fuel, not coal (chemical)`).
+- Spoiling: `inspect` lists spoilable stacks in any of the entity's inventories as `spoiling` (stalest first:
+  `agricultural_tower_output: jellynut*50 spoils in 56m21s (6% spoiled)`).
+- Space Age enemy units count as units everywhere the harness looks for enemies: Gleba's strafer and stomper pentapods
+  (`spider-unit`, wrigglers are `unit`) and Vulcanus' demolishers (`segmented-unit`), in auto `shoot`, `kite`, the
+  move safety check and `wait_until no_enemies`. Gleba's spawners (`gleba-spawner`, `gleba-spawner-small`) are
+  `unit-spawner`s and show where nests do (status `enemies`, the `defense` read).
 - `configure {position, recipe, quality}` sets a recipe at a quality (the machine and quality must be unlocked); a
   change of quality alone is a change.
 - `flush {position, fluid?, index?, platform?}` is the fluid GUI's flush: it empties the fluid segment (the connected

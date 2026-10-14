@@ -4,11 +4,12 @@
 -- radius walks the stock back.
 return function(api)
   local M={}
-  local TYPES={'assembling-machine','furnace','container','logistic-container','cargo-landing-pad'}
+  local TYPES={'assembling-machine','furnace','agricultural-tower','container','logistic-container','cargo-landing-pad'}
   -- Gathering leaves plain chests alone unless asked: they are usually feed
   -- chests the player stocked for machines, not stock to collect.
-  local NO_CHESTS={'assembling-machine','furnace','cargo-landing-pad'}
-  local CRAFTER={['assembling-machine']=true,furnace=true}
+  local NO_CHESTS={'assembling-machine','furnace','agricultural-tower','cargo-landing-pad'}
+  -- An agricultural tower's harvest is its output, as an assembler's product is (Gleba).
+  local CRAFTER={['assembling-machine']=true,furnace=true,['agricultural-tower']=true}
   local CHEST={container=true,['logistic-container']=true}
   local MAX_PLACES=32
   local function output_of(e)

@@ -544,6 +544,21 @@ do
   p.surface.find_entities_filtered=function() return {beacon} end
   r=call('transfer',{position=beacon.position,item='speed-module',count=2,direction='to_entity'})
   eq(r.transferred,2); eq(r.inventory,'beacon_modules')
+  -- Gleba (Sol, shift09: "entity has no transferable inventory"): seeds go into an agricultural tower's input.
+  defines.inventory.agricultural_tower_input=defines.inventory.agricultural_tower_input or 33
+  defines.inventory.agricultural_tower_output=defines.inventory.agricultural_tower_output or 34
+  prototypes.item['yumako-seed']={name='yumako-seed',type='item'}
+  do
+    local seeds=stack('yumako-seed',10); main={seeds}
+    main.get_item_count=function(f) return seeds.valid_for_read and seeds.name==f.name and seeds.count or 0 end
+    local tower=machine('agricultural-tower',defines.inventory.agricultural_tower_input)
+    p.surface.find_entities_filtered=function() return {tower} end
+    r=call('transfer',{position=tower.position,item='yumako-seed',count=4,direction='to_entity'})
+    eq(r.transferred,4); eq(r.inventory,'agricultural_tower_input'); eq(tower.slots[1].name,'yumako-seed')
+    r=call('transfer',{position=tower.position,inventory='agricultural_tower_input',item='yumako-seed',count=1,direction='to_entity'})
+    eq(r.transferred,1)
+  end
+  main={mod_src}
   -- Inspect gives the module inventory's index (blueprint item requests name it).
   asm.slots.index=4
   asm.slots.get_contents=function() return {{name='speed-module',count=2,quality='normal'}} end
