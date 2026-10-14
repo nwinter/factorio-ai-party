@@ -675,6 +675,11 @@ fh sleep 900 --until researched                       # ...or until the research
   - `configure` on a silo and every `launch` reply read the silo back: `settings {silo ("rocket-silo at (14.5,140.5) on
     vulcanus"), auto_requests, send_to_orbit_automatically, requesting_for (the platform its automatic requests serve),
     rocket (its state), parts}`.
+  - `requests {surface, position, set | clear | clear_all | active | from_buffers}` (Astra 02:20) sets a requester or
+    buffer chest's (or a landing pad's) requests there the same way and reads them back: `target: "requester-chest at
+    (5.5,135.5) on vulcanus"`, `sections`. With `surface` it needs `position` (never your character's requests).
+  - `configure {surface, position, recipe}` sets an assembler's recipe there as a remote recipe change does in reach
+    of nothing: an empty, idle machine takes it (`remote: true`); one holding items or mid-craft is refused.
 - `cargo {items: {name: count}}` (or `[{name, count, quality}]`, or `position` of a chest, rocket silo (its loaded
   cargo), landing pad, platform hub, wagon or vehicle in sight; `platform` for one on a platform) weighs a rocket cargo
   list before it is staged (cargo.lua; Sol rebuilt three kits into two after working the weights out offline). A

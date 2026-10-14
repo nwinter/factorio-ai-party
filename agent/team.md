@@ -190,8 +190,8 @@ already targets your character.
   rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
   and one split into rockets that keeps each within both. `./fh call silo` (or a `position`) shows a silo's rocket
   parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
-  last launch. `launch`, `silo` and `configure` (`auto_requests`, `send_to_orbit_automatically` on a silo) take
-  `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
+  last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
+  on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the
   patches on the charted map nearest first: amount left (oil: yield), distance from you and from our nearest building,
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.

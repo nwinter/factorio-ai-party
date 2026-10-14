@@ -31,6 +31,7 @@ return function(api)
     configure = {target='position', auto_launch='send_to_orbit_automatically', planet='surface'},
     launch = {planet='surface'},
     silo = {planet='surface'},
+    requests = {planet='surface'},
     rotate = {target='position'},
     -- pole_route and pipe_route call their points waypoints.
     rail_route = {waypoints='via', start='from', ['end']='to', dryrun='dry_run', ['dry-run']='dry_run'},

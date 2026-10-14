@@ -45,7 +45,9 @@ return function(api)
     local e=api.remote_entity(p,a)
     local secs=e.get_logistic_sections and e.get_logistic_sections()
     assert(secs,e.name..' has no logistic requests')
-    return e.name..' at '..string.format('(%g,%g)',e.position.x,e.position.y),secs,e
+    -- By remote view on another surface (surface=, Astra 02:20): the reply names it.
+    local remote=type(p)=='table' and rawget(p,'__remote')
+    return e.name..' at '..string.format('(%g,%g)',e.position.x,e.position.y)..(remote and ' on '..e.surface.name or ''),secs,e
   end
   -- One request as the GUI shows it: name, min..max (or =n), and on a hub
   -- the planet it imports from (exact requests too: Astra's `calcite=500`
@@ -684,7 +686,7 @@ return function(api)
     return {landing=pl.space_location.name,note='the cargo pod takes ~20 s; actions fail until the character stands on the planet: poll status'}
   end
   M.schema={
-    requests={target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
+    requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
       returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section, note (sections that are off but hold requests); call with no set/clear/active to just read'},

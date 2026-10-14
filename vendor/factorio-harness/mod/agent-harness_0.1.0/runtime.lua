@@ -4828,13 +4828,16 @@ do
       __index=function(_,k) if k=='surface' then return s end return p[k] end,
       __newindex=function(_,k,v) p[k]=v end})
   end
-  -- launch, configure and silo too (Astra 01:41: the silo on Vulcanus from Sunward above it).
-  for _,name in ipairs({'inspect','circuit_set','circuit','wire','ores','launch','configure','silo'}) do
+  -- launch, configure and silo too (Astra 01:41: the silo on Vulcanus from Sunward above it); requests (Astra 02:20,
+  -- board #377: a requester chest on Vulcanus feeding an assembler there).
+  for _,name in ipairs({'inspect','circuit_set','circuit','wire','ores','launch','configure','silo','requests'}) do
     local handler=handlers[name]
     handlers[name]=function(p,a)
       if a.surface==nil then return handler(p,a) end
       -- launch's platform is where the rocket goes, not where the call acts.
       assert(name=='launch' or a.platform==nil,'give platform or surface, not both')
+      -- requests on another surface acts on an entity there (a chest, a landing pad), never on your character.
+      assert(name~='requests' or a.position~=nil,'requests with surface needs position (a requester or buffer chest, landing pad there)')
       local args={}
       for k,v in pairs(a) do if k~='surface' then args[k]=v end end
       return handler(on_surface(p,a.surface),args)
