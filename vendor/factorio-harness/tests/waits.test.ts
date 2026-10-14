@@ -100,7 +100,9 @@ test('wait_ticks, a build awaiting a hand craft, and a transfer or collect that 
     await engine(request=>{
       if(request.action===action)return {ok:true,result:accepted};
       polls++;
-      return {ok:true,result:polls===1?{active:{kind,until_tick:31}}:{active:false,last:{kind,outcome:kind==='feed'?'fed':'duration_elapsed'}}};
+      // A walking transfer ends transferred, a success (Astra 07:53: it exited 1).
+      return {ok:true,result:polls===1?{active:{kind,until_tick:31}}:{active:false,last:{kind,op:kind==='gather'?'transfer':undefined,
+        outcome:kind==='feed'?'fed':kind==='gather'?'transferred':'duration_elapsed'}}};
     },async port=>{
       const {stdout}=await cli(port,['call',action,'--args',args,'--wait']);
       // At least the running poll and the finished one (a final plain status read may follow).
