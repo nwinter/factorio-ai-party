@@ -414,6 +414,11 @@ local function known(p,e)
   return e.force==p.force or (e.force.name=='neutral' and e.type~='unit') or drawn_enemy[e.type]==true
 end
 local attached={['rocket-silo-rocket']=true,['rocket-silo-rocket-shadow']=true,['cargo-pod']=true}
+-- Rails under a locomotive or wagon: the cursor picks the train, so a rail
+-- is the target only when nothing else is there or it is named.
+M.UNDER={['straight-rail']=true,['half-diagonal-rail']=true,['curved-rail-a']=true,['curved-rail-b']=true,['legacy-straight-rail']=true,
+  ['legacy-curved-rail']=true,['elevated-straight-rail']=true,['elevated-half-diagonal-rail']=true,['elevated-curved-rail-a']=true,
+  ['elevated-curved-rail-b']=true,['rail-ramp']=true,['rail-support']=true}
 -- Flying robots, units and other passing or unselectable entities over a building yield to it unless named or
 -- given by unit_number (Sol, shift08: a robot over a chest made inspect, transfer and collect there ambiguous).
 M.PASSING={['logistic-robot']=true,['construction-robot']=true,['combat-robot']=true,['capture-robot']=true,unit=true,
@@ -432,7 +437,7 @@ local function entity(p,args,read_only)
   -- (resource: the fallback, ore or an item on the ground).
   -- A ghost on a building (a paste replacing it) yields to the building
   -- unless named, as the cursor picks the building; inspect lists the ghost.
-  local found, resource, ghost, drifter
+  local found, resource, ghost, drifter, rail
   local named = args.name or args.unit_number
   local function wanted(e)
     -- A silo's rocket and its cargo pod sit on the silo; they are never the
@@ -447,6 +452,7 @@ local function entity(p,args,read_only)
       if (e.type == 'resource' or e.type == 'item-entity') and not args.name then resource = resource or e
       elseif e.type == 'entity-ghost' and not args.name then ghost = ghost or e
       elseif not named and M.passing(e) then drifter = drifter or e
+      elseif not named and M.UNDER[e.type] then rail = rail or e
       else
         if found then
           error(string.format('ambiguous target: %s and %s at (%g,%g); specify name or unit_number', found.name, e.name, pos.x, pos.y), 0)
@@ -464,6 +470,7 @@ local function entity(p,args,read_only)
     for _, e in pairs(p.surface.find_entities_filtered{position=pos, name=args.name}) do
       if wanted(e) and e.type == 'entity-ghost' and not args.name then ghost = ghost or e
       elseif wanted(e) and not named and M.passing(e) then drifter = drifter or e
+      elseif wanted(e) and not named and M.UNDER[e.type] then rail = rail or e
       elseif wanted(e) and e.type ~= 'resource' and e.type ~= 'item-entity' then
         if cover and cover ~= e then cover = nil; break end
         cover = e
@@ -471,7 +478,7 @@ local function entity(p,args,read_only)
     end
     found = cover
   end
-  found = found or ghost or resource or drifter
+  found = found or ghost or rail or resource or drifter
   if not found then
     -- Say what is close instead (shake3: 23 of Gemini's inspect misses were a
     -- tile or so from a pole, inserter or belt, or empty).
@@ -749,7 +756,7 @@ function handlers.describe()
     limitations={'No teleport, resource creation, free crafting, direct mining, remote building, or map reveal',
       'Runtime source installation is trusted operator code, not a security sandbox',
       'Screenshots require a graphical client controlling the requested player; headless hosts do not render',
-      'Vehicles, rail placement, and fluid transfers are unsupported',
+      'Vehicles and fluid transfers are unsupported',
       'Walk/mine completion is bounded by ticks; inspect status and observe to verify outcomes'}}
   for name,schema in pairs(scheduler and scheduler.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.orders and M.orders.schema or {}) do description.actions[name]=schema end
@@ -767,6 +774,7 @@ function handlers.describe()
   for name,schema in pairs(M.flush and M.flush.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.circuits and M.circuits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.trains and M.trains.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.rails and M.rails.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.vehicles and M.vehicles.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.shore and M.shore.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.defense and M.defense.schema or {}) do description.actions[name]=schema end
@@ -2183,6 +2191,14 @@ local function placement_error(p,proto,pos,direction,near)
 end
 local function build_direct(p,stack,pos,direction,quality,kind,place)
   local proto,surface=place or stack.prototype.place_result,p.surface
+  -- A rail planner's curve takes 3 rails and a half-diagonal 2, as the game
+  -- charges them (items_to_place_this); everything else here takes one.
+  local need=1
+  for _,it in ipairs(proto.items_to_place_this or {}) do if it.name==stack.name then need=it.count or 1 end end
+  if need>1 then
+    local held=p.get_main_inventory().get_item_count{name=stack.name,quality=quality}
+    assert(held>=need,string.format('%s takes %d %s; you hold %d',proto.name,need,stack.name,held))
+  end
   construction.clear_remnants(surface,proto,pos,direction)
   -- Items on the ground in the footprint go into the inventory, as a player's
   -- build takes them (shake5: Grok's six builds over one iron plate). One
@@ -2243,13 +2259,14 @@ local function build_direct(p,stack,pos,direction,quality,kind,place)
     e=surface.create_entity(args)
   end
   if not e then error(placement_error(p,proto,pos,direction,true),0) end
-  if stack.count>1 then stack.count=stack.count-1 else stack.clear() end
+  if need>1 then p.get_main_inventory().remove{name=stack.name,count=need,quality=quality}
+  elseif stack.count>1 then stack.count=stack.count-1 else stack.clear() end
   -- The replaced machine's recipe goes on the new one when it can make it.
   if replaced and replaced.recipe and e.set_recipe then
     local ok=pcall(e.set_recipe,replaced.recipe,replaced.recipe_quality)
     replaced.recipe_kept=ok or nil
   end
-  return e,picked,replaced
+  return e,picked,replaced,need
 end
 local function build_reach(p,pos,what)
   assert_visible(p,pos,what)
@@ -2355,9 +2372,9 @@ local function build_one(p,a)
   -- Undergrounds are always placed directly with an explicit end: cursor
   -- building does not reliably make the exit of a pair from script.
   if direct then
-    local e,picked,replaced=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type,place)
+    local e,picked,replaced,need=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type,place)
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
-    return {consumed=1,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced}
+    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced}
   end
   local function held()
     local n=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'}
@@ -3949,7 +3966,9 @@ M.paste_plan=blueprint_handlers.plan
 -- entity not built yet, by recipe (ports.lua).
 M.dryrun=require('dryrun'){placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
-  crafting_count=function(p,item) return crafting_count(p,item) end}
+  crafting_count=function(p,item) return crafting_count(p,item) end,
+  rail_box=function(name,pos,dir) return M.rails and M.rails.box(name,pos,dir) end,
+  rail_overlaps=function(shape,l,t,r,b) return M.rails.overlaps(shape,l,t,r,b) end}
 M.ports=require('ports'){boxes=function(proto) return pipes.boxes(proto) end,defined=function(e) return pipes.defined(e) end}
 -- Grenades and other capsules (capsules.lua, request #89).
 M.capsules=require('capsules'){state=state,position=position,assert_visible=assert_visible,held=held}
@@ -4011,7 +4030,7 @@ M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendl
 handlers.circuit_set=M.circuits.handlers.circuit_set
 -- The old name: queued plans and orders call handlers by name (direct calls run as circuit_set, aliases.lua).
 handlers.circuit=handlers.circuit_set
-M.trains=require('trains'){entity=entity,friendly=friendly,integer=integer}
+M.trains=require('trains'){entity=entity,remote_entity=remote_entity,friendly=friendly,integer=integer}
 handlers.train=M.trains.handlers.train
 -- Vehicles (vehicles.lua): get in and out, drive a car, send a spidertron.
 M.vehicles=require('vehicles'){entity=entity,friendly=friendly,integer=integer,position=position,distance=distance,assert_visible=assert_visible,
@@ -4194,6 +4213,88 @@ end
 function handlers.belt_route(p,a)
   local plan=route.plan(p,a)
   return place_route(p,a,plan,{route=plan.route,tiles=plan.tiles,items=plan.items,arrival=plan.arrival,extends=plan.extends})
+end
+-- Rails (rails.lua): rail_route plans the 2.0 rail planner's pieces around
+-- what blocks them and places them as ghosts; the ones in build reach are
+-- built from the inventory unless ghosts=true. train_stop puts a stop on the
+-- side of a straight rail where it serves trains heading one way.
+M.rails=require('rails'){position=position,directions=directions,chunk_of=chunk_of}
+-- Ghosts of planned entities in build reach, built from the inventory as
+-- construct builds them, without walking; the rest stay ghosts.
+function M.rails.build(p,list)
+  local built,why,order=0,{},{}
+  local reach=p.build_distance or 0
+  for _,spec in ipairs(list) do
+    if distance(p.position,spec.position)<=reach then
+      local g=p.surface.find_entities_filtered{position=spec.position,radius=0.1,ghost_name=spec.name,force=p.force,limit=1}[1]
+      local proto=prototypes.entity[spec.name]
+      local item=proto and proto.items_to_place_this and proto.items_to_place_this[1]
+      if g and g.valid and item then
+        local ok,err=pcall(build_one,p,{item=item.name,position=g.position,direction=spec.direction,entity=spec.name,stepped=true})
+        if ok and not g.valid then built=built+1
+        else
+          local r=ok and 'the ghost remained' or reason(err)
+          if not why[r] then order[#order+1]=r end
+          why[r]=(why[r] or 0)+1
+        end
+      end
+    end
+  end
+  local not_built={}
+  for i=1,math.min(4,#order) do not_built[i]=why[order[i]]..'x '..order[i] end
+  return built,#not_built>0 and not_built or nil
+end
+function handlers.rail_route(p,a)
+  assert(a.ghosts==nil or type(a.ghosts)=='boolean','ghosts must be true or false')
+  local plan=M.rails.plan(p,a)
+  local out=plan.out
+  if a.details then out.entities=plan.entities end
+  local inv=p.get_main_inventory()
+  for name,n in pairs(out.items) do
+    local have=inv and inv.get_item_count(name) or 0
+    if have<n then out.missing=out.missing or {}; out.missing[name]=n-have end
+  end
+  local placed=place_ghost_list(p,plan.entities)
+  out.placed,out.failed,out.bounds,out.obstacles_marked=placed.placed,placed.failed,placed.bounds,placed.obstacles_marked
+  if not a.ghosts and placed.placed>0 then out.built,out.not_built=M.rails.build(p,plan.entities) end
+  return out
+end
+function handlers.train_stop(p,a)
+  local name=a.name or a.station
+  assert(type(name)=='string' and #name>=1 and #name<=100,'name (the station name) is 1..100 characters')
+  assert(a.name==nil or a.station==nil or a.name==a.station,'name and station differ; give one of them')
+  assert(a.ghosts==nil or type(a.ghosts)=='boolean','ghosts must be true or false')
+  local limit=a.limit~=nil and integer(a.limit,nil,0,1000,'limit (0..1000)') or nil
+  local cands=M.rails.stop_spot(p,a)
+  -- The nearest spot, else the next ones serving the same way along the rail.
+  local chosen,errs=nil,{}
+  for _,c in ipairs(cands) do
+    if c.heading==cands[1].heading and #errs<3 then
+      local ok,ghost=pcall(place_ghost,p,{name='train-stop',position=c.spot,direction=M.rails.NAMES[c.heading]})
+      if ok then chosen=c; c.ghost=ghost; break end
+      errs[#errs+1]=string.format('(%g,%g): %s',c.spot.x,c.spot.y,reason(ghost))
+    end
+  end
+  if not chosen then
+    local ok,one_way=pcall(M.rails.line_signals,p,cands[1])
+    error('no train stop fits beside the rail for trains heading '..M.rails.NAMES[cands[1].heading]..': '..(ok and one_way or table.concat(errs,'; ')),0)
+  end
+  chosen.ghost.backer_name=name
+  if limit then chosen.ghost.trains_limit=limit end
+  local h=chosen.heading
+  local out={stop=name,position=chosen.spot,direction=M.rails.NAMES[h],serves='trains heading '..M.rails.NAMES[h],
+    side=({[0]='east',[4]='south',[8]='west',[12]='north'})[h]..' of the rail',
+    rail={position=chosen.rail.e.position,ghost=chosen.rail.ghost or nil},limit=limit}
+  if not a.ghosts then
+    local built,not_built=M.rails.build(p,{{name='train-stop',position=chosen.spot,direction=M.rails.NAMES[h]}})
+    out.built=built>0 or nil; out.not_built=not_built
+  end
+  if not out.built then
+    out.ghost=true
+    out.bounds={left=chosen.spot.x,top=chosen.spot.y,right=chosen.spot.x,bottom=chosen.spot.y}
+    if distance(p.position,chosen.spot)>(p.build_distance or 0) then out.reach=string.format('%.1f tiles from you, build reach %g',distance(p.position,chosen.spot),p.build_distance or 0) end
+  end
+  return out
 end
 -- Long pipelines go in legs: through the given waypoints, or (beyond one
 -- search's span) through free tiles picked along the straight line. Each leg
@@ -4443,7 +4544,7 @@ for name,shift in pairs(repeat_shift) do
   end
 end
 -- Remember where the last paste put ghosts so `construct` can default to it.
-for _,name in ipairs({'paste','blueprint_place','place_ghosts','belt_route','pipe_route'}) do
+for _,name in ipairs({'paste','blueprint_place','place_ghosts','belt_route','pipe_route','rail_route','train_stop'}) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
     local out=handler(p,a)
@@ -4543,7 +4644,7 @@ do
     end
   end
 end
-local permissions={walk='start_walking',move_to='start_walking',mine='begin_mining',pickup='change_picking_state',repair='start_repair',craft='craft',cancel_craft='cancel_craft',build='build',build_path='build',construct='build',place_ghosts='build',belt_route='build',pipe_route='build',pole_route='build',wire='wire_dragging',kite='change_shooting_state',revive_ghost='build',rotate='rotate_entity',configure='setup_assembling_machine',flush='flush_opened_entity_fluid',transfer='inventory_transfer',refuel='inventory_transfer',rearm='inventory_transfer',collect='inventory_transfer',feed='inventory_transfer',research='start_research',research_next='start_research',shoot='change_shooting_state',equip='inventory_transfer'}
+local permissions={walk='start_walking',move_to='start_walking',mine='begin_mining',pickup='change_picking_state',repair='start_repair',craft='craft',cancel_craft='cancel_craft',build='build',build_path='build',construct='build',place_ghosts='build',belt_route='build',pipe_route='build',pole_route='build',rail_route='build',train_stop='build',wire='wire_dragging',kite='change_shooting_state',revive_ghost='build',rotate='rotate_entity',configure='setup_assembling_machine',flush='flush_opened_entity_fluid',transfer='inventory_transfer',refuel='inventory_transfer',rearm='inventory_transfer',collect='inventory_transfer',feed='inventory_transfer',research='start_research',research_next='start_research',shoot='change_shooting_state',equip='inventory_transfer'}
 for name,input in pairs(permissions) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
@@ -4557,7 +4658,7 @@ end
 -- action and queue go on; a queue step with dry_run=true gets the same check.
 function handlers.dry_run(p,a)
   local action,args=a.action,a.args
-  assert(M.dryrun.ACTIONS[action],'dry_run takes action (place_ghosts, paste, blueprint_place or build) and args (that call\'s arguments)')
+  assert(M.dryrun.ACTIONS[action],'dry_run takes action (place_ghosts, paste, blueprint_place, build or rail_route) and args (that call\'s arguments)')
   assert(type(args)=='table','args must be the call\'s arguments')
   assert(args.dry_run==nil or args.dry_run==true,'dry_run must be true or false')
   local inner={}
@@ -4568,8 +4669,9 @@ function handlers.dry_run(p,a)
   check_args(action,inner)
   local q=p
   if inner.platform~=nil and action~='build' then q=on_platform(p,inner.platform) end
-  local kind=action=='build' and 'build' or action=='place_ghosts' and 'ghosts' or 'paste'
+  local kind=action=='build' and 'build' or (action=='place_ghosts' or action=='rail_route') and 'ghosts' or 'paste'
   local plan={kind=kind,mode=inner.mode,details=details,entities={},tiles={},standing=kind~='build'}
+  local rail_plan
   -- Bounded work: a plan past these is refused before anything is checked.
   local function bounded()
     assert(#plan.entities<=M.dryrun.MAX_ENTITIES and #plan.tiles<=M.dryrun.MAX_TILES,string.format(
@@ -4587,7 +4689,12 @@ function handlers.dry_run(p,a)
   local paste
   for k=0,copies-1 do
     local copy=copies>1 and k+1 or nil
-    if kind=='ghosts' then
+    if action=='rail_route' then
+      -- The route as rail_route plans it (rails.lua), each piece checked;
+      -- its signals go with the plan's rails (after_rails).
+      rail_plan=M.rails.plan(q,inner)
+      for i,e in ipairs(rail_plan.entities) do plan.entities[i]={index=i,name=e.name,position=e.position,direction=directions[e.direction]} end
+    elseif kind=='ghosts' then
       assert(inner.entities~=nil or inner.tiles~=nil,'place_ghosts requires entities and/or tiles')
       if inner.entities~=nil then
         assert(type(inner.entities)=='table' and #inner.entities>=1 and #inner.entities<=256,'entities requires 1..256 {name,position,direction?}')
@@ -4656,6 +4763,7 @@ function handlers.dry_run(p,a)
   local out,_,counts=M.dryrun.check(q,plan)
   out.action=action
   out.paste=paste
+  out.rail_route=rail_plan and rail_plan.out or nil
   if kind=='paste' and (inner.mode or 'normal')=='normal' and (counts.refused_now or 0)>0 then
     out.paste_note=string.format('a normal paste is all or nothing: with %d entr%s the game refuses there now, it places no ghost at all; mode forced places the rest and marks trees and rocks in the way',
       counts.refused_now,counts.refused_now==1 and 'y' or 'ies')
@@ -4953,7 +5061,7 @@ passive.circuit_set=true; passive.wire=true
 -- Planners and blueprint tools never drive the character, near or by remote
 -- view: paste, blueprint_place and the route tools put ghosts down (as
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
-for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','blueprint_save','blueprint_rename'}) do passive[name]=true end
+for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route','rail_route','train_stop','blueprint_save','blueprint_rename'}) do passive[name]=true end
 local reads={ores=true,cargo=true,silo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,networks=true}
 reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 

@@ -13,11 +13,12 @@
 -- The factory is pure so the same module can be bundled into a hot reload.
 return function(api)
   local M = {}
-  M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true}
+  M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true, rail_route=true}
   local MAX_ROWS, MAX_LISTED, HOLE_LIMIT, FLOOD_BUDGET, MAX_SPOTS = 30, 200, 1024, 20000, 8
   local MAX_INSERTERS = 64
   local DIRS = {{1,0},{-1,0},{0,1},{0,-1}}
-  local NAMES = {[0]='north', [4]='east', [8]='south', [12]='west'}
+  local NAMES = {[0]='north', 'northnortheast', 'northeast', 'eastnortheast', 'east', 'eastsoutheast', 'southeast', 'southsoutheast',
+    'south', 'southsouthwest', 'southwest', 'westsouthwest', 'west', 'westnorthwest', 'northwest', 'northnorthwest'}
   local RAILS = {['straight-rail']=true, ['half-diagonal-rail']=true, ['curved-rail-a']=true, ['curved-rail-b']=true,
     ['legacy-straight-rail']=true, ['legacy-curved-rail']=true, ['elevated-straight-rail']=true,
     ['elevated-half-diagonal-rail']=true, ['elevated-curved-rail-a']=true, ['elevated-curved-rail-b']=true, ['rail-ramp']=true}
@@ -53,9 +54,24 @@ return function(api)
     local function s(v, odd) return odd and math.floor(v)+0.5 or math.floor(v+0.5) end
     return {x=s(pos.x, w % 2 == 1), y=s(pos.y, h % 2 == 1)}
   end
+  -- A ground rail's footprint is a turned box (16 directions): the box
+  -- around it, and the turned box itself (rails.lua) for the finer checks.
   function M.footprint(proto, pos, dir)
+    local shape = RAILS[proto.type] and api.rail_box and api.rail_box(proto.name, pos, dir or 0)
+    if shape then return {left_top=shape.left_top, right_bottom=shape.right_bottom}, shape end
     local b = proto.collision_box or {left_top={x=-0.4, y=-0.4}, right_bottom={x=0.4, y=0.4}}
     return api.placewhy.box_at(b, pos, dir or 0)
+  end
+  -- Whether two planned footprints meet. Rails cross and join other rails
+  -- (the game's own check decides those); a rail and anything else meet
+  -- where the turned box does.
+  local function meets(a, b)
+    if a.shape and b.shape then
+      return a.name == b.name and math.abs(a.pos.x-b.pos.x) < 0.01 and math.abs(a.pos.y-b.pos.y) < 0.01 and a.dir % 8 == b.dir % 8
+    end
+    if a.shape then return api.rail_overlaps(a.shape, b.box.left_top.x, b.box.left_top.y, b.box.right_bottom.x, b.box.right_bottom.y) end
+    if b.shape then return api.rail_overlaps(b.shape, a.box.left_top.x, a.box.left_top.y, a.box.right_bottom.x, a.box.right_bottom.y) end
+    return overlap(a.box, b.box)
   end
   -- Compact runs of indexes: 1-4,7,9-10.
   local function runs(list)
@@ -285,7 +301,7 @@ return function(api)
         rec.mask = layers(proto.collision_mask)
         rec.pos = M.snap(proto, e.position, rec.dir)
         if math.abs(rec.pos.x-e.position.x) > 0.01 or math.abs(rec.pos.y-e.position.y) > 0.01 then rec.asked = e.position end
-        rec.box = M.footprint(proto, rec.pos, rec.dir)
+        rec.box, rec.shape = M.footprint(proto, rec.pos, rec.dir)
         local mask = rec.mask
         local rail = RAILS[proto.type]
         local chunk = {x=math.floor(rec.pos.x/32), y=math.floor(rec.pos.y/32)}
@@ -298,21 +314,45 @@ return function(api)
           for x = x0, x1 do
             for y = y0, y1 do
               for _, o in ipairs(occupied[key(x, y)] or {}) do
-                if not hit and o ~= rec and not (rail and RAILS[o.proto.type]) and collide(mask, o.mask) and overlap(o.box, rec.box) then hit = o end
+                if not hit and o ~= rec and collide(mask, o.mask) then
+                  -- Rails cross and join rails; the same rail twice is one too many.
+                  if rail and RAILS[o.proto.type] then
+                    if rec.shape and o.shape and meets(o, rec) then hit = o end
+                  elseif meets(o, rec) then hit = o end
+                end
               end
             end
           end
           if hit then
             reasons[#reasons+1] = string.format('collides with planned #%s %s at %s', hit.copy and (hit.copy..'.'..hit.index) or tostring(hit.index), hit.name, at(hit.pos))
           end
-          -- What stands in the footprint now.
+          -- What stands in the footprint now. A rail: other rails cross or
+          -- join it (the game's check decides), characters walk over it, and
+          -- the rest counts where its turned box reaches.
           local blockers, marked, ghosts, same, mine = {}, {}, {}, nil, false
+          local shape = rec.shape
+          local function here(o)
+            if not shape then return true end
+            local b = o.bounding_box
+            if not b or (b.orientation and b.orientation ~= 0) then return true end
+            return api.rail_overlaps(shape, b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y)
+          end
+          local function same_dir(d)
+            if not shape then return true end
+            return (proto.type == 'curved-rail-a' or proto.type == 'curved-rail-b') and d == rec.dir or d % 8 == rec.dir % 8
+          end
           for _, o in pairs(s.find_entities_filtered{area=rec.box}) do
             if o.valid then
               local t = o.type
               if t == 'entity-ghost' then
-                if o.ghost_name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 then same = same or o
-                elseif overlap(o.bounding_box or rec.box, rec.box) then ghosts[#ghosts+1] = 'ghost '..o.ghost_name..' '..at(o.position) end
+                if o.ghost_name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = same or o
+                elseif shape and RAILS[o.ghost_type] then -- crossing or joining
+                elseif overlap(o.bounding_box or rec.box, rec.box) and here(o) then ghosts[#ghosts+1] = 'ghost '..o.ghost_name..' '..at(o.position) end
+              elseif rail and RAILS[t] then
+                -- Another rail crosses or joins it; the same rail there is the same.
+                if o.name == e.name and math.abs(o.position.x-rec.pos.x) < 0.01 and math.abs(o.position.y-rec.pos.y) < 0.01 and same_dir(o.direction) then same = o end
+              elseif shape and t == 'character' then -- a character on the track
+              elseif shape and not here(o) then -- outside the turned box
               elseif t == 'character' then
                 if character and o == character then mine = true
                 else
@@ -352,7 +392,7 @@ return function(api)
             for x = x0, x1 do
               for y = y0, y1 do
                 local t = tile_at(x, y)
-                if collide(mask, t.layers) then
+                if collide(mask, t.layers) and (not shape or api.rail_overlaps(shape, x, y, x+1, y+1)) then
                   if t.layers.out_of_map then tile_bad[#tile_bad+1] = tile_text(x, y)..' is outside the map'
                   else
                     local fix = remedy(force, t.name, t.layers, mask)
@@ -898,6 +938,13 @@ return function(api)
     for _, r in ipairs(recs) do
       if r.proto and r.status ~= 'blocked' and r.status ~= 'exists' then
         local it = r.item or try(function() return r.proto.items_to_place_this[1] end)
+        -- A build names its item: the count is the prototype's for that item
+        -- (a curved rail takes 3 rails).
+        if type(it) == 'string' then
+          for _, st in ipairs(try(function() return r.proto.items_to_place_this end) or {}) do
+            if st.name == it then it = st; break end
+          end
+        end
         if type(it) == 'table' then add(it.name, it.count or 1) else add(it, 1) end
       end
     end
