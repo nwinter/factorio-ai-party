@@ -1108,6 +1108,14 @@ eq(call('observe',{scope='craftable',recipes={'iron-plate'}}).craftable['iron-pl
 fails(function() call('observe',{scope='craftable',recipes={'nope'}}) end,'unknown recipe')
 fails(function() call('observe',{scope='bogus'}) end,'unknown observe scope')
 fails(function() call('observe',{scope='craftable',names={'pipe'}}) end,'unknown argument names for craftable; valid: recipes')
+-- supply is a read-only observe scope with its own arguments (supply.lua has its own tests).
+do
+  local sup=call('observe',{scope='supply',item='transport-belt'})
+  eq(sup.item,'transport-belt'); assert(sup.where and sup.counted and sup.flow,'supply reply')
+end
+fails(function() call('observe',{scope='supply',item='transport-belt',radius=5}) end,'radius needs near')
+fails(function() call('observe',{scope='supply',item='transport-belt',pack='x'}) end,'unknown argument pack for supply; valid: item, near, radius, surface')
+fails(function() call('observe',{scope='supply',item='nope'}) end,'item must be an item name')
 -- nearest sorts by distance, skips fogged chunks and the character itself.
 p.position={x=0,y=0}
 p.force.is_chunk_visible=function(_,chunk) return chunk.x<1 end

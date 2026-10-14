@@ -127,12 +127,12 @@ return function(api)
   -- way whoever asks and wherever they stand (shift07: Luna read "zero
   -- logistics on all belts/chests" while Grok said "the belt scan misses this
   -- chest"). The game's 10-minute statistics, the assemblers set to it, and
-  -- every chest, belt, lab and agent holding it. Bounded: 1024 labs and
-  -- assemblers, 5000 chests, 10000 belts (the reply says when it stopped).
-  local MAX_MACHINES, MAX_CHESTS, MAX_BELTS = 1024, 5000, 10000
-  local BELTS = {'transport-belt', 'underground-belt', 'splitter'}
+  -- every chest, belt, lab and agent holding it; reach (shift08: 31+ labs
+  -- lacked chemical packs while stock sat on belts, assembler outputs and
+  -- inserter hands): where else it sits and why it does not reach the labs.
+  -- One pass for all packs through supply's scan (supply.lua: its bounds).
   M.schema.science = {pack='optional item: a science pack (default: each pack the current research needs)', surface='optional surface name (default yours)',
-    returns='research and per pack one line and its numbers, for the whole surface, the same for everyone: made and used in the last 10 min (the game\'s statistics), makers (assemblers set to it: working and the other states; packs waiting in their output), held in chests, on belts and in labs (labs lacking it of those that need it), carried by agents, the largest chests with positions; counted (how many labs, chests and belts were read)'}
+    returns='research and per pack one line and its numbers, for the whole surface, the same for everyone: made and used in the last 10 min (the game\'s statistics), makers (assemblers set to it: working and the other states; packs waiting in their output), held in chests, on belts and in labs (labs lacking it of those that need it), carried by agents, the largest chests with positions; reach: chests by kind, inserter hands, robots carrying it, the inserters taking from its makers and feeding the labs (by status, what the waiting ones\' sources hold), the logistic requesters for it per network (met, on the way, unmet with reasons), and the worst lab (position, what it lacks, its feeder\'s source, the nearest stock); counted (what the scan read)'}
   function M.science(p, a)
     local surface = p.surface
     if a.surface ~= nil then
@@ -149,89 +149,59 @@ return function(api)
       packs = {a.pack}
     end
     assert(#packs > 0, 'no research is running: name a pack (science {pack=logistic-science-pack})')
-    local want = {}
-    for _, name in ipairs(packs) do want[name] = {made=0, used=0, makers=0, working=0, states={}, in_makers=0, chests=0, belts=0, labs=0, lacking=0, carried={}, largest={}} end
+    local names = {}
+    for _, name in ipairs(packs) do names[name] = true end
+    local scan = api.supply.scan(surface, force, names, {packs=needed})
     local stats = force.get_item_production_statistics(surface)
-    for name, w in pairs(want) do
-      local function flow(category)
-        local ok, n = pcall(stats.get_flow_count, {name=name, category=category, precision_index=defines.flow_precision_index.ten_minutes, count=true})
-        return ok and math.floor(n + 0.5) or 0
-      end
-      w.made, w.used = flow('input'), flow('output')
+    local function flow(name, category)
+      local ok, n = pcall(stats.get_flow_count, {name=name, category=category, precision_index=defines.flow_precision_index.ten_minutes, count=true})
+      return ok and math.floor(n + 0.5) or 0
     end
-    -- Labs: what they hold, and how many of those that need a pack have none.
-    local labs = surface.find_entities_filtered{type='lab', force=force, limit=MAX_MACHINES}
-    for _, e in ipairs(labs) do
-      local inv = e.get_inventory(defines.inventory.lab_input)
-      for name, w in pairs(want) do
-        local n = inv and inv.get_item_count(name) or 0
-        w.labs = w.labs + n
-        if needed[name] and n == 0 then w.lacking = w.lacking + 1 end
-      end
-    end
-    -- Assemblers set to a recipe that makes the pack.
-    local machines = surface.find_entities_filtered{type='assembling-machine', force=force, limit=MAX_MACHINES}
-    for _, e in ipairs(machines) do
-      local ok, recipe = pcall(e.get_recipe)
-      for _, prod in ipairs(ok and recipe and recipe.products or {}) do
-        local w = want[prod.name]
-        if w then
-          w.makers = w.makers + 1
-          local status = api.status_name(e) or 'unknown'
-          if status == 'working' then w.working = w.working + 1 else w.states[status] = (w.states[status] or 0) + 1 end
-          local okv, out = pcall(e.get_output_inventory)
-          if okv and out then w.in_makers = w.in_makers + out.get_item_count(prod.name) end
-        end
-      end
-    end
-    local chests = surface.find_entities_filtered{type={'container', 'logistic-container'}, force=force, limit=MAX_CHESTS}
-    for _, e in ipairs(chests) do
-      local inv = e.get_inventory(defines.inventory.chest)
-      for name, w in pairs(want) do
-        local n = inv and inv.get_item_count(name) or 0
-        if n > 0 then
-          w.chests = w.chests + n
-          w.largest[#w.largest+1] = {n=n, text=string.format('%s %s %d', at(e.position), e.name, n)}
-        end
-      end
-    end
-    local belts = surface.find_entities_filtered{type=BELTS, force=force, limit=MAX_BELTS}
-    for _, e in ipairs(belts) do
-      local held = holds(e)
-      for name, w in pairs(want) do w.belts = w.belts + (held[name] or 0) end
-    end
-    local belts_total = #belts >= MAX_BELTS and surface.count_entities_filtered{type=BELTS, force=force} or #belts
+    -- Agents carrying it, wherever they are.
+    local carried = {}
     for _, ag in ipairs(api.agents and api.agents() or {}) do
       local ok, c = pcall(function() local pl = api.lookup(ag.index); return pl and pl.character end)
       local inv = ok and c and c.valid and c.get_main_inventory()
-      for name, w in pairs(want) do
+      for _, name in ipairs(packs) do
         local n = inv and inv.get_item_count(name) or 0
-        if n > 0 then w.carried[#w.carried+1] = ag.name .. ' ' .. n end
+        if n > 0 then carried[name] = carried[name] or {}; carried[name][#carried[name]+1] = ag.name .. ' ' .. n end
       end
     end
+    local labs = scan.counted.labs or 0
     local out = {}
     for _, name in ipairs(packs) do
-      local w = want[name]
-      table.sort(w.largest, function(x, y) return x.n > y.n end)
+      local t = scan.items[name]
+      local made, used = flow(name, 'input'), flow(name, 'output')
+      local working, states = 0, {}
+      for _, m in ipairs(t.makers) do
+        local status = api.status_name(m.e) or 'unknown'
+        if status == 'working' then working = working + 1 else states[status] = (states[status] or 0) + 1 end
+      end
+      local list = {}
+      for status, n in pairs(states) do list[#list+1] = n .. ' ' .. status end
+      table.sort(list)
+      local chests, rows = 0, {}
+      for _, c in ipairs(t.chests) do
+        if c.kind ~= 'pad' and c.kind ~= 'hub' and c.kind ~= 'vehicle' then chests = chests + c.n; rows[#rows+1] = c end
+      end
+      table.sort(rows, function(x, y) if x.n ~= y.n then return x.n > y.n end return x.e.position.x < y.e.position.x end)
       local largest = {}
-      for i = 1, math.min(3, #w.largest) do largest[i] = w.largest[i].text end
-      local states = {}
-      for status, n in pairs(w.states) do states[#states+1] = n .. ' ' .. status end
-      table.sort(states)
+      for i = 1, math.min(3, #rows) do largest[i] = string.format('%s %s %d', at(rows[i].e.position), rows[i].e.name, rows[i].n) end
+      local lacking = 0
+      for _, u in ipairs(t.users) do if u.lab and u.has == 0 then lacking = lacking + 1 end end
       local line = string.format('%s: made %d, used %d in 10 min; makers %d (%d working%s%s); chests %d, belts %d, labs %d',
-        short(name), w.made, w.used, w.makers, w.working, #states > 0 and ', ' .. table.concat(states, ', ') or '',
-        w.in_makers > 0 and '; ' .. w.in_makers .. ' in their output' or '', w.chests, w.belts, w.labs)
-      if needed[name] then line = line .. string.format(' (%d of %d labs have none)', w.lacking, #labs)
+        short(name), made, used, #t.makers, working, #list > 0 and ', ' .. table.concat(list, ', ') or '',
+        t.outputs > 0 and '; ' .. t.outputs .. ' in their output' or '', chests, t.belts, t.labs)
+      if needed[name] then line = line .. string.format(' (%d of %d labs have none)', lacking, labs)
       else line = line .. ' (the current research does not use it)' end
-      if #w.carried > 0 then line = line .. '; carried: ' .. table.concat(w.carried, ', ') end
+      if carried[name] then line = line .. '; carried: ' .. table.concat(carried[name], ', ') end
       if #largest > 0 then line = line .. '; largest chests: ' .. table.concat(largest, ', ') end
-      out[#out+1] = {pack=name, made_10min=w.made, used_10min=w.used, makers=w.makers, makers_working=w.working, makers_states=#states > 0 and states or nil,
-        in_makers=w.in_makers, chests=w.chests, belts=w.belts, labs=w.labs, labs_lacking=needed[name] and w.lacking or nil,
-        carried=#w.carried > 0 and w.carried or nil, largest=#largest > 0 and largest or nil, line=line}
+      out[#out+1] = {pack=name, made_10min=made, used_10min=used, makers=#t.makers, makers_working=working, makers_states=#list > 0 and list or nil,
+        in_makers=t.outputs, chests=chests, belts=t.belts, labs=t.labs, labs_lacking=needed[name] and lacking or nil,
+        carried=carried[name], largest=#largest > 0 and largest or nil, line=line, reach=api.supply.reach(t, scan, needed)}
     end
     local research = tech and string.format('%s %d%%', tech.name, math.floor((force.research_progress or 0) * 100)) or 'none'
-    return {surface=surface.name, research=research, packs=out,
-      counted=string.format('%d labs, %d assemblers, %d chests, %d of %d belts', #labs, #machines, #chests, #belts, belts_total)}
+    return {surface=surface.name, research=research, packs=out, counted=api.supply.counted(scan)}
   end
   return M
 end

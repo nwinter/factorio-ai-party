@@ -632,6 +632,7 @@ function handlers.describe()
   for name,schema in pairs(M.board and M.board.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.waits and M.waits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.labs and M.labs.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.supply and M.supply.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.audience and M.audience.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.capsules and M.capsules.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.flush and M.flush.schema or {}) do description.actions[name]=schema end
@@ -1510,7 +1511,7 @@ function handlers.platforms(p,a) return space.platforms(p,a) end
 for _,name in ipairs({'requests','platform_create','platform_schedule','launch','land','drop'}) do
   handlers[name]=function(p,a) return space[name](p,a) end
 end
-local views={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,sleep_check=true}
+local views={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 function handlers.observe(p,a)
   -- Newer read-only views travel as observe scopes: an already loaded
   -- bootstrap treats unknown action names as cached mutations.
@@ -4248,7 +4249,7 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
-local reads={placements=true,defense=true,flamers=true,labs=true,science=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
+local reads={placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -4260,7 +4261,7 @@ local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count'
   configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
   board={'status'},board_post={'note'},board_update={'status','note'},plan_save={'note'}}
 -- observe forwards to the scoped views; a scoped call is checked as that view.
-local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,sleep_check=true}
+local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 local allowed_args
 function check_args(action,args)
   if not allowed_args then
@@ -4622,9 +4623,13 @@ end
 kite=kite_module{position=position,distance=distance,integer=integer,visible=visible,directions=directions}
 threat=threat_module{state=state,known=known,distance=distance,on_character_hit=function(event) M.board.on_character_hit(event) end}
 survey=survey_module{state=state,status_name=function(e) return entity_status_names[e.status] end}
--- labs: research line diagnostics (labs.lua), an observe scope.
-M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
+-- supply: where one item sits and why it does not reach its users (supply.lua), an observe scope.
+M.supply=require('supply'){integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end}
+function handlers.supply(p,a) return M.supply.supply(p,a) end
+-- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
+M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
+  agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,supply=M.supply}
 function handlers.labs(p,a) return M.labs.view(p,a) end
 function handlers.science(p,a) return M.labs.science(p,a) end
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
