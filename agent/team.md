@@ -281,8 +281,11 @@ already targets your character.
   enemy spawners and worms within 50 tiles, and how many of our drills are on it.
 - Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
-  standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,
-  `eta_min` (at the current speed) and `next_stop`.
+  standing orders running; so does a `configure` its checks refuse. `platforms` and `inspect` of a hub show each
+  platform's `speed_kms`, `leg_left_km`, `eta_min` (at the current speed) and `next_stop`; `stops` lists each stop's wait
+  conditions with time left and items to go where it waits. A platform flying under 5 km/s is an alert naming the
+  thruster input it lacks and the pumps, plants, crushers and chunks behind it (`platforms {platform}`:
+  `thrust_inputs`).
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
 - `./fh wait --until "platform_arrived Sunward gleba"` wakes when the platform stops at that planet (any stop without

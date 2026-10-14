@@ -6729,8 +6729,11 @@ M.visuals=require('visuals'){state=state,lookup=function(index) return M.lookup(
   end}
 -- Platform health alerts in team.alerts (platalerts.lua): hits, turret ammo,
 -- repair packs, hub health, to the platform's creator, workers and riders.
+-- What a platform's thrusters lack and the chain behind it (thrust.lua): the slow-flight alert and platforms {platform}.
+M.thrust=require('thrust'){circuit=function(e) return M.circuits.read(e) end}
 M.platalerts=require('platalerts'){state=state,agents=function() return M.board.agents() end,bot=function(index) return M.bots.record(index) end,
-  lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end}
+  lookup=function(index) return M.lookup(index) end,who=function(p) return M.board.who(p) end,
+  thrust=function(pl) return M.thrust.read(pl) end,thrust_lowest=function(t) return M.thrust.lowest_text(t) end}
 -- Human players: their log and restore (players.lua). Bots, camera clients
 -- and attached agents are not humans.
 M.players=require('players'){state=state,
@@ -7445,6 +7448,7 @@ function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+  state=state,thrust=function(pl) return M.thrust.read(pl) end,
   -- A full drop's pods waiting for a hatch: a channel of their own, as shoot's is, so the
   -- character's action and queue go on (drop is passive); M.drop_jobs_tick sends them.
   start=function(p,job) state().drop_jobs=state().drop_jobs or {}; state().drop_jobs[p.index]=job end,
@@ -7759,6 +7763,7 @@ function M.tick_body(event)
   if state().turret_deaths then pcall(M.turretammo.tick,event.tick) end  -- ammo requests on the ghosts of turrets that died
   M.ores.tick()  -- queued chunks of an ore survey, a few a tick (never raises)
   if event.tick%600==0 then pcall(M.avoid.prune) end  -- enemy chunk records older than a minute (avoid.lua)
+  if event.tick%60==0 and space then pcall(space.watch_stops,event.tick) end  -- when each platform stopped (space.lua stops)
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do
     local ok,err=pcall(M.spoil.tick,event.tick)
