@@ -399,6 +399,15 @@ def main():
         host, _, port = a.obs.partition(":")
         night = NightLift(obs=OBS(host, int(port or 4455)), **(run.get("night") or {}))
     model = Model(run)
+    # token use per agent this shift, from the agents' CLI session logs (tokens.py): a thread of its own reads them
+    tokens_feed = None
+    if run.get("tokens", True) is not False:
+        if a.mock:
+            from mock import MockTokens
+            tokens_feed = MockTokens(run)
+        elif a.run:
+            import tokens
+            tokens_feed = tokens.TokenFeed(os.path.dirname(os.path.abspath(a.run))).start()
     if a.run and not a.mock:  # where each platform has been, kept across restarts (no false "first" arrivals)
         model.set_space_memory(os.path.join(os.path.dirname(os.path.abspath(a.run)), "space-memory.json"))
     hub = Hub()
@@ -430,6 +439,8 @@ def main():
                 obs = source.observe()
                 with lock:
                     model.ingest(obs, time.time())
+                    if tokens_feed:
+                        model.set_tokens(tokens_feed.snapshot())
                 source_info.update(poll_ok=time.time(), poll_error=None)
             except Exception as e:
                 source_info["poll_error"] = f"{type(e).__name__}: {e}"

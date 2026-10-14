@@ -228,6 +228,10 @@ body.portrait .cam-fill .tag, body.portrait .cam-fill .pace { font-size: 17px; l
   margin-left: auto; flex: none; font-size: 12px; font-weight: 600; color: var(--faint);
   white-space: nowrap; max-width: 92px; overflow: hidden; text-overflow: ellipsis;
 }
+.card .tok {
+  flex: none; font-size: 12px; font-weight: 600; color: var(--faint); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.card .tok:empty { display: none; }
 .card .name {
   font-size: 21px; font-weight: 700; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
   color: var(--agent-ink, var(--ink)); transition: color 600ms ease;
@@ -546,6 +550,8 @@ body.seg-full #alerts .alert:not(:last-child) { display: none; }
 #segment.lower .sbody { gap: 6px; }
 #segment.lower .shead.big { font-size: 26px; }
 #segment.lower .stable { grid-template-columns: 1fr 96px 72px; padding: 4px 10px; }
+#segment.lower.seg-tokens .stable { grid-template-columns: minmax(0, 1fr) 70px 66px 60px 88px; gap: 0; }
+#segment.lower.seg-tokens .stable .td { font-size: 15px; line-height: 1.3; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
 #segment.lower .stable .th { font-size: 12px; padding: 2px 0; }
 #segment.lower .stable .td { font-size: 18px; padding: 2px 0; gap: 8px; }
 #segment.lower .srow { font-size: 17px; }

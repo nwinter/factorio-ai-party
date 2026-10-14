@@ -15,3 +15,4 @@ runs/*/.keys/
 runs/*/*/.grok-home/
 runs/*/agent-stats.json
 site-shots/
+runs/*/tokens.json
