@@ -4130,6 +4130,27 @@ function feeding.fuel_want(p,e,a)
   if a.fuel==nil and not named and feeding.fuel_in(e) then return nil,true end
   return {item=fuel,inventory='fuel',count=a.fuel_count}
 end
+-- '2 burners hold another fuel in every fuel slot (solid-fuel 4): no slot for coal'
+function M.other_fuel_line(n,holds,item)
+  return string.format('%d burner%s hold%s another fuel in every fuel slot (%s): no slot for %s',n,n==1 and '' or 's',
+    n==1 and 's' or '',table.concat(holds,', '),item or 'it')
+end
+-- A burner whose fuel slots are all taken by another fuel has no room for item (a slot holds one item kind):
+-- what they hold ("solid-fuel 4"), or nil (Haiku, 07:55: feed with up_to over boilers burning the other fuel).
+function feeding.blocked_fuel(e,item)
+  local inv=fuel_inventory(e)
+  if not inv then return nil end
+  for i=1,#inv do
+    local s=inv[i]
+    if not (s and s.valid_for_read) or s.name==item then return nil end
+  end
+  local held_=feeding.fuel_in(e)
+  if not held_ then return nil end
+  local parts={}
+  for name,c in pairs(held_) do parts[#parts+1]=name..' '..c end
+  table.sort(parts)
+  return table.concat(parts,', ')
+end
 -- Whether a furnace smelts item (a recipe of its crafting categories takes it), by furnace name; prototypes only.
 feeding.smelts_cache={}
 function feeding.smelts(e,item)
@@ -4209,9 +4230,12 @@ function feeding.one(p,e,a)
   local gave,total={},0
   local keep=integer(a.keep,0,0,100000,'keep')
   local wants,other=feeding.wants(p,e,a)
-  local short
+  local short,blocked
   for _,w in ipairs(wants) do
-    if held(p,w.item,a.quality)>keep then
+    -- Fuel slots all holding another fuel: skipped, and said (fifth value).
+    local b=w.inventory=='fuel' and feeding.blocked_fuel(e,w.item)
+    if b then blocked=b
+    elseif held(p,w.item,a.quality)>keep then
       local ok,out=pcall(transfer_one,p,{direction='to_entity',item=w.item,inventory=w.inventory,count=w.count,up_to=w.count,keep=keep,quality=a.quality},nil,e)
       if ok and out.transferred>0 then gave[w.item]=(gave[w.item] or 0)+out.transferred; total=total+out.transferred end
     end
@@ -4221,14 +4245,14 @@ function feeding.one(p,e,a)
       if have<w.count then short=short or {}; short[w.item]=w.count-have end
     end
   end
-  return gave,total,short,other
+  return gave,total,short,other,blocked
 end
 -- A machine that wants something the character holds beyond the reserve and
 -- is below the target count for it.
 function feeding.hungry(p,e,a)
   local keep=integer(a.keep,0,0,100000,'keep')
   for _,w in ipairs(feeding.wants(p,e,a)) do
-    if held(p,w.item,a.quality)>keep then
+    if held(p,w.item,a.quality)>keep and not (w.inventory=='fuel' and feeding.blocked_fuel(e,w.item)) then
       local ok,inv=pcall(inventory,e,w.inventory)
       if ok and inv.get_item_count{name=w.item,quality=a.quality or 'normal'}<w.count then return true end
     end
@@ -4243,13 +4267,21 @@ function feeding.why(p,es,a)
   local by,order={},{}
   -- Burners left alone because they hold fuel, and furnaces with no recipe yet.
   local fueled,fuels,unset={n=0},{},0
+  local blocked={n=0,holds={}}
   for _,e in ipairs(es) do
     for _,w in ipairs(feeding.wants(p,e,a)) do
-      local ok,inv=pcall(inventory,e,w.inventory)
-      local c=ok and inv.get_item_count{name=w.item,quality=a.quality or 'normal'} or 0
-      local b=by[w.item]
-      if not b then b={n=0,lo=math.huge,hi=0,count=w.count}; by[w.item]=b; order[#order+1]=w.item end
-      b.n=b.n+1; b.lo=math.min(b.lo,c); b.hi=math.max(b.hi,c)
+      -- Fuel slots all taken by another fuel: counted apart, not as "at count already".
+      local bf=w.inventory=='fuel' and feeding.blocked_fuel(e,w.item)
+      if bf then
+        blocked.n=blocked.n+1; blocked.item=w.item
+        if not blocked.holds[bf] then blocked.holds[bf]=true; blocked.holds[#blocked.holds+1]=bf end
+      else
+        local ok,inv=pcall(inventory,e,w.inventory)
+        local c=ok and inv.get_item_count{name=w.item,quality=a.quality or 'normal'} or 0
+        local b=by[w.item]
+        if not b then b={n=0,lo=math.huge,hi=0,count=w.count}; by[w.item]=b; order[#order+1]=w.item end
+        b.n=b.n+1; b.lo=math.min(b.lo,c); b.hi=math.max(b.hi,c)
+      end
     end
     local _,has=feeding.fuel_want(p,e,a)
     if has then
@@ -4289,6 +4321,8 @@ function feeding.why(p,es,a)
     notes[#notes+1]=string.format('%d burner%s hold%s fuel (%s): fuel is added to a burner with none, or with fuel=true or fuel=NAME',
       fueled.n,fueled.n==1 and '' or 's',fueled.n==1 and 's' or '',table.concat(holds,', '))
   end
+  if blocked.n>0 then notes[#notes+1]=M.other_fuel_line(blocked.n,blocked.holds,blocked.item) end
+  if #order==0 and blocked.n>0 then return table.concat(notes,'; ') end
   if #order==0 then
     local base=string.format('none of the %d machines wants an item (no recipe set, or not a machine feed fills)',#es)
     return #notes>0 and base..'; '..table.concat(notes,'; ') or base
@@ -4342,7 +4376,20 @@ function handlers.feed(p,a)
     if state().active[p.index] then finish(p.index,'replaced') else stop(p) end
     state().active[p.index]=action
     out.until_tick=action.until_tick
-    if #targets==0 then
+    -- Burners whose fuel slots all hold another fuel are left out of the tour; with up_to, when they are all it found,
+    -- that is no warning (Haiku, 07:55).
+    local blocked={n=0,holds={}}
+    for _,e in ipairs(found) do
+      local fw=feeding.fuel_want(p,e,a)
+      local fuel=fw and fw.item
+      local bf=fuel and feeding.blocked_fuel(e,fuel)
+      if bf then
+        blocked.n=blocked.n+1; blocked.item=blocked.item or fuel
+        if not blocked.holds[bf] then blocked.holds[bf]=true; blocked.holds[#blocked.holds+1]=bf end
+      end
+    end
+    if blocked.n>0 then out.other_fuel=M.other_fuel_line(blocked.n,blocked.holds,blocked.item) end
+    if #targets==0 and not (a.up_to==true and blocked.n>0 and blocked.n==#found) then
       local ok,why=pcall(feeding.why,p,found,a)
       out.nothing_moved=ok and ('nothing to feed: '..why) or nil
     end
@@ -4351,12 +4398,17 @@ function handlers.feed(p,a)
   assert(a.ticks==nil,'ticks applies with radius')
   local targets=reachable(p,{positions=a.positions,types=types},function() return true end)
   local rows,items,total,unchanged,seen,other_recipe={},{},0,0,{},0
+  local blocked={n=0,holds={}}
   for _,t in ipairs(targets) do
     local ok,e=pcall(function() return t.entity or entity(p,{position=t.position,name=t.position.name,unit_number=t.position.unit_number}) end)
     if not ok then rows[#rows+1]={position=t.position,error=reason(e)}
     else
       seen[#seen+1]=e
-      local okf,gave,n,short,other=pcall(feeding.one,p,e,a)
+      local okf,gave,n,short,other,bf=pcall(feeding.one,p,e,a)
+      if okf and bf and n==0 then
+        blocked.n=blocked.n+1; blocked.item=blocked.item or feeding.fuel_for(p,e,a)
+        if not blocked.holds[bf] then blocked.holds[bf]=true; blocked.holds[#blocked.holds+1]=bf end
+      end
       if not okf then rows[#rows+1]={position=e.position,name=e.name,error=reason(gave)}
       elseif a.recipe then
         -- One row per machine: what it got and what it still lacks for the crafts, or the recipe it runs instead.
@@ -4373,19 +4425,23 @@ function handlers.feed(p,a)
       else
         unchanged=unchanged+1
         -- Named machines (positions, area) each get a row, also when they got nothing (Haiku: one boiler call).
-        if a.positions then rows[#rows+1]={position=e.position,name=e.name,got='nothing',fuel=feeding.fuel_line(e)} end
+        if a.positions then rows[#rows+1]={position=e.position,name=e.name,got='nothing',fuel=feeding.fuel_line(e),other_fuel=bf and n==0 and true or nil} end
       end
     end
   end
   local left={}
   for item in pairs(items) do left[item]=held(p,item,a.quality) end
   local why
-  if total==0 then
+  -- up_to=true: burners whose fuel slots hold another fuel are skipped, not a warning, when they are all that got
+  -- nothing (Haiku, 07:55); other_fuel says so.
+  local skipped_only=a.up_to==true and blocked.n>0 and blocked.n==#seen
+  if total==0 and not skipped_only then
     local ok,w=pcall(feeding.why,p,seen,a)
     why=ok and w or 'no machine in reach wants an item you hold above keep (or they are at count already)'
   end
   return {transferred=total,items=next(items) and items or nil,entities=rows,unchanged=unchanged>0 and unchanged or nil,held=next(left) and left or nil,
-    other_recipe=other_recipe>0 and other_recipe or nil,nothing_moved=why and ('nothing given: '..why) or nil}
+    other_recipe=other_recipe>0 and other_recipe or nil,nothing_moved=why and ('nothing given: '..why) or nil,
+    other_fuel=blocked.n>0 and M.other_fuel_line(blocked.n,blocked.holds,blocked.item) or nil}
 end
 -- Items of this name in an entity's transferable inventories (fuel included).
 local function entity_holds(e,item,quality)

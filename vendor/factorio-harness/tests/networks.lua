@@ -117,8 +117,8 @@ storage.networks.views={}
 local lines=N.lines(force,'nauvis',8)
 eq(#lines,3,table.concat(lines,' | '))
 eq(lines[1],'nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%); '
-  ..'solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11: their own fuel 31 min at this draw, '
-  ..'1 with fuel at their feeders, 2 under 20 min not refilled (lowest 4 min)')
+  ..'solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50% (5.0 MJ of 10.0 MJ); machines 30: 3 low power, 1 no power; boilers 11: their own fuel 31 min at this draw, '
+  ..'1 with fuel at their feeders, 2 under 20 min not refilled (lowest 4 min); lowest boiler (66,16): 4 min of coal; no inserter feeds it')
 -- (lb1 holds 100 coal, 4 min, but its inserter's chest holds 400: not low; lb2 and the one by the engine have no feeder)
 eq(lines[2],'nauvis logistic #3: 4 roboports (+1 personal), logistic area (0,25)-(125,75), construction area (-30,-5)-(155,105); '
   ..'logistic robots 147: 0 idle, 142 working, 3 charging, 2 waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; '
@@ -128,6 +128,9 @@ eq(lines[3],'nauvis turrets: gun-turret 6; ammo used in the last hour: firearm-m
 local r=N.read({force=force},{})
 eq(#r.surfaces,1); local e=r.surfaces[1].electric[1]
 eq(e.id,7); eq(e.capacity_kw,22100); eq(e.generators_kw,21600); eq(e.solar_peak_kw,600); eq(e.draw_kw.avg,18500); eq(e.draw_kw.over_s,300)
+-- (Gemini, 07:55: stored against the maximum; Haiku, 07:55: the lowest boiler named, with its fuel and feeder)
+eq(e.acc_mj,5); eq(e.acc_max_mj,10)
+eq(e.lowest_boiler.position.x,66); eq(e.lowest_boiler.min,4); eq(e.lowest_boiler.fuel,'coal'); eq(e.lowest_boiler.feeder,'no inserter feeds it')
 eq(e.boilers,11,'the far boiler feeds nothing listed'); eq(e.fuel_min,31); eq(e.boilers_fed,1); eq(e.boilers_under_10_min,1); eq(e.boilers_under_20_min,2); eq(e.lowest_boiler_min,4); eq(e.low,3); eq(e.none,1)
 -- The science line's power part (scienceline.lua): the surface's largest network, plain numbers.
 local pr=N.power_row(force,'nauvis')

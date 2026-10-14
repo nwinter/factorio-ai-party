@@ -257,6 +257,11 @@ fh call status
   you carry that, else as above; `fuel: "solid-fuel"` with that item; a fuel named in `items`/`item` counts as asking;
   `fuel: false` gives none. A `feed` that gave nothing names the burners left alone: `2 burners hold fuel (solid-fuel
   3-5): fuel is added to a burner with none, or with fuel=true or fuel=NAME`.
+- A burner whose fuel slots all hold another fuel (a boiler burning solid fuel, fed coal: a slot takes one item kind)
+  is skipped (Haiku, 07:55): its row says `other_fuel: true` and the reply `other_fuel: "1 burner holds another fuel in
+  every fuel slot (solid-fuel 4): no slot for coal"`, which is no warning; walking tours (`radius`) leave it out. It
+  is never counted as `at count already`. With `up_to: true`, when such burners are all that got nothing, the call
+  has no `nothing_moved`; without it, the line above is the reason given.
 - A furnace that never smelted has no recipe yet: `feed` gives it the items named in `items`/`item` that it smelts
   (a recipe of its crafting categories takes them), into its source slot, as a player puts ore in; unnamed, it gets
   nothing and the reply says `1 furnace with no recipe yet (nothing smelted there) takes only items named in items or
@@ -868,6 +873,9 @@ fh sleep 900 --until researched                       # ...or until the research
   hub show `repair_packs` (in the hub, or `none`) and `damaged` (`gun-turret (-6,0) 53/400`, most damaged first, 3 per
   row in `platforms`, up to 10 with `platform` set and in `inspect`; `damaged_count` past that); `inspect` of a damaged
   entity there adds the `repair` note.
+- `fh platform NAME` (Gemini, 07:55) is `fh call platforms --args '{"platform":"NAME"}'`: the one platform with its
+  full hub inventory (`hub_items`), `hub_slots` free, `speed_kms`, `next_stop`, `eta_min` and the rest of its row; a
+  name with spaces may be given unquoted; `fh platform` alone lists every platform.
 - `platforms` shows each platform's `defense`: `hub_health` (`637/1000`), `turrets` (`5 gun-turrets: 4 empty, 0 low
   (under 10 rounds)`) and `ammo`, the ammo flow (`turrets hold 6 rounds, the hub firearm-magazine 920`).
 - Flight, on every `platforms` row and in `inspect` of a hub under `flight`: `speed_kms` (the hub GUI's km/s; the game's
@@ -1773,6 +1781,12 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   network's construction area, one count per network, up to 4000. Ammo: the surface's item statistics, consumed in the last hour. The read gives
   the same numbers as fields; everything is kept 60 s (`as_of`), and the network alerts read the same view; the pole
   map is redone every 5 min in the background and by the view when older than 60 s; requests are looked at every 30 s.
+  Accumulators show their stored energy against their maximum (`accumulators 2 at 50% (5.0 MJ of 10.0 MJ)`; read:
+  `acc_mj`, `acc_max_mj`; Gemini, 07:55, for Fulgora's lightning). The API exposes no lightning storm schedule
+  (checked on 2.0.77: Fulgora's planet prototype has no lightning properties), so there is no storm countdown. The
+  boilers part names the lowest boiler: the lowest of those under 20 min and not refilled, else the lowest of all,
+  with its minutes, its fuel and its feeder (`lowest boiler (66,16): 4 min of coal; no inserter feeds it`; read:
+  `lowest_boiler {position, min, fuel, feeder, feeder_has_fuel}`; Haiku, 07:55).
 - Boilers (networks.lua; Haiku, 06:20): `boilers {surface?}` (read, `fh call boilers`, default your surface) lists every
   boiler of ours on the surface, grouped by the electric network its steam feeds (as `networks` maps them: the steam
   generators on its output's fluid segment, else one within 12 tiles; `network: null` and `no electric network found`
