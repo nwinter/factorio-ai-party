@@ -2309,6 +2309,27 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   over 10 min, 3 min left`; the rate needs the networks view to have looked at that chest). At most 64 rows: the
   not-working ones, then up to 4 working ones in a network with a stopped boiler (all in a network where every boiler
   works); `more` counts the rows left out (all working). Feeders are read only for the rows shown.
+- Space platforms' power (Astra, 13:10: `networks {surface: "Starling"}` matched nothing, a platform's surface being
+  `platform-3`; `power` took no platform; inspect showed no maximum). `networks {platform}` (a name or index) and
+  `networks {surface}` with a platform's name or its surface's name read that platform's surface; an unknown name is
+  refused with the platforms and planets, and a surface named with nothing on it says so in `none`. A platform's
+  electric network gets the planet line, named by the platform: `Starling (platform) electric #280 (6 poles near
+  (4,0)): draw 2.4 MW avg over 5 min (now 2.4 MW) of 3.6 MW capacity (67%); solar 20 panels, 2.4 MW now, 3.6 MW at
+  this solar power (solar power 300% at nauvis); accumulators 1 at 50% (2.5 MJ of 5.0 MJ); machines 8: 2 low power, 0
+  no power`. Solar power: a planet's `solar-power` property against its default (100%); a platform's, the solar power
+  in space of the location it stops at, or, flying, of both ends of its connection weighted by how far along it is
+  (`solar power 260% between nauvis (300%) and gleba (200%), 40% of the way from nauvis`); both times the surface's
+  `solar_power_multiplier` (1 unless a script set it). With no night in space a platform's capacity counts its panels
+  at that solar power (a planet's counts them at their output now). Read fields `platform` (per surface),
+  `solar_power` (percent) and `solar_power_text` (per electric network). `power {platform}` (`fh call observe --args
+  '{"scope":"power","platform":"Starling"}'`) reads that platform, 64 tiles round its hub unless an area, position
+  or radius is given; every `power` reply adds `solar_power` and `lines`, those networks' lines as above.
+- `inspect` on a producer or consumer of electricity adds `electricity`: `max_kw` at its quality (a machine's times
+  its modules' consumption bonus, `consumption_bonus: "-60%"`, with `drain_kw`; a solar panel's at 100% and
+  `at_solar_power_kw` where it is, with `solar_power`; a generator's maximum output; an accumulator's `stored_mj`,
+  `capacity_mj`, `charge_kw`, `discharge_kw`), and `now`: what all of its name on its electric network make or draw
+  (`all solar-panel on electric network #280 make 2.4 MW now (5 s average)`; the game counts power by prototype, not
+  per entity), or `no electric network: no pole reaches it`. (`power` stays the "unpowered: ..." line.)
 - Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
   requests named it with `platform=` most recently (within 2 hours; the `platforms` read does not count) and anyone
   aboard; a platform with none of them known goes to every agent. Each line names the platform and its surface:
