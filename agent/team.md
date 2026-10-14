@@ -379,3 +379,6 @@ already targets your character.
   agents build them with real items. The reply counts ghosts placed, spots already rebuilt and spots now taken.
 - Chat lines from `players` say when a human player joins or leaves, and when one removes, or marks for
   deconstruction or upgrade, 20 or more of the team's entities within 5 minutes (with the last position).
+- When the game runs slow, sleeps and `--wait` keep waiting while it advances (`slow_game: 18 ticks/s, 30% of normal`,
+  also on the clock line) and end `paused` when it stops. `game_unreachable` means nothing was sent; after a server
+  restart from a save, one reply says `rolled_back` and lists in `redo` what you changed since, which is gone.
