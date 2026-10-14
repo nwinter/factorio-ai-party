@@ -367,9 +367,12 @@ local vins_cb=cb_of('inserter',{circuit_enable_disable=false})
 thing('inserter','inserter',1,vins_cb,1,vsurf)
 r=astra('circuit_set',{surface='vulcanus',position={x=1,y=1},enable='iron-plate < 5'})
 eq(r.by,'remote view'); eq(vins_cb.circuit_condition.constant,5)
+-- A read on another surface is by remote view too.
+eq(astra('inspect',{surface='vulcanus',position={x=1,y=1}}).by,'remote view')
 hidden['vulcanus 0,0']=true
 fails(function() astra('circuit_set',{surface='vulcanus',position={x=1,y=1},enable='iron-plate < 6'}) end,'not in a visible chunk')
 fails(function() astra('inspect',{surface='vulcanus',position={x=1,y=1}}) end,'on vulcanus is not in a visible chunk')
+fails(function() astra('inspect',{surface='vulcanus',position={x=1,y=1}}) end,'; the nearest radar coverage (or a character\'s sight) is chunk (-32,0)-(-1,31), 1 tile away')
 hidden['vulcanus 0,0']=nil
 fails(function() astra('circuit_set',{surface='mars',position={x=1,y=1},enable='iron-plate < 6'}) end,'no surface named mars; planets and surfaces: nauvis, vulcanus')
 fails(function() astra('circuit_set',{surface='vulcanus',platform='Sunward',position={x=1,y=1}}) end,'give platform or surface, not both')

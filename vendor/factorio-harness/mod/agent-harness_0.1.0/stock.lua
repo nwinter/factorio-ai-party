@@ -33,6 +33,7 @@ return function(api)
     local centre=opts.position or p.position
     local quality=opts.quality or 'normal'
     local places,total,groups,makers={},0,{},{}
+    local spoils=api.spoil and api.spoil.spoils(item)
     for _,e in pairs(p.surface.find_entities_filtered{position=centre,radius=opts.radius or 128,force=p.force,type=opts.types or TYPES}) do
       if e.valid then
         if makes(e,item) then makers[e.name]=(makers[e.name] or 0)+1 end
@@ -42,7 +43,14 @@ return function(api)
           total=total+n
           local g=groups[e.name] or {name=e.name,entities=0,count=0,chest=CHEST[e.type] or nil}
           groups[e.name]=g; g.entities=g.entities+1; g.count=g.count+n
-          places[#places+1]={entity=e,name=e.name,position=e.position,count=n,distance=api.distance(centre,e.position)}
+          local place={entity=e,name=e.name,position=e.position,count=n,distance=api.distance(centre,e.position)}
+          -- A spoilable item: this place's first stack to spoil (spoil.lua).
+          if spoils then
+            for _,r in ipairs(api.spoil.inventory(inv,{})) do
+              if r.name==item and (not place.spoil_tick or r.tick<place.spoil_tick) then place.spoil_tick,place.spoil_percent,place.soon=r.tick,r.percent,r.soon end
+            end
+          end
+          places[#places+1]=place
         end
       end
     end
@@ -65,8 +73,12 @@ return function(api)
     local largest=big~=near and string.format('; largest %d in %s at (%g,%g) %d tiles away',big.count,big.name,big.position.x,big.position.y,math.floor(big.distance+0.5)) or ''
     local chests=false
     for _,g in ipairs(s.groups) do if g.chest then chests=true end end
-    return string.format('%d %s held by our factory (%s); nearest %d at (%g,%g) %d tiles away%s; collect item=%s radius=%d%s gathers it',
-      s.total,s.item,table.concat(parts,', '),near.count,near.position.x,near.position.y,math.floor(near.distance+0.5),largest,
+    local first
+    for _,x in ipairs(s.places) do if x.spoil_tick and (not first or x.spoil_tick<first.spoil_tick) then first=x end end
+    local spoil=first and string.format('; the first %s in %s at (%g,%g) in %s (%d%% spoiled)',api.spoil.hatch(s.item) and 'hatches into '..api.spoil.hatch(s.item).entity or 'spoils',
+      first.name,first.position.x,first.position.y,api.spoil.secs(first.spoil_tick-game.tick),math.floor(first.spoil_percent*100+0.5)) or ''
+    return string.format('%d %s held by our factory (%s); nearest %d at (%g,%g) %d tiles away%s%s; collect item=%s radius=%d%s gathers it',
+      s.total,s.item,table.concat(parts,', '),near.count,near.position.x,near.position.y,math.floor(near.distance+0.5),largest,spoil,
       s.item,math.max(8,math.ceil(math.max(s.places[math.min(#s.places,4)].distance,big.distance))+2),chests and ' chests=true' or '')
   end
   -- Without an item: what our machines and chests hold, per item, largest
@@ -74,6 +86,7 @@ return function(api)
   function M.summary(p,a,radius,limit)
     local centre=a.position and api.position(a.position) or p.position
     local totals,order={},{}
+    local spoil,read={},{}
     for _,e in pairs(p.surface.find_entities_filtered{position=centre,radius=radius,force=p.force,type=TYPES}) do
       local inv=e.valid and output_of(e)
       for _,s in ipairs(inv and inv.get_contents() or {}) do
@@ -82,14 +95,19 @@ return function(api)
         if not t then t={item=key,count=0,entities=0,chests=0}; totals[key]=t; order[#order+1]=t end
         t.count=t.count+s.count; t.entities=t.entities+1
         if CHEST[e.type] then t.chests=t.chests+1 end
+        -- Spoilable items: the first stack to spoil among the places (spoil.lua).
+        if api.spoil and api.spoil.spoils(s.name) and not read[e] then read[e]=true; api.spoil.inventory(inv,spoil) end
       end
     end
     table.sort(order,function(x,y) return x.count>y.count or (x.count==y.count and x.item<y.item) end)
     local items={}
     for i=1,math.min(limit,#order) do
       local t=order[i]
-      items[i]=string.format('%s %d in %d %s%s',t.item,t.count,t.entities,t.entities==1 and 'entity' or 'entities',
-        t.chests>0 and string.format(' (%d chest%s)',t.chests,t.chests==1 and '' or 's') or '')
+      local r=spoil[t.item]
+      local h=r and api.spoil.hatch(r.name)
+      items[i]=string.format('%s %d in %d %s%s%s',t.item,t.count,t.entities,t.entities==1 and 'entity' or 'entities',
+        t.chests>0 and string.format(' (%d chest%s)',t.chests,t.chests==1 and '' or 's') or '',
+        r and string.format('; the first %s in %s (%d%% spoiled)',h and 'hatches into '..h.entity or 'spoils',api.spoil.secs(r.tick-game.tick),math.floor(r.percent*100+0.5)) or '')
     end
     return {radius=radius,items=items,more=#order>limit and #order-limit or nil,
       note=#order>0 and 'machine outputs and chests within radius; scope=stock item=NAME lists the places and a collect line' or 'no machine output or chest within radius holds anything'}
@@ -104,10 +122,14 @@ return function(api)
     local places={}
     for i=1,math.min(limit,#s.places) do
       local x=s.places[i]
-      places[i]={name=x.name,position=x.position,count=x.count,distance=math.floor(x.distance+0.5)}
+      places[i]={name=x.name,position=x.position,count=x.count,distance=math.floor(x.distance+0.5),
+        first_spoils_in=x.spoil_tick and api.spoil.secs(x.spoil_tick-game.tick) or nil,spoiled_percent=x.spoil_tick and math.floor(x.spoil_percent*100+0.5) or nil,
+        within_5_min=x.soon and x.soon>0 and x.soon or nil}
     end
+    local h=api.spoil and api.spoil.hatch(a.item)
     return {item=a.item,total=s.total,by_entity=s.groups,places=places,more=#s.places>limit and #s.places-limit or nil,
-      made_by=s.makers,held=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'},summary=M.line(s,centre)}
+      made_by=s.makers,held=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'},summary=M.line(s,centre),
+      hatches_into=h and string.format('%s (an enemy, %s) when it spoils: first_spoils_in is when the first hatches',h.entity,api.spoil.per_text(h)) or nil}
   end
   -- Gathering: visit stock places nearest-neighbour from the character and
   -- take the item from each until `want` is met.

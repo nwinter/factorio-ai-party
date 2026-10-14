@@ -520,6 +520,79 @@ test('a walk that gave up says why on the error line',async()=>{
     assert.match(stdout,/\nerror: action_interrupted: Control ended: unreachable: closed in: the character \(0\.4 tiles wide\) fits through no gap out of the area \(9,42\)-\(14,53\) \(about 45 tiles\)\n$/);
   });
 });
+test('move_to and drive --wait show gaps, escapes, enemies gone around; no_safe_route fails with why',async()=>{
+  // Sol (shift09 03:13): trapped in gaps between pipes and machines; Opus (03:20): walked past a nest, a tank stuck on cliffs.
+  const ends=[
+    {action:'move_to',last:{kind:'move_to',outcome:'arrived_near',pocket:'(55,21) lies in a gap narrower than 0.7 tiles (assembling-machine-2 (53.5,22.5)) that no path led into; stopped at (51.5,24.4), 4.8 tiles from it (squeeze=true walks in)'},code:0,shown:['pocket']},
+    {action:'move_to',last:{kind:'move_to',outcome:'arrived',escaped:'no path led out of the gap at (54.2,21): walked out to (55,24.3) first',avoided_enemies:['2 big-worm-turret around (88,165)'],passed_within_margin:['medium-worm-turret (60,170): 33.7 tiles (range 30)']},code:0,shown:['escaped','avoided_enemies','passed_within_margin']},
+    {action:'move_to',last:{kind:'move_to',outcome:'unreachable',why:'closed in: ...; mining pipe (-27.5,69.5) opens a way out to (-26.7,69.5)',mine_to_get_out:['pipe (-27.5,69.5)']},code:1,shown:['mine_to_get_out']},
+    {action:'move_to',last:{kind:'move_to',outcome:'no_safe_route',why:'no way to (100,0) around 4 medium-worm-turret around (100,0): the path passes medium-worm-turret (60,0) (range 30 + 4) at 0.0 tiles'},code:1,shown:[]},
+    {action:'vehicle',last:{kind:'drive',outcome:'arrived',path_length:69,backed_up:'stuck at (30.0,123.7) (in front: cliff (30,126.5)): backed up and asked for a new path',avoided_enemies:['1 medium-worm-turret around (60,170)']},code:0,shown:['path_length','backed_up','avoided_enemies']},
+  ];
+  for (const end of ends) {
+    let polls=0;
+    await engine(request=>{
+      if(request.action===end.action)return {ok:true,result:{until_tick:180}};
+      if(request.action==='observe')return {ok:true,result:{player:{position:{x:3,y:4},health:250,max_health:250,inventory:[]},clock:'c'}};
+      polls++;
+      return {ok:true,result:polls<2?{active:{kind:end.last.kind,until_tick:180}}:{active:false,last:end.last}};
+    },async port=>{
+      const args=end.action==='vehicle'?'{"drive":{"x":30,"y":145}}':'{"position":{"x":55,"y":21}}';
+      const {code,stdout}=await compact(port,['call',end.action,'--args',args,'--wait']);
+      assert.equal(code,end.code,stdout);
+      // A wait that ended in success lists fields one per line; a failed one on the error_result line (key=value).
+      for (const key of end.shown) assert.match(stdout,new RegExp(`(\\n\\s*|\\s)${key}[:=]`),key);
+      if (end.last.outcome==='no_safe_route') assert.match(stdout,/\nerror: action_interrupted: Control ended: no_safe_route: no way to \(100,0\) around/);
+    });
+  }
+});
+test('a build that waited for a hand craft and then failed keeps the blocker on the error line',async()=>{
+  // Sol, shift09: the silo build hit trees after its craft and read "Control ended: failed".
+  let polls=0;
+  const error='placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)';
+  await engine(request=>{
+    if(request.action==='build')return {ok:true,result:{awaiting_craft:{item:'rocket-silo',held:0,need:1,crafting:1},until_tick:900}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:60,y:19},health:250,max_health:250,inventory:[]},clock:'c'}};
+    polls++;
+    return {ok:true,result:polls<2?{active:{kind:'feed',awaiting_craft:true,until_tick:900}}:{active:false,last:{kind:'feed',handler:'build',outcome:'failed',tick:5,error}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','build','--args','{"item":"rocket-silo","position":{"x":65.5,"y":14.5}}','--wait']);
+    assert.equal(code,1);
+    assert.match(stdout,/error_result: outcome=failed action=build /);
+    assert.ok(stdout.endsWith(`\nerror: action_interrupted: Control ended: failed: ${error}\n`),stdout);
+  });
+});
+test('drop --wait follows a full drop\'s pods that wait for a hatch, apart from the character\'s action',async()=>{
+  let polls=0;
+  const pods=[{pod:1,drop:4,items:'iron-plate*1000',slots:10},{pod:2,drop:5,items:'coal*300',slots:6}];
+  await engine(request=>{
+    if(request.action==='drop')return {ok:true,result:{drop:4,pods:[pods[0]],pods_waiting:'1 more pod wait for a free hatch',until_tick:900}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:1,y:1},health:250,max_health:250,inventory:[]},clock:'c'}};
+    polls++;
+    // The character walks meanwhile: its own action is no part of the drop's wait.
+    return {ok:true,result:polls<3?{active:{kind:'move_to',until_tick:5000},drop_pending:{kind:'drop',pods_sent:1,pods_left:1,until_tick:900}}
+      :{active:{kind:'move_to',until_tick:5000},last_drop:{kind:'drop',outcome:'dropped',tick:7,result:{pods,dropped:['iron-plate*1000','coal*300']}}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','drop','--args','{"platform":"Sunward","full":true,"items":[{"item":"iron-plate","count":1000},{"item":"coal","count":300}]}','--wait']);
+    assert.equal(code,0,stdout);
+    assert.ok(polls>=3,'it polled until the pods were sent');
+    assert.match(stdout,/outcome: dropped\n\s*action: drop\n/);
+    assert.match(stdout,/coal\*300/);
+  });
+  // Pods not sent: the error line says why.
+  polls=0;
+  await engine(request=>{
+    if(request.action==='drop')return {ok:true,result:{drop:4,pods:[pods[0]],until_tick:900}};
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:1,y:1},health:250,max_health:250,inventory:[]},clock:'c'}};
+    polls++;
+    return {ok:true,result:polls<2?{drop_pending:{kind:'drop',pods_left:1,until_tick:900}}
+      :{last_drop:{kind:'drop',outcome:'failed',tick:7,why:'platform Sunward left vulcanus (at vulcanus->nauvis 2%)',result:{pods:[pods[0]],not_sent:'coal*300'}}}};
+  },async port=>{
+    const {code,stdout}=await compact(port,['call','drop','--args','{"platform":"Sunward","full":true,"items":[{"item":"coal","count":300}]}','--wait']);
+    assert.equal(code,1);
+    assert.ok(stdout.endsWith('\nerror: action_interrupted: Control ended: failed: platform Sunward left vulcanus (at vulcanus->nauvis 2%)\n'),stdout);
+  });
+});
 test('polls fall back to plain status on a runtime without peek',async()=>{
   const seen:any[]=[];
   await engine(request=>{

@@ -13,7 +13,10 @@ return function(api)
     vehicle = {position='{x,y} of a car, tank, spidertron, locomotive or wagon (enter within 10 tiles; go_to: a spidertron in sight)',
       enter='true: get in (driver seat if free, else a car or spidertron passenger seat); a train you ride runs its schedule as usual',
       exit='true: get out of the vehicle you are in',
-      drive='{x,y}: drive the car or tank you are driving to there (a timed action: outcomes arrived | blocked | timed_out; ticks 1..36000, default 3600)',
+      drive='{x,y}: drive the car or tank you are driving to there (a timed action: outcomes arrived | blocked | unreachable | no_safe_route | timed_out; ticks 1..36000, default 3600). It follows the engine\'s path for the vehicle\'s box (a square as wide as its diagonal plus a tile, then as its length, then as its width): around cliffs, water, trees and buildings, steering at a point a few tiles ahead on the path. Neither moving nor turning for 1.5 s against something solid: it backs off 1 s with the wheel turned and asks for a path again, once (last.backed_up); stuck again it ends blocked (last.why names what is in front)',
+      pathfind='with drive: default true; false steers straight at the target',
+      reverse='with drive: optional true: back there, rear first (to back out of a crowd or off an obstacle). Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding the key does; last.rammed counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it',
+      avoid_enemies='with drive: as move_to (default: worms\' range + 4; true: worms and spawners + 8; a margin 0..32; false: no check)',
       go_to='{x,y}: a spidertron walks there by itself (the one at position, or the one you are in)',
       ticks='with drive', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
   }
@@ -124,9 +127,21 @@ return function(api)
       assert(seat == 'driver', 'only the driver drives')
       local target = api.position(a.drive)
       local ticks = api.integer(a.ticks, 3600, 1, 36000, 'ticks')
-      local action = {kind='drive', target=target, until_tick=game.tick + ticks, last=c.position, still=0}
+      assert(a.pathfind == nil or type(a.pathfind) == 'boolean', 'pathfind must be true or false')
+      assert(a.reverse == nil or type(a.reverse) == 'boolean', 'reverse must be true or false')
+      local mode = api.avoid_mode(a.avoid_enemies)
+      local action = {kind='drive', target=target, until_tick=game.tick + ticks, last=c.position, still=0, vehicle=v, reverse=a.reverse or nil}
       api.start(p, action)
-      return {until_tick=action.until_tick, target=target, vehicle=v.name, distance=math.floor(api.distance(v.position, target))}
+      local out = {until_tick=action.until_tick, target=target, vehicle=v.name, distance=math.floor(api.distance(v.position, target)), pathfinding=a.pathfind ~= false,
+        reverse=a.reverse or nil}
+      if a.pathfind ~= false then
+        local nav = {position=target, tolerance=3, vehicle=true}
+        action.nav = nav
+        local foes = api.avoid_start(p, nav, mode)
+        out.avoid_enemies = foes and api.avoid_describe(foes.mode) or nil
+        M.request(p, nav)
+      end
+      return out
     end
     return view(c)
   end
@@ -137,16 +152,196 @@ return function(api)
     local o = (math.atan2 or math.atan)(to.x - from.x, -(to.y - from.y)) / (2 * math.pi)
     return o < 0 and o + 1 or o
   end
+  M.angle_to = angle_to
+  -- Opus (shift09 03:20): a tank driven straight at its target got stuck on
+  -- cliffs and was killed. A drive follows the engine's path for the
+  -- vehicle's box (cliffs, water, trees and buildings block it), as a square
+  -- as wide as the vehicle's diagonal plus a tile (it turns, and steering a
+  -- few tiles ahead cuts corners: on a private copy a tank caught a cliff's
+  -- end on a path planned as wide as it is long), else as wide as it is
+  -- long, else as wide as it is wide.
+  local function halves(v)
+    local ok, box = pcall(function() return v.prototype.collision_box end)
+    if not (ok and box) then return 1, 0.7 end
+    local lt, rb = box.left_top or box[1], box.right_bottom or box[2]
+    local w = math.max(math.abs(lt.x or lt[1]), math.abs(rb.x or rb[1]))
+    local l = math.max(math.abs(lt.y or lt[2]), math.abs(rb.y or rb[2]))
+    return math.max(w, l), math.min(w, l)
+  end
+  M.halves = halves
+  function M.box_halves(v)
+    local long, short = halves(v)
+    return {(long * long + short * short) ^ 0.5 + 0.5, long, short}
+  end
+  function M.request(p, nav)
+    local v = p.character and p.character.vehicle
+    if not (v and v.valid) then nav.path_state = 'failed'; return end
+    local levels = M.box_halves(v)
+    local h = levels[math.min(#levels, (nav.path_level or 0) + 1)]
+    nav.path_id = p.surface.request_path{bounding_box={{-h, -h}, {h, h}}, collision_mask=v.prototype.collision_mask, start=v.position,
+      goal=nav.position, force=p.force, radius=nav.tolerance + 1, entity_to_ignore=v, can_open_gates=false,
+      pathfind_flags={prefer_straight_paths=true, no_break=false, cache=false}}
+    api.paths()[nav.path_id] = p.index
+    nav.path_state = 'pending'; nav.waypoints = nil; nav.waypoint = nil; nav.asked_tick = game.tick
+  end
+  -- A found path, unless the enemy check holds it or goes around a nest (avoid.lua).
+  function M.use(p, nav, path)
+    if api.accept and not api.accept(p, nav, path) then return end
+    nav.waypoints = path; nav.waypoint = 1; nav.path_state = 'found'
+    local n = 0
+    for i = 2, #path do n = n + api.distance(path[i-1].position, path[i].position) end
+    nav.path_length = math.floor(n + 0.5)
+  end
+  -- A path result for a drive: the narrower box next, then unreachable.
+  function M.on_path(p, action, event)
+    local nav = action.nav
+    if not nav or event.id ~= nav.path_id then return end
+    if event.path then return M.use(p, nav, event.path) end
+    if event.try_again_later then nav.path_state = 'busy'; return end
+    if (nav.path_level or 0) < 2 then nav.path_level = (nav.path_level or 0) + 1; return M.request(p, nav) end
+    local v = p.character and p.character.vehicle
+    local long, short = 0, 0
+    if v and v.valid then long, short = halves(v) end
+    nav.path_state = 'unreachable'
+    nav.why = string.format('no path for the %s (%.1f by %.1f tiles) to (%g,%g)', v and v.valid and v.name or 'vehicle', short * 2, long * 2, nav.position.x, nav.position.y)
+  end
+  -- The point to steer at: where the vehicle is along the path (the nearest
+  -- point of the next few segments), then lookahead tiles further along it.
+  local function aim(v, nav, lookahead)
+    local wps, pos = nav.waypoints, v.position
+    local best, bi, bt = nil, nav.waypoint, 0
+    for i = nav.waypoint, math.min(#wps - 1, nav.waypoint + 12) do
+      local a, b = wps[i].position, wps[i + 1].position
+      local dx, dy = b.x - a.x, b.y - a.y
+      local L = dx * dx + dy * dy
+      local t = L > 0 and math.max(0, math.min(1, ((pos.x - a.x) * dx + (pos.y - a.y) * dy) / L)) or 0
+      local d = (a.x + t * dx - pos.x) ^ 2 + (a.y + t * dy - pos.y) ^ 2
+      if not best or d < best then best, bi, bt = d, i, t end
+    end
+    nav.waypoint = bi
+    local a, b = wps[bi].position, (wps[bi + 1] or wps[bi]).position
+    local cur, left = {x=a.x + (b.x - a.x) * bt, y=a.y + (b.y - a.y) * bt}, lookahead
+    for i = bi + 1, #wps do
+      local q = wps[i].position
+      local seg = api.distance(cur, q)
+      if seg >= left then local t = left / seg; return {x=cur.x + (q.x - cur.x) * t, y=cur.y + (q.y - cur.y) * t} end
+      left = left - seg; cur = q
+    end
+    return nav.position
+  end
+  -- What stands right in front of the vehicle (a cliff, trees, water, a building).
+  function M.in_front(v, surface, back)
+    local o = (v.orientation or 0) * 2 * math.pi
+    local long = halves(v)
+    local s = back and -1 or 1
+    local x, y = v.position.x + math.sin(o) * (long + 1) * s, v.position.y - math.cos(o) * (long + 1) * s
+    local names, have = {}, {}
+    local okf, found = pcall(function() return surface.find_entities_filtered{area={{x - 1.5, y - 1.5}, {x + 1.5, y + 1.5}}, limit=12} end)
+    for _, e in ipairs(okf and found or {}) do
+      if e.valid and e ~= v and e.type ~= 'character' and not have[e.name] and #names < 3 then
+        local ok, colliding = pcall(function() return e.prototype.collision_mask.layers.player or e.prototype.collision_mask.layers.object end)
+        if ok and colliding then have[e.name] = true; names[#names+1] = string.format('%s (%g,%g)', e.name, math.floor(e.position.x * 2 + 0.5) / 2, math.floor(e.position.y * 2 + 0.5) / 2) end
+      end
+    end
+    local ok, n = pcall(function() return surface.count_tiles_filtered{area={{x - 1.5, y - 1.5}, {x + 1.5, y + 1.5}}, collision_mask='player'} end)
+    if ok and n > 0 then names[#names+1] = n .. ' water or other tiles' end
+    if #names > 0 then return table.concat(names, ', ') end
+    -- Nothing there: what it touches all round (a corner caught turning).
+    local units, solid, tiles = M.contact(v, surface, back, true)
+    for _, e in ipairs(solid) do
+      if #names < 3 and not have[e.name] then have[e.name] = true; names[#names+1] = string.format('%s (%g,%g)', e.name, math.floor(e.position.x * 2 + 0.5) / 2, math.floor(e.position.y * 2 + 0.5) / 2) end
+    end
+    if tiles > 0 then names[#names+1] = tiles .. ' water or other tiles' end
+    if #names > 0 then return 'nothing; beside it: ' .. table.concat(names, ', ') end
+    return #units > 0 and (#units .. ' units') or 'nothing that collides'
+  end
+  -- Units are no block (Astra, shift10 04:10: a drive into an attack group
+  -- ended blocked and left the tank surrounded, unable to back out): what the
+  -- vehicle presses against ahead (behind when reversing), as units, as what
+  -- stops it (an entity whose collision layers meet the vehicle's: buildings,
+  -- cliffs, rocks, trees), and the tiles it cannot cross (water).
+  local UNITS = {unit=true, ['spider-unit']=true, ['segmented-unit']=true}
+  -- around: all round it (turning on the spot), else the end it drives toward.
+  function M.contact(v, surface, back, around)
+    local o = (v.orientation or 0) * 2 * math.pi
+    local long, short = halves(v)
+    local s = back and -1 or 1
+    local x, y = v.position.x + math.sin(o) * (long + 0.7) * s, v.position.y - math.cos(o) * (long + 0.7) * s
+    local r = short + 0.7
+    if around then x, y, r = v.position.x, v.position.y, long + 0.7 end
+    local area = {{x - r, y - r}, {x + r, y + r}}
+    local mine = {}
+    pcall(function() for layer in pairs(v.prototype.collision_mask.layers) do mine[layer] = true end end)
+    local units, solid = {}, {}
+    local ok, found = pcall(function() return surface.find_entities_filtered{area=area, limit=48} end)
+    for _, e in ipairs(ok and found or {}) do
+      if e.valid and e ~= v and e.type ~= 'character' then
+        if UNITS[e.type] then units[#units+1] = e
+        else
+          local okm, hit = pcall(function()
+            for layer in pairs(e.prototype.collision_mask.layers) do if mine[layer] then return true end end
+            return false
+          end)
+          if okm and hit then solid[#solid+1] = e end
+        end
+      end
+    end
+    local layers = {}
+    for layer in pairs(mine) do layers[#layers+1] = layer end
+    local okt, n = pcall(function() return surface.count_tiles_filtered{area=area, collision_mask=layers} end)
+    return units, solid, okt and n or 0
+  end
+  -- A unit the drive pushed against or hit (its impact damage): counted once.
+  function M.rammed(action, e)
+    if not (e and e.valid and UNITS[e.type]) then return end
+    local k = e.unit_number
+    action.rammed = action.rammed or {}
+    if k and not action.rammed[k] then action.rammed[k] = true; action.rammed_n = (action.rammed_n or 0) + 1 end
+  end
   function M.tick(p, action)
     local c = p.character
     local v = c and c.valid and c.vehicle
     if not (v and v.valid) then return 'interrupted' end
     local R = defines.riding
+    local back = action.reverse
+    -- The pedal: forward, or reverse when backing there; backing off an obstacle uses the other one.
+    local GAS = back and R.acceleration.reversing or R.acceleration.accelerating
+    local OFF = back and R.acceleration.accelerating or R.acceleration.reversing
     -- The car's own riding state: what the driver's keys set, and the one a
     -- script character (a bot, no player) can drive by (live check 00:40).
     local function ride(acc, dir) v.riding_state = {acceleration=acc, direction=dir} end
-    local d = api.distance(v.position, action.target)
+    local nav = action.nav
+    if nav then
+      if nav.foes then api.avoid_tick(p, nav) end
+      local st = nav.path_state
+      if st == 'busy' then
+        nav.retry_tick = nav.retry_tick or game.tick + 20
+        if game.tick >= nav.retry_tick then nav.retry_tick = nil; M.request(p, nav) end
+        st = 'pending'
+      end
+      if st == 'pending' or st == 'scanning' then
+        ride(math.abs(v.speed or 0) > 0.01 and R.acceleration.braking or R.acceleration.nothing, R.direction.straight)
+        action.still, action.last = 0, v.position
+        return nil
+      end
+      if st == 'unreachable' or st == 'failed' then action.why = nav.why; ride(R.acceleration.nothing, R.direction.straight); return 'unreachable' end
+      if st == 'unsafe' then ride(R.acceleration.nothing, R.direction.straight); return 'no_safe_route' end
+    end
+    -- Backing up off whatever stopped it, then a fresh path from there.
+    if action.backing then
+      if game.tick < action.backing.until_tick then ride(OFF, action.backing.turn); return nil end
+      action.backing = nil
+      ride(R.acceleration.braking, R.direction.straight)
+      action.still, action.last = 0, v.position
+      nav.path_level = 0
+      M.request(p, nav)
+      return nil
+    end
+    local goal = nav and nav.position or action.target
+    local d = api.distance(v.position, goal)
     if d <= 3 then
+      -- A corner of the way around a nest: on to the next leg without stopping.
+      if nav and nav.leg and api.leg(p, nav) then return nil end
       ride(R.acceleration.braking, R.direction.straight)
       if math.abs(v.speed or 0) < 0.01 then
         ride(R.acceleration.nothing, R.direction.straight)
@@ -154,22 +349,62 @@ return function(api)
       end
       return nil
     end
-    local diff = angle_to(v.position, action.target) - (v.orientation or 0)
+    local speed = math.abs(v.speed or 0)
+    local point = goal
+    if nav and nav.waypoints then point = aim(v, nav, math.max(4, math.min(10, speed * 30))) end
+    -- Rear first when reversing: the rear is the heading (the wheel turns the vehicle the same way in either gear).
+    local diff = angle_to(v.position, point) - ((v.orientation or 0) + (back and 0.5 or 0)) % 1
     if diff > 0.5 then diff = diff - 1 elseif diff < -0.5 then diff = diff + 1 end
     local turn = diff > 0.02 and R.direction.right or diff < -0.02 and R.direction.left or R.direction.straight
-    -- Slow down for sharp turns and the last stretch.
-    local fast = math.abs(diff) < 0.15 and d > 12
-    local accel = (fast or math.abs(v.speed or 0) < 0.08) and R.acceleration.accelerating or R.acceleration.nothing
+    -- Slow down for sharp turns and the last stretch; turn on the spot when facing away.
+    local accel
+    if nav then
+      local sharp = math.abs(diff)
+      if sharp > 0.2 then accel = speed > 0.03 and R.acceleration.braking or R.acceleration.nothing
+      elseif sharp > 0.08 then accel = speed > 0.12 and R.acceleration.braking or (speed < 0.05 and GAS or R.acceleration.nothing)
+      else accel = (d > 12 or speed < 0.08) and GAS or R.acceleration.nothing end
+    else
+      local fast = math.abs(diff) < 0.15 and d > 12
+      accel = (fast or speed < 0.08) and GAS or R.acceleration.nothing
+    end
+    -- Pressing against units: the throttle stays down (ram through).
+    if action.ramming and game.tick - action.ramming < 30 then accel = GAS end
     ride(accel, turn)
-    -- No progress for 3 s: blocked (a tree, a building, water).
-    if api.distance(v.position, action.last) < 0.05 then
-      action.still = action.still + 1
-      if action.still >= 180 then
-        ride(R.acceleration.nothing, R.direction.straight)
-        return 'blocked'
+    local o = v.orientation or 0
+    local turned = nav and math.abs((o - (action.last_o or o) + 0.5) % 1 - 0.5) > 0.003
+    if api.distance(v.position, action.last) >= 0.05 or turned then
+      action.still, action.last, action.last_o = 0, v.position, o
+      return nil
+    end
+    action.still = action.still + 1
+    -- Still: what it presses against, every 10 ticks. Units alone: push on.
+    if action.still % 10 == 0 then
+      local units, solid, tiles = M.contact(v, p.surface, back, math.abs(diff) > 0.2)
+      if #units > 0 and #solid == 0 and tiles == 0 then
+        action.ramming = game.tick; action.still = 0
+        for _, u in ipairs(units) do M.rammed(action, u) end
+        return nil
       end
-    else action.still, action.last = 0, v.position end
-    return nil
+    end
+    if not nav then
+      -- Steering straight at the target: no progress for 3 s is blocked (a tree, a building, water).
+      if action.still >= 180 then ride(R.acceleration.nothing, R.direction.straight); return 'blocked' end
+      return nil
+    end
+    -- On a path: neither moving nor turning for 1.5 s, it backs up 1 s with the
+    -- wheel turned toward the path and asks again; the second time it is blocked.
+    if action.still < 90 then return nil end
+    action.still = 0
+    local side = back and 'behind' or 'in front'
+    if not action.backed then
+      action.backed = {at={x=v.position.x, y=v.position.y}, front=M.in_front(v, p.surface, back), side=side}
+      action.backing = {until_tick=game.tick + 60, turn=diff > 0 and R.direction.right or R.direction.left}
+      return nil
+    end
+    ride(R.acceleration.nothing, R.direction.straight)
+    action.why = string.format('stuck at (%.1f,%.1f) again after backing off once from (%.1f,%.1f); %s: %s', v.position.x, v.position.y,
+      action.backed.at.x, action.backed.at.y, side, M.in_front(v, p.surface, back))
+    return 'blocked'
   end
   -- Vehicle guns (2.0): a car, tank or spidertron fires its selected gun
   -- (selected_gun_index) from its ammo inventory when its gunner shoots, and

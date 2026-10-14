@@ -3,7 +3,7 @@ return function(api)
   local M = {handlers={}}
   local MAX_PENDING, MAX_HISTORY, MAX_INSTANT, MAX_BYTES, MAX_GUARDS, CHECK_TICKS = 128, 64, 4, 1048576, 8, 10
   -- Outcomes of timed actions that count as the step succeeding.
-  local SUCCESS={duration_elapsed=true,target_mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true}
+  local SUCCESS={duration_elapsed=true,target_mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true,dropped=true}
   -- construct's 'incomplete' (ghosts left for lack of items, or failures) is a failure.
   local forbidden = {attach=true, detach=true, recipes=true, technologies=true, inspect=true, blueprint_export=true, blueprint_list=true, stop=true, describe=true, status=true, observe=true, screenshot=true, map=true, nearest=true, craftable=true, scan=true, power=true, grid=true, rates=true, bottleneck=true, stock=true, platforms=true,
     order_set=true, order_remove=true, orders=true, orders_pause=true, orders_resume=true}
@@ -129,8 +129,14 @@ return function(api)
     local what=a.item or a.recipe or (type(a.items)=='table' and a.items[1]) or a.fuel or a.ammo
     return step.action..(type(what)=='string' and ' '..what or '')..' '..why
   end
+  -- A step given up_to=true or on_short=skip expects to run short at times.
+  local function allows_short(step)
+    return (type(step.args)=='table' and step.args.up_to==true) or step.on_short=='skip'
+  end
+  -- Its shorts stay out of the round line, which is for shorts the plan did not allow for (Grok, shift10: a brick loop
+  -- whose up_to steps found an empty chest put a line in the team block every round; he cancelled two loops over it).
   local function tally(q,step,result)
-    local r=q.loop and not step.order and q.round
+    local r=q.loop and not step.order and not allows_short(step) and q.round
     local key=r and short_key(step,result)
     if not key then return end
     if not r.counts[key] then r.counts[key]=0; r.keys[#r.keys+1]=key end
@@ -180,7 +186,7 @@ return function(api)
   -- Grok, Luna, Sonnet and Muse in shift08). The history entry says short.
   local SHORT={out_of_items=true,nothing_collected=true,inventory_full=true}
   local function short(step,result)
-    if not ((type(step.args)=='table' and step.args.up_to==true) or step.on_short=='skip') then return false end
+    if not allows_short(step) then return false end
     if type(result)~='table' then return false end
     if SHORT[result.outcome] then return true end
     return type(result.reason)=='string' and result.reason:match('^no %S+ in inventory')~=nil
@@ -460,7 +466,7 @@ return function(api)
   M.schema={
     queue_status={returns='the whole history (up to 64 entries); the other queue calls return only the newest 3 and history_total'},
     queue_repeat={steps='replace the queue with a repeating plan; errors pause it; cancel clear=true removes the loop',interval_ticks='60..36000 pause between cycles; default 1800',expected_revision='optional',
-      name='optional 1..32 characters: names the loop in its round lines',note='a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s'},
+      name='optional 1..32 characters: names the loop in its round lines',note='a round whose steps ran short (out_of_items, nothing_collected, inventory_full, none held, or a short reply) puts one line in the team block (queue: "queue NAME round N: K of M steps short: transfer iron-plate inventory_full x2, ..."), only when it differs from the last round\'s; a step with up_to=true or on_short=skip is left out of it (its history entry says short=true)'},
     queue_submit={steps='array of {action,args,wait?,label?,on_fail?}; max 128; wait defaults true; use shoot wait=false for firing while walking; a timed action started by a direct call finishes first (after_direct names it; to preempt it, stop then queue_resume)',mode='append|replace pending only',start='default true',expected_revision='optional optimistic concurrency guard',guards='optional, see guards; replace clears them'},
     queue_edit={expected_revision='required from queue_status',index='1-based pending index',remove='count to remove',steps='replacement steps'},
     queue_cancel={clear='default true; false retains pending steps; always cancels active controls and pauses',expected_revision='optional'},

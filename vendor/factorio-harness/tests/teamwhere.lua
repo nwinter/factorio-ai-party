@@ -98,8 +98,10 @@ eq(sol('status').team.tells[1],'astra (on Nauvis), 0s ago: may I build in claim 
 eq(luna('status').team.tells[1],'astra, 0s ago: may I build in claim 235?')
 sol('tell',{to='astra',text='go ahead'})
 eq(astra('status').team.tells[1],'sol (on Vulcanus), 0s ago: go ahead')
-local tl=astra('tells',{}).tells
+local tl=astra('tells',{since=0}).tells
 eq(tl[#tl].from,'sol'); eq(tl[#tl].away,'on Vulcanus'); eq(tl[1].away,nil)
+tl=astra('tells',{}).tells
+eq(#tl,1); eq(tl[1].from,'sol'); eq(tl[1].away,'on Vulcanus')
 eq(sol('tells',{}).tells[1].away,'on Nauvis')
 -- Chat: mention lines, chat reads and the unread trailer.
 sol('say',{text='@astra the furnaces are yours'})

@@ -252,6 +252,34 @@ fh call status
   item; you carry iron-plate 40 that they smelt`.
 - Spoiling: `inspect` lists spoilable stacks in any of the entity's inventories as `spoiling` (stalest first:
   `agricultural_tower_output: jellynut*50 spoils in 56m21s (6% spoiled)`).
+- Spoiling (Sol, shift10 04:59: stored pentapod eggs hatched, destroyed 114 entities of his camp and killed him 4
+  times). Read on a private 2.0.77 copy of world n:
+  - An item hatches when it spoils if its spoil trigger creates an entity as an enemy: `pentapod-egg` (spoils in
+    15 min) into big-wriggler-pentapod-premature, one each; `biter-egg` (30 min) into a big-biter per 25;
+    `captive-biter-spawner` (30 min) into a behemoth-biter.
+  - A recipe's products start at the count-weighted spoilage of its spoilable item ingredients: bioflux from 15
+    yumako-mash at 80% and 12 jelly at 20% came out 53.5% spoiled. A recipe that resets freshness makes them fresh:
+    pentapod-egg bred from nutrients at 80% came out fresh.
+  - `inspect` lists, per inventory (and a belt's lanes, an inserter's hand, an item on the ground), each spoilable
+    item as `spoiling`, earliest first, with when its first stack spoils, how spoiled that stack is, and how many
+    spoil within 5 min: `chest: yumako*20: the first spoils in 29m53s (50% spoiled)`. An item that hatches says so:
+    `chest: pentapod-egg*15: the first hatches in 4m23s into big-wriggler-pentapod-premature (71% spoiled); all within
+    5 min`, and `hatch_warning` sums those up.
+  - `inspect` on an assembler, furnace or biochamber whose products spoil adds `output_spoil`, what its next products
+    start at: `bioflux start about 53% spoiled (recipe bioflux: the count-weighted spoilage of yumako-mash*15 at 80%,
+    jelly*12 at 20%)`, or `pentapod-egg start fresh (recipe pentapod-egg resets freshness)`.
+  - `supply {item}` on a spoilable item adds `spoil`: the first stack to spoil, where and when, and how many of those
+    read spoil within 5 min. An item that hatches gets `hatch` instead: `pentapod-egg hatch into enemies
+    (big-wriggler-pentapod-premature, one each): the first hatches in wooden-chest at (46.5,48.5) (chest) in 3m52s (74%
+    spoiled); 15 of 18 within 5 min`.
+  - `stock {item}`: each place has `first_spoils_in`, `spoiled_percent` and `within_5_min`; the summary names the
+    first to spoil or hatch; `hatches_into` says into what. Without an item, each line adds the first to spoil or hatch.
+  - The egg watch: eggs (any item that hatches) of ours are looked for every 30 s, near the machines that make or use
+    them (found every 5 min on surfaces where one was made or used), near where they were found before, in every
+    character and every platform hub. When the first stack of a place hatches within 5 minutes, the agents on that
+    surface and whoever built that holder get `eggs hatching: 15 pentapod-egg in wooden-chest at (46.5,48.5): the first
+    hatch into big-wriggler-pentapod-premature in 37s (96% spoiled), ...` at the top of `team.alerts`, once, and again
+    under 1 minute; `fh sleep` wakes with `woke: eggs`.
 - Space Age enemy units count as units everywhere the harness looks for enemies: Gleba's strafer and stomper pentapods
   (`spider-unit`, wrigglers are `unit`) and Vulcanus' demolishers (`segmented-unit`), in auto `shoot`, `kite`, the
   move safety check and `wait_until no_enemies`. Gleba's spawners (`gleba-spawner`, `gleba-spawner-small`) are
@@ -279,6 +307,40 @@ fh call status
   within the arrival radius)`). With `--wait`, the error line carries `last.why`. (shift08, world n: Haiku's pocket south
   of the boiler row at (8..12,42) was closed for the character's box; the old fallback planned with a 0.3-tile box that
   gets out, and the walk pushed at 0.22-tile gaps until 15 stalls.)
+- Narrow gaps (Sol, shift09 03:12 on Gleba: the walk to (55,21) ended in the 0.6-tile gap between two assembling
+  machines under a pipe row, no path request led out of it, and he mined his own pipes to get out, twice):
+  - Where the path ends short of the target, the rest is walked straight only when a box with room to turn (0.7
+    tiles) fits within the arrival radius of the target. When only the character's own box fits there, the walk ends
+    `arrived_near` where the path ended, with `last.pocket`: `(55,21) lies in a gap narrower than 0.7 tiles (pipe
+    (55.5,20.5), pipe (54.5,20.5), assembling-machine-2 (53.5,22.5), assembling-machine-2 (56.5,22.5)) that no path
+    led into; stopped at (51.5,24.4), 4.8 tiles from it (squeeze=true walks in)`. `squeeze: true` walks in anyway.
+  - Squeezed in where no level finds a route (no room to turn where it stands), the walk first follows the gaps to the
+    nearest spot with room to turn (a flood over quarter-tile steps with the character's own box), then asks for its
+    route again; up to three times, each wanting more room: `last.escaped: no path led out of the gap at (54.2,21):
+    walked out to (55,24.3) first`.
+  - The second level starts from the nearest free tile centre only when the character gets there in a straight line
+    (beside a pipe row it lay past the pipes, and every path from there stalled at them).
+  - Closed in (no way out for the character's box), `last.why` and `last.mine_to_get_out` name the fewest of our
+    entities, trees or rocks whose mining opens a way out: `...; mining pipe (-27.5,69.5) opens a way out to
+    (-26.7,69.5)`.
+- Enemies on the way (Opus, shift09 03:20: the pathfinder walked him 30 tiles from a nest, and big biters killed him; on
+  a copy of world n the engine's path from (-110,447) to (62,40) passes 31 tiles from a biter spawner): a path found
+  for `move_to` is checked against the enemy worms and spawners the map shows (on charted chunks).
+  - By default worms only, each with its range + 4 tiles (small 25, medium 30, big 38, behemoth 48).
+    `avoid_enemies: true` adds spawners, with their units' sight (30 tiles on Nauvis, 40 on Gleba), and makes the
+    margin 8; a number 0..32 is that margin; `false` turns the check off. The reply says what is checked
+    (`avoid_enemies: worms (range + 4)`).
+  - Structures within 32 tiles of each other are one nest. A path through a reach (its deepest pass counts) is walked
+    as legs around it: corners of an octagon around each worm's or spawner's reach, the shortest way along them, each
+    leg the engine's path, checked again (up to 4 detours). `last.avoided_enemies` names each nest gone around (`2
+    big-worm-turret, 3 biter-spawner, 3 medium-worm-turret, 2 small-worm-turret around (-12,359)`).
+  - A nest whose reach holds the start or the target is not avoided: `last.enemies_at_start_or_goal` names it.
+  - With no way round, a path that crosses only the margin (outside the weapon's own range) is walked and named in
+    `last.passed_within_margin` (`medium-worm-turret (60,170): 33.7 tiles (range 30)`). One that crosses a range ends
+    the walk `no_safe_route`, with `last.why`: `no way to (100,0) around 4 medium-worm-turret around (100,0): the path
+    passes medium-worm-turret (60,0) (range 30 + 4) at 0.0 tiles`. `--wait` exits 1 with it.
+  - The worms and spawners are read per chunk while the walk waits for its path (at most 8 chunks a tick) and kept a
+    minute, so a nest built or killed in the last minute may not count yet.
 - `move_to {position, combat: true}` (or `combat: RADIUS`, 1..32, default 20) fires at enemies in range while walking,
   as `shoot {auto: true}` does, until the walk ends (`last_combat.outcome: move_ended`, with `ammo_used`); it needs
   ammunition in the ammo slots. `shoot`, `move_to combat` and `kite` fill empty ammo slots from carried ammo first
@@ -497,18 +559,27 @@ fh sleep 900 --until researched                       # ...or until the research
 - A direct `wait_ticks` or `wait_until` while the queue runs is refused (it would pause the queue: "wait_ticks would pause your queue (8 steps, repeating): ..."); `pause_queue: true` pauses it for the wait as before. A paused or empty queue is no reason to refuse. Queue steps are unchanged.
 - A tell or mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered one as `inbox {tick, woke, from}`.
 - `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
-- `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
+- `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
   - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
   - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
   - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`, `told`, `mentioned`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (damaged) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode. A tell or mention wakes once: the reply that woke the agent delivered it (shift07: Luna's 32 repeats of tells already read). `fh sleep` and `fh wait --until` wait out such a repeat (Muse, shift08: "woke 4s ago" refusals burned turns): on a `repeat: true` reply the CLI waits the rest of the 10 s and starts the sleep again (at most 3 tries), and the final reply carries `waited_out: your previous sleep woke (board) 4 s before this one, and a sleep within 10 s of a wake repeats that wake; this sleep started after 7 s more`, with the team block the earlier replies carried. The runtime's own `sleep` reply is unchanged.
   - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`).
   - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
-- A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works.
+- A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works. A wait that ends `failed` names the call (`action: build`) and puts its error on the error line (Sol, shift09: the silo build hit trees after its craft and read only `Control ended: failed`): `error: action_interrupted: Control ended: failed: placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)`. A refused build names what is in the way the same way, direct or after a craft: trees and rocks need mining first, and a cliff takes cliff explosives (a character cannot mine one).
 
 ## Messages and reads
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
+  By remote view it reads any entity on the character's own surface in a chunk our force sees now (radar coverage or a
+  character's sight), as the game's map shows it, and the reply says `by: remote view` (Astra, operator 04:57: inspect
+  worked only within 32 tiles; `surface=` naming the character's own surface added nothing then). `surface=` another
+  surface reads its visible chunks and says `by: remote view` too. The cargo weigh read (`cargo {position}`) does the
+  same (`from.by`). Out of sight and of every chunk our force sees, the refusal names the nearest radar coverage:
+  `target at (3.5,0.5) ((3.5,0.5) is 196.5 tiles from the character at (200.0,0.0)) is in no chunk our force sees now
+  (radar coverage or a character's sight); the nearest radar coverage (or a character's sight) is chunk
+  (96,0)-(127,31), 93 tiles away`; actions keep the 32-tile sight rule, and name the nearest coverage when the target
+  is out of it.
 - Reach is the game's: the distance from the character to the entity's collision box (its edge, not its centre),
   within 10 tiles (`reach_distance`) for buildings and within 2.7 (`resource_reach_distance`) for ore, trees and rocks
   (read on the shift world: a tree 4.3 tiles from its edge was out of reach; a belt 10.25 from its centre, 9.7 from its
@@ -601,7 +672,9 @@ fh sleep 900 --until researched                       # ...or until the research
   outcomes `out_of_items`, `nothing_collected`, `inventory_full`, a give with none held, or a reply's `short`) puts one
   grouped line in the team block under `queue`: `queue loop3 round 4: 3 of 9 steps short: transfer iron-plate
   inventory_full x2, collect coal nothing_collected`. It comes only when a round's list differs from the round
-  before, so a steady loop says it once.
+  before, so a steady loop says it once. A step with `up_to: true` or `on_short: "skip"` is left out of the line (its
+  short was allowed for); `queue_status` history still marks it `short: true`. `on_fail: "skip"` does not count as
+  allowing a short.
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
@@ -680,6 +753,27 @@ fh sleep 900 --until researched                       # ...or until the research
   inserter with no drop target shows `drop_tile` (and `drop_note` when it is empty space: thrown overboard).
 - A `drop` whose pod destination the game refuses returns the items to the hub; what the hub cannot take back stays in
   the cargo pod on the hub, and the error says which.
+- Cargo pods (2.0.77, read on a private server): a pod holds 10 slots and has no weight limit; a hub sends one pod per
+  output hatch at a time (3 on a hub), and a hatch sends its next pod 120 ticks (2 s) after its last. A `drop` list
+  splits into pods in the list's own order (cargo.lua's split, slots alone: Astra's shift09 Gleba kit is
+  `stone-brick*500 assembling-machine-2*1 steel-plate*400`, `steel-plate*600 electric-engine-unit*200`, then the
+  rest), stacks packed together (a part stack in the pod is topped up before a new slot).
+  - Without `full`, only the first pod goes. When the list takes more, the reply's `short` (the compact output's
+    `warning:` line) says what stays in the hub: `not sent, still in the hub: steel-plate*600 ... (a cargo pod holds 10
+    slots and the list takes 3 pods; full: true sends them all)` (Astra, shift09: the first partial drop of a kit
+    read as complete).
+  - `full: true` sends every pod: as many at once as the hatches are free, each pod in `pods [{pod, drop, items,
+    slots}]` (`drop` is its number for the team block and the `drops` read). Pods past the free hatches go as each
+    hatch frees up, apart from the character: its running action and queue go on (`drop` is passive). The reply
+    then has `pods_waiting` (their items) and `until_tick`; `status` shows `drop_pending {platform, pods_sent,
+    pods_left, until_tick}` while they wait and then `last_drop {outcome, result {pods, dropped, not_sent, short},
+    why}` for a minute. `--wait` waits for them (outcome `dropped`; `short` when the hub no longer held some items,
+    `failed` when the platform left or the hub refused, `timed_out`: these exit 1 with `why` on the error line). One
+    full drop at a time per agent: another is refused while pods wait. A queue step `drop` with `full` waits for its
+    pods too.
+  - `dry_run: true` sends nothing and shows the split: `pods` (`pod 1 (10 slots): stone-brick*500 ...`),
+    `pod_slots`, `hatches`, `sends` (what a call with and without `full` sends) and `short` (items the hub holds
+    less of).
 - A `drop` returns its number (`drop: N`). Its pod is followed down, because pods land after the call returns and often
   10-20 tiles from the spot they were aimed at (shift06 14:55: aimed near (14,134), landed at (0,129)). The sender,
   and the teammates named in `to` (a name or a list), hear about it in their team block, at most 4 drop lines per
@@ -895,6 +989,20 @@ fh sleep 900 --until researched                       # ...or until the research
     a later entry, a tile brush that lays nothing).
   - A dry run checks at most 1024 entities and 8192 tiles (repeat copies included) and refuses a larger plan before
     any check. Real engine, shift world: 7 entries on nauvis 9 ms, the platform case 14 ms.
+  - `closes_in` (off a platform, Gemini shift09: a placement trapped the character in a closed box): the plan's
+    footprints that stop a character, within 16 tiles, would leave the character no way out where it stands. The
+    area it reaches is flooded with the character's 0.4-tile box (pathing.lua, as move_to's `closed in`):
+    `placed, these close the character in where it stands (40.5,140.5): the last gap out is where #1 stone-wall
+    (42.5,140.5) goes; the area (39,139)-(42,142) (about 10 tiles) has no gap the character (0.4 tiles wide) fits
+    through; around it: stone-wall`. When several entries each leave a gap: `without any one of #1 ..., #2 ... (of 15
+    planned entries around it) a gap out stays`. Walls, gates and pipes stretch their box toward what they join
+    (2.0.77: 0.289 lone, 0.488 toward a joined wall, pipe, a gate in its line, a pipe-to-ground's open side or a
+    built machine's fluid connection), so a joined line leaves no gap a lone pair would; the plan's walls and pipes
+    are checked joined (fluid connections of machines planned in the same call are not read). Our gates open for the
+    character. `closed_in` instead: `the character is closed in already where it stands ...` (nothing blamed on the
+    plan). A build reply says the same after the fact: `closed_in: the character is closed in now where it stands
+    (0.5,78.5): the last gap out was where pipe (-1.5,78.5) now stands; ...`. About 1 ms a check on a private 2.0.77
+    server (no way out within 16 tiles counts as closed in).
   - `requests_kept` (a paste): for each entity with requests the blueprint lands on (a platform hub, requester and
     buffer chests, landing pads, spidertrons), `space-platform-hub (0,0): its requests stay (14 sections, 1 off)`, and
     when the blueprint carries requests of its own for it, `the blueprint's own requests (1 section) are not applied by
@@ -1006,7 +1114,7 @@ fh sleep 900 --until researched                       # ...or until the research
   (5-9 ms). `min_amount` on oil and the other infinite resources compares their yield %.
 - `fh call labs [--args '{"radius":96}']` (read; an observe scope): one `research` line (name, progress, packs, ETA at the working labs, or `stalled`) and one line per group of adjacent labs (largest 8, at most 256 labs): working count, other statuses, packs the labs lack (and how many labs), the inserters feeding them with idle ones and why (`source transport-belt (0,-3) has nothing the lab needs`, `no_power`), packs absent from all their belts and chests, and what those sources hold. Example: `labs (0,0)-(6,0): 1/3 working, 2 missing_science_packs, lack logistic (2); feeders: 3 inserters (1 lab-to-lab); 1 idle: source transport-belt (0,-3) has nothing the lab needs; no logistic on their 1 belts/chests; sources hold automation 12`.
 - `fh call science [--args '{"pack":"logistic-science-pack","surface":"nauvis"}']` (read; an observe scope): per pack the current research needs (or `pack`), over the whole surface and the same for everyone: `line` (made and used in 10 min from the game's statistics, the assemblers set to it and their states, packs in their output, in chests, on belts and in labs, labs that have none, carried by agents, the largest chests) and `reach`: where else it sits (chests by kind, inserter hands, robots), the inserters taking from its makers (output side full: into what), the inserters feeding the labs (by status, what the waiting ones' sources hold), each logistic network's requesters for it (met, on the way, unmet with reasons, as `supply` gives them) and the worst lab (position, the packs it lacks, its feeder's source, the nearest stock). One scan for all packs (`supply`'s, with labs as the users).
-  Each pack also has `chain` (Sonnet, shift09: "I spend most cycles diagnosing that by hand"): its recipe tree from the pack down, built from the same scan's crafters (assemblers, furnaces, silos; no other find), each step with its makers and made and used per minute (the force's item or fluid statistics over 10 minutes). The line follows the ingredient most of a step's makers lack while more than half of them lack one, and ends at the first step whose makers mostly do not, or that no crafter makes: `chain: chemical-science-pack: 9 of 14 makers lack advanced-circuit, made 12/min, used 30/min; advanced-circuit: 12 of 17 makers lack plastic-bar, made 8/min, used 20/min; plastic-bar: 4 of 4 working, made 30/min, used 52/min`. A maker lacks an ingredient when its status is an ingredient shortage and its input holds less than one craft of it. `chain_tree` lists every step down to what no crafter makes (ores, crude oil, water): `{item, depth, made_per_min, used_per_min, makers, working, states, lacking {ingredient: makers}}`, at most 40 steps (`chain_cut`); a step's makers are the crafters whose recipe (a furnace's last one when idle) makes it, and its children the ingredients of those recipes.
+  Each pack also has `chain` (Sonnet, shift09: "I spend most cycles diagnosing that by hand"): its recipe tree from the pack down, built from the same scan's crafters (assemblers, furnaces, silos; no other find), each step with its makers and made and used per minute (the force's item or fluid statistics over 10 minutes). The line follows the ingredient most of a step's makers lack while more than half of them lack one, and ends at the first step whose makers mostly do not, or that no crafter makes: `chain: chemical-science-pack: 9 of 14 makers lack advanced-circuit, made 12/min, used 30/min; advanced-circuit: 12 of 17 makers lack plastic-bar, made 8/min, used 20/min; plastic-bar: 4 of 4 working, made 30/min, used 52/min`. A maker lacks an ingredient when its status is an ingredient shortage and its input holds less than one craft of it. `chain_tree` lists every step down to what nothing makes: `{item, depth, made_per_min, used_per_min, makers, working, states, lacking {ingredient: makers}, miners, miner_states, outputs}`, at most 40 steps (`chain_cut`); a step's makers are the crafters whose recipe (a furnace's last one when idle) makes it, and its children the ingredients of those recipes. Miners make ores and fluids (Grok, 04:55: the chain said stone has no assembler): a mining drill or pumpjack makes its mining target's products, an offshore pump the fluid it pumps; such a step reads `stone: 7 electric-mining-drill, 1 burner-mining-drill (5 working, 2 output full, 1 no resource left) into 6 transport-belt, 2 wooden-chest, made 40/min, used 52/min` (states in words: working, output full, no resource left, else the status; what item drills put into, `the ground` when nothing), and a resource's required fluid (sulfuric acid for uranium) is the step below it, the drills short of it lacking it. A drill whose resource ran out has no mining target; the product it mined last is kept per drill. A step nothing makes reads `no assembler, furnace, silo, mining drill or pump makes it`. The science read's scan and `team.science` find the mining drills and offshore pumps with the crafters.
 - `fh call supply --args '{"item":"advanced-circuit"}'` (read; an observe scope; optional `"near":{"x":0,"y":0}` with `"radius"` 1..512, default 64, and `"surface"`): where one item sits and why it does not reach the machines that use it, the same for everyone. `flow` (made and used in 10 min on the surface); `where` (the total and each place: belts, requester/passive-provider/active-provider/storage/buffer and other chests, landing pads, platform hubs, vehicles, machine outputs, users' inputs, silo rockets, labs, inserter hands, robots, the team's characters); `chests` (the 5 largest, and what a requester or buffer chest asks for: `requests N`, `no request for it`, or that its section asking for it is off or a circuit sets its requests); `networks`, one line per logistic network with a requester for it (or covering `near`): what its providers, storage and buffer chests hold, how much is reserved for deliveries and free (the engine's free count is net of reservations), what its requester chests hold (robots never take from them), what its robots carry and what is due at its requesters, its logistic robots (idle, out, carrying, charging, waiting to charge, items each), and its requesters met / on the way / unmet with the reasons tallied; then up to 5 unmet ones (most short first, nearest first with `near`) as `(x,y) name have/want (+coming): reason`. Reasons: `not in a logistic network`, `logistics off`, `off by its circuit condition`, `no idle robots`, `all N held are reserved for other deliveries`, `only buffer chests hold it (this requester does not take from buffers)`, `none in providers or storage`, `short N, below its minimum delivery M`, `free stock and idle robots`. Landing pad and platform hub requests are filled from orbit and not listed. `makers` and `users` (assemblers, furnaces with their last recipe, silos; labs when the research needs the pack): counts by status with the missing ingredients (`12 item_ingredient_shortage (12 missing advanced-circuit, 7 missing electronic-circuit)`), the recipes; `makers_worst`/`users_worst`: 3 with positions (no power first, then missing this item, other shortages, output full, low power), a user with what it holds, the feeder carrying the item (its source and that source's request state; or that none of its feeding inserters takes from a place holding or requesting it) and the nearest stock with distance; `feeders` (inserters into the users by status; the waiting ones' sources with none of it by kind, and how many hold it); `takers` (inserters out of the makers; output side full: into what); `counted` (crafters, labs, chests, belts, inserters, robots and networks read; caps 2048 crafters, 1024 labs, 5000 chests, 10000 belts, 8192 inserters, 4096 robots, said when reached). With `near` the entity scans cover that circle and network totals stay whole. About 45 ms on a 6000-belt surface. The same read (item, surface, `near` and radius) within 10 s returns the same reply with `as_of: "4s ago (the same read within 10 s is reused)"` and scans nothing; `science` does the same per surface, packs and research. Example line: `network 8 (18 roboports (-92,-155)-(86,60)): providers 2 (4 reserved, 0 free), storage 0, buffers 0, in its requester chests 98; robots carry 3, 7 due at requesters; logistic robots 147: 19 idle, 128 out (57 carrying), 15 charging, 0 waiting to charge, 2 items each; requesters 21: 5 met, 0 on the way, 16 unmet, 157 items short (reasons: 16 all 2 held are reserved for other deliveries)`.
 - `fh call trace` (a read; remote view: a machine in a visible chunk, the whole of a platform with `platform`):
   - `{"position":{x,y}}` on a machine or lab: `crafting` (its recipe, or the research a lab runs); per ingredient it
@@ -1072,8 +1180,23 @@ Some actions work at a distance, the way a player can through remote view:
 
 - Vehicles: `vehicle {position, enter: true}` gets in (the driver's seat if free, else a car's or spidertron's
   passenger seat; a locomotive or wagon, whose train runs its schedule as usual), within 10 tiles; `vehicle {exit:
-  true}` gets out; `vehicle {drive: {x,y}}` drives the car or tank you drive there (a timed action steering as a
-  player's keys do: outcomes `arrived`, `blocked` after 3 s without progress, `timed_out`; `--wait` waits for it);
+  true}` gets out; `vehicle {drive: {x,y}}` drives the car or tank you drive there, a timed action steering as a
+  player's keys do (Opus, shift09 03:20: a tank driven straight at its target got stuck on cliffs and was killed;
+  Astra, shift10 04:10: a drive into an attack group ended blocked and left the tank surrounded):
+  - It follows the engine's path for the vehicle's box (a square as wide as its diagonal plus a tile, else as wide as
+    it is long, else as wide as it is wide), around cliffs, water, trees and buildings, aiming a few tiles ahead on the
+    path. `last.path_length`.
+  - Neither moving nor turning for 1.5 s against something solid, it backs off 1 s with the wheel turned toward the
+    path and asks for a path again, once (`last.backed_up: stuck at (30.0,123.7) (in front: cliff (30,126.5)):
+    backed off and asked for a new path`); stuck again it ends `blocked`, `last.why` naming what is in front.
+  - Units in the way (biters, pentapods) are no block: it keeps the throttle and pushes through, as a player holding
+    the key does; `last.rammed` counts the units it pressed against or hit. Buildings, cliffs, rocks and water stop it.
+  - `reverse: true` backs there, rear first (out of a crowd, off an obstacle), the same way.
+  - `avoid_enemies` works as for `move_to`. `pathfind: false` steers straight at the target (`blocked` after 3 s
+    without progress).
+  - Outcomes `arrived`, `blocked`, `unreachable` (no path for any of the three boxes, `last.why`),
+    `no_safe_route`, `timed_out`; `--wait` waits for it and shows `path_length`, `backed_up`, `rammed` and the enemy
+    fields.
   `vehicle {position, go_to: {x,y}}` sends a spidertron walking by itself (from outside, or the one you ride; one
   with an empty fuel slot does not walk, and the reply says so: fuel goes in with `transfer`);
   `vehicle {}` says where you sit and, for a vehicle with guns, `guns`: each slot's gun, its ammo and count, range,
@@ -1138,8 +1261,17 @@ fh --bot astra call status                                                      
 - Death ends the bot's action and queue step with outcome `died`. It respawns at its spawn spot after 600 ticks with the freeplay respawn items; `status` reports `dead_until_tick` meanwhile. Mining its corpse takes the items back, and so does `transfer` (below).
 - The server's `auto_pause` stops the game while no client is connected; keep a director client connected while bots play.
 - Cost check (operator): `remote.call("agent_harness","profile_ticks",600)` times the harness tick for 600 ticks and writes the average to the server log (`agent-harness tick average ...`). Nine bots: about 0.05 ms per tick idle, 0.26 ms with all nine pathfinding at once.
-- Where the time goes (operator): `/silent-command rcon.print(remote.call("agent_harness","profile_ticks",{seconds=60}))` (1..600 s; `{stop=true}` ends a run early) times every dispatch by action (`observe/sleep_check` with its scope; operator relays marked `(operator)`), the encoding of each reply (`encode <action>`, timed once more beside control.lua's own), every forwarded event by name, the harness tick and parts of the reply and tick (`part board.team`, `part threat.on_damaged`, ...; inside their dispatch or tick). The server log gets `agent-harness profile second tick=T n=N key=K time=...` per key per game second (`key=*` is all harness work in that second, parts excluded), then `profile total` per key and `profile done`. A LuaProfiler reading cannot be compared in Lua, so rank them offline: `python3 tools/profile_log.py factorio-current.log` prints the worst keys (count, total, average, worst second) and the busiest game seconds. Runtime-only; nothing runs while no profile is on. Parts timed (task-statuscost): a full status's `survey.summary`, `threat.summary`, `pipes.overlong`, `ground.alerts`, `threat.alerts`, `where.team`, `belt.note`, `orders.brief`; every reply's `board.team` and inside it `research.lines`, `threat.watch`, `platalerts.lines`, `drops.lines`, `pushalerts.lines` (its scan, with `networks.alert_groups`), then `chat.unread`, `research.shift_block`, `networks.lines`, `selfview.retro`, `selfview.review_due`, `idle.request`, `selfview.request`, `tells.operator_lines`, `orders.line`, `platalerts.note`, `visuals.worked`, `claims.worked`, `carry.carry`; the heavy reads' `supply.scan`, `supply.chain`, `networks.read`.
-- Status cost: the factory survey (machines, belts, science, plates, fuel/power/ammo/lab warnings), the fluid check, the pollution read and the chart walk are kept per force and surface and shared by every agent there (survey, fluid and pollution every 10 s, the chart every minute; `factory_as_of`/`threats_as_of` give the tick when older). The enemy bases around an agent stay its own (every 10 s). fh's wait polls use `status {brief: true}`; `status {brief: true, alerts: true}` adds the `alerts` block (losses, attacked areas, groups, enemy news), read from what the game reported without a scan (the stream overlay reads this).
+- Where the time goes (operator): `/silent-command rcon.print(remote.call("agent_harness","profile_ticks",{seconds=60}))` (1..600 s; `{stop=true}` ends a run early) times every dispatch by action (`observe/sleep_check` with its scope; operator relays marked `(operator)`), the encoding of each reply (`encode <action>`, timed once more beside control.lua's own), every forwarded event by name, the harness tick and parts of the reply and tick (`part board.team`, `part threat.on_damaged`, ...; inside their dispatch or tick). The server log gets `agent-harness profile second tick=T n=N key=K time=...` per key per game second (`key=*` is all harness work in that second, parts excluded), then `profile total` per key and `profile done`. A LuaProfiler reading cannot be compared in Lua, so rank them offline: `python3 tools/profile_log.py factorio-current.log` prints the worst keys (count, total, average, worst second) and the busiest game seconds. Runtime-only; nothing runs while no profile is on. Parts timed (task-statuscost): a full status's `survey.summary`, `threat.summary`, `pipes.overlong`, `ground.alerts`, `threat.alerts`, `where.team`, `belt.note`, `orders.brief`; every reply's `board.team` and inside it `research.lines`, `threat.watch`, `platalerts.lines`, `drops.lines`, `pushalerts.lines` (its scan, with `networks.alert_groups`), then `chat.unread`, `research.shift_block`, `networks.lines`, `selfview.retro`, `selfview.review_due`, `idle.request`, `selfview.request`, `tells.operator_lines`, `orders.line`, `platalerts.note`, `visuals.worked`, `claims.worked`, `carry.carry`; the heavy reads' `supply.scan`, `supply.chain`, `networks.read`; the background jobs' `pushalerts.tick`, `survey.tick`, `threat.tick`, `networks.tick`.
+- Background reads (task-statuscost; the 01:15 profile on world n had single calls of 60-150 ms in status and the team block): the surface-wide reads run in the harness tick as jobs of small steps, their state in storage so every peer runs the same, and replies read the last finished one.
+  - Walks and pacing (walk.lua; operator 04:00: in the 03:58 profile a step that found one type over a whole surface burst to 138 ms in a game second). A job covers a surface's box of chunks one band a step, every type it needs in one find; a band is rows by columns of chunks sized from the band before so it finds about 250 entities, and an entity is kept by the band its position falls in. A job reads 150 found entities a step. Its steps are spaced so a pass spreads over 80% of its period, by the number of steps its last pass took (4 ticks a step before any pass; a pass past 80% goes on every 4 ticks). The box is where the force built, kept in storage and grown by every walk from what it finds, plus 4 chunks, plus 4 chunks around every player on the surface; with none yet, the generated chunks the threat chart saw; with neither, one whole-surface find (once per surface). A building more than 4 chunks from every other building and every player is found once one of them comes near.
+  - The factory survey (`status` factory, machines, warnings): per force and surface read in the last 5 minutes, redone when 30 s old: one walk of the survey's types, undergrounds and belts, then the summary. `factory_as_of` says when that survey started. `machines=true` still surveys at once.
+  - The chart (`status` chart, cloud extent): redone when 60 s old as a sweep of the box of generated chunks the last chart saw, grown by 4 chunks and to every player on the surface, 2000 chunk positions a tick. `threats=true` still walks every chunk at once.
+  - The nests (`status` enemies, nest news): each agent's spawner search stays its own (10 s, 60 s from replies); a base's nearest building of ours and its cloud gap are kept per surface and base chunk for everyone (5 min, 1 min), at most 2 searches a call, so a base found for the first time can read `? tiles` until a later call.
+  - The push alerts' read: redone when 30 s old, one walk of every alert type per planet, then the game's alerts, the network groups (where the boiler alert looks for fuel, bounded) and the merge; the digest and `game_alerts` read the last finished one (`scanned` says its age).
+  - The networks view: redone when 60 s old, per surface one walk of generators, machines, boilers and turrets, then the boilers to their networks, their feeders 2 boilers a step (one read per belt lane), the rows, the logistic networks, the turret line. The pole map is its own walk, redone when 60 s old; a new network can take up to about 3 minutes to show.
+  - The science line (`team.science`): every 5 minutes, labs per planet and crafters walked the same way.
+  - A step that fails ends its job and is noted (`push_errors`, `survey_errors`, `view_errors`, `map_errors`, `chart_errors`, `science_line_errors` in the harness state); the last result is kept and the next job starts after the usual age. A force's or surface's very first read (after a deploy) is still made at once.
+- Status cost: the factory survey (machines, belts, science, plates, fuel/power/ammo/lab warnings), the fluid check, the pollution read and the chart walk are kept per force and surface and shared by every agent there (the survey every 30 s, fluid and pollution every 10 s, the chart every minute; `factory_as_of`/`threats_as_of` give the tick when older). The enemy bases around an agent stay its own (every 10 s). fh's wait polls use `status {brief: true}`; `status {brief: true, alerts: true}` adds the `alerts` block (losses, attacked areas, groups, enemy news), read from what the game reported without a scan (the stream overlay reads this).
 
 ## Profiles, speech bubbles, cameras
 
@@ -1179,6 +1311,15 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `owner` takes an agent name, display name or player name without `pog-`, any case; an unknown name fails with the
   roster. Anyone may take an open unowned item or add a note; only the owner or requester changes status, reassigns or
   releases (`owner: ""`). Titles are cut at 120 bytes and notes at 200 instead of failing; the last 10 notes are kept.
+- `board_update {id, title?, needs?}` (Astra, shift10: a request's ask could not be corrected after posting) replaces
+  the title and what it asks for (`needs`: text, an array of item names or `{name, count}`, or `{item: count}`; `""` or
+  `[]` clears it). Its poster, its owner or the operator may; anyone may once the one responsible (the owner, else the
+  poster) has made no request for 20 minutes (30 for a project; a project with no owner: anyone, as its goal). Each
+  change goes into the item's `history` (shown by `board {id}`, the last 10: `title changed by astra: 'need 100 green
+  circuits' -> 'need 200 green circuits' (3m00s ago)`, `needs changed by sol: electronic-circuit*100 ->
+  electronic-circuit*200, copper-cable*50`), is a board event (`title_changed`, `needs_changed`), and its owner and
+  poster hear of it in `team.board` with the old value (`#12 (your request) title changed by grok: need 200 green
+  circuits at (10,4) - was: need 200 green circuits`). The team plan's goals stay `board_plan`'s.
 - `board` returns `plan` (below), `items` (list rows carry the last 2 notes and `note_count`; `id` gives one item in
   full), `matched` and `open_unowned`. `status:"active"` means open, claimed, doing or blocked. An agent's plain
   `board` read (no filter, no limit) is about 3 KB: the newest items with their last note (`note_count`), the plan's
@@ -1259,10 +1400,35 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   near our buildings, once each and again when grown by half; then up to 6 platform lines, below) and `reminders`
   (profile, once a game minute until display_name, glyph and color are set). Directors get none; `peek: true` on any
   request leaves the hints for later.
+- `team.science` (scienceline.lua; operator 03:22: Luna made about 47 reads in 10 minutes to watch copper, power
+  and labs): one line per agent, at most every 5 minutes and only when its facts changed (the research, the labs
+  working count, the limiting pack and its short step, the headroom in 10% steps, how many boilers are under 20 min
+  and not refilled and the lowest one's step under 20/10/5 min): `science on nauvis: research plastics-2 41%; labs
+  12 of 20 working; limiting chemical-science-pack: 8 of 20 labs have none, made 12/min, used 30/min; first short
+  step plastic-bar: 4 of 4 working, made 30/min, used 52/min (chemical-science-pack > advanced-circuit >
+  plastic-bar); power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); boilers 13: 11 with fuel at their
+  feeders, 2 under 20 min of their own fuel and not refilled, lowest 2 min`. The surface is the one with the most labs (labs on platforms are not
+  counted); the limiting pack is the one the most of its labs hold none of (`every lab holds every pack` when none);
+  its made and used per minute are the force's 10 minute statistics, and the short step is where the `science`
+  chain ends (the chain's path in brackets when it goes down). Power is that surface's largest electric network by
+  capacity, its draw the 5 minute average (the networks read), and boilers as in `boiler_fuel` below. The line is
+  rebuilt every 5 minutes by a background job of small steps (Background reads above): each planet's labs walked
+  and read 100 a step, the crafters walked (assembling-machine, furnace, rocket-silo; 2048 at most), recipes 150 a
+  step, then the chain; a step that fails keeps the last line and is counted in `storage.science_line_errors`.
 - Game alerts and warnings in `team.alerts` (pushalerts.lua): what a player's alert panel and entity status icons
   show, without pulling a full status.
   - Entity statuses on planet surfaces: `no power`, `not connected to power` (no pole reaches them), `low power`,
     `out of fuel`, gun turrets `out of ammo`, flamethrower turrets `out of flamer oil`.
+  - Lost sources on planet surfaces (Haiku, 04:52: an inserter with no source fails silently; a boiler went no_fuel
+    when its feed chest was removed): an inserter that had a pickup target and has none now, or whose drop target is
+    gone, by area and by what it feeds (kinds `lost_source.<fed>` and `lost_target.<fed>`; fed is boiler, furnace,
+    lab, assembler, else the entity type), with up to 4 inserters, what each read and what it puts into: `1 inserter
+    feeding boiler lost its pickup target near (61,15): burner-inserter (60.5,14.5) read wooden-chest (41.5,13.5),
+    puts into boiler (60,16.5)`; `1 inserter feeding furnace lost its drop target near (45,15): inserter (44.5,14.5)
+    put into stone-furnace (44,16), reads iron-chest (41.5,13.5)`. Each read remembers every inserter's targets (the
+    same pickup and drop targets inspect's `io_warning` reads); one stays in its group, with what it read and fed then,
+    until it has a target again or is removed. An inserter that never had a pickup target (it takes from the ground)
+    is never in one. `game_alerts {kind:"lost_source"}` lists every fed kind.
   - The game's alerts, read from an agent player's alert panel: `no_material_for_construction`,
     `not_enough_construction_robots`, `not_enough_repair_packs`, `no_storage`, `train_out_of_fuel`,
     `unclaimed_cargo`, `collector_path_blocked`, ... Attacks, losses and the game's own turret alert are told
@@ -1282,21 +1448,32 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   - Per network (networks.lua), routed and limited the same way, with no hint: `power_high`, an electric network
     whose draw was at or above 85% of its capacity in every 5-second sample of the last 2 minutes (`electric #7 draw
     at or above 85% of capacity for 2 min: 20.0 MW of 22.1 MW now; 3 machines on low power`; worse is the next 5%
-    step: `(was 85%)`); `boiler_fuel`, boilers whose supply is under 20 minutes at the draw and running down, told
-    again when one drops under 10 and under 5 or when more boilers drop under 20 (Haiku, shift09: 10 minutes left was
-    too late to feed by hand; 01:53: it fired for hours on 13 working boilers fed from a belt and a chest with 150+
-    coal): `3 boilers under 20 min of fuel at this draw, 1 under 10, 1 under 5 and running down near (43,18) (electric
-    #7: 11 boilers, 32 min for all with their feeders' sources); boiler (66,16) 2 min: no inserter feeds it; boiler
-    (4,22) 12 min: no inserter feeds it; boiler (60,16) 17 min: burner-inserter (60,14) from wooden-chest (41,13)
-    holding 400 coal; fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16
-    on 2 tiles, nearest (31,13), (31,12)` (the lowest 3, `+N more`) and `(was 3 under 20 min, lowest 17 min)` when
-    told again. A boiler's supply is its own fuel plus, for each source an inserter feeding it takes from (an
-    inserter within 4 tiles whose drop target is the boiler, by its pickup target), that source's stock shared among
-    the boilers it feeds: a chest or machine counts all it holds of the fuel, a boiler in a chain its fuel slot, a belt
-    its tile and up to 64 tiles upstream (boilers along one belt share it). Minutes are that supply at an even share
-    of the draw of the generators the boilers feed. Running down: less than 90% of the supply at the networks view's
-    last look (30 s before; a boiler's first look never counts), so a boiler kept supplied by a belt or a refilled
-    chest is not told, whatever its own fuel. The fuel is what the boilers burn or hold (when they hold none, the line
+    step: `(was 85%)`); `boiler_fuel`, boilers under 20 minutes of their own fuel at the draw that nothing refills,
+    told again when one drops under 10 and under 5 or when more boilers drop under 20 (Haiku, shift09: 10 minutes
+    left was too late to feed by hand; 01:53, 03:20 and shift10 03:36: it fired on working boilers fed from full belts
+    and chests): `2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, not refilled, near
+    (35,19) (electric #7: 11 boilers, 1 with fuel at their feeders); boiler (66,16) 2 min: no inserter feeds it;
+    boiler (60,16) 0 min: burner-inserter (60,14) from wooden-chest (41,13) holding no fuel; fuel within 64 tiles:
+    wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16 on 2 tiles, nearest (31,13), (31,12)`
+    (the lowest 3, `+N more`) and `(was 2 under 20 min, lowest 2 min)` when told again. Minutes are a boiler's own
+    fuel (burning and in its fuel slot) at an even share of the draw of the generators the boilers feed; an inserter
+    keeps that low on purpose, so it alone never alerts. Not refilled is either of:
+    - no feeder can bring fuel: no inserter within 4 tiles whose drop target is the boiler holds fuel in its hand or
+      takes from a source holding fuel (a chest or machine, a boiler in a chain (its fuel slot), or a belt with fuel on
+      its tile or up to 64 tiles upstream, an underground followed from exit to entrance; when that belt run holds
+      none, an inserter within 3 tiles that drops onto the run from a chest or machine holding fuel counts too:
+      `(with 6 belt tiles up to it holding no fuel; loaded by fast-inserter (-24,35) from requester-chest (-24,34)
+      holding no fuel)`). Any of coal, solid-fuel, wood, rocket-fuel and nuclear-fuel counts at a source, besides
+      what the boiler burns;
+    - or its own fuel is draining (a belt bringing fuel slower than the boiler burns it): it fell by 80% or more
+      of what it burns at its share of the draw since its newest look 2 minutes or more back, or by 25% or more
+      since its newest look 4 minutes or more back (shift10: boiler (-15,42) went from 8 to 6 min in 2 minutes,
+      then to 3 in 9): `boiler (-22,41) 2 min, down from 4 min 130 s before: inserter (-22,39) from transport-belt
+      (-13,36) (with 6 belt tiles up to it holding 36 coal)`. An inserter-kept buffer swings by a few items and has
+      no trend, well under either bar. A boiler's looks are kept 6 minutes, so one is told nothing this way in its
+      first 2 minutes. A boiler at 0 can fall no further and shows as `out of fuel` above.
+
+    The fuel nearby is what the boilers burn or hold (when they hold none, the line
     names the fuels it looked for: coal, solid-fuel, wood, rocket-fuel, nuclear-fuel); chests nearby are the 3 nearest
     holding it (and a count of the rest), belts the tiles holding it with the 2 nearest (each read is capped at 300
     chests and 300 belt tiles found within 64 tiles);
@@ -1350,7 +1527,7 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the agent's surface first, `+N more networks: fh call networks`), one line per network, numbers only:
   `nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%);
   solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11:
-  fuel (theirs and their feeders' sources) 32 min at this draw, 3 under 20 min and running down (lowest 2 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
+  their own fuel 31 min at this draw, 1 with fuel at their feeders, 2 under 20 min not refilled (lowest 4 min)`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
   (0,25)-(125,75), construction area (-30,-5)-(155,105); logistic robots 147: 0 idle, 142 working, 3 charging, 2
   waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; no idle logistic
   robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5`, `nauvis
@@ -1417,11 +1594,14 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   gets it in the next reply's `team.tells` and, if asleep, wakes with `woke: told` (and `tell: "from: text"`); it is
   never in the game chat, `chat` reads, the `chat:` trailer or `chat_remaining`, and draws no bubble. Unknown names
   fail with the roster; yourself is left out. The reply: `seq`, `to` (names, or `team`), and `away` for recipients on
-  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}`
-  returns the tells you sent or received `{seq,tick,from,away?,to,team?,text}`, by default those since your last
-  `tells` read (the last 10 on a first read; `since: 0` lists them all); the operator path returns every tell, which
+  another planet, a platform or in a cargo pod (`sol is on Vulcanus`). `tells {since?, limit?}` (limit 1..100,
+  default 30, newest kept) lists tells oldest first as `{seq,tick,ago_s,from,away?,to?,team?,fyi?,text}`. Without
+  `since`: the last 30 you received (team tells included), at every read, whether or not a team block showed them
+  (Muse, shift10: two tells shown once and missed were lost). With `since`: the ones you sent or received after that
+  seq, each with `to` (`since: 0` lists them all). `cursor` is the newest seq. The team block still shows each tell
+  once. The operator path returns every tell, which
   the stream shows on its logistics ticker (`-> Sol: text`, never voiced). CLI: `fh tell luna "text"`,
-  `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells --since N`.
+  `fh tell luna,sol - <<'EOF'`, `fh tell team "text"`, `fh tells`, `fh tells --since N`, `fh tells --limit 10`.
 - `operator {text}` (1..500 characters, one line; longer is cut and the reply carries `cut {length, kept}`) files a
   request to the operator: harness bugs, tool requests, things viewers asked for that the agents cannot do. The reply:
   `seq`. At most one a minute and 10 an hour per agent; a refusal names the wait. No teammate sees it. The operator

@@ -1,4 +1,5 @@
 -- Run from repository root: lua tests/survey.lua
+package.path='mod/agent-harness_0.1.0/?.lua;'..package.path  -- (walk.lua)
 local function eq(a,b) assert(a==b,tostring(a)..' ~= '..tostring(b)) end
 local function has(list,pattern)
   for _,s in ipairs(list or {}) do if s:find(pattern,1,true) then return s end end
@@ -135,6 +136,82 @@ eq(scans,2)
 eq(S.summary(q).machines['assembling-machine-1'],'1/1 working'); eq(S.summary(p).machines['assembling-machine-1'],'2/3 working, 1 low_power')
 eq(S.summary(q).as_of,200000)
 game.tick=200600; S.summary(q); eq(scans,3)
+
+-- The background survey (task-statuscost, 01:15 on world n: survey.summary 60 ms in a full status; operator 04:00:
+-- survey.tick 50-57 ms in a game second every 10 s): for each force and surface read lately, every 30 s a job walks
+-- the surface a band of chunks a step (walk.lua; every type in one find) and reads 150 entities a step, a step every
+-- few ticks, then makes the same summary; a status reads the last finished one and finds nothing.
+do
+  storage.survey_cache=nil; storage.survey_jobs=nil; storage.survey_bg=nil; storage.survey_read=nil
+  game.tick=300000
+  local at_once=S.summary(p)
+  game.forces={[force.name]=force}
+  game.get_surface=function(i) return i==surface.index and surface or nil end
+  for _,e in ipairs(ugs) do e.valid,e.type,e.name=true,'underground-belt','underground-belt' end
+  for _,e in ipairs(belts) do e.valid,e.type=true,'transport-belt' end
+  local find=surface.find_entities_filtered
+  local per_tick,wholes,extra=0,0,{}
+  -- (the walk's finds: every type it asks for, inside the band's area)
+  surface.find_entities_filtered=function(f)
+    per_tick=per_tick+1
+    if f.position then return find(f) end
+    if not f.area then wholes=wholes+1 end
+    local types={}
+    for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end
+    local out={}
+    for _,list in ipairs({entities,ugs,belts,extra}) do
+      for _,e in ipairs(list) do
+        local q,a=e.position,f.area
+        if types[e.type] and (not a or (q.x>=a[1][1] and q.x<=a[2][1] and q.y>=a[1][2] and q.y<=a[2][2])) then out[#out+1]=e end
+      end
+    end
+    return out
+  end
+  local function surveyed(list)
+    local out={}
+    for _,w in ipairs(list) do if not w:find('^inventory') and not w:find('^hoarding') then out[#out+1]=w end end  -- per call
+    return table.concat(out,' | ')
+  end
+  local function pass()
+    local ticks,worst=0,0
+    repeat
+      game.tick=game.tick+1; per_tick=0; S.tick(game.tick); ticks=ticks+1
+      worst=math.max(worst,per_tick)
+    until (ticks>1 and not (storage.survey_jobs or {})['player/1']) or ticks>3000
+    assert(ticks<3000,'the job ends')
+    assert(worst<=2,'at most the step\'s find and a belt end check a tick: '..worst)
+    return ticks
+  end
+  game.tick=game.tick+1800
+  pass()
+  local entry=storage.survey_cache['player/1']
+  eq(entry.tick,301801,'the job\'s start, 30 s on')
+  eq(wholes,1,'no box known yet: one whole-surface find')
+  per_tick=0
+  game.tick=game.tick+300
+  local later=S.summary(p)
+  eq(per_tick,0,'the status reads the last survey')
+  eq(later.as_of,301801)
+  eq(surveyed(later.warnings),surveyed(at_once.warnings),'the same summary')
+  for name,line in pairs(at_once.machines) do eq(later.machines[name],line) end
+  eq(later.factory.belt_ends,at_once.factory.belt_ends)
+  -- The next survey: bands of chunks only, the same summary.
+  wholes=0; game.tick=game.tick+1800
+  pass()
+  eq(wholes,0,'bands only once the box is known')
+  later=S.summary(p)
+  eq(surveyed(later.warnings),surveyed(at_once.warnings),'the same summary from bands')
+  for name,line in pairs(at_once.machines) do eq(later.machines[name],line) end
+  -- A step that fails ends its job, noted in survey_errors; the last survey is kept and the next job waits 30 s.
+  extra[1]={valid=true,type='ammo-turret',name='gun-turret',position={x=0,y=0},status=0,get_inventory=function() error('broken turret') end}
+  game.tick=game.tick+1800
+  local kept=storage.survey_cache['player/1']
+  for _=1,3000 do game.tick=game.tick+1; S.tick(game.tick); if storage.survey_errors then break end end
+  eq(storage.survey_errors.count,1); assert(storage.survey_errors.last:find('broken turret',1,true),storage.survey_errors.last)
+  eq(storage.survey_jobs['player/1'],nil); eq(storage.survey_cache['player/1'],kept,'the last survey is kept')
+  surface.find_entities_filtered=find
+  game.forces=nil
+end
 -- With the runtime's research rate (research.lua, sampled every 10 s), the ETA is the last minute's rate and says so;
 -- a fallback to a longer window says the last minute had none (Grok 03:20: a starved window said 2 hours, the
 -- finish came in under 40 minutes). 300 units x 30 = 9000 work; half done, 4500 left at 2.5 per tick = 1800 ticks.

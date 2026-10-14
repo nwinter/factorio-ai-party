@@ -277,6 +277,99 @@ return function(api)
   local function dist(a, b) return ((a.x-b.x)^2+(a.y-b.y)^2)^0.5 end
   M.MAX_ENTITIES, M.MAX_TILES = 1024, 8192
 
+  -- Walls, gates and pipes stretch their collision box toward what they
+  -- join (2.0.77: a lone wall or pipe is 0.289 from its centre on each side,
+  -- joined it reaches 0.488 on that side, so joined ones leave no gap a
+  -- character passes): walls join walls and gates along the gate's line,
+  -- pipes join pipes, a pipe-to-ground's open side, and a built machine's
+  -- fluid connection on their tile. For planned ones (recs near the
+  -- character): their stretched sides, and a built neighbour's side toward
+  -- them, as flood boxes {x0, y0, x1, y1, name, rec, ids = recs it needs}.
+  -- Fluid connections of machines planned in the same call are not read.
+  local JOINS = {wall=true, gate=true, pipe=true, ['pipe-to-ground']=true}
+  local SIDES = {{1, 0, 4}, {-1, 0, 12}, {0, 1, 8}, {0, -1, 0}}
+  local REACH = 0.488
+  local function joins(at_type, at_dir, to_type, to_dir, side)
+    local back = (side+8)%16
+    if at_type == 'wall' then return to_type == 'wall' or (to_type == 'gate' and to_dir%8 == side%8) end
+    if at_type == 'gate' then return side%8 == at_dir%8 and (to_type == 'wall' or to_type == 'gate') end
+    if at_type == 'pipe' then return to_type == 'pipe' or (to_type == 'pipe-to-ground' and to_dir == back) end
+    if at_type == 'pipe-to-ground' then return side == at_dir and (to_type == 'pipe' or (to_type == 'pipe-to-ground' and to_dir == back)) end
+    return false
+  end
+  -- The piece of a box between its edge and REACH from its centre on a side.
+  local function stretch(b, c, side)
+    local l, t, r, d = b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y
+    if side == 4 then return {r, t, c.x+REACH, d} elseif side == 12 then return {c.x-REACH, t, l, d}
+    elseif side == 8 then return {l, d, r, c.y+REACH} else return {l, c.y-REACH, r, t} end
+  end
+  function M.joined_pieces(s, force, recs)
+    local mine, lo, hi = {}, nil, nil
+    for _, r in ipairs(recs) do
+      if r.proto and JOINS[r.proto.type] and r.pos then
+        mine[key(math.floor(r.pos.x), math.floor(r.pos.y))] = r
+        lo = lo and {x=math.min(lo.x, r.pos.x), y=math.min(lo.y, r.pos.y)} or {x=r.pos.x, y=r.pos.y}
+        hi = hi and {x=math.max(hi.x, r.pos.x), y=math.max(hi.y, r.pos.y)} or {x=r.pos.x, y=r.pos.y}
+      end
+    end
+    local pieces = {}
+    if not lo then return pieces end
+    -- Built neighbours: walls, gates, pipes, and machines' fluid connections
+    -- by the tile they take (the side of the machine they face).
+    local built, ports = {}, {}
+    local area = {left_top={x=lo.x-1.5, y=lo.y-1.5}, right_bottom={x=hi.x+1.5, y=hi.y+1.5}}
+    for _, e in ipairs(try(function() return s.find_entities_filtered{area=area, force=force, limit=4096} end) or {}) do
+      if e.valid and e.type ~= 'entity-ghost' then
+        if JOINS[e.type] then built[key(math.floor(e.position.x), math.floor(e.position.y))] = e
+        elseif (try(function() return #e.fluidbox end) or 0) > 0 then
+          for i = 1, #e.fluidbox do
+            for _, c in ipairs(try(function() return e.fluidbox.get_pipe_connections(i) end) or {}) do
+              local tp, from = c.target_position, c.position
+              if tp and from and c.connection_type ~= 'underground' then
+                local tk = key(math.floor(tp.x), math.floor(tp.y))
+                ports[tk] = ports[tk] or {}
+                table.insert(ports[tk], {x=math.floor(from.x)-math.floor(tp.x), y=math.floor(from.y)-math.floor(tp.y)})
+              end
+            end
+          end
+        end
+      end
+    end
+    for k, r in pairs(mine) do
+      local t, dir = r.proto.type, r.dir or 0
+      -- A gate opens for the character, its stretched sides too: none for it.
+      if t == 'gate' then t = nil end
+      local x, y = math.floor(r.pos.x), math.floor(r.pos.y)
+      for _, sd in ipairs(SIDES) do
+        local nk = key(x+sd[1], y+sd[2])
+        local o, e = mine[nk], built[nk]
+        local side = sd[3]
+        local port = false
+        for _, d in ipairs(t == 'pipe' and ports[k] or {}) do if d.x == sd[1] and d.y == sd[2] then port = true end end
+        if not t then
+          -- (a gate)
+        elseif o and o ~= r and joins(t, dir, o.proto.type, o.dir or 0, side) then
+          -- Both planned: this side stretches only with the other placed too.
+          local b = stretch(r.box, r.pos, side)
+          pieces[#pieces+1] = {b[1], b[2], b[3], b[4], r.name, r, ids={r, o}}
+        elseif e and joins(t, dir, e.type, e.direction, side) then
+          local b = stretch(r.box, r.pos, side)
+          pieces[#pieces+1] = {b[1], b[2], b[3], b[4], r.name, r, ids={r}}
+          -- The built one stretches toward it once it stands (a gate opens: none).
+          if e.type ~= 'gate' then
+            local eb = stretch(e.bounding_box, e.position, (side+8)%16)
+            pieces[#pieces+1] = {eb[1], eb[2], eb[3], eb[4], e.name, r, ids={r}}
+          end
+        elseif port and not o then
+          -- A built machine's fluid connection takes this tile from that side.
+          local b = stretch(r.box, r.pos, side)
+          pieces[#pieces+1] = {b[1], b[2], b[3], b[4], r.name, r, ids={r}}
+        end
+      end
+    end
+    return pieces
+  end
+
   -- The check. plan: {kind = ghosts | paste | build, mode? (a paste's),
   -- entities = {{index, copy?, name, position, direction (number), quality?,
   -- item?}}, tiles = {{index?, name (tile), position, item?}}, details?,
@@ -1008,6 +1101,54 @@ return function(api)
         end
       end
       if #targets > 0 then out.standing = st end
+    end
+
+    -- Whether the plan closes the character in where it stands (Gemini,
+    -- shift09: a placement trapped the character in a closed box): its area
+    -- flooded with the character's box (pathing.lua) with the planned
+    -- footprints that stop a character, and the entries that each fill the
+    -- last gap out. Planned tiles a character walks on open water.
+    if character and not on_platform and api.pathing then
+      local here, half = p.position, api.pathing.half(character)
+      local boxes, open, near = {}, nil, {}
+      for _, r in ipairs(recs) do
+        local b = r.box
+        if b and r.mask and r.mask.player and r.status ~= 'blocked' and r.status ~= 'exists'
+          and b.right_bottom.x > here.x-16 and b.left_top.x < here.x+16 and b.right_bottom.y > here.y-16 and b.left_top.y < here.y+16 then
+          near[#near+1] = r
+          -- Our gates open for the character (a gate's own box is no wall).
+          if r.proto.type ~= 'gate' then
+            boxes[#boxes+1] = {b.left_top.x, b.left_top.y, b.right_bottom.x, b.right_bottom.y, r.name, r, base=true}
+          end
+        end
+      end
+      for _, piece in ipairs(M.joined_pieces(s, force, near)) do boxes[#boxes+1] = piece end
+      for _, t in pairs(planned) do
+        if not t.layers.player then open = open or {}; open[t.x..','..t.y] = true end
+      end
+      local ok, res = false, nil
+      if #boxes > 0 then
+        ok, res = pcall(api.pathing.closes_in, s, here, half, boxes, {ignore=character, force=force, open=open, search=6})
+      end
+      if ok and res then
+        local function entry(b)
+          local r = b[6]
+          return string.format('#%s %s %s', r.copy and (r.copy..'.'..r.index) or r.index, r.name, at(r.pos))
+        end
+        local where = at({x=math.floor(here.x*10+0.5)/10, y=math.floor(here.y*10+0.5)/10})
+        if res.already then
+          out.closed_in = string.format('the character is closed in already where it stands %s: %s', where, api.pathing.area_text(res.region, half))
+        else
+          local list = {}
+          for _, b in ipairs(#res.gaps > 0 and res.gaps or res.around) do if #list < 6 then list[#list+1] = entry(b) end end
+          local more = #res.around > #list and string.format(' (of %d planned entries around it)', #res.around) or ''
+          local what = #res.gaps == 1 and 'the last gap out is where '..list[1]..' goes'
+            or #res.gaps > 1 and 'without any one of '..table.concat(list, ', ')..more..' a gap out stays'
+            or 'the planned entries around it are '..table.concat(list, ', ')..more
+          out.closes_in = string.format('placed, these close the character in where it stands %s: %s; %s', where, what,
+            api.pathing.area_text(res.region, half))
+        end
+      end
     end
 
     -- A build batch stops at its first failing entry: which one, and why.

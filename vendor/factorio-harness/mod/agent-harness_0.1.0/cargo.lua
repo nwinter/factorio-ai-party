@@ -25,9 +25,9 @@ return function(api)
     if not slots or slots < 1 then slots = 20 end
     return lift, slots
   end
-  -- list: {{name, count, quality?}}. Returns the reply fields.
-  function M.weigh(list, lift, slots)
-    -- One kind per item and quality: stacks of different qualities take their own slots.
+  -- One kind per item and quality, in the list's order: stacks of different
+  -- qualities take their own slots.
+  local function kinds_of(list)
     local kinds, by = {}, {}
     for _, e in ipairs(list) do
       local k = e.name..'@'..(e.quality or 'normal')
@@ -41,6 +41,67 @@ return function(api)
       end
       kind.count = kind.count + e.count
     end
+    return kinds
+  end
+  -- The split: kinds in the order given, each into the first container with
+  -- room for some of it (weight and slots, a part stack's room counted), new
+  -- containers as needed. {weight, slots, count[kind], kinds} each.
+  local function split(order, lift, slots)
+    local rockets = {}
+    local function room(r, kind)
+      local held = r.count[kind] or 0
+      local by_weight = kind.each > 0 and math.floor((lift-r.weight+1e-3)/kind.each) or math.huge
+      local part = held > 0 and (math.ceil(held/kind.stack)*kind.stack-held) or 0
+      local by_slots = (slots-r.slots)*kind.stack+part
+      return math.max(0, math.min(by_weight, by_slots))
+    end
+    local function put(r, kind, n)
+      local held = r.count[kind] or 0
+      if held == 0 then r.kinds[#r.kinds+1] = kind end
+      r.slots = r.slots-math.ceil(held/kind.stack)+math.ceil((held+n)/kind.stack)
+      r.count[kind] = held+n
+      r.weight = r.weight+kind.each*n
+    end
+    for _, kind in ipairs(order) do
+      local left = kind.count
+      for _, r in ipairs(rockets) do
+        if left == 0 then break end
+        local n = math.min(left, room(r, kind))
+        if n > 0 then put(r, kind, n); left = left-n end
+      end
+      while left > 0 do
+        local r = {weight=0, slots=0, count={}, kinds={}}
+        rockets[#rockets+1] = r
+        local n = math.min(left, room(r, kind))
+        put(r, kind, n); left = left-n
+      end
+    end
+    return rockets
+  end
+  local function label(kind) return kind.name..(kind.quality and '@'..kind.quality or '') end
+  -- Cargo pods from a platform hub to the planet below (space.lua drop): a
+  -- pod has slots and no weight limit (the cargo-pod prototype: 10 slots in
+  -- 2.0.77), so the list splits by slots alone, in the order given: the first
+  -- pod takes the first items. {pods = {{items = {{name, quality, count}},
+  -- slots, text}}, stacks, fewest}.
+  function M.pods(list, slots)
+    local kinds = kinds_of(list)
+    local stacks = 0
+    for _, kind in ipairs(kinds) do kind.each = 0; stacks = stacks+math.ceil(kind.count/kind.stack) end
+    local out = {pods={}, stacks=stacks, fewest=math.ceil(stacks/slots)}
+    for i, r in ipairs(split(kinds, math.huge, slots)) do
+      local items, parts = {}, {}
+      for _, kind in ipairs(r.kinds) do
+        items[#items+1] = {name=kind.name, quality=kind.quality or 'normal', count=r.count[kind]}
+        parts[#parts+1] = label(kind)..'*'..r.count[kind]
+      end
+      out.pods[i] = {items=items, slots=r.slots, text=table.concat(parts, ' ')}
+    end
+    return out
+  end
+  -- list: {{name, count, quality?}}. Returns the reply fields.
+  function M.weigh(list, lift, slots)
+    local kinds = kinds_of(list)
     local total, stacks = 0, 0
     local rows = {}
     for _, kind in ipairs(kinds) do
@@ -62,41 +123,13 @@ return function(api)
       if kind.per_rocket < 1 then too_heavy[#too_heavy+1] = string.format('%s weighs %g kg, over a rocket\'s %g kg', kind.name, kg(kind.each), kg(lift)) end
     end
     -- One split: heaviest items first, each into the first rocket with room
-    -- for some of it (weight and slots, a part stack's room counted), new
-    -- rockets as needed.
+    -- for some of it, new rockets as needed.
     local rockets = {}
-    local order = {}
-    for i, kind in ipairs(rows) do order[i] = kind end
-    table.sort(order, function(a, b) if a.each ~= b.each then return a.each > b.each end return a.name < b.name end)
-    local function room(r, kind)
-      local held = r.count[kind] or 0
-      local by_weight = kind.each > 0 and math.floor((lift-r.weight+1e-3)/kind.each) or math.huge
-      local part = held > 0 and (math.ceil(held/kind.stack)*kind.stack-held) or 0
-      local by_slots = (slots-r.slots)*kind.stack+part
-      return math.max(0, math.min(by_weight, by_slots))
-    end
-    local function put(r, kind, n)
-      local held = r.count[kind] or 0
-      if held == 0 then r.kinds[#r.kinds+1] = kind end
-      r.slots = r.slots-math.ceil(held/kind.stack)+math.ceil((held+n)/kind.stack)
-      r.count[kind] = held+n
-      r.weight = r.weight+kind.each*n
-    end
     if #too_heavy == 0 then
-      for _, kind in ipairs(order) do
-        local left = kind.count
-        for _, r in ipairs(rockets) do
-          if left == 0 then break end
-          local n = math.min(left, room(r, kind))
-          if n > 0 then put(r, kind, n); left = left-n end
-        end
-        while left > 0 do
-          local r = {weight=0, slots=0, count={}, kinds={}}
-          rockets[#rockets+1] = r
-          local n = math.min(left, room(r, kind))
-          put(r, kind, n); left = left-n
-        end
-      end
+      local order = {}
+      for i, kind in ipairs(rows) do order[i] = kind end
+      table.sort(order, function(a, b) if a.each ~= b.each then return a.each > b.each end return a.name < b.name end)
+      rockets = split(order, lift, slots)
     end
     local fewest = math.max(math.ceil(total/lift-1e-9), math.ceil(stacks/slots))
     local out = {lift=string.format('%g kg and %d cargo slots a rocket', kg(lift), slots), total_kg=kg(total), stacks=stacks,
@@ -111,7 +144,7 @@ return function(api)
       out.split = {}
       for i, r in ipairs(rockets) do
         local parts = {}
-        for _, kind in ipairs(r.kinds) do parts[#parts+1] = kind.name..(kind.quality and '@'..kind.quality or '')..'*'..r.count[kind] end
+        for _, kind in ipairs(r.kinds) do parts[#parts+1] = label(kind)..'*'..r.count[kind] end
         out.split[i] = {rocket=i, kg=kg(r.weight), slots=r.slots, items=table.concat(parts, ' ')}
       end
       out.note = #rockets > fewest

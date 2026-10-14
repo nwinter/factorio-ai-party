@@ -5,6 +5,7 @@
 return function(api)
   local M={}
   local CACHE_TICKS,CHART_TICKS,MAX_BASE_RANGE,CLOUD_SEARCH,EVOLUTION_WINDOW,MAX_NEWS=600,3600,512,8,18000,16
+  local NEAR_TICKS,CLOUD_TICKS,FORGET_TICKS,FRESH=18000,3600,108000,2  -- per base: 5 min, 1 min, forgotten after 30 min; searches per call
   local function round(v,digits)
     if not digits then return math.floor(v+0.5) end
     local m=10^digits; return math.floor(v*m+0.5)/m
@@ -96,35 +97,66 @@ return function(api)
         end
       end
     end
+    -- What a base's position alone decides (our nearest building, the cloud's
+    -- gap) is kept per surface and base chunk for every agent: NEAR_TICKS and
+    -- CLOUD_TICKS. At most FRESH searches per call (task-statuscost, 01:15 on
+    -- world n: the ring searches made threat.summary 110 ms and threat.watch
+    -- up to 123 ms); a base not searched yet has no distance ('?') and comes
+    -- in a later call.
+    local st=api.state()
+    st.base_info=st.base_info or {}
+    local info=st.base_info[s.index]
+    if not info then info={}; st.base_info[s.index]=info end
+    local fresh_left=FRESH
+    for key,v in pairs(info) do if game.tick-v.tick>=FORGET_TICKS then info[key]=nil end end
     for _,b in ipairs(out) do
       b.position={x=round(b.sx/b.spawners),y=round(b.sy/b.spawners)}
       b.first,b.sx,b.sy,b.chunks=nil,nil,nil,nil
       b.absorbing=round(b.absorbing)
       b.reached=M.reached(b.polluted_tick)
-      -- Nearest of our buildings, searched in widening rings.
-      for _,r in ipairs{64,128,256,MAX_BASE_RANGE} do
-        local ours={}
-        for _,e in pairs(s.find_entities_filtered{position=b.position,radius=r,force=p.force,limit=256}) do
-          if e.valid and not NOT_BUILDING[e.type] then ours[#ours+1]=e end
+      local key=math.floor(b.position.x/32)..','..math.floor(b.position.y/32)
+      local kept=info[key]
+      if kept and game.tick-kept.tick<NEAR_TICKS then
+        b.distance,b.direction=kept.distance,kept.direction
+      elseif fresh_left>0 then
+        fresh_left=fresh_left-1
+        kept={tick=game.tick}
+        -- Nearest of our buildings, searched in widening rings.
+        for _,r in ipairs{64,128,256,MAX_BASE_RANGE} do
+          local ours={}
+          for _,e in pairs(s.find_entities_filtered{position=b.position,radius=r,force=p.force,limit=256}) do
+            if e.valid and not NOT_BUILDING[e.type] then ours[#ours+1]=e end
+          end
+          local near=#ours>0 and s.get_closest(b.position,ours)
+          if near then
+            kept.distance=round(api.distance(b.position,near.position)); kept.direction=compass(near.position,b.position); break
+          end
         end
-        local near=#ours>0 and s.get_closest(b.position,ours)
-        if near then
-          b.distance=round(api.distance(b.position,near.position)); b.direction=compass(near.position,b.position); break
-        end
-      end
+        info[key]=kept
+        b.distance,b.direction=kept.distance,kept.direction
+      elseif kept then b.distance,b.direction=kept.distance,kept.direction  -- older than NEAR_TICKS: searched again in a later call
+      else b.distance_pending=true end
       if not b.reached then
-        -- Chunks between the base and the nearest polluted chunk.
-        local cx,cy=math.floor(b.position.x/32),math.floor(b.position.y/32)
-        for r=1,CLOUD_SEARCH do
-          for dx=-r,r do
-            for dy=-r,r do
-              if not b.cloud_gap and math.max(math.abs(dx),math.abs(dy))==r then
-                local c=chunk_centre(cx+dx,cy+dy)
-                if p.force.is_chunk_charted(s,{x=cx+dx,y=cy+dy}) and s.get_pollution(c)>0 then b.cloud_gap=r; b.cloud_direction=compass(b.position,c) end
+        if kept and kept.cloud_tick and game.tick-kept.cloud_tick<CLOUD_TICKS then
+          b.cloud_gap,b.cloud_direction=kept.cloud_gap,kept.cloud_direction
+        elseif kept and kept.tick==game.tick or fresh_left>0 then
+          if not (kept and kept.tick==game.tick) then fresh_left=fresh_left-1 end
+          -- Chunks between the base and the nearest polluted chunk.
+          local cx,cy=math.floor(b.position.x/32),math.floor(b.position.y/32)
+          for r=1,CLOUD_SEARCH do
+            for dx=-r,r do
+              for dy=-r,r do
+                if not b.cloud_gap and math.max(math.abs(dx),math.abs(dy))==r then
+                  local c=chunk_centre(cx+dx,cy+dy)
+                  if p.force.is_chunk_charted(s,{x=cx+dx,y=cy+dy}) and s.get_pollution(c)>0 then b.cloud_gap=r; b.cloud_direction=compass(b.position,c) end
+                end
               end
             end
+            if b.cloud_gap then break end
           end
-          if b.cloud_gap then break end
+          kept=info[key] or {tick=game.tick}
+          info[key]=kept
+          kept.cloud_tick,kept.cloud_gap,kept.cloud_direction=game.tick,b.cloud_gap,b.cloud_direction
         end
       end
     end
@@ -134,34 +166,44 @@ return function(api)
 
   -- Chart coverage and the charted extent of the pollution cloud; polluted
   -- chunks beyond the chart only reveal in which directions the cloud leaves it.
-  local function chart(p)
-    local s,force=p.surface,p.force
-    local charted,visible,polluted=0,0,0
-    local box,cloud,beyond={},{},{}
-    local centre=force.get_spawn_position(s)
-    local function grow(b,x,y)
-      b.left=math.min(b.left or x,x); b.right=math.max(b.right or x,x)
-      b.top=math.min(b.top or y,y); b.bottom=math.max(b.bottom or y,y)
+  -- In pieces: a tally, one generated chunk into it, the result (chart() all
+  -- at once over get_chunks; the background sweep, M.tick, over the box of
+  -- generated chunks the last chart saw plus a margin, SWEEP a tick).
+  local function grow(b,x,y)
+    b.left=math.min(b.left or x,x); b.right=math.max(b.right or x,x)
+    b.top=math.min(b.top or y,y); b.bottom=math.max(b.bottom or y,y)
+  end
+  local function chart_new(s,force)
+    local c=force.get_spawn_position(s)
+    return {charted=0,visible=0,polluted=0,box={},cloud={},beyond={},gen={},centre={x=c.x,y=c.y}}
+  end
+  local function chart_chunk(t,s,force,c)
+    grow(t.gen,c.x,c.y)
+    local is_charted=force.is_chunk_charted(s,c)
+    if is_charted then
+      t.charted=t.charted+1; grow(t.box,c.x,c.y)
+      if force.is_chunk_visible(s,c) then t.visible=t.visible+1 end
     end
-    for c in s.get_chunks() do
-      local is_charted=force.is_chunk_charted(s,c)
-      if is_charted then
-        charted=charted+1; grow(box,c.x,c.y)
-        if force.is_chunk_visible(s,c) then visible=visible+1 end
-      end
-      if s.get_pollution(chunk_centre(c.x,c.y))>0 then
-        if is_charted then polluted=polluted+1; grow(cloud,c.x,c.y)
-        else beyond[compass(centre,chunk_centre(c.x,c.y))]=true end
-      end
+    if s.get_pollution(chunk_centre(c.x,c.y))>0 then
+      if is_charted then t.polluted=t.polluted+1; grow(t.cloud,c.x,c.y)
+      else t.beyond[compass(t.centre,chunk_centre(c.x,c.y))]=true end
     end
+  end
+  local function chart_done(t,s,force,tick)
     local function extent(b)
       return b.left and string.format('x %d..%d y %d..%d',b.left*32,b.right*32+31,b.top*32,b.bottom*32+31) or nil
     end
     local dirs={}
-    for _,name in ipairs(names) do if beyond[name] then dirs[#dirs+1]=name end end
-    return {tick=game.tick,charted_chunks=charted,visible_chunks=visible,extent=extent(box),
-      radars=#s.find_entities_filtered{type='radar',force=force},
-      cloud={chunks=polluted,extent=extent(cloud),beyond_chart=#dirs>0 and table.concat(dirs,',') or nil}}
+    for _,name in ipairs(names) do if t.beyond[name] then dirs[#dirs+1]=name end end
+    return {tick=tick or game.tick,charted_chunks=t.charted,visible_chunks=t.visible,extent=extent(t.box),
+      radars=#s.find_entities_filtered{type='radar',force=force},gen=t.gen,
+      cloud={chunks=t.polluted,extent=extent(t.cloud),beyond_chart=#dirs>0 and table.concat(dirs,',') or nil}}
+  end
+  local function chart(p)
+    local s,force=p.surface,p.force
+    local t=chart_new(s,force)
+    for c in s.get_chunks() do chart_chunk(t,s,force,c) end
+    return chart_done(t,s,force)
   end
 
   -- Remembers each nest chunk: when it was last visible and whether the cloud
@@ -219,7 +261,10 @@ return function(api)
     local e=st.threat_shared[key]
     if not e then e={}; st.threat_shared[key]=e end
     if fresh or not e.pollution or game.tick-e.pollution_tick>=CACHE_TICKS then e.pollution,e.pollution_tick=pollution(p),game.tick end
-    if fresh or not e.chart or game.tick-e.chart.tick>=CHART_TICKS then e.chart=chart(p) end
+    e.force,e.surface=p.force.name,p.surface.index
+    -- With the background sweep running (M.tick) the chart is redone there; here only when asked (threats=true),
+    -- when there is none, or when it lacks the box the sweep starts from.
+    if fresh or not e.chart or not e.chart.gen or (not st.chart_bg and game.tick-e.chart.tick>=CHART_TICKS) then e.chart=chart(p) end
     return e
   end
   local function refresh(p,fresh)
@@ -235,6 +280,61 @@ return function(api)
     local s=shared(p,fresh)
     entry.pollution,entry.chart=s.pollution,s.chart
     return entry
+  end
+  -- The background chart (task-statuscost: the chart walk went over every
+  -- generated chunk in one status call once a minute per surface): started
+  -- when a surface's chart is CHART_TICKS old, it sweeps the box of generated
+  -- chunks the last chart saw, grown by SWEEP_MARGIN and to every player on
+  -- the surface, SWEEP chunk positions a tick; its state is in storage.
+  local SWEEP,SWEEP_MARGIN=2000,4
+  function M.tick(tick)
+    local st=api.state()
+    st.chart_bg=true
+    st.chart_jobs=st.chart_jobs or {}
+    local keys={}
+    for key in pairs(st.threat_shared or {}) do keys[#keys+1]=key end
+    table.sort(keys)
+    for _,key in ipairs(keys) do
+      -- A step that fails ends its sweep (noted in chart_errors); the chart is kept another CHART_TICKS.
+      local e=st.threat_shared[key]
+      local ok,err=pcall(M.sweep_step,st,key,e,tick)
+      if not ok then
+        st.chart_jobs[key]=nil
+        st.chart_errors={count=((st.chart_errors or {}).count or 0)+1,last=tostring(err),tick=tick}
+        if e.chart then e.chart.tick=tick end
+      end
+    end
+  end
+  function M.sweep_step(st,key,e,tick)
+    do
+      local job=st.chart_jobs[key]
+      local force=e.force and game.forces[e.force]
+      local s=e.surface and game.get_surface(e.surface)
+      if not job then
+        local g=e.chart and e.chart.gen
+        if g and force and s and tick-e.chart.tick>=CHART_TICKS then
+          local b={}
+          if g.left then b={left=g.left-SWEEP_MARGIN,right=g.right+SWEEP_MARGIN,top=g.top-SWEEP_MARGIN,bottom=g.bottom+SWEEP_MARGIN} end
+          for _,pl in pairs(game.players or {}) do
+            local ok,here=pcall(function() return pl.surface.index==s.index and pl.position end)
+            if ok and here then grow(b,math.floor(here.x/32)-SWEEP_MARGIN,math.floor(here.y/32)-SWEEP_MARGIN); grow(b,math.floor(here.x/32)+SWEEP_MARGIN,math.floor(here.y/32)+SWEEP_MARGIN) end
+          end
+          if b.left then st.chart_jobs[key]={start=tick,left=b.left,right=b.right,top=b.top,bottom=b.bottom,x=b.left,y=b.top}
+          else e.chart.tick=tick end  -- no generated chunk and nobody there: nothing to sweep
+        end
+      elseif not (force and s) then st.chart_jobs[key]=nil
+      else
+        job.t=job.t or chart_new(s,force)
+        local n=0
+        while n<SWEEP and job.y<=job.bottom do
+          local c={x=job.x,y=job.y}
+          if s.is_chunk_generated(c) then chart_chunk(job.t,s,force,c) end
+          n=n+1; job.x=job.x+1
+          if job.x>job.right then job.x=job.left; job.y=job.y+1 end
+        end
+        if job.y>job.bottom then e.chart=chart_done(job.t,s,force,job.start); st.chart_jobs[key]=nil end
+      end
+    end
   end
   -- Replies keep nest news flowing without a status call: the nests around an
   -- agent are rechecked when neither status nor a reply did so in the last

@@ -66,6 +66,10 @@ already targets your character.
   `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`). A task or request whose owner has made no request for
   20 minutes can be taken the same way; the owner hears it.
+- `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's title and what it
+  asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the change in `history`.
+- `inspect` reads any entity on your surface in a chunk our radars see, by remote view (`by: remote view`); out of
+  sight and coverage, the refusal names the nearest radar coverage.
 - The team plan is one board item everyone edits: goals, and one line per agent of what they are on. `./fh board plan`
   shows it (`./fh board` shows it at the top); `./fh board plan goals "..."` replaces the goals; `./fh board plan
   doing "..."` sets your line; `./fh board plan for luna "..."` sets a teammate's line (shown as set by you); `""`
@@ -82,7 +86,8 @@ already targets your character.
   its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs; its
   `chain` line walks the pack's recipe tree down, each step with its makers and made and used per minute, following
   the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
-  4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids.
+  4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids; a mined or pumped step names its drills or pumps, their states
+  (working, output full, no resource left) and what they put into.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
@@ -104,7 +109,8 @@ already targets your character.
 - `./fh tell luna "29 plates in the chest at (3,4)"` (or `luna,sol`, or `team`; text as for `say`) reaches only
   them, outside the game chat: it appears in their next reply under `team: tells` and wakes them from `sleep`.
   Add `--fyi` when no answer is needed: it waits for their next reply, marked `(fyi)`, and wakes nobody.
-  Viewers see tells on the stream's logistics ticker. `./fh tells` lists the ones you sent and received.
+  Viewers see tells on the stream's logistics ticker. `./fh tells` lists the last 30 tells you received
+  (time, sender, fyi), shown before or not; `./fh tells --since N` lists the ones you sent and received after N.
 - `./fh operator "..."` sends a request to the operator, the people running the harness and the stream: a tool that
   fails or is missing, or something viewers asked for that you can't do yourselves. The operator may answer in the
   game chat as `server:`. It is not for help with the game. Viewers see it on the ticker.
@@ -112,10 +118,12 @@ already targets your character.
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
-  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
-  or more of its capacity for 2 minutes, boilers whose fuel, with what their feeding inserters' sources hold, is under
-  20 minutes and running down (again under 10 and 5; each low boiler with its feeder and that source's count, or that
-  no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
+  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, inserters that lost their pickup or drop target (by
+  what they feed, with what each read and puts into), an electric network drawing 85%
+  or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
+  inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
+  as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that
+  source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
   idle logistic robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
@@ -123,7 +131,10 @@ already targets your character.
   repeated 5 or more times, what failed (by reason, top 3), alerts still open in your claims, and losses near where
   your character was (`review (last 2h): 412 actions: ...; time: 48% walking, 21% item moves, 9% building, 22%
   waits`, `repeated hauls: iron-plate (13,40) -> wooden-chest (89,-3) x38, ...`, `failed: 31 (...)`, ...);
-  `./fh call review` shows it any time.
+  `./fh call review` shows it any time. `science` is one line, at most every 5 minutes and only when it changed:
+  the research, labs working N of M, the pack the most labs hold none of with made and used per minute and the
+  first short step of its chain, the largest electric network's draw, capacity and headroom, and its boilers (how
+  many have fuel at their feeders; how many are under 20 minutes and not refilled, and the lowest).
   Each is shown once, so a command that sends replies to a file you don't read loses them. A change to your board
   item, a plan line set for you, or a tell also ends your `sleep`.
 - Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished
@@ -142,7 +153,8 @@ already targets your character.
   `inspect {"positions": [...]}` inspects up to 32 entities in one call; `collect {"radius": N}` without `item` takes
   every assembler and furnace output in the radius (output slots only). `position` and `positions` are interchangeable
   in these calls (`corrected` says how it ran). A repeating queue (`queue_repeat`, optional `name`) puts a `queue:`
-  line in the team block when a round's short steps differ from the round before. `transfer` takes `to_entity` or
+  line in the team block when a round's short steps differ from the round before; steps with `up_to: true` or
+  `"on_short": "skip"` are left out of it. `transfer` takes `to_entity` or
   `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
   `collect` over several targets ends with a `tally` line. `feed`, `collect` and `transfer` take `area {left_top,
@@ -160,11 +172,20 @@ already targets your character.
   or requester chest it lands on (`requests_kept`).
 - Gleba: `inspect` on an agricultural tower shows its `tower` state, seeds, output, which cells have soil for which
   seeds, and its plants with time to harvest; `transfer`, `feed` and `collect` work on its seeds and harvest.
+- Spoilage: `inspect`, `supply` and `stock` give the first stack to spoil and when; pentapod eggs say when they hatch
+  into enemies (`hatch_warning`, `hatch`); `output_spoil` is what a machine's next products start at. Eggs of ours
+  hatching within 5 minutes on your surface top `team.alerts` (`eggs hatching: ...`) and wake `fh sleep` (`woke: eggs`).
 - In a tank, car or spidertron you drive, `shoot` fires its gun: `--args '{"position":{"x":294,"y":-135},"gun":"tank-cannon"}'`
   (or `"ammo":"explosive-cannon-shell"`, `"auto":true`), loading the slot from your inventory; `vehicle {drive}` goes on meanwhile.
+- `vehicle {drive}` follows the engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes
+  through units (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does.
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
   `last.nearest_reachable`. `kite --wait` waits until the kite ends and reports its outcome, kills and ammo the same way.
+- `move_to` keeps out of the range of the worms the map shows, plus 4 tiles; `"avoid_enemies":true` also keeps out of
+  spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
+- A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
+  walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under
   it (`tiles_under`, `tiles_note`); `place_ghosts` lays the landfill ghost under an entity ghost there; `construct`
   builds the landfill first, and a build refused there names the tile.
@@ -186,7 +207,8 @@ already targets your character.
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
   reach every placement, and what each planned inserter picks up from and drops into (`missing: no drop target`);
-  `inspect` and build replies flag a built inserter with no pickup or drop target.
+  `inspect` and build replies flag a built inserter with no pickup or drop target. `closes_in` names the entry that
+  fills the last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
   `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
   "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
   `inspect` of a ghost shows the same.
@@ -209,6 +231,8 @@ already targets your character.
   `eta_min` (at the current speed) and `next_stop`.
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
+- `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
+  takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 
