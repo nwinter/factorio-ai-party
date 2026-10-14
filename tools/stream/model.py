@@ -17,6 +17,7 @@ import json, math, os, re, time
 from collections import deque
 
 import attention
+import clouds as clouds_mod
 import loadout as loadouts_mod
 import tokens
 
@@ -411,6 +412,8 @@ class Model:
         self.power = None
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
+        self.clouds = {}  # surface -> pollution or spores per charted chunk (clouds.normalise; live.py observe_clouds)
+        self.clouds_t = None
         self.board = {"events": deque(maxlen=40), "seen": set(), "items": {}, "open_unowned": None,
                       "changelog": deque(maxlen=5), "available": False}
         # Space Age: score's rockets/planets/platforms plus platform detail (live.py); moments fire once each
@@ -481,6 +484,8 @@ class Model:
         if obs.get("basemap"):
             ore = obs["basemap"].get("ore") or (self.basemap or {}).get("ore")  # ore is read less often: keep the last
             self.basemap = dict(obs["basemap"], ore=ore) if ore else obs["basemap"]
+        if obs.get("clouds") is not None:  # a read happened: a surface missing from it has no cloud now
+            self.clouds, self.clouds_t = clouds_mod.normalise(obs["clouds"]), now
         if obs.get("power"):
             self._ingest_power(obs["power"], now)
         for e in obs.get("board_events") or []:
@@ -1541,6 +1546,8 @@ class Model:
             "research_news": self.research_news_snapshot(now),
             "darkness": self.darkness,
             "basemap": self.basemap,
+            # the map's pollution and spore layer, one row per surface (clouds.py; the overlay's map shots, the site)
+            "clouds": [dict(c, age_s=round(now - self.clouds_t)) for c in self.clouds.values()] if self.clouds_t else [],
             "production": self.production(now),
             "science": science,
             "space": self.space_snapshot(science, now),

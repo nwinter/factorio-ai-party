@@ -51,6 +51,14 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
     launch, drop... with platform=; the character stands on Nauvis): the platform instead of the character, labelled
     "Astra · working on Starling", for `work_hold`, longer while its requests keep coming; then back to the agent.
   The hosts read snapshot onair.platform.
+- Cloud (viewer Joonazan, 13:00: "can you show a shot of Gleba's spore cloud?"): Factorio's map of one surface's
+  pollution or spore cloud (clouds.py frames every polluted chunk and the nests it reached; the overlay draws the
+  cells in the pollutant's map colour), labelled "Spores on Gleba", for `cloud_hold` (20 s). The operator calls it
+  (serve.py POST /cloud {surface?, seconds?}; it waits out a segment, a key battle or a followed group, and an
+  operator follow refuses it). The director picks it on its own (`cloud_auto`) when a cloud reaches nests it had
+  not reached before (the harness's pollution_reached_nest news; pentapods on Gleba), at most every `cloud_every`,
+  with the base map's guards. Unlike the base map it is no terrain frame for the site (onair.map stays None;
+  onair.cloud says what is on air).
 - Attention (Nick: "It would be interesting to follow its attention"): each agent's latest request with a place
   (attention.py, from its journal: inspect, transfer, configure, ghosts, scans...) is its attention point. While the
   agent on air looks or works somewhere the on-air frame does not show (`attn_fresh`, outside the frame, or a platform
@@ -66,6 +74,7 @@ viewer said three cameras at once made it hard to concentrate on any one thing).
 import json, os, re, time
 
 from director import Director, BUILD, FIGHT, HOLDS, WALK, dist, frame_of, in_frame, surface_of
+import clouds
 from mapcam import map_shot
 from segments import CHEAP, LOSS_RE
 
@@ -154,6 +163,10 @@ ONECAM = {
     "map_hold": 15.0,       # seconds on the map
     "map_trio": True,       # a check-in trio shows the map in one small tile
     "map_gap": 30.0,        # no base map within this long after another cut (16:44:05 came 2 s after one)
+    "cloud_hold": 20.0,     # seconds on a cloud shot (module doc); the operator's call may say otherwise (5..120)
+    "cloud_auto": True,     # the director shows a cloud that reached new nests
+    "cloud_every": 1800.0,  # at most one such shot this often
+    "cloud_late": 600.0,    # a cloud shot not on air this long after it was due (or called) is dropped
     # Space platforms (Nick, 21:25: "Do we have the camera look at the space platform sometimes?"; module doc)
     "platform_every": 720.0,  # a platform visit about this often while a platform has a surface (0: never)
     "platform_first": 420.0,  # the first one this long after the start (the base map's comes at 300 s)
@@ -309,8 +322,12 @@ def onair_info(snap, cams):
             "inset": ((cams or {}).get("inset") or {}).get("attack"),
             # where the agent on air is looking, in the inset beside it: {agent, kind, text, platform, position}
             "attention": ((cams or {}).get("inset") or {}).get("attention"),
-            # the base map: on air, or in a trio's small tile (the hosts: "here's the whole base")
-            "map": "on air" if main.get("map") else "tile" if any(r.get("map") for r in (cams or {}).values()) else None}
+            # the base map: on air, or in a trio's small tile (the hosts: "here's the whole base"); a cloud shot is
+            # not the base map (mapframes.py takes the base map's terrain frames)
+            "map": "on air" if main.get("map") and not main.get("cloud") else
+                   "tile" if any(r.get("map") and not r.get("cloud") for r in (cams or {}).values()) else None,
+            # a pollution or spore cloud on Factorio's map (onecam cloud shot): {surface, label, why}
+            "cloud": main.get("cloud")}
 
 
 class OneCam(Director):
@@ -351,6 +368,12 @@ class OneCam(Director):
         self.last_map = None   # when the last base map went on air (None: map_first after the start)
         self.basemap = None    # the snapshot's basemap (mapcam.map_shot frames the map camera from it)
         self.maps = []         # (t, where): base map shots, on air or in a trio tile
+        self.clouds = {}       # surface -> the snapshot's cloud row (clouds.normalise)
+        self.cloud_seen = None  # reached-nest keys seen (None until the first clouds: those are old news)
+        self.cloud_due = None  # {"surface", "t", "nests"}: a cloud that reached new nests, not on air yet
+        self.cloud_req = None  # {"surface", "t", "seconds", "by"}: the operator's call (POST /cloud)
+        self.last_cloud = -1e9  # when the director last put a cloud on air on its own
+        self.cloud_shots = []  # (t, surface, why)
         self.fight_list = []   # the snapshot's fights still reported (fight_t: when each last went on)
         self.plat_rows = {}    # name -> the snapshot's platform row (model.platform_where: where, route, view)
         self.plat_moving = {}  # name -> travelling at the last look (a departure: False -> True)
@@ -823,6 +846,7 @@ class OneCam(Director):
             self.game_tick = snapshot["tick"]
         self.account_surface(by_name, now)
         self.basemap = snapshot.get("basemap") or self.basemap
+        self.watch_clouds(snapshot, now)
         self.fight_list = list(snapshot.get("fights") or [])
         scores = self.scores(agents, now)
         ranked = sorted(scores, key=lambda n: -scores[n])
@@ -864,6 +888,8 @@ class OneCam(Director):
         elif cur and cur.get("subject") == "@segment" and (not segment or cur.get("seg") != segment["id"]):
             cur["until"] = 0  # the segment ended or was cut: back to normal directing
         self.watch_platforms(snapshot, now)
+        if not pinned:
+            self.cloud_operator(scores, now, segment)
         if pinned:  # an operator follow, or a key battle: on air, nothing else takes the camera
             self.leave_trio(f"follow {fol}" if fol else f"battle: {self.battle['label']}" if self.battle
                             else f"incoming: {self.incoming['label']}", now)
@@ -885,6 +911,7 @@ class OneCam(Director):
             self.maybe_work(snapshot, by_name, scores, now, segment)
             self.maybe_attention(by_name, scores, now, segment)
             self.maybe_map(scores, now, segment)
+            self.maybe_cloud(scores, now, segment)
             self.maybe_platform(scores, now, segment)
             self.maybe_trio(by_name, scores, ranked, now)
         self.maybe_cue(snapshot, by_name, scores, now, segment)
@@ -1574,6 +1601,111 @@ class OneCam(Director):
         self.maps.append((now, "on air"))
         self.urgent(t, "base map", scores, now)
 
+    # -- pollution and spore clouds -----------------------------------------------------------------------------
+    def watch_clouds(self, snapshot, now):
+        """The snapshot's clouds; nests a cloud reached that were not in the last ones make it due (cloud_auto)."""
+        rows = snapshot.get("clouds")
+        if not isinstance(rows, list):
+            return
+        self.clouds = {r["surface"]: r for r in rows if r.get("surface") and r.get("cells")}
+        keys = set()
+        for r in self.clouds.values():
+            keys |= clouds.reached_keys(r)
+        if self.cloud_seen is None:
+            if self.clouds:
+                self.cloud_seen = keys
+            return
+        new = keys - self.cloud_seen
+        self.cloud_seen |= keys
+        if not new or not self.cfg["cloud_auto"] or now - self.last_cloud < self.cfg["cloud_every"]:
+            return
+        by = {}
+        for k in new:
+            by[k[0]] = by.get(k[0], 0) + 1
+        surface = max(by, key=lambda k: by[k])
+        self.cloud_due = {"surface": surface, "t": now, "nests": by[surface]}
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} cloud due: "
+              f"{self.clouds[surface]['label']} reached {by[surface]} new nest(s)", flush=True)
+
+    def cloud_pick(self, name=None):
+        """A surface with a cloud by name (any case), or with none named: spores first (Gleba), else the biggest."""
+        if name:
+            n = str(name).strip().lower()
+            return next((k for k in self.clouds if k.lower() == n or self.clouds[k]["label"].lower() == n), None)
+        if not self.clouds:
+            return None
+        return max(self.clouds, key=lambda k: (self.clouds[k]["pollutant"] == "spores", self.clouds[k]["chunks"]))
+
+    def request_cloud(self, surface=None, seconds=None, by=None, now=None):
+        """The operator's cloud shot (serve.py POST /cloud) -> (http code, reply). It goes on air at the next step
+        with nothing pinned on air (a segment, a key battle or a followed group: it waits, up to cloud_late)."""
+        now = now or time.time()
+        f = self.follow
+        if f and now < f["until"]:
+            return 409, {"error": f"an operator follow of {f['agent']} is on air (DELETE /follow first)"}
+        name = self.cloud_pick(surface)
+        if not name:
+            return 409 if not surface else 400, {
+                "error": f"no cloud on {surface}" if surface else "no cloud read yet",
+                "clouds": {k: {"label": c["label"], "chunks": c["chunks"], "max": c["max"]} for k, c in self.clouds.items()}}
+        try:
+            secs = max(5.0, min(120.0, float(seconds or self.cfg["cloud_hold"])))
+        except (TypeError, ValueError):
+            return 400, {"error": "seconds must be a number"}
+        self.cloud_req = {"surface": name, "t": now, "seconds": secs, "by": str(by or "operator")[:40]}
+        c = self.clouds[name]
+        print(f"[director] {time.strftime('%H:%M:%S', time.localtime(now))} {self.cloud_req['by']}: cloud shot "
+              f"{c['label']} for {int(secs)} s", flush=True)
+        return 200, {"surface": name, "label": c["label"], "seconds": int(secs), "chunks": c["chunks"], "max": c["max"],
+                     "reached": len(c.get("reached") or [])}
+
+    def cloud_target(self, surface, until, why):
+        c = self.clouds.get(surface)
+        sh = clouds.shot(c, frac=self.cfg["view_frac"]) if c else None
+        if not sh:
+            return None
+        return {"agents": [], "subject": "@map", "map": True, "position": sh["position"], "surface": surface,
+                "zoom": sh["zoom"], "exact_zoom": True, "until": until, "map_size": sh["size"],
+                "cloud": {"surface": surface, "label": c["label"], "why": why}}
+
+    def cloud_operator(self, scores, now, segment):
+        req = self.cloud_req
+        if not req:
+            return
+        if now - req["t"] > self.cfg["cloud_late"]:
+            self.cloud_req = None
+            return
+        if segment or self.battle or self.incoming:
+            return
+        t = self.cloud_target(req["surface"], now + self.cfg["ready_s"] + req["seconds"], f"called by {req['by']}")
+        if not t:
+            return
+        self.cloud_req = None
+        self.cloud_shots.append((now, req["surface"], "operator"))
+        self.urgent(t, f"cloud: {t['cloud']['label']} ({req['by']})", scores, now)
+
+    def maybe_cloud(self, scores, now, segment=None):
+        due = self.cloud_due
+        if not due or len(self.slots) < 2 or self.mode != "onecam":
+            return
+        if now - due["t"] > self.cfg["cloud_late"]:
+            self.cloud_due = None
+            return
+        cur = self.state.get(self.onair)
+        if (self.hold_layout or self.pending or self.inset or self.trio_pending or segment or
+                (cur and cur.get("subject") in HOLDS and now < cur.get("until", 0)) or
+                now - self.last_program_cut < self.cfg["map_gap"] or
+                any(now - self.fight_t(f) < self.cfg["fight_quiet"] for f in self.fight_list)):
+            return
+        why = f"reached {due['nests']} new nest" + ("s" if due["nests"] > 1 else "")
+        t = self.cloud_target(due["surface"], now + self.cfg["ready_s"] + self.cfg["cloud_hold"], why)
+        self.cloud_due = None
+        if not t:
+            return
+        self.last_cloud = now
+        self.cloud_shots.append((now, due["surface"], why))
+        self.urgent(t, f"cloud: {t['cloud']['label']} {why}", scores, now)
+
     # -- space platforms ---------------------------------------------------------------------------------------
     @staticmethod
     def travelling(row):
@@ -2009,6 +2141,12 @@ class OneCam(Director):
                 row["surface"] = t["surface"]
             if t.get("map"):
                 row["map"] = "Base map"  # the page's label; the hosts' onair.map
+                row["map_view"] = {"position": t.get("position"), "surface": t.get("surface") or "nauvis",
+                                   # the zoom sent (director.apply rounds it): the overlay's cloud layer
+                                   "zoom": t.get("game_zoom") or t["zoom"], "size": t.get("map_size")}
+                if t.get("cloud"):  # a cloud shot: "Spores on Gleba" (the overlay draws its cells)
+                    row["map"] = t["cloud"]["label"]
+                    row["cloud"] = t["cloud"]
             if t.get("platform"):  # {name, why, label, agent?}: a visit and a work shot read the latest row
                 p = dict(t["platform"])
                 if p["why"] == "visit":
