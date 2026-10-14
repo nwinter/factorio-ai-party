@@ -2282,10 +2282,10 @@ p.get_main_inventory=function() return {get_item_count=function(n) return n=='tr
 local plan=call('belt_route',{from={x=0,y=0},to={x=6,y=0},dry_run=true})
 eq(plan.dry_run,true); eq(#made,0); eq(plan.missing['underground-belt'],2); eq(plan.entities,nil)
 local routed=call('belt_route',{from={x=0,y=0},to={x=6,y=0}})
-eq(routed.placed,routed.tiles); eq(routed.route,plan.route); eq(storage.agent_harness.last_paste[1].right,6.5)
+eq(routed.placed,routed.tiles); eq(routed.route,plan.belt_route.route); eq(routed.route,'E2 uE3 E1'); eq(plan.summary,'5 placeable (of 5)'); eq(storage.agent_harness.last_paste[1].right,6.5)
 local kinds={}
 for _,a in ipairs(made) do if a.type then kinds[#kinds+1]=a.type..'@'..a.position.x end end
-eq(table.concat(kinds,','),'input@0.5,output@5.5')
+eq(table.concat(kinds,','),'input@2.5,output@5.5')
 assert(call('place_ghosts',{entities={{name='transport-belt',position={x=0,y=0},type='input'}}}).failed[1].error:find('underground belts only',1,true))
 -- pipe_route: the same flow for fluids; pipe-to-ground ends face their open
 -- side (entrance back along the line, exit onward).

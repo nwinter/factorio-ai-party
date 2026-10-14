@@ -214,6 +214,41 @@ fh call status
     no limit, no rail beside it)`, with `its locomotives all face its front, so it drives forward only` for such a
     train; `every stop named Base is at its train limit (...)`; `no train stop is named X`; `stands still: no fuel in
     its locomotives`. A stop's readback adds `rail` (the rail it is beside, or none).
+- Belts: `belt_route {from, to, via?, belt?, undergrounds?, lane?, to_direction?, landfill?, return?, return_side?,
+  dry_run?, details?}` lays a belt line as ghosts (`construct` builds it).
+  - `from`: a free tile, or the end of one of our belts to extend. `to`: a free tile for the last belt, or one of our
+    belts (or an underground entrance) to feed: straight, as a curve, or side-loaded onto `lane` (left or right).
+  - The search (Sol, 07:52: a 600-tile Gleba seed return planned by hand) is a weighted A* over tiles. It keeps to
+    charted ground within 24 tiles of each leg's ends, and each leg (from, `via` points in order, to) is at most 1000
+    tiles. The line may spend 8000 placement checks and 8000 expansions; with its return line, 12000 and 13000 in all.
+    One call lays at most 2048 belts and undergrounds (both lines; a dry run checks as many).
+  - It never uses a tile one of our belts holds or outputs into. Turns cost a little; an underground pair costs more
+    and hops anything but lava and empty space, never over one of the same kind on its axis.
+  - Trees, rocks and wild plants are passed over at a small cost: the ghosts mark them for removal and `construct`
+    mines them (`over_trees_or_plants` counts the tiles). A force's own plants (Gleba farms), cliffs and buildings
+    never.
+  - Water and Gleba wetland are used only with `landfill: true`, where a tile item makes them buildable; the tile
+    ghosts are laid under the belts and counted in `landfill` and `items`. Without it they are gone round or hopped.
+  - `return: true` lays a second line back beside it, from beside its last belt to beside its first, the other way:
+    on `return_side` (left or right of the line), else whichever side starts and ends free, right first. Either end
+    moves to the nearest free tile within 2 on that side when the tile beside the line is taken. It follows the row
+    beside the first line in short legs. Where that side is blocked it crosses under the first line by an underground
+    pair (`crossings`); where the row has no way on, the rest is searched as a line of its own (`apart` counts its
+    belts with no belt of the first line next to them). Its last belt turns away rather than feed a belt. When the
+    search for its end runs out within 24 tiles of it (a built-up base around the first belt), the line ends at the
+    nearest tile reached and `short_of` says where and how far; the other side is tried for a whole line first.
+    Neither line ever crosses itself.
+  - Reply: `route` (`E12 uE5 S3`: belt runs by facing, `uE5` an underground pair east spanning 5), `tiles`, `items`,
+    `missing` (against your inventory), `arrival` (`straight`, `curve`, `side_load` with `lane`, or `end`), `legs`
+    (tiles per leg), `over_trees_or_plants`, `landfill`, `return {route, tiles, side, from, to, crossings, apart,
+    short_of}`, `cost {placement_checks, expansions}`, `placed`, `failed`, `obstacles_marked`, `tiles_laid`;
+    `details: true` lists every entity (a return belt has `line: "return"`).
+  - With no route the error names the nearest tile reached, what stands and which tiles lie around it, what the
+    straight line crosses that a belt cannot stand on, and the search's reach and cost. A blocked or uncharted end or
+    via point fails at once, naming what holds it (one of our belts, water or wetland, an entity). An end closed in (a line can reach it from only a few tiles around it, up to 600) is named
+    as such after 1000 expansions.
+  - `dry_run: true` checks every belt as a `place_ghosts` dry run does (what blocks, tiles needing landfill, standing
+    spots, items against what you hold); `belt_route` holds the plan.
 - Rails (2.0): `rail_route {from, to, via?, signals?, from_direction?, ghosts?, dry_run?, details?}` lays a line of the
   rail planner's own pieces. 2.0 rails take 16 headings (north, northnortheast, northeast, ...); the pieces are
   `straight-rail` (2 tiles, 1 rail; 2.8 tiles on a diagonal), `half-diagonal-rail` (4.5 tiles, 2 rails) and

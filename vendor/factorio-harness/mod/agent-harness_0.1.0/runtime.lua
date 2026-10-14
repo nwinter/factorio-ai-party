@@ -932,9 +932,13 @@ function handlers.describe()
       kite={position='optional anchor to clear (walks there when no enemies)',min_distance='keep units at least this far (default 7)',max_distance='band edge (default 12)',range='shoot structures within (default 14)',radius='enemy scan 8..32 (default 32)',min_health='stop below this health fraction (default 0.4)',retreat='optional {x,y}: below min_health or out of ammunition, walk there (firing at units in reach while ammunition lasts) instead of stopping where you stand; ends retreated on arrival',ticks='1..36000 (default 3600)',outcomes='clear | low_health | out_of_ammo | retreated | timed_out; last reports why (in words), kills, ammo_used, ammo_left, enemies_left, retreated_from'},
       belt_route={from='{x,y} first belt tile, or an existing belt end to extend; the result route lists belt facings in order from it (W2 N1 = two belts facing west, then one facing north; uE4 = underground pair east, exit 4 tiles on)',to='{x,y} last belt tile if free; if it holds our belt or underground entrance, the route feeds into it',
         belt='transport belt entity (default transport-belt); undergrounds of the same tier hop obstacles',undergrounds='default true',lane='left|right: side-load onto this lane of the belt at to (it needs an input from behind)',
-        to_direction='free to: last belt direction (default straight on)',dry_run='plan only, place nothing',details='list every entity',
-        returns='route (runs like E12 N3, uE5 = underground pair east spanning 5), tiles, items, missing (vs inventory), arrival {mode straight|curve|side_load|end, lane}, placed/failed/bounds (construct defaults to them)',
-        note='searches charted ground within 16 tiles around from and to; never passes a tile an existing belt outputs into; turns and undergrounds cost extra'},
+        to_direction='free to: last belt direction (default straight on)',dry_run='plan only, place nothing: each belt checked as a place_ghosts dry run checks it, belt_route holds the plan',details='list every entity',
+        via='1..16 {x,y} tiles the line passes in order (each leg from, via points, to is at most 1000 tiles)',
+        landfill='true: water and wetland a tile item makes buildable are used too (its tile ghosts are laid under the belts; tiles cost more than going round); default false: never',
+        ['return']='true: a second line back beside it, from beside its last belt to beside its first, the other way (return_side left|right of the line, default whichever starts and ends free, right first); it follows the row beside the line, crosses under the line where its side is blocked, and is searched as a line of its own where the row has no way on',
+        return_side='left|right (with return)',
+        returns='route (runs like E12 N3, uE5 = underground pair east spanning 5), tiles, items (belts, undergrounds, landfill), missing (vs inventory), arrival {mode straight|curve|side_load|end, lane}, legs (tiles per leg), over_trees_or_plants (tiles whose trees, rocks or wild plants placing marks), landfill {item: tiles}, return {route, tiles, side, from, to, crossings (times it passes under the line), apart (its belts with no belt of the line next to them), short_of (it ends at the nearest tile reached, when its end, within 24 tiles, was not reached within the budget), ...}, cost {placement_checks, expansions}, placed/failed/bounds (construct defaults to them), obstacles_marked, tiles_laid',
+        note='a weighted search over charted ground within 24 tiles of each leg\'s ends, within 8000 placement checks and 8000 expansions (12000 and 13000 with the return line), at most 2048 belts and undergrounds a call; an end closed in is named after 1000 expansions; trees, rocks and wild plants are passed over (marked, construct mines them) at a small cost; cliffs, buildings and a force\'s own plants never; undergrounds hop anything but lava and empty space; never passes a tile an existing belt outputs into; turns and undergrounds cost extra'},
       pole_route={from='{x,y}',to='{x,y}',waypoints='optional 1..16 {x,y} to pass through, in order (legs <=512 tiles, route <=1024)',item='pole item (default small-electric-pole)',spacing='tiles between poles (default: wire reach minus room for a 2-tile sideways shift: small 7, medium 8, big 29)',dry_run='boolean: plan only; returns positions',
         note='places pole ghosts along straight legs, shifting a blocked spot up to 2 tiles sideways within wire reach, reusing own poles/ghosts already on the line; returns poles, held, short (craft that many), failed (with reasons), bounds; then construct builds it (trees under ghosts are marked and cleared). Each placed pole joins every network in wire reach'},
       pipe_route={pumps='boolean: when the route (with the pipes it joins) would make a fluid segment past the engine extent limit (320 tiles), place pump ghosts on it (flow from -> to; pumps need power); without it the result warns and lists pump positions',waypoints='optional 1..16 free {x,y} tiles to pass through, in order (each leg <=200 tiles manhattan); without them a route over 150 tiles is split at free tiles along the straight line; each leg starts from what the leg before left on its waypoint (dry_run too: later legs keep off the earlier legs\' tiles)',from='{x,y} first pipe tile: free ground, or the free tile at a machine fluid connection (joins that machine only), or our pipe/pipe-to-ground/tank or single-connection machine (pumpjack, offshore pump; joined at a free tile by one of its connections)',
@@ -5578,11 +5582,15 @@ local function place_route(p,a,plan,out)
   if a.dry_run then out.dry_run=true; return out end
   local placed=place_ghost_list(p,plan.entities)
   out.placed,out.failed,out.bounds=placed.placed,placed.failed,placed.bounds
+  out.obstacles_marked,out.tiles_laid,out.tiles_note=placed.obstacles_marked,placed.tiles_laid,placed.tiles_note
   return out
 end
 function handlers.belt_route(p,a)
   local plan=route.plan(p,a)
-  return place_route(p,a,plan,{route=plan.route,tiles=plan.tiles,items=plan.items,arrival=plan.arrival,extends=plan.extends})
+  local out=place_route(p,a,plan,{route=plan.route,tiles=plan.tiles,items=plan.items,arrival=plan.arrival,extends=plan.extends,
+    legs=plan.legs,over_trees_or_plants=plan.over_trees_or_plants,landfill=plan.landfill,['return']=plan['return'],cost=plan.cost})
+  out.obstacles_marked=out.obstacles_marked or nil
+  return out
 end
 -- Rails (rails.lua): rail_route plans the 2.0 rail planner's pieces around
 -- what blocks them and places them as ghosts; the ones in build reach are
@@ -6120,7 +6128,7 @@ end
 -- action and queue go on; a queue step with dry_run=true gets the same check.
 function handlers.dry_run(p,a)
   local action,args=a.action,a.args
-  assert(M.dryrun.ACTIONS[action],'dry_run takes action (place_ghosts, paste, blueprint_place, build or rail_route) and args (that call\'s arguments)')
+  assert(M.dryrun.ACTIONS[action],'dry_run takes action (place_ghosts, paste, blueprint_place, build, rail_route or belt_route) and args (that call\'s arguments)')
   assert(type(args)=='table','args must be the call\'s arguments')
   assert(args.dry_run==nil or args.dry_run==true,'dry_run must be true or false')
   local inner={}
@@ -6132,14 +6140,16 @@ function handlers.dry_run(p,a)
   M.turretammo.check(inner.ammo)
   local q=p
   if inner.platform~=nil and action~='build' then q=on_platform(p,inner.platform) end
-  local kind=action=='build' and 'build' or (action=='place_ghosts' or action=='rail_route') and 'ghosts' or 'paste'
+  local kind=action=='build' and 'build' or (action=='place_ghosts' or action=='rail_route' or action=='belt_route') and 'ghosts' or 'paste'
   local plan={kind=kind,mode=inner.mode,details=details,entities={},tiles={},standing=kind~='build'}
-  local rail_plan
+  local rail_plan,belt_plan
   -- Bounded work: a plan past these is refused before anything is checked.
+  -- (belt_route: a line and its return line, up to 2048 belts the route has checked tile by tile already)
+  local max_entities=action=='belt_route' and 2*M.dryrun.MAX_ENTITIES or M.dryrun.MAX_ENTITIES
   local function bounded()
-    assert(#plan.entities<=M.dryrun.MAX_ENTITIES and #plan.tiles<=M.dryrun.MAX_TILES,string.format(
+    assert(#plan.entities<=max_entities and #plan.tiles<=M.dryrun.MAX_TILES,string.format(
       'a dry run checks at most %d entities and %d tiles; this plan has %d entities and %d tiles so far (fewer repeat copies, or part of the layout)',
-      M.dryrun.MAX_ENTITIES,M.dryrun.MAX_TILES,#plan.entities,#plan.tiles))
+      max_entities,M.dryrun.MAX_TILES,#plan.entities,#plan.tiles))
   end
   local copies,dx,dy=1,0,0
   local r=inner['repeat']
@@ -6157,6 +6167,10 @@ function handlers.dry_run(p,a)
       -- its signals go with the plan's rails (after_rails).
       rail_plan=M.rails.plan(q,inner)
       for i,e in ipairs(rail_plan.entities) do plan.entities[i]={index=i,name=e.name,position=e.position,direction=directions[e.direction]} end
+    elseif action=='belt_route' then
+      -- The line (and its return line) as belt_route plans it (route.lua), each belt checked.
+      belt_plan=route.plan(q,inner)
+      for i,e in ipairs(belt_plan.entities) do plan.entities[i]={index=i,name=e.name,position=e.position,direction=directions[e.direction],type=e.type} end
     elseif kind=='ghosts' then
       assert(inner.entities~=nil or inner.tiles~=nil,'place_ghosts requires entities and/or tiles')
       if inner.entities~=nil then
@@ -6242,6 +6256,11 @@ function handlers.dry_run(p,a)
   end
   out.paste=paste
   out.rail_route=rail_plan and rail_plan.out or nil
+  if belt_plan then
+    local b={}
+    for k,v in pairs(belt_plan) do if k~='entities' then b[k]=v end end
+    out.belt_route=b
+  end
   if kind=='paste' and (inner.mode or 'normal')=='normal' and (counts.refused_now or 0)>0 then
     out.paste_note=string.format('a normal paste is all or nothing: with %d entr%s the game refuses there now, it places no ghost at all; mode forced places the rest and marks trees and rocks in the way',
       counts.refused_now,counts.refused_now==1 and 'y' or 'ies')
@@ -7390,7 +7409,9 @@ end
 -- route with no way says what tiles the straight line crosses (dryrun.lua; Sol, shift09: poles on Gleba wetland).
 do
   local tiles={stands_fn=function(...) return M.dryrun.stands_fn(...) end,line_tiles=function(...) return M.dryrun.line_tiles(...) end}
-  route=route_module{position=position,directions=directions,chunk_of=chunk_of,tiles=tiles}
+  -- belt_route also passes trees, rocks and wild plants (marked when placed) and, with landfill, water and wetland
+  route=route_module{position=position,directions=directions,chunk_of=chunk_of,tiles=tiles,
+    tile_info=function(...) return M.dryrun.tile_info(...) end,only_obstacles=function(...) return construction.only_obstacles(...) end}
   pipes=pipes_module{position=position,directions=directions,chunk_of=chunk_of,tiles=tiles}
 end
 construction=construction_module{position=position,distance=distance,integer=integer,visible=visible,steer=steer,real=real,
