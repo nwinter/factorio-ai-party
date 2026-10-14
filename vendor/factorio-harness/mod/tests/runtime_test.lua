@@ -1961,6 +1961,8 @@ local belt={valid=true,name='transport-belt',type='transport-belt',position={x=2
 local ins={valid=true,name='inserter',type='inserter',position={x=2.5,y=0.5},force=p.force,direction=0,health=150,max_health=150,
   pickup_position={x=2.5,y=-0.5},drop_position={x=2.5,y=1.7},get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
 ins.surface={find_entities_filtered=function(f) return f.position.y==1.7 and {belt} or {} end}
+-- The engine's targets: the belt it drops onto; nothing at its pickup point.
+ins.drop_target=belt
 local pump={valid=true,name='offshore-pump',type='offshore-pump',position={x=10.5,y=0.5},force=p.force,direction=4,health=150,max_health=150,
   get_inventory=function() return nil end,get_fluid_contents=function() return {water=0} end}
 local joined={valid=true,name='pipe',position={x=9.5,y=0.5}}
@@ -1973,7 +1975,8 @@ p.surface.find_entities_filtered=function(f)
   return {}
 end
 local seen=call('inspect',{position=ins.position})
-eq(seen.pickup.y,-0.5); eq(seen.drop.y,1.5); eq(seen.io,'2.5,-0.5 -> 2.5,1.7 transport-belt')
+eq(seen.pickup.y,-0.5); eq(seen.drop.y,1.5); eq(seen.io,'2.5,-0.5 (no pickup target) -> 2.5,1.7 transport-belt')
+eq(seen.io_warning,'no pickup target'); eq(seen.drop_target,'transport-belt (2.5,1.5)'); eq(seen.pickup_target,nil)
 local fc=call('inspect',{position=pump.position}).fluid_connections
 eq(#fc,1); eq(fc[1].flow,'output'); eq(fc[1].at.x,10.5); eq(fc[1].joins.x,9.5); eq(fc[1].joins.y,0.5); eq(fc[1].direction,'west'); eq(fc[1].connected_to,'pipe'); eq(fc[1].fluid,'water')
 eq(call('inspect',{position=ins.position}).fluid_connections,nil)
@@ -2082,7 +2085,7 @@ eq(call('status').active.kind,'wait_ticks'); eq(call('status').last.outcome,'rep
 advance(6); eq(call('status').active,false); eq(call('status').last.outcome,'duration_elapsed')
 -- inspect is a read: anything in sight, no reach needed; in_reach says so.
 p.can_reach_entity=function() return false end
-local far=call('inspect',{position=ins.position}); eq(far.in_reach,false); eq(far.io,'2.5,-0.5 -> 2.5,1.7 transport-belt')
+local far=call('inspect',{position=ins.position}); eq(far.in_reach,false); eq(far.io,'2.5,-0.5 (no pickup target) -> 2.5,1.7 transport-belt')
 fails(function() call('rotate',{position=ins.position}) end,'out of reach')
 p.can_reach_entity=function() return true end
 -- build short of an item the hand-craft queue is making waits for it, then builds.
@@ -2310,5 +2313,43 @@ end)()
     'moved 5 coal; 1 of 3 targets touched; short: your inventory full of coal, 1 full, 1 wanting more you hold none of')
   p.surface.find_entities_filtered,p.get_main_inventory,p.can_reach_entity,p.surface.find_non_colliding_position=find,getmain,reach,free
   p.position,p.reach_distance=at,dist
+end)()
+;(function()
+  -- place_ghosts lists an inserter ghost with nothing on its pickup or drop point (targets.lua); inspect of
+  -- that ghost reads the same; one with a chest on both points is not listed.
+  local can,create,find,entities,tile=p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered,prototypes.entity,p.surface.get_tile
+  local charted,at=p.force.is_chunk_charted,p.position
+  prototypes.entity={inserter={type='inserter',items_to_place_this={{name='inserter',count=1}},inserter_pickup_position={0,-1},inserter_drop_position={0,1.2}}}
+  p.force.is_chunk_charted=function() return true end
+  p.position={x=0,y=0}
+  local made,chests={},{}
+  local function chest(x,y) chests[#chests+1]={valid=true,name='iron-chest',type='container',position={x=x,y=y}} end
+  chest(6.5,-0.5); chest(6.5,1.5)
+  p.surface.can_place_entity=function() return true end
+  p.surface.create_entity=function(a)
+    local g={valid=true,name='entity-ghost',type='entity-ghost',ghost_type='inserter',ghost_name=a.inner_name,ghost_prototype=prototypes.entity[a.inner_name],
+      position={x=a.position.x,y=a.position.y},direction=a.direction or 0,surface=p.surface,force=p.force,
+      get_fluid_contents=function() return {} end,get_inventory=function() return nil end}
+    made[#made+1]=g
+    return g
+  end
+  p.surface.find_entities_filtered=function(f)
+    local out={}
+    if f.position then
+      for _,e in ipairs(chests) do if math.abs(e.position.x-f.position.x)<=0.35 and math.abs(e.position.y-f.position.y)<=0.35 then out[#out+1]=e end end
+      for _,g in ipairs(made) do if f.position.x==g.position.x and f.position.y==g.position.y then out[#out+1]=g end end
+    end
+    return out
+  end
+  p.surface.get_tile=function() return {name='grass-1',valid=true} end
+  local r=call('place_ghosts',{entities={{name='inserter',position={x=2.5,y=0.5}},{name='inserter',position={x=6.5,y=0.5}}}})
+  eq(r.placed,2); eq(#r.inserters_without_target,1); eq(r.inserters_without_target[1].position.x,2.5)
+  eq(r.inserters_without_target[1].missing,'no pickup target, no drop target'); eq(r.inserters_without_target[1].drop,'none: the ground at (2.5,1.5)')
+  local seen=call('inspect',{position={x=2.5,y=0.5}})
+  eq(seen.io_warning,'no pickup target, no drop target'); eq(seen.pickup_target,'none: the ground at (2.5,-0.5)')
+  local good=call('inspect',{position={x=6.5,y=0.5}})
+  eq(good.io_warning,nil); eq(good.pickup_target,'iron-chest (6.5,-0.5)'); eq(good.drop_target,'iron-chest (6.5,1.5)')
+  p.surface.can_place_entity,p.surface.create_entity,p.surface.find_entities_filtered,prototypes.entity,p.surface.get_tile=can,create,find,entities,tile
+  p.force.is_chunk_charted,p.position=charted,at
 end)()
 print('runtime: '..assertions..' assertions passed')

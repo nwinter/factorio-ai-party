@@ -45,7 +45,11 @@ local p={index=1,position={x=0,y=0},cursor_stack=stack()}
 p.force={name='player',is_chunk_charted=function(_,c)return not (c.x==1 and c.y==1) end}
 p.surface={find_entities_filtered=function()return {} end}
 p.build_from_cursor=function(args)built=built+1; p.last_build=args end
+-- The inserter-target check (targets.lua, tested in tests/targets.lua): a stub
+-- here, so a paste's wiring to it can be seen.
+local targets_stub={check=function() return nil end}
 local H=dofile('mod/agent-harness_0.1.0/blueprints.lua'){
+  targets=targets_stub,
   position=function(v)assert(type(v)=='table' and type(v.x)=='number' and type(v.y)=='number');return v end,
   visible=function(player,v)return (v.x-player.position.x)^2+(v.y-player.position.y)^2<=32*32 end,
   own_platform=function(player) local pl=player.surface.platform; return pl~=nil and pl.force==player.force end,
@@ -289,6 +293,20 @@ local r2=H.paste(pp2,{slot='sunward',position={x=10.9,y=0.2}})
 game.create_inventory=make
 eq(r2.count,2,'two new ghosts'); eq(r2.expected,6); eq(r2.existing_entities,1); eq(r2.existing_ghosts,1)
 eq(r2.not_placed_count,2); eq(#r2.not_placed,2)
+eq(r2.inserters_without_target,nil,'no inserter in it')
+-- A paste hands its new inserter ghosts to the target check and lists what it finds.
+do
+  local seen
+  targets_stub.check=function(list,max) seen=list; eq(max,16); return {{name='inserter',position={x=20.5,y=0.5},missing='no drop target'}},nil end
+  sources.lone={kind='blueprint',entities={{name='chest',position={x=0.5,y=0.5}}}}
+  H.blueprint_import(p,{blueprint='lone',slot='lone'})
+  local build=function() ghost('inserter',20.5,0.5).ghost_type='inserter'; ghost('chest',21.5,0.5).ghost_type='container' end
+  game.create_inventory=function() local inv=make(); rawset(inv[1],'build_blueprint',build); return inv end
+  local r=H.paste(pp2,{slot='lone',position={x=20.5,y=0.5}})
+  game.create_inventory=make
+  eq(#seen,1,'the inserter ghost only'); eq(seen[1].ghost_type,'inserter'); eq(r.inserters_without_target[1].missing,'no drop target')
+  targets_stub.check=function() return nil end
+end
 local np={}
 for _,row in ipairs(r2.not_placed) do np[row.position.x..','..row.position.y]=row end
 local rule=np['14.5,0.5']

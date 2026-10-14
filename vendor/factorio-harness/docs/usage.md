@@ -486,7 +486,14 @@ fh sleep 900 --until researched                       # ...or until the research
 - `inspect` also shows what the entity GUI and cursor show: `status_name` (e.g. `marked_for_deconstruction`,
   `waiting_for_source_items`), `filters`, `filter_mode` and `use_filters` (inserters, loaders), `held` (an inserter's
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
-  on the footprint, such as a paste replacing it, with their filters). A ghost on a building yields to the building
+  on the footprint, such as a paste replacing it, with their filters). A built inserter whose engine targets are empty
+  says so in `io_warning` (`no pickup target`: it takes only items lying on the ground there; `no drop target`: it puts
+  items on the ground there, or over empty space throws them away), in its `io` line (`2.5,-0.5 (no pickup target) ->
+  2.5,1.7 transport-belt`), in observe rows, and in `build` and `rotate` replies right after (the engine sets an
+  inserter's targets a tick after it is built or turned, so those replies read what stands on its points; a `builds`
+  batch adds `inserters_without_target` once all its entries stand, so a chest built after its inserter counts). An inserter ghost shows `pickup_target` and `drop_target` from its points as the
+  dry run reads them, with `io_warning`; `place_ghosts`, `paste` and `blueprint_place` list the inserter ghosts they
+  placed that miss a target in `inserters_without_target` (first 16, `inserters_without_target_count` past them). A ghost on a building yields to the building
   unless you name it (`name: "entity-ghost"`). So does a flying robot, a biter, a projectile or any unselectable entity
   over it, in `inspect`, `transfer`, `collect` and every other call on a position: `name` or `unit_number` picks it,
   and alone at the position it is the target.
@@ -721,6 +728,15 @@ fh sleep 900 --until researched                       # ...or until the research
     anchor}` (where the blueprint lands, computed as the game places it: its center at `position`, shifted onto the
     grid; flips are refused on a platform or for a bot, as the paste refuses them) and, for a normal paste with an
     entry the game refuses now, `paste_note` (all or nothing: no ghost at all).
+  - `inserters` (targets.lua; Astra, three times in shift 9: a platform bypass inserter that looked right reached no
+    crusher): one row per planned inserter, `{index, name, position, direction, pickup, drop, missing}`. `pickup` and
+    `drop` name what stands on the inserter's pickup and drop point: a built entity it can use (`assembling-machine-2
+    (12.5,3.5)`, a belt), one planned in the same call (`planned crusher (0,4)`), a ghost (`ghost wooden-chest
+    (10.5,20.5)`), or `none: the ground at (5.5,21.5)`, `none: empty space at (4.5,0.5)` (a platform), `none:
+    stone-wall at (10.5,22.5) takes no items`. The points come from the prototype's vectors turned with the direction,
+    as the engine places them (a long-handed inserter facing north picks up 2 tiles north and drops 2.2 south).
+    `missing`: `no pickup target`, `no drop target`; `inserters_without_target` counts them. At most 64 rows (256 with
+    `details`).
 - `ports {name, position, direction?, recipe?, mirror?, platform?}` (read; ports.lua, Gemini's request: a recipe moves
   which fluid an electromagnetic plant's ports carry) lists the fluid connections of an entity that is not built:
   `ports [{at, joins, direction, flow, fluid, box, there}]` (`at` the entity's tile with the port, `joins` the tile

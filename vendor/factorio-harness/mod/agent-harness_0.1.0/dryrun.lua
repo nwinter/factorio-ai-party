@@ -15,6 +15,7 @@ return function(api)
   local M = {}
   M.ACTIONS = {place_ghosts=true, paste=true, blueprint_place=true, build=true}
   local MAX_ROWS, MAX_LISTED, HOLE_LIMIT, FLOOD_BUDGET, MAX_SPOTS = 30, 200, 1024, 20000, 8
+  local MAX_INSERTERS = 64
   local DIRS = {{1,0},{-1,0},{0,1},{0,-1}}
   local NAMES = {[0]='north', [4]='east', [8]='south', [12]='west'}
   local RAILS = {['straight-rail']=true, ['half-diagonal-rail']=true, ['curved-rail-a']=true, ['curved-rail-b']=true,
@@ -947,6 +948,34 @@ return function(api)
     end
     out.entities = #rows > 0 and rows or nil
     if nproblems > #rows and not plan.details then out.more_problems = nproblems-#rows end
+    -- Each planned inserter: what stands on its pickup and drop points (built,
+    -- planned in this call, or a ghost) and whether it has a target there
+    -- (targets.lua; Astra's bypass inserter that reached no crusher).
+    if api.targets then
+      local function planned(pos)
+        for _, o in ipairs(occupied[key(math.floor(pos.x), math.floor(pos.y))] or {}) do
+          local b = o.box
+          if pos.x >= b.left_top.x and pos.x <= b.right_bottom.x and pos.y >= b.left_top.y and pos.y <= b.right_bottom.y then
+            return {name=o.name, position=o.pos, type=o.proto.type}
+          end
+        end
+      end
+      local list, without = {}, 0
+      for _, r in ipairs(recs) do
+        if r.proto and r.pos and r.proto.type == 'inserter' then
+          local t = try(function() return api.targets.plan(s, r.proto, r.pos, r.dir, planned) end)
+          if t then
+            if t.missing then without = without + 1 end
+            if #list < (plan.details and 256 or MAX_INSERTERS) then
+              list[#list+1] = {index=r.copy and (r.copy..'.'..r.index) or r.index, name=r.name, position=r.pos,
+                direction=r.dir ~= 0 and NAMES[r.dir] or nil, pickup=t.pickup, drop=t.drop, missing=t.missing}
+            end
+          end
+        end
+      end
+      out.inserters = #list > 0 and list or nil
+      out.inserters_without_target = without > 0 and without or nil
+    end
     local n = #recs
     local parts = {}
     for _, k in ipairs({'ok', 'after_tiles', 'after_rails', 'needs_tiles', 'exists', 'blocked'}) do

@@ -36,6 +36,13 @@ prototypes.entity = {
   ['gun-turret']={name='gun-turret', type='ammo-turret', tile_width=2, tile_height=2, collision_box=box(0.7), collision_mask=BUILDING,
     items_to_place_this={{name='gun-turret', count=1}}},
   ['tree-01']={name='tree-01', type='tree', collision_mask=mask('object', 'player')},
+  ['stone-wall']={name='stone-wall', type='wall', tile_width=1, tile_height=1, collision_box=box(0.49), collision_mask=BUILDING},
+  inserter={name='inserter', type='inserter', tile_width=1, tile_height=1, collision_box=box(0.15), collision_mask=BUILDING,
+    items_to_place_this={{name='inserter', count=1}}, inserter_pickup_position={0, -1}, inserter_drop_position={0, 1.2}},
+  ['wooden-chest']={name='wooden-chest', type='container', tile_width=1, tile_height=1, collision_box=box(0.35), collision_mask=BUILDING,
+    items_to_place_this={{name='wooden-chest', count=1}}},
+  ['transport-belt']={name='transport-belt', type='transport-belt', tile_width=1, tile_height=1, collision_box=box(0.4),
+    collision_mask=mask('object', 'transport_belt', 'water_tile'), items_to_place_this={{name='transport-belt', count=1}}},
   character={name='character', type='character', collision_box=box(0.2), collision_mask=mask('player')},
 }
 prototypes.item = {
@@ -75,7 +82,12 @@ local function world(tiles, entities, opts)
         lt = {x=lt.x or lt[1], y=lt.y or lt[2]}; rb = {x=rb.x or rb[1], y=rb.y or rb[2]}
         ok = meets(e.bounding_box, {left_top=lt, right_bottom=rb})
       end
-      if ok and f.position then ok = dist(e.position, f.position) <= (f.radius or 0.5) end
+      -- A position alone finds what its box holds, as the engine does.
+      if ok and f.position and f.radius then ok = dist(e.position, f.position) <= f.radius
+      elseif ok and f.position then
+        local b = e.bounding_box
+        ok = f.position.x >= b.left_top.x and f.position.x <= b.right_bottom.x and f.position.y >= b.left_top.y and f.position.y <= b.right_bottom.y
+      end
       if ok and f.type then
         local types = type(f.type) == 'table' and f.type or {f.type}
         local any = false
@@ -332,6 +344,40 @@ eq(snapped.x, 5.5); eq(snapped.y, 0.5)
 local f2 = dryrun.snap(prototypes.entity['stone-furnace'], {x=5.3, y=0.6}, 0)
 eq(f2.x, 5); eq(f2.y, 1)
 eq(dryrun.runs({7, 1, 2, 3, 9, 10}), '1-3,7,9-10')
+
+-- Each planned inserter's pickup and drop target (targets.lua; Astra's bypass
+-- inserter that reached no crusher): one between a chest planned in the same
+-- call and a built belt; one facing east with nothing on either point; one
+-- between a chest ghost and a built wall, which takes no items.
+do
+  local targets = dofile('mod/agent-harness_0.1.0/targets.lua'){}
+  local api2 = {}
+  for k, v in pairs(api) do api2[k] = v end
+  api2.targets = targets
+  local dr = dofile('mod/agent-harness_0.1.0/dryrun.lua')(api2)
+  local site = world(planet, {
+    {name='transport-belt', type='transport-belt', position={x=2.5, y=22.5}},
+    {name='entity-ghost', type='entity-ghost', ghost_name='wooden-chest', ghost_type='container', position={x=10.5, y=20.5}},
+    {name='stone-wall', type='wall', position={x=10.5, y=22.5}},
+    {name='small-electric-pole', type='electric-pole', position={x=14.5, y=22.5}},
+  })
+  local q = {surface=site, force=force, position={x=0, y=20}}
+  local r = dr.check(q, {kind='ghosts', entities={
+    {index=1, name='wooden-chest', position={x=2.5, y=20.5}},
+    {index=2, name='inserter', position={x=2.5, y=21.5}},
+    {index=3, name='inserter', position={x=6.5, y=21.5}, direction=4},
+    {index=4, name='inserter', position={x=10.5, y=21.5}}}})
+  eq(#r.inserters, 3); eq(r.inserters_without_target, 2)
+  local a, b, c = r.inserters[1], r.inserters[2], r.inserters[3]
+  eq(a.index, 2); eq(a.pickup, 'planned wooden-chest (2.5,20.5)'); eq(a.drop, 'transport-belt (2.5,22.5)'); eq(a.missing, nil)
+  eq(b.direction, 'east'); eq(b.pickup, 'none: the ground at (7.5,21.5)'); eq(b.drop, 'none: the ground at (5.5,21.5)')
+  eq(b.missing, 'no pickup target, no drop target')
+  eq(c.pickup, 'ghost wooden-chest (10.5,20.5)'); eq(c.drop, 'none: stone-wall at (10.5,22.5) takes no items'); eq(c.missing, 'no drop target')
+  -- On a platform: a drop point over empty space says so.
+  local deck = world(function(x, y) return (x >= 0 and x <= 3) and 'space-platform-foundation' or 'empty-space' end, {}, {platform={name='deck'}})
+  local d = dr.check({surface=deck, force=force, position={x=0, y=0}}, {kind='ghosts', entities={{index=1, name='inserter', position={x=3.5, y=0.5}, direction=4}}})
+  eq(d.inserters[1].pickup, 'none: empty space at (4.5,0.5)'); eq(d.inserters[1].drop, 'none: the ground at (2.5,0.5)')
+end
 eq(dryrun.placeable_on('landfill', 'water'), true); eq(dryrun.placeable_on('landfill', 'grass-1'), false)
 eq(dryrun.placeable_on('space-platform-foundation', 'empty-space'), true); eq(dryrun.placeable_on('space-platform-foundation', 'grass-1'), false)
 print('dryrun: ok')
