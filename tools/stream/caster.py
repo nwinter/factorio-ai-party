@@ -957,6 +957,13 @@ def facts_for(e, s, baseline=None, deadline=None, shift=None):
         f["on_screen_map"] = {"where": "the whole picture" if shows_map == "on air" else "one small tile",
                               "note": "viewers see the whole base on Factorio's map now (the core and its outposts): "
                                       "a moment to say what is where, e.g. 'here's the whole base'"}
+    cloud = (s.get("onair") or {}).get("cloud")  # onecam.py: a pollution or spore cloud on Factorio's map, on air
+    if cloud:
+        row = next((c for c in s.get("clouds") or [] if c.get("surface") == cloud.get("surface")), {})
+        f["on_screen_cloud"] = {"shown_as": cloud.get("label"), "why": cloud.get("why"), "chunks": row.get("chunks"),
+                                "max_per_chunk": row.get("max"), "nests_reached": len(row.get("reached") or []),
+                                "note": "viewers see this surface's pollution (spores on Gleba) on Factorio's map now: "
+                                        "each coloured square is a 32-tile chunk, darker where there is more"}
     plat = (s.get("onair") or {}).get("platform")  # onecam.py: a space platform on air (a visit, a departure, work)
     if plat:
         f["on_screen_platform"] = {

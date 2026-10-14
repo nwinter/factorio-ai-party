@@ -2406,6 +2406,11 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   (searched every 10 s, followed by reference in between) with our nearest building or character within 500 tiles:
   `id, name, surface, position, speed (tiles/s), closing, nearest {x,y,name}, nearest_distance, eta_s, character
   {x,y,player}, character_distance`.
+- Operator clouds (threat.lua; the pog stream's pollution and spore layer, viewer Joonazan 13:00): `clouds {surface?}`
+  (read) gives per surface an agent asked status on (the background chart's last sweep, about once a game minute)
+  `surface, force, tick, pollutant {name, color {r,g,b,a}} (none on Vulcanus and Fulgora), cells [[cx, cy, amount]]`
+  (every charted chunk with pollution, spores on Gleba, at its centre; 32-tile chunks; at most 6000), `chunks, max,
+  total` and `reached [{tick, position, spawners}]` (the pollution_reached_nest news), and `tick`. Agents cannot call it.
 - Operator hand hauling (hauling.lua; viewer Joonazan, 05:00): `hauling {top?}` (read; top 0..50, default 10) gives
   per agent since the save began `name, items, calls, direct_items, direct_calls, queue_items, queue_calls,
   order_items, order_calls, carry_tiles, since_tick, hauls` and `tick`. Counted: every hand transfer that moved items

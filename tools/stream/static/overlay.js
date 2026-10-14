@@ -863,6 +863,7 @@
       const label = frame.querySelector(".cam-label");
       const cam = (s.cameras || {})[slot];
       if (slot === "inset") frame.classList.toggle("on", !!cam); // up only while the director has an inset
+      renderCloud(frame, cam && cam.map ? cam : null, s);
       const agents = cam ? cam.agents.map((n) => s.agents.find((a) => a.name === n)).filter(Boolean) : [];
       if (slot !== "main" && slot !== "inset" && !(onecam && curMode !== "trio")) renderFill(frame, s, !agents.length && !(cam && cam.attack));
       const sig = agents.map((a) => a.name + a.color + a.glyph + a.display_name).join("|") + "|" + (cam && cam.attack || "")
@@ -1057,6 +1058,61 @@
   // A side camera nobody is on (fewer agents than cameras, or the director paired them) would show an empty or stale
   // capture: after 4 s unused the hole gets an opaque desk card (the analyst's read, else research), gone on reuse.
   const PACE = { ahead: "ahead", "on pace": "onpace", behind: "behind" };
+  // The pollution or spore cloud over a map shot (onecam.py cloud shot and base map; clouds.py): each charted chunk's
+  // amount as a translucent square in the pollutant's map colour, stronger where there is more, the nests it reached
+  // ringed, and a small key. The camera client renders 1080 px of height at the shot's zoom (1 tile = 32 * zoom px)
+  // and the hole shows its centre, scaled to the hole's height.
+  function renderCloud(frame, cam, s) {
+    const view = cam && cam.map_view;
+    const pos = view && view.position;
+    const cloud = view && pos && (s.clouds || []).find((c) => c.surface === view.surface);
+    let cv = frame.querySelector("canvas.cam-cloud"), key = frame.querySelector(".cam-cloud-key");
+    if (!cloud || !(cloud.cells || []).length || !(view.zoom > 0)) {
+      if (cv) cv.classList.remove("on");
+      if (key) key.classList.remove("on");
+      return;
+    }
+    if (!cv) {
+      cv = document.createElement("canvas");
+      cv.className = "cam-cloud";
+      frame.insertBefore(cv, frame.firstChild);
+      key = el("div", "cam-cloud-key");
+      frame.append(key);
+    }
+    const W = frame.clientWidth, H = frame.clientHeight;
+    const sig = [W, H, pos.x, pos.y, view.zoom, cloud.tick, cloud.chunks, cloud.max].join("|");
+    if (cv.dataset.sig !== sig) {
+      cv.dataset.sig = sig;
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext("2d"), k = H / 1080 * 32 * view.zoom, side = 32 * k;
+      const col = cloud.color || {}, rgb = [col.r, col.g, col.b].map((v) => Math.round(255 * (v || 0))).join(", ");
+      const a = col.a || 0.58, lmax = Math.log1p(cloud.max || 1);
+      ctx.clearRect(0, 0, W, H);
+      for (const [cx, cy, amt] of cloud.cells) {
+        const x = W / 2 + (cx * 32 - pos.x) * k, y = H / 2 + (cy * 32 - pos.y) * k;
+        if (x > W || y > H || x + side < 0 || y + side < 0) continue;
+        ctx.fillStyle = `rgba(${rgb}, ${(a * (0.3 + 0.7 * Math.log1p(amt) / lmax)).toFixed(3)})`;
+        ctx.fillRect(x, y, side + 0.5, side + 0.5); // a hair wider: no seams between neighbours
+      }
+      ctx.lineWidth = 2.5;
+      for (const n of cloud.reached || []) {
+        const x = W / 2 + (n.x - pos.x) * k, y = H / 2 + (n.y - pos.y) * k;
+        ctx.strokeStyle = "#000"; ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = "#ff5a44"; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.stroke();
+        ctx.lineWidth = 2.5;
+      }
+      const name = cloud.pollutant === "spores" ? "Spores" : "Pollution";
+      key.textContent = "";
+      const sw = el("i", "sw");
+      sw.style.background = `linear-gradient(90deg, rgba(${rgb}, ${(a * 0.3).toFixed(2)}), rgba(${rgb}, ${a}))`;
+      key.append(sw, el("span", "", `${name} per chunk, up to ${fmtAmount(cloud.max)} · ${cloud.chunks} chunk${cloud.chunks === 1 ? "" : "s"}`));
+      if ((cloud.reached || []).length) key.append(el("i", "nest"), el("span", "", `nests reached: ${cloud.reached.length}`));
+    }
+    cv.classList.add("on");
+    key.classList.add("on");
+  }
+  function fmtAmount(v) { return v >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10); }
+
   function renderFill(frame, s, unused) {
     let fill = frame.querySelector(".cam-fill");
     if (!fill) { fill = el("div", "cam-fill"); frame.prepend(fill); }

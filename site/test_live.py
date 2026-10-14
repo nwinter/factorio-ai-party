@@ -170,8 +170,29 @@ out.paint = { drawImage: (calls.drawImage || []).map((c) => c.slice(1).map((n) =
 const t0 = Date.now();
 for (let i = 0; i < 60; i++) M.paint(ctx, M.scene(d, { cx: 40 + i, cy: 30, span: 100 + i }, 400, 400), () => null, 'sans-serif', null);
 out.ms_per_frame = (Date.now() - t0) / 60;
+// the cloud layer: Nauvis's pollution under the base; Gleba's spores on their own (no base, the agents on Gleba)
+const dn = M.prepare(Object.assign({}, data.full, { clouds: data.clouds }));
+const scn = M.scene(dn, { cx: 40, cy: 30, span: 100 }, 400, 400);
+out.nauvis = { cells: scn.cloud.cells, base: !!scn.base, off: M.scene(dn, { cx: 40, cy: 30, span: 100 }, 400, 400,
+  Object.fromEntries(M.LAYERS.map((l) => [l[0], l[0] !== 'cloud']))).cloud, hit: M.cloudHit(dn, 40, 40), miss: M.cloudHit(dn, 500, 500) };
+const dg = M.prepare(Object.assign({}, data.gleba, { clouds: data.clouds, surface: 'gleba' }));
+const scg = M.scene(dg, null, 400, 400);
+out.gleba = Object.assign(summary(scg), { cells: scg.cloud.cells.length, auto: dg.auto, reached: scg.cloud.reached.length,
+  hitNest: M.hitAt(scg, scg.cloud.reached[0].x, scg.cloud.reached[0].y), hit: M.cloudHit(dg, -200, -130) });
+const calls2 = [];
+M.paint(new Proxy({}, { get: (t, k) => (k in t ? t[k] : (...a) => calls2.push([k, t.fillStyle, ...a])), set: (t, k, v) => { t[k] = v; return true; } }),
+  scg, () => null, 'sans-serif', null);
+out.gleba.paintCells = calls2.filter((c) => c[0] === 'fillRect' && String(c[1]).startsWith('rgba(140, 140, 0,')).length;
 process.stdout.write(JSON.stringify(out));
 """
+
+
+# the stream's clouds (tools/stream/clouds.py): pollution east of the sample base, spores on Gleba with a nest reached
+CLOUDS = [{"surface": "nauvis", "label": "Pollution on Nauvis", "pollutant": "pollution", "max": 40,
+           "color": {"r": 0.549, "g": 0, "b": 0, "a": 0.584}, "cells": [[1, 1, 20], [2, 1, 40], [9, 9, 3]]},
+          {"surface": "gleba", "label": "Spores on Gleba", "pollutant": "spores", "max": 15.5,
+           "color": {"r": 0.549, "g": 0.549, "b": 0, "a": 0.584}, "cells": [[-7, -5, 14.7], [-6, -5, 15.5], [-6, -4, 1.2]],
+           "reached": [{"x": -170, "y": -150}]}]
 
 
 def map_state(core=True):
@@ -218,7 +239,11 @@ def map_tests():
         js = os.path.join(d, "scene.js")
         open(js, "w").write(SCENE_JS)
         path = os.path.join(d, "data.json")
-        json.dump({"full": viewer_data(map_state(True)), "old": viewer_data(map_state(False))}, open(path, "w"))
+        gleba = viewer_data(map_state(True))
+        gleba["agents"] = [dict(a) for a in gleba["agents"]]
+        gleba["agents"][4].update(surface="gleba", where="Gleba", position={"x": -190, "y": -120})
+        json.dump({"full": viewer_data(map_state(True)), "old": viewer_data(map_state(False)), "gleba": gleba,
+                   "clouds": CLOUDS}, open(path, "w"))
         r = subprocess.run(["node", js, os.path.join(SITE, "static", "mapview.js"), path], capture_output=True, text=True, timeout=30)
         assert r.returncode == 0, r.stderr
         o = json.loads(r.stdout)
@@ -254,6 +279,18 @@ def map_tests():
         assert o["ms_per_frame"] < 50, o["ms_per_frame"]  # scene + paint of an 80 x 96 core, well under a frame budget even in node
         old = o["old"]  # an older stream service without basemap.core: the core framed from the coarse grid
         assert not old["clip"] and old["inset"] and 70 <= old["span"] <= 200, old
+        # the cloud layer (viewer Joonazan, 13:00): Nauvis's two chunks in view under the base, 4 px a tile, stronger
+        # where there is more; off with its layer; the amount of the chunk under the pointer
+        n = o["nauvis"]
+        assert n["base"] and [(round(c["x"]), round(c["y"]), round(c["s"])) for c in n["cells"]] == [(168, 208, 128), (296, 208, 128)], n["cells"]
+        assert n["cells"][0]["a"] < n["cells"][1]["a"] == 0.584 and n["off"] is None, n
+        assert n["hit"]["text"] == "Pollution 20 in chunk (1, 1), tiles 32..63, 32..63" and n["miss"] is None, n["hit"]
+        g = o["gleba"]  # Gleba: no base, ore, nests or fights; its cloud framed, the agent on Gleba drawn, the rest listed
+        assert not g["base"] and g["nests"] == 0 and g["fights"] == 0 and g["cells"] == 3 and g["reached"] == 1, g
+        assert [a["name"] for a in g["agents"]] == ["sonnet"] and len(g["away"]) == 8, (g["agents"], g["away"])
+        assert g["away"][0][0] == "Astra · Nauvis" and g["away"][2][0] == "Luna · Vulcanus", g["away"]
+        assert -232 <= g["auto"]["cx"] <= -150 and g["hitNest"]["text"] == "Enemy nest the spores reached", g
+        assert g["hit"]["text"].startswith("Spores 14.7 in chunk (-7, -5)") and g["paintCells"] == 3, g
 
         js = os.path.join(d, "live.js")
         open(js, "w").write(LIVE_JS)
