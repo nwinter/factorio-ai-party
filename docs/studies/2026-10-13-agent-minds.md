@@ -84,7 +84,7 @@ Luna's 16:08-16:44 had none. "200 unread" is a cap; "0 mentions" left out a view
 Luna's 3.5-minute waits took 6-7 turns: 127 `./fh wait` polls and about 20M tokens in 88 minutes. Muse's 300 s
 sleeps hit its 300 s shell limit 6 times and once ended its run (back 3 s later). Claude Code delivers a typed
 message only between tool calls: the operator's message to Sonnet waited 33 minutes behind 3 stacked 15-minute waits.
-Fix: `./fh wait` blocks quietly up to 25 s per call; cap `fh sleep` under Muse's yield (about 280 s); `--wait`
+Fix: `./fh wait` blocks without output up to 25 s per call; cap `fh sleep` under Muse's yield (about 280 s); `--wait`
 returning on tells also bounds the delay of a typed message.
 
 ## What worked
