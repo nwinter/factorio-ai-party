@@ -443,4 +443,27 @@ fails(function() H.paste(p,{slot='offhub',position={x=0,y=0},anchor='hub'}) end,
 fails(function() H.paste(pp4,{slot='ferry-module-audit-north',anchor='hub'}) end,'holds no space%-platform%-hub')
 fails(function() H.paste(pp4,{slot='offhub',anchor='middle'}) end,'anchor must be hub or center')
 fails(function() H.paste(p,{slot='offhub'}) end,'position is required')
+-- A paste dry run's plan (H.plan): where each blueprint entity and tile would land; nothing is placed. The
+-- center is the middle of the box around every entity's tiles and every tile, here (0,0.5); the layout shifts by
+-- whole tiles onto the grid.
+sources.plan={kind='blueprint',entities={{entity_number=1,name='assembling-machine-1',position={x=-1.5,y=0.5}},
+  {entity_number=2,name='chest',position={x=2.5,y=0.5},direction=4}},tiles={{name='landfill',position={x=-3,y=-1}}}}
+H.blueprint_import(p,{blueprint='plan',slot='plan'})
+local before_plan=built
+local pl=H.plan(p,{slot='plan',position={x=10.3,y=5.2}})
+eq(built,before_plan,'a plan places nothing')
+eq(pl.entities[1].position.x,8.5); eq(pl.entities[1].position.y,5.5); eq(pl.entities[2].position.x,12.5); eq(pl.entities[2].direction,4)
+eq(pl.tiles[1].position.x,7.5); eq(pl.tiles[1].position.y,4.5); eq(pl.origin_at.x,10); eq(pl.origin_at.y,5); eq(pl.center_at.y,5.5)
+eq(pl.mode,'normal'); eq(pl.slot,'plan')
+-- Turned east: offsets turn a quarter clockwise and directions with them.
+pl=H.plan(p,{slot='plan',position={x=10.3,y=5.2},direction='east'})
+eq(pl.entities[1].position.x,10.5); eq(pl.entities[1].position.y,3.5); eq(pl.entities[2].position.x,10.5); eq(pl.entities[2].position.y,7.5)
+eq(pl.entities[2].direction,8)
+-- Flipped: positions and directions mirror before the turn.
+pl=H.plan(p,{slot='plan',position={x=10.3,y=5.2},flip_horizontal=true})
+eq(pl.entities[1].position.x,11.5); eq(pl.entities[2].position.x,7.5); eq(pl.entities[2].direction,12)
+-- On a platform a blueprint with a hub is planned by its hub, as the paste places it.
+local hp=H.plan(pp4,{slot='offhub'})
+eq(hp.anchor.by,'hub'); eq(hp.entities[1].position.x,0); eq(hp.entities[1].position.y,0); eq(hp.entities[2].position.x,10.5)
+fails(function() H.plan(p,{slot='plan'}) end,'position is required')
 print('blueprint policy tests passed')

@@ -576,7 +576,9 @@ function handlers.describe()
         dry_run='plan only, place nothing',details='list every entity',
         returns='route (runs like E12 N3, uE10 = pipe-to-ground pair east spanning 10), tiles, items, missing (vs inventory), joins {from,to: name, position, fluid} for ends joined to an entity, placed/failed/bounds (construct defaults to them), segment_extent (tiles, with joined pipes) and, past the limit, extent_warning + pumps [{position,direction}]',
         note='plain pipe connects on every side, so it never goes where another pipe, machine connection or ghost would connect to it (only at a joined end); pipe-to-ground pairs pass beside or under those, belts and obstacles, never along another underground pipe axis or beneath lava/space; free ends stay plain pipe; refuses an end two entities connect to, a machine with several connections (give the tile), and joining two different known fluids; searches charted ground within 16 tiles around from and to'},
-      place_ghosts={entities='1..256 {name,position,direction?,type? input|output for undergrounds} at absolute positions in charted chunks; no items needed; a tile or tile item name (landfill, stone-brick, concrete, space-platform-foundation) makes a tile ghost',
+      ports={name='entity (or the item that places it), e.g. electromagnetic-plant',position='{x,y} where it would stand (snapped like a build)',direction='north|east|south|west (default north)',recipe='optional recipe: which ports open and the fluid each carries',mirror='optional boolean: the H/V flip of fluid machines',platform='optional platform name (platform coordinates)',returns='ports [{at (the entity tile with the connection), pipe_at (the tile outside it where a pipe joins), facing, flow input|output, fluid, box, there (what stands on pipe_at now)}], closed (ports this recipe closes); a read, nothing is built; inspect of a ghost shows the same as fluid_ports'},
+      dry_run={action='place_ghosts|paste|blueprint_place|build',args='that call\'s arguments (details=true: every entry with its footprint); the same as the call with dry_run=true'},
+      place_ghosts={dry_run='boolean: place nothing; check the plan instead (a read: the running action and queue go on): per entity ok or why not (what collides and where, water/lava/out of map/platform empty space), tiles it needs first (landfill, foundation; on a platform also the empty tiles new foundation would enclose), power (wire reach, groups of planned poles with no wire path to a built pole, machines no supply area covers), standing spots that reach every placement, items vs held',entities='1..256 {name,position,direction?,type? input|output for undergrounds} at absolute positions in charted chunks; no items needed; a tile or tile item name (landfill, stone-brick, concrete, space-platform-foundation) makes a tile ghost',
         tiles='optional {name, area={left_top,right_bottom}}: fill up to 4096 tile ghosts (landfill over water, foundation beside a platform); returns tiles_placed, tiles_existing (same ghost already there), tiles_refused (not placeable there)',
         platform='optional platform name: place on that space platform (its hub builds ghosts from hub items); positions are platform coordinates, hub at 0,0',['repeat']='optional {count 1..64, dx, dy}: stamp the list count times, each shifted by dx,dy; per-copy rows',returns='placed, failed [{index,error}], bounds (construct defaults to them), obstacles_marked (trees/rocks under the ghosts, marked for deconstruction like a player placement; construct mines them); underground_warnings: an underground belt or pipe-to-ground ghost whose span crosses tiles an underground cannot pass under (lava, empty space), which stays unpaired'},
       construct={area='optional {left_top,right_bottom} <=256x256; default: ghosts from the last paste',ticks='1..216000 (default 36000)',note='builds every ghost in reach from inventory and hand-mines every entity marked for deconstruction (timed like mine; contents to inventory, stops with inventory_full), then walks to the free stand point (never on a footprint) covering the most remaining ghosts near the nearest one; blocked ghosts retry once after moving; trees/rocks under ghosts are marked and mined first; ghosts whose item is in the hand-crafting queue are awaited (status awaiting_craft), not missing; status reports built/mined/remaining/missing/failed and blockers (trees/rocks in the way of a ghost, marked and mined first, also when a build bumps into one: name, position, ghost, at, cleared); outcomes: constructed (everything done) | incomplete (ghosts left for missing items or failures; a plan step fails) | nothing_to_do (a success, completes at once) | inventory_full | timed_out'},
@@ -595,7 +597,7 @@ function handlers.describe()
       grid={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',returns='one character per tile: rows [{y,row}] from origin, ruler, legend {char: names}. Upper case buildings by type, belts ^>v<, U/J underground in/out, S splitter, ? ghost, @ character, # other; lower case ore; ~ water'},
       power={area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',limit='unpowered rows 1..256 (default 32)',note='networks with a pole in the area: poles, production/consumption kW (5 s average) by prototype, unpowered machines (no_power|low_power|unconnected)'},
       scan={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top,right_bottom} <=128x128 (instead of position + radius)',position='charted centre (default player)',radius='1..64 (default 16)',positions='or 1..64 {x,y}: just the entities on those tiles (e.g. a few belts\' lanes)',name='optional name or array',type='optional type or array (resources only listed when filtered)',fields='hp|fuel|inventory|output|spoil (spoilable items: count and stalest freshness %)|status|recipe|direction|amount|range (attack range)|ammo|target (turret shooting target)|lanes (belt contents L|R)|io (inserter pickup -> drop, with entities)|fluids (per fluidbox "fluid amount/capacity" then each connection "in|out|io x,y" = the tile it connects to, "=entity" when joined there; underground ends "io uS" with the partner; boxes split by |; ghosts too, from the prototype); other forces under fog show only static fields',limit='1..1024 rows (default 256)',ore='runs (per-row x ranges) or grid (letters, # blocked, ~ water)',returns='entities, total, truncated, ore; ground_items {stacks, items [{name, count, stacks, box}], more_items}: items on the ground in the area by item (rows for them only when name or type asks: item-on-ground, item-entity)'},
-      nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..128 (default 32); map-known (charted) entities only: after landing on a new planet about 48 tiles around you, so explore or build a radar',limit='1..64 (default 5)',returns='entities [{name?, position, distance}], total; note when nothing was found'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',entity='rail item (a rail planner): which rail it places: straight-rail (default), half-diagonal-rail, curved-rail-a, curved-rail-b; with directions including the in-between ones (northnortheast, eastnortheast, ...); place_ghosts takes the rail names too and construct builds them',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',skip_failed='boolean, with builds: a failing entry is listed in failed {index,position,error} and the rest still build',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired, and unpaired_why (lava or empty space under its reach, its partner a ghost or out of reach, or none in reach)',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
+      nearest={position='optional charted centre (default player)',name='entity name or array',type='entity type or array (name or type required)',radius='1..128 (default 32); map-known (charted) entities only: after landing on a new planet about 48 tiles around you, so explore or build a radar',limit='1..64 (default 5)',returns='entities [{name?, position, distance}], total; note when nothing was found'},cancel_craft={recipe='cancel this recipe\'s own queued crafts (latest first)',index='1-based crafting queue index (instead of recipe)',count='number to cancel (default all of the recipe or entry); refunds through normal game rules'}, build={dry_run='boolean: build nothing; check every entry from where you stand (a read): placeable or why not, out of reach (distance vs build reach), items short (held + hand-craft queue), tiles needing landfill, poles\'s wire reach, and standing spots that reach every entry',item='name (a tile item such as landfill, stone-brick, concrete places tiles: size 1..4 square, default 1; landfill only on water)',entity='rail item (a rail planner): which rail it places: straight-rail (default), half-diagonal-rail, curved-rail-a, curved-rail-b; with directions including the in-between ones (northnortheast, eastnortheast, ...); place_ghosts takes the rail names too and construct builds them',size='tiles: brush size 1..4',position='{x,y}',direction='compass name (default north)',builds='optional batch of 1..64 {item,position,direction,quality,type}; top-level item/direction/quality are defaults; the first failure fails the action (earlier entries stay built)',skip_failed='boolean, with builds: a failing entry is listed in failed {index,position,error} and the rest still build',type='underground belts: input|output (default: output when an unpaired input flowing the same way is upstream in range); result shows underground, flow, paired_with|unpaired, and unpaired_why (lava or empty space under its reach, its partner a ghost or out of reach, or none in reach)',poles='a placed pole also wires to every other network in wire reach (networks_joined)',inserters='direction is the pickup side (east picks from the east, drops west); results show pickup and drop tiles',note='short of the item while the hand-craft queue makes it: waits for the craft and then builds (awaiting_craft; a timed action, outcome fed | failed | timed_out; use --wait). Your own character the only thing on the footprint: it walks off first and then builds (stepping_aside {from,to}; the same timed action and outcomes; last.result holds the build result)'},
       wire={from='pole {x,y} (optional name/unit_number) in reach; with color: any entity with a circuit connection',to='pole {x,y} in reach (with color: an entity)',disconnect='boolean: remove the wire instead',
         color='optional red|green: a circuit wire between two entities in reach (without it: the copper wire between poles)',from_side='with color, on a combinator: input|output (default output)',to_side='with color, on a combinator: input|output (default input)'},
       inspect={position='{x,y}',platform='optional platform name: inspect on that space platform (platform coordinates, hub at 0,0; the whole platform is in sight)',note='read-only: any entity in sight (32 tiles, visible chunk) without reach; in_reach says whether acting on it would reach; inserters and mining drills show their drop tile and what stands there (io); build replies and observe entity rows show a drill\'s drop and drop_into too; trash: what the game put in a silo\'s, landing pad\'s or hub\'s trash slots; rocket_weight (a silo): cargo held/lift kg; modules {inventory_index (the inventory a blueprint module request names), slots, contents}; filters, filter_mode, use_filters (inserters, loaders); an asteroid collector: filters (chunk names), filter_slots (the game\'s count; 0 until a filter is set), arm (chunks its arms hold), its output under inventories.asteroid_collector_output; held (an inserter\'s hand), pickup_target, drop_target; marked_for_deconstruction, marked_for_upgrade; ghosts_here (ghosts on the footprint, with their filters); on a platform: hub_slots, repair_packs and damaged (most damaged first, up to 10; damaged_count past that) on the hub, repair (how a damaged entity there gets repaired), and construction_blocked (hub full, ghosts whose items the hub lacks)'}, rotate={position='{x,y}',reverse='boolean'},
@@ -614,7 +616,7 @@ function handlers.describe()
         outcomes='with radius: collected | nothing_collected | inventory_full | timed_out; status reports got, visited'},
       research={technology='name (omit everything to report: current, progress, queue, pending, and entries: each queued technology with progress %, queued_by, packs, done_in at the lab throughput measured over the last 5 minutes, waits_for a pack nobody made in 10 minutes; throughput; clock_stops_at)',remove='a queued technology name, or an array: takes it out of the queue as the research GUI does, with queued technologies that need it (also_removed); progress is kept for later',cancel='same as remove',move='a queued technology name: reorders it to position `to` (1 = researched now); refused ahead of a queued prerequisite or behind a queued technology that needs it',to='position for move (1..queue length)',front='boolean: technology or research_queue goes ahead of the current queue (overflow drops from the tail)',append='boolean: research_queue goes after the current queue',research_queue='array of ordered names; without front/append it replaces the queue ([] clears it)',returns='queue; skipped "name: reason" (unknown|already_researched|not_enabled|trigger_unlocked): dropped; pending: names beyond the engine queue cap (or waiting on prerequisites), kept and fed in as the queue frees up (adding more keeps them; a plain research_queue replaces them); added_prerequisites {tech: [names]}: unresearched prerequisites inserted ahead of each requested tech, like the game GUI'},research_next={technologies='prioritized list; starts first available only when research is idle'}, recipes={prefix='optional',limit='1..256'}, technologies={prefix='optional',limit='1..256',available='boolean: only unresearched ones whose prerequisites are done (what can be researched or triggered now)',returns='entries; trigger names what unlocks a trigger technology (craft 50 iron-plate, mine crude-oil, create a space platform, launch X to orbit, ...): labs never research those'},
       blueprint_import={blueprint='export string',slot='default clipboard'},blueprint_export={slot='default clipboard',layout='true returns normalized relative layout and material costs instead of export string'},blueprint_list={},blueprint_delete={slot='name'},
-      blueprint_capture={area='{left_top:{x,y},right_bottom:{x,y}}',slot='default clipboard',tiles='boolean',station_names='boolean'},copy={area='{left_top:{x,y},right_bottom:{x,y}}'},cut={area='{left_top:{x,y},right_bottom:{x,y}}'},paste={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}: where the blueprint\'s center goes (the game centers it there); with anchor hub, where its hub goes (default the platform\'s hub)',anchor='hub | center: on a platform a blueprint holding a space-platform-hub is placed by its hub (default there); center places its center at position',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',mode='normal (default: all or nothing, as a player\'s paste) | forced (shift-paste: ghosts where they fit; trees, rocks and the like in the way marked for deconstruction) | superforced (ctrl+shift-paste: our own entities in the way marked too)',returns='count, by_name, bounds; mode; origin_at, center_at (where the blueprint\'s 0,0 and center landed); anchor {by, hub, paste_position, hub_landed, aligned}; marked_for_deconstruction, marked_by_name (what a forced paste marked); wires {in_blueprint, connected, added, end_not_placed, failed, ends_not_placed} (the blueprint\'s wires between placed ends: missing ones connected); fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason'},blueprint_place={platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}: where the blueprint\'s center goes (the game centers it there); with anchor hub, where its hub goes (default the platform\'s hub)',anchor='hub | center: on a platform a blueprint holding a space-platform-hub is placed by its hub (default there); center places its center at position',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',mode='normal (default: all or nothing, as a player\'s paste) | forced (shift-paste: ghosts where they fit; trees, rocks and the like in the way marked for deconstruction) | superforced (ctrl+shift-paste: our own entities in the way marked too)',returns='count, by_name, bounds; mode; origin_at, center_at (where the blueprint\'s 0,0 and center landed); anchor {by, hub, paste_position, hub_landed, aligned}; marked_for_deconstruction, marked_by_name (what a forced paste marked); wires {in_blueprint, connected, added, end_not_placed, failed, ends_not_placed} (the blueprint\'s wires between placed ends: missing ones connected); fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason'},deconstruct={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}} up to 256x256 of charted map',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: mark every item stack on the ground in the area, as a planner over items on the ground (construction robots carry them to storage chests); other entities then only with entity_names/entity_types. Returns item_stacks (marked), item_stacks_already, items [{name,count,stacks}], robot_networks and storage_chests (logistic networks whose construction area covers marked stacks), outside_construction_area (stacks no roboport covers)',
+      blueprint_capture={area='{left_top:{x,y},right_bottom:{x,y}}',slot='default clipboard',tiles='boolean',station_names='boolean'},copy={area='{left_top:{x,y},right_bottom:{x,y}}'},cut={area='{left_top:{x,y},right_bottom:{x,y}}'},paste={dry_run='boolean: place nothing; check the plan instead (a read: the running action and queue go on): where each blueprint entity and tile lands, per entity ok or why not (what collides and where, water/lava/out of map/platform empty space), tiles it needs first (landfill, foundation; on a platform also the empty tiles new foundation would enclose), power (wire reach, groups of planned poles with no wire path to a built pole, machines no supply area covers), standing spots that reach every placement, items vs held',platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}: where the blueprint\'s center goes (the game centers it there); with anchor hub, where its hub goes (default the platform\'s hub)',anchor='hub | center: on a platform a blueprint holding a space-platform-hub is placed by its hub (default there); center places its center at position',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',mode='normal (default: all or nothing, as a player\'s paste) | forced (shift-paste: ghosts where they fit; trees, rocks and the like in the way marked for deconstruction) | superforced (ctrl+shift-paste: our own entities in the way marked too)',returns='count, by_name, bounds; mode; origin_at, center_at (where the blueprint\'s 0,0 and center landed); anchor {by, hub, paste_position, hub_landed, aligned}; marked_for_deconstruction, marked_by_name (what a forced paste marked); wires {in_blueprint, connected, added, end_not_placed, failed, ends_not_placed} (the blueprint\'s wires between placed ends: missing ones connected); fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason'},blueprint_place={dry_run='boolean: as paste dry_run',platform='optional platform name: act on that space platform (hub at 0,0)',position='{x,y}: where the blueprint\'s center goes (the game centers it there); with anchor hub, where its hub goes (default the platform\'s hub)',anchor='hub | center: on a platform a blueprint holding a space-platform-hub is placed by its hub (default there); center places its center at position',['repeat']='optional {count 1..64, dx, dy}: paste count copies, each shifted by dx,dy; totals plus per-copy rows',slot='default clipboard',direction='north|east|south|west',flip_horizontal='boolean',flip_vertical='boolean',book_path='array of 1-based book indices',details='boolean: list every ghost',mode='normal (default: all or nothing, as a player\'s paste) | forced (shift-paste: ghosts where they fit; trees, rocks and the like in the way marked for deconstruction) | superforced (ctrl+shift-paste: our own entities in the way marked too)',returns='count, by_name, bounds; mode; origin_at, center_at (where the blueprint\'s 0,0 and center landed); anchor {by, hub, paste_position, hub_landed, aligned}; marked_for_deconstruction, marked_by_name (what a forced paste marked); wires {in_blueprint, connected, added, end_not_placed, failed, ends_not_placed} (the blueprint\'s wires between placed ends: missing ones connected); fewer ghosts than the blueprint holds: expected, not_placed [{name,position,direction,reason}] (first 20, not_placed_count; reason: uncharted, a broken tile rule, what blocks the footprint), existing_entities/existing_ghosts at the blueprint\'s spots, settings_differ [{name,position,ghost?,differs,fix}] (recipe, filters, modules unlike the blueprint; fix is the configure call), reason'},deconstruct={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}} up to 256x256 of charted map',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: mark every item stack on the ground in the area, as a planner over items on the ground (construction robots carry them to storage chests); other entities then only with entity_names/entity_types. Returns item_stacks (marked), item_stacks_already, items [{name,count,stacks}], robot_networks and storage_chests (logistic networks whose construction area covers marked stacks), outside_construction_area (stacks no roboport covers)',
         tiles='optional: true (every minable tile in the area) or 1..32 tile names, e.g. ["space-platform-foundation"]: marks tiles as a planner in tile mode does (robots take them back to the hub or a roboport); entities then only with entity_names/entity_types. Returns tiles_marked, tiles_already, tiles_refused with refused {under_entity, engine, not_minable, error}, tiles_blocked (marked tiles under entities not marked; a note names them)'},cancel_deconstruction={platform='optional platform name: act on that space platform (hub at 0,0)',area='{left_top:{x,y},right_bottom:{x,y}}',entity_names='optional array',entity_types='optional array',items_on_ground='optional boolean: unmark the item stacks on the ground in the area (item_stacks)',
         tiles='optional: true or 1..32 tile names: clears tile marks (tiles_cancelled); entities then only with entity_names/entity_types'},
       screenshot={path='relative .png path under script-output',width='320..1920',height='240..1080'}},
@@ -2413,6 +2415,18 @@ function handlers.inspect(p,a)
     local okf,text=pcall(pipes.fluids,e)
     if okf and text then out.fluids_summary=text end
   end
+  -- A ghost: the ports its recipe opens, with the fluid of each (ports.lua);
+  -- they take the place of the prototype's whole list.
+  if e.type=='entity-ghost' then
+    local okp,rows,closed=pcall(function()
+      local okr,recipe=pcall(function() return e.get_recipe() end)
+      return M.ports.rows({prototype=e.ghost_prototype,position=e.position,direction=e.direction,mirroring=e.mirroring},okr and recipe or nil)
+    end)
+    if okp and (#rows>0 or #closed>0) then
+      out.fluid_connections=nil; out.fluids_summary=nil
+      out.fluid_ports=rows; out.fluid_ports_closed=#closed>0 and closed or nil
+    end
+  end
   if e.type=='transport-belt' or e.type=='underground-belt' or e.type=='splitter' then
     out.belt_lines={}
     for i=1,e.get_max_transport_line_index() do out.belt_lines[i]=e.get_transport_line(i).get_contents() end
@@ -3543,7 +3557,15 @@ M.placewhy=require('placewhy'){filters=function(e) return M.details.filters(e) e
 local blueprint_handlers=blueprint_module{position=position,visible=visible,distance=distance,entity=entity,friendly=friendly,integer=integer,real=real,own_platform=own_platform,
   ground_mark=function(p,box,cancel,out) return M.ground.mark(p,box,cancel,out) end,
   placewhy=M.placewhy,blocked=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end}
-for name,handler in pairs(blueprint_handlers) do handlers[name]=handler end
+for name,handler in pairs(blueprint_handlers) do if name~='plan' then handlers[name]=handler end end
+-- Where a paste would land, placing nothing (paste dry_run).
+M.paste_plan=blueprint_handlers.plan
+-- Dry runs of place_ghosts, paste and build (dryrun.lua); fluid ports of an
+-- entity not built yet, by recipe (ports.lua).
+M.dryrun=require('dryrun'){placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,
+  placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
+  crafting_count=function(p,item) return crafting_count(p,item) end}
+M.ports=require('ports'){boxes=function(proto) return pipes.boxes(proto) end,defined=function(e) return pipes.defined(e) end}
 -- Grenades and other capsules (capsules.lua, request #89).
 M.capsules=require('capsules'){state=state,position=position,assert_visible=assert_visible,held=held}
 handlers.use_item=M.capsules.handlers.use_item
@@ -3983,6 +4005,40 @@ for _,name in ipairs({'paste','blueprint_place','place_ghosts','belt_route','pip
     return out
   end
 end
+-- Fluid ports of an entity not built yet (ports.lua; Gemini: a recipe moves
+-- which fluid an electromagnetic plant's ports carry): each connection's tile,
+-- the tile outside it where a pipe joins, facing, flow and the recipe's fluid
+-- there, with what stands on that tile now.
+function handlers.ports(p,a)
+  assert(type(a.name)=='string','name is required: an entity (or the item that places it), e.g. electromagnetic-plant')
+  local proto=prototypes.entity[a.name]
+  if not proto and prototypes.item[a.name] then proto=prototypes.item[a.name].place_result end
+  assert(proto,'unknown entity '..a.name)
+  local direction=directions[a.direction or 'north']
+  assert(direction and direction%4==0,'direction must be north, east, south or west')
+  assert(a.mirror==nil or type(a.mirror)=='boolean','mirror must be true or false (the H/V flip of fluid machines)')
+  local pos=M.dryrun.snap(proto,position(a.position),direction)
+  local recipe=M.ports.recipe(proto,a.recipe)
+  local rows,closed=M.ports.rows({prototype=proto,position=pos,direction=direction,mirroring=a.mirror==true},recipe)
+  assert(#rows>0 or #closed>0,proto.name..' has no fluid connections')
+  if charted(p,pos) then
+    for _,r in ipairs(rows) do
+      if not r.underground then
+        for _,o in pairs(p.surface.find_entities_filtered{position=r.pipe_at,radius=0.3,force=p.force,limit=4}) do
+          if o.valid and o.type~='character' then r.there=o.type=='entity-ghost' and o.ghost_name..' (ghost)' or o.name; break end
+        end
+      end
+    end
+  end
+  local unsure=false
+  for _,r in ipairs(rows) do if type(r.fluid)=='string' and r.fluid:find('^one of ') then unsure=true end end
+  local note
+  if proto.crafting_categories and not recipe then note='the recipe decides which ports open and the fluid of each: pass recipe'
+  elseif #closed>0 then note='closed ports take no pipe with this recipe' end
+  return {name=proto.name,position=pos,direction=compass_names[direction],mirror=a.mirror or nil,recipe=recipe and recipe.name or nil,
+    ports=rows,closed=#closed>0 and closed or nil,note=note,
+    unsure=unsure and 'this machine has more boxes on a side than the recipe has fluids there; which fluid the extra port takes was not seen built' or nil}
+end
 -- Remote building on our space platforms: the same ghost and view actions,
 -- run against the platform's surface (hub at its centre). The hub builds
 -- the ghosts from its own inventory, as in the game.
@@ -3994,7 +4050,7 @@ local function on_platform(p,name)
     __index=function(_,k) if k=='surface' then return pl.surface elseif k=='position' then return hub end return p[k] end,
     __newindex=function(_,k,v) p[k]=v end})
 end
-for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','paste','blueprint_place','grid','scan','inspect','configure','flush'}) do
+for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','paste','blueprint_place','grid','scan','inspect','configure','flush','ports'}) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
     if a.platform==nil then return handler(p,a) end
@@ -4008,6 +4064,126 @@ for name,input in pairs(permissions) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
     assert(not p.permission_group or p.permission_group.allows_action(defines.input_action[input]),'permission denied: '..input)
+    return handler(p,a)
+  end
+end
+-- A dry run (dryrun.lua): dry_run=true on place_ghosts, paste,
+-- blueprint_place or build checks the plan the call would place and places
+-- nothing. Dispatch turns such a request into this read, so the running
+-- action and queue go on; a queue step with dry_run=true gets the same check.
+local function brush(pos,size)
+  local x0,y0=math.floor(pos.x-(size-1)/2),math.floor(pos.y-(size-1)/2)
+  local list={}
+  for dx=0,size-1 do for dy=0,size-1 do list[#list+1]={x=x0+dx+0.5,y=y0+dy+0.5} end end
+  return list
+end
+function handlers.dry_run(p,a)
+  local action,args=a.action,a.args
+  assert(M.dryrun.ACTIONS[action],'dry_run takes action (place_ghosts, paste, blueprint_place or build) and args (that call\'s arguments)')
+  assert(type(args)=='table','args must be the call\'s arguments')
+  assert(args.dry_run==nil or args.dry_run==true,'dry_run must be true or false')
+  local inner={}
+  for k,v in pairs(args) do if k~='dry_run' then inner[k]=v end end
+  -- details (every entry with its footprint) is the paste's own argument; the others take it here.
+  local details=inner.details==true
+  if action~='paste' and action~='blueprint_place' then inner.details=nil end
+  check_args(action,inner)
+  local q=p
+  if inner.platform~=nil and action~='build' then q=on_platform(p,inner.platform) end
+  local kind=action=='build' and 'build' or action=='place_ghosts' and 'ghosts' or 'paste'
+  local plan={kind=kind,details=details,entities={},tiles={},standing=kind~='build'}
+  local copies,dx,dy=1,0,0
+  local r=inner['repeat']
+  if r~=nil then
+    assert(kind~='build','repeat is for place_ghosts and paste')
+    assert(type(r)=='table','repeat is {count,dx,dy}')
+    copies=integer(r.count,1,1,64,'repeat count'); dx,dy=r.dx or 0,r.dy or 0
+    assert(type(dx)=='number' and type(dy)=='number' and (dx~=0 or dy~=0),'repeat needs a nonzero dx or dy')
+  end
+  local paste
+  for k=0,copies-1 do
+    local copy=copies>1 and k+1 or nil
+    if kind=='ghosts' then
+      assert(inner.entities~=nil or inner.tiles~=nil,'place_ghosts requires entities and/or tiles')
+      if inner.entities~=nil then
+        assert(type(inner.entities)=='table' and #inner.entities>=1 and #inner.entities<=256,'entities requires 1..256 {name,position,direction?}')
+        for i,spec in ipairs(inner.entities) do
+          assert(type(spec)=='table','entry must be {name,position,direction?,type?}')
+          local pos=position(spec.position)
+          pos={x=pos.x+k*dx,y=pos.y+k*dy}
+          local tile=not prototypes.entity[spec.name or ''] and tile_named(spec.name)
+          if tile then plan.tiles[#plan.tiles+1]={index=i,copy=copy,name=tile,position=pos}
+          else
+            local dir=spec.direction and directions[spec.direction]
+            assert(spec.direction==nil or dir,'direction must be a compass name')
+            plan.entities[#plan.entities+1]={index=i,copy=copy,name=spec.name,position=pos,direction=dir or 0}
+          end
+        end
+      end
+      if inner.tiles~=nil then
+        local t=inner.tiles
+        assert(type(t)=='table' and type(t.area)=='table','tiles requires {name, area={left_top,right_bottom}}')
+        local tile=tile_named(t.name); assert(tile,'tiles name must be a tile or an item that places one')
+        local lt,rb=position(t.area.left_top),position(t.area.right_bottom)
+        local x0,y0,x1,y1=math.floor(lt.x),math.floor(lt.y),math.ceil(rb.x)-1,math.ceil(rb.y)-1
+        assert(x1>=x0 and y1>=y0 and (x1-x0+1)*(y1-y0+1)<=4096,'tiles area must be 1..4096 tiles')
+        for x=x0,x1 do for y=y0,y1 do plan.tiles[#plan.tiles+1]={copy=copy,name=tile,position={x=x+0.5+k*dx,y=y+0.5+k*dy}} end end
+      end
+    elseif kind=='build' then
+      if inner.builds~=nil then assert(type(inner.builds)=='table' and #inner.builds>=1 and #inner.builds<=64,'builds requires 1..64 {item,position,direction} entries') end
+      for i,b in ipairs(inner.builds or {inner}) do
+        assert(type(b)=='table','each build must be an object')
+        local item=b.item or inner.item
+        assert(type(item)=='string','item is required')
+        local ip=prototypes.item[item]; assert(ip,'unknown item '..item)
+        local pos=position(b.position)
+        if ip.place_as_tile_result then
+          for _,t in ipairs(brush(pos,integer(b.size or inner.size,1,1,4,'size'))) do
+            plan.tiles[#plan.tiles+1]={index=i,name=ip.place_as_tile_result.result.name,item=item,position=t}
+          end
+        else
+          local place=ip.place_result
+          local okr,rails=pcall(function() return ip.rails end)
+          if okr and type(rails)=='table' and #rails>0 then
+            local want=b.entity or inner.entity
+            place=nil
+            for _,rl in ipairs(rails) do
+              local n=type(rl)=='string' and rl or rl.name
+              if not want or n==want then place=prototypes.entity[n]; break end
+            end
+          end
+          assert(place,item..' places no entity here')
+          local dir=directions[b.direction or inner.direction or 'north']; assert(dir,'invalid direction')
+          plan.entities[#plan.entities+1]={index=i,name=place.name,position=pos,direction=dir,quality=b.quality or inner.quality,item=item}
+        end
+      end
+    else
+      local pa={}
+      for kk,v in pairs(inner) do if kk~='repeat' then pa[kk]=v end end
+      if inner.position~=nil then local p0=position(inner.position); pa.position={x=p0.x+k*dx,y=p0.y+k*dy} end
+      local pl=M.paste_plan(q,pa)
+      for _,e in ipairs(pl.entities) do e.copy=copy; plan.entities[#plan.entities+1]=e end
+      for _,t in ipairs(pl.tiles) do t.copy=copy; plan.tiles[#plan.tiles+1]=t end
+      paste=paste or {slot=pl.slot,label=pl.label,origin_at=pl.origin_at,center_at=pl.center_at,anchor=pl.anchor}
+    end
+  end
+  local out,_,counts=M.dryrun.check(q,plan)
+  out.action=action
+  out.paste=paste
+  if kind=='paste' and (inner.mode or 'normal')=='normal' and (counts.refused_now or 0)>0 then
+    out.paste_note=string.format('a normal paste is all or nothing: with %d entr%s the game refuses there now, it places no ghost at all; mode forced places the rest',
+      counts.refused_now,counts.refused_now==1 and 'y' or 'ies')
+  elseif kind=='build' and (counts.blocked or 0)>0 then
+    out.build_note='a build batch stops at the first entry that fails (the ones before it stay built); skip_failed builds the rest'
+  end
+  return out
+end
+for name in pairs(M.dryrun.ACTIONS) do
+  local handler=handlers[name]
+  handlers[name]=function(p,a)
+    if type(a)=='table' and a.dry_run==true then return handlers.dry_run(p,{action=name,args=a}) end
+    -- "dry_run":"true" must not build for real.
+    assert(type(a)~='table' or a.dry_run==nil or a.dry_run==false,'dry_run must be true or false')
     return handler(p,a)
   end
 end
@@ -4248,7 +4424,7 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
-local reads={placements=true,defense=true,flamers=true,labs=true,science=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
+local reads={dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -4410,6 +4586,11 @@ function M.dispatch(request)
   do
     local ok,action,args,fix=pcall(M.aliases.fix,request.action,request.args,M.takes)
     if ok and fix then request.action,request.args,corrected=action,args,fix end
+  end
+  -- dry_run=true on place_ghosts, paste, blueprint_place or build is a read of
+  -- the plan (dryrun.lua): it leaves the running action and queue alone.
+  if type(request.args)=='table' and request.args.dry_run~=nil and request.args.dry_run~=false and M.dryrun.ACTIONS[request.action] then
+    request.args={action=request.action,args=request.args}; request.action='dry_run'
   end
   -- A failed request of an action that does not drive the character, from the
   -- argument check on, stops nothing (shift04: a failed placements read and a

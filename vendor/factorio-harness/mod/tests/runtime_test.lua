@@ -1595,6 +1595,63 @@ local row=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}
 eq(row.placed,3); eq(#row.copies,4); eq(row.failed[1].copy,4); eq(row.failed[1].error,'placement blocked')
 eq(row.copies[2].position.x,20); eq(row.bounds.right,31); eq(storage.agent_harness.last_paste[1].right,31)
 fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=0,y=0}}},['repeat']={count=2}}) end,'nonzero dx')
+-- dry_run=true (dryrun.lua) places nothing and is a read: the running walk
+-- goes on; a queue step with dry_run=true gets the same check.
+do
+  local get_tile=p.surface.get_tile
+  p.surface.get_tile=function() return {name='grass-1',prototype={collision_mask={layers={ground_tile=true}}}} end
+  local turret=prototypes.entity['gun-turret']
+  local plain_turret={}
+  for k,v in pairs(turret) do plain_turret[k]=v end
+  turret.tile_width=2; turret.tile_height=2; turret.collision_mask={layers={object=true}}
+  turret.collision_box={left_top={x=-0.7,y=-0.7},right_bottom={x=0.7,y=0.7}}
+  ghosts={}
+  call('walk',{direction='east',ticks=100})
+  local dry=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}},{name='gun-turret',position={x=40,y=0}}},dry_run=true})
+  eq(dry.dry_run,true); eq(dry.action,'place_ghosts'); eq(#ghosts,0,'a dry run places nothing')
+  eq(dry.entities[1].index,2); eq(dry.entities[1].status,'blocked'); eq(dry.summary,'1 placeable, 1 blocked (of 2)')
+  eq(call('status').active.kind,'walk','a dry run leaves the walk going')
+  local shifted=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}},['repeat']={count=4,dx=10},dry_run=true})
+  eq(shifted.checked,4); eq(shifted.entities[1].index,'4.1'); eq(#ghosts,0)
+  fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=0}}},facing='east',dry_run=true}) end,'unknown argument facing for place_ghosts')
+  fails(function() call('build',{item='gun-turret',position={x=3,y=0},dry_run='true'}) end,'dry_run must be true or false')
+  eq(call('status').active.kind,'walk','a failed dry run stops nothing')
+  -- A paste dry run checks where the blueprint lands (blueprints.lua plan, stubbed here); with an entry
+  -- the game refuses now, a normal paste places nothing at all.
+  local real_plan=runtime.paste_plan
+  runtime.paste_plan=function(_,a)
+    return {entities={{index=1,name='gun-turret',position={x=a.position.x,y=0},direction=0},{index=2,name='gun-turret',position={x=40,y=0},direction=0}},
+      tiles={},slot='bp',mode='normal',origin_at={x=a.position.x,y=0},center_at={x=a.position.x,y=0}}
+  end
+  local pd=call('paste',{position={x=10,y=0},dry_run=true})
+  eq(pd.action,'paste'); eq(pd.paste.slot,'bp'); eq(#ghosts,0); eq(pd.summary,'1 placeable, 1 blocked (of 2)')
+  assert(pd.paste_note:find('all or nothing: with 1 entry the game refuses there now',1,true),pd.paste_note)
+  local rp=call('paste',{position={x=10,y=0},['repeat']={count=2,dx=4},dry_run=true})
+  eq(rp.checked,4); eq(rp.entities[#rp.entities].index,'2.2'); assert(rp.entities[#rp.entities].why:find('collides with planned #1.2',1,true))
+  eq(call('paste',{position={x=10,y=0},dryrun=true}).action,'paste','dryrun is dry_run')
+  runtime.paste_plan=real_plan
+  call('stop',{})
+  call('queue_submit',{steps={{action='place_ghosts',args={entities={{name='gun-turret',position={x=10,y=0}}},dry_run=true}}}})
+  advance(3)
+  eq(#ghosts,0,'a queued dry run places nothing')
+  call('queue_cancel',{})
+  -- Fluid ports before building: a chemical plant on sulfur opens one input per fluid, closes its outputs.
+  local function c(dir,pos) return {flow_direction='input',direction=dir,connection_type='normal',positions=pos} end
+  prototypes.entity['chemical-plant']={name='chemical-plant',type='assembling-machine',tile_width=3,tile_height=3,crafting_categories={chemistry=true},
+    fluidbox_prototypes={{production_type='input',pipe_connections={c(0,{{x=-1,y=-1},{x=1,y=-1},{x=1,y=1},{x=-1,y=1}})}},
+      {production_type='input',pipe_connections={c(0,{{x=1,y=-1},{x=1,y=1},{x=-1,y=1},{x=-1,y=-1}})}},
+      {production_type='output',pipe_connections={c(8,{{x=-1,y=1},{x=-1,y=-1},{x=1,y=-1},{x=1,y=1}})}},
+      {production_type='output',pipe_connections={c(8,{{x=1,y=1},{x=-1,y=1},{x=-1,y=-1},{x=1,y=-1}})}}}}
+  prototypes.recipe=prototypes.recipe or {}
+  prototypes.recipe.sulfur={name='sulfur',category='chemistry',ingredients={{type='fluid',name='water'},{type='fluid',name='petroleum-gas'}},products={{type='item',name='sulfur'}}}
+  local pr=call('ports',{name='chemical-plant',position={x=10,y=0},recipe='sulfur'})
+  eq(pr.position.x,10.5); eq(#pr.ports,2); eq(pr.ports[1].fluid,'water'); eq(pr.ports[1].pipe_at.x,9.5); eq(pr.ports[1].pipe_at.y,-1.5)
+  eq(pr.ports[2].fluid,'petroleum-gas'); eq(#pr.closed,2); eq(pr.recipe,'sulfur')
+  eq(call('ports',{name='chemical-plant',position={x=10,y=0}}).note,'the recipe decides which ports open and the fluid of each: pass recipe')
+  fails(function() call('ports',{name='chemical-plant',position={x=10,y=0},recipe='no-such'}) end,'unknown recipe no-such')
+  p.surface.get_tile=get_tile
+  prototypes.entity['gun-turret']=plain_turret
+end
 -- pole_route lays pole ghosts from A to B within wire reach, shifting a
 -- blocked spot sideways, reusing a pole already on the line, and counting
 -- what is held; dry_run only plans.
