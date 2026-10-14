@@ -126,6 +126,9 @@ already targets your character.
   reach every placement. `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},
   "direction":"north","recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid
   the recipe puts there; `inspect` of a ghost shows the same.
+- `./fh call cargo --args '{"items":{"thruster":2,"cargo-bay":4}}'` (or a chest, silo or pad `position`) weighs a
+  rocket cargo list: each item's weight, the total against a rocket's 1000 kg and 20 cargo slots, the fewest rockets,
+  and one split into rockets that keeps each within both.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 

@@ -581,6 +581,7 @@ function handlers.describe()
         dry_run='plan only, place nothing',details='list every entity',
         returns='route (runs like E12 N3, uE10 = pipe-to-ground pair east spanning 10), tiles, items, missing (vs inventory), joins {from,to: name, position, fluid} for ends joined to an entity, placed/failed/bounds (construct defaults to them), segment_extent (tiles, with joined pipes) and, past the limit, extent_warning + pumps [{position,direction}]',
         note='plain pipe connects on every side, so it never goes where another pipe, machine connection or ghost would connect to it (only at a joined end); pipe-to-ground pairs pass beside or under those, belts and obstacles, never along another underground pipe axis or beneath lava/space; free ends stay plain pipe; refuses an end two entities connect to, a machine with several connections (give the tile), and joining two different known fluids; searches charted ground within 16 tiles around from and to'},
+      cargo={items='{name: count} or [{name, count, quality}]: a rocket cargo list (items, not fluids)',position='or a chest, rocket silo (its loaded cargo), landing pad, platform hub, wagon or vehicle in sight: what it holds',platform='optional platform name (a hub or chest there)',returns='lift (kg and cargo slots a rocket), items [{name, quality, count, each_kg, kg, stacks, per_rocket (alone in one rocket: by weight and by slots), share (of a rocket\'s lift)}] heaviest first, total_kg, stacks, fewest (rockets by total weight and stacks), rockets and split [{rocket, kg, slots, items}] (one split: heaviest first, each into the first rocket with room), too_heavy; a read, nothing moves'},
       ports={name='entity (or the item that places it), e.g. electromagnetic-plant',position='{x,y} where it would stand (snapped like a build)',direction='north|east|south|west (default north)',recipe='optional recipe: which ports open and the fluid each carries',mirror='optional boolean: the H/V flip of fluid machines',platform='optional platform name (platform coordinates)',returns='ports [{at (the entity tile with the connection), joins (the tile outside it where a pipe joins), direction, flow input|output, fluid, box, there (what stands on joins now)}], closed (ports this recipe closes); a read, nothing is built; inspect of a ghost with a recipe shows the same in fluid_connections (fluid_connections_closed)'},
       dry_run={action='place_ghosts|paste|blueprint_place|build',args='that call\'s arguments (details=true: every entry with its footprint); the same as the call with dry_run=true'},
       place_ghosts={dry_run='boolean: place nothing; check the plan instead (a read: the running action and queue go on): per entity ok or why not (what collides and where, water/lava/out of map/platform empty space), tiles it needs first (landfill, foundation; on a platform also the empty tiles new foundation would enclose), power (wire reach, groups of planned poles with no wire path to a built pole, machines no supply area covers), standing spots that reach every placement, items vs held',entities='1..256 {name,position,direction?,type? input|output for undergrounds} at absolute positions in charted chunks; no items needed; a tile or tile item name (landfill, stone-brick, concrete, space-platform-foundation) makes a tile ghost',
@@ -3680,6 +3681,45 @@ M.flush=require('flush'){integer=integer,friendly=friendly,target=function(p,a)
   return far
 end}
 handlers.flush=M.flush.handlers.flush
+-- Rocket cargo weighed before it is staged (cargo.lua, Sol: three kits rebuilt
+-- into two after working weights out offline): a list, or what a chest, rocket
+-- silo, landing pad, platform hub, wagon or vehicle holds.
+M.cargo=require('cargo'){}
+M.CARGO_INVENTORY={['rocket-silo']='rocket_silo_rocket',['cargo-landing-pad']='cargo_landing_pad_main',['space-platform-hub']='hub_main',
+  ['cargo-wagon']='cargo_wagon',car='car_trunk',['spider-vehicle']='spider_trunk'}
+handlers.cargo=function(p,a)
+  local list,from,silo={},nil,nil
+  assert((a.items==nil)~=(a.position==nil),'cargo takes items ({name: count} or [{name, count, quality}]) or a position, one of them')
+  if a.items~=nil then
+    assert(type(a.items)=='table' and next(a.items)~=nil,'items is {name: count} or [{name, count, quality}]')
+    if #a.items>0 then
+      for _,e in ipairs(a.items) do
+        assert(type(e)=='table' and type(e.name)=='string','each item is {name, count, quality?}')
+        assert(e.quality==nil or (type(e.quality)=='string' and prototypes.quality[e.quality]),'unknown quality '..tostring(e.quality))
+        list[#list+1]={name=e.name,count=integer(e.count,nil,1,10000000,'count of '..e.name),quality=e.quality}
+      end
+    else
+      for name,count in pairs(a.items) do
+        assert(type(name)=='string','items is {name: count}')
+        list[#list+1]={name=name,count=integer(count,nil,1,10000000,'count of '..name)}
+      end
+      table.sort(list,function(x,y) return x.name<y.name end)
+    end
+  else
+    local e=entity(p,a,true)
+    local name=M.CARGO_INVENTORY[e.type]
+    if not name then for _,t in ipairs(inventories.chest) do if t==e.type then name='chest' end end end
+    assert(name,e.name..' holds no cargo to weigh (a chest, rocket silo, landing pad, platform hub, wagon or vehicle does)')
+    for _,s in ipairs(contents(inventory(e,name))) do list[#list+1]={name=s.name,count=s.count,quality=s.quality~='normal' and s.quality or nil} end
+    if e.type=='rocket-silo' then silo=e end
+    from={name=e.name,position=e.position,inventory=name}
+    assert(#list>0,string.format('%s at (%g,%g) holds nothing in %s',e.name,e.position.x,e.position.y,name))
+  end
+  local lift,slots=M.cargo.limits(silo)
+  local out=M.cargo.weigh(list,lift,slots)
+  out.from=from
+  return out
+end
 -- Circuit wires and settings (circuits.lua), train stops and schedules (trains.lua).
 M.circuits=require('circuits'){entity=entity,remote_entity=remote_entity,friendly=friendly,own_platform=own_platform,position=position}
 handlers.circuit_set=M.circuits.handlers.circuit_set
@@ -4154,7 +4194,7 @@ local function on_platform(p,name)
     __index=function(_,k) if k=='surface' then return pl.surface elseif k=='position' then return hub end return p[k] end,
     __newindex=function(_,k,v) p[k]=v end})
 end
-for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','paste','blueprint_place','grid','scan','inspect','configure','flush','circuit_set','circuit','wire','ports'}) do
+for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','paste','blueprint_place','grid','scan','inspect','configure','flush','circuit_set','circuit','wire','ports','cargo'}) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
     if a.platform==nil then return handler(p,a) end
@@ -4558,7 +4598,7 @@ end
 local passive={order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
 -- circuit_set and wire (circuits.lua) leave the character and its queue alone, as circuit did.
 passive.circuit_set=true; passive.wire=true
-local reads={dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
+local reads={cargo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
