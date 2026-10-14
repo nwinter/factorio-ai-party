@@ -94,10 +94,12 @@ fh call status
 - `build_path {points, item, ticks, start_index, end_direction}` lays a belt line along axis-aligned tile-centred
   points, walking as it goes. Trees, rocks and wild plants on a tile, or across the walk to the next tile, are mined by
   hand first (Sonnet 10:50: it stopped at every rock of a Vulcanus line), one at a time, standing still for the
-  hand-mining time; what they give goes to the inventory. `last.cleared` counts them and `cleared_names` lists them
-  (`big-volcanic-rock*2 tree-08*1`; `--wait` prints both, `status.active.cleared` while it runs). It stops for
-  buildings, water and cliffs (`build_failed` with the game's refusal and `next_index` to resume from), and when the
-  inventory has no room for what a rock gives (`inventory_full`).
+  hand-mining time; what they give goes to the inventory. One out of hand reach is walked to with the pathfinder; one
+  no path leads to (a rock in a pocket of cliffs) stops it `blocked`, naming the rock and the tile. `last.cleared`
+  counts them and `cleared_names` lists them (`big-volcanic-rock*2 tree-08*1`; `--wait` prints both,
+  `status.active.cleared` and `mining` while it runs). It stops for buildings, water and cliffs (`build_failed` with
+  the game's refusal and `next_index` to resume from), and when the inventory has no room for what a rock gives
+  (`inventory_full`).
 - An action that ends with the character on a belt, underground belt or splitter says so in `last.on_belt`
   (`standing on a transport-belt facing east: it carries you; step off to stay put`); the game moves a character
   standing on a belt. `status.on_belt` shows the same for as long as it stands on one.

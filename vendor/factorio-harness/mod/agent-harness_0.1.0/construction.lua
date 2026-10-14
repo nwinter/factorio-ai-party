@@ -54,6 +54,12 @@ return function(api)
       if outcome then return outcome end
       if action.mining then return end
     end
+    -- The pathfinder walk to one out of reach (M.clear).
+    if action.nav and action.nav.clearing then
+      local e=action.nav.entity
+      if e and e.valid then return M.clear(p,action,e) end
+      action.nav=nil; p.walking_state={walking=false,direction=0}
+    end
     local progressed=false
     for _=1,4 do
       local cell=action.cells[action.next_index]
@@ -341,27 +347,47 @@ return function(api)
     end
     return best
   end
-  -- Mine e: in reach, start the hand-mining time; else walk to it (blocked
+  -- Mine e: in reach, start the hand-mining time; else walk next to it with
+  -- the pathfinder (round the cliffs or buildings beside it; Vulcanus: a rock
+  -- in a pocket of cliffs), then straight at it for the last steps (blocked
   -- after 120 ticks without getting half a tile closer).
   function M.clear(p,action,e)
     action.best_gap=nil
     if p.can_reach_entity(e) then
+      action.nav=nil
       p.walking_state={walking=false,direction=0}
       action.mining={entity=e,done_tick=game.tick+api.hand_mining_ticks(p,e)}
       action.approach=nil
       return nil
     end
     local pos=e.position
-    local d=api.distance(p.position,pos)
-    local a=action.approach
-    if not (a and a.x==pos.x and a.y==pos.y) then a={x=pos.x,y=pos.y,best=d,tick=game.tick}; action.approach=a end
-    if d<a.best-0.5 then a.best=d; a.tick=game.tick end
-    if game.tick-a.tick>=120 then
-      action.error=string.format('could not get within reach of %s at (%g,%g) in the way of tile %d to mine it: walking made no progress for 120 ticks',
-        e.name,pos.x,pos.y,action.next_index)
+    local nav=action.nav
+    if not (nav and nav.clearing) then
+      local a=action.approach
+      if a and a.x==pos.x and a.y==pos.y then
+        local d=api.distance(p.position,pos)
+        if d<a.best-0.5 then a.best=d; a.tick=game.tick end
+        if game.tick-a.tick>=120 then
+          action.error=string.format('could not get within reach of %s at (%g,%g) in the way of tile %d to mine it: walking made no progress for 120 ticks',
+            e.name,pos.x,pos.y,action.next_index)
+          return 'blocked'
+        end
+        api.steer(p,pos,action)
+        return nil
+      end
+      nav={position={x=pos.x,y=pos.y},tolerance=1.5,max_stalls=6,replans=0,stalled=0,last_position=p.position,clearing=true,entity=e}
+      action.nav=nav
+      api.request_path(p,nav)
+    end
+    local outcome=api.navigate(p,nav)
+    if not outcome then return nil end
+    action.nav=nil
+    p.walking_state={walking=false,direction=0}
+    if outcome~='arrived' and outcome~='arrived_near' then
+      action.error=string.format('could not walk within reach of %s at (%g,%g) in the way of tile %d to mine it: %s',e.name,pos.x,pos.y,action.next_index,outcome)
       return 'blocked'
     end
-    api.steer(p,pos,action)
+    action.approach={x=pos.x,y=pos.y,best=api.distance(p.position,pos),tick=game.tick}
     return nil
   end
   -- The mining under way: done when its time is up (counted by name); an

@@ -110,9 +110,11 @@ local farm={valid=true,type='plant',name='yumako-tree',minable=true,force={name=
   bounding_box={left_top={x=50.2,y=0.2},right_bottom={x=50.8,y=0.8}}}
 obstacles={rock,tree,mine_tree,farm}
 p.position={x=41.5,y=.5}; stock=100
-local start=game.tick
+local start,asked=game.tick,p.path_requests or 0
 local cleared=C.plan(p,{points={{x=43.5,y=.5},{x=50.5,y=.5}}})
 eq(run2(cleared),'path_built'); eq(cleared.placed,8); eq(cleared.mined,2)
+-- out of reach when found: it walked next to it with the pathfinder
+assert((p.path_requests or 0)>asked)
 -- a tree that cannot be mined and a farm's own plant are left alone (the build decides about them)
 eq(#took,2); eq(took[1].name,'big-rock'); eq(took[2].name,'tree-08')
 assert(took[1].tick-start>=40,'the rock took its mining time')
@@ -134,6 +136,14 @@ local odd=C.plan(p,{points={{x=52.5,y=.5},{x=55.5,y=.5}}})
 eq(run2(odd),'build_failed'); assert(odd.error:find('mining huge-rock at (53.5,0.5) did not take it',1,true),odd.error)
 p.get_main_inventory=nil
 full=false
+-- No way to get next to it: blocked, naming it.
+local walled_rock={valid=true,type='simple-entity',name='big-rock',minable=true,force={name='neutral'},position={x=58.5,y=0.5},
+  bounding_box={left_top={x=57.6,y=-0.4},right_bottom={x=59.4,y=1.4}},mining_ticks=30}
+obstacles={walled_rock}; p.position={x=55.5,y=.5}; p.walled=true
+local fenced=C.plan(p,{points={{x=56.5,y=.5},{x=60.5,y=.5}}})
+eq(run2(fenced),'blocked'); assert(walled_rock.valid)
+assert(fenced.error:find('could not walk within reach of big-rock at (58.5,0.5) in the way of tile 2 to mine it: blocked',1,true),fenced.error)
+p.walled=nil
 -- A building in the way still stops it (the build's own refusal), with nothing mined.
 obstacles={}; p.position={x=61.5,y=2.5}; blocked='64.5,0.5'
 local wall=C.plan(p,{points={{x=62.5,y=.5},{x=66.5,y=.5}}})
