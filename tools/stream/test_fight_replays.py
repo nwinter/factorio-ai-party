@@ -5,7 +5,8 @@ battle went on): python3 tools/stream/test_fight_replays.py
 1. Never during the fight: a clip about a fight waits until it has been quiet 20 s; a death clip waits for a fight
    within 40 tiles.
 2. A fight the main camera showed live gets no replay of it.
-3. A loss: a short clip centred on the moment of loss, aired after the fight, if a camera showed the spot.
+3. A loss: a clip from 8 s before the moment of loss to 3 s after, aired after the fight, if the camera on air showed
+   the spot in the 15 s before it.
 4. A fight only a side camera showed: that camera's stretch, aired after the fight; no camera, no replay.
 """
 import os, sys
@@ -96,16 +97,16 @@ def main_watched():
     label, when = aired[0]
     assert label == FIGHT["text"] and when >= t + 40 + rpl.cfg["quiet_s"], aired  # rule 1: after 20 s of quiet
     last = rpl.status["last"]
-    # rule 3: centred on the loss (alert at t+10, about 2 s after it happened): 6 s before to 4 s after
+    # rule 3: the loss's moment (alert at t+10, about 2 s after it happened): 8 s before to 3 s after
     assert rpl.status["replays"] == 1 and "r1.mkv" in last["path"]
     clip_log = [x for x in logs if "pending loss" in x]
     assert clip_log, logs[-8:]
     seg, rpl = world()
     t_loss = t + 10 - rpl.cfg["loss_lag"]
-    run(seg, rpl, t, t_loss + 16, t + 40, on_fight, losses=[t + 10])  # judged once loss_watch (15 s) is over
+    run(seg, rpl, t, t_loss + 5, t + 40, on_fight, losses=[t + 10])  # judged and saved once its clip's end is over
     c = rpl.clip  # saved, waiting for the fight to end
-    assert (c["show_from"], c["show_to"]) == (t_loss - 6, t_loss + 4) and c["fight"] == FIGHT["key"], c
-    assert seg.queue is None and rpl.why(t_loss + 16).startswith("the fight is still going on")
+    assert (c["show_from"], c["show_to"], c["saved_t"]) == (t_loss - 8, t_loss + 3, t_loss + 4) and c["fight"] == FIGHT["key"], c
+    assert seg.queue is None and rpl.why(t_loss + 5).startswith("the fight is still going on")
 
 
 def loss_alert_lingers():
