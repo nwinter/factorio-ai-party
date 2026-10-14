@@ -559,6 +559,14 @@ fh sleep 900 --until researched                       # ...or until the research
 ## Messages and reads
 
 - `inspect` is a read: any entity in sight (32 tiles, visible chunk) works without reach, like `scan`; `in_reach` says whether acting on it would reach.
+  By remote view it reads any entity on the character's own surface in a chunk our force sees now (radar coverage or a
+  character's sight), as the game's map shows it, and the reply says `by: remote view` (Astra, operator 04:57: inspect
+  worked only within 32 tiles; `surface=` naming the character's own surface added nothing then). `surface=` another
+  surface reads its visible chunks and says `by: remote view` too. The cargo weigh read (`cargo {position}`) does the
+  same (`from.by`). Out of sight and of every chunk our force sees, the refusal names the
+  nearest radar coverage: `target at (3.5,0.5) ((3.5,0.5) is 196.5 tiles from the character at (200.0,0.0)) is in no
+  chunk our force sees now (radar coverage or a character's sight); the nearest radar coverage is chunk (96,0)-(127,31),
+  93 tiles away`; actions keep the 32-tile sight rule, and their refusals name the nearest coverage too.
 - Reach is the game's: the distance from the character to the entity's collision box (its edge, not its centre),
   within 10 tiles (`reach_distance`) for buildings and within 2.7 (`resource_reach_distance`) for ore, trees and rocks
   (read on the shift world: a tree 4.3 tiles from its edge was out of reach; a belt 10.25 from its centre, 9.7 from its
@@ -1261,6 +1269,15 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
 - `owner` takes an agent name, display name or player name without `pog-`, any case; an unknown name fails with the
   roster. Anyone may take an open unowned item or add a note; only the owner or requester changes status, reassigns or
   releases (`owner: ""`). Titles are cut at 120 bytes and notes at 200 instead of failing; the last 10 notes are kept.
+- `board_update {id, title?, needs?}` (Astra, shift10: a request's ask could not be corrected after posting) replaces
+  the title and what it asks for (`needs`: text, an array of item names or `{name, count}`, or `{item: count}`; `""` or
+  `[]` clears it). Its poster, its owner or the operator may; anyone may once the one responsible (the owner, else the
+  poster) has made no request for 20 minutes (30 for a project; a project with no owner: anyone, as its goal). Each
+  change goes into the item's `history` (shown by `board {id}`, the last 10: `title changed by astra: 'need 100 green
+  circuits' -> 'need 200 green circuits' (3m00s ago)`, `needs changed by sol: electronic-circuit*100 ->
+  electronic-circuit*200, copper-cable*50`), is a board event (`title_changed`, `needs_changed`), and its owner and
+  poster hear of it in `team.board` with the old value (`#12 (your request) title changed by grok: need 200 green
+  circuits at (10,4) - was: need 200 green circuits`). The team plan's goals stay `board_plan`'s.
 - `board` returns `plan` (below), `items` (list rows carry the last 2 notes and `note_count`; `id` gives one item in
   full), `matched` and `open_unowned`. `status:"active"` means open, claimed, doing or blocked. An agent's plain
   `board` read (no filter, no limit) is about 3 KB: the newest items with their last note (`note_count`), the plan's

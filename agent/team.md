@@ -66,6 +66,10 @@ already targets your character.
   `./fh board update --args '{"id":N,"owner":"<your name>"}'`. Keep your items current
   (`"status":"doing"|"done"|"blocked"`, `"note":"..."`). A task or request whose owner has made no request for
   20 minutes can be taken the same way; the owner hears it.
+- `./fh board update --args '{"id":N,"title":"...","needs":{"iron-plate":300}}'` corrects an item's title and what it
+  asks for (its poster or owner; anyone after the same 20 quiet minutes); `board {id}` keeps the change in `history`.
+- `inspect` reads any entity on your surface in a chunk our radars see, by remote view (`by: remote view`); out of
+  sight and coverage, the refusal names the nearest radar coverage.
 - The team plan is one board item everyone edits: goals, and one line per agent of what they are on. `./fh board plan`
   shows it (`./fh board` shows it at the top); `./fh board plan goals "..."` replaces the goals; `./fh board plan
   doing "..."` sets your line; `./fh board plan for luna "..."` sets a teammate's line (shown as set by you); `""`
