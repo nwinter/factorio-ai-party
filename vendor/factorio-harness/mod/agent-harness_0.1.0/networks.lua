@@ -40,6 +40,7 @@ return function(api)
   local FUEL_SCAN = 300   -- chests and belt tiles read per alert (00:26 rule: bounded reads on the live world)
   local FUELS = {'coal', 'solid-fuel', 'wood', 'rocket-fuel', 'nuclear-fuel'}
   local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 3600, 12   -- the view: kept 60 s (task-statuscost)
+  local ITEMS_TOP = 6   -- items named on a logistic network's line, held and asked (Gemini, 12:20)
   -- Entities read a step by the background view and pole map, and boilers whose feeders are read a step (operator
   -- 04:00: 1500 a tick, and every boiler's feeders and belts in one tick, burst in single game seconds).
   local SLICE, BOILER_SLICE = 150, 2
@@ -434,6 +435,33 @@ return function(api)
               burner_fuel(lb.e) or 'no fuel', lb.feeder or 'no inserter feeds it')
             parts[#parts+1] = net.lowest_text
           end
+          -- Feed chests (Haiku, 12:20): each chest the boilers' feeders take from, its fuel and rate over the last 10 min;
+          -- the 2 with the fewest minutes left at that rate (falling ones first) on the line, all in net.feed_rates.
+          local seen, rates = {}, {}
+          for _, b in ipairs(net.boilers) do
+            local c = b.chest
+            local unit = c and c.e.valid and try(function() return c.e.unit_number end)
+            if unit and not seen[unit] then
+              seen[unit] = true
+              local r = M.feed_rate(c.e, c.count)
+              rates[#rates+1] = {chest=c.e.name, position={x=c.e.position.x, y=c.e.position.y}, count=c.count, held=c.held or 'no fuel',
+                per_min=r and r.per_min, minutes_left=r and r.minutes_left, rate=r and r.text or 'rate not measured yet'}
+            end
+          end
+          table.sort(rates, function(x, y)
+            local lx, ly = x.minutes_left or math.huge, y.minutes_left or math.huge
+            if lx ~= ly then return lx < ly end
+            return x.count < y.count
+          end)
+          net.feed_rates = #rates > 0 and rates or nil
+          if #rates > 0 then
+            local shown = {}
+            for i = 1, math.min(2, #rates) do
+              local x = rates[i]
+              shown[i] = string.format('%s %s %s, %s', x.chest, at(x.position.x, x.position.y), x.held, x.rate)
+            end
+            parts[#parts+1] = 'feed chests: ' .. table.concat(shown, '; ') .. (#rates > 2 and string.format(' (+%d more)', #rates - 2) or '')
+          end
         end
         net.line = table.remove(parts, 1) .. ': ' .. table.concat(parts, '; ')
         rows[#rows+1] = net
@@ -592,10 +620,28 @@ return function(api)
         local r = {id=id, roboports=v.roboports, personal=v.personal, center=v.center, view=v,
           logistic=v.logistic.total, logistic_idle=v.logistic.idle, construction=v.construction.total, construction_idle=v.construction.idle,
           ghosts=0, unfilled=0, items={}}
+        local short_now = {}
         for _, x in ipairs(shortfalls(ln)) do
           local since = n.unfilled[x.key]
           if since and game.tick - since >= UNFILLED_TICKS then r.unfilled = r.unfilled + 1; r.items[x.name] = (r.items[x.name] or 0) + x.missing end
+          short_now[x.name] = (short_now[x.name] or 0) + x.missing
         end
+        -- The items it holds and what its requesters ask (Gemini, 12:20): the network's contents (provider, storage and
+        -- buffer chests, as its GUI lists them) and the requests summed over its requester points, with what is short now.
+        local stock = {}
+        for k, v in pairs(try(function() return ln.get_contents() end) or {}) do
+          local name, c = type(v) == 'table' and v.name or k, type(v) == 'table' and v.count or v
+          if type(name) == 'table' then name = name.name end
+          if type(name) == 'string' and type(c) == 'number' and c > 0 then stock[name] = (stock[name] or 0) + c end
+        end
+        local asked = {}
+        for _, pt in ipairs(try(function() return ln.requester_points end) or {}) do
+          for _, flt in ipairs(try(function() return pt.filters end) or {}) do
+            local name = type(flt.name) == 'table' and flt.name.name or flt.name
+            if name and (flt.count or 0) > 0 then asked[name] = (asked[name] or 0) + flt.count end
+          end
+        end
+        r.stock, r.asked, r.short_now = stock, asked, short_now
         r.busy_since = n.busy[id]
         rows[#rows+1] = r; by_id[id] = r
       end
@@ -618,6 +664,18 @@ return function(api)
         r.busy_since and game.tick - r.busy_since >= 600 and string.format('; no idle logistic robot for %d min', math.floor((game.tick - r.busy_since) / 3600)) or '',
         r.unfilled, kinds > 0 and ' (' .. items .. (kinds > 3 and ', ...' or '') .. ' missing)' or '',
         r.ghosts, r.ghosts >= MAX_GHOSTS and ' (counted up to ' .. MAX_GHOSTS .. ')' or '')
+      local held, kinds_held = top_items(r.stock, ITEMS_TOP)
+      if kinds_held > 0 then r.line = r.line .. string.format('; holds %s%s', held, kinds_held > ITEMS_TOP and string.format(' (+%d kinds)', kinds_held - ITEMS_TOP) or '') end
+      local asks, kinds_asked = top_items(r.asked, ITEMS_TOP)
+      if kinds_asked > 0 then
+        local parts = {}
+        for each in asks:gmatch('[^,]+') do
+          local part = each:gsub('^%s+', '')
+          local name = part:match('^(.-) %d+$')
+          parts[#parts+1] = part .. (name and (r.short_now[name] or 0) > 0 and string.format(' (%d short)', r.short_now[name]) or '')
+        end
+        r.line = r.line .. string.format('; requesters ask %s%s', table.concat(parts, ', '), kinds_asked > ITEMS_TOP and string.format(' (+%d kinds)', kinds_asked - ITEMS_TOP) or '')
+      end
     end
     table.sort(rows, function(a, b) return a.roboports > b.roboports or (a.roboports == b.roboports and a.id < b.id) end)
     return rows
@@ -832,6 +890,7 @@ return function(api)
           x.boilers = #r.boilers > 0 and #r.boilers or nil
           x.fuel_min = r.fuel_min and math.floor(r.fuel_min) or nil
           x.boilers_fed = r.fed
+          x.feed_chests = r.feed_rates
           x.boilers_under_10_min = r.fuel_under and #r.fuel_under or nil
           x.boilers_under_20_min = r.fuel_low and #r.fuel_low or nil
           x.lowest_boiler_min = r.lowest_min and math.floor(r.lowest_min) or nil
@@ -849,6 +908,16 @@ return function(api)
           x.none_idle_s = r.busy_since and math.floor((game.tick - r.busy_since) / 60) or nil
           x.personal = r.personal > 0 and r.personal or nil
           x.logistic_area, x.construction_area = r.view.logistic_area, r.view.construction_area
+          -- Its items (Gemini, 12:20): the 20 most held, and every item its requesters ask for with what is short now.
+          local held = {}
+          for name, c in pairs(r.stock or {}) do held[#held+1] = {name=name, count=c} end
+          table.sort(held, function(p, q) return p.count > q.count or (p.count == q.count and p.name < q.name) end)
+          while #held > 20 do table.remove(held) end
+          x.holds = #held > 0 and held or nil
+          local asks = {}
+          for name, c in pairs(r.asked or {}) do asks[#asks+1] = {name=name, asked=c, short=(r.short_now or {})[name] or 0} end
+          table.sort(asks, function(p, q) return p.asked > q.asked or (p.asked == q.asked and p.name < q.name) end)
+          x.requests = #asks > 0 and asks or nil
           x.logistic_robots, x.construction_robots = r.view.logistic, r.view.construction
           x.charging, x.waiting = r.view.charging, r.view.waiting
           row.logistic[#row.logistic+1] = x
@@ -1022,7 +1091,26 @@ return function(api)
   -- never rose between the looks of that time (storage feed_hist, one count per look, kept FEED_TICKS and a minute),
   -- no robot is on the way to it with a fuel, and no inserter dropping into it holds a fuel. Returns the boilers so,
   -- each {e, chest, count, held, feeder}.
-  local FEED_LOW, FEED_TICKS = 20, 18000
+  local FEED_LOW, FEED_TICKS, RATE_TICKS = 20, 18000, 36000
+  -- A feed chest's fuel rate (Haiku, 12:20): its net change per minute from its look RATE_TICKS ago or the oldest
+  -- since (one at least a minute old), and the minutes left at that rate while it falls. {per_min (negative: falling),
+  -- minutes_left, over_min, text} or nil before two looks a minute apart.
+  function M.feed_rate(chest, count)
+    local unit = chest and chest.valid and try(function() return chest.unit_number end)
+    local hist = unit and (store().feed_hist or {})[unit]
+    local old
+    for _, x in ipairs(hist or {}) do
+      if game.tick - x.tick <= RATE_TICKS and game.tick - x.tick >= 3600 and not old then old = x end
+    end
+    if not old then return nil end
+    local mins = (game.tick - old.tick) / 3600
+    local per_min = (count - old.n) / mins
+    local left = per_min < 0 and count / -per_min or nil
+    local text = per_min < 0 and string.format('uses %.1f/min over %d min, %d min left', -per_min, math.floor(mins + 0.5), math.floor(left))
+      or per_min > 0 and string.format('gains %.1f/min over %d min', per_min, math.floor(mins + 0.5))
+      or string.format('unchanged over %d min', math.floor(mins + 0.5))
+    return {per_min=math.floor(per_min * 10 + 0.5) / 10, minutes_left=left and math.floor(left) or nil, over_min=math.floor(mins + 0.5), text=text}
+  end
   function M.feed_chests(boilers, surface, f)
     local st = store()
     st.feed_hist = st.feed_hist or {}
@@ -1042,7 +1130,7 @@ return function(api)
           while i > 1 and hist[i - 1].tick > at_tick do i = i - 1 end
           table.insert(hist, i, {tick=at_tick, n=c.count})
         end
-        while hist[1] and game.tick - hist[1].tick > FEED_TICKS + 3600 do table.remove(hist, 1) end
+        while hist[1] and game.tick - hist[1].tick > RATE_TICKS + 3600 do table.remove(hist, 1) end
         if judged[unit] == nil then
           local quiet = c.count < FEED_LOW
           -- Looks covering FEED_TICKS: the oldest kept is that old.
@@ -1075,7 +1163,7 @@ return function(api)
       end
     end
     for unit, hist in pairs(st.feed_hist) do
-      if not hist[#hist] or game.tick - hist[#hist].tick > FEED_TICKS + 3600 then st.feed_hist[unit] = nil end
+      if not hist[#hist] or game.tick - hist[#hist].tick > RATE_TICKS + 3600 then st.feed_hist[unit] = nil end
     end
     return out
   end
@@ -1315,6 +1403,14 @@ return function(api)
           local b = {e=r._e}
           M.boiler_supply({b}, surface, f, walked)
           r.feeder, r.feeder_has_fuel = b.feeder, b.fed
+          -- Its feed chest: fuel, and the rate over the last 10 min from the networks view's looks (Haiku, 12:20).
+          local c = b.chest
+          if c and c.e.valid then
+            local rate = M.feed_rate(c.e, c.count)
+            r.feed_chest = {name=c.e.name, position={x=c.e.position.x, y=c.e.position.y}, holds=c.held or 'no fuel', count=c.count,
+              per_min=rate and rate.per_min, minutes_left=rate and rate.minutes_left,
+              line=string.format('%s %s %s, %s', c.e.name, at(c.e.position.x, c.e.position.y), c.held or 'no fuel', rate and rate.text or 'rate not measured yet')}
+          end
         end
         r._e = nil
       end

@@ -96,6 +96,9 @@ met,saw=check({['until']='item_count',item='agricultural-science-pack',at_least=
 eq(met,true); eq(saw,'agricultural-science-pack 45 in 1 entities; rocket-silo (65.5,14.5): rocket built and ready: parts consumed (0/50), not launched, cargo agricultural-science-pack*45')
 met,saw=check({['until']='item_count',item='rocket',at_least=1,positions={{x=65.5,y=14.5}}})
 eq(met,false); eq(saw,'rocket 0 in 1 entities; rocket-silo (65.5,14.5): rocket built and ready: parts consumed (0/50), not launched, cargo agricultural-science-pack*45')
+-- One position is the same as positions with it (Haiku, 12:20: a level fallen under at one chest).
+met,saw=check({['until']='item_count',item='agricultural-science-pack',below=50,position={x=65.5,y=14.5}})
+eq(met,true); assert(saw:find('agricultural-science-pack 45 in 1 entities',1,true),saw)
 surface.find_entities_filtered=find
 assert(not pcall(C.validate,{['until']='fuel_below'}))
 assert(not pcall(C.validate,{['until']='damaged',fraction=0}))

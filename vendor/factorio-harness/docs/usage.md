@@ -568,7 +568,9 @@ fh board events --since 40
   (`sol (on Vulcanus), 2m ago: ...`), the `chat:` trailer's `latest`, and `away: "on Vulcanus"` on `chat` and `tells`
   entries. Same planet: nothing is added.
 - With `--format json`, stdout stays one JSON document and the `error:` (or `warning:`) line goes to stderr; `fh
-  stream` prints none.
+  stream` prints none. Operator tells stay in the document's `result.operator` (and the post-tool hook's file); no
+  `OPERATOR:` line is printed on stdout or stderr then, so `--format json 2>&1 | python3 -c 'json.load(...)'` parses a
+  reply that succeeded whole (Muse, shift12: an OPERATOR line ahead of the JSON on every data call).
 - The `chat: unread=N latest=...` trailer appears when a newer message arrived since you were last told, and on every
   `status`; `peek` requests report it without remembering. `team.mentions` still carries every message naming you.
 - `--deadline-file PATH` or `FH_DEADLINE_FILE` (a line such as `2026-10-10 22:48 PDT`; numeric offsets and local time
@@ -740,7 +742,7 @@ fh sleep 900 --until researched                       # ...or until the research
 - A tell or mention that arrives during a direct `wait_ticks` or `wait_until` ends it (outcome `told` or `mentioned`, `last.why` `told by astra`; within 30 ticks); one pending from before the wait does not, nor an fyi tell. `--wait` on any other action, and `fh wait`, end early the same way while the action keeps going: outcome `told` or `mentioned`, `from`, `still_running` and a note. The peek `status` polls carry the newest undelivered one as `inbox {tick, woke, from}`.
 - `fh wait --until tell|alert|COND [--max S]` is one blocking wait with one line out: `woke: told after 42 s (astra: coal please); your next reply's team block has the rest`. It is a sleep (S seconds, default 600, up to 900) whose requests peek, so the team block stays for the agent's next reply: it ends on what ends a sleep (a tell or mention, damage, death, board news, the queue finishing or stalling), on `alert` (a new attack area, enemy group or enemy base: `woke: alert`) or on a sleep `--until` condition. `--format json` adds the line as `result.line`.
 - `fh sleep SECONDS [--until COND]` (1..900) touches nothing: the current action and queue keep running and the game runs (in `turns` clock mode it advances up to 600 s). The reply's first field, `while_asleep`, says what goes on meanwhile: `your queue keeps running (move_to running, 3 steps pending); ...`, `your walk keeps going until tick N, then your character stands idle`, or `no queue and no action: your character stands idle for up to N s` (with `your queue is paused with N steps pending` when it is). It returns early when your character takes damage (`woke: damaged`, with `health` and `lost`), dies (`died`, exit 1), a chat message mentions you (`mentioned`, with the message; it is also delivered in the reply's `team.mentions`), a teammate tells you something (`told`, with `tell`; delivered in `team.tells`), someone else assigns or changes a board item of yours (`board`, with the line; delivered in `team.board`), eggs of ours on your surface or in a holder you built will hatch within 5 minutes (`eggs`, with the line; delivered in `team.alerts`), the queue that was running when the sleep began finishes (`queue_done`) or stalls (`queue_stalled`, with `queue`: a failed step or a guard that paused it, or a walking step that has not moved the character for 30 s; a repeating plan does not end a sleep between cycles), or the `--until` condition holds (`condition`, with `saw`); else `woke: elapsed`. Wakes with a running queue report `queue_steps`, the steps it finished during the sleep. A dead bot may sleep too: its reply says `dead: true` and `respawns_at_tick`, and it wakes with `respawned` when the new character appears. It polls a read-only `sleep_check` once a second; if the game advanced less than SECONDS in 1.25 x SECONDS + 10 s of real time (paused server), it exits 1 with `timed_out`.
-  - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), `platform_arrived PLATFORM [PLANET]`, any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
+  - `--until`: `researched` (the research running now) or `researched TECH`, `crafting_done`, `item_count ITEM>=N` or `ITEM<N` (the character's inventory; also `>`, `<=` and the words `below`, `under`, `above`, `at_least`), `item_count ITEM>=N at X,Y X,Y ...` (summed over our entities on those tiles, every inventory: chests, machines; up to 64; a level fallen under at one chest, Haiku 12:20: `item_count coal below 20 at 10,39`, then one feed), `rocket_ready X,Y` (the silo at X,Y has its rocket built and ready to launch), `platform_arrived PLATFORM [PLANET]`, any other `wait_until` condition as `NAME key=value ...` (`ammo_below count=5 radius=20`), or the condition as JSON. A condition met already ends the sleep on its first check (`already_met: true` in the sleep reply). The action is `sleep {seconds, condition}`; `item_count` takes the same `positions` in `wait_until` and queue steps.
   - `platform_arrived {platform, location?}` (a `wait_until` condition, so also `fh wait --until`, queue steps, guards and a standing order's `when`; Gemini, shift10: rocket launches wait on a platform's arrival): met while the platform is stopped at a space location, at `location` (a planet) when given, else at any stop; `saw` is `Sunward at gleba` or `Sunward flying nauvis->gleba 25%`. On a private 2.0.77 server a platform leaving a stop is on its route within 4 ticks, and one arriving reads at the planet from that tick (the game's speed value still falls for a few seconds); `fh wait --until "platform_arrived Sunward gleba"` woke when Sunward reached Gleba. An unknown platform fails the wait.
   - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
   - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`, `told`, `mentioned`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (damaged) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode. A tell or mention wakes once: the reply that woke the agent delivered it (shift07: Luna's 32 repeats of tells already read). `fh sleep` and `fh wait --until` wait out such a repeat (Muse, shift08: "woke 4s ago" refusals burned turns): on a `repeat: true` reply the CLI waits the rest of the 10 s and starts the sleep again (at most 3 tries), and the final reply carries `waited_out: your previous sleep woke (board) 4 s before this one, and a sleep within 10 s of a wake repeats that wake; this sleep started after 7 s more`, with the team block the earlier replies carried. The runtime's own `sleep` reply is unchanged.
@@ -2094,7 +2096,17 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   (checked on 2.0.77: Fulgora's planet prototype has no lightning properties), so there is no storm countdown. The
   boilers part names the lowest boiler: the lowest of those under 20 min and not refilled, else the lowest of all,
   with its minutes, its fuel and its feeder (`lowest boiler (66,16): 4 min of coal; no inserter feeds it`; read:
-  `lowest_boiler {position, min, fuel, feeder, feeder_has_fuel}`; Haiku, 07:55).
+  `lowest_boiler {position, min, fuel, feeder, feeder_has_fuel}`; Haiku, 07:55). Then the chests the boilers' feeders
+  take from (Haiku, 12:20), each with its fuel and its rate over the last 10 min (from the view's looks at it, one at
+  least a minute old): `feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min left`
+  (`gains 4.0/min over 10 min`, `unchanged over 6 min`, or `rate not measured yet` before two looks a minute apart);
+  the 2 with the fewest minutes left, then `(+N more)`. Read: `feed_chests` per electric network, `[{chest, position,
+  count, held, per_min, minutes_left, rate}]` (per_min negative while it falls).
+  A logistic network's line ends with its items (Gemini, 12:20): `; holds iron-plate 4200, copper-plate 3100, coal 50`
+  (its provider, storage and buffer chests as the game's network contents count them, the 6 most, `(+N kinds)`) and
+  `; requesters ask iron-plate 400 (300 short), copper-cable 200` (the requests summed over its requester points, the
+  6 largest; `short` is what its requests lack now, held plus incoming). Read: `holds` (the 20 most held, `[{name,
+  count}]`) and `requests` (`[{name, asked, short}]`).
 - Boilers (networks.lua; Haiku, 06:20): `boilers {surface?}` (read, `fh call boilers`, default your surface) lists every
   boiler of ours on the surface, grouped by the electric network its steam feeds (as `networks` maps them: the steam
   generators on its output's fluid segment, else one within 12 tiles; `network: null` and `no electric network found`
@@ -2105,7 +2117,10 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   (its fuel slots, `coal*20`), `burning`, `water` and `steam` (`water 200/200`), `feeder` (the inserter dropping into it
   and what it takes from, with the fuel there: `burner-inserter (60,14) from wooden-chest (41,13) holding 400 coal`; a
   belt: the fuel on it and up to 64 tiles upstream, else what loads that run; or `no inserter feeds it`) and
-  `feeder_has_fuel` (fuel in its hand or at its source), as the `boiler_fuel` alert reads them. At most 64 rows: the
+  `feeder_has_fuel` (fuel in its hand or at its source), as the `boiler_fuel` alert reads them; with its feeder taking
+  from a chest, `feed_chest {name, position, holds, count, per_min, minutes_left, line}` (Haiku, 12:20: the fuel there
+  and its rate over the last 10 min, `line` as on the networks line: `requester-chest (10,39) 50 coal, uses 15.0/min
+  over 10 min, 3 min left`; the rate needs the networks view to have looked at that chest). At most 64 rows: the
   not-working ones, then up to 4 working ones in a network with a stopped boiler (all in a network where every boiler
   works); `more` counts the rows left out (all working). Feeders are read only for the rows shown.
 - Platform alerts in `team.alerts`, for the agent who created a platform (`platform_create`), the 3 agents whose
@@ -2246,7 +2261,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   standing 21%"). `tell {to, text}` sends a tell from `operator`, like a teammate's: in the next reply's team tells,
   waking a sleeper (woke=told), never in the game chat. It also rides on every reply to that agent as
   `operator [{seq, ago_s, text}]` (peeks, reads and waits included; the newest 3) until the agent's next game action
-  or message; fh prints each as an `OPERATOR:` line on stderr as soon as a reply carries it and first on stdout, and
+  or message; in compact output fh prints each as an `OPERATOR:` line on stderr as soon as a reply carries it and first
+  on stdout (`--format json` keeps it in the document only), and
   files it in `.operator-tells.jsonl` beside `--journal` (or `FH_OPERATOR_FILE`) for a post-tool hook.
 - Cost: with a full board and 9 bots, hints add under 0.01 ms per request in steady state (0.5 ms on an agent's first
   request against a full backlog); nothing runs per tick.

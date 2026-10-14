@@ -209,7 +209,10 @@ test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
     for (const until of ['researched','researched automation-2','crafting_done','item_count iron-plate>=200',
       'item_count iron-plate >= 200 at -18.5,-34.5 (3,4)','items coal<10','ammo_below count=5 radius=20','rocket_ready 65.5,14.5',
       '{"until":"item_count","item":"gear","at_least":5}','platform_arrived Sunward','platform_arrived Sunward gleba',
-      'platform_arrived platform=Sunward location=nauvis']) {
+      'platform_arrived platform=Sunward location=nauvis',
+      // Haiku, 12:20: a level fallen under at a chest, and the other operators.
+      'item_count coal below 20 at 10,39','item_count coal under 20 at 10,39','item_count coal <= 19 at 10,39',
+      'item_count coal > 9','item_count coal above 9']) {
       assert.equal(JSON.parse((await cli(port,['sleep','30','--until',until])).stdout).result.woke,'condition');
     }
     await assert.rejects(cli(port,['sleep','30','--until','item_count iron-plate']),(error:any)=>/--until takes/.test(error.stdout));
@@ -222,7 +225,10 @@ test('fh sleep --until sends a wait_until condition: words or JSON',async()=>{
     {until:'item_count',item:'iron-plate',at_least:200,positions:[{x:-18.5,y:-34.5},{x:3,y:4}]},
     {until:'item_count',item:'coal',below:10},{until:'ammo_below',count:5,radius:20},{until:'rocket_ready',position:{x:65.5,y:14.5}},
     {until:'item_count',item:'gear',at_least:5},{until:'platform_arrived',platform:'Sunward'},
-    {until:'platform_arrived',platform:'Sunward',location:'gleba'},{until:'platform_arrived',platform:'Sunward',location:'nauvis'}]);
+    {until:'platform_arrived',platform:'Sunward',location:'gleba'},{until:'platform_arrived',platform:'Sunward',location:'nauvis'},
+    {until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}]},{until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}]},
+    {until:'item_count',item:'coal',below:20,positions:[{x:10,y:39}]},
+    {until:'item_count',item:'coal',at_least:10},{until:'item_count',item:'coal',at_least:10}]);
   assert.equal(seen.filter(r=>r.action==='sleep')[0].args.seconds,30);
 });
 test('fh sleep keeps the team hints the sleep request carried, and prints what keeps going first (compact)',async()=>{

@@ -86,6 +86,9 @@ for i=1,4 do
 end
 ln.cells[5]={mobile=true,owner={valid=true,position={x=0,y=0}},logistic_radius=0,construction_radius=10,charging_robots={},to_charge_robots={}}
 force.logistic_networks={nauvis={ln}}
+-- What it holds (Gemini, 12:20: an item overview per network), as the engine's get_contents gives it.
+ln.get_contents=function() return {{name='iron-plate',quality='normal',count=4200},{name='copper-plate',quality='normal',count=3100},
+  {name='coal',quality='normal',count=50}} end
 for i=1,5 do add{type='entity-ghost',name='entity-ghost',position={x=55,y=55+i}} end
 for i=1,2 do add{type='entity-ghost',name='entity-ghost',position={x=500,y=500}} end
 -- Ghosts are counted once per network over its construction area's box, bounded (00:26 rule).
@@ -118,11 +121,13 @@ local lines=N.lines(force,'nauvis',8)
 eq(#lines,3,table.concat(lines,' | '))
 eq(lines[1],'nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%); '
   ..'solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50% (5.0 MJ of 10.0 MJ); machines 30: 3 low power, 1 no power; boilers 11: their own fuel 31 min at this draw, '
-  ..'1 with fuel at their feeders, 2 under 20 min not refilled (lowest 4 min); lowest boiler (66,16): 4 min of coal; no inserter feeds it')
+  ..'1 with fuel at their feeders, 2 under 20 min not refilled (lowest 4 min); lowest boiler (66,16): 4 min of coal; no inserter feeds it; '
+  ..'feed chests: wooden-chest (41,13) 400 coal, unchanged over 5 min')
 -- (lb1 holds 100 coal, 4 min, but its inserter's chest holds 400: not low; lb2 and the one by the engine have no feeder)
 eq(lines[2],'nauvis logistic #3: 4 roboports (+1 personal), logistic area (0,25)-(125,75), construction area (-30,-5)-(155,105); '
   ..'logistic robots 147: 0 idle, 142 working, 3 charging, 2 waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; '
-  ..'no idle logistic robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5')
+  ..'no idle logistic robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5; '
+  ..'holds iron-plate 4200, copper-plate 3100, coal 50; requesters ask iron-plate 400 (300 short), copper-cable 200')
 eq(lines[3],'nauvis turrets: gun-turret 6; ammo used in the last hour: firearm-magazine 1200')
 -- The read: the same numbers as fields.
 local r=N.read({force=force},{})
@@ -136,7 +141,9 @@ eq(e.boilers,11,'the far boiler feeds nothing listed'); eq(e.fuel_min,31); eq(e.
 local pr=N.power_row(force,'nauvis')
 eq(pr.id,7); eq(pr.capacity_kw,22100); eq(pr.draw_kw,18500); eq(pr.boilers,11); eq(pr.fed,1); eq(pr.low,2); eq(math.floor(pr.low_min),4)
 eq(N.power_row(force,'vulcanus'),nil)
-local l=r.surfaces[1].logistic[1]; eq(l.unfilled,1); eq(l.unfilled_items['iron-plate'],300); eq(l.ghosts,5); eq(l.logistic_idle,0)
+local l=r.surfaces[1].logistic[1]; eq(l.unfilled,1)
+eq(l.holds[1].name,'iron-plate'); eq(l.holds[1].count,4200); eq(#l.holds,3)
+eq(l.requests[1].name,'iron-plate'); eq(l.requests[1].asked,400); eq(l.requests[1].short,300); eq(l.requests[2].short,0); eq(l.unfilled_items['iron-plate'],300); eq(l.ghosts,5); eq(l.logistic_idle,0)
 eq(l.roboports,4); eq(l.personal,1); eq(l.logistic_area.x0,0); eq(l.construction_area.x1,155)
 eq(l.logistic_robots.working,142); eq(l.logistic_robots.charging,3); eq(l.construction_robots.idle,4); eq(l.construction_robots.waiting,0)
 -- Inspect on a roboport: its network and its own cell; on a chest in the network; on a chest no roboport covers.
@@ -414,6 +421,24 @@ do
   eq(#fg6,6); eq(fg6[1].rank,2,'under 10')
   in_chest=0; run4(60)
   fg6=feed_groups(); eq(fg6[1].rank,3,'empty'); has(fg6[1].line,'holds no fuel')
+  -- Its rate (Haiku, 12:20): the net change per minute over the last 10 min of looks and the minutes left while it
+  -- falls; on the network line and the networks read, the fewest minutes left first.
+  st4.networks.feed_hist={}
+  in_chest=200; feed_groups()
+  for k=1,10 do run4(60); in_chest=200-15*k; feed_groups() end
+  local row=N4.read({force=force},{}).surfaces[1].electric[1]
+  local fr=row.feed_chests[1]
+  eq(fr.chest,'requester-chest'); eq(fr.count,50); eq(fr.per_min,-15); eq(fr.minutes_left,3)
+  eq(fr.rate,'uses 15.0/min over 10 min, 3 min left')
+  has(row.line,'feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min left')
+  -- The boilers read names each boiler's feed chest with its rate.
+  local br=N4.boilers({force=force,surface=n2},{})
+  local found
+  for _,g in ipairs(br.networks or br.groups or {}) do
+    for _,b in ipairs(g.boilers or {}) do if b.feed_chest then found=b.feed_chest end end
+  end
+  assert(found,'a boiler row with its feed chest')
+  eq(found.line,'requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min left')
   in_chest=150
   game.surfaces=saved
 end
