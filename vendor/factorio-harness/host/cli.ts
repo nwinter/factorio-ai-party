@@ -123,7 +123,7 @@ function parseUntil(text: string): Record<string, unknown> {
   const trimmed = text.trim();
   if (trimmed.startsWith('{')) return object(JSON.parse(trimmed),'--until');
   const [kind = '', ...rest] = trimmed.split(/\s+/);
-  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], or a wait_until condition as JSON';
+  const usage = '--until takes researched [TECH], crafting_done, item_count ITEM>=N|ITEM<N|ITEM below N [at X,Y X,Y], rocket_ready X,Y, platform_arrived PLATFORM [PLANET], or a wait_until condition as JSON';
   if (kind === 'researched' || kind === 'research') {
     if (rest.length > 1) throw new Error(usage);
     return rest[0] ? {until:'researched', technology:rest[0]} : {until:'researched'};
@@ -140,10 +140,15 @@ function parseUntil(text: string): Record<string, unknown> {
     return rest[1] ? {until:'platform_arrived', platform:rest[0], location:rest[1]} : {until:'platform_arrived', platform:rest[0]};
   }
   const value = (v: string): unknown => /^-?\d+(\.\d+)?$/.test(v) ? Number(v) : v;
-  if ((kind === 'item_count' || kind === 'items') && /[<>]/.test(rest.join(' '))) {
-    const match = rest.join(' ').match(/^([\w-]+)\s*(>=|<)\s*(\d+)(?:\s+(?:at|in)\s+(.+))?$/);
+  // A level reached or fallen under (Haiku, 12:20: wait until a chest's coal is below 20, then feed): ITEM>=N, ITEM>N,
+  // ITEM<N, ITEM<=N, or the words below/under/above/at_least: `item_count coal below 20 at 10,39`.
+  if ((kind === 'item_count' || kind === 'items') && /[<>]|\s(below|under|above|at_least)\s/.test(' ' + rest.join(' ') + ' ')) {
+    const match = rest.join(' ').match(/^([\w-]+)\s*(>=|<=|<|>|\s+below\s+|\s+under\s+|\s+above\s+|\s+at_least\s+)\s*(\d+)(?:\s+(?:at|in)\s+(.+))?$/);
     if (!match) throw new Error(usage);
-    const condition: Record<string, unknown> = {until:'item_count', item:match[1], [match[2] === '>=' ? 'at_least' : 'below']:Number(match[3])};
+    const op = (match[2] ?? '').trim(), n = Number(match[3]);
+    const [field, level] = op === '>=' || op === 'at_least' ? ['at_least', n] : op === '>' || op === 'above' ? ['at_least', n + 1]
+      : op === '<=' ? ['below', n + 1] : ['below', n];
+    const condition: Record<string, unknown> = {until:'item_count', item:match[1], [field]:level};
     if (match[4]) {
       condition.positions = match[4].split(/[\s;]+/).filter(Boolean).map(pair => {
         const xy = pair.match(/^\(?(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\)?$/);
@@ -199,8 +204,8 @@ function withDeadline(value: unknown): unknown {
 let streaming = false;
 // Operator tells (agent-minds study, fix 1: of 15 shift07 nudges 5 never reached the model, its replies sent to a
 // file, /dev/null, `tail -c` or a wrapper keeping three keywords). Any reply may carry result.operator until the
-// agent's next game action or message; each is printed on stderr as soon as a reply carries it, first on stdout,
-// and filed for the workspace's post-tool hook (pog tools/context.py), which puts the unseen ones in the model's context.
+// agent's next game action or message; in compact output each is printed on stderr as soon as a reply carries it and
+// first on stdout (JSON keeps it in result.operator), and filed for the workspace's post-tool hook (pog tools/context.py), which puts the unseen ones in the model's context.
 const operatorLines = new Map<number, string>();
 const operatorPrinted = new Set<number>();
 let operatorFile: string | undefined;
@@ -214,7 +219,9 @@ function noteOperator(reply: unknown) {
     if (typeof o?.seq !== 'number' || typeof o.text !== 'string' || operatorLines.has(o.seq)) continue;
     const line = `OPERATOR: ${o.text} (sent ${agoText(Number(o.ago_s ?? 0))}; repeated on every reply until your next game action or message)`;
     operatorLines.set(o.seq, line);
-    process.stderr.write(line + '\n');
+    // JSON keeps the tell in result.operator and leaves stderr without it: scripts read `--format json 2>&1`
+    // (Muse, shift12: an OPERATOR line ahead of the document on every data call until the next game action).
+    if (outputFormat !== 'json') process.stderr.write(line + '\n');
     if (operatorFile) {
       try {
         let seen = '';
@@ -808,6 +815,8 @@ async function main() {
       ...(last?.kind === 'move_to' || last?.kind === 'drive' ? {avoided_enemies: last.avoided_enemies,
         enemies_at_start_or_goal: last.enemies_at_start_or_goal, passed_within_margin: last.passed_within_margin} : {}),
       why: last?.why, note: status.result?.note,
+      // retreat (operator 12:27): why it went back, from where, the health then and now, where to.
+      retreated: last?.retreated,
       // collect over a radius: moved per item, places touched, what fell short.
       tally: last?.tally,
       // build_path: belts placed, where it stopped, and the trees and rocks it mined in its way (round1050f).

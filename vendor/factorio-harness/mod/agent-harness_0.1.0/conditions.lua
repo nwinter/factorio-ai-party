@@ -102,9 +102,12 @@ return function(api)
     -- silo's rocket state and cargo follow in saw).
     item_count=function(p,c)
       local n,where=0,''
-      if c.positions then
+      -- One position counts as positions={position} (Haiku, 12:20: item_count coal below 20 at a chest; a lone position
+      -- was ignored and the character's inventory counted).
+      local positions=c.positions or (c.position and {c.position})
+      if positions then
         local seen,silos=0,{}
-        for _,raw in ipairs(c.positions) do
+        for _,raw in ipairs(positions) do
           for _,e in pairs(p.surface.find_entities_filtered{position=api.position(raw),radius=0.3,force=p.force}) do
             -- A silo's rocket stands on its centre and holds nothing of its own (the silo counts the cargo); a robot
             -- flying over a chest is not the chest (runtime.lua M.target_rank, Astra 07:05).

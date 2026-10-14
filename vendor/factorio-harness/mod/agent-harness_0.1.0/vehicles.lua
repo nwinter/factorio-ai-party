@@ -22,6 +22,7 @@ return function(api)
       remote='with drive: true: drive one of our cars or tanks by remote view while the character stays where it is, as 2.0 lets a player (operator 08:32: to cut character deaths). vehicle names it. Refused, as the game refuses, when it is in no chunk our force sees now (radar coverage or a character\'s sight; the refusal names the nearest coverage), when someone sits in its driver seat or another agent drives it remotely, and for a spidertron (go_to) or a train. The drive ends out_of_coverage when the vehicle leaves the chunks our force sees, and driver_seated when someone gets into its driver seat. Its guns stay silent: a vehicle\'s guns fire for a gunner seated in it or a player driving it remotely, and an agent\'s character has no player',
       vehicle='with remote: the car or tank, by unit_number or {x,y} (any tile of it)',
       combat='with drive, seated as the gunner: true or a radius 1..36: the guns fire at the nearest enemy in range for the whole drive, as shoot auto does, and stop with it; last.shots (rounds fired), last.ammo_used, last.kills and kills_by_name (refused with remote)',
+      retreat='with drive: optional {to: {x,y}, health_below: 0..1, shield_below: 0..1} (any one triggers; default health_below 0.4): when the vehicle\'s health or its grid\'s shield falls under it during the drive, the drive ends retreated and the vehicle is driven back to `to` at once (guns on when seated); false: not even the standing retreat_guard',
       ticks='with drive', returns='vehicle (name, position, seat, speed) or vehicle=false when on foot'},
   }
   local TYPES = {}
@@ -224,9 +225,12 @@ return function(api)
       end
       local action = {kind='drive', target=target, until_tick=game.tick + (dry and math.min(ticks, 1800) or ticks), last=v.position, still=0, vehicle=v,
         reverse=a.reverse or nil, remote=a.remote or nil, dry=dry or nil}
+      -- retreat (retreat.lua): checked against the vehicle's health and shield; none on a dry run.
+      local back = not dry and api.retreat and api.retreat(p, a) or nil
       api.start(p, action)
+      if back then api.arm_retreat(p, action, back) end
       local out = {until_tick=action.until_tick, target=target, vehicle=v.name, distance=math.floor(api.distance(v.position, target)), pathfinding=a.pathfind ~= false,
-        reverse=a.reverse or nil, dry_run=dry or nil,
+        reverse=a.reverse or nil, dry_run=dry or nil, retreat=back and api.retreat_line and api.retreat_line(back) or nil,
         note=dry and (a.pathfind ~= false and 'the path is asked for: the preview comes when it ends (last.preview; fh --wait waits for it); the vehicle does not move'
           or 'the straight line to the target: last.preview next tick (fh --wait); the vehicle does not move') or nil}
       if a.remote then
