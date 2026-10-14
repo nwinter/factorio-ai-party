@@ -22,6 +22,7 @@ html body.portrait .card { padding: 9px 12px 9px 12px; gap: 12px; }
 html body.portrait .card .avatar { width: 64px !important; height: 64px !important; }
 html body.portrait .card .name { font-size: 27px; }
 html body.portrait .card .harness, html body.portrait .card .badge { display: none !important; }
+html body.portrait .card .tok { margin-left: auto; font-size: 14px; }
 html body.portrait .card .model { font-size: 19px; }
 html body.portrait .card .model i, html body.portrait .card .model .unset { display: none; } /* mottos: landscape only */
 html body.portrait .card .doing { font-size: 20px; gap: 8px; }

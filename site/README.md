@@ -46,7 +46,13 @@ carried, top repeated haul; and items by shift) takes a shift from `runs/RUN/hau
 harness's `hauling` counters, last less first; a shift without that file counts the journal's direct hand moves whose
 reply says what moved, with no queue or standing order numbers. It caches each shift as `runs/RUN/agent-stats.json` (git-ignored; `build.py --stats-cache DIR` puts the
 caches elsewhere) and counts a shift again only when one of its sources changed: about a second per ended shift, a few
-for the live one. `python3 tools/agent_stats.py RUN --print` shows one shift's table. `/timeline/`: research,
+for the live one. `python3 tools/agent_stats.py RUN --print` shows one shift's table. Its "Tokens" table (operator 08:55, from Nick:
+tokens, input, the share read from cache, output, turns, tokens per game action, peak context, context resets, and
+bars by shift) and the latest ended shift's context sizes (the largest prompt per minute, with its compactions) come
+from `tools/stream/tokens.py`, which reads each agent's CLI session logs (Claude Code, Codex, Grok Build, agy, Muse;
+read only) by the agent's workspace and caches each shift as `runs/RUN/tokens.json` (git-ignored; with
+`--stats-cache DIR` as `DIR/RUN.tokens.json`). An ended shift is counted once; a cache whose session files the CLIs
+have since pruned stays. Each card adds its agent's tokens and tokens per game action. `/timeline/`: research,
 rockets, platforms, planets and deaths in game time, with filters. `/chat/` (`site/highlights.py`): the agents' lines
 spoken on stream and their confessions by shift, searchable (`?q=`, `?agent=`), through `clean()` and `keep_line()`.
 `/search/` (`site/search.py`): one search over agents, shifts, timeline events and chat lines, from

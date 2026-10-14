@@ -9,9 +9,12 @@
   recounted when a journal grows; hand hauling from the journal's direct moves (items, calls, carry legs, top
   repeated haul; a walking collect's reply holds no count) or, where the stream kept them, the game's counters;
 - the site: cards, records (most built in a shift, longest survival), the comparison table, nav entries, the timeline
-  with its filters; no log text on the pages; check.py passes.
+  with its filters; no log text on the pages; check.py passes;
+- tokens (tools/stream/tokens.py, its own test: tools/stream/test_tokens.py): the agents' CLI session logs by shift, a
+  table for the run with bars by shift, the latest ended shift's context sizes and compactions, each card's tokens and
+  tokens per game action.
 """
-import gzip, json, subprocess, sys, tempfile, time
+import gzip, json, os, subprocess, sys, tempfile, time
 from pathlib import Path
 
 SITE = Path(__file__).resolve().parent
@@ -155,10 +158,41 @@ def make(root):
         + json.dumps({"t": 3, "seq": 2, "agent": "opus", "text": "SECRET-REQUEST-TEXT"}) + "\n")
 
 
+def iso(day_hm):
+    return day_hm + ":00.000Z"
+
+
+def token_logs(root, homes):
+    """Opus's Claude Code sessions in both shifts (one compaction in the second), Sol's Codex rollout in the first."""
+    import re
+    def claude_dir(run):
+        return homes["claude"] / "projects" / re.sub(r"[^A-Za-z0-9]", "-", str((root / run / "opus").resolve()))
+    def msg(mid, at, cr, out):
+        return json.dumps({"type": "assistant", "timestamp": at, "message": {"id": mid, "model": "claude-opus-5-5", "usage": {
+            "input_tokens": 10, "cache_creation_input_tokens": 0, "cache_read_input_tokens": cr, "output_tokens": out}}})
+    for run, lines in (("sa", [msg("a1", iso("2026-10-13T06:00"), 90_000, 1_000), msg("a2", iso("2026-10-13T06:05"), 140_000, 2_000)]),
+                       ("sb", [msg("b1", iso("2026-10-13T09:00"), 40_000, 500),
+                               json.dumps({"type": "system", "subtype": "compact_boundary", "timestamp": iso("2026-10-13T09:01")})])):
+        claude_dir(run).mkdir(parents=True)
+        (claude_dir(run) / "s.jsonl").write_text("\n".join(lines) + "\n")
+    rollout = homes["codex"] / "sessions" / "2026" / "10" / "12" / "rollout-x.jsonl"
+    rollout.parent.mkdir(parents=True)
+    rollout.write_text(json.dumps({"timestamp": iso("2026-10-13T06:00"), "type": "session_meta",
+                                   "payload": {"cwd": str((root / "sa" / "sol").resolve())}}) + "\n" +
+                       json.dumps({"timestamp": iso("2026-10-13T06:00"), "type": "token_usage_record", "payload": {
+                           "response_id": "r1", "usage": {"input_tokens": 5_000_000, "cached_input_tokens": 4_000_000,
+                                                          "output_tokens": 20_000}}}) + "\n")
+
+
 def main():
     with tempfile.TemporaryDirectory() as d:
         root = Path(d) / "runs"
         make(root)
+        homes = {k: Path(d) / "home" / k for k in ("claude", "codex", "grok", "agy", "muse")}
+        for h in homes.values():
+            h.mkdir(parents=True)
+        os.environ["POG_TOKEN_ROOTS"] = json.dumps({k: [str(v)] for k, v in homes.items()})  # build.py's too
+        token_logs(root, homes)
         c = agent_stats.compute(root / "sa", ["Opus", "Sol"])
         o, s = c["agents"]["opus"], c["agents"]["sol"]
         assert (o["requests"], o["reads"], o["talk"], o["actions"]) == (24, 3, 5, 16), o
@@ -206,6 +240,13 @@ def main():
         data = agent_pages.collect(longrun.load(root, start="sa"), root, ["opus", "sol"], cache)
         assert (data["totals"]["sol"]["operator"], data["totals"]["opus"]["operator"]) == (1, 1), data["totals"]
         assert [a["operator"] for _, a in data["per_shift"]["opus"]] == [0, 1], data["per_shift"]["opus"]
+        # tokens: opus in both shifts (a compaction in the second), sol in the first; per game action over the same shifts
+        tk = data["tokens"]
+        to, ts = tk["totals"]["opus"], tk["totals"]["sol"]
+        assert (to["total"], to["calls"], to["shifts"], to["resets"], to["context_max"]) == (273_530, 3, 2, 1, 140_010), to
+        assert to["actions"] == data["totals"]["opus"]["actions"] and to["per_action"] == to["total"] / to["actions"], to
+        assert (ts["total"], ts["cached"], ts["shifts"]) == (5_020_000, 80.0, 1), ts
+        assert [n for n, _ in tk["per_shift"]["opus"]] == [1, 2] and tk["last"][0] == 1  # the latest ended shift
 
         out = Path(d) / "dist"
         content = json.loads((SITE / "content" / "site.json").read_text())
@@ -225,6 +266,17 @@ def main():
         # Opus: since its 00:10 death (tick 255600) to the end of shift 2 (tick 763200); Sol played shift 1 only (1h30m)
         assert '<span class="r-value">2h20m</span>' in surv and "Opus" in surv and "still alive" in surv, surv
         assert 'table class="compare"' in page and "data-v=" in page
+        tok = page.split('<h2 id="tokens">Tokens</h2>')[1].split("<h2 ")[0]
+        assert "shifts 1 to 2" in tok and tok.index('href="#sol"') < tok.index('href="#opus"'), tok  # most tokens first
+        orow = tok.split('href="#opus"')[1].split("</tr>")[0]
+        assert 'data-v="273530" title="273,530">274K<' in orow and orow.count('<span style="height:') == 2, orow
+        assert 'data-v="1">1<' in orow  # one context reset
+        srow = tok.split('href="#sol"')[1].split("</tr>")[0]
+        assert ">5.0M<" in srow and ">80%<" in srow and srow.count('<span style="height:') == 1, srow
+        assert 'id="context">Context size through shift 1</h3>' in tok and "peak 140K" in tok and "<polyline" in tok, tok
+        card = page.split('<article class="agent-card" id="opus"')[1].split("</article>")[0]
+        assert "<dt>Tokens</dt><dd>274K</dd>" in card and "<dt>Tokens per game action</dt>" in card, card
+        assert "Context resets" in page.split('id="notes"')[1]
         # hand hauling: the run by agent (shift 1's journal, shift 2's game counters), items by shift, the note
         hl = page.split('<h2 id="hauling">Hand hauling</h2>')[1].split('<h2 ')[0]
         assert "Queue and standing order steps counted in shift 2; other shifts count direct moves only." in hl, hl
@@ -297,7 +349,7 @@ def main():
                      "Reached Vulcanus", 'data-kind="death"', 'value="death" checked', "Deaths (3)"):
             assert want in tl, want
         assert tl.index("Logistics") < tl.index("Reached Vulcanus") < tl.index("Rocket 4")
-    print("agents: ok (stats per shift, cache, cards, records, comparison, timeline, check.py)")
+    print("agents: ok (stats per shift, cache, cards, records, comparison, timeline, tokens, check.py)")
 
 
 if __name__ == "__main__":

@@ -30,6 +30,29 @@ return function(api)
     local c=pl.space_connection
     if c then return string.format('%s->%s %d%%',c.from.name,c.to.name,math.floor((pl.distance or 0)*100+0.5)) end
   end
+  local top_items,try
+  -- Hub trash (operator 09:04, Astra: Sunward's 50 processing units and 50 low
+  -- density structures, request max 0, left its trash on arrival at Gleba,
+  -- which has no landing pad; on world n they lay in a cargo-pod container at
+  -- (-10.5,-5.5)). On a 2.0.77 copy: in flight, items over a max moved from
+  -- the hub to its trash within 30 ticks and the trash stayed aboard for all
+  -- 24,800 ticks; 30 ticks after the stop at Gleba one pod took it down and
+  -- landed as a cargo-pod container 14 tiles from (0,0). Parked, what was put
+  -- in the trash went down within 20 ticks (Nauvis: to the landing pad), but
+  -- 12 processing units over a max of 0 stayed in the hub for 3500 ticks.
+  -- over: the call set a max under what the hub holds.
+  function M.trash_note(pl,over)
+    local loc=pl.space_location
+    local planet=loc and (loc.type=='planet' or try(function() return prototypes.space_location[loc.name].type end)=='planet')
+    local where='to its landing pad, or, with none there, as cargo-pod containers on the ground near (0,0) (where_is lists them)'
+    if planet then
+      return (over and 'while the platform is stopped the game leaves what is over a max in the hub; once it flies, the game moves that to the trash, which goes down at the next stop. ' or '')
+        ..'the game sends the hub\'s trash down to '..loc.name..' in cargo pods while the platform is stopped there: '..where
+    elseif pl.space_connection then
+      return (over and 'in flight the game moves what is over a max to the hub\'s trash within a second. ' or '')
+        ..'the hub keeps its trash while flying; when the platform stops at a planet, the game sends it down in cargo pods: '..where
+    end
+  end
   -- Requests ------------------------------------------------------------------
   local function sections_of(p,a)
     if a.target=='character' or (a.target==nil and a.position==nil and a.platform==nil) then
@@ -139,10 +162,27 @@ return function(api)
         #off>1 and 's' or '',table.concat(off,', '),#off>1 and 'are' or 'is',#off>1 and 'their' or 'its')
     end
     out.changed_section=touched and touched.index or nil
+    -- A hub: what is over a max goes to its trash, and where the trash goes.
+    if a.platform~=nil or (chest and chest.type=='space-platform-hub') then
+      local pl=a.platform~=nil and M.platform(p,a.platform) or chest.surface.platform
+      local hub=pl and pl.hub
+      if hub and hub.valid then
+        local over={}
+        local main=try(function() return hub.get_inventory(defines.inventory.hub_main) end)
+        for _,r in ipairs(a.set or {}) do
+          local held=r.max and main and try(function() return main.get_item_count({name=item_name(r.item),quality=r.quality or 'normal'}) end) or 0
+          if r.max and held>r.max then over[#over+1]=string.format('%s: the hub holds %d, %d over the max %d',item_name(r.item),held,held-r.max,r.max) end
+        end
+        local trash=defines.inventory.hub_trash and try(function() return hub.get_inventory(defines.inventory.hub_trash) end)
+        out.hub_trash=trash and top_items(trash,12) or nil
+        out.over_max=#over>0 and over or nil
+        if out.hub_trash or out.over_max then out.trash_note=M.trash_note(pl,out.over_max~=nil) end
+      end
+    end
     return out
   end
   -- Platforms -----------------------------------------------------------------
-  local function top_items(inv,limit)
+  top_items=function(inv,limit)
     local list=inv and inv.get_contents() or {}
     table.sort(list,function(x,y) return x.count>y.count end)
     if #list==0 then return nil end
@@ -164,7 +204,7 @@ return function(api)
   -- One platform in full: what remote view shows of its flight, damage,
   -- asteroid chunks in reach, thruster tanks and unbuilt ghosts. Each read is
   -- guarded so a missing field never hides the rest.
-  local function try(fn) local ok,v=pcall(fn); if ok then return v end end
+  try=function(fn) local ok,v=pcall(fn); if ok then return v end end
   -- Flight as the hub's GUI and the space map show it: speed in km/s (the
   -- game's speed is km per tick), the leg flown now (a space connection: its
   -- length, the end headed for, the km left to it), minutes to that end at the
@@ -367,6 +407,7 @@ return function(api)
           row.hub_slots=M.hub_slots(hub)
           local trash=defines.inventory.hub_trash and try(function() return hub.get_inventory(defines.inventory.hub_trash) end)
           row.hub_trash=trash and top_items(trash,12) or nil
+          row.hub_trash_note=row.hub_trash and M.trash_note(pl) or nil
           local secs=hub.get_logistic_sections()
           if secs then
             local req,off={},{}
@@ -873,8 +914,8 @@ return function(api)
     requests={surface='optional planet name, with position: a requester or buffer chest or landing pad there by remote view, where our force sees the chunk (the reply\'s target says on which surface)',target='character (default when no position/platform)',from_buffers='requester chest: boolean, the "request from buffer chests" switch (the reply says its state)',position='{x,y} of a requester/buffer chest, landing pad or other requester in a visible chunk (remote view; no reach needed)',platform='platform name: its hub requests (what the planet in orbit sends up)',
       set='array of {item,min,max?,quality?,from? (planet to import from, platform hubs)}; replaces that item\'s slot',clear='array of item names to remove',clear_all='boolean: empty the section first',section='1-based section index (default the first manual ungrouped section, created if none)',
       active='boolean: switch the section on or off (the GUI\'s checkbox; a section that is off requests nothing)',
-      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section, note (sections that are off but hold requests); call with no set/clear/active to just read'},
-    platforms={platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, hub, hub_items, hub_slots (free of all), hub_trash, requests, requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
+      returns='target, sections [{index, group, off (switched off: its requests are not made), controlled (set by the game, not editable), requests ["item min..max from planet", "item=n from planet"]}], changed_section, note (sections that are off but hold requests); on a platform hub: over_max (a max set in this call under what the hub holds), hub_trash, trash_note (where the game sends the trash); call with no set/clear/active to just read'},
+    platforms={platform='optional name: only this one, with its full hub inventory, speed (the game\'s value, km per tick), damaged up to 10 (the game repairs platform entities itself with the hub\'s repair packs, one at a time), damaged_tiles, asteroid_chunks on the platform surface by type, thrusters (count, lowest fuel/oxidizer tank), unbuilt_ghosts, construction_blocked (why the hub cannot build or deconstruct now: hub full, ghosts whose items the hub lacks), hub_inserters_without_target (inserters taking from the hub with nothing to drop into, and the tile they drop onto), thrown_overboard (items in flight off the platform), consumed_10min and produced_10min (the game\'s item statistics for the platform surface)',returns='platforms [{name, state, at (location or from->to %), speed_kms, next_stop (the stop it flies to; waiting at a stop, the one after), on a route leg (as flown), heading_to, leg_km, leg_left_km, eta_min (at the current speed), schedule, hub, hub_items, hub_slots (free of all), hub_trash, hub_trash_note (where the game sends the trash: kept in flight; at a planet stop down in cargo pods to its landing pad, or with none as cargo-pod containers near (0,0)), requests, requests_off (in hub sections switched off: not requested), leave_ok, defense {hub_health, turrets (count: empty, low under 10 rounds), ammo (rounds the turrets hold against the ammo in the hub)}, repair_packs, damaged (most damaged first: 3, or 10 with platform; damaged_count when more)}], silos on this surface {position, status, parts, cargo}, planet'},
     platform_create={name='optional platform name',planet='default the character\'s planet',starter_pack='default space-platform-starter-pack',note='like the platform GUI: the platform waits for its starter pack; a silo holding one in its rocket cargo launches it on its own'},
     platform_schedule={platform='name',stops='array of {station=planet, wait=[{type=all_requests_satisfied|any_request_zero|time|inactivity|..., ticks?, compare=and|or}]}; [] clears',current='1-based stop to head for (default 1)',paused='boolean: pause/unpause thrust and the schedule (paused on a route, the platform stays among its asteroids and drifts back; the reply\'s note says so)'},
     drop={platform='platform name (default: the one you are aboard)',items='array of 1..20 {item,count,quality?} from the hub inventory',position='optional {x,y} to land near when the planet has no landing pad of ours (default: a bot\'s last spot there, else the spawn point)',to='optional teammate name or list: told where it landed too, in their team block',

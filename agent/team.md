@@ -181,6 +181,8 @@ already targets your character.
   reach first, and names it in `instead`. `fh research` times (`done_in`) use the last minute's lab throughput.
   `repair` on an undamaged entity is ok with `unchanged: "not damaged"`; `repair` takes `positions` or `area` and
   reports `repaired` and `already_full`.
+- `collect {"position":{"x":10.5,"y":3.5},"wait_ticks":1800}` stands at that machine and takes each product the tick it
+  appears (`"count"` stops early); `last.took`, `last.made` and `last.inserters_took` say who got what.
 - What you take over a personal request's max goes to your trash slots: `transfer`, `collect` and `pickup` say how much
   (`trash`); `"up_to": true` stops at the max, `"keep_max": true` refuses the take. A paste leaves the requests of a hub
   or requester chest it lands on (`requests_kept`).
@@ -194,6 +196,8 @@ already targets your character.
   `vehicle {"drive":{...},"combat":true}` keeps the guns on auto for the whole drive (`last.shots`, `last.kills`).
 - `vehicle {"drive":{"x":-40,"y":-200},"remote":true,"vehicle":311799}` drives one of our cars or tanks in radar coverage by
   remote view while your character stays put; its guns do not fire that way.
+- `equipment {"vehicle":311799,"operation":"insert","item":"energy-shield-equipment"}` works a tank's (6x8) or spidertron's
+  (10x6) equipment grid in reach or seated; `"operation":"list"` shows it, also by remote view; `inspect` on it too.
 - `vehicle {drive}` follows the engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes
   through units (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does.
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
@@ -279,6 +283,8 @@ already targets your character.
   a planet); it is also a `wait_until` condition, a queue guard and an order's `when`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
   takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
+- A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods, to
+  the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it).
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 
