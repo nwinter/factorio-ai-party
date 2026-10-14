@@ -35,13 +35,14 @@ for i=1,17 do cs[#cs+1]=crafter(adv,i<=12 and 6 or 1,{['electronic-circuit']=10}
 for i=1,4 do cs[#cs+1]=crafter(plastic,1,{coal=5}) end
 -- The fake find: by type (one or a list), inside the area when there is one (walk.lua's bands).
 local finds,crafter_finds,wholes,finds_tick,last_tick=0,0,0,0,-1
+local crafter_types={}
 local function finder(lists)
   return function(f)
     assert(f.type,'by type')
     if game.tick~=last_tick then last_tick=game.tick; finds_tick=0 end
     finds=finds+1; finds_tick=finds_tick+1
     assert(finds_tick<=1,'one find a tick')
-    if type(f.type)=='table' then crafter_finds=crafter_finds+1 end
+    if type(f.type)=='table' then crafter_finds=crafter_finds+1; for _,k in ipairs(f.type) do crafter_types[k]=true end end
     if not f.area then wholes=wholes+1 end
     local out,a={},f.area
     for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do
@@ -78,9 +79,10 @@ local function finish() local n=0; while storage.science_jobs and n<18000 do run
 -- known yet), then the crafters, every type in one find, in bands of chunks around where the labs are.
 eq(S.lines(p,h),nil,'nothing built yet')
 local took=finish()
-eq(wholes,2,'a whole-surface find per planet, the first time'); assert(crafter_finds>=1,'the crafters in bands')
+eq(wholes,2,'a whole-surface find per planet, the first time'); assert(crafter_finds>=1,'the crafters and miners in bands')
 assert(took<=200,'the first job: a step every 4 ticks: '..took)
 eq(asked,'nauvis','power on the surface with the most labs')
+assert(crafter_types['mining-drill'] and crafter_types['offshore-pump'] and crafter_types['assembling-machine'],'the miners in the same finds (Grok 04:55)')
 local line=S.lines(p,h)
 eq(line,'science on nauvis: research plastics-2 41%; labs 12 of 20 working; limiting chemical-science-pack: 8 of 20 labs have none, '
   ..'made 12/min, used 30/min; first short step plastic-bar: 4 of 4 working, made 30/min, used 52/min '

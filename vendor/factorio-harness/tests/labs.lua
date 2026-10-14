@@ -168,5 +168,48 @@ eq(c.tree[6].made_per_min,600); eq(c.tree[6].used_per_min,580); eq(c.tree[6].mak
 -- A step whose makers lack something unmade: the line ends where nothing makes it.
 for _,m in ipairs(cs) do if m.get_recipe().name==plastic then m.status=6; m.get_fluid_count=function() return 0 end end end
 c=supply.chain({crafters=cs},force,surface,chem)
-has(c.line,'plastic-bar: 4 of 4 makers lack petroleum-gas, made 30/min, used 52/min; petroleum-gas: no assembler, furnace or silo makes it, made 600/min, used 580/min')
+has(c.line,'plastic-bar: 4 of 4 makers lack petroleum-gas, made 30/min, used 52/min; petroleum-gas: no assembler, furnace, silo, mining drill or pump makes it, made 600/min, used 580/min')
+-- Miners (Grok, 04:55: the chain said stone has no assembler): mining drills and pumpjacks make their resource's
+-- products, offshore pumps their fluid; the step names their count, their states in words and what they put into;
+-- a resource's required fluid is the step below it; a drill whose resource ran out keeps what it mined last.
+do
+  names[7],names[8],names[9]='waiting_for_space_in_destination','no_minable_resources','missing_required_fluid'
+  local ms={}
+  local mstate={}
+  local S2=dofile('mod/agent-harness_0.1.0/supply.lua'){status_name=function(e) return names[e.status] end,state=function() return mstate end}
+  local function res(name,products,fluid) return {valid=true,prototype={mineable_properties={products=products,required_fluid=fluid}},name=name} end
+  local stone_res=res('stone',{{type='item',name='stone',amount=1}})
+  local function drill(name,status,target,into)
+    n=n+1
+    return {valid=true,unit_number=n,name=name,type='mining-drill',position={x=n,y=120},status=status,mining_target=target,drop_target=into}
+  end
+  local belt_e,chest_e={name='transport-belt'},{name='wooden-chest'}
+  for i=1,5 do ms[#ms+1]=drill('electric-mining-drill',1,stone_res,belt_e) end
+  ms[#ms+1]=drill('electric-mining-drill',7,stone_res,chest_e)
+  ms[#ms+1]=drill('burner-mining-drill',7,stone_res,chest_e)
+  local spent=drill('electric-mining-drill',1,stone_res,belt_e)
+  ms[#ms+1]=spent
+  recipes['stone-brick']={name='stone-brick',products={{name='stone-brick',amount=1}},ingredients={{type='item',name='stone',amount=2}}}
+  local furn={valid=true,unit_number=999,name='stone-furnace',type='furnace',position={x=0,y=130},status=6,
+    get_recipe=function() return recipes['stone-brick'] end,get_inventory=function() return {get_item_count=function() return 0 end} end}
+  defines.inventory.furnace_source=defines.inventory.furnace_source or 5
+  local c2=S2.chain({crafters={furn},miners=ms},force,surface,'stone-brick')
+  has(c2.line,'stone-brick: 1 of 1 makers lack stone')
+  has(c2.line,'; stone: 7 electric-mining-drill, 1 burner-mining-drill (6 working, 2 output full) into 6 transport-belt, 2 wooden-chest, made')
+  eq(c2.tree[2].miners,8); eq(c2.tree[2].miner_states['output full'],2); eq(c2.tree[2].outputs['wooden-chest'],2)
+  -- The spent drill: no target now, still under stone from what it mined last.
+  spent.mining_target=nil; spent.status=8
+  c2=S2.chain({crafters={furn},miners=ms},force,surface,'stone-brick')
+  has(c2.line,'stone: 7 electric-mining-drill, 1 burner-mining-drill (5 working, 2 output full, 1 no resource left)')
+  -- Uranium needs sulfuric acid: the step below it; drills short of it lack it. Offshore pumps make water.
+  local u_res=res('uranium-ore',{{type='item',name='uranium-ore',amount=1}},'sulfuric-acid')
+  prototypes.fluid['sulfuric-acid']={}; prototypes.fluid.water={}
+  local ud={drill('electric-mining-drill',9,u_res,belt_e),drill('electric-mining-drill',9,u_res,belt_e),drill('electric-mining-drill',1,u_res,belt_e)}
+  local pump={valid=true,unit_number=1001,name='offshore-pump',type='offshore-pump',position={x=0,y=140},status=1,fluidbox={{name='water',amount=100}}}
+  local c3=S2.chain({crafters={},miners={ud[1],ud[2],ud[3],pump}},force,surface,'uranium-ore')
+  has(c3.line,'uranium-ore: 2 of 3 makers lack sulfuric-acid')
+  has(c3.line,'sulfuric-acid: no assembler, furnace, silo, mining drill or pump makes it')
+  local c4=S2.chain({crafters={},miners={pump}},force,surface,'water')
+  has(c4.line,'water: 1 offshore-pump (1 working),')
+end
 print('labs: ok')

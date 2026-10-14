@@ -17,7 +17,9 @@
 return function(api)
   local M = {}
   local PUSH_TICKS, INDEX_SLICE, SLICE, MAX_LABS, MAX_CRAFTERS = 18000, 150, 100, 1024, 2048
-  local CRAFTERS = {'assembling-machine', 'furnace', 'rocket-silo'}
+  -- The crafters and the miners (mining drills and pumpjacks, offshore pumps: the chain's makers of ores and fluids,
+  -- Grok 04:55), walked together.
+  local CRAFTERS, IS_MINER = {'assembling-machine', 'furnace', 'rocket-silo', 'mining-drill', 'offshore-pump'}, {['mining-drill']=true, ['offshore-pump']=true}
   local walk = api.walk or require('walk'){state=api.state}
   local function try(fn) local ok, v = pcall(fn); if ok then return v end end
   local function store()
@@ -65,7 +67,7 @@ return function(api)
         end
         by_product[item] = out
       end
-      chain = surface and api.supply.chain({crafters=job.crafters, by_product=by_product}, f, surface, pack)
+      chain = surface and api.supply.chain({crafters=job.crafters, by_product=by_product, miners=job.miners}, f, surface, pack)
       local root = chain and chain.tree and chain.tree[1]
       local text = string.format('limiting %s: %d of %d labs have none', pack, lab.lack[pack], lab.n)
       if root then text = text .. string.format(', made %d/min, used %d/min', root.made_per_min, root.used_per_min) end
@@ -150,14 +152,18 @@ return function(api)
         job.step = short and 'crafters' or 'finish'
       end
     elseif job.step == 'crafters' then
-      -- The crafters, every type in one find, a band a step.
+      -- The crafters and miners, every type in one find, a band a step.
       local surface = game.get_surface(job.surface)
+      job.miners = job.miners or {}
       local list
-      if surface and #job.crafters < MAX_CRAFTERS then
+      if surface and (#job.crafters < MAX_CRAFTERS or #job.miners < MAX_CRAFTERS) then
         job.walk = job.walk or walk.start(surface)
         list = walk.band(job.walk, surface, {type=CRAFTERS, force=f})
       end
-      for _, e in ipairs(list or {}) do if #job.crafters < MAX_CRAFTERS then job.crafters[#job.crafters+1] = e end end
+      for _, e in ipairs(list or {}) do
+        local into = IS_MINER[e.type] and job.miners or job.crafters
+        if #into < MAX_CRAFTERS then into[#into+1] = e end
+      end
       if not list then job.walk, job.step = nil, 'index' end
     elseif job.step == 'index' then
       local recipe_of = api.supply.helpers.recipe_of

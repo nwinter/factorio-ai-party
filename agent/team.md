@@ -82,7 +82,8 @@ already targets your character.
   its `reach` line says where else each pack sits (inserter hands, robots) and why it does not reach the labs; its
   `chain` line walks the pack's recipe tree down, each step with its makers and made and used per minute, following
   the ingredient most makers lack (`chemical-science-pack: 9 of 14 makers lack advanced-circuit, ...; plastic-bar:
-  4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids.
+  4 of 4 working, made 30/min, used 52/min`), and `chain_tree` lists every step down to ores and fluids; a mined or pumped step names its drills or pumps, their states
+  (working, output full, no resource left) and what they put into.
 - `./fh call supply --args '{"item":"advanced-circuit"}'` (optional `"near":{"x":0,"y":0}`, `"radius":64`,
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
