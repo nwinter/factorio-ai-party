@@ -324,18 +324,25 @@ do
   eq(ugb.fed,true); eq(ugb.feeder,'inserter (37,61) from underground-belt (36,60) (with 3 belt tiles up to it holding 6 coal)')
   -- A trickle (shift10 03:36-03:38: boiler (-15,42) from 8 to 6 min on a belt with 4 solid-fuel): fed from a belt
   -- holding fuel, but its own fuel fell by 80% or more of its burn at its share since a look 2+ min back: told.
-  -- An inserter-sized swing (30 to 26 coal) is not; nor a look under 2 min back.
+  -- An inserter-sized swing (60 to 56 coal) is not; nor a look under 2 min back. Boiler 1 burns at its share
+  -- (12 MW over 13 boilers: about 14 coal a minute) and nothing reaches it.
   in_chest=150; coal_per_tile=6
   st4.networks.boiler_own={}
-  for _,b in ipairs(boilers) do b.burner.inventory[1].count=30 end
+  for _,b in ipairs(boilers) do b.burner.inventory[1].count=60 end
   run4(30); eq(#boiler_groups(),0,'all fed and steady')
-  for i=1,13 do boilers[i].burner.inventory[1].count=i==1 and 2 or (i==2 and 26 or 30) end
+  for i=1,13 do boilers[i].burner.inventory[1].count=i==1 and 46 or (i==2 and 56 or 60) end
   run4(60); eq(#boiler_groups(),0,'60 s since the look kept: not compared yet')
+  boilers[1].burner.inventory[1].count=30
   run4(70)
   g=boiler_groups()
   eq(#g,1); eq(g[1].n,1)
   has(g[1].line,'1 boiler under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, not refilled, near (-22,41)')
-  has(g[1].line,'boiler (-22,41) 0 min, down from 2 min 130 s before: inserter (-22,39) from transport-belt (-13,36) (with 6 belt tiles up to it holding 36 coal)')
+  has(g[1].line,'boiler (-22,41) 2 min, down from 4 min 130 s before: inserter (-22,39) from transport-belt (-13,36) (with 6 belt tiles up to it holding 36 coal)')
+  -- The next look says the same (compared with the newest look 2+ min back, not with the last one).
+  boilers[1].burner.inventory[1].count=23
+  run4(30)
+  g=boiler_groups()
+  eq(#g,1); has(g[1].line,'boiler (-22,41) 1 min, down from 4 min 160 s before')
   game.surfaces=saved
 end
 -- Boilers that hold no fuel at all: the usual fuels are looked for, and the line says so.
