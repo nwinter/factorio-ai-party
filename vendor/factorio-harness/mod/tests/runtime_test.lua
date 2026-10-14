@@ -1890,6 +1890,36 @@ local placed=call('place_ghosts',{entities={{name='gun-turret',position={x=100,y
 eq(placed.placed,2); eq(#placed.failed,3); eq(placed.failed[1].index,2); eq(placed.failed[1].error,'placement blocked')
 assert(placed.failed[2].error:find('not a placeable')); eq(placed.failed[3].error,'position is not charted')
 eq(placed.bounds.left,11); eq(placed.bounds.bottom,101); eq(storage.agent_harness.last_paste[1].right,101)
+-- A turret ghost requests ammo (turretammo.lua; Astra, shift10: turrets rebuilt empty and destroyed again): the
+-- call's ammo, an entry's own (false: none); the reply counts the requests; a bad ammo argument fails the call, or
+-- just its entry.
+do
+  local entity_protos,item_protos,filtered=prototypes.entity,prototypes.item,prototypes.get_item_filtered
+  local can,create,net=p.surface.can_place_entity,p.surface.create_entity,p.surface.find_logistic_network_by_position
+  local gun={name='gun-turret',type='ammo-turret',items_to_place_this={{name='gun-turret',count=1}},attack_parameters={ammo_categories={'bullet'}},
+    automated_ammo_count=10,get_inventory_size=function() return 1 end}
+  prototypes.entity={['gun-turret']=gun}
+  prototypes.item={['firearm-magazine']={type='ammo',order='a',stack_size=200,ammo_category={name='bullet'}},['iron-plate']={type='item'}}
+  prototypes.get_item_filtered=function() return {['firearm-magazine']=prototypes.item['firearm-magazine']} end
+  local made={}
+  p.surface.can_place_entity=function() return true end
+  p.surface.find_logistic_network_by_position=function() return nil end
+  p.surface.create_entity=function(a)
+    local g={valid=true,type='entity-ghost',ghost_type='ammo-turret',ghost_name=a.inner_name,ghost_prototype=gun,position=a.position,
+      surface=p.surface,force=p.force,insert_plan={}}
+    made[#made+1]=g; return g
+  end
+  local r=call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=4}},{name='gun-turret',position={x=12,y=4},ammo=false}},ammo={count=30}})
+  eq(r.placed,2); eq(#r.ammo_requests,1); eq(r.ammo_requests[1].item,'firearm-magazine'); eq(r.ammo_requests[1].count,30)
+  eq(r.ammo_requests[1].ghosts,1); eq(r.ammo_requests[1].network_holds,nil)
+  eq(made[1].insert_plan[1].items.in_inventory[1].count,30); eq(#made[2].insert_plan,0)
+  eq(call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=4}}}}).ammo_requests[1].count,10,'the default count')
+  fails(function() call('place_ghosts',{entities={{name='gun-turret',position={x=10,y=4}}},ammo='iron-plate'}) end,'not an ammo item: iron-plate')
+  local bad=call('place_ghosts',{entities={{name='gun-turret',position={x=14,y=4},ammo='iron-plate'},{name='gun-turret',position={x=16,y=4}}}})
+  eq(bad.placed,1); assert(bad.failed[1].error:find('not an ammo item',1,true),bad.failed[1].error)
+  prototypes.entity,prototypes.item,prototypes.get_item_filtered=entity_protos,item_protos,filtered
+  p.surface.can_place_entity,p.surface.create_entity,p.surface.find_logistic_network_by_position=can,create,net
+end
 -- A ghost goes over trees and rocks and marks them, though the engine's check
 -- refuses them (shake3: "placement blocked by tree-08" from place_ghosts),
 -- and over a stump, which stays until the build (out of reach here); anything

@@ -118,7 +118,7 @@ already targets your character.
   tells, board items assigned to you or changed by someone else, new requests nobody owns, team plan edits, research
   your team finished (`research done: NAME, unlocks: ...`), attacks, losses and hits on your character, and the
   game's alerts and warnings for areas you claimed, built or are nearest (`8 assembling-machine-2 no power near
-  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, inserters that lost their pickup or drop target (by
+  (125,40)`, `12 gun-turret out of ammo near (67,-170)`, turrets rebuilt empty (built with no ammo, still empty 60 s later, named), ghosts waiting for materials, inserters that lost their pickup or drop target (by
   what they feed, with what each read and puts into), an electric network drawing 85%
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
@@ -186,6 +186,8 @@ already targets your character.
   spawners' units' sight, 8 tiles more, walking legs around a nest (`last.avoided_enemies`); no way round: `no_safe_route`.
 - A target in a narrow gap no path leads into ends the walk `arrived_near` before it (`last.pocket`; `"squeeze":true`
   walks in). Squeezed in, the walk gets out along the gaps first (`last.escaped`); closed in, `last.mine_to_get_out`.
+- Turret ghosts from `place_ghosts` and `paste` request ammo, so the robots that build them bring it (`ammo`: a name,
+  `{name, count}` or false; default 10 of what the logistic network there holds most of); so do the ghosts of turrets that died.
 - Water and Gleba wetland: `pole_route` shifts a pole up to 2 tiles to dry ground, else lays a landfill tile ghost under
   it (`tiles_under`, `tiles_note`); `place_ghosts` lays the landfill ghost under an entity ghost there; `construct`
   builds the landfill first, and a build refused there names the tile.

@@ -6,7 +6,8 @@
 -- cargo, collectors) was never read. Here, what a player's alert panel and
 -- entity status icons show:
 -- - entity statuses: no power (and no pole reaching it), low power, no fuel,
---   gun turrets out of ammo, flamethrower turrets dry;
+--   gun turrets out of ammo (rebuilt ones still empty 60 s on: named apart),
+--   flamethrower turrets dry;
 -- - the game's alerts (LuaPlayer.get_alerts, read from an agent player whose
 --   alerts are on; attacks, losses and empty turrets are told elsewhere);
 -- - per network (networks.lua, task-selfview): draw at 85% of capacity or
@@ -27,7 +28,7 @@ return function(api)
     'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'cargo-landing-pad', 'car', 'spider-vehicle'}
   -- Kinds and how a line says them; game alert types not listed read as their name.
   local LABEL = {no_power='no power', unconnected='not connected to power (no pole reaches them)', low_power='low power',
-    no_fuel='out of fuel', no_ammo='out of ammo', flamer_dry='out of flamer oil',
+    no_fuel='out of fuel', no_ammo='out of ammo', flamer_dry='out of flamer oil', rebuilt_empty='rebuilt empty',
     no_material_for_construction='ghosts waiting for materials (no robot can bring them)',
     not_enough_construction_robots='not enough construction robots', not_enough_repair_packs='robots out of repair packs',
     no_storage='robots have no storage for what they carry', no_roboport_storage='no roboport storage',
@@ -118,6 +119,47 @@ return function(api)
   local function forget_unseen(mem)
     for unit, v in pairs(mem.units) do if v.g ~= mem.gen then mem.units[unit] = nil end end
   end
+  -- Turrets rebuilt empty (Astra, shift10: 15+ gun turrets rebuilt by robots with no ammo and destroyed again;
+  -- operator 06:20 item 10). Each read remembers every ammo turret (storage push_turrets, per force, by unit number).
+  -- One first seen after a whole read was built since; while it has had no ammo since it was first seen, for
+  -- EMPTY_TICKS or more, it is in a rebuilt_empty group, named with its ammo request (instead of no_ammo). Once it
+  -- holds ammo it is like any other turret.
+  local EMPTY_TICKS = 3600
+  local function turret_memory(force)
+    local s = api.state()
+    s.push_turrets = s.push_turrets or {}
+    local mem = s.push_turrets[force.name]
+    if not mem then mem = {gen=0, units={}}; s.push_turrets[force.name] = mem end
+    return mem
+  end
+  -- After a whole read (complete: not cut by the read's budget): forget turrets it did not see; from now on a turret
+  -- not seen before was built since.
+  local function turrets_read(mem, complete)
+    if not complete then return end
+    for unit, v in pairs(mem.units) do if v.g ~= mem.gen then mem.units[unit] = nil end end
+    mem.ready = true
+  end
+  -- The kind for an ammo turret (empty: no ammo in it): rebuilt_empty with its detail, or no_ammo, or nil.
+  local function turret_kind(e, empty, mem)
+    local unit = mem and try(function() return e.unit_number end)
+    local t = unit and mem.units[unit]
+    if unit and not t then t = {new=mem.ready or nil}; mem.units[unit] = t end
+    if t then
+      t.g = mem.gen
+      if not empty then t.new, t.empty = nil, nil
+      elseif t.new then
+        t.empty = t.empty or game.tick
+        if game.tick - t.empty >= EMPTY_TICKS then
+          local asks = try(function() local x = e.item_request_proxy; return x and x.item_requests end) or {}
+          local parts = {}
+          for _, r in ipairs(asks) do parts[#parts+1] = r.count .. ' ' .. r.name end
+          return 'rebuilt_empty', string.format('%s %s %s', e.name, at_text(e.position),
+            #parts > 0 and 'requests ' .. table.concat(parts, ', ') or 'no ammo request')
+        end
+      end
+    end
+    return empty and 'no_ammo' or nil
+  end
   -- One read is these stages: the entities on each planet surface, the game's
   -- alert list, the network groups, then the merge. scan() runs them all at
   -- once; the background job (M.tick) walks each planet in bands (task-
@@ -126,29 +168,31 @@ return function(api)
   local function entity_list(s, force, t, budget)
     return try(function() return s.find_entities_filtered{force=force, type=t, limit=budget} end) or {}
   end
-  -- Entities from..to of a found list into the groups.
-  local function read_list(groups, s, list, from, to, mem)
+  -- Entities from..to of a found list into the groups (mem: the inserter memory; tmem: the turret memory).
+  local function read_list(groups, s, list, from, to, mem, tmem)
     local st = statuses()
     for i = from or 1, to or #list do
       local e = list[i]
       if e.valid and mem and e.type == 'inserter' then watch_inserter(groups, s, e, mem) end
       if e.valid then
         local kind = st[e.status]
+        local detail
         if kind == 'no_power' and not try(function() return e.electric_network_id end) then kind = 'unconnected' end
         if e.type == 'ammo-turret' then
           local inv = try(function() return e.get_inventory(defines.inventory.turret_ammo) end)
-          if inv and inv.get_item_count() == 0 then kind = 'no_ammo' end
+          local tk, td = turret_kind(e, inv and inv.get_item_count() == 0, tmem)
+          if tk then kind, detail = tk, td end
         elseif e.type == 'fluid-turret' then
           local amount = try(function() local f = e.fluidbox[1]; return f and f.amount or 0 end)
           if amount and amount < 1 then kind = 'flamer_dry' end
         end
-        if kind then add(groups, kind, s.name, e, e.position, e.name, builder(e)) end
+        if kind then add(groups, kind, s.name, e, e.position, e.name, builder(e), detail) end
       end
     end
   end
-  local function entities(groups, s, force, t, budget, mem)
+  local function entities(groups, s, force, t, budget, mem, tmem)
     local list = entity_list(s, force, t, budget)
-    read_list(groups, s, list, nil, nil, mem)
+    read_list(groups, s, list, nil, nil, mem, tmem)
     return #list
   end
   -- The background job's step (operator 04:00: steps of a whole-surface find, then 1500 entities, burst to 138 ms in
@@ -234,10 +278,11 @@ return function(api)
   -- One read of everything at once: groups (array, worst first).
   local function scan(force)
     local groups, budget = {}, MAX_SCAN
-    local mem = inserter_memory(force)
-    mem.gen = mem.gen + 1
-    for _, s in ipairs(planets()) do budget = budget - entities(groups, s, force, TYPES, budget, mem) end
+    local mem, tmem = inserter_memory(force), turret_memory(force)
+    mem.gen, tmem.gen = mem.gen + 1, tmem.gen + 1
+    for _, s in ipairs(planets()) do budget = budget - entities(groups, s, force, TYPES, budget, mem, tmem) end
     forget_unseen(mem)
+    turrets_read(tmem, budget > 0)
     game_alerts(groups, force)
     return merge(groups, network_groups(force))
   end
@@ -278,8 +323,8 @@ return function(api)
         job = {start=tick, stages=stages, i=1, groups={}, budget=MAX_SCAN, steps=0,
           every=walk.every(s.push_steps[force.name], SCAN_TICKS)}
         s.push_jobs[force.name] = job
-        local mem = inserter_memory(force)
-        mem.gen = mem.gen + 1
+        local mem, tmem = inserter_memory(force), turret_memory(force)
+        mem.gen, tmem.gen = mem.gen + 1, tmem.gen + 1
       elseif job and walk.due(job, tick, SCAN_TICKS) then
         job.steps = job.steps + 1
         local stage = job.stages[job.i]
@@ -295,11 +340,13 @@ return function(api)
             else job.walk = nil; job.i = job.i + 1 end
           else
             local last = math.min(#job.list, job.at + SLICE - 1)
-            read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force))
+            read_list(job.groups, surface, job.list, job.at, last, inserter_memory(force), turret_memory(force))
             job.at = last + 1
             if job.at > #job.list then job.list, job.at = nil, nil end
           end
-        elseif stage.step == 'alerts' then job.i = job.i + 1; game_alerts(job.groups, force); forget_unseen(inserter_memory(force))
+        elseif stage.step == 'alerts' then
+          job.i = job.i + 1; game_alerts(job.groups, force); forget_unseen(inserter_memory(force))
+          turrets_read(turret_memory(force), job.budget > 0)
         elseif stage.step == 'networks' then job.i = job.i + 1; job.extra = network_groups(force)
         else
           s.push_alerts[force.name] = {tick=job.start, groups=merge(job.groups, job.extra)}
@@ -376,6 +423,13 @@ return function(api)
         g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
         table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '')
     end
+    if g.kind == 'rebuilt_empty' then
+      -- '2 gun-turret rebuilt empty near (61,15): no ammo since built, 60+ s: gun-turret (60,14) requests 10 firearm-magazine; ...'
+      return string.format('%s rebuilt empty near (%d,%d)%s%s: no ammo since built, 60+ s: %s%s%s', what(g), g.center.x, g.center.y,
+        g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '',
+        table.concat(g.lost or {}, '; '), g.n > #(g.lost or {}) and string.format('; +%d more', g.n - #(g.lost or {})) or '',
+        not plain and '; rearm' or '')
+    end
     local hint = not plain and HINT[g.kind]
     return string.format('%s %s near (%d,%d)%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), g.center.x, g.center.y,
       g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '', hint and '; ' .. hint or '')
@@ -448,7 +502,7 @@ return function(api)
       note=#rows == 0 and 'no alerts or warnings' or nil}
   end
   M.schema = {
-    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry; lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), robots_busy (no idle logistic robot for 10 min); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
+    game_alerts = {surface='optional surface name', kind='optional kind (no_power, unconnected, low_power, no_fuel, no_ammo, flamer_dry; rebuilt_empty (turrets built with no ammo and still empty 60 s or more, each with its ammo request); lost_source and lost_target (inserters that had a pickup target and have none now, or whose drop target is gone; by what they feed: lost_source.boiler, .furnace, .lab, .assembler, else the entity type; each with lost: the inserter, what it read, what it puts into); per network: power_high (draw at 85% of capacity or more for 2 min), boiler_fuel (boilers under 20 min of their own fuel at the draw with no fuel in their feeders\' hands or at their sources, again at 10 and 5; the fuel in chests and on belts within 64 tiles and what feeds them), robots_busy (no idle logistic robot for 10 min); on Fulgora: lightning_unconnected (lightning attractors no pole reaches), lightning_unused (attractors in a network with no accumulator and nothing drawing power in the last minute), lightning_storage_full (a network with attractors whose accumulators are at 99% or more); or a game alert type such as no_material_for_construction, not_enough_construction_robots, not_enough_repair_packs, no_storage, train_out_of_fuel, unclaimed_cargo, collector_path_blocked)',
       returns='groups worst first: {kind, surface, count, center, names, at (up to 4 positions), line, to (who the team block tells: claim, built, nearest)}; scanned (the scan is at most 30 s old). What a player\'s alert panel and status icons show; new or worsening groups also come in team.alerts (one digest per 150 s). Read only'},
   }
   return M

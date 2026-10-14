@@ -867,6 +867,21 @@ fh sleep 900 --until researched                       # ...or until the research
   tiles ahead of it empty space) names the rule its spot breaks: `placement blocked: breaks its tile rule 2 facing
   north: tiles x 59..61, y -4..-1 need empty_space and must not be ground_tile; 6 of 12 do not
   (space-platform-foundation at (59,-2))`. `place_ghosts` failures carry `{index, name, position, error}`.
+- Turret ghosts request ammo (Astra, shift10: 15+ gun turrets rebuilt empty and destroyed again; turretammo.lua). A
+  turret ghost from `place_ghosts`, `paste` or `blueprint_place` gets a 2.0 item request (insert plan) for ammo in its
+  ammo slots, so the construction robots that build it bring the ammo from the logistic network too.
+  - `ammo`: an ammo item name, `{name?, count?}`, or `false` for none; a `place_ghosts` entry's own `ammo` comes first.
+  - Default item: of the ammo the turret takes, the one the logistic network at the ghost holds most of; with none
+    there (or no network), the first in prototype order (`firearm-magazine` for a gun turret). A name the turret does
+    not take (rockets for a gun turret) gives its default.
+  - Default count: the turret's automated ammo count (what inserters keep in it: 10 for a gun turret), at most what
+    its ammo slots hold.
+  - A pasted ghost whose blueprint requests ammo keeps that request.
+  - The reply lists `ammo_requests`: `[{item, count (each), ghosts, network_holds}]`, where `network_holds` is what the
+    logistic network at the first such ghost holds (absent: no network covers it, so no robot comes). A dry run lists
+    the same rows for the ghosts it would place.
+  - Where one of our turrets dies, the game leaves its ghost for the robots to rebuild; on the next tick that ghost
+    requests the ammo the turret held (none: the default above), unless it requests ammo already.
 - A `paste` (`blueprint_place`) that creates fewer ghosts than the blueprint holds explains each blueprint entity
   that is not there. It finds the shift the game used from what stands where the layout puts things. It returns:
   - `not_placed` (the first 20, plus `not_placed_count`), each `{name, position, direction, reason}`, where the reason
@@ -1447,6 +1462,13 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     same pickup and drop targets inspect's `io_warning` reads); one stays in its group, with what it read and fed then,
     until it has a target again or is removed. An inserter that never had a pickup target (it takes from the ground)
     is never in one. `game_alerts {kind:"lost_source"}` lists every fed kind.
+  - Turrets rebuilt empty (Astra, shift10: 15+ gun turrets rebuilt by robots with no ammo and destroyed again): a
+    turret built since an earlier read (one the read had not seen before) that has had no ammo since it was first
+    seen, for 60 s or more, is in a `rebuilt_empty` group instead of `out of ammo`, with up to 4 turrets and each
+    one's ammo request (what an item request proxy on it asks the robots for): `2 gun-turret rebuilt empty near
+    (212,10): no ammo since built, 60+ s: gun-turret (210,10) requests 10 firearm-magazine; gun-turret (214,10) no
+    ammo request; rearm`. Once it has held ammo it is like any other turret. The first read after a deploy only
+    remembers the turrets there.
   - The game's alerts, read from an agent player's alert panel: `no_material_for_construction`,
     `not_enough_construction_robots`, `not_enough_repair_packs`, `no_storage`, `train_out_of_fuel`,
     `unclaimed_cargo`, `collector_path_blocked`, ... Attacks, losses and the game's own turret alert are told
