@@ -289,6 +289,10 @@
       setText(c.world, world);
       c.world.className = "world" + (world ? " on " + (a.on_platform ? "platform" : "p-" + (a.surface || "")) : "");
       setText(c.where, a.location && a.location !== world ? "· " + a.location : "");
+      // the harness label gives way when the name does not fit beside the planet and tokens (Nick, 12:20: "Sonnet and
+      // Gemini and Muse Spark names are cut off next to the planet location and harness")
+      c.root.classList.remove("squeezed");
+      if (c.harness.textContent && c.name.scrollWidth > c.name.clientWidth + 1) c.root.classList.add("squeezed");
       c.root.classList.toggle("oncam", !!a.camera);
       c.root.classList.toggle("main", a.camera === "main");
       c.root.classList.toggle("dead", a.activity === "dead");
