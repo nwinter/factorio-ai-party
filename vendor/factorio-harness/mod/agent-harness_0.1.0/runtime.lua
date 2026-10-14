@@ -161,6 +161,8 @@ local function finish(index, outcome)
   local action=s.active[index]
   -- The goal lets a caller tell its own completion from one that replaced it.
   if action then s.last[index]={kind=action.kind, outcome=outcome, tick=game.tick, target=action.kind=='move_to' and action.position or nil} end
+  -- A direct timed action that ended other than done counts for the review (selfview.lua; queue steps: scheduler fail).
+  if action and not action.queued and M.selfview then pcall(M.selfview.ended,index,action.kind,outcome,action.error) end
   if action and action.blocked_item then s.last[index].blocked_item=action.blocked_item end
   if action and action.kind=='mine' and action.mined then s.last[index].mined=action.mined end
   if action and action.kind=='pickup' then
@@ -4042,6 +4044,7 @@ scheduler=scheduler_module{
   direct_action=function(p) local action=state().active[p.index]; return action and not action.queued and action.kind or nil end,
   reason=reason,
   on_step=function(index,action) M.selfview.request(index,action,true) end,
+  on_fail=function(index,action,reason) M.selfview.failed(index,action,reason) end,
   completion=function(p,action)
     local last=action=='shoot' and state().last_combat or timed[action] and state().last
     return last and last[p.index]
@@ -4158,16 +4161,39 @@ M.idle=require('idle'){state=state,agents=function() return M.board.agents() end
   end,
   is_read=function(action) return M.is_read(action) end,
   is_talk=function(action) return M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil end}
--- The agent's own hour (selfview.lua): requests and queue steps by kind, time
--- by kind, repeated hand hauls; team.your_hour once a game hour and my_hour.
+-- The agent's own play (selfview.lua): team.review every 2 game hours and the
+-- review read (actions and time by kind, repeated hand hauls, failures, open
+-- alerts in its claims, losses near its work); team.shift.retro at shift start.
 M.selfview=require('selfview'){state=state,is_read=function(action) return M.is_read(action) end,
   talk=function(action) return M.idle.TALK[action]~=nil or M.board.handlers[action]~=nil or M.players.handlers[action]~=nil or M.votes.handlers[action]~=nil end,
   waiting=function(s,index) return M.idle.waiting(s,index) end,
   has_body=function(index)
     local ok,p=pcall(M.lookup,index)
     return ok and p~=nil and p.valid and p.character~=nil and p.character.valid or false
-  end}
-function handlers.my_hour(p,a) return M.selfview.read(p,a) end
+  end,
+  where=function(index)
+    local ok,at=pcall(function()
+      local p=M.lookup(index)
+      local c=p and p.valid and p.character
+      if c and c.valid then return {x=math.floor(c.position.x+0.5),y=math.floor(c.position.y+0.5),s=c.surface and c.surface.name} end
+    end)
+    return ok and at or nil
+  end,
+  name=function(index) local ok,p=pcall(M.lookup,index); return ok and p and p.valid and M.board.who(p) or tostring(index) end,
+  is_director=function(index) return M.is_director(index) end,
+  claims=function(name)
+    local out={}
+    for _,i in pairs((state().board or {}).items or {}) do
+      if i.kind=='claim' and i.owner==name and i.area and ({open=true,claimed=true,doing=true,blocked=true})[i.status] then out[#out+1]=i.area end
+    end
+    return out
+  end,
+  claim_alerts=function(p) return M.pushalerts.claim_lines(p) end,
+  losses=function() return state().losses or {} end,
+  loss_line=function(i,reader) return describe_incident(i,reader) end,
+  research_between=function(force,from,to) return M.research.finished_between(force,from,to) end,
+  board_items=function() return (state().board or {}).items or {} end}
+function handlers.review(p,a) return M.selfview.read(p,a) end
 -- Where teammates are (where.lua): status teammates, and the place of a
 -- sender or claim owner on another planet in tells, chat and the board.
 M.where=require('where'){state=state,bot=function(index) return M.bots.record(index) end,lookup=function(index) return M.lookup(index) end,
@@ -4263,7 +4289,7 @@ end
 -- Rendering observes the world without taking over character controls.
 -- Actions that never drive the character; they leave a running queue alone.
 local passive={order_set=true,order_remove=true,orders=true,orders_pause=true,orders_resume=true,circuit=true,train=true,sleep=true,profile=true,say=true,chat=true,confess=true,confessions=true,vote=true,votes=true,tell=true,tells=true,operator=true,clock=true,advance=true,requests=true,platform_create=true,platform_schedule=true,launch=true,drop=true,research=true,research_next=true,research_done=true,board_plan=true,craft=true,cancel_craft=true,place_ghosts=true,deconstruct=true,cancel_deconstruction=true,blueprint_import=true,blueprint_delete=true,flush=true}
-local reads={placements=true,defense=true,flamers=true,labs=true,science=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,my_hour=true,networks=true}
+local reads={placements=true,defense=true,flamers=true,labs=true,science=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,networks=true}
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -4394,10 +4420,17 @@ local function idle_tick()
   -- When each character started standing (no action, no running queue, a body
   -- on the map), once a second, unlike the per-request idle count above
   -- (idle.lua idle_report: the operator's idle nudge).
-  if game.tick%60==0 then M.idle.stand_tick(); M.selfview.tick() end
+  if game.tick%60==0 then M.idle.stand_tick(); pcall(M.selfview.tick) end
 end
 local dispatch_request
+-- A failed request is counted for the agent's review (selfview.lua) and
+-- raised again unchanged (control.lua reads it as before).
 function M.dispatch(request)
+  local ok,result=pcall(M.dispatch_inner,request)
+  if not ok then pcall(M.selfview.dispatch_failed,request,result); error(result,0) end
+  return result
+end
+function M.dispatch_inner(request)
   M.carry.carry()
   -- Operator tools (RCON, never fh) read and answer the board as `operator`
   -- without a player. A failure must stop nobody (the bootstrap stops player 1).
@@ -4508,11 +4541,14 @@ function M.dispatch(request)
         -- The networks, one line each, next to researched_none_built (networks.lua).
         local okn,lines=pcall(M.networks.lines,p.force,p.surface and p.surface.name,8)
         if okn and #lines>0 then shift.networks=lines end
+        -- The previous shift for the team (selfview.lua retro).
+        local okr,retro=pcall(M.selfview.retro,p)
+        if okr and retro then shift.retro=retro end
         result.team=result.team or {}; result.team.shift=shift
       end
-      -- The agent's own hour, once per game hour (selfview.lua).
-      local okh,hour=pcall(M.selfview.hour_line,p)
-      if okh and hour then result.team=result.team or {}; result.team.your_hour=hour end
+      -- The agent's own review, every 2 game hours (selfview.lua).
+      local okv,review=pcall(M.selfview.review_due,p)
+      if okv and review then result.team=result.team or {}; result.team.review=review end
     end
     if clock and request.action=='status' then result.time_mode=clock.report() end
     -- The unread trailer repeats only when a newer message arrived (status always shows it).
@@ -4791,7 +4827,7 @@ function M.tick_body(event)
   M.bots.tick(event.tick)
   M.drops.tick(event.tick)
   M.nametags.tick(event.tick)
-  M.networks.tick(event.tick)
+  pcall(M.networks.tick,event.tick)  -- the networks' samples never stop the harness tick
   M.seated_ok=nil
   for index,action in pairs(state().active) do
     local ok,p=pcall(player,index,action.kind=='drive')
@@ -5061,7 +5097,7 @@ end
 M.profile=require('profile')()
 M.profile.wrap(M,{{M.board,'team','board.team'},{M.ground,'unseen','ground.unseen'},{M.research,'shift_block','research.shift_block'},
   {M.chat,'unread','chat.unread'},{M.chat,'left','chat.left'},{M.bots,'status','bots.status'},{M.bots,'tick','bots.tick'},
-  {M.research,'tick','research.tick'},{M.nametags,'tick','nametags.tick'},{M.cameras,'tick','cameras.tick'},{scheduler,'tick','scheduler.tick'},{M.orders,'tick','orders.tick'},
+  {M.research,'tick','research.tick'},{M.nametags,'tick','nametags.tick'},{M.networks,'tick','networks.tick'},{M.cameras,'tick','cameras.tick'},{scheduler,'tick','scheduler.tick'},{M.orders,'tick','orders.tick'},
   {clock,'tick','clock.tick'},{clock,'after_dispatch','clock.after_dispatch'},{threat,'on_damaged','threat.on_damaged'},{threat,'on_group','threat.on_group'},
   {M.players,'on_event','players.on_event'},{M.vehicles,'tick','vehicles.tick'},{M.ground,'tick','ground.tick'},{survey,'sample','survey.sample'},
   -- a full status's scans (each cached; these show when one ran and what it cost)

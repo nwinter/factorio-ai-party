@@ -267,6 +267,14 @@ return function(api)
     end
     return names
   end
+  -- Technologies the research news has finished after `from` and up to `to`, in order (the shift retro, selfview.lua).
+  function M.finished_between(force, from, to)
+    local s, names, seen = api.state(), {}, {}
+    for _, e in ipairs(s.research_news and s.research_news.list or {}) do
+      if e.force == force.name and e.tick > from and e.tick <= to and not seen[e.name] then names[#names+1] = e.name; seen[e.name] = true end
+    end
+    return names
+  end
   local UNLOCKS = require('unlocks')
   -- Labels of buildings a researched technology unlocks and the force has
   -- none of on any surface: {label, techs}, in the table's order.

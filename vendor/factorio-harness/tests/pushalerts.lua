@@ -125,4 +125,9 @@ net[2]={key='robots_busy|vulcanus|3',kind='robots_busy',surface='vulcanus',n=1,n
 game.tick=game.tick+1800
 local rows=B.read(sol,{kind='robots_busy'}).groups
 eq(#rows,1); eq(rows[1].line,'logistic #3: no idle logistic robot for 10 min (40 robots; 2 requests unfilled 60+ s) on vulcanus'); eq(rows[1].to[1],'luna (nearest)')
+-- What is open in an agent's own claims, for its review (selfview.lua): claim groups only, no hints.
+local mine=B.claim_lines(sol)
+eq(#mine,1); eq(mine[1],power.line)
+eq(#B.claim_lines(luna),0,'the nearest agent has no claim there')
+eq(A.text({kind='no_ammo',n=3,names={['gun-turret']=3},center={x=1,y=2},surface='nauvis'},'nauvis',nil,true),'3 gun-turret out of ammo near (1,2)')
 print('pushalerts: ok')

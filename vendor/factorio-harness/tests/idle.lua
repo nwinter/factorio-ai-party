@@ -213,24 +213,34 @@ eq(c.minutes,10); eq(c.actions,1); eq(c.no_effect,2); assert(c.reads>=1 and c.me
 assert(c.text:find('^last 10 min: 1 game action %(and 2 with no effect%), %d+ reads?, %d+ messages?; working %d+%%, asleep %d+%% %(sleep 600 x1, sleep 5 x1%), waiting %d+%% %(wait_ticks x%d, wait_until x%d%), standing %d+%%$'),c.text)
 assert(c.busy_s>=24 and c.standing_s>0,c.text)
 
--- The agent's own hour (selfview.lua, task-selfview): my_hour and networks are reads (a running action goes on);
--- queue steps count; team.your_hour comes once per game hour, on a reply that is not a peek.
+-- The agent's own review (selfview.lua, task-selfview): review and networks are reads (a running action goes on);
+-- queue steps count; a failed request counts and fails as before; team.review comes every 2 game hours, on a reply
+-- that is not a peek.
 S.active[si]={kind='walk',direction=0,until_tick=tick+600}
-local mh=sol('my_hour')
+local mh=sol('review')
 eq(S.active[si].kind,'walk','a read leaves the walk running')
-assert(mh.text:find('^your last %d+ min: %d+ actions'),mh.text); assert(mh.counts.reads>=1); assert(mh.note)
+assert(mh.lines[1]:find('^review %(last %d+ min%): %d+ actions'),mh.lines[1]); assert(mh.counts.reads>=1); assert(mh.note)
 eq(type(sol('networks').surfaces),'table')
 sol('stop')
-local before=sol('my_hour').queue_steps
+local before=sol('review').queue_steps
 sol('queue_submit',{steps={{action='wait_ticks',args={ticks=60}},{action='wait_ticks',args={ticks=60}}}}); advance(200)
-eq(sol('my_hour').queue_steps,before+2,'each queue step started counts')
+eq(sol('review').queue_steps,before+2,'each queue step started counts')
+local failed0=sol('review').failed
+fails(function() sol('configure',{position={x=999,y=999},recipe='nothing'}) end,'')
+eq(sol('review').failed,failed0+1,'a failed request counts')
+fails(function() sol('configure',{position={x=999,y=999},recipe='nothing',peek=true}) end,'')
+eq(sol('review').failed,failed0+1,'a peek does not')
+sol('queue_submit',{steps={{action='configure',args={position={x=999,y=999},recipe='nothing'}}}}); advance(5)
+eq(sol('review').failed,failed0+2,'a failed queue step counts')
+sol('queue_cancel',{})
 S.selfview[si].shown=nil; S.selfview[si].since=tick
-advance(60*60*60-10); eq((sol('status').team or {}).your_hour,nil,'not before an hour')
+advance(2*60*60*60-10); eq((sol('status').team or {}).review,nil,'not before 2 hours')
 advance(10)
-eq((sol('status',{peek=true}).team or {}).your_hour,nil,'a peek gets none')
-local yh=sol('status').team.your_hour
-assert(yh and yh:find('^your hour: %d+ actions?'),yh)
-eq((sol('status').team or {}).your_hour,nil,'once per hour')
+eq((sol('status',{peek=true}).team or {}).review,nil,'a peek gets none')
+local rv=sol('status').team.review
+assert(rv and rv[1]:find('^review %(last 2h%): %d+ actions?'),rv and rv[1])
+assert(has(rv,'failed: '),'the failures line'); assert(has(rv,'losses near your work: '))
+eq((sol('status').team or {}).review,nil,'once per 2 hours')
 -- The first reply of a shift carries the networks, one line each (networks.lua), next to researched_none_built.
 local pstats={output_counts={['steam-engine']=1},get_flow_count=function() return 9e6/60 end}
 local poles={}
@@ -241,4 +251,10 @@ advance(1900)  -- past the 30 s the networks view is kept
 runtime.operator.shift_start()
 local sh=sol('status').team.shift
 assert(sh and sh.networks and sh.networks[1]:find('^nauvis electric #4 %(3 poles near %(10,0%)%): draw 9%.0 MW avg over'),sh and sh.networks and sh.networks[1])
+eq(sh.retro,nil,'no previous shift on record')
+-- The next shift's first reply carries the retro of this one.
+advance(600); runtime.operator.shift_start()
+local retro=sol('status').team.shift.retro
+assert(retro and retro[1]:find('^retro: previous shift %(10s of game time%): research done: '),retro and retro[1])
+assert(has(retro,'failed (team): '),'the team failures line'); assert(has(retro,'open board items: '))
 print('idle: ok')

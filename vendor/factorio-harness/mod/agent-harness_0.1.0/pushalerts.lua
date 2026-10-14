@@ -205,11 +205,12 @@ return function(api)
     for i = 1, math.min(3, #names) do parts[i] = names[i].n .. ' ' .. names[i].name end
     return string.format('%d (%s%s)', g.n, table.concat(parts, ', '), #names > 3 and ', ...' or '')
   end
-  function M.text(g, here, was)
+  -- plain: without the hint (the review block, selfview.lua).
+  function M.text(g, here, was, plain)
     if g.line then
       return g.line .. (g.surface ~= here and ' on ' .. g.surface or '') .. (was and string.format(' (was %d%s)', was, g.unit or '') or '')
     end
-    local hint = HINT[g.kind]
+    local hint = not plain and HINT[g.kind]
     return string.format('%s %s near (%d,%d)%s%s%s', what(g), LABEL[g.kind] or g.kind:gsub('_', ' '), g.center.x, g.center.y,
       g.surface ~= here and ' on ' .. g.surface or '', was and string.format(' (was %d)', was) or '', hint and '; ' .. hint or '')
   end
@@ -243,6 +244,17 @@ return function(api)
     return lines
   end
 
+  -- Groups now in p's own board claims (selfview.lua review), worst first, without hints.
+  function M.claim_lines(p)
+    local c = current(p.force)
+    local me = api.who(p)
+    local here = try(function() return p.surface.name end)
+    local who, out = roster(), {}
+    for _, g in ipairs(c.groups) do
+      if owners(g, who)[me] == 'claim' then out[#out+1] = M.text(g, here, nil, true) end
+    end
+    return out
+  end
   -- The game_alerts read: every group now, with who it goes to.
   function M.read(p, a)
     local c = current(p.force)

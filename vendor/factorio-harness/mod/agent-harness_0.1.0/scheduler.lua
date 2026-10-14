@@ -124,6 +124,8 @@ return function(api)
   -- A failed step follows its on_fail policy; the default stops the plan.
   local function fail(q,p,step,result)
     record(q,step,false,result)
+    -- Counted for the agent's review (selfview.lua).
+    if api.on_fail then pcall(api.on_fail,p.index,step.action,type(result)=='table' and (result.reason or result.outcome) or result) end
     local policy=step.on_fail or 'abort'
     if policy=='skip' then return end
     local label=policy:match('^goto:(.+)$')

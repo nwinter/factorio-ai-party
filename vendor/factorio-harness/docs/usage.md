@@ -709,21 +709,36 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
     #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
     power (satisfaction under 100%) shows as the `low power` groups above.
-- The agent's own hour (selfview.lua): `team.your_hour` once per game hour per agent (the first an hour into the
-  shift, or an hour after its first request), on a reply that is not a peek, and `my_hour` (read, `fh call my_hour`):
-  `your hour: 212 actions (62 of them queue steps): item moves 96, walking 41, reads 40, talk 14, building 12, waits
-  9; time: 48% walking, 21% item moves, 9% building, 22% waits; repeated hauls: iron-plate (13,40) -> wooden-chest
-  (89,-3) x38, coal -> boiler (5,63) x21` (`your last N min` while the agent has less than an hour). Counts are
-  requests (not peeks) and the queue steps started, by kind: item moves (transfer, feed, refuel, rearm, collect,
+- The agent's own review (selfview.lua): `team.review` every 2 game hours per agent (the first 2 hours into the
+  shift, or 2 hours after its first request), on a reply that is not a peek, and `review` (read, `fh call review`):
+  one block of lines,
+  `review (last 2h): 412 actions (62 of them queue steps): item moves 196, walking 81, reads 80, talk 24, building 22,
+  waits 9; time: 48% walking, 21% item moves, 9% building, 22% waits`, `repeated hauls: iron-plate (13,40) ->
+  wooden-chest (89,-3) x38, coal -> boiler (5,63) x21` (when any), `failed: 31 (transfer: no iron-plate in
+  inventory; the target has N x12; move_to: no_path x6; build: placement blocked by tree at (N,N) x4)`, `open alerts
+  in your claims: 1: 12 gun-turret out of ammo near (120,130)` (`none`, or `no claims`), `losses near your work: 2
+  incidents, 25 destroyed: #7 ...; #8 ...` (`review (last N min)` while the agent has less than 2 hours). Failed:
+  requests that failed (not peeks), queue steps that failed, and direct timed actions that ended other than done
+  (`no_path`, `timed_out`, ...), by action and reason with numbers shown as `N`, the top 3. Alerts: the push alert
+  groups whose centre is in one of the agent's active board claims, without hints. Losses: incidents in the window
+  within 64 tiles of where the character was (sampled once a minute) or overlapping its claims, the largest 2 shown.
+  Counts are requests (not peeks) and the queue steps started, by kind: item moves (transfer, feed, refuel, rearm, collect,
   pickup), walking, building (build, paste, routes, construct, configure, repair, deconstruct, ...), mining, crafting,
   research, waits (wait_ticks, wait_until, sleep), talk (say, tell, board, votes, ...), reads, other. Time is game
   seconds while the character has a body: a running action or queue step counts as its kind, a wait, wait step or
   `fh sleep` as waits, and a stretch with none of these counts toward the kind of the next request (the time it took
   to issue it), or as `no request` when it lasted 10 minutes or more; the stretch still open shows as `since your last
   request`. Hauls are items put into an entity by hand (every transfer, feed, refuel, rearm goes through one place),
-  grouped by item, the spot the agent last took that item from in the last hour (none: `coal -> boiler ...`) and the
-  spot it went to, each within 10 tiles; the top 3 at 5 or more in the hour. The read adds `counts`, `time_s`,
-  `time_pct`, `hauls [{item, from, to, to_name, surface, times}]` and a `note` on how each is counted.
+  grouped by item, the spot the agent last took that item from in the window (none: `coal -> boiler ...`) and the
+  spot it went to, each within 10 tiles; the top 3 at 5 or more in the window. The read gives `lines` and adds
+  `counts`, `time_s`, `time_pct`, `hauls [{item, from, to, to_name, surface, times}]`, `failed` and a `note` on how
+  each is counted.
+- The retro (selfview.lua): `team.shift.retro`, in each agent's first reply of a shift after the first, the previous
+  shift for the team, the same lines for everyone: `retro: previous shift (3h01m of game time): research done:
+  logistics-2, solar-energy` (from the research news), `losses: 2 incidents, 48 destroyed (30 gun-turret, 18
+  stone-wall); largest: #11 ...`, `failed (team): 6 (transfer: no coal in inventory x5 (astra 4, sol 1); ...)` (the
+  top 3, with who; failures are kept 12 hours), `open board items: 3 (1 harness, 1 request, 1 task); oldest: #21 task
+  "rail to the north ore" (sol, doing, 3h00m old); ...` (tasks, requests and harness requests open now, not claims).
 - Networks (networks.lua): `networks {surface?}` (read, `fh call networks`) and `team.shift.networks` (up to 8 lines,
   the agent's surface first, `+N more networks: fh call networks`), one line per network, numbers only:
   `nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%);
@@ -765,7 +780,8 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   at the runtime's first sample), so no research event is needed; nothing before the first snapshot is known) and
   `researched_none_built` (`roboports (logistic-robotics,
   construction-robotics); ...`: researched technologies with none of their buildings on any surface, from the
-  harness's `unlocks.lua`, the table the stream hosts use) and `networks` (the networks lines, above).
+  harness's `unlocks.lua`, the table the stream hosts use), `networks` (the networks lines, above) and `retro` (the
+  previous shift, above).
 - Research news needs no restart: a technology that leaves the head of the queue researched (or a level up) and was
   not announced by `on_research_finished` (which control.lua forwards from the next server start) is announced by the
   runtime's 10 s research sample.
