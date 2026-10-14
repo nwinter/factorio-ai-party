@@ -695,15 +695,35 @@ run config brings back the director below).
 - Surface balance (viewer awoo3391, 2026-10-13 19:34: "the camera feed needs a real priority system"; 8 of 9
   agents on Nauvis, so rotation by agent showed Nauvis): onecam counts on-air seconds per surface over the last 30
   min (`surface_window`). A surface other than Nauvis with an agent on it is due `surface_share` (25%) of the air,
-  plus up to `surface_new_share` (10%) while the planet is new to the run, fading over `surface_new_hours` (3 h) from
-  the first time an agent was seen there; the other surfaces together at most `surface_total` (60%). An agent on a
-  surface under its share scores up to x(1 + `surface_bonus`) (1.5), by how far under; Nauvis agents x(1 -
+  plus up to `surface_new_share` (25%) while the planet is new to the run, fading over `surface_new_hours` (3 h) from
+  the first time an agent was seen there; the other surfaces together at most `surface_total` (75%). An agent on a
+  surface under its share scores up to x2.5 (1 + `surface_bonus` 1.5), by how far under; Nauvis agents x(1 -
   `nauvis_penalty`) (0.85) while another surface is under. Shares count over at least `surface_floor` (300 s), and
   nothing applies before `surface_warmup` (180 s) of air history. Only the story choice uses scores: urgent shots,
   battles, follows, incoming groups, segments and the dwell rules come first. A cut the balance helped says so
   (`gemini 2.1 beats astra 1.0 (surface fulgora 4% of 30%: x2.3)`), and the director log's entries carry `surface`
-  (shares, targets, factors). Off: `"surface_bonus": 0` in the run config's `director`. Test (tools/stream/
-  test_surfaces.py, 7 on Nauvis, 1 on Fulgora, 1 on Vulcanus, 30 min): Nauvis 39%, Fulgora 30%, Vulcanus 31%.
+  (shares, targets, factors). Off: `"surface_bonus": 0` in the run config's `director`.
+- A new planet's floor (viewer awoo3391, 23:46: "why arent we watching gleba right now"; Sol landed on Gleba at
+  ~23:20 and after a 5-min operator follow `astra 33.48 beats sol 3.603` took the camera back, since a factor of at
+  most 2.5 cannot lift 3.6 over 33): while a planet is new (novelty above 0) and its 30-min share is under
+  `surface_new_floor` (0.5) of its target, the story goes to its best-scoring agent whatever the scores, once the
+  dwell rules allow (`new planet gleba 3% of 38%` in the cut); a story already there stays among that planet's
+  agents, a resume after an urgent shot gives way to it, and no trio starts while the story is elsewhere. Urgent
+  shots, battles, follows and incoming groups still come first. Once the planet has its floor the factor applies as
+  before (so its air settles about the floor when its agents score far below others). Off: `"surface_new_floor": 0`.
+  How new a planet is counts game time (the game does not run between shifts) from the tick an agent first stood on
+  it, kept in `runs/RUN/surface-seen.json` and read up the run's `resumed-from` chain, so a restart or the next shift
+  does not make every planet new again (the 23:27:52 restart had given Fulgora, reached shifts before, a new planet's
+  38%). A planet the run reached before ticks were kept (`space-memory.json` `reached`, here or up the chain) is not
+  new; to make one new by hand, put its first tick in `surface-seen.json` (`{"gleba": 6643925}`) before the service
+  starts.
+- Which surface counts: the planet the agent's body stands on, as the harness reports it (status and profiles read the
+  body, so an agent working by remote view or with `platform=` counts for the planet it stands on). An agent aboard
+  a platform or riding a cargo pod (no body on a planet) and anyone on a platform's surface (`platform-N`) counts for
+  no planet: a platform has its own shots (visits, departures, work), and it never becomes a "new planet". Test
+  (tools/stream/test_surfaces.py): 7 on Nauvis, 1 on Fulgora, 1 on Vulcanus, 30 min: Nauvis 25%, Fulgora 38%,
+  Vulcanus 37%; shift09's case (Astra 33 on Nauvis, Sol 3.6 just landed on Gleba, 30 min): Gleba 10% without the
+  floor (one rotation turn), 25% with it (half its 50% target).
 - Trio (Nick, 2026-10-12: he liked the old one-big-two-small layout because each tile said who was doing what):
   sometimes the program shows all three clients in layout-3cam.json's holes, the one on air in the big tile (no cut:
   the same client stays on air) and the two standbys in small tiles, each labelled "Luna · fixing the north wall"
