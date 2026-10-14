@@ -28,6 +28,7 @@ return function(api)
       assert(step.wait==nil or type(step.wait)=='boolean','step wait must be boolean')
       assert(step.label==nil or (type(step.label)=='string' and #step.label<=64),'step label must be a short string')
       local on_fail=step.on_fail
+      assert(step.on_short==nil or step.on_short=='skip','on_short must be skip')
       assert(on_fail==nil or on_fail=='abort' or on_fail=='skip' or (type(on_fail)=='string' and on_fail:match('^goto:.+')),'on_fail must be abort, skip or goto:<label>')
       if step.action=='wait_ticks' then
         local ticks=step.args and step.args.ticks
@@ -38,7 +39,7 @@ return function(api)
         assert(timeout==nil or (type(timeout)=='number' and timeout==math.floor(timeout) and timeout>=1 and timeout<=54000),'wait_until timeout must be 1..54000 ticks')
         api.validate_condition(step.args)
       end
-      out[#out+1]={action=step.action,args=step.args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail}
+      out[#out+1]={action=step.action,args=step.args or {},wait=step.wait~=false,label=step.label,on_fail=on_fail,on_short=step.on_short}
     end
     return out
   end
@@ -69,7 +70,7 @@ return function(api)
   end
   local function copy_steps(items)
     local out={}
-    for _,step in ipairs(items) do out[#out+1]={action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail} end
+    for _,step in ipairs(items) do out[#out+1]={action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short} end
     return out
   end
   -- Guards: {when=<condition>, goto='label' | steps=[...] | neither (abort)}.
@@ -121,8 +122,19 @@ return function(api)
     end
     return false
   end
+  -- A short step (out of items, an empty source, a full inventory: the outcomes below, or the error a transfer gives
+  -- when none is held) with up_to=true in its args or on_short=skip is done, not failed: the plan goes on (couriers;
+  -- Grok, Luna, Sonnet and Muse in shift08). The history entry says short.
+  local SHORT={out_of_items=true,nothing_collected=true,inventory_full=true}
+  local function short(step,result)
+    if not ((type(step.args)=='table' and step.args.up_to==true) or step.on_short=='skip') then return false end
+    if type(result)~='table' then return false end
+    if SHORT[result.outcome] then return true end
+    return type(result.reason)=='string' and result.reason:match('^no %S+ in inventory')~=nil
+  end
   -- A failed step follows its on_fail policy; the default stops the plan.
   local function fail(q,p,step,result)
+    if short(step,result) then result.short=true; record(q,step,true,result); return end
     record(q,step,false,result)
     local policy=step.on_fail or 'abort'
     if policy=='skip' then return end
@@ -168,7 +180,7 @@ return function(api)
       local step=q.current
       local again=RESTARTABLE[step.action]==true
       record(q,step,false,{reason='interrupted',requeued=again or nil}); q.current=nil
-      if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail}) end
+      if again then table.insert(q.pending,1,{id=step.id,action=step.action,args=step.args,wait=step.wait,label=step.label,on_fail=step.on_fail,on_short=step.on_short}) end
     end
     q.paused=true; q.revision=q.revision+1
     -- A standing order stopped by anything else (the agent's own request, a
@@ -396,7 +408,7 @@ return function(api)
       position='area predicates: centre (default character)',radius='1..128 (default 32)',count='ammo_below: per-turret ammo items; fuel_below: fuel items per burner machine (furnaces, drills, boilers, burner inserters, ...)',fraction='health_*: 0..1; damaged: our buildings under this health fraction (default 1: any damage)',
       item='item_count',at_least='item_count; ghosts_waiting: ghosts (entity and tile) in the area (default 1)',below='item_count',positions='item_count: 1..64 {x,y} of our entities (chests, machines) to count in, summed over all their inventories; default the character\'s inventory',technology='researched',timeout='ticks 1..54000 (default 3600; fh call wait_until --wait takes it from --wait-timeout); timing out fails the step (timed_out)',
       checked='every 10 ticks; enemies count only if known from the chart (units only in visible chunks)',pause_queue=PAUSE_QUEUE},
-    step_options={label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)'},
+    step_options={label='name a step as a goto target',on_fail='abort (default: pause plan) | skip | goto:<label> (drops pending steps before it)',on_short='skip: a step that runs short (out_of_items, nothing_collected, inventory_full, or no item held to give) counts as done (history: short=true) and the plan goes on; up_to=true in a transfer, collect or feed step does the same'},
     guards={usage='queue_submit guards=[{when={until=...,...}, goto=label | steps=[...] | neither=abort}]; checked every 10 ticks while the plan runs; each fires once, stops the running step',max=MAX_GUARDS}
   }
   return M
