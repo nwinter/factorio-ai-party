@@ -211,6 +211,9 @@ already targets your character.
   (10x6) equipment grid in reach or seated; `"operation":"list"` shows it, also by remote view; `inspect` on it too.
 - `vehicle {drive}` follows the engine's path for the vehicle around cliffs and water, backs off once when stuck, pushes
   through units (`last.rammed`), backs there rear first with `"reverse":true`, and takes `avoid_enemies` as `move_to` does.
+  It keeps its turning room clear of our buildings and brakes before any of ours (`last.spared`). With no room near the
+  target it stops on open ground short of it (`last.stopped_short`). `"dry_run":true` previews the path and names ours
+  it would touch (`last.preview`).
 - `move_to` never ends on a belt (it steps to the nearest free tile without one, `last.off_belt`). With no route for
   your character it ends at once as `unreachable`, with `last.why` (closed in: the area and what closes it in) and
   `last.nearest_reachable`, plus `last.build_spot`: a spot you can reach within build reach of the target
