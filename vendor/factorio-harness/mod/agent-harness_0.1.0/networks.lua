@@ -285,16 +285,111 @@ return function(api)
     for i = 1, math.min(k, #list) do out[i] = list[i].name .. ' ' .. math.floor(list[i].v) end
     return table.concat(out, ', '), #list
   end
+  -- A logistic network as its GUI shows it (Luna, 22:53: a coverage gap told
+  -- apart from a busy fleet): roboports (and personal roboports), the areas
+  -- they cover (bounding boxes of the roboports' squares), and per robot kind
+  -- the total, idle (stationed in a roboport), charging and waiting to charge
+  -- at a roboport, and working (the rest: out on a job or flying).
+  local function box_add(box, x, y, r)
+    if not box then return {x0=x - r, y0=y - r, x1=x + r, y1=y + r} end
+    box.x0, box.y0, box.x1, box.y1 = math.min(box.x0, x - r), math.min(box.y0, y - r), math.max(box.x1, x + r), math.max(box.y1, y + r)
+    return box
+  end
+  local function box_text(b) return b and string.format('(%d,%d)-(%d,%d)', math.floor(b.x0), math.floor(b.y0), math.ceil(b.x1), math.ceil(b.y1)) or 'none' end
+  local KINDS = {['logistic-robot']='logistic', ['construction-robot']='construction'}
+  -- Charging and waiting robots of one cell by kind; nil when the cell does not list them.
+  local function cell_robots(c)
+    local out = {charging={logistic=0, construction=0}, waiting={logistic=0, construction=0}}
+    for key, field in pairs({charging='charging_robots', waiting='to_charge_robots'}) do
+      local list = try(function() return c[field] end)
+      if type(list) ~= 'table' then return nil end
+      for _, r in ipairs(list) do
+        local k = KINDS[try(function() return r.type end) or '']
+        if k then out[key][k] = out[key][k] + 1 end
+      end
+    end
+    return out
+  end
+  local function robots_text(kind, k)
+    local t = string.format('%s robots %d: %d idle, %d working', kind, k.total, k.idle, k.working)
+    if k.charging then t = t .. string.format(', %d charging, %d waiting to charge', k.charging, k.waiting) end
+    return t
+  end
+  function M.logistic_view(ln)
+    local v = {id=try(function() return ln.network_id end), roboports=0, personal=0,
+      logistic={total=try(function() return ln.all_logistic_robots end) or 0, idle=try(function() return ln.available_logistic_robots end) or 0, charging=0, waiting=0},
+      construction={total=try(function() return ln.all_construction_robots end) or 0, idle=try(function() return ln.available_construction_robots end) or 0, charging=0, waiting=0}}
+    local typed, any_charging, any_waiting = true, 0, 0
+    for _, c in ipairs(try(function() return ln.cells end) or {}) do
+      any_charging = any_charging + (try(function() return c.charging_robot_count end) or 0)
+      any_waiting = any_waiting + (try(function() return c.to_charge_robot_count end) or 0)
+      local by = cell_robots(c)
+      if by then
+        for _, k in ipairs({'logistic', 'construction'}) do
+          v[k].charging, v[k].waiting = v[k].charging + by.charging[k], v[k].waiting + by.waiting[k]
+        end
+      else typed = false end
+      local o = try(function() return c.owner end)
+      if try(function() return c.mobile end) then v.personal = v.personal + 1
+      elseif o and o.valid then
+        v.roboports = v.roboports + 1
+        v.center = v.center or {x=o.position.x, y=o.position.y}
+        v.logistic_area = box_add(v.logistic_area, o.position.x, o.position.y, try(function() return c.logistic_radius end) or 0)
+        v.construction_area = box_add(v.construction_area, o.position.x, o.position.y, try(function() return c.construction_radius end) or 0)
+      end
+    end
+    for _, k in ipairs({'logistic', 'construction'}) do
+      local r = v[k]
+      if not typed then r.charging, r.waiting = nil, nil end
+      r.working = math.max(0, r.total - r.idle - (r.charging or 0) - (r.waiting or 0))
+    end
+    if not typed then v.charging, v.waiting = any_charging, any_waiting end
+    v.text = string.format('%d roboport%s%s, logistic area %s, construction area %s; %s; %s%s', v.roboports, v.roboports == 1 and '' or 's',
+      v.personal > 0 and string.format(' (+%d personal)', v.personal) or '', box_text(v.logistic_area), box_text(v.construction_area),
+      robots_text('logistic', v.logistic), robots_text('construction', v.construction),
+      not typed and string.format('; %d robots charging, %d waiting to charge', any_charging, any_waiting) or '')
+    return v
+  end
+  -- What inspect shows on a roboport or a logistic chest: its network (or that
+  -- it has none) and, for a roboport, its own cell.
+  function M.of_entity(e)
+    local ln = try(function() return e.logistic_network end)
+    local cell = e.type == 'roboport' and try(function() return e.logistic_cell end)
+    ln = ln or (cell and try(function() return cell.logistic_network end))
+    local out
+    if ln then
+      local v = M.logistic_view(ln)
+      out = {id=v.id, roboports=v.roboports, personal=v.personal > 0 and v.personal or nil, logistic_area=v.logistic_area,
+        construction_area=v.construction_area, logistic_robots=v.logistic, construction_robots=v.construction,
+        charging=v.charging, waiting=v.waiting, line=string.format('logistic #%s: %s', tostring(v.id), v.text)}
+    else
+      out = {none=e.type == 'roboport' and 'this roboport is in no logistic network'
+        or 'in no logistic network: no roboport\'s logistic area covers it'}
+    end
+    if cell then
+      local x, y = e.position.x, e.position.y
+      local lr, cr = try(function() return cell.logistic_radius end) or 0, try(function() return cell.construction_radius end) or 0
+      local by = cell_robots(cell)
+      out.port = {logistic_area=box_add(nil, x, y, lr), construction_area=box_add(nil, x, y, cr),
+        stationed={logistic=try(function() return cell.stationed_logistic_robot_count end) or 0,
+          construction=try(function() return cell.stationed_construction_robot_count end) or 0},
+        charging=try(function() return cell.charging_robot_count end) or 0, waiting=try(function() return cell.to_charge_robot_count end) or 0,
+        charging_by_kind=by and by.charging or nil, waiting_by_kind=by and by.waiting or nil}
+      local function split(t) return t and string.format(' (%d logistic, %d construction)', t.logistic, t.construction) or '' end
+      out.port.line = string.format('this roboport: logistic area %s, construction area %s; stationed: %d logistic, %d construction robots; %d charging%s, %d waiting to charge%s',
+        box_text(out.port.logistic_area), box_text(out.port.construction_area), out.port.stationed.logistic, out.port.stationed.construction,
+        out.port.charging, split(out.port.charging_by_kind), out.port.waiting, split(out.port.waiting_by_kind))
+    end
+    return out
+  end
   local function logistic(n, f, surface)
     local rows, by_id = {}, {}
     for _, ln in ipairs(logistic_networks(f, surface)) do
       local id = try(function() return ln.network_id end)
       if id then
-        local cells = try(function() return ln.cells end) or {}
-        local first = cells[1] and try(function() return cells[1].owner.position end)
-        local r = {id=id, roboports=#cells, center=first,
-          logistic=try(function() return ln.all_logistic_robots end) or 0, logistic_idle=try(function() return ln.available_logistic_robots end) or 0,
-          construction=try(function() return ln.all_construction_robots end) or 0, construction_idle=try(function() return ln.available_construction_robots end) or 0,
+        local v = M.logistic_view(ln)
+        local r = {id=id, roboports=v.roboports, personal=v.personal, center=v.center, view=v,
+          logistic=v.logistic.total, logistic_idle=v.logistic.idle, construction=v.construction.total, construction_idle=v.construction.idle,
           ghosts=0, unfilled=0, items={}}
         for _, x in ipairs(shortfalls(ln)) do
           local since = n.unfilled[x.key]
@@ -316,11 +411,10 @@ return function(api)
     end
     for _, r in ipairs(rows) do
       local items, kinds = top_items(r.items, 3)
-      r.line = string.format('%s logistic #%d (%d roboports%s): logistic robots %d, %d idle%s; construction robots %d, %d idle; '
-        .. 'requests unfilled 60+ s: %d%s; ghosts in its construction area: %d%s',
-        surface.name, r.id, r.roboports, r.center and ' near ' .. at(r.center.x, r.center.y) or '', r.logistic, r.logistic_idle,
-        r.busy_since and game.tick - r.busy_since >= 600 and string.format(' (none idle for %d min)', math.floor((game.tick - r.busy_since) / 3600)) or '',
-        r.construction, r.construction_idle, r.unfilled, kinds > 0 and ' (' .. items .. (kinds > 3 and ', ...' or '') .. ' missing)' or '',
+      r.line = string.format('%s logistic #%d: %s%s; requests unfilled 60+ s: %d%s; ghosts in its construction area: %d%s',
+        surface.name, r.id, r.view.text,
+        r.busy_since and game.tick - r.busy_since >= 600 and string.format('; no idle logistic robot for %d min', math.floor((game.tick - r.busy_since) / 3600)) or '',
+        r.unfilled, kinds > 0 and ' (' .. items .. (kinds > 3 and ', ...' or '') .. ' missing)' or '',
         r.ghosts, #ghosts >= MAX_GHOSTS and ' (counted the first ' .. MAX_GHOSTS .. ' ghosts)' or '')
     end
     table.sort(rows, function(a, b) return a.roboports > b.roboports or (a.roboports == b.roboports and a.id < b.id) end)
@@ -406,6 +500,10 @@ return function(api)
           local x = plain(r, {'id', 'roboports', 'center', 'logistic', 'logistic_idle', 'construction', 'construction_idle', 'unfilled', 'ghosts', 'line'})
           x.unfilled_items = next(r.items) and r.items or nil
           x.none_idle_s = r.busy_since and math.floor((game.tick - r.busy_since) / 60) or nil
+          x.personal = r.personal > 0 and r.personal or nil
+          x.logistic_area, x.construction_area = r.view.logistic_area, r.view.construction_area
+          x.logistic_robots, x.construction_robots = r.view.logistic, r.view.construction
+          x.charging, x.waiting = r.view.charging, r.view.waiting
           row.logistic[#row.logistic+1] = x
         end
         out[#out+1] = row
@@ -414,7 +512,9 @@ return function(api)
     return {surfaces=out, as_of=string.format('%ds ago', math.floor((game.tick - v.tick) / 60)),
       note='draw: the network\'s production statistics sampled every 5 s; capacity: generators at their maximum plus solar at its output now; '
         .. 'boiler fuel: minutes at the draw of the generators they feed, shared evenly over the boilers; requests unfilled: '
-        .. 'held plus on the way below the request for 60 s or more; ammo: consumed on the surface (items statistics)'}
+        .. 'held plus on the way below the request for 60 s or more; ammo: consumed on the surface (items statistics); '
+        .. 'logistic areas: bounding boxes of the roboports\' logistic and construction squares (a gap inside one is not shown); '
+        .. 'robots: idle are stationed in a roboport, charging and waiting to charge are at a roboport, working are the rest (out on a job or flying)'}
   end
 
   -- Push alert groups (pushalerts.lua scan): plain data, worst first there.
@@ -472,8 +572,10 @@ return function(api)
   M.schema = {
     networks = {surface='optional surface name',
       returns='surfaces [{surface, electric [{id, poles, center, draw_kw {avg, now, over_s}, capacity_kw, generators_kw, solar, solar_peak_kw, '
-        .. 'acc, machines, low, none, boilers, fuel_min, boilers_under_10_min, line}], logistic [{id, roboports, center, logistic, '
-        .. 'logistic_idle, none_idle_s, construction, construction_idle, unfilled, unfilled_items, ghosts, line}], turrets {by_name, '
+        .. 'acc, machines, low, none, boilers, fuel_min, boilers_under_10_min, line}], logistic [{id, roboports, personal, center, '
+        .. 'logistic_area and construction_area {x0, y0, x1, y1}, logistic_robots and construction_robots {total, idle, working, '
+        .. 'charging, waiting}, logistic, logistic_idle, none_idle_s, construction, construction_idle, unfilled, unfilled_items, '
+        .. 'ghosts, line}], turrets {by_name, '
         .. 'ammo_used_1h, line}}]; as_of (kept 30 s); note (how each number is counted). Electric networks over 2 poles or with '
         .. 'a generator. Read only'},
   }

@@ -62,7 +62,16 @@ local ln={network_id=3,all_logistic_robots=147,available_logistic_robots=0,all_c
   cells={},requester_points={
     {owner=chest(501,{['iron-plate']=20}),filters={{name='iron-plate',quality='normal',count=400}},targeted_items_deliver={['iron-plate']=80}},
     {owner=chest(502,{['copper-cable']=200}),filters={{name='copper-cable',quality='normal',count=200}},targeted_items_deliver={}}}}
-for i=1,4 do ln.cells[i]={owner={position={x=50+i,y=50}}} end
+-- 4 roboports 25 tiles apart (logistic 25, construction 55), the first charging 3 logistic and 1 construction robot
+-- with 2 logistic waiting; and a character's personal roboport (mobile).
+local function robots(kind,n) local out={} for i=1,n do out[i]={type=kind} end return out end
+for i=1,4 do
+  ln.cells[i]={owner={valid=true,position={x=i*25,y=50}},logistic_radius=25,construction_radius=55,
+    charging_robots=i==1 and {robots('logistic-robot',3)[1],robots('logistic-robot',3)[2],robots('logistic-robot',3)[3],{type='construction-robot'}} or {},
+    to_charge_robots=i==1 and robots('logistic-robot',2) or {},charging_robot_count=i==1 and 4 or 0,to_charge_robot_count=i==1 and 2 or 0,
+    stationed_logistic_robot_count=0,stationed_construction_robot_count=i==1 and 4 or 0}
+end
+ln.cells[5]={mobile=true,owner={valid=true,position={x=0,y=0}},logistic_radius=0,construction_radius=10,charging_robots={},to_charge_robots={}}
 force.logistic_networks={nauvis={ln}}
 for i=1,5 do add{type='entity-ghost',name='entity-ghost',position={x=55,y=55+i}} end
 for i=1,2 do add{type='entity-ghost',name='entity-ghost',position={x=500,y=500}} end
@@ -84,8 +93,9 @@ local lines=N.lines(force,'nauvis',8)
 eq(#lines,3,table.concat(lines,' | '))
 eq(lines[1],'nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%); '
   ..'solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11: fuel 14 min at this draw, 2 under 10 min')
-eq(lines[2],'nauvis logistic #3 (4 roboports near (51,50)): logistic robots 147, 0 idle (none idle for 4 min); construction robots 11, 4 idle; '
-  ..'requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5')
+eq(lines[2],'nauvis logistic #3: 4 roboports (+1 personal), logistic area (0,25)-(125,75), construction area (-30,-5)-(155,105); '
+  ..'logistic robots 147: 0 idle, 142 working, 3 charging, 2 waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; '
+  ..'no idle logistic robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5')
 eq(lines[3],'nauvis turrets: gun-turret 6; ammo used in the last hour: firearm-magazine 1200')
 -- The read: the same numbers as fields.
 local r=N.read({force=force},{})
@@ -93,6 +103,25 @@ eq(#r.surfaces,1); local e=r.surfaces[1].electric[1]
 eq(e.id,7); eq(e.capacity_kw,22100); eq(e.generators_kw,21600); eq(e.solar_peak_kw,600); eq(e.draw_kw.avg,18500); eq(e.draw_kw.over_s,300)
 eq(e.boilers,11,'the far boiler feeds nothing listed'); eq(e.fuel_min,14); eq(e.boilers_under_10_min,2); eq(e.low,3); eq(e.none,1)
 local l=r.surfaces[1].logistic[1]; eq(l.unfilled,1); eq(l.unfilled_items['iron-plate'],300); eq(l.ghosts,5); eq(l.logistic_idle,0)
+eq(l.roboports,4); eq(l.personal,1); eq(l.logistic_area.x0,0); eq(l.construction_area.x1,155)
+eq(l.logistic_robots.working,142); eq(l.logistic_robots.charging,3); eq(l.construction_robots.idle,4); eq(l.construction_robots.waiting,0)
+-- Inspect on a roboport: its network and its own cell; on a chest in the network; on a chest no roboport covers.
+local port={type='roboport',position={x=25,y=50},logistic_cell=ln.cells[1],logistic_network=ln}
+local seen=N.of_entity(port)
+eq(seen.id,3); eq(seen.roboports,4); eq(seen.logistic_robots.idle,0)
+eq(seen.line,'logistic #3: 4 roboports (+1 personal), logistic area (0,25)-(125,75), construction area (-30,-5)-(155,105); '
+  ..'logistic robots 147: 0 idle, 142 working, 3 charging, 2 waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge')
+eq(seen.port.line,'this roboport: logistic area (0,25)-(50,75), construction area (-30,-5)-(80,105); stationed: 0 logistic, 4 construction robots; 4 charging (3 logistic, 1 construction), 2 waiting to charge (2 logistic, 0 construction)')
+eq(N.of_entity({type='logistic-container',position={x=60,y=60},logistic_network=ln}).id,3)
+local lone=N.of_entity({type='logistic-container',position={x=900,y=900}})
+eq(lone.none,'in no logistic network: no roboport\'s logistic area covers it'); eq(lone.id,nil)
+-- Cells that do not list their robots: per-kind charging is left out, the network's totals shown.
+local bare={network_id=4,all_logistic_robots=10,available_logistic_robots=2,all_construction_robots=0,available_construction_robots=0,
+  cells={{owner={valid=true,position={x=0,y=0}},logistic_radius=25,construction_radius=55,charging_robot_count=3,to_charge_robot_count=1}}}
+local bv=N.logistic_view(bare)
+eq(bv.logistic.charging,nil); eq(bv.logistic.working,8); eq(bv.charging,3)
+eq(bv.text,'1 roboport, logistic area (-25,-25)-(25,25), construction area (-55,-55)-(55,55); logistic robots 10: 2 idle, 8 working; '
+  ..'construction robots 0: 0 idle, 0 working; 3 robots charging, 1 waiting to charge')
 eq(r.surfaces[1].turrets.by_name['gun-turret'],6); eq(r.surfaces[1].turrets.ammo_used_1h['firearm-magazine'],1200)
 assert(r.note:find('sampled every 5 s',1,true))
 -- At most `max` lines, the rest counted.

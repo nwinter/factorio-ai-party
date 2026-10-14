@@ -401,6 +401,12 @@ fh sleep 900 --until researched                       # ...or until the research
   hand), `pickup_target` and `drop_target`, `marked_for_deconstruction` / `marked_for_upgrade`, and `ghosts_here` (ghosts
   on the footprint, such as a paste replacing it, with their filters). A ghost on a building yields to the building
   unless you name it (`name: "entity-ghost"`).
+- `inspect` on a roboport or a logistic chest shows `logistic_network`: its `id`, `roboports`, `logistic_area` and
+  `construction_area`, `logistic_robots` and `construction_robots` `{total, idle, working, charging, waiting}` and a
+  `line` (the networks read's words), or `none: in no logistic network: no roboport's logistic area covers it`. On a
+  roboport, `port` adds its own cell: `logistic_area`, `construction_area`, `stationed {logistic, construction}`,
+  `charging`, `waiting` (by kind when the game lists them) and a `line` (`this roboport: logistic area (-5,-25)-(45,25),
+  ...; stationed: 2 logistic, 1 construction robots; 0 charging, 0 waiting to charge`).
 - An asteroid collector: `inspect` shows `filters` (asteroid chunk names), `filter_slots` (the game's count, which
   reads 0 until a filter is set), `arm` (chunks its arms hold) and its output in
   `inventories.asteroid_collector_output`. `configure {position, filters}` sets the chunk filters as its GUI does,
@@ -805,10 +811,15 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   the agent's surface first, `+N more networks: fh call networks`), one line per network, numbers only:
   `nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%);
   solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11:
-  fuel 14 min at this draw, 2 under 10 min`, `nauvis logistic #3 (4 roboports near (51,50)): logistic robots 147, 0
-  idle (none idle for 4 min); construction robots 11, 4 idle; requests unfilled 60+ s: 1 (iron-plate 300 missing);
-  ghosts in its construction area: 5`, `nauvis turrets: gun-turret 6; ammo used in the last hour: firearm-magazine
-  1200`. Electric networks over 2 poles or with a generator. Draw: the network's production statistics (5-second
+  fuel 14 min at this draw, 2 under 10 min`, `nauvis logistic #3: 4 roboports (+1 personal), logistic area
+  (0,25)-(125,75), construction area (-30,-5)-(155,105); logistic robots 147: 0 idle, 142 working, 3 charging, 2
+  waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; no idle logistic
+  robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5`, `nauvis
+  turrets: gun-turret 6; ammo used in the last hour: firearm-magazine 1200`. Electric networks over 2 poles or with a
+  generator. Logistic areas: the bounding boxes of the roboports' logistic and construction squares (a gap inside
+  one is not shown; personal roboports are counted apart and not in the areas). Robots per kind: idle (stationed in a
+  roboport), charging and waiting to charge (at a roboport; when the game does not list them by kind, one total for
+  both kinds), working (the rest: out on a job or flying). Per item, `supply` says why a request is unmet. Draw: the network's production statistics (5-second
   average, as `power` reads it) sampled every 5 s, over the last 5 minutes (shorter after a runtime start: `avg over
   45 s`). Capacity: generators at their maximum output plus solar at its output now. Boilers: those sharing a fluid
   segment with the network's steam generators (else within 12 tiles of one); fuel in minutes at the draw of the

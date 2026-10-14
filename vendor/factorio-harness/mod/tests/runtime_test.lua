@@ -1842,6 +1842,24 @@ eq(call('inspect',{position=ins.position}).fluid_connections,nil)
   world={drill,{valid=true,name='iron-ore',type='resource',position={x=30.5,y=0.5},half=0.5,minable=false,force={name='neutral'}}}
   eq(call('inspect',{position={x=30.5,y=0.5}}).name,'burner-mining-drill')
   fails(function() call('mine',{position={x=30.5,y=0.5}}) end,'entity is not mineable')
+  -- A roboport and a logistic chest: their logistic network and a roboport's own cell (Luna, 22:53: a coverage gap
+  -- told apart from a busy fleet); a logistic chest outside every logistic area has none.
+  local cell={owner={valid=true,position={x=20,y=0}},logistic_radius=25,construction_radius=55,charging_robots={},to_charge_robots={},
+    charging_robot_count=0,to_charge_robot_count=0,stationed_logistic_robot_count=2,stationed_construction_robot_count=1}
+  local net={network_id=12,cells={cell},all_logistic_robots=10,available_logistic_robots=2,all_construction_robots=5,available_construction_robots=1}
+  local port={valid=true,name='roboport',type='roboport',position={x=20,y=0},half=2,force=p.force,logistic_cell=cell,logistic_network=net,
+    get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  local box={valid=true,name='requester-chest',type='logistic-container',position={x=24.5,y=6.5},half=0.5,force=p.force,logistic_network=net,
+    get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  local far={valid=true,name='passive-provider-chest',type='logistic-container',position={x=30.5,y=6.5},half=0.5,force=p.force,
+    get_inventory=function() return nil end,get_fluid_contents=function() return {} end}
+  world={port,box,far,chest}
+  local ln=call('inspect',{position={x=20,y=0}}).logistic_network
+  eq(ln.id,12); eq(ln.logistic_robots.working,8); eq(ln.port.stationed.logistic,2)
+  eq(ln.line,'logistic #12: 1 roboport, logistic area (-5,-25)-(45,25), construction area (-35,-55)-(75,55); logistic robots 10: 2 idle, 8 working, 0 charging, 0 waiting to charge; construction robots 5: 1 idle, 4 working, 0 charging, 0 waiting to charge')
+  eq(call('inspect',{position={x=24.5,y=6.5}}).logistic_network.id,12)
+  eq(call('inspect',{position={x=30.5,y=6.5}}).logistic_network.none,'in no logistic network: no roboport\'s logistic area covers it')
+  eq(call('inspect',{position={x=24.5,y=0.5}}).logistic_network,nil,'not on other entities')
   p.surface.find_entities_filtered=find
 end)()
 -- wait_until as a direct call: met at once returns met; otherwise a timed

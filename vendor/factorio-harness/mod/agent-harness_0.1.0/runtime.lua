@@ -2434,6 +2434,10 @@ function handlers.inspect(p,a)
   if M.details then M.details.inspect(e,out) end
   -- Circuit network: settings, each wire's far end, the signals now (circuits.lua).
   if M.circuits then local okc,c=pcall(M.circuits.read,e); if okc and c then out.circuit=c end end
+  -- A roboport or logistic chest: its logistic network's id, areas and robots, or that it has none; a roboport's own cell (networks.lua).
+  if M.networks and (e.type=='roboport' or e.type=='logistic-container') then
+    local okn,ln=pcall(M.networks.of_entity,e); if okn and ln then out.logistic_network=ln end
+  end
   local okp,pl=pcall(function() return e.surface.platform end)
   if okp and pl and space then
     if e.type=='space-platform-hub' then

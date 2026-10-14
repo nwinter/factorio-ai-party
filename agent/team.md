@@ -110,9 +110,11 @@ already targets your character.
 - Your first reply of a shift carries `team: shift` once: the team plan's goals and your line, the research finished
   since your last request before the shift, `researched_none_built`: researched technologies whose buildings the
   team has none of, and `networks`: one line per electric network (draw over 5 minutes against capacity, machines on
-  low power, boilers and their fuel in minutes), per logistic network (robots and idle robots, requests unfilled for
-  60 s or more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them
-  any time), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
+  low power, boilers and their fuel in minutes), per logistic network (its id, roboports and the areas they cover,
+  logistic and construction robots total, idle, working, charging and waiting to charge, requests unfilled for 60 s or
+  more, ghosts in its area) and the turrets with ammo used in the last hour (`./fh call networks` shows them any time;
+  `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
+  or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items).
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
 - Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
