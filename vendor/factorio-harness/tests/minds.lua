@@ -9,7 +9,7 @@ package.path='mod/agent-harness_0.1.0/?.lua;'..package.path
 storage={agent_harness={active={}}}
 defines={events={on_script_path_request_finished=10,on_entity_died=11},shooting={not_shooting=0,shooting_enemies=1},
   controllers={character=1,remote=27,spectator=2},direction={north=0,east=4},inventory={chest=1},build_mode={normal=1},
-  build_check_type={manual=1},flow_precision_index={five_seconds=0,one_minute=1}}
+  build_check_type={manual=1},flow_precision_index={five_seconds=0,one_minute=1},entity_status={working=1,normal=2,low_power=14}}
 rendering={draw_text=function() return {valid=true,destroy=function() end} end,get_object_by_id=function() return nil end}
 remote={interfaces={}}
 helpers={json_to_table=function(t) return t end}
@@ -150,7 +150,9 @@ eq(sol('transfer',{position={x=3.5,y=3.5},direction='to_player',item='iron-gear-
 eq(runtime.unpowered(port),'unpowered: no pole reaches it; nearest pole medium-electric-pole at (17,10), 7 tiles')
 body.position={x=8,y=8}
 r=sol('inspect',{position={x=10,y=10}})
-eq(r.status_name,'unpowered'); eq(r.power,runtime.unpowered(port))
+-- inspect pairs the engine's status number with its name (Muse, shift10); unpowered is said in power.
+eq(r.status,2); eq(r.power,runtime.unpowered(port))
+eq(r.status_name,'normal')
 port.electric_network_id=4
 eq(runtime.unpowered(port),nil); eq(sol('inspect',{position={x=10,y=10}}).power,nil)
 eq(runtime.unpowered(pole),nil,'a pole is no machine')
