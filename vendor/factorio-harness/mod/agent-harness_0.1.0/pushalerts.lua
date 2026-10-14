@@ -379,7 +379,7 @@ return function(api)
     return c
   end
 
-  -- Who hears a group: the owners of active board claims over its centre,
+  -- Who hears a group: the owners of active board claims over its centre (on its surface),
   -- else agents who built in it, else the nearest agent on its surface.
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
   local function owners(g, roster)
@@ -387,7 +387,8 @@ return function(api)
     for _, i in pairs(board and board.items or {}) do
       local a = i.area
       if i.kind == 'claim' and ACTIVE[i.status] and i.owner and a and g.center.x >= a.left_top.x and g.center.x <= a.right_bottom.x
-        and g.center.y >= a.left_top.y and g.center.y <= a.right_bottom.y then out[i.owner] = 'claim' end
+        and g.center.y >= a.left_top.y and g.center.y <= a.right_bottom.y
+        and (api.claim_surface and api.claim_surface(i) or i.surface or 'nauvis') == g.surface then out[i.owner] = 'claim' end
     end
     if next(out) then return out end
     for name in pairs(g.by) do if roster[name] then out[name] = 'built' end end

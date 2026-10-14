@@ -24,7 +24,9 @@ local V=dofile('mod/agent-harness_0.1.0/selfview.lua'){
   is_director=function(index) return index==9 end,
   claims=function(name)
     local out={}
-    for _,i in pairs(storage.board.items) do if i.kind=='claim' and i.owner==name then out[#out+1]=i.area end end
+    for _,i in pairs(storage.board.items) do
+      if i.kind=='claim' and i.owner==name then out[#out+1]={left_top=i.area.left_top,right_bottom=i.area.right_bottom,surface=i.surface or 'nauvis'} end
+    end
     return out
   end,
   claim_alerts=function(p) return alerts[p.index] or {} end,
@@ -120,7 +122,8 @@ alerts[1]={'12 gun-turret out of ammo near (120,130)'}
 S.losses={{id=7,surface='nauvis',box={60,10,70,12},first=game.tick-600,last=game.tick-60,total=20,names={['stone-wall']=20}},  -- 50 tiles from (10,10)
   {id=8,surface='nauvis',box={140,140,145,145},first=game.tick-600,last=game.tick-60,total=5,names={['gun-turret']=5}},        -- in the claim
   {id=9,surface='vulcanus',box={10,10,12,12},first=game.tick-600,last=game.tick-60,total=9,names={}},                         -- another surface
-  {id=10,surface='nauvis',box={400,400,410,410},first=game.tick-600,last=game.tick-60,total=3,names={}}}                     -- far off
+  {id=10,surface='nauvis',box={400,400,410,410},first=game.tick-600,last=game.tick-60,total=3,names={}},                      -- far off
+  {id=11,surface='vulcanus',box={140,140,145,145},first=game.tick-600,last=game.tick-60,total=4,names={}}}                     -- the claim's spot, on vulcanus
 lines=V.review(P)
 eq(lines[4],'open alerts in your claims: 1: 12 gun-turret out of ammo near (120,130)')
 eq(lines[5],'losses near your work: 2 incidents, 25 destroyed: #7 20 destroyed; #8 5 destroyed')

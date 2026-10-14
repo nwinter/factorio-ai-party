@@ -1551,7 +1551,14 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   reply of a shift lists the open projects (`team.shift.projects`, the same lines), and fh keeps the last such list and
   the project items its replies carried in `.projects.json` next to the journal (`FH_PROJECTS_FILE`), which the
   post-compaction brief shows (pog `tools/context.py`). The shift retro's `open board items` leaves projects out.
-- A claim overlapping another agent's active claim is posted with a warning. At most 300 items are kept (finished
+- A claim is on one surface (Sol 07:52: Astra's Nauvis claim #212 labelled Gleba furnaces at (62,22)): the poster's,
+  or `surface` (`board post {kind: "claim", area, surface: "gleba"}`); its owner moves it with `board update {id,
+  surface}`. A claim from before claims had a surface gets its owner's surface the first time it is read (else nauvis),
+  unless its area holds none of our buildings there and exactly one other planet's does.
+  Board items show it (`surface`). Positions on other surfaces are never in it: the overlap warning, `collect`'s
+  `claimed`, `stock`'s skips, alert routing, the owner's activity that keeps it fresh and the review's losses all
+  compare the surface too.
+- A claim overlapping another agent's active claim on its surface is posted with a warning. At most 300 items are kept (finished
   ones pruned first, then notes, then the oldest that is not an open project).
 - A claim whose owner is now somewhere other than you says so: `owner_away: "on Vulcanus"` on board items, the overlap
   warning (`overlaps claim #128 by sol (on Vulcanus): ...`), and the claim in `collect`'s `skipped_claims` and

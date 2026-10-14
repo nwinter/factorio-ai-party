@@ -368,4 +368,26 @@ do
   eq(st9.push_turrets.player.ready,true)
   force.players={}; game.forces=nil; ents.nauvis={}
 end
+-- 8. A claim routes the groups on its own surface only (Sol 07:52: Astra's Nauvis claim #212 labelled Gleba furnaces
+-- at (62,22)).
+do
+  local st10={board={items={{kind='claim',status='claimed',owner='luna',id=9,surface='vulcanus',area={left_top={x=-50,y=-50},right_bottom={x=50,y=50}}}}}}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st10 end,
+    agents=function() return {{index=1,name='astra'},{index=3,name='luna'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return places[index] end}
+  ents.nauvis={}; ents.vulcanus={}
+  for i=1,3 do ent('nauvis','stone-furnace','furnace',i*2,2,{status=3}) end
+  ent('vulcanus','stone-furnace','furnace',4,2,{status=3})
+  game.tick=game.tick+1800
+  local by={}
+  for _,g in ipairs(R.read(astra,{}).groups) do by[g.surface]=g end
+  eq(by.nauvis.to[1],'astra (nearest)','a vulcanus claim does not cover nauvis'); eq(by.vulcanus.to[1],'luna (claim)')
+  st10.board.items[1].surface='nauvis'; game.tick=game.tick+1800
+  by={}
+  for _,g in ipairs(R.read(astra,{}).groups) do by[g.surface]=g end
+  eq(by.nauvis.to[1],'luna (claim)'); eq(by.vulcanus.to[1],'luna (nearest)')
+  ents.nauvis={}; ents.vulcanus={}
+end
 print('pushalerts: ok')

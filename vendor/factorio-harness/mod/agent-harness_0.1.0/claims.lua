@@ -8,6 +8,12 @@
 -- stale: no notice needed (stock no longer skips it, the label says so).
 -- After EXPIRE the board closes it (board.lua). An `allow` list names agents
 -- (or everyone) who need no notice while it is fresh.
+-- A claim is on one surface (Sol 07:52: Astra's Nauvis claim #212 labelled
+-- Gleba furnaces at (62,22)): the poster's when posted (or `surface`); one
+-- posted before claims had one gets its owner's surface the first time it is
+-- read (else nauvis), unless its area holds none of our buildings there and
+-- exactly one other planet's does (world n, 08:05: Luna on Gleba, her claim
+-- #111 built only on Nauvis). Positions on other surfaces are never in it.
 return function(api)
   local M = {}
   local ACTIVE = {open=true, claimed=true, doing=true, blocked=true}
@@ -28,21 +34,43 @@ return function(api)
     return i.active_tick or i.updated_tick or i.created_tick or 0
   end
   function M.stale(i) return game.tick - M.activity(i) >= M.STALE end
+  -- Claim i's surface name (set here, once, for a claim from before claims had one).
+  function M.surface_of(i)
+    if not i.surface then
+      local s = api.owner_surface and api.owner_surface(i.owner)
+      s = type(s) == 'string' and s or 'nauvis'
+      if i.area and api.built_on and not api.built_on(s, i.area) then
+        local only
+        for _, name in ipairs(api.planets and api.planets() or {}) do
+          if name ~= s and api.built_on(name, i.area) then
+            if only then only = false; break end
+            only = name
+          end
+        end
+        if only then s = only end
+      end
+      i.surface = s
+    end
+    return i.surface
+  end
+  local function on(i, surface, pos) return i.area ~= nil and surface ~= nil and M.surface_of(i) == surface and inside(i.area, pos) end
+  local function surface_name(p) local ok, v = pcall(function() return p.surface.name end); return ok and v or nil end
   function M.allows(i, name)
     for _, n in ipairs(i.allow or {}) do if n == name or n == 'everyone' then return true end end
     return false
   end
   -- Whether claim i asks agent `name` to keep out (ask its owner first).
   function M.binding(i, name) return i.owner ~= name and not M.stale(i) and not M.allows(i, name) end
+  -- Claims by others at pos on p's surface.
   local function claims_at(p, pos)
     local board = api.state().board
     if not board then return function() return nil end end
-    local me = p.name
+    local me, surface = p.name, surface_name(p)
     local k, v
     return function()
       repeat
         k, v = next(board.items, k)
-        if v and v.kind == 'claim' and ACTIVE[v.status] and v.owner and v.owner ~= me and v.area and inside(v.area, pos)
+        if v and v.kind == 'claim' and ACTIVE[v.status] and v.owner and v.owner ~= me and on(v, surface, pos)
           and game.tick - M.activity(v) < M.EXPIRE then return v end
       until not k
     end
@@ -71,11 +99,13 @@ return function(api)
     if not board then return end
     local me, c = p.name, p.character
     local at = c and c.valid and c.position
+    local at_surface = at and surface_name(c)
     local pos = type(args) == 'table' and args.position
     if not (type(pos) == 'table' and type(pos.x) == 'number' and type(pos.y) == 'number') then pos = nil end
+    local surface = surface_name(p)
     for _, i in pairs(board.items) do
       if i.kind == 'claim' and i.owner == me and ACTIVE[i.status] and i.area
-          and ((at and inside(i.area, at)) or (pos and inside(i.area, pos))) then i.active_tick = game.tick end
+          and ((at and on(i, at_surface, at)) or (pos and on(i, surface, pos))) then i.active_tick = game.tick end
     end
   end
   -- How a claim stands for reader p (or no reader): age, the owner's last

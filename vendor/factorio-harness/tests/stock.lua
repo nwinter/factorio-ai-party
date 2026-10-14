@@ -85,7 +85,7 @@ eq(stock.tick(p,action),'collected'); eq(taken[3],'30:13'); eq(action.got,120)
 storage={agent_harness={board={items={{id=4,kind='claim',status='claimed',owner='sol',title='sol mall',area={left_top={x=-10,y=-5},right_bottom={x=-1,y=5}}},
   {id=5,kind='claim',status='claimed',owner='me',title='mine',area={left_top={x=15,y=-5},right_bottom={x=25,y=5}}}}}}}
 api.claims=dofile('mod/agent-harness_0.1.0/claims.lua'){state=function() return storage.agent_harness end}
-p.name='me'
+p.name='me'; p.surface.name='nauvis'
 local claimed,cinfo=stock.start(p,{item='pipe',radius=40,count=120,chests=true},600)
 eq(cinfo.places,2); eq(claimed.targets[1].position.x,20)
 eq(cinfo.skipped_claims[1],'7 pipe in 1 places of #4 sol mall (claim by sol; posted 0s ago, owner active on it 0s ago); ask the owner')
@@ -102,6 +102,10 @@ game.tick=107999
 claimed,cinfo=stock.start(p,{item='pipe',radius=40,count=120,chests=true},600)
 eq(cinfo.places,2)
 game.tick=0
+-- A claim on another surface keeps nothing here (Sol 07:52: a Nauvis claim labelled Gleba furnaces).
+sol_claim.surface='gleba'; sol_claim.created_tick=0; sol_claim.active_tick=0
+claimed,cinfo=stock.start(p,{item='pipe',radius=40,count=120,chests=true},600)
+eq(cinfo.places,3,'the gleba claim is not here'); eq(cinfo.skipped_claims,nil)
 api.claims=nil
 -- nothing held: an empty route ends at once.
 action=stock.start(p,{item='coal',radius=40},600)
