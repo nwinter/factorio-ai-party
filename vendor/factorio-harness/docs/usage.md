@@ -168,8 +168,57 @@ fh call status
 - Trains: `train {position: stop, station, limit}` names a train stop and sets its train limit (`limit: false` clears it);
   `train {position: locomotive or wagon, schedule: [{station, wait: [{type, ticks?, compare?, condition?}]}], current,
   automatic}` sets the train's schedule (wait types as in the game: time, inactivity, full, empty, item_count,
-  fluid_count, circuit, passenger_present, ...) and automatic or manual mode. Rails, stops, locomotives and wagons are
-  built with `build` and `place_ghosts`; fuel goes in with `refuel` or `transfer`.
+  fluid_count, circuit, passenger_present, ...) and automatic or manual mode. Locomotives and wagons are built with
+  `build`; fuel goes in with `refuel` or `transfer`. The target is a stop or rolling stock in sight, or by remote view
+  in a visible chunk; at a position over a train, the train is the target (a rail is one only when named or alone, for
+  every action).
+  - Readback (every `train` call; `train {position}` alone is a read): `schedule` (one line per stop with its wait
+    conditions), `current`, `automatic`, `state` (`on_the_path`, `arrive_station`, `wait_station`, `arrive_signal`,
+    `wait_signal`, `no_path`, `destination_full`, `no_schedule`, `manual_control`, `manual_control_stop`), `why`,
+    `at_stop`, `heading_to {stop, position, tiles_left}`, `speed_kmh`, `carriages`, `cargo`, `fluids`, `fuel` (per
+    locomotive). `why` by state: `at stop Base (3,-5): waits for time 10s or item_count iron-ore > 100`; `stopped at
+    rail-signal (2.5,-20.5) (closed)`; `no path to any stop named Base (2: (3,-5) 1 train, limit 1; (50,-5) 0 trains,
+    no limit, no rail beside it)`, with `its locomotives all face its front, so it drives forward only` for such a
+    train; `every stop named Base is at its train limit (...)`; `no train stop is named X`; `stands still: no fuel in
+    its locomotives`. A stop's readback adds `rail` (the rail it is beside, or none).
+- Rails (2.0): `rail_route {from, to, via?, signals?, from_direction?, ghosts?, dry_run?, details?}` lays a line of the
+  rail planner's own pieces. 2.0 rails take 16 headings (north, northnortheast, northeast, ...); the pieces are
+  `straight-rail` (2 tiles, 1 rail; 2.8 tiles on a diagonal), `half-diagonal-rail` (4.5 tiles, 2 rails) and
+  `curved-rail-a` / `curved-rail-b` (about 5 tiles and 3 rails each, each turning 22.5 degrees: a 90 degree turn is four
+  curves, about 20 tiles). Rail ends sit on a 2-tile grid. The tables come from the game (2.0.77, rail planner
+  extensions); rail ramps and elevated rails are not planned.
+  - `from`: free ground, or within 2.5 tiles of an end of your rail or rail ghost: a free end continues that line, an
+    end where two rails meet branches off it. `to`: an end within 2 tiles of it, or an end of your rail or rail ghost
+    there, joined head on. `via`: 1..16 points passed in order; each leg is at most 500 tiles, the route at most 1024
+    pieces. `from_direction` fixes the first heading.
+  - The route keeps off water, cliffs, buildings, ghosts, other forces' entities and uncharted chunks, crosses rails
+    where the game allows it, and goes over trees and rocks (a ghost marks them for removal; `construct` mines them).
+    The search stays within 32 tiles of each leg's ends and stops after 6000 placement checks; a point no piece fits
+    at fails at once (`no rail route: to (150,350): blocked by deepwater`), and a route not found says the nearest end
+    reached and what blocks there (`blocked there by transport-belt (82.5,-96.5) and 6 more, ...`).
+  - It places ghosts, then builds the pieces in your build reach from your inventory; `ghosts: true` places ghosts
+    only. `construct` with no area builds the rest, as after `belt_route`.
+  - `signals: 30` (or `"every 30 tiles"`) puts rail signal ghosts at piece joints every 30 tiles on the right of trains
+    heading from the start to the end. The line then runs one way: trains heading the other way find no path through
+    the signals, and the game refuses train stops serving them on that line.
+  - Reply: `route` (headings with tiles: `N40 NNE220 N43`), `pieces` by kind, `length` (tiles), `items` (`rail`:
+    half-diagonals count 2, curves 3; `rail-signal`), `start` and `end` `{position, heading}`, `extends` / `joins` (the
+    rail end used), `legs`, `signals`, `over_trees_or_rocks`, `placed`, `built`, `not_built` (why, by count),
+    `failed`, `obstacles_marked`, `missing` (items short), `cost {placement_checks, expansions}`; `details: true` lists
+    every piece.
+  - `dry_run: true` plans and checks each piece as `place_ghosts` dry run does (what blocks, tiles needing landfill,
+    standing spots that reach every piece, items against what you hold); `rail_route` holds the plan. Signals are
+    checked when placed (the game takes a signal only beside a rail or rail ghost).
+  - `build` with the rail item and `entity` places one piece; a curve takes 3 rails and a half-diagonal 2, as the game
+    charges them.
+- `train_stop {position, name, direction?, limit?, ghosts?}` puts a stop beside the nearest straight north-south or
+  east-west rail or rail ghost of yours within 6 tiles, on the right of the trains it serves: east of a north-south
+  rail for trains heading north, west for south; south of an east-west rail for trains heading east, north for west.
+  Without `direction` (the way trains stopping there travel) the side `position` is on decides. Diagonal rails take no
+  stop. It is built from your inventory when in reach, else a ghost (named; `ghosts: true` always a ghost; `construct`
+  builds it). Reply: `stop`, `position`, `direction`, `serves`, `side`, `rail {position, ghost}`, `built` or `ghost`,
+  `limit`. On a line signalled for one way only, a stop for the other way is refused and the refusal names the
+  signals.
 - Gleba farming (Sol, shift09 board #368): `inspect` on an agricultural tower adds `tower`: `state` in words
   (`working (planting or harvesting)`, `waiting for plants to grow`, `no seeds in its input`, `no free cell with soil
   for its seeds`, `output full`, `no power`), `seeds` and `output` (its two inventories), `area` (`48 cells of 3x3
@@ -403,8 +452,8 @@ fh queue repeat --file plan.json
   neither does their failure: any call with `platform`, or with `surface` naming another surface than the
   character's; `configure` on an entity out of the character's reach; the planners and blueprint tools wherever they
   act (`place_ghosts`, `paste`, `blueprint_place`, `blueprint_capture`, `copy`, `cut`, `deconstruct`,
-  `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`); `circuit_set`, `wire`, `requests`, `flush`,
-  `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
+  `cancel_deconstruction`, `belt_route`, `pipe_route`, `pole_route`, `rail_route`, `train_stop`); `circuit_set`,
+  `wire`, `requests`, `flush`, `train`, `platform_create`, `platform_schedule`, `launch`, `drop`. `configure` in reach, building, mining,
   walking and inventory moves (`transfer`, `feed`, `collect`, ...) take over as before.
 - A harness update (a hot runtime install, or a restart with a changed mod) keeps a running queue going: a `wait_until` or `wait_ticks` step keeps its own clock, and a step toward a goal (`move_to`, `construct`, `build_path`, `mine`, `repair`, `kite`, `rearm`, `refuel`, `collect`) starts again. Any other step that was running is interrupted and leaves the queue paused (`fh queue resume` continues with the next step). A direct action is interrupted. Each agent whose work was cut gets `team.harness_updated` lines in its next reply.
 

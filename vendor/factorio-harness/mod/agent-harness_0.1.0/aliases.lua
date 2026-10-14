@@ -28,6 +28,9 @@ return function(api)
     inspect = {target='position'},
     configure = {target='position'},
     rotate = {target='position'},
+    -- pole_route and pipe_route call their points waypoints.
+    rail_route = {waypoints='via', start='from', ['end']='to', dryrun='dry_run', ['dry-run']='dry_run'},
+    train_stop = {station_name='name', target='position'},
   }
   -- A one-name list given where a name is taken: its name.
   local SINGLE = {prefix=true}

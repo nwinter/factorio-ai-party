@@ -248,4 +248,57 @@ eq(f2.x, 5); eq(f2.y, 1)
 eq(dryrun.runs({7, 1, 2, 3, 9, 10}), '1-3,7,9-10')
 eq(dryrun.placeable_on('landfill', 'water'), true); eq(dryrun.placeable_on('landfill', 'grass-1'), false)
 eq(dryrun.placeable_on('space-platform-foundation', 'empty-space'), true); eq(dryrun.placeable_on('space-platform-foundation', 'grass-1'), false)
+
+-- Rails (rail_route's dry run): 16 directions, a turned box per piece. Consecutive pieces of a curve meet at their
+-- ends without colliding; tiles count only where the turned box reaches; a crossing rail is the game's call; a curve
+-- takes 3 rails.
+local RAIL_MASK = mask('rail', 'object', 'water_tile', 'item', 'is_lower_object', 'floor')
+for _, n in ipairs({'straight-rail', 'half-diagonal-rail', 'curved-rail-a', 'curved-rail-b'}) do
+  prototypes.entity[n] = {name=n, type=n, collision_box={left_top={x=-0.7, y=-1}, right_bottom={x=0.7, y=1}}, collision_mask=RAIL_MASK,
+    items_to_place_this={{name='rail', count=(n == 'straight-rail' and 1 or n == 'half-diagonal-rail' and 2 or 3)}}}
+end
+local rails = dofile('mod/agent-harness_0.1.0/rails.lua'){}
+local rapi = {}
+for k, v in pairs(api) do rapi[k] = v end
+rapi.rail_box = function(name, pos, dir) return rails.box(name, pos, dir) end
+rapi.rail_overlaps = function(shape, l, t, r, b) return rails.overlaps(shape, l, t, r, b) end
+local rdry = dofile('mod/agent-harness_0.1.0/dryrun.lua')(rapi)
+-- A pond at x 10..13, y -20..-17; an east-west rail crossing at (1,-9).
+local function field(x, y) if x >= 10 and x <= 13 and y >= -20 and y <= -17 then return 'water' end return 'grass-1' end
+local crossing = {name='straight-rail', type='straight-rail', position={x=1, y=-9}, direction=4}
+local rs = world(field, {crossing})
+rs.can_place_entity = function() return true end
+local rp = {surface=rs, force=force, position={x=0, y=0}, build_distance=10, character={name='character'},
+  get_main_inventory=function() return {get_item_count=function() return 7 end} end}
+-- From an end at (1,0) heading north: straight pieces, then curve a and curve b toward north-east (the game's pieces).
+local plan, x, y, d, idx = {kind='ghosts', entities={}}, 1, 0, 0, 0
+local function lay(i)
+  local m = rails.EXT[d][i]
+  idx = idx + 1
+  plan.entities[#plan.entities+1] = {index=idx, name=m[1], position={x=x+m[3], y=y+m[4]}, direction=m[2]}
+  x, y, d = x+m[5], y+m[6], m[7]
+end
+for _ = 1, 6 do lay(1) end -- straight north to (1,-12), over the crossing at (1,-9)
+lay(3) -- curved-rail-a north -> north-north-east
+lay(2) -- curved-rail-b north-north-east -> north-east
+lay(1); lay(1) -- straight north-east
+local out = rdry.check(rp, plan)
+eq(out.summary, '10 placeable (of 10)', 'no false collisions between joined pieces or with the crossing')
+eq(out.entities, nil)
+eq(out.items.rail, 6+3+3+2)
+eq(out.tiles, nil, 'the pond is clear of every turned box')
+-- A straight piece through the pond needs landfill under it.
+local wet = rdry.check(rp, {kind='ghosts', entities={{index=1, name='straight-rail', position={x=11, y=-19}, direction=0}}})
+eq(wet.entities[1].status, 'needs_tiles'); has(wet.entities[1].why, 'stands on 4 water tiles: needs 4 landfill first')
+-- A diagonal piece whose box around it reaches a pond tile its turned box does not touch.
+local diag = rdry.check(rp, {kind='ghosts', entities={{index=1, name='straight-rail', position={x=8, y=-15}, direction=2}}})
+eq(diag.summary, '1 placeable (of 1)', 'the corner tile is outside the turned box')
+-- A build of a curve names the rail item: 3 of them.
+local b3 = rdry.check(rp, {kind='build', entities={{index=1, name='curved-rail-a', position={x=1, y=-2}, direction=0, item='rail'}}})
+eq(b3.items.rail, 3)
+-- The same rail twice is a collision; other pieces at one spot (a crossing) are not.
+local twice = rdry.check(rp, {kind='ghosts', entities={{index=1, name='straight-rail', position={x=1, y=-21}, direction=0},
+  {index=2, name='straight-rail', position={x=1, y=-21}, direction=8}, {index=3, name='straight-rail', position={x=1, y=-21}, direction=4}}})
+eq(twice.entities[1].status, 'blocked'); has(twice.entities[1].why, 'collides with planned #1')
+eq(twice.summary, '2 placeable, 1 blocked (of 3)')
 print('dryrun: ok')
