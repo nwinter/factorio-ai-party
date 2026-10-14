@@ -579,7 +579,9 @@ M.UNDER={['straight-rail']=true,['half-diagonal-rail']=true,['curved-rail-a']=tr
 -- given by unit_number (Sol, shift08: a robot over a chest made inspect, transfer and collect there ambiguous).
 M.PASSING={['logistic-robot']=true,['construction-robot']=true,['combat-robot']=true,['capture-robot']=true,unit=true,
   ['spider-unit']=true,projectile=true,['artillery-projectile']=true,fire=true,stream=true,sticker=true,beam=true,
-  explosion=true,['smoke-with-trigger']=true,['highlight-box']=true,['speech-bubble']=true,['particle-source']=true}
+  explosion=true,['smoke-with-trigger']=true,['highlight-box']=true,['speech-bubble']=true,['particle-source']=true,
+  -- an item request (a turret ghost's ammo, built in) sits on its building (Astra 08:43: rearm on 6 guns was ambiguous)
+  ['item-request-proxy']=true}
 function M.passing(e)
   if M.PASSING[e.type] then return true end
   local ok,selectable=pcall(function() return e.prototype.selectable_in_game end)
