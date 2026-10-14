@@ -119,7 +119,8 @@ do
     position=function(v) return {x=v.x,y=v.y} end,
     directions={north=0,east=4,south=8,west=12},
     chunk_of=function(pos) return {x=math.floor(pos.x/32),y=math.floor(pos.y/32)} end,
-    tile_fixes=function(_,_,_,pos) return water[key(pos.x,pos.y)] and {{x=pos.x,y=pos.y,tile='water',item='landfill'}} or {} end,
+    tile_info=function(_,_,name) return name=='water' and {collides=true,item='landfill'} or name=='lava' and {collides=true} or {collides=false} end,
+    tiles={stands_fn=function() return function(x,y) return not water[key(x,y)] and not lava[key(x,y)] end end},
     only_obstacles=function(_,_,pos) return trees[key(pos.x,pos.y)] or false end}
   -- 600 tiles of open ground: one straight run, within the budget.
   local r=R2.plan(q,{from={x=0,y=0},to={x=600,y=0}})
@@ -180,6 +181,59 @@ do
   for y=-40,40 do blocked[key(10,y)]=true end
   local ok,err=pcall(R2.plan,q,{from={x=0,y=0},to={x=20,y=0},undergrounds=false})
   assert(not ok and err:find('the nearest tile reached is (9.5,',1,true) and err:find('within 24 tiles of each leg',1,true),err)
+  blocked={}
+  -- A goal closed in is named as such once the search has gone on a while (no full budget spent).
+  for _,d in ipairs({{-1,0},{1,0},{0,-1},{0,1}}) do blocked[key(20+d[1],d[2])]=true end
+  ok,err=pcall(R2.plan,q,{from={x=0,y=0},to={x=20,y=0}})
+  assert(not ok and err:find('to (20.5,0.5) is closed in: no tile next to it can take the belt that would feed it',1,true),err)
+  assert(err:find('1000 expansions',1,true),err)
+  blocked={}
+  -- ... or a few tiles around it that a thick ring closes in (no hop crosses it).
+  for x=10,30 do for y=-10,10 do if math.abs(x-20)>2 or math.abs(y)>2 then if math.abs(x-20)<=8 and math.abs(y)<=8 then blocked[key(x,y)]=true end end end end
+  ok,err=pcall(R2.plan,q,{from={x=0,y=0},to={x=20,y=0}})
+  assert(not ok and err:find('is closed in: a line can reach it from only 24 tiles around it',1,true),err)
+  blocked={}
+  -- Via legs keep off the tiles of the legs before them (here the third leg crosses the first under ground).
+  r=R2.plan(q,{from={x=0,y=0},to={x=6,y=-4},via={{x=12,y=0},{x=6,y=4}}})
+  local tiles_={}
+  for _,e in ipairs(r.entities) do
+    local k=key(e.position.x,e.position.y)
+    assert(not tiles_[k],'two entities on '..k); tiles_[k]=true
+  end
+  -- The return line crosses under the first where its side is blocked further than it can go round or hop
+  -- (an underground is entered straight, so it steps a row out to turn into each crossing: apart counts those).
+  for x=8,12 do for y=1,40 do blocked[key(x,y)]=true end end
+  r=R2.plan(q,{from={x=0,y=0},to={x=20,y=0},['return']=true,return_side='right'})
+  eq(r.route,'E21'); eq(r['return'].side,'right'); eq(r['return'].crossings,2); eq(r['return'].route,'W6 S1 W1 N1 uN2 W7 S1 uS2 W1 N1 W6')
+  eq(r['return'].apart,12)
+  tiles_={}
+  for _,e in ipairs(r.entities) do
+    local k=key(e.position.x,e.position.y)
+    assert(not tiles_[k],'two entities on '..k); tiles_[k]=true
+  end
+  blocked={}
+  -- A new underground pair never lands where another of its kind on the axis would pair with it:
+  -- an unpaired entrance at (2,0) heading east keeps the hop over the wall at x=6 off row 0.
+  local ug={}
+  local surface3={
+    can_place_entity=function(a) local k=key(a.position.x,a.position.y); return not blocked[k] and not ug[k] end,
+    find_entities_filtered=function(f)
+      if f.ghost_type then return {} end
+      local out={}
+      for _,e in pairs(ug) do out[#out+1]=e end
+      return out
+    end,
+    get_tile=surface2.get_tile}
+  local q3={surface=surface3,force=mine}
+  ug[key(2,0)]={valid=true,type='underground-belt',name='underground-belt',position={x=2.5,y=0.5},direction=4,belt_to_ground_type='input',unit_number=7}
+  for y=-40,40 do blocked[key(6,y)]=true end
+  r=R2.plan(q3,{from={x=3,y=0},to={x=12,y=0}})
+  for _,e in ipairs(r.entities) do if e.type then assert(e.position.y~=0.5,'an underground on row 0 at '..e.position.x) end end
+  assert(r.undergrounds==1,r.route)
+  -- Without it, the hop stays on row 0.
+  ug={}
+  r=R2.plan(q3,{from={x=3,y=0},to={x=12,y=0}})
+  eq(r.route,'E2 uE5 E2')
   blocked={}
 end
 print('route: ok')

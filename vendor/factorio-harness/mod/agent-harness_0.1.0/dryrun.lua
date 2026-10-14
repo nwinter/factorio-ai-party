@@ -156,6 +156,25 @@ return function(api)
     return v
   end
 
+  -- For route planners (belt_route), per tile name in the caller's cache (one
+  -- plan): whether the entity collides with that tile kind, and the unlocked
+  -- tile item that makes it buildable (item; nil when none can).
+  function M.tile_info(force, proto, tile_name, cache)
+    local v = cache[tile_name]
+    if v then return v end
+    local mask = cache.mask__
+    if not mask then mask = layers(try(function() return proto.collision_mask end)); cache.mask__ = mask end
+    local tp = prototypes.tile[tile_name]
+    local tl = tp and layers(tp.collision_mask) or {out_of_map=true}
+    v = {collides=collide(mask, tl)}
+    if v.collides and tp then
+      local fix = remedy(force, tile_name, tl, mask)
+      if fix and not fix:find(' ', 1, true) then v.item = fix end
+    end
+    cache[tile_name] = v
+    return v
+  end
+
   -- The tiles under an entity at pos that it cannot stand on now (its
   -- collision mask against each tile; a tile ghost already ordered there that
   -- it can stand on counts as laid), each {x, y, tile, item}: item is the
