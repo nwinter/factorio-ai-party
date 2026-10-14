@@ -458,8 +458,9 @@ fh sleep 900 --until researched                       # ...or until the research
     name, position, direction, status, why, reach}` for every entry that is not plainly placeable (`details: true`:
     every entry, with `footprint` tiles `x0,y0..x1,y1`); `index` is `copy.index` under `repeat`; `asked` when the
     position snaps (odd sizes to tile centres, even ones to corners). `status`: `ok`, `after_tiles` (placeable once
-    the plan's own tiles under it are laid), `needs_tiles`, `exists` (built or ghosted there already; a paste skips
-    it, place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
+    the plan's own tiles under it are laid; a paste lays both together, while place_ghosts places entity ghosts
+    before tile ghosts and a build batch goes entry by entry, which the row says), `needs_tiles`, `exists` (built or
+    ghosted there already; a paste skips it, place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
     another character, a cliff, an earlier entry of the plan: `collides with planned #5 stone-furnace at (14,-88)`),
     tiles it cannot stand on (`(60.5,-0.5) is outside the map`, a tile no tile item makes buildable), a broken tile
     rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, so a

@@ -287,9 +287,13 @@ return function(api)
             return s.can_place_entity{name=e.name, position=rec.pos, direction=rec.dir, force=force, build_check_type=check_type, forced=not manual or nil}
           end)
           rec.engine = engine
-          local covered = false
+          -- Planned tiles under it, and (a build batch) the last entry laying one.
+          local covered, last_tile = false, nil
           for x = x0, x1 do
-            for y = y0, y1 do if planned[key(x, y)] then covered = true end end
+            for y = y0, y1 do
+              local t = planned[key(x, y)]
+              if t then covered = true; if t.index and (not last_tile or t.index > last_tile) then last_tile = t.index end end
+            end
           end
           if manual and same and same.type == 'entity-ghost' then same = nil; rec.note = 'builds the ghost there' end
           -- Tiles count whatever the engine says now: on a platform it takes
@@ -318,7 +322,15 @@ return function(api)
             rec.note = string.format('stands on %d %s tile%s: needs %s first%s', #tile_need, tile_need[1].tile, #tile_need == 1 and '' or 's', table.concat(parts, ', '),
               engine == true and not manual and ' (its ghost goes there now; nothing builds it before that)' or '')
           elseif engine == true then rec.status = 'ok'
-          elseif covered then rec.status = 'after_tiles'; rec.note = 'placeable once the planned tiles under it are laid'
+          elseif covered then
+            rec.status = 'after_tiles'; rec.note = 'placeable once the planned tiles under it are laid'
+            -- What the real call does first: place_ghosts places entity ghosts
+            -- before tile ghosts; a build batch goes entry by entry.
+            if kind == 'ghosts' then
+              rec.note = rec.note..'; the game refuses its ghost on the tiles there now, and place_ghosts places entity ghosts before tile ghosts'
+            elseif manual and last_tile and e.index and last_tile > e.index then
+              rec.note = rec.note..string.format('; entry #%d of this batch lays one of them, after this one', last_tile)
+            end
           elseif obstacles > 0 then rec.status = 'ok'
           elseif mine and manual then rec.status = 'ok'
           else
@@ -784,7 +796,9 @@ return function(api)
     -- Rows: every entity that is not plainly placeable (all with details).
     local rows = {}
     for _, r in ipairs(recs) do
-      local problem = r.status == 'blocked' or r.status == 'needs_tiles' or r.reach ~= nil or (r.status == 'exists' and kind ~= 'paste')
+      -- A paste lays its tiles and entities together; the other calls go in order.
+      local problem = r.status == 'blocked' or r.status == 'needs_tiles' or r.reach ~= nil
+        or ((r.status == 'exists' or r.status == 'after_tiles') and kind ~= 'paste')
       if problem then nproblems = nproblems + 1 end
       if (problem or plan.details) and #rows < (plan.details and 256 or MAX_ROWS) then
         local row = {index=r.copy and (r.copy..'.'..r.index) or r.index, name=r.name, position=r.pos or nil,

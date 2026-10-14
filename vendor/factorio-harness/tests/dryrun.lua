@@ -184,6 +184,12 @@ eq(out.items['small-electric-pole'], 2); eq(out.items.landfill, 4)
 eq(out.missing['assembling-machine-1'], 1, 'two placeable machines, one held'); eq(out.missing['small-electric-pole'], nil, 'one held, one being crafted')
 eq(out.missing.landfill, 4); has(out.missing_from, 'hand-craft queue')
 
+-- A build batch: the furnace on the pond, then the landfill under it (entry 2): the order shows.
+local late = dryrun.check(p, {kind='build', entities={{index=1, name='stone-furnace', position={x=20, y=10}, item='stone-furnace'}},
+  tiles={{index=2, name='landfill', item='landfill', position={x=19.5, y=9.5}}, {index=2, name='landfill', item='landfill', position={x=20.5, y=9.5}},
+    {index=2, name='landfill', item='landfill', position={x=19.5, y=10.5}}, {index=2, name='landfill', item='landfill', position={x=20.5, y=10.5}}}})
+eq(late.entities[1].status, 'after_tiles'); has(late.entities[1].why, 'entry #2 of this batch lays one of them, after this one')
+
 -- Ghosts: a tree is marked, not a blocker; landfill planned under a furnace
 -- on the pond makes it placeable after the tiles; landfill on grass is refused;
 -- the engine's yes over a machine (an upgrade) stands.
@@ -202,7 +208,7 @@ local gr = {}
 for _, r in ipairs(g.entities) do gr[r.index] = r end
 eq(gr[1].status, 'ok'); has(gr[1].why, '1 tree/rock there get marked for removal')
 eq(gr[1].footprint, '-9,5..-8,6', 'details: footprints')
-eq(gr[2].status, 'after_tiles'); has(gr[2].why, 'placeable once the planned tiles under it are laid')
+eq(gr[2].status, 'after_tiles'); has(gr[2].why, 'placeable once the planned tiles under it are laid; the game refuses its ghost on the tiles there now, and place_ghosts places entity ghosts before tile ghosts')
 eq(gr[3].status, 'ok'); has(gr[3].why, 'replaces assembling-machine-1 (-10.5,-6.5)')
 eq(g.tiles.planned, 4); eq(g.tiles.refused, 1); has(g.tiles.refused_rows[1], '(0.5,5.5) landfill: landfill cannot go on grass-1')
 eq(g.standing.reach, 10); eq(g.entities[1].reach, nil, 'ghosts: reach is no problem of the plan')
