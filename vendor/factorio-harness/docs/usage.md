@@ -241,12 +241,11 @@ fh call status
   - Reply: `route` (`E12 uE5 S3`: belt runs by facing, `uE5` an underground pair east spanning 5), `tiles`, `items`,
     `missing` (against your inventory), `arrival` (`straight`, `curve`, `side_load` with `lane`, or `end`), `legs`
     (tiles per leg), `over_trees_or_plants`, `landfill`, `return {route, tiles, side, from, to, crossings, apart,
-    short_of}`, `cost
-    {placement_checks, expansions}`, `placed`, `failed`, `obstacles_marked`, `tiles_laid`; `details: true` lists every
-    entity (a return belt has `line: "return"`).
+    short_of}`, `cost {placement_checks, expansions}`, `placed`, `failed`, `obstacles_marked`, `tiles_laid`;
+    `details: true` lists every entity (a return belt has `line: "return"`).
   - With no route the error names the nearest tile reached, what stands and which tiles lie around it, what the
     straight line crosses that a belt cannot stand on, and the search's reach and cost. A blocked or uncharted end or
-    via point fails at once. An end closed in (a line can reach it from only a few tiles around it, up to 600) is named
+    via point fails at once, naming what holds it (one of our belts, water or wetland, an entity). An end closed in (a line can reach it from only a few tiles around it, up to 600) is named
     as such after 1000 expansions.
   - `dry_run: true` checks every belt as a `place_ghosts` dry run does (what blocks, tiles needing landfill, standing
     spots, items against what you hold); `belt_route` holds the plan.
