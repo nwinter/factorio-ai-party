@@ -20,7 +20,7 @@
 -- 5 s, 1 min and 10 min.
 return function(api)
   local M = {}
-  local SAMPLE, MAP_TICKS, WATCH_TICKS, WINDOW = 300, 18000, 1800, 18000
+  local SAMPLE, WATCH_TICKS, WINDOW = 300, 1800, 18000
   local HIGH, HIGH_TICKS = 0.85, 7200
   local BUSY_TICKS, FUEL_LOW, UNFILLED_TICKS = 36000, 10, 3600
   -- boiler_fuel steps (Haiku, shift09: 10 minutes left was too late to feed by hand): told at 20, again at 10 and 5.
@@ -40,7 +40,10 @@ return function(api)
   local FUEL_SCAN = 300   -- chests and belt tiles read per alert (00:26 rule: bounded reads on the live world)
   local FUELS = {'coal', 'solid-fuel', 'wood', 'rocket-fuel', 'nuclear-fuel'}
   local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 3600, 12   -- the view: kept 60 s (task-statuscost)
-  local SLICE = 1500   -- machines read a tick by the background view
+  -- Entities read a step by the background view and pole map, and boilers whose feeders are read a step (operator
+  -- 04:00: 1500 a tick, and every boiler's feeders and belts in one tick, burst in single game seconds).
+  local SLICE, BOILER_SLICE = 150, 2
+  local walk = api.walk or require('walk'){state=api.state}
   local GENERATORS = {'generator', 'burner-generator', 'solar-panel', 'accumulator', 'fusion-generator', 'electric-energy-interface'}
   local MACHINES = {'assembling-machine', 'furnace', 'mining-drill', 'lab', 'inserter', 'beacon', 'radar', 'roboport', 'pump',
     'electric-turret', 'rocket-silo', 'agricultural-tower', 'asteroid-collector', 'lamp', 'loader', 'loader-1x1', 'offshore-pump'}
@@ -66,23 +69,60 @@ return function(api)
   -- Every 30 s: which pole stands for each electric network (one per network
   -- id), how many poles it has and where; and the logistic networks' robots
   -- and requests. Every 5 s: each network's draw.
+  local function pole_into(map, e, surface, f)
+    local id = e.valid and try(function() return e.electric_network_id end)
+    if id then
+      local m = map[id]
+      if not m then m = {id=id, pole=e, poles=0, sx=0, sy=0, surface=surface.name, force=f.name}; map[id] = m end
+      m.poles, m.sx, m.sy = m.poles + 1, m.sx + e.position.x, m.sy + e.position.y
+    end
+  end
   local function map_poles(n)
     local map = {}
     for _, f in ipairs(forces()) do
       for _, surface in ipairs(surfaces()) do
         local poles = try(function() return surface.find_entities_filtered{type='electric-pole', force=f, limit=MAX_SCAN} end) or {}
-        for _, e in ipairs(poles) do
-          local id = e.valid and try(function() return e.electric_network_id end)
-          if id then
-            local m = map[id]
-            if not m then m = {id=id, pole=e, poles=0, sx=0, sy=0, surface=surface.name, force=f.name}; map[id] = m end
-            m.poles, m.sx, m.sy = m.poles + 1, m.sx + e.position.x, m.sy + e.position.y
-          end
-        end
+        for _, e in ipairs(poles) do pole_into(map, e, surface, f) end
       end
     end
     n.map, n.map_tick = map, game.tick
     for id in pairs(n.samples) do if not map[id] then n.samples[id] = nil end end
+  end
+  -- The pole map in the background (operator 04:00: the view's map step found
+  -- every pole on every surface at once each minute, 122 ms in one game
+  -- second): per force and surface a walk of the poles (walk.lua), a band or
+  -- SLICE poles a step, the steps spread over VIEW_TICKS; the map is replaced
+  -- when the walk ends.
+  local function map_step(n, tick)
+    n.map_bg = true
+    local job = n.map_job
+    if not job then
+      if n.map_tick and tick - n.map_tick < VIEW_TICKS then return end
+      local todo = {}
+      for _, f in ipairs(forces()) do for _, s in ipairs(surfaces()) do todo[#todo+1] = {force=f.name, surface=s.index} end end
+      n.map_job = {start=tick, todo=todo, i=1, map={}, steps=0, every=walk.every(n.map_steps, VIEW_TICKS)}
+      return
+    end
+    if not walk.due(job, tick, VIEW_TICKS) then return end
+    job.steps = job.steps + 1
+    local pr = job.todo[job.i]
+    if not pr then
+      n.map, n.map_tick, n.map_steps, n.map_job = job.map, job.start, job.steps, nil
+      for id in pairs(n.samples) do if not n.map[id] then n.samples[id] = nil end end
+      return
+    end
+    local f, s = game.forces[pr.force], game.get_surface(pr.surface)
+    if not (f and s) then job.i, job.walk, job.list = job.i + 1, nil, nil
+    elseif job.list then
+      local last = math.min(#job.list, job.at + SLICE - 1)
+      for k = job.at, last do pole_into(job.map, job.list[k], s, f) end
+      job.at = last + 1
+      if job.at > #job.list then job.list = nil end
+    else
+      job.walk = job.walk or walk.start(s)
+      local list = walk.band(job.walk, s, {type='electric-pole', force=f, limit=MAX_SCAN})
+      if list then job.list, job.at = list, 1 else job.i, job.walk = job.i + 1, nil end
+    end
   end
   local function sample(n)
     for id, m in pairs(n.map) do
@@ -151,13 +191,19 @@ return function(api)
     n.busy, n.unfilled = busy, unfilled
   end
   -- task-statuscost: the requests are looked at every 30 s (unfilled for 60 s,
-  -- no idle robot for 10 min); the poles are mapped again every 5 min in the
-  -- background, and by the view when its map is older than the view's age.
+  -- no idle robot for 10 min); the poles are mapped again by map_step, a walk
+  -- spread over each VIEW_TICKS (at once only when there is no map yet).
   function M.tick(tick)
     M.view_tick(tick)
-    if tick % SAMPLE ~= 0 then return end
     local n = store()
-    if not n.map_tick or tick - n.map_tick >= MAP_TICKS then map_poles(n) end
+    local ok, err = pcall(map_step, n, tick)
+    if not ok then
+      n.map_job = nil
+      n.map_errors = {count=((n.map_errors or {}).count or 0) + 1, last=tostring(err), tick=tick}
+      n.map_tick = tick   -- the last map is kept another VIEW_TICKS
+    end
+    if tick % SAMPLE ~= 0 then return end
+    if not n.map_tick then map_poles(n) end
     if not n.watch_tick or tick - n.watch_tick >= WATCH_TICKS then watch_logistics(n); n.watch_tick = tick end
     sample(n)
   end
@@ -210,7 +256,7 @@ return function(api)
   -- view: task-statuscost, 01:15 on world n: networks.alert_groups 55 ms when
   -- one call rebuilt the view): the generators, the machines, the boilers,
   -- the rows. Between steps ctx holds plain data and entities, linked by id.
-  local function e_begin(n, f, surface)
+  local function e_ctx(n, f, surface)
     local nets = {}
     for id, m in pairs(n.map) do
       if m.surface == surface.name and m.force == f.name then
@@ -218,65 +264,66 @@ return function(api)
           acc=0, acc_j=0, acc_buf=0, machines=0, low=0, none=0, boilers={}, gens=0}
       end
     end
-    local seg_net, steam = {}, {}
-    for _, e in ipairs(try(function() return surface.find_entities_filtered{type=GENERATORS, force=f, limit=MAX_SCAN} end) or {}) do
-      local net = e.valid and nets[try(function() return e.electric_network_id end) or -1]
-      if net then
-        net.gens = net.gens + 1
-        if e.type == 'solar-panel' then net.solar = net.solar + 1; net.solar_peak_kw = net.solar_peak_kw + solar_peak(e) * 60 / 1000
-        elseif e.type == 'accumulator' then
-          net.acc = net.acc + 1
-          net.acc_j = net.acc_j + (try(function() return e.energy end) or 0)
-          net.acc_buf = net.acc_buf + (try(function() return e.electric_buffer_size end) or 0)
-        elseif e.type ~= 'electric-energy-interface' then
-          net.cap_kw = net.cap_kw + max_output(e) * 60 / 1000
-          if e.type == 'generator' then
-            local sid = segment(e, 1)
-            if sid then seg_net[sid] = {id=net.id, gen=e.name} end
-            steam[#steam+1] = {id=net.id, gen=e.name, x=e.position.x, y=e.position.y}
-          end
+    return {nets=nets, seg_net={}, steam={}}
+  end
+  -- One generator, solar panel or accumulator into its network.
+  local function e_gen(ctx, e)
+    local net = e.valid and ctx.nets[try(function() return e.electric_network_id end) or -1]
+    if net then
+      net.gens = net.gens + 1
+      if e.type == 'solar-panel' then net.solar = net.solar + 1; net.solar_peak_kw = net.solar_peak_kw + solar_peak(e) * 60 / 1000
+      elseif e.type == 'accumulator' then
+        net.acc = net.acc + 1
+        net.acc_j = net.acc_j + (try(function() return e.energy end) or 0)
+        net.acc_buf = net.acc_buf + (try(function() return e.electric_buffer_size end) or 0)
+      elseif e.type ~= 'electric-energy-interface' then
+        net.cap_kw = net.cap_kw + max_output(e) * 60 / 1000
+        if e.type == 'generator' then
+          local sid = segment(e, 1)
+          if sid then ctx.seg_net[sid] = {id=net.id, gen=e.name} end
+          ctx.steam[#ctx.steam+1] = {id=net.id, gen=e.name, x=e.position.x, y=e.position.y}
         end
       end
     end
-    return {nets=nets, seg_net=seg_net, steam=steam}
   end
-  local function machine_list(f, surface)
-    return try(function() return surface.find_entities_filtered{type=MACHINES, force=f, limit=MAX_SCAN} end) or {}
+  local function e_begin(n, f, surface)
+    local ctx = e_ctx(n, f, surface)
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{type=GENERATORS, force=f, limit=MAX_SCAN} end) or {}) do e_gen(ctx, e) end
+    return ctx
   end
-  -- Machines from..to of a found list into the networks (the background view reads SLICE a tick).
-  local function e_machines_read(ctx, list, from, to)
-    local nets = ctx.nets
-    local low, none = defines.entity_status and defines.entity_status.low_power, defines.entity_status and defines.entity_status.no_power
-    for i = from or 1, to or #list do
-      local e = list[i]
-      local net = e.valid and nets[try(function() return e.electric_network_id end) or -1]
-      if net then
-        net.machines = net.machines + 1
-        if e.status == low then net.low = net.low + 1 elseif e.status == none then net.none = net.none + 1 end
-      end
+  -- One machine into its network.
+  local function e_machine(ctx, e)
+    local net = e.valid and ctx.nets[try(function() return e.electric_network_id end) or -1]
+    if net then
+      local st = defines.entity_status or {}
+      net.machines = net.machines + 1
+      if e.status == st.low_power then net.low = net.low + 1 elseif e.status == st.no_power then net.none = net.none + 1 end
     end
   end
-  local function e_machines(ctx, f, surface) e_machines_read(ctx, machine_list(f, surface)) end
+  local function e_machines(ctx, f, surface)
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{type=MACHINES, force=f, limit=MAX_SCAN} end) or {}) do e_machine(ctx, e) end
+  end
+  -- One boiler to its network: the generators whose steam it shares (its
+  -- output's fluid segment), else the nearest generator within NEAR_BOILER
+  -- tiles. The generators must all be read first.
+  local function e_boiler(ctx, e)
+    local j = e.valid and fuel_energy(e)
+    if j then
+      local sid = segment(e, try(function() return #e.fluidbox end) or 2)
+      local to = sid and ctx.seg_net[sid]
+      if not to then
+        local best = NEAR_BOILER * NEAR_BOILER
+        for _, g in ipairs(ctx.steam) do
+          local d = (g.x - e.position.x) ^ 2 + (g.y - e.position.y) ^ 2
+          if d <= best then best, to = d, g end
+        end
+      end
+      local net = to and ctx.nets[to.id]
+      if net then net.boilers[#net.boilers+1] = {e=e, j=j, gen=to.gen} end
+    end
+  end
   local function e_boilers(ctx, f, surface)
-    local seg_net, steam = ctx.seg_net, ctx.steam
-    -- A boiler feeds the generators whose steam it shares (its output's fluid
-    -- segment), else the nearest generator within NEAR_BOILER tiles.
-    for _, e in ipairs(try(function() return surface.find_entities_filtered{type='boiler', force=f, limit=MAX_SCAN} end) or {}) do
-      local j = e.valid and fuel_energy(e)
-      if j then
-        local sid = segment(e, try(function() return #e.fluidbox end) or 2)
-        local to = sid and seg_net[sid]
-        if not to then
-          local best = NEAR_BOILER * NEAR_BOILER
-          for _, g in ipairs(steam) do
-            local d = (g.x - e.position.x) ^ 2 + (g.y - e.position.y) ^ 2
-            if d <= best then best, to = d, g end
-          end
-        end
-        local net = to and ctx.nets[to.id]
-        if net then net.boilers[#net.boilers+1] = {e=e, j=j, gen=to.gen} end
-      end
-    end
+    for _, e in ipairs(try(function() return surface.find_entities_filtered{type='boiler', force=f, limit=MAX_SCAN} end) or {}) do e_boiler(ctx, e) end
   end
   local function e_rows(ctx, n, surface, f)
     local nets = ctx.nets
@@ -297,7 +344,7 @@ return function(api)
             -- Each boiler's own fuel in minutes at an even share of the draw;
             -- low: under the first step and not refilled (no feeder able to
             -- bring more, M.boiler_supply: b.fed; or draining, DRAINS).
-            M.boiler_supply(net.boilers, surface, f)
+            if not ctx.supplied then M.boiler_supply(net.boilers, surface, f) end   -- (the background view reads it in slices)
             local each, own = fed_kw * 1000 / #net.boilers, 0
             net.fed = 0
             local st = store()
@@ -543,10 +590,13 @@ return function(api)
     return rows
   end
 
-  local function turrets(f, surface)
-    local by = {}
-    for _, e in ipairs(try(function() return surface.find_entities_filtered{type=TURRETS, force=f, limit=MAX_SCAN} end) or {}) do
-      if e.valid then by[e.name] = (by[e.name] or 0) + 1 end
+  -- The turrets by name (by: counted already by the background view) and ammo used in the last hour.
+  local function turrets(f, surface, by)
+    if not by then
+      by = {}
+      for _, e in ipairs(try(function() return surface.find_entities_filtered{type=TURRETS, force=f, limit=MAX_SCAN} end) or {}) do
+        if e.valid then by[e.name] = (by[e.name] or 0) + 1 end
+      end
     end
     local used = {}
     local stats = try(function() return f.get_item_production_statistics(surface) end)
@@ -584,9 +634,30 @@ return function(api)
     n.views[f.name] = v
     return v
   end
-  -- The background view: one step a tick (the pole map; per surface the
-  -- generators, the machines, the boilers and rows, the logistic networks,
-  -- the turrets; then it is the view), started when the view is VIEW_TICKS old.
+  -- The background view, started when the view is VIEW_TICKS old, one step
+  -- every few ticks so it spreads over that (walk.every). Per surface: one
+  -- walk of generators, machines, boilers and turrets together, a band or
+  -- SLICE entities a step (operator 04:00: a whole-surface find a step burst
+  -- in single game seconds); the boilers to their networks; their feeders,
+  -- BOILER_SLICE boilers a step; the rows; the logistic networks; the turret
+  -- line. The pole map is its own job (map_step).
+  local VIEW_TYPES, IS_GEN, IS_MACHINE, IS_TURRET = {}, {}, {}, {}
+  for _, list in ipairs({{GENERATORS, IS_GEN}, {MACHINES, IS_MACHINE}, {{'boiler'}, {}}, {TURRETS, IS_TURRET}}) do
+    for _, t in ipairs(list[1]) do
+      list[2][t] = true
+      local seen = false
+      for _, x in ipairs(VIEW_TYPES) do if x == t then seen = true end end
+      if not seen then VIEW_TYPES[#VIEW_TYPES+1] = t end
+    end
+  end
+  local function view_entity(ctx, e)
+    if not e.valid then return end
+    local t = e.type
+    if IS_GEN[t] then e_gen(ctx, e) end
+    if IS_MACHINE[t] then e_machine(ctx, e) end
+    if t == 'boiler' then ctx.boiler_list[#ctx.boiler_list+1] = e end
+    if IS_TURRET[t] then ctx.turrets[e.name] = (ctx.turrets[e.name] or 0) + 1 end
+  end
   function M.view_tick(tick)
     local n = store()
     n.view_bg = true
@@ -602,64 +673,78 @@ return function(api)
     end
   end
   function M.view_step(n, f, tick)
-    do
-      local job = n.view_jobs[f.name]
-      local v = n.views[f.name]
-      if not job and (not v or tick - v.tick >= VIEW_TICKS) then
-        local steps = {{step='map'}}
-        for _, s in ipairs(surfaces()) do
-          for _, step in ipairs({'begin', 'machines', 'boilers', 'logistic', 'turrets'}) do steps[#steps+1] = {step=step, surface=s.name} end
-        end
-        steps[#steps+1] = {step='done'}
-        n.view_jobs[f.name] = {start=tick, steps=steps, i=1, out={}, ctx={}}
-      elseif job then
-        local step = job.steps[job.i]
-        job.i = job.i + 1
-        -- The machines: found in one tick, then read SLICE a tick (the step repeats until the list is read).
-        if step.step == 'machines' and job.ctx[step.surface] then
-          local ctx = job.ctx[step.surface]
-          local surface0
-          for _, s in ipairs(surfaces()) do if s.name == step.surface then surface0 = s end end
-          if surface0 and not job.list then job.list = machine_list(f, surface0); job.at = 1; job.i = job.i - 1
-          elseif surface0 then
-            local last = math.min(#job.list, job.at + SLICE - 1)
-            e_machines_read(ctx, job.list, job.at, last)
-            job.at = last + 1
-            if job.at <= #job.list then job.i = job.i - 1 else job.list, job.at = nil, nil end
-          end
-          step = {step='skip'}
-        end
-        local surface
-        for _, s in ipairs(surfaces()) do if s.name == step.surface then surface = s end end
-        local row = surface and job.out[step.surface]
-        if surface and not row then row = {name=surface.name, logistic={}}; job.out[step.surface] = row end
-        if step.step == 'map' then fresh_map(n)
-        elseif not surface and step.step ~= 'done' then  -- the surface is gone
-        elseif step.step == 'begin' then job.ctx[step.surface] = e_begin(n, f, surface)
-        elseif step.step == 'machines' then  -- (read above; no context: its begin step failed)
-        elseif step.step == 'boilers' then
-          local ctx = job.ctx[step.surface]
-          if ctx then
-            e_boilers(ctx, f, surface)
-            row.electric = e_rows(ctx, n, surface, f)
-          end
-          job.ctx[step.surface] = nil
-        elseif step.step == 'logistic' then row.logistic = logistic(n, f, surface)
-        elseif step.step == 'turrets' then row.turrets = turrets(f, surface)
-        else
-          local v2 = {tick=job.start, surfaces={}}
-          for _, s in ipairs(surfaces()) do
-            local r = job.out[s.name]
-            if r and ((r.electric and #r.electric > 0) or #r.logistic > 0 or r.turrets) then
-              r.electric = r.electric or {}
-              v2.surfaces[#v2.surfaces+1] = r
-            end
-          end
-          n.views[f.name] = v2
-          n.view_jobs[f.name] = nil
+    local job = n.view_jobs[f.name]
+    local v = n.views[f.name]
+    if not job and (not v or tick - v.tick >= VIEW_TICKS) then
+      -- (with no pole map yet the first is made here at once)
+      if not n.map_tick then fresh_map(n) end
+      local steps = {}
+      for _, s in ipairs(surfaces()) do
+        for _, step in ipairs({'walk', 'boilers', 'supply', 'rows', 'logistic', 'turrets'}) do steps[#steps+1] = {step=step, surface=s.name} end
+      end
+      steps[#steps+1] = {step='done'}
+      n.view_steps = n.view_steps or {}
+      n.view_jobs[f.name] = {start=tick, steps=steps, i=1, out={}, ctx={}, n=0, every=walk.every(n.view_steps[f.name], VIEW_TICKS)}
+      return
+    end
+    if not job or not walk.due(job, tick, VIEW_TICKS) then return end
+    job.n = job.n + 1
+    local step = job.steps[job.i]
+    if step.step == 'done' then
+      local v2 = {tick=job.start, surfaces={}}
+      for _, s in ipairs(surfaces()) do
+        local r = job.out[s.name]
+        if r and ((r.electric and #r.electric > 0) or #r.logistic > 0 or r.turrets) then
+          r.electric = r.electric or {}
+          v2.surfaces[#v2.surfaces+1] = r
         end
       end
+      n.views[f.name] = v2
+      n.view_steps[f.name] = job.n
+      n.view_jobs[f.name] = nil
+      return
     end
+    local surface
+    for _, s in ipairs(surfaces()) do if s.name == step.surface then surface = s end end
+    if not surface then job.i, job.walk, job.list = job.i + 1, nil, nil; job.ctx[step.surface] = nil; return end  -- the surface is gone
+    local row = job.out[step.surface] or {name=surface.name, logistic={}}
+    job.out[step.surface] = row
+    local ctx = job.ctx[step.surface]
+    if step.step == 'walk' then
+      if not ctx then ctx = e_ctx(n, f, surface); ctx.boiler_list, ctx.turrets = {}, {}; job.ctx[step.surface] = ctx end
+      if job.list then
+        local last = math.min(#job.list, job.at + SLICE - 1)
+        for k = job.at, last do view_entity(ctx, job.list[k]) end
+        job.at = last + 1
+        if job.at > #job.list then job.list = nil end
+      else
+        job.walk = job.walk or walk.start(surface)
+        local list = walk.band(job.walk, surface, {type=VIEW_TYPES, force=f, limit=MAX_SCAN})
+        if list then job.list, job.at = list, 1 else job.i, job.walk = job.i + 1, nil end
+      end
+      return
+    end
+    job.i = job.i + 1
+    if not ctx then
+      if step.step == 'turrets' then row.turrets = turrets(f, surface, {}) end
+      if step.step == 'logistic' then row.logistic = logistic(n, f, surface) end
+    elseif step.step == 'boilers' then
+      for _, e in ipairs(ctx.boiler_list) do e_boiler(ctx, e) end
+      ctx.boiler_list = nil
+      -- Feeders are read for the boilers of networks with a draw sample (the rows use them only there).
+      ctx.supply, ctx.supply_at, ctx.walked = {}, 1, {}
+      for id, net in pairs(ctx.nets) do
+        if draw(n, id) then for _, b in ipairs(net.boilers) do ctx.supply[#ctx.supply+1] = b end end
+      end
+    elseif step.step == 'supply' then
+      local last = math.min(#ctx.supply, ctx.supply_at + BOILER_SLICE - 1)
+      if ctx.supply_at <= last then M.boiler_supply(ctx.supply, surface, f, ctx.walked, ctx.supply_at, last) end
+      ctx.supply_at = last + 1
+      if ctx.supply_at <= #ctx.supply then job.i = job.i - 1   -- (the step repeats until every boiler is read)
+      else ctx.supplied, ctx.supply, ctx.walked = true, nil, nil end
+    elseif step.step == 'rows' then row.electric = e_rows(ctx, n, surface, f)
+    elseif step.step == 'logistic' then row.logistic = logistic(n, f, surface)
+    elseif step.step == 'turrets' then row.turrets = turrets(f, surface, ctx.turrets); job.ctx[step.surface] = nil end
   end
   -- Plain rows (no entities) for the read.
   local function plain(r, keys)
@@ -798,7 +883,8 @@ return function(api)
       local held = held_of(src, names)
       return {has=held ~= nil, text=string.format('%s %s holding %s', src.name, pos, held or 'no fuel')}
     end
-    local by, tiles, queue, seen, run = {}, 0, {src}, {}, {}
+    local by, tiles, queue, seen, run, want = {}, 0, {src}, {}, {}, {}
+    for _, name in ipairs(names) do want[name] = true end
     local x0, y0, x1, y1 = src.position.x, src.position.y, src.position.x, src.position.y
     while #queue > 0 and tiles < BELT_WALK do
       local e = table.remove(queue, 1)
@@ -808,9 +894,18 @@ return function(api)
         x0, y0, x1, y1 = math.min(x0, e.position.x), math.min(y0, e.position.y), math.max(x1, e.position.x), math.max(y1, e.position.y)
         for i = 1, try(function() return e.get_max_transport_line_index() end) or 0 do
           local line = try(function() return e.get_transport_line(i) end)
-          for _, name in ipairs(names) do
-            local n = line and try(function() return line.get_item_count(name) end) or 0
-            if n > 0 then by[name] = (by[name] or 0) + n end
+          -- One read of the lane (operator 04:00: a count per fuel per lane per tile was 640 reads a belt walk).
+          local contents = line and try(function() return line.get_contents() end)
+          if contents then
+            for k, v in pairs(contents) do
+              local name, n = type(v) == 'table' and v.name or k, type(v) == 'table' and v.count or v
+              if want[name] and type(n) == 'number' and n > 0 then by[name] = (by[name] or 0) + n end
+            end
+          else
+            for _, name in ipairs(names) do
+              local n = line and try(function() return line.get_item_count(name) end) or 0
+              if n > 0 then by[name] = (by[name] or 0) + n end
+            end
           end
         end
         for _, nb in ipairs(try(function() return e.belt_neighbours.inputs end) or {}) do queue[#queue+1] = nb end
@@ -848,10 +943,12 @@ return function(api)
   -- Per boiler, b.fed: a feeder can bring more fuel now (fuel in its hand,
   -- or at its source); b.feeder names the feeder that can (else the first)
   -- and its source, or that no inserter feeds it. One read per source and
-  -- fuel list in a look (several boilers take from one chest or belt tile).
-  function M.boiler_supply(boilers, surface, f)
-    local walked = {}
-    for _, b in ipairs(boilers) do
+  -- fuel list in a look (several boilers take from one chest or belt tile);
+  -- walked: that memo, when boilers are read a few at a time (from..to).
+  function M.boiler_supply(boilers, surface, f, walked, from, to)
+    walked = walked or {}
+    for i = from or 1, to or #boilers do
+      local b = boilers[i]
       b.fed, b.feeder = false, nil
       local e = b.e
       local names = fuel_names(b)
