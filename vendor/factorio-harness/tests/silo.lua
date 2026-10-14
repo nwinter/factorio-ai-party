@@ -166,4 +166,25 @@ assert(not ok and tostring(err):find('no surface vulcanus'),err)
 surface('vulcanus')
 ok,err=pcall(S.read,p,{surface='vulcanus'})
 assert(not ok and tostring(err):find('no rocket silo of ours on vulcanus'),err)
+
+-- 7. The silo's inventories by transfer name (Luna 12:20: a 50/50/50 kit went into the rocket cargo instead of the
+-- recipe input): parts and cargo, what each holds and is for, one call each; trash take-only.
+local encode=dofile('mod/agent-harness_0.1.0/aliases.lua'){}.encode
+eq(S.ALIASES.parts,'assembling_machine_input'); eq(S.ALIASES.cargo,'rocket_silo_rocket')
+local rows=S.inventories(fs,encode)
+eq(#rows,3)
+eq(rows[1].inventory,'assembling_machine_input'); eq(rows[1].alias,'parts'); eq(rows[1].holds,'low-density-structure*32 processing-unit*32')
+eq(rows[1].what,"the rocket-part recipe's ingredients (processing-unit, low-density-structure, rocket-fuel): the silo crafts rocket parts from them")
+eq(rows[1].example,[[fh call transfer --args '{"count":50,"direction":"to_entity","inventory":"assembling_machine_input","item":"processing-unit","position":{"x":-65.5,"y":90.5}}']])
+eq(rows[2].inventory,'rocket_silo_rocket'); eq(rows[2].alias,'cargo'); eq(rows[2].holds,'empty')
+eq(rows[2].what,"the rocket's cargo: it goes up with the rocket at launch (lift 1000 kg); not used for parts")
+eq(rows[2].example,[[fh call transfer --args '{"count":10,"direction":"to_entity","inventory":"rocket_silo_rocket","item":"space-platform-foundation","position":{"x":-65.5,"y":90.5}}']])
+eq(rows[3].inventory,'rocket_silo_trash'); eq(rows[3].alias,nil); eq(rows[3].holds,'empty')
+eq(rows[3].example,[[fh call transfer --args '{"direction":"to_player","inventory":"rocket_silo_trash","position":{"x":-65.5,"y":90.5}}']])
+-- A loaded rocket: its cargo, and the example names what it holds.
+rows=S.inventories(ns,encode)
+eq(rows[2].holds,'space-platform-foundation*50 rocket-fuel*20'); assert(rows[2].example:find('"item":"space-platform-foundation"',1,true),rows[2].example)
+eq(rows[3].holds,'processing-unit*7')
+local names,recipe_name=S.ingredients(ns)
+eq(recipe_name,'rocket-part'); eq(#names,3); eq(names[3],'rocket-fuel')
 print('silo ok')

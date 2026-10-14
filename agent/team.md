@@ -100,6 +100,8 @@ already targets your character.
 - `./fh call turrets` (optional `"surface"` or `"area"`) lists every turret by front: its ammo (a flamer's oil with
   its buffer), health, and what feeds it (an inserter and its belt or chest, robots, a pipe, power, or nothing:
   hand-fed); the hand-fed and low ones first.
+- `./fh call rearm --args '{"surface":true,"below":5}'` (or `"area"`, `"radius"`) tops up every turret under 5 rounds
+  in one walking tour, nearest cluster first. refuel, feed and rearm that find nothing name the nearest one outside.
 - `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
   ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
   tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
@@ -172,7 +174,9 @@ already targets your character.
   minutes left at that rate; the networks line names the lowest boiler (position, minutes, fuel, feeder), the 2 feed
   chests with the fewest minutes left (`feed chests: requester-chest (10,39) 50 coal, uses 15.0/min over 10 min, 3 min
   left`) and accumulators' stored MJ of their maximum; a logistic network's line ends with the items it holds most of
-  and what its requesters ask (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`); `./fh platform NAME` shows one space platform (hub free
+  and what its requesters ask (`holds iron-plate 4200, ...; requesters ask iron-plate 400 (300 short), ...`); on
+  Fulgora, `networks` and `status` carry `storm`: lightning in the dark, the phase, darkness and the seconds to dusk,
+  full dark, brightening and dawn; `./fh platform NAME` shows one space platform (hub free
   slots, cargo, speed, next stop, ETA);
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
@@ -322,7 +326,8 @@ already targets your character.
   last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
   `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
-  chests near the silo.
+  chests near the silo. A silo's transfer inventories: `assembling_machine_input` (alias `parts`, the rocket-part
+  ingredients) and `rocket_silo_rocket` (alias `cargo`, what goes up with the rocket); `inspect` lists them with a call each.
 - `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
   and spoiled, the rockets sent to it; per leg what spoiled on the way) and `spoiling` (when its spoilable items spoil,
   against the arrival). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
@@ -349,7 +354,8 @@ already targets your character.
   power where it is and its panels' output, accumulators, machines on low power); `power` takes `platform` too, and
   `inspect` on a machine, solar panel or accumulator shows its maximum under `electricity`.
 - `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
-  takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
+  takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first and the landing pad's room
+  (`pad_room`: free slots, what takes the rest, `spill`: what would land on the ground).
 - A hub's trash (what is over a request's max) stays aboard in flight; at a stop the game sends it down in cargo pods, to
   the landing pad or, on a planet with none, as a cargo-pod container near (0,0) (`where_is` lists it).
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
@@ -380,3 +386,6 @@ already targets your character.
   agents build them with real items. The reply counts ghosts placed, spots already rebuilt and spots now taken.
 - Chat lines from `players` say when a human player joins or leaves, and when one removes, or marks for
   deconstruction or upgrade, 20 or more of the team's entities within 5 minutes (with the last position).
+- When the game runs slow, sleeps and `--wait` keep waiting while it advances (`slow_game: 18 ticks/s, 30% of normal`,
+  also on the clock line) and end `paused` when it stops. `game_unreachable` means nothing was sent; after a server
+  restart from a save, one reply says `rolled_back` and lists in `redo` what you changed since, which is gone.

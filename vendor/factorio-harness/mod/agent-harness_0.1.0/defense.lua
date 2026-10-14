@@ -473,6 +473,8 @@ return function(api)
     end
     return groups
   end
+  -- The same grouping for rearm's walk (runtime.lua M.rearm_clusters): rows with a position.
+  M.fronts_of=fronts_of
   -- What feeds each turret of a front: inserters dropping into it (one find over the front's box and 3 tiles more).
   local function feeds(s,force,members)
     local b={}

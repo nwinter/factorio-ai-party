@@ -386,6 +386,39 @@ test('build --wait follows a step-aside through the rest of the batch and exits 
     assert.equal(reply.ok,true); assert.equal(reply.result.built,1); assert.equal(statusPolls,0);
   });
 });
+// Sol 12:20: collect --wait --wait-timeout 60000 read STILL RUNNING at 62 s over a gather that had ended collected
+// (got 10 of 10) at 54.2 s game time: the poll after the deadline showed it ended and was not judged. That poll now
+// ends the wait by the outcome; fh wait likewise. An action still running there still times out (exit 3).
+test('--wait and fh wait judge the poll after the deadline: an action that ended there ends the wait by its outcome',async()=>{
+  let began=0, endsAfter=1600, outcome='collected';
+  const accepted=9079299, ended=9082549;
+  await engine(request=>{
+    if(request.action==='collect'){began=Date.now();return {ok:true,tick:accepted,result:{until_tick:9086499,got:0,want:10}};}
+    if(request.action==='observe')return {ok:true,result:{player:{position:{x:44,y:28},inventory:[]}}};
+    if(Date.now()-began<endsAfter)return {ok:true,tick:accepted+60,result:{active:{kind:'gather',until_tick:9086499,got:9}}};
+    return {ok:true,tick:ended+18,result:{active:false,last:{kind:'gather',outcome,got:10,want:10,tick:ended}}};
+  },async port=>{
+    const args=['call','collect','--args','{"position":{"x":44.5,"y":26.5},"item":"nutrients","count":10,"wait_ticks":3600}','--wait','--wait-timeout','1500'];
+    const reply=JSON.parse((await cli(port,args)).stdout);
+    assert.equal(reply.ok,true); assert.equal(reply.result.completion.last.outcome,'collected'); assert.equal(reply.result.completion.last.got,10);
+    assert.equal(reply.result.timed_out,undefined);
+    // ended badly at the deadline: exit 1 with its outcome
+    outcome='nothing_collected';
+    const failed:any=await cli(port,args).then(()=>assert.fail('exit 1 expected'),(error:any)=>error);
+    assert.equal(failed.code,1); assert.match(failed.stdout,/Control ended: nothing_collected/);
+    // fh wait: idle at the poll after the deadline is idle
+    outcome='collected'; began=Date.now();
+    const waited=JSON.parse((await cli(port,['wait','--wait-timeout','1500'])).stdout);
+    assert.equal(waited.ok,true); assert.equal(waited.result.last.outcome,'collected');
+    // still running at the poll after the deadline: STILL RUNNING, exit 3
+    endsAfter=60000;
+    const still:any=await cli(port,args).then(()=>assert.fail('exit 3 expected'),(error:any)=>error);
+    assert.equal(still.code,3); assert.match(still.stdout,/STILL RUNNING/);
+    began=Date.now();
+    const stillIdle:any=await cli(port,['wait','--wait-timeout','1500']).then(()=>assert.fail('exit 3 expected'),(error:any)=>error);
+    assert.equal(stillIdle.code,3); assert.equal(JSON.parse(stillIdle.stdout).result.still_running.kind,'gather');
+  });
+});
 // Viewers' @mentions (Sonnet and Opus, shift12 13:50: they ended a sleep, a wait and a move_to --wait every minute or
 // so): the poll carries them apart (inbox_viewer); they end a wait only with --wake-on-viewers.
 test('a viewer\'s @mention does not end --wait; with --wake-on-viewers it does',async()=>{

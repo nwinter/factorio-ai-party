@@ -105,4 +105,35 @@ assert(lines[1]:find('lightning-rod in no electric network',1,true) or lines[2]:
 eq(#A.lines(sol,hs),0,'sol is on Nauvis')
 local read=A.read(gemini,{kind='lightning_unused'})
 eq(#read.groups,1); eq(read.groups[1].to[1],'gemini (nearest)')
+
+-- Fulgora's sky (Gemini 12:20): storm while dark, from the surface's day cycle (world n: a 10800-tick day, dusk 0.25,
+-- evening 0.45, morning 0.55, dawn 0.75, darkness up to 0.85); bolts near a position when one is given.
+local sky={planet={name='fulgora'},ticks_per_day=10800,dusk=0.25,evening=0.45,morning=0.55,dawn=0.75,freeze_daytime=false}
+sky.count_entities_filtered=function(f) eq(f.type,'lightning'); eq(f.radius,64); assert(f.position,'near a position'); return 4 end
+local function at(d,dark) sky.daytime,sky.darkness=d,dark; return L.sky(sky) end
+local r=at(0.1,0)
+eq(r.state,'clear'); eq(r.phase,'day'); eq(r.darkness,0); eq(r.dusk_in_s,27); eq(r.evening_in_s,63); eq(r.dawn_in_s,117); eq(r.day_s,180); eq(r.bolts_near,nil)
+eq(r.line,'fulgora sky: day, clear (no lightning in daylight); dusk in 27s, full dark in 1m03s; a 3m00s day: dark from dusk to dawn, 1m30s')
+r=at(0.8,0)
+eq(r.phase,'day'); eq(r.dusk_in_s,81,'past dawn: the next dusk')
+r=at(0.3462,0.481)
+eq(r.state,'storm'); eq(r.phase,'darkening'); eq(r.darkness,0.48)
+eq(r.line,'fulgora sky: storm, darkening (darkness 0.48; lightning in the dark, most at full dark); full dark in 19s, dawn (clear) in 1m13s; a 3m00s day: dark from dusk to dawn, 1m30s')
+r=at(0.5,0.85)
+eq(r.phase,'full dark'); eq(r.morning_in_s,9); eq(r.dawn_in_s,45)
+eq(r.line,'fulgora sky: storm, full dark (darkness 0.85; lightning); brightening in 9s, dawn (clear) in 45s; a 3m00s day: dark from dusk to dawn, 1m30s')
+r=at(0.7,0.2)
+eq(r.phase,'brightening'); eq(r.state,'storm')
+eq(r.line,'fulgora sky: storm, brightening (darkness 0.20; lightning in the dark); dawn (clear) in 9s, next dusk in 1m39s; a 3m00s day: dark from dusk to dawn, 1m30s')
+-- with a position (status): the bolts near it
+sky.daytime,sky.darkness=0.5,0.85
+r=L.sky(sky,{x=1,y=2})
+eq(r.bolts_near,4); assert(r.line:find('; 4 lightning bolts within 64 tiles of you now; a 3m00s day',1,true),r.line)
+-- frozen daytime: no times
+sky.freeze_daytime=true
+r=L.sky(sky)
+eq(r.dawn_in_s,nil); eq(r.line,'fulgora sky: full dark, darkness 0.85, daytime frozen')
+-- another planet: none
+eq(L.sky(nauvis),nil)
+eq(L.sky({planet=nil}),nil)
 print('lightning ok')
