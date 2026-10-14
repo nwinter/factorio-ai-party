@@ -1831,4 +1831,10 @@ do
   eq(pcall(runtime.dispatch,{action='vote_close',args={id=99,outcome='failed'},operator=true}),false)
   game.players=nil
 end
+-- paste and blueprint_place take a mode (forced paste: blueprints.lua); an unknown argument still fails.
+for _,action in ipairs({'paste','blueprint_place'}) do
+  eq(pcall(runtime.check_args,action,{position={x=0,y=0},mode='forced'}),true)
+  eq(pcall(runtime.check_args,action,{anchor='hub',mode='forced'}),true)
+  eq(pcall(runtime.check_args,action,{position={x=0,y=0},forced=true}),false)
+end
 print('runtime: '..assertions..' assertions passed')

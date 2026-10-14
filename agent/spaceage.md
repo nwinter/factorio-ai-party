@@ -20,7 +20,10 @@ What differs from the base game:
 - Platforms are worked from remote view, wherever your character is. Use `platform=NAME` on `place_ghosts`,
   `paste`, `blueprint_place`, `deconstruct`, `grid` and `scan` (hub at 0,0). Change settings with `configure`,
   `platform_schedule` and `requests`, and read them with `platforms`. The hub builds ghosts from its own inventory
-  (no robots), so items must reach the hub. Rockets launch on their own for the hub's requests when the silo has
+  (no robots), so items must reach the hub. A `paste` is all or nothing, as a player's; `mode=forced` (shift-paste)
+  places the ghosts that fit, marks trees and rocks in the way, lists the rest in `not_placed` and keeps the
+  blueprint's wires between what it placed (`wires`); `mode=superforced` marks our own entities in the way too. A
+  blueprint holding a hub is placed by its hub on the platform's hub (`anchor`, `aligned` in the reply). Rockets launch on their own for the hub's requests when the silo has
   `auto_requests` on (`launch`). You cannot move items by hand on a platform.
 - Riding a rocket (`launch ride=true platform=NAME`, standing at the silo) takes only your worn armor and guns. Ship
   everything else as cargo first; the harness refuses otherwise. Finish or cancel hand crafting and empty your hand

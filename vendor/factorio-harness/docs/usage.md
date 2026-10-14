@@ -405,7 +405,25 @@ fh sleep 900 --until researched                       # ...or until the research
     modules differ from the blueprint, each `{name, position, ghost?, differs, fix}`, where `fix` is the `configure`
     call that sets them (modules: `transfer`);
   - `reason`, a one-line summary.
-  A paste never changes what was already there.
+  A normal paste never changes what was already there.
+- `paste {mode}` picks the player's paste: `normal` (default) is all or nothing, as a plain paste: one colliding
+  entity and the game places no ghost at all. `forced` is a shift-paste: ghosts where they fit, trees, rocks and the
+  like in the way marked for deconstruction (`marked_for_deconstruction`, `marked_by_name`: only what this paste
+  marked), the rest in `not_placed` with reasons as above. `superforced` (ctrl+shift-paste) also marks our own
+  entities in the way. On a platform (`platform=NAME`) and for bots the mode goes to `build_blueprint`.
+- The game puts a blueprint's center (the middle of the box around its entities and tiles) at the paste `position`.
+  On a platform (`platform=NAME`) a blueprint that holds a `space-platform-hub` is placed by its hub instead
+  (`anchor: "hub"`, the default there): `position` is where its hub goes, by default the platform's hub, so a
+  blueprint whose hub is off its center no longer lands shifted with its hub on the platform's (Astra 18:55: a
+  33-entity Sunward paste placed nothing, a 22-entity one landed at another offset). `anchor: "center"` keeps the
+  center at `position`. The reply says `anchor {by, hub, paste_position, hub_landed, aligned}`, and whenever the
+  paste is checked (short, wired or anchored) `origin_at` and `center_at`: where the blueprint's 0,0 and its center
+  landed.
+- After any paste of a blueprint with wires, each of its circuit and copper wires whose two ends stand where the
+  layout puts them (a new ghost, or a matching entity or ghost from before) is checked and connected if missing, as
+  the game's paste does: `wires {in_blueprint, connected (already), added, end_not_placed, failed, ends_not_placed
+  ["chest #3"]}` (Astra 18:51: Sunward's module-audit paste made 0 ghosts over one collision, and its entities placed
+  one by one with `place_ghosts` lost their wires).
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
   within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists
