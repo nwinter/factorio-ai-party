@@ -132,7 +132,12 @@ return function(api)
   -- inserter hands): where else it sits and why it does not reach the labs.
   -- One pass for all packs through supply's scan (supply.lua: its bounds).
   M.schema.science = {pack='optional item: a science pack (default: each pack the current research needs)', surface='optional surface name (default yours)',
-    returns='research and per pack one line and its numbers, for the whole surface, the same for everyone: made and used in the last 10 min (the game\'s statistics), makers (assemblers set to it: working and the other states; packs waiting in their output), held in chests, on belts and in labs (labs lacking it of those that need it), carried by agents, the largest chests with positions; reach: chests by kind, inserter hands, robots carrying it, the inserters taking from its makers and feeding the labs (by status, what the waiting ones\' sources hold), the logistic requesters for it per network (met, on the way, unmet with reasons), and the worst lab (position, what it lacks, its feeder\'s source, the nearest stock); counted (what the scan read)'}
+    returns='research and per pack one line and its numbers, for the whole surface, the same for everyone: made and used in the last 10 min (the game\'s statistics), makers (assemblers set to it: working and the other states; packs waiting in their output), held in chests, on belts and in labs (labs lacking it of those that need it), carried by agents, the largest chests with positions; reach: chests by kind, inserter hands, robots carrying it, the inserters taking from its makers and feeding the labs (by status, what the waiting ones\' sources hold), the logistic requesters for it per network (met, on the way, unmet with reasons), and the worst lab (position, what it lacks, its feeder\'s source, the nearest stock); chain: the pack\'s recipe tree from the step down, '
+      .. 'following the ingredient most of a step\'s makers lack while most of them lack one and ending at the first step whose makers mostly do '
+      .. 'not, each step with its makers and made and used per minute (10 min statistics) ("chemical-science-pack: 9 of 14 makers lack '
+      .. 'advanced-circuit, made 12/min, used 30/min; advanced-circuit: ...; plastic-bar: 4 of 4 working, made 30/min, used 52/min"); '
+      .. 'chain_tree: every step down to what no assembler, furnace or silo makes {item, depth, made_per_min, used_per_min, makers, '
+      .. 'working, states, lacking {ingredient: makers}} (40 steps at most, chain_cut); counted (what the scan read)'}
   function M.science(p, a)
     local surface = p.surface
     if a.surface ~= nil then
@@ -196,9 +201,12 @@ return function(api)
       else line = line .. ' (the current research does not use it)' end
       if carried[name] then line = line .. '; carried: ' .. table.concat(carried[name], ', ') end
       if #largest > 0 then line = line .. '; largest chests: ' .. table.concat(largest, ', ') end
+      -- The pack's recipe tree from the scan's crafters (supply.lua chain).
+      local okc, chain = pcall(api.supply.chain, scan, force, surface, name)
       out[#out+1] = {pack=name, made_10min=made, used_10min=used, makers=#t.makers, makers_working=working, makers_states=#list > 0 and list or nil,
         in_makers=t.outputs, chests=chests, belts=t.belts, labs=t.labs, labs_lacking=needed[name] and lacking or nil,
-        carried=carried[name], largest=#largest > 0 and largest or nil, line=line, reach=api.supply.reach(t, scan, needed)}
+        carried=carried[name], largest=#largest > 0 and largest or nil, line=line, reach=api.supply.reach(t, scan, needed),
+        chain=okc and chain and chain.line or nil, chain_tree=okc and chain and chain.tree or nil, chain_cut=okc and chain and chain.cut or nil}
     end
     local research = tech and string.format('%s %d%%', tech.name, math.floor((force.research_progress or 0) * 100)) or 'none'
     return {surface=surface.name, research=research, packs=out, counted=api.supply.counted(scan)}
