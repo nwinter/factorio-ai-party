@@ -680,6 +680,7 @@ function handlers.describe()
   for name,schema in pairs(M.waits and M.waits.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.labs and M.labs.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.supply and M.supply.schema or {}) do description.actions[name]=schema end
+  for name,schema in pairs(M.trace and M.trace.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.audience and M.audience.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.capsules and M.capsules.schema or {}) do description.actions[name]=schema end
   for name,schema in pairs(M.flush and M.flush.schema or {}) do description.actions[name]=schema end
@@ -4226,6 +4227,8 @@ function handlers.ports(p,a)
     ports=rows,closed=#closed>0 and closed or nil,note=note,
     unsure=unsure and 'this machine has more boxes on a side than the recipe has fluids there; which fluid the extra port takes was not seen built' or nil}
 end
+-- trace (trace.lua, set up with supply below); here so platform= wraps it.
+function handlers.trace(p,a) return M.trace.trace(p,a) end
 -- Remote building on our space platforms: the same ghost and view actions,
 -- run against the platform's surface (hub at its centre). The hub builds
 -- the ghosts from its own inventory, as in the game.
@@ -4237,7 +4240,7 @@ local function on_platform(p,name)
     __index=function(_,k) if k=='surface' then return pl.surface elseif k=='position' then return hub end return p[k] end,
     __newindex=function(_,k,v) p[k]=v end})
 end
-for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','paste','blueprint_place','grid','scan','inspect','configure','flush','circuit_set','circuit','wire','ports','cargo'}) do
+for _,name in ipairs({'place_ghosts','deconstruct','cancel_deconstruction','paste','blueprint_place','grid','scan','inspect','configure','flush','circuit_set','circuit','wire','ports','cargo','trace'}) do
   local handler=handlers[name]
   handlers[name]=function(p,a)
     if a.platform==nil then return handler(p,a) end
@@ -4682,6 +4685,7 @@ passive.circuit_set=true; passive.wire=true
 -- place_ghosts), capture and copy read an area, cut marks it as the planner does.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route'}) do passive[name]=true end
 local reads={cargo=true,dry_run=true,ports=true,placements=true,defense=true,flamers=true,labs=true,science=true,supply=true,sleep_check=true,describe=true,status=true,map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,observe=true,inspect=true,recipes=true,technologies=true,blueprint_export=true,blueprint_list=true,screenshot=true,profiles=true,cameras=true,inventory=true,research_options=true,where_is=true,drops=true,game_alerts=true,review=true,networks=true}
+reads.trace=true  -- trace.lua: a read (no stop, no queue pause)
 
 -- Arguments are checked against describe, so a misspelt or unsupported key
 -- fails loudly instead of silently falling back to a default. Describe keys
@@ -4693,6 +4697,7 @@ local EXTRA_ARGS={attach={'offline'},build={'quality','entity'},collect={'count'
   configure={'name','unit_number','quality'},revive_ghost={'unit_number'},observe={'scope'},requests=TARGET,launch=TARGET,
   board={'status'},board_post={'note'},board_update={'status','note'},plan_save={'note'}}
 EXTRA_ARGS.circuit_set=TARGET
+EXTRA_ARGS.trace=TARGET
 -- observe forwards to the scoped views; a scoped call is checked as that view.
 local VIEW_SCOPES={map=true,nearest=true,craftable=true,scan=true,power=true,grid=true,rates=true,bottleneck=true,stock=true,platforms=true,labs=true,science=true,supply=true,sleep_check=true}
 local allowed_args
@@ -5113,6 +5118,8 @@ survey=survey_module{state=state,status_name=function(e) return entity_status_na
 M.supply=require('supply'){integer=integer,position=position,status_name=function(e) return entity_status_names[e.status] end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end}
 function handlers.supply(p,a) return M.supply.supply(p,a) end
+-- trace: a machine's feeders and their sources, its output followed to where it ends, an item's routes (trace.lua).
+M.trace=require('trace'){supply=M.supply,entity=entity,remote_entity=remote_entity,position=position,integer=integer,status_name=function(e) return entity_status_names[e.status] end}
 -- labs: research line diagnostics (labs.lua), an observe scope; science reads its packs through supply's scan.
 M.labs=require('labs'){integer=integer,center=center,status_name=function(e) return entity_status_names[e.status] end,
   agents=function() return M.board.agents() end,lookup=function(index) return M.lookup(index) end,supply=M.supply}

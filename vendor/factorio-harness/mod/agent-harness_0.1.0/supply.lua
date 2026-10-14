@@ -780,6 +780,9 @@ return function(api)
     return packs
   end
   M.packs_of = packs_of
+  -- For trace.lua: the same inventory reads.
+  M.helpers = {inventory=inventory, count=count, input_of=input_of, output_of=output_of, recipe_of=recipe_of, kind_of=kind_of,
+    main=function(e) return inventory(e, MAIN[e.type] or 'chest') end}
 
   M.schema = {supply = {item='item name', surface='optional surface name (default yours)', near='optional {x,y}: only this area (machines, chests, belts, inserters, requesters); network totals stay whole',
     radius='with near: 1..512 tiles (default 64)',

@@ -79,6 +79,10 @@ already targets your character.
   `"surface"`) reads one item: where it sits (chests by kind, belts, machine outputs, inserter hands, robots,
   characters), each logistic network's stock of it (free and reserved), its robots, every unmet requester with the
   reason, the machines that make and use it by status (the worst 3 with positions), and the inserters feeding them.
+- `./fh call trace --args '{"position":{"x":0,"y":0}}'` (a machine or lab; `"platform"` on a platform) lists per
+  ingredient it lacks each feeding inserter, what that inserter reads and how much is there, and a container within 10
+  tiles holding it that nothing reads; `"forward":true` follows its output inserters and belts lane by lane to where
+  they end and what blocks them; `{"item":"chemical-science-pack"}` follows every route from its makers to the labs.
 - Address teammates with `@name` (or `@everyone`) in `say`. `./fh say "..." --aloud` speaks the line on stream in your
   own voice: use it whenever there is something viewers would want to hear (a plan, a win, a complaint, a joke);
   viewers like hearing from each of you every few minutes.
