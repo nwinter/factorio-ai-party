@@ -9,7 +9,7 @@ local function has(text,part) assert(text and text:find(part,1,true),'missing "'
 defines={inventory={chest=1},flow_precision_index={five_seconds=0,one_hour=3},entity_status={no_power=1,low_power=2,working=0},
   logistic_member_index={logistic_container=0}}
 prototypes={item={coal={type='item',fuel_value=4e6},['firearm-magazine']={type='ammo'},['iron-plate']={type='item'}},
-  surface_property={['solar-power']={default_value=100}}}
+  surface_property={['solar-power']={default_value=100}},entity={accumulator={type='accumulator'}}}
 storage={}
 local force={name='player',players={{}}}
 local enemy={name='enemy',players={}}
@@ -37,7 +37,12 @@ nauvis.find_entities_filtered=function(f) local out={} for _,e in ipairs(list) d
 game={tick=0,forces={player=force,enemy=enemy},surfaces={nauvis}}
 -- Electric network 7: 10 poles; network 9: two poles and nothing else (not listed).
 local flows={['steam-engine']=18e6/60,['solar-panel']=0.5e6/60}
-local stats={output_counts={['steam-engine']=1,['solar-panel']=1},get_flow_count=function(t) eq(t.category,'output'); eq(t.precision_index,0); return flows[t.name] or 0 end}
+-- (accumulators: output while they discharge, input while they charge; J per tick)
+local flows_in={}
+local stats={output_counts={['steam-engine']=1,['solar-panel']=1,accumulator=1},get_flow_count=function(t)
+  eq(t.precision_index,0)
+  if t.category=='input' then return flows_in[t.name] or 0 end
+  eq(t.category,'output'); return flows[t.name] or 0 end}
 for i=0,9 do add{type='electric-pole',name='medium-electric-pole',position={x=i*7,y=0},electric_network_id=7,electric_network_statistics=stats,surface=nauvis} end
 for i=0,1 do add{type='electric-pole',name='small-electric-pole',position={x=300+i*5,y=0},electric_network_id=9,
   electric_network_statistics={output_counts={},get_flow_count=function() return 0 end},surface=nauvis} end
@@ -519,4 +524,55 @@ eq(bo.not_working, 0); eq(bo.networks[1].network, 7); eq(bo.networks[1].not_work
 assert(not pcall(N.boilers, you, {surface='vulcanus'}))
 eq(N.schema.boilers.surface, 'optional surface name (default yours)')
 far.status = 5
+-- 6. Accumulators running down (Gemini, shift12 15:10: Fulgora's daylight lull between storms; on a copy of world n
+-- its network 301, 173 accumulators, fell 14.6 MW net in daylight and emptied in about 35 s, then charged in the
+-- storm). Network 7's 2 accumulators hold 5 MJ of 10 MJ: the net flow of the last 30 s against what they hold now,
+-- told under 10 min, again under 5 and 2; kept 10 min after at the worst step, so a storm between lulls is no news.
+do
+  local function acc_groups(n6)
+    storage.networks.views={}
+    local out={}
+    for _,x in ipairs((n6 or N).alert_groups(force)) do if x.kind=='accumulators_draining' then out[#out+1]=x end end
+    return out
+  end
+  flows.accumulator=5e3/60; run(30)
+  eq(#acc_groups(),0,'1000 s to empty: no alert')
+  storage.networks.views={}
+  has(N.lines(force,'nauvis',8)[1],'accumulators 2 at 50% (5.0 MJ of 10.0 MJ), falling 5 kW net over the last 30 s: empty in about 16m40s at that rate')
+  flows.accumulator=10e3/60; run(30)
+  local g=acc_groups()
+  eq(#g,1); eq(g[1].rank,1); eq(g[1].now_text,'8m20s from empty'); eq(g[1].key,'accumulators_draining|nauvis|7')
+  eq(g[1].line,'electric #7 near (32,0): its 2 accumulators at 50% (5.0 MJ of 10.0 MJ) fall 10 kW net over the last 30 s: empty in about 8m20s at that rate')
+  flows.accumulator=50e3/60; run(30)
+  g=acc_groups(); eq(g[1].rank,3); eq(g[1].now_text,'1m40s from empty')
+  -- Charging (a storm): kept at its worst step, said so.
+  flows.accumulator=0; flows_in.accumulator=20e3/60; run(30)
+  g=acc_groups()
+  eq(#g,1); eq(g[1].rank,3)
+  eq(g[1].line,'electric #7 near (32,0): its 2 accumulators were 1m40s from empty 30s ago (falling 50 kW net); now at 50% (5.0 MJ of 10.0 MJ), rising 20 kW net')
+  -- On Fulgora the sky's timing (lightning.lua M.sky): the next storm in daylight, else dawn.
+  local N6=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return storage end,
+    sky=function() return {phase='day',dusk_in_s=72,dawn_in_s=162} end}
+  game.get_surface=function(name) return name=='nauvis' and nauvis or nil end
+  has(acc_groups(N6)[1].line,'; Fulgora: day, no lightning; next storm (dusk) in 1m12s')
+  N6=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return storage end,
+    sky=function() return {phase='full dark',dusk_in_s=110,dawn_in_s=40} end}
+  has(acc_groups(N6)[1].line,'; Fulgora: storm (full dark); dawn (clear) in 40s')
+  game.get_surface=nil
+  -- Empty: said so, and once charging again, when it ran empty (Vulcanus #209 on the copy read "at 0% ... empty in
+  -- about 0s").
+  local accs={}
+  for _,e in ipairs(list) do if e.type=='accumulator' then accs[#accs+1]=e; e.energy=0 end end
+  flows_in.accumulator=nil; flows.accumulator=10e3/60; run(30)
+  g=acc_groups()
+  eq(g[1].line,'electric #7 near (32,0): its 2 accumulators are empty (0.0 MJ of 10.0 MJ; 10 kW net flowed out over the last 30 s)')
+  eq(g[1].now_text,'empty')
+  flows.accumulator=0; flows_in.accumulator=20e3/60; for _,e in ipairs(accs) do e.energy=1e6 end; run(30)
+  eq(acc_groups()[1].line,'electric #7 near (32,0): its 2 accumulators ran empty 30s ago; now at 20% (2.0 MJ of 10.0 MJ), rising 20 kW net')
+  for _,e in ipairs(accs) do e.energy=2.5e6 end
+  -- Ten minutes past the last fall under 10 min: gone.
+  run(601)
+  eq(#acc_groups(),0)
+  flows_in.accumulator=nil
+end
 print('networks: ok')
