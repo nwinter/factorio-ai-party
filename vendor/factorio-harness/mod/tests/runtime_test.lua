@@ -812,6 +812,16 @@ do
   cargo.get_contents=function() local out={}; for _,s in ipairs(cargo) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
   silo.get_inventory=function(i) return ({[5]=silo_input,[7]=cargo})[i] end
   eq(call('inspect',{position={x=3,y=0}}).rocket_weight,'960/1000 kg')
+  -- Astra 10:50: inspect says a built rocket plainly, parts and rocket_ready side by side, and the last launch.
+  do
+    local kept_def=defines.rocket_silo_status
+    defines.rocket_silo_status=kept_def or {building_rocket=0,create_rocket=1,rocket_ready=7,launch_started=14}
+    silo.rocket_silo_status,silo.rocket_parts=7,0
+    local si=call('inspect',{position={x=3,y=0}})
+    eq(si.rocket_ready,true); assert(si.parts:find('^0/'),si.parts)
+    assert(si.rocket:find('^rocket built and ready: parts consumed %(0/%d+%), not launched; no launch seen$'),si.rocket)
+    silo.rocket_silo_status,silo.rocket_parts=nil,nil; defines.rocket_silo_status=kept_def
+  end
   local kept=main
   main=inv(stack('solar-panel',5))
   local r=call('transfer',{position={x=3,y=0},item='solar-panel',count=5,inventory='rocket_silo_rocket',direction='to_entity'})

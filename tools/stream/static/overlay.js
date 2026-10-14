@@ -1368,6 +1368,33 @@
       }
       strip.hidden = false;
     }
+    loadoutClear();
+  }
+  // Chat first (viewer Enginerd, 10:59: "the combat info box often overlays the chat messages, I think the chat
+  // messages are more important"): a strip whose box meets a caption on screen (audio.js #voice) or the chat panel
+  // steps aside until it no longer does. Checked on each render and whenever the captions change.
+  function overlaps(a, b) { return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; }
+  function loadoutClear() {
+    const strips = document.querySelectorAll(".loadout:not([hidden])");
+    if (!strips.length) return;
+    const boxes = [];
+    for (const c of document.querySelectorAll("#voice .cap.on")) boxes.push(c.getBoundingClientRect());
+    for (const id of ["chat", "chat-pins", "chat-ticker"]) {
+      const e = $(id);
+      if (e && e.offsetParent !== null) boxes.push(e.getBoundingClientRect());
+    }
+    for (const s of strips) {
+      s.classList.remove("lo-yield");
+      const r = s.getBoundingClientRect();
+      if (r.width && boxes.some((b) => b.width && b.height && overlaps(r, b))) s.classList.add("lo-yield");
+    }
+  }
+  let loadoutWatched = false;
+  function watchLoadoutClear() {
+    const v = $("voice");
+    if (loadoutWatched || !v || !window.MutationObserver) return;
+    loadoutWatched = true;
+    new MutationObserver(loadoutClear).observe(v, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
   }
 
   function render(s) {
@@ -1389,6 +1416,7 @@
     renderLoadouts(s);
     rotateWidgets();
     watchVoice();
+    watchLoadoutClear();
     watchAlerts();
   }
 

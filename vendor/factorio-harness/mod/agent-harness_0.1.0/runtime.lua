@@ -3409,6 +3409,11 @@ function handlers.inspect(p,a)
     local okw,weight=pcall(space.rocket_weight,e)
     out.rocket_weight=okw and weight or nil
   end
+  -- A silo's rocket in words, parts and rocket_ready side by side, and its last launch (silo.lua M.rocket; Astra 10:50).
+  if e.type=='rocket-silo' then
+    local okr,rk=pcall(M.silo.rocket,e)
+    if okr then out.parts=rk.parts; out.rocket_ready=rk.rocket_ready; out.rocket=rk.rocket; out.last_launch=rk.last_launch end
+  end
   -- Module slots and their inventory index (blueprint item requests name it).
   local okm,mods=pcall(function()
     local inv=e.get_module_inventory()
@@ -7372,6 +7377,7 @@ function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve}
 function handlers.drops(p,a) return M.drops.read(p,a) end
 space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+  rocket=function(e) return M.silo.rocket(e) end,
   -- A full drop's pods waiting for a hatch: a channel of their own, as shoot's is, so the
   -- character's action and queue go on (drop is passive); M.drop_jobs_tick sends them.
   start=function(p,job) state().drop_jobs=state().drop_jobs or {}; state().drop_jobs[p.index]=job end,
