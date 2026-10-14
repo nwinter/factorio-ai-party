@@ -44,7 +44,9 @@ local space=dofile('mod/agent-harness_0.1.0/space.lua'){
   real=function(q) return q end,stop=function(q) q.stopped=(q.stopped or 0)+1 end,
   -- drops.lua's side, faked: who is told, and the record space.drop hands it
   drops={recipients=function(to) if to==nil then return {} end assert(to~='nobody','unknown agent nobody'); return {to} end,
-    record=function(_,d) _G.drop_record=d; return 7 end}}
+    record=function(_,d) _G.drop_record=d; _G.drop_records=_G.drop_records or {}; table.insert(_G.drop_records,d); return 7 end},
+  -- The pod split (cargo.lua) and a full drop's timed action (runtime.lua).
+  cargo=dofile('mod/agent-harness_0.1.0/cargo.lua'){},start=function(_,job) _G.drop_job=job end,pending=function() return _G.pending_job end}
 -- Character requests: a manual section is created, slots are reused per item.
 local r=space.requests(p,{set={{item='iron-plate',min=100},{item='coal',min=5,max=10}}})
 eq(r.target,'character'); eq(r.sections[1].requests[1],'iron-plate 100..inf'); eq(r.sections[1].requests[2],'coal 5..10')
@@ -282,10 +284,22 @@ p.surface.platform=nil
 -- Drop: hub items go down in a cargo pod to the planet below a stopped platform.
 -- The hub's own stacks move (freshness kept); repeated entries add up.
 defines.inventory.cargo_unit=30
+prototypes.item['iron-plate'].stack_size=100; prototypes.item.coal.stack_size=50
+-- Item stacks as the engine's: transfer_stack into a stack of the same item
+-- tops it up to the stack size (checked on 2.0.77) and leaves the rest.
 local function stack(name,count,spoil)
-  local st={valid_for_read=count>0,name=name,count=count,quality={name='normal'},spoil_percent=spoil or 0}
+  local st={valid_for_read=count>0,name=name,count=count,quality={name='normal'},spoil_percent=spoil or 0,
+    prototype={stack_size=name and prototypes.item[name] and prototypes.item[name].stack_size or 100}}
   st.clear=function() st.valid_for_read=false; st.count=0 end
-  st.transfer_stack=function(o) st.name,st.count,st.quality,st.spoil_percent,st.valid_for_read=o.name,o.count,o.quality,o.spoil_percent,true; o.clear(); return true end
+  st.transfer_stack=function(o)
+    if st.valid_for_read and st.name==o.name then
+      local n=math.min(st.prototype.stack_size-st.count,o.count)
+      st.count=st.count+n; o.count=o.count-n
+      if o.count==0 then o.clear() end
+      return o.count==0
+    end
+    st.name,st.count,st.quality,st.spoil_percent,st.valid_for_read,st.prototype=o.name,o.count,o.quality,o.spoil_percent,true,o.prototype; o.clear(); return true
+  end
   return st
 end
 local function slots(list,n) local inv={}; for i=1,n do inv[i]=list[i] or stack(nil,0) end; return inv end
@@ -299,11 +313,29 @@ game={planets={vulcanus={surface=vulcanus_surface}}}
 p.force.get_spawn_position=function() return {x=0,y=0} end
 local drop_pod,inserted
 local refuse=false
+-- pod_size: a pod's slots (10 in the game); hatches: pods the hub can make now (nil: any).
+local pod_size,hatches=2,nil
 platform.hub.create_cargo_pod=function()
-  local cargo=slots({},2)
+  if hatches then if hatches<=0 then return nil end; hatches=hatches-1 end
+  local cargo=slots({},pod_size)
   cargo.find_empty_stack=function() for i=1,#cargo do if not cargo[i].valid_for_read then return cargo[i],i end end end
-  cargo.insert=function(def) inserted=def; local st=cargo.find_empty_stack(); if not st then return 0 end
-    st.name,st.count,st.spoil_percent,st.valid_for_read=def.name,def.count,def.spoil_percent or 0,true; return def.count end
+  -- insert tops up a part stack of the item first, as the engine's does.
+  cargo.insert=function(def)
+    inserted=def
+    local size,left=prototypes.item[def.name].stack_size or 100,def.count
+    for i=1,#cargo do
+      local st=cargo[i]
+      if left>0 and st.valid_for_read and st.name==def.name and st.count<size then local n=math.min(size-st.count,left); st.count=st.count+n; left=left-n end
+    end
+    while left>0 do
+      local st=cargo.find_empty_stack()
+      if not st then break end
+      local n=math.min(size,left)
+      st.name,st.count,st.spoil_percent,st.valid_for_read,st.prototype=def.name,n,def.spoil_percent or 0,true,{stack_size=size}
+      left=left-n
+    end
+    return def.count-left
+  end
   cargo.is_empty=function() for i=1,#cargo do if cargo[i].valid_for_read then return false end end return true end
   local pod={valid=true,cargo=cargo}
   drop_pod=setmetatable({},{__index=pod,__newindex=function(_,k,v) if k=='cargo_pod_destination' and refuse then error('refused') end pod[k]=v end})
@@ -315,8 +347,9 @@ platform.space_location={name='vulcanus',type='planet'}
 fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=5},{item='iron-plate',count=5}}}) end,'holds 7 iron-plate, not 10')
 local d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=3},{item='iron-plate',count=2}}})
 eq(d.dropped[1],'iron-plate*5'); eq(#d.dropped,1,'repeated entries add up')
-eq(drop_pod.cargo[1].count,3); eq(drop_pod.cargo[1].spoil_percent,0.25,'a whole stack moves as is')
-eq(drop_pod.cargo[2].count,2); eq(inserted.spoil_percent,0.5,'part of a stack keeps its freshness')
+eq(drop_pod.cargo[1].spoil_percent,0.25,'a whole stack moves as is')
+eq(inserted.count,2); eq(inserted.spoil_percent,0.5,'part of a stack keeps its freshness')
+eq(drop_pod.cargo[1].count,5,'the part joins the stack sent whole, as the engine inserts'); eq(drop_pod.cargo[2].valid_for_read,false)
 eq(hub_inv.get_item_count{name='iron-plate'},2,'only what left the hub was sent')
 eq(drop_pod.cargo_pod_destination.surface,vulcanus_surface); eq(drop_pod.cargo_pod_destination.position.x,0); eq(d.to,'vulcanus')
 -- The drop is followed until it lands (drops.lua): its number, the pod, who is told.
@@ -342,12 +375,93 @@ eq(hub_inv.get_item_count{name='coal'},coal_before); eq(drop_pod.valid,false)
 -- The hub cannot take them back (filled meanwhile): they stay in the pod, which is kept.
 local insert=hub_inv.insert
 hub_inv.insert=function() return 0 end
-fails(function() space.drop(p,{platform='alpha',items={{item='coal',count=2}}}) end,'the hub took back all but coal*1 coal*1, which stay in the cargo pod on the hub')
-eq(drop_pod.valid,true); eq(drop_pod.cargo[1].count+drop_pod.cargo[2].count,2)
+fails(function() space.drop(p,{platform='alpha',items={{item='coal',count=2}}}) end,'the hub took back all but coal*2, which stay in the cargo pod on the hub')
+eq(drop_pod.valid,true); eq(drop_pod.cargo[1].count,2,'two hub stacks of 1 share a pod slot')
 hub_inv.insert=insert
 refuse=false
 platform.space_location=nil
 fails(function() space.drop(p,{platform='alpha',items={{item='coal',count=1}}}) end,'not stopped at a planet')
+-- A list bigger than one pod (Astra, shift09: a Gleba kit took three drops,
+-- the first partial one read as complete). Pods of 10 slots; the split keeps
+-- the list's order (cargo.lua pods).
+platform.space_location={name='vulcanus',type='planet'}
+pod_size=10; game.tick=1000
+hub_slots={}
+for i=1,12 do hub_slots[#hub_slots+1]=stack('iron-plate',100) end
+for i=1,10 do hub_slots[#hub_slots+1]=stack('coal',50) end
+for i=1,8 do hub_slots[#hub_slots+1]=stack(nil,0) end
+for i=1,#hub_slots do hub_inv[i]=hub_slots[i] end
+for i=#hub_slots+1,40 do hub_inv[i]=nil end
+local kit={{item='iron-plate',count=1200},{item='coal',count=300}}
+-- Dry run: the split, nothing sent.
+platform.hub.cargo_hatches={{is_output_compatible=false},{is_output_compatible=true},{is_output_compatible=true},{is_output_compatible=true}}
+local dry=space.drop(p,{platform='alpha',items=kit,dry_run=true})
+eq(dry.dry_run,true); eq(#dry.pods,2); eq(dry.pods[1],'pod 1 (10 slots): iron-plate*1000'); eq(dry.pods[2],'pod 2 (8 slots): iron-plate*200 coal*300')
+eq(dry.pod_slots,'a cargo pod holds 10 slots (no weight limit); the list takes 18 stacks')
+eq(dry.hatches,'3 output hatches: up to 3 pods leave at once, each hatch sends its next 2 s after its last')
+assert(dry.sends:find('full: true sends all 2 pods',1,true),dry.sends); eq(dry.short,nil)
+eq(hub_inv.get_item_count{name='iron-plate'},1200,'a dry run sends nothing')
+eq(space.drop(p,{platform='alpha',items={{item='coal',count=600}},dry_run=true}).short[1],'coal: the hub holds 500 of 600')
+-- Without full: the first pod goes, and the reply says what stays in the hub.
+d=space.drop(p,{platform='alpha',items=kit})
+eq(#d.dropped,1); eq(d.dropped[1],'iron-plate*1000'); eq(d.pods,nil)
+eq(d.short,'not sent, still in the hub: iron-plate*200 coal*300 (a cargo pod holds 10 slots and the list takes 2 pods; full: true sends them all)')
+eq(hub_inv.get_item_count{name='iron-plate'},200)
+-- full: every pod, at once while hatches are free.
+for i=1,10 do hub_inv.insert(stack('iron-plate',100)) end
+_G.drop_records={}
+d=space.drop(p,{platform='alpha',items=kit,full=true})
+eq(#d.pods,2); eq(d.pods[1].items,'iron-plate*1000'); eq(d.pods[1].slots,10); eq(d.pods[2].items,'iron-plate*200 coal*300'); eq(d.pods[2].slots,8)
+eq(d.dropped[1],'iron-plate*1200'); eq(d.dropped[2],'coal*300'); eq(d.short,nil); eq(d.pods_waiting,nil)
+eq(#drop_records,2,'each pod is followed down')
+-- full with one hatch free: the rest wait for a hatch, a timed action.
+for i=1,12 do hub_inv.insert(stack('iron-plate',100)) end
+for i=1,6 do hub_inv.insert(stack('coal',50)) end
+hatches=1; _G.drop_job=nil
+d=space.drop(p,{platform='alpha',items=kit,full=true})
+eq(#d.pods,1); assert(d.pods_waiting:find('1 more pod wait',1,true) and d.pods_waiting:find('iron-plate*200 coal*300',1,true),d.pods_waiting)
+eq(d.until_tick,1000+120*2+600); eq(drop_job.kind,'drop'); eq(#drop_job.pods,1)
+game.tick=1010
+eq(space.drop_tick(p,drop_job),nil,'no hatch free yet')
+hatches=1; game.tick=1020
+eq(space.drop_tick(p,drop_job),'dropped')
+local res,why=space.drop_result(drop_job,'dropped')
+eq(#res.pods,2); eq(res.pods[2].items,'iron-plate*200 coal*300'); eq(res.dropped[2],'coal*300'); eq(res.not_sent,nil); eq(why,nil)
+-- The hub ran short meanwhile: what is there goes; short says what did not.
+for i=1,12 do hub_inv.insert(stack('iron-plate',100)) end
+for i=1,6 do hub_inv.insert(stack('coal',50)) end
+hatches=1; game.tick=2000
+d=space.drop(p,{platform='alpha',items=kit,full=true})
+for i=1,#hub_slots do if hub_slots[i].valid_for_read and hub_slots[i].name=='coal' then hub_slots[i].clear() end end
+hub_inv.insert(stack('coal',20))
+hatches=nil; game.tick=2010
+eq(space.drop_tick(p,drop_job),'short')
+res,why=space.drop_result(drop_job,'short')
+eq(res.pods[2].items,'iron-plate*200 coal*20'); eq(why,'the hub held less than asked: coal*280 not sent')
+-- The platform leaves: the waiting pods are not sent.
+for i=1,12 do hub_inv.insert(stack('iron-plate',100)) end
+hatches=1; game.tick=3000
+d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=1200}},full=true})
+platform.space_location=nil; platform.space_connection={from={name='vulcanus'},to={name='nauvis'}}; platform.distance=0.1
+game.tick=3010
+eq(space.drop_tick(p,drop_job),'failed'); eq(drop_job.why,'platform alpha left vulcanus (at vulcanus->nauvis 10%)')
+res=space.drop_result(drop_job,'failed'); eq(res.not_sent,'iron-plate*200')
+-- One full drop at a time: another is refused while its pods wait (nothing leaves the hub).
+_G.pending_job={platform=platform,pods={{items={}}}}
+platform.space_location={name='vulcanus',type='planet'}; platform.space_connection=nil
+local before_iron=hub_inv.get_item_count{name='iron-plate'}
+fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=100}},full=true}) end,'your last full drop from alpha still has 1 pod waiting for a hatch')
+eq(hub_inv.get_item_count{name='iron-plate'},before_iron)
+eq(space.drop(p,{platform='alpha',items={{item='iron-plate',count=100}},full=true,dry_run=true}).dry_run,true,'a dry run is not refused')
+_G.pending_job=nil
+-- No hatch free at all: without full it fails, with full it waits for one.
+platform.space_location={name='vulcanus',type='planet'}; platform.space_connection=nil
+hatches=0
+fails(function() space.drop(p,{platform='alpha',items={{item='iron-plate',count=100}}}) end,'no free cargo hatch right now')
+d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=100}},full=true})
+eq(d.drop,nil); eq(#d.pods,0); assert(d.pods_waiting:find('1 more pod wait',1,true),d.pods_waiting)
+hatches=nil; pod_size=2
+
 -- Creating a platform goes through the force like the platform GUI.
 p.force.create_space_platform=function(args) return {name=args.name,state=0,planet=args.planet} end
 local made=space.platform_create(p,{name='beta'})

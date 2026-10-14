@@ -3,7 +3,7 @@ return function(api)
   local M = {handlers={}}
   local MAX_PENDING, MAX_HISTORY, MAX_INSTANT, MAX_BYTES, MAX_GUARDS, CHECK_TICKS = 128, 64, 4, 1048576, 8, 10
   -- Outcomes of timed actions that count as the step succeeding.
-  local SUCCESS={duration_elapsed=true,target_mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true}
+  local SUCCESS={duration_elapsed=true,target_mined=true,repair_completed=true,arrived=true,arrived_near=true,path_built=true,constructed=true,nothing_to_do=true,clear=true,fed=true,collected=true,topped_up=true,target_destroyed=true,dropped=true}
   -- construct's 'incomplete' (ghosts left for lack of items, or failures) is a failure.
   local forbidden = {attach=true, detach=true, recipes=true, technologies=true, inspect=true, blueprint_export=true, blueprint_list=true, stop=true, describe=true, status=true, observe=true, screenshot=true, map=true, nearest=true, craftable=true, scan=true, power=true, grid=true, rates=true, bottleneck=true, stock=true, platforms=true,
     order_set=true, order_remove=true, orders=true, orders_pause=true, orders_resume=true}

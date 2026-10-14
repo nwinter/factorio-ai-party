@@ -45,6 +45,8 @@ local water={name='water',prototype={collision_mask={layers={water_tile=true,ite
 local grass={name='grass-1',prototype={collision_mask={layers={ground_tile=true}}}}
 local tile_queries=0
 surface.find_tiles_filtered=function(f)
+  -- The closed-in check after a build (pathing.lua) floods with the character's box: not the shore search.
+  if f.collision_mask=='player' then return {} end
   tile_queries=tile_queries+1
   local out={}
   local lt,rb=f.area.left_top,f.area.right_bottom

@@ -235,7 +235,7 @@ local function finish(index, outcome)
   end
   if action and action.kind=='feed' then
     local last=s.last[index]
-    last.result=action.result; last.error=action.error
+    last.result=action.result; last.error=action.error; last.handler=action.handler
   end
   if action and action.kind=='wait_until' then
     local last=s.last[index]
@@ -1054,6 +1054,7 @@ function handlers.status(p,a)
   if a.brief==true then
     return {brief=true,active=active(p.index),last=state().last and state().last[p.index] or false,combat=state().combat and state().combat[p.index] or false,
       last_combat=state().last_combat and state().last_combat[p.index] or false,alive=alive or false,riding=p.driving or nil,connected=p.connected,
+      drop_pending=M.drop_pending(p.index),last_drop=M.last_drop(p.index),
       surface=alive and p.surface.name or nil,platform=alive and p.surface.platform and p.surface.platform.name or nil,
       alerts=a.alerts==true and recent_alerts(a,p) or nil,order=M.orders.brief(p.index),
       supported_control=controllable,control_error=not controllable and tostring(control_error) or nil,tick=game.tick,position=p.position}
@@ -2155,7 +2156,8 @@ local function placement_error(p,proto,pos,direction,near)
   local l,t,r,btm=b.left_top.x,b.left_top.y,b.right_bottom.x,b.right_bottom.y
   if direction==4 or direction==12 then l,t,r,btm=-btm,l,-t,r end
   local area={left_top={x=pos.x+l,y=pos.y+t},right_bottom={x=pos.x+r,y=pos.y+btm}}
-  local found,character,clearable,items={},false,false,false
+  local found,character,items={},false,false
+  local trees,rocks,cliffs=0,0,0
   for _,e in pairs(p.surface.find_entities_filtered{area=area,limit=16}) do
     if e.valid and e.type=='character' and e==p.character then character=true
     elseif e.valid and e.type=='character' and #found<4 then
@@ -2171,13 +2173,20 @@ local function placement_error(p,proto,pos,direction,near)
       local name=e.type=='entity-ghost' and 'ghost '..e.ghost_name or e.type=='tile-ghost' and 'tile ghost '..e.ghost_name or e.name
       -- An item on the ground (shake4: Grok's 9 tries at one spot): say which.
       if e.type=='item-entity' then items=true; name=name..(e.stack and e.stack.valid_for_read and ' ('..e.stack.name..')' or '') end
-      if e.type=='tree' or e.type=='plant' or e.type=='simple-entity' or e.type=='cliff' then clearable=true end
+      if e.type=='tree' or e.type=='plant' then trees=trees+1 elseif e.type=='simple-entity' then rocks=rocks+1 elseif e.type=='cliff' then cliffs=cliffs+1 end
       found[#found+1]=string.format('%s (%g,%g)',name,e.position.x,e.position.y)
     end
   end
   if character then found[#found+1]='the character standing on the footprint (move off it first)' end
   if #found>0 then
-    return ' by '..table.concat(found,', ')..(clearable and '; mine it, or place_ghosts (marks it) + construct (clears it)' or '')
+    -- Trees and rocks need mining first (Sol, shift09: say so with the names
+    -- and positions, also when a build that waited for a craft hits them).
+    local what=trees>0 and rocks>0 and 'the trees and rocks' or trees>1 and 'the trees' or trees==1 and 'the tree'
+      or rocks>1 and 'the rocks' or rocks==1 and 'the rock' or nil
+    local them=trees+rocks>1 and 'them' or 'it'
+    return ' by '..table.concat(found,', ')
+      ..(what and string.format('; it needs %s mined first (mine %s, or place_ghosts marks %s and construct clears %s)',what,them,them,them) or '')
+      ..(cliffs>0 and '; cliff explosives clear a cliff (a character cannot mine one)' or '')
       ..(items and '; a build takes items on the ground into your inventory, and this one did not fit: free a slot (or stand next to it and fh call pickup)' or '')
   end
   -- Tile buildability rules (asteroid collectors: rear rows on foundation, the
@@ -2401,7 +2410,7 @@ local function build_one(p,a)
   if direct then
     local e,picked,replaced,need=build_direct(p,stack,pos,direction,a.quality or 'normal',a.type,place)
     local joined=e.type=='electric-pole' and bridge_pole(e) or 0
-    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced}
+    return {consumed=need,entity=built_summary(e),networks_joined=joined>0 and joined or nil,picked_up=picked,replaced=replaced},{e}
   end
   local function held()
     local n=p.get_main_inventory().get_item_count{name=a.item,quality=a.quality or 'normal'}
@@ -2422,17 +2431,36 @@ local function build_one(p,a)
   assert(restored,'build finished but could not restore cursor; items remain in cursor')
   assert(ok,err)
   local after=held()
-  local placed,joined={},nil
+  local placed,joined,ents={},nil,{}
   if before>after then
     for _,e in pairs(p.surface.find_entities_filtered(filter)) do
       if e.valid and not existing[e.unit_number or (e.name..'@'..e.position.x..','..e.position.y)] then
-        placed[#placed+1]=built_summary(e)
+        placed[#placed+1]=built_summary(e); ents[#ents+1]=e
         if e.type=='electric-pole' then joined=(joined or 0)+bridge_pole(e) end
       end
     end
   end
   return {consumed=before-after,entity=#placed==1 and placed[1] or nil,entities=#placed>1 and placed or nil,
-    networks_joined=joined and joined>0 and joined or nil}
+    networks_joined=joined and joined>0 and joined or nil},ents
+end
+-- After a hand build: what it just built closed the character in where it
+-- stands (Gemini, shift09: a placement trapped the character in a closed
+-- box), with the entities that each filled the last gap out (pathing.lua).
+function M.closed_in_note(p,built)
+  if #built==0 then return nil end
+  local c=p.character
+  if not (c and c.valid) or c.vehicle then return nil end
+  local half=M.pathing.half(c)
+  local ok,res=pcall(M.pathing.closed_by,p.surface,p.position,half,built,{ignore=c,force=p.force})
+  if not (ok and res) then return nil end
+  local list={}
+  for _,e in ipairs(res.gaps) do if #list<6 then list[#list+1]=string.format('%s (%g,%g)',e.name,e.position.x,e.position.y) end end
+  local here=p.position
+  local what=#list==1 and 'the last gap out was where '..list[1]..' now stands'
+    or #list>1 and 'without any one of '..table.concat(list,', ')..(#built>#list and string.format(' (of %d built now)',#built) or '')..' a gap out would stay'
+    or 'what this build placed closes it'
+  return string.format('the character is closed in now where it stands (%g,%g): %s; %s',math.floor(here.x*10+0.5)/10,math.floor(here.y*10+0.5)/10,
+    what,M.pathing.area_text(res.region,half))
 end
 -- Batches share item/direction/quality defaults and stop at the first failure,
 -- (tiles report the tile instead of an entity)
@@ -2467,24 +2495,26 @@ function handlers.build(p,a)
     return {stepping_aside={from=p.position,to=aside.to},until_tick=until_tick}
   end
   if not a.builds then
-    local r=build_one(p,a)
-    if not r.aside then return r end
+    local r,ents=build_one(p,a)
+    if not r.aside then r.closed_in=M.closed_in_note(p,ents or {}); return r end
     local rest={}
     for k,v in pairs(a) do rest[k]=v end
     return step_aside(r.aside,rest)
   end
   assert(type(a.builds)=='table' and #a.builds>=1 and #a.builds<=64,'builds requires 1..64 {item,position,direction} entries')
   assert(a.skip_failed==nil or type(a.skip_failed)=='boolean','skip_failed must be true or false')
-  local placed,failed,inserters={},{},{}
+  local placed,failed,inserters,built={},{},{},{}
   for _,f in ipairs(a.failed_before or {}) do failed[#failed+1]=f end
+  for _,e in ipairs(a.built_ents or {}) do built[#built+1]=e end
   for i,b in ipairs(a.builds) do
-    local ok,result=pcall(function()
+    local ok,result,ents=pcall(function()
       assert(type(b)=='table','each build must be an object')
-      local r=build_one(p,{item=b.item or a.item,position=b.position,direction=b.direction or a.direction,quality=b.quality or a.quality,type=b.type,size=b.size or a.size,
+      local r,ents=build_one(p,{item=b.item or a.item,position=b.position,direction=b.direction or a.direction,quality=b.quality or a.quality,type=b.type,size=b.size or a.size,
         entity=b.entity or a.entity,stepped=a.stepped and i==1})
       assert(r.aside or r.consumed>0,'nothing was placed')
-      return r
+      return r,ents
     end)
+    for _,e in ipairs(ok and ents or {}) do built[#built+1]=e end
     -- A partial batch is a failure, so plan on_fail policies see it; the
     -- entries before it stay built. skip_failed (shake3: Grok and Astra
     -- wanted the rest built) lists the entry and goes on.
@@ -2498,6 +2528,7 @@ function handlers.build(p,a)
       rest.built_before=(a.built_before or 0)+#placed
       rest.index_before=(a.index_before or 0)+i-1
       rest.failed_before=#failed>0 and failed or nil
+      rest.built_ents=#built>0 and built or nil
       local out=step_aside(result.aside,rest)
       out.built=#placed; out.placed=#placed>0 and placed or nil; out.failed=#failed>0 and failed or nil
       return out
@@ -2519,7 +2550,8 @@ function handlers.build(p,a)
       if #loose<16 then loose[#loose+1]={name=e.name,position=e.position,missing=t.missing,pickup=t.pickup,drop=t.drop} end
     end
   end
-  return {built=#placed,placed=placed,built_before=a.built_before,failed=#failed>0 and failed or nil,inserters_without_target=loose}
+  return {built=#placed,placed=placed,built_before=a.built_before,failed=#failed>0 and failed or nil,inserters_without_target=loose,
+    closed_in=M.closed_in_note(p,built)}
 end
 -- Red, green and copper wires, as a player drags them (circuits.lua).
 function handlers.wire(p,a) return M.circuits.wire(p,a) end
@@ -4091,7 +4123,7 @@ M.bplibrary_operator=blueprint_handlers.operator
 M.paste_plan=blueprint_handlers.plan
 -- Dry runs of place_ghosts, paste and build (dryrun.lua); fluid ports of an
 -- entity not built yet, by recipe (ports.lua).
-M.dryrun=require('dryrun'){placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,
+M.dryrun=require('dryrun'){placewhy=M.placewhy,charted=charted,own_platform=own_platform,character_owner=M.character_owner,targets=M.targets,keep=M.keep,pathing=M.pathing,
   placement_error=function(p,proto,pos,direction) return placement_error(p,proto,pos,direction) end,
   crafting_count=function(p,item) return crafting_count(p,item) end,
   rail_box=function(name,pos,dir) return M.rails and M.rails.box(name,pos,dir) end,
@@ -5045,6 +5077,7 @@ scheduler=scheduler_module{
   fix_args=function(action,args) return M.aliases.fix(action,args,M.takes) end,
   busy=function(p,action)
     if action=='shoot' then return state().combat and state().combat[p.index]~=nil end
+    if action=='drop' then return state().drop_jobs and state().drop_jobs[p.index]~=nil or false end
     local now=timed[action] and state().active[p.index]
     return now and (timed_kind[action] and timed_kind[action][now.kind] or now.kind==action) or false
   end,
@@ -5059,11 +5092,11 @@ scheduler=scheduler_module{
   on_step=function(index,action) M.selfview.request(index,action,true) end,
   on_fail=function(index,action,reason) M.selfview.failed(index,action,reason) end,
   completion=function(p,action)
-    local last=action=='shoot' and state().last_combat or timed[action] and state().last
+    local last=action=='shoot' and state().last_combat or action=='drop' and state().last_drop or timed[action] and state().last
     return last and last[p.index]
   end,
   outcome=function(p,action)
-    local last=action=='shoot' and state().last_combat or timed[action] and state().last
+    local last=action=='shoot' and state().last_combat or action=='drop' and state().last_drop or timed[action] and state().last
     return last and last[p.index] and last[p.index].outcome
   end
 }
@@ -5789,12 +5822,43 @@ function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 -- Where drops landed (drops.lua): their pods followed down, told in the team block, the drops read.
 M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve}
 function handlers.drops(p,a) return M.drops.read(p,a) end
-space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,
+space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+  -- A full drop's pods waiting for a hatch: a channel of their own, as shoot's is, so the
+  -- character's action and queue go on (drop is passive); M.drop_jobs_tick sends them.
+  start=function(p,job) state().drop_jobs=state().drop_jobs or {}; state().drop_jobs[p.index]=job end,
+  pending=function(p) return state().drop_jobs and state().drop_jobs[p.index] end,
   bot=function(p) return M.bots.is(p) and M.bots.named(rawget(p,'__bot')) or nil end,
   -- Riding or landing takes the character away: controls stop and a plan pauses.
   stop=function(p) M.stop_player(p.index) end,
   -- A platform's defence: hub health, turrets and their ammo against the hub's, repair packs (platalerts.lua).
   defense=function(pl) return M.platalerts.defense(pl) end}
+-- A full drop's pods that wait for a hatch (space.lua), every 10 ticks: sent
+-- as hatches free up, then the result kept as last_drop (status shows it,
+-- and drop_pending while pods wait; --wait follows them as it does shoot).
+function M.drop_jobs_tick(tick)
+  local jobs=state().drop_jobs
+  if not (jobs and next(jobs)) or tick%10~=0 then return end
+  for index,job in pairs(jobs) do
+    local ok,outcome=pcall(space.drop_tick,M.lookup(index),job)
+    if not ok then job.why=reason(outcome); outcome='failed' end
+    if not outcome and tick>job.until_tick then outcome='timed_out' end
+    if outcome then
+      local result,why=space.drop_result(job,outcome)
+      state().last_drop=state().last_drop or {}
+      state().last_drop[index]={kind='drop',outcome=outcome,tick=tick,result=result,why=why}
+      jobs[index]=nil
+    end
+  end
+end
+function M.drop_pending(index)
+  local job=state().drop_jobs and state().drop_jobs[index]
+  return job and {kind='drop',platform=job.platform.valid and job.platform.name or nil,pods_sent=#job.sent,pods_left=#job.pods,until_tick=job.until_tick} or nil
+end
+-- The last full drop's result for a minute after it ended (a wait reads it once).
+function M.last_drop(index)
+  local last=state().last_drop and state().last_drop[index]
+  return last and game.tick-last.tick<=3600 and last or nil
+end
 stock=stock_module{distance=distance,integer=integer,position=position,claims=M.claims,
   -- One stop of a rearm/refuel tour: top the entity up; stop when none is left.
   visit=function(p,action,e)
@@ -5955,6 +6019,7 @@ function M.tick_body(event)
   M.research.tick(event.tick)
   M.bots.tick(event.tick)
   M.drops.tick(event.tick)
+  M.drop_jobs_tick(event.tick)
   M.nametags.tick(event.tick)
   pcall(M.networks.tick,event.tick)  -- the networks' samples never stop the harness tick
   M.ores.tick()  -- queued chunks of an ore survey, a few a tick (never raises)

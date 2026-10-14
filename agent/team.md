@@ -180,7 +180,8 @@ already targets your character.
   fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
   new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
   reach every placement, and what each planned inserter picks up from and drops into (`missing: no drop target`);
-  `inspect` and build replies flag a built inserter with no pickup or drop target.
+  `inspect` and build replies flag a built inserter with no pickup or drop target. `closes_in` names the entry that
+  fills the last gap out when the plan would close you in where you stand; a build reply says `closed_in` after it.
   `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},"direction":"north",
   "recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid the recipe puts there;
   `inspect` of a ghost shows the same.
@@ -203,6 +204,8 @@ already targets your character.
   `eta_min` (at the current speed) and `next_stop`.
 - `./fh call requests --args '{"platform":"NAME"}'` shows each hub section; `off: true` means it requests nothing
   (`"section":N,"active":true` switches it on), and each request shows the planet it imports from.
+- `drop` sends one cargo pod (10 slots); `short` says what stays in the hub. `"full":true` sends every pod the list
+  takes (each pod's items in `pods`), and `"dry_run":true` shows the pod split first.
 - If the harness lacks a tool you need, `./fh board request --args '{"title":"...","problem":"...","proposal":"..."}'`.
   You can't change the harness yourself; answers come as board notes and a `server: harness vN` chat line.
 

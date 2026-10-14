@@ -494,7 +494,7 @@ fh sleep 900 --until researched                       # ...or until the research
   - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`).
   - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
-- A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works.
+- A `build`, `transfer`, `rearm` or `refuel` short of an item that the hand-craft queue is making waits for the craft (`awaiting_craft`, outcome `fed` once it acted, or `failed`), so `craft` followed by `build --wait` works. A wait that ends `failed` names the call (`action: build`) and puts its error on the error line (Sol, shift09: the silo build hit trees after its craft and read only `Control ended: failed`): `error: action_interrupted: Control ended: failed: placement blocked by stingfrond (63.9375,11.375), stingfrond (68.125,12.4375); it needs the trees mined first (mine them, or place_ghosts marks them and construct clears them)`. A refused build names what is in the way the same way, direct or after a craft: trees and rocks need mining first, and a cliff takes cliff explosives (a character cannot mine one).
 
 ## Messages and reads
 
@@ -644,6 +644,27 @@ fh sleep 900 --until researched                       # ...or until the research
   inserter with no drop target shows `drop_tile` (and `drop_note` when it is empty space: thrown overboard).
 - A `drop` whose pod destination the game refuses returns the items to the hub; what the hub cannot take back stays in
   the cargo pod on the hub, and the error says which.
+- Cargo pods (2.0.77, read on a private server): a pod holds 10 slots and has no weight limit; a hub sends one pod per
+  output hatch at a time (3 on a hub), and a hatch sends its next pod 120 ticks (2 s) after its last. A `drop` list
+  splits into pods in the list's own order (cargo.lua's split, slots alone: Astra's shift09 Gleba kit is
+  `stone-brick*500 assembling-machine-2*1 steel-plate*400`, `steel-plate*600 electric-engine-unit*200`, then the
+  rest), stacks packed together (a part stack in the pod is topped up before a new slot).
+  - Without `full`, only the first pod goes. When the list takes more, the reply's `short` (the compact output's
+    `warning:` line) says what stays in the hub: `not sent, still in the hub: steel-plate*600 ... (a cargo pod holds 10
+    slots and the list takes 3 pods; full: true sends them all)` (Astra, shift09: the first partial drop of a kit
+    read as complete).
+  - `full: true` sends every pod: as many at once as the hatches are free, each pod in `pods [{pod, drop, items,
+    slots}]` (`drop` is its number for the team block and the `drops` read). Pods past the free hatches go as each
+    hatch frees up, apart from the character: its running action and queue go on (`drop` is passive). The reply
+    then has `pods_waiting` (their items) and `until_tick`; `status` shows `drop_pending {platform, pods_sent,
+    pods_left, until_tick}` while they wait and then `last_drop {outcome, result {pods, dropped, not_sent, short},
+    why}` for a minute. `--wait` waits for them (outcome `dropped`; `short` when the hub no longer held some items,
+    `failed` when the platform left or the hub refused, `timed_out`: these exit 1 with `why` on the error line). One
+    full drop at a time per agent: another is refused while pods wait. A queue step `drop` with `full` waits for its
+    pods too.
+  - `dry_run: true` sends nothing and shows the split: `pods` (`pod 1 (10 slots): stone-brick*500 ...`),
+    `pod_slots`, `hatches`, `sends` (what a call with and without `full` sends) and `short` (items the hub holds
+    less of).
 - A `drop` returns its number (`drop: N`). Its pod is followed down, because pods land after the call returns and often
   10-20 tiles from the spot they were aimed at (shift06 14:55: aimed near (14,134), landed at (0,129)). The sender,
   and the teammates named in `to` (a name or a list), hear about it in their team block, at most 4 drop lines per
@@ -859,6 +880,20 @@ fh sleep 900 --until researched                       # ...or until the research
     a later entry, a tile brush that lays nothing).
   - A dry run checks at most 1024 entities and 8192 tiles (repeat copies included) and refuses a larger plan before
     any check. Real engine, shift world: 7 entries on nauvis 9 ms, the platform case 14 ms.
+  - `closes_in` (off a platform, Gemini shift09: a placement trapped the character in a closed box): the plan's
+    footprints that stop a character, within 16 tiles, would leave the character no way out where it stands. The
+    area it reaches is flooded with the character's 0.4-tile box (pathing.lua, as move_to's `closed in`):
+    `placed, these close the character in where it stands (40.5,140.5): the last gap out is where #1 stone-wall
+    (42.5,140.5) goes; the area (39,139)-(42,142) (about 10 tiles) has no gap the character (0.4 tiles wide) fits
+    through; around it: stone-wall`. When several entries each leave a gap: `without any one of #1 ..., #2 ... (of 15
+    planned entries around it) a gap out stays`. Walls, gates and pipes stretch their box toward what they join
+    (2.0.77: 0.289 lone, 0.488 toward a joined wall, pipe, a gate in its line, a pipe-to-ground's open side or a
+    built machine's fluid connection), so a joined line leaves no gap a lone pair would; the plan's walls and pipes
+    are checked joined (fluid connections of machines planned in the same call are not read). Our gates open for the
+    character. `closed_in` instead: `the character is closed in already where it stands ...` (nothing blamed on the
+    plan). A build reply says the same after the fact: `closed_in: the character is closed in now where it stands
+    (0.5,78.5): the last gap out was where pipe (-1.5,78.5) now stands; ...`. About 1 ms a check on a private 2.0.77
+    server (no way out within 16 tiles counts as closed in).
   - `requests_kept` (a paste): for each entity with requests the blueprint lands on (a platform hub, requester and
     buffer chests, landing pads, spidertrons), `space-platform-hub (0,0): its requests stay (14 sections, 1 off)`, and
     when the blueprint carries requests of its own for it, `the blueprint's own requests (1 section) are not applied by

@@ -41,7 +41,7 @@ return function(api)
   local CONTROL = {stop=true, attach=true, detach=true, sleep_check=true}
   -- How a direct timed action may end without having failed (runtime.lua finish).
   local DONE = {duration_elapsed=true, target_mined=true, repair_completed=true, arrived=true, arrived_near=true, path_built=true,
-    constructed=true, nothing_to_do=true, clear=true, fed=true, collected=true, topped_up=true, completed=true, met=true,
+    constructed=true, nothing_to_do=true, clear=true, fed=true, collected=true, topped_up=true, completed=true, met=true, dropped=true,
     replaced=true, interrupted=true, told=true, mentioned=true, stopped=true, out_of_items=true, player_unavailable=true}
   local function kind_of(action)
     if KIND[action] then return KIND[action] end
