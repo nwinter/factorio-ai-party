@@ -82,8 +82,10 @@ the `kb` lookups before quoting them on air.
 ## Rough SPM benchmarks by game time (our judgement, not a record)
 
 SPM in the community = science packs consumed per minute **of each type** being researched ("a 60 SPM base" makes
-60 red, 60 green, ... per minute). **On our stream the overlay headline and the analyst's "SPM" are all pack colours
-summed**, so 15 red + 12 green shows as 27 SPM. Say which one when quoting; the table below is per type.
+60 red, 60 green, ... per minute). **On our stream the overlay headline and the analyst's "SPM" are the same: research
+units a minute**, the labs' use of packs in sets (every 2.0 technology takes one of each of its packs per unit), so labs
+using 15 red and 15 green a minute show as 15 SPM. Packs made per minute (all colours summed) is a separate number.
+The table below is per type.
 
 | Game time | Weak | Competent human | Strong / speedrun-like |
 |---|---|---|---|

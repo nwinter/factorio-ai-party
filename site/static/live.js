@@ -307,7 +307,8 @@
     var pct = Math.round((r.progress || 0) * 100);
     var strip = '<div class="strip-item"><span class="fx-label">Game time</span><b>' + esc(s.game_time || '–') + (s.paused ? ' (paused)' : '') + '</b></div>' +
       '<div class="strip-item"><span class="fx-label">Technologies</span><b>' + esc(r.done_count != null ? r.done_count : '–') + '</b></div>' +
-      '<div class="strip-item"><span class="fx-label">Science / min</span><b>' + esc(sci.spm != null ? fmt(sci.spm) : '–') + '</b></div>' +
+      '<div class="strip-item"><span class="fx-label">SPM</span><b>' + esc(sci.spm != null ? fmt(sci.spm) : '–') + '</b></div>' +
+      '<div class="strip-item"><span class="fx-label">Packs made / min</span><b>' + esc((sci.made || {}).per_min != null ? fmt(sci.made.per_min) : '–') + '</b></div>' +
       '<div class="strip-item"><span class="fx-label">Stage</span><b>' + esc(sci.stage_label || '–') + '</b></div>' +
       (r.current ? '<div class="strip-item strip-research"><div class="live-research-label"><span>Researching <strong>' + esc(r.label || label(r.current)) +
         '</strong></span><span class="live-research-pct">' + pct + '%</span></div><div class="fx-progress fx-progress--research fx-progress--thin" role="progressbar" aria-valuenow="' +
@@ -380,10 +381,10 @@
     var prodSeries = (s.production || []).slice(0, 4).map(function (p, i) {
       return { name: label(p.item), v: '--s' + (i + 1), values: (p.series || []).map(Number) };
     });
-    var sciSeries = [{ name: 'Science packs', v: '--s1', values: (sci.series || []).map(Number) }];
+    var sciSeries = [{ name: 'SPM', v: '--s1', values: (sci.series || []).map(Number) }];
     charts = {};
     var chartHtml = lineChart('Production', 'Items made per minute, last 30 minutes', prodSeries, 'per minute') +
-      lineChart('Science', 'All science packs per minute, last 30 minutes', sciSeries, 'packs per minute');
+      lineChart('Science', 'SPM: research units a minute (the labs\' use of packs in sets), last hour', sciSeries, 'research units per minute');
 
     // game chat
     var gchat = chat.slice(-12).map(function (c) {

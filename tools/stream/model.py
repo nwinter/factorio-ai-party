@@ -37,6 +37,21 @@ SCIENCE = ["automation-science-pack", "logistic-science-pack", "military-science
            "metallurgic-science-pack", "electromagnetic-science-pack", "agricultural-science-pack",
            "cryogenic-science-pack", "promethium-science-pack"]
 SPACE_PACKS = SCIENCE[6:]
+# Science per minute as players say it (viewer joonazan, operator 15:51): research throughput, the labs' use of
+# science packs in sets. Every 2.0 technology takes one of each of its packs per unit (243 of 243 with units in the
+# 2.0.77 data) and one technology runs at a time, so the units are the count of the pack the labs used most. The
+# agricultural pack spoils, and its count runs ahead of the others (shift12: the labs' agricultural count rose 3942
+# while red rose 2149), so it is left out unless nothing else was used.
+SPOILING_PACKS = {"agricultural-science-pack"}
+
+
+def research_units(used):
+    """Research units from the packs the labs used ({pack: count or rate}): the most-used pack that does not spoil."""
+    vals = [v or 0 for k, v in used.items() if k not in SPOILING_PACKS]
+    best = max(vals, default=0)
+    return best if best > 0 else max((v or 0 for v in used.values()), default=0)
+
+
 PLANET_LABELS = {"nauvis": "Nauvis", "vulcanus": "Vulcanus", "fulgora": "Fulgora", "gleba": "Gleba", "aquilo": "Aquilo",
                  "solar-system-edge": "Solar system edge", "shattered-planet": "Shattered Planet"}
 # Items the production widget can show, by game stage (0 raw .. 5 rocket). The widget leads with science per minute
@@ -452,6 +467,8 @@ class Model:
         self.research_started = False
         self.prod_samples = deque(maxlen=400)  # (wall time, game seconds, {item: total})
         self.flows = {}
+        self.used_samples = deque(maxlen=400)  # (wall time, game seconds, {pack: total the labs used}): score's consumed
+        self.used_flows = {}  # pack -> 30 two-minute counts the labs used, oldest first (harness.USED_FLOW_LUA)
         self.power = None
         self.darkness = None  # LuaSurface.darkness: 0 day .. ~0.85 midnight (nightlift.py)
         self.basemap = None  # the base as a coarse grid (harness.BASEMAP_LUA), for the site's live map only
@@ -516,6 +533,10 @@ class Model:
             self._ingest_research(obs["research"], now)
         if obs.get("produced") is not None:
             self.prod_samples.append((now, game_sec, dict(obs["produced"])))
+        if obs.get("consumed") is not None:
+            self.used_samples.append((now, game_sec, dict(obs["consumed"])))
+        if obs.get("used_flows"):
+            self.used_flows = obs["used_flows"]
         if obs.get("entities") is not None:  # the score's building counts (tools/pog.py), for unused_unlocks
             self.entities = dict(obs["entities"])
             # zeros are left out of the counts, so only a building the score says it counts can be "none built"
@@ -930,6 +951,7 @@ class Model:
         res["done"] = done
         res["current"] = r.get("current")
         res["progress"] = r.get("progress")
+        res["packs"] = list(r.get("packs") or [])  # the running technology's packs (score's current_packs)
 
     def unused_unlocks(self, now=None):
         """Researched technologies whose building the team has none of, oldest first: [{tech, unlocks, built,
@@ -1470,7 +1492,7 @@ class Model:
     def space_snapshot(self, sci, now=None):
         now = now or time.time()
         sp = self.space
-        packs = [dict(p, label=pack_label(p["item"])) for p in sci.get("packs") or [] if p["item"] in SPACE_PACKS]
+        packs = [dict(p, label=pack_label(p["item"])) for p in (sci.get("made") or {}).get("packs") or [] if p["item"] in SPACE_PACKS]
         planets = [planet_label(s) for s in sp.get("planets") or []]
         plats = []
         for i, p in enumerate(sp.get("platforms") or []):
@@ -1502,12 +1524,14 @@ class Model:
                 "hot": bool(lost or any(c.get("hits_per_min") for c in plats)),
                 "summary": " · ".join(bits) if active else None, "moments": list(self.moments)}
 
-    def _rates(self):
-        """Per-minute rates over the last ~2.5 game minutes from `score` total deltas (score's items only)."""
-        if len(self.prod_samples) < 2:
+    def _rates(self, samples=None):
+        """Per-minute rates over the last ~2.5 game minutes from `score` total deltas (score's items only; samples:
+        used_samples for what the labs used)."""
+        samples = self.prod_samples if samples is None else samples
+        if len(samples) < 2:
             return {}
-        t1, g1, p1 = self.prod_samples[-1]
-        for t0, g0, p0 in self.prod_samples:
+        t1, g1, p1 = samples[-1]
+        for t0, g0, p0 in samples:
             if g1 - g0 <= 150:
                 break
         if g1 <= g0:
@@ -1554,27 +1578,56 @@ class Model:
         return max([ITEM_STAGE.get(n, SCIENCE_STAGE.get(n, 0)) for n in made] or [0])
 
     def science(self, now):
-        """Headline: science packs made per minute (all colours), with the per-pack split and a per-minute series."""
+        """Headline: science per minute as players mean it (research_units: research units a minute, the labs' use of
+        packs in sets), with the labs' use per pack beside it (the running technology's packs, and any other used
+        lately) and a per-minute series; made: packs made per minute, all colours, and per pack."""
         latest = self.prod_samples[-1][2] if self.prod_samples else {}
         rate = self._rates()
-        packs = []
+        made_rows = []
         for n in SCIENCE:
             if latest.get(n, 0) > 0 or sum(self.flows.get(n) or []) > 0:
-                packs.append(self._item_row(n, latest, rate))
-        spm = round(sum(p["rate"] or 0 for p in packs), 1) if packs else None
-        width = max((len(p["series"]) for p in packs), default=0)
-        series = [round(sum((p["series"][i - width + len(p["series"])] if i - width + len(p["series"]) >= 0 else 0)
-                            for p in packs), 1) for i in range(width)]
+                made_rows.append(self._item_row(n, latest, rate))
+        made = {"per_min": round(sum(p["rate"] or 0 for p in made_rows), 1) if made_rows else None,
+                "packs": [{"item": p["item"], "rate": p["rate"], "total": p["total"]} for p in made_rows]}
+        # what the labs used: rates from the score's consumed totals, the series from the last hour's flows (else
+        # from the totals seen since the stream started)
+        used_latest = self.used_samples[-1][2] if self.used_samples else {}
+        used_rate = self._rates(self.used_samples)
+        series_by = {}
+        for n in SCIENCE:
+            if self.used_flows:  # one source for the whole series: the hour's flows, else the totals
+                s = [round(c / 2.0, 1) for c in self.used_flows.get(n) or []]
+            else:
+                s = self._series_from_totals(n, samples=self.used_samples)
+            if s:
+                series_by[n] = s
+        running = list(self.research.get("packs") or [])
+        packs, per = [], {}
+        for n in SCIENCE:
+            s = series_by.get(n) or []
+            r = used_rate[n] if n in used_rate else (sum(s[-2:]) / len(s[-2:]) if s else None)
+            if r is None and n not in running:
+                continue
+            per[n] = r or 0
+            if (r or 0) > 0 or n in running:
+                packs.append({"item": n, "rate": None if r is None else round(r, 1), "running": n in running,
+                              "used_total": used_latest.get(n)})
+        has_used = bool(self.used_samples or self.used_flows)
+        spm = round(research_units(per), 1) if has_used else None
+        width = max((len(s) for s in series_by.values()), default=0)
+        series = [round(research_units({n: (s[i - width + len(s)] if i - width + len(s) >= 0 else 0)
+                                        for n, s in series_by.items()}), 1) for i in range(width)]
         stage = self.stage(latest)
-        return {"spm": spm, "series": series, "stage": stage, "stage_label": STAGE_LABELS[stage],
-                "packs": [{"item": p["item"], "rate": p["rate"], "total": p["total"]} for p in packs]}
+        return {"spm": spm, "series": series, "stage": stage, "stage_label": STAGE_LABELS[stage], "packs": packs,
+                "running": running, "made": made}
 
-    def _series_from_totals(self, item, buckets=30):
-        if len(self.prod_samples) < 2:
+    def _series_from_totals(self, item, buckets=30, samples=None):
+        samples = self.prod_samples if samples is None else samples
+        if len(samples) < 2:
             return []
         out = []
         prev = None
-        for t, g, p in self.prod_samples:
+        for t, g, p in samples:
             if prev and g > prev[0]:
                 out.append(max(0.0, (p.get(item, 0) - prev[1]) * 60.0 / (g - prev[0])))
             prev = (g, p.get(item, 0))

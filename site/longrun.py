@@ -23,6 +23,25 @@ PACKS = [("automation-science-pack", "Red"), ("logistic-science-pack", "Green"),
          ("electromagnetic-science-pack", "Electromagnetic"), ("agricultural-science-pack", "Agricultural"),
          ("cryogenic-science-pack", "Cryogenic"), ("promethium-science-pack", "Promethium")]
 PACK_LABEL = dict(PACKS)
+# Science per minute as players say it (operator 15:51, viewer joonazan): research units a minute, the labs' use of
+# packs in sets. Every 2.0 technology takes one of each of its packs per unit and one runs at a time, so the units are
+# the count of the pack the labs used most; the agricultural pack spoils and its count runs ahead (tools/stream/model.py).
+SPOILING_PACKS = {"agricultural-science-pack"}
+
+
+def research_units(used):
+    """Research units from the packs the labs used ({pack: count or rate}): the most-used pack that does not spoil."""
+    vals = [v or 0 for k, v in used.items() if k not in SPOILING_PACKS]
+    best = max(vals, default=0)
+    return best if best > 0 else max((v or 0 for v in used.values()), default=0)
+
+
+def used_between(a, b):
+    """{pack: count} the labs used between two score rows; None unless both carry lab counts (older logs have none,
+    and a row before any use has none either)."""
+    if a.get("used") is None or b.get("used") is None:
+        return None
+    return {k: max(0, v - a["used"].get(k, 0)) for k, v in b["used"].items()}
 # technologies worth a line in a shift's moments (the rest is in the research count)
 MILESTONES = {
     "oil-processing": "oil processing", "advanced-oil-processing": "advanced oil processing",
@@ -141,6 +160,9 @@ def scores(path):
                      "done": set(done if isinstance(done, list) else done),
                      "science": sum(v for k, v in produced.items() if SCIENCE.search(k)),
                      "packs": {k: v for k, v in produced.items() if SCIENCE.search(k) and isinstance(v, (int, float))},
+                     # the labs' use of each pack (score logs since Space Age; absent from older ones and before any use)
+                     "used": {k: v for k, v in (s.get("consumed") or {}).items() if isinstance(v, (int, float))}
+                     if isinstance(s.get("consumed"), dict) else None,
                      "rockets": s.get("rockets") or 0,
                      "current": s.get("current_research") if isinstance(s.get("current_research"), str) else None,
                      "platforms": [p["name"] for p in plats],
@@ -320,8 +342,9 @@ def chat_lines(path):
 
 
 def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=(), hide=lambda name, text: False):
-    """{"shifts": [row per shift], "research": [(game minute, technologies)], "spm": [(game minute, packs/min)],
-    "spm_packs": {pack: [(game minute, packs/min)]}, "rockets": [(game minute, rockets)], "made": {pack: total},
+    """{"shifts": [row per shift], "research": [(game minute, technologies)], "spm": [(game minute, research units/min)],
+    "spm_packs": {pack: [(game minute, packs the labs used/min)]}, "made_spm": [(game minute, packs made/min, all
+    colours)], "rockets": [(game minute, rockets)], "made": {pack: total},
     "firsts": [{label, kind, tick, t, shift}], "bounds": [(game minute, shift n, started)], "clock": [(game minute,
     iso time)]} or None without a chain. clean: the site's redaction (build.clean) for any text taken from logs; keep:
     False drops a line outright (names the site must not show); agents: the agents' ids (their chat answers);
@@ -337,7 +360,7 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         p = parents(runs_dir).get(start)
         before = scores(runs_dir / p / "scores.jsonl") if p and (runs_dir / p).is_dir() else []
         origin = before[-1] if before else None
-    shifts, research, spm, rockets_s, clock, bounds = [], [], [], [], [], []
+    shifts, research, spm, rockets_s, clock, bounds, made_spm = [], [], [], [], [], [], []
     spm_packs, made, firsts, seen_first = {}, {}, [], set()
     prev = rebase(origin, origin) if origin else None
     last_row = origin  # for the made-pack deltas across shift changes
@@ -427,7 +450,9 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
         row.update(started=a["t"], ended=b["t"], running=running, tick0=a["tick"], tick1=b["tick"], game0=game_time(a["tick"]),
                    game1=game_time(b["tick"]), research=b["research"], research_new=b["research"] - base["research"],
                    researching=in_progress(b.get("current")),
-                   spm=round(sum(own.values()) / mins, 1) if mins > 0 else None,
+                   # SPM: research units a minute over the shift (the labs' use); packs made a minute, all colours
+                   spm=round(research_units(used_between(a, b)) / mins, 1) if mins > 0 and used_between(a, b) is not None else None,
+                   made_per_min=round(sum(own.values()) / mins, 1) if mins > 0 else None,
                    rockets=b["rockets"], rockets_new=b["rockets"] - base["rockets"],
                    platforms=b["platforms"], planets=b["planets"], deaths=deaths, losses=losses,
                    made=shift_made, made_total=sum(shift_made.values()), platforms_built=built, platforms_lost=lost,
@@ -557,10 +582,14 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
                 x = round(r["tick"] / 3600, 1)
                 tot = 0
                 for k in r["made"]:
-                    v = max(0.0, (r["made"].get(k, 0) - w0["made"].get(k, 0)) / dm)
-                    tot += v
-                    spm_packs.setdefault(k, []).append((x, round(v, 1)))
-                spm.append((x, round(tot, 1)))
+                    tot += max(0.0, (r["made"].get(k, 0) - w0["made"].get(k, 0)) / dm)
+                made_spm.append((x, round(tot, 1)))
+                # SPM and the labs' use per pack: windows where both rows carry lab counts
+                used = used_between(w0, r)
+                if used is not None:
+                    for k, v in used.items():
+                        spm_packs.setdefault(k, []).append((x, round(v / dm, 1)))
+                    spm.append((x, round(research_units(used) / dm, 1)))
                 w0 = r
         row["series"] = {"research": [(round(r["tick"] / 3600, 1), r["research"]) for r in sc],
                          "rockets": [(round(r["tick"] / 3600, 1), r["rockets"]) for r in sc]}
@@ -573,5 +602,5 @@ def load(runs_dir, clean=lambda s: s, start=None, keep=lambda s: True, agents=()
     for k, pts in spm_packs.items():
         have = dict(pts)
         spm_packs[k] = [(x, have.get(x, 0.0)) for x in xs]
-    return {"shifts": shifts, "research": research, "spm": spm, "spm_packs": spm_packs, "rockets": rockets_s,
+    return {"shifts": shifts, "research": research, "spm": spm, "spm_packs": spm_packs, "made_spm": made_spm, "rockets": rockets_s,
             "made": made, "firsts": firsts, "bounds": bounds, "clock": clock, "platforms": plats}
