@@ -6891,6 +6891,9 @@ M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.
     local ok,more=pcall(M.lightning.alert_groups,force)
     if ok then for _,g in ipairs(more) do out[#out+1]=g end
     else local s=state(); s.lightning_errors={count=((s.lightning_errors or {}).count or 0)+1,last=tostring(more),tick=game.tick} end
+    -- A science colour with no maker working for 5+ min (scienceline.lua, Opus 07:55).
+    local oks,idle=pcall(M.scienceline.alert_groups,force)
+    if oks then for _,g in ipairs(idle) do out[#out+1]=g end end
     return out
   end,
   -- an agent player's alert panel (camera players have theirs switched off: cameras.lua)

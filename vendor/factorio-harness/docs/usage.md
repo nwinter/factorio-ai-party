@@ -1694,6 +1694,15 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
     `robots_busy`, a logistic network with no idle logistic robot in every 30-second look for 10 minutes (`logistic
     #3: no idle logistic robot for 11 min (147 robots; 1 requests unfilled 60+ s)`). A network with machines on low
     power (satisfaction under 100%) shows as the `low power` groups above.
+  - A science colour stopped (scienceline.lua, Opus 07:55), routed and limited the same way: `science_idle`, a pack the
+    current research needs whose makers on the science surface (the one with the most labs; it has some) all stood
+    still at a `team.science` build and still at a later one 5 minutes or more on, with their states and the chain's
+    first short step: `no chemical-science-pack maker working for 5+ min (14 makers: 14 item_ingredient_shortage);
+    first short step copper-ore: 6 electric-mining-drill (6 no resource left) into 6 transport-belt, made 0/min, used 40/min
+    (chemical-science-pack > advanced-circuit > copper-cable > copper-plate > copper-ore)`. One group per pack and
+    root step, so it is told once, and again when the root changes; it is gone at the first build where a maker
+    works. A pack made only on another planet is never one. The science line's builds now walk the crafters every
+    time.
   - Lightning on Fulgora (lightning.lua, Gemini's request), routed and limited the same way, with no hint. A rod or
     collector (`lightning-attractor` with an energy buffer; ruin attractors are left out) charges its own buffer
     from a strike and feeds it into its electric network:

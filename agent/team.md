@@ -125,7 +125,8 @@ already targets your character.
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
   as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that
   source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
-  idle logistic robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
+  idle logistic robot for 10 minutes, a science colour whose makers here have all stood still for 5+ minutes (with
+  its chain's first short step), Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
   your character's time by kind (the time before a request counts toward that request's kind), the hand hauls you
