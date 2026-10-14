@@ -117,9 +117,18 @@ do
   -- amount is count
   _,f,n=A.fix('transfer',{position=P,direction='to_entity',item='firearm-magazine',amount=40},takes)
   eq(f.count,40); eq(f.amount,nil)
-  -- two places: neither taken as the target (the refusal shows pick)
+  -- two places (friction2: Grok): a take at one and a give at the other, as the pick courier
   _,f,n=A.fix('transfer',{from_entity={x=52.5,y=45.5},to_entity={x=65.5,y=14.5},item='coal'},takes)
-  eq(n,nil); eq(f.from_entity.x,52.5)
+  eq(f.pick,'first_with_stock'); eq(f.positions[1].x,52.5); eq(f.to.y,14.5); eq(f.from_entity,nil); eq(f.to_entity,nil)
+  eq(n.notes[1],'from_entity and to_entity without pick: a take there and a give at to_entity (pick="first_with_stock")')
+  _,f,n=A.fix('transfer',{position={x=52.5,y=45.5},to={x=65.5,y=14.5},item='coal',count=5},takes)
+  eq(f.pick,'first_with_stock'); eq(f.positions[1].x,52.5); eq(f.position,nil); eq(f.count,5)
+  eq(n.notes[1],'position and to without pick: a take there and a give at to (pick="first_with_stock")')
+  _,f,n=A.fix('transfer',{from={x=52.5,y=45.5},to={x=65.5,y=14.5},item='coal',direction='take'},takes)
+  eq(f.pick,'first_with_stock'); eq(f.direction,nil)
+  -- a give named with to elsewhere stays a refusal (which side is meant is not said)
+  _,f,n=A.fix('transfer',{position={x=52.5,y=45.5},to={x=65.5,y=14.5},item='coal',direction='to_entity'},takes)
+  eq(f.pick,nil)
   -- with pick, to stays pick's
   _,f,n=A.fix('transfer',{pick='first_with_stock',positions={P},item='coal',to={x=30.5,y=4.5}},takes)
   eq(n,nil)

@@ -362,7 +362,7 @@ rf.ingest([{"id": "s:2", "source": "site", "author": "b", "name": "bo", "text": 
            {"id": "s:4", "source": "site", "author": "d", "name": "di", "text": "loving the factory, but copper is short", "t": NOW}], [], now=NOW)
 sent = relay.step(NOW)
 check("relay: an order to an agent is viewer talk and is relayed (marked order in the lane)",
-      sent and sent["id"] == "s:2" and sent["order"] and h.says == [{"name": "bo", "text": "astra, build turrets"}],
+      sent and sent["id"] == "s:2" and sent["order"] and h.says == [{"name": "bo", "text": "astra, build turrets", "source": "site"}],
       (sent, h.says))
 cmd = [c for c in h.cmds if '"viewer_say"' in c][0]
 check("relay: an operator dispatch of viewer_say, the JSON in a safe long string",
@@ -533,7 +533,7 @@ rz.step(NOW + 80)
 dl = {m["id"]: (m.get("delivery"), m.get("to")) for m in fz.lane()[0]}
 check("delivery: chatter none, then sent to one agent, then waiting inside the author gap",
       dl == {"z1": (None, None), "z2": ("sent", "astra"), "z3": ("waiting", None)}
-      and hz.says == [{"name": "craig", "text": "@astra All agents, always put walls around each gun turret"}], (dl, hz.says))
+      and hz.says == [{"name": "craig", "text": "@astra All agents, always put walls around each gun turret", "source": "youtube"}], (dl, hz.says))
 # shift05 09:30, Nick: "'Not sent: too soon' ... does that get queued? was good suggestion": it waits, others go first
 fz.ingest([{"id": "z4", "source": "youtube", "author": "j", "name": "joon", "text": "astra, the coal belt has a kink",
             "t": NOW + 82}], [], now=NOW + 82)

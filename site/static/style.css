@@ -442,6 +442,11 @@ details summary { cursor: pointer; font-weight: 600; font-size: .92rem; }
 @media (min-width: 961px) { .vchat { max-height: none; } }
 .vchat li { padding: 2px 0; overflow-wrap: anywhere; }
 .vchat b { color: var(--fx-heading); }
+/* where a line was written (live.js renderChat): YouTube red, the site's own orange */
+.vchat .c-src { display: inline-block; font-size: 0.68em; font-weight: 700; letter-spacing: 0.04em; padding: 0 4px;
+  border-radius: 3px; line-height: 1.5; vertical-align: 1px; color: #fff; }
+.vchat .c-src-yt { background: #c4302b; }
+.vchat .c-src-site { background: var(--fx-orange, #e39827); color: #1b1b1b; }
 .vchat-form { display: grid; grid-template-columns: 6.5em 1fr auto; gap: 6px; margin-top: 8px; }
 .vchat-form[hidden] { display: none; }
 .chat-panel .small { margin: 6px 0 0; }

@@ -123,8 +123,10 @@ return function(api)
     end
     recent[#recent+1] = now
     v.by_name[key] = now
-    local seq = api.post_viewer(name, text)
-    return {posted=true, seq=seq, from='viewer ' .. name, text=text}
+    -- source: where the viewer wrote (youtube or site), shown with the line (Luna 13:54)
+    assert(a.source == nil or type(a.source) == 'string', 'source must be youtube or site')
+    local seq = api.post_viewer(name, text, a.source)
+    return {posted=true, seq=seq, from='viewer ' .. name, text=text, source=a.source}
   end
   return M
 end

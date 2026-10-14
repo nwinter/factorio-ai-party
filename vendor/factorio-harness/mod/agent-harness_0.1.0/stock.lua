@@ -455,6 +455,8 @@ return function(api)
     if action.wait then return M.wait_tick(p,action) end
     while true do
       if action.got>=action.want then return 'collected' end
+      -- transfer {walk} filling a count over several chests (from: "nearest"): done once it is taken.
+      if action.fill and action.got>=action.fill then return 'transferred' end
       local t=action.targets[action.index]
       if not t then return done(action) end
       if t.find and not t.entity and api.near(p,t.position) then

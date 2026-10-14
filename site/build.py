@@ -1675,8 +1675,8 @@ def live_app(heading, sample_href):
   </div>
   <aside class="chat-panel live-panel fx-root fx-panel" aria-label="Chat">
     <div class="fx-tabs chat-tabs" role="tablist">
-      <button class="fx-tab is-selected" role="tab" aria-selected="true" data-tab="site" type="button">Site chat</button>
-      <button class="fx-tab" role="tab" aria-selected="false" data-tab="yt" type="button">YouTube chat</button>
+      <button class="fx-tab is-selected" role="tab" aria-selected="true" data-tab="site" type="button">Chat</button>
+      <button class="fx-tab" role="tab" aria-selected="false" data-tab="yt" type="button">YouTube</button>
     </div>
     <div class="fx-tab-body">
       <div data-pane="site" class="vchat-pane">
@@ -1693,6 +1693,7 @@ def live_app(heading, sample_href):
           <div><dt>@operator</dt><dd>harness suggestions: read, maybe built</dd></div>
           <div><dt>Several</dt><dd>one per person into the game at a time, up to 3 wait their turn</dd></div>
           <div><dt>Rules</dt><dd>no account, no links, be kind</dd></div>
+          <div><dt>YT · SITE</dt><dd>YouTube and site comments in one list, in time order; you write as a site comment</dd></div>
         </dl>
       </div>
       <div data-pane="yt" class="yt-pane" hidden>

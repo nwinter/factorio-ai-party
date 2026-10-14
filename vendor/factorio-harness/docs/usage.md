@@ -239,7 +239,8 @@ fh call status
   after the change), `network`. It leaves a running action and queue alone.
 - `inspect` (and `circuit_set`) read back an entity's circuit side under `circuit`, for an entity with circuit settings
   or wires: `enable` and `logistic` as text (`"ice < 300"`, the same form `enable` takes) with `enable_met` and
-  `logistic_met` (whether the condition holds now) and `disabled` (the entity stopped by it); `logistic_reads`: the
+  `logistic_met` (whether the condition holds now: `false` too, which the reply used to drop) and `disabled` (the entity
+  stopped by it); `logistic_reads`: the
   logistic network the condition reads, the one whose logistic area holds the entity's centre, with its count of the
   condition's item (`network 8 (its logistic area holds the centre): iron-plate -3 (the count less what deliveries have
   reserved)`), or `none` when no logistic area holds the centre: then the condition is never met, even with most of a
@@ -253,11 +254,23 @@ fh call status
   `{entity, position, side, ghost}` (wires the game does not draw, such as radar links, are left out); `networks` per
   circuit connector `{id, signals, more}`: the signals on that network now, largest first, at most 30. An entity whose
   circuit settings were never changed shows its wires and `settings_note`.
+- `circuit_set` (friction2, Opus 18:54: "production-science-pack < 1000" on an inserter whose logistic condition "< 100"
+  read 101; Opus told Astra it ran, and it stayed off 10.8 min): when an enable or logistic condition is not met after
+  the call, `stays_disabled` names it, with what it reads and whether this call set it, and the CLI puts it on the
+  final `warning:` line: `warning: stays disabled: inserter (75.5,-1.5): its logistic condition production-science-pack
+  < 1000 is not met (network 8 (its logistic area holds the centre): production-science-pack 1137) (not set by this
+  call)`. `disabled` there comes from the conditions: on a copy of world n a condition's `fulfilled` was current the
+  tick it was written, the entity's own `disabled` only the tick after. Ghosts are left out.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
 - `requests` shows each section's state: `off: true` for a section switched off (the GUI's checkbox; it requests
   nothing, and the reply's `note` names it), and on a platform hub the planet each request imports from, exact
   requests too (`calcite=500 from vulcanus`). `requests {platform, section: 1, active: true}` (or `false`) switches a
-  section on or off; `changed_section` says which section a call changed. `stored` (Luna, shift12 12:47) echoes each
+  section on or off; `changed_section` says which section a call changed, only when a slot was set or cleared or the
+  section switched (else `unchanged: this call set, cleared and switched nothing in section 1`). `set` as a map
+  `{"low-density-structure": 100}` runs as the list `[{"item":"low-density-structure","min":100}]` and the reply's
+  `corrected` says so (friction2: Muse's map set nothing and the reply said `changed_section: 1`; the silo requester
+  stayed at min 4 for 11.7 min); a value that is an object gives that item's fields (`{"coal": {"min": 5, "max":
+  10}}`). `stored` (Luna, shift12 12:47) echoes each
   item the call set or cleared as read back from its slot: `processing-unit 0..400 from vulcanus (import planet kept:
   not named in this edit) (was 0..200 from vulcanus)`, `coal: cleared (was coal=500 from vulcanus)`. A `set` entry
   without `from` keeps the import planet the slot already has (before, the game stored its default, nauvis: three of
@@ -564,9 +577,21 @@ fh call status
     walked out to (55,24.3) first`.
   - The second level starts from the nearest free tile centre only when the character gets there in a straight line
     (beside a pipe row it lay past the pipes, and every path from there stalled at them).
-  - Closed in (no way out for the character's box), `last.why` and `last.mine_to_get_out` name the fewest of our
-    entities, trees or rocks whose mining opens a way out: `...; mining pipe (-27.5,69.5) opens a way out to
-    (-26.7,69.5)`.
+  - Closed in (no way out for the character's box), `last.why` and `last.mine_to_get_out` name what to mine for a way
+    out to open ground, through every closed pocket on the way, or to the goal when that costs less, all of it in one
+    reply: `...; mining wooden-chest (42.5,120.5) and stone-wall (46.5,120.5) opens a way out to open ground at
+    (57.5,120.5)` (friction2: Gemini, 19:51, followed seven answers of one entity each, two poles, four accumulators
+    and a recycler, each opening only a larger closed pocket). The search runs over the tiles round the closed area
+    (16 tiles past it, at most 64 a side); open ground is its edge. Stepping onto a tile costs what stands there, by
+    kind: chests, accumulators, walls, gates, solar panels, lamps, trees and rocks 1; belts, pipes, inserters and pumps
+    2; poles, machines and the rest 3; cliffs, tiles and others' entities never; at most 16. On a copy of world n's
+    Fulgora island a search took 2 to 8 ms (the old one, which stopped at the first pocket, 1.3 to 3.3).
+  - A `build` batch that fails after some entries stand says what those entries closed in its refusal
+    (`build 9/9 failed after 8 built: ...; the character is closed in now where it stands (50.5,108.5): ...`; Gemini's
+    19:25 batch failed after 2 built, and those 2 had closed the last gap out). A real `place_ghosts` says
+    `closes_in` as its dry run does, for ghosts that once built close the character in where it stands (walls and
+    pipes as they join their neighbours when built): `once built, these ghosts close the character in where it stands
+    (30.5,108.5): ...`. The CLI puts `closed_in` and `closes_in` on the final `warning:` line.
 - Enemies on the way (Opus, shift09 03:20: the pathfinder walked him 30 tiles from a nest, and big biters killed him; on
   a copy of world n the engine's path from (-110,447) to (62,40) passes 31 tiles from a biter spawner): a path found
   for `move_to` is checked against the enemy worms and spawners the map shows (on charted chunks).
@@ -607,10 +632,24 @@ fh call status
   - `unit_number` alone works only for what the game finds by number: prototypes flagged `get-by-unit-number`
     (vehicles and the like; on a copy of world n an iron chest's own number found nothing). For others the refusal
     asks for `{position, unit_number}`.
-  - Reach is measured to the entity's box, as the engine measures it, with a quarter tile to spare:
-    - `transfer` (default): the engine's own test too, 10 tiles; for ore, trees and rocks 2.7.
-    - `build`: `build_distance`, 10.
+  - Reach is measured with a quarter tile to spare:
+    - `transfer` (default): to the entity's box, as the engine measures it, and the engine's own test too, 10 tiles;
+      for ore, trees and rocks 2.7.
+    - `build`: `build_distance` (10) to the entity's centre, as `build` measures the position it builds at (friction2,
+      Sol 14:43: a walk ended 9.7 tiles from a chest's edge, and the build there failed at 10.1 from its centre; on a
+      copy of world n the walk now ends 9.6 tiles from the centre: `iron-chest (13.5,53.5): 9.6 tiles to its centre
+      (build reach 10)`).
     - a number: tiles to the box, 0.5..64.
+- `move_to {position, reach: "build" | "transfer" | tiles}` (no target; Sol 18:56: target takes an entity, and Sol
+  wanted to stand within build reach of an empty spot) walks until the character is within that reach of the point and
+  arrives there (`last.reach: (75.5,40.5): 9.7 tiles (build reach 10)`); already within it, it arrives at once.
+- A `move_to` position nothing leads to (a tile inside a machine, a silo or a landing pad; friction2: Gemini's (-50,75)
+  five times, each followed by a walk to the spot the reply named; Haiku stood in reach already and the exit stopped its
+  `&&` chain): the walk goes on once to the spot within build reach of it that the give-up found (`build_spot`) and
+  ends `arrived_near` there, exit 0; `last.near_walk` says so: `no path led to (65.5,14.5) (no path request found a way
+  ...); walked to (60.5,18.5) instead, ended 6.2 tiles from it, a spot within build reach of it the give-up found`. Not
+  when closed in (the reply says what to mine), nor toward a via point; `near: false` keeps the old end, `unreachable`
+  with `build_spot`.
   - The walk heads for the entity's centre and stops as soon as it is within reach: the nearest spot on its way. A
     character already within reach arrives on the first tick, and the reply says `in_reach: true`.
   - An end within reach that would have been `unreachable`, `blocked`, `arrived_near`, `timed_out` or `no_safe_route`
@@ -762,6 +801,8 @@ fh call confessions --since 3                  # your own confessions
   `configure`, `rotate`, `repair`, `flush` or `revive_ghost` request names. Mining, crafting and routes refresh every
   10 or 30 ticks; rings and texts share 30 a second. Faults there are counted (`visual_errors` in storage), never fatal.
 - `viewer_say` (operator only, the same `operator: true` dispatch) relays a stream viewer's chat line:
+  optional `source` (`youtube` or `site`) labels it: the game line reads `viewer NAME (YouTube): text`, `chat` rows carry
+  `source`, and team mention lines say `viewer NAME (YouTube) @you`.
   `{"id":"...","operator":true,"action":"viewer_say","args":{"name":"bob","text":"..."}}`. It posts
   `viewer bob: text` in the game chat, in grey; agents read it from `chat` with `from: "viewer bob"` and `viewer: true`,
   unread for every agent. It files a `team` mention (shown once in the agent's next reply) only for an agent it names
@@ -856,6 +897,12 @@ fh queue repeat --file plan.json
   or `feed` step's args: its history entry has `ok: true` and `short: true`, and the plan goes on. Other failures
   (out of reach, an unknown entity, a timed-out tour) still follow `on_fail`.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
+- `fh queue submit --file plan.json --args '{"dry_run":true}'` checks the plan as a submit does and queues nothing (the
+  queue, its revision and a running standing order are left as they are; Luna, shift12 15:20). It counts the silo
+  cargo the steps would leave, from what you, the chests and the silos hold now through `transfer`, `load_silo` and
+  `launch` steps (waits move nothing): `launches [{step, label, silo, cargo (before that launch), kg, min_cargo,
+  platform_now, would_refuse}]`, `silos_after`, and `notes` for steps whose item moves are not counted (`collect`,
+  `craft`, `feed`, ...) or a transfer that would be refused.
 - A direct call that moves or acts as the character pauses the queue. Reads, the board, chat, `say`, `tell`, `confess`, `operator`, `craft`/`cancel_craft`, research, votes, `sleep` and the queue calls don't, and when one of them fails (a `placements` out of sight, a `board_update` with an unknown argument) the running action and the queue go on as well. `sleep` leaves the queue running, and so does its end.
 - Calls that act on another surface or by remote view don't pause it either, nor stop a running standing order, and
   neither does their failure: any call with `platform`, or with `surface` naming another surface than the
@@ -1001,10 +1048,21 @@ fh sleep 900 --until researched                       # ...or until the research
     the collect at once.
   - `transfer {item, from: "nearest"}` (Haiku 10:50: an ammo chest held pipes and no magazines, which cost a walk)
     takes from the nearest of our chests (container, logistic and linked chests) in reach that holds the item now,
-    as the map shows them; `radius` (1..64) looks that far and walks there (a timed call, as `walk`). `from_nearest`
+    as the map shows them; `radius` (1..256) looks that far and walks there (a timed call, as `walk`). `from_nearest`
     says which: `wooden-chest at (56.5,34.5), 7.0 tiles from you, holds 200 firearm-magazine (2 chests checked, 1
     holding it)`. None: refused, naming the nearest within 32 tiles (`radius=24 walks there`); with `up_to: true`,
     moved 0 and a short. `from: {x,y}` is still the position.
+    - Requester and buffer chests come last (they feed machines), and a `count` more than the first chest holds comes
+      from the next ones too, in that order, up to 16 chests (friction2: Sonnet's nearest held 20 of the 300 asked;
+      Grok took 40 iron plates from a requester feeding a machine): `3 chests hold 210 of the 150 asked, nearest first,
+      requester and buffer chests last: steel-chest (10.5,63.5) 10.2 tiles, holds 12; requester-chest (9.5,59.5) 6.9
+      tiles, holds 100 (requester); ...`. Walking (`radius`), the walk takes what is still missing at each chest and
+      ends `transferred` once the count is taken.
+  - A take at one place and a give at another in one call (friction2: Grok's `from_entity` and `to_entity`, refused
+    three times as unknown arguments; Luna's `position` then `to`): `{from | from_entity | position | positions, to |
+    to_entity, item | items, count}` with no `pick` runs as the pick courier below (`pick: "first_with_stock"`), and
+    the reply's `corrected` says so. A give named with `direction: "to_entity"` and a `to` elsewhere is still refused
+    (which side is meant is not said).
   - A take from a named chest that holds none of the item says where the nearest chest holding it is, in
     `nothing_moved`: `...; the nearest holding firearm-magazine: wooden-chest at (56.5,34.5), 7.0 tiles from you,
     holds 180 (transfer from: "nearest")`.
@@ -1423,6 +1481,51 @@ fh sleep 900 --until researched                       # ...or until the research
   the rocket holds nothing, ...; science in chests within 32 tiles: wooden-chest (30.5,22.5)
   agricultural-science-pack*120`. When the game refuses (it gives no reason), the error lists what it may check: a missing rocket,
   automatic requests, a paused platform, then the silo, cargo, platform and destination it saw.
+- `launch {position, platform, min_cargo, arrived}` (Luna, shift12 15:20: a rocket_ready wait ran before an
+  agricultural science top-up, and the queued launch went with the old cargo): read in the tick the rocket launches
+  (a queue step's launch runs whole in its tick), after the rocket is ready.
+  - `min_cargo` (`{"agricultural-science-pack":1000}` or `[{item, count, quality}]`): the rocket holds at least these,
+    else `launch refused at tick 9606118, nothing launched: min_cargo not met: agricultural-science-pack 600 of 1000
+    (400 short); the rocket holds agricultural-science-pack*600`.
+  - `arrived: true`: the platform is stopped at this planet (not on its path), the `platform_arrived` rule, else
+    `... platform Sunward has not arrived at nauvis (at nauvis, on its path (not stopped))`.
+  - The reply's `checked {tick, lines}` lists what was read. A launch step that is refused fails, so the plan pauses
+    (or follows its `on_fail`) and the rocket stays. `wait_until {"until":"item_count","item":...,"at_least":1000,
+    "positions":[silo]}` counts the silo's rocket cargo.
+  - `fh call launch --args '{"min_cargo":{"agricultural-science-pack":1000},"platform":"Sunward","position":{"x":65.5,"y":14.5},"arrived":true}'`
+- `load_silo {position, items, to_total?, from?, chests?, launch?, platform?, orbit?, min_cargo?, arrived?, ticks?}`
+  (rocketload.lua; Sonnet, shift12: about 40 transfer and launch round trips a shift) loads an item list into a silo's
+  rocket cargo in one call. The silo must be within reach.
+  - `items`: `{"agricultural-science-pack":1000}` or `[{item, count, quality}]`, 1..20 items. Each count is loaded on top
+    of what the rocket holds; with `to_total: true` each count is what it should hold in all.
+  - Sources: your inventory first, then our chests within reach, nearest first (at most 16); `from` (a chest `{x,y}` or
+    up to 16) reads only those after your inventory; `chests: false` your inventory only.
+  - Only what fits under the 1000 kg lift and in the rocket's 20 cargo slots goes in. A silo with automatic requests
+    on is refused (the game takes no cargo by hand then).
+  - Reply: `loaded [{item, asked, aboard_before, loaded, aboard, from ("you 300, iron-chest (61.5,10.5) 400"), short,
+    why}]` (`why`: weight, the cargo slots, or `you and the 2 chests read held only 200`), `cargo`, `rocket_weight`,
+    `slots` (used/total), `chests`, `complete`, `short`.
+  - `launch: true` with `platform` (or `orbit: true`) launches in the same tick, once every count is aboard;
+    `min_cargo` and `arrived` are checked as `launch` checks them. Any count short: `not launched: ...; what was loaded
+    stays in the rocket (it holds ..., 600/1000 kg)`. A launch refused after loading: `loaded, then the launch was
+    refused: ...; the cargo stays in the rocket`.
+  - No rocket yet, or `launch: true` before the rocket is ready: a timed action (`waiting {why, rocket}`,
+    `until_tick`; `ticks` 1..36000, default 3600) that runs the whole call in the tick the rocket is there (ready, for
+    a launch); outcome `fed` (`last.result` holds the reply), `failed` (`last.error`) or `timed_out`. `--wait` follows
+    it.
+  - `fh call load_silo --args '{"items":{"agricultural-science-pack":1000},"launch":true,"platform":"Sunward","position":{"x":65.5,"y":14.5},"to_total":true}'`
+- `preflight {position, items?, platform?, surface?}` (read; Gemini, shift12) shows what the silo's rocket would carry,
+  by remote view (a visible chunk):
+  - `cargo {items, rows [{item, count, each_kg, kg, stacks}], kg, lift_kg, free_kg, over_kg, slots, free_slots}`,
+    `rocket`, `rocket_ready`, `auto_requests`;
+  - with `items`: `order [{item, want, aboard, lacks, fits, you_hold}]` (`fits`: how many of what it lacks the rocket
+    takes by weight and slots);
+  - with `platform`: `platform {name, where, arrived, requests [{item, min, hub, aboard, lacks_after}], not_requested}`:
+    its hub's requests importing from this planet (active sections), what the hub holds, what this rocket carries, and
+    what they lack after it; `not_requested` is cargo it does not request from here;
+  - `launch_now`: `ok`, or `refused: ` and what `launch` would refuse now (the rocket not ready, overweight, empty, the
+    platform not stopped here); `line`, all of it in one line.
+  - `fh call preflight --args '{"items":{"agricultural-science-pack":1000},"platform":"Sunward","position":{"x":65.5,"y":14.5}}'`
 - supply and science count a silo's rocket once, as silo cargo (`silo rockets N`); its output inventory is that rocket,
   which was also counted under machine outputs (Astra, 06:29: 90 counted for 45 in the rocket).
 - `inspect` of an entity with module slots shows `modules {inventory_index, slots, contents}`. A blueprint entity's
@@ -2038,6 +2141,10 @@ Some actions work at a distance, the way a player can through remote view:
 
 Items on the ground:
 
+- `scan` lists its rows in reading order (by y, then x). With more than `limit` rows it keeps the `limit` nearest its
+  centre (the position given, the character, or an area's middle), as `observe` does, and says so in `kept_nearest
+  {centre, within, note}`; `total` counts them all. `transfer` takes `to_machine` and `to_building` as `to_entity`,
+  `from_machine` and `from_building` as `to_player`, for every entity kind.
 - `scan` and `observe` list items on the ground as `ground_items` (`{stacks, items: [{name, count, stacks, box}],
   more_items}`), by item, instead of one row per stack; rows for them come only when the call filters for them
   (`type: "item-entity"` or `name: "item-on-ground"`; observe `entity_types`/`entity_names`).
