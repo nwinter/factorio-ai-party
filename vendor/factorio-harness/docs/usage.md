@@ -1275,12 +1275,13 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
       `(with 6 belt tiles up to it holding no fuel; loaded by fast-inserter (-24,35) from requester-chest (-24,34)
       holding no fuel)`). Any of coal, solid-fuel, wood, rocket-fuel and nuclear-fuel counts at a source, besides
       what the boiler burns;
-    - or its own fuel fell by 80% or more of what it burns at its share of the draw since a look at least 2 minutes
-      back (a belt bringing fuel slower than the boiler burns it): `boiler (-22,41) 0 min, down from 2 min 130 s
-      before: inserter (-22,39) from transport-belt (-13,36) (with 6 belt tiles up to it holding 36 coal)`. An
-      inserter-kept buffer swings by a few items, well under that over 2 minutes. Each look is compared with the
-      boiler's newest look 2 minutes or more back (its looks are kept 5 minutes), so a boiler is told nothing this
-      way in its first 2 minutes. A boiler at 0 can fall no further and shows as `out of fuel` above.
+    - or its own fuel is draining (a belt bringing fuel slower than the boiler burns it): it fell by 80% or more
+      of what it burns at its share of the draw since its newest look 2 minutes or more back, or by 25% or more
+      since its newest look 4 minutes or more back (shift10: boiler (-15,42) went from 8 to 6 min in 2 minutes,
+      then to 3 in 9): `boiler (-22,41) 2 min, down from 4 min 130 s before: inserter (-22,39) from transport-belt
+      (-13,36) (with 6 belt tiles up to it holding 36 coal)`. An inserter-kept buffer swings by a few items and has
+      no trend, well under either bar. A boiler's looks are kept 6 minutes, so one is told nothing this way in its
+      first 2 minutes. A boiler at 0 can fall no further and shows as `out of fuel` above.
 
     The fuel nearby is what the boilers burn or hold (when they hold none, the line
     names the fuels it looked for: coal, solid-fuel, wood, rocket-fuel, nuclear-fuel); chests nearby are the 3 nearest

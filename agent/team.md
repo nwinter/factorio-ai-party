@@ -115,7 +115,7 @@ already targets your character.
   (125,40)`, `12 gun-turret out of ammo near (67,-170)`, ghosts waiting for materials, an electric network drawing 85%
   or more of its capacity for 2 minutes, boilers under 20 minutes of their own fuel that nothing refills (their feeding
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
-  as fast as they burn over the last 2+ minutes) (again under 10 and 5; each low boiler with its feeder and that
+  as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that
   source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
   idle logistic robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;

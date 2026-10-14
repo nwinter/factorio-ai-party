@@ -30,11 +30,13 @@ return function(api)
   -- working boilers on full fuel belts (an inserter keeps a boiler's own fuel low; a belt's stock is a flow, not a
   -- store). A boiler is low only when its own fuel is under a step and nothing refills it: none of its feeders can
   -- bring more (no fuel in the inserter's hand, at its source; a belt: up to BELT_WALK tiles upstream, else what
-  -- loads that run), or its own fuel fell by DRAIN or more of what it burns at its share of the draw since the last
-  -- look at least DRAIN_MIN_TICKS before (shift10 03:36-03:38: boiler (-15,42) went from 8 to 6 min on a 64-tile
-  -- belt with 4 solid-fuel on it). An inserter-kept buffer swings by a few items: a few coal is a quarter of a
-  -- minute's burn, a few solid-fuel nearly a minute's, so the look compared is 2 minutes back or more.
-  local BELT_WALK, DRAIN, DRAIN_MIN_TICKS, OWN_TICKS, OWN_LOOKS = 64, 0.8, 7200, 18000, 20
+  -- loads that run), or its own fuel is draining: per DRAINS {share, ticks}, it fell by that share or more of what
+  -- it burns at its share of the draw since its newest look that many ticks back (shift10: boiler (-15,42) on a
+  -- 64-tile belt with 0-4 solid-fuel went from 8 min at 03:36 to 6 at 03:38 and 3 at 03:47: fast, then slow). An
+  -- inserter-kept buffer swings by a few items and has no trend: a few coal is a quarter of a minute's burn, a few
+  -- solid-fuel nearly a minute's, so the looks compared are 2 and 4 minutes back or more.
+  local BELT_WALK, OWN_TICKS, OWN_LOOKS = 64, 21600, 30
+  local DRAINS = {{0.8, 7200}, {0.25, 14400}}
   local FUEL_SCAN = 300   -- chests and belt tiles read per alert (00:26 rule: bounded reads on the live world)
   local FUELS = {'coal', 'solid-fuel', 'wood', 'rocket-fuel', 'nuclear-fuel'}
   local MAX_SCAN, MAX_GHOSTS, VIEW_TICKS, NEAR_BOILER = 20000, 4000, 3600, 12   -- the view: kept 60 s (task-statuscost)
@@ -271,8 +273,7 @@ return function(api)
           if fed_kw > 0 then
             -- Each boiler's own fuel in minutes at an even share of the draw;
             -- low: under the first step and not refilled (no feeder able to
-            -- bring more, M.boiler_supply: b.fed; or draining: its own fuel
-            -- fell by DRAIN of its burn since the last look).
+            -- bring more, M.boiler_supply: b.fed; or draining, DRAINS).
             M.boiler_supply(net.boilers, surface, f)
             local each, own = fed_kw * 1000 / #net.boilers, 0
             net.fed = 0
@@ -282,16 +283,18 @@ return function(api)
             for _, b in ipairs(net.boilers) do
               b.min = b.j / each / 60
               own = own + b.j
-              -- Its looks of the last OWN_TICKS, oldest first; compared with the newest one DRAIN_MIN_TICKS old or more,
-              -- so every look after the first 2 minutes says the same (one sample kept and replaced would not).
+              -- Its looks of the last OWN_TICKS, oldest first; each DRAINS row compares with the newest look that old or
+              -- older, so consecutive looks say the same (one sample kept and replaced would not).
               local unit = try(function() return b.e.unit_number end)
               local hist = unit and st.boiler_own[unit] or {}
               while hist[1] and game.tick - hist[1].tick > OWN_TICKS do table.remove(hist, 1) end
-              local prev
-              for _, x in ipairs(hist) do if game.tick - x.tick >= DRAIN_MIN_TICKS then prev = x end end
-              local dt = prev and (game.tick - prev.tick) / 60
-              if dt and prev.j - b.j >= DRAIN * each * dt then
-                b.drop = string.format('down from %d min %d s before', math.floor(prev.j / each / 60), math.floor(dt))
+              for _, rule in ipairs(DRAINS) do
+                local prev
+                for _, x in ipairs(hist) do if game.tick - x.tick >= rule[2] then prev = x end end
+                local dt = prev and (game.tick - prev.tick) / 60
+                if not b.drop and dt and prev.j - b.j >= rule[1] * each * dt then
+                  b.drop = string.format('down from %d min %d s before', math.floor(prev.j / each / 60), math.floor(dt))
+                end
               end
               if unit and (not hist[#hist] or hist[#hist].tick < game.tick) then
                 hist[#hist+1] = {tick=game.tick, j=b.j}
@@ -592,7 +595,7 @@ return function(api)
       note='draw: the network\'s production statistics sampled every 5 s; capacity: generators at their maximum plus solar at its output now; '
         .. 'boiler fuel: the boilers\' own fuel in minutes at the draw of the generators they feed, shared evenly over the boilers; '
         .. 'boilers_fed: boilers an inserter can bring fuel to now (fuel in its hand, at its source, on its belt within 64 tiles upstream or at what loads that belt); '
-        .. 'boilers_under_N_min: under N min of their own fuel and not refilled (no fuel at their feeders, or their own fuel fell by 80% or more of their burn over the last 2+ min); requests unfilled: '
+        .. 'boilers_under_N_min: under N min of their own fuel and not refilled (no fuel at their feeders, or their own fuel fell by 80% or more of their burn over 2+ min, or 25% over 4+ min); requests unfilled: '
         .. 'held plus on the way below the request for 60 s or more; ammo: consumed on the surface (items statistics); '
         .. 'logistic areas: bounding boxes of the roboports\' logistic and construction squares (a gap inside one is not shown); '
         .. 'robots: idle are stationed in a roboport, charging and waiting to charge are at a roboport, working are the rest (out on a job or flying)'}
