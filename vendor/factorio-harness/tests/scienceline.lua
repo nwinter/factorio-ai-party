@@ -98,12 +98,13 @@ run(18000); S.lines(p,h); finish()
 has(S.lines(p,h),'labs 16 of 20 working; limiting chemical-science-pack: 8 of 20 labs have none')
 -- Another agent hears it on its own clock.
 has(S.lines(p,{}),'labs 16 of 20 working')
--- 4. Every lab holds every pack: no chain read (lab finds only); the boilers all fed.
+-- 4. Every lab holds every pack: no limiting pack; the crafters are still walked (the idle-colour check); the boilers
+-- all fed.
 for i=1,20 do labs[i].status=1; labs[i].get_inventory=function() return {get_item_count=function() return 5 end} end end
 power.fed=13; power.low=0; power.low_min=nil
 crafter_finds=0
 run(18000); S.lines(p,h); finish()
-eq(crafter_finds,0,'no crafter finds')
+assert(crafter_finds>0,'the crafters walked for the idle check')
 eq(S.lines(p,h),'science on nauvis: research plastics-2 41%; labs 20 of 20 working; every lab holds every pack; '
   ..'power electric #7: 18.5 MW of 22.1 MW, headroom 3.6 MW (16%); boilers 13: 13 with fuel at their feeders')
 -- 5. A failing step drops the job and keeps the last line; the error is recorded.
@@ -121,4 +122,20 @@ eq(storage.science_jobs,nil,'the old job is dropped'); eq(storage.science_line_e
 has(storage.science_line.player.text,'labs 20 of 20 working')
 run(18000); S.lines(p,h); finish()
 eq(storage.science_line_errors.count,2,'the next job runs'); eq(storage.science_line.player.tick>game.tick-18000,true)
+-- 7. A whole colour stopped (Opus, 07:55): every chemical pack maker stands still at a build and still at the next, 5
+-- min on: a digest group naming the makers' states and the chain's first short step; none at the first build; gone
+-- once one works again. Automation has no maker on this surface: never one.
+eq(#S.alert_groups(force),0)
+for i=1,14 do cs[i].status=6 end
+run(18000); S.lines(p,h); finish()
+eq(#S.alert_groups(force),0,'idle at one build only')
+run(18000); S.lines(p,h); finish()
+local ig=S.alert_groups(force)
+eq(#ig,1); eq(ig[1].kind,'science_idle'); eq(ig[1].surface,'nauvis'); eq(ig[1].key,'science_idle|nauvis|chemical-science-pack|plastic-bar')
+has(ig[1].line,'no chemical-science-pack maker working for ')
+has(ig[1].line,'+ min (14 makers: 14 item_ingredient_shortage); first short step plastic-bar: 4 of 4 working, made 30/min, used 52/min (chemical-science-pack > advanced-circuit > plastic-bar)')
+assert(ig[1].center and ig[1].center.y==90,'centred on its makers')
+cs[1].status=1
+run(18000); S.lines(p,h); finish()
+eq(#S.alert_groups(force),0,'a maker works again')
 print('scienceline: ok')
