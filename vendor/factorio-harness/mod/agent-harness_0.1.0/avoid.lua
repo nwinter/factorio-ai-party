@@ -322,26 +322,28 @@ return function(api)
     end
   end
   local function blob_key(bl) return math.floor(bl.x) .. ',' .. math.floor(bl.y) end
-  -- The discs as seen from here. A nest with here in a weapon's reach, or
-  -- the goal within its reach and margin, is not avoided (the walk leaves it
-  -- or goes there), and is named when that is where the walk began or goes.
-  -- Here inside a margin only: that disc shrinks to just short of here (the
-  -- way on may come no nearer).
+  -- The discs as seen from here. A nest with here or the goal in a weapon's
+  -- own reach is not avoided (the walk leaves it, or goes there: a goal in a
+  -- reach takes unsafe_goal), and is named when that is where the walk began
+  -- or goes. Here or the goal inside a margin only: that disc shrinks to just
+  -- short of it, so the way on keeps out of the weapon's reach (Astra,
+  -- operator 07:26: a goal in a nest's margin left the whole nest unchecked,
+  -- and a big worm in it killed her on the way); such a nest is named too.
   local function member_key(m) return m.name .. '@' .. math.floor(m.x) .. ',' .. math.floor(m.y) end
+  local function at_ends(f, bl)
+    f.at_ends = f.at_ends or {}
+    local name = M.name(bl)
+    for _, t in ipairs(f.at_ends) do if t == name then return end end
+    f.at_ends[#f.at_ends+1] = name
+  end
   local function fit(blobs, here, final, f)
     local skip = {}
     for bi, bl in ipairs(blobs) do
       for _, m in ipairs(bl.members) do
         local dh = dist(m, here)
-        if dh < m.range or dist(m, final) < m.r then
+        if dh < m.range or dist(m, final) < m.range then
           skip[bi] = true
-          if dist(m, f.origin or here) < m.r or dist(m, final) < m.r then
-            f.at_ends = f.at_ends or {}
-            local name = M.name(bl)
-            local seen = false
-            for _, t in ipairs(f.at_ends) do if t == name then seen = true end end
-            if not seen then f.at_ends[#f.at_ends+1] = name end
-          end
+          if dist(m, f.origin or here) < m.r or dist(m, final) < m.r then at_ends(f, bl) end
           break
         end
       end
@@ -354,6 +356,8 @@ return function(api)
           if g and g > m.r then m.r = g end
           local dh = dist(m, here)
           if dh < m.r then m.r = dh - 0.5 end
+          local dg = dist(m, final)
+          if dg < m.r then m.r = math.max(m.range, dg - 0.5); at_ends(f, bl) end
           r = math.max(r, dist(bl, m) + m.r)
         end
         bl.r = r
@@ -470,6 +474,98 @@ return function(api)
     -- A corner it cannot get to (water, cliffs): on to the next one.
     if outcome == 'unreachable' and f.skips < 3 then f.skips = f.skips + 1; return api.leg(p, nav) end
     return false
+  end
+  -- The point nearest goal along the ray goal + s*(ux,uy), 0 <= s <= maxs,
+  -- outside every disc, as s (just past each disc's edge); nil when none.
+  local function clear_along(goal, ux, uy, discs, maxs)
+    local s = 0
+    for _ = 1, 64 do
+      local moved = false
+      local q = {x=goal.x + ux * s, y=goal.y + uy * s}
+      for _, m in ipairs(discs) do
+        if dist(q, m) < m.r then
+          local fx, fy = goal.x - m.x, goal.y - m.y
+          local b = fx * ux + fy * uy
+          local disc = b * b - (fx * fx + fy * fy - m.r * m.r)
+          local t = disc >= 0 and -b + disc ^ 0.5 + 0.5 or s
+          if t > s then s = t; moved = true end
+        end
+      end
+      if not moved then return s <= maxs and s or nil end
+      if s > maxs then return nil end
+    end
+  end
+  -- The nearest safe spot toward goal from `from`: on the line back to it, the
+  -- point nearest goal outside every disc; else (from in a disc too) the
+  -- nearest such point round goal, within 128 tiles.
+  local function safe_spot(goal, from, discs)
+    local dx, dy = from.x - goal.x, from.y - goal.y
+    local L = (dx * dx + dy * dy) ^ 0.5
+    if L > 0.5 then
+      local s = clear_along(goal, dx / L, dy / L, discs, L)
+      if s then return {x=goal.x + dx / L * s, y=goal.y + dy / L * s} end
+    end
+    local best, bs
+    for k = 0, 31 do
+      local ang = 2 * math.pi * k / 32
+      local s = clear_along(goal, math.cos(ang), math.sin(ang), discs, 128)
+      if s and (not bs or s < bs) then best, bs = {x=goal.x + math.cos(ang) * s, y=goal.y + math.sin(ang) * s}, s end
+    end
+    return best
+  end
+  -- A goal inside a weapon's own reach (a worm's range; with spawners, a
+  -- spawner's units' sight) on the chunks the map draws, read now (Astra,
+  -- operator 07:26: avoid_enemies true walked her to (-10,350), a goal in a
+  -- nest's reach, and a big worm killed her on the way at (-25,335)). Returns
+  -- nil when clear, else {m (the nearest weapon by how deep the goal lies in
+  -- its reach), d, spot (the nearest safe spot toward the goal from `from`,
+  -- outside every disc: reach + margin), nest}. The chunks round the spot
+  -- are read too, up to three rounds, so the spot clears what lies past them.
+  function M.goal_check(p, from, goal, mode)
+    if not mode or p.surface.platform ~= nil then return nil end
+    local surface, force = p.surface, p.force
+    local discs, have = {}, {}
+    local function read(point)
+      local chunks = M.chunks_near({point}, max_reach(mode))
+      local need = M.missing(surface, chunks)
+      if #need > 0 then M.scan(surface, force, need, #need) end
+      for _, bl in ipairs(M.blobs(surface, chunks, mode)) do
+        for _, m in ipairs(bl.members) do
+          local k = member_key(m)
+          if not have[k] then have[k] = true; m.blob = bl; discs[#discs+1] = m end
+        end
+      end
+    end
+    read(goal)
+    local inside
+    for _, m in ipairs(discs) do
+      local d = dist(m, goal)
+      if d < m.range and (not inside or d - m.range < inside.d - inside.m.range) then inside = {m=m, d=d} end
+    end
+    if not inside then return nil end
+    local spot
+    for _ = 1, 3 do
+      spot = safe_spot(goal, from, discs)
+      if not spot then break end
+      local n = #discs
+      read(spot)
+      if #discs == n then break end
+      local clear = true
+      for i = n + 1, #discs do if dist(spot, discs[i]) < discs[i].r then clear = false end end
+      if clear then break end
+    end
+    return {m=inside.m, d=inside.d, spot=spot, nest=M.name(inside.m.blob)}
+  end
+  -- 'goal (-10,350) is inside big-worm-turret (-21,343) range 38 (13.0 tiles from it)'.
+  function M.goal_text(label, goal, c)
+    return string.format('%s %s is inside %s %s %s %g (%.1f tiles from it)', label, at(goal), c.m.name, at(c.m), c.m.spawner and 'sight' or 'range',
+      c.m.range, c.d)
+  end
+  -- '; the nearest safe spot toward it: (-10,302), 48 tiles from the goal, outside every worm's range + 8 ...'.
+  function M.spot_text(goal, c, mode)
+    if not c.spot then return '; no spot within 128 tiles of it is outside every reach the map shows' end
+    return string.format('; the nearest safe spot toward it: %s, %d tiles from it, outside every %s the map shows', at(c.spot), math.floor(dist(c.spot, goal) + 0.5),
+      mode.spawners and string.format('worm\'s range and spawner\'s units\' sight + %g', mode.pad) or string.format('worm\'s range + %g', mode.pad))
   end
   -- The facts for last: what was gone around, what lies at the start or goal.
   function M.report(last, nav)

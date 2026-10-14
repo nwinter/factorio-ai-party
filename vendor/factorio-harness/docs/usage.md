@@ -361,7 +361,21 @@ fh call status
     as legs around it: corners of an octagon around each worm's or spawner's reach, the shortest way along them, each
     leg the engine's path, checked again (up to 4 detours). `last.avoided_enemies` names each nest gone around (`2
     big-worm-turret, 3 biter-spawner, 3 medium-worm-turret, 2 small-worm-turret around (-12,359)`).
-  - A nest whose reach holds the start or the target is not avoided: `last.enemies_at_start_or_goal` names it.
+  - A goal inside a worm's range (with `avoid_enemies: true`, also a spawner's units' sight) on the chunks the map
+    draws is refused before the walk starts (Astra, operator 07:26: she died at (-25,335) on the way to (-10,350), a
+    goal in a nest's reach that the walk did not avoid): `goal (60,0) is inside medium-worm-turret (50,5) range 30
+    (11.2 tiles from it): unsafe_goal: true to go anyway; the nearest safe spot toward it: (84,0), 24 tiles from it,
+    outside every worm's range + 4 the map shows`.
+    - The safe spot is the point nearest the goal, on the line back to the character, outside every worm's (and
+      spawner's) reach plus the margin. With the character in a reach too, it is the nearest such point round the
+      goal, within 128 tiles. The chunks round the goal and the spot are read at the call.
+    - Via points are checked the same way (`via point 1 (55,10) is inside ...`).
+    - `unsafe_goal: true` goes anyway; the reply says `unsafe_goal: goal (60,0) is inside ...`.
+    - `avoid_enemies: false` checks nothing.
+  - A nest with the start in a weapon's range, or the goal with `unsafe_goal`, is not avoided. A start or goal in a
+    nest's margin only (outside the weapon's own range) keeps that worm's disc just short of it, so the way there still
+    keeps out of the range. Before, the whole nest went unchecked. `last.enemies_at_start_or_goal` names such
+    nests.
   - With no way round, a path that crosses only the margin (outside the weapon's own range) is walked and named in
     `last.passed_within_margin` (`medium-worm-turret (60,170): 33.7 tiles (range 30)`). One that crosses a range ends
     the walk `no_safe_route`, with `last.why`: `no way to (100,0) around 4 medium-worm-turret around (100,0): the path
