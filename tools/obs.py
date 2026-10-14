@@ -10,6 +10,7 @@
   tools/.venv/bin/python tools/obs.py shot OUT.png --scene stream                  # any scene, no switching
   tools/.venv/bin/python tools/obs.py scene NAME                                   # switch the program scene
   tools/.venv/bin/python tools/obs.py stream-audio        # game audio (cam1 only) ducked under the overlay's voices
+  tools/.venv/bin/python tools/obs.py rehook-cams         # the stream camN captures off and on (hook joined clients)
   tools/.venv/bin/python tools/obs.py audio-test --url URL [--game-url URL]        # scratch scene, same mix
   tools/.venv/bin/python tools/obs.py meter --seconds 20 [--inputs a,b]           # peak dBFS per input per second
 """
@@ -129,6 +130,29 @@ MUSIC_FILE = r"D:\pog\music\bed.mp3"  # off (music=False) until the file exists:
 DUCK = {"ratio": 2.5, "threshold": -40.0, "attack_time": 15, "release_time": 700, "output_gain": 0.0}
 
 
+def rehook_cams(c, scene="stream", n=3):
+    """Turn each game capture "stream camN" off and on again so it hooks the client that has just joined (19:15: the
+    captures started before the clients and the picture stayed black). An item that was off stays off."""
+    import time
+    out = []
+    for i in range(1, n + 1):
+        name = f"stream cam{i}"
+        try:
+            item = c.get_scene_item_id(scene, name).scene_item_id
+        except Exception as e:  # noqa: BLE001
+            out.append(f"{name}: not in {scene} ({type(e).__name__})")
+            continue
+        was = c.get_scene_item_enabled(scene, item).scene_item_enabled
+        if not was:
+            out.append(f"{name}: off, left off")
+            continue
+        c.set_scene_item_enabled(scene, item, False)
+        time.sleep(0.5)
+        c.set_scene_item_enabled(scene, item, True)
+        out.append(f"{name}: re-enabled")
+    return "; ".join(out)
+
+
 def ensure_filter(c, source, name, kind, settings):
     if name in [f["filterName"] for f in c.get_source_filter_list(source).filters]:
         c.set_source_filter_settings(source, name, settings, True)
@@ -212,7 +236,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("cmd", choices=["coop-scene", "stream-scene", "scene", "reload-overlay", "start", "stop", "pause",
                                     "resume", "status", "shot", "stream-start", "stream-stop", "stream-status",
-                                    "stream-audio", "audio-test", "meter", "replay-stop"])
+                                    "stream-audio", "audio-test", "meter", "replay-stop", "rehook-cams"])
     ap.add_argument("out", nargs="?")
     ap.add_argument("--game-url", help="audio-test: loop this audio URL as a stand-in for the game client")
     ap.add_argument("--seconds", type=float, default=20, help="meter: how long to listen")
@@ -231,6 +255,8 @@ def main():
         print("scene", stream_scene(c, a.url, layout=a.layout))
     elif a.cmd == "stream-audio":
         print("audio inputs", stream_audio(c))
+    elif a.cmd == "rehook-cams":
+        print(rehook_cams(c))
     elif a.cmd == "audio-test":
         print("scene", audio_test_scene(c, a.url, a.game_url))
     elif a.cmd == "meter":
