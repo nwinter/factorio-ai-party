@@ -707,7 +707,10 @@ fh sleep 900 --until researched                       # ...or until the research
   items on the ground there, or over empty space throws them away), in its `io` line (`2.5,-0.5 (no pickup target) ->
   2.5,1.7 transport-belt`), in observe rows, and in `build` and `rotate` replies right after (the engine sets an
   inserter's targets a tick after it is built or turned, so those replies read what stands on its points; a `builds`
-  batch adds `inserters_without_target` once all its entries stand, so a chest built after its inserter counts). An inserter ghost shows `pickup_target` and `drop_target` from its points as the
+  batch adds `inserters_without_target` once all its entries stand, so a chest built after its inserter counts: first
+  16, `inserters_without_target_count` past them). The points lie on the engine's grid of 1/256 tile, as the engine
+  places them: a long-handed inserter drops 2.19921875 tiles off (its prototype says 2.2), and a drop on the edge of a
+  machine's box is in it. An inserter ghost shows `pickup_target` and `drop_target` from its points as the
   dry run reads them, with `io_warning`; `place_ghosts`, `paste` and `blueprint_place` list the inserter ghosts they
   placed that miss a target in `inserters_without_target` (first 16, `inserters_without_target_count` past them). A ghost on a building yields to the building
   unless you name it (`name: "entity-ghost"`). So does a flying robot, a biter, a projectile or any unselectable entity
