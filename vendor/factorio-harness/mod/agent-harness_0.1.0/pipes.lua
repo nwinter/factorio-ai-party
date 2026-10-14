@@ -365,6 +365,7 @@ return function(api)
     local s=survey(p,box)
 
     local charted,free={},{}
+    local stands=api.tiles and api.tiles.stands_fn(p.surface,pipe) or function() return true end
     local function passable(x,y)
       if x<box.left or x>box.right or y<box.top or y>box.bottom then return false end
       local k=key(x,y)
@@ -374,7 +375,7 @@ return function(api)
         local ck=key(c.x,c.y)
         if charted[ck]==nil then charted[ck]=p.force.is_chunk_charted(p.surface,c) end
         free[k]=charted[ck] and not s.occupant[k] and not s.ghosts[k] and p.surface.can_place_entity{name=pipe.name,position=pos,direction=0,
-          force=p.force,build_check_type=defines.build_check_type.manual_ghost} or false
+          force=p.force,build_check_type=defines.build_check_type.manual_ghost} and stands(x,y) or false
       end
       return free[k]
     end
@@ -522,8 +523,12 @@ return function(api)
         end
       end
     end
-    assert(goal,expansions>MAX_EXPANSIONS and 'no route found within the search budget; give a nearer waypoint'
-      or 'no route: blocked, uncharted, or boxed in by foreign fluid connections (search spans '..MARGIN..' tiles around from and to)')
+    if not goal then
+      local ok,line=pcall(function() return api.tiles and api.tiles.line_tiles(p.surface,p.force,pipe,centre(fx,fy),centre(tx,ty)) end)
+      error((expansions>MAX_EXPANSIONS and 'no route found within the search budget; give a nearer waypoint'
+        or 'no route: blocked, uncharted, or boxed in by foreign fluid connections (search spans '..MARGIN..' tiles around from and to)')
+        ..(ok and line and '; '..line or ''),0)
+    end
 
     -- Walk back to the start, then describe.
     local steps,first={},goal

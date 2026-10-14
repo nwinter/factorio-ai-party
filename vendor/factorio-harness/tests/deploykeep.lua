@@ -1,6 +1,7 @@
 -- Run from repository root: lua tests/deploykeep.lua
--- A hot runtime install carries running queues over (carry.lua): control.lua
--- has the outgoing runtime stop_all, the incoming one undoes the pause.
+-- A hot runtime install carries waits, queues and standing orders over
+-- (carry.lua): control.lua has the outgoing runtime stop_all, the incoming one
+-- puts back what ran; a step or direct action that moves or builds starts again.
 local function eq(a,b,m) assert(a==b,(m or 'mismatch')..': '..tostring(a)..' ~= '..tostring(b)) end
 local function has(list,text)
   for _,line in ipairs(list or {}) do if line:find(text,1,true) then return line end end
@@ -71,9 +72,10 @@ local function request(req)
   return result
 end
 local function as(name) return function(action,args) return request{action=action,args=args or {},bot=name} end end
-local names={'astra','sol','grok','muse','luna'}
+local names={'astra','sol','grok','muse','luna','haiku','opus','sonnet','gemini','walker','mover','oldmover','sleeper','done'}
 local bot={}
 for _,name in ipairs(names) do runtime.operator.bot_create(name); bot[name]=as(name) end
+local function index(name) return runtime.bots.index_of(name) end
 -- As control.lua's install_source: compile the new runtime (game present), the old one stops everything, swap.
 local function install(loading)
   local saved=game
@@ -83,57 +85,114 @@ local function install(loading)
   assert(pcall(runtime.stop_all))
   runtime=candidate
 end
+local function brief(name) return bot[name]('status',{brief=true,peek=true}) end
+local function notes(name) local r=bot[name]('status',{brief=true}); return r.team and r.team.harness_updated end
 
--- astra: a queue waiting on a chest; sol: a wait_ticks step; grok: a move_to
--- step (restartable) with a step after it; muse: a walk step (not restartable);
--- luna: a direct walk, no queue.
+-- gemini: a standing order (a courier routine), running once the character has been free for its hold.
+bot.gemini('order_set',{name='courier',steps={{action='wait_ticks',args={ticks=6000}},{action='wait_ticks',args={ticks=60}}}})
+advance(1320)
+local q=bot.gemini('queue_status')
+eq(q.order and q.order.name,'courier','gemini order'); eq(q.active.action,'wait_ticks')
+local gemini_until=q.active.until_tick
+
+-- Queues: astra a wait_until on a chest; sol a wait_ticks; grok a move_to (moves) with a step after it;
+-- muse a walk step; opus a repeating courier loop in its move_to; sonnet a repeating plan resting between cycles.
+-- Direct: luna a wait_until (her research waits), haiku a wait_ticks 9000 (his --wait cycle), walker a walk,
+-- mover a move_to, oldmover a move_to an older runtime started (no call kept), sleeper an fh sleep over its queue;
+-- done a queue that finished before (left unpaused and empty).
 chest_items['iron-plate']=10
 bot.astra('queue_submit',{steps={{action='wait_until',args={['until']='item_count',item='iron-plate',at_least=100,positions={{x=3,y=3}},timeout=18000}},
   {action='wait_ticks',args={ticks=30}}}})
 bot.sol('queue_submit',{steps={{action='wait_ticks',args={ticks=600}},{action='wait_ticks',args={ticks=60}}}})
 bot.grok('queue_submit',{steps={{action='move_to',args={position={x=100,y=100}}},{action='wait_ticks',args={ticks=60}}}})
 bot.muse('queue_submit',{steps={{action='walk',args={direction='east',ticks=600}},{action='wait_ticks',args={ticks=60}}}})
-bot.luna('walk',{direction='east',ticks=600})
+bot.opus('queue_repeat',{name='courier',interval_ticks=60,steps={{action='move_to',args={position={x=100,y=-100}}},{action='wait_ticks',args={ticks=60}}}})
+bot.sonnet('queue_repeat',{interval_ticks=36000,steps={{action='wait_ticks',args={ticks=1}}}})
+bot.luna('wait_until',{['until']='item_count',item='iron-plate',at_least=200,positions={{x=3,y=3}},timeout=18000})
+bot.haiku('wait_ticks',{ticks=9000})
+bot.walker('walk',{direction='east',ticks=600})
+bot.mover('move_to',{position={x=-100,y=100}})
+bot.oldmover('move_to',{position={x=-100,y=-100}})
+storage.agent_harness.active[index('oldmover')].call=nil
+bot.sleeper('queue_submit',{steps={{action='wait_ticks',args={ticks=600}}}})
+bot.done('queue_submit',{steps={{action='wait_ticks',args={ticks=1}}}})
 advance(5)
-local astra_until=bot.astra('queue_status').active.until_tick
-local sol_until=bot.sol('queue_status').active.until_tick
-eq(bot.grok('queue_status').active.action,'move_to'); eq(bot.muse('queue_status').active.action,'walk')
+local sleep=bot.sleeper('sleep',{seconds=60})
+assert(sleep.wakes_on:find('your queue finishing',1,true),sleep.wakes_on)
+advance(5)
+local before={}
+for _,name in ipairs{'astra','sol','gemini'} do before[name]=bot[name]('queue_status',{peek=true}).active.until_tick end
+for _,name in ipairs{'luna','haiku','walker'} do before[name]=brief(name).active.until_tick end
+eq(before.gemini,gemini_until)
+local opus_q=bot.opus('queue_status',{peek=true}); eq(opus_q.active.action,'move_to'); local opus_cycle=opus_q.cycle
+local sonnet_q=bot.sonnet('queue_status',{peek=true}); eq(sonnet_q.active,false); assert(sonnet_q.next_cycle_tick,'sonnet resting')
+eq(bot.grok('queue_status',{peek=true}).active.action,'move_to'); eq(bot.muse('queue_status',{peek=true}).active.action,'walk')
+eq(brief('mover').active.kind,'move_to'); eq(brief('oldmover').active.kind,'move_to')
+local at=tick
 
 install()
-eq(bot.astra('queue_status',{peek=true}).paused,false) -- carried by the first request
-advance(1)
--- The waits keep their own clocks, with no interruption in the history.
-local q=bot.astra('queue_status')
-eq(q.paused,false); eq(q.active.action,'wait_until'); eq(q.active.until_tick,astra_until); eq(#q.pending,1)
+-- The first request after the install already sees everything as it was.
+q=bot.astra('queue_status',{peek=true})
+eq(q.paused,false); eq(q.active.action,'wait_until'); eq(q.active.until_tick,before.astra); eq(#q.pending,1)
 for _,h in ipairs(q.history) do assert(h.ok~=false,'astra history: '..tostring(h.action)) end
-q=bot.sol('queue_status')
-eq(q.paused,false); eq(q.active.action,'wait_ticks'); eq(q.active.until_tick,sol_until)
--- Nothing of theirs was cut: no note.
-local r=bot.astra('status',{brief=true})
-eq(r.team and r.team.harness_updated,nil)
--- grok's move_to starts again; it is told once.
-q=bot.grok('queue_status',{peek=true})
-eq(q.paused,false); eq(q.active.action,'move_to'); eq(#q.pending,1)
-r=bot.grok('status',{brief=true,peek=true})
-eq(r.team,nil) -- a peek leaves the note for the reply the agent sees
-r=bot.grok('status',{brief=true})
-assert(has(r.team.harness_updated,'your queue step move_to (job-1) was interrupted and starts again'),r.team.harness_updated[1])
-r=bot.grok('status',{brief=true})
-eq(r.team and r.team.harness_updated,nil)
--- muse's walk does not restart: the queue waits, and says how to go on.
-q=bot.muse('queue_status',{peek=true})
-eq(q.paused,true); eq(#q.pending,1)
-r=bot.muse('status',{brief=true})
-assert(has(r.team.harness_updated,'paused with 1 steps pending: fh queue resume continues with the next one'),r.team.harness_updated[1])
--- luna's direct walk was cut.
-r=bot.luna('status',{brief=true})
-assert(has(r.team.harness_updated,'your walk was interrupted'),r.team.harness_updated[1])
--- The carried steps finish as they would have.
+local b=brief('luna')
+eq(b.active.kind,'wait_until','luna'); eq(b.active.until_tick,before.luna); assert(not (b.last and b.last.outcome=='interrupted'),'luna last')
+b=brief('haiku')
+eq(b.active.kind,'wait_ticks','haiku'); eq(b.active.until_tick,before.haiku); eq(b.last,false)
+advance(1)
+-- Waits keep their own clocks.
+q=bot.sol('queue_status',{peek=true}); eq(q.paused,false); eq(q.active.action,'wait_ticks'); eq(q.active.until_tick,before.sol)
+b=brief('walker'); eq(b.active.kind,'walk'); eq(b.active.until_tick,before.walker)
+q=bot.muse('queue_status',{peek=true}); eq(q.paused,false); eq(q.active.action,'walk'); eq(#q.pending,1)
+-- The standing order runs on, the same run.
+q=bot.gemini('queue_status',{peek=true}); eq(q.paused,false); eq(q.order and q.order.name,'courier'); eq(q.active.until_tick,gemini_until)
+-- The repeating plans: opus's cycle starts its move_to again, sonnet's rest is untouched.
+q=bot.opus('queue_status',{peek=true}); eq(q.paused,false); eq(q.repeating,true); eq(q.cycle,opus_cycle); eq(q.active.action,'move_to')
+q=bot.sonnet('queue_status',{peek=true}); eq(q.paused,false); eq(q.next_cycle_tick,sonnet_q.next_cycle_tick)
+-- grok's move_to starts again from the head of the queue.
+q=bot.grok('queue_status',{peek=true}); eq(q.paused,false); eq(q.active.action,'move_to'); eq(q.active.id,'job-1'); eq(#q.pending,1)
+-- mover's direct move_to started again from its call; oldmover's could not be.
+b=brief('mover'); eq(b.active.kind,'move_to'); eq(b.active.to.x,-100)
+eq(brief('oldmover').active,false)
+-- The sleep over sleeper's queue goes on.
+eq(bot.sleeper('sleep_check',{peek=true}).woke,nil)
+
+-- One line each in the next reply (a peek leaves it there).
+eq(bot.astra('status',{brief=true,peek=true}).team,nil)
+local carried='harness updated at tick '..at..' (your wait/queue carried over)'
+for _,name in ipairs{'astra','sol','muse','gemini','luna','haiku','walker','sleeper'} do
+  local n=notes(name)
+  eq(n and #n,1,name..' notes'); eq(n[1],carried,name)
+end
+eq(notes('astra'),nil)
+eq(notes('sonnet'),nil) -- nothing of its was running
+eq(notes('done'),nil)
+q=bot.done('queue_status',{peek=true}); eq(q.paused,false); eq(#q.history,1)
+eq(notes('grok')[1],'harness updated at tick '..at..': your queue step move_to (job-1) was interrupted by a harness update; resumed')
+eq(notes('opus')[1],'harness updated at tick '..at..': your queue step move_to (job-'..opus_q.active.id:match('%d+')..') was interrupted by a harness update; resumed')
+eq(notes('mover')[1],'harness updated at tick '..at..': your move_to was interrupted by a harness update; resumed')
+eq(notes('oldmover')[1],'harness updated at tick '..at..': your move_to was interrupted by a harness update; start it again if it is still needed')
+eq(brief('oldmover').last.outcome,'interrupted')
+
+-- The carried waits finish as they would have.
 chest_items['iron-plate']=100
 advance(11)
 q=bot.astra('queue_status'); eq(q.history[#q.history].action,'wait_until'); eq(q.history[#q.history].ok,true)
-advance(sol_until-tick)
-q=bot.sol('queue_status'); eq(q.history[1].ok,true); eq(q.history[1].finished_tick,sol_until)
+chest_items['iron-plate']=200
+advance(11)
+b=brief('luna'); eq(b.active,false); eq(b.last.kind,'wait_until'); eq(b.last.outcome,'met')
+advance(before.sol-tick)
+q=bot.sol('queue_status'); eq(q.history[1].ok,true); eq(q.history[1].finished_tick,before.sol)
+advance(before.walker-tick+1)
+b=brief('walker'); eq(b.last.kind,'walk'); eq(b.last.outcome,'duration_elapsed')
+advance(before.haiku-tick+1)
+b=brief('haiku'); eq(b.last.kind,'wait_ticks'); eq(b.last.outcome,'duration_elapsed'); eq(b.last.tick,before.haiku+1)
+
+-- A second install carries the restarted move_to again (it keeps its call).
+bot.mover('move_to',{position={x=-50,y=50}}); advance(2); at=tick
+install()
+b=brief('mover'); eq(b.active.kind,'move_to'); eq(b.active.to.x,-50)
+eq(notes('mover')[1],'harness updated at tick '..at..': your move_to was interrupted by a harness update; resumed')
 
 -- A load from a save (on_load: no game while the runtime loads) carries nothing.
 bot.astra('queue_submit',{steps={{action='wait_ticks',args={ticks=600}}}}); advance(2)

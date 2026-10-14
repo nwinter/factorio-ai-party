@@ -56,13 +56,14 @@ local lb1=boiler(60,16,101,100,'luna'); local lb2=boiler(66,16,101,100,'luna')
 local nearb=boiler(4,22,nil,400); boiler(400,400,999,400)
 -- Coal nearby: a chest with 400 and an iron chest with 50, a belt of two tiles with 4 a lane; an inserter feeds one
 -- low boiler from the chest; a chest of iron plates holds no fuel.
-local coalchest=add{type='container',name='wooden-chest',unit_number=801,position={x=40.5,y=12.5},get_inventory=function() return {get_item_count=function(n) return n=='coal' and 400 or 0 end} end,
-  get_item_count=function(n) return n=='coal' and 400 or 0 end}
+chest_coal=400
+local coalchest=add{type='container',name='wooden-chest',unit_number=801,position={x=40.5,y=12.5},get_inventory=function() return {get_item_count=function(n) return n=='coal' and chest_coal or 0 end} end,
+  get_item_count=function(n) return n=='coal' and chest_coal or 0 end}
 add{type='container',name='iron-chest',unit_number=802,position={x=80.5,y=12.5},get_inventory=function() return {get_item_count=function(n) return n=='coal' and 50 or 0 end} end}
 add{type='container',name='wooden-chest',unit_number=803,position={x=41.5,y=12.5},get_inventory=function() return {get_item_count=function(n) return n=='iron-plate' and 50 or 0 end} end}
 for i=1,2 do add{type='transport-belt',name='transport-belt',position={x=30.5,y=10.5+i},get_max_transport_line_index=function() return 2 end,
   get_transport_line=function() return {get_item_count=function(n) return n=='coal' and 4 or 0 end} end} end
-add{type='inserter',name='burner-inserter',position={x=60,y=14},drop_target=lb1,pickup_target=coalchest}
+local lb1_feeder=add{type='inserter',name='burner-inserter',position={x=60,y=14},drop_target=lb1,pickup_target=coalchest}
 -- 30 assemblers on network 7: 3 on low power, 1 without power; 2 stone furnaces (no network).
 for i=1,30 do add{type='assembling-machine',name='assembling-machine-2',position={x=i,y=60},electric_network_id=7,status=i<=3 and 2 or (i==4 and 1 or 0)} end
 for i=1,2 do add{type='furnace',name='stone-furnace',position={x=i,y=70},status=0} end
@@ -115,8 +116,9 @@ storage.networks.views={}
 local lines=N.lines(force,'nauvis',8)
 eq(#lines,3,table.concat(lines,' | '))
 eq(lines[1],'nauvis electric #7 (10 poles near (32,0)): draw 18.5 MW avg over 5 min (now 18.5 MW) of 22.1 MW capacity (84%); '
-  ..'solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11: fuel (theirs and their feeders\' sources) 33 min at this draw')
--- (the first look: no supply known from before, so none is running down yet)
+  ..'solar 10 panels, 500 kW now, 600 kW peak; accumulators 2 at 50%; machines 30: 3 low power, 1 no power; boilers 11: their own fuel 31 min at this draw, '
+  ..'1 with fuel at their feeders, 2 under 20 min with none (lowest 4 min)')
+-- (lb1 holds 100 coal, 4 min, but its inserter's chest holds 400: not low; lb2 and the one by the engine have no feeder)
 eq(lines[2],'nauvis logistic #3: 4 roboports (+1 personal), logistic area (0,25)-(125,75), construction area (-30,-5)-(155,105); '
   ..'logistic robots 147: 0 idle, 142 working, 3 charging, 2 waiting to charge; construction robots 11: 4 idle, 6 working, 1 charging, 0 waiting to charge; '
   ..'no idle logistic robot for 4 min; requests unfilled 60+ s: 1 (iron-plate 300 missing); ghosts in its construction area: 5')
@@ -125,7 +127,11 @@ eq(lines[3],'nauvis turrets: gun-turret 6; ammo used in the last hour: firearm-m
 local r=N.read({force=force},{})
 eq(#r.surfaces,1); local e=r.surfaces[1].electric[1]
 eq(e.id,7); eq(e.capacity_kw,22100); eq(e.generators_kw,21600); eq(e.solar_peak_kw,600); eq(e.draw_kw.avg,18500); eq(e.draw_kw.over_s,300)
-eq(e.boilers,11,'the far boiler feeds nothing listed'); eq(e.fuel_min,33); eq(e.boilers_under_10_min,0); eq(e.boilers_under_20_min,0); eq(e.lowest_boiler_min,4); eq(e.low,3); eq(e.none,1)
+eq(e.boilers,11,'the far boiler feeds nothing listed'); eq(e.fuel_min,31); eq(e.boilers_fed,1); eq(e.boilers_under_10_min,1); eq(e.boilers_under_20_min,2); eq(e.lowest_boiler_min,4); eq(e.low,3); eq(e.none,1)
+-- The science line's power part (scienceline.lua): the surface's largest network, plain numbers.
+local pr=N.power_row(force,'nauvis')
+eq(pr.id,7); eq(pr.capacity_kw,22100); eq(pr.draw_kw,18500); eq(pr.boilers,11); eq(pr.fed,1); eq(math.floor(pr.unfed_min),4)
+eq(N.power_row(force,'vulcanus'),nil)
 local l=r.surfaces[1].logistic[1]; eq(l.unfilled,1); eq(l.unfilled_items['iron-plate'],300); eq(l.ghosts,5); eq(l.logistic_idle,0)
 eq(l.roboports,4); eq(l.personal,1); eq(l.logistic_area.x0,0); eq(l.construction_area.x1,155)
 eq(l.logistic_robots.working,142); eq(l.logistic_robots.charging,3); eq(l.construction_robots.idle,4); eq(l.construction_robots.waiting,0)
@@ -152,23 +158,32 @@ assert(r.note:find('sampled every 5 s',1,true))
 storage.networks.views={}
 local two=N.lines(force,'nauvis',2); eq(#two,2); eq(two[2],'+2 more networks: fh call networks')
 
--- 2. Alert groups. A second look a second later: three boilers burnt down (luna's two and the one by the engine), the
--- other eight kept their coal. Low: under 20 min with their feeders' sources and running down. The line names each
--- low boiler, its feeder and the feeder's source (lb1's inserter takes from the chest with 400 coal: 17 min), and the
+-- 2. Alert groups. A second look: three boilers burnt down (luna's two and the one by the engine), the other eight
+-- kept their coal. Low: under 20 min of their own fuel with no fuel at their feeders. lb1 (20 coal, 0 min) is fed from
+-- the chest with 400 coal: not low. The line names each low boiler and its feeder (or that none feeds it), and the
 -- coal in chests and on belts nearby; draw under 85%: no power_high; robots not 10 min yet.
 lb1.burner.inventory[1].count=20; lb2.burner.inventory[1].count=60; nearb.burner.inventory[1].count=300
 run(5)  -- (whole 5 s draw samples keep the 2-minute checks below aligned)
 storage.networks.views={}
 local g=N.alert_groups(force)
-eq(#g,1); eq(g[1].kind,'boiler_fuel'); eq(g[1].n,3); eq(g[1].by.luna,2); eq(g[1].center.x,43); eq(g[1].rank,30003)
-eq(g[1].now_text,'3 boilers under 20 min of fuel at this draw, 1 under 10, 1 under 5, lowest 2 min')
-eq(g[1].line,'3 boilers under 20 min of fuel at this draw, 1 under 10, 1 under 5 and running down near (43,18) (electric #7: 11 boilers, '
-  ..'32 min for all with their feeders\' sources); boiler (66,16) 2 min: no inserter feeds it; boiler (4,22) 12 min: no inserter feeds it; '
-  ..'boiler (60,16) 17 min: burner-inserter (60,14) from wooden-chest (41,13) holding 400 coal; '
+eq(#g,1); eq(g[1].kind,'boiler_fuel'); eq(g[1].n,2); eq(g[1].by.luna,1); eq(g[1].center.x,35); eq(g[1].rank,30002)
+eq(g[1].now_text,'2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5, lowest 2 min')
+eq(g[1].line,'2 boilers under 20 min of their own fuel at this draw, 1 under 10, 1 under 5 and no fuel at their feeders near (35,19) (electric #7: 11 boilers, '
+  ..'1 with fuel at their feeders); boiler (66,16) 2 min: no inserter feeds it; boiler (4,22) 12 min: no inserter feeds it; '
   ..'fuel within 64 tiles: wooden-chest (41,13) coal 400, iron-chest (81,13) coal 50; belts: coal 16 on 2 tiles, nearest (31,13), (31,12)')
--- A third look with nothing burnt since: nothing is running down, no alert.
+-- The chest empties: lb1 is low too, its feeder and the empty chest named.
+chest_coal=0; run(5); storage.networks.views={}
+g=N.alert_groups(force)
+eq(g[1].n,3)
+has(g[1].line,'boiler (60,16) 0 min: burner-inserter (60,14) from wooden-chest (41,13) holding no fuel')
+-- The inserter has coal in hand: lb1 is fed again.
+lb1_feeder.held_stack={valid_for_read=true,name='coal',count=1}
 run(5); storage.networks.views={}
-for _,x in ipairs(N.alert_groups(force)) do assert(x.kind~='boiler_fuel','steady: no boiler alert') end
+eq(N.alert_groups(force)[1].n,2)
+-- The two unfed boilers refilled: no alert.
+lb2.burner.inventory[1].count=1000; nearb.burner.inventory[1].count=1000; chest_coal=400; lb1_feeder.held_stack=nil
+run(5); storage.networks.views={}
+for _,x in ipairs(N.alert_groups(force)) do assert(x.kind~='boiler_fuel','all fed or full: no boiler alert') end
 -- Draw at 90% for 2 minutes: power_high; robots none idle for 10 minutes: robots_busy.
 flows['steam-engine']=19.5e6/60
 run(119); storage.networks.views={}
@@ -220,6 +235,7 @@ do
     for _,e in ipairs(stuff) do
       local ok=matches(e,f)
       if ok and f.position and f.radius then ok=(e.position.x-f.position.x)^2+(e.position.y-f.position.y)^2<=f.radius^2 end
+      if ok and f.area then ok=e.position.x>=f.area[1][1] and e.position.x<=f.area[2][1] and e.position.y>=f.area[1][2] and e.position.y<=f.area[2][2] end
       if ok then out[#out+1]=e end
     end
     return out
@@ -266,28 +282,53 @@ do
     return out
   end
   run4(60)
-  eq(#boiler_groups(),0,'the first look')
-  run4(30)
-  eq(#boiler_groups(),0,'supply steady: no alert though each boiler holds under 5 min of its own')
+  eq(#boiler_groups(),0,'the first look: every boiler has fuel at its feeder')
   local line=N4.lines(force,'n2',8)[1]
-  has(line,'boilers 13: fuel (theirs and their feeders\' sources) ')
-  -- The supply runs out: the chest and the belt empty, the boilers burn down to 2 coal each.
-  in_chest=0; coal_per_tile=0
+  has(line,'boilers 13: their own fuel ')
+  has(line,', 13 with fuel at their feeders')
+  -- Haiku and Astra, 03:20: inserters keep each boiler at 2 coal (0 min of its own) while the belt is full: not low.
   for _,b in ipairs(boilers) do b.burner.inventory[1].count=2 end
+  run4(30)
+  eq(#boiler_groups(),0,'2 coal each on a full belt: no alert')
+  -- The supply runs out: the chest and the belt empty.
+  in_chest=0; coal_per_tile=0
   run4(30)
   local g=boiler_groups()
   eq(#g,1); eq(g[1].n,13)
-  has(g[1].line,'13 boilers under 20 min of fuel at this draw, 13 under 10, 13 under 5 and running down near (-4,41)')
-  has(g[1].line,'boiler (-22,41) 0 min: inserter (-22,39) from transport-belt (-13,36) (with 6 belt tiles up to it holding no coal)')
-  has(g[1].line,'inserter (2,39) from requester-chest (10,39) holding no coal')
+  has(g[1].line,'13 boilers under 20 min of their own fuel at this draw, 13 under 10, 13 under 5 and no fuel at their feeders near (-4,41) (electric #20: 13 boilers, 0 with fuel at their feeders)')
+  has(g[1].line,'boiler (-22,41) 0 min: inserter (-22,39) from transport-belt (-13,36) (with 6 belt tiles up to it holding no fuel)')
+  has(g[1].line,'inserter (2,39) from requester-chest (10,39) holding no fuel')
   has(g[1].line,'+10 more')
+  -- The belt's first tile is loaded by an inserter from a requester chest holding solid fuel (the boilers burn
+  -- coal; any fuel counts): the belt boilers are fed, the line names what loads the belt.
+  local loader_chest=put{type='logistic-container',name='requester-chest',unit_number=3002,position={x=-23.5,y=33.5},
+    get_item_count=function(n) return n=='solid-fuel' and 90 or 0 end}
+  local loader=put{type='inserter',name='fast-inserter',unit_number=4100,position={x=-23.5,y=34.5},drop_target=tiles[1],pickup_target=loader_chest}
+  run4(30)
+  g=boiler_groups()
+  eq(g[1].n,6,'the 7 belt boilers fed, the 6 chest boilers not')
+  local r4=N4.read({force=force},{}).surfaces[1].electric[1]
+  eq(r4.boilers_fed,7); eq(r4.boilers_under_20_min,6)
+  -- An underground: the walk goes from its exit to its entrance and on up the belt.
+  local ug_in=put{type='underground-belt',name='underground-belt',unit_number=2101,position={x=30,y=60},belt_to_ground_type='input'}
+  local ug_out=put{type='underground-belt',name='underground-belt',unit_number=2102,position={x=36,y=60},belt_to_ground_type='output',neighbours=ug_in}
+  local before=put{type='transport-belt',name='transport-belt',unit_number=2100,position={x=29,y=60}}
+  for _,t in ipairs({ug_in,ug_out,before}) do
+    t.get_max_transport_line_index=function() return 2 end
+    t.get_transport_line=function() return {get_item_count=function(n) return t==before and n=='coal' and 3 or 0 end} end
+  end
+  before.belt_neighbours={inputs={},outputs={ug_in}}; ug_in.belt_neighbours={inputs={before},outputs={}}; ug_out.belt_neighbours={inputs={},outputs={}}
+  local ugb={e={valid=true,type='boiler',name='boiler',position={x=37,y=63},burner={remaining_burning_fuel=0,inventory={{valid_for_read=true,name='coal',count=1}}}},j=4e6}
+  put{type='inserter',name='inserter',unit_number=4200,position={x=37,y=61},drop_target=ugb.e,pickup_target=ug_out}
+  N4.boiler_supply({ugb},n2,force)
+  eq(ugb.fed,true); eq(ugb.feeder,'inserter (37,61) from underground-belt (36,60) (with 3 belt tiles up to it holding 6 coal)')
   game.surfaces=saved
 end
 -- Boilers that hold no fuel at all: the usual fuels are looked for, and the line says so.
 local empty={valid=true,type='boiler',name='boiler',unit_number=990,position={x=200,y=200},
   burner={remaining_burning_fuel=0,inventory={{valid_for_read=false}}}}
 local fg=N.fuel_group({name='nauvis'},{id=9,boilers={{e=empty,min=0}},fuel_low={{e=empty,min=0}}},force)
-has(fg.line,'1 boiler under 20 min of fuel at this draw, 1 under 10, 1 under 5 and running down near (200,200) (electric #9: 1 boiler, no draw); '
+has(fg.line,'1 boiler under 20 min of their own fuel at this draw, 1 under 10, 1 under 5 and no fuel at their feeders near (200,200) (electric #9: 1 boiler, no draw); '
   ..'boiler (200,200) 0 min: no inserter feeds it; '
   ..'fuel within 64 tiles (the boilers hold none; looked for coal, solid-fuel, wood, rocket-fuel, nuclear-fuel): iron-chest (81,13) coal 50, wooden-chest (41,13) coal 400; belts: coal 16')
 has(fg.line,'boiler (200,200) 0 min: no inserter feeds it')

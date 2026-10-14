@@ -316,6 +316,8 @@ return function(api)
       if got == 0 then return 'inventory_full' end
       action.picked = action.picked or {}
       action.picked[name] = (action.picked[name] or 0) + got
+      -- Over the personal request max: what the game moves to trash (trash.lua).
+      if api.trash then action.trashed = api.trash.count(p, action.trashed, name, s.quality and s.quality.name or nil, got) end
       if got >= count then here.destroy() else s.count = count - got end
       return nil
     end

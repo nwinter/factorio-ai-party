@@ -141,6 +141,7 @@ has(astra('status').orders,'courier resumes in 20 s (after your last action)')
 -- Which calls stay out of the way: planners always; others when they name a platform or another surface,
 -- or (configure) when the target is out of reach.
 for _,name in ipairs({'paste','blueprint_place','blueprint_capture','copy','cut','belt_route','pipe_route','pole_route',
+  'rail_route','train_stop','train',
   'place_ghosts','deconstruct','cancel_deconstruction','circuit_set','wire','requests','platform_schedule','flush'}) do
   eq(runtime.keeps(name),true,name)
 end

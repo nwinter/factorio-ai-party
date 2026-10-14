@@ -57,11 +57,29 @@ local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=14.5,y=
 silo.get_inventory=function(i) if i==11 then return inventory(cargo) end if i==12 then return inventory(trash) end end
 silo.launch_rocket=function(d) launched=d; return true end
 local far={valid=true,name='rocket-silo',type='rocket-silo',position={x=400.5,y=400.5},force=force,surface=vulcanus,unit_number=78,prototype={rocket_parts_required=50}}
+-- Astra 02:20 (board #377): a requester chest at (5.5,135.5) on Vulcanus feeding the assembler at (2.5,135.5).
+local slots={}
+local section={index=1,is_manual=true,group='',active=true}
+section.filters_count=0
+section.get_slot=function(i) return slots[i] end
+section.set_slot=function(i,v) slots[i]=v; section.filters_count=math.max(section.filters_count,i) end
+section.clear_slot=function(i) slots[i]=nil end
+setmetatable(section,{__index=function(_,k) if k=='filters' then local out={} for i=1,section.filters_count do if slots[i] then out[#out+1]=slots[i] end end return out end end})
+local requester={valid=true,name='requester-chest',type='logistic-container',position={x=5.5,y=135.5},force=force,surface=vulcanus,unit_number=81,half=0.5}
+requester.get_logistic_sections=function() return {sections_count=1,get_section=function(i) return i==1 and section or nil end,add_section=function() return section end} end
+local recipe_now
+local assembler={valid=true,name='assembling-machine-2',type='assembling-machine',position={x=2.5,y=135.5},force=force,surface=vulcanus,unit_number=82,half=1.5,
+  prototype={crafting_categories={crafting=true}},fluidbox={},crafting_progress=0}
+assembler.get_recipe=function() return recipe_now and {name=recipe_now} or nil end
+assembler.set_recipe=function(name) recipe_now=name; return {} end
+force.recipes={['rocket-fuel']={name='rocket-fuel',enabled=true,category='crafting'}}
+prototypes.item['solid-fuel']={name='solid-fuel'}; prototypes.item['light-oil']=nil
 vulcanus.find_entities_filtered=function(f)
   local out={}
-  for _,e in ipairs({silo,far}) do
+  for _,e in ipairs({silo,far,requester,assembler}) do
     local dx,dy=math.abs(e.position.x-(f.position and f.position.x or e.position.x)),math.abs(e.position.y-(f.position and f.position.y or e.position.y))
-    local inside=f.position==nil or (f.radius and dx*dx+dy*dy<=f.radius*f.radius) or (not f.radius and dx<4.5 and dy<4.5)
+    local h=e.half or 4.5
+    local inside=f.position==nil or (f.radius and dx*dx+dy*dy<=f.radius*f.radius) or (not f.radius and dx<h and dy<h)
     if inside and (not f.type or f.type==e.type) and (not f.name or f.name==e.name) then out[#out+1]=e end
   end
   return out
@@ -132,4 +150,26 @@ eq(runtime.remote(me,'launch',{surface='vulcanus'}),true); eq(runtime.remote(me,
 -- describe lists surface for each.
 local d=astra('describe').actions
 assert(d.launch.surface and d.configure.surface and d.silo.surface and d.configure.send_to_orbit_automatically,'describe lists them')
+
+-- requests by remote view on Vulcanus (Astra 02:20, board #377): set the requester's requests and read them back.
+local rq=astra('requests',{surface='vulcanus',position={x=5.5,y=135.5},set={{item='solid-fuel',min=50}}})
+eq(rq.target,'requester-chest at (5.5,135.5) on vulcanus'); eq(rq.sections[1].requests[1],'solid-fuel 50..inf'); eq(rq.changed_section,1)
+eq(slots[1].value.name,'solid-fuel'); eq(slots[1].min,50)
+-- A read alone (planet runs as surface), and clear.
+rq=astra('requests',{planet='vulcanus',position={x=5.5,y=135.5}})
+eq(rq.sections[1].requests[1],'solid-fuel 50..inf'); assert(rq.corrected:find('planet is surface',1,true),rq.corrected)
+rq=astra('requests',{surface='vulcanus',position={x=5.5,y=135.5},clear={'solid-fuel'}})
+eq(#rq.sections[1].requests,0)
+-- Never the character's own requests on another surface; an unseen chunk is refused as for the silo.
+fails(function() astra('requests',{surface='vulcanus',set={{item='solid-fuel',min=5}}}) end,'requests with surface needs position')
+fails(function() astra('requests',{surface='vulcanus',position={x=400.5,y=400.5}}) end,'not visible to our force now')
+assert(astra('describe').actions.requests.surface,'describe lists requests surface')
+-- configure's recipe on the assembler there, by remote view: an empty idle machine takes it; the reply says remote.
+local cf=astra('configure',{surface='vulcanus',position={x=2.5,y=135.5},recipe='rocket-fuel'})
+eq(cf.recipe,'rocket-fuel'); eq(cf.remote,true); eq(recipe_now,'rocket-fuel')
+eq(astra('configure',{surface='vulcanus',position={x=2.5,y=135.5},recipe='rocket-fuel'}).unchanged,true)
+-- Mid-craft it is refused, as any remote recipe change.
+recipe_now=nil; assembler.crafting_progress=0.4
+fails(function() astra('configure',{surface='vulcanus',position={x=2.5,y=135.5},recipe='rocket-fuel'}) end,'remote recipe change')
+assembler.crafting_progress=0
 print('silosurface: ok')
