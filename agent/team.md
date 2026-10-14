@@ -214,7 +214,9 @@ already targets your character.
   `repair` on an undamaged entity is ok with `unchanged: "not damaged"`; `repair` takes `positions` or `area` and
   reports `repaired` and `already_full`.
 - `collect {"position":{"x":10.5,"y":3.5},"wait_ticks":1800}` stands at that machine and takes each product the tick it
-  appears (`"count"` stops early); `last.took`, `last.made` and `last.inserters_took` say who got what.
+  appears (`"count"` stops early); `last.took`, `last.made` and `last.inserters_took` (counted) say who got what, and
+  `last.why` why it took none. A tell or board line shown in a sleep reply that your next sleep followed within 5 s
+  comes again in `team.missed_while_asleep`. `place_ghosts` and `scan` take `"surface": "vulcanus"` (remote view).
 - What you take over a personal request's max goes to your trash slots: `transfer`, `collect` and `pickup` say how much
   (`trash`); `"up_to": true` stops at the max, `"keep_max": true` refuses the take. A paste leaves the requests of a hub
   or requester chest it lands on (`requests_kept`), a hub's construction requests too.

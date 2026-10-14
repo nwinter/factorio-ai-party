@@ -171,6 +171,10 @@ fh call status
   `circuit_set {position, ...}` changes what the entity's circuit GUI holds; `circuit` is its old name (a direct call
   runs as `circuit_set` and says so in `corrected`). `platform: "Sunward"` acts on that platform (platform coordinates,
   hub at 0,0); `surface: "vulcanus"` (a planet, a platform's name or its surface name) on another surface by remote view.
+- `place_ghosts`, its `dry_run` and `scan` take `surface: "vulcanus"` too (Astra 12:33: laying out a Vulcanus chain
+  while Sonnet builds there by hand): in 2.0 a player places ghosts on another planet from the map, on charted
+  chunks, and that planet's construction robots build them. `scan` there needs `position`, `area` or `positions`.
+  `requests` takes `surface` with a `position` there (a requester or buffer chest, a landing pad).
   - `enable: "ice < 300"` (spaces around `<` `>` `=` `>=` `<=` `!=`; the right side a number or a signal), or
     `{signal, comparator, value | signal2}`: the entity works only while it holds (inserters, belts, pumps, lamps,
     drills, train stops, turrets, machines, power switches); `false` turns it off. `logistic` takes the same on the
@@ -792,6 +796,17 @@ fh sleep 900 --until researched                       # ...or until the research
   - `platform_arrived {platform, location?}` (a `wait_until` condition, so also `fh wait --until`, queue steps, guards and a standing order's `when`; Gemini, shift10: rocket launches wait on a platform's arrival): met while the platform is stopped at a space location, at `location` (a planet) when given, else at any stop; `saw` is `Sunward at gleba` or `Sunward flying nauvis->gleba 25%`. On a private 2.0.77 server a platform leaving a stop is on its route within 4 ticks, and one arriving reads at the planet from that tick (the game's speed value still falls for a few seconds); `fh wait --until "platform_arrived Sunward gleba"` woke when Sunward reached Gleba. An unknown platform fails the wait.
   - With a deadline file (`--deadline-file`, `FH_DEADLINE_FILE`) a sleep never runs past it: it is cut to the time left and reports `woke: deadline` when it ends there; after the deadline it does not start (`woke: deadline`, `slept_s: 0`).
   - A sleep started within 10 game seconds of reading a wake on an event (anything but `elapsed`, `died`, `respawned`, `deadline`, `told`, `mentioned`) does not start: it returns at once with that wake, `repeat: true` and `while_asleep: this sleep did not start: you woke (damaged) 4 s ago; ...`, so a shell loop of sleeps ends on the first wake. At most 3 repeats per wake; none for a sleep given `--until`, none in `turns` mode. A tell or mention wakes once: the reply that woke the agent delivered it (shift07: Luna's 32 repeats of tells already read). `fh sleep` and `fh wait --until` wait out such a repeat (Muse, shift08: "woke 4s ago" refusals burned turns): on a `repeat: true` reply the CLI waits the rest of the 10 s and starts the sleep again (at most 3 tries), and the final reply carries `waited_out: your previous sleep woke (board) 4 s before this one, and a sleep within 10 s of a wake repeats that wake; this sleep started after 7 s more`, with the team block the earlier replies carried. The runtime's own `sleep` reply is unchanged.
+  - A board line wakes once too, like a tell, a mention or eggs. A loop that drops each reply (Opus, shift12 12:26: an
+    `fh sleep 300` loop whose output was captured and thrown away; the operator's tell woke a sleep and the next sleep
+    began 0.27 s later) loses what that reply showed. So what the replies of a sleep or an `fh wait` showed (tells,
+    mentions, board lines, eggs) is kept until their last reply, and a sleep or wait the same agent begins less than
+    300 ticks (5 s) after it moves it to a missed list. The new sleep does not wake on those items (they are older
+    than it). The reply to the agent's next request that is no sleep or wait, or to a sleep begun 5 s or more after
+    its previous request, shows them once in `team.missed_while_asleep`: `1 tell shown in a sleep reply that the next
+    sleep followed 0.3 s later:`, then each item (`tell from sol, 43s ago: coal at the mall, ...`, `board: ...`,
+    `eggs: ...`; at most 12, `+N more`). Missed items a sleep reply shows again are kept again the same way. An
+    `fh wait` is told by its poll (`status` with `peek` and `brief`); a read within 120 ticks of that poll is the
+    wait's last reply. Damage and death wakes keep repeating as above. Off in `turns` mode.
   - `{until: "alert"}` as the condition (`fh wait --until alert`) wakes on a new attack area, enemy group or enemy base for the team (`woke: alert`).
   - `fh call sleep --args '{"seconds":N}'` (with or without `--wait`, also in `fh run` and `fh stream`) is the same blocking wait; the raw action only starts a sleep.
   - Claude Code agents get a 20-minute Bash timeout (tools/clean-profile.py in the pog repo), above the longest sleep. Codex agents' `yield_time_ms` returns earlier and leaves the sleep running in the background.
@@ -972,9 +987,18 @@ fh sleep 900 --until researched                       # ...or until the research
       ends it once that many are taken.
     - A timed action (`--wait` follows it): outcomes `collected`, `nothing_collected`, `inventory_full`, or
       `unreached` (the walk ended out of reach, `last.why`).
-    - `last` weighs what it took against what the machine made: `took` (`iron-gear-wheel*11`), `crafts` (its
-      products_finished since it began), `made` (crafts times the recipe's products per craft), `inserters_took` (what
-      the output held and the machine made, less what you took and what is left), and `waited_s`.
+    - `last` weighs what it took against what the machine made, counted in its output each tick (Sol, shift12 12:41:
+      the old estimate, crafts times each product's chance, read `made iron-bacteria*2, inserters_took
+      iron-bacteria*2` while none was made and the only output inserter takes spoilage): `took`
+      (`iron-gear-wheel*11`), `crafts` (its products_finished since it began), `made` (what arrived in the output),
+      `inserters_took` (what inserters picking from it took into their hands), `left_otherwise` (spoiled, or another
+      player took it), `chance` (`iron-bacteria comes from 10% of crafts`), `waited_s`, and when it took none `why`
+      (`the machine made no iron-bacteria in 50 s (16 crafts); iron-bacteria comes from 10% of crafts: about 1.6
+      expected`, `... its status: item_ingredient_shortage`, `its output inserters took 1`, a failed take, or the walk
+      that ended out of reach). On 2.0.77 the take reaches a product the tick it is there before an inserter waiting
+      at the output does (a burner inserter at a stone furnace took none of 6 plates during a wait). Reach is the
+      engine's, to the machine's edge, as `transfer`'s: both reached a stone furnace from 10.0 tiles and neither from
+      10.1.
     - An empty output costs nothing that tick.
   - `feed`, `collect` and `transfer` take `area {left_top, right_bottom}` (up to 128x128) in place of `positions`: our
     entities whose centre lies inside it, of the call's types, run as its positions (nearest first, each by its
@@ -1069,7 +1093,10 @@ fh sleep 900 --until researched                       # ...or until the research
   Items count at the ghost's quality. Tile ghosts the game's foundation rules hold back get one line each: a tile
   that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
   enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
-  200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same.
+  200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same. Every
+  tile ghost on the platform counts, also past the 64 the check reads and under an entity ghost (Astra, shift12
+  12:41: Starling had 336 tile ghosts, and the tile ghost at (-7.5,-0.5) under a belt ghost was named a hole); the
+  dry run's hole count looks past the box it reads the same way.
 - `repair` on an undamaged entity (Astra 03:42: a repair patrol logged 2481 `entity does not need repair` errors in a
   shift, which hid the real failures) is ok: `{unchanged: "not damaged", name, position, health}`, nothing started, no
   repair tool needed, `last` outcome `nothing_to_do`; a queue step with it succeeds and the plan goes on. Its health is

@@ -1163,6 +1163,14 @@ return function(api)
     for _, m in ipairs(box.list) do if m.tell or not shown[m.seq] then keep[#keep+1] = m end end
     box.list = keep
   end
+  -- What the last team block delivered per agent (mentions and tells as filed), read once by the dispatch for a
+  -- sleep's replies (missed.lua); never kept past the request that built it.
+  local delivered = {}
+  function M.delivered(index)
+    local d = delivered[index]
+    delivered[index] = nil
+    return d
+  end
   -- Every pending mention and tell, oldest first; never cut by the other
   -- parts' caps. Tells (logistics sent to this agent) are listed apart.
   local function mentions(p)
@@ -1186,6 +1194,7 @@ return function(api)
         lines[#lines+1] = string.format('%s%s, %s ago: %s', from(m), tag, ago(game.tick - m.tick), m.text)
       end
     end
+    delivered[p.index] = box.list
     box.list, box.dropped = {}, 0
     return #lines > 0 and lines or nil, #tells > 0 and tells or nil
   end
