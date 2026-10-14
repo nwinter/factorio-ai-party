@@ -48,7 +48,29 @@ local function state() return storage.agent_harness end
 -- Bots (script-driven characters), profiles/speech bubbles and director
 -- cameras. Bot indices sit above every player index (bots.BASE).
 M.crafting=require('crafting'){state=state}
-M.claims=require('claims'){state=state,where_from=function(me) return M.where.from(me) end,owner_state=function(name) return M.board.owner_state(name) end}
+M.claims=require('claims'){state=state,where_from=function(me) return M.where.from(me) end,owner_state=function(name) return M.board.owner_state(name) end,
+  -- the surface an agent is on now (a claim from before claims had one; claims.lua), nil in a pod or unknown
+  owner_surface=function(name)
+    for _,a in ipairs(M.board.agents()) do
+      if a.name==name then
+        local ok,w=pcall(M.where.place,a.index)
+        local key=ok and w and w.key
+        return type(key)=='string' and not key:find('^pod:') and key or nil
+      end
+    end
+  end,
+  -- whether any of our buildings stand in an area of a surface (one count, limit 1), and the planet surfaces
+  built_on=function(name,area)
+    local sf=game.get_surface(name)
+    local ok,n=pcall(function() return sf and sf.count_entities_filtered{area={area.left_top,area.right_bottom},force='player',limit=1} or 0 end)
+    return ok and n>0
+  end,
+  planets=function()
+    local out={}
+    for _,sf in pairs(game.surfaces or {}) do if not (pcall(function() return sf.platform end) and sf.platform) then out[#out+1]=sf.name end end
+    table.sort(out)
+    return out
+  end}
 M.belt=require('belt')()
 -- Waits, queues and actions carried over a hot install (carry.lua: notes them while this loads).
 M.carry=require('carry'){state=state,restart=function(index,call) return M.restart_call(index,call) end}
@@ -559,7 +581,9 @@ M.UNDER={['straight-rail']=true,['half-diagonal-rail']=true,['curved-rail-a']=tr
 -- given by unit_number (Sol, shift08: a robot over a chest made inspect, transfer and collect there ambiguous).
 M.PASSING={['logistic-robot']=true,['construction-robot']=true,['combat-robot']=true,['capture-robot']=true,unit=true,
   ['spider-unit']=true,projectile=true,['artillery-projectile']=true,fire=true,stream=true,sticker=true,beam=true,
-  explosion=true,['smoke-with-trigger']=true,['highlight-box']=true,['speech-bubble']=true,['particle-source']=true}
+  explosion=true,['smoke-with-trigger']=true,['highlight-box']=true,['speech-bubble']=true,['particle-source']=true,
+  -- an item request (a turret ghost's ammo, built in) sits on its building (Astra 08:43: rearm on 6 guns was ambiguous)
+  ['item-request-proxy']=true}
 function M.passing(e)
   if M.PASSING[e.type] then return true end
   local ok,selectable=pcall(function() return e.prototype.selectable_in_game end)
@@ -851,10 +875,10 @@ function handlers.describe()
         note='searches charted ground within 16 tiles around from and to; never passes a tile an existing belt outputs into; turns and undergrounds cost extra'},
       pole_route={from='{x,y}',to='{x,y}',waypoints='optional 1..16 {x,y} to pass through, in order (legs <=512 tiles, route <=1024)',item='pole item (default small-electric-pole)',spacing='tiles between poles (default: wire reach minus room for a 2-tile sideways shift: small 7, medium 8, big 29)',dry_run='boolean: plan only; returns positions',
         note='places pole ghosts along straight legs, shifting a blocked spot up to 2 tiles sideways within wire reach, reusing own poles/ghosts already on the line; returns poles, held, short (craft that many), failed (with reasons), bounds; then construct builds it (trees under ghosts are marked and cleared). Each placed pole joins every network in wire reach'},
-      pipe_route={pumps='boolean: when the route (with the pipes it joins) would make a fluid segment past the engine extent limit (320 tiles), place pump ghosts on it (flow from -> to; pumps need power); without it the result warns and lists pump positions',waypoints='optional 1..16 free {x,y} tiles to pass through, in order (each leg <=200 tiles manhattan); without them a route over 150 tiles is split at free tiles along the straight line',from='{x,y} first pipe tile: free ground, or the free tile at a machine fluid connection (joins that machine only), or our pipe/pipe-to-ground/tank or single-connection machine (pumpjack, offshore pump; joined at a free tile by one of its connections)',
+      pipe_route={pumps='boolean: when the route (with the pipes it joins) would make a fluid segment past the engine extent limit (320 tiles), place pump ghosts on it (flow from -> to; pumps need power); without it the result warns and lists pump positions',waypoints='optional 1..16 free {x,y} tiles to pass through, in order (each leg <=200 tiles manhattan); without them a route over 150 tiles is split at free tiles along the straight line; each leg starts from what the leg before left on its waypoint (dry_run too: later legs keep off the earlier legs\' tiles)',from='{x,y} first pipe tile: free ground, or the free tile at a machine fluid connection (joins that machine only), or our pipe/pipe-to-ground/tank or single-connection machine (pumpjack, offshore pump; joined at a free tile by one of its connections)',
         to='{x,y} last pipe tile, same forms as from',pipe='pipe entity (default pipe); its -to-ground variant hops obstacles (reach from its fluid box)',undergrounds='default true',
         dry_run='plan only, place nothing',details='list every entity',
-        returns='route (runs like E12 N3, uE10 = pipe-to-ground pair east spanning 10), tiles, items, missing (vs inventory), joins {from,to: name, position, fluid} for ends joined to an entity, placed/failed/bounds (construct defaults to them), segment_extent (tiles, with joined pipes) and, past the limit, extent_warning + pumps [{position,direction}]',
+        returns='route (runs like E12 N3, uE10 = pipe-to-ground pair east spanning 10), tiles, items, missing (vs inventory), joins {from,to: name, ghost?, position, fluid} for ends joined to an entity (a pipe ghost there is joined as part of its line: name is what it builds, ghost=true), placed/failed/bounds (construct defaults to them), segment_extent (tiles, with joined pipes; a joined ghost line counts as built) and, past the limit, extent_warning + pumps [{position,direction}]',
         note='plain pipe connects on every side, so it never goes where another pipe, machine connection or ghost would connect to it (only at a joined end); pipe-to-ground pairs pass beside or under those, belts and obstacles, never along another underground pipe axis or beneath lava/space; free ends stay plain pipe; refuses an end two entities connect to, a machine with several connections (give the tile), and joining two different known fluids; searches charted ground within 16 tiles around from and to'},
       cargo={items='{name: count} or [{name, count, quality}]: a rocket cargo list (items, not fluids)',position='or a chest, rocket silo (its loaded cargo), landing pad, platform hub, wagon or vehicle in sight: what it holds',platform='optional platform name (a hub or chest there)',returns='lift (kg and cargo slots a rocket), items [{name, quality, count, each_kg, kg, stacks, per_rocket (alone in one rocket: by weight and by slots), share (of a rocket\'s lift)}] heaviest first, total_kg, stacks, fewest (rockets by total weight and stacks), rockets and split [{rocket, kg, slots, items}] (one split: heaviest first, each into the first rocket with room), too_heavy; a read, nothing moves'},
       ports={name='entity (or the item that places it), e.g. electromagnetic-plant',position='{x,y} where it would stand (snapped like a build)',direction='north|east|south|west (default north)',recipe='optional recipe: which ports open and the fluid each carries',mirror='optional boolean: the H/V flip of fluid machines',platform='optional platform name (platform coordinates)',returns='ports [{at (the entity tile with the connection), joins (the tile outside it where a pipe joins), direction, flow input|output, fluid, box, there (what stands on joins now)}], closed (ports this recipe closes); a read, nothing is built; inspect of a ghost with a recipe shows the same in fluid_connections (fluid_connections_closed)'},
@@ -5587,19 +5611,19 @@ local function free_pipe_tile(p,name,pos)
     end end
   end
 end
-local function pipe_leg(p,a,from,to)
+local function pipe_leg(p,a,from,to,reserved,from_held)
   local args={}
   for k,v in pairs(a) do if k~='waypoints' and k~='pumps' then args[k]=v end end
-  args.from,args.to=from,to
+  args.from,args.to,args.reserved,args.from_held=from,to,reserved,from_held
   local plan=pipes.plan(p,args)
   return place_route(p,args,plan,{route=plan.route,tiles=plan.tiles,items=plan.items,joins=plan.joins}),plan
 end
--- The existing segment a route end joins (pipes and tanks only; machines,
--- pumps and ghosts start segments of their own).
+-- The existing segment a route end joins (pipes and tanks; machines and pumps
+-- start segments of their own); a pipe ghost there with the line it is part of
+-- (pipes.line_box: looked up by ghost_name, Astra 08:19).
 local function joined_box(p,join)
   if not join then return nil end
-  local e=p.surface.find_entities_filtered{position=join.position,name=join.name,force=p.force,limit=1}[1]
-  return pipes.segment_box(e,1)
+  return pipes.line_box(p.surface,p.force,join,pipes.extent_limit())
 end
 -- Pumps where the finished route would pass the segment extent limit; with
 -- place, they replace the route's own pipe ghosts on those tiles.
@@ -5763,8 +5787,21 @@ function handlers.pipe_route(p,a)
     for i=2,#points-1 do out.waypoints[#out.waypoints+1]=points[i] end
   end
   local entities,first_join,last_join={},nil,nil
+  -- A dry run places nothing, so each leg would see the ground before the earlier ones: their tiles are reserved
+  -- (all but the waypoint the next leg starts from), as their ghosts take them in the real call (Astra 08:19: a dry
+  -- run planned leg 2 back over leg 1; the real call then failed at the waypoint).
+  local reserved=a.dry_run and #points>2 and {} or nil
+  local held_end
   for i=1,#points-1 do
-    local ok,leg,plan=pcall(pipe_leg,p,a,points[i],points[i+1])
+    local ok,leg,plan=pcall(pipe_leg,p,a,points[i],points[i+1],reserved,held_end)
+    if ok and reserved then
+      held_end=plan.tail
+      local wx,wy=math.floor(points[i+1].x),math.floor(points[i+1].y)
+      for _,e in ipairs(plan.entities) do
+        local x,y=math.floor(e.position.x),math.floor(e.position.y)
+        if x~=wx or y~=wy then reserved[x..','..y]=true end
+      end
+    end
     if not ok then
       if #points==2 then error(leg,0) end
       error(string.format('pipe_route leg %d/%d (%g,%g)->(%g,%g) failed: %s%s',i,#points-1,points[i].x,points[i].y,points[i+1].x,points[i+1].y,reason(leg),
@@ -5792,7 +5829,7 @@ function handlers.pipe_route(p,a)
     if have<n then out.missing=out.missing or {}; out.missing[name]=n-have end
   end
   out.route=table.concat(out.route,' | ')
-  if out.dry_run and #points>2 then out.note='dry_run plans each leg alone from its waypoint tile' end
+  if out.dry_run and #points>2 then out.note='dry_run plans the legs in order, each kept off the tiles of the legs before it' end
   if out.dry_run then out.placed=nil end
   return out
 end
@@ -6343,7 +6380,9 @@ M.selfview=require('selfview'){state=state,is_read=function(action) return M.is_
   claims=function(name)
     local out={}
     for _,i in pairs((state().board or {}).items or {}) do
-      if i.kind=='claim' and i.owner==name and i.area and ({open=true,claimed=true,doing=true,blocked=true})[i.status] then out[#out+1]=i.area end
+      if i.kind=='claim' and i.owner==name and i.area and ({open=true,claimed=true,doing=true,blocked=true})[i.status] then
+        out[#out+1]={left_top=i.area.left_top,right_bottom=i.area.right_bottom,surface=M.claims.surface_of(i)}
+      end
     end
     return out
   end,
@@ -7080,12 +7119,16 @@ M.scienceline=require('scienceline'){state=state,supply=M.supply,networks=M.netw
 -- Lightning attractors on Fulgora whose catches have nowhere to go, and full accumulators beside them (lightning.lua).
 M.lightning=require('lightning'){}
 M.pushalerts=require('pushalerts'){state=state,agents=function() return M.board.agents() end,who=M.board.who,
+  claim_surface=function(i) return M.claims.surface_of(i) end,
   place=function(index) return M.where.place(index) end,targets=M.targets,
   network_groups=function(force)
     local out=M.networks.alert_groups(force)
     local ok,more=pcall(M.lightning.alert_groups,force)
     if ok then for _,g in ipairs(more) do out[#out+1]=g end
     else local s=state(); s.lightning_errors={count=((s.lightning_errors or {}).count or 0)+1,last=tostring(more),tick=game.tick} end
+    -- A science colour with no maker working for 5+ min (scienceline.lua, Opus 07:55).
+    local oks,idle=pcall(M.scienceline.alert_groups,force)
+    if oks then for _,g in ipairs(idle) do out[#out+1]=g end end
     return out
   end,
   -- an agent player's alert panel (camera players have theirs switched off: cameras.lua)

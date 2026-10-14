@@ -10,8 +10,16 @@ storage={board={items={}}}
 local force={name='player',players={}}
 local ents={nauvis={},vulcanus={},['platform-1']={}}
 local finds,wholes={},0
+local standing={}   -- what stands on a point (targets.standing): entities by position, any type
 local function surface(name,index,platform)
   return {name=name,index=index,platform=platform,find_entities_filtered=function(f)
+    if f.position and not f.type then
+      local out={}
+      for _,e in ipairs(standing) do
+        if e.valid and math.abs(e.position.x-f.position.x)<=0.5 and math.abs(e.position.y-f.position.y)<=0.5 then out[#out+1]=e end
+      end
+      return out
+    end
     eq(f.force,force); assert(f.type and f.limit,'by type, bounded')
     local types={}
     for _,t in ipairs(type(f.type)=='table' and f.type or {f.type}) do types[t]=true end
@@ -284,6 +292,29 @@ do
   b.valid=false
   g=lost(read())
   eq(g['lost_target.furnace'],nil); eq(st6.push_inserters.player.units[702],nil)
+  -- A chest upgraded in place (Astra, 07:26: a wooden chest fast-replaced by a requester; the inserter, holding cable,
+  -- worked from it while the engine's pickup target was still empty): what stands on the pickup point is its target
+  -- and the one remembered from now on; not lost.
+  local wood=thing('wooden-chest','container',-68.5,-0.5)
+  local asm=thing('assembling-machine-2','assembling-machine',-68.5,-3.5)
+  local f=inserter('fast-inserter',-68.5,-1.5,wood,asm)
+  f.pickup_position={x=-68.5,y=-0.5}; f.drop_position={x=-68.5,y=-2.5}
+  read()
+  eq(st6.push_inserters.player.units[f.unit_number].p,'wooden-chest (-68.5,-0.5)')
+  wood.valid=false; f.pickup_target=nil
+  local req=thing('requester-chest','logistic-container',-68.5,-0.5)
+  standing[#standing+1]=req
+  g=lost(read())
+  eq(g['lost_source.assembler'],nil,'the requester on its pickup point is its source')
+  eq(st6.push_inserters.player.units[f.unit_number].p,'requester-chest (-68.5,-0.5)','the remembered source is the new chest')
+  -- The engine links it later: still the requester, still not lost.
+  f.pickup_target=req
+  g=lost(read())
+  eq(g['lost_source.assembler'],nil)
+  -- Nothing on the point (the requester mined too): lost, reading the requester.
+  req.valid=false; f.pickup_target=nil
+  g=lost(read())
+  eq(g['lost_source.assembler'].lost[1],'fast-inserter (-68.5,-1.5) read requester-chest (-68.5,-0.5), puts into assembling-machine-2 (-68.5,-3.5)')
   ents.nauvis={}
 end
 -- 7. Turrets rebuilt empty (Astra, shift10: 15+ gun turrets rebuilt by robots with no ammo and destroyed again): a
@@ -367,5 +398,27 @@ do
   repeat game.tick=game.tick+1; B2.tick(game.tick); n=n+1 until (not st9.push_jobs.player and n>1) or n>5000
   eq(st9.push_turrets.player.ready,true)
   force.players={}; game.forces=nil; ents.nauvis={}
+end
+-- 8. A claim routes the groups on its own surface only (Sol 07:52: Astra's Nauvis claim #212 labelled Gleba furnaces
+-- at (62,22)).
+do
+  local st10={board={items={{kind='claim',status='claimed',owner='luna',id=9,surface='vulcanus',area={left_top={x=-50,y=-50},right_bottom={x=50,y=50}}}}}}
+  local R=dofile('mod/agent-harness_0.1.0/pushalerts.lua'){
+    state=function() return st10 end,
+    agents=function() return {{index=1,name='astra'},{index=3,name='luna'}} end,
+    who=function(p) return p.name end,
+    place=function(index) return places[index] end}
+  ents.nauvis={}; ents.vulcanus={}
+  for i=1,3 do ent('nauvis','stone-furnace','furnace',i*2,2,{status=3}) end
+  ent('vulcanus','stone-furnace','furnace',4,2,{status=3})
+  game.tick=game.tick+1800
+  local by={}
+  for _,g in ipairs(R.read(astra,{}).groups) do by[g.surface]=g end
+  eq(by.nauvis.to[1],'astra (nearest)','a vulcanus claim does not cover nauvis'); eq(by.vulcanus.to[1],'luna (claim)')
+  st10.board.items[1].surface='nauvis'; game.tick=game.tick+1800
+  by={}
+  for _,g in ipairs(R.read(astra,{}).groups) do by[g.surface]=g end
+  eq(by.nauvis.to[1],'luna (claim)'); eq(by.vulcanus.to[1],'luna (nearest)')
+  ents.nauvis={}; ents.vulcanus={}
 end
 print('pushalerts: ok')

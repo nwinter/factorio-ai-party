@@ -34,7 +34,7 @@ already targets your character.
   `--full` for the whole status). The `clock:` line ends with the time left until your deadline. A `--wait` that a tell
   or mention ends while the action still runs exits 3 (`still_running`); `--wait-through-tells` keeps waiting.
 - Organize yourselves: agree on who does what (there is no assigned leader or roles). Post a claim for the area you
-  build in (`board post` with kind `claim` and the area): it shows teammates who works where, sends that area's
+  build in (`board post` with kind `claim` and the area; it is on your surface, or `"surface":"gleba"`): it shows teammates who works where, sends that area's
   alerts to you, and keeps teammates' `stock` sweeps out of its chests. Put shared infrastructure (power poles, main
   belts) on the board too. Keep one job you own; when you hand it over, take a new one in the same message.
 - Anywhere, a teammate's claim included, you may build, extend, connect power, belts and inserters, and take from
@@ -125,7 +125,8 @@ already targets your character.
   inserters have no fuel in hand or at their source: belt, chest, or what loads the belt; or their own fuel fell about
   as fast as they burn over 2+ minutes, or by a quarter of their burn over 4+ minutes) (again under 10 and 5; each low boiler with its feeder and that
   source, or that no inserter feeds it, and the fuel in chests and on belts within 64 tiles), a logistic network with no
-  idle logistic robot for 10 minutes, Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
+  idle logistic robot for 10 minutes, a science colour whose makers here have all stood still for 5+ minutes (with
+  its chain's first short step), Fulgora's lightning attractors no pole reaches or in a network with no accumulator and nothing
   drawing power, full accumulators in an attractor network; at most one digest every 2.5 minutes, new or worse only;
   `./fh call game_alerts` lists them all). Every 2 game hours it carries `review`, your last 2 hours: your requests and queue steps by kind, the share of
   your character's time by kind (the time before a request counts toward that request's kind), the hand hauls you
@@ -258,6 +259,8 @@ already targets your character.
   parts X/50, what it lacks for the parts left (in the silo and at its feeders), the cargo's kg and slots, and the
   last launch. `launch`, `silo`, `requests` and `configure` (a recipe; `auto_requests`, `send_to_orbit_automatically`
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
+  `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
+  chests near the silo.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
 - `./fh call ores --args '{"resource":"iron-ore"}'` (or every resource; `surface`, `min_amount`, `limit`) lists the

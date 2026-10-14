@@ -44,6 +44,58 @@ return function(api)
       every=walk.every(steps and steps[f.name], PUSH_TICKS)}
   end
 
+  -- A whole colour stopped (Opus, 07:55): a pack the research needs whose makers on the science surface (there are
+  -- some) all stand still at a build, still so at a later one PUSH_TICKS or more after the first, is a digest group
+  -- science_idle naming the makers' states and its chain's first short step (the root of the stop, e.g. copper ore).
+  -- Kept in storage science_idle per force and pack: since (the first build that saw it idle), the line's facts.
+  local function idle_store(f)
+    local s = api.state()
+    s.science_idle = s.science_idle or {}
+    s.science_idle[f.name] = s.science_idle[f.name] or {}
+    return s.science_idle[f.name]
+  end
+  function M.check_idle(job, f, surface, scan)
+    local was = idle_store(f)
+    local now = {}
+    for _, pack in ipairs(surface and job.packs or {}) do
+      local makers = scan.by_product[pack] or {}
+      local working, states, by, sx, sy = 0, {}, {}, 0, 0
+      for _, m in ipairs(makers) do
+        local status = api.status_name(m.e) or 'unknown'
+        if status == 'working' then working = working + 1 else states[status] = (states[status] or 0) + 1 end
+        local u = try(function() return m.e.last_user and m.e.last_user.name end)
+        if u then by[u] = (by[u] or 0) + 1 end
+        sx, sy = sx + m.e.position.x, sy + m.e.position.y
+      end
+      if #makers > 0 and working == 0 then
+        local chain = api.supply.chain(scan, f, surface, pack)
+        local list = {}
+        for st, n in pairs(states) do list[#list+1] = {st=st, n=n} end
+        table.sort(list, function(x, y) if x.n ~= y.n then return x.n > y.n end return x.st < y.st end)
+        for i, x in ipairs(list) do list[i] = x.n .. ' ' .. x.st end
+        local path = chain and chain.path or {}
+        now[pack] = {since=was[pack] and was[pack].since or job.start, surface=surface.name, makers=#makers, states=table.concat(list, ', '),
+          root=path[#path] or pack, last=chain and chain.last or nil, path=#path > 1 and table.concat(path, ' > ') or nil,
+          by=by, center={x=math.floor(sx / #makers + 0.5), y=math.floor(sy / #makers + 0.5)}, seen=job.start}
+      end
+    end
+    api.state().science_idle[f.name] = now
+  end
+  -- The digest groups (pushalerts.lua's network groups): each colour idle for PUSH_TICKS or more.
+  function M.alert_groups(f)
+    local out = {}
+    for pack, v in pairs((api.state().science_idle or {})[f.name] or {}) do
+      if v.seen - v.since >= PUSH_TICKS then
+        out[#out+1] = {key='science_idle|' .. v.surface .. '|' .. pack .. '|' .. v.root, kind='science_idle', surface=v.surface, n=1,
+          names={[pack]=v.makers}, by=v.by, at={}, center=v.center,
+          line=string.format('no %s maker working for %d+ min (%d makers: %s)%s', pack, math.floor((v.seen - v.since) / 3600), v.makers, v.states,
+            v.last and '; first short step ' .. v.last .. (v.path and ' (' .. v.path .. ')' or '') or '')}
+      end
+    end
+    table.sort(out, function(a, b) return a.key < b.key end)
+    return out
+  end
+
   -- What the line says, from the finished job.
   local function compose(job, f)
     local lab = job.labs[job.surface] or {n=0, working=0, lack={}}
@@ -56,18 +108,20 @@ return function(api)
       if (lab.lack[name] or 0) > 0 and (not pack or lab.lack[name] > lab.lack[pack]) then pack = name end
     end
     local key = {job.tech or '', job.surface, lab.working, lab.n}
-    if pack then
-      local surface = game.get_surface(job.surface)
-      local by_product = {}
-      for item, list in pairs(job.by_product) do
-        local out = {}
-        for _, m in ipairs(list) do
-          local recipe = m.e.valid and prototypes.recipe[m.recipe]
-          if recipe then out[#out+1] = {e=m.e, recipe=recipe} end
-        end
-        by_product[item] = out
+    local surface = game.get_surface(job.surface)
+    local by_product = {}
+    for item, list in pairs(job.by_product) do
+      local out = {}
+      for _, m in ipairs(list) do
+        local recipe = m.e.valid and prototypes.recipe[m.recipe]
+        if recipe then out[#out+1] = {e=m.e, recipe=recipe} end
       end
-      chain = surface and api.supply.chain({crafters=job.crafters, by_product=by_product, miners=job.miners}, f, surface, pack)
+      by_product[item] = out
+    end
+    local scan = {crafters=job.crafters, by_product=by_product, miners=job.miners}
+    M.check_idle(job, f, surface, scan)
+    if pack then
+      chain = surface and api.supply.chain(scan, f, surface, pack)
       local root = chain and chain.tree and chain.tree[1]
       local text = string.format('limiting %s: %d of %d labs have none', pack, lab.lack[pack], lab.n)
       if root then text = text .. string.format(', made %d/min, used %d/min', root.made_per_min, root.used_per_min) end
@@ -146,10 +200,8 @@ return function(api)
           if row and row.n > 0 and (not job.surface or row.n > job.labs[job.surface].n) then job.surface = s end
         end
         job.surface = job.surface or (job.labs.nauvis and 'nauvis') or job.surfaces[1]
-        -- No pack short in any lab: the chain is not needed.
-        local short = false
-        for _ in pairs((job.labs[job.surface] or {lack={}}).lack) do short = true end
-        job.step = short and 'crafters' or 'finish'
+        -- The crafters for every research: the idle-colour check (science_idle) reads each pack's makers.
+        job.step = #job.packs > 0 and 'crafters' or 'finish'
       end
     elseif job.step == 'crafters' then
       -- The crafters and miners, every type in one find, a band a step.

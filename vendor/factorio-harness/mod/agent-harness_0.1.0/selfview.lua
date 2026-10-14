@@ -311,7 +311,8 @@ return function(api)
           end
         end
         for _, a in ipairs(areas) do
-          if not hit and b[1] <= a.right_bottom.x and b[3] >= a.left_top.x and b[2] <= a.right_bottom.y and b[4] >= a.left_top.y then hit = true end
+          if not hit and (a.surface == nil or a.surface == i.surface) and b[1] <= a.right_bottom.x and b[3] >= a.left_top.x
+            and b[2] <= a.right_bottom.y and b[4] >= a.left_top.y then hit = true end
         end
         if hit then out[#out+1] = i end
       end

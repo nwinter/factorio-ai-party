@@ -2310,6 +2310,30 @@ kinds={}
 for _,a in ipairs(made) do if a.inner_name=='pipe-to-ground' then kinds[#kinds+1]=a.direction..'@'..a.position.x end end
 eq(#kinds,2); assert(kinds[1]:match('^12@') and kinds[2]:match('^4@'),table.concat(kinds,','))
 fails(function() call('pipe_route',{from={x=0,y=0},to={x=6,y=0},lane='left'}) end,'unknown argument lane for pipe_route')
+-- Astra 08:19: a pipe ghost at an end with pumps=true failed 'Unknown entity name: pipe(ghost)' (the ghost's label went
+-- into a find). The fake finds as the engine does: an unknown name is an error.
+do
+  local find=p.surface.find_entities_filtered
+  local ghost={valid=true,type='entity-ghost',name='entity-ghost',ghost_name='pipe',ghost_type='pipe',ghost_prototype=prototypes.entity.pipe,
+    position={x=6.5,y=0.5},direction=0,force=p.force,unit_number=4242,bounding_box={left_top={x=6.2,y=0.2},right_bottom={x=6.8,y=0.8}}}
+  local function names(v) return type(v)=='table' and v or {v} end
+  p.surface.find_entities_filtered=function(f)
+    for _,n in ipairs(names(f.name or {})) do assert(prototypes.entity[n],'Unknown entity name: '..n) end
+    for _,n in ipairs(names(f.ghost_name or {})) do assert(prototypes.entity[n],'Unknown entity name: '..n) end
+    local named=f.ghost_name or f.type=='entity-ghost'
+    local here=f.position and math.abs(f.position.x-6.5)<=0.5 and math.abs(f.position.y-0.5)<=0.5
+    if (named and not f.position) or here or (f.area and not f.name) then return {ghost} end
+    return {}
+  end
+  local r=call('pipe_route',{from={x=0,y=0},to={x=6.5,y=0.5},pumps=true,dry_run=true})
+  eq(r.joins.to.name,'pipe'); eq(r.joins.to.ghost,true); eq(r.segment_extent,7)
+  p.surface.find_entities_filtered=find
+  -- A dry run with a waypoint plans leg 2 off leg 1's tiles: back west along y=0 (W8 alone) is taken. (East of the
+  -- fake's blocked column x=3.)
+  local legs=call('pipe_route',{from={x=5,y=0},to={x=4,y=0},waypoints={{x=11,y=0}},undergrounds=false,dry_run=true})
+  eq(legs.legs,2); assert(legs.route:find('^E7 | ') and not legs.route:find('| W8',1,true),legs.route)
+  eq(legs.note,'dry_run plans the legs in order, each kept off the tiles of the legs before it')
+end
 -- scan fields=fluids: contents and connections of each fluidbox.
 local pump={valid=true,name='offshore-pump',type='offshore-pump',position={x=0.5,y=0.5},force=p.force,surface=p.surface,
   fluidbox={{name='water',amount=100},get_capacity=function() return 100 end,get_pipe_connections=function()

@@ -246,6 +246,67 @@ return function(api)
     end
     return out
   end
+  -- The tiles the line a route end joins spans once built (pipe_route pumps; Astra 08:19: a pipe ghost at an end is
+  -- part of the line): a built pipe or tank, its fluid segment; a ghost, it and every pipe-like ghost or entity
+  -- connected to it (normal connections, and an underground end's partner), a built one with its segment. The walk
+  -- stops once the span passes stop_at (the extent limit: past it the answer is already "too long"), or after
+  -- LINE_MAX entities.
+  local LINE_MAX=600
+  local PIPE_LIKE={pipe=true,['pipe-to-ground']=true,['storage-tank']=true,['infinity-pipe']=true}
+  local function kind_of(o) return o.type=='entity-ghost' and o.ghost_type or o.type end
+  local function ident(o)
+    local ok,u=pcall(function() return o.unit_number end)
+    return ok and u or (kind_of(o)..key(o.position.x,o.position.y))
+  end
+  function M.line_box(surface,force,join,stop_at)
+    local filter={position=join.position,radius=0.3,force=force,limit=1}
+    if join.ghost then filter.type='entity-ghost'; filter.ghost_name=join.name else filter.name=join.name end
+    local okf,found=pcall(surface.find_entities_filtered,filter)
+    local e=okf and found[1]
+    if not (e and e.valid) then return nil end
+    if e.type~='entity-ghost' then return M.segment_box(e,1) end
+    local box,seen,queue,n=nil,{[ident(e)]=true},{e},0
+    local function linked(o,c)
+      local out={}
+      if c.kind=='normal' and c.dir then
+        for _,t in pairs(surface.find_entities_filtered{position=centre(c.tx,c.ty),force=force}) do
+          for _,tc in ipairs(PIPE_LIKE[kind_of(t)] and M.connections(t) or {}) do
+            if tc.kind=='normal' and tc.x==c.tx and tc.y==c.ty and tc.tx==c.x and tc.ty==c.y then out[#out+1]=t; break end
+          end
+        end
+      elseif c.kind=='underground' and c.dir and c.reach then
+        local st=STEP[c.dir]
+        for k=1,c.reach do
+          for _,t in pairs(surface.find_entities_filtered{position=centre(c.x+st[1]*k,c.y+st[2]*k),force=force}) do
+            if kind_of(t)=='pipe-to-ground' then
+              for _,tc in ipairs(M.connections(t)) do
+                if tc.kind=='underground' and tc.dir==opposite(c.dir) then out[#out+1]=t end
+              end
+            end
+          end
+          if #out>0 then break end
+        end
+      end
+      return out
+    end
+    while #queue>0 and n<LINE_MAX do
+      local o=table.remove(queue)
+      n=n+1
+      if o.type~='entity-ghost' then box=union(box,M.segment_box(o,1))
+      else
+        local bb=o.bounding_box
+        box=grow(grow(box,math.floor(bb.left_top.x),math.floor(bb.left_top.y)),math.ceil(bb.right_bottom.x)-1,math.ceil(bb.right_bottom.y)-1)
+        for _,c in ipairs(M.connections(o)) do
+          for _,t in ipairs(linked(o,c)) do
+            local id=ident(t)
+            if not seen[id] then seen[id]=true; queue[#queue+1]=t end
+          end
+        end
+      end
+      if stop_at and box and span(box)>stop_at then break end
+    end
+    return box
+  end
   -- Every segment of ours over the limit on this surface (at most `limit`).
   function M.overlong(p,max)
     local limit,seen,out=M.extent_limit(),{},{}
@@ -308,7 +369,10 @@ return function(api)
     end
     local unders,at={},{}
     for _,e in ipairs(found) do
-      local entry={name=label(e),position=e.position,conns=M.connections(e)}
+      -- name: what the entity is (a ghost's ghost_name, Astra 08:19: 'Unknown entity name: pipe(ghost)' when the label
+      -- went into a find); label: how messages name it.
+      local ghost=e.type=='entity-ghost'
+      local entry={name=ghost and e.ghost_name or e.name,ghost=ghost or nil,label=label(e),position=e.position,conns=M.connections(e)}
       each_tile(e.bounding_box,function(x,y) s.occupant[key(x,y)]=entry end)
       for _,c in ipairs(entry.conns) do
         if c.kind=='normal' and c.dir then
@@ -369,6 +433,8 @@ return function(api)
     local function passable(x,y)
       if x<box.left or x>box.right or y<box.top or y>box.bottom then return false end
       local k=key(x,y)
+      -- A dry run's earlier legs (pipe_route waypoints): their tiles are taken, as their ghosts would be.
+      if a.reserved and a.reserved[k] then return false end
       if free[k]==nil then
         local pos=centre(x,y)
         local c=api.chunk_of(pos)
@@ -395,6 +461,15 @@ return function(api)
     -- connection tile of its own. `toward` points from the tile to the join.
     local function ends(label_,x,y)
       local here=s.occupant[key(x,y)]
+      -- A dry run's later leg starts on what the leg before leaves on its waypoint (a.from_held, pipe_route): a plain
+      -- pipe opens every side, a pipe-to-ground exit only onward.
+      if label_=='from' and a.from_held then
+        local conns={}
+        for _,d in ipairs(a.from_held.kind=='exit' and {a.from_held.dir} or DIRS) do
+          conns[#conns+1]={box=1,flow='input-output',kind='normal',x=x,y=y,dir=d,tx=x+STEP[d][1],ty=y+STEP[d][2]}
+        end
+        here={name=a.from_held.name,label='the '..a.from_held.name..' the leg before ends with',position=centre(x,y),conns=conns}
+      end
       if here then
         local normal,box_seen,oneway,single=0,nil,false,true
         for _,c in ipairs(here.conns) do
@@ -403,20 +478,28 @@ return function(api)
           if box_seen and box_seen~=c.box then single=false end
           box_seen=c.box
         end
-        assert(normal==1 or single and not oneway,label_..' holds '..here.name..' with several or one-way fluid connections; give the free tile at the one to join (scan fields=fluids lists them)')
-        local list={}
+        assert(normal==1 or single and not oneway,label_..' holds '..here.label..' with several or one-way fluid connections; give the free tile at the one to join (scan fields=fluids lists them)')
+        local list,why={},{}
         for _,c in ipairs(here.conns) do
-          if c.kind=='normal' and c.dir and passable(c.tx,c.ty) and only(c.tx,c.ty,here) then
-            list[#list+1]={x=c.tx,y=c.ty,toward=opposite(c.dir),join=here,fluid=fluid_of(here)}
+          if c.kind=='normal' and c.dir then
+            local k=key(c.tx,c.ty)
+            if passable(c.tx,c.ty) and only(c.tx,c.ty,here) then
+              list[#list+1]={x=c.tx,y=c.ty,toward=opposite(c.dir),join=here,fluid=fluid_of(here)}
+            else
+              -- What takes each side (Astra 08:19: a waypoint whose only free side was the leg it came in by).
+              local occ=s.occupant[k]
+              why[#why+1]=string.format('(%g,%g) %s',c.tx+0.5,c.ty+0.5,occ and occ.label or a.reserved and a.reserved[k] and 'an earlier leg of this route'
+                or s.ghosts[k] and 'a ghost' or not passable(c.tx,c.ty) and 'blocked or not charted' or 'another connection points there')
+            end
           end
         end
-        assert(#list>0,label_..' holds '..here.name..' but no tile at its connections is free of other connections')
+        assert(#list>0,label_..' holds '..here.label..' but no tile at its connections is free of other connections: '..table.concat(why,'; '))
         return list
       end
       assert(passable(x,y),label_..' is blocked or not charted')
       local join,toward,fluid
       for _,t in ipairs(s.targets[key(x,y)] or {}) do
-        assert(not join or join==t.entry,label_..' is where both '..(join and join.name or '')..' and '..t.entry.name..' connect; a pipe there would join them')
+        assert(not join or join==t.entry,label_..' is where both '..(join and join.label or '')..' and '..t.entry.label..' connect; a pipe there would join them')
         join,toward,fluid=t.entry,opposite(t.conn.dir),fluid or t.conn.fluid
       end
       return {{x=x,y=y,toward=toward,join=join,fluid=fluid}}
@@ -584,9 +667,12 @@ return function(api)
     if pairs_>0 then items[under.name]=pairs_*2 end
     local joins
     for side,e in pairs{from=first.start,to=goal.goal} do
-      if e.join then joins=joins or {}; joins[side]={name=e.join.name,position=e.join.position,fluid=e.fluid} end
+      if e.join then joins=joins or {}; joins[side]={name=e.join.name,ghost=e.join.ghost,position=e.join.position,fluid=e.fluid} end
     end
-    return {route=table.concat(text,' '),tiles=#steps,pipes=pipes_,undergrounds=pairs_,items=items,entities=entities,joins=joins}
+    -- tail: what the route ends with on its last tile (a dry run's next leg starts on it: from_held).
+    local last=steps[#steps]
+    local tail={kind=last.kind=='exit' and 'exit' or 'pipe',dir=last.dir,name=last.kind=='exit' and under.name or pipe.name}
+    return {route=table.concat(text,' '),tiles=#steps,pipes=pipes_,undergrounds=pairs_,items=items,entities=entities,joins=joins,tail=tail}
   end
   return M
 end
