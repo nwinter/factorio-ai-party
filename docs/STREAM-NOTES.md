@@ -256,6 +256,7 @@ page (the alert stays in the state for the casters). `model.research_news`, `sta
 | attack_replay | 15-40 | the OBS "replay" scene (see Replays); available while a fresh clip waits | program scene switch |
 | space | 15-30 | panel: planets reached, rockets, platforms (where or route, speed), space-age science made, who is off Nauvis; available once the Space panel shows | unchanged |
 | space_moment `{moment}` | 12-25 | a Space Age moment (below): full panel, or a lower card for a landing with an agent | a landing follows the agent (zoom 0.9) |
+| hauling | 10-16 | lower card "Hand hauling this shift": the top 5 agents by items moved by hand, items and calls (harness `hauling`, read every 5 min by live.py into `runs/RUN/hauling.jsonl`; this shift = last read less the first). The director starts it every 30 min (`hauling_every`) at a free slot, not within 60 s of a fight cut; unavailable while nothing is counted | unchanged |
 
 Rules (the director has the last word): one segment start per 180 s whoever asks (`spacing`). When the director
 cuts the main camera to a fight, death, base attack or loss, a running segment ends at once (`cut: "attack"`) and

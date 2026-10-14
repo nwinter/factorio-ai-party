@@ -444,8 +444,11 @@ return function(api)
               step.next_check=game.tick+1
               q.current=step
             else
+              -- What the step moves by hand is the queue's or its standing order's (hauling.lua).
+              if api.step_begin then pcall(api.step_begin,index,step) end
               local ok,result=pcall(api.handlers[step.action],p,step.args)
               if ok and api.claim then api.claim(p) end
+              if api.step_done then pcall(api.step_done,index) end
               if not ok then
                 fail(q,p,step,{reason=api.reason and api.reason(result) or tostring(result)})
               elseif step.wait and api.busy(p,step.action) then

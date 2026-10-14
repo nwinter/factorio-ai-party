@@ -428,6 +428,7 @@ class Model:
         self.work = deque(maxlen=20)  # work away from the body (live.py observe_work), for the director
         self.incoming = {}  # id -> an enemy group on its way (attack_groups_live), as last read
         self.big = {}  # id -> a demolisher near our buildings (big_enemies_live), as last read
+        self.hauling = None  # hand hauling this shift (live.py observe_hauling): {rows, since, t}
         self.fights = {}  # key -> fight still reported (attacked chunk, loss, agent in combat), for replays.py
         self.space_age = bool(run.get("space_age")) or "Space Age" in (run.get("subtitle") or "")
         self.last_obs_t = None
@@ -508,6 +509,8 @@ class Model:
             self._ingest_groups(obs["attack_groups"], now)
         if obs.get("big_enemies") is not None:
             self._ingest_big(obs["big_enemies"], now)
+        if obs.get("hauling") is not None:  # hand hauling this shift (live.py observe_hauling), for the segment card
+            self.hauling = obs["hauling"]
         self.errors = obs.get("errors", {})
 
     def platform_view(self, name):
@@ -1525,6 +1528,7 @@ class Model:
             "fights": self.fights_snapshot(now),
             "incoming": self.incoming_snapshot(now),
             "big_enemies": self.big_snapshot(now),
+            "hauling": self.hauling,
             "alerts": [a for a in self.alerts if a["until"] > now][-3:],
             "board": self.board_snapshot(),
             "cameras": cameras or {},

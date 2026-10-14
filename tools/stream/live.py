@@ -8,6 +8,7 @@ worlds (e.g. the paused co-op save in world c).
 import math, os, re, time
 
 import basemap_log
+import hauling
 import operator_inbox
 from harness import Harness
 from model import SPARK_ITEMS, notes_job
@@ -81,6 +82,11 @@ class LiveSource:
         self.has_operator = False
         self.inbox_path = operator_inbox.path_for(journals)
         self.journals = journals
+        # hand hauling (hauling.lua `hauling`), every few minutes: runs/RUN/hauling.jsonl, and the shift's numbers
+        self.has_hauling = False
+        self.next_hauling = 0
+        self.hauling_path = hauling.path_for(journals)
+        self.hauling_first = (hauling.read_rows(self.hauling_path) or [None])[0] if self.hauling_path else None
         self.notes_cache = {}  # agent -> (mtime, job line): notes.md is read again only when it changed
         # after the file's last request, or the earlier shifts' for a new one (the save holds them all)
         self.operator_seq = operator_inbox.start_seq(self.inbox_path) if self.inbox_path else 0
@@ -395,6 +401,7 @@ class LiveSource:
             self.has_operator = "operator" in actions
             self.has_groups = "attack_groups_live" in (res.get("operator_reads") or [])
             self.has_big = "big_enemies_live" in (res.get("operator_reads") or [])
+            self.has_hauling = "hauling" in (res.get("operator_reads") or [])
         except Exception as e:
             self.has_board = False
             print(f"[live] board probe failed: {e}", flush=True)
@@ -424,13 +431,36 @@ class LiveSource:
                 errors["big_enemies"] = str(e)
                 self.next_big = now + 30.0
 
+    def observe_hauling(self, obs, errors):
+        """Hand hauling per agent (operator read `hauling`), every hauling.READ_EVERY seconds: each read is a row in
+        runs/RUN/hauling.jsonl, and obs["hauling"] is the shift's numbers so far (this read less the file's first)."""
+        now = time.time()
+        if not getattr(self, "has_hauling", False) or now < self.next_hauling:
+            return
+        try:
+            res, _ = self.h.operator_read("hauling", {"top": 10})
+        except Exception as e:
+            errors["hauling"] = str(e)
+            self.next_hauling = now + 60.0
+            return
+        self.next_hauling = now + hauling.READ_EVERY
+        row = hauling.append(self.hauling_path, res, now)
+        if row is None:
+            return
+        if self.hauling_first is None:
+            self.hauling_first = row
+        team = set(self.agents_cfg) or None
+        obs["hauling"] = {"rows": hauling.shift_rows(self.hauling_first, row, team), "since": self.hauling_first["t"],
+                          "t": row["t"]}
+
     def observe_board(self, obs, errors):
         if self.caps is None or not self.caps.get("harness"):
             return
-        if not self.has_board or not getattr(self, "has_groups", True):
+        if not self.has_board or not getattr(self, "has_groups", True) or not getattr(self, "has_hauling", True):
             if time.time() >= self.next_board_probe:
                 self.board_probe()
         self.observe_groups(obs, errors)
+        self.observe_hauling(obs, errors)
         if self.has_confess:  # confessionals (agent -> viewers only), read as the operator
             try:
                 res, _ = self.h.operator_read("confessions", {"since": self.confess_seq, "limit": 30})

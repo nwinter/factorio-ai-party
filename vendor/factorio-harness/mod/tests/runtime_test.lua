@@ -965,12 +965,19 @@ p.surface.find_entities_filtered=function() return {lab,f1,f2} end
 main=inv(stack('coal',3),stack('iron-ore',30),stack('automation-science-pack',12))
 eq(f1.slots[2][1].count,5)
 local fed=call('feed',{count=20,keep=2})
-eq(fed.transferred,31); eq(fed.items['iron-ore'],20); eq(fed.items['automation-science-pack'],10); eq(fed.items.coal,1)
-eq(f1.slots[3][1].count,20); eq(f1.slots[2][1].count,6); eq(f2.slots[2][1].count,5); eq(lab_slots[1].count,10)
-eq(fed.held['iron-ore'],10); eq(fed.held.coal,2); eq(#fed.entities,2); eq(fed.entities[1].name,'stone-furnace'); eq(fed.entities[2].gave['automation-science-pack'],10)
+-- Burners that hold fuel get none unless asked (Gemini 03:20): the furnaces keep their 5 coal.
+eq(fed.transferred,30); eq(fed.items['iron-ore'],20); eq(fed.items['automation-science-pack'],10); eq(fed.items.coal,nil)
+eq(f1.slots[3][1].count,20); eq(f1.slots[2][1].count,5); eq(f2.slots[2][1].count,5); eq(lab_slots[1].count,10)
+eq(fed.held['iron-ore'],10); eq(fed.held.coal,nil); eq(#fed.entities,2); eq(fed.entities[1].name,'stone-furnace'); eq(fed.entities[2].gave['automation-science-pack'],10)
+eq(fed.entities[1].fuel,'coal 5'); eq(fed.entities[2].fuel,nil)
 eq(fed.unchanged,1)
+-- fuel=true tops every burner up to fuel_count (from what is held above keep).
+local topped=call('feed',{fuel=true,keep=2})
+eq(topped.items.coal,1); eq(f1.slots[2][1].count,6); eq(topped.entities[1].fuel,'coal 6')
+main[1].count=3
 local nothing=call('feed',{items={'copper-plate'}})
 eq(nothing.transferred,0); assert(nothing.nothing_moved:find('nothing given: none of the 3 machines wants an item',1,true),nothing.nothing_moved)
+assert(nothing.nothing_moved:find('2 burners hold fuel (coal 5-6): fuel is added to a burner with none, or with fuel=true or fuel=NAME',1,true),nothing.nothing_moved)
 -- item: one name, as transfer takes it (Grok); count is the target each machine holds.
 local one=call('feed',{item='iron-ore',count=25})
 eq(one.transferred,5); eq(one.items['iron-ore'],5); eq(one.items.coal,nil); eq(f1.slots[3][1].count,25); eq(one.held['iron-ore'],5)
@@ -993,6 +1000,70 @@ eq(tour.places,1); eq(call('status').active.kind,'gather'); advance(1)
 local toured=call('status').last
 eq(toured.outcome,'topped_up'); eq(toured.op,'feed'); eq(toured.given,5); eq(toured.items['iron-ore'],5); eq(f1.slots[3][1].count,5)
 eq(call('feed',{radius=20,items={'iron-ore'}}).places,0); advance(1); eq(call('status').last.outcome,'nothing_to_do')
+-- Round 03:20. Fakes: furnaces at (3,0) and (4,0), boilers at (1..3,3); a point finds what stands there.
+local function boiler(x,count)
+  local fuel=inv(stack('coal',count))
+  local b={valid=true,name='boiler',type='boiler',position={x=x,y=3},force=p.force,unit_number=900+x,fuel=fuel}
+  b.get_inventory=function(i) return i==defines.inventory.fuel and fuel or nil end
+  b.get_fuel_inventory=function() return fuel end
+  return b
+end
+local b1,b2,b3=boiler(1,2),boiler(2,0),boiler(3,10)
+local function typed(f,e)
+  if type(f.type)=='table' then for _,t in ipairs(f.type) do if t==e.type then return true end end return false end
+  return f.type==nil or f.type==e.type
+end
+p.surface.find_entities_filtered=function(f)
+  local out={}
+  for _,e in ipairs({f1,f2,b1,b2,b3}) do
+    if typed(f,e) and (not (f.position and (f.radius or 0)<1) or (e.position.x==f.position.x and e.position.y==f.position.y)) then out[#out+1]=e end
+  end
+  return out
+end
+-- Gemini (shift09 10:20): furnaces burning solid fuel, no coal carried: the ore goes in without fuel ("you carry 0 coal"
+-- before); the row names what its fuel slots hold.
+prototypes.item['solid-fuel']={fuel_value=12000000}; prototypes.item['iron-plate']={}
+local fs=f1.slots[2][1]; fs.name,fs.count,fs.valid_for_read='solid-fuel',3,true
+main=inv(stack('iron-ore',30),stack(nil,0),stack(nil,0))
+local ore=call('feed',{positions={{x=3,y=0}}})
+eq(ore.items['iron-ore'],15); eq(ore.items.coal,nil); eq(ore.entities[1].fuel,'solid-fuel 3'); eq(ore.nothing_moved,nil); eq(fs.count,3)
+-- A furnace that never smelted (no recipe yet) takes nothing unnamed; the reply says so, with what it would smelt.
+prototypes.recipe={['steel-plate']={name='steel-plate',category='smelting',ingredients={{type='item',name='iron-plate',amount=5}}}}
+f2.prototype={crafting_categories={smelting=true}}
+main=inv(stack('iron-plate',40),stack(nil,0),stack(nil,0))
+main.get_contents=function() return {{name='iron-plate',count=40,quality='normal'}} end
+local unnamed=call('feed',{positions={{x=4,y=0}}})
+eq(unnamed.transferred,0); eq(unnamed.entities[1].got,'nothing'); eq(unnamed.entities[1].fuel,'coal 5')
+eq(unnamed.nothing_moved,'nothing given: none of the 1 machines wants an item (no recipe set, or not a machine feed fills); '
+  ..'1 furnace with no recipe yet (nothing smelted there) takes only items named in items or item; you carry iron-plate 40 that they smelt; '
+  ..'1 burner holds fuel (coal 5): fuel is added to a burner with none, or with fuel=true or fuel=NAME')
+-- Named, it goes into the source slot as a player puts it there.
+local named=call('feed',{positions={{x=4,y=0}},item='iron-plate'})
+eq(named.items['iron-plate'],20); eq(f2.slots[3][1].name,'iron-plate'); eq(f2.slots[3][1].count,20)
+-- A burner with empty fuel slots gets fuel unasked.
+local f2s=f2.slots[2][1]; f2s.count,f2s.valid_for_read=0,false
+main=inv(stack('coal',5),stack(nil,0),stack(nil,0))
+local empty=call('feed',{positions={{x=4,y=0}}})
+eq(empty.items.coal,5); eq(empty.entities[1].fuel,'coal 5')
+-- Haiku 03:20: one call tops up every boiler in an area from the inventory; each boiler has a row (what it got, its
+-- fuel after); fuel=true tops up the ones that hold some too.
+main=inv(stack('coal',50),stack(nil,0),stack(nil,0))
+local area={left_top={x=0,y=2},right_bottom={x=4,y=4}}
+local boilers=call('feed',{area=area,types={'boiler'}})
+eq(boilers.area_targets,3); eq(boilers.items.coal,10); eq(b2.fuel[1].count,10); eq(b1.fuel[1].count,2)
+eq(#boilers.entities,3); eq(boilers.entities[1].got,'nothing'); eq(boilers.entities[1].fuel,'coal 2')
+eq(boilers.entities[2].gave.coal,10); eq(boilers.entities[3].fuel,'coal 10')
+local topped_all=call('feed',{area=area,types={'boiler'},fuel=true})
+eq(topped_all.items.coal,8); eq(b1.fuel[1].count,10)
+eq(topped_all.entities[1].gave.coal,8); eq(topped_all.entities[1].fuel,'coal 10'); eq(topped_all.entities[2].got,'nothing'); eq(topped_all.entities[3].got,'nothing')
+-- The same as a walking tour (radius): last names each stop.
+b1.fuel[1].count=4; b3.fuel[1].count=7
+call('feed',{radius=20,types={'boiler'},fuel=true}); advance(1)
+local tour_last=call('status').last
+eq(tour_last.op,'feed'); eq(tour_last.given,9); eq(#tour_last.entities,2)
+eq(tour_last.entities[1].gave.coal,6); eq(tour_last.entities[1].fuel,'coal 10'); eq(tour_last.entities[2].gave.coal,3)
+fails(function() call('feed',{fuel=1}) end,'fuel must be a fuel item, true or false')
+prototypes.recipe=nil; f2.prototype=nil
 f1.get_recipe=nil
 end
 p.surface.find_entities_filtered=function(f) eq(f.force,p.force); return {f2,f1} end
@@ -1267,11 +1338,33 @@ local main_before_collect=main
 main=inv(stack(nil,0),stack(nil,0))
 p.can_reach_entity=function() return true end
 prototypes.item['iron-gear-wheel']={fuel_value=0}
+-- Hand hauling (hauling.lua), read as the operator: totals over every agent, as differences from here.
+local H={}
+function H.read()
+  local t={items=0,calls=0,direct_items=0,direct_calls=0,queue_items=0,queue_calls=0,order_items=0,order_calls=0}
+  for _,row in ipairs(runtime.dispatch{action='hauling',args={},operator=true}.agents) do
+    for k in pairs(t) do t[k]=t[k]+row[k] end
+  end
+  return t
+end
+H[0]=H.read()
+-- A hauling hook that throws fails no request (every hook runs under pcall).
+do
+  local begin,done=runtime.hauling.begin,runtime.hauling.done
+  runtime.hauling.begin=function() error('hauling broke') end
+  runtime.hauling.done=function() error('hauling broke') end
+  eq(type(call('status')),'table')
+  runtime.hauling.begin,runtime.hauling.done=begin,done
+end
 local trip=call('collect',{item='iron-gear-wheel',radius=20,count=25})
 eq(trip.stock,30); eq(trip.places,1); eq(call('status').active.kind,'gather')
 advance(1)
 local gathered=call('status').last
 eq(gathered.outcome,'collected'); eq(gathered.got,25); eq(gathered.item,'iron-gear-wheel'); eq(main[1].count,25)
+-- A direct walking collect: one direct call, its 25 items, though they moved on a tick after the request.
+H[1]=H.read()
+eq(H[1].items-H[0].items,25); eq(H[1].direct_items-H[0].direct_items,25); eq(H[1].direct_calls-H[0].direct_calls,1)
+eq(H[1].calls-H[0].calls,1); eq(H[1].queue_items-H[0].queue_items,0)
 fails(function() call('collect',{item='iron-gear-wheel',ticks=60}) end,'ticks applies to collect with radius')
 -- Without an item (Gemini): every assembler and furnace output in the radius, all items; inputs and fuel stay.
 do
@@ -1299,6 +1392,9 @@ do
   eq(took.outcome,'collected'); eq(took.got,12); eq(took.items['iron-gear-wheel'],5); eq(took.items['iron-plate'],7)
   -- The total line (Muse): moved per item, places touched of the total.
   eq(took.tally,'moved 7 iron-plate, 5 iron-gear-wheel; 2 of 2 places touched')
+  -- Two places, one call.
+  local haul2=H.read()
+  eq(haul2.items-H[1].items,12); eq(haul2.direct_calls-H[1].direct_calls,1)
   eq(gear_slots[1].valid_for_read,false); eq(result[1].valid_for_read,false); eq(source[1].count,9); eq(fuel[1].count,3)
   -- Nothing left: nothing_collected, and the reply says so.
   local none=call('collect',{radius=20,up_to=true})
@@ -1319,6 +1415,11 @@ do
   eq(team and team.queue and team.queue[1],'queue sweep round 2: 1 of 1 steps short: collect nothing_collected')
   advance(70); eq((call('status').team or {}).queue,nil)
   call('queue_cancel',{})
+  -- The sweep's 3 plates were a queue step's: one queue call; rounds that took nothing count no call. The 4 of
+  -- collect {count=4} before it were direct.
+  local haul3=H.read()
+  eq(haul3.queue_items-haul2.queue_items,3); eq(haul3.queue_calls-haul2.queue_calls,1)
+  eq(haul3.direct_items-haul2.direct_items,4); eq(haul3.items-haul2.items,7); eq(haul3.order_items-haul2.order_items,0)
   -- With up_to=true the plan allowed for the short (Grok, shift10): no line, while its history says short.
   result[1].name,result[1].count,result[1].valid_for_read='iron-plate',3,true
   call('queue_repeat',{name='sweep2',interval_ticks=60,steps={{action='collect',args={radius=20,up_to=true}}}})
@@ -2681,5 +2782,34 @@ end)()
   p.force.is_chunk_visible=function() return false end
   fails(function() call('inspect',{position={x=3.5,y=0.5}}) end,'no chunk within 256 tiles of it is in radar coverage or a character\'s sight')
   p.surface.find_entities_filtered,p.position,p.force.is_chunk_visible=find,at,vis
+end)()
+;(function()
+  -- place_ghosts with a tile ghost where a Gleba tree stands (Sol, shift10: a slipstack kept landfill out): the tree
+  -- is marked for deconstruction first, as the game's ghost placement marks it, and the reply says so.
+  local find,can,create=p.surface.find_entities_filtered,p.surface.can_place_entity,p.surface.create_entity
+  local tiles,items=prototypes.tile,prototypes.item
+  prototypes.tile=prototypes.tile or {}; prototypes.item=prototypes.item or {}
+  local saved_tile,saved_item=prototypes.tile.landfill,prototypes.item.landfill
+  prototypes.tile.landfill={name='landfill',collision_mask={layers={ground_tile=true}}}
+  prototypes.item.landfill=nil
+  local tree={valid=true,name='slipstack',type='tree',minable=true,force={name='neutral'},position={x=10.06,y=10.06},
+    prototype={collision_mask={layers={object=true,ground_tile=true}}}}
+  tree.to_be_deconstructed=function() return tree.marked==true end
+  tree.order_deconstruction=function() tree.marked=true; return true end
+  tree.cancel_deconstruction=function() tree.marked=nil; return true end
+  p.surface.find_entities_filtered=function(f) if f.area then return {tree} end return {} end
+  p.surface.can_place_entity=function(a) if a.name=='tile-ghost' then return tree.marked==true end return can(a) end
+  local made={}
+  p.surface.create_entity=function(a) if a.name=='tile-ghost' then local g={valid=true,type='tile-ghost',ghost_name=a.inner_name,position=a.position}; made[#made+1]=g; return g end return create(a) end
+  local r=call('place_ghosts',{entities={{name='landfill',position={x=10.5,y=10.5}}}})
+  eq(r.placed,1); eq(tree.marked,true); eq(#made,1); eq(r.obstacles_marked,1)
+  eq(r.tile_obstacles_marked,'marked for deconstruction where tile ghosts go: slipstack (10.1,10.1); construct mines them before it lays the tiles')
+  -- Something else there (not a minable tree or rock): refused, named, and nothing marked.
+  tree.marked=nil; tree.minable=false
+  r=call('place_ghosts',{entities={{name='landfill',position={x=10.5,y=10.5}}}})
+  eq(r.placed,0); eq(r.failed[1].error,'tile placement blocked by slipstack at (10.1,10.1)'); eq(tree.marked,nil)
+  p.surface.find_entities_filtered,p.surface.can_place_entity,p.surface.create_entity=find,can,create
+  prototypes.tile.landfill,prototypes.item.landfill=saved_tile,saved_item
+  prototypes.tile,prototypes.item=tiles,items
 end)()
 print('runtime: '..assertions..' assertions passed')

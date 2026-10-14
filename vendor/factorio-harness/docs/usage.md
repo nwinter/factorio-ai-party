@@ -240,6 +240,18 @@ fh call status
 - Burner fuel by category: `feed` without `fuel` gives a burner the fuel it burns (coal for chemical burners; a
   biochamber burns nutrients, so it gets nutrients); `refuel` skips burners of another category in a radius and refuses
   one named by position (`biochamber at (-20.5,-20.5) burns nutrients fuel, not coal (chemical)`).
+- When `feed` gives fuel (Gemini 03:20: furnaces burning solid fuel refused an ore feed over `you carry 0 coal`):
+  without `fuel`, only to a burner whose fuel slots are empty; a burner holding any fuel gets its recipe's
+  ingredients and no fuel. `fuel: true` tops every burner up to `fuel_count` (default 10) with the fuel it holds when
+  you carry that, else as above; `fuel: "solid-fuel"` with that item; a fuel named in `items`/`item` counts as asking;
+  `fuel: false` gives none. A `feed` that gave nothing names the burners left alone: `2 burners hold fuel (solid-fuel
+  3-5): fuel is added to a burner with none, or with fuel=true or fuel=NAME`.
+- A furnace that never smelted has no recipe yet: `feed` gives it the items named in `items`/`item` that it smelts
+  (a recipe of its crafting categories takes them), into its source slot, as a player puts ore in; unnamed, it gets
+  nothing and the reply says `1 furnace with no recipe yet (nothing smelted there) takes only items named in items or
+  item; you carry iron-plate 40 that they smelt`.
+- Spoiling: `inspect` lists spoilable stacks in any of the entity's inventories as `spoiling` (stalest first:
+  `agricultural_tower_output: jellynut*50 spoils in 56m21s (6% spoiled)`).
 - Spoiling (Sol, shift10 04:59: stored pentapod eggs hatched, destroyed 114 entities of his camp and killed him 4
   times). Read on a private 2.0.77 copy of world n:
   - An item hatches when it spoils if its spoil trigger creates an entity as an enemy: `pentapod-egg` (spoils in
@@ -577,6 +589,15 @@ fh sleep 900 --until researched                       # ...or until the research
   reach: tree-04 at (-69.5625,-115.063) is 3.4 tiles away (to its edge), reach 2.7 (ore, trees and rocks); in reach
   from (-67.5,-115.5)` (the spot is left out when none is free). A mine that loses reach mid-way ends `out_of_reach`
   with the same line in `last.error`.
+- A mined-out resource tile (Grok 03:20: a repeating `mine` step stalled its loop three times on one stone patch):
+  `mine` at a position whose resource tile is gone mines the tile of the same resource within `radius` (1..32,
+  default 8) of it, one in reach first, else the nearest to you. The resource is `name`, or the one an earlier `mine`
+  at that position took (each agent's last 64 positions are kept). The reply's `instead` has `mined_out`, `name`,
+  `position` and `line` (`stone at (73.5,-54.5) is mined out; mining stone at (72.5,-54.5), 1.0 tiles from it`), as
+  does a queue step's history entry; `last.instead` holds the line. When the nearest one is out of reach: `stone at
+  (73.5,-54.5) is mined out; the nearest stone within 8 tiles is out of reach: entity is out of reach: ...` with its
+  spot; none left: `stone at (73.5,-54.5) is mined out and no stone is left within 8 tiles of it`. A position never
+  mined and given no `name` fails as before (`entity not found at ...`).
 - `rotate {position}` is one 90-degree turn clockwise, as the R key (`reverse: true`: counter-clockwise); `rotate
   {position, direction: "south"}` (or 0, 4, 8, 12) turns it until it faces that way, the shorter way round. The reply
   has `before` and `after` (compass names; 2.0 directions are north 0, east 4, south 8, west 12, and replies leave out
@@ -599,7 +620,8 @@ fh sleep 900 --until researched                       # ...or until the research
 - A `transfer`, `collect` or `feed` that moved nothing says why in `nothing_moved` (also on the final `warning:`
   line): what the target holds (`wooden-chest at (3.5,3.5) holds no iron-plate in chest; it holds copper-plate*15`),
   `already holds N (up_to M)`, what you keep, or for `feed` per wanted item what you carry and the machines hold
-  (`you carry 0 coal; 2 machines hold 5-6`). The third identical empty move in 7 minutes adds `repeated`.
+  (`you carry 0 coal; 2 machines hold 5-6`), burners left alone because they hold fuel and furnaces with no recipe yet.
+  The third identical empty move in 7 minutes adds `repeated`.
 - Couriers:
   - `transfer {..., "up_to": true}` moves min(count, what the source holds, room) and never fails on a short or empty
     source: `moved`, and `short {asked, moved, reason}` (`none_held`, `source_short`, `source_empty`, `target_full`)
@@ -623,6 +645,10 @@ fh sleep 900 --until researched                       # ...or until the research
     `other_recipe`. `crafts` 1..1000 (default 1); not with `items` or `item`.
   - `feed {"item": "iron-plate", "count": 50}` gives only that item, as `items: ["iron-plate"]` does (with `items`, it is
     added to them); `count` is what each machine is topped up to.
+  - `feed` rows (`entities`): each machine fed `{position, name, gave, fuel}`, `fuel` being its fuel slots after
+    (`coal 10`, `solid-fuel 3`, `empty`); with `positions` or `area` also each machine that got nothing (`got:
+    "nothing"`). Haiku's boilers in one call: `feed {"area": {...}, "types": ["boiler"], "fuel": true}` tops up every
+    boiler in the area and lists each; with `radius` (a walking tour) `last.entities` lists each stop the same way.
   - `collect {"radius": 20}` without `item` walks to every assembler and furnace output in the radius that holds
     anything (chemical plants, refineries and the like are assemblers) and takes all of it: output slots only, never
     inputs or fuel. `count` caps the total; chests need `item`. The reply has `items: "all"`, `stock` and `places`;
@@ -700,6 +726,18 @@ fh sleep 900 --until researched                       # ...or until the research
   that would enclose empty space no ghost covers (`tile ghost (-7.5,8.5) space-platform-foundation: building it would
   enclose 6 empty tiles with no ghost: (-6.5,8.5), ...`), one with no foundation or tile ghost beside it, one more than
   200 tiles north of the hub, one in the 82 tiles south of a thruster. `inspect` on a tile ghost shows the same.
+- `repair` on an undamaged entity (Astra 03:42: a repair patrol logged 2481 `entity does not need repair` errors in a
+  shift, which hid the real failures) is ok: `{unchanged: "not damaged", name, position, health}`, nothing started, no
+  repair tool needed, `last` outcome `nothing_to_do`; a queue step with it succeeds and the plan goes on. Its health is
+  read in sight (32 tiles); reach applies only to a damaged one. A damaged target with no repair tool held still fails
+  (`no repair tool in inventory`).
+- `repair {"positions": [...]}` (1..64, each may carry `name` or `unit_number`) or `{"area": {left_top, right_bottom}}`
+  (up to 128x128: our entities with health in it): one timed action (`ticks` 1..36000, default 3600) through every
+  damaged one, nearest first, walking to each out of reach. The reply: `targets`, `damaged`, `already_full`, `failed` and
+  `first_error` (positions naming no entity); none damaged is `unchanged` as above. `last`: `repaired`, `already_full`
+  (also those full by the time it got there), `unreached` (no path), `lost` (gone), `left`, and `tally` (`repaired 2,
+  1 already full, 1 not reached`); outcomes `repair_completed` | `timed_out` | `repair_tool_exhausted`. With damaged
+  targets and no repair tool held it fails before starting: `no repair tool in inventory (1 of 3 targets damaged)`.
 - The game repairs a platform's entities itself, one entity at a time, with repair packs from the hub; `repair` refuses
   platform targets (`platform`, or standing on a platform) with that reason. `platforms` and `inspect` of the
   hub show `repair_packs` (in the hub, or `none`) and `damaged` (`gun-turret (-6,0) 53/400`, most damaged first, 3 per
@@ -913,6 +951,20 @@ fh sleep 900 --until researched                       # ...or until the research
     buildable)`.
   - `construct` lays a tile ghost before an entity ghost standing on it (the entity waits for it), and a bot's tile
     build fulfils a tile ghost of that tile as a player's does (it aborted on the ghost before).
+  - Trees and rocks a tile collides with (Sol, shift10: a slipstack on Gleba wetland kept landfill from three belt
+    tiles; mined, landfill and belts went in). On a private 2.0.77 server Gleba's slipstack, cuttlepop, hairyclubnub,
+    water-cane and the iron and copper stromatolites have `ground_tile` in their collision mask, as landfill has, so
+    the game refuses a landfill tile (or its ghost) where one of them stands, plain or forced; marked for
+    deconstruction, the tile ghost goes in. Nauvis trees and rocks lack `ground_tile`. So:
+    - `place_ghosts` marks those trees and rocks for deconstruction before it lays a tile ghost there (a tile entry,
+      a `tiles` area, or the landfill under an entity ghost), as the game's ghost placement does, and says so:
+      `obstacles_marked` and `tile_obstacles_marked: "marked for deconstruction where tile ghosts go: cuttlepop
+      (-170.6,-223.2); construct mines them before it lays the tiles"`. Anything else there refuses the ghost,
+      named: `tile placement blocked by ...`.
+    - `construct` mines the trees and rocks a tile ghost's tile collides with before it lays the tile, then builds
+      what stands on it (on the private copy: a cuttlepop mined, 2 landfill and 2 belts built in one run).
+    - A hand-laid tile (`build` with landfill) names what stops it: `no tile was placed: blocked by cuttlepop tree at
+      (-256.5,-199.7): mine it first` (`not_placed` when only some of a brush went down).
   - A refused build or revive names the tile (`placement blocked by tiles: wetland-blue-slime (needs landfill, ...)`),
     never the ghost of the same entity on the same centre that it revives, nor a tile ghost under it. Another
     entity's ghost there is still named. A build over its own ghost with the character on the footprint steps aside
@@ -940,7 +992,11 @@ fh sleep 900 --until researched                       # ...or until the research
     tree-01 ...`). Rails may cross rails.
   - `tiles`: `needed {item: n}` (the unlocked tile item that makes each tile buildable for that entity: landfill on
     water, foundation on lava, space-platform-foundation on empty space), `under_entities`, `positions` (up to 200
-    tile centres, then `more`), and the plan's own tiles: `planned`, `already`, `refused` with `refused_rows`. On a
+    tile centres, then `more`), and the plan's own tiles: `planned`, `already`, `refused` with `refused_rows`. Each
+    needed or planned tile gets the game's own tile ghost check, and what stands there is named, by kind of call: a
+    hand build reads `blocked by slipstack tree at (-180.9,-84.9): mine it first (where its landfill goes)` (a rock:
+    `rock`, a cliff: `cliff explosives clear it`), while `place_ghosts` marks trees and rocks first, so its dry run
+    reads `place_ghosts marks slipstack (-180.94,-84.94) for removal` on the entry and `marks` under `tiles`. On a
     platform the engine takes an entity ghost over empty space, which nothing builds until foundation is there: such
     entries read `needs_tiles` all the same. New foundation (planned or needed) is flood-filled: empty tiles it would
     enclose (regions up to 1024 tiles; larger ones count as open space) are added as `holes`, since the game builds no
@@ -1064,10 +1120,13 @@ fh sleep 900 --until researched                       # ...or until the research
   queued technology then each pending one: `name`, `progress` (%; saved progress for one not running), `queued_by` (the
   agent whose `research` or `research_next` queued it, or the player who queued it in the game; absent when the queue
   had it before the harness kept track), `packs`, `done_in` (time until it finishes, counting the entries ahead of it,
-  at the lab throughput measured from the running research's progress over the last 5 minutes, sampled every 10 s),
+  at the lab throughput measured from the running research's progress over the last minute, sampled every 10 s; a
+  minute with no research progress falls back to the last 2 minutes, then to every sample kept, about 5 minutes),
   `waits_for` (a pack the running research does not use and nobody made in the last 10 minutes; the clock stops there,
-  `clock_stops_at`), `waiting` for pending ones; and `throughput` (`measured over the last <time>`, or not measured
-  yet). `fh research done` (`research_done {limit?}`): technologies your force finished lately, newest first, with
+  `clock_stops_at`), `waiting` for pending ones; and `throughput` (`the last minute's rate: measured over the last
+  <time>`, `measured over the last <time> (no research progress in the last minute)`, or not measured yet). The
+  `status` factory line's research `eta` uses the same rate and names it: `eta 38m (rate of the last 1m)`, or
+  `(rate of the last 2m: none in the last 1m)`. `fh research done` (`research_done {limit?}`): technologies your force finished lately, newest first, with
   `ago`, `unlocks` and `queued_by`. `unlocks` names recipes, `travel to PLACE`, `QUALITY quality`, given items, and
   bonuses as `modifier-type +10%` (fractions) or `+N`.
 - Editing the queue as the research GUI does: `research {remove: NAME}` (or an array; `cancel` is the same) takes it
@@ -1620,6 +1679,18 @@ fh plan save iron-tour --file tour.json; fh plan run iron-tour; fh plan list
   (searched every 10 s, followed by reference in between) with our nearest building or character within 500 tiles:
   `id, name, surface, position, speed (tiles/s), closing, nearest {x,y,name}, nearest_distance, eta_s, character
   {x,y,player}, character_distance`.
+- Operator hand hauling (hauling.lua; viewer Joonazan, 05:00): `hauling {top?}` (read; top 0..50, default 10) gives
+  per agent since the save began `name, items, calls, direct_items, direct_calls, queue_items, queue_calls,
+  order_items, order_calls, carry_tiles, since_tick, hauls` and `tick`. Counted: every hand transfer that moved items
+  (transfer either way, collect, feed, refuel, rearm) and every pickup from the ground; a call counts once, on its
+  first move, as direct (the agent's request), queue (a step of its queue) or order (a standing order's step); a
+  timed action (a walking collect, a feed waiting for a craft, a pickup) counts as the call that started it.
+  `carry_tiles`: per item, the straight line from where it was last taken or put to where it is put (a put of several
+  items adds its longest leg; legs on one surface up to 400 tiles). `hauls`: puts grouped by item, the 10-tile cells
+  it was taken from (none when not taken from an entity or the ground) and put to, most first: `{item, surface,
+  from {x,y}?, to {x,y}, to_name, times, items}` (100 kept per agent, the fewest dropped). The stream service reads it
+  every 5 minutes into `runs/RUN/hauling.jsonl` (tools/stream/hauling.py); a shift's numbers are its last read less
+  its first. Agents never see it.
 - Operator idle nudge (idle.lua; `tools/idle_nudge.py` in the pog repo): `idle_report` (read) gives per agent
   `standing_s` (how long its character has had a body on the map and nothing that moves or works it; kept once a
   second for agents that made a request). A wait is not work: `wait_ticks`, `wait_until`, `sleep`, a queue held behind

@@ -531,9 +531,23 @@ return function(api)
       end
     end
     for _, h in ipairs(hidden) do pcall(surface.set_hidden_tile, h.pos, h.name) end
-    assert(placed > 0, 'no tile was placed (blocked or already there)')
+    -- Tiles that did not go down: what stands there (Sol, shift10: a slipstack
+    -- on Gleba wetland collides with landfill; mined, it goes in).
+    local blocked, seen = {}, {}
+    for _, t in ipairs(tiles) do
+      if #blocked < 4 and surface.get_tile(t.position[1], t.position[2]).name ~= tile.name and api.tile_blockers then
+        local ok, list = pcall(api.tile_blockers, surface, p.force, tile.name, t.position[1], t.position[2])
+        for _, b in ipairs(ok and list or {}) do
+          if not seen[b.text] and #blocked < 4 then seen[b.text] = true; blocked[#blocked+1] = b.text end
+        end
+      end
+    end
+    if placed == 0 then
+      error(#blocked > 0 and 'no tile was placed: blocked by '..table.concat(blocked, ', ') or 'no tile was placed (blocked or already there)', 0)
+    end
     inv.remove{name=a.item, quality=quality, count=placed}
-    return {consumed=placed, tile=tile.name, position={x=math.floor(pos.x)+0.5, y=math.floor(pos.y)+0.5}}
+    return {consumed=placed, tile=tile.name, position={x=math.floor(pos.x)+0.5, y=math.floor(pos.y)+0.5},
+      not_placed=placed < #tiles and string.format('%d of %d tiles%s', #tiles-placed, #tiles, #blocked > 0 and ': blocked by '..table.concat(blocked, ', ') or '') or nil}
   end
   return M
 end

@@ -18,8 +18,11 @@ CARD = [("shifts", "Shifts", "n"), ("actions", "Game actions", "n"), ("built", "
 TABLE = ["actions", "built", "walked", "deaths", "research", "rockets", "say", "voiced", "active"]
 SUM = ["requests", "actions", "talk", "reads", "failed", "built", "mined", "walked", "research", "research_done",
        "rockets", "say", "aloud_marked", "tells", "confessions", "viewer_answers", "deaths", "voiced", "operator",
-       "active_min", "minutes"]
+       "active_min", "minutes", "haul_items", "haul_calls", "haul_direct_items", "haul_direct_calls", "haul_carry"]
+# counted only where the stream kept the game's hauling counters (agent_stats game_hauls): None on other shifts
+HAUL_PLANNED = ["haul_queue_items", "haul_queue_calls", "haul_order_items", "haul_order_calls"]
 RECORDS = [("built", "Most buildings placed in a shift"), ("walked", "Most tiles walked in a shift"),
+           ("haul_items", "Most items hauled by hand in a shift"),
            ("actions", "Most game actions in a shift"), ("rockets", "Most rockets launched in a shift"),
            ("say", "Most chat lines in a shift"), ("voiced", "Most lines spoken on stream in a shift"),
            ("research", "Most research queued in a shift"), ("deaths", "Most deaths in a shift")]
@@ -64,10 +67,16 @@ def collect(long, runs_dir, keys, cache_dir=None, names=()):
         for k, a in st["agents"].items():
             if k not in keys:
                 continue
-            t = totals.setdefault(k, {f: 0 for f in SUM} | {"shifts": 0})
+            t = totals.setdefault(k, {f: 0 for f in SUM} | {f: None for f in HAUL_PLANNED} | {"shifts": 0, "haul_top": None})
             t["shifts"] += 1
             for f in SUM:
                 t[f] += a.get(f) or 0
+            for f in HAUL_PLANNED:
+                if a.get(f) is not None:
+                    t[f] = (t[f] or 0) + a[f]
+            top = a.get("haul_top")
+            if top and (t["haul_top"] is None or top["times"] > t["haul_top"]["times"]):
+                t["haul_top"] = dict(top, shift=n)
             per.setdefault(k, []).append((n, a))
             if a.get("voice"):
                 voice[k] = a["voice"]
@@ -138,6 +147,7 @@ table.compare td .bar { position: absolute; left: 12px; right: 12px; bottom: 3px
 table.compare td .bar i { display: block; height: 100%; border-radius: 2px; background: var(--ac, var(--accent)); opacity: .8; }
 table.compare th button { all: unset; cursor: pointer; }
 table.makers td.agents-cell { white-space: normal; min-width: 12em; }
+table.hauling td.haul-top { white-space: normal; min-width: 16em; font-size: .88rem; }
 table.makers td.agents-cell .chip { margin-right: 8px; font-size: .88rem; }
 table.compare th button:focus-visible { outline: var(--fx-focus); }
 table.compare th[aria-sort] button::after { content: " ▾"; }
@@ -229,6 +239,78 @@ def compare_table(data, agent, avatar, esc):
             f'<tbody>{"".join(body)}</tbody></table></div>')
 
 
+HAUL_COLS = [("haul_items", "Items"), ("haul_calls", "Calls"), ("haul_direct_items", "Direct"),
+             ("haul_queue_items", "Queue steps"), ("haul_order_items", "Standing orders"), ("haul_carry", "Tiles carried")]
+
+
+def haul_place(p):
+    return f"({p['x']}, {p['y']})" if p else "hand"
+
+
+def haul_text(top):
+    """'iron plate ×105: (-61, 66) → (-64, 71), Fulgora'"""
+    if not top:
+        return "–"
+    where = (top.get("surface") or "").replace("-", " ").title()
+    return (f"{top['item'].replace('-', ' ')} ×{top['times']:,}: {haul_place(top.get('from'))} → "
+            f"{haul_place(top.get('to'))}{', ' + where if where else ''}")
+
+
+def haul_shifts(data):
+    """Shift numbers whose hand hauling came from the game's counters (queue and standing order steps counted)."""
+    return [n for n, _, st in data["shifts"] if any(a.get("haul_from") == "game" for a in st["agents"].values())]
+
+
+def hauling_table(data, agent, avatar, esc):
+    """Hand hauling for the run, by agent (most items first), and items by shift."""
+    totals = data["totals"]
+    tops = {f: max((t.get(f) or 0 for t in totals.values()), default=0) for f, _ in HAUL_COLS}
+    head = '<th scope="col">Agent</th>' + "".join(
+        f'<th scope="col"><button type="button">{esc(label)}</button></th>' for _, label in HAUL_COLS) + \
+        '<th scope="col">Top repeated haul</th>'
+    body = []
+    for k, t in sorted(totals.items(), key=lambda kv: -(kv[1].get("haul_items") or 0)):
+        a = agent(k)
+        cells = []
+        for f, _ in HAUL_COLS:
+            v = t.get(f)
+            w = round(100 * (v or 0) / tops[f]) if tops[f] else 0
+            cells.append(f'<td data-v="{v if v is not None else ""}">{fmt(v)}<span class="bar"><i style="width:{w}%"></i></span></td>')
+        top = t.get("haul_top")
+        shift = f' <span class="muted">shift {top["shift"]}</span>' if top and top.get("shift") else ""
+        cells.append(f'<td class="haul-top">{esc(haul_text(top))}{shift}</td>')
+        body.append(f'<tr style="--ac:{esc(ac(a.get("color")))}"><th scope="row">'
+                    f'<a class="chip" href="#{esc(k)}">{avatar(k, "sm")}{esc(a["name"])}</a></th>{"".join(cells)}</tr>')
+    run = (f'<div class="table-wrap"><table class="compare hauling"><thead><tr>{head}</tr></thead>'
+           f'<tbody>{"".join(body)}</tbody></table></div>')
+    nums = [n for n, _, _ in data["shifts"]]
+    shead = '<th scope="col">Agent</th>' + "".join(
+        f'<th scope="col"><button type="button">{n}</button></th>' for n in nums)
+    sbody = []
+    for k, t in sorted(totals.items(), key=lambda kv: -(kv[1].get("haul_items") or 0)):
+        a = agent(k)
+        by = {n: r for n, r in data["per_shift"].get(k, [])}
+        cells = []
+        for n in nums:
+            r = by.get(n)
+            v = r.get("haul_items") if r else None
+            title = f' title="{r.get("haul_calls") or 0:,} calls"' if r else ""
+            cells.append(f'<td data-v="{v if v is not None else ""}"{title}>{fmt(v)}</td>')
+        sbody.append(f'<tr><th scope="row"><a class="chip" href="#{esc(k)}">{avatar(k, "sm")}{esc(a["name"])}</a></th>'
+                     f'{"".join(cells)}</tr>')
+    game = haul_shifts(data)
+    if not game:
+        note = "Queue and standing order steps: not counted in these shifts."
+    elif game == nums:
+        note = "Every shift counts queue and standing order steps."
+    else:
+        note = f"Queue and standing order steps counted in shift{'s' if len(game) > 1 else ''} " \
+               f"{', '.join(str(n) for n in game)}; other shifts count direct moves only."
+    by_shift = (f'<h3 id="hauling-shifts">Items by shift</h3><div class="table-wrap"><table class="compare hauling-shifts">'
+                f'<thead><tr>{shead}</tr></thead><tbody>{"".join(sbody)}</tbody></table></div>')
+    return f'<p class="small muted">{esc(note)}</p>{run}{by_shift}'
+
+
 MAKER_COLS = ["actions", "built", "walked", "deaths", "research", "rockets", "say", "voiced"]
 
 
@@ -297,6 +379,7 @@ def build_agents(data, agent, avatar, esc):
             f'<h2 id="records">Records</h2><ul class="records">{"".join(recs)}</ul>'
             f'<h2 id="compare">Comparison</h2>{compare_table(data, agent, avatar, esc)}'
             f'<h2 id="makers">By maker</h2>{maker_table(data, agent, avatar, esc)}'
+            f'<h2 id="hauling">Hand hauling</h2>{hauling_table(data, agent, avatar, esc)}'
             f'<h2 id="cards">The team</h2><div class="agent-grid">{cards}</div>'
             f'<h2 id="notes">Definitions</h2><dl class="kv defs">'
             + "".join(f"<div><dt>{esc(a)}</dt><dd>{esc(b)}</dd></div>" for a, b in DEFS) + "</dl>" + SORT_JS)
@@ -311,6 +394,13 @@ DEFS = [("Game actions", "requests that change the game: moves, builds, crafts, 
         ("Spoken on stream", "chat lines the stream voiced"),
         ("Viewer replies", "chat lines that start with @ and a name outside the team"),
         ("Minutes acting", "minutes with a game action, of the minutes on shift"),
+        ("Hand hauling", "items moved by hand between the character and a chest, machine, turret or the ground: "
+                         "transfer, collect, feed, refuel, rearm, pickup; a call counts once"),
+        ("Direct, queue steps, standing orders", "who started the call: the agent's own request, a step of its queue, "
+                                                 "a step of a standing order"),
+        ("Tiles carried", "straight lines from where an item was taken or last put to where it is put; legs over "
+                          "400 tiles left out"),
+        ("Top repeated haul", "puts of one item from one 10-tile area to another, most often"),
         ("Longest survival", "game time between deaths, or since the last one")]
 
 

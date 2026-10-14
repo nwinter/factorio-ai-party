@@ -156,6 +156,26 @@ eq(q.clock_stops_at,'sulfur-processing')
 made['chemical-science-pack']=40
 q=astra('research'); eq(q.entries[4].waits_for,nil); eq(q.clock_stops_at,nil); assert(q.entries[4].done_in)
 table.remove(force.research_queue)
+-- Grok 03:20: a window over starved labs said 2 hours when the finish came in under 40 minutes. Four starved minutes
+-- (1% a minute), then a fed one (10%): done_in is the last minute's rate (15 per tick) and throughput says so.
+-- 86% left: 464400 / 15 = 30960 ticks = 8m36s (the whole 5-minute window would say about 33 minutes).
+force.research_progress=0; advance(600)
+for k=1,24 do force.research_progress=0.01*k/6; advance(600) end
+local starved=force.research_progress
+for k=1,6 do force.research_progress=starved+0.1*k/6; advance(600) end
+q=astra('research')
+eq(q.throughput,'the last minute\'s rate: measured over the last 1m00s')
+assert(q.entries[1].done_in:find('^8m3[67]s$'),q.entries[1].done_in)
+-- A minute with no progress falls back to two minutes (7.5 per tick: 61920 ticks = 17m12s), and says why.
+for _=1,6 do advance(600) end
+q=astra('research')
+eq(q.throughput,'measured over the last 2m00s (no research progress in the last minute)')
+assert(q.entries[1].done_in:find('^17m1[23]s$'),q.entries[1].done_in)
+-- Two minutes without progress: every sample kept (about 5 minutes).
+for _=1,6 do advance(600) end
+q=astra('research')
+assert(q.throughput:find('^measured over the last 5m00s %(no research progress in the last minute%)$'),q.throughput)
+force.research_progress=0
 
 -- A first reply looks back ten minutes; nothing finished yet, so no research lines.
 eq(team(astra('status')),nil); eq(team(sol('status')),nil)
