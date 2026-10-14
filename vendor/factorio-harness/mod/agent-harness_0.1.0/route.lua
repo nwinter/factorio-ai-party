@@ -7,8 +7,9 @@
 -- (from, via points, to), up to MAX_LEG tiles a leg, within a budget of
 -- placement checks. Trees, rocks and wild plants are passed over at a cost
 -- (place_ghosts marks them, construct mines them); water and Gleba wetland
--- only with landfill=true (tile ghosts under the belts); cliffs and buildings
--- never. An underground pair hops anything but lava and empty space.
+-- only with landfill=true (tile ghosts under the belts); cliffs are passed
+-- over as trees are (the ghost marks them, one cliff-explosives each);
+-- buildings never. An underground pair hops anything but lava and empty space.
 -- return=true lays a second line beside it, the other way.
 local heap=require('heap')
 return function(api)
