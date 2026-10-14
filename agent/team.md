@@ -154,7 +154,10 @@ already targets your character.
   `./fh call boilers` lists each boiler by network, the stopped ones first: state, fuel, water, its feeder and what
   the feeder takes from with the fuel there; the networks line names the lowest boiler (position, minutes, fuel,
   feeder) and accumulators' stored MJ of their maximum; `./fh platform NAME` shows one space platform (hub free
-  slots, cargo, speed, next stop, ETA);
+  slots, cargo, speed, next stop, ETA; `freight`: per stop what was expected down and up, what left the hub, came
+  aboard and spoiled, the rockets sent to it, and per leg what spoiled on the way; `spoiling`: when its spoilable
+  items spoil, against the arrival); a `requests` edit echoes what is stored per item (`stored`) and keeps the
+  import planet when `from` is not given;
   `./fh call inspect` on a roboport or logistic chest shows its network and, for a roboport, its own area and robots,
   or that no roboport's logistic area covers the chest), and `retro`: the previous shift for the team (research done, losses, the top failures and who had them,
   open board items). `projects` lists the open projects, one line each with progress, next step and handoff.

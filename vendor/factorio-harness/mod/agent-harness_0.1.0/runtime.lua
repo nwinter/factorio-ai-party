@@ -6770,7 +6770,9 @@ end
 local timed={walk=true,move_to=true,build_path=true,construct=true,kite=true,mine=true,pickup=true,repair=true,rearm=true,refuel=true,transfer=true,collect=true,feed=true,wait_until=true,wait_ticks=true,build=true}
 -- The active action kind a step's handler starts, where it differs from its name.
 local timed_kind={rearm={feed=true,gather=true},refuel={feed=true,gather=true},transfer={feed=true,gather=true},build={feed=true},collect={gather=true},feed={gather=true}}
-local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end}
+local conditions=conditions_module{known=known,position=position,passing=function(e) return M.passing(e) end,
+  -- platform_arrived reads where a platform is as the platforms row does (freight.lua)
+  platform_where=function(pl) return M.freight and M.freight.where(pl) end}
 scheduler=scheduler_module{
   state=state,player=player,handlers=handlers,
   condition=function(p,c) return conditions.check(p,c) end,check_args=function(action,args) return check_args(action,args) end,validate_condition=function(c) return conditions.validate(c) end,
@@ -7830,7 +7832,9 @@ function handlers.game_alerts(p,a) return M.pushalerts.read(p,a) end
 -- Where drops landed (drops.lua): their pods followed down, told in the team block, the drops read.
 M.drops=require('drops'){state=state,integer=integer,who=M.board.who,resolve=M.board.resolve}
 function handlers.drops(p,a) return M.drops.read(p,a) end
-space=space_module{position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
+-- What each platform carried stop by stop and leg by leg, and where it is (freight.lua; Luna, shift12 12:47).
+M.freight=require('freight'){state=state,spoil=M.spoil}
+space=space_module{freight=M.freight,position=position,integer=integer,remote_entity=remote_entity,real=real,bots=M.bots,drops=M.drops,cargo=M.cargo,
   keep=function() return M.keep end,
   state=state,thrust=function(pl) return M.thrust.read(pl) end,
   rocket=function(e) return M.silo.rocket(e) end,
@@ -8149,6 +8153,7 @@ function M.tick_body(event)
   M.ores.tick()  -- queued chunks of an ore survey, a few a tick (never raises)
   if event.tick%600==0 then pcall(M.avoid.prune) end  -- enemy chunk records older than a minute (avoid.lua)
   if event.tick%60==0 and space then pcall(space.watch_stops,event.tick) end  -- when each platform stopped (space.lua stops)
+  if event.tick%60==0 and M.freight then pcall(M.freight.tick,event.tick) end  -- each hub's items by stop and leg (freight.lua)
   -- The egg watch, a bounded stage a tick (spoil.lua); a fault is counted, never stops the tick.
   do
     local ok,err=pcall(M.spoil.tick,event.tick)
@@ -8398,6 +8403,7 @@ function M.on_event(event)
   end
   -- Rocket launches for the silo read (silo.lua): like research news, faults are counted.
   if event.name==defines.events.on_rocket_launch_ordered then
+    if M.freight then pcall(M.freight.on_launch,event) end
     local ok,err=pcall(M.silo.on_launch_ordered,event)
     if not ok then local s=state(); s.silo_errors={count=((s.silo_errors or {}).count or 0)+1,last=tostring(err),tick=game.tick} end
     return

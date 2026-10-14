@@ -70,6 +70,25 @@ fails(function() space.requests(p,{section=1,platform='alpha',set={{item='coal',
 -- is off says so (off=true and a note: false drops out of the compact reply), and active switches it.
 r=space.requests(p,{platform='alpha',set={{item='coal',min=500,max=500,from='vulcanus'}}})
 eq(r.sections[2].requests[2],'coal=500 from vulcanus'); eq(r.changed_section,2); eq(r.sections[2].off,nil)
+-- What is stored for each item touched is echoed, and an edit without from keeps the import planet (Luna, shift12
+-- 19:30: min/max edits of three requests from vulcanus turned them into from nauvis).
+eq(r.stored[1],'coal=500 from vulcanus')
+r=space.requests(p,{platform='alpha',set={{item='coal',min=0,max=400}}})
+eq(r.sections[2].requests[2],'coal 0..400 from vulcanus')
+eq(r.stored[1],'coal 0..400 from vulcanus (import planet kept: not named in this edit) (was coal=500 from vulcanus)')
+r=space.requests(p,{platform='alpha',set={{item='coal',min=0,max=400,from='nauvis'}}})
+eq(r.stored[1],'coal 0..400 from nauvis (was coal 0..400 from vulcanus)')
+fails(function() space.requests(p,{platform='alpha',set={{item='coal',min=1,from='Sunward'}}}) end,
+  'from is the planet a platform hub imports the item from, a space location (nauvis, vulcanus): Sunward is not one')
+r=space.requests(p,{platform='alpha',clear={'coal','iron-plate','iron-plate'}})
+eq(r.stored[1],'coal: cleared (was coal 0..400 from nauvis)'); eq(r.stored[2],'iron-plate: cleared (was iron-plate 100..inf from nauvis)')
+eq(r.stored[3],'iron-plate: no request to clear in section 2')
+r=space.requests(p,{platform='alpha',set={{item='iron-plate',min=100,from='nauvis'},{item='coal',min=500,max=500,from='vulcanus'}}})
+eq(r.sections[2].requests[1],'iron-plate 100..inf from nauvis'); eq(r.sections[2].requests[2],'coal=500 from vulcanus')
+eq(space.requests(p,{platform='alpha'}).stored,nil,'a plain read echoes nothing')
+-- A character request names no planet.
+eq(space.requests(p,{set={{item='coal',min=5}}}).stored[1],'coal 5..inf')
+space.requests(p,{clear={'coal'}})
 hub_sections.get_section(2).active=false
 r=space.requests(p,{platform='alpha'})
 eq(r.sections[2].off,true); eq(r.note,'section 2 is switched off: its requests are not made (requests {section, active: true} switches one on)')
@@ -475,10 +494,13 @@ eq(res.pods[2].items,'iron-plate*200 coal*20'); eq(why,'the hub held less than a
 for i=1,12 do hub_inv.insert(stack('iron-plate',100)) end
 hatches=1; game.tick=3000
 d=space.drop(p,{platform='alpha',items={{item='iron-plate',count=1200}},full=true})
+-- (its schedule heads for nauvis, as a platform that left vulcanus for nauvis has: the leg is read the way it is flown)
+local kept_schedule=platform.schedule; platform.schedule={records={{station='nauvis'}},current=1}
 platform.space_location=nil; platform.space_connection={from={name='vulcanus'},to={name='nauvis'}}; platform.distance=0.1
 game.tick=3010
 eq(space.drop_tick(p,drop_job),'failed'); eq(drop_job.why,'platform alpha left vulcanus (at vulcanus->nauvis 10%)')
 res=space.drop_result(drop_job,'failed'); eq(res.not_sent,'iron-plate*200')
+platform.schedule=kept_schedule
 -- One full drop at a time: another is refused while its pods wait (nothing leaves the hub).
 _G.pending_job={platform=platform,pods={{items={}}}}
 platform.space_location={name='vulcanus',type='planet'}; platform.space_connection=nil
