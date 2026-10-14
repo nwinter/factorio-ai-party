@@ -533,6 +533,74 @@ return function(api)
   end
   H.paste=H.blueprint_place
 
+  -- Where a paste would put each blueprint entity and tile, placing nothing
+  -- (paste dry_run, dryrun.lua): the game puts the blueprint's center at the
+  -- paste position (on a platform with the hub anchor, its hub on the hub)
+  -- and shifts the whole layout onto the tile grid (rails: the 2-tile grid).
+  -- Flips mirror positions and directions before the turn.
+  local RAIL={['straight-rail']=true,['half-diagonal-rail']=true,['curved-rail-a']=true,['curved-rail-b']=true,
+    ['legacy-straight-rail']=true,['legacy-curved-rail']=true,['train-stop']=true,['rail-signal']=true,['rail-chain-signal']=true,['rail-ramp']=true}
+  function H.plan(p,a)
+    local on_platform=type(p)=='table' and rawget(p,'__platform')~=nil
+    assert(a.anchor==nil or a.anchor=='hub' or a.anchor=='center','anchor must be hub or center')
+    local pos=a.position~=nil and api.position(a.position) or nil
+    local direction=directions[a.direction or 'north']; assert(direction, 'blueprint direction must be north, east, south, or west')
+    local mode=a.mode or 'normal'
+    assert(MODES[mode],'paste mode must be normal, forced or superforced')
+    return load(p,a,function(root)
+      local stack=selected(root,a)
+      local entities,tiles=validate(stack)
+      local c=center(entities,tiles)
+      local hub_e
+      for _,e in ipairs(entities) do if e.name=='space-platform-hub' then hub_e=e; break end end
+      local anchor=a.anchor or (hub_e and on_platform and 'hub') or 'center'
+      local anchored
+      local function turn(x,y)
+        if a.flip_horizontal then x=-x end
+        if a.flip_vertical then y=-y end
+        return api.placewhy.rotate(x,y,direction)
+      end
+      if anchor=='hub' then
+        assert(hub_e,'anchor hub: this blueprint holds no space-platform-hub')
+        assert(on_platform,'anchor hub works on a platform (platform=NAME)')
+        local target=pos
+        if not target then
+          local pl=p.surface.platform
+          local hub=pl and pl.hub
+          target=hub and hub.valid and {x=hub.position.x,y=hub.position.y} or {x=0,y=0}
+        end
+        local hx,hy=api.placewhy.rotate(hub_e.position.x-c.x,hub_e.position.y-c.y,direction)
+        pos={x=target.x-hx,y=target.y-hy}
+        anchored={by='hub',hub=target,paste_position=pos}
+      end
+      assert(pos,'position is required (the blueprint\'s center goes there; on a platform a blueprint with a hub is placed by its hub)')
+      local even=false
+      for _,e in ipairs(entities) do
+        local proto=prototypes.entity[e.name]
+        if proto and RAIL[proto.type] then even=true end
+      end
+      local cx,cy=turn(c.x,c.y)
+      local function round(v) if even then return 2*math.floor(v/2+0.5) end return math.floor(v+0.5) end
+      local shift={x=round(pos.x-cx),y=round(pos.y-cy)}
+      local list={}
+      for i,e in ipairs(entities) do
+        local x,y=turn(e.position.x,e.position.y)
+        local d=e.direction or 0
+        if a.flip_horizontal then d=(16-d)%16 end
+        if a.flip_vertical then d=(24-d)%16 end
+        list[i]={index=i,name=e.name,position={x=shift.x+x,y=shift.y+y},direction=(d+direction)%16,
+          quality=type(e.quality)=='string' and e.quality or nil}
+      end
+      local tlist={}
+      for i,t in ipairs(tiles or {}) do
+        local x,y=turn(t.position.x+0.5,t.position.y+0.5)
+        tlist[i]={index=i,name=t.name,position={x=math.floor(shift.x+x)+0.5,y=math.floor(shift.y+y)+0.5}}
+      end
+      return {entities=list,tiles=tlist,mode=mode,origin_at=shift,center_at={x=shift.x+cx,y=shift.y+cy},anchor=anchored,
+        slot=slot_name(a),label=stack.label~='' and stack.label or nil}
+    end)
+  end
+
   -- Tiles, as a planner in tile mode marks them (request #144: platform
   -- foundation): every minable tile in the area (tiles=true) or the named
   -- ones. The engine decides each (LuaTile.order_deconstruction); the result

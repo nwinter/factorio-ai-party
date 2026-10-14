@@ -522,6 +522,60 @@ fh sleep 900 --until researched                       # ...or until the research
   the game's paste does: `wires {in_blueprint, connected (already), added, end_not_placed, failed, ends_not_placed
   ["chest #3"]}` (Astra 18:51: Sunward's module-audit paste made 0 ghosts over one collision, and its entities placed
   one by one with `place_ghosts` lost their wires).
+- `dry_run: true` on `place_ghosts`, `paste` / `blueprint_place` (with `repeat`, `platform`, `anchor`, flips) and
+  `build` (one entry or `builds`) places nothing and returns the check of what the call would place (dryrun.lua). It is
+  a read: the running action and queue go on, and a failed dry run stops nothing; a queue step with `dry_run` gets the
+  same check. Astra (ship refits: a gun route needed 20 more foundation tiles, found by a flood fill after staging),
+  Sol (a batch failed on its last, far entry after the first ones were built) and Gemini asked for it. The reply:
+  - `summary` (`9 placeable, 2 need tiles first, 1 blocked (of 12)`), `checked`, and `entities` rows `{index,
+    name, position, direction, status, why, reach}` for every entry that is not plainly placeable (`details: true`:
+    every entry, with `footprint` tiles `x0,y0..x1,y1`); `index` is `copy.index` under `repeat`; `asked` when the
+    position snaps (odd sizes to tile centres, even ones to corners). `status`: `ok`, `after_tiles` (placeable once
+    the plan's own tiles under it are laid; a paste lays both together, while place_ghosts places entity ghosts
+    before tile ghosts and a build batch goes entry by entry, which the row says), `needs_tiles`, `exists` (built or
+    ghosted there already; a paste skips it, place_ghosts and build fail on it), `blocked`. `why` names what collides and where (an entity, a ghost,
+    another character, a cliff, an earlier entry of the plan: `collides with planned #5 stone-furnace at (14,-88)`),
+    tiles it cannot stand on (`(60.5,-0.5) is outside the map`, a tile no tile item makes buildable), a broken tile
+    rule, uncharted chunks, or the engine's own refusal. The engine's check decides what stands there now, so a
+    ghost over a machine it upgrades reads `ok` with `replaces ...`; trees and rocks under a ghost read `ok` (marked
+    for removal), under a hand build `blocked`.
+  - `tiles`: `needed {item: n}` (the unlocked tile item that makes each tile buildable for that entity: landfill on
+    water, foundation on lava, space-platform-foundation on empty space), `under_entities`, `positions` (up to 200
+    tile centres, then `more`), and the plan's own tiles: `planned`, `already`, `refused` with `refused_rows`. On a
+    platform the engine takes an entity ghost over empty space, which nothing builds until foundation is there: such
+    entries read `needs_tiles` all the same. New foundation (planned or needed) is flood-filled: empty tiles it would
+    enclose (regions up to 1024 tiles; larger ones count as open space) are added as `holes`, since the game builds no
+    foundation that leaves a hole; `not_connected` names new tiles that touch no existing foundation even through the
+    other new tiles, and `too_far_north` those more than 200 tiles north of the hub.
+  - `power` (when the plan has poles or electric machines): `reach` per planned pole kind (`small-electric-pole wire
+    7.5 supply 2.5`, at its quality), `poles`, `connected` (`planned poles #1-3 reach the built network of
+    medium-electric-pole (40,5)`, or `join 2 separate built networks into one: ...`), `islands` (`planned pole #4 at
+    (-40.5,22.5): no wire path to a built pole; nearest built pole medium-electric-pole at (-32.5,19.5) is 8.5 tiles
+    from (-40.5,22.5) (wire reach 7.5)`) and `unpowered` rows (no pole's supply area over the machine, or only pole
+    ghosts with no wire path). Two poles join when they are within the shorter of their two wire reaches; built poles
+    and pole ghosts within 40 tiles of the plan count.
+  - `standing` (off a platform): `reach` (your build distance), `from_here` (`5 of 7 in reach from (11.5,-90)`),
+    and `spots [{at, reaches: "#4-6"}]`, at most 8, nearest first from where you stand: free tiles (off every planned
+    footprint, not on a belt, where a character fits) from which each entry out of reach is within reach; `no_spot`
+    when none fits. For `build` each out-of-reach entry also carries `reach` (`12.3 tiles from you, reach 10`), and a
+    blocked batch says that a batch stops at its first failure (`skip_failed`).
+  - `items` the placeable entries and needed tiles use, `missing` against your inventory (for `build` plus the
+    hand-craft queue; on a platform the hub), `missing_from`. A paste adds `paste {slot, label, origin_at, center_at,
+    anchor}` (where the blueprint lands, computed as the game places it: its center at `position`, shifted onto the
+    grid) and, for a normal paste with a blocked entry, `paste_note` (all or nothing: no ghost at all).
+- `ports {name, position, direction?, recipe?, mirror?, platform?}` (read; ports.lua, Gemini's request: a recipe moves
+  which fluid an electromagnetic plant's ports carry) lists the fluid connections of an entity that is not built:
+  `ports [{at, joins, direction, flow, fluid, box, there}]` (`at` the entity's tile with the port, `joins` the tile
+  outside it where a pipe joins, as in inspect's `fluid_connections`; `there` what stands on `joins` now), `closed`
+  (ports the recipe closes), and the snapped `position`. `inspect` of a ghost with a recipe lists only the ports that
+  recipe opens, each with its fluid, in `fluid_connections` (`fluid_connections_closed`, `fluid_recipe`). A
+  crafting machine joins its fluid boxes by recipe, as 280 machines on the shift world's engine showed: a fluid with a
+  `fluidbox_index` takes that box only (basic oil processing: crude oil at one input, petroleum gas at one output);
+  the others take the free boxes of their side in order; a side's single fluid without an index takes every leftover
+  box of that side (a chemical plant on lubricant takes heavy oil at both inputs; an electromagnetic plant on
+  supercapacitor takes electrolyte at both); a side with no fluid has no open port. With two or more fluids a side and
+  boxes left over (a cryogenic plant on a 2-fluid recipe) the extra port reads `one of A, B (not seen built: inspect
+  once built)`.
 - A refused `build` of an offshore pump (any reason) lists up to 3 valid placements within 12 tiles, nearest first, with
   their directions, from the game's own manual build check (`nearest valid offshore-pump placements (game build check,
   within 12 tiles): (10,-0.5) east, ...`). A build refused by water under the footprint (a boiler, a steam engine) lists

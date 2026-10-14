@@ -101,6 +101,9 @@ return function(api)
     end
     return out
   end
+  -- The prototype's view alone, for an entity not built yet (ports.lua: a
+  -- table with prototype, position, direction and mirroring will do).
+  M.boxes,M.defined=boxes,defined
   -- Engine and prototype views together: the prototype adds reach, and
   -- connections a machine only opens for some recipes.
   function M.connections(e)

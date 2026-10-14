@@ -120,6 +120,12 @@ already targets your character.
   sets an entity's circuit condition, read switches, settings or combinator, in reach or by remote view (our entities
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
   reads back the conditions, settings, each wire's far end and the signals on each network now.
+- `"dry_run":true` on `place_ghosts`, `paste` or `build` places nothing and reports the plan: per entity whether it
+  fits or what blocks it and where, the tiles it needs first (landfill, foundation, and on a platform the empty tiles
+  new foundation would enclose), power poles' wire reach and pole groups left unconnected, and standing spots that
+  reach every placement. `./fh call ports --args '{"name":"electromagnetic-plant","position":{"x":0,"y":0},
+  "direction":"north","recipe":"electrolyte"}'` lists where each fluid port of an unbuilt machine is and the fluid
+  the recipe puts there; `inspect` of a ghost shows the same.
 - Calls that act by remote view or on another surface (any call with `platform`, `configure` out of reach, ghosts,
   blueprints, deconstruction, `circuit_set`, `wire`, `requests`, schedules) leave your character's action, queue and
   standing orders running. `platforms` and `inspect` of a hub show each platform's `speed_kms`, `leg_left_km`,
