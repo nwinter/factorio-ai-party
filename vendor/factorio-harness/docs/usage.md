@@ -659,6 +659,14 @@ fh sleep 900 --until researched                       # ...or until the research
     inventory full of ITEM`, `N full`, `N wanting more you hold none of`, `N failed (the first reason)`. `collect` with
     `radius` puts it in `last` (and the `--wait` reply) over places: `N not reached`, `N failed`, `N places not visited
     (OUTCOME)`. Compact output prints it after the action's own fields, before the team and clock lines.
+  - One word for item moves (Muse 06:27): `transfer`, `collect`, `feed`, `pickup`, `rearm` and `refuel` replies say
+    `moved` (the count moved; `transferred` stays beside it as an alias for one shift), and rows over several targets
+    say `moved` per target. Every one of these replies ends with `inv`, the inventory line after the move: `free
+    18/20; held: iron-plate 100` (free main inventory slots, then what you hold of the items moved, up to 6); compact
+    output prints it last, after the team and clock lines (the `warning:` line still follows). A call that only
+    starts a move over time (a `pickup`, a tour with `radius`, a give that waits for crafts) has `moved: 0` and
+    `timed: moves until tick N: last.moved and last.inv say what it moved`; when it ends, `last.moved` and `last.inv`
+    hold the count and the line, and the `--wait` reply shows both.
   - `feed`, `collect` and `transfer` take `area {left_top, right_bottom}` (up to 128x128) in place of `positions`: our
     entities whose centre lies inside it, of the call's types, run as its positions (nearest first, each by its
     unit_number; at most 64), and the reply says how many in `area_targets`. Types: `feed` as in reach (with `recipe`,

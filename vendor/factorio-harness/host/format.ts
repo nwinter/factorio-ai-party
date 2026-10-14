@@ -191,16 +191,18 @@ function byClock(body: Json): Json {
 }
 /**
  * A transfer or collect over several targets closes with its total line (Muse): `tally` goes after the action's own
- * fields, before the reply's trailer (team, chat, clock and the like).
+ * fields, before the reply's trailer (team, chat, clock and the like). An item move's inventory line after the move
+ * (`inv`, Muse 06:27) closes the whole reply, after the trailer.
  */
 const TRAILER = new Set(['team', 'chat', 'clock', 'orders', 'teammates', 'inbox', 'tells']);
 function tallyLast(body: Json): Json {
-  if (typeof body.tally !== 'string') return body;
-  const { tally, ...rest } = body;
+  if (typeof body.tally !== 'string' && typeof body.inv !== 'string') return body;
+  const { tally, inv, ...rest } = body;
   const out: Json = {};
   for (const [key, entry] of Object.entries(rest)) if (!TRAILER.has(key)) out[key] = entry;
-  out.tally = tally;
+  if (tally !== undefined) out.tally = tally;
   for (const [key, entry] of Object.entries(rest)) if (TRAILER.has(key)) out[key] = entry;
+  if (inv !== undefined) out.inv = inv;
   return out;
 }
 /** One line, whatever the value. */

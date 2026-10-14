@@ -637,7 +637,7 @@ p.surface.find_entities_filtered=function(f) return {f.position.x==3 and f1 or f
 main=inv(stack(nil,0),stack(nil,0),stack(nil,0))
 local batch=call('transfer',{positions={{x=3,y=0},{x=4,y=0},{x=40,y=0}},direction='to_player'})
 eq(batch.transferred,8); eq(batch.items[1].name,'iron-plate'); eq(batch.items[2].count,3)
-eq(batch.entities[2].transferred,3); assert(batch.entities[3].error:find('outside local visible area'))
+eq(batch.entities[2].moved,3); assert(batch.entities[3].error:find('outside local visible area'))
 eq(f1.slots[2][1].count,2); eq(main[1].count,5); eq(flying[#flying],'+3 [item=copper-plate]')
 prototypes={item={coal={fuel_value=4000000},['iron-ore']={fuel_value=0}}}
 main=inv(stack('coal',10),stack('iron-ore',10))
@@ -823,8 +823,8 @@ eq(main[2].count,8); eq(main[1].valid_for_read,false)
 -- total caps a batch, filled in order, and is echoed back.
 main=inv(stack('coal',50))
 local capped=call('transfer',{positions={{x=3,y=0},{x=4,y=0}},item='coal',count=5,total=7,inventory='fuel',direction='to_entity'})
-eq(capped.transferred,7); eq(capped.total,7); eq(capped.entities[1].transferred,5); eq(capped.entities[2].transferred,2)
-eq(call('transfer',{positions={{x=3,y=0},{x=4,y=0}},item='coal',total=3,inventory='fuel',direction='to_entity'}).entities[1].transferred,3)
+eq(capped.transferred,7); eq(capped.total,7); eq(capped.entities[1].moved,5); eq(capped.entities[2].moved,2)
+eq(call('transfer',{positions={{x=3,y=0},{x=4,y=0}},item='coal',total=3,inventory='fuel',direction='to_entity'}).entities[1].moved,3)
 fails(function() call('transfer',{positions={{x=3,y=0}},total=3,direction='to_player'}) end,'total requires item')
 -- A full character inventory is named, not reported as a quiet partial move.
 main=inv(stack('iron-plate',100))

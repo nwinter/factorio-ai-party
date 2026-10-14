@@ -157,7 +157,9 @@ already targets your character.
   `"on_short": "skip"` are left out of it. `transfer` takes `to_entity` or
   `from_entity` as the target (`{"to_entity": {x,y}}`) on any container; out of reach, it says the distance, your
   reach and a spot in reach. `inspect` of a chest shows `holds` (and `requests` with their fill); a `transfer` or
-  `collect` over several targets ends with a `tally` line. `feed`, `collect` and `transfer` take `area {left_top,
+  `collect` over several targets ends with a `tally` line. Item moves (`transfer`, `collect`, `feed`, `pickup`,
+  `rearm`, `refuel`) say `moved` and end with `inv` (free slots, what you hold of the items moved); a move over time
+  says `timed`, and `last.moved`/`last.inv` when it ends. `feed`, `collect` and `transfer` take `area {left_top,
   right_bottom}` for every machine (or chest) inside it; `inspect` of a machine shows `output_fill` (and `full`).
   `feed` gives a burner fuel when its fuel slots are empty, or with `fuel` (`true` or a fuel name); a furnace with no
   recipe yet takes the `item`/`items` it smelts; each named machine gets a row (`gave` or `got`, and its `fuel`).

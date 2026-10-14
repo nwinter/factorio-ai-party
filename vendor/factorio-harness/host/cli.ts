@@ -737,6 +737,8 @@ async function main() {
       why: last?.why, note: status.result?.note,
       // collect over a radius: moved per item, places touched, what fell short.
       tally: last?.tally,
+      // An item move that ran over time: what it moved and the inventory line after (Muse 06:27).
+      moved: last?.moved, inv: last?.inv,
       team: carrier.result?.team, clock: carrier.result?.clock, orders: carrier.result?.orders, chat: carrier.result?.chat,
     };
     for (const key of Object.keys(result)) if (result[key] === undefined) delete result[key];

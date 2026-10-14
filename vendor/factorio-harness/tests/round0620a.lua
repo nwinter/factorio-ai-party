@@ -53,7 +53,7 @@ local function slot()
   return s
 end
 local function inventory(size)
-  local inv={}
+  local inv={valid=true}
   for i=1,size do inv[i]=slot() end
   local function q(x) return type(x.quality)=='table' and x.quality.name or x.quality or 'normal' end
   function inv.insert(x)
@@ -327,5 +327,33 @@ fails(function() astra('circuit_set',{position=ins.position,setting={}}) end,
   'closest name: settings; long-handed-inserter at (10.5,0.5) takes: enable, logistic, read, settings (')
 -- Any action: the nearest name, no entity part.
 fails(function() astra('transfer',{position=ins.position,counts=3}) end,'; closest name: count')
+
+-- 4. Muse (06:27): every item move says moved (transferred stays as its alias for a shift) and carries the
+-- inventory line after the move; a move that runs over time says so, and its last has both when it ends.
+main=inventory(20)
+fill(main,'iron-plate',150)
+local box=chest('iron-chest',{x=12.5,y=0.5})
+r=astra('transfer',{position=box.position,item='iron-plate',count=50,direction='to_entity'})
+eq(r.moved,50); eq(r.transferred,50,'the alias')
+eq(r.inv,'free 18/20; held: iron-plate 100')
+-- collect from a named chest: the same words.
+r=astra('collect',{positions={box.position},item='iron-plate',chests=true})
+eq(r.moved,50); eq(r.inv,'free 18/20; held: iron-plate 150')
+-- Rows over several targets say moved too.
+local box2=chest('iron-chest',{x=12.5,y=2.5})
+r=astra('transfer',{positions={box.position,box2.position},item='iron-plate',count=10,direction='to_entity'})
+eq(r.moved,20); eq(r.entities[1].moved,10); eq(r.entities[1].transferred,nil)
+assert(r.tally:find('moved 20 iron-plate; 2 of 2 targets touched',1,true),r.tally)
+-- A pickup runs over ticks: moved 0 so far, what ends it, the line now; last has what it took when it ends.
+local plate={valid=true,name='item-on-ground',type='item-entity',position={x=0.2,y=0.1},force=force,
+  stack={valid_for_read=true,name='copper-plate',count=7,quality={name='normal'}}}
+plate.destroy=function() plate.valid=false end
+world[#world+1]=plate
+r=astra('pickup',{})
+eq(r.moved,0); assert(r.timed:find('^moves until tick %d+: last.moved and last.inv say what it moved'),r.timed)
+eq(r.inv,'free 18/20')
+advance(20)
+local last=astra('status',{}).last
+eq(last.outcome,'picked_up'); eq(last.moved,7); eq(last.inv,'free 17/20; held: copper-plate 7')
 
 print('round0620a: ok')
