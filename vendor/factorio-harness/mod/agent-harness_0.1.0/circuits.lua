@@ -387,13 +387,14 @@ return function(api)
       if enabled then
         local c = try(function() return cb.circuit_condition end)
         out.enable = condition_text(c) or 'blank'
-        out.enable_met = type(c) == 'table' and c.fulfilled or nil
+        -- (false too: an unmet condition read as nil was dropped from the reply)
+        if type(c) == 'table' then out.enable_met = c.fulfilled end
       else out.enable = false end
       local logistic = try(function() return cb.connect_to_logistic_network end)
       if logistic then
         local c = try(function() return cb.logistic_condition end)
         out.logistic = condition_text(c) or 'blank'
-        out.logistic_met = type(c) == 'table' and c.fulfilled or nil
+        if type(c) == 'table' then out.logistic_met = c.fulfilled end
         out.logistic_reads = logistic_reads(e, c)
       else out.logistic = false end
       out.disabled = try(function() return cb.disabled end) or nil
@@ -754,7 +755,33 @@ return function(api)
       done[#done+1] = s.what
     end
     out.circuit = M.read(e, cb)
+    M.held_off(e, cb, out, a)
     return out
+  end
+  -- After a write: an entity with an enable or logistic condition that is off because one is not met (friction2:
+  -- Opus set "production-science-pack < 1000" on an inserter whose logistic condition "< 100" read 101, and told Astra
+  -- it ran; it stayed off 10.8 min). Read on a private copy of world n: a condition's fulfilled is current the tick it
+  -- is written, the behavior's disabled only the tick after; so disabled is read from the conditions, and stays_disabled
+  -- names the one that is not met (the CLI puts it on the warning line).
+  function M.held_off(e, cb, out, a)
+    local c = out.circuit
+    if out.ghost or not (c and (c.enable_met ~= nil or c.logistic_met ~= nil)) then return end
+    local held = {}
+    if c.enable and c.enable_met == false then
+      local cond = try(function() return cb.circuit_condition end)
+      local first = type(cond) == 'table' and cond.first_signal
+      local n = first and try(function() return e.get_signal(first, defines.wire_connector_id.circuit_red, defines.wire_connector_id.circuit_green) end)
+      held[#held+1] = string.format('its circuit condition %s is not met%s%s', c.enable, type(n) == 'number' and string.format(' (%s reads %d on its wires)', signal_text(first), n) or '',
+        a.enable == nil and ' (not set by this call)' or '')
+    end
+    if c.logistic and c.logistic_met == false then
+      held[#held+1] = string.format('its logistic condition %s is not met%s%s', c.logistic, c.logistic_reads and ' (' .. c.logistic_reads .. ')' or '',
+        a.logistic == nil and ' (not set by this call)' or '')
+    end
+    c.disabled = #held > 0 or nil
+    if #held > 0 then
+      out.stays_disabled = string.format('%s (%g,%g): %s', out.entity, e.position.x, e.position.y, table.concat(held, '; '))
+    end
   end
 
   -- wire -----------------------------------------------------------------------
