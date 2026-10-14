@@ -233,7 +233,12 @@ fh call status
 - `requests` shows each section's state: `off: true` for a section switched off (the GUI's checkbox; it requests
   nothing, and the reply's `note` names it), and on a platform hub the planet each request imports from, exact
   requests too (`calcite=500 from vulcanus`). `requests {platform, section: 1, active: true}` (or `false`) switches a
-  section on or off; `changed_section` says which section a call changed. On a platform hub the reply adds `over_max`
+  section on or off; `changed_section` says which section a call changed. `stored` (Luna, shift12 12:47) echoes each
+  item the call set or cleared as read back from its slot: `processing-unit 0..400 from vulcanus (import planet kept:
+  not named in this edit) (was 0..200 from vulcanus)`, `coal: cleared (was coal=500 from vulcanus)`. A `set` entry
+  without `from` keeps the import planet the slot already has (before, the game stored its default, nauvis: three of
+  Sunward's requests from vulcanus became from nauvis after a min/max edit); `from` that is not a space location is
+  refused with the list of them (a platform name is not one). On a platform hub the reply adds `over_max`
   (a max set in the call under what the hub holds: `processing-unit: the hub holds 50, 50 over the max 0`), `hub_trash`
   and `trash_note` (where the game sends the trash, as `platforms` says; in flight what is over a max moves to the
   trash within a second, while the platform is stopped it stays in the hub until it flies). The `platforms` row lists a hub's requests
@@ -1123,8 +1128,30 @@ fh sleep 900 --until researched                       # ...or until the research
   own value, `speed` with `platform` set, is km per tick), `next_stop` (the schedule's stop it flies to, or while it waits at its current stop, the
   one after it), and on a route `leg` in the way it is flown (`vulcanus->nauvis`), `heading_to`, `leg_km`,
   `leg_left_km` and `eta_min` (minutes to the end of the leg at the current speed; none at speed 0 or below, as when
-  paused and drifting back). `at` keeps the connection's own order and its percent from the first end
-  (`nauvis->vulcanus 25%`).
+  paused and drifting back). `at` is the leg the same way, with the share of it flown (`gleba->nauvis 73%`; Luna,
+  shift12: it used to keep the connection's own order, `nauvis->gleba 27%` for the same place, while `leg` said
+  `gleba->nauvis`). Stopped, `at` is the location; at a location while the game still has the platform on its path
+  (`state: on_the_path`, as when it leaves), `at` says `gleba (on its path, not stopped)`. The `platform_arrived` wait
+  reads the same rule (freight.lua), so it is met exactly when the row shows the platform stopped there; its `saw`
+  says `Sunward at gleba, on its path (not stopped)` then, and in flight `Sunward flying gleba->nauvis 73%`.
+- Freight, on the `platforms` row with `platform` set (`fh platform NAME`; Luna, shift12 12:47: of 995 agricultural
+  science packs Sunward took from Gleba, 200 spoiled on the way and 200 at Nauvis, and 595 went down, which she put
+  together from separate reads): `freight`, its last 6 stops and legs, newest first, from the hub's items (its main
+  inventory and its trash) counted once a game second:
+  `stop at nauvis (4m10s, 1m02s ago): agricultural-science-pack: expected down 795 (landing pads ask 2000, hold 0),
+  left the hub 595, spoiled aboard 200; iron-plate: expected up 150 (the hub asks 1000 from nauvis), came aboard 849;
+  rockets launched to it: 3, cargo iron-plate*849` and `leg gleba->nauvis (6m16s, 4m10s ago):
+  agricultural-science-pack 995 aboard at departure, 200 spoiled on the way (into spoilage), 795 at arrival`.
+  Expected down: on arrival, what the planet's landing pads ask (their active sections' minimums) less what they hold,
+  at most what the hub held. Expected up: the hub's requests importing from that planet, their minimum less what the
+  hub held on arrival. Left the hub and came aboard are net over the stop (the hub's count at the end against the one
+  on arrival, spoilage taken out): items going down in cargo pods and items its inserters take count alike. Spoiled:
+  a spoilable item's fall matched, in the same game second, to the rise of what it spoils into. Listed per stop: the
+  items expected down or up, the rockets' cargo, what spoiled, and spoilable items whose count changed. Rockets: those
+  whose cargo pod was sent to this platform's hub while it stopped there (the launch, as the game orders it). A stop
+  or leg under way when the harness first looked says so. `spoiling`: the hub's spoilable items (`agricultural-science-pack*795:
+  the first spoils in 1m10s (95% spoiled); all within 5 min`), and in flight `; arrival at nauvis in 3m30s: 200 spoil
+  before it, 595 arrive, the next spoils 2m05s after arrival`.
 - `stops` on every `platforms` row (operator 10:53, Gemini): each stop of the schedule with its wait conditions in
   order (`and`/`or` as the GUI joins them), the stop it waits at (`waiting here`) or flies to (`flying to it`) and the
   one after (`next`); at the stop where it waits, how far each condition is: `time 30s: 18s left`, `inactivity 10s: 2s

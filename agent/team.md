@@ -317,6 +317,10 @@ already targets your character.
   on a silo) take `surface` (a planet) and `position` and act there by remote view where our force sees the chunk.
   `launch` refuses a rocket with no cargo (a launch spends its parts) unless `allow_empty: true`, naming science in
   chests near the silo.
+- `./fh platform NAME` also shows `freight` (per stop what was expected down and up, what left the hub, came aboard
+  and spoiled, the rockets sent to it; per leg what spoiled on the way) and `spoiling` (when its spoilable items spoil,
+  against the arrival). A `requests` edit echoes what is stored per item (`stored`) and keeps the import planet when
+  `from` is not given.
 - `./fh sleep 600 --until "rocket_ready 65.5,14.5"` (or `wait_until {"until":"rocket_ready","position":...}`) waits for
   that silo's rocket to be ready; the item `rocket` is ammunition, and `item_count` at a silo counts its rocket cargo.
   `./fh wait --until "item_count coal below 20 at 10,39"` wakes when that chest's coal falls under 20 (also `>=`, `<`,
