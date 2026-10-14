@@ -104,6 +104,10 @@ already targets your character.
   since your last request before the shift, and `researched_none_built`: researched technologies whose buildings the
   team has none of.
 - `./fh plan save NAME --file plan.json` stores a queue plan; `./fh plan run NAME` runs it again; `./fh plan list`.
+- Courier calls: `"up_to": true` in `transfer`, `collect` or `feed` moves what there is and reports `moved` and `short`
+  instead of failing (a queue step with it, or with `"on_short": "skip"`, goes on when short); `feed {"recipe": NAME,
+  "crafts": N, "positions": [...]}` loads each machine set to that recipe for N crafts; `inspect {"positions": [...]}`
+  inspects up to 32 entities in one call.
 - Standing orders keep your character on routine jobs while you think: turret ammo, lab packs, fuel, repairs,
   ghosts. `./fh call order_set --args '{"name":"rearm","priority":7,"when":{"until":
   "ammo_below","count":20,"position":{"x":12,"y":-40},"radius":20},"steps":[...]}'` runs its queue steps whenever

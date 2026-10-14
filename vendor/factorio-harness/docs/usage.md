@@ -295,6 +295,10 @@ fh queue repeat --file plan.json
 - `"wait":false` lets a step overlap the next one, for example shooting while walking.
 - `wait_ticks` and `wait_until` are queue steps and also direct timed actions (see Waiting below).
 - A failed step pauses the queue. Use `on_fail` (`abort`, `skip`, `goto:<label>`) and `guards` to handle failures instead.
+- A step that runs short (outcome `out_of_items`, `nothing_collected` or `inventory_full`, or a transfer's `no ITEM in
+  inventory`) is done, not failed, with `"on_short": "skip"` on the step or `"up_to": true` in a `transfer`, `collect`
+  or `feed` step's args: its history entry has `ok: true` and `short: true`, and the plan goes on. Other failures
+  (out of reach, an unknown entity, a timed-out tour) still follow `on_fail`.
 - `queue edit` needs the current revision, so you can't accidentally edit a plan that has already moved on.
 - A direct call that moves or acts as the character pauses the queue. Reads, the board, chat, `say`, `tell`, `confess`, `operator`, `craft`/`cancel_craft`, research, votes, `sleep` and the queue calls don't, and when one of them fails (a `placements` out of sight, a `board_update` with an unknown argument) the running action and the queue go on as well. `sleep` leaves the queue running, and so does its end.
 - A harness update (a hot runtime install, or a restart with a changed mod) keeps a running queue going: a `wait_until` or `wait_ticks` step keeps its own clock, and a step toward a goal (`move_to`, `construct`, `build_path`, `mine`, `repair`, `kite`, `rearm`, `refuel`, `collect`) starts again. Any other step that was running is interrupted and leaves the queue paused (`fh queue resume` continues with the next step). A direct action is interrupted. Each agent whose work was cut gets `team.harness_updated` lines in its next reply.
@@ -333,6 +337,19 @@ fh sleep 900 --until researched                       # ...or until the research
   line): what the target holds (`wooden-chest at (3.5,3.5) holds no iron-plate in chest; it holds copper-plate*15`),
   `already holds N (up_to M)`, what you keep, or for `feed` per wanted item what you carry and the machines hold
   (`you carry 0 coal; 2 machines hold 5-6`). The third identical empty move in 7 minutes adds `repeated`.
+- Couriers:
+  - `transfer {..., "up_to": true}` moves min(count, what the source holds, room) and never fails on a short or empty
+    source: `moved`, and `short {asked, moved, reason}` (`none_held`, `source_short`, `source_empty`, `target_full`)
+    when it fell short (on the final `warning:` line too). With `positions`, `asked` is count per entity, summed. A number
+    keeps its old meaning: `up_to: N` tops the target up to N. `collect {..., "up_to": true}` adds the same `moved` and
+    `short` (`asked: "all"` without count).
+  - `feed {"recipe": "logistic-science-pack", "crafts": 10, "positions": [...]}` (or in reach, or `radius` for the
+    walking tour) tops every machine set to that recipe up to each item ingredient's amount x crafts, from your
+    inventory, in one call: `entities` rows with `loaded {item=count}` and `short {item=still missing}`; a named machine
+    set to another recipe is a row with `recipe` (what it runs, or `none`), and in reach they are counted in
+    `other_recipe`. `crafts` 1..1000 (default 1); not with `items`.
+  - `inspect {"positions": [...]}` (1..32 entries, each may carry `name` or `unit_number`): one inspect per entry in one
+    call, `entities` in order and `count`; an entry that fails is `{position, error}`.
 - Queue writes (`queue_submit`, `queue_repeat`, `queue_edit`, `queue_cancel`, `queue_resume`) answer briefly:
   `revision`, `paused`, `active`, `pending` (the next 5 as `id action [label]`), `pending_count`, `recent` (the last 2
   results), `last_failure`; `queue_status` shows every step in full.
