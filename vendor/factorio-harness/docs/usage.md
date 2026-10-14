@@ -824,6 +824,12 @@ fh sleep 900 --until researched                       # ...or until the research
     retries): when any listed machine is out of reach, one timed tour (`ticks` default 3600) walks a nearest-first
     route through them and feeds each as a `radius` tour does; the reply has `places`, `out_of_reach`, `legs` and
     `until_tick`, `last.entities` a row per stop, `--wait` follows it. All in reach: the feed at once.
+  - `collect {positions, walk: true}` likewise (Muse 12:20): the places out of reach are walked to, nearest first,
+    and each is collected from as in reach (the same take: machine outputs, named chests; `item`, `count`, `up_to`,
+    `keep_max` as without walk). One timed call (`ticks` default 3600) with `places`, `out_of_reach`, `legs`,
+    `until_tick`; `last` has `got`, `moved`, `items` and `entities` (a row per place); outcomes `collected`,
+    `nothing_collected`, `inventory_full`, `unreached`, `failed`, `timed_out`; `--wait` follows it. All in reach:
+    the collect at once.
   - `transfer {item, from: "nearest"}` (Haiku 10:50: an ammo chest held pipes and no magazines, which cost a walk)
     takes from the nearest of our chests (container, logistic and linked chests) in reach that holds the item now,
     as the map shows them; `radius` (1..64) looks that far and walks there (a timed call, as `walk`). `from_nearest`
