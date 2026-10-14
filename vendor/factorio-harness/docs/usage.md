@@ -232,7 +232,8 @@ fh call status
   after the change), `network`. It leaves a running action and queue alone.
 - `inspect` (and `circuit_set`) read back an entity's circuit side under `circuit`, for an entity with circuit settings
   or wires: `enable` and `logistic` as text (`"ice < 300"`, the same form `enable` takes) with `enable_met` and
-  `logistic_met` (whether the condition holds now) and `disabled` (the entity stopped by it); `logistic_reads`: the
+  `logistic_met` (whether the condition holds now: `false` too, which the reply used to drop) and `disabled` (the entity
+  stopped by it); `logistic_reads`: the
   logistic network the condition reads, the one whose logistic area holds the entity's centre, with its count of the
   condition's item (`network 8 (its logistic area holds the centre): iron-plate -3 (the count less what deliveries have
   reserved)`), or `none` when no logistic area holds the centre: then the condition is never met, even with most of a
@@ -246,11 +247,23 @@ fh call status
   `{entity, position, side, ghost}` (wires the game does not draw, such as radar links, are left out); `networks` per
   circuit connector `{id, signals, more}`: the signals on that network now, largest first, at most 30. An entity whose
   circuit settings were never changed shows its wires and `settings_note`.
+- `circuit_set` (friction2, Opus 18:54: "production-science-pack < 1000" on an inserter whose logistic condition "< 100"
+  read 101; Opus told Astra it ran, and it stayed off 10.8 min): when an enable or logistic condition is not met after
+  the call, `stays_disabled` names it, with what it reads and whether this call set it, and the CLI puts it on the
+  final `warning:` line: `warning: stays disabled: inserter (75.5,-1.5): its logistic condition production-science-pack
+  < 1000 is not met (network 8 (its logistic area holds the centre): production-science-pack 1137) (not set by this
+  call)`. `disabled` there comes from the conditions: on a copy of world n a condition's `fulfilled` was current the
+  tick it was written, the entity's own `disabled` only the tick after. Ghosts are left out.
 - `requests {position: requester chest, from_buffers: true}` sets its "request from buffer chests" switch.
 - `requests` shows each section's state: `off: true` for a section switched off (the GUI's checkbox; it requests
   nothing, and the reply's `note` names it), and on a platform hub the planet each request imports from, exact
   requests too (`calcite=500 from vulcanus`). `requests {platform, section: 1, active: true}` (or `false`) switches a
-  section on or off; `changed_section` says which section a call changed. `stored` (Luna, shift12 12:47) echoes each
+  section on or off; `changed_section` says which section a call changed, only when a slot was set or cleared or the
+  section switched (else `unchanged: this call set, cleared and switched nothing in section 1`). `set` as a map
+  `{"low-density-structure": 100}` runs as the list `[{"item":"low-density-structure","min":100}]` and the reply's
+  `corrected` says so (friction2: Muse's map set nothing and the reply said `changed_section: 1`; the silo requester
+  stayed at min 4 for 11.7 min); a value that is an object gives that item's fields (`{"coal": {"min": 5, "max":
+  10}}`). `stored` (Luna, shift12 12:47) echoes each
   item the call set or cleared as read back from its slot: `processing-unit 0..400 from vulcanus (import planet kept:
   not named in this edit) (was 0..200 from vulcanus)`, `coal: cleared (was coal=500 from vulcanus)`. A `set` entry
   without `from` keeps the import planet the slot already has (before, the game stored its default, nauvis: three of
@@ -513,9 +526,21 @@ fh call status
     walked out to (55,24.3) first`.
   - The second level starts from the nearest free tile centre only when the character gets there in a straight line
     (beside a pipe row it lay past the pipes, and every path from there stalled at them).
-  - Closed in (no way out for the character's box), `last.why` and `last.mine_to_get_out` name the fewest of our
-    entities, trees or rocks whose mining opens a way out: `...; mining pipe (-27.5,69.5) opens a way out to
-    (-26.7,69.5)`.
+  - Closed in (no way out for the character's box), `last.why` and `last.mine_to_get_out` name what to mine for a way
+    out to open ground, through every closed pocket on the way, or to the goal when that costs less, all of it in one
+    reply: `...; mining wooden-chest (42.5,120.5) and stone-wall (46.5,120.5) opens a way out to open ground at
+    (57.5,120.5)` (friction2: Gemini, 19:51, followed seven answers of one entity each, two poles, four accumulators
+    and a recycler, each opening only a larger closed pocket). The search runs over the tiles round the closed area
+    (16 tiles past it, at most 64 a side); open ground is its edge. Stepping onto a tile costs what stands there, by
+    kind: chests, accumulators, walls, gates, solar panels, lamps, trees and rocks 1; belts, pipes, inserters and pumps
+    2; poles, machines and the rest 3; cliffs, tiles and others' entities never; at most 16. On a copy of world n's
+    Fulgora island a search took 2 to 8 ms (the old one, which stopped at the first pocket, 1.3 to 3.3).
+  - A `build` batch that fails after some entries stand says what those entries closed in its refusal
+    (`build 9/9 failed after 8 built: ...; the character is closed in now where it stands (50.5,108.5): ...`; Gemini's
+    19:25 batch failed after 2 built, and those 2 had closed the last gap out). A real `place_ghosts` says
+    `closes_in` as its dry run does, for ghosts that once built close the character in where it stands (walls and
+    pipes as they join their neighbours when built): `once built, these ghosts close the character in where it stands
+    (30.5,108.5): ...`. The CLI puts `closed_in` and `closes_in` on the final `warning:` line.
 - Enemies on the way (Opus, shift09 03:20: the pathfinder walked him 30 tiles from a nest, and big biters killed him; on
   a copy of world n the engine's path from (-110,447) to (62,40) passes 31 tiles from a biter spawner): a path found
   for `move_to` is checked against the enemy worms and spawners the map shows (on charted chunks).
@@ -556,10 +581,24 @@ fh call status
   - `unit_number` alone works only for what the game finds by number: prototypes flagged `get-by-unit-number`
     (vehicles and the like; on a copy of world n an iron chest's own number found nothing). For others the refusal
     asks for `{position, unit_number}`.
-  - Reach is measured to the entity's box, as the engine measures it, with a quarter tile to spare:
-    - `transfer` (default): the engine's own test too, 10 tiles; for ore, trees and rocks 2.7.
-    - `build`: `build_distance`, 10.
+  - Reach is measured with a quarter tile to spare:
+    - `transfer` (default): to the entity's box, as the engine measures it, and the engine's own test too, 10 tiles;
+      for ore, trees and rocks 2.7.
+    - `build`: `build_distance` (10) to the entity's centre, as `build` measures the position it builds at (friction2,
+      Sol 14:43: a walk ended 9.7 tiles from a chest's edge, and the build there failed at 10.1 from its centre; on a
+      copy of world n the walk now ends 9.6 tiles from the centre: `iron-chest (13.5,53.5): 9.6 tiles to its centre
+      (build reach 10)`).
     - a number: tiles to the box, 0.5..64.
+- `move_to {position, reach: "build" | "transfer" | tiles}` (no target; Sol 18:56: target takes an entity, and Sol
+  wanted to stand within build reach of an empty spot) walks until the character is within that reach of the point and
+  arrives there (`last.reach: (75.5,40.5): 9.7 tiles (build reach 10)`); already within it, it arrives at once.
+- A `move_to` position nothing leads to (a tile inside a machine, a silo or a landing pad; friction2: Gemini's (-50,75)
+  five times, each followed by a walk to the spot the reply named; Haiku stood in reach already and the exit stopped its
+  `&&` chain): the walk goes on once to the spot within build reach of it that the give-up found (`build_spot`) and
+  ends `arrived_near` there, exit 0; `last.near_walk` says so: `no path led to (65.5,14.5) (no path request found a way
+  ...); walked to (60.5,18.5) instead, ended 6.2 tiles from it, a spot within build reach of it the give-up found`. Not
+  when closed in (the reply says what to mine), nor toward a via point; `near: false` keeps the old end, `unreachable`
+  with `build_spot`.
   - The walk heads for the entity's centre and stops as soon as it is within reach: the nearest spot on its way. A
     character already within reach arrives on the first tick, and the reply says `in_reach: true`.
   - An end within reach that would have been `unreachable`, `blocked`, `arrived_near`, `timed_out` or `no_safe_route`
@@ -950,10 +989,21 @@ fh sleep 900 --until researched                       # ...or until the research
     the collect at once.
   - `transfer {item, from: "nearest"}` (Haiku 10:50: an ammo chest held pipes and no magazines, which cost a walk)
     takes from the nearest of our chests (container, logistic and linked chests) in reach that holds the item now,
-    as the map shows them; `radius` (1..64) looks that far and walks there (a timed call, as `walk`). `from_nearest`
+    as the map shows them; `radius` (1..256) looks that far and walks there (a timed call, as `walk`). `from_nearest`
     says which: `wooden-chest at (56.5,34.5), 7.0 tiles from you, holds 200 firearm-magazine (2 chests checked, 1
     holding it)`. None: refused, naming the nearest within 32 tiles (`radius=24 walks there`); with `up_to: true`,
     moved 0 and a short. `from: {x,y}` is still the position.
+    - Requester and buffer chests come last (they feed machines), and a `count` more than the first chest holds comes
+      from the next ones too, in that order, up to 16 chests (friction2: Sonnet's nearest held 20 of the 300 asked;
+      Grok took 40 iron plates from a requester feeding a machine): `3 chests hold 210 of the 150 asked, nearest first,
+      requester and buffer chests last: steel-chest (10.5,63.5) 10.2 tiles, holds 12; requester-chest (9.5,59.5) 6.9
+      tiles, holds 100 (requester); ...`. Walking (`radius`), the walk takes what is still missing at each chest and
+      ends `transferred` once the count is taken.
+  - A take at one place and a give at another in one call (friction2: Grok's `from_entity` and `to_entity`, refused
+    three times as unknown arguments; Luna's `position` then `to`): `{from | from_entity | position | positions, to |
+    to_entity, item | items, count}` with no `pick` runs as the pick courier below (`pick: "first_with_stock"`), and
+    the reply's `corrected` says so. A give named with `direction: "to_entity"` and a `to` elsewhere is still refused
+    (which side is meant is not said).
   - A take from a named chest that holds none of the item says where the nearest chest holding it is, in
     `nothing_moved`: `...; the nearest holding firearm-magazine: wooden-chest at (56.5,34.5), 7.0 tiles from you,
     holds 180 (transfer from: "nearest")`.
