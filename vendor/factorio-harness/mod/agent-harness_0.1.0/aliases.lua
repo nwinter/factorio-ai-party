@@ -20,6 +20,7 @@ return function(api)
     paste = {dryrun='dry_run', ['dry-run']='dry_run'},
     blueprint_place = {dryrun='dry_run', ['dry-run']='dry_run'},
     ports = {entity='name', machine='name', facing='direction'},
+    ores = {name='resource', ore='resource', resources='resource', center='position', centre='position', min='min_amount', amount='min_amount'},
     board_post = {text='title', name='title'},
     recipes = {search='prefix', name='prefix', recipe='prefix', filter='prefix'},
     technologies = {search='prefix', name='prefix', filter='prefix', technology='prefix'},
