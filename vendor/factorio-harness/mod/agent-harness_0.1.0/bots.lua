@@ -484,33 +484,69 @@ return function(api)
     local moved = p.get_main_inventory().insert(held)
     if moved >= held.count then held.clear() elseif moved > 0 then held.count = held.count - moved end
   end
-  -- Tiles without a cursor: the item's placement condition against the tile
-  -- underneath (landfill only on water), one item per tile placed.
+  -- Tiles without a cursor, one item per tile placed, by the game's rules
+  -- (dryrun.lua hand_tile): the item's tile list and condition (landfill on
+  -- water and wetland, never on lava), protected entities on the tile block
+  -- it and are named, and what does not block a tile (water-cane, fish) goes
+  -- with it. Sol, shift12 12:55: landfill on a Gleba tile with a water-cane
+  -- kept failing with "blocked or already there"; set_tiles counts the cane,
+  -- the game's tile building does not.
   function M.place_tiles(p, a, stack, pos, size)
     local result = stack.prototype.place_as_tile_result
     local tile = result.result
-    local blocked_by = result.condition and result.condition.layers or {}
     local surface, inv = p.surface, p.get_main_inventory()
     local quality = a.quality or 'normal'
     local have = inv.get_item_count{name=a.item, quality=quality}
     local x0, y0 = math.floor(pos.x - (size - 1) / 2), math.floor(pos.y - (size - 1) / 2)
-    local tiles, hidden = {}, {}
+    -- Without the dry run module: the item's own tile rules.
+    local function rules(x, y)
+      local here = surface.get_tile(x, y)
+      if here.name == tile.name then return {already=true} end
+      local ok = true
+      if result.tile_condition then
+        ok = false
+        for _, t in ipairs(result.tile_condition) do if (type(t) == 'string' and t or t.name) == here.name then ok = true end end
+      end
+      local hit = false
+      for layer in pairs(result.condition and result.condition.layers or {}) do
+        if here.prototype.collision_mask.layers[layer] then hit = true end
+      end
+      if hit ~= (result.invert == true) then ok = false end
+      return ok and {removes={}} or {why=a.item..' cannot go on '..here.name}
+    end
+    local function verdict(x, y) return api.hand_tile and api.hand_tile(surface, p.force, a.item, x, y) or rules(x, y) end
+    -- Refusals by reason: '(68.5,45.5) (69.5,45.5): blocked by ...'.
+    local reasons, by_reason, refused = {}, {}, 0
+    local function refuse(x, y, why)
+      local r = by_reason[why]
+      if not r then r = {}; by_reason[why] = r; reasons[#reasons+1] = why end
+      r[#r+1] = string.format('(%g,%g)', x + 0.5, y + 0.5)
+      refused = refused + 1
+    end
+    local function refusals()
+      local parts = {}
+      for i, why in ipairs(reasons) do
+        if i > 4 then parts[#parts+1] = string.format('%d more reasons', #reasons - 4); break end
+        parts[#parts+1] = table.concat(by_reason[why], ' ')..': '..why
+      end
+      return table.concat(parts, '; ')
+    end
+    local tiles, hidden, removes, short = {}, {}, {}, 0
     for dx = 0, size - 1 do
       for dy = 0, size - 1 do
-        if #tiles < have then
-          local here = surface.get_tile(x0 + dx, y0 + dy)
-          local ok = here.name ~= tile.name
-          for layer in pairs(blocked_by) do
-            if ok and here.prototype.collision_mask.layers[layer] then ok = false end
-          end
-          if ok then
-            tiles[#tiles+1] = {name=tile.name, position={x0 + dx, y0 + dy}}
-            if tile.mineable_properties and tile.mineable_properties.minable then hidden[#hidden+1] = {pos={x0 + dx, y0 + dy}, name=here.name} end
-          end
+        local x, y = x0 + dx, y0 + dy
+        local v = verdict(x, y)
+        if v.already then refuse(x, y, tile.name..' is there already')
+        elseif v.why then refuse(x, y, v.why)
+        elseif #tiles >= have then short = short + 1
+        else
+          tiles[#tiles+1] = {name=tile.name, position={x, y}}
+          for _, e in ipairs(v.removes or {}) do removes[#removes+1] = e end
+          if tile.mineable_properties and tile.mineable_properties.minable then hidden[#hidden+1] = {pos={x, y}, name=surface.get_tile(x, y).name} end
         end
       end
     end
-    assert(#tiles > 0, 'no tile was placed (blocked or already there)')
+    if #tiles == 0 then error('no tile was placed: '..refusals(), 0) end
     -- A tile ghost of this tile is what the build fulfils, as a player's
     -- does; left in place it aborts set_tiles (2.0.77: construct never laid
     -- the landfill ghost under a pole on wetland). Put back where no tile went.
@@ -520,10 +556,19 @@ return function(api)
         if g.valid and g.ghost_name == tile.name then fulfilled[#fulfilled+1] = {position=g.position, force=g.force}; g.destroy() end
       end
     end
+    -- What does not block a tile goes with it (2.0.77: robots laid landfill
+    -- over an unmarked water-cane and it was gone); set_tiles would refuse it.
+    local removed = #removes > 0 and api.removes_text and api.removes_text(removes) or nil
+    for _, e in ipairs(removes) do if e.valid then e.destroy{raise_destroy=true} end end
     surface.set_tiles(tiles, true, 'abort_on_collision', true, true)
     local placed = 0
     for _, t in ipairs(tiles) do
-      if surface.get_tile(t.position[1], t.position[2]).name == tile.name then placed = placed + 1 end
+      local x, y = t.position[1], t.position[2]
+      if surface.get_tile(x, y).name == tile.name then placed = placed + 1
+      else
+        local ok, v = pcall(verdict, x, y)
+        refuse(x, y, ok and v.why or 'the game refused it there')
+      end
     end
     for _, g in ipairs(fulfilled) do
       if surface.get_tile(g.position.x, g.position.y).name ~= tile.name then
@@ -531,23 +576,13 @@ return function(api)
       end
     end
     for _, h in ipairs(hidden) do pcall(surface.set_hidden_tile, h.pos, h.name) end
-    -- Tiles that did not go down: what stands there (Sol, shift10: a slipstack
-    -- on Gleba wetland collides with landfill; mined, it goes in).
-    local blocked, seen = {}, {}
-    for _, t in ipairs(tiles) do
-      if #blocked < 4 and surface.get_tile(t.position[1], t.position[2]).name ~= tile.name and api.tile_blockers then
-        local ok, list = pcall(api.tile_blockers, surface, p.force, tile.name, t.position[1], t.position[2])
-        for _, b in ipairs(ok and list or {}) do
-          if not seen[b.text] and #blocked < 4 then seen[b.text] = true; blocked[#blocked+1] = b.text end
-        end
-      end
-    end
-    if placed == 0 then
-      error(#blocked > 0 and 'no tile was placed: blocked by '..table.concat(blocked, ', ') or 'no tile was placed (blocked or already there)', 0)
-    end
+    if placed == 0 then error('no tile was placed: '..refusals(), 0) end
     inv.remove{name=a.item, quality=quality, count=placed}
-    return {consumed=placed, tile=tile.name, position={x=math.floor(pos.x)+0.5, y=math.floor(pos.y)+0.5},
-      not_placed=placed < #tiles and string.format('%d of %d tiles%s', #tiles-placed, #tiles, #blocked > 0 and ': blocked by '..table.concat(blocked, ', ') or '') or nil}
+    local missed = refused > 0 and string.format('%d of %d tiles: %s', refused, placed + refused + short, refusals()) or nil
+    if short > 0 then missed = (missed and missed..'; ' or '')..string.format('%d with no %s left', short, a.item) end
+    return {consumed=placed, tile=tile.name, position={x=math.floor(pos.x)+0.5, y=math.floor(pos.y)+0.5}, not_placed=missed,
+      removed=removed, removed_note=removed and M.REMOVED_NOTE or nil}
   end
+  M.REMOVED_NOTE = 'water-cane and fish do not block a tile; a new tile takes them away'
   return M
 end

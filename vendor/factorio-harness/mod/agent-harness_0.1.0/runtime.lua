@@ -112,8 +112,9 @@ M.belt=require('belt')()
 M.carry=require('carry'){state=state,restart=function(index,call,until_tick) return M.restart_call(index,call,until_tick) end,
   resume=function(index,action) return M.resume_carried(index,action) end}
 M.bots=require('bots'){state=state,stop=function(index,outcome) M.stop_player(index,outcome) end,crafting=M.crafting,
-  -- What stands where a tile does not go (dryrun.lua tile_blockers): a hand-laid tile's refusal names it.
-  tile_blockers=function(surface,force,tile,x,y) return M.dryrun and M.dryrun.tile_blockers(surface,force,tile,x,y) end,
+  -- Whether a hand-laid tile goes on a tile, what blocks it and what it takes away (dryrun.lua hand_tile).
+  hand_tile=function(surface,force,item,x,y) return M.dryrun and M.dryrun.hand_tile(surface,force,item,x,y) end,
+  removes_text=function(list) return M.dryrun and M.dryrun.removes_text(list) end,
   profile=function(index) return M.profiles.get(index) end,on_spawn=function(b) M.profiles.apply(M.bots.proxy(b)); M.nametags.refresh(b) end}
 M.cameras=require('cameras'){state=state,bot=function(name) return M.bots.named(name) end,
   controlled=function(index) return state().controlled and state().controlled[index]~=nil end}
@@ -3613,6 +3614,8 @@ function handlers.build(p,a)
   assert(type(a.builds)=='table' and #a.builds>=1 and #a.builds<=64,'builds requires 1..64 {item,position,direction} entries')
   assert(a.skip_failed==nil or type(a.skip_failed)=='boolean','skip_failed must be true or false')
   local placed,failed,inserters,built={},{},{},{}
+  -- Tile entries: what their tiles took away (water-cane, fish) and what of a brush did not go down (Sol 12:55).
+  local tiles_removed,tiles_not_placed={},{}
   for _,f in ipairs(a.failed_before or {}) do failed[#failed+1]=f end
   for _,e in ipairs(a.built_ents or {}) do built[#built+1]=e end
   for i,b in ipairs(a.builds) do
@@ -3653,6 +3656,9 @@ function handlers.build(p,a)
       placed[#placed+1]=e and e.position or b.position
       -- (summary gives an inserter's pickup tile, and only an inserter's)
       if e and e.pickup~=nil then inserters[#inserters+1]=e.position end
+      local n=i+(a.index_before or 0)
+      if result.removed and #tiles_removed<16 then tiles_removed[#tiles_removed+1]='#'..n..': '..result.removed end
+      if result.not_placed and #tiles_not_placed<16 then tiles_not_placed[#tiles_not_placed+1]='#'..n..': '..result.not_placed end
     end
   end
   -- The batch's inserters with nothing on a pickup or drop point once all
@@ -3671,7 +3677,9 @@ function handlers.build(p,a)
   local okb,last_belt=pcall(M.beltflow.last,built)
   return {built=#placed,placed=placed,built_before=a.built_before,failed=#failed>0 and failed or nil,inserters_without_target=loose,
     inserters_without_target_count=nloose and nloose>#loose and nloose or nil,
-    closed_in=M.closed_in_note(p,built),outside_logistic_coverage=cover,underground_side_feed=side,last_belt=okb and last_belt or nil}
+    closed_in=M.closed_in_note(p,built),outside_logistic_coverage=cover,underground_side_feed=side,last_belt=okb and last_belt or nil,
+    tiles_removed=#tiles_removed>0 and tiles_removed or nil,removed_note=#tiles_removed>0 and M.bots.REMOVED_NOTE or nil,
+    tiles_not_placed=#tiles_not_placed>0 and tiles_not_placed or nil}
 end
 -- Red, green and copper wires, as a player drags them (circuits.lua).
 function handlers.wire(p,a) return M.circuits.wire(p,a) end

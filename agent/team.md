@@ -284,9 +284,11 @@ already targets your character.
   in visible chunks, all of a platform); `wire` connects and removes red, green and copper wires the same way; `inspect`
   reads back the conditions, settings, each wire's far end and the signals on each network now. A logistic condition
   reads the network whose logistic area holds the entity's centre (`logistic_reads`; `none`: never met).
-- Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub, water-cane or stromatolite stands:
-  a dry run names them (`blocked by slipstack tree at (x,y): mine it first`); `place_ghosts` marks them for removal
-  first (`tile_obstacles_marked`) and `construct` mines them before it lays the landfill.
+- Landfill on Gleba wetland goes in only where no slipstack, cuttlepop, hairyclubnub or stromatolite stands (marked or
+  not, for a tile laid by hand): a dry run and a failed build name them (`blocked by slipstack tree at (x,y): mine it
+  first`); `place_ghosts` marks them for removal first (`tile_obstacles_marked`) and `construct` mines them before it
+  lays the landfill. Water-cane and fish do not block a tile: the new tile takes them away (`removed`). Landfill goes on
+  water and wetland only (`landfill cannot go on oil-ocean-deep (foundation can; not researched)`).
 - `./fh call placements --args '{"name":"accumulator","near":{"x":-60,"y":95},"radius":16}'` lists up to 10 (`limit`
   up to 50) positions where it fits now, nearest first, by the game's build check (`blocked`: positions something
   stands in); `"separate":true` lists spots that do not overlap each other, `"powered":true` only spots in one of our

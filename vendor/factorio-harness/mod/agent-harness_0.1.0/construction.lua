@@ -466,11 +466,14 @@ return function(api)
   end
   -- Trees and rocks a tile ghost cannot go under (Sol, shift10: a slipstack on
   -- Gleba wetland kept landfill out). 2.0.77: Gleba's slipstack, cuttlepop,
-  -- hairyclubnub, water-cane and the stromatolites have ground_tile in their
-  -- collision mask, so landfill (a ground_tile) collides with them; Nauvis
-  -- trees do not, and tiles go in under them. Those on the tile are marked for
+  -- hairyclubnub and the stromatolites have ground_tile in their collision
+  -- mask, so landfill (a ground_tile) collides with them; Nauvis trees do not,
+  -- and tiles go in under them. Those on the tile are marked for
   -- deconstruction, as the game marks them for a player's tile ghost, and the
-  -- tile waits until they are mined.
+  -- tile waits until they are mined. Water-cane has ground_tile too but is not
+  -- protected_from_tile_building: the tile takes it away (bots.lua
+  -- place_tiles), so it is left standing. An edge that only touches the tile
+  -- counts: the engine's tile check counted it on three sides of four.
   function M.tile_obstacles(p,g)
     local ok,tl=pcall(function() return g.ghost_prototype.collision_mask.layers end)
     if not ok or not tl then return {} end
@@ -478,7 +481,8 @@ return function(api)
     local box={left_top={x=x,y=y},right_bottom={x=x+1,y=y+1}}
     local found={}
     for _,e in pairs(p.surface.find_entities_filtered{area={{x-1.5,y-1.5},{x+2.5,y+2.5}},type={'tree','plant','simple-entity'},force='neutral'}) do
-      if e.valid and e.minable and touches(e,box,-0.01) then
+      local okp,prot=pcall(function() return e.prototype.protected_from_tile_building end)
+      if e.valid and e.minable and touches(e,box,0) and not (okp and prot==false) then
         local okm,el=pcall(function() return e.prototype.collision_mask.layers end)
         local hits=false
         for layer in pairs(okm and el or {}) do if tl[layer] then hits=true end end
