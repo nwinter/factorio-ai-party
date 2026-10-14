@@ -127,13 +127,20 @@ eq(storage.science_line_errors.count,2,'the next job runs'); eq(storage.science_
 -- once one works again. Automation has no maker on this surface: never one.
 eq(#S.alert_groups(force),0)
 for i=1,14 do cs[i].status=6 end
+-- (Astra, 12:02) While every lab holds chemical packs, its stopped makers are no stopped colour.
+run(18000); S.lines(p,h); finish(); run(18000); S.lines(p,h); finish()
+eq(#S.alert_groups(force),0,'every lab holds it')
+eq(storage.science_labs.player.n,20); eq(next(storage.science_labs.player.lack),nil)
+-- The labs run out of chemical packs.
+for i=1,20 do labs[i].get_inventory=function() return {get_item_count=function(n) return n==chem and 0 or 5 end} end end
 run(18000); S.lines(p,h); finish()
 eq(#S.alert_groups(force),0,'idle at one build only')
+eq(storage.science_labs.player.lack[chem],20,'the lab state kept for the stall alert')
 run(18000); S.lines(p,h); finish()
 local ig=S.alert_groups(force)
 eq(#ig,1); eq(ig[1].kind,'science_idle'); eq(ig[1].surface,'nauvis'); eq(ig[1].key,'science_idle|nauvis|chemical-science-pack|plastic-bar')
 has(ig[1].line,'no chemical-science-pack maker working for ')
-has(ig[1].line,'+ min (14 makers: 14 item_ingredient_shortage); first short step plastic-bar: 4 of 4 working, made 30/min, used 52/min (chemical-science-pack > advanced-circuit > plastic-bar)')
+has(ig[1].line,'+ min (14 makers: 14 item_ingredient_shortage); 20 of 20 labs have none; first short step plastic-bar: 4 of 4 working, made 30/min, used 52/min (chemical-science-pack > advanced-circuit > plastic-bar)')
 assert(ig[1].center and ig[1].center.y==90,'centred on its makers')
 cs[1].status=1
 run(18000); S.lines(p,h); finish()
