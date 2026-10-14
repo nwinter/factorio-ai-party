@@ -847,12 +847,17 @@ class Relay:
 
     @staticmethod
     def line(msg, to=None):
-        """viewer_say takes only name and text, and the harness wakes a sleeping agent for a viewer line only when it
+        """viewer_say takes name, text and source (youtube or site), and the harness wakes a sleeping agent for a viewer line only when it
         says @name (board.lua mention_how): each agent to wake that the line does not already @-mention gets "@name "
         in front, the viewer's words unchanged. `to`: a name or a list of names."""
         names = [to] if isinstance(to, str) else list(to or [])
         prefix = "".join(f"@{n} " for n in names)
-        return {"name": msg["name"], "text": prefix + cap(msg["text"], RELAY_MAX - len(prefix))}
+        out = {"name": msg["name"], "text": prefix + cap(msg["text"], RELAY_MAX - len(prefix))}
+        # where the viewer wrote: the game line and the agents' chat say "(YouTube)" or "(site)" (Luna 13:54; a runtime
+        # from before ignores it)
+        if msg.get("source") in ("youtube", "site"):
+            out["source"] = msg["source"]
+        return out
 
     def named_agents(self, text):
         """[(agent name, already @-mentioned?)] for the agents a line names, by name, pog- name or display name, word

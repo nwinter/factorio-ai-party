@@ -3896,4 +3896,70 @@ end)()
   runtime.networks.read,game.get_surface,s.planet=kept_read,kept_get,kept_planet
   for _,k in ipairs(fields) do s[k]=kept[k] end
 end)()
+-- shift12 15:20 (rocketload.lua): launch's min_cargo guard before the game is asked, load_silo waiting for its rocket
+-- as a timed action and then loading in that tick, a queue dry run that queues nothing; describe has them.
+;(function()
+  local d=call('describe',{})
+  assert(d.actions.load_silo and d.actions.preflight,'load_silo and preflight described')
+  assert(d.actions.launch.min_cargo and d.actions.launch.arrived and d.actions.queue_submit.dry_run,'launch min_cargo and arrived, queue_submit dry_run')
+  local kept_find,kept_main,kept_rss,kept_pos,kept_platforms=p.surface.find_entities_filtered,main,defines.rocket_silo_status,p.position,p.force.platforms
+  defines.rocket_silo_status=defines.rocket_silo_status or {building_rocket=1,rocket_ready=9}
+  defines.inventory.rocket_silo_rocket=defines.inventory.rocket_silo_rocket or 21
+  local RR=defines.inventory.rocket_silo_rocket
+  prototypes.item['agricultural-science-pack']=prototypes.item['agricultural-science-pack'] or {}
+  local ag=prototypes.item['agricultural-science-pack']
+  local kept_w,kept_s=ag.weight,ag.stack_size
+  ag.weight,ag.stack_size=1000,200
+  local function listing(t)
+    t.get_contents=function() local out={}; for _,s in ipairs(t) do if s.valid_for_read then out[#out+1]={name=s.name,count=s.count,quality='normal'} end end; return out end
+    t.is_empty=function() return #t.get_contents()==0 end
+    t.can_insert=function() return true end
+    return t
+  end
+  local cargo=listing(inv(stack('agricultural-science-pack',60),stack(nil,0),stack(nil,0)))
+  local silo={valid=true,name='rocket-silo',type='rocket-silo',position={x=5.5,y=5.5},force=p.force,surface=p.surface,unit_number=77,
+    rocket_silo_status=defines.rocket_silo_status.rocket_ready,rocket_parts=0,prototype={rocket_parts_required=50},use_transitional_requests=false}
+  local rocket_there=true
+  silo.get_inventory=function(i) if i==RR and rocket_there then return cargo end end
+  local kept_gmi=p.get_main_inventory
+  p.get_main_inventory=function() return main end
+  p.position={x=0,y=0}; p.force.platforms={}
+  p.surface.find_entities_filtered=function(f) if f.type=='rocket-silo' or f.position then return {silo} end return {} end
+  -- launch: min_cargo short is refused in this tick, before the game is asked; met, the launch goes on (here to a
+  -- platform that is not there, refused by launch itself).
+  fails(function() call('launch',{position=silo.position,platform='Nowhere',min_cargo={['agricultural-science-pack']=100}}) end,
+    'launch refused at tick '..tick..', nothing launched: min_cargo not met: agricultural-science-pack 60 of 100 (40 short); the rocket holds agricultural-science-pack*60')
+  cargo[1].count=100
+  fails(function() call('launch',{position=silo.position,platform='Nowhere',min_cargo={['agricultural-science-pack']=100}}) end,'no platform named Nowhere')
+  -- load_silo: no rocket yet, a timed action (kind feed) until there is one, then the load in that tick.
+  rocket_there=false
+  for i=1,3 do cargo[i]=stack(nil,0) end
+  main=inv(stack('agricultural-science-pack',90),stack(nil,0))
+  main.get_contents=function() return {{name='agricultural-science-pack',count=main[1].count,quality='normal'}} end
+  local r=call('load_silo',{position=silo.position,items={['agricultural-science-pack']=90},chests=false})
+  eq(r.waiting.why,'no rocket to load yet'); assert(r.until_tick==tick+3600,tostring(r.until_tick))
+  eq(call('status',{}).active.kind,'feed')
+  advance(25); eq(call('status',{}).active.kind,'feed','still no rocket')
+  rocket_there=true; advance(15)
+  local st=call('status',{})
+  eq(st.active,false); eq(st.last.outcome,'fed'); eq(st.last.result.loaded[1].loaded,90); eq(st.last.result.complete,true)
+  eq(cargo[1].count,90); eq(main[1].count,0)
+  -- With launch: the launch's refusal after loading says the cargo stays.
+  main[1]=stack('agricultural-science-pack',10)
+  fails(function() call('load_silo',{position=silo.position,items={['agricultural-science-pack']=100},to_total=true,chests=false,launch=true,platform='Nowhere'}) end,
+    'loaded, then the launch was refused: no platform named Nowhere')
+  eq(cargo[1].count,100)
+  -- A queue dry run: the cargo before the launch step, queued nothing.
+  cargo[1].count=60
+  local before=call('queue_status',{}).revision
+  local dr=call('queue_submit',{dry_run=true,steps={{action='wait_until',args={['until']='rocket_ready',position=silo.position}},
+    {action='launch',args={position=silo.position,platform='Nowhere',min_cargo={['agricultural-science-pack']=100}}}}})
+  eq(dr.dry_run,true); eq(dr.queued,false); eq(dr.steps,2)
+  eq(dr.launches[1].step,2); eq(dr.launches[1].cargo,'agricultural-science-pack*60')
+  eq(dr.launches[1].would_refuse[1],'min_cargo not met: agricultural-science-pack 60 of 100 (40 short)')
+  eq(call('queue_status',{}).revision,before,'nothing queued')
+  fails(function() call('queue_submit',{dry_run='yes',steps={}}) end,'dry_run must be true or false')
+  p.surface.find_entities_filtered,main,defines.rocket_silo_status,p.position,p.force.platforms=kept_find,kept_main,kept_rss,kept_pos,kept_platforms
+  ag.weight,ag.stack_size=kept_w,kept_s; p.get_main_inventory=kept_gmi
+end)()
 print('runtime: '..assertions..' assertions passed')

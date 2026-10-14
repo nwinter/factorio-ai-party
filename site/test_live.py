@@ -62,6 +62,20 @@ def payload_tests():
     for bad in ({"watching": None}, {"watching_t": now - 400}, {"watching": True}, {"watching": "40"}, {"watching": -1}):
         assert "watching" not in push_live.public_state(dict(s, viewers_status={"youtube": dict(yt, **bad)})), bad
     assert "watching" not in push_live.public_state(s)
+    # the joined chat pane's YouTube lines (eng/sitechat2): from the viewer lane, YouTube only, the site's hidden lines out
+    import moderation
+    h = moderation.Hidden()
+    h.names.add("spammer")
+    lane = [{"id": "yt:1", "source": "youtube", "name": "Joonazan", "text": "no biters on Gleba", "t": now - 30, "checked": "clef"},
+            {"id": "s:2", "source": "site", "name": "bo", "text": "site line", "t": now - 20},
+            {"id": "yt:3", "source": "youtube", "name": "Spammer", "text": "buy", "t": now - 10},
+            {"id": "yt:4", "source": "youtube", "name": "mod", "text": "hi", "t": now - 5, "staff": True}]
+    yt = push_live.public_youtube(lane, h)
+    assert yt == [{"id": "yt:1", "name": "Joonazan", "text": "no biters on Gleba", "t": round(now - 30, 1)},
+                  {"id": "yt:4", "name": "mod", "text": "hi", "t": round(now - 5, 1), "staff": True}], yt
+    many = [dict(lane[0], id=f"yt:{i}", t=now + i) for i in range(push_live.YOUTUBE_MAX + 5)]
+    assert [r["id"] for r in push_live.public_youtube(many)][0] == "yt:5"  # the newest kept, oldest first
+    assert push_live.public_state(dict(s, viewers=lane))["youtube_chat"][0]["name"] == "Joonazan"
 
 
 def build_tests():
@@ -126,7 +140,8 @@ global.fetch = (url, opts) => {
 require(process.argv[2]);
 setTimeout(() => process.stdout.write(JSON.stringify({ dash: kids['#dash'].innerHTML, made, sets,
   agents: (kids['#cb-agents'] || {}).innerHTML, cams: (kids['#map-cams'] || {}).innerHTML, board: (kids['#cb-board'] || {}).innerHTML,
-  watching: { text: kids['#watching'].textContent, hidden: kids['#watching'].hidden }, posts }), () => process.exit(0)), 300);
+  watching: { text: kids['#watching'].textContent, hidden: kids['#watching'].hidden }, posts,
+  vchat: (kids['#vchat'] || {}).innerHTML }), () => process.exit(0)), 300);
 """
 
 SCENE_JS = r"""
@@ -295,10 +310,16 @@ def map_tests():
         js = os.path.join(d, "live.js")
         open(js, "w").write(LIVE_JS)
         spath = os.path.join(d, "state.json")
-        json.dump(map_state(True), open(spath, "w"))
+        # the joined chat pane (eng/sitechat2): the YouTube lines push_live publishes, in time order, badged
+        yt = [{"id": "yt:2", "name": "Joonazan", "text": "no biters on Gleba", "t": 1792015200.0},
+              {"id": "yt:1", "name": "Enginerd", "text": "<b>hi</b>", "t": 1792015100.0}]
+        json.dump(dict(map_state(True), youtube_chat=yt), open(spath, "w"))
         r = subprocess.run(["node", js, os.path.join(SITE, "static", "live.js"), spath], capture_output=True, text=True, timeout=30)
         assert r.returncode == 0, r.stderr
         lv = json.loads(r.stdout)
+        vc = lv["vchat"]
+        assert vc.count('c-src-yt') == 2 and vc.index("Enginerd") < vc.index("Joonazan"), vc  # oldest first
+        assert "&lt;b&gt;hi" in vc and "<b>hi" not in vc, vc  # escaped
         assert lv["dash"].count('class="fx-panel live-card') == 6 and 'id="cb-map"' in lv["dash"]
         assert len(lv["made"]) == 1 and lv["made"][0]["host"] == "mm", lv["made"]  # one viewer, kept across refreshes
         got = lv["sets"][-1]

@@ -949,7 +949,7 @@ async function main() {
       // an active 'feed'; the radius tours run as 'gather'; vehicle drive runs
       // as 'drive' (request #5: the wait returned the previous action's result). A transfer that walks (walk, pick)
       // runs as 'gather' too.
-      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' ? ['feed']
+      const kinds = action === 'collect' || action === 'feed' ? ['gather'] : ['rearm','refuel','transfer'].includes(action) ? ['gather','feed'] : action === 'build' || action === 'load_silo' ? ['feed']
         : action === 'vehicle' ? ['drive'] : [action];
       const stillRunning = active && (action === 'shoot' || action === 'drop' || kinds.includes(active.kind));
       if (status.ok && stillRunning && told(status, acceptedTick) && action !== 'wait_ticks' && action !== 'wait_until') {
@@ -1234,6 +1234,8 @@ async function main() {
         || (['transfer','rearm','refuel','build'].includes(action) && reply.result?.awaiting_craft !== undefined)
         // build stepping off its own footprint, then placing the rest (Sol 11:18: --wait returned at "built 1 of 5")
         || (action === 'build' && reply.result?.stepping_aside !== undefined)
+        // load_silo waiting for its rocket (no rocket yet, or launch=true before it is ready), then loading (shift12 15:20)
+        || (action === 'load_silo' && reply.result?.waiting !== undefined)
         // A transfer or collect that walks (walk, pick, pick with to) runs as a timed tour.
         || (['transfer','collect'].includes(action) && reply.result?.op === 'transfer' && reply.result?.until_tick !== undefined)
         // feed over positions with walk: a tour when any was out of reach (Opus 10:50).
