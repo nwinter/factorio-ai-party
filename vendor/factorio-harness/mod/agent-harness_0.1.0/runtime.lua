@@ -7759,7 +7759,26 @@ function handlers.science(p,a) return M.labs.science(p,a) end
 rates=rates_module{position=position,status_name=function(e) return entity_status_names[e.status] end}
 -- Electric and logistic networks and turrets, one line each (networks.lua):
 -- the shift block, the networks read, and the network push alerts.
-M.networks=require('networks'){state=state}
+-- Space not in play yet (Nick 12:35, item 4, for a fresh run): no rocket launched, no platform, and no planet but
+-- Nauvis with our entities (characters too); looked at once a minute per force. Text lines then name no planet;
+-- JSON fields keep it.
+function M.one_planet(force)
+  local s=state()
+  s.one_planet=s.one_planet or {}
+  local c=s.one_planet[force.name]
+  if c and game.tick-c.tick<3600 then return c.yes end
+  local yes=(force.rockets_launched or 0)==0
+  if yes then for _,pl in pairs(force.platforms or {}) do if pl.valid then yes=false; break end end end
+  if yes then
+    for _,sf in pairs(game.surfaces) do
+      local ok,n=pcall(function() return sf.name~='nauvis' and not sf.platform and sf.count_entities_filtered{force=force,limit=1} or 0 end)
+      if ok and type(n)=='number' and n>0 then yes=false; break end
+    end
+  end
+  s.one_planet[force.name]={tick=game.tick,yes=yes}
+  return yes
+end
+M.networks=require('networks'){state=state,one_planet=function(f) return M.one_planet(f) end}
 function handlers.networks(p,a) return M.networks.read(p,a) end
 function handlers.boilers(p,a) return M.networks.boilers(p,a) end
 -- One science line per agent in the team block, at most every 5 min and when it changed (scienceline.lua, operator 03:22).

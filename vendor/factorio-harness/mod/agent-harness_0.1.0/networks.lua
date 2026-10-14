@@ -1060,13 +1060,18 @@ return function(api)
       fed=best.fed, low=best.fuel_low and #best.fuel_low or 0, low_min=best.fuel_low and best.fuel_low[1] and best.fuel_low[1].min or nil}
   end
   -- The lines, the agent's surface first; at most `max` (the rest counted).
+  -- While Nauvis is the only planet in play (runtime one_planet; Nick 12:35, item 4) a line names no planet.
+  local function plain_line(f, line)
+    if api.one_planet and try(function() return api.one_planet(f) end) then return (line:gsub('^nauvis ', '')) end
+    return line
+  end
   function M.lines(f, here, max)
     local v = view(f)
     local list = {}
     local function add(s)
-      for _, r in ipairs(s.electric) do list[#list+1] = r.line end
-      for _, r in ipairs(s.logistic) do list[#list+1] = r.line end
-      if s.turrets then list[#list+1] = s.turrets.line end
+      for _, r in ipairs(s.electric) do list[#list+1] = plain_line(f, r.line) end
+      for _, r in ipairs(s.logistic) do list[#list+1] = plain_line(f, r.line) end
+      if s.turrets then list[#list+1] = plain_line(f, s.turrets.line) end
     end
     for _, s in ipairs(v.surfaces) do if s.name == here then add(s) end end
     for _, s in ipairs(v.surfaces) do if s.name ~= here then add(s) end end
@@ -1082,9 +1087,10 @@ return function(api)
     local out = {}
     for _, s in ipairs(v.surfaces) do
       if a.surface == nil or a.surface == s.name then
-        local row = {surface=s.name, electric={}, logistic={}, turrets=s.turrets and {by_name=s.turrets.by, ammo_used_1h=s.turrets.used, line=s.turrets.line} or nil}
+        local row = {surface=s.name, electric={}, logistic={}, turrets=s.turrets and {by_name=s.turrets.by, ammo_used_1h=s.turrets.used, line=plain_line(p.force, s.turrets.line)} or nil}
         for _, r in ipairs(s.electric) do
           local x = plain(r, {'id', 'poles', 'machines', 'low', 'none', 'acc', 'solar', 'line'})
+          x.line = plain_line(p.force, x.line)
           x.center = {x=math.floor(r.center.x + 0.5), y=math.floor(r.center.y + 0.5)}
           x.capacity_kw = math.floor(r.capacity_kw + 0.5)
           x.generators_kw, x.solar_peak_kw = math.floor(r.cap_kw + 0.5), math.floor(r.solar_peak_kw + 0.5)
@@ -1105,6 +1111,7 @@ return function(api)
         end
         for _, r in ipairs(s.logistic) do
           local x = plain(r, {'id', 'roboports', 'center', 'logistic', 'logistic_idle', 'construction', 'construction_idle', 'unfilled', 'ghosts', 'line'})
+          x.line = plain_line(p.force, x.line)
           x.unfilled_items = next(r.items) and r.items or nil
           x.none_idle_s = r.busy_since and math.floor((game.tick - r.busy_since) / 60) or nil
           x.personal = r.personal > 0 and r.personal or nil

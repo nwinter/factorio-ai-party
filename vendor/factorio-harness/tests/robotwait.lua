@@ -93,4 +93,15 @@ for _,e in ipairs(list) do e.valid=false end
 r=row()
 eq(r.backlog.total,0); assert(r.line:find('construction backlog: none',1,true),r.line)
 eq(next(storage.networks.orders.player),nil,'gone orders forgotten')
+-- Item 4 (12:35): while Nauvis is the only planet in play (runtime one_planet) a line names no planet; the read's
+-- surface field keeps it. Without that, the planet leads the line.
+assert(N.lines(force,'nauvis',8)[1]:find('^nauvis logistic #3'),'the planet named')
+local one=true
+local N1=dofile('mod/agent-harness_0.1.0/networks.lua'){state=function() return storage end,one_planet=function() return one end}
+storage.networks.views={}
+assert(N1.lines(force,'nauvis',8)[1]:find('^logistic #3: '),N1.lines(force,'nauvis',8)[1])
+local rd=N1.read({force=force},{})
+eq(rd.surfaces[1].surface,'nauvis'); assert(rd.surfaces[1].logistic[1].line:find('^logistic #3: '))
+one=false
+assert(N1.lines(force,'nauvis',8)[1]:find('^nauvis logistic #3'))
 print('robotwait: ok')

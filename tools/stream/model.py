@@ -697,9 +697,11 @@ class Model:
             ag.died_at = now
             ag.bump(5, now)
             where = where_label(ag.surface, ag.platform) if ag.surface else None
+            # (the casters' facts name no planet while Nauvis is the only one in play: Nick 12:35, item 4)
             self.alert("death", f"{ag.display_name} died" + (f" on {where}" if where and where != "Nauvis" else ""),
                        key=f"death:{ag.name}:{int(now // 30)}", agent=ag.name,
-                       facts={"headline": "agent_death", "agent": ag.display_name, "where": where})
+                       facts={"headline": "agent_death", "agent": ag.display_name,
+                              "where": where if where != "Nauvis" or self.space_in_play() else None})
         ag.alive = alive
         ag.connected = connected
         ag.dead_until_tick = a.get("dead_until_tick")
@@ -1373,6 +1375,13 @@ class Model:
             "platforms_left": left or "none", "game_time": fmt_game_time(self.tick / 60)})
 
     LOST_SHOW_S = 120  # a lost platform stays in the widget this long, marked lost, with its cause
+
+    def space_in_play(self):
+        """Space beyond Nauvis (the space widget's active, without the science packs): a rocket, a platform, another
+        planet with our entities, or an agent away from Nauvis."""
+        sp = self.space
+        return bool(sp.get("rockets") or sp.get("platforms") or len(sp.get("planets") or []) > 1
+                    or any(a.surface and a.surface != "nauvis" for a in self.agents.values()))
 
     def space_snapshot(self, sci, now=None):
         now = now or time.time()
